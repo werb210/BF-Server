@@ -111,7 +111,7 @@ async function findExistingContactId(params: {
     `select id
      from contacts
      where lower(email) = lower($1)
-        or regexp_replace(coalesce(phone, ''), '\\D', '', 'g') = regexp_replace($2, '\\D', '', 'g')
+        or phone = $2
      order by created_at asc
      limit 1`,
     [params.email, params.phone]

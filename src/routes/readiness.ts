@@ -20,13 +20,13 @@ const readinessSchema = z.object({
 });
 
 router.post("/", async (req, res) => {
-  try {
-    const parsed = readinessSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return res.status(400).json({ error: "Invalid request" });
-    }
+  const parsed = readinessSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request" });
+  }
 
-    const payload = parsed.data;
+  const payload = parsed.data;
+  try {
     const { leadId } = await createReadinessLead(payload as any);
     const session = await createOrReuseReadinessSession(payload);
 
@@ -39,72 +39,67 @@ router.post("/", async (req, res) => {
         reused: session.reused,
       },
     });
-  } catch {
-    return res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+    if (error instanceof Error && error.message === "invalid_phone") {
+      return res.status(400).json({ error: "Invalid request" });
+    }
+    throw error;
   }
 });
 
 router.post("/continue", async (req, res) => {
-  try {
-    const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
-    if (!email) {
-      return res.status(400).json({ error: "Invalid request" });
-    }
-
-    const result = await db.query(
-      `select *
-       from continuation
-       where lower(email) = lower($1)
-       order by created_at desc
-       limit 1`,
-      [email]
-    );
-    const session = result.rows[0] ?? null;
-    if (!session) {
-      return res.status(200).json({ success: true, data: { session: null } });
-    }
-
-    return res.status(200).json({ success: true, data: { session } });
-  } catch {
-    return res.status(500).json({ error: "Internal server error" });
+  const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
+  if (!email) {
+    return res.status(400).json({ error: "Invalid request" });
   }
+
+  const result = await db.query(
+    `select *
+     from continuation
+     where lower(email) = lower($1)
+     order by created_at desc
+     limit 1`,
+    [email]
+  );
+  const session = result.rows[0] ?? null;
+  if (!session) {
+    return res.status(400).json({ error: "Invalid state" });
+  }
+
+  return res.status(200).json({ success: true, data: { session } });
 });
 
 router.get("/:sessionId", async (req, res) => {
-  try {
-    const sessionId = typeof req.params.sessionId === "string" ? req.params.sessionId.trim() : "";
-    if (!sessionId) {
-      return res.status(400).json({ error: "Invalid request" });
-    }
-
-    const session = await getActiveReadinessSessionByToken(sessionId);
-    if (!session) {
-      return res.status(404).json({ error: "Not found" });
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        leadId: session.leadId,
-        kyc: {
-          companyName: session.companyName,
-          fullName: session.fullName,
-          email: session.email,
-          phone: session.phone,
-          industry: session.industry,
-        },
-        financial: {
-          yearsInBusiness: session.yearsInBusiness,
-          monthlyRevenue: session.monthlyRevenue,
-          annualRevenue: session.annualRevenue,
-          arOutstanding: session.arOutstanding,
-          existingDebt: session.existingDebt,
-        },
-      },
-    });
-  } catch {
-    return res.status(500).json({ error: "Internal server error" });
+  const sessionId = typeof req.params.sessionId === "string" ? req.params.sessionId.trim() : "";
+  if (!sessionId) {
+    return res.status(400).json({ error: "Invalid request" });
   }
+
+  const session = await getActiveReadinessSessionByToken(sessionId);
+  if (!session) {
+    return res.status(404).json({ error: "Not found" });
+  }
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      leadId: session.leadId,
+      kyc: {
+        companyName: session.companyName,
+        fullName: session.fullName,
+        email: session.email,
+        phone: session.phone,
+        industry: session.industry,
+      },
+      financial: {
+        yearsInBusiness: session.yearsInBusiness,
+        monthlyRevenue: session.monthlyRevenue,
+        annualRevenue: session.annualRevenue,
+        arOutstanding: session.arOutstanding,
+        existingDebt: session.existingDebt,
+      },
+    },
+  });
 });
 
 export default router;

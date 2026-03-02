@@ -36,9 +36,12 @@ import healthRouter from "./routes/health";
 import readinessRouter from "./routes/readiness";
 import contactRouter from "./routes/contact";
 import supportRouter from "./routes/support";
+import publicRouter from "./routes/public";
 import aiCoreRouter from "./routes/aiCore";
 import applicationRouter from "./routes/application";
 import applicationContinuationRouter from "./modules/continuation/continuation.routes";
+import chatRouter from "./modules/ai/chat.routes";
+import confidenceRouter from "./modules/ai/confidence.routes";
 import { assertApiV1Frozen } from "./contracts/v1Freeze";
 import requestLogMiddleware from "./middleware/logger";
 import envCheck from "./middleware/envCheck";
@@ -167,10 +170,14 @@ export function registerApiRoutes(app: express.Express): void {
   });
 
   app.use("/api", limiter);
+  app.use("/api/client", requireHttps, ensureIdempotencyKey, idempotencyMiddleware);
 
   app.use("/", healthRouter);
-  app.use("/api", readinessRouter);
-  app.use("/api", contactRouter);
+  app.use("/api/readiness", readinessRouter);
+  app.use("/api/contact", contactRouter);
+  app.use("/api", chatRouter);
+  app.use("/api", confidenceRouter);
+  app.use("/api/public", publicRouter);
   app.use("/api/support", supportRouter);
   app.use("/api", aiCoreRouter);
   app.use("/api/application", applicationRouter);
@@ -187,13 +194,6 @@ export function registerApiRoutes(app: express.Express): void {
   API_ROUTE_MOUNTS.forEach((entry) => {
     app.use(`/api${entry.path}`, entry.router);
   });
-
-  app.use(
-    "/api",
-    requireHttps,
-    ensureIdempotencyKey,
-    idempotencyMiddleware
-  );
 
   app.use("/api", notFoundHandler);
 

@@ -55,10 +55,7 @@ export async function createOrReuseReadinessSession(payload: ReadinessSessionInp
      from readiness_sessions
      where (
         lower(email) = $1
-        or (
-          $2::text is not null
-          and regexp_replace(coalesce(phone, ''), '\\D', '', 'g') = regexp_replace($2, '\\D', '', 'g')
-        )
+        or ($2::text is not null and phone = $2)
      )
      and is_active = true and expires_at > now()
      order by created_at desc
