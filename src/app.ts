@@ -34,6 +34,11 @@ import applicationsRoutes from "./routes/applications";
 import aiRoutes from "./routes/ai";
 import healthRouter from "./routes/health";
 import readinessRouter from "./routes/readiness";
+import contactRouter from "./routes/contact";
+import supportRouter from "./routes/support";
+import aiCoreRouter from "./routes/aiCore";
+import applicationRouter from "./routes/application";
+import applicationContinuationRouter from "./modules/continuation/continuation.routes";
 import { assertApiV1Frozen } from "./contracts/v1Freeze";
 import requestLogMiddleware from "./middleware/logger";
 import envCheck from "./middleware/envCheck";
@@ -165,6 +170,11 @@ export function registerApiRoutes(app: express.Express): void {
 
   app.use("/", healthRouter);
   app.use("/api", readinessRouter);
+  app.use("/api", contactRouter);
+  app.use("/api/support", supportRouter);
+  app.use("/api", aiCoreRouter);
+  app.use("/api/application", applicationRouter);
+  app.use("/api/application/continuation", applicationContinuationRouter);
 
   /* Explicit mounts */
   app.use("/api/auth", authRoutes);
