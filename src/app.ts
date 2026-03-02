@@ -32,6 +32,8 @@ import lendersRoutes from "./routes/lenders";
 import lenderProductsRoutes from "./routes/lenderProducts";
 import applicationsRoutes from "./routes/applications";
 import aiRoutes from "./routes/ai";
+import healthRouter from "./routes/health";
+import readinessRouter from "./routes/readiness";
 import { assertApiV1Frozen } from "./contracts/v1Freeze";
 import requestLogMiddleware from "./middleware/logger";
 import envCheck from "./middleware/envCheck";
@@ -160,6 +162,9 @@ export function registerApiRoutes(app: express.Express): void {
   });
 
   app.use("/api", limiter);
+
+  app.use("/", healthRouter);
+  app.use("/api", readinessRouter);
 
   /* Explicit mounts */
   app.use("/api/auth", authRoutes);
