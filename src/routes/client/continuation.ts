@@ -1,35 +1,35 @@
 import { Router, Request, Response } from "express";
-import { verifyClientContinuationToken } from "../../services/auth/continuationTokenService";
-import { getLatestIncompleteApplication } from "../../services/applications/applicationService";
+import { getContinuation as getClientContinuation } from "../../modules/continuation/continuation.service";
 
 const router = Router();
 
 /**
- * GET /api/client/continuation/:token
+ * GET /client/continuation/:token
  */
-router.get("/continuation/:token", async (req: Request, res: Response) => {
+router.get("/:token", async (req: Request, res: Response) => {
+  const token = req.params.token;
+
+  if (typeof token !== "string") {
+    return res.status(400).json({
+      error: "token is required",
+    });
+  }
+
   try {
-    const { token } = req.params;
+    const result = await getClientContinuation(token);
 
-    const decoded = verifyClientContinuationToken(token);
-    if (!decoded) {
-      return res.status(401).json({ error: "Invalid token" });
-    }
-
-    const app = await getLatestIncompleteApplication(decoded.userId);
-
-    if (!app) {
-      return res.status(200).json({
-        exists: false,
+    if (!result) {
+      return res.status(404).json({
+        error: "Application not found",
       });
     }
 
-    return res.status(200).json({
-      exists: true,
-      application: app,
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Continuation route error:", error);
+    return res.status(500).json({
+      error: "Internal server error",
     });
-  } catch (_err) {
-    return res.status(401).json({ error: "Invalid token" });
   }
 });
 
