@@ -2,7 +2,6 @@ import { Router } from "express";
 import continuationRouter from "./continuation";
 import documentsRouter from "./documents";
 import applicationsRouter from "./applications";
-import lenderProductsRouter from "./lenderProducts";
 import lendersRouter from "./lenders";
 import clientSubmissionRoutes from "../../modules/clientSubmission/clientSubmission.routes";
 import {
@@ -23,7 +22,6 @@ router.use((req, res, next) => {
 
 router.use("/", continuationRouter);
 router.use("/", applicationsRouter);
-router.use("/", lenderProductsRouter);
 router.use("/lenders", lendersRouter);
 router.use("/", clientSubmissionRoutes);
 router.use("/documents", clientDocumentsRateLimit(), documentsRouter);

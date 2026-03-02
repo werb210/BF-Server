@@ -1,35 +1,28 @@
-import { Router, Request, Response } from "express";
+import { Router } from "express";
 import { getContinuation as getClientContinuation } from "../../modules/continuation/continuation.service";
 
 const router = Router();
 
 /**
- * GET /client/continuation/:token
+ * GET /api/client/continuation/:token
  */
-router.get("/:token", async (req: Request, res: Response) => {
+router.get("/:token", async (req, res) => {
   const token = req.params.token;
 
-  if (typeof token !== "string") {
-    return res.status(400).json({
-      error: "token is required",
-    });
+  if (!token) {
+    return res.status(401).json({ error: "Invalid token" });
   }
 
   try {
     const result = await getClientContinuation(token);
 
     if (!result) {
-      return res.status(404).json({
-        error: "Application not found",
-      });
+      return res.status(404).json({ exists: false });
     }
 
     return res.status(200).json(result);
-  } catch (error) {
-    console.error("Continuation route error:", error);
-    return res.status(500).json({
-      error: "Internal server error",
-    });
+  } catch (err) {
+    return res.status(500).json({ error: "Internal error" });
   }
 });
 
