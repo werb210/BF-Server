@@ -1,4 +1,5 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
+import { randomUUID } from "crypto";
 import twilio from "twilio";
 import AccessToken from "twilio/lib/jwt/AccessToken";
 import { VoiceGrant } from "twilio/lib/jwt/AccessToken";
@@ -11,8 +12,74 @@ import { pool } from "../db";
 import { updateCallStatus } from "../modules/calls/calls.service";
 import { findCallLogByTwilioSid } from "../modules/calls/calls.repo";
 import { createVoicemail } from "../modules/voice/voicemail.repo";
+import { logInfo, logWarn } from "../observability/logger";
 
 const router = Router();
+const oneMinuteMs = 60_000;
+
+type Bucket = { count: number; resetAt: number };
+const ipBuckets = new Map<string, Bucket>();
+const staffBuckets = new Map<string, Bucket>();
+
+function consumeRateLimit(buckets: Map<string, Bucket>, key: string, max: number): boolean {
+  const now = Date.now();
+  const current = buckets.get(key);
+  if (!current || current.resetAt <= now) {
+    buckets.set(key, { count: 1, resetAt: now + oneMinuteMs });
+    return true;
+  }
+  if (current.count >= max) {
+    return false;
+  }
+  current.count += 1;
+  return true;
+}
+
+function getIpKey(req: { ip?: string; headers: Record<string, unknown> }): string {
+  const forwarded = typeof req.headers["x-forwarded-for"] === "string" ? req.headers["x-forwarded-for"].split(",")[0] : null;
+  return (forwarded?.trim() || req.ip || "unknown").toLowerCase();
+}
+
+async function resolveStaffUserId(req: { body?: Record<string, unknown>; query?: Record<string, unknown> }): Promise<string | null> {
+  const directStaffId = typeof req.body?.staffId === "string" ? req.body.staffId : typeof req.body?.StaffId === "string" ? req.body.StaffId : null;
+  if (directStaffId) {
+    return directStaffId;
+  }
+
+  const callSid = typeof req.body?.CallSid === "string"
+    ? req.body.CallSid
+    : typeof req.query?.callSid === "string"
+      ? req.query.callSid
+      : null;
+
+  if (!callSid) {
+    return null;
+  }
+
+  const callLog = await findCallLogByTwilioSid(callSid);
+  return callLog?.staff_user_id ?? null;
+}
+
+const dialerRateLimit: RequestHandler = async (req, res, next) => {
+  const ipKey = getIpKey(req);
+  if (!consumeRateLimit(ipBuckets, ipKey, 30)) {
+    res.status(429).json({ code: "rate_limited", message: "Too many requests." });
+    return;
+  }
+
+  const staffUserId = await resolveStaffUserId(req);
+  if (staffUserId && !consumeRateLimit(staffBuckets, staffUserId, 10)) {
+    res.status(429).json({ code: "rate_limited", message: "Too many requests." });
+    return;
+  }
+
+  next();
+};
+
+export function __resetTwilioRateLimitsForTest(): void {
+  ipBuckets.clear();
+  staffBuckets.clear();
+}
 
 const twilioRuntime = twilio as unknown as {
   validateRequest: (authToken: string, signature: string, url: string, params: Record<string, unknown>) => boolean;
@@ -58,6 +125,19 @@ router.get(
       throw new AppError("invalid_token", "Invalid or expired token.", 401);
     }
 
+    const activeCalls = await pool.query<{ count: string }>(
+      `select count(*)::text as count
+       from call_logs
+       where staff_user_id = $1
+         and status in ('ringing', 'in_progress')`,
+      [identity]
+    );
+
+    if (Number(activeCalls.rows[0]?.count ?? "0") > 0) {
+      res.status(409).json({ code: "active_call_in_progress" });
+      return;
+    }
+
     const token = new AccessToken(
       process.env.TWILIO_ACCOUNT_SID ?? "",
       process.env.TWILIO_API_KEY ?? "",
@@ -78,6 +158,7 @@ router.get(
 
 router.post(
   "/twilio/voice",
+  dialerRateLimit,
   safeHandler(async (req, res) => {
     assertValidTwilioSignature(req);
 
@@ -118,6 +199,14 @@ router.post(
           dial.client(row.id);
         }
       }
+
+      logInfo("dialer.call_started", {
+        staff_id: assignedStaff,
+        application_id: null,
+        silo: "twilio",
+        duration: null,
+        call_sid: callSid,
+      });
     } finally {
       client.release();
     }
@@ -128,6 +217,7 @@ router.post(
 
 router.post(
   "/twilio/voice/action",
+  dialerRateLimit,
   safeHandler(async (req, res) => {
     assertValidTwilioSignature(req);
     const dialStatus = typeof req.body?.DialCallStatus === "string" ? req.body.DialCallStatus : "";
@@ -150,6 +240,7 @@ router.post(
 
 router.post(
   "/twilio/recording",
+  dialerRateLimit,
   safeHandler(async (req, res) => {
     assertValidTwilioSignature(req);
 
@@ -169,12 +260,22 @@ router.post(
       recordingUrl,
     });
 
+    const callLog = await findCallLogByTwilioSid(callSid);
+    logInfo("dialer.voicemail_recorded", {
+      staff_id: callLog?.staff_user_id ?? null,
+      application_id: callLog?.application_id ?? null,
+      silo: "twilio",
+      duration: null,
+      call_sid: callSid,
+    });
+
     res.status(200).json({ ok: true });
   })
 );
 
 router.post(
   "/twilio/status",
+  dialerRateLimit,
   safeHandler(async (req, res) => {
     assertValidTwilioSignature(req);
     const callSid = typeof req.body?.CallSid === "string" ? req.body.CallSid : "";
@@ -194,15 +295,61 @@ router.post(
     else if (callStatus === "in-progress" || callStatus === "answered") status = "in_progress";
     else if (callStatus === "completed") status = "completed";
 
+    const durationSeconds = typeof req.body?.CallDuration === "string" ? Number(req.body.CallDuration) : undefined;
+    const isCompleted = callStatus === "completed";
+
     await updateCallStatus({
       id: found.id,
       status,
-      durationSeconds: typeof req.body?.CallDuration === "string" ? Number(req.body.CallDuration) : undefined,
+      durationSeconds,
       errorCode: typeof req.body?.ErrorCode === "string" ? req.body.ErrorCode : undefined,
       errorMessage: typeof req.body?.ErrorMessage === "string" ? req.body.ErrorMessage : undefined,
       fromNumber: typeof req.body?.From === "string" ? req.body.From : undefined,
       toNumber: typeof req.body?.To === "string" ? req.body.To : undefined,
     });
+
+    const priceEstimateCents = isCompleted && typeof durationSeconds === "number" ? durationSeconds * 3 : null;
+    await pool.query(
+      `update call_logs
+       set answered = $1,
+           ended_reason = $2,
+           price_estimate_cents = $3
+       where id = $4`,
+      [isCompleted, callStatus || null, priceEstimateCents, found.id]
+    );
+
+    if (callStatus === "no-answer") {
+      const hasVoicemail = await pool.query<{ count: string }>(
+        "select count(*)::text as count from voicemails where call_sid = $1",
+        [callSid]
+      );
+      if (Number(hasVoicemail.rows[0]?.count ?? "0") === 0) {
+        await pool.query(
+          `insert into crm_task (id, type, staff_id, phone_number, created_at)
+           values ($1, 'missed_call', $2, $3, now())`,
+          [randomUUID(), found.staff_user_id, found.phone_number]
+        );
+      }
+    }
+
+    if (callStatus === "completed") {
+      logInfo("dialer.call_completed", {
+        staff_id: found.staff_user_id,
+        application_id: found.application_id,
+        silo: "twilio",
+        duration: durationSeconds ?? null,
+        call_sid: callSid,
+      });
+    } else if (callStatus === "failed" || callStatus === "busy" || callStatus === "no-answer") {
+      logWarn("dialer.call_failed", {
+        staff_id: found.staff_user_id,
+        application_id: found.application_id,
+        silo: "twilio",
+        duration: durationSeconds ?? null,
+        call_sid: callSid,
+        ended_reason: callStatus,
+      });
+    }
 
     res.status(200).json({ ok: true });
   })
