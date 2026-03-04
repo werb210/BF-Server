@@ -11,15 +11,15 @@
     "start": "node dist/index.js",
     "db:migrate": "tsx -e \"import('./src/migrations').then(m => m.runMigrations()).catch(err => { console.error(err); process.exit(1); })\"",
     "db:seed": "tsx src/db/seed.ts",
-    "test": "vitest",
+    "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:runtime": "npm run build && node scripts/runtime-verify.js",
     "test:codex:server": "node scripts/codex-server-test.js",
     "user:set-role": "tsx scripts/set-user-role.ts",
-    "typecheck": "tsc --noEmit",
-    "lint": "npm run typecheck"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint \"src/**/*.{ts,js}\" --max-warnings=0"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.29.1",
@@ -73,6 +73,9 @@
     "ts-node": "^10.9.2",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",
-    "vitest": "^4.0.17"
+    "vitest": "^4.0.17",
+    "eslint": "^9.20.1",
+    "@typescript-eslint/parser": "^8.24.0",
+    "@typescript-eslint/eslint-plugin": "^8.24.0"
   }
 }

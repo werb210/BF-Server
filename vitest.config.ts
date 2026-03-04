@@ -5,6 +5,8 @@ export default defineConfig({
     environment: "node",
     globals: true,
     clearMocks: true,
+    restoreMocks: true,
+    mockReset: true,
     setupFiles: ["src/test/setup.ts"],
     include: ["src/test/**/*.test.ts", "src/modules/**/__tests__/**/*.test.ts"],
     exclude: ["src/test/e2e/**"],
