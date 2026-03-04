@@ -44,6 +44,7 @@ import chatRouter from "./modules/ai/chat.routes";
 import confidenceRouter from "./modules/ai/confidence.routes";
 import twilioRoutes from "./routes/twilio";
 import voiceTokenRoute from "./routes/voiceToken";
+import voiceIncoming from "./routes/voiceIncoming";
 import telephonyRoutes from "./telephony/routes/telephonyRoutes";
 import { assertApiV1Frozen } from "./contracts/v1Freeze";
 import requestLogMiddleware from "./middleware/logger";
@@ -184,6 +185,7 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api/support", supportRouter);
   app.use("/api", aiCoreRouter);
   app.use("/api", twilioRoutes);
+  app.use("/api", voiceIncoming);
   app.use("/api", voiceTokenRoute);
   app.use("/telephony", telephonyRoutes);
   app.use("/api/application", applicationRouter);
