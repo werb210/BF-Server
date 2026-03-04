@@ -45,6 +45,7 @@ import confidenceRouter from "./modules/ai/confidence.routes";
 import twilioRoutes from "./routes/twilio";
 import voiceTokenRoute from "./routes/voiceToken";
 import voiceIncoming from "./routes/voiceIncoming";
+import voiceStatusRoute from "./routes/voiceStatus";
 import telephonyRoutes from "./telephony/routes/telephonyRoutes";
 import { assertApiV1Frozen } from "./contracts/v1Freeze";
 import requestLogMiddleware from "./middleware/logger";
@@ -186,6 +187,7 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api", aiCoreRouter);
   app.use("/api", twilioRoutes);
   app.use("/api", voiceIncoming);
+  app.use("/api", voiceStatusRoute);
   app.use("/api", voiceTokenRoute);
   app.use("/telephony", telephonyRoutes);
   app.use("/api/application", applicationRouter);

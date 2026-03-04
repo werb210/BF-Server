@@ -6,7 +6,13 @@ const router = Router();
 type TwilioRuntime = {
   twiml: {
     VoiceResponse: new () => {
-      dial: (attrs: { timeout: number; callerId: string | undefined }) => { client: (identity: string) => void };
+      dial: (attrs: {
+        timeout: number;
+        callerId: string | undefined;
+        statusCallback: string;
+        statusCallbackEvent: string[];
+        statusCallbackMethod: "POST";
+      }) => { client: (identity: string) => void };
       toString: () => string;
     };
   };
@@ -21,6 +27,9 @@ router.post("/voice/incoming", (_req, res) => {
   const dial = twiml.dial({
     timeout: 20,
     callerId: process.env.TWILIO_PHONE_NUMBER,
+    statusCallback: "/api/voice/status",
+    statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
+    statusCallbackMethod: "POST",
   });
 
   dial.client("staff_portal");
