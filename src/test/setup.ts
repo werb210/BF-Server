@@ -49,7 +49,31 @@ vi.mock("twilio", () => {
   class TwilioMock {
     verify = { v2: { services } };
   }
-  return { default: TwilioMock };
+
+  class VoiceResponseMock {
+    private clients: string[] = [];
+
+    dial(): { client: (identity: string) => void } {
+      return {
+        client: (identity: string) => {
+          this.clients.push(identity);
+        },
+      };
+    }
+
+    toString(): string {
+      const clientsXml = this.clients.map((identity) => `<Client>${identity}</Client>`).join("");
+      return `<Response><Dial>${clientsXml}</Dial></Response>`;
+    }
+  }
+
+  const twilioMock = Object.assign(TwilioMock, {
+    twiml: {
+      VoiceResponse: VoiceResponseMock,
+    },
+  });
+
+  return { default: twilioMock };
 });
 
 setupTestDatabase();
