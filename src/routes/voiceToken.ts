@@ -1,33 +1,77 @@
 import { Router } from "express";
-import twilio from "twilio";
+import AccessToken from "twilio/lib/jwt/AccessToken";
+import { VoiceGrant } from "twilio/lib/jwt/AccessToken";
+import { requireAuth } from "../middleware/auth";
+import { ROLES, type Role } from "../auth/roles";
 
 const router = Router();
 
-function resolveVoiceIdentity(query: Record<string, unknown>): string {
+const STAFF_VOICE_ROLES: ReadonlySet<Role> = new Set([ROLES.ADMIN, ROLES.STAFF, ROLES.OPS]);
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isValidClientId(clientId: string): boolean {
+  return uuidPattern.test(clientId);
+}
+
+function resolveVoiceIdentity(params: {
+  query: Record<string, unknown>;
+  userId: string;
+  role: Role;
+}): string | null {
+  const { query, userId, role } = params;
   const requestedIdentity = typeof query.identity === "string" ? query.identity.trim() : "";
+  const clientIdFromQuery = typeof query.clientId === "string" ? query.clientId.trim() : "";
+  const isStaffRole = STAFF_VOICE_ROLES.has(role);
 
   if (requestedIdentity === "staff_portal" || requestedIdentity === "staff_mobile") {
-    return requestedIdentity;
+    return isStaffRole ? requestedIdentity : null;
   }
 
   if (requestedIdentity.startsWith("client_")) {
-    return requestedIdentity;
+    const clientId = requestedIdentity.slice("client_".length);
+    if (!isValidClientId(clientId)) {
+      return null;
+    }
+    if (isStaffRole || userId === clientId) {
+      return requestedIdentity;
+    }
+    return null;
   }
 
-  const clientId = typeof query.clientId === "string" ? query.clientId.trim() : "";
-
-  if (clientId.length > 0) {
-    return `client_${clientId}`;
+  if (clientIdFromQuery.length > 0) {
+    if (!isValidClientId(clientIdFromQuery)) {
+      return null;
+    }
+    if (isStaffRole || userId === clientIdFromQuery) {
+      return `client_${clientIdFromQuery}`;
+    }
+    return null;
   }
 
-  return "staff_portal";
+  if (requestedIdentity.length > 0) {
+    return null;
+  }
+
+  return isStaffRole ? "staff_portal" : null;
 }
 
-router.get("/voice/token", (req, res) => {
-  const identity = resolveVoiceIdentity(req.query as Record<string, unknown>);
+router.get("/voice/token", requireAuth, (req, res) => {
+  const user = req.user;
+  if (!user) {
+    res.status(401).json({ ok: false, error: "missing_token" });
+    return;
+  }
 
-  const AccessToken = (twilio as any).jwt.AccessToken;
-  const VoiceGrant = AccessToken.VoiceGrant;
+  const identity = resolveVoiceIdentity({
+    query: req.query as Record<string, unknown>,
+    userId: user.userId,
+    role: user.role,
+  });
+
+  if (!identity) {
+    res.status(400).json({ code: "invalid_identity", message: "Invalid voice identity." });
+    return;
+  }
 
   const accountSid = process.env.TWILIO_ACCOUNT_SID!;
   const apiKey = process.env.TWILIO_API_KEY!;

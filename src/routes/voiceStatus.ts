@@ -1,8 +1,9 @@
-import { Router } from "express";
+import express, { Router } from "express";
+import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation";
 
 const router = Router();
 
-router.post("/voice/status", async (req, res) => {
+router.post("/voice/status", express.urlencoded({ extended: false }), twilioWebhookValidation, async (req, res) => {
   try {
     const {
       CallSid,
