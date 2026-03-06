@@ -1,34 +1,22 @@
-import { EventEmitter } from "events";
+type Handler = (payload: any) => void
 
-export type SystemEventName =
-  | "application_created"
-  | "document_uploaded"
-  | "documents_complete"
-  | "offer_created"
-  | "offer_accepted"
-  | "message_received"
-  | "lender_submission_created";
-
-const bus = new EventEmitter();
-
-async function forwardToAgent(event: SystemEventName, payload: Record<string, unknown>): Promise<void> {
-  const endpoint = process.env.AGENT_EVENTS_URL;
-  if (!endpoint) return;
-  try {
-    await fetch(endpoint, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ event, payload }),
-    });
-  } catch {
-    // swallow forwarding failures so API calls stay reliable
-  }
-}
+const listeners: Record<string, Handler[]> = {}
 
 export const eventBus = {
-  emit(event: SystemEventName, payload: Record<string, unknown>): boolean {
-    void forwardToAgent(event, payload);
-    return bus.emit(event, payload);
+  emit(event: string, payload: any) {
+    if (!listeners[event]) return
+    for (const h of listeners[event]) h(payload)
   },
-  on: bus.on.bind(bus),
-};
+  on(event: string, handler: Handler) {
+    if (!listeners[event]) listeners[event] = []
+    listeners[event].push(handler)
+  },
+}
+
+export function emit(event: string, payload: any) {
+  eventBus.emit(event, payload)
+}
+
+export function on(event: string, handler: Handler) {
+  eventBus.on(event, handler)
+}

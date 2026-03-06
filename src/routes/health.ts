@@ -3,7 +3,7 @@ import { pool } from "../db";
 
 const router = Router();
 
-router.get("/health", async (_req, res) => {
+router.get('/health', async (_req, res) => {
   let db = "disconnected";
   try {
     await pool.query("select 1");
