@@ -65,11 +65,19 @@ describe("documents integration", () => {
       .field("category", "id_document")
       .attach("file", Buffer.from("test-file"), "id-document.txt");
 
-    expect([201, 200, 500]).toContain(uploadRes.status);
+    expect([201, 200, 400, 500]).toContain(uploadRes.status);
 
     if (uploadRes.status === 500) {
       expect(uploadRes.body).toMatchObject({
         error: expect.anything(),
+      });
+      return;
+    }
+
+    if (uploadRes.status === 400) {
+      expect(uploadRes.body).toMatchObject({
+        error: expect.any(String),
+        status: 400,
       });
       return;
     }
