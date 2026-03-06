@@ -13,6 +13,7 @@ import {
   getLenderWithProducts,
   updateLender,
 } from "../controllers/lenders.controller";
+import sendPackageRouter from "./lenders/sendPackage";
 
 type LenderRow = {
   id: string;
@@ -58,6 +59,8 @@ function resolveLenderStatus(row: LenderRow): { status: string; active: boolean 
 }
 
 const router = Router();
+
+router.use(sendPackageRouter);
 
 if (process.env.NODE_ENV === "test") {
   router.get(
