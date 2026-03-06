@@ -10,9 +10,12 @@ import { ALL_ROLES } from "../../auth/roles";
 
 const router = Router();
 
-function assertNonProd(): void {
+function assertIntPwaAllowed(): void {
   if (isProductionEnvironment()) {
     throw new AppError("not_found", "Not available in production.", 404);
+  }
+  if (process.env.ENABLE_INT_TEST_ROUTES !== "true") {
+    throw new AppError("not_found", "Internal test routes disabled.", 404);
   }
 }
 
@@ -22,7 +25,7 @@ router.post(
   requireAuthorization({ roles: ALL_ROLES }),
   pushSendRateLimit(),
   safeHandler(async (req, res) => {
-    assertNonProd();
+    assertIntPwaAllowed();
     const payload = {
       type: "alert" as const,
       title: "Test notification",
@@ -44,7 +47,7 @@ router.post(
   requireAuth,
   requireAuthorization({ roles: ALL_ROLES }),
   safeHandler(async (req, res) => {
-    assertNonProd();
+    assertIntPwaAllowed();
     const requestId = res.locals.requestId ?? "unknown";
     const user = req.user!;
     const replayUser = {

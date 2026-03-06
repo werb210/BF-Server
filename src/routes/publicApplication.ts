@@ -3,6 +3,7 @@ import { Router } from "express";
 import { getClientSubmissionOwnerUserId } from "../config";
 import { pool } from "../db";
 import { ApplicationStage } from "../modules/applications/pipelineState";
+import { upsertStructuredApplicationData } from "../services/v1StructuredPersistence";
 
 const router = Router();
 
@@ -78,6 +79,22 @@ router.post("/application/start", async (req, res) => {
       ]
     );
 
+
+    await upsertStructuredApplicationData({
+      applicationId,
+      companyName,
+      annualRevenue: typeof annualRevenue === "number" ? annualRevenue : Number(annualRevenue ?? NaN) || null,
+      timeInBusinessMonths: typeof yearsInBusiness === "number"
+        ? Math.round(yearsInBusiness * 12)
+        : (Number(yearsInBusiness ?? NaN) ? Math.round(Number(yearsInBusiness) * 12) : null),
+      owners: [
+        {
+          name: fullName,
+          email,
+          phone: phone ?? null,
+        },
+      ],
+    });
     return res.status(200).json({ applicationId });
   } catch (error) {
     console.error("Error creating draft application:", error);

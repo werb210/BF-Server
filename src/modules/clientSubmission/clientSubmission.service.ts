@@ -8,6 +8,7 @@ import { createClientSubmission, findClientSubmissionByKey } from "./clientSubmi
 import { logInfo, logWarn } from "../../observability/logger";
 import { recordTransactionRollback } from "../../observability/transactionTelemetry";
 import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService";
+import { upsertStructuredApplicationData } from "../../services/v1StructuredPersistence";
 import {
   normalizeRequiredDocumentKey,
   type RequiredDocumentKey,
@@ -313,6 +314,21 @@ export async function submitClientApplication(params: {
       triggeredBy: "system",
       client,
     });
+
+    await upsertStructuredApplicationData({
+      applicationId: application.id,
+      companyName: submission.business.legalName,
+      entityType: submission.business.entityType,
+      country: submission.business.address.country,
+      provinceState: submission.business.address.state,
+      owners: [
+        {
+          name: `${submission.applicant.firstName} ${submission.applicant.lastName}`.trim(),
+          email: submission.applicant.email,
+          phone: submission.applicant.phone,
+        },
+      ],
+    }, client);
 
     for (const doc of submission.documents) {
       const document = await createDocument({

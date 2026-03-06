@@ -50,15 +50,14 @@ export type PushTarget = {
 
 type PushStatus = {
   configured: boolean;
+  enabled: boolean;
   subject?: string;
-  publicKey?: string;
-  privateKey?: string;
   error?: string;
 };
 
 let pushConfigured = false;
 let pushInitAttempted = false;
-let cachedStatus: PushStatus = { configured: false };
+let cachedStatus: PushStatus = { configured: false, enabled: true };
 
 const DEFAULT_TTL_SECONDS = 3600;
 const HIGH_TTL_SECONDS = 24 * 3600;
@@ -161,11 +160,26 @@ function shouldDeleteSubscription(statusCode: number | undefined): boolean {
   return statusCode === 404 || statusCode === 410 || statusCode === 400;
 }
 
+function isPushEnabled(): boolean {
+  const raw = process.env.PWA_PUSH_ENABLED;
+  if (raw === undefined) {
+    return true;
+  }
+  return raw.trim().toLowerCase() === "true";
+}
+
 export function initializePushService(): PushStatus {
   if (pushInitAttempted) {
     return cachedStatus;
   }
   pushInitAttempted = true;
+
+  const enabled = isPushEnabled();
+  if (!enabled) {
+    cachedStatus = { configured: false, enabled, error: "push_disabled" };
+    logInfo("push_disabled", {});
+    return cachedStatus;
+  }
 
   const publicKey = getVapidPublicKey();
   const privateKey = getVapidPrivateKey();
@@ -173,24 +187,16 @@ export function initializePushService(): PushStatus {
 
   if (!publicKey || !privateKey || !subject) {
     const error = "missing_vapid";
-    const status: PushStatus = {
+    cachedStatus = {
       configured: false,
+      enabled,
       error,
+      subject,
     };
-    if (publicKey) {
-      status.publicKey = publicKey;
-    }
-    if (privateKey) {
-      status.privateKey = privateKey;
-    }
-    if (subject) {
-      status.subject = subject;
-    }
-    cachedStatus = status;
     if (isProductionEnvironment()) {
-      throw new Error("VAPID configuration is required in production.");
+      throw new Error("VAPID configuration is required in production when push is enabled.");
     }
-    logWarn("push_vapid_missing", { subject, publicKey: Boolean(publicKey) });
+    logWarn("push_vapid_missing", { subject: subject ?? null, publicKey: Boolean(publicKey) });
     return cachedStatus;
   }
 
@@ -199,26 +205,18 @@ export function initializePushService(): PushStatus {
     pushConfigured = true;
     cachedStatus = {
       configured: true,
+      enabled,
       subject,
-      publicKey,
-      privateKey,
     };
     logInfo("push_initialized", { subject });
     return cachedStatus;
   } catch (error) {
     const status: PushStatus = {
       configured: false,
+      enabled,
       error: error instanceof Error ? error.message : "invalid_vapid",
+      subject,
     };
-    if (publicKey) {
-      status.publicKey = publicKey;
-    }
-    if (privateKey) {
-      status.privateKey = privateKey;
-    }
-    if (subject) {
-      status.subject = subject;
-    }
     cachedStatus = status;
     if (isProductionEnvironment()) {
       throw error instanceof Error ? error : new Error("invalid_vapid");
@@ -228,6 +226,10 @@ export function initializePushService(): PushStatus {
     });
     return cachedStatus;
   }
+}
+
+export function validatePushEnvironmentAtStartup(): void {
+  initializePushService();
 }
 
 export function getPushStatus(): PushStatus {
@@ -322,7 +324,10 @@ export async function sendNotification(
       failed += 1;
       const statusCode = error?.statusCode;
       if (shouldDeleteSubscription(statusCode)) {
-        await deletePwaSubscriptionByEndpoint(subscription.endpoint);
+        await deletePwaSubscriptionByEndpoint({
+          userId: target.userId,
+          endpoint: subscription.endpoint,
+        });
       }
       trackEvent({
         name: "push_failed",

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { requireAuth, requireAuthorization } from "../middleware/auth";
 import { safeHandler } from "../middleware/safeHandler";
 import {
@@ -8,6 +9,7 @@ import {
   upsertPwaSubscription,
   deletePwaSubscription,
   acknowledgePwaNotification,
+  deletePwaSubscriptionLegacy,
 } from "../repositories/pwa.repo";
 import { AppError } from "../middleware/errors";
 import { getBuildInfo } from "../config";
@@ -17,6 +19,26 @@ import { pool } from "../db";
 import { ALL_ROLES, ROLES } from "../auth/roles";
 
 const router = Router();
+const DEFAULT_NOTIFICATION_LIMIT = 50;
+const MAX_NOTIFICATION_LIMIT = 100;
+
+const perUserNotificationReadLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.userId ?? ipKeyGenerator(req.ip ?? ""),
+  skip: () => process.env.NODE_ENV === "test" || process.env.RATE_LIMIT_ENABLED === "false",
+});
+
+const perUserNotificationAckLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.userId ?? ipKeyGenerator(req.ip ?? ""),
+  skip: () => process.env.NODE_ENV === "test" || process.env.RATE_LIMIT_ENABLED === "false",
+});
 
 const subscriptionSchema = z.object({
   endpoint: z.string().min(1),
@@ -29,6 +51,7 @@ const subscriptionSchema = z.object({
 
 const unsubscribeSchema = z.object({
   endpoint: z.string().min(1),
+  scope: z.enum(["legacy", "owned"]).optional(),
 });
 
 router.post(
@@ -67,11 +90,34 @@ router.delete(
       throw new AppError("validation_error", "Invalid unsubscribe payload.", 400);
     }
     const parsed = parsedResult.data;
+    const endpoint = parsed.endpoint.trim();
+    const scope = parsed.scope ?? "owned";
+    const removed =
+      scope === "legacy"
+        ? await deletePwaSubscriptionLegacy(endpoint)
+        : await deletePwaSubscription({
+            userId: req.user!.userId,
+            endpoint,
+          });
+    res.status(200).json({ ok: true, removed, scope });
+  })
+);
+
+router.delete(
+  "/unsubscribe/owned",
+  requireAuth,
+  requireAuthorization({ roles: ALL_ROLES }),
+  safeHandler(async (req, res) => {
+    const parsedResult = unsubscribeSchema.safeParse(req.body ?? {});
+    if (!parsedResult.success) {
+      throw new AppError("validation_error", "Invalid unsubscribe payload.", 400);
+    }
+    const parsed = parsedResult.data;
     const removed = await deletePwaSubscription({
       userId: req.user!.userId,
       endpoint: parsed.endpoint.trim(),
     });
-    res.status(200).json({ ok: true, removed });
+    res.status(200).json({ ok: true, removed, scope: "owned" });
   })
 );
 
@@ -89,9 +135,30 @@ router.get(
   "/notifications",
   requireAuth,
   requireAuthorization({ roles: ALL_ROLES }),
+  perUserNotificationReadLimiter,
   safeHandler(async (req, res) => {
-    const notifications = await listPwaNotificationsForUser(req.user!.userId);
-    res.status(200).json({ ok: true, notifications });
+    const limitRaw = typeof req.query.limit === "string" ? Number(req.query.limit) : DEFAULT_NOTIFICATION_LIMIT;
+    const offsetRaw = typeof req.query.offset === "string" ? Number(req.query.offset) : 0;
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(MAX_NOTIFICATION_LIMIT, Math.max(1, Math.floor(limitRaw)))
+      : DEFAULT_NOTIFICATION_LIMIT;
+    const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0;
+
+    const result = await listPwaNotificationsForUser({
+      userId: req.user!.userId,
+      limit,
+      offset,
+    });
+    res.status(200).json({
+      ok: true,
+      notifications: result.notifications,
+      pagination: {
+        total: result.total,
+        limit,
+        offset,
+        hasMore: offset + result.notifications.length < result.total,
+      },
+    });
   })
 );
 
@@ -99,6 +166,7 @@ router.post(
   "/notifications/:id/ack",
   requireAuth,
   requireAuthorization({ roles: ALL_ROLES }),
+  perUserNotificationAckLimiter,
   safeHandler(async (req, res) => {
     const id = req.params.id;
     if (!id) {
@@ -146,9 +214,11 @@ router.get(
     const { commitHash, buildTimestamp } = getBuildInfo();
     const pushStatus = getPushStatus();
     res.status(200).json({
-      push_enabled: pushStatus.configured,
+      push_enabled: pushStatus.enabled,
       background_sync_enabled: true,
       vapid_configured: pushStatus.configured,
+      vapid_subject: pushStatus.subject ?? null,
+      vapid_error: pushStatus.error ?? null,
       offline_replay_enabled: true,
       server_version: commitHash ?? buildTimestamp ?? "unknown",
     });
@@ -198,8 +268,11 @@ router.get(
 
     res.status(200).json({
       ok: true,
-      vapid_keys_valid: pushStatus.configured,
-      push_service_reachable: pushStatus.configured,
+      push_readiness: {
+        enabled: pushStatus.enabled,
+        configured: pushStatus.configured,
+        error: pushStatus.error ?? null,
+      },
       db_writeable: dbWriteable,
       queue_processing_healthy: queueProcessingHealthy,
       warnings,

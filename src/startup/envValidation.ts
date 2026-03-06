@@ -1,4 +1,5 @@
 import { logError, logWarn } from "../observability/logger";
+import { validatePushEnvironmentAtStartup } from "../services/pushService";
 
 const REQUIRED_AUTH_ENV = [
   "JWT_SECRET",
@@ -62,3 +63,6 @@ export function assertRequiredAuthEnv(): void {
 }
 
 assertRequiredAuthEnv();
+
+
+validatePushEnvironmentAtStartup();

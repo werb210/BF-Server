@@ -98,6 +98,15 @@ export async function deletePwaSubscription(params: {
   return (result.rowCount ?? 0) > 0;
 }
 
+export async function deletePwaSubscriptionLegacy(endpoint: string): Promise<boolean> {
+  const result = await pool.query(
+    `delete from pwa_subscriptions
+     where endpoint = $1`,
+    [endpoint]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
 export async function listPwaSubscriptionsByUser(
   userId: string
 ): Promise<PwaSubscription[]> {
@@ -120,11 +129,14 @@ export async function listPwaSubscriptions(): Promise<PwaSubscription[]> {
   return result.rows;
 }
 
-export async function deletePwaSubscriptionByEndpoint(endpoint: string): Promise<void> {
+export async function deletePwaSubscriptionByEndpoint(params: {
+  userId: string;
+  endpoint: string;
+}): Promise<void> {
   await pool.query(
     `delete from pwa_subscriptions
-     where endpoint = $1`,
-    [endpoint]
+     where user_id = $1 and endpoint = $2`,
+    [params.userId, params.endpoint]
   );
 }
 
@@ -135,7 +147,26 @@ export async function createPwaNotificationAudit(params: {
   body: string;
   deliveredAt: Date;
   payloadHash: string;
+  duplicateWindowSeconds?: number;
 }): Promise<PwaNotification> {
+  const duplicateWindowSeconds = params.duplicateWindowSeconds ?? 120;
+  const existing = await pool.query<PwaNotification>(
+    `select id, user_id, level, title, body, delivered_at, acknowledged_at, payload_hash
+     from pwa_notifications
+     where user_id = $1
+       and payload_hash = $2
+     order by delivered_at desc
+     limit 1`,
+    [params.userId, params.payloadHash]
+  );
+  const latest = existing.rows[0];
+  if (latest) {
+    const cutoff = Date.now() - duplicateWindowSeconds * 1000;
+    if (new Date(latest.delivered_at).getTime() >= cutoff) {
+      return latest;
+    }
+  }
+
   const result = await pool.query<PwaNotification>(
     `insert into pwa_notifications
      (id, user_id, level, title, body, delivered_at, acknowledged_at, payload_hash)
@@ -158,17 +189,32 @@ export async function createPwaNotificationAudit(params: {
   return notification;
 }
 
-export async function listPwaNotificationsForUser(
-  userId: string
-): Promise<PwaNotification[]> {
-  const result = await pool.query<PwaNotification>(
-    `select id, user_id, level, title, body, delivered_at, acknowledged_at, payload_hash
-     from pwa_notifications
-     where user_id = $1
-     order by delivered_at desc`,
-    [userId]
-  );
-  return result.rows;
+export async function listPwaNotificationsForUser(params: {
+  userId: string;
+  limit: number;
+  offset: number;
+}): Promise<{ notifications: PwaNotification[]; total: number }> {
+  const [result, countResult] = await Promise.all([
+    pool.query<PwaNotification>(
+      `select id, user_id, level, title, body, delivered_at, acknowledged_at, payload_hash
+       from pwa_notifications
+       where user_id = $1
+       order by delivered_at desc
+       limit $2
+       offset $3`,
+      [params.userId, params.limit, params.offset]
+    ),
+    pool.query<{ count: number }>(
+      `select count(*)::int as count
+       from pwa_notifications
+       where user_id = $1`,
+      [params.userId]
+    ),
+  ]);
+  return {
+    notifications: result.rows,
+    total: countResult.rows[0]?.count ?? 0,
+  };
 }
 
 export async function acknowledgePwaNotification(params: {
@@ -182,4 +228,13 @@ export async function acknowledgePwaNotification(params: {
     [params.notificationId, params.userId]
   );
   return (result.rowCount ?? 0) > 0;
+}
+
+export async function purgeOldPwaNotifications(retentionDays: number): Promise<number> {
+  const result = await pool.query(
+    `delete from pwa_notifications
+     where delivered_at < now() - ($1::text || ' days')::interval`,
+    [retentionDays]
+  );
+  return result.rowCount ?? 0;
 }
