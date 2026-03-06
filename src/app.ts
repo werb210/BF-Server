@@ -52,6 +52,7 @@ import { assertApiV1Frozen } from "./contracts/v1Freeze";
 import requestLogMiddleware from "./middleware/logger";
 import envCheck from "./middleware/envCheck";
 import { logger as serverLogger } from "./server/utils/logger";
+import { verifyRoutes } from "./startup/verifyRoutes";
 
 /* ---------------- ROUTE ASSERTION ---------------- */
 
@@ -251,6 +252,7 @@ export function registerApiRoutes(app: express.Express): void {
   }
 
   assertRoutesMounted(app);
+  verifyRoutes(app);
 }
 
 /* ---------------- BOOTSTRAP ---------------- */

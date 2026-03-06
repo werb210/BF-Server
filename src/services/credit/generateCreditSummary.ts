@@ -1,23 +1,19 @@
-export interface CreditInput {
-  businessName: string;
-  requestedAmount: number;
+export function generateCreditSummary(application: {
+  companyName: string;
+  requestedAmount: number | string;
   revenue: number;
-  risks: string[];
-  mitigants: string[];
-}
+  industry: string;
+}) {
+  const {
+    companyName,
+    requestedAmount,
+    revenue,
+    industry,
+  } = application;
 
-export function generateCreditSummary(input: CreditInput) {
   return {
-    transaction: `Financing request for ${input.businessName}`,
-    overview: `${input.businessName} seeking ${input.requestedAmount}`,
-    financialSummary: {
-      revenue: input.revenue,
-    },
-    risks: input.risks,
-    mitigants: input.mitigants,
-    rationale: [
-      "Business demonstrates operating revenue",
-      "Requested facility aligned with operating profile",
-    ],
+    overview: `${companyName} is seeking ${requestedAmount} in financing.`,
+    industry,
+    revenue,
   };
 }

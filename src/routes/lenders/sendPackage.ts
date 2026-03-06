@@ -1,16 +1,21 @@
 import { Router } from "express";
-import { buildLenderPackage } from "../../services/lenders/buildLenderPackage";
+import { buildLenderPackage } from "../../services/lenders/packageBuilder";
 
 const router = Router();
 
 router.post("/send", async (req, res) => {
-  const { application, documents, creditSummary } = req.body;
-  const lenderPackage = buildLenderPackage(application, documents, creditSummary);
+  try {
+    const packageData = buildLenderPackage(req.body);
 
-  res.json({
-    status: "sent",
-    package: lenderPackage,
-  });
+    return res.json({
+      status: "sent",
+      package: packageData,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      error: err?.message ?? "Failed to send package",
+    });
+  }
 });
 
 export default router;
