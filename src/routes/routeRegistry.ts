@@ -2,12 +2,15 @@ import { type Router } from "express";
 import { ROLES, type Role } from "../auth/roles";
 import adminRoutes from "./admin";
 import applicationsRoutes from "./applications";
+import bankingRoutes from "./banking";
 import authRoutes from "./auth";
 import calendarRoutes from "./calendar";
 import callsRoutes from "./calls";
 import clientRoutes from "./client";
 import communicationsRoutes from "./communications";
 import crmRoutes from "./crm";
+import creditRoutes from "./credit";
+import creditSummaryRoutes from "./creditSummary";
 import dashboardRoutes from "./dashboard";
 import documentsRoutes from "./documents";
 import internalRoutes from "./_int";
@@ -17,6 +20,8 @@ import lenderSubmissionsRoutes from "./lenderSubmissions";
 import lenderProductsRoutes from "./lenderProducts";
 import lendersRoutes from "./lenders";
 import marketingRoutes from "./marketing";
+import offersRoutes from "./offers";
+import messagesRoutes from "./messages";
 import reportingRoutes from "./reporting";
 import reportsRoutes from "./reports";
 import settingsRoutes from "./settings";
@@ -56,10 +61,13 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/applications", router: applicationsRoutes },
   { path: "/calendar", router: calendarRoutes },
   { path: "/calls", router: callsRoutes },
+  { path: "/banking", router: bankingRoutes },
   { path: "/client", router: clientRoutes },
   { path: "/communications", router: communicationsRoutes },
+  { path: "/credit", router: creditRoutes },
   { path: "/crm", router: crmRoutes },
   { path: "/dashboard", router: dashboardRoutes },
+  { path: "/credit-summary", router: creditSummaryRoutes },
   { path: "/documents", router: documentsRoutes },
   { path: "/lender", router: lenderRoutes },
   { path: "/lender-submissions", router: lenderSubmissionsRoutes },
@@ -67,6 +75,8 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/lenders", router: lendersRoutes },
   { path: "/admin", router: adminRoutes },
   { path: "/marketing", router: marketingRoutes },
+  { path: "/offers", router: offersRoutes },
+  { path: "/messages", router: messagesRoutes },
   { path: "/reporting", router: reportingRoutes },
   { path: "/reports", router: reportsRoutes },
   { path: "/settings", router: settingsRoutes },

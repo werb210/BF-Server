@@ -179,6 +179,7 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api/client", requireHttps, ensureIdempotencyKey, idempotencyMiddleware);
 
   app.use("/", healthRouter);
+  app.use("/api", healthRouter);
   app.use("/api/readiness", readinessRouter);
   app.use("/api/contact", contactRouter);
   app.use("/api", chatRouter);

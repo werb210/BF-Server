@@ -77,7 +77,12 @@ export async function createIdempotencyRecord(params: {
       await runner.query(
         `insert into idempotency_keys
          (id, key, route, method, request_hash, response_code, response_body, created_at)
-         values ($1, $2, $3, $4, $5, $6, $7, now())`,
+         values ($1, $2, $3, $4, $5, $6, $7, now())
+         on conflict (route, key) do update
+         set request_hash = excluded.request_hash,
+             response_code = excluded.response_code,
+             response_body = excluded.response_body,
+             created_at = now()`,
         [
           id,
           params.idempotencyKey,
@@ -99,7 +104,12 @@ export async function createIdempotencyRecord(params: {
     await runner.query(
       `insert into idempotency_keys
        (id, key, route, request_hash, response_code, response_body, created_at)
-       values ($1, $2, $3, $4, $5, $6, now())`,
+       values ($1, $2, $3, $4, $5, $6, now())
+       on conflict (route, key) do update
+       set request_hash = excluded.request_hash,
+           response_code = excluded.response_code,
+           response_body = excluded.response_body,
+           created_at = now()`,
       [
         id,
         params.idempotencyKey,
@@ -119,7 +129,10 @@ export async function createIdempotencyRecord(params: {
   await runner.query(
     `insert into idempotency_keys
      (key, route, response, created_at)
-     values ($1, $2, $3, now())`,
+     values ($1, $2, $3, now())
+     on conflict (route, key) do update
+     set response = excluded.response,
+         created_at = now()`,
     [
       params.idempotencyKey,
       params.route,

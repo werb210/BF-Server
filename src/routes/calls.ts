@@ -66,6 +66,44 @@ function buildRequestMetadata(req: Request): { ip?: string; userAgent?: string }
   return metadata;
 }
 
+
+router.post(
+  "/log",
+  safeHandler(async (req, res) => {
+    const parsed = z
+      .object({
+        staff_id: z.string().uuid(),
+        client_id: z.string().uuid(),
+        phone_number: z.string().min(1),
+        call_duration: z.number().int().nonnegative().default(0),
+        direction: z.enum(["outbound", "inbound"]),
+      })
+      .safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw new AppError("validation_error", "Invalid call log payload.", 400);
+    }
+
+    const record = await startCall({
+      phoneNumber: parsed.data.phone_number.trim(),
+      direction: parsed.data.direction,
+      staffUserId: parsed.data.staff_id,
+      status: "completed",
+      crmContactId: parsed.data.client_id,
+      ...buildRequestMetadata(req),
+    });
+
+    const updated = await updateCallStatus({
+      id: record.id,
+      status: "completed",
+      durationSeconds: parsed.data.call_duration,
+      actorUserId: parsed.data.staff_id,
+      ...buildRequestMetadata(req),
+    });
+
+    res.status(201).json({ ok: true, call: updated ?? record });
+  })
+);
+
 router.post(
   "/start",
   requireAuth,

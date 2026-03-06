@@ -62,6 +62,12 @@ function isOptionalIdempotencyRoute(req: Request): boolean {
   return false;
 }
 
+function normalizeRouteScope(path: string): string {
+  return path
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi, ":id")
+    .replace(/\/\d+(?=\/|$)/g, "/:id");
+}
+
 function shouldBypass(error: unknown): boolean {
   if (isDbConnectionFailure(error)) return true;
   if (!(error instanceof Error)) return false;
@@ -111,7 +117,7 @@ export function idempotencyMiddleware(
 
   const requestId = res.locals.requestId ?? "unknown";
   const requestPath = (req.originalUrl ?? req.url ?? req.path).split("?")[0] ?? req.path;
-  const route = requestPath.startsWith("/api/") ? requestPath.slice(4) : requestPath;
+  const route = normalizeRouteScope(requestPath.startsWith("/api/") ? requestPath.slice(4) : requestPath);
   const requestHash = sha256(stableStringify(req.body ?? {}));
   const keyHash = sha256(rawKey);
 

@@ -15,6 +15,7 @@ import {
   getLatestDocumentVersion,
   upsertApplicationRequiredDocument,
   updateDocumentUploadDetails,
+  listApplicationRequiredDocuments,
 } from "../modules/applications/applications.repo";
 import { getDocumentMaxSizeBytes } from "../config";
 import {
@@ -27,6 +28,7 @@ import {
   createBankingAnalysisJob,
   createDocumentProcessingJob,
 } from "../modules/processing/processing.service";
+import { eventBus } from "../events/eventBus";
 
 const BANK_STATEMENT_CATEGORY = "bank_statements_6_months";
 
@@ -146,6 +148,19 @@ const uploadHandler = safeHandler(async (req, res) => {
     isRequired: requirement.required !== false,
     status: "uploaded",
   });
+
+  eventBus.emit("document_uploaded", {
+    documentId: document.id,
+    applicationId,
+  });
+
+  const requiredDocs = await listApplicationRequiredDocuments({ applicationId });
+  const requiredComplete = requiredDocs
+    .filter((item) => item.is_required)
+    .every((item) => item.status === "uploaded" || item.status === "accepted");
+  if (requiredComplete) {
+    eventBus.emit("documents_complete", { applicationId });
+  }
 
   if (normalizedCategory === BANK_STATEMENT_CATEGORY) {
     await createBankingAnalysisJob(applicationId);

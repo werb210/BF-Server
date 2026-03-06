@@ -8,6 +8,7 @@ import { safeHandler } from "../../middleware/safeHandler";
 import { ApplicationStage } from "../../modules/applications/pipelineState";
 import { findApplicationById } from "../../modules/applications/applications.repo";
 import { logAnalyticsEvent } from "../../services/analyticsService";
+import { eventBus } from "../../events/eventBus";
 
 const router = Router();
 
@@ -16,6 +17,8 @@ const createSchema = z.object({
   requested_amount: z.number().positive(),
   lender_id: z.string().uuid(),
   product_id: z.string().uuid(),
+  product_category: z.string().min(1).optional(),
+  kyc_responses: z.record(z.unknown()).optional(),
 });
 
 const patchSchema = z.object({
@@ -32,7 +35,7 @@ router.post(
     if (!parsed.success) {
       throw new AppError("validation_error", "Invalid application payload.", 400);
     }
-    const { business_name, requested_amount, lender_id, product_id } = parsed.data;
+    const { business_name, requested_amount, lender_id, product_id, product_category, kyc_responses } = parsed.data;
     const applicationId = randomUUID();
     await pool.query(
       `insert into applications
@@ -42,7 +45,10 @@ router.post(
         applicationId,
         getClientSubmissionOwnerUserId(),
         business_name,
-        null,
+        {
+          ...(kyc_responses ? { kyc_responses } : {}),
+          ...(product_category ? { product_category } : {}),
+        },
         "standard",
         ApplicationStage.RECEIVED,
         ApplicationStage.RECEIVED,
@@ -72,6 +78,8 @@ router.post(
         requestedAmount: requested_amount,
       },
     });
+
+    eventBus.emit("application_created", { applicationId });
   })
 );
 

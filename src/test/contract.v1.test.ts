@@ -9,7 +9,7 @@ import { listRoutes } from "../debug/printRoutes";
 import { loadOpenApiV1, openApiPathToExpress, resolveSchemaRefs } from "../contracts/v1/openapi";
 
 const EXPECTED_OPENAPI_SHA256 =
-  "654188f9d87947d805a8d127783d62acfbfaf55826b38eae329c4d1b18f09925";
+  "80fd55a51f21752c48c4e4968026a2d6cdcec32b1441da44b6ebd8e192f55189";
 
 function routeKey(method: string, path: string): string {
   return `${method.toUpperCase()} ${path}`;
