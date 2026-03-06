@@ -11,6 +11,7 @@ import { logAnalyticsEvent } from "../../services/analyticsService";
 import { eventBus } from "../../events/eventBus";
 
 const router = Router();
+// V1 contract: POST /api/client/applications
 
 const createSchema = z.object({
   business_name: z.string().min(1),

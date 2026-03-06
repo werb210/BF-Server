@@ -104,6 +104,20 @@ export const PORTAL_ROUTE_REQUIREMENTS: Pick<ApiRoute, "method" | "path">[] = [
   { method: "GET", path: "/api/settings" },
 ];
 
+
+export const V1_REQUIRED_ROUTE_SURFACE = [
+  "/api/client",
+  "/api/portal",
+  "/api/documents",
+  "/api/banking",
+  "/api/credit",
+  "/api/lenders",
+  "/api/offers",
+  "/api/messages",
+  "/api/calls",
+  "/api/health",
+] as const;
+
 export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/auth/otp/start", roles: ALL_ROLES },
   { method: "POST", path: "/api/auth/otp/verify", roles: ALL_ROLES },
