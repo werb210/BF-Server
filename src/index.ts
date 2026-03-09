@@ -1,3 +1,7 @@
+import { validateEnv } from "./startup/validateEnv";
+
+validateEnv();
+
 import { startServer } from "./server/index";
 
 if (require.main === module && process.env.NODE_ENV !== "test") {

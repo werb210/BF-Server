@@ -15,8 +15,17 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "noUnusedLocals": true,
-    "types": ["node", "vitest/globals"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src/**/*"],
-  "exclude": ["**/__tests__/**", "**/*.test.ts", "src/test/**", "src/tests/**"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "src/test/**",
+    "src/tests/**"
+  ]
 }
