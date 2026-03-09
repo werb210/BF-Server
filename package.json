@@ -19,7 +19,8 @@
     "test:codex:server": "node scripts/codex-server-test.js",
     "user:set-role": "tsx scripts/set-user-role.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint \"src/**/*.{ts,js}\" --max-warnings=0"
+    "lint": "eslint \"src/**/*.{ts,js}\" --max-warnings=0",
+    "workers": "tsx scripts/startWorkers.ts"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.29.1",
@@ -28,6 +29,7 @@
     "ajv-formats": "^3.0.1",
     "applicationinsights": "^3.12.1",
     "bcryptjs": "^3.0.3",
+    "bullmq": "^5.70.4",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
@@ -35,6 +37,7 @@
     "file-type": "^21.3.1",
     "googleapis": "^133.0.0",
     "helmet": "^8.1.0",
+    "ioredis": "^5.10.0",
     "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.3",
     "libphonenumber-js": "^1.12.34",
