@@ -1,5 +1,6 @@
 export function validateEnv() {
   const required = [
+    "OTP_HASH_SECRET",
     "DATABASE_URL",
     "JWT_SECRET",
     "JWT_REFRESH_SECRET",
