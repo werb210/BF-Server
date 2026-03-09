@@ -71,6 +71,8 @@ export type DocumentVersionRecord = {
   id: string;
   document_id: string;
   version: number;
+  blob_name: string | null;
+  hash: string | null;
   metadata: unknown;
   content: string;
   created_at: Date;
@@ -733,18 +735,22 @@ export async function createDocumentVersion(params: {
   version: number;
   metadata: unknown;
   content: string;
+  blobName?: string | null;
+  hash?: string | null;
   client?: Queryable;
 }): Promise<DocumentVersionRecord> {
   const runner = params.client ?? pool;
   const res = await runner.query<DocumentVersionRecord>(
     `insert into document_versions
-     (id, document_id, version, metadata, content, created_at)
-     values ($1, $2, $3, $4, $5, now())
-     returning id, document_id, version, metadata, content, created_at`,
+     (id, document_id, version, blob_name, hash, metadata, content, created_at)
+     values ($1, $2, $3, $4, $5, $6, $7, now())
+     returning id, document_id, version, blob_name, hash, metadata, content, created_at`,
     [
       randomUUID(),
       params.documentId,
       params.version,
+      params.blobName ?? null,
+      params.hash ?? null,
       params.metadata,
       params.content,
     ]
@@ -758,7 +764,7 @@ export async function findDocumentVersionById(
 ): Promise<DocumentVersionRecord | null> {
   const runner = client ?? pool;
   const res = await runner.query<DocumentVersionRecord>(
-    `select id, document_id, version, metadata, content, created_at
+    `select id, document_id, version, blob_name, hash, metadata, content, created_at
      from document_versions
      where id = $1
      limit 1`,
@@ -790,7 +796,7 @@ export async function findAcceptedDocumentVersion(params: {
 }): Promise<DocumentVersionRecord | null> {
   const runner = params.client ?? pool;
   const res = await runner.query<DocumentVersionRecord>(
-    `select dv.id, dv.document_id, dv.version, dv.metadata, dv.content, dv.created_at
+    `select dv.id, dv.document_id, dv.version, dv.blob_name, dv.hash, dv.metadata, dv.content, dv.created_at
      from document_versions dv
      join document_version_reviews r on r.document_version_id = dv.id
      where dv.document_id = $1
@@ -908,7 +914,7 @@ export async function findActiveDocumentVersion(params: {
 }): Promise<DocumentVersionRecord | null> {
   const runner = params.client ?? pool;
   const accepted = await runner.query<DocumentVersionRecord>(
-    `select dv.id, dv.document_id, dv.version, dv.metadata, dv.content, dv.created_at
+    `select dv.id, dv.document_id, dv.version, dv.blob_name, dv.hash, dv.metadata, dv.content, dv.created_at
      from document_versions dv
      join document_version_reviews r on r.document_version_id = dv.id
      where dv.document_id = $1
@@ -922,7 +928,7 @@ export async function findActiveDocumentVersion(params: {
     return acceptedRecord;
   }
   const latest = await runner.query<DocumentVersionRecord>(
-    `select id, document_id, version, metadata, content, created_at
+    `select id, document_id, version, blob_name, hash, metadata, content, created_at
      from document_versions
      where document_id = $1
      order by version desc

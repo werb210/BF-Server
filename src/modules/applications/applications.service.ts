@@ -42,6 +42,8 @@ import {
 import { getDocumentAllowedMimeTypes, getDocumentMaxSizeBytes } from "../../config";
 import { recordTransactionRollback } from "../../observability/transactionTelemetry";
 import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService";
+import { uploadDocumentBuffer } from "../../services/storage/blobStorage";
+import { validateFile } from "../../utils/fileValidation";
 import {
   normalizeRequiredDocumentKey,
 } from "../../db/schema/requiredDocuments";
@@ -955,6 +957,14 @@ export async function uploadDocument(params: {
     });
     throw new AppError("invalid_document_type", "Document type is not allowed.", 400);
   }
+  const buffer = Buffer.from(params.content, "base64");
+  const detectedType = await validateFile(buffer);
+  const uploaded = await uploadDocumentBuffer({
+    buffer,
+    filename: params.metadata.fileName,
+    contentType: detectedType.mime,
+  });
+
   const normalizedCategory = normalizedRequested ?? requestedType;
 
   const client = await pool.connect();
@@ -1009,10 +1019,7 @@ export async function uploadDocument(params: {
         title: params.title,
         documentType: params.documentType ?? params.title,
         filename: params.metadata.fileName,
-        storageKey:
-          typeof (params.metadata as { storageKey?: string }).storageKey === "string"
-            ? (params.metadata as { storageKey?: string }).storageKey ?? null
-            : null,
+        storageKey: uploaded.blobName,
         uploadedBy: resolveUploadedBy(params.actorRole),
         client,
       });
@@ -1030,8 +1037,16 @@ export async function uploadDocument(params: {
     const version = await createDocumentVersion({
       documentId,
       version: nextVersion,
-      metadata: params.metadata,
-      content: params.content,
+      blobName: uploaded.blobName,
+      hash: uploaded.hash,
+      metadata: {
+        ...(params.metadata as Record<string, unknown>),
+        mimeType: detectedType.mime,
+        storageKey: uploaded.blobName,
+        storageUrl: uploaded.url,
+        hash: uploaded.hash,
+      },
+      content: "",
       client,
     });
 
@@ -1048,10 +1063,7 @@ export async function uploadDocument(params: {
       documentId,
       status: "uploaded",
       filename: params.metadata.fileName,
-      storageKey:
-        typeof (params.metadata as { storageKey?: string }).storageKey === "string"
-          ? (params.metadata as { storageKey?: string }).storageKey ?? null
-          : null,
+      storageKey: uploaded.blobName,
       uploadedBy: resolveUploadedBy(params.actorRole),
       client,
     });

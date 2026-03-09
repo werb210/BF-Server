@@ -2,6 +2,8 @@ import { Router, type Request } from "express";
 import { randomUUID } from "crypto";
 import multer from "multer";
 import { AppError } from "../middleware/errors";
+import { validateFile } from "../utils/fileValidation";
+import { uploadDocumentBuffer } from "../services/storage/blobStorage";
 import { safeHandler } from "../middleware/safeHandler";
 import { requireAuth, requireCapability } from "../middleware/auth";
 import { CAPABILITIES } from "../auth/capabilities";
@@ -42,7 +44,6 @@ const upload = multer({
       "application/pdf",
       "image/png",
       "image/jpeg",
-      "image/webp",
     ]);
     if (!allowedMimeTypes.has(file.mimetype)) {
       cb(new AppError("validation_error", "Invalid file type.", 400));
@@ -122,24 +123,33 @@ const uploadHandler = safeHandler(async (req, res) => {
     filename: safeFilename,
     uploadedBy: "client",
   });
+  const fileType = await validateFile(req.file.buffer);
   const nextVersion = (await getLatestDocumentVersion(document.id)) + 1;
-  const storageKey = `documents/${document.id}/${safeFilename}`;
+  const uploaded = await uploadDocumentBuffer({
+    buffer: req.file.buffer,
+    filename: safeFilename,
+    contentType: fileType.mime,
+  });
   await createDocumentVersion({
     documentId: document.id,
     version: nextVersion,
+    blobName: uploaded.blobName,
+    hash: uploaded.hash,
     metadata: {
       fileName: safeFilename,
-      mimeType: req.file.mimetype,
+      mimeType: fileType.mime,
       size: req.file.size,
-      storageKey,
+      storageKey: uploaded.blobName,
+      storageUrl: uploaded.url,
+      hash: uploaded.hash,
     },
-    content: req.file.buffer.toString("base64"),
+    content: "",
   });
   await updateDocumentUploadDetails({
     documentId: document.id,
     status: "uploaded",
     filename: safeFilename,
-    storageKey,
+    storageKey: uploaded.blobName,
     uploadedBy: "client",
   });
   await upsertApplicationRequiredDocument({
@@ -174,7 +184,7 @@ const uploadHandler = safeHandler(async (req, res) => {
     category,
     filename: safeFilename,
     size: req.file.size,
-    storageKey,
+    storageKey: uploaded.blobName,
     createdAt: document.created_at,
   });
 });
