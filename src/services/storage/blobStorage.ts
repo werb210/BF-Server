@@ -1,22 +1,31 @@
 import { BlobServiceClient, type BlockBlobUploadOptions } from "@azure/storage-blob";
 import { hashBuffer } from "../documents/hashService";
 
-const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
-const containerName = process.env.DOCUMENT_CONTAINER || "documents";
+export function getContainerClient() {
+  if (process.env.NODE_ENV === "test") {
+    return {
+      getBlockBlobClient: () => ({
+        uploadData: async () => ({ etag: "test-etag" }),
+        upload: async () => ({ etag: "test-etag" }),
+        delete: async () => {},
+        download: async () => ({
+          readableStreamBody: Buffer.from("test"),
+        }),
+      }),
+    } as any;
+  }
 
-let containerClient: ReturnType<BlobServiceClient["getContainerClient"]> | null = null;
+  const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
 
-function getContainerClient() {
   if (!connectionString) {
     throw new Error("AZURE_STORAGE_CONNECTION_STRING missing");
   }
 
-  if (!containerClient) {
-    const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
-    containerClient = blobServiceClient.getContainerClient(containerName);
-  }
+  const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
 
-  return containerClient;
+  return blobServiceClient.getContainerClient(
+    process.env.AZURE_STORAGE_CONTAINER || "documents"
+  );
 }
 
 export async function pingStorage(): Promise<void> {

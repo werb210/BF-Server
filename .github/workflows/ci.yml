@@ -26,3 +26,5 @@ jobs:
           NODE_ENV: test
           JWT_SECRET: test
           JWT_REFRESH_SECRET: test
+          OPENAI_API_KEY: dummy
+          AZURE_STORAGE_CONNECTION_STRING: test
