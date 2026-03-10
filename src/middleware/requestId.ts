@@ -1,29 +1,14 @@
 import { type NextFunction, type Request, type Response } from "express";
-import { randomUUID } from "crypto";
-import { runWithRequestContext } from "./requestContext";
+import { v4 as uuidv4 } from "uuid";
 
 export function requestId(
   req: Request,
   res: Response,
   next: NextFunction
 ): void {
-  const headerId = req.get("x-request-id");
-  const trimmedHeader = headerId ? headerId.trim() : "";
-  const id = trimmedHeader.length > 0 ? trimmedHeader : randomUUID();
+  const id = req.get("x-request-id")?.trim() || uuidv4();
+  req.id = id;
   res.locals.requestId = id;
-  res.locals.requestRoute = req.originalUrl;
-  (req as Request & { id?: string }).id = id;
-  res.setHeader("x-request-id", id);
-  runWithRequestContext(
-    {
-      requestId: id,
-      method: req.method,
-      path: req.path,
-      route: req.originalUrl,
-      dbProcessIds: new Set(),
-    },
-    () => {
-      next();
-    }
-  );
+  res.setHeader("X-Request-Id", id);
+  next();
 }

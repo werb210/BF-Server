@@ -28,6 +28,9 @@ const isSqlTracePath = (path: string): boolean =>
   path.startsWith("/api/lenders") || path.startsWith("/api/lender-products");
 
 const resolveRequestId = (req: Request): string => {
+  if (typeof req.id === "string" && req.id.trim().length > 0) {
+    return req.id;
+  }
   const headerValue = req.get("x-request-id");
   const trimmed = headerValue ? headerValue.trim() : "";
   return trimmed.length > 0 ? trimmed : randomUUID();

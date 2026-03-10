@@ -5,6 +5,7 @@ import rateLimit from "express-rate-limit";
 
 import { listRoutes, printRoutes } from "./debug/printRoutes";
 import { requestContext } from "./middleware/requestContext";
+import { requestId } from "./middleware/requestId";
 import { requestLogger } from "./middleware/requestLogger";
 import { requestTimeout } from "./middleware/requestTimeout";
 import { routeResolutionLogger } from "./middleware/routeResolutionLogger";
@@ -130,6 +131,7 @@ export function assertCorsConfig(): void {
 export function buildApp(): express.Express {
   const app = express();
 
+  app.use(requestId);
   app.use(requestLogMiddleware);
   app.use(requestContext);
   app.use(requestLogger);
@@ -180,7 +182,12 @@ export function registerApiRoutes(app: express.Express): void {
 
   app.use("/api", limiter);
   app.use("/api/client", requireHttps, ensureIdempotencyKey, idempotencyMiddleware);
+  app.use("/api/applications", ensureIdempotencyKey, idempotencyMiddleware);
+  app.use("/api/lender-submissions", ensureIdempotencyKey, idempotencyMiddleware);
+  app.use("/api/documents", ensureIdempotencyKey, idempotencyMiddleware);
 
+  app.use("/health", healthRouter);
+  app.use("/api/health", healthRouter);
   app.use("/", healthRouter);
   app.use("/api", healthRouter);
   app.use("/api", systemHealthRouter);
