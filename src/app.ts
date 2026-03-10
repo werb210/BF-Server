@@ -5,7 +5,6 @@ import rateLimit from "express-rate-limit";
 
 import { listRoutes, printRoutes } from "./debug/printRoutes";
 import { requestContext } from "./middleware/requestContext";
-import { requestId } from "./middleware/requestId";
 import { requestLogger } from "./middleware/requestLogger";
 import { requestTimeout } from "./middleware/requestTimeout";
 import { routeResolutionLogger } from "./middleware/routeResolutionLogger";
@@ -24,16 +23,12 @@ import {
 } from "./middleware/security";
 import { apiLimiter } from "./middleware/rateLimit";
 import { csrfProtection } from "./middleware/csrfProtection";
-import { idempotencyMiddleware } from "./middleware/idempotency";
 import { notFoundHandler } from "./middleware/errors";
-import { errorHandler } from "./middleware/errorHandler";
 import authRoutes from "./routes/auth";
 import lendersRoutes from "./routes/lenders";
 import lenderProductsRoutes from "./routes/lenderProducts";
 import applicationsRoutes from "./routes/applications";
 import aiRoutes from "./routes/ai";
-import healthRouter from "./routes/health";
-import metricsRouter from "./routes/metrics";
 import readinessRouter from "./routes/readiness";
 import contactRouter from "./routes/contact";
 import supportRouter from "./routes/support";
@@ -55,6 +50,12 @@ import { logger as serverLogger } from "./server/utils/logger";
 import { verifyRoutes } from "./startup/verifyRoutes";
 import systemHealthRouter from "./routes/systemHealth";
 import { httpMetricsMiddleware } from "./metrics/httpMetrics";
+import { requestId } from "./platform/requestId";
+import { idempotency } from "./platform/idempotency";
+import { errorHandler } from "./platform/errorHandler";
+import healthRoutes from "./platform/healthRoutes";
+import metricsRoutes from "./platform/metricsRoutes";
+import { env } from "./platform/env";
 
 /* ---------------- ROUTE ASSERTION ---------------- */
 
@@ -81,9 +82,9 @@ function assertRoutesMounted(app: express.Express): void {
 
 function getRequiredCorsOrigins(): string[] {
   return [
-    process.env.CLIENT_URL,
-    process.env.PORTAL_URL,
-    process.env.WEBSITE_URL,
+    env.CLIENT_URL,
+    env.PORTAL_URL,
+    env.WEBSITE_URL,
   ]
     .map((origin) => (typeof origin === "string" ? origin.trim() : ""))
     .filter((origin) => origin.length > 0);
@@ -182,13 +183,13 @@ export function registerApiRoutes(app: express.Express): void {
 
   app.use("/api", limiter);
   app.use("/api/client", requireHttps);
-  app.use("/api", idempotencyMiddleware);
+  app.use(idempotency);
 
-  app.use("/health", healthRouter);
-  app.use("/metrics", metricsRouter);
-  app.use("/api/health", healthRouter);
-  app.use("/", healthRouter);
-  app.use("/api", healthRouter);
+  app.use("/health", healthRoutes);
+  app.use(metricsRoutes);
+  app.use("/api/health", healthRoutes);
+  app.use("/", healthRoutes);
+  app.use("/api", healthRoutes);
   app.use("/api", systemHealthRouter);
   app.use("/api/readiness", readinessRouter);
   app.use("/api/contact", contactRouter);
@@ -224,7 +225,7 @@ export function registerApiRoutes(app: express.Express): void {
   const mountedRoutes = listRoutes(app);
   printRoutes(app);
 
-  if (process.env.PRINT_ROUTES === "true") {
+  if (env.NODE_ENV === "development" && env.PRINT_ROUTES === "true") {
     serverLogger.info("mounted_routes", {
       routes: mountedRoutes.map((route) => `${route.method} ${route.path}`),
     });
