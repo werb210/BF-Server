@@ -1,237 +1,122 @@
-// src/middleware/idempotency.ts
-
-import { type NextFunction, type Request, type Response } from "express";
 import { createHash } from "crypto";
-import { pool } from "../db";
-import { isDbConnectionFailure, isTestEnvironment } from "../dbRuntime";
-import { AppError } from "./errors";
-import { getIdempotencyEnabled, isProductionEnvironment } from "../config";
-import {
-  createIdempotencyRecord,
-  deleteExpiredIdempotencyRecord,
-  findIdempotencyRecord,
-  purgeExpiredIdempotencyKeys,
-} from "../modules/idempotency/idempotency.repo";
-import { logWarn } from "../observability/logger";
-import { trackEvent } from "../observability/appInsights";
-import { setRequestIdempotencyKeyHash } from "./requestContext";
+import { type NextFunction, type Request, type Response } from "express";
+import { getStoredResponse, storeResponse } from "../lib/idempotencyStore";
+import { logInfo, logWarn } from "../observability/logger";
 
 const IDEMPOTENCY_HEADER = "idempotency-key";
-const ENFORCED_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const ENFORCED_METHODS = new Set(["POST", "PATCH", "DELETE"]);
 
-function sha256(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-function advisoryLockKey(value: string): [number, number] {
-  const hash = createHash("sha256").update(value).digest();
-  return [hash.readInt32BE(0), hash.readInt32BE(4)];
-}
+const inFlightRequests = new Map<string, Promise<void>>();
 
 function stableStringify(value: unknown): string {
   if (value === null || value === undefined) return "null";
   if (typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(",")}]`;
-  }
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+
   const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((k) => `${JSON.stringify(k)}:${stableStringify(record[k])}`)
+  const sortedKeys = Object.keys(record).sort();
+  return `{${sortedKeys
+    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
     .join(",")}}`;
 }
 
-function isAuthRoute(req: Request): boolean {
-  const path = (req.originalUrl ?? req.url ?? "").split("?")[0] ?? "";
-  return path.startsWith("/api/auth/");
+function requestHash(req: Request): string {
+  const payload = `${req.method}:${req.path}:${stableStringify(req.body ?? {})}`;
+  return createHash("sha256").update(payload).digest("hex");
 }
 
-function isIdempotencyExempt(req: Request): boolean {
-  return (
-    req.path === "/webhooks/twilio/voice"
+function normalizePath(req: Request): string {
+  const rawPath = (req.originalUrl ?? req.path).split("?")[0] ?? req.path;
+  return rawPath.replace(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi,
+    ":id"
   );
 }
 
-function isOptionalIdempotencyRoute(req: Request): boolean {
-  if (req.path === "/client/submissions") {
-    return true;
-  }
-  if (req.path === "/client/documents" || req.path.startsWith("/client/documents/")) {
-    return true;
-  }
-  return false;
+function buildStoreKey(req: Request, key: string): string {
+  return `${req.method}:${normalizePath(req)}:${key}`;
 }
 
-function normalizeRouteScope(path: string): string {
-  return path
-    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi, ":id")
-    .replace(/\/\d+(?=\/|$)/g, "/:id");
-}
-
-function shouldBypass(error: unknown): boolean {
-  if (isDbConnectionFailure(error)) return true;
-  if (!(error instanceof Error)) return false;
-  const code = (error as { code?: string }).code;
-  return code === "42P01" || code === "42703" || code === "42P07";
-}
-
-export function idempotencyMiddleware(
+export async function idempotencyMiddleware(
   req: Request,
   res: Response,
   next: NextFunction
-): void {
-  if (!getIdempotencyEnabled()) return next();
-  if (isAuthRoute(req)) return next();
-  if (isIdempotencyExempt(req)) return next();
-  if (!ENFORCED_METHODS.has(req.method)) return next();
+): Promise<void> {
+  if (!ENFORCED_METHODS.has(req.method.toUpperCase())) {
+    next();
+    return;
+  }
 
-  const rawKey = req.get(IDEMPOTENCY_HEADER)?.trim();
-  if (!rawKey) {
-    if (isOptionalIdempotencyRoute(req)) {
-      return next();
+  const key = req.get(IDEMPOTENCY_HEADER)?.trim();
+  if (!key) {
+    next();
+    return;
+  }
+
+  const storeKey = buildStoreKey(req, key);
+  const hash = requestHash(req);
+
+  const existingInFlight = inFlightRequests.get(storeKey);
+  if (existingInFlight) {
+    await existingInFlight;
+    const replay = await getStoredResponse(storeKey);
+    if (replay) {
+      logInfo("idempotent_request_replayed", { key, route: req.path });
+      res.status(replay.statusCode).json(replay.body);
+      return;
     }
-    if (!isProductionEnvironment()) {
-      logWarn("idempotency_key_missing", {
-        route: req.originalUrl,
-        requestId: res.locals.requestId ?? "unknown",
+  }
+
+  const cached = await getStoredResponse(storeKey);
+  if (cached) {
+    if (cached.requestHash !== hash) {
+      res.status(409).json({
+        code: "idempotency_conflict",
+        message: "Idempotency key reused with a different request payload.",
       });
+      return;
     }
-    return next(
-      new AppError(
-        "missing_idempotency_key",
-        "Idempotency-Key header is required.",
-        400
-      )
-    );
+
+    logInfo("idempotent_request_replayed", { key, route: req.path });
+    res.status(cached.statusCode).json(cached.body);
+    return;
   }
 
-  if (rawKey.length > 128) {
-    return next(
-      new AppError(
-        "idempotency_key_too_long",
-        "Idempotency-Key is too long.",
-        400
-      )
-    );
-  }
+  const finalize = new Promise<void>((resolve) => {
+    res.on("finish", resolve);
+    res.on("close", resolve);
+  });
+  inFlightRequests.set(storeKey, finalize);
 
-  const requestId = res.locals.requestId ?? "unknown";
-  const requestPath = (req.originalUrl ?? req.url ?? req.path).split("?")[0] ?? req.path;
-  const route = normalizeRouteScope(requestPath.startsWith("/api/") ? requestPath.slice(4) : requestPath);
-  const requestHash = sha256(stableStringify(req.body ?? {}));
-  const keyHash = sha256(rawKey);
-
-  setRequestIdempotencyKeyHash(keyHash);
-
-  if (isTestEnvironment() && req.get("authorization")) {
-    return next();
-  }
-
-  const lockKey = advisoryLockKey(`${route}:${rawKey}`);
-  const shouldLock = !isTestEnvironment();
-
-  (async () => {
-    try {
-      const client = await pool.connect();
-      try {
-        if (shouldLock) {
-          await client.query("select pg_advisory_lock($1,$2)", lockKey);
-        }
-
-        await purgeExpiredIdempotencyKeys(client);
-
-        const existing = await findIdempotencyRecord({
-          route,
-          idempotencyKey: rawKey,
-          client,
+  const originalJson = res.json.bind(res) as (body: unknown) => Response;
+  res.json = ((body: unknown): Response => {
+    if (res.statusCode < 500) {
+      void storeResponse(storeKey, {
+        statusCode: res.statusCode,
+        body,
+        requestHash: hash,
+        storedAt: Date.now(),
+      }).catch((error: unknown) => {
+        logWarn("idempotency_store_failed", {
+          key,
+          route: req.path,
+          error: error instanceof Error ? error.message : "store_failed",
         });
-
-        if (existing) {
-          if (existing.request_hash !== requestHash) {
-            trackEvent({
-              name: "idempotency_conflict",
-              properties: { route, requestId, idempotencyKeyHash: keyHash },
-            });
-            res.status(409).json({
-              code: "idempotency_conflict",
-              message: "Idempotency key reused with different payload.",
-              requestId,
-            });
-            return;
-          }
-
-          trackEvent({
-            name: "idempotency_cache_hit",
-            properties: { route, requestId, idempotencyKeyHash: keyHash },
-          });
-
-          res.status(existing.response_code).json(existing.response_body);
-          return;
-        }
-
-        await deleteExpiredIdempotencyRecord({
-          route,
-          idempotencyKey: rawKey,
-          client,
-        });
-
-        const wrap = <T extends (...args: any[]) => any>(fn: T): T =>
-          ((body: unknown) => {
-            if (!res.headersSent && !res.locals.requestTimedOut) {
-              res.locals.idempotencyResponseBody = body;
-            }
-            return fn(body);
-          }) as T;
-
-        res.json = wrap(res.json.bind(res));
-        res.send = wrap(res.send.bind(res));
-
-        next();
-
-        await new Promise<void>((resolve) => {
-          res.on("finish", resolve);
-          res.on("close", resolve);
-        });
-
-        if (res.statusCode < 500 && !res.locals.requestTimedOut) {
-          await createIdempotencyRecord({
-            idempotencyKey: rawKey,
-            route,
-            method: req.method,
-            requestHash,
-            responseCode: res.statusCode,
-            responseBody: res.locals.idempotencyResponseBody ?? null,
-            client,
-          });
-        }
-      } finally {
-        if (shouldLock) {
-          try {
-            await client.query("select pg_advisory_unlock($1,$2)", lockKey);
-          } catch {}
-        }
-        client.release();
-      }
-    } catch (err) {
-            logWarn("idempotency_failed", {
-        requestId,
-        route,
-        error: err instanceof Error ? err.message : "unknown_error",
       });
 
-      if (!res.headersSent) {
-        if (shouldBypass(err)) {
-          next();
-          return;
-        }
-        next(err instanceof Error ? err : new Error("idempotency_failed"));
-      }
+      logInfo("idempotent_request_recorded", { key, route: req.path });
     }
-  })();
+
+    return originalJson(body);
+  }) as Response["json"];
+
+  finalize.finally(() => {
+    inFlightRequests.delete(storeKey);
+  });
+
+  next();
 }
 
-export function hashIdempotencyKey(
-  key: string | null | undefined
-): string {
-  return sha256(key ?? "missing");
+export function hashIdempotencyKey(key: string | null | undefined): string {
+  return createHash("sha256").update(key ?? "missing").digest("hex");
 }

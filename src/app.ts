@@ -25,7 +25,6 @@ import {
 import { apiLimiter } from "./middleware/rateLimit";
 import { csrfProtection } from "./middleware/csrfProtection";
 import { idempotencyMiddleware } from "./middleware/idempotency";
-import { ensureIdempotencyKey } from "./middleware/idempotencyKey";
 import { notFoundHandler } from "./middleware/errors";
 import { errorHandler } from "./middleware/errorHandler";
 import authRoutes from "./routes/auth";
@@ -181,10 +180,8 @@ export function registerApiRoutes(app: express.Express): void {
   });
 
   app.use("/api", limiter);
-  app.use("/api/client", requireHttps, ensureIdempotencyKey, idempotencyMiddleware);
-  app.use("/api/applications", ensureIdempotencyKey, idempotencyMiddleware);
-  app.use("/api/lender-submissions", ensureIdempotencyKey, idempotencyMiddleware);
-  app.use("/api/documents", ensureIdempotencyKey, idempotencyMiddleware);
+  app.use("/api/client", requireHttps);
+  app.use("/api", idempotencyMiddleware);
 
   app.use("/health", healthRouter);
   app.use("/api/health", healthRouter);
