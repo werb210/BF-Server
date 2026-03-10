@@ -33,6 +33,7 @@ import lenderProductsRoutes from "./routes/lenderProducts";
 import applicationsRoutes from "./routes/applications";
 import aiRoutes from "./routes/ai";
 import healthRouter from "./routes/health";
+import metricsRouter from "./routes/metrics";
 import readinessRouter from "./routes/readiness";
 import contactRouter from "./routes/contact";
 import supportRouter from "./routes/support";
@@ -49,11 +50,11 @@ import voiceStatusRoute from "./routes/voiceStatus";
 import twilioVoice from "./routes/twilioVoice";
 import telephonyRoutes from "./telephony/routes/telephonyRoutes";
 import { assertApiV1Frozen } from "./contracts/v1Freeze";
-import requestLogMiddleware from "./middleware/logger";
 import envCheck from "./middleware/envCheck";
 import { logger as serverLogger } from "./server/utils/logger";
 import { verifyRoutes } from "./startup/verifyRoutes";
 import systemHealthRouter from "./routes/systemHealth";
+import { httpMetricsMiddleware } from "./metrics/httpMetrics";
 
 /* ---------------- ROUTE ASSERTION ---------------- */
 
@@ -131,9 +132,9 @@ export function buildApp(): express.Express {
   const app = express();
 
   app.use(requestId);
-  app.use(requestLogMiddleware);
-  app.use(requestContext);
   app.use(requestLogger);
+  app.use(httpMetricsMiddleware);
+  app.use(requestContext);
   app.use(productionLogger);
 
   app.use(express.json({ limit: "10mb" }));
@@ -184,6 +185,7 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api", idempotencyMiddleware);
 
   app.use("/health", healthRouter);
+  app.use("/metrics", metricsRouter);
   app.use("/api/health", healthRouter);
   app.use("/", healthRouter);
   app.use("/api", healthRouter);

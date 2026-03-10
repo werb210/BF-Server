@@ -19,6 +19,10 @@ function getContainerClient() {
   return containerClient;
 }
 
+export async function pingStorage(): Promise<void> {
+  await getContainerClient().exists();
+}
+
 export async function uploadDocumentBuffer(params: {
   buffer: Buffer;
   filename: string;

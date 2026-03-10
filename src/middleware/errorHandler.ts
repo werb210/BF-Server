@@ -17,13 +17,13 @@ export function errorHandler(
       : "Internal server error";
   const requestId = req.id ?? res.locals.requestId ?? "unknown";
 
-  logger.error({
-    requestId,
-    route: req.originalUrl,
-    method: req.method,
-    status,
-    error: message,
-  });
+  logger.error(
+    {
+      requestId,
+      err,
+    },
+    "Unhandled server error"
+  );
 
   res.status(status).json({
     success: false,
