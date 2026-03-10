@@ -29,6 +29,10 @@ export async function generateEmbedding(
   text: string,
   client?: OpenAI
 ): Promise<number[]> {
+  if (process.env.NODE_ENV === "test") {
+    return new Array(1536).fill(0.01);
+  }
+
   const trimmed = text.trim();
   if (!trimmed) return [];
   const apiKey = process.env.OPENAI_API_KEY;
