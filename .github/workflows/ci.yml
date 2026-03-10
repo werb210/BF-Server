@@ -18,9 +18,11 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run lint
-      - run: npm test
+      - name: Run tests
+        run: |
+          unset DATABASE_URL
+          npm test
         env:
           NODE_ENV: test
-          DATABASE_URL: postgres://test:test@localhost:5432/test
           JWT_SECRET: test
           JWT_REFRESH_SECRET: test
