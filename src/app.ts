@@ -5,6 +5,7 @@ import rateLimit from "express-rate-limit";
 
 import { listRoutes, printRoutes } from "./debug/printRoutes";
 import { requestContext } from "./middleware/requestContext";
+import { rateLimitKeyFromRequest } from "./middleware/clientIp";
 import { requestLogger } from "./middleware/requestLogger";
 import { requestTimeout } from "./middleware/requestTimeout";
 import { routeResolutionLogger } from "./middleware/routeResolutionLogger";
@@ -131,6 +132,7 @@ export function assertCorsConfig(): void {
 
 export function buildApp(): express.Express {
   const app = express();
+  app.set("trust proxy", true);
 
   app.use(requestId);
   app.use(requestLogger);
@@ -179,11 +181,13 @@ export function registerApiRoutes(app: express.Express): void {
     max: 500,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: rateLimitKeyFromRequest,
   });
 
   const continuationLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 60,
+    keyGenerator: rateLimitKeyFromRequest,
   });
 
   app.use("/api", limiter);

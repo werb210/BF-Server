@@ -1,4 +1,5 @@
 import rateLimit, { type RateLimitRequestHandler } from "express-rate-limit";
+import { rateLimitKeyFromRequest } from "./clientIp";
 
 const oneMinute = 60 * 1000;
 
@@ -16,6 +17,7 @@ function makeLimiter(max: number, windowMs = oneMinute): RateLimitRequestHandler
     standardHeaders: true,
     legacyHeaders: false,
     skip: () => !isEnabled() || process.env.NODE_ENV === "test",
+    keyGenerator: rateLimitKeyFromRequest,
   });
 }
 
