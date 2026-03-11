@@ -181,6 +181,11 @@ export function registerApiRoutes(app: express.Express): void {
     legacyHeaders: false,
   });
 
+  const continuationLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 60,
+  });
+
   app.use("/api", limiter);
   app.use("/api/client", requireHttps);
   app.use(idempotency);
@@ -205,7 +210,7 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api", twilioVoice);
   app.use("/telephony", telephonyRoutes);
   app.use("/api/application", applicationRouter);
-  app.use("/api/application/continuation", applicationContinuationRouter);
+  app.use("/api/application/continuation", continuationLimiter, applicationContinuationRouter);
 
   /* Explicit mounts */
   app.use("/api/auth", authRoutes);
