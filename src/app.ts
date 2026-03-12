@@ -23,8 +23,6 @@ import {
 } from "./middleware/security";
 import { apiLimiter } from "./middleware/rateLimit";
 import { csrfProtection } from "./middleware/csrfProtection";
-import { notFoundHandler } from "./middleware/errors";
-import authRoutes from "./routes/auth";
 import lendersRoutes from "./routes/lenders";
 import lenderProductsRoutes from "./routes/lenderProducts";
 import applicationsRoutes from "./routes/applications";
@@ -39,7 +37,6 @@ import applicationContinuationRouter from "./modules/continuation/continuation.r
 import chatRouter from "./modules/ai/chat.routes";
 import confidenceRouter from "./modules/ai/confidence.routes";
 import twilioRoutes from "./routes/twilio";
-import telephonyRoutes from "./telephony/routes/telephonyRoutes";
 import { assertApiV1Frozen } from "./contracts/v1Freeze";
 import envCheck from "./middleware/envCheck";
 import { logger as serverLogger } from "./server/utils/logger";
@@ -53,6 +50,7 @@ import healthRoutes from "./platform/healthRoutes";
 import metricsRoutes from "./platform/metricsRoutes";
 import { env } from "./platform/env";
 import internalEnvRouter from "./routes/internal/env";
+import apiRouter from "./routes";
 
 /* ---------------- ROUTE ASSERTION ---------------- */
 
@@ -238,8 +236,13 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/health", healthRoutes);
   app.use(metricsRoutes);
   app.use("/api/health", healthRoutes);
-  app.use("/", healthRoutes);
   app.use("/api", healthRoutes);
+  app.get("/", (_req, res) => {
+    res.status(200).json({
+      service: "bf-server",
+      status: "running",
+    });
+  });
   app.use("/api", systemHealthRouter);
   app.use("/api/readiness", readinessRouter);
   app.use("/api/contact", contactRouter);
@@ -249,12 +252,11 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api/support", supportRouter);
   app.use("/api", aiCoreRouter);
   app.use("/api", twilioRoutes);
-  app.use("/api/telephony", telephonyRoutes);
+  app.use("/api", apiRouter);
   app.use("/api/application", applicationRouter);
   app.use("/api/application/continuation", continuationLimiter, applicationContinuationRouter);
 
   /* Explicit mounts */
-  app.use("/api/auth", authRoutes);
   app.use("/api/lenders", lendersRoutes);
   app.use("/api/lender-products", lenderProductsRoutes);
   app.use("/api/applications", applicationsRoutes);
@@ -266,7 +268,11 @@ export function registerApiRoutes(app: express.Express): void {
     app.use(`/api${entry.path}`, entry.router);
   });
 
-  app.use("/api", notFoundHandler);
+  app.use("/api/*", (_req, res) => {
+    res.status(404).json({
+      error: "API route not found",
+    });
+  });
   app.use(errorHandler);
 
   const mountedRoutes = listRoutes(app);
