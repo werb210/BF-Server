@@ -1,13 +1,22 @@
 import { Router } from "express";
+import { requireAuth, requireAuthorization } from "../middleware/auth";
+import { ROLES } from "../auth/roles";
 
 const router = Router();
 
-router.get("/status", (_req, res) => {
-  res.json({
-    status: "ready",
-    activeCalls: 0,
-    queueDepth: 0,
-  });
-});
+router.post(
+  "/status",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  async (req, res) => {
+    const { callSid, status } = req.body as { callSid?: string; status?: string };
+
+    if (!callSid) {
+      return res.status(400).json({ error: "callSid required" });
+    }
+
+    return res.json({ success: true, callSid, status: status ?? null });
+  }
+);
 
 export default router;
