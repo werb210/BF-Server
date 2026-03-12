@@ -1,75 +1,79 @@
-import { Request, Response, NextFunction } from "express";
+import { RequestHandler } from "express";
 import jwt from "jsonwebtoken";
 
-export interface AuthRequest extends Request {
-  user?: any;
-}
+type AuthorizationOptions = {
+  roles?: string[];
+  capabilities?: string[];
+};
 
-function getToken(req: Request): string | null {
+export const requireAuth: RequestHandler = (req, res, next) => {
   const header = req.headers.authorization;
-  if (!header) return null;
-  if (!header.startsWith("Bearer ")) return null;
-  return header.substring(7);
-}
-
-/*
-Base auth middleware
-*/
-export function requireAuth(
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) {
-  const token = getToken(req);
-
-  if (!token) {
-    return res.status(401).json({
-      ok: false,
-      error: "missing_token",
-    });
+  if (!header || !header.startsWith("Bearer ")) {
+    res.status(401).json({ ok: false, error: "missing_token" });
+    return;
   }
 
   try {
+    const token = header.substring(7);
     const decoded = jwt.verify(token, process.env.JWT_SECRET as string);
-    req.user = decoded;
+    (req as any).user = decoded;
     next();
   } catch {
-    return res.status(401).json({
-      ok: false,
-      error: "invalid_token",
-    });
+    res.status(401).json({ ok: false, error: "invalid_token" });
   }
-}
+};
 
-/*
-Alias used in some routes
-*/
-export const requireAuthorization = requireAuth;
+export function requireAuthorization(options: AuthorizationOptions = {}): RequestHandler {
+  const requiredRoles = options.roles ?? [];
+  const requiredCapabilities = options.capabilities ?? [];
 
-/*
-Capability middleware
-Accepts either string OR string[]
-*/
-export function requireCapability(capabilities: string | string[]) {
-  const required = Array.isArray(capabilities) ? capabilities : [capabilities];
+  return (req, res, next) => {
+    const user = (req as any).user;
 
-  return (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.user) {
-      return res.status(401).json({
-        ok: false,
-        error: "unauthorized",
-      });
+    if (!user) {
+      res.status(401).json({ ok: false, error: "unauthorized" });
+      return;
     }
 
-    const userCaps: string[] = req.user.capabilities || [];
+    if (requiredRoles.length > 0 && !requiredRoles.includes(user.role)) {
+      res.status(403).json({ ok: false, error: "forbidden" });
+      return;
+    }
 
-    const allowed = required.some((cap) => userCaps.includes(cap));
+    if (requiredCapabilities.length > 0) {
+      const userCapabilities: string[] = user.capabilities || [];
+      const allowed = requiredCapabilities.some((capability) =>
+        userCapabilities.includes(capability)
+      );
+
+      if (!allowed) {
+        res.status(403).json({ ok: false, error: "forbidden" });
+        return;
+      }
+    }
+
+    next();
+  };
+}
+
+export function requireCapability(cap: string | string[]): RequestHandler {
+  const required = Array.isArray(cap) ? cap : [cap];
+
+  return (req, res, next) => {
+    const user = (req as any).user;
+
+    if (!user) {
+      res.status(401).json({ ok: false, error: "unauthorized" });
+      return;
+    }
+
+    const userCaps: string[] = user.capabilities || [];
+
+    const allowed = required.some((c) => userCaps.includes(c));
 
     if (!allowed) {
-      return res.status(403).json({
-        ok: false,
-        error: "forbidden",
-      });
+      res.status(403).json({ ok: false, error: "forbidden" });
+      return;
     }
 
     next();
