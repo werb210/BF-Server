@@ -8,8 +8,15 @@ const router = Router();
 
 router.get("/call-status", (_req, res) => {
   res.status(200).json({
-    status: "ok",
-    telephony: "active",
+    status: "idle",
+    activeCall: false,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+router.get("/health", (_req, res) => {
+  res.status(200).json({
+    telephony: "ok",
     timestamp: new Date().toISOString(),
   });
 });
