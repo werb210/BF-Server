@@ -52,7 +52,6 @@ import { errorHandler } from "./platform/errorHandler";
 import healthRoutes from "./platform/healthRoutes";
 import metricsRoutes from "./platform/metricsRoutes";
 import { env } from "./platform/env";
-import { ALLOWED_ORIGINS } from "./config/runtime";
 import internalEnvRouter from "./routes/internal/env";
 
 /* ---------------- ROUTE ASSERTION ---------------- */
@@ -88,29 +87,36 @@ export function shouldBlockInternalOriginRequest(
   );
 }
 
+const allowedOrigins = [
+  "https://staff.boreal.financial",
+  "https://api.staff.boreal.financial",
+  "https://client.boreal.financial",
+  "https://boreal.financial",
+  "https://www.boreal.financial",
+];
+
 function buildCorsOptions(): cors.CorsOptions {
   return {
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (ALLOWED_ORIGINS.includes(origin)) {
+    origin: function (origin, callback) {
+      if (!origin) {
         return callback(null, true);
       }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      console.error("CORS blocked origin:", origin);
       return callback(new Error("CORS blocked"));
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: [
-      "Authorization",
-      "Content-Type",
-      "Idempotency-Key",
-      "X-Request-Id",
-    ],
-    optionsSuccessStatus: 204,
+    allowedHeaders: ["Content-Type", "Authorization"],
   };
 }
 
 export function assertCorsConfig(): void {
-  if (ALLOWED_ORIGINS.length === 0) {
+  if (allowedOrigins.length === 0) {
     throw new Error(
       "At least one of WEBSITE_URL, PORTAL_URL, or CLIENT_URL must be configured."
     );
@@ -144,9 +150,8 @@ export function buildApp(): express.Express {
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-  const corsOptions = buildCorsOptions();
-  app.use(cors(corsOptions));
-  app.options("*", cors(corsOptions));
+  app.use(cors(buildCorsOptions()));
+  app.options("*", cors());
 
   app.use(
     helmet({
