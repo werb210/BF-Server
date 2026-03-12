@@ -1,10 +1,18 @@
-import express from "express";
+import { Router } from "express";
 import { requireAuth, requireAuthorization } from "../../middleware/auth";
 import { ROLES } from "../../auth/roles";
 import { generateVoiceToken } from "../services/tokenService";
 import { createConference } from "../services/conferenceService";
 
-const router = express.Router();
+const router = Router();
+
+router.get("/call-status", (_req, res) => {
+  res.status(200).json({
+    status: "ok",
+    telephony: "active",
+    timestamp: new Date().toISOString(),
+  });
+});
 
 router.use(requireAuth);
 router.use(
