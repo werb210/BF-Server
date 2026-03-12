@@ -127,7 +127,7 @@ export function assertCorsConfig(): void {
 
 export function buildApp(): express.Express {
   const app = express();
-  app.set("trust proxy", 1);
+  app.set("trust proxy", true);
 
   app.use((req, _res, next) => {
     if (req.url.startsWith("/api/api/")) {
@@ -200,6 +200,23 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api", limiter);
   app.use("/api/client", requireHttps);
   app.use(idempotency);
+
+  app.get("/health", (_req, res) => {
+    res.status(200).json({
+      status: "ok",
+      service: "bf-server",
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  app.get("/api/health", (_req, res) => {
+    res.status(200).json({
+      status: "ok",
+      api: true,
+      service: "bf-server",
+      timestamp: new Date().toISOString(),
+    });
+  });
 
   app.use("/health", healthRoutes);
   app.use(metricsRoutes);
