@@ -40,11 +40,6 @@ import applicationContinuationRouter from "./modules/continuation/continuation.r
 import chatRouter from "./modules/ai/chat.routes";
 import confidenceRouter from "./modules/ai/confidence.routes";
 import twilioRoutes from "./routes/twilio";
-import voiceToken from "./routes/voiceToken";
-import voiceIncoming from "./routes/voiceIncoming";
-import voiceStatusRoute from "./routes/voiceStatus";
-import twilioVoice from "./routes/twilioVoice";
-import callStatusRoutes from "./routes/callStatus";
 import telephonyRoutes from "./telephony/routes/telephonyRoutes";
 import { assertApiV1Frozen } from "./contracts/v1Freeze";
 import envCheck from "./middleware/envCheck";
@@ -198,6 +193,7 @@ export async function initializeServer(): Promise<void> {
 export function registerApiRoutes(app: express.Express): void {
   assertApiV1Frozen();
   app.use(envCheck);
+  app.use(requireHttps);
 
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -231,12 +227,7 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api/support", supportRouter);
   app.use("/api", aiCoreRouter);
   app.use("/api", twilioRoutes);
-  app.use("/api", voiceIncoming);
-  app.use("/api", voiceStatusRoute);
-  app.use("/api", voiceToken);
-  app.use("/api", twilioVoice);
-  app.use("/api/call", callStatusRoutes);
-  app.use("/telephony", telephonyRoutes);
+  app.use("/api/telephony", telephonyRoutes);
   app.use("/api/application", applicationRouter);
   app.use("/api/application/continuation", continuationLimiter, applicationContinuationRouter);
 

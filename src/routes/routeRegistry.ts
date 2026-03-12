@@ -32,7 +32,7 @@ import portalRoutes from "./portal";
 import pwaRoutes from "./pwa";
 import referralsRoutes from "./referrals";
 import pipelineRoutes from "./pipeline";
-import voiceRoutes from "./voice";
+import telephonyRoutes from "../telephony/routes/telephonyRoutes";
 import webhooksRoutes from "./webhooks";
 import websiteRoutes from "./website";
 
@@ -87,7 +87,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/pwa", router: pwaRoutes },
   { path: "/referrals", router: referralsRoutes },
   { path: "/pipeline", router: pipelineRoutes },
-  { path: "/voice", router: voiceRoutes },
+  { path: "/telephony", router: telephonyRoutes },
   { path: "/webhooks", router: webhooksRoutes },
   { path: "/website", router: websiteRoutes },
 ];
@@ -123,17 +123,10 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/auth/otp/verify", roles: ALL_ROLES },
   { method: "GET", path: "/api/auth/me", roles: ALL_ROLES },
   { method: "POST", path: "/api/auth/logout", roles: ALL_ROLES },
-  { method: "POST", path: "/api/voice/token", roles: [ROLES.ADMIN, ROLES.STAFF] },
-  { method: "POST", path: "/api/voice/call", roles: [ROLES.ADMIN, ROLES.STAFF] },
-  { method: "POST", path: "/api/voice/call/start", roles: [ROLES.ADMIN, ROLES.STAFF] },
-  { method: "POST", path: "/api/voice/call/status", roles: [ROLES.ADMIN, ROLES.STAFF] },
-  { method: "POST", path: "/api/voice/call/recording", roles: [ROLES.ADMIN, ROLES.STAFF] },
-  { method: "POST", path: "/api/voice/call/mute", roles: [ROLES.ADMIN, ROLES.STAFF] },
-  { method: "POST", path: "/api/voice/call/hold", roles: [ROLES.ADMIN, ROLES.STAFF] },
-  { method: "POST", path: "/api/voice/call/resume", roles: [ROLES.ADMIN, ROLES.STAFF] },
-  { method: "POST", path: "/api/voice/call/hangup", roles: [ROLES.ADMIN, ROLES.STAFF] },
-  { method: "POST", path: "/api/voice/call/end", roles: [ROLES.ADMIN, ROLES.STAFF] },
-  { method: "GET", path: "/api/voice/calls", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { method: "POST", path: "/api/telephony/token", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { method: "POST", path: "/api/telephony/outbound-call", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { method: "POST", path: "/api/telephony/presence", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { method: "POST", path: "/api/telephony/call-status", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "POST", path: "/api/webhooks/twilio/voice", roles: [] },
   { method: "GET", path: "/api/dialer/token", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "POST", path: "/api/twilio/voice", roles: [] },

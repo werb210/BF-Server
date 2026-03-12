@@ -1,31 +1,19 @@
-import { logError, logWarn } from "../observability/logger";
+import { logError } from "../observability/logger";
 import { validatePushEnvironmentAtStartup } from "../services/pushService";
 
-const REQUIRED_AUTH_ENV = [
+const REQUIRED_ENV = [
+  "DATABASE_URL",
   "JWT_SECRET",
   "JWT_REFRESH_SECRET",
-] as const;
-
-const OPTIONAL_SERVICE_ENV = [
-  {
-    name: "twilio_verify",
-    keys: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_VERIFY_SERVICE_SID"],
-  },
-  {
-    name: "twilio_voice",
-    keys: [
-      "TWILIO_ACCOUNT_SID",
-      "TWILIO_AUTH_TOKEN",
-      "TWILIO_API_KEY",
-      "TWILIO_API_SECRET",
-      "TWILIO_VOICE_APP_SID",
-      "TWILIO_VOICE_CALLER_ID",
-    ],
-  },
+  "TWILIO_ACCOUNT_SID",
+  "TWILIO_AUTH_TOKEN",
+  "TWILIO_API_KEY_SID",
+  "TWILIO_API_SECRET",
+  "OPENAI_API_KEY",
 ] as const;
 
 function getMissingEnvKeys(): string[] {
-  return REQUIRED_AUTH_ENV.filter((key) => {
+  return REQUIRED_ENV.filter((key) => {
     const value = process.env[key];
     return !value || value.trim().length === 0;
   });
@@ -36,20 +24,9 @@ export function assertRequiredAuthEnv(): void {
   if (nodeEnv === "development" || nodeEnv === "test") {
     return;
   }
+
   const missing = getMissingEnvKeys();
   if (missing.length === 0) {
-    OPTIONAL_SERVICE_ENV.forEach((service) => {
-      const missingKeys = service.keys.filter((key) => {
-        const value = process.env[key];
-        return !value || value.trim().length === 0;
-      });
-      if (missingKeys.length > 0) {
-        logWarn("optional_service_disabled", {
-          service: service.name,
-          missing: missingKeys,
-        });
-      }
-    });
     return;
   }
 
@@ -63,6 +40,4 @@ export function assertRequiredAuthEnv(): void {
 }
 
 assertRequiredAuthEnv();
-
-
 validatePushEnvironmentAtStartup();

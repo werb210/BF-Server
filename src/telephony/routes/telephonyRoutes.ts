@@ -1,8 +1,17 @@
 import express from "express";
+import { requireAuth, requireAuthorization } from "../../middleware/auth";
+import { ROLES } from "../../auth/roles";
 import { generateVoiceToken } from "../services/tokenService";
 import { createConference } from "../services/conferenceService";
 
 const router = express.Router();
+
+router.use(requireAuth);
+router.use(
+  requireAuthorization({
+    roles: [ROLES.ADMIN, ROLES.STAFF],
+  })
+);
 
 router.post("/token", async (req, res) => {
   const { identity } = req.body as { identity?: string };
@@ -23,6 +32,26 @@ router.post("/outbound-call", async (req, res) => {
     conferenceId,
     to,
     fromIdentity,
+  });
+});
+
+router.post("/presence", async (_req, res) => {
+  res.json({
+    success: true,
+  });
+});
+
+router.post("/call-status", async (req, res) => {
+  const { callSid, status } = req.body as { callSid?: string; status?: string };
+
+  if (!callSid) {
+    return res.status(400).json({ error: "callSid required" });
+  }
+
+  res.json({
+    success: true,
+    callSid,
+    status: status ?? null,
   });
 });
 

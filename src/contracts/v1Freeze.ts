@@ -35,7 +35,7 @@ const FROZEN_V1_MOUNTS = [
   "/pwa",
   "/referrals",
   "/pipeline",
-  "/voice",
+  "/telephony",
   "/webhooks",
   "/website",
 ] as const;
