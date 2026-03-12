@@ -50,7 +50,7 @@ import healthRoutes from "./platform/healthRoutes";
 import metricsRoutes from "./platform/metricsRoutes";
 import { env } from "./platform/env";
 import internalEnvRouter from "./routes/internal/env";
-import apiRouter from "./routes";
+import apiRouter from "./routes/api";
 
 /* ---------------- ROUTE ASSERTION ---------------- */
 
