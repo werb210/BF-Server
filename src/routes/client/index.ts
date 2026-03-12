@@ -5,6 +5,7 @@ import applicationsRouter from "./applications";
 import lendersRouter from "./lenders";
 import lenderProductsRouter from "./lenderProducts";
 import clientSubmissionRoutes from "../../modules/clientSubmission/clientSubmission.routes";
+import sessionRouter from "./session";
 import {
   clientDocumentsRateLimit,
   clientReadRateLimit,
@@ -26,6 +27,7 @@ router.use("/", applicationsRouter);
 router.use("/lenders", lendersRouter);
 router.use("/", lenderProductsRouter);
 router.use("/", clientSubmissionRoutes);
+router.use("/", sessionRouter);
 router.use("/documents", clientDocumentsRateLimit(), documentsRouter);
 
 export default router;

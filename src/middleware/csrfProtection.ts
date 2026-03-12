@@ -7,8 +7,14 @@ function normalizeOrigin(value: string): string {
 }
 
 function getTrustedOrigins(): Set<string> {
+  const trustedOrigins = [process.env.CLIENT_URL, process.env.PORTAL_URL, process.env.WEBSITE_URL];
+
+  if (process.env.NODE_ENV !== "production") {
+    trustedOrigins.push("http://localhost", "http://localhost:3000", "http://localhost:5173");
+  }
+
   return new Set(
-    [process.env.CLIENT_URL, process.env.PORTAL_URL, process.env.WEBSITE_URL]
+    trustedOrigins
       .filter((origin): origin is string => typeof origin === "string" && origin.trim().length > 0)
       .map(normalizeOrigin)
   );

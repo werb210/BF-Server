@@ -82,13 +82,23 @@ function assertRoutesMounted(app: express.Express): void {
 /* ---------------- CORS ---------------- */
 
 function getRequiredCorsOrigins(): string[] {
-  return [
+  const requiredOrigins = [
     env.CLIENT_URL,
     env.PORTAL_URL,
     env.WEBSITE_URL,
   ]
     .map((origin) => (typeof origin === "string" ? origin.trim() : ""))
     .filter((origin) => origin.length > 0);
+
+  if (env.NODE_ENV !== "production") {
+    requiredOrigins.push(
+      "http://localhost",
+      "http://localhost:3000",
+      "http://localhost:5173"
+    );
+  }
+
+  return requiredOrigins;
 }
 
 export function shouldBlockInternalOriginRequest(
@@ -133,6 +143,18 @@ export function assertCorsConfig(): void {
 export function buildApp(): express.Express {
   const app = express();
   app.set("trust proxy", true);
+
+  app.use((req, _res, next) => {
+    if (req.url.startsWith("/api/api/")) {
+      const normalizedUrl = req.url.replace(/^\/api\/api\//, "/api/");
+      serverLogger.info("normalized_duplicate_api_prefix", {
+        originalUrl: req.url,
+        normalizedUrl,
+      });
+      req.url = normalizedUrl;
+    }
+    next();
+  });
 
   app.use(requestId);
   app.use(requestLogger);
