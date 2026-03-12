@@ -37,7 +37,7 @@ export async function createServer(
   options: CreateServerOptions = {}
 ): Promise<express.Express> {
   const app = buildApp();
-  app.set("trust proxy", 1);
+  app.set("trust proxy", true);
 
   const config = options.config ?? {};
   const db = {
@@ -103,4 +103,3 @@ export async function createServer(
 
   return app;
 }
-
