@@ -54,6 +54,16 @@ import healthRoutes from "./platform/healthRoutes";
 import metricsRoutes from "./platform/metricsRoutes";
 import { env } from "./platform/env";
 
+const API_BASE_URL =
+  process.env.PUBLIC_BASE_URL ||
+  process.env.API_BASE_URL ||
+  "https://api.staff.boreal.financial";
+
+const ALLOWED_ORIGINS = [
+  "https://staff.boreal.financial",
+  "https://client.boreal.financial",
+];
+
 /* ---------------- ROUTE ASSERTION ---------------- */
 
 function assertRoutesMounted(app: express.Express): void {
@@ -77,26 +87,6 @@ function assertRoutesMounted(app: express.Express): void {
 
 /* ---------------- CORS ---------------- */
 
-function getRequiredCorsOrigins(): string[] {
-  const requiredOrigins = [
-    env.CLIENT_URL,
-    env.PORTAL_URL,
-    env.WEBSITE_URL,
-  ]
-    .map((origin) => (typeof origin === "string" ? origin.trim() : ""))
-    .filter((origin) => origin.length > 0);
-
-  if (env.NODE_ENV !== "production") {
-    requiredOrigins.push(
-      "http://localhost",
-      "http://localhost:3000",
-      "http://localhost:5173"
-    );
-  }
-
-  return requiredOrigins;
-}
-
 export function shouldBlockInternalOriginRequest(
   path: string,
   origin?: string
@@ -108,10 +98,14 @@ export function shouldBlockInternalOriginRequest(
 }
 
 function buildCorsOptions(): cors.CorsOptions {
-  const allowlist = new Set(getRequiredCorsOrigins());
-
   return {
-    origin: [...allowlist],
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("CORS blocked"));
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: [
@@ -125,9 +119,7 @@ function buildCorsOptions(): cors.CorsOptions {
 }
 
 export function assertCorsConfig(): void {
-  const allowlist = getRequiredCorsOrigins();
-
-  if (allowlist.length === 0) {
+  if (ALLOWED_ORIGINS.length === 0) {
     throw new Error(
       "At least one of WEBSITE_URL, PORTAL_URL, or CLIENT_URL must be configured."
     );
@@ -138,7 +130,7 @@ export function assertCorsConfig(): void {
 
 export function buildApp(): express.Express {
   const app = express();
-  app.set("trust proxy", true);
+  app.set("trust proxy", 1);
 
   app.use((req, _res, next) => {
     if (req.url.startsWith("/api/api/")) {
@@ -237,6 +229,12 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api/lender-products", lenderProductsRoutes);
   app.use("/api/applications", applicationsRoutes);
   app.use("/api/ai", aiRoutes);
+  app.get("/api/_int/env", (_req, res) => {
+    res.json({
+      apiBaseUrl: API_BASE_URL,
+      allowedOrigins: ALLOWED_ORIGINS,
+    });
+  });
 
   /* Dynamic mounts — REQUIRED FOR TESTS */
   API_ROUTE_MOUNTS.forEach((entry) => {
