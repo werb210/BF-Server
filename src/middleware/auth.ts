@@ -5,23 +5,27 @@ export interface AuthRequest extends Request {
   user?: any;
 }
 
-function extractToken(req: Request) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return null;
-  return authHeader.replace("Bearer ", "");
+function getToken(req: Request): string | null {
+  const header = req.headers.authorization;
+  if (!header) return null;
+  if (!header.startsWith("Bearer ")) return null;
+  return header.substring(7);
 }
 
-export function requireAuthorization(
+/*
+Base auth middleware
+*/
+export function requireAuth(
   req: AuthRequest,
   res: Response,
   next: NextFunction
 ) {
-  const token = extractToken(req);
+  const token = getToken(req);
 
   if (!token) {
     return res.status(401).json({
       ok: false,
-      error: "missing_token"
+      error: "missing_token",
     });
   }
 
@@ -32,26 +36,39 @@ export function requireAuthorization(
   } catch {
     return res.status(401).json({
       ok: false,
-      error: "invalid_token"
+      error: "invalid_token",
     });
   }
 }
 
-export function requireCapability(capability: string) {
+/*
+Alias used in some routes
+*/
+export const requireAuthorization = requireAuth;
+
+/*
+Capability middleware
+Accepts either string OR string[]
+*/
+export function requireCapability(capabilities: string | string[]) {
+  const required = Array.isArray(capabilities) ? capabilities : [capabilities];
+
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
       return res.status(401).json({
         ok: false,
-        error: "unauthorized"
+        error: "unauthorized",
       });
     }
 
-    const capabilities = req.user.capabilities || [];
+    const userCaps: string[] = req.user.capabilities || [];
 
-    if (!capabilities.includes(capability)) {
+    const allowed = required.some((cap) => userCaps.includes(cap));
+
+    if (!allowed) {
       return res.status(403).json({
         ok: false,
-        error: "forbidden"
+        error: "forbidden",
       });
     }
 
