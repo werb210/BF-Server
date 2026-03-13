@@ -64,6 +64,13 @@ export async function startServer() {
   }
   app = await createServer();
 
+  const expressApp = app as any;
+  expressApp?._router?.stack
+    ?.filter((r: any) => r.route)
+    ?.forEach((r: any) => {
+      console.log(Object.keys(r.route.methods), r.route.path);
+    });
+
   const port = resolvePort();
   server = await new Promise((resolve) => {
     if (!app) {
