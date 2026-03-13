@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { getBuildInfo } from "../config";
 import packageJson from "../../package.json";
-import { listRouteInventory } from "../debug/printRoutes";
+import { listRoutes } from "../system/exportRoutes";
 import { readyHandler } from "./ready";
 import { requireAuth, requireAuthorization } from "../middleware/auth";
 import internalRoutes from "./internal";
@@ -29,7 +29,7 @@ router.get("/version", (_req, res) => {
 });
 
 router.get("/routes", (req, res) => {
-  const routes = listRouteInventory(req.app);
+  const routes = listRoutes(req.app);
   res.status(200).json({ routes });
 });
 
