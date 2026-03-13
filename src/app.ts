@@ -52,6 +52,7 @@ import metricsRoutes from "./platform/metricsRoutes";
 import { env } from "./platform/env";
 import internalEnvRouter from "./routes/internal/env";
 import apiRouter from "./routes/api";
+import analyticsRouter from "./routes/analytics";
 
 /* ---------------- ROUTE ASSERTION ---------------- */
 
@@ -238,6 +239,9 @@ export function registerApiRoutes(app: express.Express): void {
       status: "running",
     });
   });
+  app.get("/session", (_req, res) => {
+    res.status(200).json({ ok: true });
+  });
   app.use("/api", systemHealthRouter);
   app.use("/api/readiness", readinessRouter);
   app.use("/api/contact", contactRouter);
@@ -249,6 +253,7 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api/telephony", telephonyRoutes);
   app.use("/api", twilioRoutes);
   app.use("/api", apiRouter);
+  app.use("/api/analytics", analyticsRouter);
   app.use("/api/application", applicationRouter);
   app.use("/api/application/continuation", continuationLimiter, applicationContinuationRouter);
 

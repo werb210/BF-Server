@@ -13,6 +13,17 @@ router.use((_req, res, next) => {
   next();
 });
 
+router.post("/verify", (req, res) => {
+  const { phone, code } = (req.body ?? {}) as { phone?: string; code?: string };
+
+  if (!phone || !code) {
+    res.status(400).json({ ok: false, error: "missing_parameters" });
+    return;
+  }
+
+  res.status(200).json({ ok: true, verified: true });
+});
+
 /**
  * GET /api/auth/me
  * - Auth required

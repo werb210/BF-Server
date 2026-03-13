@@ -8,28 +8,46 @@ router.get("/", (_req, res) => {
   });
 });
 
-router.get("/pipeline", async (req, res) => {
-  res.json({ ok: true, data: [] });
+router.get("/pipeline", async (_req, res) => {
+  res.json({ count: 0 });
 });
 
-router.get("/actions", async (req, res) => {
-  res.json({ ok: true, data: [] });
+router.get("/actions", async (_req, res) => {
+  res.json({ count: 0 });
 });
 
-router.get("/metrics", async (req, res) => {
-  res.json({ ok: true, data: {} });
+router.get("/document-health", async (_req, res) => {
+  res.json({
+    missingStatements: 0,
+    missingAR: 0,
+    rejected: 0,
+  });
 });
 
-router.get("/offers", async (req, res) => {
-  res.json({ ok: true, data: [] });
+router.get("/lender-activity", async (_req, res) => {
+  res.json({
+    recent: 0,
+    awaiting: 0,
+    declined: 0,
+  });
 });
 
-router.get("/document-health", async (req, res) => {
-  res.json({ ok: true, data: {} });
+router.get("/offers", async (_req, res) => {
+  res.json({
+    new: 0,
+    accepted: 0,
+    expiring: 0,
+  });
 });
 
-router.get("/lender-activity", async (req, res) => {
-  res.json({ ok: true, data: [] });
+router.get("/metrics", async (_req, res) => {
+  res.json({
+    pipeline: 0,
+    actions: 0,
+    documentHealth: 0,
+    lenderActivity: 0,
+    offers: 0,
+  });
 });
 
 export default router;
