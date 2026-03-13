@@ -42,7 +42,7 @@ describe("POST /api/auth/otp/start", () => {
     expect(res.headers["access-control-allow-origin"]).toBe(
       "https://staff.boreal.financial"
     );
-    expect(res.headers["access-control-allow-credentials"]).toBeUndefined();
+    expect(res.headers["access-control-allow-credentials"]).toBe("true");
     expect(res.headers["access-control-allow-headers"]?.toLowerCase()).toContain(
       "idempotency-key"
     );

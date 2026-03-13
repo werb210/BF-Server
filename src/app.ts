@@ -153,7 +153,15 @@ export function buildApp(): express.Express {
       allowedHeaders: ["Content-Type", "Authorization", "x-request-id"],
     })
   );
-  app.options("*", cors());
+  app.options(
+    "*",
+    cors({
+      origin: allowedOrigins,
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "x-request-id"],
+    })
+  );
 
   app.use(
     helmet({

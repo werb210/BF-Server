@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import { requireAuth, requireAuthorization } from "../../middleware/auth";
 import { ROLES } from "../../auth/roles";
 import { generateVoiceToken } from "../services/tokenService";
@@ -28,13 +28,18 @@ router.use(
   })
 );
 
-router.post("/token", async (req, res) => {
-  const { identity } = req.body as { identity?: string };
+async function handleTokenRequest(req: Request, res: Response) {
+  const bodyIdentity = typeof req.body?.identity === "string" ? req.body.identity : undefined;
+  const queryIdentity = typeof req.query?.identity === "string" ? req.query.identity : undefined;
+  const identity = queryIdentity ?? bodyIdentity;
 
   const token = generateVoiceToken(identity ?? "");
 
   res.json({ token });
-});
+}
+
+router.get("/token", handleTokenRequest);
+router.post("/token", handleTokenRequest);
 
 router.post("/outbound-call", async (req, res) => {
   const { to, fromIdentity } = req.body as { to?: string; fromIdentity?: string };
