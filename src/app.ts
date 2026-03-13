@@ -53,6 +53,8 @@ import { env } from "./platform/env";
 import internalEnvRouter from "./routes/internal/env";
 import apiRouter from "./routes/api";
 import analyticsRouter from "./routes/analytics";
+import { requireAuth, requireAuthorization } from "./middleware/auth";
+import { ALL_ROLES } from "./auth/roles";
 
 /* ---------------- ROUTE ASSERTION ---------------- */
 
@@ -213,11 +215,7 @@ export function registerApiRoutes(app: express.Express): void {
   app.use(idempotency);
 
   app.get("/health", (_req, res) => {
-    res.status(200).json({
-      status: "ok",
-      service: "bf-server",
-      timestamp: new Date().toISOString(),
-    });
+    res.status(200).json({ status: "ok" });
   });
 
   app.get("/api/health", (_req, res) => {
@@ -227,6 +225,10 @@ export function registerApiRoutes(app: express.Express): void {
       service: "bf-server",
       timestamp: new Date().toISOString(),
     });
+  });
+
+  app.get("/api", (_req, res) => {
+    res.status(200).json({ ok: true });
   });
 
   app.use("/health", healthRoutes);
@@ -250,11 +252,11 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api/public", publicRouter);
   app.use("/api/support", supportRouter);
   app.use("/api", aiCoreRouter);
-  app.use("/api/telephony", telephonyRoutes);
+  app.use("/api/telephony", requireAuth, requireAuthorization({ roles: ALL_ROLES }), telephonyRoutes);
   app.use("/api", twilioRoutes);
   app.use("/api", apiRouter);
   app.use("/api/analytics", analyticsRouter);
-  app.use("/api/application", applicationRouter);
+  app.use("/api/application", requireAuth, requireAuthorization({ roles: ALL_ROLES }), applicationRouter);
   app.use("/api/application/continuation", continuationLimiter, applicationContinuationRouter);
 
   /* Explicit mounts */
@@ -266,6 +268,11 @@ export function registerApiRoutes(app: express.Express): void {
 
   /* Dynamic mounts — REQUIRED FOR TESTS */
   API_ROUTE_MOUNTS.forEach((entry) => {
+    if (entry.path === "/dashboard") {
+      app.use(`/api${entry.path}`, requireAuth, requireAuthorization({ roles: ALL_ROLES }), entry.router);
+      return;
+    }
+
     app.use(`/api${entry.path}`, entry.router);
   });
 
