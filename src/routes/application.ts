@@ -12,6 +12,15 @@ const createApplicationSchema = z.object({
   source: z.string().trim().optional(),
 });
 
+
+router.get("/update", async (_req, res) => {
+  res.status(200).json({ ok: true });
+});
+
+router.post("/update", async (_req, res) => {
+  res.status(200).json({ ok: true });
+});
+
 router.post("/", async (req, res) => {
   try {
     const { sessionId, source } = createApplicationSchema.parse(req.body ?? {});
