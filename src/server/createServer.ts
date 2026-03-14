@@ -53,6 +53,7 @@ export async function createServer(
     startFollowUpJobs,
     ...options.services,
   };
+  const isProduction = (process.env.NODE_ENV ?? "development") === "production";
 
   if (!config.skipEnvCheck) {
     assertEnv();
@@ -65,22 +66,45 @@ export async function createServer(
   }
 
   if (!config.skipWarmup) {
-    await db.warmUpDatabase?.();
+    try {
+      await db.warmUpDatabase?.();
+    } catch (err) {
+      if (isProduction) {
+        throw err;
+      }
+      logError("database_warmup_skipped_non_prod", {
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   if (!config.skipSchemaCheck) {
     try {
       await db.assertRequiredSchema?.();
     } catch (err) {
-      logError("fatal_schema_mismatch", {
+      if (isProduction) {
+        logError("fatal_schema_mismatch", {
+          message: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
+      logError("schema_check_skipped_non_prod", {
         message: err instanceof Error ? err.message : String(err),
       });
-      throw err;
     }
   }
 
   if (!config.skipSeed) {
-    await services.seedRequirementsForAllProducts?.();
+    try {
+      await services.seedRequirementsForAllProducts?.();
+    } catch (err) {
+      if (isProduction) {
+        throw err;
+      }
+      logError("seed_skipped_non_prod", {
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   if (!config.skipCorsCheck) {
