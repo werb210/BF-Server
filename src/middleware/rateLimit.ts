@@ -21,7 +21,8 @@ function makeLimiter(max: number, windowMs = oneMinute): RateLimitRequestHandler
 }
 
 const loginLimiter = makeLimiter(20);
-const otpLimiter = makeLimiter(5, oneMinute);
+const otpLimiter = makeLimiter(5, 15 * 60 * 1000);
+const verifyOtpLimiter = makeLimiter(10, 15 * 60 * 1000);
 
 export const apiLimiter = makeLimiter(200, 15 * 60 * 1000);
 export const publicLimiter = makeLimiter(200, 15 * 60 * 1000);
@@ -32,6 +33,7 @@ export const portalRateLimit = (max = 120, windowMs = oneMinute) => makeLimiter(
 export const voiceRateLimit = (max = 60, windowMs = oneMinute) => makeLimiter(max, windowMs);
 export const loginRateLimit = () => loginLimiter;
 export const otpRateLimit = () => otpLimiter;
+export const verifyOtpRateLimit = () => verifyOtpLimiter;
 export function resetOtpRateLimit(key?: string): void {
   if (!key) {
     otpLimiter.resetKey?.("::/0");

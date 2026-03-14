@@ -42,7 +42,9 @@ function verifyJwtPayload(token: string): jwt.JwtPayload {
     const payload = verifyAccessToken(token);
     return payload as jwt.JwtPayload;
   } catch {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string, {
+      algorithms: ["HS256"],
+    });
     if (!decoded || typeof decoded !== "object") {
       throw new Error("invalid_token");
     }

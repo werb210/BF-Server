@@ -5,6 +5,7 @@ import {
   otpRateLimit,
   refreshRateLimit,
   resetOtpRateLimit,
+  verifyOtpRateLimit,
 } from "../../middleware/rateLimit";
 import { getRequestId } from "../../middleware/requestContext";
 import { logError } from "../../observability/logger";
@@ -244,7 +245,45 @@ async function handleOtpVerify(
   }
 }
 
-router.post("/otp/verify", otpRateLimit(), handleOtpVerify);
+router.post("/otp/verify", verifyOtpRateLimit(), handleOtpVerify);
+
+/**
+ * POST /api/auth/send-otp
+ */
+router.post("/send-otp", otpRateLimit(), async (req, res) => {
+  try {
+    const { phone } = req.body as { phone?: string };
+    await startOtp(phone);
+    res.json({ sent: true });
+  } catch (_err) {
+    res.status(400).json({ error: "OTP start failed" });
+  }
+});
+
+/**
+ * POST /api/auth/verify-otp
+ */
+router.post("/verify-otp", verifyOtpRateLimit(), async (req, res) => {
+  try {
+    const { phone, code, email } = req.body as {
+      phone?: string;
+      code?: string;
+      email?: string | null;
+    };
+    const result = await verifyOtpCode({
+      phone: phone ?? "",
+      code: code ?? "",
+      ...(email !== undefined ? { email } : {}),
+      ...(req.ip ? { ip: req.ip } : {}),
+      ...(req.get("user-agent") ? { userAgent: req.get("user-agent") } : {}),
+      route: "/api/auth/verify-otp",
+      method: req.method,
+    });
+    res.json(result);
+  } catch (_err) {
+    res.status(400).json({ error: "OTP verification failed" });
+  }
+});
 
 /**
  * POST /api/auth/login

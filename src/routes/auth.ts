@@ -33,7 +33,7 @@ router.post("/request", (req, res) => {
     return;
   }
 
-  const code = process.env.NODE_ENV === "production" ? generateOtpCode() : "123456";
+  const code = process.env.NODE_ENV === "test" ? "000000" : generateOtpCode();
 
   otpStore.set(phone, {
     code,
@@ -55,7 +55,7 @@ router.post("/request-otp", async (req, res) => {
     await createOtpSessionsTable();
     await startOtp(phone);
 
-    const code = process.env.NODE_ENV === "production" ? "unknown" : "123456";
+    const code = process.env.NODE_ENV === "test" ? "000000" : "unknown";
     const sessionId = crypto.randomUUID();
 
     await db.query(
