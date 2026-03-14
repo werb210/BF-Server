@@ -10,6 +10,8 @@ import { createServer } from "./createServer";
 import { db } from "../db";
 import { initChatSocket } from "../modules/ai/socket.server";
 import { validateStartup } from "../startup/validateStartup";
+import { cleanupOtpSessions } from "../jobs/otpCleanup";
+import { createOtpSessionsTable } from "../db/migrations/createOtpSessions";
 
 let processHandlersInstalled = false;
 let server: Server | null = null;
@@ -38,6 +40,21 @@ async function verifyDatabase() {
   }
 }
 
+
+function registerOtpCleanupJob(): void {
+  const timer = setInterval(() => {
+    cleanupOtpSessions(db).catch((err) => {
+      logger.error("otp_cleanup_failed", {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }, 600000);
+
+  if (typeof timer.unref === "function") {
+    timer.unref();
+  }
+}
+
 function resolvePort(): number {
   const rawPort = process.env.PORT;
   if (!rawPort) {
@@ -63,6 +80,8 @@ export async function startServer() {
     await verifyDatabase();
   }
   app = await createServer();
+  await createOtpSessionsTable();
+  registerOtpCleanupJob();
 
   const expressApp = app as any;
   expressApp?._router?.stack
