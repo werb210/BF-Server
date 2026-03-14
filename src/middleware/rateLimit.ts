@@ -21,7 +21,7 @@ function makeLimiter(max: number, windowMs = oneMinute): RateLimitRequestHandler
 }
 
 const loginLimiter = makeLimiter(20);
-const otpLimiter = makeLimiter(20);
+const otpLimiter = makeLimiter(5, oneMinute);
 
 export const apiLimiter = makeLimiter(200, 15 * 60 * 1000);
 export const publicLimiter = makeLimiter(200, 15 * 60 * 1000);
@@ -51,7 +51,7 @@ export const clientReadRateLimit = (max = 120, windowMs = oneMinute) =>
 export const clientDocumentsRateLimit = (max = 40, windowMs = oneMinute) =>
   makeLimiter(max, windowMs);
 export const pushSendRateLimit = (max = 30, windowMs = oneMinute) => makeLimiter(max, windowMs);
-export const otpSendLimiter = (max = 20, windowMs = oneMinute) => makeLimiter(max, windowMs);
+export const otpSendLimiter = (max = 5, windowMs = oneMinute) => makeLimiter(max, windowMs);
 export const otpVerifyLimiter = (max = 20, windowMs = oneMinute) => makeLimiter(max, windowMs);
 
 export function resetLoginRateLimit(key?: string): void {
