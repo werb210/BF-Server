@@ -108,10 +108,13 @@ export function shouldBlockInternalOriginRequest(
 }
 
 const allowedOrigins = [
-  "https://staff.boreal.financial",
-  "https://client.boreal.financial",
+  process.env.CLIENT_URL,
+  process.env.PORTAL_URL,
+  "https://boreal-client.azurewebsites.net",
+  "https://boreal-portal.azurewebsites.net",
   "http://localhost:5173",
-];
+  "http://localhost:3000",
+].filter((origin): origin is string => Boolean(origin));
 
 export function assertCorsConfig(): void {
   if (allowedOrigins.length === 0) {
@@ -170,16 +173,15 @@ export function buildApp(): express.Express {
 
   app.use(
     cors({
-      origin: true,
-      credentials: true,
-      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization", "x-request-id"],
-    })
-  );
-  app.options(
-    "*",
-    cors({
-      origin: true,
+      origin: (origin, callback) => {
+        if (!origin) {
+          return callback(null, true);
+        }
+        if (allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+        return callback(new Error("Not allowed by CORS"));
+      },
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization", "x-request-id"],
