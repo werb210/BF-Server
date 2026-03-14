@@ -135,7 +135,8 @@ router.post("/verify", otpVerifyLimiter(), async (req, res, next) => {
     };
     const result = await verifyOtpCode(payload);
     if (!result.ok) {
-      return res.status(401).json({
+      return res.status(400).json({
+        success: false,
         error: "Invalid OTP",
       });
     }

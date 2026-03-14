@@ -72,7 +72,10 @@ router.post("/request-otp", async (req, res) => {
     });
   } catch (err) {
     console.error("OTP request failed", err);
-    return res.status(500).json({ error: "otp_request_failed" });
+    return res.status(400).json({
+      success: false,
+      message: err instanceof Error ? err.message : "otp_request_failed",
+    });
   }
 });
 
@@ -163,8 +166,12 @@ router.post("/verify-otp", async (req, res) => {
       });
     }
 
-    const normalizedPhone = String(phone).trim();
+    const normalizedPhone = normalizePhone(String(phone));
     const normalizedCode = String(code).trim();
+
+    if (!normalizedCode) {
+      return res.status(400).json({ error: "Code required" });
+    }
 
     req.log?.info({
       event: "otp_verify_attempt",
@@ -182,9 +189,7 @@ router.post("/verify-otp", async (req, res) => {
     const valid = result.ok;
 
     if (!valid) {
-      return res.status(401).json({
-        error: "invalid_code",
-      });
+      return res.status(400).json({ error: "Invalid OTP" });
     }
 
     return res.status(200).json({
@@ -196,8 +201,9 @@ router.post("/verify-otp", async (req, res) => {
       error: err,
     });
 
-    return res.status(500).json({
-      error: "OTP verification failed",
+    return res.status(400).json({
+      success: false,
+      message: err instanceof Error ? err.message : "OTP verification failed",
     });
   }
 });
