@@ -9,7 +9,34 @@ router.get("/", (_req, res) => {
 });
 
 router.get("/pipeline", async (_req, res) => {
-  res.json({ count: 0 });
+  const pipeline = [
+    {
+      name: "New",
+      cards: [],
+    },
+    {
+      name: "Review",
+      cards: [],
+    },
+    {
+      name: "Requires Docs",
+      cards: [],
+    },
+    {
+      name: "Sent to Lender",
+      cards: [],
+    },
+    {
+      name: "Approved",
+      cards: [],
+    },
+    {
+      name: "Declined",
+      cards: [],
+    },
+  ];
+
+  res.json(pipeline);
 });
 
 router.get("/actions", async (_req, res) => {
