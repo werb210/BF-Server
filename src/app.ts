@@ -129,6 +129,9 @@ export function buildApp(): express.Express {
   const app = express();
   app.set("trust proxy", true);
 
+  app.use(express.json({ limit: "1mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
   app.use(healthRouter);
 
   app.use((req, _res, next) => {
@@ -166,9 +169,6 @@ export function buildApp(): express.Express {
   app.use(httpMetricsMiddleware);
   app.use(requestContext);
   app.use(productionLogger);
-
-  app.use(express.json({ limit: "1mb" }));
-  app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
   app.use(
     cors({

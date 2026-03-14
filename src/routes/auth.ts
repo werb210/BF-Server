@@ -107,6 +107,7 @@ router.post("/verify", (req, res) => {
 
 router.post("/verify-otp", async (req, res) => {
   try {
+    console.log("verify-otp body:", req.body);
     const body = req.body || {};
 
     const phone =
