@@ -945,7 +945,22 @@
     {
       "method": "POST",
       "path": "/api/application",
+      "source": "/"
+    },
+    {
+      "method": "POST",
+      "path": "/api/application",
       "source": "/api/application"
+    },
+    {
+      "method": "POST",
+      "path": "/api/application/continuation",
+      "source": "/"
+    },
+    {
+      "method": "POST",
+      "path": "/api/application/update",
+      "source": "/"
     },
     {
       "method": "POST",
@@ -995,7 +1010,17 @@
     {
       "method": "POST",
       "path": "/api/auth/otp/start",
+      "source": "/"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/otp/start",
       "source": "/api/auth"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/otp/verify",
+      "source": "/"
     },
     {
       "method": "POST",
@@ -1096,6 +1121,11 @@
       "method": "POST",
       "path": "/api/client/documents/upload",
       "source": "/api/client/documents"
+    },
+    {
+      "method": "POST",
+      "path": "/api/client/session/refresh",
+      "source": "/"
     },
     {
       "method": "POST",
@@ -1281,6 +1311,11 @@
       "method": "POST",
       "path": "/api/readiness/continue",
       "source": "/api/readiness"
+    },
+    {
+      "method": "POST",
+      "path": "/api/readiness/submit",
+      "source": "/"
     },
     {
       "method": "POST",

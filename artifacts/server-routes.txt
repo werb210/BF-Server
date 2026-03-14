@@ -181,6 +181,7 @@ POST /api/ai/startup-interest
 POST /api/ai/voice/token
 POST /api/analytics
 POST /api/application
+POST /api/application/continuation
 POST /api/application/update
 POST /api/applications
 POST /api/applications/:id/documents
@@ -248,6 +249,7 @@ POST /api/pwa/subscribe
 POST /api/pwa/sync
 POST /api/readiness
 POST /api/readiness/continue
+POST /api/readiness/submit
 POST /api/referrals
 POST /api/startup-interest
 POST /api/support/contact

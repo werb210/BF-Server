@@ -25,6 +25,23 @@ export function validateServerEnv(): ServerEnv {
     return cachedEnv;
   }
 
+  const nodeEnv = process.env.NODE_ENV ?? "development";
+  if (nodeEnv !== "production") {
+    process.env.NODE_ENV = nodeEnv;
+    process.env.DATABASE_URL ||= "postgres://postgres:postgres@localhost:5432/staff_dev";
+    process.env.JWT_SECRET ||= "dev-jwt-secret";
+    process.env.TWILIO_ACCOUNT_SID ||= "AC00000000000000000000000000000000";
+    process.env.TWILIO_AUTH_TOKEN ||= "dev-twilio-token";
+    process.env.TWILIO_PHONE_NUMBER ||= "+10000000000";
+    process.env.SENDGRID_API_KEY ||= "dev-sendgrid-key";
+    process.env.CORS_ALLOWED_ORIGINS ||= "http://localhost:5173";
+    process.env.RATE_LIMIT_WINDOW_MS ||= "60000";
+    process.env.RATE_LIMIT_MAX ||= "200";
+    process.env.APPINSIGHTS_CONNECTION_STRING ||= "InstrumentationKey=dev";
+    process.env.JWT_EXPIRES_IN ||= "15m";
+    process.env.JWT_REFRESH_EXPIRES_IN ||= "30d";
+  }
+
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
     const missingOrInvalid = parsed.error.issues.map((issue) => issue.path.join("."));

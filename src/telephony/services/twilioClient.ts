@@ -1,6 +1,7 @@
 import Twilio from "twilio";
 
-const accountSid = process.env.TWILIO_ACCOUNT_SID || "test_sid";
+const accountSid =
+  process.env.TWILIO_ACCOUNT_SID || "AC00000000000000000000000000000000";
 const authToken = process.env.TWILIO_AUTH_TOKEN || "test_token";
 
 /*

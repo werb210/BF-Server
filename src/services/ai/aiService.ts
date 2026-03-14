@@ -3,7 +3,7 @@ import { db } from "../../db";
 import { retrieveRelevantContext } from "./retrievalService";
 
 const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY || "test-openai-key",
 });
 
 type RuleRow = {
