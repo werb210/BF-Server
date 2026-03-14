@@ -73,11 +73,37 @@ router.post("/start", otpLimiter, async (req, res, next) => {
 });
 
 router.post("/verify", otpVerifyLimiter(), async (req, res, next) => {
-  const { phone, code } = req.body ?? {};
+  const body = req.body || {};
+
+  const phone = body.phone || body.phoneNumber || body.mobile || body.userPhone;
+
+  const code = body.code || body.otp || body.passcode;
+
+  if (!phone || !code) {
+    req.log?.warn({
+      event: "otp_missing_fields",
+      body,
+    });
+
+    return res.status(400).json({
+      error: "Invalid request",
+      message: "phone and code required",
+    });
+  }
+
+  const normalizedCode = String(code).trim();
   const normalizedPhone = normalizePhoneNumber(phone);
 
-  if (!normalizedPhone || !code) {
-    return res.status(400).json({ ok: false, success: false });
+  if (!normalizedPhone || !normalizedCode) {
+    req.log?.warn({
+      event: "otp_missing_fields",
+      body,
+    });
+
+    return res.status(400).json({
+      error: "Invalid request",
+      message: "phone and code required",
+    });
   }
 
   if (activeVerifications.get(normalizedPhone)) {
@@ -90,12 +116,17 @@ router.post("/verify", otpVerifyLimiter(), async (req, res, next) => {
   activeVerifications.set(normalizedPhone, true);
 
   try {
-    const { email } = req.body ?? {};
+    req.log?.info({
+      event: "otp_verification_attempt",
+      phone: normalizedPhone,
+    });
+
+    const email = body.email;
     const userAgent = req.get("user-agent");
     const route = req.originalUrl ?? req.url;
     const payload = {
       phone: normalizedPhone,
-      code,
+      code: normalizedCode,
       email,
       ...(req.ip ? { ip: req.ip } : {}),
       ...(userAgent ? { userAgent } : {}),
@@ -104,10 +135,8 @@ router.post("/verify", otpVerifyLimiter(), async (req, res, next) => {
     };
     const result = await verifyOtpCode(payload);
     if (!result.ok) {
-      return res.status(result.status).json({
-        ok: false,
-        success: false,
-        error: result.error,
+      return res.status(401).json({
+        error: "Invalid OTP",
       });
     }
     resetOtpRateLimit(normalizedPhone);
@@ -122,8 +151,14 @@ router.post("/verify", otpVerifyLimiter(), async (req, res, next) => {
       },
     });
   } catch (err) {
-    console.error("OTP verify failed", err);
-    return res.status(500).json({ ok: false, success: false });
+    req.log?.error({
+      event: "otp_verification_error",
+      error: err,
+    });
+
+    return res.status(500).json({
+      error: "OTP verification failed",
+    });
   } finally {
     activeVerifications.delete(normalizedPhone);
   }
