@@ -62,6 +62,7 @@ import { requireAuth, requireAuthorization } from "./middleware/auth";
 import { ALL_ROLES } from "./auth/roles";
 import recoveryRoutes from "./routes/recoveryRoutes";
 import devRecoveryRoutes from "./routes/devRecoveryRoutes";
+import devRoutes from "./routes/dev";
 
 function isTruthyFlag(value: string | undefined): boolean {
   if (!value) {
@@ -218,6 +219,7 @@ export function registerApiRoutes(app: express.Express): void {
   assertApiV1Frozen();
   app.use(envCheck);
   app.use(requireHttps);
+  app.use(devRoutes);
 
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -238,7 +240,11 @@ export function registerApiRoutes(app: express.Express): void {
   app.use(idempotency);
 
   app.get("/health", (_req, res) => {
-    res.status(200).json({ status: "ok" });
+    res.status(200).json({
+      status: "ok",
+      service: "bf-server",
+      timestamp: new Date().toISOString(),
+    });
   });
 
   app.get("/api/health", (_req, res) => {
