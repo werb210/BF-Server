@@ -61,6 +61,7 @@ import applicationDevRoutes from "./routes/applicationDev";
 import { requireAuth, requireAuthorization } from "./middleware/auth";
 import { ALL_ROLES } from "./auth/roles";
 import recoveryRoutes from "./routes/recoveryRoutes";
+import devRecoveryRoutes from "./routes/devRecoveryRoutes";
 
 function isTruthyFlag(value: string | undefined): boolean {
   if (!value) {
@@ -194,6 +195,9 @@ export function buildApp(): express.Express {
   if (isTruthyFlag(process.env.ENABLE_RECOVERY_ROUTES)) {
     serverLogger.warn("recovery_routes_enabled");
     app.use(recoveryRoutes);
+  }
+  if (env.NODE_ENV === "development") {
+    app.use(devRecoveryRoutes);
   }
   app.use(requestTimeout);
 
