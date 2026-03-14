@@ -38,6 +38,7 @@ import chatRouter from "./modules/ai/chat.routes";
 import confidenceRouter from "./modules/ai/confidence.routes";
 import twilioRoutes from "./routes/twilio";
 import telephonyRoutes from "./routes/telephony";
+import telephonyDevRoutes from "./routes/telephonyDev";
 import { assertApiV1Frozen } from "./contracts/v1Freeze";
 import envCheck from "./middleware/envCheck";
 import { logger as serverLogger } from "./server/utils/logger";
@@ -56,6 +57,7 @@ import analyticsRouter from "./routes/analytics";
 import sessionRoutes from "./routes/session";
 import applicationCompatRoutes from "./routes/applicationCompat";
 import otpCompatRoutes from "./routes/otpCompat";
+import applicationDevRoutes from "./routes/applicationDev";
 import { requireAuth, requireAuthorization } from "./middleware/auth";
 import { ALL_ROLES } from "./auth/roles";
 import recoveryRoutes from "./routes/recoveryRoutes";
@@ -163,7 +165,7 @@ export function buildApp(): express.Express {
 
   app.use(
     cors({
-      origin: allowedOrigins,
+      origin: true,
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization", "x-request-id"],
@@ -172,7 +174,7 @@ export function buildApp(): express.Express {
   app.options(
     "*",
     cors({
-      origin: allowedOrigins,
+      origin: true,
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization", "x-request-id"],
@@ -271,6 +273,8 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api", confidenceRouter);
   app.use("/api/public", publicRouter);
   app.use("/api/support", supportRouter);
+  app.use("/telephony", telephonyDevRoutes);
+  app.use("/api/application", applicationDevRoutes);
   app.use("/api", aiCoreRouter);
   app.use("/api/telephony", requireAuth, requireAuthorization({ roles: ALL_ROLES }), telephonyRoutes);
   app.use("/api", twilioRoutes);

@@ -21,6 +21,13 @@ function buildPoolConfig(): PoolConfig {
         max: Number(process.env.DB_POOL_MAX ?? 20),
       };
     }
+    if (process.env.NODE_ENV !== "production") {
+      return {
+        connectionString: "postgres://postgres:postgres@127.0.0.1:5432/staff_dev",
+        ssl: false,
+        max: Number(process.env.DB_POOL_MAX ?? 20),
+      };
+    }
     markNotReady("db_unavailable");
     throw new Error("DATABASE_URL is missing");
   }

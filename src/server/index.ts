@@ -82,6 +82,7 @@ export async function startServer() {
         app.set("server", listener);
       }
       logger.info("server_listening", { port });
+      console.log(`Server running on port ${port}`);
       resolve(listener);
     });
   });
