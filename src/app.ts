@@ -53,6 +53,9 @@ import { env } from "./platform/env";
 import internalEnvRouter from "./routes/internal/env";
 import apiRouter from "./routes/api";
 import analyticsRouter from "./routes/analytics";
+import sessionRoutes from "./routes/session";
+import applicationCompatRoutes from "./routes/applicationCompat";
+import otpCompatRoutes from "./routes/otpCompat";
 import { requireAuth, requireAuthorization } from "./middleware/auth";
 import { ALL_ROLES } from "./auth/roles";
 
@@ -241,15 +244,9 @@ export function registerApiRoutes(app: express.Express): void {
       status: "running",
     });
   });
-  app.get("/session", (req, res) => {
-    const sessionUser = (req as { session?: { user?: unknown } }).session?.user;
-    if (sessionUser) {
-      res.status(200).json({ authenticated: true, user: sessionUser });
-      return;
-    }
-
-    res.status(200).json({ authenticated: false });
-  });
+  app.use(sessionRoutes);
+  app.use(applicationCompatRoutes);
+  app.use(otpCompatRoutes);
   app.use("/api", systemHealthRouter);
   app.use("/api/readiness", readinessRouter);
   app.use("/api/contact", contactRouter);
