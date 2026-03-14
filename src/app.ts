@@ -60,6 +60,15 @@ import { requireAuth, requireAuthorization } from "./middleware/auth";
 import { ALL_ROLES } from "./auth/roles";
 import recoveryRoutes from "./routes/recoveryRoutes";
 
+function isTruthyFlag(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
 /* ---------------- ROUTE ASSERTION ---------------- */
 
 function assertRoutesMounted(app: express.Express): void {
@@ -180,7 +189,10 @@ export function buildApp(): express.Express {
   app.use(csrfProtection);
   app.use("/api/", apiLimiter);
   app.use(routeResolutionLogger);
-  app.use(recoveryRoutes);
+  if (isTruthyFlag(process.env.ENABLE_RECOVERY_ROUTES)) {
+    serverLogger.warn("recovery_routes_enabled");
+    app.use(recoveryRoutes);
+  }
   app.use(requestTimeout);
 
   return app;
@@ -247,8 +259,11 @@ export function registerApiRoutes(app: express.Express): void {
     });
   });
   app.use(sessionRoutes);
-  app.use(applicationCompatRoutes);
-  app.use(otpCompatRoutes);
+  if (isTruthyFlag(process.env.ENABLE_COMPAT_ROUTES)) {
+    serverLogger.warn("compat_routes_enabled");
+    app.use(applicationCompatRoutes);
+    app.use(otpCompatRoutes);
+  }
   app.use("/api", systemHealthRouter);
   app.use("/api/readiness", readinessRouter);
   app.use("/api/contact", contactRouter);
