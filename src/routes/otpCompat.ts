@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { normalizePhone } from "../utils/phone";
 
 const router = Router();
 
@@ -12,8 +13,13 @@ type SessionRequest = {
 router.post("/api/auth/otp/start", async (req, res) => {
   const { phone } = (req.body ?? {}) as { phone?: string };
 
-  if (!phone) {
-    return res.status(400).json({ error: "phone required" });
+  try {
+    normalizePhone(phone ?? "");
+  } catch (err) {
+    return res.status(400).json({
+      success: false,
+      message: err instanceof Error ? err.message : "Invalid phone number format",
+    });
   }
 
   return res.json({
@@ -23,7 +29,16 @@ router.post("/api/auth/otp/start", async (req, res) => {
 });
 
 router.post("/api/auth/otp/verify", async (req, res) => {
-  const { code } = (req.body ?? {}) as { code?: string };
+  const { phone, code } = (req.body ?? {}) as { phone?: string; code?: string };
+
+  try {
+    normalizePhone(phone ?? "");
+  } catch (err) {
+    return res.status(400).json({
+      success: false,
+      message: err instanceof Error ? err.message : "Invalid phone number format",
+    });
+  }
 
   if (!code) {
     return res.status(400).json({ error: "code required" });
