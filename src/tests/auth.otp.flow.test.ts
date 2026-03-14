@@ -66,7 +66,7 @@ describe("auth otp flow regression coverage", () => {
 
   it("OTP happy path works end-to-end", async () => {
     const app = buildTestApp();
-    await upsertUser({ phone: TEST_PHONE, role: ROLES.STAFF });
+    const { userId } = await upsertUser({ phone: TEST_PHONE, role: ROLES.STAFF });
 
     const twilioMocks = getTwilioMocks();
     twilioMocks.createVerification.mockResolvedValueOnce({
@@ -80,6 +80,7 @@ describe("auth otp flow regression coverage", () => {
 
     const start = await otpStartRequest(app, { phone: TEST_PHONE });
     expect(start.status).toBe(200);
+    expect(start.body).toMatchObject({ success: true });
 
     const verify = await otpVerifyRequest(app, { phone: TEST_PHONE });
     expect(verify.status).toBe(200);
@@ -89,6 +90,7 @@ describe("auth otp flow regression coverage", () => {
       .get("/api/auth/me")
       .set("Authorization", `Bearer ${verify.body.accessToken}`);
     expect(me.status).toBe(200);
+    expect(me.body).toMatchObject({ id: userId, role: "staff" });
   });
 
   it("OTP retry safety resets send and verify counters after success", async () => {
