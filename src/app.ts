@@ -63,6 +63,7 @@ import { ALL_ROLES } from "./auth/roles";
 import recoveryRoutes from "./routes/recoveryRoutes";
 import devRecoveryRoutes from "./routes/devRecoveryRoutes";
 import devRoutes from "./routes/dev";
+import healthRouter from "./routes/health";
 
 function isTruthyFlag(value: string | undefined): boolean {
   if (!value) {
@@ -125,6 +126,8 @@ export function assertCorsConfig(): void {
 export function buildApp(): express.Express {
   const app = express();
   app.set("trust proxy", true);
+
+  app.use(healthRouter);
 
   app.use((req, _res, next) => {
     const forwardedHost = req.headers["x-forwarded-host"];
@@ -238,23 +241,6 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api", limiter);
   app.use("/api/client", requireHttps);
   app.use(idempotency);
-
-  app.get("/health", (_req, res) => {
-    res.status(200).json({
-      status: "ok",
-      service: "bf-server",
-      timestamp: new Date().toISOString(),
-    });
-  });
-
-  app.get("/api/health", (_req, res) => {
-    res.status(200).json({
-      status: "ok",
-      api: true,
-      service: "bf-server",
-      timestamp: new Date().toISOString(),
-    });
-  });
 
   app.get("/api", (_req, res) => {
     res.status(200).json({ ok: true });
