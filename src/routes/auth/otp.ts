@@ -10,6 +10,7 @@ import { normalizePhoneNumber } from "../../modules/auth/phone";
 const router = Router();
 const OTP_START_REUSE_WINDOW_MS = 60 * 1000;
 const recentOtpStarts = new Map<string, number>();
+const activeVerifications = new Map<string, boolean>();
 
 const otpLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -72,12 +73,28 @@ router.post("/start", otpLimiter, async (req, res, next) => {
 });
 
 router.post("/verify", otpVerifyLimiter(), async (req, res, next) => {
+  const { phone, code } = req.body ?? {};
+  const normalizedPhone = normalizePhoneNumber(phone);
+
+  if (!normalizedPhone || !code) {
+    return res.status(400).json({ ok: false, success: false });
+  }
+
+  if (activeVerifications.get(normalizedPhone)) {
+    return res.status(429).json({
+      success: false,
+      error: "Verification already in progress",
+    });
+  }
+
+  activeVerifications.set(normalizedPhone, true);
+
   try {
-    const { phone, code, email } = req.body ?? {};
+    const { email } = req.body ?? {};
     const userAgent = req.get("user-agent");
     const route = req.originalUrl ?? req.url;
     const payload = {
-      phone,
+      phone: normalizedPhone,
       code,
       email,
       ...(req.ip ? { ip: req.ip } : {}),
@@ -93,9 +110,7 @@ router.post("/verify", otpVerifyLimiter(), async (req, res, next) => {
         error: result.error,
       });
     }
-    if (typeof phone === "string") {
-      resetOtpRateLimit(phone);
-    }
+    resetOtpRateLimit(normalizedPhone);
     return res.status(200).json({
       ok: true,
       success: true,
@@ -107,7 +122,10 @@ router.post("/verify", otpVerifyLimiter(), async (req, res, next) => {
       },
     });
   } catch (err) {
-    return next(err);
+    console.error("OTP verify failed", err);
+    return res.status(500).json({ ok: false, success: false });
+  } finally {
+    activeVerifications.delete(normalizedPhone);
   }
 });
 
