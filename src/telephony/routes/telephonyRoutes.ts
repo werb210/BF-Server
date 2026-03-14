@@ -29,6 +29,13 @@ router.use(
 );
 
 async function handleTokenRequest(req: Request, res: Response) {
+  if (!(req as any).user) {
+    return res.status(401).json({
+      error: "Unauthorized",
+      code: "AUTH_REQUIRED",
+    });
+  }
+
   const bodyIdentity = typeof req.body?.identity === "string" ? req.body.identity : undefined;
   const queryIdentity = typeof req.query?.identity === "string" ? req.query.identity : undefined;
   const identity = queryIdentity ?? bodyIdentity;

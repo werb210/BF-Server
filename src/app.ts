@@ -38,7 +38,6 @@ import chatRouter from "./modules/ai/chat.routes";
 import confidenceRouter from "./modules/ai/confidence.routes";
 import twilioRoutes from "./routes/twilio";
 import telephonyRoutes from "./routes/telephony";
-import telephonyDevRoutes from "./routes/telephonyDev";
 import { assertApiV1Frozen } from "./contracts/v1Freeze";
 import envCheck from "./middleware/envCheck";
 import { logger as serverLogger } from "./server/utils/logger";
@@ -198,6 +197,12 @@ export function buildApp(): express.Express {
   app.use(csrfProtection);
   app.use("/api/", apiLimiter);
   app.use(routeResolutionLogger);
+  app.use((req, _res, next) => {
+    if (req.url.startsWith("/telephony/")) {
+      req.url = req.url.replace("/telephony", "/api/telephony");
+    }
+    next();
+  });
   if (isTruthyFlag(process.env.ENABLE_RECOVERY_ROUTES)) {
     serverLogger.warn("recovery_routes_enabled");
     app.use(recoveryRoutes);
@@ -272,7 +277,6 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api", confidenceRouter);
   app.use("/api/public", publicRouter);
   app.use("/api/support", supportRouter);
-  app.use("/telephony", telephonyDevRoutes);
   app.use("/api/application", applicationDevRoutes);
   app.use("/api", aiCoreRouter);
   app.use("/api/telephony", requireAuth, requireAuthorization({ roles: ALL_ROLES }), telephonyRoutes);
@@ -299,10 +303,6 @@ export function registerApiRoutes(app: express.Express): void {
     app.use(`/api${entry.path}`, entry.router);
   });
 
-  app.get("/telephony/call-status", (req, res) => {
-    req.url = "/api/telephony/call-status";
-    (app as any).handle(req, res);
-  });
 
   app.get("/continuation/session", (req, res) => {
     req.url = "/api/application/continuation";

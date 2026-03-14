@@ -14,8 +14,12 @@ type AuthorizationOptions = {
 export const requireAuth: RequestHandler = (req, res, next) => {
   const token = resolveToken(req);
   if (!token) {
-    res.status(401).json({ ok: false, error: "missing_token" });
-    return;
+    req.log?.warn({
+      event: "auth_missing_token",
+      path: req.originalUrl,
+      ip: req.ip,
+    });
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
   try {
