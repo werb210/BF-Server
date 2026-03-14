@@ -2,6 +2,25 @@ import { Router } from "express";
 
 const router = Router();
 
+/*
+Temporary pipeline data so Portal UI can render cards.
+This will be replaced by database queries later.
+*/
+const mockApplications = [
+  {
+    id: "app-1",
+    company: "Demo Construction Ltd",
+    amount: "$250,000",
+    stage: "New",
+  },
+  {
+    id: "app-2",
+    company: "Northern Transport Inc",
+    amount: "$500,000",
+    stage: "Review",
+  },
+];
+
 router.get("/", (_req, res) => {
   res.json({
     ok: true,
@@ -9,32 +28,19 @@ router.get("/", (_req, res) => {
 });
 
 router.get("/pipeline", async (_req, res) => {
-  const pipeline = [
-    {
-      name: "New",
-      cards: [],
-    },
-    {
-      name: "Review",
-      cards: [],
-    },
-    {
-      name: "Requires Docs",
-      cards: [],
-    },
-    {
-      name: "Sent to Lender",
-      cards: [],
-    },
-    {
-      name: "Approved",
-      cards: [],
-    },
-    {
-      name: "Declined",
-      cards: [],
-    },
+  const stages = [
+    "New",
+    "Review",
+    "Requires Docs",
+    "Sent to Lender",
+    "Approved",
+    "Declined",
   ];
+
+  const pipeline = stages.map((stage) => ({
+    name: stage,
+    cards: mockApplications.filter((application) => application.stage === stage),
+  }));
 
   res.json(pipeline);
 });
