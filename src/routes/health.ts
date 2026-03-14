@@ -16,4 +16,11 @@ router.get("/health/db", (_req, res) => {
   });
 });
 
+
+router.get("/ready", (_req, res) => {
+  res.status(200).json({
+    ready: true,
+  });
+});
+
 export default router;
