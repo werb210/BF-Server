@@ -58,6 +58,7 @@ import applicationCompatRoutes from "./routes/applicationCompat";
 import otpCompatRoutes from "./routes/otpCompat";
 import { requireAuth, requireAuthorization } from "./middleware/auth";
 import { ALL_ROLES } from "./auth/roles";
+import recoveryRoutes from "./routes/recoveryRoutes";
 
 /* ---------------- ROUTE ASSERTION ---------------- */
 
@@ -179,6 +180,7 @@ export function buildApp(): express.Express {
   app.use(csrfProtection);
   app.use("/api/", apiLimiter);
   app.use(routeResolutionLogger);
+  app.use(recoveryRoutes);
   app.use(requestTimeout);
 
   return app;
