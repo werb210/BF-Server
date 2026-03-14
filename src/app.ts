@@ -241,8 +241,14 @@ export function registerApiRoutes(app: express.Express): void {
       status: "running",
     });
   });
-  app.get("/session", (_req, res) => {
-    res.status(200).json({ ok: true });
+  app.get("/session", (req, res) => {
+    const sessionUser = (req as { session?: { user?: unknown } }).session?.user;
+    if (sessionUser) {
+      res.status(200).json({ authenticated: true, user: sessionUser });
+      return;
+    }
+
+    res.status(200).json({ authenticated: false });
   });
   app.use("/api", systemHealthRouter);
   app.use("/api/readiness", readinessRouter);
