@@ -80,7 +80,9 @@ export async function startServer() {
   if (process.env.NODE_ENV === "production") {
     await verifyDatabase();
   }
-  await runMigrations();
+  if (process.env.RUN_DB_MIGRATIONS === "true") {
+    await runMigrations();
+  }
   app = await createServer();
   await createOtpSessionsTable();
   registerOtpCleanupJob();

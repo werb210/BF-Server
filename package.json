@@ -8,9 +8,9 @@
   },
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc",
+    "build": "tsc && mkdir -p dist/db/migrations && cp src/db/migrations/*.sql dist/db/migrations/",
     "start": "node dist/index.js",
-    "db:migrate": "node dist/db/migrate.js",
+    "db:migrate": "ts-node --transpile-only src/db/runMigrations.ts",
     "db:seed": "tsx src/db/seed.ts",
     "test": "node scripts/vitest-runner.js",
     "test:watch": "vitest",
