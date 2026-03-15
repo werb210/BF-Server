@@ -106,19 +106,16 @@ export function shouldBlockInternalOriginRequest(
   );
 }
 
-const allowedOrigins = [
-  process.env.CLIENT_ORIGIN,
-  process.env.PORTAL_ORIGIN,
-  "https://boreal-client.azurewebsites.net",
-  "https://boreal-portal.azurewebsites.net",
-  "http://localhost:5173",
-  "http://localhost:3000",
-].filter((origin): origin is string => Boolean(origin));
-
 export function assertCorsConfig(): void {
-  if (allowedOrigins.length === 0) {
+  const hasAllowedOrigins =
+    process.env.CORS_ALLOWED_ORIGINS?.trim().length ||
+    process.env.CORS_ALLOWLIST?.trim().length ||
+    process.env.CLIENT_ORIGIN?.trim().length ||
+    process.env.PORTAL_ORIGIN?.trim().length;
+
+  if (!hasAllowedOrigins) {
     throw new Error(
-      "At least one of CLIENT_ORIGIN or PORTAL_ORIGIN must be configured."
+      "CORS_ALLOWED_ORIGINS (or CORS_ALLOWLIST) must include at least one origin."
     );
   }
 }
