@@ -31,9 +31,9 @@ BEGIN
       ALTER COLUMN status TYPE lender_status
       USING (
         CASE
-          WHEN status IS NULL THEN 'ACTIVE'
-          WHEN LOWER(status::text) = 'inactive' THEN 'INACTIVE'
-          ELSE 'ACTIVE'
+          WHEN status IS NULL THEN 'ACTIVE'::lender_status
+          WHEN LOWER(status::text) = 'inactive' THEN 'INACTIVE'::lender_status
+          ELSE 'ACTIVE'::lender_status
         END
       );
   END IF;
@@ -74,21 +74,21 @@ BEGIN
     WHERE table_name = 'lenders'
   ) THEN
     UPDATE lenders
-    SET status = 'ACTIVE'
+    SET status = 'ACTIVE'::lender_status
     WHERE status IS NULL;
 
     UPDATE lenders
-    SET status = 'ACTIVE'
+    SET status = 'ACTIVE'::lender_status
     WHERE LOWER(status::text) = 'active';
 
     UPDATE lenders
-    SET status = 'INACTIVE'
+    SET status = 'INACTIVE'::lender_status
     WHERE LOWER(status::text) = 'inactive';
   END IF;
 END $$;
 
 ALTER TABLE IF EXISTS lenders
-  ALTER COLUMN status SET DEFAULT 'ACTIVE',
+  ALTER COLUMN status SET DEFAULT 'ACTIVE'::lender_status,
   ALTER COLUMN status SET NOT NULL;
 
 DO $$
