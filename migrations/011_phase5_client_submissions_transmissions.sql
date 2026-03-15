@@ -26,7 +26,8 @@ create table if not exists lender_submission_retries (
 );
 
 drop index if exists lender_submissions_application_id_unique;
-drop index if exists lender_submissions_idempotency_key_key;
+alter table lender_submissions
+  drop constraint if exists lender_submissions_idempotency_key_key;
 
 create unique index if not exists lender_submissions_application_lender_unique
   on lender_submissions (application_id, lender_id);
