@@ -114,12 +114,6 @@ async function handleOtpStart(
 
     const validation = validateStartOtp(req);
     if (!validation.success) {
-      const body = req.body ?? {};
-      if (Object.keys(body).length === 0) {
-        res.status(204).send();
-        return;
-      }
-
       respondRequestValidationError(
         res,
         route,
