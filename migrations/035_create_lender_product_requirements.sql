@@ -1,6 +1,6 @@
 create table if not exists lender_product_requirements (
   id uuid primary key default gen_random_uuid(),
-  lender_product_id uuid not null references lender_products(id) on delete cascade,
+  lender_product_id text not null references lender_products(id) on delete cascade,
   document_type text not null,
   required boolean not null default true,
   min_amount integer null,
