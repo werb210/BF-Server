@@ -203,6 +203,119 @@ async function ensureCoreTables(): Promise<void> {
   );
 }
 
+
+async function ensureProcessingJobSchema(): Promise<void> {
+  await ensureTable(
+    "document_processing_jobs",
+    `create table document_processing_jobs (
+      id uuid primary key,
+      application_id uuid not null,
+      document_id uuid not null,
+      status text not null,
+      created_at timestamptz not null default now(),
+      completed_at timestamptz null
+    )`
+  );
+  await ensureTable(
+    "banking_analysis_jobs",
+    `create table banking_analysis_jobs (
+      id uuid primary key,
+      application_id uuid not null,
+      status text not null,
+      created_at timestamptz not null default now(),
+      completed_at timestamptz null
+    )`
+  );
+  await ensureTable(
+    "credit_summary_jobs",
+    `create table credit_summary_jobs (
+      id uuid primary key,
+      application_id uuid not null,
+      status text not null,
+      created_at timestamptz not null default now(),
+      completed_at timestamptz null
+    )`
+  );
+
+  await ensureColumn({
+    table: "document_processing_jobs",
+    column: "retry_count",
+    definition: "retry_count integer not null default 0",
+  });
+  await ensureColumn({
+    table: "document_processing_jobs",
+    column: "last_retry_at",
+    definition: "last_retry_at timestamptz",
+  });
+  await ensureColumn({
+    table: "document_processing_jobs",
+    column: "max_retries",
+    definition: "max_retries integer not null default 3",
+  });
+  await ensureColumn({
+    table: "document_processing_jobs",
+    column: "updated_at",
+    definition: "updated_at timestamptz not null default now()",
+  });
+  await ensureColumn({
+    table: "document_processing_jobs",
+    column: "error_message",
+    definition: "error_message text",
+  });
+
+  await ensureColumn({
+    table: "banking_analysis_jobs",
+    column: "retry_count",
+    definition: "retry_count integer not null default 0",
+  });
+  await ensureColumn({
+    table: "banking_analysis_jobs",
+    column: "last_retry_at",
+    definition: "last_retry_at timestamptz",
+  });
+  await ensureColumn({
+    table: "banking_analysis_jobs",
+    column: "max_retries",
+    definition: "max_retries integer not null default 2",
+  });
+  await ensureColumn({
+    table: "banking_analysis_jobs",
+    column: "updated_at",
+    definition: "updated_at timestamptz not null default now()",
+  });
+  await ensureColumn({
+    table: "banking_analysis_jobs",
+    column: "error_message",
+    definition: "error_message text",
+  });
+
+  await ensureColumn({
+    table: "credit_summary_jobs",
+    column: "retry_count",
+    definition: "retry_count integer not null default 0",
+  });
+  await ensureColumn({
+    table: "credit_summary_jobs",
+    column: "last_retry_at",
+    definition: "last_retry_at timestamptz",
+  });
+  await ensureColumn({
+    table: "credit_summary_jobs",
+    column: "max_retries",
+    definition: "max_retries integer not null default 1",
+  });
+  await ensureColumn({
+    table: "credit_summary_jobs",
+    column: "updated_at",
+    definition: "updated_at timestamptz not null default now()",
+  });
+  await ensureColumn({
+    table: "credit_summary_jobs",
+    column: "error_message",
+    definition: "error_message text",
+  });
+}
+
 async function ensureAuditViews(): Promise<void> {
   await pool.query(
     `create or replace view application_pipeline_history as
@@ -351,6 +464,7 @@ export function setupTestDatabase(): void {
     await ensureUserColumns();
     await ensureAuthRefreshTokenColumns();
     await ensureCoreTables();
+    await ensureProcessingJobSchema();
     await ensureAuditViews();
   });
 

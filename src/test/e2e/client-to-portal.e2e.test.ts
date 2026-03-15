@@ -10,6 +10,9 @@ import { seedUser } from "../helpers/users";
 let server: Awaited<ReturnType<typeof createTestServer>>;
 let phoneCounter = 5000;
 
+const PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO8B3XYAAAAASUVORK5CYII=";
+
 const nextPhone = (): string =>
   `+1415555${String(phoneCounter++).padStart(4, "0")}`;
 
@@ -26,7 +29,7 @@ describe("client-to-portal e2e", () => {
     await seedLenderProduct({
       category: "LOC",
       country: "US",
-      requiredDocuments: [{ type: "bank_statement", required: true }],
+      requiredDocuments: [{ type: "void_check", required: true }],
     });
     const phone = nextPhone();
     const email = `e2e-${phone.replace(/\D/g, "")}@example.com`;
@@ -64,17 +67,17 @@ describe("client-to-portal e2e", () => {
       .post("/api/documents")
       .set("Authorization", `Bearer ${token}`)
       .field("applicationId", applicationId)
-      .field("category", "bank_statement")
-      .attach("file", Buffer.from("e2e-file"), "statement.txt");
+      .field("category", "void_check")
+      .attach("file", Buffer.from(PNG_BASE64, "base64"), "statement.png");
 
     expect(uploadRes.status).toBe(201);
     const documentId = uploadRes.body.documentId as string;
 
-    const ocrJobs = await pool.query<{ count: number }>(
-      "select count(*)::int as count from ocr_jobs where document_id = $1",
+    const processingJobs = await pool.query<{ count: number }>(
+      "select count(*)::int as count from document_processing_jobs where document_id = $1",
       [documentId]
     );
-    expect(ocrJobs.rows[0]?.count ?? 0).toBe(1);
+    expect(processingJobs.rows[0]?.count ?? 0).toBe(1);
 
     const fetchRes = await request(server.url)
       .get(`/api/applications/${applicationId}`)

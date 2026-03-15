@@ -10,6 +10,9 @@ import { seedUser } from "../helpers/users";
 let app: Express;
 let phoneCounter = 4200;
 
+const PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO8B3XYAAAAASUVORK5CYII=";
+
 const nextPhone = (): string =>
   `+1415555${String(phoneCounter++).padStart(4, "0")}`;
 
@@ -109,8 +112,8 @@ describe("pipeline automation", () => {
       .send({
         title: "Bank Statement",
         documentType: "bank_statement",
-        metadata: { fileName: "bank.pdf", mimeType: "application/pdf", size: 123 },
-        content: "base64data",
+        metadata: { fileName: "bank.png", mimeType: "image/png", size: 123 },
+        content: PNG_BASE64,
       });
     expect(uploadRes.status).toBe(201);
 
