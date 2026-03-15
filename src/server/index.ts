@@ -81,6 +81,7 @@ export async function startServer() {
     await verifyDatabase();
   }
   if (process.env.RUN_DB_MIGRATIONS === "true") {
+    console.log("Running database migrations...");
     await runMigrations();
   }
   app = await createServer();

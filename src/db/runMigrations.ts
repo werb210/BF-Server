@@ -1,11 +1,13 @@
-import { runMigrations } from "./migrationRunner";
+import { runMigrations } from "./migrate";
 
-runMigrations()
-  .then(() => {
-    process.stdout.write("Migrations completed successfully.\n");
+(async () => {
+  try {
+    console.log("Starting migrations...");
+    await runMigrations();
+    console.log("Migrations completed");
     process.exit(0);
-  })
-  .catch((err) => {
-    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+  } catch (err) {
+    console.error("Migration failure:", err);
     process.exit(1);
-  });
+  }
+})();
