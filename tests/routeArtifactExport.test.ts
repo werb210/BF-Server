@@ -8,19 +8,14 @@ import {
   type NormalizedRouteEntry,
 } from "../src/system/routeArtifacts";
 
-type RouteArtifact = {
-  schemaVersion: number;
-  generatedBy: string;
-  routes: NormalizedRouteEntry[];
-};
-
 const requiredRoutes = [
-  "GET /health",
-  "GET /api",
+  "POST /api/auth/otp/start",
+  "POST /api/auth/otp/verify",
   "GET /api/auth/me",
-  "POST /api/auth/verify",
-  "POST /api/application/update",
-  "GET /api/dashboard/metrics",
+  "GET /health",
+  "GET /api/telephony/token",
+  "GET /api/applications/:id/documents",
+  "GET /api/documents/:id/presign",
 ] as const;
 
 describe("route artifact export", () => {
@@ -28,13 +23,12 @@ describe("route artifact export", () => {
     const artifactPath = await exportServerRoutesArtifact(DEFAULT_ROUTE_ARTIFACT_PATH);
     expect(artifactPath).toBe(path.resolve(DEFAULT_ROUTE_ARTIFACT_PATH));
 
-    const payload = JSON.parse((await readFile(artifactPath, "utf8"))) as RouteArtifact;
+    const routes = JSON.parse((await readFile(artifactPath, "utf8"))) as NormalizedRouteEntry[];
 
-    expect(payload.schemaVersion).toBe(1);
-    expect(payload.generatedBy).toBe("bf-server");
-    expect(payload.routes.length).toBeGreaterThan(0);
+    expect(Array.isArray(routes)).toBe(true);
+    expect(routes.length).toBeGreaterThan(0);
 
-    const normalizedLines = renderNormalizedRouteLines(payload.routes);
+    const normalizedLines = renderNormalizedRouteLines(routes);
     expect(normalizedLines.length).toBeGreaterThan(0);
 
     const sortedLines = [...normalizedLines].sort((a, b) => a.localeCompare(b));

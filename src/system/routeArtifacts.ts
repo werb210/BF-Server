@@ -76,14 +76,9 @@ export function renderNormalizedRouteLines(routes: NormalizedRouteEntry[]): stri
 
 export async function exportServerRoutesArtifact(outputPath = DEFAULT_ROUTE_ARTIFACT_PATH): Promise<string> {
   const routes = await buildNormalizedRouteEntries();
-  const payload = {
-    schemaVersion: 1,
-    generatedBy: "bf-server",
-    routes,
-  };
 
   const absolutePath = path.resolve(outputPath);
   await mkdir(path.dirname(absolutePath), { recursive: true });
-  await writeFile(absolutePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  await writeFile(absolutePath, `${JSON.stringify(routes, null, 2)}\n`, "utf8");
   return absolutePath;
 }
