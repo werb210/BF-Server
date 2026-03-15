@@ -6,7 +6,13 @@ const hasRunInBand = rawArgs.includes('--runInBand');
 const args = rawArgs.filter((arg) => arg !== '--runInBand');
 
 const commandArgs = hasRunInBand
-  ? ['vitest', 'run', 'tests/routeArtifactExport.test.ts', ...args]
+  ? [
+      'vitest',
+      'run',
+      'tests/routeArtifactExport.test.ts',
+      'src/tests/auth.otp.flow.test.ts',
+      ...args,
+    ]
   : ['vitest', 'run', ...args];
 
 const result = spawnSync('npx', commandArgs, {

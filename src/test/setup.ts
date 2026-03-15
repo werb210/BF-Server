@@ -7,6 +7,7 @@ import { setupTestDatabase } from "./db";
 import {
   getExpectedTwilioSignature,
   twilioDefaultExport,
+  twilioMockState,
   validateExpressRequest,
   validateRequest,
 } from "./twilioMock";
@@ -53,7 +54,11 @@ vi.mock("../observability/logger", () => ({
 
 vi.mock("twilio", () => ({
   default: twilioDefaultExport,
+  jwt: twilioDefaultExport.jwt,
+  __twilioMocks: twilioMockState,
 }));
+
+(globalThis as typeof globalThis & { __twilioMocks?: unknown }).__twilioMocks = twilioMockState;
 
 vi.mock("twilio/lib/webhooks/webhooks", () => ({
   validateRequest,

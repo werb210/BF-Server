@@ -24,16 +24,73 @@ class VoiceResponseMock {
   }
 }
 
+class AccessTokenMock {
+  private identity?: string;
+  private ttl?: number;
+
+  constructor(
+    _accountSid: string,
+    _apiKey: string,
+    _apiSecret: string,
+    opts?: { identity?: string; ttl?: number }
+  ) {
+    this.identity = opts?.identity;
+    this.ttl = opts?.ttl;
+  }
+
+  addGrant(_grant: unknown): void {
+    // no-op for tests
+  }
+
+  toJwt(): string {
+    const identity = this.identity ?? "anonymous";
+    const ttl = this.ttl ?? 0;
+    return `voice-token-${identity}-${ttl}`;
+  }
+
+  static VoiceGrant = class {
+    outgoingApplicationSid: string;
+
+    constructor(opts: { outgoingApplicationSid: string }) {
+      this.outgoingApplicationSid = opts.outgoingApplicationSid;
+    }
+  };
+}
+
 const createVerification = vi.fn(async () => ({ sid: "VE_TEST", status: "pending" }));
 const createVerificationCheck = vi.fn(async () => ({ sid: "VC_TEST", status: "approved" }));
-const services = vi.fn(() => ({
-  verifications: { create: createVerification },
-  verificationChecks: { create: createVerificationCheck },
+const createCall = vi.fn(async (_params: { to: string; from: string; applicationSid: string }) => ({
+  sid: "CA123",
+  status: "queued",
 }));
+const updateCall = vi.fn(async (callSid?: string, params?: { status?: string; twiml?: string }) => ({
+  sid: callSid ?? "CA123",
+  status: params?.status ?? "in-progress",
+}));
+
+const calls = Object.assign(
+  (callSid?: string) => ({
+    update: (params: { status?: string; twiml?: string }) => updateCall(callSid, params),
+  }),
+  { create: createCall }
+);
+
+const services = vi.fn((serviceSid: string) => {
+  twilioMockState.lastServiceSid = serviceSid;
+  return {
+    verifications: { create: createVerification },
+    verificationChecks: { create: createVerificationCheck },
+  };
+});
 
 class TwilioMock {
   verify = { v2: { services } };
+  calls = calls;
 }
+
+const twilioConstructor = vi.fn(function TwilioConstructor() {
+  return new TwilioMock();
+});
 
 function normalizeParams(params: TwilioParams): string {
   return Object.keys(params)
@@ -64,15 +121,30 @@ function validateExpressRequest(
   return validateRequest(authToken, signature, url, req.body ?? {});
 }
 
-const twilioDefaultExport = Object.assign(TwilioMock, {
+const twilioMockState = {
+  createVerification,
+  createVerificationCheck,
+  createCall,
+  updateCall,
+  twilioConstructor,
+  services,
+  lastServiceSid: null as string | null,
+};
+
+const twilioDefaultExport = Object.assign(twilioConstructor, {
   twiml: {
     VoiceResponse: VoiceResponseMock,
   },
+  jwt: {
+    AccessToken: AccessTokenMock,
+  },
+  __twilioMocks: twilioMockState,
 });
 
 export {
   getExpectedTwilioSignature,
   twilioDefaultExport,
+  twilioMockState,
   validateExpressRequest,
   validateRequest,
   VoiceResponseMock,

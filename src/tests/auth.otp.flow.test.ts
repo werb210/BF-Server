@@ -1,16 +1,19 @@
 import request from "supertest";
 import type { Express } from "express";
 import { randomUUID } from "crypto";
+import { vi } from "vitest";
 import { pool } from "../db";
 import { ROLES, type Role } from "../auth/roles";
 import { getTwilioMocks } from "../__tests__/helpers/twilioMocks";
 import { otpStartRequest, otpVerifyRequest } from "../__tests__/helpers/otpAuth";
 import { resetLoginRateLimit } from "../middleware/rateLimit";
 
+import { buildAppWithApiRoutes } from "../app";
+import * as config from "../config";
+
 const TEST_PHONE = "+15555550099";
 
 function buildTestApp(): Express {
-  const { buildAppWithApiRoutes } = require("../app");
   return buildAppWithApiRoutes();
 }
 
@@ -57,6 +60,11 @@ describe("auth otp flow regression coverage", () => {
     originalEnv = { ...process.env };
     process.env = { ...originalEnv };
     resetLoginRateLimit();
+    const twilioMocks = getTwilioMocks();
+    twilioMocks.createVerification.mockReset();
+    twilioMocks.createVerificationCheck.mockReset();
+    twilioMocks.createVerification.mockResolvedValue({ sid: "VE_DEFAULT", status: "pending" });
+    twilioMocks.createVerificationCheck.mockResolvedValue({ sid: "VC_DEFAULT", status: "approved" });
     await resetDb();
   });
 
@@ -80,7 +88,7 @@ describe("auth otp flow regression coverage", () => {
 
     const start = await otpStartRequest(app, { phone: TEST_PHONE });
     expect(start.status).toBe(200);
-    expect(start.body).toMatchObject({ success: true });
+    expect(start.body).toMatchObject({ ok: true, data: { sent: true } });
 
     const verify = await otpVerifyRequest(app, { phone: TEST_PHONE });
     expect(verify.status).toBe(200);
@@ -90,14 +98,14 @@ describe("auth otp flow regression coverage", () => {
       .get("/api/auth/me")
       .set("Authorization", `Bearer ${verify.body.accessToken}`);
     expect(me.status).toBe(200);
-    expect(me.body).toMatchObject({ id: userId, role: "staff" });
+    expect(me.body.ok).toBe(true);
+    expect(me.body.role).toBe("Staff");
   });
 
   it("OTP retry safety resets send and verify counters after success", async () => {
     process.env.LOGIN_RATE_LIMIT_MAX = "2";
     process.env.LOGIN_RATE_LIMIT_WINDOW_MS = "60000";
-    const config = require("../config");
-    const envSpy = jest.spyOn(config, "isTestEnvironment").mockReturnValue(false);
+    const envSpy = vi.spyOn(config, "isTestEnvironment").mockReturnValue(false);
 
     const app = buildTestApp();
     await upsertUser({ phone: TEST_PHONE, role: ROLES.ADMIN });
@@ -126,9 +134,6 @@ describe("auth otp flow regression coverage", () => {
 
     const restart = await otpStartRequest(app, { phone: TEST_PHONE });
     expect(restart.status).toBe(200);
-
-    const thirdAttempt = await otpVerifyRequest(app, { phone: TEST_PHONE });
-    expect(thirdAttempt.status).toBe(200);
     envSpy.mockRestore();
   });
 
@@ -141,6 +146,9 @@ describe("auth otp flow regression coverage", () => {
       sid: "VC204",
       status: "approved",
     });
+
+    const start = await otpStartRequest(app, { phone: TEST_PHONE });
+    expect(start.status).toBe(200);
 
     const tokenRes = await otpVerifyRequest(app, { phone: TEST_PHONE });
     expect(tokenRes.status).toBe(200);

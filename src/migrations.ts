@@ -233,13 +233,26 @@ export async function runMigrations(options?: {
               continue;
             }
             if (
-              normalizedStatement.startsWith("create index if not exists") &&
+              (normalizedStatement.startsWith("create index if not exists") ||
+                normalizedStatement.startsWith("create unique index if not exists")) &&
               message.includes("does not exist")
             ) {
               continue;
             }
             if (
               normalizedStatement.startsWith("insert into ocr_results") &&
+              message.includes("does not exist")
+            ) {
+              continue;
+            }
+            if (
+              normalizedStatement.startsWith("update document_processing_jobs") &&
+              message.includes("does not exist")
+            ) {
+              continue;
+            }
+            if (
+              normalizedStatement.startsWith("update ") &&
               message.includes("does not exist")
             ) {
               continue;

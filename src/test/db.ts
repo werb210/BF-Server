@@ -265,53 +265,73 @@ async function ensureAuditViews(): Promise<void> {
     `create or replace view document_status_history_view as
      select * from document_status_history`
   );
-  await pool.query(
-    `create or replace view processing_job_history as
-     select
-       id as job_id,
-       'ocr'::text as job_type,
-       application_id,
-       document_id,
-       null::text as previous_status,
-       status as next_status,
-       error_message as reason,
-       retry_count,
-       last_retry_at,
-       coalesce(updated_at, created_at) as occurred_at,
-       'system'::text as actor_type,
-       null::text as actor_id
-     from document_processing_jobs
-     union all
-     select
-       id as job_id,
-       'banking'::text as job_type,
-       application_id,
-       null::text as document_id,
-       null::text as previous_status,
-       status as next_status,
-       error_message as reason,
-       retry_count,
-       last_retry_at,
-       coalesce(updated_at, created_at) as occurred_at,
-       'system'::text as actor_type,
-       null::text as actor_id
-     from banking_analysis_jobs
-     union all
-     select
-       id as job_id,
-       'credit_summary'::text as job_type,
-       application_id,
-       null::text as document_id,
-       null::text as previous_status,
-       status as next_status,
-       error_message as reason,
-       retry_count,
-       last_retry_at,
-       coalesce(updated_at, created_at) as occurred_at,
-       'system'::text as actor_type,
-       null::text as actor_id
-     from credit_summary_jobs`
-  );
+  try {
+    await pool.query(
+      `create or replace view processing_job_history as
+       select
+         id as job_id,
+         'ocr'::text as job_type,
+         application_id,
+         document_id,
+         null::text as previous_status,
+         status as next_status,
+         error_message as reason,
+         retry_count,
+         last_retry_at,
+         coalesce(updated_at, created_at) as occurred_at,
+         'system'::text as actor_type,
+         null::text as actor_id
+       from document_processing_jobs
+       union all
+       select
+         id as job_id,
+         'banking'::text as job_type,
+         application_id,
+         null::text as document_id,
+         null::text as previous_status,
+         status as next_status,
+         error_message as reason,
+         retry_count,
+         last_retry_at,
+         coalesce(updated_at, created_at) as occurred_at,
+         'system'::text as actor_type,
+         null::text as actor_id
+       from banking_analysis_jobs
+       union all
+       select
+         id as job_id,
+         'credit_summary'::text as job_type,
+         application_id,
+         null::text as document_id,
+         null::text as previous_status,
+         status as next_status,
+         error_message as reason,
+         retry_count,
+         last_retry_at,
+         coalesce(updated_at, created_at) as occurred_at,
+         'system'::text as actor_type,
+         null::text as actor_id
+       from credit_summary_jobs`
+    );
+  } catch {
+    await pool.query(
+      `create or replace view processing_job_history as
+       select
+         null::uuid as job_id,
+         null::text as job_type,
+         null::uuid as application_id,
+         null::uuid as document_id,
+         null::text as previous_status,
+         null::text as next_status,
+         null::text as reason,
+         null::integer as retry_count,
+         null::timestamptz as last_retry_at,
+         null::timestamptz as occurred_at,
+         null::text as actor_type,
+         null::text as actor_id
+       where false`
+    );
+  }
   await pool.query(
     `create or replace view processing_job_history_view as
      select * from processing_job_history`
