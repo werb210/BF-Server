@@ -1,1456 +1,1452 @@
-{
-  "schemaVersion": 1,
-  "generatedBy": "bf-server",
-  "routes": [
-    {
-      "method": "DELETE",
-      "path": "/api/applications/:id/documents/:documentId",
-      "source": "/api/applications"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/lender-products/:id/requirements/:reqId",
-      "source": "/api/lender-products"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/pwa/unsubscribe",
-      "source": "/api/pwa"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/pwa/unsubscribe/owned",
-      "source": "/api/pwa"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/users/:id",
-      "source": "/api/users"
-    },
-    {
-      "method": "GET",
-      "path": "/",
-      "source": "/"
-    },
-    {
-      "method": "GET",
-      "path": "/api",
-      "source": "/"
-    },
-    {
-      "method": "GET",
-      "path": "/api",
-      "source": "/api"
-    },
-    {
-      "method": "GET",
-      "path": "/api/_int/build",
-      "source": "/api/_int"
-    },
-    {
-      "method": "GET",
-      "path": "/api/_int/env",
-      "source": "/"
-    },
-    {
-      "method": "GET",
-      "path": "/api/_int/env",
-      "source": "/api/_int"
-    },
-    {
-      "method": "GET",
-      "path": "/api/_int/exports/recent",
-      "source": "/api/_int"
-    },
-    {
-      "method": "GET",
-      "path": "/api/_int/health",
-      "source": "/api/_int"
-    },
-    {
-      "method": "GET",
-      "path": "/api/_int/jobs",
-      "source": "/api/_int"
-    },
-    {
-      "method": "GET",
-      "path": "/api/_int/ops",
-      "source": "/api/_int"
-    },
-    {
-      "method": "GET",
-      "path": "/api/_int/ready",
-      "source": "/api/_int"
-    },
-    {
-      "method": "GET",
-      "path": "/api/_int/routes",
-      "source": "/api/_int"
-    },
-    {
-      "method": "GET",
-      "path": "/api/_int/runtime",
-      "source": "/api/_int"
-    },
-    {
-      "method": "GET",
-      "path": "/api/_int/version",
-      "source": "/api/_int"
-    },
-    {
-      "method": "GET",
-      "path": "/api/admin/applications/:id/transmission-status",
-      "source": "/api/admin"
-    },
-    {
-      "method": "GET",
-      "path": "/api/admin/audit/events",
-      "source": "/api/admin/audit"
-    },
-    {
-      "method": "GET",
-      "path": "/api/admin/ocr/documents/:documentId/result",
-      "source": "/api/admin/ocr"
-    },
-    {
-      "method": "GET",
-      "path": "/api/admin/ocr/documents/:documentId/status",
-      "source": "/api/admin/ocr"
-    },
-    {
-      "method": "GET",
-      "path": "/api/admin/ops/kill-switches",
-      "source": "/api/admin/ops"
-    },
-    {
-      "method": "GET",
-      "path": "/api/admin/ops/replay/:id/status",
-      "source": "/api/admin/ops"
-    },
-    {
-      "method": "GET",
-      "path": "/api/ai/knowledge",
-      "source": "/api/ai"
-    },
-    {
-      "method": "GET",
-      "path": "/api/ai/knowledge/db",
-      "source": "/api/ai"
-    },
-    {
-      "method": "GET",
-      "path": "/api/analytics",
-      "source": "/api/analytics"
-    },
-    {
-      "method": "GET",
-      "path": "/api/application/continuation",
-      "source": "/api/application"
-    },
-    {
-      "method": "GET",
-      "path": "/api/application/continuation",
-      "source": "/api/application/continuation"
-    },
-    {
-      "method": "GET",
-      "path": "/api/application/update",
-      "source": "/api/application"
-    },
-    {
-      "method": "GET",
-      "path": "/api/applications",
-      "source": "/api/applications"
-    },
-    {
-      "method": "GET",
-      "path": "/api/applications/:id",
-      "source": "/api/applications"
-    },
-    {
-      "method": "GET",
-      "path": "/api/applications/:id/documents",
-      "source": "/api/applications"
-    },
-    {
-      "method": "GET",
-      "path": "/api/applications/:id/ocr-insights",
-      "source": "/api/applications"
-    },
-    {
-      "method": "GET",
-      "path": "/api/applications/:id/processing-status",
-      "source": "/api/applications"
-    },
-    {
-      "method": "GET",
-      "path": "/api/auth/me",
-      "source": "/api/auth"
-    },
-    {
-      "method": "GET",
-      "path": "/api/calendar",
-      "source": "/api/calendar"
-    },
-    {
-      "method": "GET",
-      "path": "/api/calendar/events",
-      "source": "/api/calendar"
-    },
-    {
-      "method": "GET",
-      "path": "/api/calendar/tasks",
-      "source": "/api/calendar"
-    },
-    {
-      "method": "GET",
-      "path": "/api/call/status",
-      "source": "/api"
-    },
-    {
-      "method": "GET",
-      "path": "/api/calls",
-      "source": "/api/calls"
-    },
-    {
-      "method": "GET",
-      "path": "/api/chat/:sessionId/messages",
-      "source": "/api"
-    },
-    {
-      "method": "GET",
-      "path": "/api/chat/sessions",
-      "source": "/api"
-    },
-    {
-      "method": "GET",
-      "path": "/api/client/application/:id/status",
-      "source": "/api/client"
-    },
-    {
-      "method": "GET",
-      "path": "/api/client/continuation/:token",
-      "source": "/api/client"
-    },
-    {
-      "method": "GET",
-      "path": "/api/client/documents/:id/presign",
-      "source": "/api/client/documents"
-    },
-    {
-      "method": "GET",
-      "path": "/api/client/lender-products",
-      "source": "/api/client"
-    },
-    {
-      "method": "GET",
-      "path": "/api/client/lender-products/:id/requirements",
-      "source": "/api/client"
-    },
-    {
-      "method": "GET",
-      "path": "/api/client/lender-products/requirements",
-      "source": "/api/client"
-    },
-    {
-      "method": "GET",
-      "path": "/api/client/lenders",
-      "source": "/api/client/lenders"
-    },
-    {
-      "method": "GET",
-      "path": "/api/communications",
-      "source": "/api/communications"
-    },
-    {
-      "method": "GET",
-      "path": "/api/communications/messages",
-      "source": "/api/communications"
-    },
-    {
-      "method": "GET",
-      "path": "/api/continuation/:token",
-      "source": "/api"
-    },
-    {
-      "method": "GET",
-      "path": "/api/crm",
-      "source": "/api/crm"
-    },
-    {
-      "method": "GET",
-      "path": "/api/crm/contacts",
-      "source": "/api/crm"
-    },
-    {
-      "method": "GET",
-      "path": "/api/crm/customers",
-      "source": "/api/crm"
-    },
-    {
-      "method": "GET",
-      "path": "/api/crm/timeline",
-      "source": "/api/crm"
-    },
-    {
-      "method": "GET",
-      "path": "/api/crm/web-leads",
-      "source": "/api/crm"
-    },
-    {
-      "method": "GET",
-      "path": "/api/dashboard",
-      "source": "/api/dashboard"
-    },
-    {
-      "method": "GET",
-      "path": "/api/dashboard/actions",
-      "source": "/api/dashboard"
-    },
-    {
-      "method": "GET",
-      "path": "/api/dashboard/document-health",
-      "source": "/api/dashboard"
-    },
-    {
-      "method": "GET",
-      "path": "/api/dashboard/lender-activity",
-      "source": "/api/dashboard"
-    },
-    {
-      "method": "GET",
-      "path": "/api/dashboard/metrics",
-      "source": "/api/dashboard"
-    },
-    {
-      "method": "GET",
-      "path": "/api/dashboard/offers",
-      "source": "/api/dashboard"
-    },
-    {
-      "method": "GET",
-      "path": "/api/dashboard/pipeline",
-      "source": "/api/dashboard"
-    },
-    {
-      "method": "GET",
-      "path": "/api/db",
-      "source": "/api"
-    },
-    {
-      "method": "GET",
-      "path": "/api/dialer/token",
-      "source": "/api"
-    },
-    {
-      "method": "GET",
-      "path": "/api/documents/:id/presign",
-      "source": "/api/documents"
-    },
-    {
-      "method": "GET",
-      "path": "/api/health",
-      "source": "/api"
-    },
-    {
-      "method": "GET",
-      "path": "/api/health",
-      "source": "/api/health"
-    },
-    {
-      "method": "GET",
-      "path": "/api/health/db",
-      "source": "/api"
-    },
-    {
-      "method": "GET",
-      "path": "/api/health/db",
-      "source": "/api/health"
-    },
-    {
-      "method": "GET",
-      "path": "/api/health/storage",
-      "source": "/api/health"
-    },
-    {
-      "method": "GET",
-      "path": "/api/health/twilio",
-      "source": "/api/health"
-    },
-    {
-      "method": "GET",
-      "path": "/api/lender-products",
-      "source": "/api/lender-products"
-    },
-    {
-      "method": "GET",
-      "path": "/api/lender-products/:id/requirements",
-      "source": "/api/lender-products"
-    },
-    {
-      "method": "GET",
-      "path": "/api/lender/submissions/:id",
-      "source": "/api/lender"
-    },
-    {
-      "method": "GET",
-      "path": "/api/lenders",
-      "source": "/api/lenders"
-    },
-    {
-      "method": "GET",
-      "path": "/api/lenders/__test-error",
-      "source": "/api/lenders"
-    },
-    {
-      "method": "GET",
-      "path": "/api/lenders/:id",
-      "source": "/api/lenders"
-    },
-    {
-      "method": "GET",
-      "path": "/api/lenders/:id/products",
-      "source": "/api/lenders"
-    },
-    {
-      "method": "GET",
-      "path": "/api/lenders/active",
-      "source": "/api/lenders"
-    },
-    {
-      "method": "GET",
-      "path": "/api/marketing",
-      "source": "/api/marketing"
-    },
-    {
-      "method": "GET",
-      "path": "/api/marketing/campaigns",
-      "source": "/api/marketing"
-    },
-    {
-      "method": "GET",
-      "path": "/api/offers",
-      "source": "/api/offers"
-    },
-    {
-      "method": "GET",
-      "path": "/api/pipeline",
-      "source": "/api/pipeline"
-    },
-    {
-      "method": "GET",
-      "path": "/api/pipeline/stages",
-      "source": "/api/pipeline"
-    },
-    {
-      "method": "GET",
-      "path": "/api/portal/applications",
-      "source": "/api/portal"
-    },
-    {
-      "method": "GET",
-      "path": "/api/portal/applications/:id",
-      "source": "/api/portal"
-    },
-    {
-      "method": "GET",
-      "path": "/api/portal/applications/:id/history",
-      "source": "/api/portal"
-    },
-    {
-      "method": "GET",
-      "path": "/api/portal/applications/:id/readiness",
-      "source": "/api/portal"
-    },
-    {
-      "method": "GET",
-      "path": "/api/portal/applications/stages",
-      "source": "/api/portal"
-    },
-    {
-      "method": "GET",
-      "path": "/api/portal/documents/:id/history",
-      "source": "/api/portal"
-    },
-    {
-      "method": "GET",
-      "path": "/api/portal/jobs/:id/history",
-      "source": "/api/portal"
-    },
-    {
-      "method": "GET",
-      "path": "/api/portal/lenders",
-      "source": "/api/portal"
-    },
-    {
-      "method": "GET",
-      "path": "/api/portal/offers",
-      "source": "/api/portal"
-    },
-    {
-      "method": "GET",
-      "path": "/api/portal/readiness-leads",
-      "source": "/api/portal"
-    },
-    {
-      "method": "GET",
-      "path": "/api/public/lender-count",
-      "source": "/api/public"
-    },
-    {
-      "method": "GET",
-      "path": "/api/pwa/health",
-      "source": "/api/pwa"
-    },
-    {
-      "method": "GET",
-      "path": "/api/pwa/notifications",
-      "source": "/api/pwa"
-    },
-    {
-      "method": "GET",
-      "path": "/api/pwa/runtime",
-      "source": "/api/pwa"
-    },
-    {
-      "method": "GET",
-      "path": "/api/pwa/subscriptions",
-      "source": "/api/pwa"
-    },
-    {
-      "method": "GET",
-      "path": "/api/readiness/:sessionId",
-      "source": "/api/readiness"
-    },
-    {
-      "method": "GET",
-      "path": "/api/ready",
-      "source": "/api"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reporting/applications/volume",
-      "source": "/api/reporting"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reporting/conversion",
-      "source": "/api/reporting"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reporting/documents",
-      "source": "/api/reporting"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reporting/documents/metrics",
-      "source": "/api/reporting"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reporting/lenders",
-      "source": "/api/reporting"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reporting/lenders/performance",
-      "source": "/api/reporting"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reporting/overview",
-      "source": "/api/reporting"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reporting/pipeline",
-      "source": "/api/reporting"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reporting/pipeline/summary",
-      "source": "/api/reporting"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reporting/pipeline/timeseries",
-      "source": "/api/reporting"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reporting/staff/activity",
-      "source": "/api/reporting"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reports/applications/volume",
-      "source": "/api/reports"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reports/conversion",
-      "source": "/api/reports"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reports/documents",
-      "source": "/api/reports"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reports/documents/metrics",
-      "source": "/api/reports"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reports/lenders",
-      "source": "/api/reports"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reports/lenders/performance",
-      "source": "/api/reports"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reports/overview",
-      "source": "/api/reports"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reports/pipeline",
-      "source": "/api/reports"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reports/pipeline/summary",
-      "source": "/api/reports"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reports/pipeline/timeseries",
-      "source": "/api/reports"
-    },
-    {
-      "method": "GET",
-      "path": "/api/reports/staff/activity",
-      "source": "/api/reports"
-    },
-    {
-      "method": "GET",
-      "path": "/api/settings",
-      "source": "/api/settings"
-    },
-    {
-      "method": "GET",
-      "path": "/api/settings/me",
-      "source": "/api/settings"
-    },
-    {
-      "method": "GET",
-      "path": "/api/settings/preferences",
-      "source": "/api/settings"
-    },
-    {
-      "method": "GET",
-      "path": "/api/staff/overview",
-      "source": "/api/staff"
-    },
-    {
-      "method": "GET",
-      "path": "/api/storage",
-      "source": "/api"
-    },
-    {
-      "method": "GET",
-      "path": "/api/support/escalations",
-      "source": "/api"
-    },
-    {
-      "method": "GET",
-      "path": "/api/support/events",
-      "source": "/api/support"
-    },
-    {
-      "method": "GET",
-      "path": "/api/support/issues",
-      "source": "/api/support"
-    },
-    {
-      "method": "GET",
-      "path": "/api/support/live",
-      "source": "/api/support"
-    },
-    {
-      "method": "GET",
-      "path": "/api/support/live/count",
-      "source": "/api/support"
-    },
-    {
-      "method": "GET",
-      "path": "/api/support/queue",
-      "source": "/api/support"
-    },
-    {
-      "method": "GET",
-      "path": "/api/system/health",
-      "source": "/api"
-    },
-    {
-      "method": "GET",
-      "path": "/api/tasks",
-      "source": "/api/tasks"
-    },
-    {
-      "method": "GET",
-      "path": "/api/telephony/call-status",
-      "source": "/api/telephony"
-    },
-    {
-      "method": "GET",
-      "path": "/api/telephony/health",
-      "source": "/api/telephony"
-    },
-    {
-      "method": "GET",
-      "path": "/api/telephony/token",
-      "source": "/api/telephony"
-    },
-    {
-      "method": "GET",
-      "path": "/api/twilio",
-      "source": "/api"
-    },
-    {
-      "method": "GET",
-      "path": "/api/users",
-      "source": "/api/users"
-    },
-    {
-      "method": "GET",
-      "path": "/api/users/me",
-      "source": "/api/users"
-    },
-    {
-      "method": "GET",
-      "path": "/continuation/session",
-      "source": "/"
-    },
-    {
-      "method": "GET",
-      "path": "/dev/ping",
-      "source": "/"
-    },
-    {
-      "method": "GET",
-      "path": "/health",
-      "source": "/"
-    },
-    {
-      "method": "GET",
-      "path": "/health",
-      "source": "/health"
-    },
-    {
-      "method": "GET",
-      "path": "/health/db",
-      "source": "/health"
-    },
-    {
-      "method": "GET",
-      "path": "/health/storage",
-      "source": "/health"
-    },
-    {
-      "method": "GET",
-      "path": "/health/twilio",
-      "source": "/health"
-    },
-    {
-      "method": "GET",
-      "path": "/metrics",
-      "source": "/"
-    },
-    {
-      "method": "GET",
-      "path": "/session",
-      "source": "/"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/client/applications/:id",
-      "source": "/api/client"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/lender-products/:id",
-      "source": "/api/lender-products"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/lenders/:id",
-      "source": "/api/lenders"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/offers/:id/status",
-      "source": "/api/offers"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/portal/applications/:id/status",
-      "source": "/api/portal"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/portal/offers/:id/status",
-      "source": "/api/portal"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/users/:id",
-      "source": "/api/users"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/users/me",
-      "source": "/api/users"
-    },
-    {
-      "method": "POST",
-      "path": "/api/_int/bootstrap-admin",
-      "source": "/api/_int"
-    },
-    {
-      "method": "POST",
-      "path": "/api/_int/pwa/test-push",
-      "source": "/api/_int"
-    },
-    {
-      "method": "POST",
-      "path": "/api/_int/pwa/test-sync",
-      "source": "/api/_int"
-    },
-    {
-      "method": "POST",
-      "path": "/api/_int/twilio-test",
-      "source": "/api/_int"
-    },
-    {
-      "method": "POST",
-      "path": "/api/admin/exports/applications",
-      "source": "/api/admin/exports"
-    },
-    {
-      "method": "POST",
-      "path": "/api/admin/exports/lenders",
-      "source": "/api/admin/exports"
-    },
-    {
-      "method": "POST",
-      "path": "/api/admin/exports/pipeline",
-      "source": "/api/admin/exports"
-    },
-    {
-      "method": "POST",
-      "path": "/api/admin/ocr/applications/:applicationId/enqueue",
-      "source": "/api/admin/ocr"
-    },
-    {
-      "method": "POST",
-      "path": "/api/admin/ocr/documents/:documentId/enqueue",
-      "source": "/api/admin/ocr"
-    },
-    {
-      "method": "POST",
-      "path": "/api/admin/ocr/documents/:documentId/retry",
-      "source": "/api/admin/ocr"
-    },
-    {
-      "method": "POST",
-      "path": "/api/admin/ops/kill-switches/:key/disable",
-      "source": "/api/admin/ops"
-    },
-    {
-      "method": "POST",
-      "path": "/api/admin/ops/kill-switches/:key/enable",
-      "source": "/api/admin/ops"
-    },
-    {
-      "method": "POST",
-      "path": "/api/admin/ops/replay/:scope",
-      "source": "/api/admin/ops"
-    },
-    {
-      "method": "POST",
-      "path": "/api/admin/transmissions/:id/cancel",
-      "source": "/api/admin"
-    },
-    {
-      "method": "POST",
-      "path": "/api/admin/transmissions/:id/retry",
-      "source": "/api/admin"
-    },
-    {
-      "method": "POST",
-      "path": "/api/ai/chat",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/ai/chat",
-      "source": "/api/ai"
-    },
-    {
-      "method": "POST",
-      "path": "/api/ai/confidence",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/ai/continuation",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/ai/escalate",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/ai/escalate",
-      "source": "/api/ai"
-    },
-    {
-      "method": "POST",
-      "path": "/api/ai/knowledge",
-      "source": "/api/ai"
-    },
-    {
-      "method": "POST",
-      "path": "/api/ai/knowledge/upload",
-      "source": "/api/ai"
-    },
-    {
-      "method": "POST",
-      "path": "/api/ai/report",
-      "source": "/api/ai"
-    },
-    {
-      "method": "POST",
-      "path": "/api/ai/report-issue",
-      "source": "/api/ai"
-    },
-    {
-      "method": "POST",
-      "path": "/api/ai/session/:sessionId/close",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/ai/startup-interest",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/ai/voice/token",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/analytics",
-      "source": "/api/analytics"
-    },
-    {
-      "method": "POST",
-      "path": "/api/application",
-      "source": "/api/application"
-    },
-    {
-      "method": "POST",
-      "path": "/api/application/update",
-      "source": "/api/application"
-    },
-    {
-      "method": "POST",
-      "path": "/api/applications",
-      "source": "/api/applications"
-    },
-    {
-      "method": "POST",
-      "path": "/api/applications/:id/documents",
-      "source": "/api/applications"
-    },
-    {
-      "method": "POST",
-      "path": "/api/applications/:id/documents/:documentId/versions/:versionId/accept",
-      "source": "/api/applications"
-    },
-    {
-      "method": "POST",
-      "path": "/api/applications/:id/documents/:documentId/versions/:versionId/reject",
-      "source": "/api/applications"
-    },
-    {
-      "method": "POST",
-      "path": "/api/applications/:id/open",
-      "source": "/api/applications"
-    },
-    {
-      "method": "POST",
-      "path": "/api/applications/:id/pipeline",
-      "source": "/api/applications"
-    },
-    {
-      "method": "POST",
-      "path": "/api/auth/login",
-      "source": "/api/auth"
-    },
-    {
-      "method": "POST",
-      "path": "/api/auth/logout",
-      "source": "/api/auth"
-    },
-    {
-      "method": "POST",
-      "path": "/api/auth/otp/start",
-      "source": "/api/auth"
-    },
-    {
-      "method": "POST",
-      "path": "/api/auth/otp/verify",
-      "source": "/api/auth"
-    },
-    {
-      "method": "POST",
-      "path": "/api/auth/refresh",
-      "source": "/api/auth"
-    },
-    {
-      "method": "POST",
-      "path": "/api/auth/request",
-      "source": "/api/auth"
-    },
-    {
-      "method": "POST",
-      "path": "/api/auth/request-otp",
-      "source": "/api/auth"
-    },
-    {
-      "method": "POST",
-      "path": "/api/auth/send-otp",
-      "source": "/api/auth"
-    },
-    {
-      "method": "POST",
-      "path": "/api/auth/verify",
-      "source": "/api/auth"
-    },
-    {
-      "method": "POST",
-      "path": "/api/auth/verify-otp",
-      "source": "/api/auth"
-    },
-    {
-      "method": "POST",
-      "path": "/api/banking/analysis",
-      "source": "/api/banking"
-    },
-    {
-      "method": "POST",
-      "path": "/api/calls/:id/end",
-      "source": "/api/calls"
-    },
-    {
-      "method": "POST",
-      "path": "/api/calls/:id/status",
-      "source": "/api/calls"
-    },
-    {
-      "method": "POST",
-      "path": "/api/calls/log",
-      "source": "/api/calls"
-    },
-    {
-      "method": "POST",
-      "path": "/api/calls/start",
-      "source": "/api/calls"
-    },
-    {
-      "method": "POST",
-      "path": "/api/chat/close",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/chat/human",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/chat/message",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/chat/session",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/chat/start",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/chat/transfer",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/client/applications",
-      "source": "/api/client"
-    },
-    {
-      "method": "POST",
-      "path": "/api/client/documents",
-      "source": "/api/client/documents"
-    },
-    {
-      "method": "POST",
-      "path": "/api/client/documents/:id/accept",
-      "source": "/api/client/documents"
-    },
-    {
-      "method": "POST",
-      "path": "/api/client/documents/:id/reject",
-      "source": "/api/client/documents"
-    },
-    {
-      "method": "POST",
-      "path": "/api/client/documents/upload",
-      "source": "/api/client/documents"
-    },
-    {
-      "method": "POST",
-      "path": "/api/client/session/refresh",
-      "source": "/"
-    },
-    {
-      "method": "POST",
-      "path": "/api/client/session/refresh",
-      "source": "/api/client"
-    },
-    {
-      "method": "POST",
-      "path": "/api/client/submissions",
-      "source": "/api/client"
-    },
-    {
-      "method": "POST",
-      "path": "/api/contact",
-      "source": "/api/contact"
-    },
-    {
-      "method": "POST",
-      "path": "/api/continuation",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/credit-summary",
-      "source": "/api/credit-summary"
-    },
-    {
-      "method": "POST",
-      "path": "/api/credit/score",
-      "source": "/api/credit"
-    },
-    {
-      "method": "POST",
-      "path": "/api/crm/web-leads",
-      "source": "/api/crm"
-    },
-    {
-      "method": "POST",
-      "path": "/api/documents",
-      "source": "/api/documents"
-    },
-    {
-      "method": "POST",
-      "path": "/api/documents/:id/accept",
-      "source": "/api/documents"
-    },
-    {
-      "method": "POST",
-      "path": "/api/documents/:id/reject",
-      "source": "/api/documents"
-    },
-    {
-      "method": "POST",
-      "path": "/api/documents/upload",
-      "source": "/api/documents"
-    },
-    {
-      "method": "POST",
-      "path": "/api/internal/processing/banking/:applicationId/complete",
-      "source": "/api/internal/processing"
-    },
-    {
-      "method": "POST",
-      "path": "/api/internal/processing/banking/:applicationId/fail",
-      "source": "/api/internal/processing"
-    },
-    {
-      "method": "POST",
-      "path": "/api/internal/processing/ocr/:applicationId/complete",
-      "source": "/api/internal/processing"
-    },
-    {
-      "method": "POST",
-      "path": "/api/internal/processing/ocr/:applicationId/fail",
-      "source": "/api/internal/processing"
-    },
-    {
-      "method": "POST",
-      "path": "/api/lender-products",
-      "source": "/api/lender-products"
-    },
-    {
-      "method": "POST",
-      "path": "/api/lender-products/:id/requirements",
-      "source": "/api/lender-products"
-    },
-    {
-      "method": "POST",
-      "path": "/api/lender-submissions/:applicationId/submit",
-      "source": "/api/lender-submissions"
-    },
-    {
-      "method": "POST",
-      "path": "/api/lender/submissions",
-      "source": "/api/lender"
-    },
-    {
-      "method": "POST",
-      "path": "/api/lenders",
-      "source": "/api/lenders"
-    },
-    {
-      "method": "POST",
-      "path": "/api/lenders/send",
-      "source": "/api/lenders"
-    },
-    {
-      "method": "POST",
-      "path": "/api/messages",
-      "source": "/api/messages"
-    },
-    {
-      "method": "POST",
-      "path": "/api/offers",
-      "source": "/api/offers"
-    },
-    {
-      "method": "POST",
-      "path": "/api/portal/applications/:id/promote",
-      "source": "/api/portal"
-    },
-    {
-      "method": "POST",
-      "path": "/api/portal/applications/:id/retry",
-      "source": "/api/portal"
-    },
-    {
-      "method": "POST",
-      "path": "/api/portal/applications/:id/retry-job",
-      "source": "/api/portal"
-    },
-    {
-      "method": "POST",
-      "path": "/api/portal/jobs/:id/retry",
-      "source": "/api/portal"
-    },
-    {
-      "method": "POST",
-      "path": "/api/portal/lender-submissions",
-      "source": "/api/portal"
-    },
-    {
-      "method": "POST",
-      "path": "/api/portal/offers",
-      "source": "/api/portal"
-    },
-    {
-      "method": "POST",
-      "path": "/api/portal/readiness-leads/:id/convert",
-      "source": "/api/portal"
-    },
-    {
-      "method": "POST",
-      "path": "/api/public/application/start",
-      "source": "/api/public"
-    },
-    {
-      "method": "POST",
-      "path": "/api/public/readiness",
-      "source": "/api/public"
-    },
-    {
-      "method": "POST",
-      "path": "/api/pwa/notifications/:id/ack",
-      "source": "/api/pwa"
-    },
-    {
-      "method": "POST",
-      "path": "/api/pwa/subscribe",
-      "source": "/api/pwa"
-    },
-    {
-      "method": "POST",
-      "path": "/api/pwa/sync",
-      "source": "/api/pwa"
-    },
-    {
-      "method": "POST",
-      "path": "/api/readiness",
-      "source": "/api/readiness"
-    },
-    {
-      "method": "POST",
-      "path": "/api/readiness/continue",
-      "source": "/api/readiness"
-    },
-    {
-      "method": "POST",
-      "path": "/api/referrals",
-      "source": "/api/referrals"
-    },
-    {
-      "method": "POST",
-      "path": "/api/startup-interest",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/support/contact",
-      "source": "/api/support"
-    },
-    {
-      "method": "POST",
-      "path": "/api/support/event",
-      "source": "/api/support"
-    },
-    {
-      "method": "POST",
-      "path": "/api/support/human",
-      "source": "/api/support"
-    },
-    {
-      "method": "POST",
-      "path": "/api/support/issue",
-      "source": "/api/support"
-    },
-    {
-      "method": "POST",
-      "path": "/api/support/live",
-      "source": "/api/support"
-    },
-    {
-      "method": "POST",
-      "path": "/api/support/report",
-      "source": "/api/support"
-    },
-    {
-      "method": "POST",
-      "path": "/api/support/session",
-      "source": "/api/support"
-    },
-    {
-      "method": "POST",
-      "path": "/api/support/track",
-      "source": "/api/support"
-    },
-    {
-      "method": "POST",
-      "path": "/api/telephony/call-status",
-      "source": "/api/telephony"
-    },
-    {
-      "method": "POST",
-      "path": "/api/telephony/outbound-call",
-      "source": "/api/telephony"
-    },
-    {
-      "method": "POST",
-      "path": "/api/telephony/presence",
-      "source": "/api/telephony"
-    },
-    {
-      "method": "POST",
-      "path": "/api/telephony/token",
-      "source": "/api/telephony"
-    },
-    {
-      "method": "POST",
-      "path": "/api/twilio/recording",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/twilio/status",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/twilio/voice",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/twilio/voice/action",
-      "source": "/api"
-    },
-    {
-      "method": "POST",
-      "path": "/api/users",
-      "source": "/api/users"
-    },
-    {
-      "method": "POST",
-      "path": "/api/users/:id/disable",
-      "source": "/api/users"
-    },
-    {
-      "method": "POST",
-      "path": "/api/users/:id/enable",
-      "source": "/api/users"
-    },
-    {
-      "method": "POST",
-      "path": "/api/users/:id/role",
-      "source": "/api/users"
-    },
-    {
-      "method": "POST",
-      "path": "/api/webhooks/twilio/voice",
-      "source": "/api/webhooks"
-    },
-    {
-      "method": "POST",
-      "path": "/api/website/contact",
-      "source": "/api/website"
-    },
-    {
-      "method": "POST",
-      "path": "/api/website/credit-readiness",
-      "source": "/api/website"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/lender-products/:id/requirements/:reqId",
-      "source": "/api/lender-products"
-    }
-  ]
-}
+[
+  {
+    "method": "DELETE",
+    "path": "/api/applications/:id/documents/:documentId",
+    "source": "/api/applications"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/lender-products/:id/requirements/:reqId",
+    "source": "/api/lender-products"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/pwa/unsubscribe",
+    "source": "/api/pwa"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/pwa/unsubscribe/owned",
+    "source": "/api/pwa"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/users/:id",
+    "source": "/api/users"
+  },
+  {
+    "method": "GET",
+    "path": "/",
+    "source": "/"
+  },
+  {
+    "method": "GET",
+    "path": "/api",
+    "source": "/"
+  },
+  {
+    "method": "GET",
+    "path": "/api",
+    "source": "/api"
+  },
+  {
+    "method": "GET",
+    "path": "/api/_int/build",
+    "source": "/api/_int"
+  },
+  {
+    "method": "GET",
+    "path": "/api/_int/env",
+    "source": "/"
+  },
+  {
+    "method": "GET",
+    "path": "/api/_int/env",
+    "source": "/api/_int"
+  },
+  {
+    "method": "GET",
+    "path": "/api/_int/exports/recent",
+    "source": "/api/_int"
+  },
+  {
+    "method": "GET",
+    "path": "/api/_int/health",
+    "source": "/api/_int"
+  },
+  {
+    "method": "GET",
+    "path": "/api/_int/jobs",
+    "source": "/api/_int"
+  },
+  {
+    "method": "GET",
+    "path": "/api/_int/ops",
+    "source": "/api/_int"
+  },
+  {
+    "method": "GET",
+    "path": "/api/_int/ready",
+    "source": "/api/_int"
+  },
+  {
+    "method": "GET",
+    "path": "/api/_int/routes",
+    "source": "/api/_int"
+  },
+  {
+    "method": "GET",
+    "path": "/api/_int/runtime",
+    "source": "/api/_int"
+  },
+  {
+    "method": "GET",
+    "path": "/api/_int/version",
+    "source": "/api/_int"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/applications/:id/transmission-status",
+    "source": "/api/admin"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/audit/events",
+    "source": "/api/admin/audit"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/ocr/documents/:documentId/result",
+    "source": "/api/admin/ocr"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/ocr/documents/:documentId/status",
+    "source": "/api/admin/ocr"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/ops/kill-switches",
+    "source": "/api/admin/ops"
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/ops/replay/:id/status",
+    "source": "/api/admin/ops"
+  },
+  {
+    "method": "GET",
+    "path": "/api/ai/knowledge",
+    "source": "/api/ai"
+  },
+  {
+    "method": "GET",
+    "path": "/api/ai/knowledge/db",
+    "source": "/api/ai"
+  },
+  {
+    "method": "GET",
+    "path": "/api/analytics",
+    "source": "/api/analytics"
+  },
+  {
+    "method": "GET",
+    "path": "/api/application/continuation",
+    "source": "/api/application"
+  },
+  {
+    "method": "GET",
+    "path": "/api/application/continuation",
+    "source": "/api/application/continuation"
+  },
+  {
+    "method": "GET",
+    "path": "/api/application/update",
+    "source": "/api/application"
+  },
+  {
+    "method": "GET",
+    "path": "/api/applications",
+    "source": "/api/applications"
+  },
+  {
+    "method": "GET",
+    "path": "/api/applications/:id",
+    "source": "/api/applications"
+  },
+  {
+    "method": "GET",
+    "path": "/api/applications/:id/documents",
+    "source": "/api/applications"
+  },
+  {
+    "method": "GET",
+    "path": "/api/applications/:id/ocr-insights",
+    "source": "/api/applications"
+  },
+  {
+    "method": "GET",
+    "path": "/api/applications/:id/processing-status",
+    "source": "/api/applications"
+  },
+  {
+    "method": "GET",
+    "path": "/api/auth/me",
+    "source": "/api/auth"
+  },
+  {
+    "method": "GET",
+    "path": "/api/calendar",
+    "source": "/api/calendar"
+  },
+  {
+    "method": "GET",
+    "path": "/api/calendar/events",
+    "source": "/api/calendar"
+  },
+  {
+    "method": "GET",
+    "path": "/api/calendar/tasks",
+    "source": "/api/calendar"
+  },
+  {
+    "method": "GET",
+    "path": "/api/call/status",
+    "source": "/api"
+  },
+  {
+    "method": "GET",
+    "path": "/api/calls",
+    "source": "/api/calls"
+  },
+  {
+    "method": "GET",
+    "path": "/api/chat/:sessionId/messages",
+    "source": "/api"
+  },
+  {
+    "method": "GET",
+    "path": "/api/chat/sessions",
+    "source": "/api"
+  },
+  {
+    "method": "GET",
+    "path": "/api/client/application/:id/status",
+    "source": "/api/client"
+  },
+  {
+    "method": "GET",
+    "path": "/api/client/continuation/:token",
+    "source": "/api/client"
+  },
+  {
+    "method": "GET",
+    "path": "/api/client/documents/:id/presign",
+    "source": "/api/client/documents"
+  },
+  {
+    "method": "GET",
+    "path": "/api/client/lender-products",
+    "source": "/api/client"
+  },
+  {
+    "method": "GET",
+    "path": "/api/client/lender-products/:id/requirements",
+    "source": "/api/client"
+  },
+  {
+    "method": "GET",
+    "path": "/api/client/lender-products/requirements",
+    "source": "/api/client"
+  },
+  {
+    "method": "GET",
+    "path": "/api/client/lenders",
+    "source": "/api/client/lenders"
+  },
+  {
+    "method": "GET",
+    "path": "/api/communications",
+    "source": "/api/communications"
+  },
+  {
+    "method": "GET",
+    "path": "/api/communications/messages",
+    "source": "/api/communications"
+  },
+  {
+    "method": "GET",
+    "path": "/api/continuation/:token",
+    "source": "/api"
+  },
+  {
+    "method": "GET",
+    "path": "/api/crm",
+    "source": "/api/crm"
+  },
+  {
+    "method": "GET",
+    "path": "/api/crm/contacts",
+    "source": "/api/crm"
+  },
+  {
+    "method": "GET",
+    "path": "/api/crm/customers",
+    "source": "/api/crm"
+  },
+  {
+    "method": "GET",
+    "path": "/api/crm/timeline",
+    "source": "/api/crm"
+  },
+  {
+    "method": "GET",
+    "path": "/api/crm/web-leads",
+    "source": "/api/crm"
+  },
+  {
+    "method": "GET",
+    "path": "/api/dashboard",
+    "source": "/api/dashboard"
+  },
+  {
+    "method": "GET",
+    "path": "/api/dashboard/actions",
+    "source": "/api/dashboard"
+  },
+  {
+    "method": "GET",
+    "path": "/api/dashboard/document-health",
+    "source": "/api/dashboard"
+  },
+  {
+    "method": "GET",
+    "path": "/api/dashboard/lender-activity",
+    "source": "/api/dashboard"
+  },
+  {
+    "method": "GET",
+    "path": "/api/dashboard/metrics",
+    "source": "/api/dashboard"
+  },
+  {
+    "method": "GET",
+    "path": "/api/dashboard/offers",
+    "source": "/api/dashboard"
+  },
+  {
+    "method": "GET",
+    "path": "/api/dashboard/pipeline",
+    "source": "/api/dashboard"
+  },
+  {
+    "method": "GET",
+    "path": "/api/db",
+    "source": "/api"
+  },
+  {
+    "method": "GET",
+    "path": "/api/dialer/token",
+    "source": "/api"
+  },
+  {
+    "method": "GET",
+    "path": "/api/documents/:id/presign",
+    "source": "/api/documents"
+  },
+  {
+    "method": "GET",
+    "path": "/api/health",
+    "source": "/api"
+  },
+  {
+    "method": "GET",
+    "path": "/api/health",
+    "source": "/api/health"
+  },
+  {
+    "method": "GET",
+    "path": "/api/health/db",
+    "source": "/api"
+  },
+  {
+    "method": "GET",
+    "path": "/api/health/db",
+    "source": "/api/health"
+  },
+  {
+    "method": "GET",
+    "path": "/api/health/storage",
+    "source": "/api/health"
+  },
+  {
+    "method": "GET",
+    "path": "/api/health/twilio",
+    "source": "/api/health"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lender-products",
+    "source": "/api/lender-products"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lender-products/:id/requirements",
+    "source": "/api/lender-products"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lender/submissions/:id",
+    "source": "/api/lender"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lenders",
+    "source": "/api/lenders"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lenders/__test-error",
+    "source": "/api/lenders"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lenders/:id",
+    "source": "/api/lenders"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lenders/:id/products",
+    "source": "/api/lenders"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lenders/active",
+    "source": "/api/lenders"
+  },
+  {
+    "method": "GET",
+    "path": "/api/marketing",
+    "source": "/api/marketing"
+  },
+  {
+    "method": "GET",
+    "path": "/api/marketing/campaigns",
+    "source": "/api/marketing"
+  },
+  {
+    "method": "GET",
+    "path": "/api/offers",
+    "source": "/api/offers"
+  },
+  {
+    "method": "GET",
+    "path": "/api/pipeline",
+    "source": "/api/pipeline"
+  },
+  {
+    "method": "GET",
+    "path": "/api/pipeline/stages",
+    "source": "/api/pipeline"
+  },
+  {
+    "method": "GET",
+    "path": "/api/portal/applications",
+    "source": "/api/portal"
+  },
+  {
+    "method": "GET",
+    "path": "/api/portal/applications/:id",
+    "source": "/api/portal"
+  },
+  {
+    "method": "GET",
+    "path": "/api/portal/applications/:id/history",
+    "source": "/api/portal"
+  },
+  {
+    "method": "GET",
+    "path": "/api/portal/applications/:id/readiness",
+    "source": "/api/portal"
+  },
+  {
+    "method": "GET",
+    "path": "/api/portal/applications/stages",
+    "source": "/api/portal"
+  },
+  {
+    "method": "GET",
+    "path": "/api/portal/documents/:id/history",
+    "source": "/api/portal"
+  },
+  {
+    "method": "GET",
+    "path": "/api/portal/jobs/:id/history",
+    "source": "/api/portal"
+  },
+  {
+    "method": "GET",
+    "path": "/api/portal/lenders",
+    "source": "/api/portal"
+  },
+  {
+    "method": "GET",
+    "path": "/api/portal/offers",
+    "source": "/api/portal"
+  },
+  {
+    "method": "GET",
+    "path": "/api/portal/readiness-leads",
+    "source": "/api/portal"
+  },
+  {
+    "method": "GET",
+    "path": "/api/public/lender-count",
+    "source": "/api/public"
+  },
+  {
+    "method": "GET",
+    "path": "/api/pwa/health",
+    "source": "/api/pwa"
+  },
+  {
+    "method": "GET",
+    "path": "/api/pwa/notifications",
+    "source": "/api/pwa"
+  },
+  {
+    "method": "GET",
+    "path": "/api/pwa/runtime",
+    "source": "/api/pwa"
+  },
+  {
+    "method": "GET",
+    "path": "/api/pwa/subscriptions",
+    "source": "/api/pwa"
+  },
+  {
+    "method": "GET",
+    "path": "/api/readiness/:sessionId",
+    "source": "/api/readiness"
+  },
+  {
+    "method": "GET",
+    "path": "/api/ready",
+    "source": "/api"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reporting/applications/volume",
+    "source": "/api/reporting"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reporting/conversion",
+    "source": "/api/reporting"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reporting/documents",
+    "source": "/api/reporting"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reporting/documents/metrics",
+    "source": "/api/reporting"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reporting/lenders",
+    "source": "/api/reporting"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reporting/lenders/performance",
+    "source": "/api/reporting"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reporting/overview",
+    "source": "/api/reporting"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reporting/pipeline",
+    "source": "/api/reporting"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reporting/pipeline/summary",
+    "source": "/api/reporting"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reporting/pipeline/timeseries",
+    "source": "/api/reporting"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reporting/staff/activity",
+    "source": "/api/reporting"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reports/applications/volume",
+    "source": "/api/reports"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reports/conversion",
+    "source": "/api/reports"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reports/documents",
+    "source": "/api/reports"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reports/documents/metrics",
+    "source": "/api/reports"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reports/lenders",
+    "source": "/api/reports"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reports/lenders/performance",
+    "source": "/api/reports"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reports/overview",
+    "source": "/api/reports"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reports/pipeline",
+    "source": "/api/reports"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reports/pipeline/summary",
+    "source": "/api/reports"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reports/pipeline/timeseries",
+    "source": "/api/reports"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reports/staff/activity",
+    "source": "/api/reports"
+  },
+  {
+    "method": "GET",
+    "path": "/api/settings",
+    "source": "/api/settings"
+  },
+  {
+    "method": "GET",
+    "path": "/api/settings/me",
+    "source": "/api/settings"
+  },
+  {
+    "method": "GET",
+    "path": "/api/settings/preferences",
+    "source": "/api/settings"
+  },
+  {
+    "method": "GET",
+    "path": "/api/staff/overview",
+    "source": "/api/staff"
+  },
+  {
+    "method": "GET",
+    "path": "/api/storage",
+    "source": "/api"
+  },
+  {
+    "method": "GET",
+    "path": "/api/support/escalations",
+    "source": "/api"
+  },
+  {
+    "method": "GET",
+    "path": "/api/support/events",
+    "source": "/api/support"
+  },
+  {
+    "method": "GET",
+    "path": "/api/support/issues",
+    "source": "/api/support"
+  },
+  {
+    "method": "GET",
+    "path": "/api/support/live",
+    "source": "/api/support"
+  },
+  {
+    "method": "GET",
+    "path": "/api/support/live/count",
+    "source": "/api/support"
+  },
+  {
+    "method": "GET",
+    "path": "/api/support/queue",
+    "source": "/api/support"
+  },
+  {
+    "method": "GET",
+    "path": "/api/system/health",
+    "source": "/api"
+  },
+  {
+    "method": "GET",
+    "path": "/api/tasks",
+    "source": "/api/tasks"
+  },
+  {
+    "method": "GET",
+    "path": "/api/telephony/call-status",
+    "source": "/api/telephony"
+  },
+  {
+    "method": "GET",
+    "path": "/api/telephony/health",
+    "source": "/api/telephony"
+  },
+  {
+    "method": "GET",
+    "path": "/api/telephony/token",
+    "source": "/api/telephony"
+  },
+  {
+    "method": "GET",
+    "path": "/api/twilio",
+    "source": "/api"
+  },
+  {
+    "method": "GET",
+    "path": "/api/users",
+    "source": "/api/users"
+  },
+  {
+    "method": "GET",
+    "path": "/api/users/me",
+    "source": "/api/users"
+  },
+  {
+    "method": "GET",
+    "path": "/continuation/session",
+    "source": "/"
+  },
+  {
+    "method": "GET",
+    "path": "/dev/ping",
+    "source": "/"
+  },
+  {
+    "method": "GET",
+    "path": "/health",
+    "source": "/"
+  },
+  {
+    "method": "GET",
+    "path": "/health",
+    "source": "/health"
+  },
+  {
+    "method": "GET",
+    "path": "/health/db",
+    "source": "/health"
+  },
+  {
+    "method": "GET",
+    "path": "/health/storage",
+    "source": "/health"
+  },
+  {
+    "method": "GET",
+    "path": "/health/twilio",
+    "source": "/health"
+  },
+  {
+    "method": "GET",
+    "path": "/metrics",
+    "source": "/"
+  },
+  {
+    "method": "GET",
+    "path": "/session",
+    "source": "/"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/client/applications/:id",
+    "source": "/api/client"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/lender-products/:id",
+    "source": "/api/lender-products"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/lenders/:id",
+    "source": "/api/lenders"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/offers/:id/status",
+    "source": "/api/offers"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/portal/applications/:id/status",
+    "source": "/api/portal"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/portal/offers/:id/status",
+    "source": "/api/portal"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/users/:id",
+    "source": "/api/users"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/users/me",
+    "source": "/api/users"
+  },
+  {
+    "method": "POST",
+    "path": "/api/_int/bootstrap-admin",
+    "source": "/api/_int"
+  },
+  {
+    "method": "POST",
+    "path": "/api/_int/pwa/test-push",
+    "source": "/api/_int"
+  },
+  {
+    "method": "POST",
+    "path": "/api/_int/pwa/test-sync",
+    "source": "/api/_int"
+  },
+  {
+    "method": "POST",
+    "path": "/api/_int/twilio-test",
+    "source": "/api/_int"
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/exports/applications",
+    "source": "/api/admin/exports"
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/exports/lenders",
+    "source": "/api/admin/exports"
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/exports/pipeline",
+    "source": "/api/admin/exports"
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/ocr/applications/:applicationId/enqueue",
+    "source": "/api/admin/ocr"
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/ocr/documents/:documentId/enqueue",
+    "source": "/api/admin/ocr"
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/ocr/documents/:documentId/retry",
+    "source": "/api/admin/ocr"
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/ops/kill-switches/:key/disable",
+    "source": "/api/admin/ops"
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/ops/kill-switches/:key/enable",
+    "source": "/api/admin/ops"
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/ops/replay/:scope",
+    "source": "/api/admin/ops"
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/transmissions/:id/cancel",
+    "source": "/api/admin"
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/transmissions/:id/retry",
+    "source": "/api/admin"
+  },
+  {
+    "method": "POST",
+    "path": "/api/ai/chat",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/ai/chat",
+    "source": "/api/ai"
+  },
+  {
+    "method": "POST",
+    "path": "/api/ai/confidence",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/ai/continuation",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/ai/escalate",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/ai/escalate",
+    "source": "/api/ai"
+  },
+  {
+    "method": "POST",
+    "path": "/api/ai/knowledge",
+    "source": "/api/ai"
+  },
+  {
+    "method": "POST",
+    "path": "/api/ai/knowledge/upload",
+    "source": "/api/ai"
+  },
+  {
+    "method": "POST",
+    "path": "/api/ai/report",
+    "source": "/api/ai"
+  },
+  {
+    "method": "POST",
+    "path": "/api/ai/report-issue",
+    "source": "/api/ai"
+  },
+  {
+    "method": "POST",
+    "path": "/api/ai/session/:sessionId/close",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/ai/startup-interest",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/ai/voice/token",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/analytics",
+    "source": "/api/analytics"
+  },
+  {
+    "method": "POST",
+    "path": "/api/application",
+    "source": "/api/application"
+  },
+  {
+    "method": "POST",
+    "path": "/api/application/update",
+    "source": "/api/application"
+  },
+  {
+    "method": "POST",
+    "path": "/api/applications",
+    "source": "/api/applications"
+  },
+  {
+    "method": "POST",
+    "path": "/api/applications/:id/documents",
+    "source": "/api/applications"
+  },
+  {
+    "method": "POST",
+    "path": "/api/applications/:id/documents/:documentId/versions/:versionId/accept",
+    "source": "/api/applications"
+  },
+  {
+    "method": "POST",
+    "path": "/api/applications/:id/documents/:documentId/versions/:versionId/reject",
+    "source": "/api/applications"
+  },
+  {
+    "method": "POST",
+    "path": "/api/applications/:id/open",
+    "source": "/api/applications"
+  },
+  {
+    "method": "POST",
+    "path": "/api/applications/:id/pipeline",
+    "source": "/api/applications"
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/login",
+    "source": "/api/auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/logout",
+    "source": "/api/auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/otp/start",
+    "source": "/api/auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/otp/verify",
+    "source": "/api/auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/refresh",
+    "source": "/api/auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/request",
+    "source": "/api/auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/request-otp",
+    "source": "/api/auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/send-otp",
+    "source": "/api/auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/verify",
+    "source": "/api/auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/verify-otp",
+    "source": "/api/auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/banking/analysis",
+    "source": "/api/banking"
+  },
+  {
+    "method": "POST",
+    "path": "/api/calls/:id/end",
+    "source": "/api/calls"
+  },
+  {
+    "method": "POST",
+    "path": "/api/calls/:id/status",
+    "source": "/api/calls"
+  },
+  {
+    "method": "POST",
+    "path": "/api/calls/log",
+    "source": "/api/calls"
+  },
+  {
+    "method": "POST",
+    "path": "/api/calls/start",
+    "source": "/api/calls"
+  },
+  {
+    "method": "POST",
+    "path": "/api/chat/close",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/chat/human",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/chat/message",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/chat/session",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/chat/start",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/chat/transfer",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/client/applications",
+    "source": "/api/client"
+  },
+  {
+    "method": "POST",
+    "path": "/api/client/documents",
+    "source": "/api/client/documents"
+  },
+  {
+    "method": "POST",
+    "path": "/api/client/documents/:id/accept",
+    "source": "/api/client/documents"
+  },
+  {
+    "method": "POST",
+    "path": "/api/client/documents/:id/reject",
+    "source": "/api/client/documents"
+  },
+  {
+    "method": "POST",
+    "path": "/api/client/documents/upload",
+    "source": "/api/client/documents"
+  },
+  {
+    "method": "POST",
+    "path": "/api/client/session/refresh",
+    "source": "/"
+  },
+  {
+    "method": "POST",
+    "path": "/api/client/session/refresh",
+    "source": "/api/client"
+  },
+  {
+    "method": "POST",
+    "path": "/api/client/submissions",
+    "source": "/api/client"
+  },
+  {
+    "method": "POST",
+    "path": "/api/contact",
+    "source": "/api/contact"
+  },
+  {
+    "method": "POST",
+    "path": "/api/continuation",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/credit-summary",
+    "source": "/api/credit-summary"
+  },
+  {
+    "method": "POST",
+    "path": "/api/credit/score",
+    "source": "/api/credit"
+  },
+  {
+    "method": "POST",
+    "path": "/api/crm/web-leads",
+    "source": "/api/crm"
+  },
+  {
+    "method": "POST",
+    "path": "/api/documents",
+    "source": "/api/documents"
+  },
+  {
+    "method": "POST",
+    "path": "/api/documents/:id/accept",
+    "source": "/api/documents"
+  },
+  {
+    "method": "POST",
+    "path": "/api/documents/:id/reject",
+    "source": "/api/documents"
+  },
+  {
+    "method": "POST",
+    "path": "/api/documents/upload",
+    "source": "/api/documents"
+  },
+  {
+    "method": "POST",
+    "path": "/api/internal/processing/banking/:applicationId/complete",
+    "source": "/api/internal/processing"
+  },
+  {
+    "method": "POST",
+    "path": "/api/internal/processing/banking/:applicationId/fail",
+    "source": "/api/internal/processing"
+  },
+  {
+    "method": "POST",
+    "path": "/api/internal/processing/ocr/:applicationId/complete",
+    "source": "/api/internal/processing"
+  },
+  {
+    "method": "POST",
+    "path": "/api/internal/processing/ocr/:applicationId/fail",
+    "source": "/api/internal/processing"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lender-products",
+    "source": "/api/lender-products"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lender-products/:id/requirements",
+    "source": "/api/lender-products"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lender-submissions/:applicationId/submit",
+    "source": "/api/lender-submissions"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lender/submissions",
+    "source": "/api/lender"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lenders",
+    "source": "/api/lenders"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lenders/send",
+    "source": "/api/lenders"
+  },
+  {
+    "method": "POST",
+    "path": "/api/messages",
+    "source": "/api/messages"
+  },
+  {
+    "method": "POST",
+    "path": "/api/offers",
+    "source": "/api/offers"
+  },
+  {
+    "method": "POST",
+    "path": "/api/portal/applications/:id/promote",
+    "source": "/api/portal"
+  },
+  {
+    "method": "POST",
+    "path": "/api/portal/applications/:id/retry",
+    "source": "/api/portal"
+  },
+  {
+    "method": "POST",
+    "path": "/api/portal/applications/:id/retry-job",
+    "source": "/api/portal"
+  },
+  {
+    "method": "POST",
+    "path": "/api/portal/jobs/:id/retry",
+    "source": "/api/portal"
+  },
+  {
+    "method": "POST",
+    "path": "/api/portal/lender-submissions",
+    "source": "/api/portal"
+  },
+  {
+    "method": "POST",
+    "path": "/api/portal/offers",
+    "source": "/api/portal"
+  },
+  {
+    "method": "POST",
+    "path": "/api/portal/readiness-leads/:id/convert",
+    "source": "/api/portal"
+  },
+  {
+    "method": "POST",
+    "path": "/api/public/application/start",
+    "source": "/api/public"
+  },
+  {
+    "method": "POST",
+    "path": "/api/public/readiness",
+    "source": "/api/public"
+  },
+  {
+    "method": "POST",
+    "path": "/api/pwa/notifications/:id/ack",
+    "source": "/api/pwa"
+  },
+  {
+    "method": "POST",
+    "path": "/api/pwa/subscribe",
+    "source": "/api/pwa"
+  },
+  {
+    "method": "POST",
+    "path": "/api/pwa/sync",
+    "source": "/api/pwa"
+  },
+  {
+    "method": "POST",
+    "path": "/api/readiness",
+    "source": "/api/readiness"
+  },
+  {
+    "method": "POST",
+    "path": "/api/readiness/continue",
+    "source": "/api/readiness"
+  },
+  {
+    "method": "POST",
+    "path": "/api/referrals",
+    "source": "/api/referrals"
+  },
+  {
+    "method": "POST",
+    "path": "/api/startup-interest",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/support/contact",
+    "source": "/api/support"
+  },
+  {
+    "method": "POST",
+    "path": "/api/support/event",
+    "source": "/api/support"
+  },
+  {
+    "method": "POST",
+    "path": "/api/support/human",
+    "source": "/api/support"
+  },
+  {
+    "method": "POST",
+    "path": "/api/support/issue",
+    "source": "/api/support"
+  },
+  {
+    "method": "POST",
+    "path": "/api/support/live",
+    "source": "/api/support"
+  },
+  {
+    "method": "POST",
+    "path": "/api/support/report",
+    "source": "/api/support"
+  },
+  {
+    "method": "POST",
+    "path": "/api/support/session",
+    "source": "/api/support"
+  },
+  {
+    "method": "POST",
+    "path": "/api/support/track",
+    "source": "/api/support"
+  },
+  {
+    "method": "POST",
+    "path": "/api/telephony/call-status",
+    "source": "/api/telephony"
+  },
+  {
+    "method": "POST",
+    "path": "/api/telephony/outbound-call",
+    "source": "/api/telephony"
+  },
+  {
+    "method": "POST",
+    "path": "/api/telephony/presence",
+    "source": "/api/telephony"
+  },
+  {
+    "method": "POST",
+    "path": "/api/telephony/token",
+    "source": "/api/telephony"
+  },
+  {
+    "method": "POST",
+    "path": "/api/twilio/recording",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/twilio/status",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/twilio/voice",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/twilio/voice/action",
+    "source": "/api"
+  },
+  {
+    "method": "POST",
+    "path": "/api/users",
+    "source": "/api/users"
+  },
+  {
+    "method": "POST",
+    "path": "/api/users/:id/disable",
+    "source": "/api/users"
+  },
+  {
+    "method": "POST",
+    "path": "/api/users/:id/enable",
+    "source": "/api/users"
+  },
+  {
+    "method": "POST",
+    "path": "/api/users/:id/role",
+    "source": "/api/users"
+  },
+  {
+    "method": "POST",
+    "path": "/api/webhooks/twilio/voice",
+    "source": "/api/webhooks"
+  },
+  {
+    "method": "POST",
+    "path": "/api/website/contact",
+    "source": "/api/website"
+  },
+  {
+    "method": "POST",
+    "path": "/api/website/credit-readiness",
+    "source": "/api/website"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/lender-products/:id/requirements/:reqId",
+    "source": "/api/lender-products"
+  }
+]

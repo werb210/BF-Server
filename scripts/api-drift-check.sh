@@ -14,8 +14,8 @@ node -e '
 const fs = require("node:fs");
 const artifactPath = process.argv[1];
 const outputPath = process.argv[2];
-const payload = JSON.parse(fs.readFileSync(artifactPath, "utf8"));
-const lines = [...new Set((payload.routes || []).map((route) => `${String(route.method || "").toUpperCase()} ${String(route.path || "")}`))]
+const routes = JSON.parse(fs.readFileSync(artifactPath, "utf8"));
+const lines = [...new Set((Array.isArray(routes) ? routes : []).map((route) => `${String(route.method || "").toUpperCase()} ${String(route.path || "")}`))]
   .sort((a, b) => a.localeCompare(b));
 fs.writeFileSync(outputPath, `${lines.join("\n")}\n`, "utf8");
 ' "${ARTIFACT_JSON}" "${ARTIFACT_TXT}"
