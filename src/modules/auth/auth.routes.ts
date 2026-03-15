@@ -19,6 +19,7 @@ import {
 import { requireAuth, requireAuthorization } from "../../middleware/auth";
 import { incrementTokenVersion, revokeRefreshTokensForUser } from "./auth.repo";
 import { ALL_ROLES } from "../../auth/roles";
+import { isTestEnvironment } from "../../config";
 
 const router = Router();
 
@@ -143,9 +144,12 @@ async function handleOtpStart(
       return;
     }
 
-    await startOtp(phone);
+    const otpStartResult = await startOtp(phone);
 
-    const responseBody = { sent: true };
+    const responseBody = {
+      sent: true,
+      ...(isTestEnvironment() ? { otp: otpStartResult.otp } : {}),
+    };
     const responseValidation =
       startOtpResponseSchema.safeParse(responseBody);
 
