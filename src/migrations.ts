@@ -5,14 +5,92 @@ import { logInfo } from "./observability/logger";
 
 const migrationsDir = path.join(process.cwd(), "migrations");
 
+function parseMigrationPrefix(file: string): bigint | null {
+  const match = file.match(/^(\d+)(?:[_-]|\.)/);
+  if (!match) {
+    return null;
+  }
+  const prefix = match[1];
+  if (!prefix) {
+    return null;
+  }
+  return BigInt(prefix);
+}
+
+function compareMigrationFiles(a: string, b: string): number {
+  const aPrefix = parseMigrationPrefix(a);
+  const bPrefix = parseMigrationPrefix(b);
+
+  if (aPrefix !== null && bPrefix !== null && aPrefix !== bPrefix) {
+    return aPrefix < bPrefix ? -1 : 1;
+  }
+
+  if (aPrefix !== null && bPrefix === null) {
+    return -1;
+  }
+
+  if (aPrefix === null && bPrefix !== null) {
+    return 1;
+  }
+
+  return a.localeCompare(b);
+}
+
+function findMigrationForTableCreation(
+  files: string[],
+  tableName: string
+): string | null {
+  const tablePattern = new RegExp(
+    `create\\s+table(?:\\s+if\\s+not\\s+exists)?\\s+${tableName}\\b`,
+    "i"
+  );
+
+  for (const file of files) {
+    const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
+    if (tablePattern.test(sql)) {
+      return file;
+    }
+  }
+
+  return null;
+}
+
+function assertDocumentVersionMigrationOrder(files: string[]): void {
+  const documentVersionsMigration = findMigrationForTableCreation(
+    files,
+    "document_versions"
+  );
+  const documentVersionReviewsMigration = findMigrationForTableCreation(
+    files,
+    "document_version_reviews"
+  );
+
+  if (!documentVersionsMigration || !documentVersionReviewsMigration) {
+    return;
+  }
+
+  const versionsIndex = files.indexOf(documentVersionsMigration);
+  const reviewsIndex = files.indexOf(documentVersionReviewsMigration);
+
+  if (reviewsIndex < versionsIndex) {
+    throw new Error(
+      `invalid_migration_order:${documentVersionReviewsMigration} must run after ${documentVersionsMigration}`
+    );
+  }
+}
+
 function listMigrationFiles(): string[] {
   if (!fs.existsSync(migrationsDir)) {
     return [];
   }
-  return fs
+  const files = fs
     .readdirSync(migrationsDir)
     .filter((file) => file.endsWith(".sql"))
-    .sort();
+    .sort(compareMigrationFiles);
+
+  assertDocumentVersionMigrationOrder(files);
+
+  return files;
 }
 
 async function ensureMigrationsTable(): Promise<void> {
