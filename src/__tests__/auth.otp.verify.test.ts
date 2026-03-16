@@ -1,5 +1,6 @@
 import request from "supertest";
 import type { Express } from "express";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { getTwilioMocks } from "./helpers/twilioMocks";
 
 function buildTestApp(): Express {
@@ -12,8 +13,8 @@ describe("POST /api/auth/otp/start Twilio Verify behaviors", () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    jest.resetModules();
-    jest.clearAllMocks();
+    vi.resetModules();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
