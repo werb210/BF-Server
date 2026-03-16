@@ -5,7 +5,8 @@ import {
   otpVerifyLimiter,
   resetOtpRateLimit,
 } from "../../middleware/rateLimit";
-import { otpStartSchema } from "../../validation/auth.validation";
+import { otpStartSchema, verifyOtpSchema } from "../../validation/auth.validation";
+import { normalizePhone } from "../../utils/normalizePhone";
 
 const router = Router();
 const OTP_START_REUSE_WINDOW_MS = 60 * 1000;
@@ -18,32 +19,6 @@ const otpLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-
-function normalizePhone(input: string): string {
-  if (!input) return "";
-
-  let phone = input.trim();
-
-  // remove everything except digits and +
-  phone = phone.replace(/[^\d+]/g, "");
-
-  // remove leading +
-  if (phone.startsWith("+")) {
-    phone = phone.slice(1);
-  }
-
-  // convert 10 digit → Canadian format
-  if (phone.length === 10) {
-    phone = "1" + phone;
-  }
-
-  // convert 11 digit starting with 1 → keep
-  if (phone.length === 11 && phone.startsWith("1")) {
-    return "+" + phone;
-  }
-
-  return "+" + phone;
-}
 
 function hasRecentOtpStart(phone: string): boolean {
   const now = Date.now();
@@ -150,10 +125,10 @@ router.post("/verify", otpVerifyLimiter(), async (req, res) => {
       req.body.phone = normalizePhone(req.body.phone);
     }
 
-    const parsed = otpStartSchema.parse(req.body);
+    const parsed = verifyOtpSchema.parse({ ...req.body, code });
     const phone = parsed.phone;
     phoneForLock = phone;
-    const parsedCode = typeof code === "string" ? code.trim() : "";
+    const parsedCode = parsed.code.trim();
 
     if (!parsedCode) {
       return res.status(400).json({
