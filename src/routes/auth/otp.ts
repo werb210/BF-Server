@@ -78,6 +78,7 @@ router.post("/verify", otpVerifyLimiter(), async (req, res, next) => {
   const phone = body.phone || body.phoneNumber || body.mobile || body.userPhone;
 
   const code = body.code || body.otp || body.passcode;
+  const otpId = body.otpSessionId || body.sessionToken;
 
   if (!phone || !code) {
     req.log?.warn({
@@ -103,6 +104,14 @@ router.post("/verify", otpVerifyLimiter(), async (req, res, next) => {
     return res.status(400).json({
       error: "Invalid request",
       message: "phone and code required",
+    });
+  }
+
+
+  if (!otpId) {
+    return res.status(400).json({
+      error: "Invalid request",
+      message: "Missing OTP session id",
     });
   }
 
@@ -142,9 +151,6 @@ router.post("/verify", otpVerifyLimiter(), async (req, res, next) => {
     }
     resetOtpRateLimit(normalizedPhone);
     return res.status(200).json({
-      ok: true,
-      success: true,
-      accessToken: result.token,
       token: result.token,
       user: {
         id: result.user.id,

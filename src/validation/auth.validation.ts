@@ -18,11 +18,16 @@ export const startOtpSchema = z
 
 export const verifyOtpSchema = z
   .object({
-    phone: phoneSchema,
-    code: z.string().length(6, "Code must be 6 characters"),
+    phone: z.string(),
+    code: z.string(),
+    otpSessionId: z.string().optional(),
+    sessionToken: z.string().optional(),
     email: z.string().email().optional(),
   })
-  .strict();
+  .refine((payload) => Boolean(payload.otpSessionId || payload.sessionToken), {
+    message: "Missing OTP session id",
+    path: ["otpSessionId"],
+  });
 
 export const startOtpResponseSchema = z
   .object({
@@ -33,9 +38,9 @@ export const startOtpResponseSchema = z
 
 export const verifyOtpResponseSchema = z
   .object({
-    ok: z.literal(true),
-    accessToken: z.string(),
-    refreshToken: z.string(),
+    token: z.string(),
+    accessToken: z.string().optional(),
+    refreshToken: z.string().optional(),
     user: z
       .object({
         id: z.string(),

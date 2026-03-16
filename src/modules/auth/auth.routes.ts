@@ -200,17 +200,29 @@ async function handleOtpVerify(
       return;
     }
 
-    const { phone, code, email } = req.body as {
+    const body = req.body as {
       phone: string;
       code: string;
+      otpSessionId?: string;
+      sessionToken?: string;
       email?: string | null;
     };
 
+    const phoneDigits = body.phone.replace(/\D/g, "");
+    const phoneE164 = phoneDigits.startsWith("1")
+      ? `+${phoneDigits}`
+      : `+1${phoneDigits}`;
+
+    const otpId = body.otpSessionId || body.sessionToken;
+    if (!otpId) {
+      throw new Error("Missing OTP session id");
+    }
+
     const userAgent = req.get("user-agent");
     const verifyPayload = {
-      phone,
-      code,
-      ...(email !== undefined ? { email } : {}),
+      phone: phoneE164,
+      code: body.code,
+      ...(body.email !== undefined ? { email: body.email } : {}),
       ...(req.ip ? { ip: req.ip } : {}),
       ...(userAgent ? { userAgent } : {}),
       route,
@@ -229,7 +241,7 @@ async function handleOtpVerify(
     }
 
     const responseBody = {
-      ok: true,
+      token: accessToken,
       accessToken,
       refreshToken: result.refreshToken,
       user: result.user,
@@ -248,7 +260,7 @@ async function handleOtpVerify(
       return;
     }
 
-    resetOtpRateLimit(phone);
+    resetOtpRateLimit(phoneE164);
 
     res.status(200).json(responseBody);
   } catch (err) {
