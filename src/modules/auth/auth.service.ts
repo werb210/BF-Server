@@ -838,7 +838,7 @@ export async function verifyOtpCode(params: {
       requestId
     );
 
-    if (!isTestEnvironment()) {
+    if (!isTestEnvironment() && hasInternalUserCandidate) {
       if (!latestVerification) {
         return {
           ok: false,
@@ -881,6 +881,11 @@ export async function verifyOtpCode(params: {
     if (status !== "approved") {
       if (isTestEnvironment()) {
         const testOtp = testOtpStore.get(phoneE164);
+        console.log("OTP verify check", {
+          now: Date.now(),
+          expiresAt: testOtp?.expiresAt,
+          delta: testOtp?.expiresAt ? testOtp.expiresAt - Date.now() : null,
+        });
         if (!testOtp || testOtp.expiresAt <= Date.now()) {
           recordOtpAttempt(phoneE164, codeHash);
           return {
