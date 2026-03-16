@@ -5,6 +5,7 @@ import { pool } from "../db";
 import { ROLES } from "../auth/roles";
 import { resetLoginRateLimit } from "../middleware/rateLimit";
 import { otpVerifyRequest } from "./helpers/otpAuth";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from "vitest";
 
 const app = buildAppWithApiRoutes();
 
@@ -57,6 +58,10 @@ beforeAll(async () => {
 beforeEach(async () => {
   await resetDb();
   resetLoginRateLimit();
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
 });
 
 afterAll(async () => {
