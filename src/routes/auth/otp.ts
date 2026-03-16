@@ -5,10 +5,7 @@ import {
   otpVerifyLimiter,
   resetOtpRateLimit,
 } from "../../middleware/rateLimit";
-import {
-  startOtpSchema,
-  verifyOtpSchema,
-} from "../../validation/auth.validation";
+import { otpStartSchema } from "../../validation/auth.validation";
 
 const router = Router();
 const OTP_START_REUSE_WINDOW_MS = 60 * 1000;
@@ -39,103 +36,109 @@ function markRecentOtpStart(phone: string): void {
   recentOtpStarts.set(phone, Date.now() + OTP_START_REUSE_WINDOW_MS);
 }
 
-router.post("/start", otpLimiter, async (req, res, next) => {
+router.post("/start", otpLimiter, async (req, res) => {
   try {
-    const parsed = startOtpSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: "Validation failed",
-        details: parsed.error.flatten(),
-      });
-    }
+    const { phone } = otpStartSchema.parse({
+      phone: req.body?.phone ?? req.body?.phoneNumber,
+    });
 
-    const { phone } = parsed.data;
     const reused = hasRecentOtpStart(phone);
     let otpSessionId: string | null = null;
+    let otp: string | undefined;
 
     if (!reused) {
       const otpResult = await startOtp(phone);
       otpSessionId = otpResult.sid;
+      otp = otpResult.otp;
       markRecentOtpStart(phone);
     }
 
     return res.status(200).json({
-      otpSessionId: otpSessionId ?? "reused",
+      ok: true,
+      data: {
+        sent: true,
+        otpSessionId: otpSessionId ?? "reused",
+        ...(otp ? { otp } : {}),
+      },
     });
   } catch (err) {
-    return next(err);
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: "invalid_request",
+        message: err instanceof Error ? err.message : "Invalid request",
+      },
+    });
   }
 });
 
-router.post("/verify", otpVerifyLimiter(), async (req, res, next) => {
-  const parsed = verifyOtpSchema.safeParse(req.body);
-  if (!parsed.success) {
-    req.log?.warn({
-      event: "otp_verify_validation_failed",
-      body: req.body,
-      errors: parsed.error.flatten(),
-    });
-
-    return res.status(400).json({
-      error: "Validation failed",
-      details: parsed.error.flatten(),
-    });
-  }
-
-  const { phone, code, email } = parsed.data;
-
-  if (activeVerifications.get(phone)) {
-    return res.status(429).json({
-      success: false,
-      error: "Verification already in progress",
-    });
-  }
-
-  activeVerifications.set(phone, true);
+router.post("/verify", otpVerifyLimiter(), async (req, res) => {
+  let phoneForLock: string | null = null;
 
   try {
-    req.log?.info({
-      event: "otp_verification_attempt",
-      phone,
-    });
+    const rawPhone = req.body?.phone ?? req.body?.phoneNumber;
+    const rawCode = req.body?.code;
+
+    const { phone } = otpStartSchema.parse({ phone: rawPhone });
+    phoneForLock = phone;
+    const code = typeof rawCode === "string" ? rawCode.trim() : "";
+
+    if (!code) {
+      return res.status(400).json({
+        ok: false,
+        error: { code: "invalid_code", message: "Invalid verification code" },
+      });
+    }
+
+    if (activeVerifications.get(phone)) {
+      return res.status(429).json({
+        ok: false,
+        error: { code: "verify_in_progress", message: "Verification already in progress" },
+      });
+    }
+
+    activeVerifications.set(phone, true);
 
     const userAgent = req.get("user-agent");
     const route = req.originalUrl ?? req.url;
     const payload = {
       phone,
       code,
-      email,
       ...(req.ip ? { ip: req.ip } : {}),
       ...(userAgent ? { userAgent } : {}),
       ...(route ? { route } : {}),
       ...(req.method ? { method: req.method } : {}),
     };
     const result = await verifyOtpCode(payload);
+
     if (!result.ok) {
       return res.status(400).json({
-        success: false,
-        error: "Invalid OTP",
+        ok: false,
+        error: { code: "invalid_code", message: "Invalid verification code" },
       });
     }
+
     resetOtpRateLimit(phone);
+
     return res.status(200).json({
-      token: result.token,
-      user: {
-        id: result.user.id,
-        role: result.user.role,
+      ok: true,
+      data: {
+        token: result.token,
+        user: result.user,
       },
     });
   } catch (err) {
-    req.log?.error({
-      event: "otp_verification_error",
-      error: err,
-    });
-
-    return res.status(500).json({
-      error: "OTP verification failed",
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: "verify_failed",
+        message: err instanceof Error ? err.message : "OTP verification failed",
+      },
     });
   } finally {
-    activeVerifications.delete(phone);
+    if (phoneForLock) {
+      activeVerifications.delete(phoneForLock);
+    }
   }
 });
 

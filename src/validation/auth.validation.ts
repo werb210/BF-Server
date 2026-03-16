@@ -4,28 +4,25 @@ import { ROLES, type Role } from "../auth/roles";
 
 const roleValues = Object.values(ROLES) as [Role, ...Role[]];
 const roleSchema = z.enum(roleValues);
-function normalizePhone(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-
-  return phone;
-}
-
 const phoneSchema = z
   .string()
-  .min(1, "Phone is required")
-  .transform(normalizePhone)
-  .refine((phone) => /^\+\d{10,15}$/.test(phone), {
-    message: "Phone must be in E.164 format",
+  .trim()
+  .regex(/^[0-9]{10,15}$/, "Invalid phone number")
+  .transform((p) => {
+    const digits = p.replace(/\D/g, "");
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.startsWith("1") && digits.length === 11) return `+${digits}`;
+    if (digits.startsWith("+")) return digits;
+    return `+${digits}`;
   });
 
-export const startOtpSchema = z
+export const otpStartSchema = z
   .object({
     phone: phoneSchema,
   })
   .strict();
+
+export const startOtpSchema = otpStartSchema;
 
 export const verifyOtpSchema = z
   .object({
