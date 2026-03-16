@@ -6,6 +6,7 @@ import {
   resetOtpRateLimit,
 } from "../../middleware/rateLimit";
 import { otpStartSchema } from "../../validation/auth.validation";
+import { normalizePhone } from "../../utils/phone";
 
 const router = Router();
 const OTP_START_REUSE_WINDOW_MS = 60 * 1000;
@@ -38,9 +39,26 @@ function markRecentOtpStart(phone: string): void {
 
 router.post("/start", otpLimiter, async (req, res) => {
   try {
-    const { phone } = otpStartSchema.parse({
-      phone: req.body?.phone ?? req.body?.phoneNumber,
-    });
+    const rawBody =
+      typeof req.body === "string"
+        ? JSON.parse(req.body)
+        : req.body || {};
+
+    const phoneRaw =
+      rawBody.phone ||
+      rawBody.phoneNumber ||
+      rawBody.phone_number ||
+      null;
+
+    if (!phoneRaw) {
+      return res.status(400).json({
+        ok: false,
+        error: "phone_required",
+      });
+    }
+
+    const phone = normalizePhone(phoneRaw);
+    otpStartSchema.parse({ phone });
 
     const reused = hasRecentOtpStart(phone);
     let otpSessionId: string | null = null;
@@ -64,10 +82,7 @@ router.post("/start", otpLimiter, async (req, res) => {
   } catch (err) {
     return res.status(400).json({
       ok: false,
-      error: {
-        code: "invalid_request",
-        message: err instanceof Error ? err.message : "Invalid request",
-      },
+      error: "invalid_request",
     });
   }
 });
@@ -76,24 +91,43 @@ router.post("/verify", otpVerifyLimiter(), async (req, res) => {
   let phoneForLock: string | null = null;
 
   try {
-    const rawPhone = req.body?.phone ?? req.body?.phoneNumber;
-    const rawCode = req.body?.code;
+    const rawBody =
+      typeof req.body === "string"
+        ? JSON.parse(req.body)
+        : req.body || {};
 
-    const { phone } = otpStartSchema.parse({ phone: rawPhone });
-    phoneForLock = phone;
-    const code = typeof rawCode === "string" ? rawCode.trim() : "";
+    const phoneRaw =
+      rawBody.phone ||
+      rawBody.phoneNumber ||
+      rawBody.phone_number ||
+      null;
 
-    if (!code) {
+    const code = rawBody.code || rawBody.otp || null;
+    const otpSessionId = rawBody.otpSessionId || null;
+
+    if (!phoneRaw || !code) {
       return res.status(400).json({
         ok: false,
-        error: { code: "invalid_code", message: "Invalid verification code" },
+        error: "invalid_payload",
+      });
+    }
+
+    const phone = normalizePhone(phoneRaw);
+    otpStartSchema.parse({ phone });
+    phoneForLock = phone;
+    const parsedCode = typeof code === "string" ? code.trim() : "";
+
+    if (!parsedCode) {
+      return res.status(400).json({
+        ok: false,
+        error: "invalid_code",
       });
     }
 
     if (activeVerifications.get(phone)) {
       return res.status(429).json({
         ok: false,
-        error: { code: "verify_in_progress", message: "Verification already in progress" },
+        error: "verify_in_progress",
       });
     }
 
@@ -103,7 +137,8 @@ router.post("/verify", otpVerifyLimiter(), async (req, res) => {
     const route = req.originalUrl ?? req.url;
     const payload = {
       phone,
-      code,
+      code: parsedCode,
+      ...(otpSessionId ? { otpSessionId } : {}),
       ...(req.ip ? { ip: req.ip } : {}),
       ...(userAgent ? { userAgent } : {}),
       ...(route ? { route } : {}),
@@ -114,7 +149,7 @@ router.post("/verify", otpVerifyLimiter(), async (req, res) => {
     if (!result.ok) {
       return res.status(400).json({
         ok: false,
-        error: { code: "invalid_code", message: "Invalid verification code" },
+        error: "invalid_code",
       });
     }
 
@@ -130,10 +165,7 @@ router.post("/verify", otpVerifyLimiter(), async (req, res) => {
   } catch (err) {
     return res.status(400).json({
       ok: false,
-      error: {
-        code: "verify_failed",
-        message: err instanceof Error ? err.message : "OTP verification failed",
-      },
+      error: "verify_failed",
     });
   } finally {
     if (phoneForLock) {
