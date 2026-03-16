@@ -34,16 +34,21 @@ export const verifyOtpResponseSchema = z
     ok: z.literal(true),
     data: z
       .object({
-        token: z.string(),
+        token: z.string().nullable(),
+        sessionToken: z.string().nullable(),
         user: z
           .object({
             id: z.string(),
             role: roleSchema,
             email: z.string().nullable(),
           })
-          .strict(),
+          .strict()
+          .nullable(),
+        applicationId: z.string().nullable(),
+        nextPath: z.enum(["/application/start", "/portal"]),
       })
       .strict(),
+    error: z.null(),
   })
   .strict();
 

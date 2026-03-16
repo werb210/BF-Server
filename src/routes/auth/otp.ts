@@ -160,9 +160,14 @@ router.post("/verify", otpVerifyLimiter(), async (req, res) => {
     const result = await verifyOtpCode(payload);
 
     if (!result.ok) {
-      return res.status(400).json({
+      const errorCode = result.error.code === "invalid_code" ? "invalid_code" : "verify_failed";
+      return res.status(result.error.code === "invalid_code" ? 400 : result.status).json({
         ok: false,
-        error: "invalid_code",
+        data: null,
+        error: {
+          code: errorCode,
+          message: result.error.message,
+        },
       });
     }
 
@@ -172,13 +177,21 @@ router.post("/verify", otpVerifyLimiter(), async (req, res) => {
       ok: true,
       data: {
         token: result.token,
+        sessionToken: result.sessionToken,
         user: result.user,
+        applicationId: result.applicationId,
+        nextPath: result.nextPath,
       },
+      error: null,
     });
   } catch (err) {
     return res.status(400).json({
       ok: false,
-      error: "verify_failed",
+      data: null,
+      error: {
+        code: "verify_failed",
+        message: "OTP verification failed",
+      },
     });
   } finally {
     if (phoneForLock) {

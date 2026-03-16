@@ -1,7 +1,6 @@
 import request from "supertest";
 import type { Express } from "express";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { randomUUID } from "crypto";
 import { createUserAccount } from "../../modules/auth/auth.service";
 import { ROLES } from "../../auth/roles";
 import { pool } from "../../db";
@@ -40,10 +39,12 @@ describe("POST /api/auth/otp/verify", () => {
       .send({ phone, code: "000000" });
 
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({ ok: false, error: "invalid_code" });
+    expect(res.body.ok).toBe(false);
+    expect(res.body.data).toBeNull();
+    expect(res.body.error.code).toBe("invalid_code");
   });
 
-  it("accepts approved codes and returns JWT + user", async () => {
+  it("accepts valid OTP for existing auth user with staff payload", async () => {
     const phone = `+1415555${Math.floor(Math.random() * 9000 + 1000)}`;
     await createUserAccount({
       email: "otp-approved@example.com",
@@ -59,11 +60,15 @@ describe("POST /api/auth/otp/verify", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
+    expect(res.body.error).toBeNull();
     expect(typeof res.body.data?.token).toBe("string");
+    expect(typeof res.body.data?.sessionToken).toBe("string");
     expect(res.body.data?.user?.id).toBeTruthy();
+    expect(res.body.data?.applicationId).toBeNull();
+    expect(res.body.data?.nextPath).toBe("/portal");
   });
 
-  it("auto-creates a user on first successful verify", async () => {
+  it("accepts valid OTP without pre-existing user for applicant flow", async () => {
     const phone = `+1587${Math.floor(Math.random() * 9000000 + 1000000)}`;
 
     await pool.query("delete from users where phone_number = $1", [phone]);
@@ -79,12 +84,29 @@ describe("POST /api/auth/otp/verify", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
+    expect(res.body.error).toBeNull();
+    expect(res.body.data?.token).toBeNull();
+    expect(typeof res.body.data?.sessionToken).toBe("string");
+    expect(res.body.data?.user).toBeNull();
+    expect(res.body.data?.applicationId).toBeNull();
+    expect(res.body.data?.nextPath).toBe("/application/start");
+    expect(res.body.error?.code).not.toBe("user_not_found");
+  });
 
-    const created = await pool.query(
-      "select id, phone_number from users where phone_number = $1",
-      [phone]
-    );
-    expect(created.rowCount).toBe(1);
-    expect(created.rows[0].id).toBe(res.body.data.user.id);
+  it("normalizes phone for OTP verify lookup", async () => {
+    const phone = "+15878881837";
+    await pool.query("delete from users where phone_number = $1", [phone]);
+
+    const app = buildTestApp();
+    await request(app).post("/api/auth/otp/start").send({ phone: "5878881837" });
+
+    const res = await request(app)
+      .post("/api/auth/otp/verify")
+      .send({ phone: "5878881837", code: "123456" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.error).toBeNull();
+    expect(res.body.data?.nextPath).toBe("/application/start");
   });
 });

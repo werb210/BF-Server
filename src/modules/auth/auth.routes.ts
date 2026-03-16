@@ -196,25 +196,23 @@ async function handleOtpVerify(
     const result = await verifyOtpCode(verifyPayload);
 
     if (!result.ok) {
-      if (result.error.code === "invalid_code") {
-        res.status(400).json({ ok: false, error: "invalid_code" });
-        return;
-      }
-      respondError(res, result.status, result.error.code, result.error.message);
+      const responseCode =
+        result.error.code === "invalid_code" ? "invalid_code" : "verify_failed";
+      const responseStatus = result.error.code === "invalid_code" ? 400 : result.status;
+      respondError(res, responseStatus, responseCode, result.error.message);
       return;
-    }
-
-    const accessToken = result.token;
-    if (!accessToken) {
-      throw new Error("OTP verified but accessToken missing");
     }
 
     const responseBody = {
       ok: true as const,
       data: {
-        token: accessToken,
+        token: result.token,
+        sessionToken: result.sessionToken,
         user: result.user,
+        applicationId: result.applicationId,
+        nextPath: result.nextPath,
       },
+      error: null,
     };
 
     const responseValidation =
