@@ -19,20 +19,30 @@ const otpLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-function normalizePhone(input: string) {
+function normalizePhone(input: string): string {
   if (!input) return "";
 
-  let phone = input.replace(/[^\d+]/g, "").trim();
+  let phone = input.trim();
 
-  if (phone.startsWith("1") && phone.length === 11) {
-    phone = "+" + phone;
+  // remove everything except digits and +
+  phone = phone.replace(/[^\d+]/g, "");
+
+  // remove leading +
+  if (phone.startsWith("+")) {
+    phone = phone.slice(1);
   }
 
-  if (!phone.startsWith("+1") && phone.length === 10) {
-    phone = "+1" + phone;
+  // convert 10 digit → Canadian format
+  if (phone.length === 10) {
+    phone = "1" + phone;
   }
 
-  return phone;
+  // convert 11 digit starting with 1 → keep
+  if (phone.length === 11 && phone.startsWith("1")) {
+    return "+" + phone;
+  }
+
+  return "+" + phone;
 }
 
 function hasRecentOtpStart(phone: string): boolean {
@@ -72,13 +82,15 @@ router.post("/start", otpLimiter, async (req, res) => {
       });
     }
 
-    const normalizedPhone = normalizePhone(phoneRaw);
+    req.body = { ...rawBody, phone: phoneRaw };
 
-    req.body = { ...rawBody, phone: normalizedPhone };
+    if (req.body.phone) {
+      req.body.phone = normalizePhone(req.body.phone);
+    }
 
-    otpStartSchema.parse(req.body);
+    const parsed = otpStartSchema.parse(req.body);
 
-    const phone = normalizedPhone;
+    const phone = parsed.phone;
 
     const reused = hasRecentOtpStart(phone);
     let otpSessionId: string | null = null;
@@ -132,8 +144,14 @@ router.post("/verify", otpVerifyLimiter(), async (req, res) => {
       });
     }
 
-    const phone = normalizePhone(phoneRaw);
-    otpStartSchema.parse({ phone });
+    req.body = { ...rawBody, phone: phoneRaw };
+
+    if (req.body.phone) {
+      req.body.phone = normalizePhone(req.body.phone);
+    }
+
+    const parsed = otpStartSchema.parse(req.body);
+    const phone = parsed.phone;
     phoneForLock = phone;
     const parsedCode = typeof code === "string" ? code.trim() : "";
 
