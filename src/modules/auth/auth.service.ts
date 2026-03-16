@@ -45,6 +45,10 @@ import { getCapabilitiesForRole } from "../../auth/capabilities";
 import { getTwilioClient, getVerifyServiceSid } from "../../services/twilio";
 import { assertLenderBinding } from "../../auth/lenderBinding";
 
+const OTP_TRACE = (...args: any[]) => {
+  console.log("[OTP_TRACE]", ...args);
+};
+
 type RefreshTokenPayload = JwtPayload & {
   sub?: string;
   tokenVersion?: number;
@@ -690,6 +694,12 @@ export async function startOtp(
 
     if (isTestEnvironment()) {
       const generatedOtp = getOrCreateTestOtp(phoneE164);
+      OTP_TRACE("OTP_START", {
+        phone,
+        code: generatedOtp,
+        instance: process.pid,
+        time: Date.now(),
+      });
       return {
         ok: true,
         sid: "test",
@@ -775,6 +785,12 @@ export async function verifyOtpCode(params: {
   method?: string;
 }): Promise<VerifyOtpSuccess | VerifyOtpFailure> {
   const requestId = getRequestId() ?? "unknown";
+  OTP_TRACE("OTP_VERIFY_REQUEST", {
+    phone: params.phone,
+    code: params.code,
+    instance: process.pid,
+    time: Date.now(),
+  });
   let dedupPhone: string | null = null;
   const normalizedEmail = normalizeEmail(params.email ?? null);
   try {
@@ -881,6 +897,13 @@ export async function verifyOtpCode(params: {
     if (status !== "approved") {
       if (isTestEnvironment()) {
         const testOtp = testOtpStore.get(phoneE164);
+        OTP_TRACE("OTP_LOOKUP", {
+          phone: phoneE164,
+          storedCode: testOtp?.code || null,
+          expiresAt: testOtp?.expiresAt || null,
+          now: Date.now(),
+          instance: process.pid,
+        });
         console.log("OTP verify check", {
           now: Date.now(),
           expiresAt: testOtp?.expiresAt,
@@ -945,6 +968,11 @@ export async function verifyOtpCode(params: {
     testOtpStore.delete(phoneE164);
 
     if (!hasInternalUserCandidate && !isBootstrapAdminUser({ phoneNumber: phoneE164, email: null })) {
+      OTP_TRACE("OTP_VERIFY_RESULT", {
+        phone: phoneE164,
+        success: true,
+        instance: process.pid,
+      });
       return {
         ok: true,
         token: null,
@@ -1109,6 +1137,11 @@ export async function verifyOtpCode(params: {
       });
 
       await dbClient.query("commit");
+      OTP_TRACE("OTP_VERIFY_RESULT", {
+        phone: phoneE164,
+        success: true,
+        instance: process.pid,
+      });
       return {
         ok: true,
         token,
