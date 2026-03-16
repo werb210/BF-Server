@@ -4,23 +4,13 @@ import { ROLES, type Role } from "../auth/roles";
 
 const roleValues = Object.values(ROLES) as [Role, ...Role[]];
 const roleSchema = z.enum(roleValues);
-const phoneSchema = z
-  .string()
-  .trim()
-  .regex(/^[0-9]{10,15}$/, "Invalid phone number")
-  .transform((p) => {
-    const digits = p.replace(/\D/g, "");
-    if (digits.length === 10) return `+1${digits}`;
-    if (digits.startsWith("1") && digits.length === 11) return `+${digits}`;
-    if (digits.startsWith("+")) return digits;
-    return `+${digits}`;
-  });
+const phoneSchema = z.string().regex(/^\+1\d{10}$/, "Invalid phone number");
 
 export const otpStartSchema = z
   .object({
     phone: phoneSchema,
   })
-  .strict();
+  .passthrough();
 
 export const startOtpSchema = otpStartSchema;
 

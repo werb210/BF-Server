@@ -6,7 +6,6 @@ import {
   resetOtpRateLimit,
 } from "../../middleware/rateLimit";
 import { otpStartSchema } from "../../validation/auth.validation";
-import { normalizePhone } from "../../utils/phone";
 
 const router = Router();
 const OTP_START_REUSE_WINDOW_MS = 60 * 1000;
@@ -19,6 +18,22 @@ const otpLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+function normalizePhone(input: string) {
+  if (!input) return "";
+
+  let phone = input.replace(/[^\d+]/g, "").trim();
+
+  if (phone.startsWith("1") && phone.length === 11) {
+    phone = "+" + phone;
+  }
+
+  if (!phone.startsWith("+1") && phone.length === 10) {
+    phone = "+1" + phone;
+  }
+
+  return phone;
+}
 
 function hasRecentOtpStart(phone: string): boolean {
   const now = Date.now();
@@ -57,8 +72,13 @@ router.post("/start", otpLimiter, async (req, res) => {
       });
     }
 
-    const phone = normalizePhone(phoneRaw);
-    otpStartSchema.parse({ phone });
+    const normalizedPhone = normalizePhone(phoneRaw);
+
+    req.body = { ...rawBody, phone: normalizedPhone };
+
+    otpStartSchema.parse(req.body);
+
+    const phone = normalizedPhone;
 
     const reused = hasRecentOtpStart(phone);
     let otpSessionId: string | null = null;
