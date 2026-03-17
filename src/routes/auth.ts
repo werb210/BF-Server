@@ -7,6 +7,7 @@ import { errorHandler } from "../middleware/errorHandler";
 import { authMeHandler } from "./auth/me";
 import { ALL_ROLES } from "../auth/roles";
 import { normalizeOtpPhone } from "../modules/auth/phone";
+import { normalizePhone } from "../utils/normalizePhone";
 import { createOtpSessionsTable } from "../db/migrations/createOtpSessions";
 
 const router = Router();
@@ -18,7 +19,7 @@ router.use((_req, res, next) => {
 
 router.post("/otp/request", async (req, res) => {
   try {
-    const rawPhone = req.body?.phone;
+    const rawPhone = normalizePhone(String(req.body?.phone ?? ""));
     const phone = normalizeOtpPhone(typeof rawPhone === "string" ? rawPhone : "");
 
     if (!phone) {
@@ -46,7 +47,8 @@ router.post("/otp/verify", async (req, res) => {
   );
 
   try {
-    const phone = normalizeOtpPhone(String(req.body.phone ?? ""));
+    const rawPhone = normalizePhone(String(req.body.phone ?? ""));
+    const phone = normalizeOtpPhone(rawPhone);
     const code = String(req.body.code ?? "").trim();
 
     if (!phone || !code) {
