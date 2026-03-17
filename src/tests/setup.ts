@@ -1,24 +1,45 @@
 import { vi } from "vitest"
 import { pool } from "../db"
+import {
+  getExpectedTwilioSignature,
+  twilioDefaultExport,
+  twilioMockState,
+  validateExpressRequest,
+  validateRequest,
+} from "../test/twilioMock";
 
 vi.mock("twilio", () => {
   return {
-    default: () => ({
-      messages: {
-        create: vi.fn().mockResolvedValue({ sid: "mock_sid" })
-      }
-    })
+    default: twilioDefaultExport,
+    validateRequest,
+    validateExpressRequest,
+    getExpectedTwilioSignature,
+    __twilioMocks: twilioMockState,
   }
 })
+
+Object.assign(globalThis, { __twilioMocks: twilioMockState });
+
+process.env.NODE_ENV = "test";
+process.env.TWILIO_ACCOUNT_SID ??= "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+process.env.TWILIO_AUTH_TOKEN ??= "test-auth-token-1234567890";
+process.env.TWILIO_VERIFY_SERVICE_SID ??= "VA00000000000000000000000000000000";
+process.env.TWILIO_API_KEY ??= "SKXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+process.env.TWILIO_API_SECRET ??= "test-twilio-api-secret";
+process.env.TWILIO_VOICE_APP_SID ??= "AP00000000000000000000000000000000";
+process.env.TWILIO_VOICE_CALLER_ID ??= "+14155550000";
+process.env.JWT_SECRET ??= "test-access-secret";
+process.env.TEST_OTP_CODE ??= "123456";
 
 beforeAll(async () => {
   await pool.query(`
     create table if not exists users (
       id uuid primary key,
       phone text,
-      phone_number text,
+      phone_number text unique,
       email text,
       role text,
+      silo text,
       status text not null default 'ACTIVE',
       active boolean not null default true,
       is_active boolean,
@@ -81,6 +102,19 @@ beforeAll(async () => {
       success boolean not null,
       metadata jsonb,
       created_at timestamptz not null default now()
+    );
+  `)
+
+  await pool.query(`
+    create table if not exists lenders (
+      id uuid primary key,
+      name text not null,
+      active boolean not null default true,
+      status text not null default 'ACTIVE',
+      country text not null,
+      submission_method text not null default 'email',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
     );
   `)
 })

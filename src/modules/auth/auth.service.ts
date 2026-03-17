@@ -234,6 +234,11 @@ const testOtpStore = new Map<string, { code: string; expiresAt: number }>();
 const TEST_OTP_TTL_MS = 5 * 60 * 1000;
 
 function getOrCreateTestOtp(phoneE164: string): string {
+  const forcedTestOtp = process.env.TEST_OTP_CODE?.trim();
+  if (forcedTestOtp) {
+    return forcedTestOtp;
+  }
+
   const existing = testOtpStore.get(phoneE164);
   const now = Date.now();
   if (existing && existing.expiresAt > now) {
@@ -668,6 +673,22 @@ export async function startOtp(
         code: generatedOtp,
         expiresAt: new Date(Date.now() + OTP_SESSION_TTL_MS),
       });
+
+      let sid = session.id;
+      if (serviceSid) {
+        try {
+          const verification = await twilioClient.verify.v2
+            .services(serviceSid)
+            .verifications.create({
+              to: phoneE164,
+              channel: "sms",
+            });
+          sid = verification.sid ?? sid;
+        } catch {
+          // Do not fail test-mode OTP generation when provider mocks are unavailable.
+        }
+      }
+
       OTP_TRACE("OTP_START", {
         phone: phoneE164,
         code: generatedOtp,
@@ -677,11 +698,11 @@ export async function startOtp(
       logInfo("otp_start_sent", {
         ...startMeta,
         providerStatus: "approved",
-        sid: session.id,
+        sid,
       });
       return {
         ok: true,
-        sid: session.id,
+        sid,
         otp: generatedOtp,
       };
     }

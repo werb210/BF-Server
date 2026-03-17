@@ -1,4 +1,5 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
+import { parse as parseQueryString } from "querystring";
 import { AppError } from "../../middleware/errors";
 import {
   loginRateLimit,
@@ -24,6 +25,21 @@ import { isTestEnvironment } from "../../config";
 import { normalizeOtpPhone } from "./phone";
 
 const router = Router();
+
+function coerceBody(body: unknown): Record<string, unknown> {
+  if (!body) return {};
+  if (typeof body === "string") {
+    const trimmed = body.trim();
+    if (!trimmed) return {};
+    try {
+      return JSON.parse(trimmed) as Record<string, unknown>;
+    } catch {
+      return parseQueryString(trimmed) as Record<string, unknown>;
+    }
+  }
+  if (typeof body === "object") return body as Record<string, unknown>;
+  return {};
+}
 
 function getAuthRequestId(res: Response): string {
   return res.locals.requestId ?? getRequestId() ?? "unknown";
@@ -114,6 +130,15 @@ async function handleOtpStart(
     const route = "/api/auth/otp/start";
     const requestId = getAuthRequestId(res);
 
+    const rawBody = coerceBody(req.body);
+    const phone =
+      rawBody.phone ??
+      rawBody.phoneNumber ??
+      rawBody.phone_number ??
+      rawBody.mobile ??
+      null;
+    req.body = { ...rawBody, ...(phone !== null ? { phone } : {}) };
+
     const validation = validateStartOtp(req);
     if (!validation.success) {
       respondRequestValidationError(
@@ -175,6 +200,20 @@ async function handleOtpVerify(
   try {
     const route = "/api/auth/otp/verify";
     const requestId = getAuthRequestId(res);
+
+    const rawBody = coerceBody(req.body);
+    const phone =
+      rawBody.phone ??
+      rawBody.phoneNumber ??
+      rawBody.phone_number ??
+      rawBody.mobile ??
+      null;
+    const codeRaw = rawBody.code ?? rawBody.otp ?? rawBody.token ?? null;
+    req.body = {
+      ...rawBody,
+      ...(phone !== null ? { phone } : {}),
+      ...(codeRaw !== null ? { code: codeRaw } : {}),
+    };
 
     const validation = validateVerifyOtp(req);
     if (!validation.success) {

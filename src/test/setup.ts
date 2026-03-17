@@ -1,15 +1,18 @@
 import { vi } from "vitest";
+import {
+  getExpectedTwilioSignature,
+  twilioDefaultExport,
+  twilioMockState,
+  validateExpressRequest,
+  validateRequest,
+} from "./twilioMock";
 
-vi.mock("twilio", () => {
-  return {
-    default: function () {
-      return {
-        messages: {
-          create: vi.fn().mockResolvedValue({
-            sid: "test_sid"
-          })
-        }
-      };
-    }
-  };
-});
+vi.mock("twilio", () => ({
+  default: twilioDefaultExport,
+  validateRequest,
+  validateExpressRequest,
+  getExpectedTwilioSignature,
+  __twilioMocks: twilioMockState,
+}));
+
+Object.assign(globalThis, { __twilioMocks: twilioMockState });
