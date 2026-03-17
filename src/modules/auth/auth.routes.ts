@@ -21,6 +21,7 @@ import { requireAuth, requireAuthorization } from "../../middleware/auth";
 import { incrementTokenVersion, revokeRefreshTokensForUser } from "./auth.repo";
 import { ALL_ROLES } from "../../auth/roles";
 import { isTestEnvironment } from "../../config";
+import { normalizeOtpPhone } from "./phone";
 
 const router = Router();
 
@@ -124,8 +125,13 @@ async function handleOtpStart(
       return;
     }
 
-    const { phone } = validation.data;
-    const otpStartResult = await startOtp(phone);
+    const normalizedPhone = normalizeOtpPhone(validation.data.phone);
+    if (!normalizedPhone) {
+      respondError(res, 400, "invalid_phone", "Invalid phone number");
+      return;
+    }
+
+    const otpStartResult = await startOtp(normalizedPhone);
 
     const responseBody = {
       sent: true,
@@ -181,11 +187,16 @@ async function handleOtpVerify(
       return;
     }
 
-    const { phone, code, email } = validation.data;
+    const { code, email } = validation.data;
+    const normalizedPhone = normalizeOtpPhone(validation.data.phone);
+    if (!normalizedPhone) {
+      respondError(res, 400, "invalid_phone", "Invalid phone number");
+      return;
+    }
 
     const userAgent = req.get("user-agent");
     const verifyPayload = {
-      phone,
+      phone: normalizedPhone,
       code,
       ...(email !== undefined ? { email } : {}),
       ...(req.ip ? { ip: req.ip } : {}),
@@ -196,8 +207,7 @@ async function handleOtpVerify(
     const result = await verifyOtpCode(verifyPayload);
 
     if (!result.ok) {
-      const responseCode =
-        result.error.code === "invalid_code" ? "invalid_code" : "verify_failed";
+      const responseCode = result.error.code === "invalid_code" ? "invalid_otp" : result.error.code;
       const responseStatus = result.error.code === "invalid_code" ? 400 : result.status;
       respondError(res, responseStatus, responseCode, result.error.message);
       return;
@@ -213,6 +223,7 @@ async function handleOtpVerify(
         nextPath: result.nextPath,
       },
       error: null,
+      requestId,
     };
 
     const responseValidation =
@@ -228,7 +239,7 @@ async function handleOtpVerify(
       return;
     }
 
-    resetOtpRateLimit(phone);
+    resetOtpRateLimit(normalizedPhone);
 
     res.status(200).json(responseBody);
   } catch (err) {
@@ -267,8 +278,9 @@ router.post("/verify-otp", verifyOtpRateLimit(), async (req, res) => {
       code?: string;
       email?: string | null;
     };
+    const normalizedPhone = normalizeOtpPhone(phone ?? "");
     const result = await verifyOtpCode({
-      phone: phone ?? "",
+      phone: normalizedPhone ?? "",
       code: code ?? "",
       ...(email !== undefined ? { email } : {}),
       ...(req.ip ? { ip: req.ip } : {}),

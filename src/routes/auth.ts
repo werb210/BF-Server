@@ -6,7 +6,7 @@ import { notFoundHandler } from "../middleware/errors";
 import { errorHandler } from "../middleware/errorHandler";
 import { authMeHandler } from "./auth/me";
 import { ALL_ROLES } from "../auth/roles";
-import { normalizePhone } from "../utils/phoneNormalizer";
+import { normalizeOtpPhone } from "../modules/auth/phone";
 import { createOtpSessionsTable } from "../db/migrations/createOtpSessions";
 
 const router = Router();
@@ -19,7 +19,7 @@ router.use((_req, res, next) => {
 router.post("/otp/request", async (req, res) => {
   try {
     const rawPhone = req.body?.phone;
-    const phone = normalizePhone(typeof rawPhone === "string" ? rawPhone : "");
+    const phone = normalizeOtpPhone(typeof rawPhone === "string" ? rawPhone : "");
 
     if (!phone) {
       return res.status(400).json({ error: "phone_required" });
@@ -46,7 +46,7 @@ router.post("/otp/verify", async (req, res) => {
   );
 
   try {
-    const phone = normalizePhone(String(req.body.phone ?? ""));
+    const phone = normalizeOtpPhone(String(req.body.phone ?? ""));
     const code = String(req.body.code ?? "").trim();
 
     if (!phone || !code) {
@@ -70,10 +70,18 @@ router.post("/otp/verify", async (req, res) => {
     ]);
 
     if (!result.ok) {
-      return res.status(400).json({
+      return res.status(result.status).json({
         ok: false,
         data: null,
-        error: "invalid_otp",
+        error: result.error.code === "invalid_code" ? "invalid_otp" : result.error.code,
+      });
+    }
+
+    if (!result.token || !result.sessionToken || !result.user) {
+      return res.status(401).json({
+        ok: false,
+        data: null,
+        error: "auth_token_creation_failed",
       });
     }
 
@@ -81,7 +89,9 @@ router.post("/otp/verify", async (req, res) => {
       ok: true,
       data: {
         token: result.token,
+        sessionToken: result.sessionToken,
         user: result.user,
+        nextPath: result.nextPath,
       },
       error: null,
     });

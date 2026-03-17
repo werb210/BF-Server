@@ -3,7 +3,13 @@ export function normalizePhone(phone: string): string {
     throw new Error("Phone number required");
   }
 
-  const digits = phone.replace(/\D/g, "");
+  const trimmed = phone.trim();
+  if (!trimmed) {
+    throw new Error("Phone number required");
+  }
+
+  const hasLeadingPlus = trimmed.startsWith("+");
+  const digits = trimmed.replace(/\D/g, "");
 
   if (digits.length === 10) {
     return `+1${digits}`;
@@ -13,7 +19,7 @@ export function normalizePhone(phone: string): string {
     return `+${digits}`;
   }
 
-  if (phone.startsWith("+") && digits.length >= 11) {
+  if (hasLeadingPlus && digits.length >= 11 && digits.length <= 15) {
     return `+${digits}`;
   }
 

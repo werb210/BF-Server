@@ -6,7 +6,7 @@ import {
   resetOtpRateLimit,
 } from "../../middleware/rateLimit";
 import { otpStartSchema, verifyOtpSchema } from "../../validation/auth.validation";
-import { normalizePhone } from "../../utils/normalizePhone";
+import { normalizeOtpPhone } from "../../modules/auth/phone";
 
 const router = Router();
 const OTP_START_REUSE_WINDOW_MS = 60 * 1000;
@@ -59,11 +59,12 @@ router.post("/start", otpLimiter, async (req, res) => {
 
     req.body = { ...rawBody, phone: phoneRaw };
 
-    if (req.body.phone) {
-      req.body.phone = normalizePhone(req.body.phone);
+    const normalizedPhone = normalizeOtpPhone(req.body.phone);
+    if (!normalizedPhone) {
+      return res.status(400).json({ ok: false, error: "invalid_phone" });
     }
 
-    const parsed = otpStartSchema.parse(req.body);
+    const parsed = otpStartSchema.parse({ ...req.body, phone: normalizedPhone });
 
     const phone = parsed.phone;
 
@@ -121,11 +122,12 @@ router.post("/verify", otpVerifyLimiter(), async (req, res) => {
 
     req.body = { ...rawBody, phone: phoneRaw };
 
-    if (req.body.phone) {
-      req.body.phone = normalizePhone(req.body.phone);
+    const normalizedPhone = normalizeOtpPhone(req.body.phone);
+    if (!normalizedPhone) {
+      return res.status(400).json({ ok: false, error: "invalid_phone" });
     }
 
-    const parsed = verifyOtpSchema.parse({ ...req.body, code });
+    const parsed = verifyOtpSchema.parse({ ...req.body, phone: normalizedPhone, code });
     const phone = parsed.phone;
     phoneForLock = phone;
     const parsedCode = parsed.code.trim();
@@ -160,7 +162,7 @@ router.post("/verify", otpVerifyLimiter(), async (req, res) => {
     const result = await verifyOtpCode(payload);
 
     if (!result.ok) {
-      const errorCode = result.error.code === "invalid_code" ? "invalid_code" : "verify_failed";
+      const errorCode = result.error.code === "invalid_code" ? "invalid_otp" : result.error.code;
       return res.status(result.error.code === "invalid_code" ? 400 : result.status).json({
         ok: false,
         data: null,
@@ -172,6 +174,14 @@ router.post("/verify", otpVerifyLimiter(), async (req, res) => {
     }
 
     resetOtpRateLimit(phone);
+
+    if (!result.token || !result.sessionToken || !result.user) {
+      return res.status(401).json({
+        ok: false,
+        data: null,
+        error: { code: "auth_token_creation_failed", message: "Failed to create auth token" },
+      });
+    }
 
     return res.status(200).json({
       ok: true,

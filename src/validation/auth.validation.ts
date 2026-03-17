@@ -4,7 +4,7 @@ import { ROLES, type Role } from "../auth/roles";
 
 const roleValues = Object.values(ROLES) as [Role, ...Role[]];
 const roleSchema = z.enum(roleValues);
-const phoneSchema = z.string().regex(/^\+1\d{10}$/, "Invalid phone number");
+const phoneSchema = z.string().trim().min(1, "Phone is required");
 
 export const otpStartSchema = z
   .object({
@@ -17,8 +17,8 @@ export const startOtpSchema = otpStartSchema;
 export const verifyOtpSchema = z
   .object({
     phone: phoneSchema,
-    code: z.string().min(1, "Code is required"),
-    email: z.string().email().optional(),
+    code: z.string().trim().min(1, "Code is required"),
+    email: z.string().trim().email().optional(),
   })
   .strict();
 
@@ -48,6 +48,7 @@ export const verifyOtpResponseSchema = z
       })
       .strict(),
     error: z.null(),
+    requestId: z.string().min(1),
   })
   .strict();
 

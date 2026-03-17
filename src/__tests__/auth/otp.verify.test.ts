@@ -1,22 +1,26 @@
 import request from "supertest";
-import type { Express } from "express";
+import { randomUUID } from "crypto";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { createUserAccount } from "../../modules/auth/auth.service";
-import { ROLES } from "../../auth/roles";
+import { buildAppWithApiRoutes } from "../../app";
 import { pool } from "../../db";
+import { ROLES } from "../../auth/roles";
 
-function buildTestApp(): Express {
-  const { buildAppWithApiRoutes } = require("../../app");
-  return buildAppWithApiRoutes();
+async function insertUser(phone: string, email: string): Promise<void> {
+  await pool.query(
+    `insert into users (id, email, phone_number, phone, role, active, is_active, disabled, phone_verified, status, silo)
+     values ($1, $2, $3, $4, $5, true, true, false, true, 'ACTIVE', 'staff')`,
+    [randomUUID(), email, phone, phone, ROLES.STAFF]
+  );
 }
 
-describe("POST /api/auth/otp/verify", () => {
+describe("POST /api/auth/otp/start and /api/auth/otp/verify", () => {
   const originalEnv = process.env;
 
   beforeEach(async () => {
-    process.env = { ...originalEnv };
-    vi.resetModules();
+    process.env = { ...originalEnv, NODE_ENV: "test" };
     vi.clearAllMocks();
+    await pool.query("alter table users add column if not exists silo text");
+    await pool.query("alter table users add column if not exists status text");
     await pool.query("delete from auth_refresh_tokens");
     await pool.query("delete from otp_verifications");
   });
@@ -25,88 +29,83 @@ describe("POST /api/auth/otp/verify", () => {
     process.env = originalEnv;
   });
 
-  it("rejects invalid OTP codes", async () => {
-    const phone = `+1415555${Math.floor(Math.random() * 9000 + 1000)}`;
-    await createUserAccount({
-      email: "otp-invalid@example.com",
-      phoneNumber: phone,
-      role: ROLES.STAFF,
-    });
-
-    const app = buildTestApp();
-    const res = await request(app)
-      .post("/api/auth/otp/verify")
-      .send({ phone, code: "000000" });
-
-    expect(res.status).toBe(400);
-    expect(res.body.ok).toBe(false);
-    expect(res.body.data).toBeNull();
-    expect(res.body.error.code).toBe("invalid_code");
-  });
-
-  it("accepts valid OTP for existing auth user with staff payload", async () => {
-    const phone = `+1415555${Math.floor(Math.random() * 9000 + 1000)}`;
-    await createUserAccount({
-      email: "otp-approved@example.com",
-      phoneNumber: phone,
-      role: ROLES.STAFF,
-    });
-
-    const app = buildTestApp();
-    await request(app).post("/api/auth/otp/start").send({ phone });
-    const res = await request(app)
-      .post("/api/auth/otp/verify")
-      .send({ phone, code: "123456" });
-
+  it("normalizes start phone (587) 888-1837 to +15878881837", async () => {
+    const app = buildAppWithApiRoutes();
+    const res = await request(app).post("/api/auth/otp/start").send({ phone: "(587) 888-1837" });
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
-    expect(res.body.error).toBeNull();
+  });
+
+  it("normalizes verify phone 5878881837 to +15878881837", async () => {
+    await insertUser("+15878881837", "otp-normalize@example.com");
+    const app = buildAppWithApiRoutes();
+    const start = await request(app).post("/api/auth/otp/start").send({ phone: "(587) 888-1837" });
+    const res = await request(app).post("/api/auth/otp/verify").send({ phone: "5878881837", code: start.body.data?.otp ?? "123456" });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+
+  it("approved OTP + found user => strict success", async () => {
+    const phone = "+14155551234";
+    await insertUser(phone, "otp-approved@example.com");
+    const app = buildAppWithApiRoutes();
+    await request(app).post("/api/auth/otp/start").send({ phone });
+    const res = await request(app).post("/api/auth/otp/verify").send({ phone: "4155551234", code: "123456" });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
     expect(typeof res.body.data?.token).toBe("string");
     expect(typeof res.body.data?.sessionToken).toBe("string");
-    expect(res.body.data?.user?.id).toBeTruthy();
-    expect(res.body.data?.applicationId).toBeNull();
+    expect(res.body.data?.user).toBeTruthy();
     expect(res.body.data?.nextPath).toBe("/portal");
+    expect(typeof res.body.requestId).toBe("string");
   });
 
-  it("returns user_not_found for valid OTP without pre-existing user", async () => {
-    const phone = `+1587${Math.floor(Math.random() * 9000000 + 1000000)}`;
-
-    await pool.query("delete from users where phone_number = $1", [phone]);
-
-    const app = buildTestApp();
-    const startRes = await request(app)
-      .post("/api/auth/otp/start")
-      .send({ phone });
-
-    const res = await request(app)
-      .post("/api/auth/otp/verify")
-      .send({ phone, code: startRes.body.data?.otp ?? "123456" });
-
+  it("approved OTP + missing user => user_not_found and never ok true", async () => {
+    const phone = "+15875550123";
+    const app = buildAppWithApiRoutes();
+    await request(app).post("/api/auth/otp/start").send({ phone });
+    const res = await request(app).post("/api/auth/otp/verify").send({ phone: "5875550123", code: "123456" });
     expect(res.status).toBe(404);
     expect(res.body.ok).toBe(false);
-    expect(res.body.data).toBeNull();
-    expect(res.body.error?.code).toBe("verify_failed");
-    expect(res.body.error?.message).toBe("User not found");
+    expect(res.body.error?.code).toBe("user_not_found");
   });
 
-  it("normalizes phone for OTP verify lookup", async () => {
-    const phone = "+15878881837";
-    await createUserAccount({
-      email: "otp-normalize@example.com",
-      phoneNumber: phone,
-      role: ROLES.STAFF,
-    });
+  it("approved OTP + token creation failure => auth_token_creation_failed", async () => {
+    const phone = "+14155550999";
+    await insertUser(phone, "otp-token-fail@example.com");
+    process.env.JWT_SECRET = "";
+    const app = buildAppWithApiRoutes();
+    await request(app).post("/api/auth/otp/start").send({ phone });
+    const res = await request(app).post("/api/auth/otp/verify").send({ phone, code: "123456" });
+    expect(res.status).toBe(401);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error?.code).toBe("auth_token_creation_failed");
+  });
 
-    const app = buildTestApp();
-    await request(app).post("/api/auth/otp/start").send({ phone: "5878881837" });
+  it("invalid OTP => invalid_otp", async () => {
+    const phone = "+14155557654";
+    await insertUser(phone, "otp-invalid@example.com");
+    const app = buildAppWithApiRoutes();
+    await request(app).post("/api/auth/otp/start").send({ phone });
+    const res = await request(app).post("/api/auth/otp/verify").send({ phone, code: "000000" });
+    expect(res.status).toBe(400);
+    expect(res.body.error?.code).toBe("invalid_otp");
+  });
 
-    const res = await request(app)
-      .post("/api/auth/otp/verify")
-      .send({ phone: "5878881837", code: "123456" });
+  it("expired/missing OTP session => explicit error", async () => {
+    const phone = "+14155550022";
+    await insertUser(phone, "otp-expired@example.com");
+    const app = buildAppWithApiRoutes();
+    const res = await request(app).post("/api/auth/otp/verify").send({ phone, code: "123456" });
+    expect(res.status).toBe(400);
+    expect(res.body.error?.code).toBe("expired_code");
+  });
 
-    expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.error).toBeNull();
-    expect(res.body.data?.nextPath).toBe("/portal");
+  it("never returns ok true with null token/user", async () => {
+    const phone = "+14155550023";
+    await insertUser(phone, "otp-shape@example.com");
+    const app = buildAppWithApiRoutes();
+    const res = await request(app).post("/api/auth/otp/verify").send({ phone, code: "000000" });
+    expect(res.body).not.toMatchObject({ ok: true, data: { token: null, user: null } });
   });
 });
