@@ -186,14 +186,16 @@ router.post("/verify-otp", async (req, res) => {
       route: req.originalUrl,
       method: req.method,
     });
-    const valid = result.ok;
-
-    if (!valid) {
+    if (!result.ok) {
       return res.status(400).json({ error: "Invalid OTP" });
     }
 
-    return res.status(200).json({
-      success: true,
+    const sessionToken = result.sessionToken;
+
+    return res.json({
+      ok: true,
+      sessionToken,
+      nextPath: "/application/start",
     });
   } catch (err) {
     req.log?.error({
