@@ -23,6 +23,7 @@ describe("POST /api/auth/otp/start and /api/auth/otp/verify", () => {
     await pool.query("alter table users add column if not exists status text");
     await pool.query("delete from auth_refresh_tokens");
     await pool.query("delete from otp_verifications");
+    await pool.query("delete from otp_sessions");
   });
 
   afterEach(() => {
@@ -109,4 +110,51 @@ describe("POST /api/auth/otp/start and /api/auth/otp/verify", () => {
     const res = await request(app).post("/api/auth/otp/verify").send({ phone, code: "000000" });
     expect(res.body).not.toMatchObject({ ok: true, data: { token: null, user: null } });
   });
+
+  it("expired otp session => explicit expired_code", async () => {
+    const phone = "+14155550111";
+    await insertUser(phone, "otp-expired-session@example.com");
+    const app = buildAppWithApiRoutes();
+    await request(app).post("/api/auth/otp/start").send({ phone });
+    await pool.query(
+      `update otp_sessions set expires_at = now() - interval '1 minute' where phone = $1`,
+      [phone]
+    );
+
+    const res = await request(app).post("/api/auth/otp/verify").send({ phone, code: "123456" });
+    expect(res.status).toBe(400);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error.code).toBe("expired_code");
+  });
+
+  it("uses latest otp_verifications row when historical approved rows exist", async () => {
+    const phone = "+14155550112";
+    await insertUser(phone, "otp-latest-verification@example.com");
+    const app = buildAppWithApiRoutes();
+    await request(app).post("/api/auth/otp/start").send({ phone });
+
+    const userRow = await pool.query<{ id: string }>(
+      `select id from users where phone_number = $1 limit 1`,
+      [phone]
+    );
+    const userId = userRow.rows[0]?.id;
+    expect(userId).toBeTruthy();
+
+    await pool.query(
+      `insert into otp_verifications (id, user_id, phone, verification_sid, status, verified_at, created_at)
+       values ($1, $2, $3, null, 'approved', now() - interval '5 minute', now() - interval '5 minute')`,
+      [randomUUID(), userId, phone]
+    );
+    await pool.query(
+      `insert into otp_verifications (id, user_id, phone, verification_sid, status, verified_at, created_at)
+       values ($1, $2, $3, null, 'pending', null, now())`,
+      [randomUUID(), userId, phone]
+    );
+
+    const res = await request(app).post("/api/auth/otp/verify").send({ phone, code: "123456" });
+    expect(res.status).toBe(400);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error.code).toBe("invalid_otp");
+  });
+
 });

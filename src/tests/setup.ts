@@ -43,6 +43,18 @@ beforeAll(async () => {
     );
   `)
 
+
+
+  await pool.query(`
+    create table if not exists otp_sessions (
+      id uuid primary key,
+      phone text not null,
+      code text not null,
+      created_at timestamptz not null default now(),
+      expires_at timestamptz not null
+    );
+  `)
+
   await pool.query(`
     create table if not exists otp_verifications (
       id uuid primary key,

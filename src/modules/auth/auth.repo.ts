@@ -282,6 +282,14 @@ export interface OtpVerificationRecord {
   createdAt: Date;
 }
 
+export interface OtpSessionRecord {
+  id: string;
+  phone: string;
+  code: string;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
 export async function storeRefreshToken(params: {
   userId: string;
   token: string;
@@ -518,6 +526,55 @@ export async function findLatestOtpVerificationByPhone(params: {
      limit 1`,
     [params.phone]
   );
+  return res.rows[0] ?? null;
+}
+
+export async function createOtpSession(params: {
+  phone: string;
+  code: string;
+  expiresAt: Date;
+  client?: Queryable;
+}): Promise<OtpSessionRecord> {
+  const runner = params.client ?? pool;
+  const res = await runAuthQuery<OtpSessionRecord>(
+    runner,
+    `insert into otp_sessions (id, phone, code, created_at, expires_at)
+     values ($1, $2, $3, now(), $4)
+     returning id,
+              phone,
+              code,
+              created_at as "createdAt",
+              expires_at as "expiresAt"`,
+    [randomUUID(), params.phone, params.code, params.expiresAt]
+  );
+
+  const row = res.rows[0];
+  if (!row) {
+    throw new AppError("data_error", "Failed to create OTP session.", 500);
+  }
+
+  return row;
+}
+
+export async function findLatestOtpSessionByPhone(params: {
+  phone: string;
+  client?: Queryable;
+}): Promise<OtpSessionRecord | null> {
+  const runner = params.client ?? pool;
+  const res = await runAuthQuery<OtpSessionRecord>(
+    runner,
+    `select id,
+            phone,
+            code,
+            created_at as "createdAt",
+            expires_at as "expiresAt"
+     from otp_sessions
+     where phone = $1
+     order by created_at desc
+     limit 1`,
+    [params.phone]
+  );
+
   return res.rows[0] ?? null;
 }
 

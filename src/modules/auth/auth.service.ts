@@ -5,8 +5,9 @@ import {
   createUser,
   findAuthUserByPhone,
   findAuthUserById,
-  findApprovedOtpVerificationByPhone,
   findLatestOtpVerificationByPhone,
+  findLatestOtpSessionByPhone,
+  createOtpSession,
   createOtpVerification,
   updateOtpVerificationStatus,
   setUserActive,
@@ -45,6 +46,8 @@ import { assertLenderBinding } from "../../auth/lenderBinding";
 const OTP_TRACE = (...args: any[]) => {
   console.log("[OTP_TRACE]", ...args);
 };
+
+const OTP_SESSION_TTL_MS = 10 * 60 * 1000;
 
 type RefreshTokenPayload = JwtPayload & {
   sub?: string;
@@ -495,6 +498,10 @@ function isOtpVerificationFresh(record: {
   return Date.now() - timestamp.valueOf() <= OTP_VERIFICATION_MAX_AGE_MS;
 }
 
+function isOtpSessionExpired(record: { expiresAt: Date }): boolean {
+  return record.expiresAt.valueOf() <= Date.now();
+}
+
 function isMissingOtpTableError(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -518,15 +525,15 @@ async function safeFindLatestOtpVerificationByPhone(
   }
 }
 
-async function safeFindApprovedOtpVerificationByPhone(
+async function safeFindLatestOtpSessionByPhone(
   phone: string,
   requestId: string
 ) {
   try {
-    return await findApprovedOtpVerificationByPhone({ phone });
+    return await findLatestOtpSessionByPhone({ phone });
   } catch (err) {
     if (isMissingOtpTableError(err)) {
-      logWarn("otp_verification_table_missing", { requestId });
+      logWarn("otp_session_table_missing", { requestId });
       return null;
     }
     throw err;
@@ -656,6 +663,11 @@ export async function startOtp(
 
     if (isTestEnvironment()) {
       const generatedOtp = getOrCreateTestOtp(phoneE164);
+      const session = await createOtpSession({
+        phone: phoneE164,
+        code: generatedOtp,
+        expiresAt: new Date(Date.now() + OTP_SESSION_TTL_MS),
+      });
       OTP_TRACE("OTP_START", {
         phone: phoneE164,
         code: generatedOtp,
@@ -665,16 +677,21 @@ export async function startOtp(
       logInfo("otp_start_sent", {
         ...startMeta,
         providerStatus: "approved",
-        sid: "test",
+        sid: session.id,
       });
       return {
         ok: true,
-        sid: "test",
+        sid: session.id,
         otp: generatedOtp,
       };
     }
 
     try {
+      const session = await createOtpSession({
+        phone: phoneE164,
+        code: "",
+        expiresAt: new Date(Date.now() + OTP_SESSION_TTL_MS),
+      });
       const verification = await twilioClient.verify.v2
         .services(serviceSid)
         .verifications.create({
@@ -704,7 +721,7 @@ export async function startOtp(
           error: err instanceof Error ? err.message : "unknown_error",
         });
       }
-      return { ok: true, sid: verification.sid ?? "unknown" };
+      return { ok: true, sid: verification.sid ?? session.id };
     } catch (err: any) {
       const details = getTwilioErrorDetails(err);
       logError("auth_twilio_verify_failed", {
@@ -780,6 +797,19 @@ export async function verifyOtpCode(params: {
     assertSingleVerifyAttempt(phoneE164);
     dedupPhone = phoneE164;
 
+    const latestSession = await safeFindLatestOtpSessionByPhone(phoneE164, requestId);
+    if (!latestSession || isOtpSessionExpired(latestSession)) {
+      logWarn("otp_verify_response", {
+        ...meta,
+        providerStatus: "not_checked",
+        userFound: false,
+        tokenCreated: false,
+        ok: false,
+        error: "expired_code",
+      });
+      return { ok: false, status: 400, error: { code: "expired_code", message: "OTP session expired" } };
+    }
+
     let latestVerification = await safeFindLatestOtpVerificationByPhone(phoneE164, requestId);
     if (!latestVerification || !isOtpVerificationFresh(latestVerification)) {
       logWarn("otp_verify_response", {
@@ -796,12 +826,6 @@ export async function verifyOtpCode(params: {
     let providerStatus: string | undefined;
     if (latestVerification.status === "approved" && isOtpVerificationFresh(latestVerification)) {
       providerStatus = "approved";
-    } else {
-      const approvedVerification = await safeFindApprovedOtpVerificationByPhone(phoneE164, requestId);
-      if (approvedVerification && isOtpVerificationFresh(approvedVerification)) {
-        providerStatus = "approved";
-        latestVerification = approvedVerification;
-      }
     }
 
     const twilioClient = getTwilioClient();
@@ -814,6 +838,11 @@ export async function verifyOtpCode(params: {
           recordOtpAttempt(phoneE164, codeHash);
           logInfo("otp_verify_provider_result", { ...meta, providerStatus: "expired", userFound: false, tokenCreated: false });
           return { ok: false, status: 400, error: { code: "expired_code", message: "OTP code expired." } };
+        }
+        if (latestSession.code && latestSession.code !== code) {
+          recordOtpAttempt(phoneE164, codeHash);
+          logInfo("otp_verify_provider_result", { ...meta, providerStatus: "invalid", userFound: false, tokenCreated: false });
+          return { ok: false, status: 400, error: { code: "invalid_code", message: "Invalid OTP code." } };
         }
         if (testOtp.code !== code) {
           recordOtpAttempt(phoneE164, codeHash);
