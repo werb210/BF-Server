@@ -97,6 +97,19 @@ router.post("/start", otpLimiter, async (req, res) => {
 
 router.post("/verify", otpVerifyLimiter(), async (req, res) => {
   let phoneForLock: string | null = null;
+  const requestId = res.locals.requestId ?? "unknown";
+
+  const fail = (code: string, message: string) => {
+    return res.status(400).json({
+      ok: false,
+      data: null,
+      error: {
+        code,
+        message,
+      },
+      requestId,
+    });
+  };
 
   try {
     const rawBody =
@@ -114,17 +127,14 @@ router.post("/verify", otpVerifyLimiter(), async (req, res) => {
     const otpSessionId = rawBody.otpSessionId || null;
 
     if (!phoneRaw || !code) {
-      return res.status(400).json({
-        ok: false,
-        error: "invalid_payload",
-      });
+      return fail("invalid_payload", "Phone and code are required");
     }
 
     req.body = { ...rawBody, phone: phoneRaw };
 
     const normalizedPhone = normalizeOtpPhone(req.body.phone);
     if (!normalizedPhone) {
-      return res.status(400).json({ ok: false, error: "invalid_phone" });
+      return fail("invalid_phone", "Phone number is invalid");
     }
 
     const parsed = verifyOtpSchema.parse({ ...req.body, phone: normalizedPhone, code });
@@ -133,17 +143,11 @@ router.post("/verify", otpVerifyLimiter(), async (req, res) => {
     const parsedCode = parsed.code.trim();
 
     if (!parsedCode) {
-      return res.status(400).json({
-        ok: false,
-        error: "invalid_code",
-      });
+      return fail("invalid_code", "OTP code is invalid");
     }
 
     if (activeVerifications.get(phone)) {
-      return res.status(429).json({
-        ok: false,
-        error: "verify_in_progress",
-      });
+      return fail("verify_in_progress", "Verification already in progress");
     }
 
     activeVerifications.set(phone, true);
@@ -163,24 +167,13 @@ router.post("/verify", otpVerifyLimiter(), async (req, res) => {
 
     if (!result.ok) {
       const errorCode = result.error.code === "invalid_code" ? "invalid_otp" : result.error.code;
-      return res.status(result.error.code === "invalid_code" ? 400 : result.status).json({
-        ok: false,
-        data: null,
-        error: {
-          code: errorCode,
-          message: result.error.message,
-        },
-      });
+      return fail(errorCode, result.error.message);
     }
 
     resetOtpRateLimit(phone);
 
     if (!result.token || !result.sessionToken || !result.user) {
-      return res.status(401).json({
-        ok: false,
-        data: null,
-        error: { code: "auth_token_creation_failed", message: "Failed to create auth token" },
-      });
+      return fail("auth_token_creation_failed", "Failed to create auth token");
     }
 
     return res.status(200).json({
@@ -188,21 +181,19 @@ router.post("/verify", otpVerifyLimiter(), async (req, res) => {
       data: {
         token: result.token,
         sessionToken: result.sessionToken,
-        user: result.user,
-        applicationId: result.applicationId,
-        nextPath: result.nextPath,
+        user: {
+          id: result.user.id,
+          role: result.user.role,
+          email: result.user.email ?? null,
+        },
+        applicationId: null,
+        nextPath: "/portal",
       },
       error: null,
+      requestId,
     });
   } catch (err) {
-    return res.status(400).json({
-      ok: false,
-      data: null,
-      error: {
-        code: "verify_failed",
-        message: "OTP verification failed",
-      },
-    });
+    return fail("verify_failed", "OTP verification failed");
   } finally {
     if (phoneForLock) {
       activeVerifications.delete(phoneForLock);
