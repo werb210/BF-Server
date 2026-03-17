@@ -1,10 +1,13 @@
-export function normalizePhone(input: string): string {
-  if (!input) return input;
+export function normalizePhone(phone: string): string {
+  if (!phone) return "";
 
-  const digits = input.replace(/[^\d]/g, "");
+  // remove spaces, dashes, etc.
+  phone = phone.replace(/[^\d+]/g, "");
 
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  // ensure leading +
+  if (!phone.startsWith("+")) {
+    phone = "+" + phone;
+  }
 
-  return input;
+  return phone;
 }
