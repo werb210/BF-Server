@@ -178,7 +178,7 @@ export async function tagStartupInterest(req: Request, res: Response): Promise<v
   }
 
 
-  if (leadContext) {
+  if (leadContext && (leadContext.email || leadContext.phone)) {
     await upsertCrmLead({
       companyName: leadContext.company_name ?? undefined,
       fullName: leadContext.full_name ?? undefined,

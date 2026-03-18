@@ -15,6 +15,14 @@ export async function seedLenderProduct(params: SeedLenderProductParams): Promis
   lenderId: string;
   productId: string;
 }> {
+  await pool.query(
+    `update lender_products
+     set active = false,
+         updated_at = now()
+     where category = $1
+       and country = $2`,
+    [params.category, params.country]
+  );
   const lenderId = randomUUID();
   const productId = randomUUID();
   await pool.query(

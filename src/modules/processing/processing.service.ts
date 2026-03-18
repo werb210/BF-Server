@@ -3,6 +3,7 @@ import { AppError } from "../../middleware/errors";
 import { getDocumentTypeAliases } from "../../db/schema/requiredDocuments";
 import { advanceProcessingStage } from "../applications/processingStage.service";
 import type { PoolClient } from "pg";
+import { randomUUID } from "crypto";
 import { getCircuitBreaker } from "../../utils/circuitBreaker";
 import { getRetryPolicyEnabled } from "../../config";
 import { assertRetryAllowed } from "./retryPolicy";
@@ -131,10 +132,10 @@ export async function createDocumentProcessingJob(
     }
     const inserted = await client.query<DocumentProcessingJobRecord>(
       `insert into document_processing_jobs
-       (application_id, document_id, status)
-       values ($1, $2, 'pending')
+       (id, application_id, document_id, status)
+       values ($1, $2, $3, 'pending')
        returning id, application_id, document_id, status, created_at, completed_at`,
-      [applicationId, documentId]
+      [randomUUID(), applicationId, documentId]
     );
     await advanceProcessingStage({ applicationId, client });
     await client.query("commit");
@@ -312,10 +313,10 @@ export async function createBankingAnalysisJob(
     }
     const inserted = await client.query<BankingAnalysisJobRecord>(
       `insert into banking_analysis_jobs
-       (application_id, status)
-       values ($1, 'pending')
+       (id, application_id, status)
+       values ($1, $2, 'pending')
        returning id, application_id, status, created_at, completed_at`,
-      [applicationId]
+      [randomUUID(), applicationId]
     );
     await advanceProcessingStage({ applicationId, client });
     await client.query("commit");
