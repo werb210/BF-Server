@@ -44,6 +44,7 @@ beforeAll(async () => {
   await pool.query("drop table if exists auth_refresh_tokens cascade;");
   await pool.query("drop table if exists otp_verifications cascade;");
   await pool.query("drop table if exists otp_sessions cascade;");
+  await pool.query("drop table if exists otp_codes cascade;");
   await pool.query("drop table if exists audit_events cascade;");
   await pool.query("drop table if exists lenders cascade;");
   await pool.query("drop table if exists users cascade;");
@@ -104,6 +105,16 @@ beforeAll(async () => {
     );
   `);
   await pool.query(`create index if not exists idx_otp_phone on otp_sessions(phone);`);
+  await pool.query(`
+    create table if not exists otp_codes (
+      id uuid primary key,
+      phone text not null,
+      code text not null,
+      created_at timestamptz not null default now(),
+      expires_at timestamptz not null
+    );
+  `);
+  await pool.query(`create index if not exists otp_codes_phone_idx on otp_codes(phone);`);
   await pool.query(`
     create table if not exists otp_verifications (
       id uuid primary key,

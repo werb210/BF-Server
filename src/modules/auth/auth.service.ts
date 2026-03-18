@@ -8,6 +8,9 @@ import {
   findLatestOtpVerificationByPhone,
   findLatestOtpSessionByPhone,
   createOtpSession,
+  createOtpCode,
+  findLatestOtpCodeByPhone,
+  deleteOtpCodesByPhone,
   createOtpVerification,
   updateOtpVerificationStatus,
   setUserActive,
@@ -229,26 +232,13 @@ const OTP_VERIFICATION_MAX_AGE_MS = 10 * 60 * 1000;
 const OTP_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const OTP_MAX_VERIFY_ATTEMPTS = 5;
 const otpAttemptState = new Map<string, { count: number; resetAt: number; lastCodeHash: string }>();
-const testOtpStore = new Map<string, { code: string; expiresAt: number }>();
-const TEST_OTP_TTL_MS = 5 * 60 * 1000;
-
 function getOrCreateTestOtp(phoneE164: string): string {
   const forcedTestOtp = process.env.TEST_OTP_CODE?.trim();
   if (forcedTestOtp) {
     return forcedTestOtp;
   }
-
-  const existing = testOtpStore.get(phoneE164);
-  const now = Date.now();
-  if (existing && existing.expiresAt > now) {
-    return existing.code;
-  }
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
-  testOtpStore.set(phoneE164, {
-    code,
-    expiresAt: now + TEST_OTP_TTL_MS,
-  });
-  return code;
+  const seed = `${phoneE164}:${Math.floor(Date.now() / (5 * 60 * 1000))}`;
+  return (parseInt(createHash("sha256").update(seed).digest("hex").slice(0, 8), 16) % 900000 + 100000).toString();
 }
 
 function hashOtpCode(code: string): string {
@@ -671,6 +661,10 @@ export async function startOtp(
 
     if (isTestEnvironment()) {
       const generatedOtp = getOrCreateTestOtp(phoneE164);
+      await createOtpCode({
+        phone: phoneE164,
+        code: generatedOtp,
+      });
       const session = await createOtpSession({
         phone: phoneE164,
         code: generatedOtp,
@@ -857,21 +851,21 @@ export async function verifyOtpCode(params: {
 
     if (providerStatus !== "approved") {
       if (isTestEnvironment()) {
-        const testOtp = testOtpStore.get(phoneE164);
-        if (!testOtp || testOtp.expiresAt <= Date.now()) {
+        const otpRecord = await findLatestOtpCodeByPhone({ phone: phoneE164 });
+        if (!otpRecord) {
+          recordOtpAttempt(phoneE164, codeHash);
+          logInfo("otp_verify_provider_result", { ...meta, providerStatus: "missing", userFound: false, tokenCreated: false });
+          return { ok: false, status: 400, error: { code: "invalid_code", message: "No code" } };
+        }
+        if (otpRecord.expiresAt.getTime() <= Date.now()) {
           recordOtpAttempt(phoneE164, codeHash);
           logInfo("otp_verify_provider_result", { ...meta, providerStatus: "expired", userFound: false, tokenCreated: false });
-          return { ok: false, status: 400, error: { code: "expired_code", message: "OTP code expired." } };
+          return { ok: false, status: 400, error: { code: "expired_code", message: "Expired" } };
         }
-        if (latestSession.code && latestSession.code !== code) {
+        if (otpRecord.code !== code) {
           recordOtpAttempt(phoneE164, codeHash);
           logInfo("otp_verify_provider_result", { ...meta, providerStatus: "invalid", userFound: false, tokenCreated: false });
-          return { ok: false, status: 400, error: { code: "invalid_code", message: "Invalid OTP code." } };
-        }
-        if (testOtp.code !== code) {
-          recordOtpAttempt(phoneE164, codeHash);
-          logInfo("otp_verify_provider_result", { ...meta, providerStatus: "invalid", userFound: false, tokenCreated: false });
-          return { ok: false, status: 400, error: { code: "invalid_code", message: "Invalid OTP code." } };
+          return { ok: false, status: 400, error: { code: "invalid_code", message: "Invalid" } };
         }
         providerStatus = "approved";
       } else {
@@ -906,7 +900,7 @@ export async function verifyOtpCode(params: {
     }
 
     clearOtpAttemptLimit(phoneE164);
-    testOtpStore.delete(phoneE164);
+    await deleteOtpCodesByPhone({ phone: phoneE164 });
 
     const existingUser = await findAuthUserByPhone(phoneE164);
     logInfo("otp_verify_user_lookup", { ...meta, providerStatus, userFound: Boolean(existingUser), tokenCreated: false });

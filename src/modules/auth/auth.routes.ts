@@ -5,7 +5,6 @@ import { pool } from "../../db";
 import { requireAuth, requireAuthorization } from "../../middleware/auth";
 import { ALL_ROLES } from "../../auth/roles";
 import { normalizePhone } from "../../lib/phone";
-import { clearOtp, getOtp, setOtp } from "../../lib/otpStore";
 import { getTwilioClient, getVerifyServiceSid } from "../../services/twilio";
 
 const router = Router();
@@ -32,13 +31,10 @@ router.post("/otp/start", async (req: Request, res: Response) => {
 
   const code = generateCode();
 
-  setOtp(phone, code);
-
   console.log("OTP_START", {
     phone,
     code,
   });
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
   try {
     const twilioClient = getTwilioClient();
@@ -51,10 +47,10 @@ router.post("/otp/start", async (req: Request, res: Response) => {
     }
 
     const insertResult = await pool.query(
-      `insert into otp_sessions (id, phone, code, created_at, expires_at)
-       values ($1, $2, $3, now(), $4)
-       returning *`,
-      [randomUUID(), phone, code, expiresAt]
+      `insert into otp_codes (id, phone, code, created_at, expires_at)
+       values ($1, $2, $3, now(), now() + interval '5 minutes')
+       returning id`,
+      [randomUUID(), phone, code]
     );
 
     if (!insertResult.rows || insertResult.rows.length === 0) {
@@ -79,14 +75,27 @@ router.post("/otp/verify", async (req: Request, res: Response) => {
   const phoneInput = typeof body.phone === "string" ? body.phone : "";
   const phone = normalizePhone(phoneInput);
   const incoming = typeof body.code === "string" ? body.code : typeof body.code === "number" ? String(body.code) : "";
-  const record = getOtp(phone);
 
   if (!phone || !incoming) {
     return res.status(400).json({ ok: false, error: "Missing fields" });
   }
 
+  const latestOtpResult = await pool.query<{ code: string; expires_at: Date }>(
+    `select code, expires_at
+     from otp_codes
+     where phone = $1
+     order by created_at desc
+     limit 1`,
+    [phone]
+  );
+  const record = latestOtpResult.rows[0] ?? null;
+
   if (!record) {
-    return res.status(400).json({ ok: false, error: "No code found" });
+    return res.status(400).json({ ok: false, error: "No code" });
+  }
+
+  if (record.expires_at.getTime() <= Date.now()) {
+    return res.status(400).json({ ok: false, error: "Expired" });
   }
 
   console.log("OTP_VERIFY", {
@@ -98,12 +107,12 @@ router.post("/otp/verify", async (req: Request, res: Response) => {
   if (record.code !== incoming) {
     return res.status(400).json({
       ok: false,
-      error: "Invalid code",
+      error: "Invalid",
       debug: { stored: record.code, incoming },
     });
   }
 
-  clearOtp(phone);
+  await pool.query(`delete from otp_codes where phone = $1`, [phone]);
 
   let user: Record<string, any> | null = null;
 
