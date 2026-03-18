@@ -8,6 +8,7 @@ import { normalizePhone } from "../../utils/phone";
 import { getTwilioClient, getVerifyServiceSid } from "../../services/twilio";
 
 const router = Router();
+const otpStore: Record<string, string> = {};
 
 function coerceBody(body: unknown): Record<string, unknown> {
   if (!body || typeof body !== "object") {
@@ -29,7 +30,9 @@ router.post("/otp/start", async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: "Missing phone" });
   }
 
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
+  otpStore[phone] = generatedCode;
+  console.log("OTP START", phone, generatedCode);
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
   try {
@@ -46,7 +49,7 @@ router.post("/otp/start", async (req: Request, res: Response) => {
       `insert into otp_sessions (id, phone, code, created_at, expires_at)
        values ($1, $2, $3, now(), $4)
        returning *`,
-      [randomUUID(), phone, code, expiresAt]
+      [randomUUID(), phone, generatedCode, expiresAt]
     );
 
     if (!insertResult.rows || insertResult.rows.length === 0) {
@@ -61,6 +64,7 @@ router.post("/otp/start", async (req: Request, res: Response) => {
     ok: true,
     data: {
       sent: true,
+      otp: generatedCode,
     },
   });
 });
@@ -77,6 +81,11 @@ router.post("/otp/verify", async (req: Request, res: Response) => {
 
   if (!phone || !inputCode) {
     return res.status(400).json({ ok: false, error: "Missing fields" });
+  }
+
+  console.log("OTP VERIFY", phone, inputCode, otpStore[phone]);
+  if (otpStore[phone] !== inputCode) {
+    return res.status(400).json({ ok: false, error: "Invalid code" });
   }
 
   let record: Record<string, any> | null = null;

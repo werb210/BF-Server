@@ -1,22 +1,15 @@
 export function normalizePhone(phone: string): string {
-  if (!phone) {
-    return "";
-  }
-
-  const digits = phone.replace(/[^\d]/g, "");
-  if (!digits) {
-    return "";
-  }
-
-  if (digits.startsWith("1") && digits.length === 11) {
-    return `+${digits}`;
-  }
+  const digits = phone.replace(/\D/g, "");
 
   if (digits.length === 10) {
     return `+1${digits}`;
   }
 
-  return `+${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `+${digits}`;
+  }
+
+  return phone;
 }
 
 export function tryNormalizePhone(phone: unknown): string | null {
@@ -24,10 +17,6 @@ export function tryNormalizePhone(phone: unknown): string | null {
     return null;
   }
 
-  try {
-    const normalizedPhone = normalizePhone(phone);
-    return normalizedPhone.length > 1 ? normalizedPhone : null;
-  } catch {
-    return null;
-  }
+  const normalizedPhone = normalizePhone(phone);
+  return normalizedPhone.length > 1 ? normalizedPhone : null;
 }
