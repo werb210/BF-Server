@@ -25,11 +25,12 @@ export async function seedLenderProduct(params: SeedLenderProductParams): Promis
   );
   const lenderId = randomUUID();
   const productId = randomUUID();
+  const lenderName = `Test Lender ${lenderId}`;
   await pool.query(
     `insert into lenders
      (id, name, country, submission_method, active, created_at, updated_at)
-     values ($1, 'Test Lender', $2, 'api', true, now(), now())`,
-    [lenderId, params.country]
+     values ($1, $3, $2, 'api', true, now(), now())`,
+    [lenderId, params.country, lenderName]
   );
   await pool.query(
     `insert into lender_products
