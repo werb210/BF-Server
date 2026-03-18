@@ -1,150 +1,168 @@
-import { Router, type NextFunction, type Request, type Response } from "express";
-import { parse as parseQueryString } from "querystring";
-import { AppError } from "../../middleware/errors";
-import {
-  otpRateLimit,
-  verifyOtpRateLimit,
-} from "../../middleware/rateLimit";
-import { startOtp, verifyOtpCode } from "./otp.service";
-import {
-  startOtpResponseSchema,
-  validateStartOtp,
-  validateVerifyOtp,
-  verifyOtpResponseSchema,
-} from "../../validation/auth.validation";
+import { randomUUID } from "crypto";
+import { Router, type Request, type Response } from "express";
+import jwt from "jsonwebtoken";
+import { pool } from "../../db";
 import { requireAuth, requireAuthorization } from "../../middleware/auth";
 import { ALL_ROLES } from "../../auth/roles";
-import { isTestEnvironment } from "../../config";
-import { normalizePhone } from "./phone";
 
 const router = Router();
 
 function coerceBody(body: unknown): Record<string, unknown> {
-  if (!body) return {};
-  if (typeof body === "string") {
-    const trimmed = body.trim();
-    if (!trimmed) return {};
-    try {
-      return JSON.parse(trimmed) as Record<string, unknown>;
-    } catch {
-      return parseQueryString(trimmed) as Record<string, unknown>;
-    }
+  if (!body || typeof body !== "object") {
+    return {};
   }
-  if (typeof body === "object") return body as Record<string, unknown>;
-  return {};
+  return body as Record<string, unknown>;
 }
 
-function respondError(res: Response, status: number, message: string): void {
-  res.status(status).json({ ok: false, error: message });
-}
+router.post("/otp/start", async (req: Request, res: Response) => {
+  const body = coerceBody(req.body);
+  const phone = typeof body.phone === "string" ? body.phone.trim() : "";
 
-function respondOk<T>(res: Response, data: T, status = 200): void {
-  res.status(status).json({ ok: true, data });
-}
+  if (!phone) {
+    return res.status(400).json({ ok: false, error: "Missing phone" });
+  }
 
-router.post("/otp/start", otpRateLimit(), async (req: Request, res: Response, next: NextFunction) => {
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
   try {
-    const rawBody = coerceBody(req.body);
-    const phone = rawBody.phone ?? rawBody.phoneNumber ?? rawBody.phone_number ?? rawBody.mobile ?? null;
-    req.body = { ...rawBody, ...(phone !== null ? { phone } : {}) };
+    const insertResult = await pool.query(
+      `insert into otp_sessions (id, phone, code, expires_at)
+       values ($1, $2, $3, $4)
+       returning id, phone, code, created_at, expires_at`,
+      [randomUUID(), phone, code, expiresAt]
+    );
 
-    const validation = validateStartOtp(req);
-    if (!validation.success) {
-      respondError(res, 400, "Invalid request payload");
-      return;
+    console.log("OTP INSERT RESULT:", insertResult.rows);
+
+    if (!insertResult.rows || insertResult.rows.length === 0) {
+      throw new Error("OTP insert failed");
     }
-
-    let normalizedPhone: string;
-    try {
-      normalizedPhone = normalizePhone(validation.data.phone);
-    } catch {
-      respondError(res, 400, "Invalid phone number");
-      return;
-    }
-
-    const otpStartResult = await startOtp(normalizedPhone);
-    const responseBody = { sent: true, ...(isTestEnvironment() ? { otp: otpStartResult.otp } : {}) };
-    const responseValidation = startOtpResponseSchema.safeParse(responseBody);
-    if (!responseValidation.success) {
-      respondError(res, 500, "Invalid auth response shape");
-      return;
-    }
-
-    respondOk(res, responseBody);
   } catch (err) {
-    if (err instanceof AppError) {
-      respondError(res, err.status, err.message);
-      return;
-    }
-    next(err);
+    console.error("OTP INSERT ERROR:", err);
+    return res.status(500).json({ ok: false, error: "OTP persistence failed" });
   }
+
+  return res.json({
+    ok: true,
+    data: {
+      phone,
+      expiresAt,
+      otp: code,
+    },
+  });
 });
 
-router.post("/otp/verify", verifyOtpRateLimit(), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const rawBody = coerceBody(req.body);
-    const phone = rawBody.phone ?? rawBody.phoneNumber ?? rawBody.phone_number ?? rawBody.mobile ?? null;
-    const codeRaw = rawBody.code ?? rawBody.otp ?? rawBody.token ?? null;
-    req.body = { ...rawBody, ...(phone !== null ? { phone } : {}), ...(codeRaw !== null ? { code: codeRaw } : {}) };
+router.post("/otp/verify", async (req: Request, res: Response) => {
+  const body = coerceBody(req.body);
+  const phone = typeof body.phone === "string" ? body.phone.trim() : "";
+  const code = typeof body.code === "string" ? body.code.trim() : "";
 
-    const validation = validateVerifyOtp(req);
-    if (!validation.success) {
-      respondError(res, 400, "Invalid request payload");
-      return;
-    }
-
-    let normalizedPhone: string;
-    try {
-      normalizedPhone = normalizePhone(validation.data.phone);
-    } catch {
-      respondError(res, 400, "Invalid phone number");
-      return;
-    }
-
-    const result = await verifyOtpCode({
-      phone: normalizedPhone,
-      code: validation.data.code,
-      ...(validation.data.email !== undefined ? { email: validation.data.email } : {}),
-      ...(req.ip ? { ip: req.ip } : {}),
-      ...(req.get("user-agent") ? { userAgent: req.get("user-agent") } : {}),
-      route: "/api/auth/otp/verify",
-      method: req.method,
-    });
-
-    if (!result.ok) {
-      respondError(res, result.status, result.error.message);
-      return;
-    }
-
-    const responseValidation = verifyOtpResponseSchema.safeParse(result);
-    if (!responseValidation.success) {
-      respondError(res, 500, "Invalid auth response shape");
-      return;
-    }
-
-    res.status(200).json(result);
-  } catch (err) {
-    if (err instanceof AppError) {
-      respondError(res, err.status, err.message);
-      return;
-    }
-    next(err);
+  if (!phone || !code) {
+    return res.status(400).json({ ok: false, error: "Missing fields" });
   }
+
+  let record: Record<string, any> | null = null;
+
+  try {
+    const rows = await pool.query(
+      `select id, phone, code, created_at, expires_at
+       from otp_sessions
+       where phone = $1
+       order by created_at desc
+       limit 1`,
+      [phone]
+    );
+
+    record = rows.rows[0] ?? null;
+
+    console.log("OTP FETCH RESULT:", record);
+
+    if (!record) {
+      return res.status(400).json({ ok: false, error: "No OTP session" });
+    }
+
+    if (record.code !== code) {
+      return res.status(400).json({ ok: false, error: "Invalid code" });
+    }
+
+    if (new Date(record.expires_at) < new Date()) {
+      return res.status(400).json({ ok: false, error: "Expired code" });
+    }
+  } catch (err) {
+    console.error("OTP VERIFY ERROR:", err);
+    return res.status(500).json({ ok: false, error: "Verification failed" });
+  }
+
+  let user: Record<string, any> | null = null;
+
+  try {
+    const existing = await pool.query(
+      `select *
+       from users
+       where phone = $1 or phone_number = $1
+       limit 1`,
+      [phone]
+    );
+
+    user = existing.rows[0] ?? null;
+
+    if (!user) {
+      const created = await pool.query(
+        `insert into users (id, phone, phone_number, role, active, status, phone_verified, token_version)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)
+         returning *`,
+        [randomUUID(), phone, phone, "Staff", true, "ACTIVE", true, 0]
+      );
+
+      if (!created.rows[0]) {
+        throw new Error("User creation insert failed");
+      }
+
+      user = created.rows[0];
+    }
+  } catch (err) {
+    console.error("USER ERROR:", err);
+    return res.status(500).json({ ok: false, error: "User creation failed" });
+  }
+
+  if (!user) {
+    return res.status(500).json({ ok: false, error: "User creation failed" });
+  }
+
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET missing");
+  }
+
+  const token = jwt.sign({ userId: user.id, phone }, process.env.JWT_SECRET, {
+    expiresIn: "7d",
+  });
+
+  return res.json({
+    ok: true,
+    data: {
+      token,
+      user,
+      nextPath: "/portal",
+    },
+  });
 });
 
 router.get("/me", requireAuth, requireAuthorization({ roles: ALL_ROLES }), async (req, res) => {
   const user = req.user;
   if (!user) {
-    respondError(res, 401, "Authorization token is required.");
-    return;
+    return res.status(401).json({ ok: false, error: "Authorization token is required." });
   }
 
-  respondOk(res, {
-    user: {
-      id: user.userId,
-      role: user.role,
-      silo: user.silo,
-      phone: user.phone,
+  return res.json({
+    ok: true,
+    data: {
+      user: {
+        id: user.userId,
+        role: user.role,
+        silo: user.silo,
+        phone: user.phone,
+      },
     },
   });
 });

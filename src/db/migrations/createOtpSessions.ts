@@ -7,13 +7,16 @@ export async function createOtpSessionsTable(): Promise<void> {
     migrationPromise = db
       .query(`
         CREATE TABLE IF NOT EXISTS otp_sessions (
-          id UUID PRIMARY KEY,
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           phone TEXT NOT NULL,
           code TEXT NOT NULL,
-          created_at TIMESTAMPTZ DEFAULT NOW(),
-          expires_at TIMESTAMPTZ NOT NULL
+          created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+          expires_at TIMESTAMP NOT NULL
         );
       `)
+      .then(async () => {
+        await db.query("CREATE INDEX IF NOT EXISTS idx_otp_phone ON otp_sessions(phone);");
+      })
       .then(() => undefined)
       .catch((error) => {
         migrationPromise = null;

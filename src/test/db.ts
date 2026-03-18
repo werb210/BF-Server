@@ -1,26 +1,12 @@
-import { Pool } from "pg"
-
-let pool
+import { pool } from "../db";
 
 export async function initTestDb() {
-  if (pool) return pool
-
-  pool = new Pool({
-    connectionString:
-      process.env.TEST_DATABASE_URL ||
-      process.env.DATABASE_URL ||
-      "postgres://postgres:postgres@localhost:5432/test_db",
-  })
-
-  await pool.query("SELECT 1")
-
-  return pool
+  await pool.query("SELECT 1");
+  return pool;
 }
 
 export async function closeTestDb() {
-  if (pool) {
-    await pool.end()
-  }
+  // Shared test pool is managed by the main DB module.
 }
 
-export default initTestDb
+export default initTestDb;

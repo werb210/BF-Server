@@ -96,13 +96,14 @@ beforeAll(async () => {
   `);
   await pool.query(`
     create table if not exists otp_sessions (
-      id uuid primary key,
+      id uuid primary key default gen_random_uuid(),
       phone text not null,
       code text not null,
-      created_at timestamptz not null default now(),
-      expires_at timestamptz not null
+      created_at timestamp not null default now(),
+      expires_at timestamp not null
     );
   `);
+  await pool.query(`create index if not exists idx_otp_phone on otp_sessions(phone);`);
   await pool.query(`
     create table if not exists otp_verifications (
       id uuid primary key,

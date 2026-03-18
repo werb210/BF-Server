@@ -17,14 +17,14 @@ router.post("/api/auth/otp/start", async (req, res) => {
     normalizePhone(phone ?? "");
   } catch (err) {
     return res.status(400).json({
-      success: false,
-      message: err instanceof Error ? err.message : "Invalid phone number format",
+      ok: false,
+      error: err instanceof Error ? err.message : "Invalid phone number format",
     });
   }
 
   return res.json({
-    success: true,
-    message: "OTP sent",
+    ok: true,
+    data: { message: "OTP sent" },
   });
 });
 
@@ -35,13 +35,13 @@ router.post("/api/auth/otp/verify", async (req, res) => {
     normalizePhone(phone ?? "");
   } catch (err) {
     return res.status(400).json({
-      success: false,
-      message: err instanceof Error ? err.message : "Invalid phone number format",
+      ok: false,
+      error: err instanceof Error ? err.message : "Invalid phone number format",
     });
   }
 
   if (!code) {
-    return res.status(400).json({ error: "code required" });
+    return res.status(400).json({ ok: false, error: "code required" });
   }
 
   const sessionRequest = req as unknown as SessionRequest;
@@ -49,7 +49,8 @@ router.post("/api/auth/otp/verify", async (req, res) => {
   sessionRequest.session.user = { verified: true };
 
   return res.json({
-    success: true,
+    ok: true,
+    data: { verified: true },
   });
 });
 
