@@ -1,5 +1,5 @@
 import { type NextFunction, type Request, type Response } from "express";
-import { AppError } from "./errors";
+import { isAppError } from "./errors";
 import { isDbConnectionFailure } from "../dbRuntime";
 import { logError } from "../observability/logger";
 import { getRequestContext } from "../observability/requestContext";
@@ -37,17 +37,13 @@ export function safeHandler(handler: SafeRequestHandler): SafeRequestHandler {
       });
 
       // Let canonical error handlers deal with known error types
-      if (err instanceof AppError || isDbConnectionFailure(err)) {
+      if (isAppError(err) || isDbConnectionFailure(err)) {
         next(err as Error);
         return;
       }
 
-      // Final hard stop: unexpected server error
-      res.status(500).json({
-        code: "server_error",
-        message: "An unexpected error occurred.",
-        requestId,
-      });
+      // Delegate all other failures to the centralized error middleware.
+      next(err as Error);
     }
   };
 }

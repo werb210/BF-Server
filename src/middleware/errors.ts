@@ -15,6 +15,28 @@ export class AppError extends Error {
   }
 }
 
+export function isAppError(value: unknown): value is AppError {
+  if (value instanceof AppError) {
+    return true;
+  }
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const status = (value as { status?: unknown }).status;
+  const code = (value as { code?: unknown }).code;
+  const message = (value as { message?: unknown }).message;
+
+  return (
+    typeof status === "number" &&
+    Number.isFinite(status) &&
+    typeof code === "string" &&
+    code.length > 0 &&
+    typeof message === "string" &&
+    message.length > 0
+  );
+}
+
 export function forbiddenError(message = "Access denied."): AppError {
   return new AppError("forbidden", message, 403);
 }
@@ -57,7 +79,7 @@ function isAuthRoute(req: Request): boolean {
 }
 
 function resolveFailureReason(err: Error): string {
-  if (err instanceof AppError) {
+  if (isAppError(err)) {
     return AUTH_FAILURE_CODES.has(err.code)
       ? "auth_failure"
       : "request_error";
@@ -72,7 +94,7 @@ function resolveFailureReason(err: Error): string {
 function normalizeAuthError(
   err: Error
 ): { status: number; code: string; message: string; details?: unknown } {
-  if (err instanceof AppError) {
+  if (isAppError(err)) {
     return {
       status: err.status,
       code: err.code,
@@ -190,7 +212,7 @@ export function errorHandler(
   }
 
   // APPLICATION ERRORS
-  if (err instanceof AppError) {
+  if (isAppError(err)) {
     logWarn("request_error", {
       ...logBase,
       status: err.status,

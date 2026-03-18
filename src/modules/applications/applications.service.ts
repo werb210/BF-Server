@@ -949,7 +949,7 @@ export async function uploadDocument(params: {
       ? normalizedRequirement === normalizedRequested
       : item.documentType === requestedType;
   });
-  if (!requirement) {
+  if (!requirement && !normalizedRequested) {
     await recordDocumentUploadFailure({
       actorUserId: params.actorUserId,
       targetUserId: application.owner_user_id,
@@ -1070,7 +1070,7 @@ export async function uploadDocument(params: {
     await upsertApplicationRequiredDocument({
       applicationId: params.applicationId,
       documentCategory: normalizedCategory,
-      isRequired: requirement.required !== false,
+      isRequired: requirement?.required === true,
       status: "uploaded",
       client,
     });
@@ -1107,17 +1107,64 @@ export async function uploadDocument(params: {
 export async function changePipelineState(params: {
   applicationId: string;
   nextState: string;
+  override?: boolean;
   actorUserId: string;
   actorRole: Role;
   ip?: string;
   userAgent?: string;
 }): Promise<void> {
-  void params;
-  throw new AppError(
-    "forbidden",
-    "Manual pipeline stage changes are not permitted.",
-    403
-  );
+  const requestedState = params.nextState.trim().toUpperCase();
+  const isDeclinedAlias = requestedState === "DECLINED";
+  if (!isDeclinedAlias && !isPipelineState(requestedState)) {
+    throw new AppError("invalid_state", "Pipeline state is invalid.", 400);
+  }
+
+  const application = await findApplicationById(params.applicationId);
+  if (!application) {
+    throw new AppError("not_found", "Application not found.", 404);
+  }
+
+  if (!canAccessApplication(params.actorRole, application.owner_user_id, params.actorUserId)) {
+    throw new AppError("forbidden", "Not authorized.", 403);
+  }
+
+  const currentStage = assertPipelineState(application.pipeline_state);
+  const nextStage = isDeclinedAlias ? "DECLINED" : requestedState;
+
+  if (
+    !params.override &&
+    (currentStage === ApplicationStage.RECEIVED ||
+      currentStage === ApplicationStage.DOCUMENTS_REQUIRED) &&
+    nextStage === ApplicationStage.OFF_TO_LENDER
+  ) {
+    throw new AppError("invalid_transition", "Invalid pipeline transition.", 400);
+  }
+
+  if (currentStage === nextStage) {
+    return;
+  }
+
+  await updateApplicationPipelineState({
+    applicationId: params.applicationId,
+    pipelineState: nextStage,
+  });
+  await createApplicationStageEvent({
+    applicationId: params.applicationId,
+    fromStage: currentStage,
+    toStage: nextStage,
+    trigger: params.override ? "manual_override" : "manual_change",
+    triggeredBy: params.actorUserId,
+    reason: params.override ? "override" : null,
+  });
+  await recordAuditEvent({
+    action: "pipeline_state_changed",
+    actorUserId: params.actorUserId,
+    targetUserId: application.owner_user_id,
+    ip: params.ip ?? null,
+    userAgent: params.userAgent ?? null,
+    success: true,
+    metadata: { from: currentStage, to: nextStage, override: params.override === true },
+  });
 }
 
 export async function acceptDocumentVersion(params: {
@@ -1208,6 +1255,53 @@ export async function acceptDocumentVersion(params: {
       status: "accepted",
       client,
     });
+
+    const requiredDocuments = await listApplicationRequiredDocuments({
+      applicationId: params.applicationId,
+      client,
+    });
+    const hasPendingDocuments = requiredDocuments.some(
+      (doc) => doc.status !== "accepted"
+    );
+    if (!hasPendingDocuments && application.pipeline_state === ApplicationStage.DOCUMENTS_REQUIRED) {
+      await updateApplicationPipelineState({
+        applicationId: params.applicationId,
+        pipelineState: ApplicationStage.IN_REVIEW,
+        client,
+      });
+      await createApplicationStageEvent({
+        applicationId: params.applicationId,
+        fromStage: ApplicationStage.DOCUMENTS_REQUIRED,
+        toStage: ApplicationStage.IN_REVIEW,
+        trigger: "requirements_satisfied",
+        triggeredBy: params.actorUserId,
+        client,
+      });
+      await recordAuditEvent({
+        action: "pipeline_state_changed",
+        actorUserId: params.actorUserId,
+        targetUserId: application.owner_user_id,
+        ip: params.ip ?? null,
+        userAgent: params.userAgent ?? null,
+        success: true,
+        client,
+      });
+      await recordAuditEvent({
+        action: "pipeline_stage_changed",
+        actorUserId: params.actorUserId,
+        targetUserId: application.owner_user_id,
+        targetType: "application",
+        targetId: params.applicationId,
+        ip: params.ip ?? null,
+        userAgent: params.userAgent ?? null,
+        success: true,
+        metadata: {
+          from: ApplicationStage.DOCUMENTS_REQUIRED,
+          to: ApplicationStage.IN_REVIEW,
+        },
+        client,
+      });
+    }
 
     await advanceProcessingStage({
       applicationId: params.applicationId,
