@@ -106,7 +106,24 @@ type PoolMetrics = {
   max: number;
 };
 
+type TestFailureMode = "connection_timeout" | "connection_reset";
+
+type DbTestFailureInjection = {
+  mode: TestFailureMode;
+  remaining: number;
+  matchQuery?: string;
+};
+
 let testPoolMetricsOverride: PoolMetrics | null = null;
+let dbTestFailureInjection: DbTestFailureInjection | null = null;
+
+export function setDbTestFailureInjection(injection: DbTestFailureInjection | null): void {
+  dbTestFailureInjection = injection;
+}
+
+export function clearDbTestFailureInjection(): void {
+  dbTestFailureInjection = null;
+}
 
 export function setDbTestPoolMetricsOverride(override: PoolMetrics | null): void {
   testPoolMetricsOverride = override;
@@ -120,6 +137,22 @@ function createQueryWrapper<T extends (...args: any[]) => Promise<any>>(original
     const traceStart = shouldTrace ? process.hrtime.bigint() : null;
     const traceStack = shouldTrace ? new Error("sql-trace").stack : undefined;
     const traceParams = shouldTrace ? extractQueryParams(args as unknown[]) : null;
+    const injectedFailure = dbTestFailureInjection;
+    if (injectedFailure && injectedFailure.remaining > 0) {
+      const shouldInject =
+        !injectedFailure.matchQuery ||
+        (queryText?.toLowerCase().includes(injectedFailure.matchQuery.toLowerCase()) ?? false);
+      if (shouldInject) {
+        injectedFailure.remaining -= 1;
+        const error = new Error(
+          injectedFailure.mode === "connection_timeout"
+            ? "test_injected_connection_timeout"
+            : "test_injected_connection_reset"
+        ) as Error & { code?: string };
+        error.code = injectedFailure.mode === "connection_timeout" ? "ETIMEDOUT" : "ECONNRESET";
+        throw error;
+      }
+    }
     const start = Date.now();
     try {
       const result = await originalQuery(...(args as Parameters<T>));

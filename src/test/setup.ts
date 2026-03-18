@@ -3,6 +3,7 @@ import { markReady } from "../startupState";
 import { runMigrations as runCoreMigrations } from "../migrations";
 import { runMigrations as runServerMigrations } from "../startup/runMigrations";
 import { createOtpSessionsTable } from "../db/migrations/createOtpSessions";
+import { seedBaselineLenders } from "../db/seed";
 import { vi } from "vitest";
 import {
   getExpectedTwilioSignature,
@@ -59,8 +60,35 @@ beforeAll(async () => {
 
   await runServerMigrations(pool);
   await createOtpSessionsTable();
+  await seedBaselineLenders();
+  await pool.query(
+    `insert into lenders (id, name, active, status, submission_method, country, created_at, updated_at)
+     values ($1, 'Test Lender', true, 'ACTIVE', 'email', 'US', now(), now())
+     on conflict (id) do nothing`,
+    ["00000000-0000-0000-0000-00000000a001"]
+  );
+  await pool.query(
+    `insert into lender_products (
+        id, lender_id, name, category, country, rate_type, interest_min, interest_max,
+        term_min, term_max, term_unit, active, required_documents, created_at, updated_at
+      )
+     values (
+       $1, $2, 'Test Product', 'TERM', 'US', 'FIXED', '5.0', '15.0', 6, 60, 'MONTHS', true,
+       $3::jsonb, now(), now()
+     )
+     on conflict (id) do nothing`,
+    [
+      "00000000-0000-0000-0000-00000000b001",
+      "00000000-0000-0000-0000-00000000a001",
+      JSON.stringify([
+        { type: "bank_statement", months: 6 },
+        { type: "id_document", months: 0 },
+      ]),
+    ]
+  );
 
   initialized = true;
 });
 
 Object.assign(globalThis, { __twilioMocks: twilioMockState });
+Object.assign(globalThis, { jest: vi });

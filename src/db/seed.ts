@@ -77,19 +77,18 @@ export async function seedSecondAdminUser(): Promise<{
 }
 
 export async function seedBaselineLenders(): Promise<void> {
-  const { rows: tableRows } = await pool.query<{
-    lenders: string | null;
-    lender_products: string | null;
-  }>(
-    "select to_regclass('public.lenders') as lenders, to_regclass('public.lender_products') as lender_products"
+  const { rows: tableRows } = await pool.query<{ table_name: string }>(
+    `select table_name
+       from information_schema.tables
+      where table_schema = 'public'
+        and table_name in ('lenders', 'lender_products')`
   );
-  const lendersTable = tableRows[0]?.lenders ?? null;
-  const lenderProductsTable = tableRows[0]?.lender_products ?? null;
-  if (!lendersTable || !lenderProductsTable) {
+  const tableSet = new Set(tableRows.map((row) => row.table_name));
+  if (!tableSet.has("lenders") || !tableSet.has("lender_products")) {
     logInfo("baseline_lenders_seed_skipped", {
       reason: "tables_missing",
-      lendersTableExists: Boolean(lendersTable),
-      lenderProductsTableExists: Boolean(lenderProductsTable),
+      lendersTableExists: tableSet.has("lenders"),
+      lenderProductsTableExists: tableSet.has("lender_products"),
     });
     return;
   }

@@ -20,4 +20,6 @@ export const {
   warmUpDatabase,
   getInstrumentedClient,
   setDbTestPoolMetricsOverride,
+  setDbTestFailureInjection,
+  clearDbTestFailureInjection,
 } = dbImpl;

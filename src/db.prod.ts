@@ -93,6 +93,14 @@ export function setDbTestPoolMetricsOverride(): void {
   // no-op in production
 }
 
+export function setDbTestFailureInjection(): void {
+  // no-op in production
+}
+
+export function clearDbTestFailureInjection(): void {
+  // no-op in production
+}
+
 pool.on("connect", () => logInfo("db_client_connected"));
 
 pool.on("error", (err) => {
