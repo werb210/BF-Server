@@ -290,6 +290,14 @@ export interface OtpSessionRecord {
   expiresAt: Date;
 }
 
+export interface OtpCodeRecord {
+  id: string;
+  phone: string;
+  code: string;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
 export async function storeRefreshToken(params: {
   userId: string;
   token: string;
@@ -576,6 +584,65 @@ export async function findLatestOtpSessionByPhone(params: {
   );
 
   return res.rows[0] ?? null;
+}
+
+export async function createOtpCode(params: {
+  phone: string;
+  code: string;
+  client?: Queryable;
+}): Promise<OtpCodeRecord> {
+  const runner = params.client ?? pool;
+  const res = await runAuthQuery<OtpCodeRecord>(
+    runner,
+    `insert into otp_codes (id, phone, code, created_at, expires_at)
+     values ($1, $2, $3, now(), now() + interval '5 minutes')
+     returning id,
+              phone,
+              code,
+              created_at as "createdAt",
+              expires_at as "expiresAt"`,
+    [randomUUID(), params.phone, params.code]
+  );
+
+  const row = res.rows[0];
+  if (!row) {
+    throw new AppError("data_error", "Failed to create OTP code.", 500);
+  }
+
+  return row;
+}
+
+export async function findLatestOtpCodeByPhone(params: {
+  phone: string;
+  client?: Queryable;
+}): Promise<OtpCodeRecord | null> {
+  const runner = params.client ?? pool;
+  const res = await runAuthQuery<OtpCodeRecord>(
+    runner,
+    `select id,
+            phone,
+            code,
+            created_at as "createdAt",
+            expires_at as "expiresAt"
+     from otp_codes
+     where phone = $1
+     order by created_at desc
+     limit 1`,
+    [params.phone]
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function deleteOtpCodesByPhone(params: {
+  phone: string;
+  client?: Queryable;
+}): Promise<void> {
+  const runner = params.client ?? pool;
+  await runAuthQuery(
+    runner,
+    `delete from otp_codes where phone = $1`,
+    [params.phone]
+  );
 }
 
 export async function createOtpVerification(params: {
