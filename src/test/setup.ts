@@ -65,12 +65,42 @@ beforeAll(async () => {
       locked_until timestamptz null,
       phone_verified boolean not null default false,
       created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
       token_version integer not null default 0
     );
   `);
-  await pool.query(`create table if not exists applications (id uuid primary key, user_id uuid null references users(id) on delete set null, created_at timestamptz not null default now());`);
+  await pool.query(`
+    create table if not exists applications (
+      id uuid primary key,
+      user_id uuid null references users(id) on delete set null,
+      owner_user_id uuid null references users(id) on delete set null,
+      name text null,
+      metadata jsonb null,
+      product_type text null,
+      pipeline_state text null,
+      status text null,
+      lender_id uuid null,
+      lender_product_id uuid null,
+      requested_amount numeric null,
+      source text null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
   await pool.query(`create table if not exists reports (id uuid primary key, user_id uuid null references users(id) on delete set null, created_at timestamptz not null default now());`);
   await pool.query(`create table if not exists voice_logs (id uuid primary key, user_id uuid null references users(id) on delete set null, created_at timestamptz not null default now());`);
+  await pool.query(`
+    create table if not exists documents (
+      id uuid primary key,
+      application_id uuid null references applications(id) on delete cascade,
+      owner_user_id uuid null references users(id) on delete set null,
+      title text null,
+      document_type text null,
+      status text null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
 
   await pool.query(`
     create table if not exists idempotency_keys (
@@ -110,6 +140,8 @@ beforeAll(async () => {
       id uuid primary key,
       phone text not null,
       code text not null,
+      attempts int not null default 0,
+      consumed boolean not null default false,
       created_at timestamptz not null default now(),
       expires_at timestamptz not null
     );
@@ -152,6 +184,93 @@ beforeAll(async () => {
       submission_method text not null default 'email',
       created_at timestamp not null default now(),
       updated_at timestamp not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists lender_products (
+      id uuid primary key,
+      lender_id uuid not null references lenders(id) on delete cascade,
+      name text not null,
+      category text not null default 'LOC',
+      country text not null default 'US',
+      rate_type text null,
+      interest_min text null,
+      interest_max text null,
+      term_min integer null,
+      term_max integer null,
+      term_unit text not null default 'MONTHS',
+      active boolean not null default true,
+      required_documents jsonb not null default '[]'::jsonb,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists document_processing_jobs (
+      id uuid primary key,
+      application_id uuid null references applications(id) on delete cascade,
+      document_id uuid null references documents(id) on delete cascade,
+      provider text null,
+      status text not null default 'queued',
+      retry_count integer not null default 0,
+      max_retries integer not null default 3,
+      error_code text null,
+      error_message text null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      completed_at timestamptz null
+    );
+  `);
+  await pool.query(`
+    create table if not exists contact_leads (
+      id uuid primary key,
+      email text null,
+      phone text null,
+      payload jsonb null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists client_submissions (
+      id uuid primary key,
+      submission_key text null,
+      application_id uuid null references applications(id) on delete set null,
+      payload jsonb null,
+      created_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists application_pipeline_history (
+      id uuid primary key,
+      application_id uuid not null references applications(id) on delete cascade,
+      from_state text null,
+      to_state text not null,
+      reason text null,
+      actor_user_id uuid null references users(id) on delete set null,
+      created_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists document_status_history (
+      id uuid primary key,
+      document_id uuid not null references documents(id) on delete cascade,
+      from_status text null,
+      to_status text not null,
+      reason text null,
+      actor_user_id uuid null references users(id) on delete set null,
+      created_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists processing_job_history (
+      id uuid primary key,
+      job_id uuid null references document_processing_jobs(id) on delete cascade,
+      application_id uuid null references applications(id) on delete cascade,
+      from_status text null,
+      to_status text not null,
+      reason text null,
+      created_at timestamptz not null default now()
     );
   `);
 });
