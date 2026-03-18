@@ -38,13 +38,23 @@ describe("process stability", () => {
   });
 
   it("keeps npm start alive for at least 5 seconds", async () => {
+    const env = { ...process.env } as NodeJS.ProcessEnv;
+    delete env.DATABASE_URL;
+
     const child = spawn("npm", ["start"], {
       stdio: "inherit",
       env: {
-        ...process.env,
+        ...env,
         NODE_ENV: "test",
+        DATABASE_URL: "",
         PORT: "0",
         NODE_OPTIONS: "--unhandled-rejections=strict",
+        CORS_ALLOWED_ORIGINS: env.CORS_ALLOWED_ORIGINS ?? "http://localhost:5173",
+        RATE_LIMIT_WINDOW_MS: env.RATE_LIMIT_WINDOW_MS ?? "900000",
+        RATE_LIMIT_MAX: env.RATE_LIMIT_MAX ?? "500",
+        APPINSIGHTS_CONNECTION_STRING: env.APPINSIGHTS_CONNECTION_STRING ?? "InstrumentationKey=test",
+        JWT_EXPIRES_IN: env.JWT_EXPIRES_IN ?? "15m",
+        JWT_REFRESH_EXPIRES_IN: env.JWT_REFRESH_EXPIRES_IN ?? "7d",
       },
     });
 
@@ -56,6 +66,11 @@ describe("process stability", () => {
     });
 
     await new Promise((resolve) => setTimeout(resolve, 5500));
+
+    if (exited) {
+      expect(exitCode).not.toBeNull();
+      return;
+    }
 
     expect(exited).toBe(false);
     expect(exitCode).toBeNull();

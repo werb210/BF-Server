@@ -46,6 +46,16 @@ beforeAll(async () => {
   await pool.query("drop table if exists otp_sessions cascade;");
   await pool.query("drop table if exists otp_codes cascade;");
   await pool.query("drop table if exists audit_events cascade;");
+  await pool.query("drop table if exists contacts cascade;");
+  await pool.query("drop table if exists crm_leads cascade;");
+  await pool.query("drop table if exists crm_lead_activities cascade;");
+  await pool.query("drop table if exists issue_reports cascade;");
+  await pool.query("drop table if exists readiness_leads cascade;");
+  await pool.query("drop table if exists readiness_sessions cascade;");
+  await pool.query("drop table if exists application_continuations cascade;");
+  await pool.query("drop table if exists continuation cascade;");
+  await pool.query("drop table if exists chat_sessions cascade;");
+  await pool.query("drop table if exists ai_sessions cascade;");
   await pool.query("drop table if exists lenders cascade;");
   await pool.query("drop table if exists users cascade;");
 
@@ -77,12 +87,27 @@ beforeAll(async () => {
       name text null,
       metadata jsonb null,
       product_type text null,
+      product_category text null,
       pipeline_state text null,
+      current_stage text null,
+      processing_stage text null,
       status text null,
+      application_status text null,
+      current_step integer not null default 0,
+      last_updated timestamptz not null default now(),
+      is_completed boolean not null default false,
       lender_id uuid null,
       lender_product_id uuid null,
       requested_amount numeric null,
       source text null,
+      submission_key text null,
+      external_id text null,
+      client_submission_id text null,
+      first_opened_at timestamptz null,
+      ocr_completed_at timestamptz null,
+      banking_completed_at timestamptz null,
+      credit_summary_completed_at timestamptz null,
+      startup_flag boolean null,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
@@ -237,6 +262,182 @@ beforeAll(async () => {
       submission_key text null,
       application_id uuid null references applications(id) on delete set null,
       payload jsonb null,
+      created_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists contacts (
+      id uuid primary key,
+      company_id uuid null,
+      name text null,
+      email text null,
+      phone text null,
+      status text null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists crm_leads (
+      id uuid primary key,
+      full_name text null,
+      email text null,
+      phone text null,
+      company_name text null,
+      industry text null,
+      years_in_business integer null,
+      monthly_revenue numeric null,
+      annual_revenue numeric null,
+      ar_outstanding numeric null,
+      existing_debt boolean null,
+      source text null,
+      tags jsonb not null default '[]'::jsonb,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists crm_lead_activities (
+      id uuid primary key,
+      lead_id uuid not null references crm_leads(id) on delete cascade,
+      activity_type text not null,
+      payload jsonb null,
+      created_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists issue_reports (
+      id uuid primary key,
+      session_id uuid null,
+      description text null,
+      page_url text null,
+      browser_info text null,
+      screenshot_path text null,
+      screenshot_base64 text null,
+      user_agent text null,
+      status text not null default 'open',
+      created_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists continuation (
+      id uuid primary key,
+      company_name text null,
+      full_name text null,
+      email text null,
+      phone text null,
+      industry text null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists chat_sessions (
+      id uuid primary key,
+      user_type text not null,
+      status text not null,
+      source text null,
+      escalated_to uuid null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists ai_sessions (
+      id uuid primary key,
+      source text null,
+      status text null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists readiness_leads (
+      id uuid primary key,
+      company_name text null,
+      full_name text null,
+      email text null,
+      phone text null,
+      industry text null,
+      years_in_business integer null,
+      monthly_revenue numeric null,
+      annual_revenue numeric null,
+      ar_outstanding numeric null,
+      existing_debt boolean null,
+      source text null,
+      status text null,
+      token text null,
+      crm_contact_id uuid null,
+      converted_application_id uuid null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists readiness_sessions (
+      id uuid primary key,
+      token text not null,
+      lead_id uuid null references readiness_leads(id) on delete cascade,
+      crm_lead_id uuid null,
+      email text null,
+      phone text null,
+      company_name text null,
+      full_name text null,
+      industry text null,
+      years_in_business integer null,
+      monthly_revenue numeric null,
+      annual_revenue numeric null,
+      ar_outstanding numeric null,
+      existing_debt boolean null,
+      prefill_json jsonb null,
+      expires_at timestamptz not null,
+      is_active boolean not null default true,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists application_continuations (
+      token text primary key,
+      company_name text null,
+      full_name text null,
+      email text null,
+      phone text null,
+      industry text null,
+      years_in_business integer null,
+      monthly_revenue numeric null,
+      annual_revenue numeric null,
+      ar_outstanding numeric null,
+      existing_debt boolean null,
+      crm_lead_id uuid null,
+      prefill_json jsonb null,
+      status text null,
+      converted_application_id uuid null,
+      converted_at timestamptz null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    create table if not exists application_required_documents (
+      id uuid primary key,
+      application_id uuid not null references applications(id) on delete cascade,
+      document_category text not null,
+      is_required boolean not null default true,
+      status text not null default 'missing',
+      created_at timestamptz not null default now(),
+      unique (application_id, document_category)
+    );
+  `);
+  await pool.query(`
+    create table if not exists application_stage_events (
+      id uuid primary key,
+      application_id uuid not null references applications(id) on delete cascade,
+      from_stage text null,
+      to_stage text not null,
+      trigger text not null,
+      triggered_by text not null,
+      reason text null,
       created_at timestamptz not null default now()
     );
   `);

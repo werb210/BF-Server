@@ -119,10 +119,14 @@ router.post("/report", async (req, res) => {
   pushValue("screenshot_path", screenshot ?? null);
   pushValue("status", "open");
 
-  await dbQuery(
-    `insert into issue_reports (${insertColumns.join(", ")}) values (${placeholderParts.join(", ")})`,
-    values
-  );
+  if (insertColumns.length === 0) {
+    await dbQuery("insert into issue_reports default values");
+  } else {
+    await dbQuery(
+      `insert into issue_reports (${insertColumns.join(", ")}) values (${placeholderParts.join(", ")})`,
+      values
+    );
+  }
 
   await withRetry(async () => {
     await createSupportThread({
