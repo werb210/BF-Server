@@ -73,10 +73,10 @@ function resolvePort(): number {
 }
 
 export async function startServer() {
-  console.log("DB URL:", process.env.DATABASE_URL);
-  if (!process.env.DATABASE_URL || !process.env.DATABASE_URL.startsWith("postgres://")) {
-    throw new Error("DATABASE_URL missing or invalid");
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL missing");
   }
+  console.log("DB CONNECTED:", process.env.DATABASE_URL);
   if (!process.env.JWT_SECRET) {
     throw new Error("JWT_SECRET missing");
   }

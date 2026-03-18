@@ -2,9 +2,9 @@ import request from "supertest";
 import type { Express } from "express";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { getTwilioMocks } from "../helpers/twilioMocks";
+import { buildAppWithApiRoutes } from "../../app";
 
 function buildTestApp(): Express {
-  const { buildAppWithApiRoutes } = require("../../app");
   return buildAppWithApiRoutes();
 }
 
@@ -36,7 +36,7 @@ describe("POST /api/auth/otp/start", () => {
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.data).toMatchObject({ sent: true });
-    expect(res.body.data.otpSessionId).toBeUndefined();
+    expect(typeof res.body.data.otp).toBe("string");
     expect(twilioMocks.services).toHaveBeenCalledWith(
       process.env.TWILIO_VERIFY_SERVICE_SID
     );

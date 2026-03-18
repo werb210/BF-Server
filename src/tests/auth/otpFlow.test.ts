@@ -46,7 +46,8 @@ describe("OTP Authentication Flow", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(res.body.ok ?? res.body.success).toBe(true);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.data).toBeDefined();
     expect(typeof res.body.data?.otp).toBe("string");
   });
 
@@ -64,8 +65,9 @@ describe("OTP Authentication Flow", () => {
     });
 
     expect(verify.status).toBe(200);
-    expect(typeof (verify.body.token ?? verify.body.accessToken)).toBe("string");
-    expect(verify.body.user).toBeDefined();
+    expect(verify.body.ok).toBe(true);
+    expect(typeof verify.body.data?.token).toBe("string");
+    expect(verify.body.data?.user).toBeDefined();
   });
 
   test("Access protected endpoint with token", async () => {
@@ -81,14 +83,14 @@ describe("OTP Authentication Flow", () => {
       code: otpCode,
     });
 
-    const token = verify.body.token ?? verify.body.accessToken;
+    const token = verify.body.data?.token;
 
     const protectedRes = await request(app)
-      .get("/api/users/me")
+      .get("/api/auth/me")
       .set("Authorization", `Bearer ${token}`);
 
     expect(protectedRes.status).toBe(200);
     expect(protectedRes.body.ok).toBe(true);
-    expect(protectedRes.body.user?.status).toBe("ACTIVE");
+    expect(protectedRes.body.data?.user?.role).toBe("Staff");
   });
 });

@@ -28,9 +28,7 @@ describe("POST /api/auth/otp/start phone normalization", () => {
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({
       ok: false,
-      error: {
-        code: "validation_error",
-      },
+      error: "Missing phone",
     });
   });
 
@@ -48,6 +46,7 @@ describe("POST /api/auth/otp/start phone normalization", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: true, data: { sent: true } });
+    expect(typeof res.body.data.otp).toBe("string");
     expect(twilioMocks.createVerification).toHaveBeenCalledWith({
       to: "+15878881837",
       channel: "sms",

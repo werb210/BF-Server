@@ -4,6 +4,8 @@ import jwt from "jsonwebtoken";
 import { pool } from "../../db";
 import { requireAuth, requireAuthorization } from "../../middleware/auth";
 import { ALL_ROLES } from "../../auth/roles";
+import { normalizePhone } from "../../utils/phone";
+import { getTwilioClient, getVerifyServiceSid } from "../../services/twilio";
 
 const router = Router();
 
@@ -16,7 +18,12 @@ function coerceBody(body: unknown): Record<string, unknown> {
 
 router.post("/otp/start", async (req: Request, res: Response) => {
   const body = coerceBody(req.body);
-  const phone = typeof body.phone === "string" ? body.phone.trim() : "";
+  const phoneInput = typeof body.phone === "string"
+    ? body.phone
+    : typeof body.phoneNumber === "string"
+      ? body.phoneNumber
+      : "";
+  const phone = normalizePhone(phoneInput);
 
   if (!phone) {
     return res.status(400).json({ ok: false, error: "Missing phone" });
@@ -26,14 +33,23 @@ router.post("/otp/start", async (req: Request, res: Response) => {
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
   try {
+    const twilioClient = getTwilioClient();
+    const verifyServiceSid = getVerifyServiceSid();
+    if (verifyServiceSid) {
+      await twilioClient.verify.v2.services(verifyServiceSid).verifications.create({
+        to: phone,
+        channel: "sms",
+      });
+    }
+
     const insertResult = await pool.query(
-      `insert into otp_sessions (id, phone, code, expires_at)
-       values ($1, $2, $3, $4)
-       returning id, phone, code, created_at, expires_at`,
+      `insert into otp_sessions (id, phone, code, created_at, expires_at)
+       values ($1, $2, $3, now(), $4)
+       returning *`,
       [randomUUID(), phone, code, expiresAt]
     );
 
-    console.log("OTP INSERT RESULT:", insertResult.rows);
+    console.log("OTP INSERT:", insertResult.rows[0]);
 
     if (!insertResult.rows || insertResult.rows.length === 0) {
       throw new Error("OTP insert failed");
@@ -46,8 +62,8 @@ router.post("/otp/start", async (req: Request, res: Response) => {
   return res.json({
     ok: true,
     data: {
+      sent: true,
       phone,
-      expiresAt,
       otp: code,
     },
   });
@@ -55,10 +71,15 @@ router.post("/otp/start", async (req: Request, res: Response) => {
 
 router.post("/otp/verify", async (req: Request, res: Response) => {
   const body = coerceBody(req.body);
-  const phone = typeof body.phone === "string" ? body.phone.trim() : "";
-  const code = typeof body.code === "string" ? body.code.trim() : "";
+  const phoneInput = typeof body.phone === "string"
+    ? body.phone
+    : typeof body.phoneNumber === "string"
+      ? body.phoneNumber
+      : "";
+  const phone = normalizePhone(phoneInput);
+  const inputCode = typeof body.code === "string" ? body.code : "";
 
-  if (!phone || !code) {
+  if (!phone || !inputCode) {
     return res.status(400).json({ ok: false, error: "Missing fields" });
   }
 
@@ -66,7 +87,7 @@ router.post("/otp/verify", async (req: Request, res: Response) => {
 
   try {
     const rows = await pool.query(
-      `select id, phone, code, created_at, expires_at
+      `select *
        from otp_sessions
        where phone = $1
        order by created_at desc
@@ -82,12 +103,15 @@ router.post("/otp/verify", async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, error: "No OTP session" });
     }
 
-    if (record.code !== code) {
-      return res.status(400).json({ ok: false, error: "Invalid code" });
+    const MAX_AGE_MS = 5 * 60 * 1000;
+    const age = Date.now() - new Date(record.created_at).getTime();
+
+    if (age > MAX_AGE_MS) {
+      return res.status(400).json({ ok: false, error: "OTP expired" });
     }
 
-    if (new Date(record.expires_at) < new Date()) {
-      return res.status(400).json({ ok: false, error: "Expired code" });
+    if (record.code !== inputCode) {
+      return res.status(400).json({ ok: false, error: "Invalid code" });
     }
   } catch (err) {
     console.error("OTP VERIFY ERROR:", err);
@@ -134,7 +158,7 @@ router.post("/otp/verify", async (req: Request, res: Response) => {
     throw new Error("JWT_SECRET missing");
   }
 
-  const token = jwt.sign({ userId: user.id, phone }, process.env.JWT_SECRET, {
+  const token = jwt.sign({ userId: user.id, sub: user.id, role: user.role, phone }, process.env.JWT_SECRET, {
     expiresIn: "7d",
   });
 

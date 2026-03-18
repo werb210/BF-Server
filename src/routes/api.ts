@@ -8,9 +8,9 @@ const apiRouter = Router();
 
 apiRouter.use("/telephony", telephonyRoutes);
 apiRouter.use("/auth", authRoutes);
-apiRouter.get("/debug/otp-sessions", async (_req, res) => {
+apiRouter.get("/debug/otp_sessions", async (_req, res) => {
   const rows = await pool.query(`select * from otp_sessions order by created_at desc limit 10`);
-  res.json({ ok: true, rows: rows.rows });
+  res.json({ ok: true, data: rows.rows });
 });
 
 apiRouter.use("/", systemRoutes);
