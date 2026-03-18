@@ -4,11 +4,11 @@ import jwt from "jsonwebtoken";
 import { pool } from "../../db";
 import { requireAuth, requireAuthorization } from "../../middleware/auth";
 import { ALL_ROLES } from "../../auth/roles";
-import { normalizePhone } from "../../utils/phone";
+import { normalizePhone } from "../../lib/phone";
+import { clearOtp, getOtp, setOtp } from "../../lib/otpStore";
 import { getTwilioClient, getVerifyServiceSid } from "../../services/twilio";
 
 const router = Router();
-const otpStore: Record<string, string> = {};
 
 function generateCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -30,19 +30,13 @@ router.post("/otp/start", async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: "Missing phone" });
   }
 
-  if (otpStore[phone]) {
-    console.log("OTP already exists, reusing");
-    return res.json({ ok: true });
-  }
-
   const code = generateCode();
 
-  otpStore[phone] = code;
+  setOtp(phone, code);
 
   console.log("OTP_START", {
     phone,
     code,
-    store: otpStore,
   });
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
@@ -85,53 +79,31 @@ router.post("/otp/verify", async (req: Request, res: Response) => {
   const phoneInput = typeof body.phone === "string" ? body.phone : "";
   const phone = normalizePhone(phoneInput);
   const incoming = typeof body.code === "string" ? body.code : typeof body.code === "number" ? String(body.code) : "";
-  const stored = otpStore[phone];
+  const record = getOtp(phone);
 
   if (!phone || !incoming) {
     return res.status(400).json({ ok: false, error: "Missing fields" });
   }
 
+  if (!record) {
+    return res.status(400).json({ ok: false, error: "No code found" });
+  }
+
   console.log("OTP_VERIFY", {
     phone,
-    incoming,
-    stored,
-    match: stored === incoming,
+    code: incoming,
+    stored: record.code,
   });
 
-  if (stored !== incoming) {
-    return res.status(400).json({ ok: false, error: "Invalid code" });
+  if (record.code !== incoming) {
+    return res.status(400).json({
+      ok: false,
+      error: "Invalid code",
+      debug: { stored: record.code, incoming },
+    });
   }
 
-  let record: Record<string, any> | null = null;
-
-  try {
-    const rows = await pool.query(
-      `select *
-       from otp_sessions
-       where phone = $1
-       order by created_at desc
-       limit 1`,
-      [phone]
-    );
-
-    record = rows.rows[0] ?? null;
-
-    if (!record) {
-      return res.status(400).json({ ok: false, error: "No OTP session" });
-    }
-
-    const expiresAt = new Date(record.expires_at).getTime();
-    if (Number.isNaN(expiresAt) || Date.now() > expiresAt) {
-      return res.status(400).json({ ok: false, error: "OTP expired" });
-    }
-
-    if (record.code !== incoming) {
-      return res.status(400).json({ ok: false, error: "Invalid code" });
-    }
-  } catch (err) {
-    req.log?.error({ err }, "otp_verify_failed");
-    return res.status(500).json({ ok: false, error: "Verification failed" });
-  }
+  clearOtp(phone);
 
   let user: Record<string, any> | null = null;
 
