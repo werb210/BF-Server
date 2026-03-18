@@ -29,14 +29,29 @@ router.post("/otp/start", async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: "Missing phone" });
   }
 
+  const recent = await pool.query(
+    `select id
+     from otp_codes
+     where phone = $1
+       and created_at > now() - interval '30 seconds'
+     order by created_at desc
+     limit 1`,
+    [phone]
+  );
+
+  if ((recent.rowCount ?? 0) > 0) {
+    return res.status(429).json({ ok: false, error: "Too soon" });
+  }
+
   const code = generateCode();
 
-  console.log("OTP_START", {
-    phone,
-    code,
-  });
-
   try {
+    await pool.query(
+      `insert into otp_codes (id, phone, code, expires_at)
+       values ($1, $2, $3, now() + interval '5 minutes')`,
+      [randomUUID(), phone, code]
+    );
+
     const twilioClient = getTwilioClient();
     const verifyServiceSid = getVerifyServiceSid();
     if (verifyServiceSid) {
@@ -45,74 +60,102 @@ router.post("/otp/start", async (req: Request, res: Response) => {
         channel: "sms",
       });
     }
-
-    const insertResult = await pool.query(
-      `insert into otp_codes (id, phone, code, created_at, expires_at)
-       values ($1, $2, $3, now(), now() + interval '5 minutes')
-       returning id`,
-      [randomUUID(), phone, code]
-    );
-
-    if (!insertResult.rows || insertResult.rows.length === 0) {
-      throw new Error("OTP insert failed");
-    }
   } catch (err) {
     req.log?.error({ err }, "otp_start_failed");
     return res.status(500).json({ ok: false, error: "OTP persistence failed" });
   }
 
-  return res.json({
-    ok: true,
-    data: {
-      sent: true,
-      otp: code,
-    },
-  });
+  console.log("OTP_START", { phone, code });
+
+  return res.json({ ok: true });
 });
+
+type OtpRow = {
+  id: string;
+  phone: string;
+  code: string;
+  attempts: number;
+  expires_at: Date;
+  consumed: boolean;
+};
 
 router.post("/otp/verify", async (req: Request, res: Response) => {
   const body = coerceBody(req.body);
   const phoneInput = typeof body.phone === "string" ? body.phone : "";
   const phone = normalizePhone(phoneInput);
-  const incoming = typeof body.code === "string" ? body.code : typeof body.code === "number" ? String(body.code) : "";
+  const inputCode = String(body.code ?? "");
 
-  if (!phone || !incoming) {
+  if (!phone || !inputCode) {
     return res.status(400).json({ ok: false, error: "Missing fields" });
   }
 
-  const latestOtpResult = await pool.query<{ code: string; expires_at: Date }>(
-    `select code, expires_at
-     from otp_codes
-     where phone = $1
-     order by created_at desc
-     limit 1`,
-    [phone]
-  );
-  const record = latestOtpResult.rows[0] ?? null;
+  const client = await pool.connect();
 
-  if (!record) {
-    return res.status(400).json({ ok: false, error: "No code" });
+  try {
+    await client.query("begin");
+
+    const result = await client.query<OtpRow>(
+      `select *
+       from otp_codes
+       where phone = $1
+         and consumed = false
+       order by created_at desc
+       limit 1
+       for update`,
+      [phone]
+    );
+
+    if (result.rowCount === 0) {
+      await client.query("rollback");
+      return res.status(400).json({ ok: false, error: "No code" });
+    }
+
+    const otp = result.rows[0];
+
+    if (!otp) {
+      await client.query("rollback");
+      return res.status(400).json({ ok: false, error: "No code" });
+    }
+
+    if (new Date() > otp.expires_at) {
+      await client.query("rollback");
+      return res.status(400).json({ ok: false, error: "Expired" });
+    }
+
+    if (otp.attempts >= 5) {
+      await client.query("rollback");
+      return res.status(400).json({ ok: false, error: "Too many attempts" });
+    }
+
+    if (otp.code !== inputCode) {
+      await client.query(
+        `update otp_codes
+         set attempts = attempts + 1
+         where id = $1`,
+        [otp.id]
+      );
+
+      await client.query("commit");
+      return res.status(400).json({ ok: false, error: "Invalid code" });
+    }
+
+    await client.query(
+      `update otp_codes
+       set consumed = true
+       where id = $1`,
+      [otp.id]
+    );
+
+    await client.query("commit");
+  } catch (err) {
+    await client.query("rollback");
+    req.log?.error({ err }, "otp_verify_failed");
+    return res.status(500).json({ ok: false, error: "OTP verification failed" });
+  } finally {
+    client.release();
   }
 
-  if (record.expires_at.getTime() <= Date.now()) {
-    return res.status(400).json({ ok: false, error: "Expired" });
-  }
-
-  console.log("OTP_VERIFY", {
-    phone,
-    code: incoming,
-    stored: record.code,
-  });
-
-  if (record.code !== incoming) {
-    return res.status(400).json({
-      ok: false,
-      error: "Invalid",
-      debug: { stored: record.code, incoming },
-    });
-  }
-
-  await pool.query(`delete from otp_codes where phone = $1`, [phone]);
+  console.log("OTP_VERIFY_SUCCESS", { phone });
 
   let user: Record<string, any> | null = null;
 
