@@ -507,10 +507,14 @@ function isOtpSessionExpired(record: { expiresAt: Date }): boolean {
 }
 
 function isMissingOtpTableError(error: unknown): boolean {
+  if (!(typeof error === "object" && error !== null)) {
+    return false;
+  }
+  const typedError = error as { code?: string; message?: string };
   return (
-    typeof error === "object" &&
-    error !== null &&
-    (error as { code?: string }).code === "42P01"
+    typedError.code === "42P01" ||
+    typedError.message?.includes("relation \"otp_verifications\" does not exist") === true ||
+    typedError.message?.includes("relation \"otp_sessions\" does not exist") === true
   );
 }
 

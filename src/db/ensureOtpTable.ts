@@ -3,9 +3,6 @@ import { pool } from "../db";
 type PgError = { code?: string; message?: string };
 
 export async function ensureOtpTableExists(): Promise<void> {
-  if (process.env.NODE_ENV === "test") {
-    return;
-  }
   await pool.query(`
       create table if not exists otp_verifications (
         id uuid primary key,

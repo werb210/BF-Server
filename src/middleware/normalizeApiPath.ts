@@ -5,5 +5,9 @@ export function normalizeApiPath(req: Request, _res: Response, next: NextFunctio
     req.url = req.url.replace("/api/api/", "/api/");
   }
 
+  if (req.url.startsWith("/auth/") || req.url === "/auth") {
+    req.url = `/api${req.url}`;
+  }
+
   next();
 }
