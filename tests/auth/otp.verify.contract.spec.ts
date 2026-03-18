@@ -82,8 +82,8 @@ describe("OTP verify contract", () => {
     await upsertUser({ phone: TEST_PHONE, role: ROLES.ADMIN });
 
     let app: Express;
-    jest.isolateModules(() => {
-      jest.doMock("../../src/modules/auth/otp.service", () => {
+    vi.isolateModules(() => {
+      vi.mock("../../src/modules/auth/otp.service", () => {
         const actual = jest.requireActual("../../src/modules/auth/otp.service");
         return {
           ...actual,

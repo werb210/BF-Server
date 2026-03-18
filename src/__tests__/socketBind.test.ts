@@ -14,7 +14,7 @@ function createMockServer(): MockServer {
 
 describe("socket bind", () => {
   afterEach(() => {
-    jest.resetModules();
+    vi.resetModules();
   });
 
   it("uses a single listener with the configured port", async () => {
@@ -32,8 +32,8 @@ describe("socket bind", () => {
     });
 
     await new Promise<void>((resolve, reject) => {
-      jest.isolateModules(() => {
-        jest.doMock("../app", () => ({
+      vi.isolateModules(() => {
+        vi.mock("../app", () => ({
           buildApp: () => ({ listen: listenSpy, use: jest.fn() }),
           registerApiRoutes: jest.fn(),
         }));
@@ -61,8 +61,8 @@ describe("socket bind", () => {
     });
 
     await new Promise<void>((resolve, reject) => {
-      jest.isolateModules(() => {
-        jest.doMock("../app", () => ({
+      vi.isolateModules(() => {
+        vi.mock("../app", () => ({
           buildApp: () => ({ listen: listenSpy, use: jest.fn() }),
           registerApiRoutes: jest.fn(),
         }));

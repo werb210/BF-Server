@@ -7,7 +7,7 @@ describe("internal version endpoint", () => {
   beforeAll(async () => {
     process.env.COMMIT_SHA = "test-sha";
     process.env.NODE_ENV = "test";
-    jest.resetModules();
+    vi.resetModules();
     const { buildAppWithApiRoutes } = await import("../app");
     app = buildAppWithApiRoutes();
   });

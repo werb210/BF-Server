@@ -58,12 +58,11 @@ type RefreshTokenPayload = JwtPayload & {
 
 type VerifyOtpSuccess = {
   ok: true;
-  token: string;
-  refreshToken: string;
-  sessionToken: string;
-  user: { id: string; role: Role; email: string | null };
-  applicationId: string | null;
-  nextPath: "/portal";
+  data: {
+    token: string;
+    user: { id: string; role: Role; email: string | null };
+    nextPath: "/portal";
+  };
 };
 
 type VerifyOtpFailure = {
@@ -970,8 +969,7 @@ export async function verifyOtpCode(params: {
         return { ok: false, status: 401, error: { code: "auth_token_creation_failed", message: "Failed to create auth token" } };
       }
 
-      const sessionToken = token;
-      if (!token || !sessionToken || !userRecord.id) {
+      if (!token || !userRecord.id) {
         await dbClient.query("commit");
         logError("otp_verify_token_created", { ...meta, providerStatus, userFound: true, tokenCreated: false, reason: "missing_token_or_user" });
         return { ok: false, status: 401, error: { code: "auth_token_creation_failed", message: "Failed to create auth token" } };
@@ -992,16 +990,15 @@ export async function verifyOtpCode(params: {
       logInfo("otp_verify_response", { ...meta, providerStatus, userFound: true, tokenCreated: true, ok: true, error: null });
       return {
         ok: true,
-        token,
-        refreshToken: refresh!.token,
-        sessionToken,
-        user: {
-          id: userRecord.id,
-          role,
-          email: userRecord.email,
+        data: {
+          token,
+          user: {
+            id: userRecord.id,
+            role,
+            email: userRecord.email,
+          },
+          nextPath: "/portal",
         },
-        applicationId: null,
-        nextPath: "/portal",
       };
     } catch (err) {
       await dbClient.query("rollback");

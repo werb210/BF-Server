@@ -51,8 +51,8 @@ describe("azure health endpoints", () => {
     });
 
     await new Promise<void>((resolve, reject) => {
-      jest.isolateModules(() => {
-        jest.doMock("../app", () => ({
+      vi.isolateModules(() => {
+        vi.mock("../app", () => ({
           buildApp: () => ({ listen: listenSpy, use: jest.fn() }),
           registerApiRoutes: jest.fn(),
         }));

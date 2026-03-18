@@ -38,9 +38,7 @@ class AccessTokenMock {
     this.ttl = opts?.ttl;
   }
 
-  addGrant(_grant: unknown): void {
-    // no-op for tests
-  }
+  addGrant(_grant: unknown): void {}
 
   toJwt(): string {
     const identity = this.identity ?? "anonymous";
@@ -59,19 +57,14 @@ class AccessTokenMock {
 
 const createVerification = vi.fn(async () => ({ sid: "VE_TEST", status: "pending" }));
 const createVerificationCheck = vi.fn(async () => ({ sid: "VC_TEST", status: "approved" }));
-const createCall = vi.fn(async (_params: { to: string; from: string; applicationSid: string }) => ({
-  sid: "CA123",
-  status: "queued",
-}));
-const updateCall = vi.fn(async (callSid?: string, params?: { status?: string; twiml?: string }) => ({
+const createCall = vi.fn(async () => ({ sid: "CA123", status: "queued" }));
+const updateCall = vi.fn(async (callSid?: string, params?: { status?: string }) => ({
   sid: callSid ?? "CA123",
   status: params?.status ?? "in-progress",
 }));
 
 const calls = Object.assign(
-  (callSid?: string) => ({
-    update: (params: { status?: string; twiml?: string }) => updateCall(callSid, params),
-  }),
+  (callSid?: string) => ({ update: (params: { status?: string; twiml?: string }) => updateCall(callSid, params) }),
   { create: createCall }
 );
 
@@ -83,20 +76,21 @@ const services = vi.fn((serviceSid: string) => {
   };
 });
 
-class TwilioMock {
+export class Twilio {
+  constructor() {}
+  messages = {
+    create: async () => ({ sid: "mock_sid" }),
+  };
   verify = { v2: { services } };
   calls = calls;
 }
 
 const twilioConstructor = vi.fn(function TwilioConstructor() {
-  return new TwilioMock();
+  return new Twilio();
 });
 
 function normalizeParams(params: TwilioParams): string {
-  return Object.keys(params)
-    .sort()
-    .map((key) => `${key}:${String(params[key])}`)
-    .join("|");
+  return Object.keys(params).sort().map((key) => `${key}:${String(params[key])}`).join("|");
 }
 
 function getExpectedTwilioSignature(authToken: string, url: string, params: TwilioParams): string {
@@ -104,10 +98,7 @@ function getExpectedTwilioSignature(authToken: string, url: string, params: Twil
 }
 
 function validateRequest(authToken: string, signature: string, url: string, params: TwilioParams): boolean {
-  if (!authToken || !signature) {
-    return false;
-  }
-
+  if (!authToken || !signature) return false;
   return signature === getExpectedTwilioSignature(authToken, url, params);
 }
 
@@ -132,20 +123,9 @@ const twilioMockState = {
 };
 
 const twilioDefaultExport = Object.assign(twilioConstructor, {
-  twiml: {
-    VoiceResponse: VoiceResponseMock,
-  },
-  jwt: {
-    AccessToken: AccessTokenMock,
-  },
+  twiml: { VoiceResponse: VoiceResponseMock },
+  jwt: { AccessToken: AccessTokenMock },
   __twilioMocks: twilioMockState,
 });
 
-export {
-  getExpectedTwilioSignature,
-  twilioDefaultExport,
-  twilioMockState,
-  validateExpressRequest,
-  validateRequest,
-  VoiceResponseMock,
-};
+export { getExpectedTwilioSignature, twilioDefaultExport, twilioMockState, validateExpressRequest, validateRequest, VoiceResponseMock };

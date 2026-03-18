@@ -4,9 +4,9 @@ describe("startup twilio config", () => {
     process.env = { ...originalEnv };
     delete process.env.TWILIO_AUTH_TOKEN;
 
-    jest.resetModules();
+    vi.resetModules();
 
-    jest.isolateModules(() => {
+    vi.isolateModules(() => {
       const { getTwilioClient } = require("../services/twilio");
       expect(() => getTwilioClient()).toThrow(
         "Missing required env var: TWILIO_AUTH_TOKEN"

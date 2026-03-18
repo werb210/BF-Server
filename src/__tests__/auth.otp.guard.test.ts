@@ -16,7 +16,7 @@ describe("OTP endpoints when Twilio disabled", () => {
     delete process.env.TWILIO_ACCOUNT_SID;
     delete process.env.TWILIO_AUTH_TOKEN;
     delete process.env.TWILIO_VERIFY_SERVICE_SID;
-    jest.resetModules();
+    vi.resetModules();
   });
 
   afterEach(() => {

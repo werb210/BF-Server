@@ -2,15 +2,9 @@ import { Router, type NextFunction, type Request, type Response } from "express"
 import { parse as parseQueryString } from "querystring";
 import { AppError } from "../../middleware/errors";
 import {
-  loginRateLimit,
   otpRateLimit,
-  refreshRateLimit,
-  resetOtpRateLimit,
   verifyOtpRateLimit,
 } from "../../middleware/rateLimit";
-import { getRequestId } from "../../middleware/requestContext";
-import { logError } from "../../observability/logger";
-import { refreshSession } from "./auth.service";
 import { startOtp, verifyOtpCode } from "./otp.service";
 import {
   startOtpResponseSchema,
@@ -19,10 +13,9 @@ import {
   verifyOtpResponseSchema,
 } from "../../validation/auth.validation";
 import { requireAuth, requireAuthorization } from "../../middleware/auth";
-import { incrementTokenVersion, revokeRefreshTokensForUser } from "./auth.repo";
 import { ALL_ROLES } from "../../auth/roles";
 import { isTestEnvironment } from "../../config";
-import { normalizeOtpPhone } from "./phone";
+import { normalizePhone } from "./phone";
 
 const router = Router();
 
@@ -41,369 +34,119 @@ function coerceBody(body: unknown): Record<string, unknown> {
   return {};
 }
 
-function getAuthRequestId(res: Response): string {
-  return res.locals.requestId ?? getRequestId() ?? "unknown";
+function respondError(res: Response, status: number, message: string): void {
+  res.status(status).json({ ok: false, error: message });
 }
 
 function respondOk<T>(res: Response, data: T, status = 200): void {
-  const requestId = getAuthRequestId(res);
-  res.status(status).json({
-    ok: true,
-    data,
-    error: null,
-    requestId,
-  });
+  res.status(status).json({ ok: true, data });
 }
 
-function respondError(
-  res: Response,
-  status: number,
-  code: string,
-  message: string,
-  details?: unknown
-): void {
-  const requestId = getAuthRequestId(res);
-  res.status(status).json({
-    ok: false,
-    data: null,
-    error: { code, message, ...(details ? { details } : {}) },
-    requestId,
-  });
-}
-
-function respondRequestValidationError(
-  res: Response,
-  route: string,
-  requestId: string,
-  errors: unknown
-): void {
-  logError("auth_request_validation_failed", {
-    route,
-    requestId,
-    errors,
-  });
-
-  res.status(400).json({
-    ok: false,
-    data: null,
-    error: {
-      code: "validation_error",
-      message: "Invalid request payload",
-      details: errors,
-    },
-    requestId,
-  });
-}
-
-function respondResponseValidationError(
-  res: Response,
-  route: string,
-  requestId: string,
-  errors: unknown
-): void {
-  logError("auth_response_validation_failed", {
-    route,
-    requestId,
-    errors,
-  });
-
-  res.status(500).json({
-    ok: false,
-    data: null,
-    error: {
-      code: "invalid_response_shape",
-      message: "Invalid auth response shape",
-    },
-    requestId,
-  });
-}
-
-/**
- * POST /api/auth/otp/start
- */
-async function handleOtpStart(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> {
+router.post("/otp/start", otpRateLimit(), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const route = "/api/auth/otp/start";
-    const requestId = getAuthRequestId(res);
-
     const rawBody = coerceBody(req.body);
-    const phone =
-      rawBody.phone ??
-      rawBody.phoneNumber ??
-      rawBody.phone_number ??
-      rawBody.mobile ??
-      null;
+    const phone = rawBody.phone ?? rawBody.phoneNumber ?? rawBody.phone_number ?? rawBody.mobile ?? null;
     req.body = { ...rawBody, ...(phone !== null ? { phone } : {}) };
 
     const validation = validateStartOtp(req);
     if (!validation.success) {
-      respondRequestValidationError(
-        res,
-        route,
-        requestId,
-        validation.error.flatten()
-      );
+      respondError(res, 400, "Invalid request payload");
       return;
     }
 
-    const normalizedPhone = normalizeOtpPhone(validation.data.phone);
-    if (!normalizedPhone) {
-      respondError(res, 400, "invalid_phone", "Invalid phone number");
+    let normalizedPhone: string;
+    try {
+      normalizedPhone = normalizePhone(validation.data.phone);
+    } catch {
+      respondError(res, 400, "Invalid phone number");
       return;
     }
 
     const otpStartResult = await startOtp(normalizedPhone);
-
-    const responseBody = {
-      sent: true,
-      ...(isTestEnvironment() ? { otp: otpStartResult.otp } : {}),
-    };
-    const responseValidation =
-      startOtpResponseSchema.safeParse(responseBody);
-
+    const responseBody = { sent: true, ...(isTestEnvironment() ? { otp: otpStartResult.otp } : {}) };
+    const responseValidation = startOtpResponseSchema.safeParse(responseBody);
     if (!responseValidation.success) {
-      respondResponseValidationError(
-        res,
-        route,
-        requestId,
-        responseValidation.error.flatten()
-      );
+      respondError(res, 500, "Invalid auth response shape");
       return;
     }
 
     respondOk(res, responseBody);
   } catch (err) {
     if (err instanceof AppError) {
-      const details = (err as { details?: unknown }).details;
-      respondError(res, err.status, err.code, err.message, details);
+      respondError(res, err.status, err.message);
       return;
     }
-
     next(err);
   }
-}
+});
 
-router.post("/otp/start", otpRateLimit(), handleOtpStart);
-
-/**
- * POST /api/auth/otp/verify
- */
-async function handleOtpVerify(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> {
+router.post("/otp/verify", verifyOtpRateLimit(), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const route = "/api/auth/otp/verify";
-    const requestId = getAuthRequestId(res);
-
     const rawBody = coerceBody(req.body);
-    const phone =
-      rawBody.phone ??
-      rawBody.phoneNumber ??
-      rawBody.phone_number ??
-      rawBody.mobile ??
-      null;
+    const phone = rawBody.phone ?? rawBody.phoneNumber ?? rawBody.phone_number ?? rawBody.mobile ?? null;
     const codeRaw = rawBody.code ?? rawBody.otp ?? rawBody.token ?? null;
-    req.body = {
-      ...rawBody,
-      ...(phone !== null ? { phone } : {}),
-      ...(codeRaw !== null ? { code: codeRaw } : {}),
-    };
+    req.body = { ...rawBody, ...(phone !== null ? { phone } : {}), ...(codeRaw !== null ? { code: codeRaw } : {}) };
 
     const validation = validateVerifyOtp(req);
     if (!validation.success) {
-      respondRequestValidationError(
-        res,
-        route,
-        requestId,
-        validation.error.flatten()
-      );
+      respondError(res, 400, "Invalid request payload");
       return;
     }
 
-    const { code, email } = validation.data;
-    const normalizedPhone = normalizeOtpPhone(validation.data.phone);
-    if (!normalizedPhone) {
-      respondError(res, 400, "invalid_phone", "Invalid phone number");
+    let normalizedPhone: string;
+    try {
+      normalizedPhone = normalizePhone(validation.data.phone);
+    } catch {
+      respondError(res, 400, "Invalid phone number");
       return;
     }
 
-    const userAgent = req.get("user-agent");
-    const verifyPayload = {
-      phone: normalizedPhone,
-      code,
-      ...(email !== undefined ? { email } : {}),
-      ...(req.ip ? { ip: req.ip } : {}),
-      ...(userAgent ? { userAgent } : {}),
-      route,
-      method: req.method,
-    };
-    const result = await verifyOtpCode(verifyPayload);
-
-    if (!result.ok) {
-      const responseCode = result.error.code === "invalid_code" ? "invalid_otp" : result.error.code;
-      const responseStatus = result.error.code === "invalid_code" ? 400 : result.status;
-      respondError(res, responseStatus, responseCode, result.error.message);
-      return;
-    }
-
-    const responseBody = {
-      ok: true as const,
-      data: {
-        token: result.token,
-        sessionToken: result.sessionToken,
-        user: result.user,
-        applicationId: result.applicationId,
-        nextPath: result.nextPath,
-      },
-      error: null,
-      requestId,
-    };
-
-    const responseValidation =
-      verifyOtpResponseSchema.safeParse(responseBody);
-
-    if (!responseValidation.success) {
-      respondResponseValidationError(
-        res,
-        route,
-        requestId,
-        responseValidation.error.flatten()
-      );
-      return;
-    }
-
-    resetOtpRateLimit(normalizedPhone);
-
-    res.status(200).json(responseBody);
-  } catch (err) {
-    if (err instanceof AppError) {
-      const details = (err as { details?: unknown }).details;
-      respondError(res, err.status, err.code, err.message, details);
-      return;
-    }
-
-    next(err);
-  }
-}
-
-router.post("/otp/verify", verifyOtpRateLimit(), handleOtpVerify);
-
-/**
- * POST /api/auth/send-otp
- */
-router.post("/send-otp", otpRateLimit(), async (req, res) => {
-  try {
-    const { phone } = req.body as { phone?: string };
-    await startOtp(phone);
-    res.json({ sent: true });
-  } catch (_err) {
-    res.status(400).json({ error: "OTP start failed" });
-  }
-});
-
-/**
- * POST /api/auth/verify-otp
- */
-router.post("/verify-otp", verifyOtpRateLimit(), async (req, res) => {
-  try {
-    const { phone, code, email } = req.body as {
-      phone?: string;
-      code?: string;
-      email?: string | null;
-    };
-    const normalizedPhone = normalizeOtpPhone(phone ?? "");
     const result = await verifyOtpCode({
-      phone: normalizedPhone ?? "",
-      code: code ?? "",
-      ...(email !== undefined ? { email } : {}),
+      phone: normalizedPhone,
+      code: validation.data.code,
+      ...(validation.data.email !== undefined ? { email: validation.data.email } : {}),
       ...(req.ip ? { ip: req.ip } : {}),
       ...(req.get("user-agent") ? { userAgent: req.get("user-agent") } : {}),
-      route: "/api/auth/verify-otp",
+      route: "/api/auth/otp/verify",
       method: req.method,
     });
-    res.json(result);
-  } catch (_err) {
-    res.status(400).json({ error: "OTP verification failed" });
+
+    if (!result.ok) {
+      respondError(res, result.status, result.error.message);
+      return;
+    }
+
+    const responseValidation = verifyOtpResponseSchema.safeParse(result);
+    if (!responseValidation.success) {
+      respondError(res, 500, "Invalid auth response shape");
+      return;
+    }
+
+    res.status(200).json(result);
+  } catch (err) {
+    if (err instanceof AppError) {
+      respondError(res, err.status, err.message);
+      return;
+    }
+    next(err);
   }
 });
 
-/**
- * POST /api/auth/login
- */
-router.post("/login", loginRateLimit(), handleOtpVerify);
-
-/**
- * POST /api/auth/logout
- */
-router.post(
-  "/logout",
-  requireAuth,
-  requireAuthorization({ roles: ALL_ROLES }),
-  async (req, res, next) => {
-    try {
-      const userId = req.user?.userId;
-      if (!userId) {
-        respondError(res, 401, "invalid_token", "Invalid or expired token.");
-        return;
-      }
-
-      await revokeRefreshTokensForUser(userId);
-      await incrementTokenVersion(userId);
-
-      res.status(200).json({ ok: true });
-    } catch (err) {
-      next(err);
-    }
+router.get("/me", requireAuth, requireAuthorization({ roles: ALL_ROLES }), async (req, res) => {
+  const user = req.user;
+  if (!user) {
+    respondError(res, 401, "Authorization token is required.");
+    return;
   }
-);
 
-/**
- * POST /api/auth/refresh
- */
-router.post("/refresh", refreshRateLimit(), async (req, res, next) => {
-  try {
-    const refreshToken =
-      typeof req.body?.refreshToken === "string" ? req.body.refreshToken : "";
-    const userAgent = req.get("user-agent");
-    const refreshPayload = {
-      refreshToken,
-      ...(req.ip ? { ip: req.ip } : {}),
-      ...(userAgent ? { userAgent } : {}),
-    };
-
-    const result = await refreshSession(refreshPayload);
-
-    if (!result.ok) {
-      respondError(
-        res,
-        result.status,
-        result.error.code,
-        result.error.message
-      );
-      return;
-    }
-
-    res.status(200).json({
-      ok: true,
-      accessToken: result.token,
-      refreshToken: result.refreshToken,
-      user: result.user,
-    });
-  } catch (err) {
-    if (err instanceof AppError) {
-      const details = (err as { details?: unknown }).details;
-      respondError(res, err.status, err.code, err.message, details);
-      return;
-    }
-
-    next(err);
-  }
+  respondOk(res, {
+    user: {
+      id: user.userId,
+      role: user.role,
+      silo: user.silo,
+      phone: user.phone,
+    },
+  });
 });
 
 export default router;

@@ -33,7 +33,7 @@ jest.mock("applicationinsights", () => {
 
 describe("application insights telemetry", () => {
   beforeEach(() => {
-    jest.resetModules();
+    vi.resetModules();
     trackRequest.mockClear();
     trackDependency.mockClear();
     trackException.mockClear();

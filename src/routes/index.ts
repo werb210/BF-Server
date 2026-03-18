@@ -1,5 +1,5 @@
 import { Router } from "express";
-import authRoutes from "./auth";
+import authRoutes from "../modules/auth/auth.routes";
 import systemRoutes from "./systemRoutes";
 import telephonyRoutes from "../telephony/routes/telephonyRoutes";
 

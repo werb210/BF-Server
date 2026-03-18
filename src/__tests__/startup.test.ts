@@ -32,7 +32,7 @@ describe("startup behavior", () => {
     resetStartupState();
 
     await new Promise<void>((resolve, reject) => {
-      jest.isolateModules(() => {
+      vi.isolateModules(() => {
         const { startServer } = require("../index");
         startServer()
           .then((listener: import("http").Server) => {
@@ -68,7 +68,7 @@ describe("startup behavior", () => {
     resetStartupState();
 
     await new Promise<void>((resolve, reject) => {
-      jest.isolateModules(() => {
+      vi.isolateModules(() => {
         const { startServer } = require("../index");
         startServer()
           .then((listener: import("http").Server) => {

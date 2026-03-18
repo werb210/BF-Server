@@ -12,7 +12,7 @@ describe("POST /api/auth/otp/start", () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    jest.resetModules();
+    vi.resetModules();
   });
 
   afterEach(() => {
@@ -23,7 +23,7 @@ describe("POST /api/auth/otp/start", () => {
     process.env.TWILIO_ACCOUNT_SID = "ACxxxx";
     process.env.TWILIO_AUTH_TOKEN = "token";
     delete process.env.TWILIO_VERIFY_SERVICE_SID;
-    jest.resetModules();
+    vi.resetModules();
 
     expect(() => buildTestApp()).toThrow(
       "Missing required environment variables: TWILIO_VERIFY_SERVICE_SID"

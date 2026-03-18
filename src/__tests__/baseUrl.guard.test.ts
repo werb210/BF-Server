@@ -1,13 +1,13 @@
 describe("BASE_URL guard", () => {
   afterEach(() => {
-    jest.resetModules();
+    vi.resetModules();
   });
 
   it("throws when BASE_URL is missing in production", () => {
     process.env.NODE_ENV = "production";
     delete process.env.BASE_URL;
     expect(() => {
-      jest.isolateModules(() => {
+      vi.isolateModules(() => {
         require("../server");
       });
     }).toThrow("BASE_URL must be set in production.");
@@ -17,7 +17,7 @@ describe("BASE_URL guard", () => {
     process.env.NODE_ENV = "test";
     delete process.env.BASE_URL;
     expect(() => {
-      jest.isolateModules(() => {
+      vi.isolateModules(() => {
         require("../server");
       });
     }).not.toThrow();

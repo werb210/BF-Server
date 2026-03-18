@@ -172,26 +172,11 @@ router.post("/verify", otpVerifyLimiter(), async (req, res) => {
 
     resetOtpRateLimit(phone);
 
-    if (!result.token || !result.sessionToken || !result.user) {
+    if (!result.data.token || !result.data.user) {
       return fail("auth_token_creation_failed", "Failed to create auth token");
     }
 
-    return res.status(200).json({
-      ok: true,
-      data: {
-        token: result.token,
-        sessionToken: result.sessionToken,
-        user: {
-          id: result.user.id,
-          role: result.user.role,
-          email: result.user.email ?? null,
-        },
-        applicationId: null,
-        nextPath: "/portal",
-      },
-      error: null,
-      requestId,
-    });
+    return res.status(200).json(result);
   } catch (err) {
     return fail("verify_failed", "OTP verification failed");
   } finally {

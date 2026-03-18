@@ -3,7 +3,7 @@ describe("startup without Twilio configuration", () => {
 
   afterEach(() => {
     process.env = originalEnv;
-    jest.resetModules();
+    vi.resetModules();
   });
 
   it("fails fast when Twilio env vars are missing", () => {
@@ -13,7 +13,7 @@ describe("startup without Twilio configuration", () => {
     delete process.env.TWILIO_VERIFY_SERVICE_SID;
 
     expect(() => {
-      jest.isolateModules(() => {
+      vi.isolateModules(() => {
         require("../index");
       });
     }).toThrow(

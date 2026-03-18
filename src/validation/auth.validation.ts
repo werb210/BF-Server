@@ -35,7 +35,6 @@ export const verifyOtpResponseSchema = z
     data: z
       .object({
         token: z.string(),
-        sessionToken: z.string(),
         user: z
           .object({
             id: z.string(),
@@ -43,27 +42,25 @@ export const verifyOtpResponseSchema = z
             email: z.string().nullable(),
           })
           .strict(),
-        applicationId: z.string().nullable(),
         nextPath: z.literal("/portal"),
       })
       .strict(),
-    error: z.null(),
-    requestId: z.string().min(1),
   })
   .strict();
 
 export const authMeSchema = z
   .object({
     ok: z.literal(true),
-    userId: z.string(),
-    role: roleSchema,
-    silo: z.string().min(1, "Silo is required"),
-    user: z
+    data: z
       .object({
-        id: z.string(),
-        role: roleSchema,
-        silo: z.string().min(1, "Silo is required"),
-        phone: z.string().nullable(),
+        user: z
+          .object({
+            id: z.string(),
+            role: roleSchema,
+            silo: z.string().nullable().optional(),
+            phone: z.string().nullable().optional(),
+          })
+          .strict(),
       })
       .strict(),
   })

@@ -3,7 +3,7 @@ describe("twilio startup without configuration", () => {
 
   afterEach(() => {
     process.env = originalEnv;
-    jest.resetModules();
+    vi.resetModules();
   });
 
   it("does not fail when Twilio env vars are missing", () => {
@@ -15,7 +15,7 @@ describe("twilio startup without configuration", () => {
     process.env.NODE_ENV = "test";
 
     expect(() => {
-      jest.isolateModules(() => {
+      vi.isolateModules(() => {
         require("../index");
       });
     }).not.toThrow();

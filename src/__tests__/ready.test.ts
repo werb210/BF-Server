@@ -34,7 +34,7 @@ beforeAll(async () => {
   process.env.NODE_ENV = "test";
   process.env.JWT_SECRET = "test-access-secret";
 
-  jest.resetModules();
+  vi.resetModules();
   const { buildAppWithApiRoutes } = await import("../app");
   const db = await import("../db");
   const { ensureAuditEventSchema } = await import("./helpers/auditSchema");
