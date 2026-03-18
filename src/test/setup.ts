@@ -12,6 +12,7 @@ import {
   validateExpressRequest,
   validateRequest,
 } from "./twilioMock";
+import { resetIdempotencyStoreForTests } from "../lib/idempotencyStore";
 
 vi.mock("twilio", () => ({
   default: twilioDefaultExport,
@@ -88,6 +89,10 @@ beforeAll(async () => {
   );
 
   initialized = true;
+});
+
+beforeEach(() => {
+  resetIdempotencyStoreForTests();
 });
 
 Object.assign(globalThis, { __twilioMocks: twilioMockState });

@@ -98,3 +98,9 @@ export async function storeResponse(key: string, value: StoredResponse): Promise
 
   memoryFallbackSet(key, value);
 }
+
+export function resetIdempotencyStoreForTests(): void {
+  if (process.env.NODE_ENV === "test") {
+    memoryStore.clear();
+  }
+}

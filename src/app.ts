@@ -45,7 +45,7 @@ import systemHealthRouter from "./routes/systemHealth";
 import { httpMetricsMiddleware } from "./metrics/httpMetrics";
 import { requestId } from "./platform/requestId";
 import { idempotency } from "./platform/idempotency";
-import { errorHandler } from "./platform/errorHandler";
+import { errorHandler } from "./middleware/errors";
 import healthRoutes from "./platform/healthRoutes";
 import metricsRoutes from "./platform/metricsRoutes";
 import { env } from "./platform/env";
