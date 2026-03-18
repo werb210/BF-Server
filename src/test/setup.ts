@@ -77,23 +77,12 @@ beforeAll(async () => {
       name text null,
       metadata jsonb null,
       product_type text null,
-      product_category text null,
       pipeline_state text null,
-      current_stage text null,
-      processing_stage text null,
       status text null,
-      application_status text null,
-      is_completed boolean not null default false,
-      last_updated timestamptz null,
       lender_id uuid null,
       lender_product_id uuid null,
       requested_amount numeric null,
       source text null,
-      first_opened_at timestamptz null,
-      ocr_completed_at timestamptz null,
-      banking_completed_at timestamptz null,
-      credit_summary_completed_at timestamptz null,
-      startup_flag boolean not null default false,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
@@ -108,60 +97,8 @@ beforeAll(async () => {
       title text null,
       document_type text null,
       status text null,
-      filename text null,
-      storage_key text null,
-      uploaded_by text null,
-      rejection_reason text null,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
-    create table if not exists application_stage_events (
-      id uuid primary key,
-      application_id uuid not null references applications(id) on delete cascade,
-      from_stage text null,
-      to_stage text not null,
-      trigger text null,
-      triggered_by text null,
-      reason text null,
-      created_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
-    create table if not exists application_required_documents (
-      id uuid primary key,
-      application_id uuid not null references applications(id) on delete cascade,
-      document_category text not null,
-      is_required boolean not null default true,
-      status text not null default 'PENDING',
-      created_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
-    create unique index if not exists application_required_documents_app_doc_uidx
-      on application_required_documents (application_id, document_category);
-  `);
-  await pool.query(`
-    create table if not exists document_versions (
-      id uuid primary key,
-      document_id uuid not null references documents(id) on delete cascade,
-      version integer not null default 1,
-      blob_name text null,
-      hash text null,
-      metadata jsonb null,
-      content text null,
-      created_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
-    create table if not exists document_version_reviews (
-      id uuid primary key,
-      document_version_id uuid not null references document_versions(id) on delete cascade,
-      status text not null,
-      reviewed_by_user_id uuid null references users(id) on delete set null,
-      reviewed_at timestamptz null,
-      created_at timestamptz not null default now()
     );
   `);
 
@@ -269,194 +206,13 @@ beforeAll(async () => {
     );
   `);
   await pool.query(`
-    create table if not exists contacts (
-      id uuid primary key,
-      company_id uuid null,
-      company text null,
-      name text null,
-      email text null,
-      phone text null,
-      status text null,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
-    create table if not exists companies (
-      id uuid primary key,
-      name text null,
-      email text null,
-      phone text null,
-      status text null,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
-    create table if not exists continuation (
-      id uuid primary key,
-      application_id uuid null references applications(id) on delete set null,
-      company_name text null,
-      full_name text null,
-      email text null,
-      phone text null,
-      industry text null,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
-    create table if not exists issue_reports (
-      id uuid primary key default gen_random_uuid(),
-      description text null,
-      screenshot_base64 text null,
-      screenshot_path text null,
-      page_url text null,
-      browser_info text null,
-      user_agent text null,
-      status text null,
-      created_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
-    create table if not exists crm_leads (
-      id uuid primary key,
-      company_name text null,
-      full_name text null,
-      email text null,
-      phone text null,
-      industry text null,
-      years_in_business text null,
-      monthly_revenue text null,
-      annual_revenue text null,
-      ar_outstanding text null,
-      existing_debt text null,
-      source text null,
-      tags jsonb null default '[]'::jsonb,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
-    create table if not exists crm_lead_activities (
-      id uuid primary key,
-      lead_id uuid not null references crm_leads(id) on delete cascade,
-      activity_type text not null,
-      payload jsonb not null default '{}'::jsonb,
-      created_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
-    create table if not exists readiness_leads (
-      id uuid primary key,
-      company_name text not null,
-      full_name text not null,
-      phone text not null,
-      email text not null,
-      industry text null,
-      years_in_business integer null,
-      monthly_revenue numeric null,
-      annual_revenue numeric null,
-      ar_outstanding numeric null,
-      existing_debt boolean null,
-      source text not null default 'website',
-      status text not null default 'new',
-      crm_contact_id uuid null references contacts(id) on delete set null,
-      application_id uuid null references applications(id) on delete set null,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
-    create table if not exists readiness_sessions (
-      id uuid primary key,
-      token uuid not null,
-      email text not null,
-      phone text null,
-      company_name text not null,
-      full_name text not null,
-      industry text null,
-      years_in_business integer null,
-      monthly_revenue numeric null,
-      annual_revenue numeric null,
-      ar_outstanding numeric null,
-      existing_debt boolean null,
-      crm_lead_id uuid null references crm_leads(id) on delete set null,
-      is_active boolean not null default true,
-      expires_at timestamptz not null,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
-    create table if not exists chat_sessions (
-      id uuid primary key,
-      user_type text null,
-      source text null,
-      channel text null,
-      status text not null,
-      lead_id uuid null references contacts(id) on delete set null,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
-    create table if not exists ai_sessions (
-      id uuid primary key,
-      visitor_id uuid null,
-      context text null,
-      source text null,
-      status text null,
-      company_name text null,
-      full_name text null,
-      email text null,
-      phone text null,
-      startup_interest_tags jsonb null,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
-    create table if not exists ai_messages (
-      id uuid primary key,
-      session_id uuid not null references ai_sessions(id) on delete cascade,
-      role text not null,
-      content text not null,
-      created_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
-    create table if not exists communications_messages (
-      id uuid primary key,
-      type text null,
-      direction text null,
-      status text null,
-      contact_id uuid null references contacts(id) on delete set null,
-      body text null,
-      created_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
-    create table if not exists application_continuations (
-      token text primary key,
-      prefill_json jsonb null,
-      status text null,
-      crm_lead_id uuid null references crm_leads(id) on delete set null,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
     create table if not exists document_processing_jobs (
-      id uuid primary key default gen_random_uuid(),
+      id uuid primary key,
       application_id uuid null references applications(id) on delete cascade,
       document_id uuid null references documents(id) on delete cascade,
-      job_type text not null default 'ocr',
       provider text null,
-      status text not null default 'pending',
-      started_at timestamptz null,
+      status text not null default 'queued',
       retry_count integer not null default 0,
-      last_retry_at timestamptz null,
       max_retries integer not null default 3,
       error_code text null,
       error_message text null,
@@ -466,31 +222,8 @@ beforeAll(async () => {
     );
   `);
   await pool.query(`
-    create unique index if not exists document_processing_jobs_doc_type_uidx
-      on document_processing_jobs (document_id, job_type);
-  `);
-  await pool.query(`
-    create table if not exists banking_analysis_jobs (
-      id uuid primary key default gen_random_uuid(),
-      application_id uuid not null references applications(id) on delete cascade,
-      status text not null default 'pending',
-      statement_months_detected integer null,
-      started_at timestamptz null,
-      completed_at timestamptz null,
-      error_message text null,
-      retry_count integer not null default 0,
-      last_retry_at timestamptz null,
-      max_retries integer not null default 3,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
-    );
-  `);
-  await pool.query(`
     create table if not exists contact_leads (
-      id uuid primary key default gen_random_uuid(),
-      company text null,
-      first_name text null,
-      last_name text null,
+      id uuid primary key,
       email text null,
       phone text null,
       payload jsonb null,
