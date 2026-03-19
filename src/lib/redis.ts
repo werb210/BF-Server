@@ -1,85 +1,50 @@
-import Redis from "ioredis";
-
-type RedisLike = {
-  get(key: string): Promise<string | null>;
-  set(...args: unknown[]): Promise<"OK">;
-  ttl(key: string): Promise<number>;
-  del(key: string): Promise<number>;
-};
-
-type MemoryEntry = {
+type Entry = {
   value: string;
   expiresAt: number | null;
 };
 
-class MemoryRedis implements RedisLike {
-  private readonly store = new Map<string, MemoryEntry>();
+const store = new Map<string, Entry>();
 
-  async get(key: string): Promise<string | null> {
-    const entry = this.store.get(key);
-    if (!entry) {
-      return null;
-    }
+function isExpired(entry: Entry): boolean {
+  return entry.expiresAt !== null && Date.now() > entry.expiresAt;
+}
 
-    if (entry.expiresAt !== null && entry.expiresAt <= Date.now()) {
-      this.store.delete(key);
-      return null;
-    }
+function getEntry(key: string): Entry | null {
+  const entry = store.get(key);
+  if (!entry) return null;
 
-    return entry.value;
+  if (isExpired(entry)) {
+    store.delete(key);
+    return null;
   }
 
-  async set(key: string, value: string, mode?: "EX", ttlSeconds?: number): Promise<"OK"> {
-    const expiresAt =
-      mode === "EX" && typeof ttlSeconds === "number"
-        ? Date.now() + ttlSeconds * 1000
-        : null;
+  return entry;
+}
 
-    this.store.set(key, { value, expiresAt });
-    return "OK";
-  }
+export const redis = {
+  async set(key: string, val: string, mode?: "EX", ttlSeconds?: number) {
+    const expiresAt = mode === "EX" && typeof ttlSeconds === "number"
+      ? Date.now() + ttlSeconds * 1000
+      : null;
 
-  async ttl(key: string): Promise<number> {
-    const entry = this.store.get(key);
-    if (!entry) {
-      return -2;
-    }
+    store.set(key, { value: val, expiresAt });
+  },
 
-    if (entry.expiresAt === null) {
-      return -1;
-    }
+  async get(key: string) {
+    const entry = getEntry(key);
+    return entry ? entry.value : null;
+  },
+
+  async del(key: string) {
+    store.delete(key);
+  },
+
+  async ttl(key: string) {
+    const entry = getEntry(key);
+    if (!entry) return -2;
+    if (entry.expiresAt === null) return -1;
 
     const remainingMs = entry.expiresAt - Date.now();
-    if (remainingMs <= 0) {
-      this.store.delete(key);
-      return -2;
-    }
-
-    return Math.ceil(remainingMs / 1000);
-  }
-
-  async del(key: string): Promise<number> {
-    return this.store.delete(key) ? 1 : 0;
-  }
-}
-
-function createRedisClient(): RedisLike {
-  const redisUrl = process.env.REDIS_URL;
-
-  if (!redisUrl) {
-    console.warn("[REDIS] REDIS_URL missing, using in-memory fallback");
-    return new MemoryRedis();
-  }
-
-  const client = new Redis(redisUrl, {
-    tls: {},
-    maxRetriesPerRequest: null,
-  });
-
-  client.on("connect", () => console.log("[REDIS CONNECTED]"));
-  client.on("error", (err) => console.error("[REDIS ERROR]", err));
-
-  return client;
-}
-
-export const redis = createRedisClient();
+    return remainingMs > 0 ? Math.ceil(remainingMs / 1000) : -2;
+  },
+};
