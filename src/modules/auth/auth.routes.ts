@@ -77,9 +77,10 @@ async function handleOtpVerify(req: Request, res: Response, next: (err?: unknown
       });
     }
 
-    res.cookie("session", "valid", {
+    res.cookie("session", result.data.token, {
       httpOnly: true,
       sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
     });
 
     return res.json({
@@ -182,16 +183,8 @@ router.post("/logout", async (_req: Request, res: Response) => {
   });
 });
 
-router.get("/me", requireAuth, requireAuthorization({ roles: ALL_ROLES }), async (req, res, next) => {
+router.get("/me", requireAuth, requireAuthorization({ roles: ALL_ROLES }), async (req, res) => {
   const user = req.user;
-  if (!user && !req.headers.cookie) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-  if (!user) {
-    return res.status(200).json({
-      user: { id: "1", role: "Admin" },
-    });
-  }
 
   return res.json({
     ok: true,

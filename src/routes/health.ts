@@ -1,9 +1,10 @@
 import { Router } from "express";
+import { isReady } from "../startupState";
 
 const router = Router();
 
 router.get('/health/db', (req, res) => {
-  const ready = req.app.locals.dbReady === true;
+  const ready = isReady();
 
   if (!ready) {
     return res.status(503).json({
