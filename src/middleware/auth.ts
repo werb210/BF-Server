@@ -16,6 +16,7 @@ function resolveRequestId(req: Parameters<RequestHandler>[0]): string {
 }
 
 export const requireAuth: RequestHandler = (req, res, next) => {
+  req.id = String(req.id);
   const token = resolveToken(req);
   if (!token) {
     req.log?.warn({

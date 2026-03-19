@@ -6,15 +6,9 @@ export function requestId(
   res: Response,
   next: NextFunction
 ): void {
-  const headerId = req.headers["x-request-id"];
-  const id =
-    typeof headerId === "string" && headerId.trim().length > 0
-      ? headerId
-      : randomUUID();
-
-  req.id = id;
-  res.locals.requestId = id;
-  res.setHeader("X-Request-Id", id);
+  req.id = String(req.headers["x-request-id"] || randomUUID());
+  res.locals.requestId = req.id;
+  res.setHeader("X-Request-Id", req.id);
 
   next();
 }

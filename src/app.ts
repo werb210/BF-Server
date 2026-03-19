@@ -153,12 +153,7 @@ export function buildApp(): express.Express {
   app.use(normalizeApiPath);
 
   app.use((req, _res, next) => {
-    const headerRequestId = req.headers["x-request-id"];
-    if (typeof headerRequestId === "string" && headerRequestId.trim().length > 0) {
-      req.id = headerRequestId;
-    } else if (!req.id) {
-      req.id = crypto.randomUUID();
-    }
+    req.id = String(req.headers["x-request-id"] || crypto.randomUUID());
     next();
   });
 
