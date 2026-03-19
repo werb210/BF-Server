@@ -26,6 +26,7 @@ export const requireAuth: RequestHandler = (req, res, next) => {
     });
     return res.status(401).json({
       code: "UNAUTHORIZED",
+      error: "missing_token",
       message: "Missing token",
       requestId: resolveRequestId(req),
     });
@@ -37,6 +38,7 @@ export const requireAuth: RequestHandler = (req, res, next) => {
     if (!user) {
       return res.status(401).json({
         code: "UNAUTHORIZED",
+        error: "invalid_token",
         message: "Invalid token",
         requestId: resolveRequestId(req),
       });
@@ -47,6 +49,7 @@ export const requireAuth: RequestHandler = (req, res, next) => {
   } catch {
     return res.status(401).json({
       code: "UNAUTHORIZED",
+      error: "invalid_token",
       message: "Invalid token",
       requestId: resolveRequestId(req),
     });
@@ -146,6 +149,7 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
     if (!user) {
       return res.status(401).json({
         code: "UNAUTHORIZED",
+        error: "missing_token",
         message: "Missing token",
         requestId: resolveRequestId(req),
       });
@@ -154,6 +158,7 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
     if (requiredRoles.length > 0 && !requiredRoles.includes(user.role)) {
       return res.status(403).json({
         code: "FORBIDDEN",
+        error: "forbidden",
         message: "Forbidden",
         requestId: resolveRequestId(req),
       });
@@ -168,6 +173,7 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
       if (!allowed) {
         return res.status(403).json({
           code: "FORBIDDEN",
+          error: "forbidden",
           message: "Forbidden",
           requestId: resolveRequestId(req),
         });
@@ -187,6 +193,7 @@ export function requireCapability(cap: string | string[]): RequestHandler {
     if (!user) {
       return res.status(401).json({
         code: "UNAUTHORIZED",
+        error: "missing_token",
         message: "Missing token",
         requestId: resolveRequestId(req),
       });
@@ -199,6 +206,7 @@ export function requireCapability(cap: string | string[]): RequestHandler {
     if (!allowed) {
       return res.status(403).json({
         code: "FORBIDDEN",
+        error: "forbidden",
         message: "Forbidden",
         requestId: resolveRequestId(req),
       });

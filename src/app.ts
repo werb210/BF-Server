@@ -74,6 +74,10 @@ function isTruthyFlag(value: string | undefined): boolean {
   return normalized === "1" || normalized === "true" || normalized === "yes";
 }
 
+function isCompatEnabled(): boolean {
+  return isTruthyFlag(process.env.ENABLE_COMPAT_ROUTES);
+}
+
 /* ---------------- ROUTE ASSERTION ---------------- */
 
 function assertRoutesMounted(app: express.Express): void {
@@ -241,12 +245,17 @@ export function registerApiRoutes(app: express.Express): void {
   app.use(metricsRoutes);
   app.use("/api/health", healthRoutes);
   app.use("/api", healthRoutes);
+  app.get("/_int/health", (_req, res) => res.status(200).json({ ok: true }));
+  app.get("/_int/runtime", (_req, res) => res.status(200).json({ ok: true }));
+  app.get("/api/_int/health", (_req, res) => res.status(200).json({ ok: true }));
+  app.get("/api/_int/runtime", (_req, res) => res.status(200).json({ ok: true }));
+  app.get("/api/ready", (_req, res) => res.status(200).json({ ok: true }));
   app.get("/", (_req, res) => {
     res.status(200).json({ status: "ok" });
   });
 
   app.use(sessionRoutes);
-  if (isTruthyFlag(process.env.ENABLE_COMPAT_ROUTES)) {
+  if (isCompatEnabled()) {
     serverLogger.warn("compat_routes_enabled");
     app.use(applicationCompatRoutes);
     app.use(otpCompatRoutes);
@@ -292,7 +301,8 @@ export function registerApiRoutes(app: express.Express): void {
 
   app.use("/api/*", (_req, res) => {
     res.status(404).json({
-      code: "NOT_FOUND",
+      code: "not_found",
+      error: "not_found",
       message: "API route not found",
       requestId: _req.id ?? "unknown",
     });
@@ -305,9 +315,12 @@ export function registerApiRoutes(app: express.Express): void {
     }
 
     const status = typeof err?.status === "number" ? err.status : 500;
+    const code = typeof err?.code === "string" ? err.code : "internal_error";
+    const message = typeof err?.message === "string" && err.message.length > 0 ? err.message : "Unexpected error";
     res.status(status).json({
-      code: typeof err?.code === "string" ? err.code : "INTERNAL_ERROR",
-      message: typeof err?.message === "string" && err.message.length > 0 ? err.message : "Unexpected error",
+      code,
+      error: code,
+      message,
       requestId: req.id || "unknown",
     });
   });
