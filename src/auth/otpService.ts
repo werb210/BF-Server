@@ -9,36 +9,46 @@ function normalizePhone(phone: string): string {
   return `+${p}`;
 }
 
+function getRedisClient() {
+  if (!redis) {
+    throw new Error("OTP service unavailable: Redis is disabled");
+  }
+  return redis;
+}
+
 export async function sendOtp(phone: string) {
+  const client = getRedisClient();
   const normalized = normalizePhone(phone);
   const code = process.env.TEST_OTP_CODE ?? "123456";
   const key = `otp:${normalized}`;
 
   console.log("[OTP STORE]", key, code);
 
-  await redis.set(key, code, "EX", TTL);
+  await client.set(key, code, "EX", TTL);
 
-  const ttl = await redis.ttl(key);
+  const ttl = await client.ttl(key);
   console.log("[OTP TTL]", ttl);
 
   return code;
 }
 
 export async function storeOtp(phone: string, code: string) {
+  const client = getRedisClient();
   const normalized = normalizePhone(phone);
   const key = `otp:${normalized}`;
 
-  await redis.set(key, code, "EX", TTL);
+  await client.set(key, code, "EX", TTL);
 
-  const ttl = await redis.ttl(key);
+  const ttl = await client.ttl(key);
   console.log("[OTP STORE]", key, code, "ttl:", ttl);
 }
 
 export async function verifyOtp(phone: string, code: string) {
+  const client = getRedisClient();
   const normalized = normalizePhone(phone);
   const key = `otp:${normalized}`;
 
-  const stored = await redis.get(key);
+  const stored = await client.get(key);
 
   console.log("[OTP VERIFY]", key, "stored:", stored, "incoming:", code);
 
@@ -50,7 +60,7 @@ export async function verifyOtp(phone: string, code: string) {
     return { ok: false, error: "invalid_code" };
   }
 
-  await redis.del(key);
+  await client.del(key);
 
   return { ok: true };
 }
