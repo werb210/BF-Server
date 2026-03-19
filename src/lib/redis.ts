@@ -1,20 +1,49 @@
 import Redis from "ioredis";
 
-const url = process.env.REDIS_URL || "redis://localhost:6379";
+let redisClient: Redis | null = null;
 
-export const redis = new Redis(url);
+export function initRedis(): Redis | null {
+  const redisUrl = process.env.REDIS_URL?.trim();
 
-redis.on("connect", () => console.log("Redis connected"));
-redis.on("error", (e) => console.error("Redis error", e.message));
+  if (!redisUrl) {
+    console.log("Redis disabled: REDIS_URL not provided");
+    return null;
+  }
+
+  if (redisClient) {
+    return redisClient;
+  }
+
+  redisClient = new Redis(redisUrl, {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: true,
+  });
+
+  redisClient.on("ready", () => console.log("REDIS CONNECTED"));
+  redisClient.on("error", (error) => {
+    console.error("REDIS ERROR", error.message);
+  });
+
+  return redisClient;
+}
+
+export const redis = initRedis();
+
+function requireRedis(): Redis {
+  if (!redis) {
+    throw new Error("Redis is disabled because REDIS_URL is missing");
+  }
+  return redis;
+}
 
 export async function setOtp(phone: string, code: string) {
-  await redis.set(`otp:${phone}`, code, "EX", 300);
+  await requireRedis().set(`otp:${phone}`, code, "EX", 300);
 }
 
 export async function getOtp(phone: string) {
-  return redis.get(`otp:${phone}`);
+  return requireRedis().get(`otp:${phone}`);
 }
 
 export async function deleteOtp(phone: string) {
-  await redis.del(`otp:${phone}`);
+  await requireRedis().del(`otp:${phone}`);
 }
