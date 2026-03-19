@@ -32,7 +32,7 @@ describe("socket bind", () => {
     });
 
     await new Promise<void>((resolve, reject) => {
-      vi.isolateModules(() => {
+      vi.stubEnv(() => {
         vi.mock("../app", () => ({
           buildApp: () => ({ listen: listenSpy, use: jest.fn() }),
           registerApiRoutes: jest.fn(),
@@ -61,7 +61,7 @@ describe("socket bind", () => {
     });
 
     await new Promise<void>((resolve, reject) => {
-      vi.isolateModules(() => {
+      vi.stubEnv(() => {
         vi.mock("../app", () => ({
           buildApp: () => ({ listen: listenSpy, use: jest.fn() }),
           registerApiRoutes: jest.fn(),

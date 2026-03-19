@@ -15,7 +15,7 @@ describe("twilio startup without configuration", () => {
     process.env.NODE_ENV = "test";
 
     expect(() => {
-      vi.isolateModules(() => {
+      vi.stubEnv(() => {
         require("../index");
       });
     }).not.toThrow();

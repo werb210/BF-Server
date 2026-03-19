@@ -13,7 +13,7 @@ describe("startup without Twilio configuration", () => {
     delete process.env.TWILIO_VERIFY_SERVICE_SID;
 
     expect(() => {
-      vi.isolateModules(() => {
+      vi.stubEnv(() => {
         require("../index");
       });
     }).toThrow(
