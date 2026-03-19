@@ -15,6 +15,7 @@ import { createOtpSessionsTable } from "../db/migrations/createOtpSessions";
 import { runMigrations } from "../db/migrationRunner";
 import { runMigrations as runStartupMigrations } from "../startup/runMigrations";
 import { pool } from "../db";
+import { assertDatabaseHealthy } from "../health/dbHealth";
 
 let processHandlersInstalled = false;
 let server: Server | null = null;
@@ -31,16 +32,6 @@ function installProcessHandlers(): void {
   process.on("uncaughtException", (err) => {
     logger.error("uncaught_exception", { err: err instanceof Error ? err.message : String(err) });
   });
-}
-
-async function verifyDatabase() {
-  try {
-    await db.query("SELECT 1");
-    logger.info("database_connected");
-  } catch (_err) {
-    logger.error("database_connection_failed");
-    process.exit(1);
-  }
 }
 
 
@@ -86,9 +77,7 @@ export async function startServer() {
     validateEnv();
   }
   validateServerEnv();
-  if (process.env.NODE_ENV === "production") {
-    await verifyDatabase();
-  }
+  await assertDatabaseHealthy();
   if (process.env.RUN_DB_MIGRATIONS === "true") {
     console.log("Running database migrations...");
     await runMigrations();

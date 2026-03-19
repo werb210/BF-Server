@@ -62,6 +62,7 @@ import recoveryRoutes from "./routes/recoveryRoutes";
 import devRecoveryRoutes from "./routes/devRecoveryRoutes";
 import devRoutes from "./routes/dev";
 import healthRouter from "./routes/health";
+import dbTestRouter from "./routes/dbTest";
 import { corsMiddleware } from "./middleware/cors";
 import { normalizeApiPath } from "./middleware/normalizeApiPath";
 
@@ -258,6 +259,7 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api/telephony", requireAuth, requireAuthorization({ roles: ALL_ROLES }), telephonyRoutes);
   app.use("/api", twilioRoutes);
   app.use("/api", apiRouter);
+  app.use("/api", dbTestRouter);
   app.use("/api/analytics", analyticsRouter);
   app.use("/api/application", requireAuth, requireAuthorization({ roles: ALL_ROLES }), applicationRouter);
   app.use("/api/application/continuation", continuationLimiter, applicationContinuationRouter);
