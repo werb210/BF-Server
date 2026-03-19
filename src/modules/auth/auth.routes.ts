@@ -15,14 +15,26 @@ function coerceBody(body: unknown): Record<string, unknown> {
 router.post("/otp/start", async (req: Request, res: Response, next) => {
   const body = coerceBody(req.body);
   try {
-    const phone = typeof body.phone === "string" ? body.phone : "";
+    const phone =
+      typeof body.phone === "string"
+        ? body.phone
+        : typeof body.phoneNumber === "string"
+          ? body.phoneNumber
+          : typeof body.phone_number === "string"
+            ? body.phone_number
+            : "";
+    if (!phone.trim()) {
+      return res.status(400).json({ ok: false, error: "Missing phone" });
+    }
     const result = await startOtp(phone);
     return res.status(200).json({
       ok: true,
       sent: true,
+      otp: result.otp,
       sid: result.sid,
       data: {
         sent: true,
+        otp: result.otp,
         sid: result.sid,
       },
     });
@@ -66,6 +78,7 @@ async function handleOtpVerify(req: Request, res: Response, next: (err?: unknown
 
     return res.json({
       ok: true,
+      token: result.data.token,
       accessToken: result.data.token,
       refreshToken: result.data.refreshToken,
       user: result.data.user,
@@ -77,6 +90,14 @@ async function handleOtpVerify(req: Request, res: Response, next: (err?: unknown
 }
 
 router.post("/otp/verify", handleOtpVerify);
+router.post("/request", (req, res, next) => {
+  req.url = "/otp/start";
+  return router.handle(req, res, next);
+});
+router.post("/verify", (req, res, next) => {
+  req.url = "/otp/verify";
+  return router.handle(req, res, next);
+});
 
 router.post("/login", async (req: Request, res: Response, next) => {
   const body = coerceBody(req.body);

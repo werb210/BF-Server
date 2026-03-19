@@ -53,7 +53,8 @@ router.post("/start", otpLimiter, async (req, res) => {
     if (!phoneRaw) {
       return res.status(400).json({
         ok: false,
-        error: "phone_required",
+        error: "Missing phone",
+        code: "phone_required",
       });
     }
 
@@ -61,7 +62,7 @@ router.post("/start", otpLimiter, async (req, res) => {
 
     const normalizedPhone = normalizeOtpPhone(req.body.phone);
     if (!normalizedPhone) {
-      return res.status(400).json({ ok: false, error: "invalid_phone" });
+      return res.status(400).json({ ok: false, error: "Invalid phone number format", code: "invalid_phone" });
     }
 
     const parsed = otpStartSchema.parse({ ...req.body, phone: normalizedPhone });
@@ -91,6 +92,7 @@ router.post("/start", otpLimiter, async (req, res) => {
     return res.status(400).json({
       ok: false,
       error: "invalid_request",
+      code: "invalid_request",
     });
   }
 });
