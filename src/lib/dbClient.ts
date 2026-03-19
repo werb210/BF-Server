@@ -12,12 +12,11 @@ function createPool(): Pool {
   });
 }
 
-// Lazy getter
+// Primary access (lazy)
 export function getDb(): Pool {
   if (!_pool) {
     if (!process.env.DATABASE_URL) {
       if (process.env.NODE_ENV === 'test') {
-        // allow tests to run without real DB
         return null as any;
       }
       throw new Error('DATABASE_URL is required');
@@ -27,16 +26,20 @@ export function getDb(): Pool {
   return _pool;
 }
 
-// BACKWARD COMPAT EXPORT
-export const pool: Pick<Pool, 'query'> = {
-  query: ((...args: any[]) => (getDb().query as any).apply(getDb(), args)) as Pool['query'],
+// BACKWARD COMPAT: pool.query()
+export const pool = {
+  query: (...args: any[]) => {
+    const db = getDb();
+    if (!db) throw new Error('DB not available in test mode');
+    return (db as any).query(...args as any);
+  },
 };
 
-// RESTORE MISSING FUNCTION
+// BACKWARD COMPAT: health check
 export async function testDbConnection(): Promise<boolean> {
   try {
     const db = getDb();
-    if (!db) return true; // test mode
+    if (!db) return true;
     await db.query('SELECT 1');
     return true;
   } catch {
