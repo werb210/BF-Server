@@ -1,15 +1,24 @@
-import "./config/validateEnv";
-import { validateEnv } from "./startup/validateEnv";
+import express from "express";
+import { testDb } from "./lib/db";
 
-validateEnv();
+const app = express();
+app.use(express.json());
 
-import { startServer } from "./server/index";
+app.get("/health", async (_req, res) => {
+  res.json({ ok: true });
+});
 
-if (require.main === module && process.env.NODE_ENV !== "test") {
-  startServer().catch((err) => {
-    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
-    process.exit(1);
+const PORT = process.env.PORT || 3000;
+
+async function start() {
+  await testDb(); // fail if DB is broken
+
+  app.listen(PORT, () => {
+    console.log(`Server running on ${PORT}`);
   });
 }
 
-export * from "./server/index";
+start().catch((err) => {
+  console.error("FATAL START ERROR:", err);
+  process.exit(1);
+});
