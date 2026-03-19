@@ -13,9 +13,9 @@ export type ExportFilters = {
   productType?: string | null;
 };
 
-const PIPELINE_ORDER_SQL = `ARRAY[${PIPELINE_STATES.map((state) => `'${state}'`).join(
-  ", "
-)}]`;
+const PIPELINE_ORDER_CASE_SQL = `case pipeline_state ${PIPELINE_STATES.map(
+  (state, index) => `when '${state}' then ${index + 1}`
+).join(" ")} else 999 end`;
 
 function buildWhereClause(params: {
   column: string;
@@ -149,7 +149,7 @@ export async function exportPipelineSummary(params: {
                  from reporting_pipeline_daily_snapshots
                  ${clause}
                  order by snapshot_date desc,
-                          coalesce(array_position(${PIPELINE_ORDER_SQL}::text[], pipeline_state), 999) asc`;
+                          ${PIPELINE_ORDER_CASE_SQL} asc`;
 
   if (params.format === "csv" && params.write) {
     params.write("snapshot_date,pipeline_state,application_count\n");
