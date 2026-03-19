@@ -11,9 +11,9 @@ export type PipelineSnapshotRow = {
   applicationCount: number;
 };
 
-const PIPELINE_ORDER_SQL = `ARRAY[${PIPELINE_STATES.map((state) => `'${state}'`).join(
-  ", "
-)}]`;
+const PIPELINE_ORDER_CASE_SQL = `case pipeline_state ${PIPELINE_STATES.map(
+  (state, index) => `when '${state}' then ${index + 1}`
+).join(" ")} else 999 end`;
 
 function buildWhereClause(params: {
   column: string;
@@ -82,7 +82,7 @@ export async function listPipelineSnapshots(params: {
      ${stateClause}
      group by period, pipeline_state
      order by period desc,
-              coalesce(array_position(${PIPELINE_ORDER_SQL}::text[], pipeline_state), 999) asc
+              ${PIPELINE_ORDER_CASE_SQL} asc
      limit $${limitIndex} offset $${offsetIndex}`,
     [...values, params.limit, params.offset]
   );

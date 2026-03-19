@@ -100,6 +100,23 @@ function httpRequest({ method, path, token }) {
   });
 }
 
+function extractRoutePaths(routesBody) {
+  if (!routesBody || !Array.isArray(routesBody.routes)) {
+    return [];
+  }
+  const firstRoute = routesBody.routes[0];
+  if (typeof firstRoute === "string") {
+    return routesBody.routes.filter(Boolean);
+  }
+  if (firstRoute && typeof firstRoute.path === "string") {
+    return routesBody.routes.map((route) => route.path).filter(Boolean);
+  }
+  return routesBody.routes
+    .flatMap((group) => group.routes || [])
+    .map((route) => route.path)
+    .filter(Boolean);
+}
+
 async function run() {
   const app = buildAppWithApiRoutes();
 
@@ -154,11 +171,7 @@ async function run() {
       throw new Error(`/api/_int/routes expected 200, got ${routesResponse.status}`);
     }
     const routesBody = JSON.parse(routesResponse.body || "{}");
-    const routes = Array.isArray(routesBody.routes)
-      ? routesBody.routes
-          .flatMap((group) => group.routes || [])
-          .map((route) => route.path)
-      : [];
+    const routes = extractRoutePaths(routesBody);
     ["/api/users", "/api/lenders", "/api/lender-products"].forEach((path) => {
       if (!routes.includes(path)) {
         throw new Error(`/api/_int/routes missing ${path}`);
