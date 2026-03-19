@@ -64,6 +64,7 @@ import devRoutes from "./routes/dev";
 import healthRouter from "./routes/health";
 import { corsMiddleware } from "./middleware/cors";
 import { normalizeApiPath } from "./middleware/normalizeApiPath";
+import { dbGuard } from "./middleware/dbGuard";
 
 function isTruthyFlag(value: string | undefined): boolean {
   if (!value) {
@@ -261,6 +262,7 @@ export function registerApiRoutes(app: express.Express): void {
     app.use(otpCompatRoutes);
   }
   app.use("/api", systemHealthRouter);
+  app.use("/api", dbGuard);
   app.use("/api/readiness", readinessRouter);
   app.use("/api/contact", contactRouter);
   app.use("/api", chatRouter);

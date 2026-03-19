@@ -21,6 +21,7 @@ router.post('/otp/verify', async (req, res, next) => {
   res.cookie('session', 'valid', {
     httpOnly: true,
     sameSite: 'lax',
+    secure: process.env.NODE_ENV === "production",
   });
 
   return res.status(200).json({ user: { id: '1' } });
