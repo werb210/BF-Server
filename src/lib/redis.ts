@@ -1,50 +1,20 @@
-type Entry = {
-  value: string;
-  expiresAt: number | null;
-};
+import Redis from "ioredis";
 
-const store = new Map<string, Entry>();
+const url = process.env.REDIS_URL || "redis://localhost:6379";
 
-function isExpired(entry: Entry): boolean {
-  return entry.expiresAt !== null && Date.now() > entry.expiresAt;
+export const redis = new Redis(url);
+
+redis.on("connect", () => console.log("Redis connected"));
+redis.on("error", (e) => console.error("Redis error", e.message));
+
+export async function setOtp(phone: string, code: string) {
+  await redis.set(`otp:${phone}`, code, "EX", 300);
 }
 
-function getEntry(key: string): Entry | null {
-  const entry = store.get(key);
-  if (!entry) return null;
-
-  if (isExpired(entry)) {
-    store.delete(key);
-    return null;
-  }
-
-  return entry;
+export async function getOtp(phone: string) {
+  return redis.get(`otp:${phone}`);
 }
 
-export const redis = {
-  async set(key: string, val: string, mode?: "EX", ttlSeconds?: number) {
-    const expiresAt = mode === "EX" && typeof ttlSeconds === "number"
-      ? Date.now() + ttlSeconds * 1000
-      : null;
-
-    store.set(key, { value: val, expiresAt });
-  },
-
-  async get(key: string) {
-    const entry = getEntry(key);
-    return entry ? entry.value : null;
-  },
-
-  async del(key: string) {
-    store.delete(key);
-  },
-
-  async ttl(key: string) {
-    const entry = getEntry(key);
-    if (!entry) return -2;
-    if (entry.expiresAt === null) return -1;
-
-    const remainingMs = entry.expiresAt - Date.now();
-    return remainingMs > 0 ? Math.ceil(remainingMs / 1000) : -2;
-  },
-};
+export async function deleteOtp(phone: string) {
+  await redis.del(`otp:${phone}`);
+}

@@ -12,12 +12,6 @@ export const pool = new Pool({
 });
 
 export async function testDb() {
-  try {
-    await pool.query("SELECT 1");
-    console.log("DB OK");
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("DB FAILED", message);
-    throw err;
-  }
+  await pool.query("SELECT 1");
+  console.log("DB OK");
 }
