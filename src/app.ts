@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import express from "express";
 import helmet from "helmet";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
@@ -45,7 +46,6 @@ import systemHealthRouter from "./routes/systemHealth";
 import { httpMetricsMiddleware } from "./metrics/httpMetrics";
 import { requestId } from "./platform/requestId";
 import { idempotency } from "./platform/idempotency";
-import { errorHandler } from "./middleware/errors";
 import healthRoutes from "./platform/healthRoutes";
 import metricsRoutes from "./platform/metricsRoutes";
 import { env } from "./platform/env";
@@ -151,6 +151,16 @@ export function buildApp(): express.Express {
   });
 
   app.use(normalizeApiPath);
+
+  app.use((req, _res, next) => {
+    const headerRequestId = req.headers["x-request-id"];
+    if (typeof headerRequestId === "string" && headerRequestId.trim().length > 0) {
+      req.id = headerRequestId;
+    } else if (!req.id) {
+      req.id = crypto.randomUUID();
+    }
+    next();
+  });
 
   app.use(requestId);
   app.use(requestLogger);
@@ -287,10 +297,25 @@ export function registerApiRoutes(app: express.Express): void {
 
   app.use("/api/*", (_req, res) => {
     res.status(404).json({
-      error: "API route not found",
+      code: "NOT_FOUND",
+      message: "API route not found",
+      requestId: _req.id ?? "unknown",
     });
   });
-  app.use(errorHandler);
+
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (res.headersSent) {
+      next(err);
+      return;
+    }
+
+    const status = typeof err?.status === "number" ? err.status : 500;
+    res.status(status).json({
+      code: typeof err?.code === "string" ? err.code : "INTERNAL_ERROR",
+      message: typeof err?.message === "string" && err.message.length > 0 ? err.message : "Unexpected error",
+      requestId: req.id || "unknown",
+    });
+  });
 
   const mountedRoutes = listRoutes(app);
   printRoutes(app);
