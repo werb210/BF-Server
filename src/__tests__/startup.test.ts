@@ -32,7 +32,7 @@ describe("startup behavior", () => {
     resetStartupState();
 
     await new Promise<void>((resolve, reject) => {
-      vi.isolateModules(() => {
+      vi.stubEnv(() => {
         const { startServer } = require("../index");
         startServer()
           .then((listener: import("http").Server) => {
@@ -68,7 +68,7 @@ describe("startup behavior", () => {
     resetStartupState();
 
     await new Promise<void>((resolve, reject) => {
-      vi.isolateModules(() => {
+      vi.stubEnv(() => {
         const { startServer } = require("../index");
         startServer()
           .then((listener: import("http").Server) => {

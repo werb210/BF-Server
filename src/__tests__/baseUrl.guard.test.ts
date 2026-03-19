@@ -7,7 +7,7 @@ describe("BASE_URL guard", () => {
     process.env.NODE_ENV = "production";
     delete process.env.BASE_URL;
     expect(() => {
-      vi.isolateModules(() => {
+      vi.stubEnv(() => {
         require("../server");
       });
     }).toThrow("BASE_URL must be set in production.");
@@ -17,7 +17,7 @@ describe("BASE_URL guard", () => {
     process.env.NODE_ENV = "test";
     delete process.env.BASE_URL;
     expect(() => {
-      vi.isolateModules(() => {
+      vi.stubEnv(() => {
         require("../server");
       });
     }).not.toThrow();

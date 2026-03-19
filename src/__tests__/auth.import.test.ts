@@ -6,7 +6,7 @@ describe("startup twilio config", () => {
 
     vi.resetModules();
 
-    vi.isolateModules(() => {
+    vi.stubEnv(() => {
       const { getTwilioClient } = require("../services/twilio");
       expect(() => getTwilioClient()).toThrow(
         "Missing required env var: TWILIO_AUTH_TOKEN"

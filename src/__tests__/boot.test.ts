@@ -43,7 +43,7 @@ describe("boot behavior", () => {
         .mockImplementation((() => undefined) as never);
       vi.resetModules();
       await new Promise<void>((resolve, reject) => {
-        vi.isolateModules(() => {
+        vi.stubEnv(() => {
           const { startServer } = require("../index");
           startServer()
             .then((listener: import("http").Server) => {

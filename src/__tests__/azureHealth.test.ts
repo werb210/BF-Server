@@ -51,7 +51,7 @@ describe("azure health endpoints", () => {
     });
 
     await new Promise<void>((resolve, reject) => {
-      vi.isolateModules(() => {
+      vi.stubEnv(() => {
         vi.mock("../app", () => ({
           buildApp: () => ({ listen: listenSpy, use: jest.fn() }),
           registerApiRoutes: jest.fn(),
