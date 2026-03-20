@@ -12,8 +12,8 @@ function mountSafe(path: string, modulePath: string): void {
     const loaded = require(modulePath) as { default?: RequestHandler } | RequestHandler;
     const handler = (loaded as { default?: RequestHandler }).default ?? (loaded as RequestHandler);
     router.use(path, handler);
-  } catch {
-    // Intentionally ignore missing or invalid route modules.
+  } catch (e) {
+    console.error("ROUTE LOAD FAIL:", e);
   }
 }
 
