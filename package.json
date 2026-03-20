@@ -12,7 +12,7 @@
     "start": "node dist/index.js",
     "db:migrate": "tsx src/db/runMigrations.ts",
     "db:seed": "tsx src/db/seed.ts",
-    "test": "npm run test:e2e",
+    "test": "jest --config jest.config.js",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
@@ -24,7 +24,9 @@
     "workers": "tsx scripts/startWorkers.ts",
     "routes:export": "node --import tsx scripts/export-routes.ts",
     "drift:check": "bash scripts/api-drift-check.sh",
-    "test:db:runtime": "npm run build && node scripts/db-runtime-integration.js"
+    "test:db:runtime": "npm run build && node scripts/db-runtime-integration.js",
+    "e2e": "playwright test",
+    "test:all": "npm run test && npm run e2e"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.29.1",
@@ -68,10 +70,12 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "@types/express-session": "^1.18.2",
+    "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/morgan": "^1.9.10",
     "@types/node": "^25.4.0",
@@ -85,8 +89,11 @@
     "@vitest/coverage-v8": "^4.0.18",
     "cross-env": "^7.0.3",
     "eslint": "^9.39.4",
+    "jest": "^30.3.0",
     "pg-mem": "^3.0.5",
+    "playwright": "^1.58.2",
     "supertest": "^7.2.2",
+    "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
