@@ -28,7 +28,8 @@
     "e2e": "playwright test",
     "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e || true",
     "test:unit": "vitest run",
-    "test:integration": "vitest run --dir src"
+    "test:integration": "vitest run --dir src",
+    "test:full": "NODE_ENV=test vitest --run"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.29.1",

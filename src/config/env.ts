@@ -50,6 +50,8 @@ type EnvConfig = {
 
 let cachedEnv: EnvConfig | null = null;
 
+export const IS_TEST = process.env.NODE_ENV === "test";
+
 export function isTestEnv(): boolean {
   return process.env.NODE_ENV === "test";
 }
