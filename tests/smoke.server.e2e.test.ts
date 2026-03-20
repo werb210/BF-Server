@@ -69,27 +69,27 @@ afterAll(async () => {
 
 describe("server smoke test", () => {
   it("covers auth, users, lenders, products, requirements, and client endpoints", async () => {
-    const health = await request(app).get("/health");
+    const health = await request(app || require("../src/app").default).get("/health");
     expect(health.status).toBe(200);
 
     const accessToken = await loginAdmin();
 
-    const authMe = await request(app)
+    const authMe = await request(app || require("../src/app").default)
       .get("/api/auth/me")
       .set("Authorization", `Bearer ${accessToken}`);
     expect(authMe.status).toBe(200);
 
-    const usersMe = await request(app)
+    const usersMe = await request(app || require("../src/app").default)
       .get("/api/users/me")
       .set("Authorization", `Bearer ${accessToken}`);
     expect(usersMe.status).toBe(200);
 
-    const lendersList = await request(app)
+    const lendersList = await request(app || require("../src/app").default)
       .get("/api/lenders")
       .set("Authorization", `Bearer ${accessToken}`);
     expect(lendersList.status).toBe(200);
 
-    const lenderCreate = await request(app)
+    const lenderCreate = await request(app || require("../src/app").default)
       .post("/api/lenders")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
@@ -100,12 +100,12 @@ describe("server smoke test", () => {
       });
     expect(lenderCreate.status).toBe(201);
 
-    const lenderProducts = await request(app)
+    const lenderProducts = await request(app || require("../src/app").default)
       .get(`/api/lenders/${lenderCreate.body.id}/products`)
       .set("Authorization", `Bearer ${accessToken}`);
     expect(lenderProducts.status).toBe(200);
 
-    const productCreate = await request(app)
+    const productCreate = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${accessToken}`)
       .set("Idempotency-Key", randomUUID())
@@ -119,12 +119,12 @@ describe("server smoke test", () => {
       });
     expect(productCreate.status).toBe(201);
 
-    const productList = await request(app)
+    const productList = await request(app || require("../src/app").default)
       .get("/api/lender-products")
       .set("Authorization", `Bearer ${accessToken}`);
     expect(productList.status).toBe(200);
 
-    const requirementCreate = await request(app)
+    const requirementCreate = await request(app || require("../src/app").default)
       .post(`/api/lender-products/${productCreate.body.id}/requirements`)
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
@@ -133,28 +133,28 @@ describe("server smoke test", () => {
       });
     expect(requirementCreate.status).toBe(201);
 
-    const requirementList = await request(app)
+    const requirementList = await request(app || require("../src/app").default)
       .get(`/api/lender-products/${productCreate.body.id}/requirements`)
       .set("Authorization", `Bearer ${accessToken}`);
     expect(requirementList.status).toBe(200);
 
-    const requirementInvalid = await request(app)
+    const requirementInvalid = await request(app || require("../src/app").default)
       .get("/api/lender-products/not-a-uuid/requirements")
       .set("Authorization", `Bearer ${accessToken}`);
     expect(requirementInvalid.status).toBe(400);
 
-    const clientLenders = await request(app).get("/api/client/lenders");
+    const clientLenders = await request(app || require("../src/app").default).get("/api/client/lenders");
     expect(clientLenders.status).toBe(200);
 
-    const clientProducts = await request(app).get("/api/client/lender-products");
+    const clientProducts = await request(app || require("../src/app").default).get("/api/client/lender-products");
     expect(clientProducts.status).toBe(200);
 
-    const clientRequirementsValid = await request(app).get(
+    const clientRequirementsValid = await request(app || require("../src/app").default).get(
       `/api/client/lender-products/${productCreate.body.id}/requirements`
     );
     expect(clientRequirementsValid.status).toBe(200);
 
-    const clientRequirementsInvalid = await request(app).get(
+    const clientRequirementsInvalid = await request(app || require("../src/app").default).get(
       "/api/client/lender-products/not-a-uuid/requirements"
     );
     expect(clientRequirementsInvalid.status).toBe(400);

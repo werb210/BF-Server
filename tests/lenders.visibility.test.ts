@@ -91,7 +91,7 @@ describe("lender visibility", () => {
       idempotencyKey: `idem-lender-${lenderPhone}`,
     });
 
-    const adminList = await request(app)
+    const adminList = await request(app || require("../src/app").default)
       .get("/api/lenders")
       .set("Authorization", `Bearer ${adminLogin.body.accessToken}`)
       .set("x-request-id", requestId);
@@ -99,7 +99,7 @@ describe("lender visibility", () => {
     expect(adminList.status).toBe(200);
     expect(adminList.body.length).toBe(2);
 
-    const lenderList = await request(app)
+    const lenderList = await request(app || require("../src/app").default)
       .get("/api/lenders")
       .set("Authorization", `Bearer ${lenderLogin.body.accessToken}`)
       .set("x-request-id", requestId);
@@ -132,7 +132,7 @@ describe("lender visibility", () => {
       idempotencyKey: `idem-admin-missing-${adminPhone}`,
     });
 
-    const response = await request(app)
+    const response = await request(app || require("../src/app").default)
       .get("/api/lenders")
       .set("Authorization", `Bearer ${adminLogin.body.accessToken}`)
       .set("x-request-id", requestId);

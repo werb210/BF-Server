@@ -21,7 +21,7 @@ describe("lenders route error logging", () => {
     const requestId = "lenders-trace-req";
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .get("/api/lenders/__test-error")
       .set("x-request-id", requestId);
 

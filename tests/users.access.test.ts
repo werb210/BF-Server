@@ -62,7 +62,7 @@ describe("user access controls", () => {
     });
 
     const newUserPhone = nextPhone();
-    const create = await request(app)
+    const create = await request(app || require("../src/app").default)
       .post("/api/users")
       .set("Authorization", `Bearer ${adminLogin.body.accessToken}`)
       .set("Idempotency-Key", randomUUID())
@@ -75,7 +75,7 @@ describe("user access controls", () => {
     expect(create.status).toBe(201);
     expect(create.body.user.role).toBe(ROLES.REFERRER);
 
-    const promote = await request(app)
+    const promote = await request(app || require("../src/app").default)
       .post(`/api/users/${create.body.user.id}/role`)
       .set("Authorization", `Bearer ${adminLogin.body.accessToken}`)
       .set("Idempotency-Key", randomUUID())
@@ -83,14 +83,14 @@ describe("user access controls", () => {
 
     expect(promote.status).toBe(200);
 
-    const disable = await request(app)
+    const disable = await request(app || require("../src/app").default)
       .post(`/api/users/${create.body.user.id}/disable`)
       .set("Authorization", `Bearer ${adminLogin.body.accessToken}`)
       .set("Idempotency-Key", randomUUID());
 
     expect(disable.status).toBe(200);
 
-    const enable = await request(app)
+    const enable = await request(app || require("../src/app").default)
       .post(`/api/users/${create.body.user.id}/enable`)
       .set("Authorization", `Bearer ${adminLogin.body.accessToken}`)
       .set("Idempotency-Key", randomUUID());
@@ -118,7 +118,7 @@ describe("user access controls", () => {
       role: ROLES.REFERRER,
     });
 
-    const create = await request(app)
+    const create = await request(app || require("../src/app").default)
       .post("/api/users")
       .set("Authorization", `Bearer ${staffLogin.body.accessToken}`)
       .set("Idempotency-Key", randomUUID())
@@ -130,7 +130,7 @@ describe("user access controls", () => {
 
     expect(create.status).toBe(403);
 
-    const promote = await request(app)
+    const promote = await request(app || require("../src/app").default)
       .post(`/api/users/${target.id}/role`)
       .set("Authorization", `Bearer ${staffLogin.body.accessToken}`)
       .set("Idempotency-Key", randomUUID())

@@ -47,7 +47,7 @@ describe("OTP verify contract", () => {
     const app = buildTestApp();
     await upsertUser({ phone: TEST_PHONE, role: ROLES.ADMIN });
 
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/auth/otp/verify")
       .send({ phone: TEST_PHONE, code: "123456" });
 
@@ -64,13 +64,13 @@ describe("OTP verify contract", () => {
     const app = buildTestApp();
     await upsertUser({ phone: JWT_PHONE, role: ROLES.STAFF });
 
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/auth/otp/verify")
       .send({ phone: JWT_PHONE, code: "123456" });
 
     const token = res.body.accessToken as string;
 
-    const me = await request(app)
+    const me = await request(app || require("../src/app").default)
       .get("/api/auth/me")
       .set("Authorization", `Bearer ${token}`);
 

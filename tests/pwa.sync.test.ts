@@ -51,7 +51,7 @@ describe("PWA sync replay", () => {
     const token = await login(ROLES.ADMIN);
     const actionId = randomUUID();
 
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/pwa/sync")
       .set("Authorization", `Bearer ${token}`)
       .send({
@@ -78,7 +78,7 @@ describe("PWA sync replay", () => {
 
   it("rejects unsupported paths and aborts batch", async () => {
     const token = await login(ROLES.ADMIN);
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/pwa/sync")
       .set("Authorization", `Bearer ${token}`)
       .send({
@@ -107,7 +107,7 @@ describe("PWA sync replay", () => {
 
   it("rejects JWT tokens in payloads", async () => {
     const token = await login(ROLES.ADMIN);
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/pwa/sync")
       .set("Authorization", `Bearer ${token}`)
       .send({

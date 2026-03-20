@@ -37,7 +37,7 @@ async function loginAdmin(): Promise<string> {
 }
 
 async function createLender(token: string) {
-  const lenderResponse = await request(app)
+  const lenderResponse = await request(app || require("../src/app").default)
     .post("/api/lenders")
     .set("Authorization", `Bearer ${token}`)
     .set("x-request-id", requestId)
@@ -77,7 +77,7 @@ describe("lender products API", () => {
       [lender.id]
     );
 
-    const response = await request(app)
+    const response = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)
@@ -91,7 +91,7 @@ describe("lender products API", () => {
     const token = await loginAdmin();
     const lender = await createLender(token);
 
-    const defaultResponse = await request(app)
+    const defaultResponse = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)
@@ -100,7 +100,7 @@ describe("lender products API", () => {
     expect(defaultResponse.status).toBe(201);
     expect(defaultResponse.body.name).toBe("Unnamed Product");
 
-    const namedResponse = await request(app)
+    const namedResponse = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)
@@ -118,7 +118,7 @@ describe("lender products API", () => {
     const token = await loginAdmin();
     const lender = await createLender(token);
 
-    const createResponse = await request(app)
+    const createResponse = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)
@@ -126,7 +126,7 @@ describe("lender products API", () => {
 
     expect(createResponse.status).toBe(201);
 
-    const patchResponse = await request(app)
+    const patchResponse = await request(app || require("../src/app").default)
       .patch(`/api/lender-products/${createResponse.body.id}`)
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)
@@ -140,13 +140,13 @@ describe("lender products API", () => {
     const token = await loginAdmin();
     const lender = await createLender(token);
 
-    await request(app)
+    await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)
       .send({ lenderId: lender.id, required_documents: [] });
 
-    const listResponse = await request(app)
+    const listResponse = await request(app || require("../src/app").default)
       .get("/api/lender-products")
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId);
@@ -164,7 +164,7 @@ describe("lender products API", () => {
     const token = await loginAdmin();
     const lender = await createLender(token);
 
-    const createResponse = await request(app)
+    const createResponse = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)
@@ -172,7 +172,7 @@ describe("lender products API", () => {
 
     expect(createResponse.status).toBe(201);
 
-    const joinResponse = await request(app)
+    const joinResponse = await request(app || require("../src/app").default)
       .get(`/api/lenders/${lender.id}/products`)
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId);

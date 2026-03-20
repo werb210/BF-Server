@@ -176,7 +176,7 @@ describe("pipeline safety", () => {
     });
     expect(login.status).toBe(200);
 
-    const create = await request(app)
+    const create = await request(app || require("../src/app").default)
       .post("/api/applications")
       .set("Authorization", `Bearer ${login.body.accessToken}`)
       .set("Idempotency-Key", `idem-app-${phone}`)
@@ -185,7 +185,7 @@ describe("pipeline safety", () => {
 
     expect(create.status).toBe(201);
 
-    const transition = await request(app)
+    const transition = await request(app || require("../src/app").default)
       .post(`/api/applications/${create.body.application.id}/pipeline`)
       .set("Authorization", `Bearer ${login.body.accessToken}`)
       .set("Idempotency-Key", `idem-transition-${phone}`)
@@ -211,7 +211,7 @@ describe("pipeline safety", () => {
     });
     expect(login.status).toBe(200);
 
-    const create = await request(app)
+    const create = await request(app || require("../src/app").default)
       .post("/api/applications")
       .set("Authorization", `Bearer ${login.body.accessToken}`)
       .set("Idempotency-Key", `idem-app-override-${phone}`)
@@ -225,7 +225,7 @@ describe("pipeline safety", () => {
       [create.body.application.id]
     );
 
-    const transition = await request(app)
+    const transition = await request(app || require("../src/app").default)
       .post(`/api/applications/${create.body.application.id}/pipeline`)
       .set("Authorization", `Bearer ${login.body.accessToken}`)
       .set("Idempotency-Key", `idem-transition-override-${phone}`)
@@ -260,7 +260,7 @@ describe("pipeline safety", () => {
     });
     expect(login.status).toBe(200);
 
-    const create = await request(app)
+    const create = await request(app || require("../src/app").default)
       .post("/api/applications")
       .set("Authorization", `Bearer ${login.body.accessToken}`)
       .set("Idempotency-Key", `idem-app-submit-${phone}`)
@@ -276,7 +276,7 @@ describe("pipeline safety", () => {
       ]
     );
 
-    const submission = await request(app)
+    const submission = await request(app || require("../src/app").default)
       .post("/api/lender/submissions")
       .set("Authorization", `Bearer ${login.body.accessToken}`)
       .set("Idempotency-Key", `idem-submit-request-${phone}`)

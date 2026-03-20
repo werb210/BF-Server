@@ -52,7 +52,7 @@ describe("OTP integration", () => {
   it("starts OTP verification", async () => {
     const twilioMocks = getTwilioMocks();
 
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/auth/otp/start")
       .send({ phone: TEST_PHONE });
 
@@ -63,7 +63,7 @@ describe("OTP integration", () => {
   it("verifies OTP and returns access token", async () => {
     await upsertUser({ phone: TEST_PHONE, role: ROLES.ADMIN });
 
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/auth/otp/verify")
       .send({ phone: TEST_PHONE, code: "123456" });
 
@@ -91,7 +91,7 @@ describe("OTP integration", () => {
       sid: "VEFAIL",
     });
 
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/auth/otp/verify")
       .send({ phone: FAIL_PHONE, code: "123456" });
 

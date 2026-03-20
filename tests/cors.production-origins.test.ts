@@ -9,7 +9,7 @@ describe("production CORS allowlist", () => {
     "https://staff.boreal.financial",
     "https://server.boreal.financial",
   ])("allows preflight requests from %s", async (origin) => {
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .options("/api/health")
       .set("Origin", origin)
       .set("Access-Control-Request-Method", "GET");

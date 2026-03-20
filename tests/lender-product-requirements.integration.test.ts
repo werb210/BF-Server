@@ -55,7 +55,7 @@ afterAll(async () => {
 
 describe("lender product requirements", () => {
   it("returns 400 for invalid lender product ids", async () => {
-    const response = await request(app).get(
+    const response = await request(app || require("../src/app").default).get(
       "/api/client/lender-products/invalid-id/requirements"
     );
 
@@ -68,7 +68,7 @@ describe("lender product requirements", () => {
 
   it("returns empty requirements for valid but missing lender products", async () => {
     const missingId = randomUUID();
-    const response = await request(app).get(
+    const response = await request(app || require("../src/app").default).get(
       `/api/client/lender-products/${missingId}/requirements`
     );
 
@@ -80,7 +80,7 @@ describe("lender product requirements", () => {
   it("seeds requirements when a product is created", async () => {
     const token = await loginAdmin();
 
-    const lenderResponse = await request(app)
+    const lenderResponse = await request(app || require("../src/app").default)
       .post("/api/lenders")
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)
@@ -93,7 +93,7 @@ describe("lender product requirements", () => {
 
     expect(lenderResponse.status).toBe(201);
 
-    const productResponse = await request(app)
+    const productResponse = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${token}`)
       .set("Idempotency-Key", randomUUID())
@@ -109,7 +109,7 @@ describe("lender product requirements", () => {
 
     expect(productResponse.status).toBe(201);
 
-    const requirementsResponse = await request(app).get(
+    const requirementsResponse = await request(app || require("../src/app").default).get(
       `/api/client/lender-products/${productResponse.body.id}/requirements`
     );
 
@@ -120,7 +120,7 @@ describe("lender product requirements", () => {
   it("returns requirements for a valid lender product", async () => {
     const token = await loginAdmin();
 
-    const lenderResponse = await request(app)
+    const lenderResponse = await request(app || require("../src/app").default)
       .post("/api/lenders")
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)
@@ -133,7 +133,7 @@ describe("lender product requirements", () => {
 
     expect(lenderResponse.status).toBe(201);
 
-    const productResponse = await request(app)
+    const productResponse = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${token}`)
       .set("Idempotency-Key", randomUUID())
@@ -149,7 +149,7 @@ describe("lender product requirements", () => {
 
     expect(productResponse.status).toBe(201);
 
-    const requirementsResponse = await request(app).get(
+    const requirementsResponse = await request(app || require("../src/app").default).get(
       `/api/client/lender-products/${productResponse.body.id}/requirements`
     );
 
@@ -160,7 +160,7 @@ describe("lender product requirements", () => {
   it("returns required requirements only", async () => {
     const token = await loginAdmin();
 
-    const lenderResponse = await request(app)
+    const lenderResponse = await request(app || require("../src/app").default)
       .post("/api/lenders")
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)
@@ -171,7 +171,7 @@ describe("lender product requirements", () => {
         submissionEmail: "submissions@required-lender.com",
       });
 
-    const productResponse = await request(app)
+    const productResponse = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${token}`)
       .set("Idempotency-Key", randomUUID())
@@ -185,7 +185,7 @@ describe("lender product requirements", () => {
         required_documents: [],
       });
 
-    const optionalRequirement = await request(app)
+    const optionalRequirement = await request(app || require("../src/app").default)
       .post(`/api/lender-products/${productResponse.body.id}/requirements`)
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)
@@ -196,7 +196,7 @@ describe("lender product requirements", () => {
 
     expect(optionalRequirement.status).toBe(201);
 
-    const requirementsResponse = await request(app).get(
+    const requirementsResponse = await request(app || require("../src/app").default).get(
       `/api/client/lender-products/${productResponse.body.id}/requirements`
     );
 
@@ -210,7 +210,7 @@ describe("lender product requirements", () => {
   it("filters conditional requirements by requested amount", async () => {
     const token = await loginAdmin();
 
-    const lenderResponse = await request(app)
+    const lenderResponse = await request(app || require("../src/app").default)
       .post("/api/lenders")
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)
@@ -221,7 +221,7 @@ describe("lender product requirements", () => {
         submissionEmail: "submissions@conditional-lender.com",
       });
 
-    const productResponse = await request(app)
+    const productResponse = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${token}`)
       .set("Idempotency-Key", randomUUID())
@@ -235,7 +235,7 @@ describe("lender product requirements", () => {
         required_documents: [],
       });
 
-    const conditionalRequirement = await request(app)
+    const conditionalRequirement = await request(app || require("../src/app").default)
       .post(`/api/lender-products/${productResponse.body.id}/requirements`)
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)
@@ -248,7 +248,7 @@ describe("lender product requirements", () => {
 
     expect(conditionalRequirement.status).toBe(201);
 
-    const outsideResponse = await request(app).get(
+    const outsideResponse = await request(app || require("../src/app").default).get(
       `/api/client/lender-products/${productResponse.body.id}/requirements?requestedAmount=15000`
     );
 
@@ -257,7 +257,7 @@ describe("lender product requirements", () => {
     );
     expect(outsideDocs).not.toContain("tax_returns");
 
-    const insideResponse = await request(app).get(
+    const insideResponse = await request(app || require("../src/app").default).get(
       `/api/client/lender-products/${productResponse.body.id}/requirements?requestedAmount=25000`
     );
 
@@ -270,7 +270,7 @@ describe("lender product requirements", () => {
   it("blocks inactive products", async () => {
     const token = await loginAdmin();
 
-    const lenderResponse = await request(app)
+    const lenderResponse = await request(app || require("../src/app").default)
       .post("/api/lenders")
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)
@@ -281,7 +281,7 @@ describe("lender product requirements", () => {
         submissionEmail: "submissions@inactive-lender.com",
       });
 
-    const productResponse = await request(app)
+    const productResponse = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${token}`)
       .set("Idempotency-Key", randomUUID())
@@ -296,7 +296,7 @@ describe("lender product requirements", () => {
 
     expect(productResponse.status).toBe(201);
 
-    const requirementsResponse = await request(app).get(
+    const requirementsResponse = await request(app || require("../src/app").default).get(
       `/api/client/lender-products/${productResponse.body.id}/requirements`
     );
 
@@ -307,7 +307,7 @@ describe("lender product requirements", () => {
   it("aggregates requirements for client product filters", async () => {
     const token = await loginAdmin();
 
-    const lenderResponse = await request(app)
+    const lenderResponse = await request(app || require("../src/app").default)
       .post("/api/lenders")
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)
@@ -318,7 +318,7 @@ describe("lender product requirements", () => {
         submissionEmail: "submissions@aggregation-lender.com",
       });
 
-    await request(app)
+    await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${token}`)
       .set("Idempotency-Key", randomUUID())
@@ -333,7 +333,7 @@ describe("lender product requirements", () => {
         required_documents: [{ type: "void_cheque" }],
       });
 
-    await request(app)
+    await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${token}`)
       .set("Idempotency-Key", randomUUID())
@@ -348,7 +348,7 @@ describe("lender product requirements", () => {
         required_documents: [{ type: "government_id" }],
       });
 
-    const response = await request(app).get(
+    const response = await request(app || require("../src/app").default).get(
       "/api/client/lender-products/requirements?category=LOC&country=US&requestedAmount=12"
     );
 

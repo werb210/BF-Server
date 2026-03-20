@@ -56,7 +56,7 @@ describe("client lender products flow", () => {
   it("creates a lender product and returns it to clients", async () => {
     const token = await loginAdmin();
 
-    const lenderResponse = await request(app)
+    const lenderResponse = await request(app || require("../src/app").default)
       .post("/api/lenders")
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)
@@ -69,7 +69,7 @@ describe("client lender products flow", () => {
 
     expect(lenderResponse.status).toBe(201);
 
-    const productResponse = await request(app)
+    const productResponse = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${token}`)
       .set("Idempotency-Key", randomUUID())
@@ -85,7 +85,7 @@ describe("client lender products flow", () => {
 
     expect(productResponse.status).toBe(201);
 
-    const clientList = await request(app).get("/api/client/lender-products");
+    const clientList = await request(app || require("../src/app").default).get("/api/client/lender-products");
 
     expect(clientList.status).toBe(200);
     expect(Array.isArray(clientList.body)).toBe(true);

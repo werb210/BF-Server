@@ -62,7 +62,7 @@ async function issueAdminToken(userId: string, phone: string): Promise<string> {
 
 describe("cors and internal route guard", () => {
   it("allows portal origin to call /api/health", async () => {
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .get("/api/health")
       .set("Origin", portalOrigin);
 
@@ -70,7 +70,7 @@ describe("cors and internal route guard", () => {
   });
 
   it("blocks browser origins from /api/_int routes", async () => {
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .get("/api/_int/routes")
       .set("Origin", portalOrigin);
 
@@ -78,7 +78,7 @@ describe("cors and internal route guard", () => {
   });
 
   it("allows server-to-server access to /api/_int routes", async () => {
-    const res = await request(app).get("/api/_int/routes");
+    const res = await request(app || require("../src/app").default).get("/api/_int/routes");
 
     expect(res.status).toBe(200);
   });
@@ -88,7 +88,7 @@ describe("cors and internal route guard", () => {
     const { userId } = await upsertAdminUser(phone);
     const token = await issueAdminToken(userId, phone);
 
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .get("/api/auth/me")
       .set("Authorization", `Bearer ${token}`);
 

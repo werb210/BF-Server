@@ -32,7 +32,7 @@ describe("OTP route normalization", () => {
     vi.mocked(startOtp).mockResolvedValueOnce({ ok: true, sid: "VE123" });
 
     const app = buildTestApp();
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/auth/request-otp")
       .send({ phone: "4035551234" });
 
@@ -50,7 +50,7 @@ describe("OTP route normalization", () => {
     });
 
     const app = buildTestApp();
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/auth/verify-otp")
       .send({ phone: "4035551234", code: "123456" });
 
@@ -63,7 +63,7 @@ describe("OTP route normalization", () => {
 
   test("invalid numbers fail", async () => {
     const app = buildTestApp();
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/auth/request-otp")
       .send({ phone: "abc" });
 
@@ -75,7 +75,7 @@ describe("OTP route normalization", () => {
     vi.mocked(startOtp).mockResolvedValueOnce({ ok: true, sid: "VE999" });
 
     const app = buildTestApp();
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/auth/request-otp")
       .send({ phone: "+14035551234" });
 
