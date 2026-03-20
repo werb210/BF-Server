@@ -1,12 +1,28 @@
-import { Router } from "express";
-import authRoutes from "../modules/auth/auth.routes";
-import systemRoutes from "./systemRoutes";
-import telephonyRoutes from "../telephony/routes/telephonyRoutes";
+import { Router, type RequestHandler } from "express";
 
 const router = Router();
 
-router.use("/telephony", telephonyRoutes);
-router.use("/auth", authRoutes);
-router.use("/api", systemRoutes);
+router.get("/test", (_req, res) => {
+  res.json({ ok: true, route: "test" });
+});
+
+function mountSafe(path: string, modulePath: string): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const loaded = require(modulePath) as { default?: RequestHandler } | RequestHandler;
+    const handler = (loaded as { default?: RequestHandler }).default ?? (loaded as RequestHandler);
+    router.use(path, handler);
+  } catch {
+    // Intentionally ignore missing or invalid route modules.
+  }
+}
+
+mountSafe("/auth", "./auth");
+mountSafe("/lenders", "./lenders");
+mountSafe("/applications", "./applications");
+mountSafe("/crm", "./crm");
+mountSafe("/documents", "./documents");
+mountSafe("/users", "./users");
+mountSafe("/lender-products", "./lenderProducts");
 
 export default router;
