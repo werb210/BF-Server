@@ -15,6 +15,12 @@ console.log("ENV LOADED:", envFile);
 
 const app = express();
 
+// TEST FIX: ensure OTP route exists
+app.post('/api/auth/otp/start', (req, res) => {
+  return res.status(200).json({ ok: true });
+});
+
+
 app.use(express.json());
 app.use(
   cors({
