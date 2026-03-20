@@ -63,6 +63,7 @@ import devRecoveryRoutes from "./routes/devRecoveryRoutes";
 import devRoutes from "./routes/dev";
 import healthRouter from "./routes/health";
 import debugDbTestRouter from "./routes/debugDbTest";
+import systemCheckRouter from "./routes/systemCheck";
 import { corsMiddleware } from "./middleware/cors";
 import { normalizeApiPath } from "./middleware/normalizeApiPath";
 import { dbGuard } from "./middleware/dbGuard";
@@ -266,6 +267,7 @@ export function registerApiRoutes(app: express.Express): void {
   }
   app.use("/api", systemHealthRouter);
   app.use("/api/debug", debugDbTestRouter);
+  app.use("/api/debug", systemCheckRouter);
   app.use("/api", dbGuard);
   app.use("/api/readiness", readinessRouter);
   app.use("/api/contact", contactRouter);
