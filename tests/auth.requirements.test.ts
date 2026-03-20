@@ -62,7 +62,7 @@ describe("auth requirements", () => {
     });
     expect(login.status).toBe(200);
 
-    const me = await request(app)
+    const me = await request(app || require("../src/app").default)
       .get("/api/auth/me")
       .set("Authorization", `Bearer ${login.body.accessToken}`);
 
@@ -89,7 +89,7 @@ describe("auth requirements", () => {
     expect(login.status).toBe(200);
     expect(login.body.refreshToken).toBeTruthy();
 
-    const refresh = await request(app)
+    const refresh = await request(app || require("../src/app").default)
       .post("/api/auth/refresh")
       .send({ refreshToken: login.body.refreshToken });
 
@@ -126,14 +126,14 @@ describe("auth requirements", () => {
       idempotencyKey: `idem-staff-${staffPhone}`,
     });
 
-    const disable = await request(app)
+    const disable = await request(app || require("../src/app").default)
       .post(`/api/users/${staffUser.id}/disable`)
       .set("Authorization", `Bearer ${adminLogin.body.accessToken}`)
       .set("Idempotency-Key", randomUUID());
 
     expect(disable.status).toBe(200);
 
-    const me = await request(app)
+    const me = await request(app || require("../src/app").default)
       .get("/api/auth/me")
       .set("Authorization", `Bearer ${staffLogin.body.accessToken}`);
 

@@ -78,11 +78,11 @@ describe("auth middleware smoke test", () => {
     const adminToken = await issueToken(adminPhone, ROLES.ADMIN);
     const lenderToken = await issueToken(lenderPhone, ROLES.LENDER);
 
-    const adminRes = await request(app)
+    const adminRes = await request(app || require("../src/app").default)
       .get("/api/lenders")
       .set("Authorization", `Bearer ${adminToken}`);
 
-    const lenderRes = await request(app)
+    const lenderRes = await request(app || require("../src/app").default)
       .get("/api/lenders")
       .set("Authorization", `Bearer ${lenderToken}`);
 

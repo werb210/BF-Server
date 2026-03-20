@@ -85,7 +85,7 @@ describe("lender product access", () => {
       idempotencyKey: `idem-lender-${lenderPhone}`,
     });
 
-    const lenderCreate = await request(app)
+    const lenderCreate = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${lenderLogin.body.accessToken}`)
       .set("Idempotency-Key", randomUUID())
@@ -95,7 +95,7 @@ describe("lender product access", () => {
     expect(lenderCreate.status).toBe(201);
     expect(lenderCreate.body.lenderId).toBe(lenderA);
 
-    const lenderCross = await request(app)
+    const lenderCross = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${lenderLogin.body.accessToken}`)
       .set("Idempotency-Key", randomUUID())
@@ -104,7 +104,7 @@ describe("lender product access", () => {
 
     expect(lenderCross.status).toBe(403);
 
-    const adminCreate = await request(app)
+    const adminCreate = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${adminLogin.body.accessToken}`)
       .set("Idempotency-Key", randomUUID())
@@ -113,7 +113,7 @@ describe("lender product access", () => {
 
     expect(adminCreate.status).toBe(201);
 
-    const lenderList = await request(app)
+    const lenderList = await request(app || require("../src/app").default)
       .get("/api/lender-products")
       .set("Authorization", `Bearer ${lenderLogin.body.accessToken}`)
       .set("x-request-id", requestId);
@@ -123,7 +123,7 @@ describe("lender product access", () => {
       lenderList.body.every((item: { lenderId: string }) => item.lenderId === lenderA)
     ).toBe(true);
 
-    const lenderPatch = await request(app)
+    const lenderPatch = await request(app || require("../src/app").default)
       .patch(`/api/lender-products/${adminCreate.body.id}`)
       .set("Authorization", `Bearer ${lenderLogin.body.accessToken}`)
       .set("Idempotency-Key", randomUUID())
@@ -132,7 +132,7 @@ describe("lender product access", () => {
 
     expect(lenderPatch.status).toBe(403);
 
-    const adminPatch = await request(app)
+    const adminPatch = await request(app || require("../src/app").default)
       .patch(`/api/lender-products/${adminCreate.body.id}`)
       .set("Authorization", `Bearer ${adminLogin.body.accessToken}`)
       .set("Idempotency-Key", randomUUID())

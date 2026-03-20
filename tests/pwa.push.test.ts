@@ -57,7 +57,7 @@ describe("PWA push dispatch", () => {
     const token = await login(ROLES.ADMIN);
     const endpoint = `https://example.com/push/${randomUUID()}`;
 
-    await request(app)
+    await request(app || require("../src/app").default)
       .post("/api/pwa/subscribe")
       .set("Authorization", `Bearer ${token}`)
       .send({
@@ -93,7 +93,7 @@ describe("PWA push dispatch", () => {
     const token = await login(ROLES.ADMIN);
     const endpoint = `https://example.com/push/${randomUUID()}`;
 
-    await request(app)
+    await request(app || require("../src/app").default)
       .post("/api/pwa/subscribe")
       .set("Authorization", `Bearer ${token}`)
       .send({
@@ -129,7 +129,7 @@ describe("PWA push dispatch", () => {
     const token = await login(ROLES.ADMIN);
     const endpoint = `https://example.com/push/${randomUUID()}`;
 
-    await request(app)
+    await request(app || require("../src/app").default)
       .post("/api/pwa/subscribe")
       .set("Authorization", `Bearer ${token}`)
       .send({

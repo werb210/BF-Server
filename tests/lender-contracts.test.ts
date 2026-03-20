@@ -57,7 +57,7 @@ async function createAdminToken(): Promise<string> {
 }
 
 async function createLender(token: string) {
-  const lenderResponse = await request(app)
+  const lenderResponse = await request(app || require("../src/app").default)
     .post("/api/lenders")
     .set("Authorization", `Bearer ${token}`)
     .set("x-request-id", requestId)
@@ -81,7 +81,7 @@ describe("lender contract integration", () => {
     const token = await createAdminToken();
     const lender = await createLender(token);
 
-    const response = await request(app)
+    const response = await request(app || require("../src/app").default)
       .get("/api/lenders")
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId);
@@ -98,7 +98,7 @@ describe("lender contract integration", () => {
     const token = await createAdminToken();
     const lender = await createLender(token);
 
-    const response = await request(app)
+    const response = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${token}`)
       .set("x-request-id", requestId)

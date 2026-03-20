@@ -49,7 +49,7 @@ describe("PWA subscriptions", () => {
     const token = await login(ROLES.ADMIN);
     const endpoint = `https://example.com/push/${randomUUID()}`;
 
-    const subscribe = await request(app)
+    const subscribe = await request(app || require("../src/app").default)
       .post("/api/pwa/subscribe")
       .set("Authorization", `Bearer ${token}`)
       .send({
@@ -61,14 +61,14 @@ describe("PWA subscriptions", () => {
     expect(subscribe.status).toBe(201);
     expect(subscribe.body.subscription.endpoint).toBe(endpoint);
 
-    const list = await request(app)
+    const list = await request(app || require("../src/app").default)
       .get("/api/pwa/subscriptions")
       .set("Authorization", `Bearer ${token}`);
 
     expect(list.status).toBe(200);
     expect(list.body.subscriptions).toHaveLength(1);
 
-    const remove = await request(app)
+    const remove = await request(app || require("../src/app").default)
       .delete("/api/pwa/unsubscribe")
       .set("Authorization", `Bearer ${token}`)
       .send({ endpoint });
@@ -82,7 +82,7 @@ describe("PWA subscriptions", () => {
     const staffToken = await login(ROLES.STAFF);
     const endpoint = `https://example.com/push/${randomUUID()}`;
 
-    const first = await request(app)
+    const first = await request(app || require("../src/app").default)
       .post("/api/pwa/subscribe")
       .set("Authorization", `Bearer ${adminToken}`)
       .send({
@@ -93,7 +93,7 @@ describe("PWA subscriptions", () => {
 
     expect(first.status).toBe(201);
 
-    const second = await request(app)
+    const second = await request(app || require("../src/app").default)
       .post("/api/pwa/subscribe")
       .set("Authorization", `Bearer ${staffToken}`)
       .send({

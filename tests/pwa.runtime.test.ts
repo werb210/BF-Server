@@ -46,7 +46,7 @@ afterAll(async () => {
 describe("PWA runtime endpoints", () => {
   it("returns runtime flags", async () => {
     const token = await login(ROLES.STAFF);
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .get("/api/pwa/runtime")
       .set("Authorization", `Bearer ${token}`);
 
@@ -59,7 +59,7 @@ describe("PWA runtime endpoints", () => {
 
   it("returns health status", async () => {
     const token = await login(ROLES.ADMIN);
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .get("/api/pwa/health")
       .set("Authorization", `Bearer ${token}`);
 

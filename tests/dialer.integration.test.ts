@@ -44,7 +44,7 @@ describe("dialer integration", () => {
     await createUserAccount({ phoneNumber: phone, role: ROLES.STAFF });
     const login = await otpVerifyRequest(app, { phone });
 
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .get("/api/dialer/token")
       .set("Authorization", `Bearer ${login.body.accessToken}`);
 
@@ -64,7 +64,7 @@ describe("dialer integration", () => {
       [user.id]
     );
 
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .get("/api/dialer/token")
       .set("Authorization", `Bearer ${login.body.accessToken}`);
 
@@ -75,7 +75,7 @@ describe("dialer integration", () => {
   it("rate limits abusive requests", async () => {
     let lastStatus = 0;
     for (let i = 0; i < 31; i += 1) {
-      const res = await request(app)
+      const res = await request(app || require("../src/app").default)
         .post("/api/twilio/status")
         .send({ CallSid: `CA-RATE-${i}`, CallStatus: "ringing" });
       lastStatus = res.status;
@@ -85,7 +85,7 @@ describe("dialer integration", () => {
   });
 
   it("webhook rejects invalid signature", async () => {
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/twilio/status")
       .send({ CallSid: "CA-INVALID", CallStatus: "ringing" });
 
@@ -99,7 +99,7 @@ describe("dialer integration", () => {
       CallSid: "CA-VM-1",
     };
 
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/twilio/recording?clientId=2d5af179-6f09-4e59-a6cd-6a3a4fcba46e&callSid=CA-VM-1")
       .set("x-twilio-signature", twilioSignature("/api/twilio/recording?clientId=2d5af179-6f09-4e59-a6cd-6a3a4fcba46e&callSid=CA-VM-1", body))
       .type("form")
@@ -124,7 +124,7 @@ describe("dialer integration", () => {
     );
 
     const body = { CallSid: "CA-STATUS-1", CallStatus: "completed", CallDuration: "12" };
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/twilio/status")
       .set("x-twilio-signature", twilioSignature("/api/twilio/status", body))
       .type("form")
@@ -151,7 +151,7 @@ describe("dialer integration", () => {
     );
 
     const body = { CallSid: "CA-MISSED-1", CallStatus: "no-answer" };
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/twilio/status")
       .set("x-twilio-signature", twilioSignature("/api/twilio/status", body))
       .type("form")

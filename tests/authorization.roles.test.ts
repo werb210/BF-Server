@@ -42,7 +42,7 @@ describe("authorization role enforcement", () => {
       idempotencyKey: `idem-authz-${staffPhone}`,
     });
 
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .get("/api/pwa/health")
       .set("Authorization", `Bearer ${staffLogin.body.accessToken}`);
 

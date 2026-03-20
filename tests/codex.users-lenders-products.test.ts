@@ -144,29 +144,29 @@ describe("codex users/lenders/lender products access", () => {
   it("enforces user role controls for users and lender creation", async () => {
     const { admin, staff, lenderUser, referrer } = await seedScenario();
 
-    const adminUsers = await request(app)
+    const adminUsers = await request(app || require("../src/app").default)
       .get("/api/users")
       .set("Authorization", `Bearer ${admin.accessToken}`);
     expect(adminUsers.status).toBe(200);
     expect(adminUsers.body.ok).toBe(true);
 
-    const staffUsers = await request(app)
+    const staffUsers = await request(app || require("../src/app").default)
       .get("/api/users")
       .set("Authorization", `Bearer ${staff.accessToken}`);
     expect(staffUsers.status).toBe(403);
     expect(staffUsers.body.error).toBe("forbidden");
 
-    const lenderUsers = await request(app)
+    const lenderUsers = await request(app || require("../src/app").default)
       .get("/api/users")
       .set("Authorization", `Bearer ${lenderUser.accessToken}`);
     expect(lenderUsers.status).toBe(403);
 
-    const referrerUsers = await request(app)
+    const referrerUsers = await request(app || require("../src/app").default)
       .get("/api/users")
       .set("Authorization", `Bearer ${referrer.accessToken}`);
     expect(referrerUsers.status).toBe(403);
 
-    const createLender = await request(app)
+    const createLender = await request(app || require("../src/app").default)
       .post("/api/lenders")
       .set("Authorization", `Bearer ${admin.accessToken}`)
       .send({
@@ -183,7 +183,7 @@ describe("codex users/lenders/lender products access", () => {
     );
     expect(rows.length).toBe(1);
 
-    const staffCreateAdmin = await request(app)
+    const staffCreateAdmin = await request(app || require("../src/app").default)
       .post("/api/users")
       .set("Authorization", `Bearer ${staff.accessToken}`)
       .send({
@@ -198,18 +198,18 @@ describe("codex users/lenders/lender products access", () => {
     const { lenderAId, lenderBId, admin, staff, lenderUser } =
       await seedScenario();
 
-    const lenderAResponse = await request(app)
+    const lenderAResponse = await request(app || require("../src/app").default)
       .get(`/api/lenders/${lenderAId}/products`)
       .set("Authorization", `Bearer ${lenderUser.accessToken}`);
     expect(lenderAResponse.status).toBe(200);
     expect(lenderAResponse.body.lender.id).toBe(lenderAId);
 
-    const lenderBResponse = await request(app)
+    const lenderBResponse = await request(app || require("../src/app").default)
       .get(`/api/lenders/${lenderBId}/products`)
       .set("Authorization", `Bearer ${lenderUser.accessToken}`);
     expect(lenderBResponse.status).toBe(403);
 
-    const adminList = await request(app)
+    const adminList = await request(app || require("../src/app").default)
       .get("/api/lenders")
       .set("Authorization", `Bearer ${admin.accessToken}`);
     expect(adminList.status).toBe(200);
@@ -217,7 +217,7 @@ describe("codex users/lenders/lender products access", () => {
       expect.arrayContaining([expect.objectContaining({ id: lenderAId })])
     );
 
-    const staffList = await request(app)
+    const staffList = await request(app || require("../src/app").default)
       .get("/api/lenders")
       .set("Authorization", `Bearer ${staff.accessToken}`);
     expect(staffList.status).toBe(200);
@@ -229,7 +229,7 @@ describe("codex users/lenders/lender products access", () => {
   it("controls lender product visibility by role", async () => {
     const { lenderAId, admin, lenderUser, referrer } = await seedScenario();
 
-    const lenderProducts = await request(app)
+    const lenderProducts = await request(app || require("../src/app").default)
       .get("/api/lender-products")
       .set("Authorization", `Bearer ${lenderUser.accessToken}`);
     expect(lenderProducts.status).toBe(200);
@@ -239,13 +239,13 @@ describe("codex users/lenders/lender products access", () => {
       )
     ).toBe(true);
 
-    const adminProducts = await request(app)
+    const adminProducts = await request(app || require("../src/app").default)
       .get("/api/lender-products")
       .set("Authorization", `Bearer ${admin.accessToken}`);
     expect(adminProducts.status).toBe(200);
     expect(adminProducts.body).toHaveLength(3);
 
-    const referrerProducts = await request(app)
+    const referrerProducts = await request(app || require("../src/app").default)
       .get("/api/lender-products")
       .set("Authorization", `Bearer ${referrer.accessToken}`);
     expect(referrerProducts.status).toBe(403);
@@ -254,7 +254,7 @@ describe("codex users/lenders/lender products access", () => {
   it("enforces lender product creation rules and hard failures", async () => {
     const { lenderAId, lenderBId, admin, lenderUser } = await seedScenario();
 
-    const lenderCreate = await request(app)
+    const lenderCreate = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${lenderUser.accessToken}`)
       .send({ lenderId: lenderAId, name: "Lender A Product" });
@@ -267,13 +267,13 @@ describe("codex users/lenders/lender products access", () => {
     );
     expect(lenderCreatedRows.rows[0]?.lender_id).toBe(lenderAId);
 
-    const lenderCross = await request(app)
+    const lenderCross = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${lenderUser.accessToken}`)
       .send({ lenderId: lenderBId, name: "Cross Lender" });
     expect(lenderCross.status).toBe(403);
 
-    const adminCreate = await request(app)
+    const adminCreate = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${admin.accessToken}`)
       .send({ lenderId: lenderBId, name: "Admin Product" });
@@ -288,7 +288,7 @@ describe("codex users/lenders/lender products access", () => {
       lenderMissing.id,
     ]);
 
-    const missingBinding = await request(app)
+    const missingBinding = await request(app || require("../src/app").default)
       .post("/api/lender-products")
       .set("Authorization", `Bearer ${lenderMissing.accessToken}`)
       .send({ name: "Missing Lender" });

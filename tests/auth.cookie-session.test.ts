@@ -30,7 +30,7 @@ describe("cookie-based auth session", () => {
   it("allows /api/auth/me when access token cookie exists", async () => {
     const token = issueToken();
 
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .get("/api/auth/me")
       .set("Cookie", [`token=${token}`]);
 
@@ -43,7 +43,7 @@ describe("cookie-based auth session", () => {
   it("allows /api/telephony/token with cookie auth", async () => {
     const token = issueToken();
 
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .get("/api/telephony/token?identity=staff_portal")
       .set("Cookie", [`token=${token}`]);
 

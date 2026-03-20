@@ -68,7 +68,7 @@ describe("POST /api/auth/verify-otp", () => {
     verifyOtpCodeMock.mockResolvedValue({ ok: false });
 
     const app = makeApp();
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/auth/verify-otp")
       .set("Content-Type", "application/json")
       .send({ phone: " +15551234567 ", code: " 123456 " });
@@ -87,7 +87,7 @@ describe("POST /api/auth/verify-otp", () => {
     verifyOtpCodeMock.mockResolvedValue({ ok: false });
 
     const app = makeApp();
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/auth/verify-otp")
       .set("Content-Type", "application/x-www-form-urlencoded")
       .send("phoneNumber=%2B15551234567&otp=757064");
@@ -105,7 +105,7 @@ describe("POST /api/auth/verify-otp", () => {
     verifyOtpCodeMock.mockResolvedValue({ ok: false });
 
     const app = makeApp();
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/auth/verify-otp")
       .set("Content-Type", "text/plain")
       .send("mobile=%2B15551234567&token=757064");
@@ -121,7 +121,7 @@ describe("POST /api/auth/verify-otp", () => {
 
   it("returns 400 missing_fields when fields are malformed", async () => {
     const app = makeApp();
-    const res = await request(app)
+    const res = await request(app || require("../src/app").default)
       .post("/api/auth/verify-otp")
       .set("Content-Type", "application/json")
       .send({ phone: "+15551234567" });
