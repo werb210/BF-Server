@@ -67,9 +67,10 @@ async function start() {
     });
 }
 
-start().catch((err) => {
+const appReady = start().catch((err) => {
   console.error("FATAL:", err);
   process.exit(1);
 });
 
-export { app };
+export { app, appReady };
+export default app;

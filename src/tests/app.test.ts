@@ -1,13 +1,17 @@
 import request from 'supertest';
-import app from '../app';
+import app, { appReady } from '../index';
 
 describe('API smoke', () => {
-  it('health', async () => {
+  beforeAll(async () => {
+    await appReady;
+  });
+
+  it('GET /health = 200', async () => {
     const res = await request(app).get('/health');
     expect(res.status).toBe(200);
   });
 
-  it('otp route exists', async () => {
+  it('POST /api/auth/otp/start exists', async () => {
     const res = await request(app)
       .post('/api/auth/otp/start')
       .send({ phone: '5878881837' });
