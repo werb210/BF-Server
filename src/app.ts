@@ -268,6 +268,8 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api", systemHealthRouter);
   app.use("/api/debug", debugDbTestRouter);
   app.use("/api/debug", systemCheckRouter);
+  console.log("DEBUG ROUTES REGISTERED: /api/debug/db-test");
+  console.log("DEBUG ROUTES REGISTERED: /api/debug/system-check");
   app.use("/api", dbGuard);
   app.use("/api/readiness", readinessRouter);
   app.use("/api/contact", contactRouter);
