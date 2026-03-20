@@ -1,6 +1,4 @@
-import { redis } from "../lib/redis";
-
-const TTL = 300;
+import { deleteOtp, getOtp, storeOtp as persistOtp } from "../services/otpService";
 
 function normalizePhone(phone: string): string {
   let p = phone.replace(/\D/g, "");
@@ -9,58 +7,40 @@ function normalizePhone(phone: string): string {
   return `+${p}`;
 }
 
-function getRedisClient() {
-  if (!redis) {
-    throw new Error("OTP service unavailable: Redis is disabled");
-  }
-  return redis;
+function generateOtp(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-export async function sendOtp(phone: string) {
-  const client = getRedisClient();
+export async function sendOtp(phone: string): Promise<string> {
   const normalized = normalizePhone(phone);
-  const code = process.env.TEST_OTP_CODE ?? "123456";
-  const key = `otp:${normalized}`;
+  const code = generateOtp();
 
-  console.log("[OTP STORE]", key, code);
+  await persistOtp(normalized, code);
 
-  await client.set(key, code, "EX", TTL);
-
-  const ttl = await client.ttl(key);
-  console.log("[OTP TTL]", ttl);
+  console.log("[OTP SEND]", normalized, code);
 
   return code;
 }
 
-export async function storeOtp(phone: string, code: string) {
-  const client = getRedisClient();
+export async function storeOtp(phone: string, code: string): Promise<void> {
   const normalized = normalizePhone(phone);
-  const key = `otp:${normalized}`;
 
-  await client.set(key, code, "EX", TTL);
+  await persistOtp(normalized, code);
 
-  const ttl = await client.ttl(key);
-  console.log("[OTP STORE]", key, code, "ttl:", ttl);
+  console.log("[OTP SEND]", normalized, code);
 }
 
-export async function verifyOtp(phone: string, code: string) {
-  const client = getRedisClient();
+export async function verifyOtp(phone: string, code: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const normalized = normalizePhone(phone);
-  const key = `otp:${normalized}`;
+  const stored = await getOtp(normalized);
 
-  const stored = await client.get(key);
+  console.log("[OTP VERIFY]", normalized, stored, code);
 
-  console.log("[OTP VERIFY]", key, "stored:", stored, "incoming:", code);
-
-  if (!stored) {
-    return { ok: false, error: "expired_code" };
-  }
-
-  if (stored !== code) {
+  if (!stored || stored !== code) {
     return { ok: false, error: "invalid_code" };
   }
 
-  await client.del(key);
+  await deleteOtp(normalized);
 
   return { ok: true };
 }

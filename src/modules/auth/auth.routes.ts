@@ -67,9 +67,11 @@ async function handleOtpVerify(req: Request, res: Response, next: (err?: unknown
 
     if (!hasSessionId && legacyPhone.trim() && legacyCode.trim()) {
       const legacy = await verifyLegacyOtp(legacyPhone, legacyCode);
-      if (legacy.ok) {
-        return res.status(200).json({ ok: true });
+      if (!legacy.ok) {
+        return res.status(400).json(legacy);
       }
+
+      return res.status(200).json({ ok: true });
     }
 
     const result = await verifyOtpCode({
