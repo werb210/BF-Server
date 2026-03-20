@@ -37,7 +37,7 @@ function markRecentOtpStart(phone: string): void {
   recentOtpStarts.set(phone, Date.now() + OTP_START_REUSE_WINDOW_MS);
 }
 
-router.post("/start", otpLimiter, async (req, res, next) => {
+router.post("/otp/start", otpLimiter, async (req, res, next) => {
   try {
     const rawBody =
       typeof req.body === "string"

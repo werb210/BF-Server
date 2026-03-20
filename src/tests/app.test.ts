@@ -1,17 +1,13 @@
 import request from 'supertest';
-import app, { appReady } from '../index';
+import app from '../index';
 
-describe('API smoke', () => {
-  beforeAll(async () => {
-    await appReady;
-  });
-
-  it('GET /health = 200', async () => {
+describe('API contract', () => {
+  it('GET /health returns 200', async () => {
     const res = await request(app).get('/health');
     expect(res.status).toBe(200);
   });
 
-  it('POST /api/auth/otp/start exists', async () => {
+  it('POST /api/auth/otp/start exists (not 404)', async () => {
     const res = await request(app)
       .post('/api/auth/otp/start')
       .send({ phone: '5878881837' });
