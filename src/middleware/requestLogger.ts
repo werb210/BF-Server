@@ -1,47 +1,31 @@
-import { Request, Response, NextFunction } from "express";
-import { trackRequest } from "../observability/appInsights";
-import { logError, logInfo } from "../observability/logger";
+import { randomUUID } from "crypto";
+import { type NextFunction, type Request, type Response } from "express";
 
 export function requestLogger(req: Request, res: Response, next: NextFunction): void {
-  const start = Date.now();
-  const requestId = res.locals.requestId ?? req.id ?? "unknown";
+  const headerRequestId = req.headers["x-request-id"];
+  const id = typeof headerRequestId === "string" && headerRequestId.length > 0 ? headerRequestId : randomUUID();
 
-  logInfo("request_started", {
-    requestId,
-    method: req.method,
-    path: req.path,
-  });
+  req.id = id;
+  req.requestId = id;
+  res.setHeader("x-request-id", id);
+
+  console.log(
+    JSON.stringify({
+      event: "request_started",
+      request_id: id,
+      method: req.method,
+      path: req.originalUrl,
+    })
+  );
 
   res.on("finish", () => {
-    const durationMs = Date.now() - start;
-    if (res.statusCode >= 500) {
-      logError("request_failed", {
-        requestId,
-        method: req.method,
-        path: req.path,
-        statusCode: res.statusCode,
-        durationMs,
-      });
-    }
-
-    logInfo("request_completed", {
-      requestId,
-      method: req.method,
-      path: req.path,
-      statusCode: res.statusCode,
-      durationMs,
-    });
-
-    trackRequest({
-      name: `${req.method} ${req.path}`,
-      url: req.originalUrl || req.url,
-      duration: durationMs,
-      resultCode: res.statusCode,
-      success: res.statusCode < 500,
-      properties: {
-        requestId,
-      },
-    });
+    console.log(
+      JSON.stringify({
+        event: "request_completed",
+        request_id: id,
+        status: res.statusCode,
+      })
+    );
   });
 
   next();
