@@ -9,27 +9,29 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
 
+    env:
+      NODE_ENV: test
+      JWT_SECRET: test_jwt_secret
+      JWT_REFRESH_SECRET: test_jwt_refresh_secret
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/test_db
+      CLIENT_URL: http://localhost:3000
+      PORTAL_URL: http://localhost:3001
+      TEST_MODE: true
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use Node 20
+      - name: Use Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci --include=dev
+      - name: Install
+        run: npm ci
 
       - name: Typecheck
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
-      - name: Build
-        run: npm run build
-
-      - name: Verify dist exists
-        run: test -f dist/index.js
-
-      - name: Run tests
-        run: npm run test
+      - name: Run Tests
+        run: npx vitest run

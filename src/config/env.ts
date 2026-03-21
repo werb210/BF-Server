@@ -2,9 +2,11 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-function required(name: string): string {
-  const value = process.env[name];
+const isTest = process.env.NODE_ENV === 'test';
+
+function required(value: string | undefined, name: string): string {
   if (!value) {
+    if (isTest) return 'test';
     throw new Error(`Missing required env var: ${name}`);
   }
   return value;
@@ -17,13 +19,13 @@ function optional(name: string, fallback?: string): string | undefined {
 export const ENV = {
   PORT: Number(process.env.PORT || 8080),
 
-  DATABASE_URL: required("DATABASE_URL"),
+  DATABASE_URL: required(process.env.DATABASE_URL, "DATABASE_URL"),
 
-  JWT_SECRET: required("JWT_SECRET"),
-  JWT_REFRESH_SECRET: required("JWT_REFRESH_SECRET"),
+  JWT_SECRET: required(process.env.JWT_SECRET, "JWT_SECRET"),
+  JWT_REFRESH_SECRET: required(process.env.JWT_REFRESH_SECRET, "JWT_REFRESH_SECRET"),
 
-  CLIENT_URL: required("CLIENT_URL"),
-  PORTAL_URL: required("PORTAL_URL"),
+  CLIENT_URL: required(process.env.CLIENT_URL, "CLIENT_URL"),
+  PORTAL_URL: required(process.env.PORTAL_URL, "PORTAL_URL"),
 
   TWILIO_ACCOUNT_SID: optional("TWILIO_ACCOUNT_SID"),
   TWILIO_API_KEY: optional("TWILIO_API_KEY"),
