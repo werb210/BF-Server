@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from "supertest";
 import { EventEmitter } from "events";
 import { buildApp } from "../app";
@@ -52,14 +52,11 @@ describe("azure health endpoints", () => {
     });
 
     await new Promise<void>((resolve, reject) => {
-      vi.stubEnv(() => {
-        vi.mock("../app", () => ({
-          buildApp: () => ({ listen: listenSpy, use: vi.fn() }),
-          registerApiRoutes: vi.fn(),
-        }));
-        const { startServer } = require("../index");
-        startServer().then(() => resolve()).catch(reject);
-      });
+      vi.doMock("../app", () => ({
+        buildApp: () => ({ listen: listenSpy, use: vi.fn() }),
+        registerApiRoutes: vi.fn(),
+      }));
+      import("../index").then(({ startServer }) => startServer()).then(() => resolve()).catch(reject);
     });
 
     expect(listenSpy).toHaveBeenCalledWith(4777, "0.0.0.0", expect.any(Function));

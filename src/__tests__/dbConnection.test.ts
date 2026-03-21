@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   assertPoolHealthy,
   checkDb,
@@ -9,7 +9,7 @@ import {
 
 describe("database connectivity", () => {
   it("runs a simple connection check", async () => {
-    const spy = jest
+    const spy = vi
       .spyOn(pool, "query")
       .mockResolvedValueOnce({ rows: [], rowCount: 1 } as never);
 
@@ -20,7 +20,7 @@ describe("database connectivity", () => {
   });
 
   it("fails fast when warm-up cannot reach the database", async () => {
-    const spy = jest
+    const spy = vi
       .spyOn(pool, "query")
       .mockImplementationOnce(() =>
         Promise.reject(new Error("db unavailable"))

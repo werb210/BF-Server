@@ -1,26 +1,18 @@
-import { vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 describe("BASE_URL guard", () => {
   afterEach(() => {
     vi.resetModules();
   });
 
-  it("throws when BASE_URL is missing in production", () => {
+  it("throws when BASE_URL is missing in production", async () => {
     process.env.NODE_ENV = "production";
     delete process.env.BASE_URL;
-    expect(() => {
-      vi.stubEnv(() => {
-        require("../server");
-      });
-    }).toThrow("BASE_URL must be set in production.");
+    await expect(import("../server")).rejects.toThrow("BASE_URL must be set in production.");
   });
 
-  it("allows missing BASE_URL outside production", () => {
+  it("allows missing BASE_URL outside production", async () => {
     process.env.NODE_ENV = "test";
     delete process.env.BASE_URL;
-    expect(() => {
-      vi.stubEnv(() => {
-        require("../server");
-      });
-    }).not.toThrow();
+    await expect(import("../server")).resolves.toBeDefined();
   });
 });

@@ -6,6 +6,7 @@
     "esModuleInterop": true,
     "strict": true,
     "skipLibCheck": true,
+    "resolveJsonModule": true,
     "outDir": "dist",
     "types": [
       "vitest/globals",
@@ -15,5 +16,12 @@
   "include": [
     "src",
     "tests"
+  ],
+  "exclude": [
+    "**/*.test.ts",
+    "**/__tests__/**",
+    "tests/**",
+    "src/test/**",
+    "src/tests/**"
   ]
 }

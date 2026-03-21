@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import jwt from "jsonwebtoken";
 import request from "supertest";
 import { buildAppWithApiRoutes } from "../app";
@@ -7,8 +7,8 @@ import { ROLES } from "../auth/roles";
 
 const app = buildAppWithApiRoutes();
 
-const TOKEN_OPTIONS = {
-  expiresIn: "1h",
+const TOKEN_OPTIONS: jwt.SignOptions = {
+  expiresIn: 60 * 60,
   issuer: "boreal-staff-server",
   audience: "boreal-staff-portal",
 };

@@ -1,7 +1,18 @@
-import app from "./app";
+import { createServer, type Server } from "http";
+import { buildAppWithApiRoutes } from "./app";
 
-const PORT = process.env.PORT || 4000;
+export async function startServer(): Promise<Server> {
+  const app = buildAppWithApiRoutes();
+  const port = Number(process.env.PORT || 4000);
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+  return await new Promise<Server>((resolve) => {
+    const server = createServer(app);
+    server.listen(port, "0.0.0.0", () => resolve(server));
+  });
+}
+
+if (process.env.NODE_ENV !== "test") {
+  void startServer();
+}
+
+export default buildAppWithApiRoutes();

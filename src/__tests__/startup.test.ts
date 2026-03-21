@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { resetStartupState } from "../startupState";
 import { resolveBaseUrl } from "./helpers/baseUrl";
 
@@ -33,15 +33,12 @@ describe("startup behavior", () => {
     resetStartupState();
 
     await new Promise<void>((resolve, reject) => {
-      vi.stubEnv(() => {
-        const { startServer } = require("../index");
-        startServer()
-          .then((listener: import("http").Server) => {
-            server = listener;
-            resolve();
-          })
-          .catch(reject);
-      });
+      import("../index").then(({ startServer }) => startServer())
+        .then((listener: import("http").Server) => {
+          server = listener;
+          resolve();
+        })
+        .catch(reject);
     });
 
     await waitForCondition(() => Boolean(server?.listening), 2000);
@@ -69,15 +66,12 @@ describe("startup behavior", () => {
     resetStartupState();
 
     await new Promise<void>((resolve, reject) => {
-      vi.stubEnv(() => {
-        const { startServer } = require("../index");
-        startServer()
-          .then((listener: import("http").Server) => {
-            server = listener;
-            resolve();
-          })
-          .catch(reject);
-      });
+      import("../index").then(({ startServer }) => startServer())
+        .then((listener: import("http").Server) => {
+          server = listener;
+          resolve();
+        })
+        .catch(reject);
     });
 
     await waitForCondition(() => Boolean(server?.listening), 2000);

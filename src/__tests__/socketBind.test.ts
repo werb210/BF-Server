@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from "events";
 
 type MockServer = EventEmitter & {
@@ -33,14 +33,11 @@ describe("socket bind", () => {
     });
 
     await new Promise<void>((resolve, reject) => {
-      vi.stubEnv(() => {
-        vi.mock("../app", () => ({
-          buildApp: () => ({ listen: listenSpy, use: vi.fn() }),
-          registerApiRoutes: vi.fn(),
-        }));
-        const { startServer } = require("../index");
-        startServer().then(() => resolve()).catch(reject);
-      });
+      vi.doMock("../app", () => ({
+        buildApp: () => ({ listen: listenSpy, use: vi.fn() }),
+        registerApiRoutes: vi.fn(),
+      }));
+      import("../index").then(({ startServer }) => startServer()).then(() => resolve()).catch(reject);
     });
 
     expect(listenSpy).toHaveBeenCalledTimes(1);
@@ -62,14 +59,11 @@ describe("socket bind", () => {
     });
 
     await new Promise<void>((resolve, reject) => {
-      vi.stubEnv(() => {
-        vi.mock("../app", () => ({
-          buildApp: () => ({ listen: listenSpy, use: vi.fn() }),
-          registerApiRoutes: vi.fn(),
-        }));
-        const { startServer } = require("../index");
-        startServer().then(() => resolve()).catch(reject);
-      });
+      vi.doMock("../app", () => ({
+        buildApp: () => ({ listen: listenSpy, use: vi.fn() }),
+        registerApiRoutes: vi.fn(),
+      }));
+      import("../index").then(({ startServer }) => startServer()).then(() => resolve()).catch(reject);
     });
 
     expect(listenSpy).toHaveBeenCalledWith(4999, "0.0.0.0", expect.any(Function));

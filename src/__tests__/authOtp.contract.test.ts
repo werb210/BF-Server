@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import jwt from "jsonwebtoken";
 import request from "supertest";
 import { buildAppWithApiRoutes } from "../app";
@@ -11,6 +11,7 @@ import { resetLoginRateLimit } from "../middleware/rateLimit";
 import { ensureAuditEventSchema } from "./helpers/auditSchema";
 import { DEFAULT_OTP_CODE, otpVerifyRequest } from "./helpers/otpAuth";
 import { getTwilioMocks } from "./helpers/twilioMocks";
+import type { VerificationCheckListInstanceCreateOptions } from "twilio/lib/rest/verify/v2/service/verificationCheck";
 
 const app = buildAppWithApiRoutes();
 let phoneCounter = 300;
@@ -55,7 +56,7 @@ beforeEach(async () => {
     sid: "VE123",
     status: "pending",
   }));
-  twilioMocks.createVerificationCheck.mockImplementation(async (params) => ({
+  twilioMocks.createVerificationCheck.mockImplementation(async (params: VerificationCheckListInstanceCreateOptions) => ({
     status: params.code === DEFAULT_OTP_CODE ? "approved" : "pending",
     sid: "VE-CHECK-DEFAULT",
   }));

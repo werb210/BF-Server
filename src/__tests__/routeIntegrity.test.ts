@@ -15,6 +15,7 @@ const app = buildAppWithApiRoutes();
 const rolePhones: Record<Role, string> = {
   [ROLES.ADMIN]: SEEDED_ADMIN_PHONE,
   [ROLES.STAFF]: "+15555550100",
+  [ROLES.OPS]: "+15555550103",
   [ROLES.LENDER]: "+15555550101",
   [ROLES.REFERRER]: "+15555550102",
 };
@@ -55,6 +56,10 @@ async function setupRoleUsers(): Promise<void> {
      values ($1, $2, $3, 'email', true, 'ACTIVE', now(), now())`,
     [lenderId, "Integrity Lender", "US"]
   );
+  await createUserAccount({
+    phoneNumber: rolePhones[ROLES.OPS],
+    role: ROLES.OPS,
+  });
   await createUserAccount({
     phoneNumber: rolePhones[ROLES.LENDER],
     role: ROLES.LENDER,

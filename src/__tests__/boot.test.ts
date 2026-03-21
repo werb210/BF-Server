@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { resolveBaseUrl } from "./helpers/baseUrl";
 
 async function waitForCondition(condition: () => boolean, timeoutMs: number): Promise<void> {
@@ -36,23 +36,20 @@ describe("boot behavior", () => {
       TWILIO_AUTH_TOKEN: "test-auth-token-1234567890",
       TWILIO_VERIFY_SERVICE_SID: "VA00000000000000000000000000000000",
     };
-    let exitSpy: vi.SpyInstance | null = null;
+    let exitSpy: { mockRestore: () => void } | null = null;
 
     try {
-      exitSpy = jest
+      exitSpy = vi
         .spyOn(process, "exit")
         .mockImplementation((() => undefined) as never);
       vi.resetModules();
       await new Promise<void>((resolve, reject) => {
-        vi.stubEnv(() => {
-          const { startServer } = require("../index");
-          startServer()
-            .then((listener: import("http").Server) => {
-              server = listener;
-              resolve();
-            })
-            .catch(reject);
-        });
+        import("../index").then(({ startServer }) => startServer())
+          .then((listener: import("http").Server) => {
+          server = listener;
+          resolve();
+        })
+        .catch(reject);
       });
 
       await waitForCondition(() => Boolean(server?.listening), 2000);
