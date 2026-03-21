@@ -1,4 +1,7 @@
 export const DOCUMENT_CONTRACT = {
   UPLOAD: "/api/documents/upload",
-  REQUIRED_FIELDS: ["file", "applicationId", "category"] as const,
+  FIELDS: {
+    APPLICATION_ID: "applicationId",
+    CATEGORY: "category"
+  }
 } as const;

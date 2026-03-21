@@ -1,4 +1,7 @@
 import { Router, type Request } from "express";
+import { DOCUMENT_CONTRACT } from "../contracts/document.contract";
+import { stripPrefix } from "../contracts/path";
+import { requireFields } from "../middleware/contractGuard";
 import { randomUUID } from "crypto";
 import multer from "multer";
 import { AppError } from "../middleware/errors";
@@ -55,6 +58,8 @@ const upload = multer({
 
 const router = Router();
 
+const DOC_BASE = "/api/documents";
+
 function buildRequestMetadata(req: Request): { ip?: string; userAgent?: string } {
   const metadata: { ip?: string; userAgent?: string } = {};
   if (req.ip) {
@@ -70,13 +75,6 @@ function buildRequestMetadata(req: Request): { ip?: string; userAgent?: string }
 const uploadHandler = safeHandler(async (req, res, next) => {
   const { applicationId, category } = req.body;
 
-  if (!applicationId || !category) {
-    res.status(400).json({
-      error: "Missing required fields",
-      required: ["applicationId", "category"],
-    });
-    return;
-  }
   if (!req.file) {
     throw new AppError("validation_error", "file is required.", 400);
   }
@@ -187,8 +185,15 @@ const uploadHandler = safeHandler(async (req, res, next) => {
   });
 });
 
-router.post("/", upload.single("file"), uploadHandler);
-router.post("/upload", upload.single("file"), uploadHandler);
+router.post(
+  stripPrefix(DOCUMENT_CONTRACT.UPLOAD, DOC_BASE),
+  requireFields([
+    DOCUMENT_CONTRACT.FIELDS.APPLICATION_ID,
+    DOCUMENT_CONTRACT.FIELDS.CATEGORY
+  ]),
+  upload.single("file"),
+  uploadHandler
+);
 
 router.get(
   "/:id/presign",
