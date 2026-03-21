@@ -1,9 +1,4 @@
-import { Router } from 'express'
-
-const router = Router()
-
-router.get('/_int/health', (_req, res) => {
-  res.status(200).json({ status: 'ok' })
-})
-
-export default router
+export function intHealthHandler(_req: any, res: any) {
+  res.json({ ok: true });
+}
+export default intHealthHandler;
