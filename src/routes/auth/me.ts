@@ -18,8 +18,11 @@ function respondAuthError(
   const requestId = getAuthRequestId(res);
   res.set("Cache-Control", "no-store");
   res.status(status).json({
-    ok: false,
+    success: false,
+    code,
+    message,
     data: null,
+    ok: false,
     error: { code, message },
     requestId,
   });
@@ -39,12 +42,12 @@ function respondResponseValidationError(
 
   res.set("Cache-Control", "no-store");
   res.status(500).json({
-    ok: false,
+    success: false,
+    code: "invalid_response_shape",
+    message: "Invalid auth response shape",
     data: null,
-    error: {
-      code: "invalid_response_shape",
-      message: "Invalid auth response shape",
-    },
+    ok: false,
+    error: { code: "invalid_response_shape", message: "Invalid auth response shape" },
     requestId,
   });
 }
@@ -94,10 +97,8 @@ export async function authMeHandler(
     }
 
     const responseBody = {
+      success: true,
       ok: true,
-      userId: user.userId,
-      role: user.role,
-      silo,
       data: {
         user: {
           id: user.userId,
@@ -106,6 +107,9 @@ export async function authMeHandler(
           phone: user.phone,
         },
       },
+      userId: user.userId,
+      role: user.role,
+      silo,
       user: {
         id: user.userId,
         role: user.role,

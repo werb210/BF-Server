@@ -58,7 +58,11 @@ router.post("/start", otpLimiter, async (req, res, next) => {
 
     const normalizedPhone = normalizeOtpPhone(req.body.phone);
     if (!normalizedPhone) {
-      return res.status(400).json({ ok: false, error: "Invalid phone number format", code: "invalid_phone" });
+      return res.status(400).json({
+        success: false,
+        code: "invalid_phone",
+        message: "Invalid phone number format",
+      });
     }
 
     const parsed = otpStartSchema.parse({ ...req.body, phone: normalizedPhone });
@@ -77,6 +81,7 @@ router.post("/start", otpLimiter, async (req, res, next) => {
     }
 
     return res.status(200).json({
+      success: true,
       ok: true,
       data: {
         sent: true,
@@ -86,8 +91,9 @@ router.post("/start", otpLimiter, async (req, res, next) => {
     });
   } catch (err) {
     return res.status(400).json({
+      success: false,
+      message: "Invalid request",
       ok: false,
-      error: "invalid_request",
       code: "invalid_request",
     });
   }
@@ -99,6 +105,9 @@ router.post("/verify", otpVerifyLimiter(), async (req, res, next) => {
 
   const fail = (code: string, message: string) => {
     return res.status(400).json({
+      success: false,
+      code,
+      message,
       ok: false,
       data: null,
       error: {
@@ -174,7 +183,25 @@ router.post("/verify", otpVerifyLimiter(), async (req, res, next) => {
       return fail("auth_token_creation_failed", "Failed to create auth token");
     }
 
-    return res.status(200).json(result);
+    res.cookie("token", result.data.token, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        accessToken: result.data.token,
+        refreshToken: result.data.refreshToken,
+        user: result.data.user,
+        nextPath: result.data.nextPath,
+      },
+      ok: true,
+      accessToken: result.data.token,
+      user: result.data.user,
+    });
   } catch (err) {
     return fail("verify_failed", "OTP verification failed");
   } finally {

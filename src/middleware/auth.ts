@@ -15,6 +15,15 @@ function resolveRequestId(req: Parameters<RequestHandler>[0]): string {
   return req.id ?? "unknown";
 }
 
+function authErrorBody(req: Parameters<RequestHandler>[0], code: string, message: string) {
+  return {
+    success: false,
+    code,
+    message,
+    requestId: resolveRequestId(req),
+  };
+}
+
 export const requireAuth: RequestHandler = (req, res, next) => {
   req.id = String(req.id);
   const token = resolveToken(req);
@@ -24,35 +33,20 @@ export const requireAuth: RequestHandler = (req, res, next) => {
       path: req.originalUrl,
       ip: req.ip,
     });
-    return res.status(401).json({
-      code: "UNAUTHORIZED",
-      error: "missing_token",
-      message: "Missing token",
-      requestId: resolveRequestId(req),
-    });
+    return res.status(401).json(authErrorBody(req, "missing_token", "Missing token"));
   }
 
   try {
     const decoded = verifyJwtPayload(token);
     const user = resolveAuthenticatedUser(decoded);
     if (!user) {
-      return res.status(401).json({
-        code: "UNAUTHORIZED",
-        error: "invalid_token",
-        message: "Invalid token",
-        requestId: resolveRequestId(req),
-      });
+      return res.status(401).json(authErrorBody(req, "invalid_token", "Invalid token"));
     }
 
     (req as any).user = user;
     next();
   } catch {
-    return res.status(401).json({
-      code: "UNAUTHORIZED",
-      error: "invalid_token",
-      message: "Invalid token",
-      requestId: resolveRequestId(req),
-    });
+    return res.status(401).json(authErrorBody(req, "invalid_token", "Invalid token"));
   }
 };
 
@@ -147,21 +141,11 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
     const user = (req as any).user;
 
     if (!user) {
-      return res.status(401).json({
-        code: "UNAUTHORIZED",
-        error: "missing_token",
-        message: "Missing token",
-        requestId: resolveRequestId(req),
-      });
+      return res.status(401).json(authErrorBody(req, "missing_token", "Missing token"));
     }
 
     if (requiredRoles.length > 0 && !requiredRoles.includes(user.role)) {
-      return res.status(403).json({
-        code: "FORBIDDEN",
-        error: "forbidden",
-        message: "Forbidden",
-        requestId: resolveRequestId(req),
-      });
+      return res.status(403).json(authErrorBody(req, "forbidden", "Forbidden"));
     }
 
     if (requiredCapabilities.length > 0) {
@@ -171,12 +155,7 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
       );
 
       if (!allowed) {
-        return res.status(403).json({
-          code: "FORBIDDEN",
-          error: "forbidden",
-          message: "Forbidden",
-          requestId: resolveRequestId(req),
-        });
+        return res.status(403).json(authErrorBody(req, "forbidden", "Forbidden"));
       }
     }
 
@@ -191,12 +170,7 @@ export function requireCapability(cap: string | string[]): RequestHandler {
     const user = (req as any).user;
 
     if (!user) {
-      return res.status(401).json({
-        code: "UNAUTHORIZED",
-        error: "missing_token",
-        message: "Missing token",
-        requestId: resolveRequestId(req),
-      });
+      return res.status(401).json(authErrorBody(req, "missing_token", "Missing token"));
     }
 
     const userCaps: string[] = user.capabilities || [];
@@ -204,12 +178,7 @@ export function requireCapability(cap: string | string[]): RequestHandler {
     const allowed = required.some((c) => userCaps.includes(c));
 
     if (!allowed) {
-      return res.status(403).json({
-        code: "FORBIDDEN",
-        error: "forbidden",
-        message: "Forbidden",
-        requestId: resolveRequestId(req),
-      });
+      return res.status(403).json(authErrorBody(req, "forbidden", "Forbidden"));
     }
 
     next();

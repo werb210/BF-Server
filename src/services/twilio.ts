@@ -5,9 +5,14 @@ let client: ReturnType<typeof twilio> | null = null;
 function requireEnv(name: "TWILIO_ACCOUNT_SID" | "TWILIO_AUTH_TOKEN" | "TWILIO_VERIFY_SERVICE_SID"): string {
   const value = process.env[name];
   if (!value || !value.trim()) {
-    throw new Error(`Missing required env: ${name}`);
+    throw new Error("Missing required environment variable");
   }
   return value.trim();
+}
+
+export function validateRequiredTwilioEnv(): void {
+  requireEnv("TWILIO_ACCOUNT_SID");
+  requireEnv("TWILIO_AUTH_TOKEN");
 }
 
 function createTestTwilioClient(): ReturnType<typeof twilio> {
@@ -36,9 +41,8 @@ function createTestTwilioClient(): ReturnType<typeof twilio> {
 }
 
 export function getTwilioClient(): ReturnType<typeof twilio> {
-  if (process.env.NODE_ENV === "test" || process.env.TEST_MODE === "true") {
-    return createTestTwilioClient();
-  }
+  validateRequiredTwilioEnv();
+  if (process.env.NODE_ENV === "test" || process.env.TEST_MODE === "true") return createTestTwilioClient();
 
   if (client) return client;
 
@@ -52,3 +56,5 @@ export function getTwilioClient(): ReturnType<typeof twilio> {
 export function getVerifyServiceSid(): string {
   return requireEnv("TWILIO_VERIFY_SERVICE_SID");
 }
+
+validateRequiredTwilioEnv();

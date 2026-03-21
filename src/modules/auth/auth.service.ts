@@ -632,6 +632,31 @@ function generatePlaceholderPhoneNumber(): string {
   return `+1999${suffix}`;
 }
 
+async function createVerification(params: {
+  twilioClient: ReturnType<typeof getTwilioClient>;
+  serviceSid: string;
+  to: string;
+}): Promise<{ sid?: string; status?: string }> {
+  const service = params.twilioClient.verify.v2.services(params.serviceSid);
+  if (!service.verifications || typeof service.verifications.create !== "function") {
+    throw new AppError("twilio_error", "Twilio verifications client is unavailable.", 500);
+  }
+  return service.verifications.create({ to: params.to, channel: "sms" });
+}
+
+async function createVerificationCheck(params: {
+  twilioClient: ReturnType<typeof getTwilioClient>;
+  serviceSid: string;
+  to: string;
+  code: string;
+}): Promise<{ status?: string }> {
+  const service = params.twilioClient.verify.v2.services(params.serviceSid);
+  if (!service.verificationChecks || typeof service.verificationChecks.create !== "function") {
+    throw new AppError("twilio_error", "Twilio verificationChecks client is unavailable.", 500);
+  }
+  return service.verificationChecks.create({ to: params.to, code: params.code });
+}
+
 export async function startOtp(
   phone: unknown
 ): Promise<{ ok: true; sid: string; otp?: string }> {
@@ -682,12 +707,11 @@ export async function startOtp(
       let sid = session.id;
       if (serviceSid) {
         try {
-          const verification = await twilioClient.verify.v2
-            .services(serviceSid)
-            .verifications.create({
-              to: phoneE164,
-              channel: "sms",
-            });
+          const verification = await createVerification({
+            twilioClient,
+            serviceSid,
+            to: phoneE164,
+          });
           sid = verification.sid ?? sid;
         } catch {
           // Do not fail test-mode OTP generation when provider mocks are unavailable.
@@ -718,12 +742,11 @@ export async function startOtp(
         code: "",
         expiresAt: new Date(Date.now() + OTP_SESSION_TTL_MS),
       });
-      const verification = await twilioClient.verify.v2
-        .services(serviceSid)
-        .verifications.create({
-          to: phoneE164,
-          channel: "sms",
-        });
+      const verification = await createVerification({
+        twilioClient,
+        serviceSid,
+        to: phoneE164,
+      });
       logInfo("otp_start_sent", {
         ...startMeta,
         serviceSid,
@@ -861,7 +884,42 @@ export async function verifyOtpCode(params: {
     const serviceSid = getVerifyServiceSid();
 
     if (providerStatus !== "approved") {
-      if (isTestEnvironment()) {
+      try {
+        const check = await createVerificationCheck({
+          twilioClient,
+          serviceSid,
+          to: phoneE164,
+          code,
+        });
+        providerStatus = check.status;
+        logInfo("otp_verify_provider_result", {
+          ...meta,
+          providerStatus,
+          userFound: false,
+          tokenCreated: false,
+        });
+      } catch (err) {
+        if (isTestEnvironment()) {
+          providerStatus = undefined;
+        } else {
+          const details = getTwilioErrorDetails(err);
+          logError("auth_twilio_verify_failed", {
+            action: "otp_verify",
+            ...meta,
+            serviceSid,
+            twilioCode: details.code,
+            status: details.status,
+            message: details.message,
+            error: err,
+          });
+          recordOtpAttempt(phoneE164, codeHash);
+          const mapped = mapTwilioVerifyCheckFailure(details, err);
+          logWarn("otp_verify_response", { ...meta, providerStatus: "provider_error", userFound: false, tokenCreated: false, ok: false, error: mapped.error.code });
+          return mapped;
+        }
+      }
+
+      if (isTestEnvironment() && providerStatus !== "approved") {
         const otpRecord = await findLatestOtpCodeByPhone({ phone: phoneE164 });
         if (!otpRecord) {
           recordOtpAttempt(phoneE164, codeHash);
@@ -879,27 +937,6 @@ export async function verifyOtpCode(params: {
           return { ok: false, status: 400, error: { code: "invalid_code", message: "Invalid" } };
         }
         providerStatus = "approved";
-      } else {
-        try {
-          const check = await twilioClient.verify.v2.services(serviceSid).verificationChecks.create({ to: phoneE164, code });
-          providerStatus = check.status;
-          logInfo("otp_verify_provider_result", { ...meta, providerStatus, userFound: false, tokenCreated: false });
-        } catch (err) {
-          const details = getTwilioErrorDetails(err);
-          logError("auth_twilio_verify_failed", {
-            action: "otp_verify",
-            ...meta,
-            serviceSid,
-            twilioCode: details.code,
-            status: details.status,
-            message: details.message,
-            error: err,
-          });
-          recordOtpAttempt(phoneE164, codeHash);
-          const mapped = mapTwilioVerifyCheckFailure(details, err);
-          logWarn("otp_verify_response", { ...meta, providerStatus: "provider_error", userFound: false, tokenCreated: false, ok: false, error: mapped.error.code });
-          return mapped;
-        }
       }
     }
 

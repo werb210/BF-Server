@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import { trackRequest } from "../observability/appInsights";
 import { logError, logInfo } from "../observability/logger";
 
 export function requestLogger(req: Request, res: Response, next: NextFunction): void {
@@ -29,6 +30,17 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
       path: req.path,
       statusCode: res.statusCode,
       durationMs,
+    });
+
+    trackRequest({
+      name: `${req.method} ${req.path}`,
+      url: req.originalUrl || req.url,
+      duration: durationMs,
+      resultCode: res.statusCode,
+      success: res.statusCode < 500,
+      properties: {
+        requestId,
+      },
     });
   });
 

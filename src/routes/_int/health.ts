@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 
 export const intHealthHandler = (req: Request, res: Response) => {
   res.json({
-    status: "healthy",
+    success: true,
+    status: "ok",
   });
 };
