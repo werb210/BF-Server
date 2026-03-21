@@ -17,11 +17,9 @@ function mountSafe(path: string, modulePath: string): void {
   }
 }
 
-mountSafe("/auth", "./auth");
 mountSafe("/lenders", "./lenders");
 mountSafe("/applications", "./applications");
 mountSafe("/crm", "./crm");
-mountSafe("/documents", "./documents");
 mountSafe("/users", "./users");
 mountSafe("/lender-products", "./lenderProducts");
 

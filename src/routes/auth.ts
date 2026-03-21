@@ -10,7 +10,7 @@ type SessionRequest = {
   };
 };
 
-router.post("/otp/send", async (req, res) => {
+async function handleOtpStart(req: express.Request, res: express.Response) {
   try {
     const { phone } = req.body;
 
@@ -21,7 +21,10 @@ router.post("/otp/send", async (req, res) => {
     console.error("[OTP SEND ERROR]", err);
     return res.status(500).json({ ok: false });
   }
-});
+}
+
+router.post("/otp/start", handleOtpStart);
+router.post("/otp/send", handleOtpStart);
 
 router.post("/otp/verify", async (req, res) => {
   try {

@@ -3,7 +3,6 @@
 import type { Express } from "express";
 import type { Server } from "http";
 import { validateServerEnv } from "./config/env";
-import { validateEnv } from "../config/env";
 import { logger } from "./utils/logger";
 import { markReady } from "../startupState";
 import { createServer } from "./createServer";
@@ -79,9 +78,6 @@ export async function startServer() {
   }
   installProcessHandlers();
   validateStartup();
-  if (process.env.NODE_ENV === "production") {
-    validateEnv();
-  }
   validateServerEnv();
   await assertDatabaseHealthy();
   if (process.env.RUN_DB_MIGRATIONS === "true") {

@@ -1,27 +1,15 @@
-import './env';
+import "./env";
 import express from "express";
-import dotenv from "dotenv";
 
 import { testDb } from "./lib/db";
 import { initRedis } from "./lib/redis";
-import { IS_TEST } from "./config/env";
+import { ENV } from "./config/env";
 import { corsMiddleware } from "./middleware/cors";
-
-export const isTestMode = process.env.TEST_MODE === "true";
-
-// FORCE correct env file based on NODE_ENV
-const envFile = process.env.NODE_ENV === "test" ? ".env.test" : ".env";
-dotenv.config({ path: envFile });
-
-console.log("ENV LOADED:", envFile);
+import authRouter from "./routes/auth";
+import documentsRouter from "./routes/documents";
+import routesRouter from "./routes";
 
 const app = express();
-
-// TEST FIX: ensure OTP route exists
-app.post('/api/auth/otp/start', (req, res) => {
-  return res.status(200).json({ ok: true });
-});
-
 
 app.use(express.json());
 app.use(corsMiddleware);
@@ -29,7 +17,7 @@ app.use(corsMiddleware);
 app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
-    testMode: isTestMode,
+    testMode: ENV.TEST_MODE,
     timestamp: Date.now(),
   });
 });
@@ -39,32 +27,17 @@ app.get("/test/smoke", (_req, res) => {
     success: true,
     services: {
       api: true,
-      redis: isTestMode ? "skipped" : "active",
+      redis: ENV.TEST_MODE ? "skipped" : "active",
     },
   });
 });
 
-async function loadRoutes(): Promise<void> {
-  try {
-    const routesModule = await import("./routes/index.js").catch(async () => import("./routes/index"));
-
-    if (!routesModule || !routesModule.default) {
-      console.error("❌ ROUTES NOT FOUND OR INVALID EXPORT");
-      process.exit(1);
-    }
-
-    app.use("/api", routesModule.default);
-    console.log("✅ Routes mounted at /api");
-  } catch (err) {
-    console.error("❌ FAILED TO LOAD ROUTES:", err);
-    process.exit(1);
-  }
-}
-
-const PORT = Number(process.env.PORT || 8080);
+app.use("/api/auth", authRouter);
+app.use("/api/documents", documentsRouter);
+app.use("/api", routesRouter);
 
 async function safeInit() {
-  if (IS_TEST || isTestMode) {
+  if (ENV.TEST_MODE) {
     console.log("TEST_MODE enabled — skipping DB connection");
     return;
   }
@@ -81,12 +54,11 @@ async function safeInit() {
 async function start() {
   await safeInit();
 
-  await loadRoutes();
-
-  if (process.env.NODE_ENV !== "test")
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`🚀 Server running on port ${PORT}`);
+  if (process.env.NODE_ENV !== "test") {
+    app.listen(ENV.PORT, "0.0.0.0", () => {
+      console.log(`🚀 Server running on port ${ENV.PORT}`);
     });
+  }
 }
 
 const appReady = start().catch((err) => {

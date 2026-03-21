@@ -1,27 +1,27 @@
 import { Request, Response, NextFunction } from "express";
 import { ENV } from "../config/env";
 
-export function corsMiddleware(req: Request, res: Response, next: NextFunction) {
+const allowedOrigins = [ENV.CLIENT_URL, ENV.PORTAL_URL].filter(Boolean);
+
+export function corsMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
   const origin = req.headers.origin;
 
-  const allowedOrigins = new Set([
-    ENV.CLIENT_URL,
-    ENV.PORTAL_URL,
-    ...ENV.CORS_ORIGINS,
-  ]);
-
-  if (origin && allowedOrigins.has(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
   }
 
-  res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader(
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header(
     "Access-Control-Allow-Headers",
     "Origin, X-Requested-With, Content-Type, Accept, Authorization"
   );
-  res.setHeader(
+  res.header(
     "Access-Control-Allow-Methods",
-    "GET, POST, PUT, DELETE, OPTIONS"
+    "GET, POST, PUT, PATCH, DELETE, OPTIONS"
   );
 
   if (req.method === "OPTIONS") {

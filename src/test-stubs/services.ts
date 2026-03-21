@@ -1,4 +1,4 @@
-import { IS_TEST } from "../config/env";
+const IS_TEST = process.env.TEST_MODE === "true" || process.env.NODE_ENV === "test";
 
 export const mockSuccess = async () => ({ success: true });
 

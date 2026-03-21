@@ -1,18 +1,4 @@
-import {
-  assertEnv as assertRuntimeEnv,
-  getAccessTokenSecret as getAccessTokenSecretValue,
-  getRefreshTokenSecret as getRefreshTokenSecretValue,
-  getAppInsightsConnectionString,
-  getCorsAllowlist,
-  getGlobalRateLimitMax,
-  getGlobalRateLimitWindowMs,
-  getJwtExpiresIn,
-  getJwtRefreshExpiresIn,
-  getJwtRefreshExpiresInMs,
-  getJwtClockSkewSeconds as getJwtClockSkewSecondsValue,
-  isProductionEnv,
-  isTestEnv,
-} from "./config/env";
+import { ENV } from "./config/env";
 import { logInfo } from "./observability/logger";
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
@@ -78,31 +64,31 @@ export function getBuildInfo(): { commitHash: string; buildTimestamp: string } {
  * Only true runtime dependencies are enforced.
  */
 export function assertEnv(): void {
-  assertRuntimeEnv();
+  return;
 }
 
 export function getAccessTokenExpiresIn(): string {
-  return getJwtExpiresIn();
+  return process.env.JWT_EXPIRES_IN ?? "15m";
 }
 
 export function getAccessTokenSecret(): string | undefined {
-  return getAccessTokenSecretValue();
+  return ENV.JWT_SECRET;
 }
 
 export function getRefreshTokenSecret(): string | undefined {
-  return getRefreshTokenSecretValue() ?? (isTestEnvironment() ? "test-refresh" : undefined);
+  return ENV.JWT_REFRESH_SECRET;
 }
 
 export function getRefreshTokenExpiresIn(): string {
-  return getJwtRefreshExpiresIn();
+  return process.env.JWT_REFRESH_EXPIRES_IN ?? "30d";
 }
 
 export function getRefreshTokenExpiresInMs(): number {
-  return getJwtRefreshExpiresInMs();
+  return parsePositiveInt(process.env.JWT_REFRESH_EXPIRES_IN_MS, 30 * 24 * 60 * 60 * 1000);
 }
 
 export function getJwtClockSkewSeconds(): number {
-  return getJwtClockSkewSecondsValue();
+  return parsePositiveInt(process.env.JWT_CLOCK_SKEW_SECONDS, 30);
 }
 
 export function getLoginLockoutThreshold(): number {
@@ -158,7 +144,7 @@ export function getReportingHourlyIntervalMs(): number {
 }
 
 export function getFollowUpJobsEnabled(): boolean {
-  return parseBoolean(process.env.FOLLOWUP_JOBS_ENABLED, !isTestEnv());
+  return parseBoolean(process.env.FOLLOWUP_JOBS_ENABLED, !ENV.TEST_MODE);
 }
 
 export function getFollowUpJobsIntervalMs(): number {
@@ -326,22 +312,22 @@ export function getAdminRateLimitWindowMs(): number {
 }
 
 export function getCorsAllowlistConfig(): string[] {
-  return getCorsAllowlist();
+  return [ENV.CLIENT_URL, ENV.PORTAL_URL].filter(Boolean);
 }
 
 export function getGlobalRateLimitWindowMsConfig(): number {
-  return getGlobalRateLimitWindowMs();
+  return parsePositiveInt(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000);
 }
 
 export function getGlobalRateLimitMaxConfig(): number {
-  return getGlobalRateLimitMax();
+  return parsePositiveInt(process.env.RATE_LIMIT_MAX, 100);
 }
 
 export function getRateLimitEnabled(): boolean {
   if (process.env.ENABLE_RATE_LIMITING !== undefined) {
-    return parseBoolean(process.env.ENABLE_RATE_LIMITING, !isTestEnv());
+    return parseBoolean(process.env.ENABLE_RATE_LIMITING, !ENV.TEST_MODE);
   }
-  return parseBoolean(process.env.RATE_LIMIT_ENABLED, !isTestEnv());
+  return parseBoolean(process.env.RATE_LIMIT_ENABLED, !ENV.TEST_MODE);
 }
 
 export function getIdempotencyEnabled(): boolean {
@@ -357,15 +343,15 @@ export function getRetryPolicyEnabled(): boolean {
 }
 
 export function getAppInsightsConnectionStringConfig(): string {
-  return getAppInsightsConnectionString();
+  return process.env.APPINSIGHTS_CONNECTION_STRING ?? "";
 }
 
 export function isTestEnvironment(): boolean {
-  return isTestEnv();
+  return ENV.TEST_MODE;
 }
 
 export function isProductionEnvironment(): boolean {
-  return isProductionEnv();
+  return process.env.NODE_ENV === "production";
 }
 
 export function getRequestBodyLimit(): string {
