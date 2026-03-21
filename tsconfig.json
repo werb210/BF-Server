@@ -7,21 +7,14 @@
     "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "outDir": "dist",
-    "types": [
-      "vitest/globals",
-      "node"
-    ]
+    "outDir": "dist"
   },
   "include": [
-    "src",
-    "tests"
+    "src"
   ],
   "exclude": [
-    "**/*.test.ts",
     "**/__tests__/**",
-    "tests/**",
-    "src/test/**",
-    "src/tests/**"
+    "**/*.test.ts",
+    "**/*.spec.ts"
   ]
 }

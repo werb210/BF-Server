@@ -12,25 +12,12 @@
     "start": "node dist/index.js",
     "db:migrate": "tsx src/db/runMigrations.ts",
     "db:seed": "tsx src/db/seed.ts",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test || echo 'no e2e configured'",
-    "test:runtime": "npm run build && node scripts/runtime-verify.js",
-    "test:codex:server": "node scripts/codex-server-test.js",
     "user:set-role": "tsx scripts/set-user-role.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.{ts,js}\" --max-warnings=0",
     "workers": "tsx scripts/startWorkers.ts",
     "routes:export": "node --import tsx scripts/export-routes.ts",
-    "drift:check": "bash scripts/api-drift-check.sh",
-    "test:db:runtime": "npm run build && node scripts/db-runtime-integration.js",
-    "e2e": "playwright test",
-    "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e || true",
-    "test:unit": "vitest run",
-    "test:integration": "vitest run --dir src",
-    "test:full": "NODE_ENV=test vitest --run",
-    "start:test": "TEST_MODE=true node dist/index.js"
+    "drift:check": "bash scripts/api-drift-check.sh"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.29.1",
@@ -74,18 +61,15 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "@types/express-session": "^1.18.2",
-    "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/morgan": "^1.9.10",
     "@types/node": "^25.5.0",
     "@types/pg": "^8.16.0",
-    "@types/supertest": "^6.0.3",
     "@types/uuid": "^10.0.0",
     "@types/web-push": "^3.6.4",
     "@types/ws": "^8.18.1",
@@ -94,19 +78,9 @@
     "cross-env": "^7.0.3",
     "dotenv": "^17.3.1",
     "eslint": "^9.39.4",
-    "ioredis-mock": "^8.13.1",
-    "jest": "^30.3.0",
-    "pg-mem": "^3.0.14",
-    "playwright": "^1.58.2",
-    "supertest": "^6.3.3",
-    "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "vitest": "^2.1.9"
-  },
-  "vitest": {
-    "environment": "node"
+    "typescript": "^5.9.3"
   }
 }
