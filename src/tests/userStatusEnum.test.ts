@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { pool } from "../db";
 import { createUserAccount } from "../modules/auth/auth.service";
 import { ROLES } from "../auth/roles";

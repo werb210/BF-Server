@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import {
   createLenderProductService,
   DEFAULT_LENDER_PRODUCT_NAME,

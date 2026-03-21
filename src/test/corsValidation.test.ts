@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import * as logger from "../observability/logger";
 import { validateCorsConfig } from "../startup/corsValidation";
 

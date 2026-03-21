@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import request from "supertest";
 import { randomUUID } from "crypto";
 import { pool } from "../../src/db";

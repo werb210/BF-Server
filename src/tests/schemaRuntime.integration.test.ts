@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { execFile } from "child_process";
 import type { Server } from "http";
 import jwt, { type SignOptions } from "jsonwebtoken";

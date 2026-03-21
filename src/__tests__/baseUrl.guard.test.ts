@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 describe("BASE_URL guard", () => {
   afterEach(() => {
     vi.resetModules();

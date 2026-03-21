@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { pool } from "../src/db";
 
 describe("database schema regression", () => {

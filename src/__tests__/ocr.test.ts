@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { randomUUID } from "crypto";
 import { pool } from "../db";
 import { createUserAccount } from "../modules/auth/auth.service";

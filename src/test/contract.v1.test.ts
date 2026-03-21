@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { createHash } from "crypto";
 import { readFileSync } from "fs";
 import { resolve } from "path";

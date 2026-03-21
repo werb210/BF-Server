@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import path from "path";
 import request from "supertest";
 import { buildAppWithApiRoutes } from "../app";

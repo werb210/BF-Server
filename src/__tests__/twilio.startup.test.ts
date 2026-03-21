@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 describe("twilio startup without configuration", () => {
   const originalEnv = process.env;
 

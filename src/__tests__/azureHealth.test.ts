@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import request from "supertest";
 import { EventEmitter } from "events";
 import { buildApp } from "../app";
