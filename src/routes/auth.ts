@@ -24,7 +24,14 @@ async function handleOtpStart(req: express.Request, res: express.Response) {
 }
 
 router.post("/otp/start", handleOtpStart);
-router.post("/otp/send", handleOtpStart);
+
+router.post("/otp/send", async (req, res, next) => {
+  try {
+    return (router as any).handle({ ...req, url: "/otp/start", method: "POST" }, res, next);
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.post("/otp/verify", async (req, res) => {
   try {

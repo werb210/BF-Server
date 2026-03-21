@@ -4,7 +4,7 @@ import express from "express";
 import { testDb } from "./lib/db";
 import { initRedis } from "./lib/redis";
 import { ENV } from "./config/env";
-import { corsMiddleware } from "./middleware/cors";
+import cors from "cors";
 import authRouter from "./routes/auth";
 import documentsRouter from "./routes/documents";
 import routesRouter from "./routes";
@@ -12,7 +12,24 @@ import routesRouter from "./routes";
 const app = express();
 
 app.use(express.json());
-app.use(corsMiddleware);
+
+const allowedOrigins = [
+  process.env.CLIENT_ORIGIN,
+  process.env.PORTAL_ORIGIN,
+].filter(Boolean) as string[];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
+);
 
 app.get("/health", (_req, res) => {
   res.json({
@@ -34,6 +51,7 @@ app.get("/test/smoke", (_req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/documents", documentsRouter);
+app.use("/documents", documentsRouter);
 app.use("/api", routesRouter);
 
 async function safeInit() {

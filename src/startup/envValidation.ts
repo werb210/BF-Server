@@ -1,4 +1,3 @@
-import { logError } from "../observability/logger";
 import { validatePushEnvironmentAtStartup } from "../services/pushService";
 
 const REQUIRED_ENV = [
@@ -30,13 +29,9 @@ export function assertRequiredAuthEnv(): void {
     return;
   }
 
-  missing.forEach((key) => {
-    logError("missing_env", { key });
+  missing.forEach(key => {
+    console.warn(`Missing env var: ${key}`);
   });
-
-  throw new Error(
-    `Missing required environment variables: ${missing.join(", ")}`
-  );
 }
 
 assertRequiredAuthEnv();

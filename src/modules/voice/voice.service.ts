@@ -77,17 +77,32 @@ function assertVoiceEnabled(): void {
 
 function getVoiceConfig(): {
   accountSid: string;
+  authToken: string;
   apiKey: string;
   apiSecret: string;
   applicationSid: string;
   callerId: string;
 } {
+  const voiceConfig = {
+    accountSid: process.env.TWILIO_ACCOUNT_SID,
+    authToken: process.env.TWILIO_AUTH_TOKEN || process.env.TWILIO_API_SECRET,
+    apiKey: process.env.TWILIO_API_KEY || process.env.TWILIO_API_KEY_SID,
+    apiSecret: process.env.TWILIO_API_SECRET,
+    appSid: process.env.TWILIO_VOICE_APP_SID || "",
+    callerId:
+      process.env.TWILIO_VOICE_CALLER_ID ||
+      process.env.TWILIO_NUMBER ||
+      process.env.TWILIO_PHONE ||
+      "",
+  };
+
   return {
-    accountSid: requireVoiceEnv("TWILIO_ACCOUNT_SID"),
-    apiKey: requireVoiceEnv("TWILIO_API_KEY"),
-    apiSecret: requireVoiceEnv("TWILIO_API_SECRET"),
-    applicationSid: requireVoiceEnv("TWILIO_VOICE_APP_SID"),
-    callerId: requireVoiceEnv("TWILIO_VOICE_CALLER_ID"),
+    accountSid: voiceConfig.accountSid?.trim() || requireVoiceEnv("TWILIO_ACCOUNT_SID"),
+    authToken: voiceConfig.authToken?.trim() || requireVoiceEnv("TWILIO_AUTH_TOKEN"),
+    apiKey: voiceConfig.apiKey?.trim() || requireVoiceEnv("TWILIO_API_KEY"),
+    apiSecret: voiceConfig.apiSecret?.trim() || requireVoiceEnv("TWILIO_API_SECRET"),
+    applicationSid: voiceConfig.appSid.trim() || requireVoiceEnv("TWILIO_VOICE_APP_SID"),
+    callerId: voiceConfig.callerId.trim() || requireVoiceEnv("TWILIO_VOICE_CALLER_ID"),
   };
 }
 

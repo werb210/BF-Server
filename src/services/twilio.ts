@@ -5,21 +5,39 @@ let warnedMissingCredentials = false;
 let warnedMissingVerifySid = false;
 
 export function getTwilioClient(): ReturnType<typeof twilio> {
+  if (process.env.TEST_MODE === "true") {
+    console.warn("Twilio disabled (TEST_MODE)");
+    return {
+      send: async () => true,
+    } as unknown as ReturnType<typeof twilio>;
+  }
+
   if (client) return client;
 
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
+  const accountSid =
+    process.env.TWILIO_ACCOUNT_SID;
 
-  if (!sid || !token) {
+  const authToken =
+    process.env.TWILIO_AUTH_TOKEN ||
+    process.env.TWILIO_API_SECRET;
+
+  const apiKeySid =
+    process.env.TWILIO_API_KEY_SID ||
+    process.env.TWILIO_API_KEY;
+
+  const apiSecret =
+    process.env.TWILIO_API_SECRET;
+
+  if (!accountSid || (!authToken && !(apiKeySid && apiSecret))) {
     if (!warnedMissingCredentials) {
       console.warn("Twilio credentials are missing; SMS/voice features are effectively disabled.");
       warnedMissingCredentials = true;
     }
-    client = twilio(sid ?? "", token ?? "");
+    client = twilio(accountSid ?? "", authToken ?? "");
     return client;
   }
 
-  client = twilio(sid, token);
+  client = twilio(accountSid, authToken ?? apiSecret ?? "");
   return client;
 }
 

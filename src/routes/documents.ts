@@ -68,18 +68,19 @@ function buildRequestMetadata(req: Request): { ip?: string; userAgent?: string }
 }
 
 const uploadHandler = safeHandler(async (req, res, next) => {
-  const applicationIdInput =
-    req.body?.applicationId || req.body?.application_id;
-  const categoryInput =
-    req.body?.category || req.body?.document_category;
   const applicationId =
-    typeof applicationIdInput === "string" ? applicationIdInput.trim() : "";
-  const category = typeof categoryInput === "string" ? categoryInput.trim() : "";
-  if (!applicationId) {
-    throw new AppError("validation_error", "applicationId is required.", 400);
-  }
-  if (!category) {
-    throw new AppError("validation_error", "category is required.", 400);
+    req.body.applicationId ||
+    req.body.application_id;
+
+  const category =
+    req.body.category ||
+    req.body.document_category;
+
+  if (!applicationId || !category) {
+    res.status(400).json({
+      error: "Missing required fields: applicationId and category",
+    });
+    return;
   }
   if (!req.file) {
     throw new AppError("validation_error", "file is required.", 400);
