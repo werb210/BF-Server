@@ -68,6 +68,7 @@ import { corsMiddleware } from "./middleware/cors";
 import { normalizeApiPath } from "./middleware/normalizeApiPath";
 import { dbGuard } from "./middleware/dbGuard";
 import { sessionMiddleware } from "./middleware/sessionStore";
+import { runtimeHandler } from "./routes/_int/runtime";
 
 export const isTestMode = process.env.TEST_MODE === "true";
 
@@ -300,9 +301,9 @@ export function registerApiRoutes(app: express.Express): void {
   app.use("/api/health", healthRoutes);
   app.use("/api", healthRoutes);
   app.get("/_int/health", (_req, res) => res.status(200).json({ status: "ok" }));
-  app.get("/_int/runtime", (_req, res) => res.status(200).json({ ok: true }));
+  app.get("/_int/runtime", runtimeHandler);
   app.get("/api/_int/health", (_req, res) => res.status(200).json({ status: "ok" }));
-  app.get("/api/_int/runtime", (_req, res) => res.status(200).json({ ok: true }));
+  app.get("/api/_int/runtime", runtimeHandler);
   app.get("/api/ready", (_req, res) => res.status(200).json({ ok: true }));
   app.get("/", (_req, res) => {
     res.status(200).json({ status: "ok" });

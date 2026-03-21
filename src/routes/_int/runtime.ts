@@ -3,6 +3,9 @@ import { getBuildInfo, getCorsAllowlistConfig } from "../../config";
 import { checkDb } from "../../db";
 
 type RuntimeResponse = {
+  ok: boolean;
+  uptime: number;
+  env: string;
   build: {
     version: string | null;
     commit: string | null;
@@ -16,11 +19,11 @@ type RuntimeResponse = {
   warnings: string[];
 };
 
-export async function runtimeHandler(
-  _req: Request,
-  res: Response
-): Promise<void> {
+export async function runtimeHandler(_req: Request, res: Response): Promise<void> {
   const response: RuntimeResponse = {
+    ok: true,
+    uptime: process.uptime(),
+    env: process.env.NODE_ENV || "unknown",
     build: { version: null, commit: null },
     cors: { enabled: null },
     db: { connected: null },
