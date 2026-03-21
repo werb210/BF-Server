@@ -1,34 +1,32 @@
-name: Deploy Staff Server to Azure App Service
+name: Deploy BF Server
 
 on:
   push:
     branches:
       - main
 
-concurrency:
-  group: bf-server-deploy-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Use Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Install dependencies
+      - name: Install deps
         run: npm install
 
       - name: Build
         run: npm run build
 
       - name: Deploy to Azure
-        uses: azure/webapps-deploy@v2
+        uses: azure/webapps-deploy@v3
         with:
           app-name: boreal-staff-server
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: .
