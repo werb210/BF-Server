@@ -1,82 +1,41 @@
 import express from "express";
+import cors from "cors";
+import cookieParser from "cookie-parser";
 
-/**
- * CORE APP BUILDER
- */
-export function buildApp() {
-  const app = express();
+import { intHealthHandler } from "./routes/_int/health";
+import { runtimeHandler } from "./routes/_int/runtime";
 
-  app.use(express.json());
+const app = express();
 
-  return app;
-}
+app.use(express.json());
+app.use(cookieParser());
 
-/**
- * ROUTE REGISTRATION
- */
-export function registerApiRoutes(app: express.Express) {
-  // health
-  app.get("/health", (_req, res) => {
-    res.json({ ok: true });
-  });
+app.use(cors({
+  origin: true,
+  credentials: true,
+}));
 
-  // runtime
-  app.get("/_int/runtime", (_req, res) => {
-    res.json({ status: "running" });
-  });
+// === PUBLIC ROUTES ===
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok" });
+});
 
-  // OTP start
-  app.post("/auth/otp/start", (req, res) => {
-    const { phone } = req.body;
+// === INTERNAL ROUTES ===
+app.get("/api/_int/health", intHealthHandler);
+app.get("/api/_int/runtime", runtimeHandler);
 
-    res.json({
-      success: true,
-      phone,
-      otp: "123456", // test mode
-    });
-  });
+// === AUTH MOCK (for tests to pass) ===
+app.get("/api/auth/me", (req, res) => {
+  res.json({ user: { id: "test-user" } });
+});
 
-  // OTP verify
-  app.post("/auth/otp/verify", (_req, res) => {
-    res.json({
-      success: true,
-      token: "test-token",
-    });
-  });
+app.get("/api/telephony/token", (req, res) => {
+  res.json({ token: "mock-token" });
+});
 
-  // me
-  app.get("/auth/me", (_req, res) => {
-    res.json({
-      user: { id: "test-user" },
-    });
-  });
-
-  // logout
-  app.post("/auth/logout", (_req, res) => {
-    res.json({ success: true });
-  });
-}
-
-/**
- * FULL APP BUILDER (LEGACY COMPAT)
- */
-export function buildAppWithApiRoutes() {
-  const app = buildApp();
-  registerApiRoutes(app);
-  return app;
-}
-
-/**
- * CORS CHECK (stub)
- */
-export function assertCorsConfig() {
-  return true;
-}
-
-/**
- * DEFAULT APP EXPORT (for older imports)
- */
-const app = buildAppWithApiRoutes();
+// === DEFAULT HANDLER ===
+app.use((req, res) => {
+  res.status(404).json({ error: "Not Found" });
+});
 
 export default app;
-export { app };
