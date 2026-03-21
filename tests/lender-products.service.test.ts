@@ -14,32 +14,32 @@ import {
   updateLenderProduct,
 } from "../src/repositories/lenderProducts.repo";
 
-jest.mock("../src/repositories/lenderProducts.repo", () => ({
-  createLenderProduct: jest.fn(),
-  listLenderProducts: jest.fn(),
-  listLenderProductsByLenderId: jest.fn(),
-  updateLenderProduct: jest.fn(),
+vi.mock("../src/repositories/lenderProducts.repo", () => ({
+  createLenderProduct: vi.fn(),
+  listLenderProducts: vi.fn(),
+  listLenderProductsByLenderId: vi.fn(),
+  updateLenderProduct: vi.fn(),
 }));
 
-jest.mock("../src/services/lenderProductRequirementsService", () => ({
-  ensureSeedRequirementsForProduct: jest.fn(),
+vi.mock("../src/services/lenderProductRequirementsService", () => ({
+  ensureSeedRequirementsForProduct: vi.fn(),
 }));
 
-const mockedCreate = createLenderProduct as jest.MockedFunction<typeof createLenderProduct>;
-const mockedList = listLenderProducts as jest.MockedFunction<typeof listLenderProducts>;
+const mockedCreate = createLenderProduct as vi.MockedFunction<typeof createLenderProduct>;
+const mockedList = listLenderProducts as vi.MockedFunction<typeof listLenderProducts>;
 const mockedListByLenderId =
-  listLenderProductsByLenderId as jest.MockedFunction<
+  listLenderProductsByLenderId as vi.MockedFunction<
     typeof listLenderProductsByLenderId
   >;
-const mockedUpdate = updateLenderProduct as jest.MockedFunction<typeof updateLenderProduct>;
+const mockedUpdate = updateLenderProduct as vi.MockedFunction<typeof updateLenderProduct>;
 const mockedEnsureSeed =
-  ensureSeedRequirementsForProduct as jest.MockedFunction<
+  ensureSeedRequirementsForProduct as vi.MockedFunction<
     typeof ensureSeedRequirementsForProduct
   >;
 
 describe("lenderProductsService", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockedEnsureSeed.mockResolvedValue(0);
   });
 

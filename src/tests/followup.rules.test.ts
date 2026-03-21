@@ -11,9 +11,9 @@ import { followUpRules } from "../modules/followup/followup.rules";
 
 function buildHandlers() {
   return createFollowUpActionHandlers({
-    sendSms: jest.fn(async () => ({ provider: "test" })),
-    createTask: jest.fn(async () => undefined),
-    logTimeline: jest.fn(async () => undefined),
+    sendSms: vi.fn(async () => ({ provider: "test" })),
+    createTask: vi.fn(async () => undefined),
+    logTimeline: vi.fn(async () => undefined),
   });
 }
 

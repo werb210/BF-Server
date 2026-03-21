@@ -8,12 +8,12 @@ import type {
   VerificationCheckListInstanceCreateOptions,
 } from "twilio/lib/rest/verify/v2/service/verificationCheck";
 
-const createVerification = jest.fn<
+const createVerification = vi.fn<
   Promise<Pick<VerificationInstance, "sid" | "status">>,
   [VerificationListInstanceCreateOptions]
 >(async () => ({ sid: "VE123", status: "pending" }));
 
-const createVerificationCheck = jest.fn<
+const createVerificationCheck = vi.fn<
   Promise<Pick<VerificationCheckInstance, "status" | "sid">>,
   [VerificationCheckListInstanceCreateOptions]
 >(async () => ({ status: "approved", sid: "VEXXXXX" }));
@@ -27,7 +27,7 @@ type VerificationService = {
   };
 };
 
-type ServicesMock = jest.MockedFunction<
+type ServicesMock = vi.MockedFunction<
   (serviceSid: string) => VerificationService
 >;
 
@@ -51,13 +51,13 @@ const twilioMockState = {
   lastServiceSid: null as string | null,
 };
 
-const createCall = jest.fn(
+const createCall = vi.fn(
   async (_params: { to: string; from: string; applicationSid: string }) => ({
     sid: "CA123",
     status: "queued",
   })
 );
-const updateCall = jest.fn(
+const updateCall = vi.fn(
   async (_callSid: string | undefined, _params?: { status?: string; twiml?: string }) => ({
     sid: _callSid ?? "CA123",
     status: _params?.status ?? "in-progress",
@@ -105,7 +105,7 @@ class AccessTokenMock {
   };
 }
 
-const services: ServicesMock = jest.fn((serviceSid: string) => {
+const services: ServicesMock = vi.fn((serviceSid: string) => {
   twilioMockState.lastServiceSid = serviceSid;
   return mockService;
 });
@@ -119,7 +119,7 @@ const mockClient: TwilioClientMock = {
   calls,
 };
 
-const TwilioMock = jest.fn<
+const TwilioMock = vi.fn<
   TwilioClientMock,
   [string | undefined, string | undefined, ClientOpts | undefined]
 >(() => mockClient);

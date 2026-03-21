@@ -2,18 +2,18 @@ import request from "supertest";
 import { buildAppWithApiRoutes } from "../../app";
 import { pool } from "../../db";
 
-jest.mock("../../db", () => {
-  const query = jest.fn();
+vi.mock("../../db", () => {
+  const query = vi.fn();
   return {
     pool: { query },
     db: { query },
-    checkDb: jest.fn(),
+    checkDb: vi.fn(),
   };
 });
 
 const app = buildAppWithApiRoutes();
 
-const mockPool = pool as unknown as { query: jest.Mock };
+const mockPool = pool as unknown as { query: vi.Mock };
 
 describe("GET /api/client/lender-products", () => {
   beforeEach(() => {

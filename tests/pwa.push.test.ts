@@ -7,10 +7,10 @@ import { ROLES, type Role } from "../src/auth/roles";
 import { otpVerifyRequest } from "../src/__tests__/helpers/otpAuth";
 import { sendNotification } from "../src/services/pushService";
 
-jest.mock("web-push");
+vi.mock("web-push");
 
-const webPushMock = jest.requireMock("web-push") as {
-  sendNotification: jest.Mock;
+const webPushMock = vi.requireMock("web-push") as {
+  sendNotification: vi.Mock;
 };
 
 const app = buildAppWithApiRoutes();

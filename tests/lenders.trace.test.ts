@@ -19,7 +19,7 @@ describe("lenders route error logging", () => {
 
   it("returns existing error shape and logs stack with request id", async () => {
     const requestId = "lenders-trace-req";
-    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const res = await request(app || require("../src/app").default)
       .get("/api/lenders/__test-error")

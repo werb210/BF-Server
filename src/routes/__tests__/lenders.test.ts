@@ -4,22 +4,22 @@ import { pool } from "../../db";
 import { ROLES } from "../../auth/roles";
 import { signAccessToken } from "../../auth/jwt";
 
-jest.mock("../../services/lenderProductRequirementsService", () => ({
-  ensureSeedRequirementsForProduct: jest.fn().mockResolvedValue(0),
+vi.mock("../../services/lenderProductRequirementsService", () => ({
+  ensureSeedRequirementsForProduct: vi.fn().mockResolvedValue(0),
 }));
 
-jest.mock("../../db", () => {
-  const query = jest.fn();
+vi.mock("../../db", () => {
+  const query = vi.fn();
   return {
     pool: { query },
     db: { query },
-    checkDb: jest.fn(),
+    checkDb: vi.fn(),
   };
 });
 
 const app = buildAppWithApiRoutes();
 
-const mockPool = pool as unknown as { query: jest.Mock };
+const mockPool = pool as unknown as { query: vi.Mock };
 
 const userRow = {
   id: "user-1",

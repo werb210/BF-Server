@@ -35,7 +35,7 @@ describe("boot behavior", () => {
       TWILIO_AUTH_TOKEN: "test-auth-token-1234567890",
       TWILIO_VERIFY_SERVICE_SID: "VA00000000000000000000000000000000",
     };
-    let exitSpy: jest.SpyInstance | null = null;
+    let exitSpy: vi.SpyInstance | null = null;
 
     try {
       exitSpy = jest

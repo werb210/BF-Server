@@ -15,13 +15,13 @@ function captureLogs(): {
   restore: () => void;
 } {
   const entries: LogEntry[] = [];
-  const infoSpy = jest.spyOn(console, "info").mockImplementation((message) => {
+  const infoSpy = vi.spyOn(console, "info").mockImplementation((message) => {
     entries.push({ level: "info", payload: JSON.parse(String(message)) });
   });
-  const warnSpy = jest.spyOn(console, "warn").mockImplementation((message) => {
+  const warnSpy = vi.spyOn(console, "warn").mockImplementation((message) => {
     entries.push({ level: "warn", payload: JSON.parse(String(message)) });
   });
-  const errorSpy = jest.spyOn(console, "error").mockImplementation((message) => {
+  const errorSpy = vi.spyOn(console, "error").mockImplementation((message) => {
     entries.push({ level: "error", payload: JSON.parse(String(message)) });
   });
 

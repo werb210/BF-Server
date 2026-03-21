@@ -84,10 +84,10 @@ describe("OTP verify contract", () => {
     let app: Express;
     vi.isolateModules(() => {
       vi.mock("../../src/modules/auth/otp.service", () => {
-        const actual = jest.requireActual("../../src/modules/auth/otp.service");
+        const actual = vi.requireActual("../../src/modules/auth/otp.service");
         return {
           ...actual,
-          verifyOtpCode: jest.fn().mockResolvedValue({
+          verifyOtpCode: vi.fn().mockResolvedValue({
             ok: true,
             token: "",
             refreshToken: "",

@@ -6,8 +6,8 @@ import { pool } from "../src/db";
 import { ROLES, type Role } from "../src/auth/roles";
 
 type TwilioMockState = {
-  createVerification: jest.Mock;
-  createVerificationCheck: jest.Mock;
+  createVerification: vi.Mock;
+  createVerificationCheck: vi.Mock;
 };
 
 const TEST_PHONE = "+15555555555";
