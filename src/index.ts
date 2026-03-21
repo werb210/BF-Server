@@ -1,5 +1,6 @@
 import "./env";
 import express from "express";
+import { randomUUID } from "crypto";
 
 import { AUTH_CONTRACT } from "./contracts/auth.contract";
 import { DOCUMENT_CONTRACT } from "./contracts/document.contract";
@@ -24,6 +25,14 @@ function assertContract() {
 assertContract();
 
 const app = express();
+
+app.use((req, res, next) => {
+  const requestId = req.headers["x-request-id"] || randomUUID();
+  req.requestId = requestId as string;
+  req.id = requestId as string;
+  res.setHeader("x-request-id", requestId);
+  next();
+});
 
 app.use(express.json());
 app.use(requestContext);

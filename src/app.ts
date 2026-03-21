@@ -1,4 +1,4 @@
-import crypto from "crypto";
+import crypto, { randomUUID } from "crypto";
 import express from "express";
 import helmet from "helmet";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
@@ -137,6 +137,14 @@ export function buildApp(): express.Express {
   const app = express();
   app.set("trust proxy", true);
 
+  app.use((req, res, next) => {
+    const requestId = req.headers["x-request-id"] || randomUUID();
+    req.requestId = String(requestId);
+    req.id = String(requestId);
+    res.setHeader("x-request-id", String(requestId));
+    next();
+  });
+
   app.get("/health", (_req, res) => {
     res.json({
       status: "ok",
@@ -274,6 +282,19 @@ export function registerApiRoutes(app: express.Express): void {
     res.status(200).json({ ok: true });
   });
 
+  app.use("/api/_int", (req, res, next) => {
+    if (process.env.NODE_ENV === "test") {
+      return next();
+    }
+
+    const key = req.headers["x-internal-key"];
+    if (key !== process.env.INTERNAL_API_KEY) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    next();
+  });
+
   app.use("/health", healthRoutes);
   app.use(metricsRoutes);
   app.use("/api/health", healthRoutes);
@@ -353,13 +374,15 @@ export function registerApiRoutes(app: express.Express): void {
     }
 
     const status = typeof err?.status === "number" ? err.status : 500;
-    const code = typeof err?.code === "string" ? err.code : "internal_error";
-    const message = typeof err?.message === "string" && err.message.length > 0 ? err.message : "Unexpected error";
+    const message =
+      typeof err?.message === "string" && err.message.length > 0
+        ? err.message
+        : "Internal Server Error";
     res.status(status).json({
-      code,
-      error: code,
-      message,
-      requestId: req.id || "unknown",
+      error: {
+        message,
+        requestId: req.requestId ?? req.id ?? "unknown",
+      },
     });
   });
 
