@@ -20,7 +20,7 @@ vi.mock("../../db", () => {
 
 const app = buildAppWithApiRoutes();
 
-const mockPool = pool as unknown as { query: vi.Mock };
+const mockPool = pool as unknown as { query: ReturnType<typeof vi.fn> };
 
 const userRow = {
   id: "user-1",

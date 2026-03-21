@@ -7,8 +7,8 @@ import { pool } from "../src/db";
 import { ROLES, type Role } from "../src/auth/roles";
 
 type TwilioMockState = {
-  createVerification: vi.Mock;
-  createVerificationCheck: vi.Mock;
+  createVerification: ReturnType<typeof vi.fn>;
+  createVerificationCheck: ReturnType<typeof vi.fn>;
 };
 
 const TEST_PHONE = "+15555555555";
