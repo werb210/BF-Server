@@ -299,9 +299,9 @@ export function registerApiRoutes(app: express.Express): void {
   app.use(metricsRoutes);
   app.use("/api/health", healthRoutes);
   app.use("/api", healthRoutes);
-  app.get("/_int/health", (_req, res) => res.status(200).json({ ok: true }));
+  app.get("/_int/health", (_req, res) => res.status(200).json({ status: "ok" }));
   app.get("/_int/runtime", (_req, res) => res.status(200).json({ ok: true }));
-  app.get("/api/_int/health", (_req, res) => res.status(200).json({ ok: true }));
+  app.get("/api/_int/health", (_req, res) => res.status(200).json({ status: "ok" }));
   app.get("/api/_int/runtime", (_req, res) => res.status(200).json({ ok: true }));
   app.get("/api/ready", (_req, res) => res.status(200).json({ ok: true }));
   app.get("/", (_req, res) => {

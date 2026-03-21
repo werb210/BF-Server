@@ -235,9 +235,7 @@ router.post("/refresh", async (req: Request, res: Response, next) => {
 });
 
 router.post("/logout", async (_req: Request, res: Response) => {
-  return res.json({
-    ok: true,
-  });
+  return res.status(204).send();
 });
 
 router.get("/me", requireAuth, requireAuthorization({ roles: ALL_ROLES }), async (req, res) => {
