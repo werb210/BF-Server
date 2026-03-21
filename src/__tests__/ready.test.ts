@@ -2,17 +2,17 @@ import request from "supertest";
 import type express from "express";
 import type { Pool } from "pg";
 
-const trackRequest = jest.fn();
-const trackDependency = jest.fn();
-const trackException = jest.fn();
-const trackEvent = jest.fn();
+const trackRequest = vi.fn();
+const trackDependency = vi.fn();
+const trackException = vi.fn();
+const trackEvent = vi.fn();
 
-jest.mock("../observability/appInsights", () => ({
+vi.mock("../observability/appInsights", () => ({
   trackRequest: (telemetry: unknown) => trackRequest(telemetry),
   trackDependency: (telemetry: unknown) => trackDependency(telemetry),
   trackException: (telemetry: unknown) => trackException(telemetry),
   trackEvent: (telemetry: unknown) => trackEvent(telemetry),
-  initializeAppInsights: jest.fn(),
+  initializeAppInsights: vi.fn(),
 }));
 
 let app: express.Express;

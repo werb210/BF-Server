@@ -1,13 +1,13 @@
 export const google = {
   auth: {
-    GoogleAuth: jest.fn().mockImplementation(() => ({})),
+    GoogleAuth: vi.fn().mockImplementation(() => ({})),
   },
-  sheets: jest.fn(() => ({
+  sheets: vi.fn(() => ({
     spreadsheets: {
-      get: jest.fn(),
+      get: vi.fn(),
       values: {
-        get: jest.fn(),
-        append: jest.fn(),
+        get: vi.fn(),
+        append: vi.fn(),
       },
     },
   })),

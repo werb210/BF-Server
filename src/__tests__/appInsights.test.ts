@@ -3,22 +3,22 @@ import request from "supertest";
 import { ROLES } from "../auth/roles";
 import { otpVerifyRequest } from "./helpers/otpAuth";
 
-const trackRequest = jest.fn();
-const trackDependency = jest.fn();
-const trackException = jest.fn();
+const trackRequest = vi.fn();
+const trackDependency = vi.fn();
+const trackException = vi.fn();
 let idempotencyCounter = 0;
 const nextIdempotencyKey = (): string => `idem-insights-${idempotencyCounter++}`;
 const validConnectionString = "InstrumentationKey=00000000-0000-0000-0000-000000000000";
 
-jest.mock("applicationinsights", () => {
+vi.mock("applicationinsights", () => {
   const chain = {
-    setAutoCollectConsole: jest.fn().mockReturnThis(),
-    setAutoCollectExceptions: jest.fn().mockReturnThis(),
-    setAutoCollectPerformance: jest.fn().mockReturnThis(),
-    setAutoCollectRequests: jest.fn().mockReturnThis(),
-    setAutoCollectDependencies: jest.fn().mockReturnThis(),
-    setSendLiveMetrics: jest.fn().mockReturnThis(),
-    start: jest.fn().mockReturnThis(),
+    setAutoCollectConsole: vi.fn().mockReturnThis(),
+    setAutoCollectExceptions: vi.fn().mockReturnThis(),
+    setAutoCollectPerformance: vi.fn().mockReturnThis(),
+    setAutoCollectRequests: vi.fn().mockReturnThis(),
+    setAutoCollectDependencies: vi.fn().mockReturnThis(),
+    setSendLiveMetrics: vi.fn().mockReturnThis(),
+    start: vi.fn().mockReturnThis(),
   };
 
   return {
@@ -27,7 +27,7 @@ jest.mock("applicationinsights", () => {
       trackDependency,
       trackException,
     },
-    setup: jest.fn(() => chain),
+    setup: vi.fn(() => chain),
   };
 });
 

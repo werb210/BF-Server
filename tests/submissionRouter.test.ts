@@ -1,9 +1,9 @@
 import { SubmissionRouter } from "../src/modules/submissions/SubmissionRouter";
 
-const submitMock = jest.fn();
+const submitMock = vi.fn();
 
-jest.mock("../src/modules/submissions/adapters/GoogleSheetSubmissionAdapter", () => ({
-  GoogleSheetSubmissionAdapter: jest.fn().mockImplementation(() => ({
+vi.mock("../src/modules/submissions/adapters/GoogleSheetSubmissionAdapter", () => ({
+  GoogleSheetSubmissionAdapter: vi.fn().mockImplementation(() => ({
     submit: submitMock,
   })),
 }));

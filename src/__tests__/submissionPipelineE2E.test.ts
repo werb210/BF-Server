@@ -182,8 +182,8 @@ afterAll(async () => {
 
 describe("submission pipeline end-to-end", () => {
   it("completes a full submission without warnings or retries", async () => {
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const { token } = await loginAsStaff();
       const applicationId = await createApplication(token);

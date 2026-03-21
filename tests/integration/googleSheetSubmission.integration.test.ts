@@ -4,10 +4,10 @@ import { createUserAccount } from "../../src/modules/auth/auth.service";
 import { ROLES } from "../../src/auth/roles";
 import { submitApplication } from "../../src/modules/lender/lender.service";
 
-const submitMock = jest.fn();
+const submitMock = vi.fn();
 
-jest.mock("../../src/modules/submissions/adapters/GoogleSheetSubmissionAdapter", () => ({
-  GoogleSheetSubmissionAdapter: jest.fn().mockImplementation(() => ({
+vi.mock("../../src/modules/submissions/adapters/GoogleSheetSubmissionAdapter", () => ({
+  GoogleSheetSubmissionAdapter: vi.fn().mockImplementation(() => ({
     submit: submitMock,
   })),
 }));

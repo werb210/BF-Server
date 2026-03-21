@@ -18,7 +18,7 @@ describe("auth me contract", () => {
   });
 
   it("accepts a valid JWT with role", async () => {
-    const querySpy = jest.spyOn(pool, "query");
+    const querySpy = vi.spyOn(pool, "query");
     const token = jwt.sign(
       { sub: "user-1", role: ROLES.STAFF, tokenVersion: 0 },
       process.env.JWT_SECRET ?? "test-access-secret",
@@ -40,7 +40,7 @@ describe("auth me contract", () => {
   });
 
   it("rejects a JWT without role", async () => {
-    const querySpy = jest.spyOn(pool, "query");
+    const querySpy = vi.spyOn(pool, "query");
     const token = jwt.sign(
       { sub: "user-2", tokenVersion: 0 },
       process.env.JWT_SECRET ?? "test-access-secret",
@@ -59,7 +59,7 @@ describe("auth me contract", () => {
   });
 
   it("rejects requests without authorization", async () => {
-    const querySpy = jest.spyOn(pool, "query");
+    const querySpy = vi.spyOn(pool, "query");
     const res = await request(app).get("/api/auth/me");
 
     expect(res.status).toBe(401);
@@ -70,7 +70,7 @@ describe("auth me contract", () => {
   });
 
   it("rejects invalid tokens", async () => {
-    const querySpy = jest.spyOn(pool, "query");
+    const querySpy = vi.spyOn(pool, "query");
     const res = await request(app)
       .get("/api/auth/me")
       .set("Authorization", "Bearer garbage");

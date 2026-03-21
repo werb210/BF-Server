@@ -11,11 +11,11 @@ import { getOcrFieldRegistry } from "../../ocr/ocrFieldRegistry";
 import { ensureOcrTestSchema, resetOcrTestSchema } from "./ocrTestSchema";
 
 const mockStorage = {
-  getBuffer: jest.fn().mockResolvedValue(Buffer.from("pdf")),
+  getBuffer: vi.fn().mockResolvedValue(Buffer.from("pdf")),
 };
 
 const mockProvider = {
-  extract: jest.fn(async (params: { fileName?: string }) => {
+  extract: vi.fn(async (params: { fileName?: string }) => {
     const fileName = params.fileName ?? "unknown";
     if (fileName.includes("financial")) {
       return {

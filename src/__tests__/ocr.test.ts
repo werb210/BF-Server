@@ -133,10 +133,10 @@ describe("ocr jobs", () => {
     });
 
     const mockProvider = {
-      extract: jest.fn().mockRejectedValue(new Error("provider_failed")),
+      extract: vi.fn().mockRejectedValue(new Error("provider_failed")),
     };
     const mockStorage = {
-      getBuffer: jest.fn().mockResolvedValue(Buffer.from("data")),
+      getBuffer: vi.fn().mockResolvedValue(Buffer.from("data")),
     };
 
     await processOcrJob(job, { provider: mockProvider, storage: mockStorage });

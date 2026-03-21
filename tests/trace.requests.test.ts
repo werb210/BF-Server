@@ -16,7 +16,7 @@ describe("request traceability", () => {
   });
 
   it("logs request start and route resolution for auth routes", async () => {
-    const logSpy = jest.spyOn(logger, "logInfo");
+    const logSpy = vi.spyOn(logger, "logInfo");
     const res = await request(app || require("../src/app").default).post("/api/auth/otp/start").send({});
     expect(res.status).toBe(204);
 

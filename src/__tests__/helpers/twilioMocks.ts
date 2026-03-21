@@ -8,19 +8,19 @@ import type {
 } from "twilio/lib/rest/verify/v2/service/verificationCheck";
 import type { ClientOpts } from "twilio/lib/base/BaseTwilio";
 
-type VerificationCreateMock = jest.MockedFunction<
+type VerificationCreateMock = vi.MockedFunction<
   (
     params: VerificationListInstanceCreateOptions
   ) => Promise<Pick<VerificationInstance, "sid" | "status">>
 >;
 
-type VerificationCheckCreateMock = jest.MockedFunction<
+type VerificationCheckCreateMock = vi.MockedFunction<
   (
     params: VerificationCheckListInstanceCreateOptions
   ) => Promise<Pick<VerificationCheckInstance, "status" | "sid">>
 >;
 
-type TwilioConstructorMock = jest.MockedFunction<
+type TwilioConstructorMock = vi.MockedFunction<
   (
     accountSid?: string,
     authToken?: string,
@@ -34,7 +34,7 @@ type TwilioConstructorMock = jest.MockedFunction<
   }
 >;
 
-type ServicesMock = jest.MockedFunction<
+type ServicesMock = vi.MockedFunction<
   (serviceSid: string) => {
     verifications: {
       create: VerificationCreateMock;
@@ -48,10 +48,10 @@ type ServicesMock = jest.MockedFunction<
 export type TwilioMockState = {
   createVerification: VerificationCreateMock;
   createVerificationCheck: VerificationCheckCreateMock;
-  createCall: jest.MockedFunction<
+  createCall: vi.MockedFunction<
     (params: { to: string; from: string; applicationSid: string }) => Promise<{ sid: string; status: string }>
   >;
-  updateCall: jest.MockedFunction<
+  updateCall: vi.MockedFunction<
     (callSid?: string, params?: { status?: string; twiml?: string }) => Promise<{ sid: string; status: string }>
   >;
   twilioConstructor: TwilioConstructorMock;

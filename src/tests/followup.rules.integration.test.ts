@@ -12,8 +12,8 @@ describe("follow-up rules integration", () => {
     const store = new InMemoryFollowUpEventStore();
     const idempotency = new InMemoryFollowUpIdempotencyStore();
 
-    const smsSender = jest.fn(async () => ({ provider: "test" }));
-    const timelineLogger = jest.fn(async () => undefined);
+    const smsSender = vi.fn(async () => ({ provider: "test" }));
+    const timelineLogger = vi.fn(async () => undefined);
 
     const handlers = createFollowUpActionHandlers({
       sendSms: smsSender,

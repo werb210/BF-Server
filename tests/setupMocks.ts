@@ -18,3 +18,24 @@ vi.mock('@/services/twilio', async () => {
   const mod = await import('./mocks/twilio');
   return { client: mod.client };
 });
+
+vi.mock('twilio', () => {
+  function TwilioMock() {
+    return {
+      verify: {
+        services: () => ({
+          verifications: {
+            create: async () => ({ sid: 'test' }),
+          },
+          verificationChecks: {
+            create: async () => ({ status: 'approved' }),
+          },
+        }),
+      },
+    };
+  }
+
+  return {
+    default: TwilioMock,
+  };
+});

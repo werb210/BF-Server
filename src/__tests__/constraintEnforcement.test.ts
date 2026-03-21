@@ -92,7 +92,7 @@ describe("constraint enforcement", () => {
 
     expect(first.status).toBe(201);
 
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const second = await request(app)
         .post("/api/users")

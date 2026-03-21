@@ -1,7 +1,7 @@
-const sendNotification = jest.fn(() => Promise.resolve());
-const setVapidDetails = jest.fn();
-const getVapidHeaders = jest.fn(() => ({}));
-const generateVAPIDKeys = jest.fn(() => ({
+const sendNotification = vi.fn(() => Promise.resolve());
+const setVapidDetails = vi.fn();
+const getVapidHeaders = vi.fn(() => ({}));
+const generateVAPIDKeys = vi.fn(() => ({
   publicKey: "test-public",
   privateKey: "test-private",
 }));
