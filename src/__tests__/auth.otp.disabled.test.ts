@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import type { Express } from "express";
 
 function buildTestApp(): Express {

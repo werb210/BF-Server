@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { randomUUID } from "crypto";
 import { get, patch, post } from "../_utils/http";
 import { authHeader, startOtp, verifyOtp } from "../_utils/auth";

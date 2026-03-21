@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import type { ClientOpts } from "twilio/lib/base/BaseTwilio";
 import type {
   VerificationInstance,

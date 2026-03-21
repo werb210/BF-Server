@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { resolveBaseUrl } from "./helpers/baseUrl";
 
 async function waitForCondition(condition: () => boolean, timeoutMs: number): Promise<void> {

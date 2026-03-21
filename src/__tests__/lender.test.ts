@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import request from "supertest";
 import { randomUUID } from "crypto";
 import { buildAppWithApiRoutes } from "../app";

@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { resetStartupState } from "../startupState";
 import { resolveBaseUrl } from "./helpers/baseUrl";
 

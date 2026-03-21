@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { pool } from "../db";
 import { recordAuditEvent } from "../modules/audit/audit.service";
 import { ensureAuditEventSchema } from "./helpers/auditSchema";

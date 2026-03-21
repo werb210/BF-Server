@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import jwt from "jsonwebtoken";
 import request from "supertest";
 import { buildAppWithApiRoutes } from "../app";

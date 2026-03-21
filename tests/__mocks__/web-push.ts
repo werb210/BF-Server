@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 const sendNotification = vi.fn(() => Promise.resolve());
 const setVapidDetails = vi.fn();
 const getVapidHeaders = vi.fn(() => ({}));

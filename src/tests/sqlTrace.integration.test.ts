@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import request from "supertest";
 import { buildAppWithApiRoutes } from "../app";
 import { pool } from "../db";

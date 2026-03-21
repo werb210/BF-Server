@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { spawn } from "child_process";
 
 function runCommand(cmd: string, args: string[]): Promise<void> {

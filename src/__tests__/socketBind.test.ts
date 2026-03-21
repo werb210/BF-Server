@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { EventEmitter } from "events";
 
 type MockServer = EventEmitter & {

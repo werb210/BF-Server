@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 describe("startup without Twilio configuration", () => {
   const originalEnv = process.env;
 

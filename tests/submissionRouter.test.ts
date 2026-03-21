@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { SubmissionRouter } from "../src/modules/submissions/SubmissionRouter";
 
 const submitMock = vi.fn();

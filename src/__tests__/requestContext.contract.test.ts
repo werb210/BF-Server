@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import * as ctx from "../middleware/requestContext";
 
 describe("requestContext exports", () => {

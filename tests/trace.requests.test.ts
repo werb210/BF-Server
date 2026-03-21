@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import request from "supertest";
 import { app } from "../src";
 import * as logger from "../src/observability/logger";

@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import request from "supertest";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "crypto";

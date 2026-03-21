@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import type { Server } from "http";
 import { buildAppWithApiRoutes } from "../../src/app";
 import { get, patch, post } from "../_utils/http";

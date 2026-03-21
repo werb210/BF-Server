@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 export const google = {
   auth: {
     GoogleAuth: vi.fn().mockImplementation(() => ({})),

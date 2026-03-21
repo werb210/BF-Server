@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 const isCodespaces =
   process.env.CODESPACES === "true" ||
   Boolean(process.env.CODESPACE_NAME) ||
