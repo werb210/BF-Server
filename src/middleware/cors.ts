@@ -25,7 +25,7 @@ export function corsMiddleware(
   );
 
   if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
+    return res.sendStatus(204);
   }
 
   next();

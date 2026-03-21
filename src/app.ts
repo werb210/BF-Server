@@ -180,6 +180,19 @@ export function buildApp(): express.Express {
 
   app.use(normalizeApiPath);
 
+  app.use((req, res, next) => {
+    if (req.path.startsWith("/api/_int")) {
+      const origin = req.headers.origin;
+      const allowed = [process.env.CLIENT_URL, process.env.PORTAL_URL];
+
+      if (origin && !allowed.includes(origin)) {
+        return res.sendStatus(403);
+      }
+    }
+
+    next();
+  });
+
   app.use((req, _res, next) => {
     req.id = String(req.headers["x-request-id"] || crypto.randomUUID());
     next();
