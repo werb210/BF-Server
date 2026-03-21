@@ -137,9 +137,6 @@ export function buildApp(): express.Express {
   const app = express();
   app.set("trust proxy", true);
 
-  app.use(express.json({ limit: "1mb" }));
-  app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-
   app.get("/health", (_req, res) => {
     res.json({
       status: "ok",
@@ -180,6 +177,19 @@ export function buildApp(): express.Express {
 
   app.use(normalizeApiPath);
 
+  app.use((req, _res, next) => {
+    req.id = String(req.headers["x-request-id"] || crypto.randomUUID());
+    next();
+  });
+
+  app.use(requestId);
+  app.use(requestLogger);
+  app.use(httpMetricsMiddleware);
+  app.use(requestContext);
+  app.use(productionLogger);
+
+  app.use(corsMiddleware);
+
   app.use((req, res, next) => {
     if (req.path.startsWith("/api/_int")) {
       const origin = req.headers.origin;
@@ -193,18 +203,8 @@ export function buildApp(): express.Express {
     next();
   });
 
-  app.use((req, _res, next) => {
-    req.id = String(req.headers["x-request-id"] || crypto.randomUUID());
-    next();
-  });
-
-  app.use(requestId);
-  app.use(requestLogger);
-  app.use(httpMetricsMiddleware);
-  app.use(requestContext);
-  app.use(productionLogger);
-
-  app.use(corsMiddleware);
+  app.use(express.json({ limit: "1mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "10mb" }));
   app.use(sessionMiddleware);
 
   app.use(helmet());
@@ -389,14 +389,6 @@ export function buildAppWithApiRoutes(): express.Express {
   return app;
 }
 
-const app = buildAppWithApiRoutes();
+export const app = buildAppWithApiRoutes();
 
 export default app;
-
-process.on("uncaughtException", (err) => {
-  console.error("UNCAUGHT EXCEPTION", err);
-});
-
-process.on("unhandledRejection", (err) => {
-  console.error("UNHANDLED REJECTION", err);
-});
