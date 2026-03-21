@@ -1,60 +1,68 @@
-import twilio from "twilio";
+import process from "node:process"
+import Twilio from "twilio"
 
-let client: ReturnType<typeof twilio> | null = null;
+let client: any | null = null
 
-function requireEnv(name: "TWILIO_ACCOUNT_SID" | "TWILIO_AUTH_TOKEN" | "TWILIO_VERIFY_SERVICE_SID"): string {
-  const value = process.env[name];
-  if (!value || !value.trim()) {
-    throw new Error("Missing required environment variable");
+function isConfigured() {
+  return !!(
+    process.env.TWILIO_ACCOUNT_SID &&
+    process.env.TWILIO_AUTH_TOKEN &&
+    process.env.TWILIO_VERIFY_SERVICE_SID
+  )
+}
+
+function getClient() {
+  if (!isConfigured()) {
+    throw new Error("Missing required environment variable")
   }
-  return value.trim();
+
+  if (!client) {
+    client = Twilio(
+      process.env.TWILIO_ACCOUNT_SID!,
+      process.env.TWILIO_AUTH_TOKEN!
+    )
+  }
+
+  return client
 }
 
-export function validateRequiredTwilioEnv(): void {
-  requireEnv("TWILIO_ACCOUNT_SID");
-  requireEnv("TWILIO_AUTH_TOKEN");
+export function getTwilioClient() {
+  return getClient()
 }
 
-function createTestTwilioClient(): ReturnType<typeof twilio> {
-  return {
-    verify: {
-      v2: {
-        services: () => ({
-          verifications: {
-            create: async () => ({ sid: "test_sid", status: "pending" }),
-          },
-          verificationChecks: {
-            create: async () => ({ status: "approved" }),
-          },
-        }),
-      },
-    },
-    api: {
-      accounts: {
-        list: async () => [],
-      },
-    },
-    messages: {
-      create: async () => ({ sid: "test_message_sid" }),
-    },
-  } as unknown as ReturnType<typeof twilio>;
+export function getVerifyServiceSid() {
+  if (!process.env.TWILIO_VERIFY_SERVICE_SID) {
+    throw new Error("Missing required environment variable")
+  }
+
+  return process.env.TWILIO_VERIFY_SERVICE_SID
 }
 
-export function getTwilioClient(): ReturnType<typeof twilio> {
-  validateRequiredTwilioEnv();
-  if (process.env.NODE_ENV === "test" || process.env.TEST_MODE === "true") return createTestTwilioClient();
+export async function startVerification(phone: string) {
+  const twilio = getClient()
 
-  if (client) return client;
-
-  const accountSid = requireEnv("TWILIO_ACCOUNT_SID");
-  const authToken = requireEnv("TWILIO_AUTH_TOKEN");
-
-  client = twilio(accountSid, authToken);
-  return client;
+  return twilio.verify.v2
+    .services(getVerifyServiceSid())
+    .verifications.create({
+      to: phone,
+      channel: "sms",
+    })
 }
 
-export function getVerifyServiceSid(): string {
-  return requireEnv("TWILIO_VERIFY_SERVICE_SID");
+export async function checkVerification(phone: string, code: string) {
+  const twilio = getClient()
+
+  return twilio.verify.v2
+    .services(getVerifyServiceSid())
+    .verificationChecks.create({
+      to: phone,
+      code,
+    })
 }
 
-validateRequiredTwilioEnv();
+/**
+ * Safe guard for tests / non-Twilio environments
+ */
+export function isTwilioAvailable() {
+  return isConfigured()
+}
