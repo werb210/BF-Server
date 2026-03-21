@@ -29,8 +29,8 @@ export function assertRequiredAuthEnv(): void {
     return;
   }
 
-  missing.forEach(key => {
-    console.warn(`Missing env var: ${key}`);
+  missing.forEach((key) => {
+    throw new Error(`Missing required env: ${key}`);
   });
 }
 

@@ -16,7 +16,7 @@ const DEFAULT_HOLD_TWIML =
 const VOICE_ENV_KEYS = [
   "TWILIO_ACCOUNT_SID",
   "TWILIO_AUTH_TOKEN",
-  "TWILIO_API_KEY",
+  "TWILIO_API_KEY_SID",
   "TWILIO_API_SECRET",
   "TWILIO_VOICE_APP_SID",
   "TWILIO_VOICE_CALLER_ID",
@@ -83,26 +83,13 @@ function getVoiceConfig(): {
   applicationSid: string;
   callerId: string;
 } {
-  const voiceConfig = {
-    accountSid: process.env.TWILIO_ACCOUNT_SID,
-    authToken: process.env.TWILIO_AUTH_TOKEN || process.env.TWILIO_API_SECRET,
-    apiKey: process.env.TWILIO_API_KEY || process.env.TWILIO_API_KEY_SID,
-    apiSecret: process.env.TWILIO_API_SECRET,
-    appSid: process.env.TWILIO_VOICE_APP_SID || "",
-    callerId:
-      process.env.TWILIO_VOICE_CALLER_ID ||
-      process.env.TWILIO_NUMBER ||
-      process.env.TWILIO_PHONE ||
-      "",
-  };
-
   return {
-    accountSid: voiceConfig.accountSid?.trim() || requireVoiceEnv("TWILIO_ACCOUNT_SID"),
-    authToken: voiceConfig.authToken?.trim() || requireVoiceEnv("TWILIO_AUTH_TOKEN"),
-    apiKey: voiceConfig.apiKey?.trim() || requireVoiceEnv("TWILIO_API_KEY"),
-    apiSecret: voiceConfig.apiSecret?.trim() || requireVoiceEnv("TWILIO_API_SECRET"),
-    applicationSid: voiceConfig.appSid.trim() || requireVoiceEnv("TWILIO_VOICE_APP_SID"),
-    callerId: voiceConfig.callerId.trim() || requireVoiceEnv("TWILIO_VOICE_CALLER_ID"),
+    accountSid: requireVoiceEnv("TWILIO_ACCOUNT_SID"),
+    authToken: requireVoiceEnv("TWILIO_AUTH_TOKEN"),
+    apiKey: requireVoiceEnv("TWILIO_API_KEY_SID"),
+    apiSecret: requireVoiceEnv("TWILIO_API_SECRET"),
+    applicationSid: requireVoiceEnv("TWILIO_VOICE_APP_SID"),
+    callerId: requireVoiceEnv("TWILIO_VOICE_CALLER_ID"),
   };
 }
 

@@ -68,17 +68,12 @@ function buildRequestMetadata(req: Request): { ip?: string; userAgent?: string }
 }
 
 const uploadHandler = safeHandler(async (req, res, next) => {
-  const applicationId =
-    req.body.applicationId ||
-    req.body.application_id;
-
-  const category =
-    req.body.category ||
-    req.body.document_category;
+  const { applicationId, category } = req.body;
 
   if (!applicationId || !category) {
     res.status(400).json({
-      error: "Missing required fields: applicationId and category",
+      error: "Missing required fields",
+      required: ["applicationId", "category"],
     });
     return;
   }

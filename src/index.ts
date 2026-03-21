@@ -6,30 +6,35 @@ import { initRedis } from "./lib/redis";
 import { ENV } from "./config/env";
 import cors from "cors";
 import authRouter from "./routes/auth";
-import documentsRouter from "./routes/documents";
+import documentRoutes from "./routes/documents";
 import routesRouter from "./routes";
+import { AUTH_CONTRACT } from "./contracts/auth.contract";
+import { DOCUMENT_CONTRACT } from "./contracts/document.contract";
 
 const app = express();
 
 app.use(express.json());
 
-const allowedOrigins = [
-  process.env.CLIENT_ORIGIN,
-  process.env.PORTAL_ORIGIN,
-].filter(Boolean) as string[];
+const allowedOrigins = (process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
 
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
       }
-      return callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
   })
 );
+
+console.log("AUTH CONTRACT:", AUTH_CONTRACT);
+console.log("DOCUMENT CONTRACT:", DOCUMENT_CONTRACT);
 
 app.get("/health", (_req, res) => {
   res.json({
@@ -50,8 +55,7 @@ app.get("/test/smoke", (_req, res) => {
 });
 
 app.use("/api/auth", authRouter);
-app.use("/api/documents", documentsRouter);
-app.use("/documents", documentsRouter);
+app.use("/api/documents", documentRoutes);
 app.use("/api", routesRouter);
 
 async function safeInit() {
