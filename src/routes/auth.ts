@@ -1,7 +1,11 @@
 import express from "express";
 import { sendOtp, verifyOtp } from "../auth/otpService";
+import { AUTH_CONTRACT } from "../contracts/auth.contract";
+import { stripPrefix } from "../contracts/path";
 
 const router = express.Router();
+
+const AUTH_BASE = "/api/auth";
 
 type SessionRequest = {
   session?: {
@@ -10,7 +14,7 @@ type SessionRequest = {
   };
 };
 
-async function handleOtpStart(req: express.Request, res: express.Response) {
+async function otpStartHandler(req: express.Request, res: express.Response) {
   try {
     const { phone } = req.body;
 
@@ -23,10 +27,7 @@ async function handleOtpStart(req: express.Request, res: express.Response) {
   }
 }
 
-router.post("/otp/start", handleOtpStart);
-
-
-router.post("/otp/verify", async (req, res) => {
+async function otpVerifyHandler(req: express.Request, res: express.Response) {
   try {
     const { phone, code } = req.body;
 
@@ -45,6 +46,16 @@ router.post("/otp/verify", async (req, res) => {
     console.error("[OTP VERIFY ERROR]", err);
     return res.status(500).json({ ok: false });
   }
-});
+}
+
+router.post(
+  stripPrefix(AUTH_CONTRACT.OTP_START, AUTH_BASE),
+  otpStartHandler
+);
+
+router.post(
+  stripPrefix(AUTH_CONTRACT.OTP_VERIFY, AUTH_BASE),
+  otpVerifyHandler
+);
 
 export default router;

@@ -1,6 +1,9 @@
 import "./env";
 import express from "express";
 
+import { AUTH_CONTRACT } from "./contracts/auth.contract";
+import { DOCUMENT_CONTRACT } from "./contracts/document.contract";
+
 import { testDb } from "./lib/db";
 import { initRedis } from "./lib/redis";
 import { ENV } from "./config/env";
@@ -8,8 +11,14 @@ import cors from "cors";
 import authRouter from "./routes/auth";
 import documentRoutes from "./routes/documents";
 import routesRouter from "./routes";
-import { AUTH_CONTRACT } from "./contracts/auth.contract";
-import { DOCUMENT_CONTRACT } from "./contracts/document.contract";
+
+function assertContract() {
+  if (!AUTH_CONTRACT.OTP_START || !DOCUMENT_CONTRACT.UPLOAD) {
+    throw new Error("Contract not initialized");
+  }
+}
+
+assertContract();
 
 const app = express();
 
