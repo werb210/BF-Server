@@ -12,7 +12,11 @@ export function normalizeOtpPhone(phone: unknown): string | null {
   }
 
   try {
-    return normalizePhone(phone);
+    const normalized = normalizePhone(phone);
+    if (!normalized.startsWith("+")) {
+      throw new Error("invalid_phone");
+    }
+    return normalized;
   } catch {
     return null;
   }

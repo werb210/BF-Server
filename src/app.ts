@@ -64,7 +64,7 @@ export function createApp(): Express {
   app.use("/api/auth", authRoutes);
   app.use("/api/lenders", lendersRoutes);
   app.use("/api/lender-products", lenderProductsRoutes);
-  app.use("/api/applications", applicationsRoutes);
+  app.use("/api/client/submissions", applicationsRoutes);
   app.use("/api/documents", documentsRoutes);
   app.use("/api/telephony", telephonyRoutes);
   app.use("/api/_int", internalBrowserBlocker, internalRoutes);
@@ -89,7 +89,7 @@ export function registerApiRoutes(app: Express): void {
   app.use("/api/auth", authRoutes);
   app.use("/api/lenders", lendersRoutes);
   app.use("/api/lender-products", lenderProductsRoutes);
-  app.use("/api/applications", applicationsRoutes);
+  app.use("/api/client/submissions", applicationsRoutes);
   app.use("/api/documents", documentsRoutes);
   app.use("/api/telephony", telephonyRoutes);
   app.use("/api/_int", internalBrowserBlocker, internalRoutes);

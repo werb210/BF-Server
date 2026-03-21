@@ -147,7 +147,7 @@ router.get(
 
     token.addGrant(
       new VoiceGrant({
-        outgoingApplicationSid: process.env.TWILIO_VOICE_APP_SID ?? process.env.TWILIO_TWIML_APP_SID,
+        outgoingApplicationSid: process.env.TWILIO_VOICE_APP_SID,
         incomingAllow: true,
       })
     );

@@ -76,7 +76,7 @@ router.get("/voice/token", requireAuth, (req, res) => {
   const accountSid = process.env.TWILIO_ACCOUNT_SID!;
   const apiKey = process.env.TWILIO_API_KEY!;
   const apiSecret = process.env.TWILIO_API_SECRET!;
-  const twimlAppSid = process.env.TWILIO_TWIML_APP_SID!;
+  const twimlAppSid = process.env.TWILIO_VOICE_APP_SID!;
 
   const token = new AccessToken(accountSid, apiKey, apiSecret, { identity });
 

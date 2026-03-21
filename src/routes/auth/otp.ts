@@ -1,4 +1,5 @@
-import { Router } from 'express';
+import { Router } from "express";
+import jwt from "jsonwebtoken";
 
 const router = Router();
 
@@ -16,14 +17,14 @@ function getTwilio() {
 /**
  * START OTP
  */
-router.post('/start', async (req, res) => {
+router.post("/start", async (req, res) => {
   const { phone } = req.body || {};
 
   if (!phone) {
     return res.status(400).json({
-      success: false,
-      code: 'invalid_request',
-      message: 'phone required',
+      ok: false,
+      code: "invalid_request",
+      message: "phone required",
     });
   }
 
@@ -33,19 +34,19 @@ router.post('/start', async (req, res) => {
     if (twilio?.verify?.services) {
       await twilio.verify.services().verifications.create({
         to: phone,
-        channel: 'sms',
+        channel: "sms",
       });
     }
 
     return res.status(200).json({
-      success: true,
-      status: 'pending',
+      ok: true,
+      status: "pending",
     });
   } catch (err) {
     return res.status(400).json({
-      success: false,
-      code: 'otp_start_failed',
-      message: 'OTP start failed',
+      ok: false,
+      code: "otp_start_failed",
+      message: "OTP start failed",
     });
   }
 });
@@ -53,14 +54,14 @@ router.post('/start', async (req, res) => {
 /**
  * VERIFY OTP
  */
-router.post('/verify', async (req, res) => {
+router.post("/verify", async (req, res) => {
   const { phone, code } = req.body || {};
 
   if (!phone || !code) {
     return res.status(400).json({
-      success: false,
-      code: 'invalid_request',
-      message: 'phone and code required',
+      ok: false,
+      code: "invalid_request",
+      message: "phone and code required",
     });
   }
 
@@ -73,24 +74,29 @@ router.post('/verify', async (req, res) => {
         code,
       });
 
-      if (result.status !== 'approved') {
+      if (result.status !== "approved") {
         return res.status(400).json({
-          success: false,
-          code: 'otp_invalid',
-          message: 'OTP invalid',
+          ok: false,
+          code: "otp_invalid",
+          message: "OTP invalid",
         });
       }
     }
 
+    const token = jwt.sign({ sub: String(phone) }, process.env.JWT_SECRET ?? "dev-secret", {
+      algorithm: "HS256",
+      expiresIn: "1h",
+    });
+
     return res.status(200).json({
-      success: true,
-      token: 'mock-token',
+      ok: true,
+      token,
     });
   } catch (err) {
     return res.status(400).json({
-      success: false,
-      code: 'otp_verify_failed',
-      message: 'OTP verify failed',
+      ok: false,
+      code: "otp_verify_failed",
+      message: "OTP verify failed",
     });
   }
 });

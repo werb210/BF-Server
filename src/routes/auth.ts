@@ -10,7 +10,6 @@ router.get("/me", requireAuth, authMeHandler);
 router.post("/logout", (_req, res) => {
   res.clearCookie("token");
   res.clearCookie("accessToken");
-  res.clearCookie("session");
   res.status(204).send();
 });
 
