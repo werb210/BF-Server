@@ -270,6 +270,9 @@ export async function createLender(
         return String(entry.value);
       }
       values.push(entry.value);
+      if (entry.name === "status") {
+        return `$${values.length}::lender_status`;
+      }
       return `$${values.length}`;
     });
     return { values, placeholders };
@@ -413,8 +416,10 @@ export async function updateLender(
     return getLenderById(params.id);
   }
 
-  const setClauses = updates.map(
-    (entry, index) => `${entry.name} = $${index + 1}`
+  const setClauses = updates.map((entry, index) =>
+    entry.name === "status"
+      ? `${entry.name} = $${index + 1}::lender_status`
+      : `${entry.name} = $${index + 1}`
   );
   const values = updates.map((entry) => entry.value);
   values.push(params.id);
