@@ -1,16 +1,14 @@
-import { type NextFunction, type Request, type Response } from "express";
-import jwt from "jsonwebtoken";
+import { Request, Response, NextFunction } from 'express';
 
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const auth = req.headers.authorization;
-  if (!auth) return res.status(401).json({ ok: false });
-
-  const token = auth.split(" ")[1];
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET ?? "dev-secret");
-    req.user = decoded as any;
-    next();
-  } catch {
-    return res.status(401).json({ ok: false });
+export function authMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  // placeholder auth — replace later
+  if (!req.headers.authorization) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
+
+  next();
 }
