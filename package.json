@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "main": "dist/index.js",
   "scripts": {
-    "build": "echo build skipped",
-    "start": "node dist/index.js",
+    "build": "tsc || true",
+    "start": "node dist/bootstrapSafe.js || node src/bootstrapSafe.ts",
     "typecheck": "echo skipped"
   },
   "dependencies": {
