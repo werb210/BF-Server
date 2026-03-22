@@ -15,6 +15,7 @@ import { runMigrations } from "../db/migrationRunner";
 import { runMigrations as runStartupMigrations } from "../startup/runMigrations";
 import { pool } from "../db";
 import { assertDatabaseHealthy } from "../health/dbHealth";
+import { runSelfTest } from "../_internal/selfTest";
 
 let processHandlersInstalled = false;
 let server: Server | null = null;
@@ -108,6 +109,7 @@ export async function startServer() {
       }
       logger.info("server_listening", { port });
       console.log(`Server running on port ${port}`);
+      void runSelfTest(port);
       resolve(listener);
     });
   });
