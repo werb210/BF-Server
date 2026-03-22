@@ -1,15 +1,17 @@
-import { Request, Response } from "express";
+import { Handler } from "../types/handler";
+import { lenderProductsService } from "../services/lenderProducts/lenderProducts.service";
 
-export const listLenderProducts = async (_req: Request, res: Response): Promise<void> => {
-  res.json({ success: true, data: [] });
+export const listLenderProducts: Handler = async (_req, res) => {
+  const data = await lenderProductsService.list();
+  res.json({ success: true, data });
 };
 
-export const listLenderProductsHandler = listLenderProducts;
-
-export const createLenderProductHandler = async (_req: Request, res: Response): Promise<void> => {
-  res.json({ success: true, created: true });
+export const createLenderProductHandler: Handler = async (req, res) => {
+  const data = await lenderProductsService.create(req.body);
+  res.json({ success: true, data });
 };
 
-export const updateLenderProductHandler = async (_req: Request, res: Response): Promise<void> => {
-  res.json({ success: true, updated: true });
+export const updateLenderProductHandler: Handler = async (req, res) => {
+  const data = await lenderProductsService.update(req.params.id, req.body);
+  res.json({ success: true, data });
 };
