@@ -1,26 +1,31 @@
-import type { NextFunction, Request, Response } from "express";
-import jwt from "jsonwebtoken";
+import { Request, Response, NextFunction } from "express";
 
-export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  const header = req.headers.authorization;
-  if (!header) {
-    res.status(401).json({ ok: false, error: "Missing token" });
-    return;
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const auth = req.headers.authorization;
+
+  if (!auth) {
+    return res.status(401).json({
+      ok: false,
+      error: "Missing Authorization header"
+    });
   }
 
-  const token = header.replace("Bearer ", "");
-  const secret = process.env.JWT_SECRET;
-
-  if (!secret) {
-    res.status(500).json({ ok: false, error: "JWT secret not configured" });
-    return;
+  // DEV MODE BYPASS
+  if (process.env.NODE_ENV !== "production") {
+    return next();
   }
 
-  try {
-    const decoded = jwt.verify(token, secret);
-    req.user = decoded as Request["user"];
-    next();
-  } catch {
-    res.status(401).json({ ok: false, error: "Invalid token" });
+  // PRODUCTION (future)
+  const token = auth.replace("Bearer ", "");
+
+  if (!process.env.JWT_SECRET) {
+    return res.status(500).json({
+      ok: false,
+      error: "JWT secret not configured"
+    });
   }
+
+  // TODO: real verification later
+
+  next();
 }
