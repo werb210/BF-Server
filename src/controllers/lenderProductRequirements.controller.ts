@@ -1,16 +1,20 @@
-import { Request, Response } from 'express';
+import { Request, Response } from "express";
 
-export const getLenderRequirements = async (req: Request, res: Response) => {
-  try {
-    return res.status(200).json({
-      success: true,
-      data: []
-    });
-  } catch (err) {
-    console.error('REQ ERROR', err);
-    return res.status(500).json({ success: false });
-  }
+export const listLenderProductRequirementsHandler = async (_req: Request, res: Response): Promise<void> => {
+  res.json({ success: true, data: [] });
 };
 
-// compatibility export
-export const listLenderProductRequirementsHandler = getLenderRequirements;
+export const createLenderProductRequirementHandler = async (_req: Request, res: Response): Promise<void> => {
+  res.json({ success: true, created: true });
+};
+
+export const updateLenderProductRequirementHandler = async (_req: Request, res: Response): Promise<void> => {
+  res.json({ success: true, updated: true });
+};
+
+export const deleteLenderProductRequirementHandler = async (_req: Request, res: Response): Promise<void> => {
+  res.json({ success: true, deleted: true });
+};
+
+// aliases (backward compatibility)
+export const getLenderRequirements = listLenderProductRequirementsHandler;

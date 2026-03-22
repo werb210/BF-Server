@@ -1,22 +1,21 @@
-import "express";
-import { type AuthenticatedUser } from "./auth";
+import { JwtPayload } from "jsonwebtoken";
 
-declare module "express-serve-static-core" {
-  interface Request {
-    id: string;
-    requestId?: string;
-    log?: {
-      info: (...args: any[]) => void;
-      error: (...args: any[]) => void;
-      warn: (...args: any[]) => void;
-      debug: (...args: any[]) => void;
-    };
-  }
+export interface AuthenticatedUser extends JwtPayload {
+  id?: string;
+  email?: string;
 }
 
 declare global {
   namespace Express {
     interface Request {
+      id: string;
+      requestId?: string;
+      log?: {
+        info: (...args: any[]) => void;
+        error: (...args: any[]) => void;
+        warn: (...args: any[]) => void;
+        debug: (...args: any[]) => void;
+      };
       user?: AuthenticatedUser;
     }
   }

@@ -8,7 +8,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const token = auth.split(" ")[1];
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET ?? "dev-secret");
-    (req ).user = decoded;
+    req.user = decoded as any;
     next();
   } catch {
     return res.status(401).json({ ok: false });

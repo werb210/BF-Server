@@ -1,17 +1,13 @@
-import { Request, Response } from 'express';
+import { Request, Response } from "express";
 
-export const aiHandler = async (req: Request, res: Response) => {
-  try {
-    return res.status(200).json({
-      success: true,
-      message: 'AI endpoint alive',
-      data: null
-    });
-  } catch (err) {
-    console.error('AI ERROR', err);
-    return res.status(500).json({ success: false });
-  }
+export const aiHandler = async (_req: Request, res: Response): Promise<void> => {
+  res.json({ success: true, message: "AI alive" });
 };
 
-// compatibility export
+export const chat = aiHandler;
+export const closeSession = aiHandler;
+export const createContinuation = aiHandler;
+export const escalate = aiHandler;
+
+// alias for older routes
 export const tagStartupInterest = aiHandler;
