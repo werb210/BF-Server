@@ -103,7 +103,7 @@ export function clearDbTestFailureInjection(): void {
 
 pool.on("connect", () => logInfo("db_client_connected"));
 
-pool.on("error", (err) => {
+pool.on("error", (err: any) => {
   markNotReady("db_unavailable");
   logWarn("db_connection_error", { message: err.message });
 });
