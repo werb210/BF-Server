@@ -9,31 +9,31 @@ import { validateStartup } from "./startup/validateStartup";
 const app = express();
 
 // ===============================
-// VALIDATE ENV (FIRST)
+// STARTUP VALIDATION
 // ===============================
 validateStartup();
 
 // ===============================
-// CORE MIDDLEWARE
+// MIDDLEWARE ORDER (CRITICAL)
 // ===============================
-app.use(express.json());
 app.use(requestContextMiddleware);
+app.use(express.json());
 app.use(corsMiddleware);
 
 // ===============================
-// HEALTH (ALWAYS FIRST ROUTE)
+// HEALTH
 // ===============================
 app.get("/health", (req, res) => {
   res.json({ ok: true });
 });
 
 // ===============================
-// API ROUTES
+// ROUTES
 // ===============================
 registerRoutes(app);
 
 // ===============================
-// NOT FOUND (AFTER ROUTES)
+// NOT FOUND
 // ===============================
 app.use(notFound);
 
@@ -43,7 +43,7 @@ app.use(notFound);
 app.use(errorHandler);
 
 // ===============================
-// START SERVER (LAST)
+// START
 // ===============================
 const PORT = process.env.PORT || 8080;
 
