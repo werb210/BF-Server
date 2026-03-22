@@ -1,30 +1,39 @@
 import express from "express";
 import jwt from "jsonwebtoken";
 import { ok, fail } from "../../utils/response.js";
+import { requireFields } from "../../middleware/validate.js";
 
 const router = express.Router();
 
-router.post("/start", async (req, res) => {
+let otpStore = {};
+
+router.post("/start", requireFields(["phone"]), (req, res) => {
   const { phone } = req.body;
-  if (!phone) return res.status(400).json(fail("Missing phone"));
+
+  const code = "123456"; // dev mode
+  otpStore[phone] = code;
 
   return res.json(ok({ message: "OTP sent" }));
 });
 
-router.post("/verify", async (req, res) => {
+router.post("/verify", requireFields(["phone", "code"]), (req, res) => {
   const { phone, code } = req.body;
-  if (!phone || !code) return res.status(400).json(fail("Missing fields"));
 
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return res.status(500).json(fail("JWT secret not configured", 500));
+  if (otpStore[phone] !== code) {
+    return res.status(401).json(fail("Invalid OTP"));
+  }
 
-  const token = jwt.sign({ phone }, secret, { expiresIn: "1h" });
+  const token = jwt.sign({ phone }, process.env.JWT_SECRET, {
+    expiresIn: "1h"
+  });
+
+  delete otpStore[phone];
 
   return res.json(
     ok({
       token,
       user: { phone },
-      nextPath: "/dashboard",
+      nextPath: "/dashboard"
     })
   );
 });

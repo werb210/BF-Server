@@ -1,16 +1,12 @@
-import type { NextFunction, Request, RequestHandler, Response } from "express";
-import type { ObjectSchema } from "joi";
-import { errorResponse } from "./response";
-
-export function validateBody(schema: ObjectSchema): RequestHandler {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const { error } = schema.validate(req.body, { abortEarly: false });
-    if (error) {
-      return errorResponse(
-        res,
-        400,
-        error.details.map((detail) => detail.message).join("; ")
-      );
+export function requireFields(fields) {
+  return (req, res, next) => {
+    for (const field of fields) {
+      if (!req.body[field]) {
+        return res.status(400).json({
+          ok: false,
+          error: `Missing field: ${field}`
+        });
+      }
     }
     next();
   };
