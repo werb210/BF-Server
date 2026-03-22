@@ -17,6 +17,7 @@ import { getPushStatus } from "../services/pushService";
 import { replaySyncBatch } from "../services/pwaSyncService";
 import { pool } from "../db";
 import { ALL_ROLES, ROLES } from "../auth/roles";
+import { toStringSafe } from "../utils/toStringSafe";
 
 const router = Router();
 const DEFAULT_NOTIFICATION_LIMIT = 50;
@@ -137,8 +138,8 @@ router.get(
   requireAuthorization({ roles: ALL_ROLES }),
   perUserNotificationReadLimiter,
   safeHandler(async (req, res, next) => {
-    const limitRaw = typeof req.query.limit === "string" ? Number(req.query.limit) : DEFAULT_NOTIFICATION_LIMIT;
-    const offsetRaw = typeof req.query.offset === "string" ? Number(req.query.offset) : 0;
+    const limitRaw = typeof toStringSafe(req.query.limit) === "string" ? Number(toStringSafe(req.query.limit)) : DEFAULT_NOTIFICATION_LIMIT;
+    const offsetRaw = typeof toStringSafe(req.query.offset) === "string" ? Number(toStringSafe(req.query.offset)) : 0;
     const limit = Number.isFinite(limitRaw)
       ? Math.min(MAX_NOTIFICATION_LIMIT, Math.max(1, Math.floor(limitRaw)))
       : DEFAULT_NOTIFICATION_LIMIT;
@@ -168,7 +169,7 @@ router.post(
   requireAuthorization({ roles: ALL_ROLES }),
   perUserNotificationAckLimiter,
   safeHandler(async (req, res, next) => {
-    const id = req.params.id;
+    const id = toStringSafe(req.params.id);
     if (!id) {
       throw new AppError("validation_error", "id is required.", 400);
     }

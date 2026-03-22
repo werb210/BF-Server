@@ -31,10 +31,12 @@ function getEnvKillSwitch(key: OpsKillSwitchKey): boolean {
 export async function listKillSwitches(): Promise<
   Array<{ key: OpsKillSwitchKey; enabled: boolean; envEnabled: boolean; dbEnabled: boolean }>
 > {
-  const result = await pool.query<{ key: OpsKillSwitchKey; enabled: boolean }>(
+  const result = await pool.query<{ key: OpsKillSwitchKey; enabled: unknown }>(
     "select key, enabled from ops_kill_switches"
   );
-  const dbMap = new Map(result.rows.map((row) => [row.key, row.enabled]));
+  const dbMap = new Map<OpsKillSwitchKey, boolean>(
+    result.rows.map((row) => [row.key, Boolean(row.enabled)])
+  );
   return OPS_KILL_SWITCH_KEYS.map((key) => {
     const envEnabled = getEnvKillSwitch(key);
     const dbEnabled = dbMap.get(key) ?? false;

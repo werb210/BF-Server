@@ -2,6 +2,7 @@ import { type Request, type Response } from "express";
 import { logError } from "../../observability/logger";
 import { respondOk } from "../../utils/respondOk";
 import { getCompanies, getCompanyById } from "./companies.service";
+import { toStringSafe } from "../../utils/toStringSafe";
 
 function logCrmError(event: string, error: unknown): void {
   logError(event, {
@@ -29,7 +30,7 @@ export async function handleGetCompanyById(
   res: Response
 ): Promise<void> {
   try {
-    const companyId = req.params.id;
+    const companyId = toStringSafe(req.params.id);
     if (!companyId) {
       res.status(400).json({
         code: "validation_error",

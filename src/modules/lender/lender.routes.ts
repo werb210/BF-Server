@@ -5,6 +5,7 @@ import { AppError } from "../../middleware/errors";
 import { getSubmissionStatus, submitApplication } from "./lender.service";
 import { lenderSubmissionRateLimit } from "../../middleware/rateLimit";
 import { safeHandler } from "../../middleware/safeHandler";
+import { toStringSafe } from "../../utils/toStringSafe";
 
 const router = Router();
 
@@ -83,7 +84,7 @@ router.get(
   requireAuth,
   requireCapability([CAPABILITIES.LENDER_SUBMIT]),
   safeHandler(async (req, res, next) => {
-    const submissionId = req.params.id;
+    const submissionId = toStringSafe(req.params.id);
     if (!submissionId) {
       throw new AppError("validation_error", "submission id is required.", 400);
     }

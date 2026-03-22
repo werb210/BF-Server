@@ -1,6 +1,7 @@
 import express, { Request, Response } from "express";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { ok, fail } from "../utils/response.js";
+import { toStringSafe } from "../utils/toStringSafe";
 
 const router = express.Router();
 
@@ -27,7 +28,7 @@ router.post("/upload", requireAuth, (req: Request, res: Response) => {
 });
 
 router.patch("/:id/accept", requireAuth, (req: Request, res: Response) => {
-  const doc = db[req.params.id];
+  const doc = db[toStringSafe(req.params.id)];
   if (!doc) return res.status(404).json(fail("Not found"));
 
   doc.status = "accepted";
@@ -35,7 +36,7 @@ router.patch("/:id/accept", requireAuth, (req: Request, res: Response) => {
 });
 
 router.patch("/:id/reject", requireAuth, (req: Request, res: Response) => {
-  const doc = db[req.params.id];
+  const doc = db[toStringSafe(req.params.id)];
   if (!doc) return res.status(404).json(fail("Not found"));
 
   doc.status = "rejected";
