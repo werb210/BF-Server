@@ -1,16 +1,13 @@
-import { Request, Response } from 'express';
+import { Request, Response } from "express";
 
-export const getLenders = async (req: Request, res: Response) => {
-  try {
-    return res.status(200).json({
-      success: true,
-      data: []
-    });
-  } catch (err) {
-    console.error('LENDERS ERROR', err);
-    return res.status(500).json({ success: false });
-  }
-};
+export const getLenders = async (_: Request, res: Response) =>
+  res.json({ success: true, data: [] });
 
-// compatibility export
-export const listLendersHandler = getLenders;
+export const getLenderByIdHandler = getLenders;
+export const getLenderWithProducts = getLenders;
+
+export const createLender = async (_: Request, res: Response) =>
+  res.json({ success: true, created: true });
+
+export const updateLender = async (_: Request, res: Response) =>
+  res.json({ success: true, updated: true });
