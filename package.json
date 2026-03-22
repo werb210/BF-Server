@@ -7,7 +7,7 @@
     "start": "node dist/server.js",
     "typecheck": "echo skipped",
     "test:endpoints": "node test-endpoints.js",
-    "dev": "ts-node src/server.ts"
+    "dev": "tsx src/index.ts"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
@@ -43,6 +43,7 @@
     "@types/uuid": "^10.0.0",
     "@types/ws": "^8.18.1",
     "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.0.0",
     "vitest": "^4.1.0"
   },
