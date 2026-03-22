@@ -1,7 +1,9 @@
-export function requireFields(fields) {
-  return (req, res, next) => {
+import { Request, Response, NextFunction } from "express";
+
+export function requireFields(fields: string[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
     for (const field of fields) {
-      if (!req.body[field]) {
+      if (!(req.body as any)[field]) {
         return res.status(400).json({
           ok: false,
           error: `Missing field: ${field}`

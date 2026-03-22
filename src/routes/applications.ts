@@ -1,42 +1,54 @@
-import express from "express";
+import express, { Request, Response } from "express";
 import { ok, fail } from "../utils/response.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 
 const router = express.Router();
 
-let db = {};
+type Application = {
+  id: string;
+  status: string;
+  createdAt: string;
+  updatedAt?: string;
+  [key: string]: any;
+};
 
-router.post("/", (req, res) => {
+const db: Record<string, Application> = {};
+
+router.post("/", (req: Request, res: Response) => {
   const id = Date.now().toString();
 
-  db[id] = {
+  const app: Application = {
     id,
     status: "started",
     createdAt: new Date().toISOString(),
     ...req.body
   };
 
-  return res.json(ok(db[id]));
+  db[id] = app;
+
+  return res.json(ok(app));
 });
 
-router.get("/:id", requireAuth, (req, res) => {
+router.get("/:id", requireAuth, (req: Request, res: Response) => {
   const app = db[req.params.id];
   if (!app) return res.status(404).json(fail("Application not found"));
 
   return res.json(ok(app));
 });
 
-router.patch("/:id", requireAuth, (req, res) => {
+router.patch("/:id", requireAuth, (req: Request, res: Response) => {
   const app = db[req.params.id];
   if (!app) return res.status(404).json(fail("Application not found"));
 
-  db[req.params.id] = {
+  const updated = {
     ...app,
     ...req.body,
     updatedAt: new Date().toISOString()
   };
 
-  return res.json(ok(db[req.params.id]));
+  db[req.params.id] = updated;
+
+  return res.json(ok(updated));
 });
 
 export default router;

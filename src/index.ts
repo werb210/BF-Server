@@ -1,20 +1,9 @@
-import { createServer, type Server } from "http";
-import { createApp } from "./app";
+import { createApp } from "./app.js";
 
-export async function startServer(): Promise<Server> {
-  const app = createApp();
-  const port = Number(process.env.PORT || 4000);
+const app = createApp();
 
-  return await new Promise<Server>((resolve) => {
-    const server = createServer(app);
-    server.listen(port, "0.0.0.0", () => resolve(server));
-  });
-}
+const PORT = process.env.PORT || 4000;
 
-export const app = createApp();
-
-if (process.env.NODE_ENV !== "test") {
-  void startServer();
-}
-
-export default app;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
