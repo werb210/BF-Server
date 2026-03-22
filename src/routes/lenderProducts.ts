@@ -74,7 +74,9 @@ router.post(
   "/:id/requirements",
   requireAuth,
   requireAuthorization({ roles: [ROLES.ADMIN] }),
-  safeHandler(createRequirementHandler)
+  safeHandler(async (req, res) => {
+    await createRequirementHandler(req, res);
+  })
 );
 
 /**
@@ -86,7 +88,9 @@ router.put(
   "/:id/requirements/:reqId",
   requireAuth,
   requireAuthorization({ roles: [ROLES.ADMIN] }),
-  safeHandler(updateRequirementHandler)
+  safeHandler(async (req, res) => {
+    await updateRequirementHandler(req, res);
+  })
 );
 
 /**
@@ -98,7 +102,9 @@ router.delete(
   "/:id/requirements/:reqId",
   requireAuth,
   requireAuthorization({ roles: [ROLES.ADMIN] }),
-  safeHandler(deleteRequirementHandler)
+  safeHandler(async (req, res) => {
+    await deleteRequirementHandler(req, res);
+  })
 );
 
 export default router;

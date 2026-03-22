@@ -163,7 +163,7 @@ export async function createApplication(params: {
     }
     throw err;
   }
-  const record = requireRow(res.rows, "application");
+  const record = requireRow<ApplicationRecord>(res.rows, "application");
   await createApplicationStageEvent({
     applicationId: record.id,
     fromStage: null,

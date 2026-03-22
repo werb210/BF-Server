@@ -19,13 +19,13 @@ const createSchema = z.object({
   lender_id: z.string().uuid(),
   product_id: z.string().uuid(),
   product_category: z.string().min(1).optional(),
-  kyc_responses: z.record(z.unknown()).optional(),
+  kyc_responses: z.record(z.string(), z.unknown()).optional(),
 });
 
 const patchSchema = z.object({
   business_name: z.string().min(1).optional(),
   requested_amount: z.number().positive().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   current_step: z.number().int().positive().optional(),
 });
 

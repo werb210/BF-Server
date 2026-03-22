@@ -119,7 +119,7 @@ router.get(
       return;
     }
     const resolvedSilo = resolveSilo(req.user?.silo);
-    const filtered = filterBySilo(lendersRows, resolvedSilo)
+    const filtered = filterBySilo<LenderRow>(lendersRows, resolvedSilo)
       .map((row) => normalizedById.get(row.id))
       .filter((entry): entry is (typeof normalized)[number] => Boolean(entry));
     res.status(200).json(filtered.filter((entry) => entry.active));
