@@ -5,7 +5,8 @@
   "scripts": {
     "build": "tsc || true",
     "start": "node dist/bootstrapSafe.js || node src/bootstrapSafe.ts",
-    "typecheck": "echo skipped"
+    "typecheck": "echo skipped",
+    "test:endpoints": "node test-endpoints.js"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
