@@ -1,23 +1,21 @@
 import express from "express";
-import otpRoutes from "./routes/auth/otp.js";
-import applicationRoutes from "./routes/applications.js";
-import documentRoutes from "./routes/documents.js";
-import telephonyRoutes from "./routes/telephony.js";
-import { errorHandler } from "./middleware/errorHandler.js";
+import apiRouter from "./api/index";
 
 export function createApp() {
   const app = express();
 
   app.use(express.json());
 
-  app.use("/api/auth/otp", otpRoutes);
-  app.use("/api/applications", applicationRoutes);
-  app.use("/api/documents", documentRoutes);
-  app.use("/api/telephony", telephonyRoutes);
+  // === API ROOT ===
+  app.use("/api", apiRouter);
 
-  app.get("/api/health", (req, res) => res.json({ ok: true }));
-
-  app.use(errorHandler);
+  // === HARD BLOCK UNKNOWN ROUTES ===
+  app.use("/api/*", (req, res) => {
+    res.status(404).json({
+      error: "INVALID_ROUTE",
+      path: req.originalUrl,
+    });
+  });
 
   return app;
 }
@@ -27,7 +25,6 @@ export function createApp() {
  * BACKWARD COMPATIBILITY LAYER
  * =========================
  */
-
 
 export function assertCorsConfig() {
   // compatibility shim: CORS is configured at middleware level elsewhere

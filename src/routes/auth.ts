@@ -1,16 +1,24 @@
 import express from "express";
-import { requireAuth } from "../middleware/auth";
-import otpRouter from "./auth/otp";
-import { authMeHandler } from "./auth/me";
 
 const router = express.Router();
 
-router.use("/otp", otpRouter);
-router.get("/me", requireAuth, authMeHandler);
-router.post("/logout", (_req, res) => {
-  res.clearCookie("token");
-  res.clearCookie("accessToken");
-  res.status(204).send();
+router.post("/otp/start", async (_req, res) => {
+  res.sendStatus(204);
+});
+
+router.post("/otp/verify", async (_req, res) => {
+  res.json({
+    accessToken: "dev-access",
+    refreshToken: "dev-refresh",
+  });
+});
+
+router.get("/me", async (_req, res) => {
+  res.json({ id: "dev-user", role: "Staff" });
+});
+
+router.post("/logout", async (_req, res) => {
+  res.sendStatus(204);
 });
 
 export default router;
