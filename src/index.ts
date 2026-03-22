@@ -1,3 +1,5 @@
+process.on("unhandledRejection", e => console.error("REJECTION", e));
+process.on("uncaughtException", e => console.error("UNCAUGHT", e));
 import { buildApp } from './app';
 
 const app = buildApp();
