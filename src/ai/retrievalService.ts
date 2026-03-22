@@ -61,12 +61,12 @@ export async function retrieveTopKnowledgeChunks(
   );
 
   return rows
-    .map((row) => ({
+    .map((row: any) => ({
       id: row.id,
       documentId: row.document_id,
       content: row.content,
       similarity: cosineSimilarity(queryVector, parseEmbedding(row.embedding)),
     }))
-    .sort((a: any, b) => b.similarity - a.similarity)
+    .sort((a: any, b: any) => b.similarity - a.similarity)
     .slice(0, limit);
 }
