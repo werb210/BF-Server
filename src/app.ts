@@ -10,7 +10,7 @@ export function createApp() {
   app.use("/api", apiRouter);
 
   // === HARD BLOCK UNKNOWN ROUTES ===
-  app.use("/api/*", (req, res) => {
+  app.use("/api/(.*)", (req, res) => {
     res.status(404).json({
       error: "INVALID_ROUTE",
       path: req.originalUrl,
