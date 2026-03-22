@@ -1,50 +1,49 @@
 import express from "express";
+import { registerRoutes } from "./routeRegistry";
+import { requestContextMiddleware } from "./middleware/requestContext";
+import { corsMiddleware } from "./middleware/cors";
+import { notFound } from "./middleware/notFound";
+import { errorHandler } from "./middleware/errorHandler";
+import { validateStartup } from "./startup/validateStartup";
 
 const app = express();
 
 // ===============================
-// BASIC MIDDLEWARE
+// VALIDATE ENV (FIRST)
 // ===============================
-app.use(express.json());
+validateStartup();
 
 // ===============================
-// HEALTH
+// CORE MIDDLEWARE
+// ===============================
+app.use(express.json());
+app.use(requestContextMiddleware);
+app.use(corsMiddleware);
+
+// ===============================
+// HEALTH (ALWAYS FIRST ROUTE)
 // ===============================
 app.get("/health", (req, res) => {
   res.json({ ok: true });
 });
 
 // ===============================
-// ROUTES (IMPORT YOUR REGISTRY HERE)
+// API ROUTES
 // ===============================
-// Example:
-// import { registerRoutes } from "./api";
-// registerRoutes(app);
+registerRoutes(app);
 
 // ===============================
-// JSON 404 (MUST BE AFTER ROUTES)
+// NOT FOUND (AFTER ROUTES)
 // ===============================
-app.use((req, res) => {
-  res.status(404).json({
-    error: "Not Found",
-    path: req.originalUrl,
-    method: req.method,
-  });
-});
+app.use(notFound);
 
 // ===============================
-// GLOBAL ERROR HANDLER (LAST)
+// ERROR HANDLER (LAST)
 // ===============================
-app.use((err: any, req: any, res: any, next: any) => {
-  console.error("Unhandled error:", err);
-
-  res.status(err.status || 500).json({
-    error: err.message || "Internal Server Error",
-  });
-});
+app.use(errorHandler);
 
 // ===============================
-// START SERVER (LAST STEP ONLY)
+// START SERVER (LAST)
 // ===============================
 const PORT = process.env.PORT || 8080;
 
