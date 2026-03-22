@@ -1,11 +1,15 @@
-export function errorHandler(err: any, req: any, res: any, next: any) {
-  if (res.headersSent) {
-    return next(err);
-  }
+import { Request, Response, NextFunction } from 'express';
+import { logger } from '../lib/logger';
 
-  res.status(err.status || 500).json({
-    error: err.message || "Internal Server Error",
-    path: req.originalUrl,
-    method: req.method,
+export function errorHandler(
+  err: unknown,
+  _req: Request,
+  res: Response,
+  _next: NextFunction
+) {
+  logger.error('Unhandled error', err);
+
+  return res.status(500).json({
+    error: 'Internal Server Error'
   });
 }

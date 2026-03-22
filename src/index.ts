@@ -1,63 +1,25 @@
-import express from "express";
-import { registerRoutes } from "./routeRegistry";
-import { requestContextMiddleware } from "./middleware/requestContext";
-import { corsMiddleware } from "./middleware/cors";
-import { notFound } from "./middleware/notFound";
-import { errorHandler } from "./middleware/errorHandler";
-import { validateStartup } from "./startup/validateStartup";
+import express from 'express';
+import cors from 'cors';
+import healthRouter from './routes/health';
+import { errorHandler } from './middleware/errorHandler';
+import { logger } from './lib/logger';
+import { ENV } from './config/env';
 
 const app = express();
 
-// ===============================
-// STARTUP VALIDATION
-// ===============================
-validateStartup();
-
-// ===============================
-// MIDDLEWARE ORDER (CRITICAL)
-// ===============================
-app.use(requestContextMiddleware);
+app.use(cors());
 app.use(express.json());
-app.use(corsMiddleware);
 
-// ===============================
-// HEALTH
-// ===============================
-app.get("/health", (req, res) => {
-  res.json({ ok: true });
+app.use('/', healthRouter);
+
+app.use((_req, res) => {
+  res.status(404).json({ error: 'Not Found' });
 });
 
-// ===============================
-// ROUTES
-// ===============================
-registerRoutes(app);
-
-// ===============================
-// NOT FOUND
-// ===============================
-app.use(notFound);
-
-// ===============================
-// ERROR HANDLER (LAST)
-// ===============================
 app.use(errorHandler);
 
-// ===============================
-// START
-// ===============================
-const PORT = process.env.PORT || 8080;
+const PORT = Number(ENV.PORT);
 
 app.listen(PORT, () => {
-  console.log(`SERVER RUNNING ON ${PORT}`);
-});
-
-// UNHANDLED_REJECTION_HANDLER
-process.on('unhandledRejection', (err) => {
-  console.error('UNHANDLED REJECTION:', err);
-  process.exit(1);
-});
-
-process.on('uncaughtException', (err) => {
-  console.error('UNCAUGHT EXCEPTION:', err);
-  process.exit(1);
+  logger.info(`Server running on port ${PORT}`);
 });
