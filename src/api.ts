@@ -1,3 +1,4 @@
+import { assertCriticalRoutes } from "./_internal/routeAudit";
 import express from "express";
 import { registerApiRouteMounts } from "./routes/routeRegistry";
 
@@ -11,8 +12,14 @@ export function buildApi() {
     res.json({ ok: true });
   });
 
+  app.get("/_int/routes", (req, res) => {
+    const { auditRoutes } = require("./_internal/routeAudit");
+    res.json(auditRoutes(app));
+  });
+
   // ROUTES (ONLY SOURCE OF TRUTH)
   registerApiRouteMounts(app);
+  assertCriticalRoutes(app);
 
   // FALLBACK
   app.use((req, res) => {
