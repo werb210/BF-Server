@@ -1,29 +1,14 @@
-import { Router } from "express";
+import express from "express";
+import { ok } from "../utils/response.js";
 
-const router = Router();
+const router = express.Router();
 
-router.get("/call-status", async (_req, res) => {
-  try {
-    res.status(200).json({
-      status: "idle",
-      activeCall: false,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error("Telephony call-status error:", error);
-
-    res.status(200).json({
-      status: "unknown",
-      activeCall: false,
-    });
-  }
+router.post("/token", (req, res) => {
+  return res.json(ok({ token: "mock-twilio-token" }));
 });
 
-router.get("/health", (_req, res) => {
-  res.status(200).json({
-    telephony: "ok",
-    timestamp: new Date().toISOString(),
-  });
+router.post("/outbound-call", (req, res) => {
+  return res.json(ok({ status: "initiated" }));
 });
 
 export default router;
