@@ -1,23 +1,19 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 
 const app = express();
 
-// BASIC MIDDLEWARE
 app.use(express.json());
 
-// HEALTH CHECK (AZURE NEEDS THIS)
-app.get('/health', (req, res) => {
+app.get('/health', (req: Request, res: Response) => {
   console.log('HEALTH CHECK HIT');
   res.status(200).send('ok');
 });
 
-// ROOT TEST
-app.get('/', (req, res) => {
+app.get('/', (req: Request, res: Response) => {
   console.log('ROOT HIT');
   res.send('server alive');
 });
 
-// PORT (CRITICAL FOR AZURE)
 const PORT = process.env.PORT || 8080;
 
 console.log('Starting server...');
