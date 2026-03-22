@@ -1,23 +1,25 @@
-import { Router } from "express";
-
-import { notFoundHandler } from "./middleware/errors";
-import { errorHandler } from "./middleware/errorHandler";
-import { requireHttps } from "./middleware/security";
-import { idempotencyMiddleware } from "./middleware/idempotency";
+import express from "express";
 import { registerApiRouteMounts } from "./routes/routeRegistry";
-import { healthHandler, readyHandler } from "./routes/ready";
 
-const router = Router();
+export function buildApi() {
+  const app = express();
 
-router.use(requireHttps);
-router.use(idempotencyMiddleware);
+  app.use(express.json());
 
-router.get("/health", healthHandler);
-router.get("/ready", readyHandler);
+  // HEALTH
+  app.get("/health", (_req, res) => {
+    res.json({ ok: true });
+  });
 
-registerApiRouteMounts(router);
+  // ROUTES (ONLY SOURCE OF TRUTH)
+  registerApiRouteMounts(app);
 
-router.use(notFoundHandler);
-router.use(errorHandler);
+  // FALLBACK
+  app.use((req, res) => {
+    res.status(404).json({ error: "not_found", path: req.path });
+  });
 
-export default router;
+  return app;
+}
+
+export default buildApi;

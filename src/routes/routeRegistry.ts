@@ -1,7 +1,7 @@
 import { type Router } from "express";
 import { ROLES, type Role } from "../auth/roles";
 import adminRoutes from "./admin";
-import applicationsRoutes from "./applications";
+import applicationsRoutes from "../modules/applications/applications.routes";
 import bankingRoutes from "./banking";
 import calendarRoutes from "./calendar";
 import callsRoutes from "./calls";
