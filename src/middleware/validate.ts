@@ -13,3 +13,6 @@ export function requireFields(fields: string[]) {
     next();
   };
 }
+
+// backward compatibility
+export const validateBody = requireFields;
