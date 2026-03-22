@@ -17,6 +17,7 @@ import { isRole } from "../../auth/roles";
 import { documentUploadRateLimit } from "../../middleware/rateLimit";
 import { safeHandler } from "../../middleware/safeHandler";
 import { logError } from "../../observability/logger";
+import { toStringSafe } from "../../utils/toStringSafe";
 
 const router = Router();
 
@@ -91,7 +92,7 @@ router.get(
     if (!role || !isRole(role)) {
       throw forbiddenError();
     }
-    const applicationId = req.params.id;
+    const applicationId = toStringSafe(req.params.id);
     if (!applicationId) {
       throw new AppError("validation_error", "application id is required.", 400);
     }
@@ -116,7 +117,7 @@ router.post(
     if (!role || !isRole(role)) {
       throw forbiddenError();
     }
-    const applicationId = req.params.id;
+    const applicationId = toStringSafe(req.params.id);
     if (!applicationId) {
       throw new AppError("validation_error", "application id is required.", 400);
     }
@@ -153,7 +154,7 @@ router.post(
       if (!role || !isRole(role)) {
         throw forbiddenError();
       }
-      const applicationId = req.params.id;
+      const applicationId = toStringSafe(req.params.id);
       if (!applicationId) {
         throw new AppError("validation_error", "application id is required.", 400);
       }
@@ -194,8 +195,8 @@ router.delete(
     if (!role || !isRole(role)) {
       throw forbiddenError();
     }
-    const applicationId = req.params.id;
-    const documentId = req.params.documentId;
+    const applicationId = toStringSafe(req.params.id);
+    const documentId = toStringSafe(req.params.documentId);
     if (!applicationId || !documentId) {
       throw new AppError("validation_error", "application id is required.", 400);
     }
@@ -228,7 +229,7 @@ router.post(
       if (!role || !isRole(role)) {
         throw forbiddenError();
       }
-      const applicationId = req.params.id;
+      const applicationId = toStringSafe(req.params.id);
       if (!applicationId) {
         throw new AppError("validation_error", "application id is required.", 400);
       }
@@ -267,9 +268,9 @@ router.post(
       if (!role || !isRole(role)) {
         throw forbiddenError();
       }
-      const applicationId = req.params.id;
-      const documentId = req.params.documentId;
-      const documentVersionId = req.params.versionId;
+      const applicationId = toStringSafe(req.params.id);
+      const documentId = toStringSafe(req.params.documentId);
+      const documentVersionId = toStringSafe(req.params.versionId);
       if (!applicationId || !documentId || !documentVersionId) {
         throw new AppError("validation_error", "application id is required.", 400);
       }
@@ -308,9 +309,9 @@ router.post(
       if (!role || !isRole(role)) {
         throw forbiddenError();
       }
-      const applicationId = req.params.id;
-      const documentId = req.params.documentId;
-      const documentVersionId = req.params.versionId;
+      const applicationId = toStringSafe(req.params.id);
+      const documentId = toStringSafe(req.params.documentId);
+      const documentVersionId = toStringSafe(req.params.versionId);
       if (!applicationId || !documentId || !documentVersionId) {
         throw new AppError("validation_error", "application id is required.", 400);
       }

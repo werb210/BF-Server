@@ -17,6 +17,7 @@ import {
   REPLAY_SCOPES,
   runReplayJob,
 } from "../modules/ops/replay.service";
+import { toStringSafe } from "../utils/toStringSafe";
 
 const router = Router();
 
@@ -51,7 +52,7 @@ router.get("/kill-switches", safeHandler(async (req, res, next) => {
 }));
 
 router.post("/kill-switches/:key/enable", safeHandler(async (req, res, next) => {
-  const key = req.params.key ?? "";
+  const key = toStringSafe(req.params.key) ?? "";
   assertKillSwitchKey(key);
   await setKillSwitch(key, true);
   await recordAuditEvent({
@@ -67,7 +68,7 @@ router.post("/kill-switches/:key/enable", safeHandler(async (req, res, next) => 
 }));
 
 router.post("/kill-switches/:key/disable", safeHandler(async (req, res, next) => {
-  const key = req.params.key ?? "";
+  const key = toStringSafe(req.params.key) ?? "";
   assertKillSwitchKey(key);
   await setKillSwitch(key, false);
   await recordAuditEvent({
@@ -83,7 +84,7 @@ router.post("/kill-switches/:key/disable", safeHandler(async (req, res, next) =>
 }));
 
 router.post("/replay/:scope", safeHandler(async (req, res, next) => {
-  const scope = req.params.scope ?? "";
+  const scope = toStringSafe(req.params.scope) ?? "";
   if (!REPLAY_SCOPES.includes(scope as (typeof REPLAY_SCOPES)[number])) {
     throw new AppError("invalid_scope", "Unsupported replay scope.", 400);
   }
@@ -107,7 +108,7 @@ router.post("/replay/:scope", safeHandler(async (req, res, next) => {
 }));
 
 router.get("/replay/:id/status", safeHandler(async (req, res, next) => {
-  const jobId = req.params.id;
+  const jobId = toStringSafe(req.params.id);
   if (!jobId) {
     throw new AppError("validation_error", "Replay job id is required.", 400);
   }

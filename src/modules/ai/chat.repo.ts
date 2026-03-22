@@ -1,3 +1,4 @@
+import { toStringSet } from "../../utils/collectionSafe";
 import { randomUUID } from "crypto";
 import { pool } from "../../db";
 
@@ -33,7 +34,7 @@ async function getTableColumns(table: string): Promise<Set<string>> {
     [table]
   );
 
-  const columns = new Set(rows.map((row) => row.column_name));
+  const columns = toStringSet(rows.map((row) => row.column_name));
   tableColumnCache.set(table, columns);
   return columns;
 }

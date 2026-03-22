@@ -1,6 +1,7 @@
 import express, { Request, Response } from "express";
 import { ok, fail } from "../utils/response.js";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { toStringSafe } from "../utils/toStringSafe";
 
 const router = express.Router();
 
@@ -30,14 +31,14 @@ router.post("/", (req: Request, res: Response) => {
 });
 
 router.get("/:id", requireAuth, (req: Request, res: Response) => {
-  const app = db[req.params.id];
+  const app = db[toStringSafe(req.params.id)];
   if (!app) return res.status(404).json(fail("Application not found"));
 
   return res.json(ok(app));
 });
 
 router.patch("/:id", requireAuth, (req: Request, res: Response) => {
-  const app = db[req.params.id];
+  const app = db[toStringSafe(req.params.id)];
   if (!app) return res.status(404).json(fail("Application not found"));
 
   const updated = {
@@ -46,7 +47,7 @@ router.patch("/:id", requireAuth, (req: Request, res: Response) => {
     updatedAt: new Date().toISOString()
   };
 
-  db[req.params.id] = updated;
+  db[toStringSafe(req.params.id)] = updated;
 
   return res.json(ok(updated));
 });

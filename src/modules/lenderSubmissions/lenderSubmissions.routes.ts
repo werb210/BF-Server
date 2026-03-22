@@ -5,6 +5,7 @@ import { AppError } from "../../middleware/errors";
 import { safeHandler } from "../../middleware/safeHandler";
 import { lenderSubmissionRateLimit } from "../../middleware/rateLimit";
 import { submitLenderSubmission } from "./lenderSubmissions.service";
+import { toStringSafe } from "../../utils/toStringSafe";
 
 const router = Router();
 
@@ -29,7 +30,7 @@ router.post(
     if (!req.user) {
       throw new AppError("missing_token", "Authorization token is required.", 401);
     }
-    const applicationId = req.params.applicationId;
+    const applicationId = toStringSafe(req.params.applicationId);
     if (!applicationId) {
       throw new AppError("missing_fields", "applicationId is required.", 400);
     }

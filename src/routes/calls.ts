@@ -6,6 +6,7 @@ import { ROLES } from "../auth/roles";
 import { AppError } from "../middleware/errors";
 import { endCall, listCalls, startCall, updateCallStatus } from "../modules/calls/calls.service";
 import { type CallStatus } from "../modules/calls/calls.repo";
+import { toStringSafe } from "../utils/toStringSafe";
 
 const router = Router();
 
@@ -134,7 +135,7 @@ router.post(
   requireAuth,
   requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
   safeHandler(async (req, res, next) => {
-    const id = req.params.id;
+    const id = toStringSafe(req.params.id);
     if (!id || !uuidSchema.safeParse(id).success) {
       throw new AppError("validation_error", "Invalid call id.", 400);
     }
@@ -163,7 +164,7 @@ router.post(
   requireAuth,
   requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
   safeHandler(async (req, res, next) => {
-    const id = req.params.id;
+    const id = toStringSafe(req.params.id);
     if (!id || !uuidSchema.safeParse(id).success) {
       throw new AppError("validation_error", "Invalid call id.", 400);
     }
@@ -191,9 +192,9 @@ router.get(
   requireAuth,
   requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
   safeHandler(async (req, res, next) => {
-    const contactId = typeof req.query.contactId === "string" ? req.query.contactId : null;
+    const contactId = typeof toStringSafe(req.query.contactId) === "string" ? toStringSafe(req.query.contactId) : null;
     const applicationId =
-      typeof req.query.applicationId === "string" ? req.query.applicationId : null;
+      typeof toStringSafe(req.query.applicationId) === "string" ? toStringSafe(req.query.applicationId) : null;
 
     if (contactId && !uuidSchema.safeParse(contactId).success) {
       throw new AppError("validation_error", "Invalid contactId.", 400);

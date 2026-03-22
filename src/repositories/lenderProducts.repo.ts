@@ -1,3 +1,4 @@
+import { toStringSet } from "../utils/collectionSafe";
 import { randomUUID } from "crypto";
 import { pool } from "../db";
 import { type PoolClient } from "pg";
@@ -27,7 +28,7 @@ async function assertLenderProductColumnsExist(params: {
          and table_name = $1`,
       [LENDER_PRODUCTS_TABLE]
     );
-    const existing = new Set(result.rows.map((row) => row.column_name));
+    const existing = toStringSet(result.rows.map((row) => row.column_name));
     const missing = params.columns.filter((column) => !existing.has(column));
     if (missing.length === 0) {
       return existing;

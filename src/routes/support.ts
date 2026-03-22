@@ -1,3 +1,4 @@
+import { toStringSet } from "../utils/collectionSafe";
 import { Router } from "express";
 import { retry, withRetry } from "../utils/retry";
 import { createSupportThread } from "../services/supportService";
@@ -20,7 +21,7 @@ async function getTableColumns(table: string): Promise<Set<string>> {
     `select column_name from information_schema.columns where table_schema = 'public' and table_name = $1`,
     [table]
   );
-  const columns = new Set(rows.map((row) => row.column_name));
+  const columns = toStringSet(rows.map((row) => row.column_name));
   tableColumnCache.set(table, columns);
   return columns;
 }

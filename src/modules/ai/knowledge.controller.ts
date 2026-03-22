@@ -1,3 +1,4 @@
+import type { MulterRequest } from "../../types/multer";
 import type { Request, Response } from "express";
 import multer from "multer";
 import { v4 as uuid } from "uuid";
@@ -15,7 +16,7 @@ const knowledgeDocs: Array<{
 }> = [];
 
 export const AIKnowledgeController = {
-  async upload(req: Request, res: Response): Promise<void> {
+  async upload(req: MulterRequest, res: Response): Promise<void> {
     const file = req.file;
 
     if (!file) {
