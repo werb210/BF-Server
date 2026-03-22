@@ -1,37 +1,27 @@
-import { Request, Response, NextFunction } from "express";
-import { ENV } from "../config/env";
+export function corsMiddleware(req: any, res: any, next: any) {
+  const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || "")
+    .split(",")
+    .map(o => o.trim())
+    .filter(Boolean);
 
-const allowedOrigins = [
-  ENV.CLIENT_URL,
-  ENV.PORTAL_URL,
-  "https://server.boreal.financial",
-  "https://staff.boreal.financial",
-  "https://client.boreal.financial",
-];
-
-export function corsMiddleware(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
   const origin = req.headers.origin;
 
   if (origin && allowedOrigins.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
 
-  res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, Authorization"
+    "Authorization, Content-Type, Idempotency-Key"
   );
+
   res.setHeader(
     "Access-Control-Allow-Methods",
-    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+    "GET, POST, PUT, PATCH, DELETE, OPTIONS"
   );
 
   if (req.method === "OPTIONS") {
-    return res.status(204).end();
+    return res.sendStatus(204);
   }
 
   next();

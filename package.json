@@ -5,7 +5,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
-    "typecheck": "echo skipped",
+    "typecheck": "tsc --noEmit",
     "test:endpoints": "node test-endpoints.js",
     "dev": "tsx src/index.ts",
     "test": "vitest --run"

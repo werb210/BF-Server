@@ -1,4 +1,4 @@
-throw new Error("startup schema repairs are permanently disabled");
+
 
 import { pool } from "../db";
 import { isTestEnvironment } from "../dbRuntime";

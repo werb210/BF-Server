@@ -1,84 +1,27 @@
+import { AsyncLocalStorage } from "async_hooks";
 import { randomUUID } from "crypto";
-import { type Request, type Response, type NextFunction } from "express";
-import {
-  getRequestContext,
-  runWithRequestContext as runWithRequestContextMiddleware,
-  type RequestContextInput,
-  withRequestContext,
-} from "../observability/requestContext";
 
-export type RequestContext = {
+type Context = {
   requestId: string;
-  route?: string;
-  start?: number;
-  method?: string;
-  path?: string;
-  startTime?: number;
-  sqlTraceEnabled?: boolean;
-  dbProcessIds?: Set<number>;
-  idempotencyKeyHash?: string;
+  path: string;
+  method: string;
 };
 
-export function requestContext(req: Request, res: Response, next: NextFunction): void {
-  const incoming = req.headers["x-request-id"];
-  const requestId = String(Array.isArray(incoming) ? incoming[0] : incoming ?? randomUUID());
+const storage = new AsyncLocalStorage<Context>();
 
-  req.id = requestId;
-  req.requestId = requestId;
-  res.setHeader("x-request-id", requestId);
-
-  runWithRequestContextMiddleware(req, res, next);
-}
-
-export function getRequestId(): string | undefined {
-  return getRequestContext()?.requestId;
-}
-
-export function getRequestRoute(): string | undefined {
-  return getRequestContext()?.path;
-}
-
-export function getRequestIdempotencyKeyHash(): string | undefined {
-  return getRequestContext()?.idempotencyKeyHash;
-}
-
-export function runWithRequestContext<T>(ctx: RequestContext, fn: () => T): T {
-  const input: RequestContextInput = {
-    requestId: ctx.requestId,
-    ...(ctx.method !== undefined ? { method: ctx.method } : {}),
-    ...(ctx.path !== undefined || ctx.route !== undefined ? { path: ctx.path ?? ctx.route } : {}),
-    ...(ctx.startTime !== undefined || ctx.start !== undefined
-      ? { startTime: ctx.startTime ?? ctx.start }
-      : {}),
-    ...(ctx.sqlTraceEnabled !== undefined ? { sqlTraceEnabled: ctx.sqlTraceEnabled } : {}),
-    ...(ctx.dbProcessIds !== undefined ? { dbProcessIds: ctx.dbProcessIds } : {}),
-    ...(ctx.idempotencyKeyHash !== undefined ? { idempotencyKeyHash: ctx.idempotencyKeyHash } : {}),
+export function requestContextMiddleware(req: any, res: any, next: any) {
+  const context: Context = {
+    requestId: req.headers["x-request-id"] || randomUUID(),
+    path: req.originalUrl,
+    method: req.method,
   };
-  return withRequestContext(input, fn);
+
+  storage.run(context, () => {
+    res.setHeader("X-Request-Id", context.requestId);
+    next();
+  });
 }
 
-export function addRequestDbProcessId(processId: number): void {
-  const store = getRequestContext();
-  if (!store) return;
-  if (!store.dbProcessIds) {
-    store.dbProcessIds = new Set<number>();
-  }
-  store.dbProcessIds.add(processId);
-}
-
-export function removeRequestDbProcessId(processId: number): void {
-  const store = getRequestContext();
-  if (!store) return;
-  store.dbProcessIds?.delete(processId);
-}
-
-export function getRequestDbProcessIds(): number[] {
-  const store = getRequestContext();
-  return store?.dbProcessIds ? Array.from(store.dbProcessIds) : [];
-}
-
-export function setRequestIdempotencyKeyHash(value: string): void {
-  const store = getRequestContext();
-  if (!store) return;
-  store.idempotencyKeyHash = value;
+export function getRequestContext(): Context | undefined {
+  return storage.getStore();
 }
