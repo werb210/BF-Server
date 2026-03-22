@@ -1,13 +1,21 @@
-import { Request, Response } from "express";
+import { Handler } from "../types/handler";
 
-export const getLenders = async (_: Request, res: Response) =>
+export const getLenders: Handler = async (_req, res) => {
   res.json({ success: true, data: [] });
+};
 
-export const getLenderByIdHandler = getLenders;
-export const getLenderWithProducts = getLenders;
+export const getLenderById: Handler = async (_req, res) => {
+  res.json({ success: true });
+};
 
-export const createLender = async (_: Request, res: Response) =>
-  res.json({ success: true, created: true });
+export const createLender: Handler = async (_req, res) => {
+  res.json({ success: true });
+};
 
-export const updateLender = async (_: Request, res: Response) =>
-  res.json({ success: true, updated: true });
+export const updateLender: Handler = async (_req, res) => {
+  res.json({ success: true });
+};
+
+export const getLenderWithProducts: Handler = async (_req, res) => {
+  res.json({ success: true });
+};
