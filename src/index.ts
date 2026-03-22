@@ -12,3 +12,10 @@ console.log('PORT:', PORT);
 app.listen(PORT, () => {
   console.log(`REAL SERVER RUNNING ON ${PORT}`);
 });
+
+// --- SYSTEM CONTRACT: GLOBAL ERROR HANDLING ---
+import { notFoundHandler } from './middleware/notFoundHandler';
+import { errorHandler } from './middleware/errorHandler';
+
+app.use(notFoundHandler);
+app.use(errorHandler);
