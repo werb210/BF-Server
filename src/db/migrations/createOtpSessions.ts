@@ -18,7 +18,7 @@ export async function createOtpSessionsTable(): Promise<void> {
         await db.query("CREATE INDEX IF NOT EXISTS idx_otp_phone ON otp_sessions(phone);");
       })
       .then(() => undefined)
-      .catch((error) => {
+      .catch((error: any) => {
         migrationPromise = null;
         throw error;
       });

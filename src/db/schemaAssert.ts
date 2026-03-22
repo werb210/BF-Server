@@ -54,6 +54,6 @@ export async function assertRequiredSchema(): Promise<void> {
     return;
   }
 
-  const missing = res.rows.map((row) => `${row.table_name}.${row.column_name}`);
+  const missing = res.rows.map((row: any) => `${row.table_name}.${row.column_name}`);
   throw new Error(`schema mismatch: missing columns: ${missing.join(", ")}`);
 }

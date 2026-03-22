@@ -83,7 +83,7 @@ export async function seedBaselineLenders(): Promise<void> {
       where table_schema = 'public'
         and table_name in ('lenders', 'lender_products')`
   );
-  const tableSet = new Set(tableRows.map((row) => row.table_name));
+  const tableSet = new Set(tableRows.map((row: any) => row.table_name));
   if (!tableSet.has("lenders") || !tableSet.has("lender_products")) {
     logInfo("baseline_lenders_seed_skipped", {
       reason: "tables_missing",
