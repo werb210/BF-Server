@@ -1,12 +1,12 @@
 export function corsMiddleware(req: any, res: any, next: any) {
-  const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || "")
+  const allowed = (process.env.CORS_ALLOWED_ORIGINS || "")
     .split(",")
-    .map(o => o.trim())
+    .map(s => s.trim())
     .filter(Boolean);
 
   const origin = req.headers.origin;
 
-  if (origin && allowedOrigins.includes(origin)) {
+  if (origin && allowed.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
 
@@ -20,8 +20,10 @@ export function corsMiddleware(req: any, res: any, next: any) {
     "GET, POST, PUT, PATCH, DELETE, OPTIONS"
   );
 
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+
   if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
+    return res.status(204).end();
   }
 
   next();
