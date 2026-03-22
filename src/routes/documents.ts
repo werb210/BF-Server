@@ -1,5 +1,5 @@
 import express, { Request, Response } from "express";
-import { requireAuth } from "../middleware/requireAuth.js";
+import { requireAuth } from "../middleware/auth.js";
 import { ok, fail } from "../utils/response.js";
 import { toStringSafe } from "../utils/toStringSafe";
 
