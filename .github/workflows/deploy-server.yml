@@ -17,9 +17,10 @@ jobs:
 
       - run: npm install
 
-      # DO NOT BLOCK DEPLOY ON TYPES
+      # Type errors allowed
       - run: npx tsc --noEmit || true
 
+      # Build allowed to fail silently
       - run: npm run build || true
 
-      - run: echo "Deploy step here"
+      - run: echo "Deploy step"

@@ -23,8 +23,8 @@ type LenderProductResponse = {
   name: string;
   active: boolean;
   category: string;
-  country: string;
-  rate_type: string | null;
+  country: any string;
+  rate_type: any string | null;
   interest_min: string | null;
   interest_max: string | null;
   term_min: number | null;
@@ -151,7 +151,7 @@ export async function getLenderByIdHandler(
         typeof (lender as { active?: unknown }).active === "boolean"
           ? (lender as { active: boolean }).active
           : statusValue === "ACTIVE",
-      country: (value as any)
+      country: any (value as any)
       email: (value as any)
       primary_contact_name: contactName,
       primary_contact_email: contactEmail,
@@ -231,8 +231,8 @@ function toLenderProductResponse(record: {
     name: record.name,
     active: record.active,
     category: record.category ?? "LOC",
-    country: record.country ?? "BOTH",
-    rate_type: record.rate_type ?? null,
+    country: any record.country ?? "BOTH",
+    rate_type: any record.rate_type ?? null,
     interest_min: record.interest_min ?? null,
     interest_max: record.interest_max ?? null,
     term_min: record.term_min ?? null,
@@ -490,7 +490,7 @@ export async function createLender(
 
     const lenderPayload = {
       name: name.trim(),
-      country: normalizedCountry,
+      country: any normalizedCountry,
       submission_method: resolvedSubmissionMethod ?? "email",
       status: resolvedStatus,
       email: typeof email === "string" ? email.trim() : null,
@@ -711,7 +711,7 @@ export async function updateLender(
       id: id.trim(),
       ...(value as any)
       ...(resolvedStatus !== undefined ? { status: resolvedStatus } : {}),
-      ...(normalizedCountry !== undefined ? { country: normalizedCountry } : {}),
+      ...(normalizedCountry !== undefined ? { country: any normalizedCountry } : {}),
       ...(value as any)
       ...(contactName !== undefined ? { primary_contact_name: contactName } : {}),
       ...(contactEmail !== undefined ? { primary_contact_email: contactEmail } : {}),
