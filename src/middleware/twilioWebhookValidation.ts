@@ -25,7 +25,13 @@ export const twilioWebhookValidation: RequestHandler = (req, res, next) => {
     return;
   }
 
-  const isValid = validateRequest(authToken, signature, resolvePublicWebhookUrl(req), (req.body ?? {}) as Record<string, unknown>);
+  const isValid = validateRequest(
+    authToken,
+    signature,
+    resolvePublicWebhookUrl(req),
+    (req.body ?? {}) as Record<string, unknown>
+  );
+
   if (!isValid) {
     res.status(403).json({ code: "invalid_signature", message: "Invalid Twilio signature." });
     return;
@@ -33,3 +39,5 @@ export const twilioWebhookValidation: RequestHandler = (req, res, next) => {
 
   next();
 };
+
+export const validateTwilioWebhook = twilioWebhookValidation;
