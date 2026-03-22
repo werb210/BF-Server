@@ -2,8 +2,8 @@ import { Router } from "express";
 
 const router = Router();
 
-router.post("/", (_req, res) => {
-  res.json({ success: true });
+router.get("/ready", async (req, res) => {
+  res.json({ status: "ready" });
 });
 
 export default router;
