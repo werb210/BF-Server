@@ -9,7 +9,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": [
-    "src/index.ts"
-  ]
+  "include": ["src"]
 }
