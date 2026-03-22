@@ -1,45 +1,45 @@
-import express from "express";
-import multer from "multer";
-import { ok, fail } from "../utils/response.js";
+import express, { Request, Response } from "express";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { ok, fail } from "../utils/response.js";
 
-const upload = multer({ dest: "uploads/" });
 const router = express.Router();
 
-let docs = {};
+type Document = {
+  id: string;
+  status: "uploaded" | "accepted" | "rejected";
+  metadata?: any;
+};
 
-router.post("/upload", upload.single("file"), (req, res) => {
-  if (!req.file) return res.status(400).json(fail("Missing file"));
+const db: Record<string, Document> = {};
 
+router.post("/upload", requireAuth, (req: Request, res: Response) => {
   const id = Date.now().toString();
 
-  docs[id] = {
+  const doc: Document = {
     id,
-    applicationId: req.body.applicationId,
-    category: req.body.category,
-    filename: req.file.filename,
-    status: "uploaded"
+    status: "uploaded",
+    metadata: req.body
   };
 
-  return res.json(ok(docs[id]));
+  db[id] = doc;
+
+  return res.json(ok(doc));
 });
 
-router.post("/:id/accept", requireAuth, (req, res) => {
-  if (!docs[req.params.id]) return res.status(404).json(fail("Not found"));
+router.patch("/:id/accept", requireAuth, (req: Request, res: Response) => {
+  const doc = db[req.params.id];
+  if (!doc) return res.status(404).json(fail("Not found"));
 
-  docs[req.params.id].status = "accepted";
-  return res.json(ok(docs[req.params.id]));
+  doc.status = "accepted";
+  return res.json(ok(doc));
 });
 
-router.post("/:id/reject", requireAuth, (req, res) => {
-  const { reason } = req.body;
+router.patch("/:id/reject", requireAuth, (req: Request, res: Response) => {
+  const doc = db[req.params.id];
+  if (!doc) return res.status(404).json(fail("Not found"));
 
-  if (!docs[req.params.id]) return res.status(404).json(fail("Not found"));
-
-  docs[req.params.id].status = "rejected";
-  docs[req.params.id].reason = reason;
-
-  return res.json(ok(docs[req.params.id]));
+  doc.status = "rejected";
+  return res.json(ok(doc));
 });
 
 export default router;

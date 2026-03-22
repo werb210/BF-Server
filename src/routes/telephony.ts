@@ -1,28 +1,19 @@
-import express from "express";
-import { ok } from "../utils/response.js";
+import express, { Request, Response } from "express";
+import { requireAuth } from "../middleware/requireAuth.js";
+import { ok, fail } from "../utils/response.js";
 
 const router = express.Router();
 
-router.post("/token", (req, res) => {
-  return res.json(ok({
-    token: "mock-token",
-    identity: "staff"
-  }));
-});
-
-router.post("/outbound-call", (req, res) => {
+router.post("/outbound-call", requireAuth, (req: Request, res: Response) => {
   const { to } = req.body;
 
   if (!to) {
-    return res.status(400).json({
-      ok: false,
-      error: "Missing 'to'"
-    });
+    return res.status(400).json(fail("Missing 'to'"));
   }
 
   return res.json(ok({
-    status: "initiated",
-    to
+    callSid: "mock-call-id",
+    status: "initiated"
   }));
 });
 

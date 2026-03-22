@@ -1,41 +1,45 @@
-import express from "express";
-import jwt from "jsonwebtoken";
+import express, { Request, Response } from "express";
 import { ok, fail } from "../../utils/response.js";
-import { requireFields } from "../../middleware/validate.js";
 
 const router = express.Router();
 
-let otpStore = {};
+type OTPEntry = {
+  code: string;
+  expires: number;
+};
 
-router.post("/start", requireFields(["phone"]), (req, res) => {
+const store: Record<string, OTPEntry> = {};
+
+router.post("/start", (req: Request, res: Response) => {
   const { phone } = req.body;
 
-  const code = "123456"; // dev mode
-  otpStore[phone] = code;
-
-  return res.json(ok({ message: "OTP sent" }));
-});
-
-router.post("/verify", requireFields(["phone", "code"]), (req, res) => {
-  const { phone, code } = req.body;
-
-  if (otpStore[phone] !== code) {
-    return res.status(401).json(fail("Invalid OTP"));
+  if (!phone) {
+    return res.status(400).json(fail("phone required"));
   }
 
-  const token = jwt.sign({ phone }, process.env.JWT_SECRET, {
-    expiresIn: "1h"
-  });
+  const code = "123456";
 
-  delete otpStore[phone];
+  store[phone] = {
+    code,
+    expires: Date.now() + 5 * 60 * 1000
+  };
 
-  return res.json(
-    ok({
-      token,
-      user: { phone },
-      nextPath: "/dashboard"
-    })
-  );
+  return res.json(ok({ sent: true }));
+});
+
+router.post("/verify", (req: Request, res: Response) => {
+  const { phone, code } = req.body;
+
+  const entry = store[phone];
+
+  if (!entry || entry.code !== code) {
+    return res.status(400).json(fail("invalid code"));
+  }
+
+  return res.json(ok({
+    token: "mock-jwt-token",
+    nextPath: "/dashboard"
+  }));
 });
 
 export default router;
