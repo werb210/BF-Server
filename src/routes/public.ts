@@ -1,7 +1,6 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { getActiveLenderCount } from "../services/publicService";
-import publicApplicationRoutes from "./publicApplication";
 import { createReadinessLead } from "../modules/readiness/readiness.service";
 
 const router = Router();
@@ -11,7 +10,6 @@ router.get("/lender-count", async (_req, res) => {
   res.json({ count });
 });
 
-
 const readinessLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20,
@@ -20,7 +18,7 @@ const readinessLimiter = rateLimit({
   skip: () => process.env.NODE_ENV === "test",
 });
 
-router.post("/readiness", readinessLimiter, async (req, res, next) => {
+router.post("/readiness", readinessLimiter, async (req, res) => {
   try {
     const { leadId } = await createReadinessLead(req.body ?? {});
     res.status(201).json({ leadId, status: "created" });
@@ -36,7 +34,5 @@ router.post("/readiness", readinessLimiter, async (req, res, next) => {
     res.status(500).json({ error: "Server error" });
   }
 });
-
-router.use(publicApplicationRoutes);
 
 export default router;
