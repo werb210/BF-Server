@@ -30,7 +30,6 @@ import { normalizeOtpPhone } from "./phone";
 import { ensureOtpTableExists } from "../../db/ensureOtpTable";
 import {
   getAccessTokenSecret,
-  getRefreshTokenExpiresIn,
   getRefreshTokenExpiresInMs,
   getRefreshTokenSecret,
   getJwtClockSkewSeconds,
