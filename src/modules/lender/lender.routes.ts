@@ -1,27 +1,13 @@
-import { Router } from "express";
-import { safeHandler } from "../../middleware/safeHandler";
-import { requireAuth } from "../../middleware/requireAuth";
-import { requireIdempotency } from "../../middleware/requireIdempotency";
+import { Router, Request, Response } from 'express';
 
 const router = Router();
 
-// Example endpoints
+router.get('/', (req: Request, res: Response) => {
+  res.json({ ok: true });
+});
 
-router.post(
-  "/send",
-  requireAuth,
-  requireIdempotency,
-  safeHandler(async (req, res) => {
-    res.json({ success: true });
-  })
-);
-
-router.get(
-  "/products",
-  requireAuth,
-  safeHandler(async (req, res) => {
-    res.json({ products: [] });
-  })
-);
+router.post('/', (req: Request, res: Response) => {
+  res.json({ ok: true });
+});
 
 export default router;
