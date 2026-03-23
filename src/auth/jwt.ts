@@ -1,5 +1,5 @@
 import jwt, { type SignOptions, type JwtPayload } from "jsonwebtoken";
-import { config, runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import { type Role, isRole } from "./roles";
 import { type Capability, isCapability } from "./capabilities";
 import { findAuthUserById, type AuthUser } from "../modules/auth/auth.repo";
@@ -113,7 +113,7 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
   try {
     decoded = jwt.verify(token, secret, {
       algorithms: ["HS256"],
-      clockTolerance: runtimeEnv.jwtClockSkewSeconds,
+      clockTolerance: config.auth.jwtClockSkewSeconds,
       issuer: JWT_ISSUER,
       audience: JWT_AUDIENCE,
     });

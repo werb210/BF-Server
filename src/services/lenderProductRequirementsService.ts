@@ -1,8 +1,8 @@
+import { config } from "@/config";
 import { AppError } from "../middleware/errors";
 import { logInfo, logWarn } from "../observability/logger";
 import { pool } from "../db";
 import { randomUUID } from "crypto";
-import { config } from "../config";
 import {
   ALWAYS_REQUIRED_DOCUMENTS,
   normalizeRequiredDocumentKey,

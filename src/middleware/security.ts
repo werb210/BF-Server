@@ -1,9 +1,8 @@
 import { type NextFunction, type Request, type Response } from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import { runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import { logger } from "../server/utils/logger";
-import { config } from "../config";
 
 function isLoopback(req: Request): boolean {
   const ip = req.ip || "";
@@ -40,7 +39,7 @@ function isAzureHttps(req: Request): boolean {
 }
 
 export function requireHttps(req: Request, res: Response, next: NextFunction): void {
-  if (!runtimeEnv.isProduction) return next();
+  if (!config.isProduction) return next();
 
   // Always allow internal routes (health/ready) and loopback
   if (isPublicHealthPath(req) || isLoopback(req) || isCodespacesRuntime()) return next();

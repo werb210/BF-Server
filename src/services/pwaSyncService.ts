@@ -17,7 +17,7 @@ import {
   normalizeRequiredDocumentKey,
   type RequiredDocumentKey,
 } from "../db/schema/requiredDocuments";
-import { runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 
 type ReplayUserContext = {
   userId: string;
@@ -261,7 +261,7 @@ function isLenderActive(lender: unknown): boolean {
 }
 
 function assertActionPayloadSize(body: unknown): void {
-  const maxBytes = runtimeEnv.pwaSyncActionMaxBytes;
+  const maxBytes = config.pwa.syncActionMaxBytes;
   const size = Buffer.byteLength(JSON.stringify(body ?? {}), "utf8");
   if (size > maxBytes) {
     throw new AppError(
@@ -432,7 +432,7 @@ export async function replaySyncBatch(params: {
   if (parsed.actions.length === 0) {
     throw new AppError("validation_error", "No actions provided.", 400);
   }
-  const maxActions = runtimeEnv.pwaSyncMaxActions;
+  const maxActions = config.pwa.syncMaxActions;
   if (parsed.actions.length > maxActions) {
     throw new AppError(
       "too_many_actions",
@@ -442,7 +442,7 @@ export async function replaySyncBatch(params: {
   }
 
   const batchSize = Buffer.byteLength(JSON.stringify(parsed), "utf8");
-  const maxBatchBytes = runtimeEnv.pwaSyncBatchMaxBytes;
+  const maxBatchBytes = config.pwa.syncBatchMaxBytes;
   if (batchSize > maxBatchBytes) {
     throw new AppError(
       "payload_too_large",

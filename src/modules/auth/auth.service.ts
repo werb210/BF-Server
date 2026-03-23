@@ -1,7 +1,6 @@
 import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
 import { createHash, randomUUID } from "crypto";
 import { type PoolClient } from "pg";
-import { config as envConfig } from "../../config";
 import {
   createUser,
   findAuthUserByPhone,
@@ -29,7 +28,7 @@ import { logError, logInfo, logWarn } from "../../observability/logger";
 import { fetchRequestId } from "../../middleware/requestContext";
 import { normalizeOtpPhone } from "./phone";
 import { ensureOtpTableExists } from "../../db/ensureOtpTable";
-import { config, runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import {
   signAccessToken,
   type AccessTokenPayload,
@@ -134,7 +133,7 @@ function verifyRefreshToken(token: string): RefreshTokenPayload {
   try {
     return jwt.verify(token, secret, {
       algorithms: ["HS256"],
-      clockTolerance: runtimeEnv.jwtClockSkewSeconds,
+      clockTolerance: config.auth.jwtClockSkewSeconds,
     }) as RefreshTokenPayload;
   } catch {
     throw new AppError("invalid_refresh_token", "Invalid refresh token.", 401);
@@ -228,7 +227,7 @@ const OTP_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const OTP_MAX_VERIFY_ATTEMPTS = 5;
 const otpAttemptState = new Map<string, { count: number; resetAt: number; lastCodeHash: string }>();
 function ensureTestOtp(phoneE164: string): string {
-  const forcedTestOtp = envConfig.auth.testOtpCode?.trim();
+  const forcedTestOtp = config.auth.testOtpCode?.trim();
   if (forcedTestOtp) {
     return forcedTestOtp;
   }
@@ -237,7 +236,7 @@ function ensureTestOtp(phoneE164: string): string {
 }
 
 function hashOtpCode(code: string): string {
-  const salt = envConfig.auth.otpHashSalt?.trim() || envConfig.twilio.authToken?.trim() || "staff-server-otp";
+  const salt = config.auth.otpHashSalt?.trim() || config.twilio.authToken?.trim() || "staff-server-otp";
   return createHash("sha256").update(`${salt}:${code}`).digest("hex");
 }
 
@@ -268,7 +267,7 @@ function clearOtpAttemptLimit(phoneE164: string): void {
 }
 
 function assertSingleVerifyAttempt(phoneE164: string): void {
-  if (runtimeEnv.isTest) {
+  if (config.env === "test") {
     return;
   }
   if (otpVerifyInFlight.has(phoneE164)) {
@@ -606,7 +605,7 @@ function resolveOtpFailure(status?: string): VerifyOtpFailure {
 }
 
 function shouldLogFullOtpPhone(): boolean {
-  return envConfig.env !== "production" || envConfig.auth.debugOtpPhone === "1";
+  return config.env !== "production" || config.auth.debugOtpPhone === "1";
 }
 
 function otpLogMeta(requestId: string, phoneE164: string): { requestId: string; phoneTail: string; normalizedPhone?: string } {
@@ -686,7 +685,7 @@ export async function startOtp(
     const serviceSid = fetchVerifyServiceSid();
     clearOtpAttemptLimit(phoneE164);
 
-    if (runtimeEnv.isTest) {
+    if (config.env === "test") {
       const generatedOtp = ensureTestOtp(phoneE164);
       await createOtpCode({
         phone: phoneE164,
@@ -854,7 +853,7 @@ export async function verifyOtpCode(params: {
     }
 
     let latestVerification = await safeFindLatestOtpVerificationByPhone(phoneE164, requestId);
-    if ((!latestVerification || !isOtpVerificationFresh(latestVerification)) && !runtimeEnv.isTest) {
+    if ((!latestVerification || !isOtpVerificationFresh(latestVerification)) && config.env !== "test") {
       logWarn("otp_verify_response", {
         ...meta,
         providerStatus: "not_checked",
@@ -893,7 +892,7 @@ export async function verifyOtpCode(params: {
           tokenCreated: false,
         });
       } catch (err) {
-        if (runtimeEnv.isTest) {
+        if (config.env === "test") {
           providerStatus = undefined;
         } else {
           const details = fetchTwilioErrorDetails(err);
@@ -913,7 +912,7 @@ export async function verifyOtpCode(params: {
         }
       }
 
-      if (runtimeEnv.isTest && providerStatus !== "approved") {
+      if (config.env === "test" && providerStatus !== "approved") {
         const otpRecord = await findLatestOtpCodeByPhone({ phone: phoneE164 });
         if (!otpRecord) {
           recordOtpAttempt(phoneE164, codeHash);
@@ -1368,7 +1367,7 @@ export async function createUserAccount(params: {
       phoneNumber,
       role: params.role,
       lenderId,
-      active: envConfig.env === "test",
+      active: config.env === "test",
       client: db,
       ...(params.email !== undefined ? { email: params.email } : {}),
     };

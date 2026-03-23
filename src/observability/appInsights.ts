@@ -1,7 +1,6 @@
 import * as appInsights from "applicationinsights";
-import { runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import { logInfo, logWarn } from "./logger";
-import { config } from "../config";
 
 type RequestTelemetry = {
   name: string;
@@ -62,7 +61,7 @@ export function initializeAppInsights(): void {
     if (!connectionString?.trim()) {
       logWarn("appinsights_disabled", {
         reason: "missing_connection_string",
-        testEnvironment: runtimeEnv.isTest,
+        testEnvironment: config.env === "test",
       });
       return;
     }

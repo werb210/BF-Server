@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import packageJson from "../../package.json";
 import { listRouteInventory } from "../debug/printRoutes";
 import { readyHandler } from "./ready";
@@ -9,7 +9,6 @@ import { intHealthHandler } from "./_int/health";
 import { runtimeHandler } from "./_int/runtime";
 import pwaInternalRoutes from "./_int/pwa";
 import { ALL_ROLES } from "../auth/roles";
-import { config } from "../config";
 
 const router = Router();
 
@@ -17,13 +16,13 @@ router.get("/health", intHealthHandler);
 router.get("/runtime", runtimeHandler);
 router.get("/ready", readyHandler);
 router.get("/build", (_req: any, res: any) => {
-  const buildTimestamp = runtimeEnv.buildTimestamp;
+  const buildTimestamp = config.buildTimestamp;
   res.status(200).json({ buildTimestamp });
 });
 
 router.get("/version", (_req: any, res: any) => {
-  const commitHash = runtimeEnv.commitSha;
-  const buildTimestamp = runtimeEnv.buildTimestamp;
+  const commitHash = config.commitSha;
+  const buildTimestamp = config.buildTimestamp;
   res.status(200).json({
     version: packageJson.version ?? buildTimestamp ?? "unknown",
     commitHash,

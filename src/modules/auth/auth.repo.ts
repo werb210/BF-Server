@@ -5,7 +5,7 @@ import { type Role } from "../../auth/roles";
 import { AppError } from "../../middleware/errors";
 import { normalizePhoneNumber } from "./phone";
 import { logger } from "../../server/utils/logger";
-import { config } from "../../config";
+import { config } from "@/config";
 
 type Queryable = Pick<PoolClient, "query">;
 

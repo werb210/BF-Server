@@ -1,5 +1,5 @@
 import { type SubmissionAdapter, type SubmissionResult } from "../SubmissionAdapter";
-import { config } from "../../../config";
+import { config } from "@/config";
 
 export class EmailAdapter implements SubmissionAdapter {
   private to: string;

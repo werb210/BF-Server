@@ -1,6 +1,5 @@
-import { runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import { fetchRequestRoute } from "../observability/requestContext";
-import { config } from "../config";
 
 const instanceId = config.telemetry.instanceId;
 
@@ -15,7 +14,7 @@ export function buildTelemetryProperties(
   const merged: Record<string, unknown> = {
     ...properties,
     instanceId,
-    buildId: runtimeEnv.commitSha,
+    buildId: config.commitSha,
   };
   if (resolvedRoute) {
     merged.route = resolvedRoute;

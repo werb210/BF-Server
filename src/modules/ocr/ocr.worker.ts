@@ -1,17 +1,17 @@
 import { randomUUID } from "crypto";
-import { runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import { isKillSwitchEnabled } from "../ops/ops.service";
 import { clearExpiredOcrLocks, lockOcrJobs } from "./ocr.repo";
 import { processOcrJob } from "./ocr.service";
 
 export function startOcrWorker(): { stop: () => void } {
-  if (!runtimeEnv.ocrEnabled) {
+  if (!config.features.ocrEnabled) {
     return { stop: () => undefined };
   }
 
   const workerId = randomUUID();
-  const pollInterval = runtimeEnv.ocrPollIntervalMs;
-  const concurrency = runtimeEnv.ocrWorkerConcurrency;
+  const pollInterval = config.ocr.pollIntervalMs;
+  const concurrency = config.ocr.workerConcurrency;
 
   let stopped = false;
   let running = false;

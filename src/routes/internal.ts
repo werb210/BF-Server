@@ -1,6 +1,6 @@
 import { Router, type Request } from "express";
 import { pool } from "../db";
-import { runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import { listKillSwitches } from "../modules/ops/ops.service";
 import { listActiveReplayJobs } from "../modules/ops/replay.service";
 import { listRecentExports } from "../modules/exports/export.service";
@@ -10,7 +10,6 @@ import { AppError } from "../middleware/errors";
 import { logInfo, logWarn } from "../observability/logger";
 import { requireAuth, requireCapability } from "../middleware/auth";
 import { CAPABILITIES } from "../auth/capabilities";
-import { config } from "../config";
 
 const router = Router();
 let bootstrapAdminDisabled = false;
@@ -31,8 +30,8 @@ router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.OPS_MANAGE]));
 
 router.get("/version", (_req: any, res: any) => {
-  const commitHash = runtimeEnv.commitSha;
-  const buildTimestamp = runtimeEnv.buildTimestamp;
+  const commitHash = config.commitSha;
+  const buildTimestamp = config.buildTimestamp;
   res.json({ commitHash, buildTimestamp });
 });
 

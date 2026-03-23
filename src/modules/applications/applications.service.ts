@@ -39,7 +39,7 @@ import {
   assertPipelineState,
   assertPipelineTransition,
 } from "./applicationLifecycle.service";
-import { config } from "src/server/config/config";
+import { config } from "@/config";
 import { recordTransactionRollback } from "../../observability/transactionTelemetry";
 import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService";
 import { uploadDocumentBuffer } from "../../services/storage/blobStorage";

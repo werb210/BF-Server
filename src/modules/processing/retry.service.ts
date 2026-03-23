@@ -3,7 +3,7 @@ import { AppError } from "../../middleware/errors";
 import { recordAuditEvent } from "../audit/audit.service";
 import { fetchCircuitBreaker } from "../../utils/circuitBreaker";
 import type { Role } from "../../auth/roles";
-import { runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import { assertRetryAllowed } from "./retryPolicy";
 
 type RetryJobResult = {
@@ -51,7 +51,7 @@ export async function retryProcessingJob(params: {
   ip?: string | null;
   userAgent?: string | null;
 }): Promise<RetryJobResult> {
-  if (!runtimeEnv.retryPolicyEnabled && !params.force) {
+  if (!config.flags.retryPolicyEnabled && !params.force) {
     throw new AppError("retry_disabled", "Retry policy is disabled.", 403);
   }
   const client = await pool.connect();

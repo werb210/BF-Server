@@ -10,7 +10,7 @@ import {
   upsertStaffActivityWindow,
 } from "./reporting.repo";
 import { pool } from "../../db";
-import { runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import { runWithRequestContext } from "../../middleware/requestContext";
 import { logError, logInfo } from "../../observability/logger";
 import { type PoolClient } from "pg";
@@ -140,12 +140,12 @@ export async function runLenderPerformanceJob(date = new Date()): Promise<number
 }
 
 export function startReportingJobs(): { stop: () => void } {
-  if (!runtimeEnv.reportingJobsEnabled) {
+  if (!config.flags.reportingJobsEnabled) {
     return { stop: () => undefined };
   }
 
-  const dailyInterval = runtimeEnv.reportingDailyIntervalMs;
-  const hourlyInterval = runtimeEnv.reportingHourlyIntervalMs;
+  const dailyInterval = config.flags.reportingDailyIntervalMs;
+  const hourlyInterval = config.flags.reportingHourlyIntervalMs;
 
   const safeRun = (fn: () => Promise<void>) => {
     fn().catch(() => undefined);

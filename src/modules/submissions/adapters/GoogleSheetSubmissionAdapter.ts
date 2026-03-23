@@ -1,6 +1,6 @@
+import { config } from "@/config";
 import { google } from "googleapis";
 import { logError, logInfo } from "../../../observability/logger";
-import { config } from "../../../config";
 import {
   type SubmissionAdapter,
   type SubmissionPayload,

@@ -1,4 +1,4 @@
-import { runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import { randomUUID } from "crypto";
 import { pool } from "../../db";
 import { isTestEnvironment } from "../../dbRuntime";
@@ -198,7 +198,7 @@ export async function upsertSubmissionRetryState(params: {
   client?: Queryable;
 }): Promise<LenderSubmissionRetryRecord> {
   const runner = params.client ?? pool;
-  if (runtimeEnv.isTest) {
+  if (config.env === "test") {
     const existing = await runner.query<LenderSubmissionRetryRecord>(
       `select id, submission_id, status, attempt_count, next_attempt_at, last_error, created_at, updated_at, canceled_at
        from lender_submission_retries
@@ -334,7 +334,7 @@ export async function createSubmissionEvent(params: {
     return eventRecord;
   } catch (err) {
     const code = (err as { code?: string }).code;
-    if (runtimeEnv.isTest && code === "42P01") {
+    if (config.env === "test" && code === "42P01") {
       return {
         id: randomUUID(),
         application_id: params.applicationId,

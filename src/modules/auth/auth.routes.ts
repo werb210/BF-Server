@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { createOtp, verifyOtp } from './otpStore'
-import { runtimeEnv } from 'src/server/config/config'
+import { config } from '@/config'
 
 const router = Router()
 
@@ -17,7 +17,7 @@ router.post('/api/auth/otp/start', (req: Request, res: Response) => {
     ok: true,
     data: {
       sent: true,
-      otp: runtimeEnv.isTest ? code : undefined
+      otp: config.env === "test" ? code : undefined
     }
   })
 })

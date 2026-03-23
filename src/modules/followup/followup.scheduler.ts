@@ -1,4 +1,4 @@
-import { config } from "src/server/config/config";
+import { config } from "@/config";
 import { logError } from "../../observability/logger";
 import { createFollowUpActionHandlers } from "./followup.actions";
 import { evaluateFollowUpRules } from "./followup.engine";

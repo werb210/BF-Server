@@ -1,4 +1,4 @@
-import { config } from "../config";
+import { config } from "@/config";
 import { dbClient } from "../platform/dbClient";
 import { redisClient } from "../platform/redisClient";
 import { initializeAppInsights } from "../observability/appInsights";
