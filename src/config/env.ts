@@ -65,3 +65,7 @@ export const ENV: Env = {
 
   SENDGRID_API_KEY: process.env.SENDGRID_API_KEY,
 };
+
+export function isTest(): boolean {
+  return process.env.NODE_ENV === 'test';
+}

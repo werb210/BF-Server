@@ -1,6 +1,6 @@
 import { ENV } from './config/env';
 
-// --- CORE ENV HELPERS ---
+// --- ENV BASICS ---
 
 export function assertEnv(): void {
   if (!ENV.DATABASE_URL) {
@@ -10,6 +10,10 @@ export function assertEnv(): void {
 
 export function isProductionEnvironment(): boolean {
   return ENV.NODE_ENV === 'production';
+}
+
+export function isTestEnvironment(): boolean {
+  return ENV.TEST_MODE === 'true';
 }
 
 export function getTestMode(): boolean {
@@ -28,6 +32,10 @@ export function getRefreshTokenSecret(): string {
 
 export function getAccessTokenExpiresIn(): string {
   return '1h';
+}
+
+export function getRefreshTokenExpiresInMs(): number {
+  return 7 * 24 * 60 * 60 * 1000;
 }
 
 export function getJwtClockSkewSeconds(): number {
@@ -54,14 +62,24 @@ export function getAiEmbeddingModel(): string {
   return 'text-embedding-3-small';
 }
 
-// --- UPLOADS ---
+// --- FILES ---
 
 export function getDocumentMaxSizeBytes(): number {
-  return 10 * 1024 * 1024; // 10MB
+  return 10 * 1024 * 1024;
 }
 
 export function getDocumentAllowedMimeTypes(): string[] {
   return ['application/pdf', 'image/png', 'image/jpeg'];
+}
+
+// --- BUSINESS LOGIC ---
+
+export function getFollowUpJobsEnabled(): boolean {
+  return true;
+}
+
+export function getClientSubmissionOwnerUserId(): string {
+  return 'system';
 }
 
 // --- IDEMPOTENCY ---
@@ -79,4 +97,3 @@ export function getRateLimitMax(): number {
 export function getRateLimitWindowMs(): number {
   return parseInt(ENV.RATE_LIMIT_WINDOW_MS || '900000', 10);
 }
-
