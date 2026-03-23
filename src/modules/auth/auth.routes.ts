@@ -17,7 +17,7 @@ router.post('/api/auth/otp/start', (req: Request, res: Response) => {
     ok: true,
     data: {
       sent: true,
-      otp: isTest ? code : undefined
+      otp: isTest() ? code : undefined
     }
   })
 })
