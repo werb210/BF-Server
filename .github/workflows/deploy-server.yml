@@ -27,5 +27,19 @@ jobs:
       - name: Build (FAILS BUILD IF BROKEN)
         run: npm run build
 
+      - name: Enforce architecture rules
+        run: |
+          echo "Checking for forbidden get* helpers..."
+          grep -r "function get" src && exit 1 || echo "OK"
+
+          echo "Checking for illegal get usage..."
+          grep -r "get[A-Z]" src | grep -v "Date.get" && exit 1 || echo "OK"
+
+          echo "Checking for direct process.env usage..."
+          grep -r "process.env" src | grep -v "config" && exit 1 || echo "OK"
+
+          echo "Checking single entrypoint..."
+          test $(grep -r "app.listen" src | wc -l) -eq 1
+
       - name: Deploy
         run: echo "Deploy step here"
