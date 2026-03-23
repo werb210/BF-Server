@@ -1,6 +1,7 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
 import { dbQuery } from "../db";
+import config from "../server/config/config";
 
 type ContinuationJwt = {
   preAppId: string;
@@ -8,13 +9,6 @@ type ContinuationJwt = {
 
 const router = Router();
 
-function getJwtSecret(): string {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error("JWT_SECRET is not configured");
-  }
-  return secret;
-}
 
 /**
  * WEBSITE → Store pre-application and return continuation token.
@@ -58,7 +52,7 @@ router.post("/continue-application", async (req: any, res: any, next: any) => {
       return res.status(500).json({ error: "Failed to create pre-application" });
     }
 
-    const token = jwt.sign({ preAppId: record.id }, getJwtSecret(), {
+    const token = jwt.sign({ preAppId: record.id }, config.auth.jwtSecret, {
       expiresIn: "30m",
     });
 
@@ -79,7 +73,7 @@ router.get("/continue-application", async (req: any, res: any, next: any) => {
       return res.status(401).json({ error: "Missing token" });
     }
 
-    const decoded = jwt.verify(token, getJwtSecret()) as ContinuationJwt;
+    const decoded = jwt.verify(token, config.auth.jwtSecret) as ContinuationJwt;
 
     const result = await dbQuery(
       `select

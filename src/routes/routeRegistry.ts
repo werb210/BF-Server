@@ -14,7 +14,6 @@ import dashboardRoutes from "./dashboard";
 import documentsRoutes from "./documents";
 import internalRoutes from "./_int";
 import internalProcessingRoutes from "./internal/processing";
-import lenderRoutes from "./lender";
 import lenderSubmissionsRoutes from "./lenderSubmissions";
 import lenderProductsRoutes from "./lenderProducts";
 import lendersRoutes from "./lenders";
@@ -68,7 +67,6 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/dashboard", router: dashboardRoutes },
   { path: "/credit-summary", router: creditSummaryRoutes },
   { path: "/documents", router: documentsRoutes },
-  { path: "/lender", router: lenderRoutes },
   { path: "/lender-submissions", router: lenderSubmissionsRoutes },
   { path: "/lender-products", router: lenderProductsRoutes },
   { path: "/lenders", router: lendersRoutes },
@@ -114,7 +112,6 @@ export const V1_REQUIRED_ROUTE_SURFACE = [
   "/api/offers",
   "/api/messages",
   "/api/calls",
-  "/api/health",
 ] as const;
 
 export const ROUTES: ApiRoute[] = [
@@ -156,7 +153,6 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/website/credit-readiness", roles: [] },
   { method: "POST", path: "/api/website/contact", roles: [] },
   { method: "POST", path: "/api/public/application/start", roles: [] },
-  { method: "POST", path: "/api/public/readiness", roles: [] },
   { method: "GET", path: "/api/client/continuation/:token", roles: [] },
   { method: "GET", path: "/api/portal/readiness-leads", roles: [ROLES.ADMIN] },
   { method: "POST", path: "/api/portal/readiness-leads/:id/convert", roles: [ROLES.ADMIN] },

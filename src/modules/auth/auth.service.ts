@@ -36,7 +36,7 @@ import {
 import { DEFAULT_AUTH_SILO } from "../../auth/silo";
 import { hashRefreshToken } from "../../auth/tokenUtils";
 import { getCapabilitiesForRole } from "../../auth/capabilities";
-import { getTwilioClient, getVerifyServiceSid } from "../../services/twilio";
+import { twilioClient, verifyServiceSid } from "../../services/twilio";
 import { assertLenderBinding } from "../../auth/lenderBinding";
 
 const OTP_TRACE = (...args: any[]) => {
@@ -626,7 +626,7 @@ function generatePlaceholderPhoneNumber(): string {
 }
 
 async function createVerification(params: {
-  twilioClient: ReturnType<typeof getTwilioClient>;
+  twilioClient: ReturnType<typeof twilioClient>;
   serviceSid: string;
   to: string;
 }): Promise<{ sid?: string; status?: string }> {
@@ -638,7 +638,7 @@ async function createVerification(params: {
 }
 
 async function createVerificationCheck(params: {
-  twilioClient: ReturnType<typeof getTwilioClient>;
+  twilioClient: ReturnType<typeof twilioClient>;
   serviceSid: string;
   to: string;
   code: string;
@@ -681,8 +681,8 @@ export async function startOtp(
       ok: true,
     });
 
-    const twilioClient = getTwilioClient();
-    const serviceSid = getVerifyServiceSid();
+    const twilio = twilioClient();
+    const serviceSid = verifyServiceSid();
     clearOtpAttemptLimit(phoneE164);
 
     if (runtimeEnv.isTest) {
@@ -701,7 +701,7 @@ export async function startOtp(
       if (serviceSid) {
         try {
           const verification = await createVerification({
-            twilioClient,
+            twilioClient: twilio,
             serviceSid,
             to: phoneE164,
           });
@@ -736,7 +736,7 @@ export async function startOtp(
         expiresAt: new Date(Date.now() + OTP_SESSION_TTL_MS),
       });
       const verification = await createVerification({
-        twilioClient,
+        twilioClient: twilio,
         serviceSid,
         to: phoneE164,
       });
@@ -873,13 +873,13 @@ export async function verifyOtpCode(params: {
       providerStatus = "approved";
     }
 
-    const twilioClient = getTwilioClient();
-    const serviceSid = getVerifyServiceSid();
+    const twilio = twilioClient();
+    const serviceSid = verifyServiceSid();
 
     if (providerStatus !== "approved") {
       try {
         const check = await createVerificationCheck({
-          twilioClient,
+          twilioClient: twilio,
           serviceSid,
           to: phoneE164,
           code,

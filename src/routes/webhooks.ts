@@ -7,13 +7,6 @@ import { handleVoiceStatusWebhook } from "../modules/voice/voice.service";
 
 const router = Router();
 
-function getTwilioAuthToken(): string {
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  if (!authToken || !authToken.trim()) {
-    throw new AppError("twilio_misconfigured", "Twilio auth token is missing.", 500);
-  }
-  return authToken.trim();
-}
 
 function buildWebhookUrl(req: { protocol: string; get: (name: string) => string | undefined; originalUrl: string }): string {
   const baseUrl = process.env.BASE_URL?.trim();
@@ -34,7 +27,10 @@ router.post(
       throw new AppError("invalid_signature", "Missing Twilio signature.", 403);
     }
 
-    const authToken = getTwilioAuthToken();
+    const authToken = process.env.TWILIO_AUTH_TOKEN?.trim() ?? "";
+    if (!authToken) {
+      throw new AppError("twilio_misconfigured", "Twilio auth token is missing.", 500);
+    }
     const url = buildWebhookUrl(req);
     const valid = validateRequest(authToken, signature, url, req.body ?? {});
 

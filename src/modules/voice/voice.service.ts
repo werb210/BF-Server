@@ -4,7 +4,7 @@ import { logError, logInfo, logWarn } from "../../observability/logger";
 import { normalizePhoneNumber } from "../auth/phone";
 import { startCall, updateCallStatus, updateCallRecording } from "../calls/calls.service";
 import { findCallLogByTwilioSid } from "../calls/calls.repo";
-import { getTwilioClient } from "../../services/twilio";
+import { twilioClient } from "../../services/twilio";
 import { type CallStatus, type CallLogRecord } from "../calls/calls.repo";
 import { runtimeEnv } from "src/server/config/config";
 import { recordAuditEvent } from "../audit/audit.service";
@@ -240,7 +240,7 @@ export async function startVoiceCall(params: {
   let callSid = params.callSid ?? "";
   if (shouldCreateTwilioCall) {
     try {
-      const client = getTwilioClient();
+      const client = twilioClient();
       const callOptions: {
         to: string;
         from: string;
@@ -322,7 +322,7 @@ export async function endVoiceCall(params: {
   let twilioError: AppError | null = null;
   if (!isTerminal) {
     try {
-      const client = getTwilioClient();
+      const client = twilioClient();
       await client.calls(params.callSid).update({ status: "completed" });
     } catch (error) {
       const details = normalizeTwilioError(error);
@@ -440,7 +440,7 @@ export async function controlVoiceCall(params: {
 
   let twilioError: AppError | null = null;
   try {
-    const client = getTwilioClient();
+    const client = twilioClient();
     if (params.action === "hangup") {
       await client.calls(params.callSid).update({ status: "completed" });
     } else if (twiml) {

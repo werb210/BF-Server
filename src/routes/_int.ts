@@ -2,19 +2,15 @@ import { Router } from "express";
 import { runtimeEnv } from "src/server/config/config";
 import packageJson from "../../package.json";
 import { listRouteInventory } from "../debug/printRoutes";
-import { readyHandler } from "./ready";
 import { requireAuth, requireAuthorization } from "../middleware/auth";
 import internalRoutes from "./internal";
-import { intHealthHandler } from "./_int/health";
 import { runtimeHandler } from "./_int/runtime";
 import pwaInternalRoutes from "./_int/pwa";
 import { ALL_ROLES } from "../auth/roles";
 
 const router = Router();
 
-router.get("/health", intHealthHandler);
 router.get("/runtime", runtimeHandler);
-router.get("/ready", readyHandler);
 router.get("/build", (_req: any, res: any) => {
   const buildTimestamp = runtimeEnv.buildTimestamp;
   res.status(200).json({ buildTimestamp });

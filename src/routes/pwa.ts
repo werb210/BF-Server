@@ -15,7 +15,6 @@ import { AppError } from "../middleware/errors";
 import { runtimeEnv } from "src/server/config/config";
 import { getPushStatus } from "../services/pushService";
 import { replaySyncBatch } from "../services/pwaSyncService";
-import { pool } from "../db";
 import { ALL_ROLES, ROLES } from "../auth/roles";
 import { toStringSafe } from "../utils/toStringSafe";
 
@@ -223,61 +222,6 @@ router.get(
       vapid_error: pushStatus.error ?? null,
       offline_replay_enabled: true,
       server_version: commitHash ?? buildTimestamp ?? "unknown",
-    });
-  })
-);
-
-router.get(
-  "/health",
-  requireAuth,
-  requireAuthorization({ roles: [ROLES.ADMIN] }),
-  safeHandler(async (_req: any, res: any) => {
-    const pushStatus = getPushStatus();
-    let dbWriteable = false;
-    let queueProcessingHealthy: boolean | null = null;
-    const warnings: string[] = [];
-
-    try {
-      await pool.query("create temporary table if not exists pwa_health_check (id int)");
-      await pool.query("insert into pwa_health_check (id) values (1)");
-      dbWriteable = true;
-    } catch {
-      dbWriteable = false;
-      warnings.push("db_write_failed");
-    }
-
-    try {
-      const tableCheck = await pool.query<{ exists: string | null }>(
-        "select to_regclass('public.ops_replay_jobs') as exists"
-      );
-      if (!tableCheck.rows[0]?.exists) {
-        queueProcessingHealthy = null;
-        warnings.push("queue_table_missing");
-      } else {
-        const result = await pool.query<{ count: number }>(
-          `select count(*)::int as count
-           from ops_replay_jobs
-           where status in ('queued', 'running')
-             and started_at is not null
-             and started_at < (now()::timestamp - interval '15 minutes')`
-        );
-        queueProcessingHealthy = result.rows[0]?.count === 0;
-      }
-    } catch {
-      queueProcessingHealthy = false;
-      warnings.push("queue_check_failed");
-    }
-
-    res.status(200).json({
-      ok: true,
-      push_readiness: {
-        enabled: pushStatus.enabled,
-        configured: pushStatus.configured,
-        error: pushStatus.error ?? null,
-      },
-      db_writeable: dbWriteable,
-      queue_processing_healthy: queueProcessingHealthy,
-      warnings,
     });
   })
 );

@@ -3,7 +3,7 @@ import { Router } from "express";
 import { retry, withRetry } from "../utils/retry";
 import { createSupportThread } from "../services/supportService";
 import { dbQuery } from "../db";
-import { getTwilioClient } from "../services/twilio";
+import { twilioClient } from "../services/twilio";
 import { pushLeadToCRM } from "../services/crmWebhook";
 import { SupportController } from "../modules/support/support.controller";
 import { logger } from "../server/utils/logger";
@@ -161,7 +161,7 @@ router.post("/contact", async (req: any, res: any, next: any) => {
     [company, firstName, lastName, email, phone]
   );
 
-  const client = getTwilioClient();
+  const client = twilioClient();
   await retry(async () =>
     client.messages.create({
       body: `New Contact: ${company} - ${firstName} ${lastName} - ${phone}`,

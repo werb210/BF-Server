@@ -1,4 +1,4 @@
-import { getTwilioClient } from "../../services/twilio";
+import { twilioClient } from "../../services/twilio";
 
 export async function sendSms({ to, message }: { to: string; message: string }) {
   if (process.env.TEST_MODE === "true") {
@@ -6,7 +6,7 @@ export async function sendSms({ to, message }: { to: string; message: string }) 
     return { success: true };
   }
 
-  const client = getTwilioClient();
+  const client = twilioClient();
   return client.messages.create({
     body: message,
     from: process.env.TWILIO_FROM || process.env.TWILIO_NUMBER || process.env.TWILIO_PHONE,
