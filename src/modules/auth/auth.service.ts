@@ -117,7 +117,7 @@ export function issueRefreshToken(params: {
     type: "refresh",
     jti: randomUUID(),
   };
-  const expiresIn = getRefreshTokenExpiresIn() as SignOptions["expiresIn"];
+  const expiresIn = getRefreshTokenExpiresInMs() as SignOptions["expiresIn"];
   const options: SignOptions = {
     algorithm: "HS256",
   };

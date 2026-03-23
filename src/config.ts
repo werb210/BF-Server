@@ -97,3 +97,7 @@ export function getRateLimitMax(): number {
 export function getRateLimitWindowMs(): number {
   return parseInt(ENV.RATE_LIMIT_WINDOW_MS || '900000', 10);
 }
+
+export function getFollowUpJobsIntervalMs(): number {
+  return 5 * 60 * 1000; // 5 minutes
+}
