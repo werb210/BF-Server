@@ -1,23 +1,13 @@
 import { Pool } from 'pg';
-
-const connectionString = process.env.DATABASE_URL;
-
-if (!connectionString) {
-  throw new Error('DATABASE_URL is not defined');
-}
+import { ENV } from '../config/env';
 
 export const dbClient = new Pool({
-  connectionString,
-  ssl: {
-    rejectUnauthorized: false
-  }
+  connectionString: ENV.DATABASE_URL,
 });
 
 export async function testDbConnection(): Promise<boolean> {
   try {
-    const client = await dbClient.connect();
-    await client.query('SELECT 1');
-    client.release();
+    await dbClient.query('SELECT 1');
     return true;
   } catch {
     return false;
