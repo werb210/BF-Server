@@ -1,18 +1,17 @@
 import crypto from "crypto";
+import { config } from "../config";
 
 export function verifyTwilioSignature(
   signature: string,
   url: string,
   params: Record<string, string>
 ): boolean {
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-
   const data = Object.keys(params)
     .sort()
     .reduce((acc, key) => acc + key + params[key], url);
 
   const computed = crypto
-    .createHmac("sha1", authToken!)
+    .createHmac("sha1", config.twilio.authToken)
     .update(data)
     .digest("base64");
 

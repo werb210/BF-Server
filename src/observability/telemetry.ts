@@ -1,7 +1,8 @@
 import { runtimeEnv } from "src/server/config/config";
 import { fetchRequestRoute } from "../observability/requestContext";
+import { config } from "../config";
 
-const instanceId = process.env.INSTANCE_ID ?? process.env.HOSTNAME ?? "unknown";
+const instanceId = config.telemetry.instanceId;
 
 export function buildTelemetryProperties(
   properties?: Record<string, unknown>,

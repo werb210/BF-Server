@@ -1,5 +1,6 @@
 import Redis from "ioredis";
 import { logWarn } from "../observability/logger";
+import { config } from "../config";
 
 const ONE_HOUR_IN_SECONDS = 60 * 60;
 const ONE_HOUR_IN_MILLISECONDS = ONE_HOUR_IN_SECONDS * 1000;
@@ -23,7 +24,7 @@ function fetchRedisClient(): Redis | null {
   }
 
   redisAttempted = true;
-  const redisUrl = process.env.REDIS_URL;
+  const redisUrl = config.redis.url;
   if (!redisUrl) {
     return null;
   }
@@ -100,7 +101,7 @@ export async function storeResponse(key: string, value: StoredResponse): Promise
 }
 
 export function resetIdempotencyStoreForTests(): void {
-  if (process.env.NODE_ENV === "test") {
+  if (config.env === "test") {
     memoryStore.clear();
   }
 }

@@ -4,6 +4,7 @@ import {
   type GoogleSheetsSheetMap,
 } from "../../server/config/env/merchantGrowth.sheetMap";
 import { logError, logInfo } from "../../observability/logger";
+import { config } from "../../config";
 
 export type GoogleSheetsSubmissionResult = {
   success: boolean;
@@ -29,10 +30,10 @@ function assertGoogleEnv(): {
   redirectUri: string;
   refreshToken: string;
 } {
-  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI?.trim();
-  const refreshToken = process.env.GOOGLE_SHEETS_REFRESH_TOKEN?.trim();
+  const clientId = config.google.clientId?.trim();
+  const clientSecret = config.google.clientSecret?.trim();
+  const redirectUri = config.google.redirectUri?.trim();
+  const refreshToken = config.google.refreshToken?.trim();
   if (!clientId || !clientSecret || !redirectUri || !refreshToken) {
     throw new Error("Missing Google Sheets OAuth environment configuration.");
   }

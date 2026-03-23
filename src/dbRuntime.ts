@@ -1,8 +1,9 @@
 import { pool } from "./db";
 import { logger } from "./platform/logger";
+import { config } from "./config";
 
 export function isTestEnv(): boolean {
-  return process.env.NODE_ENV === "test";
+  return config.env === "test";
 }
 
 const connectionFailureCodes = new Set([

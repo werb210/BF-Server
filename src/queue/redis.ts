@@ -1,8 +1,7 @@
-import type { ConnectionOptions } from "bullmq"
-
-const redisUrl = process.env.REDIS_URL || "redis://127.0.0.1:6379"
+import type { ConnectionOptions } from "bullmq";
+import { config } from "../config";
 
 export const redisConnection: ConnectionOptions = {
-  url: redisUrl,
+  url: config.redis.url,
   maxRetriesPerRequest: null,
-}
+};

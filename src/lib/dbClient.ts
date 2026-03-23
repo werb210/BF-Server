@@ -1,11 +1,8 @@
-import { Pool } from 'pg';
-import { ENV } from 'src/server/config/config';
 import { canExecute, recordFailure } from './circuitBreaker';
 import { retry } from './retry';
+import { dbClient } from '../platform/dbClient';
 
-export const dbClient = new Pool({
-  connectionString: ENV.DATABASE_URL,
-});
+export { dbClient };
 
 export async function testDbConnection(): Promise<boolean> {
   if (!canExecute()) {
@@ -28,12 +25,8 @@ export async function testDbConnection(): Promise<boolean> {
   }
 }
 
-/**
- * Typed query helper (replaces broken spread version)
- */
-export function query(text: string, params?: any[]) {
+export function query(text: string, params?: unknown[]) {
   return dbClient.query(text, params);
 }
 
-// backward compatibility
 export const pool = dbClient;

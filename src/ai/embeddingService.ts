@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { createHash, randomUUID } from "crypto";
 import { runtimeEnv } from "src/server/config/config";
 import { pool } from "../db";
+import { config } from "../config";
 
 const APPROX_CHUNK_SIZE = 800;
 
@@ -29,13 +30,13 @@ export async function generateEmbedding(
   text: string,
   client?: OpenAI
 ): Promise<number[]> {
-  if (process.env.NODE_ENV === "test") {
+  if (config.env === "test") {
     return new Array(1536).fill(0.01);
   }
 
   const trimmed = text.trim();
   if (!trimmed) return [];
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = config.openai.apiKey;
   if (!apiKey && !client) {
     return hashToVector(trimmed);
   }

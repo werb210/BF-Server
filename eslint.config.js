@@ -18,6 +18,14 @@ module.exports = [
     plugins: {
       "@typescript-eslint": tsPlugin,
     },
-    rules: {},
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "MemberExpression[object.name=\'process\'][property.name=\'env\']",
+          message: "Use config instead of process.env",
+        },
+      ],
+    },
   },
 ];

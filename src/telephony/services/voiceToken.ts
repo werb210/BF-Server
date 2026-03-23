@@ -1,16 +1,23 @@
 import AccessToken, { VoiceGrant } from "twilio/lib/jwt/AccessToken";
+import { config } from "../../config";
+
+function requireTokenConfig(value: string | undefined, name: string): string {
+  if (!value) {
+    throw new Error(`${name} is required for voice token generation`);
+  }
+  return value;
+}
 
 export function generateVoiceToken(identity: string): string {
   const token = new AccessToken(
-    process.env.TWILIO_ACCOUNT_SID!,
-    process.env.TWILIO_API_KEY!,
-    process.env.TWILIO_API_SECRET!,
+    config.twilio.accountSid,
+    requireTokenConfig(config.twilio.apiKey, "TWILIO_API_KEY"),
+    requireTokenConfig(config.twilio.apiSecret, "TWILIO_API_SECRET"),
     { identity }
   );
 
   const grant = new VoiceGrant({
-    outgoingApplicationSid:
-      process.env.TWILIO_VOICE_APP_SID!,
+    outgoingApplicationSid: requireTokenConfig(config.twilio.voiceAppSid, "TWILIO_VOICE_APP_SID"),
     incomingAllow: true,
   });
 

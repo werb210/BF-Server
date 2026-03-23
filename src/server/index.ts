@@ -16,11 +16,12 @@ import { runMigrations as runStartupMigrations } from "../startup/runMigrations"
 import { pool } from "../db";
 import { assertDatabaseHealthy } from "../health/dbHealth";
 import { runSelfTest } from "../_internal/selfTest";
+import { config } from "../config";
 
 let processHandlersInstalled = false;
 let server: Server | null = null;
 let app: Express | null = null;
-const isTestMode = process.env.TEST_MODE === "true";
+const isTestMode = config.env === "test";
 
 function installProcessHandlers(): void {
   if (processHandlersInstalled) return;
@@ -56,7 +57,7 @@ function registerOtpCleanupJob(): void {
 }
 
 function resolvePort(): number {
-  const rawPort = process.env.PORT;
+  const rawPort = String(config.port);
   if (!rawPort) {
     logger.warn("port_missing_defaulting", { fallback: 3000 });
     return 3000;
@@ -70,18 +71,12 @@ function resolvePort(): number {
 }
 
 export async function startServer() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error("DATABASE_URL missing");
-  }
-  logger.info("db_connected", { databaseUrl: process.env.DATABASE_URL });
-  if (!process.env.JWT_SECRET) {
-    throw new Error("JWT_SECRET missing");
-  }
+  logger.info("db_connected", { databaseUrl: config.db.url });
   installProcessHandlers();
   validateStartup();
   validateServerEnv();
   await assertDatabaseHealthy();
-  if (process.env.RUN_DB_MIGRATIONS === "true") {
+  if (config.flags.runDbMigrations) {
     logger.info("Running database migrations...");
     await runMigrations();
   }

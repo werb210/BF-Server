@@ -1,13 +1,16 @@
-export const API_BASE =
-  process.env.API_BASE_URL ||
-  "https://api.staff.boreal.financial";
+import { config } from "./index";
 
-export const PUBLIC_BASE =
-  process.env.PUBLIC_BASE_URL ||
-  "https://staff.boreal.financial";
+function requireValue(name: string, value: string | undefined): string {
+  if (!value) {
+    throw new Error(`Missing required runtime config: ${name}`);
+  }
+  return value;
+}
 
-export const CLIENT_BASE =
-  process.env.CLIENT_BASE_URL ||
-  "https://client.boreal.financial";
+export const API_BASE = requireValue("API_BASE_URL", config.urls.apiBase);
+
+export const PUBLIC_BASE = requireValue("PUBLIC_BASE_URL", config.urls.publicBase);
+
+export const CLIENT_BASE = requireValue("CLIENT_BASE_URL", config.urls.clientBase);
 
 export const ALLOWED_ORIGINS = [PUBLIC_BASE, CLIENT_BASE];

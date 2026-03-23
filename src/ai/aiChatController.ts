@@ -9,6 +9,7 @@ import { runtimeEnv } from "src/server/config/config";
 import { emitAiEscalation } from "../realtime/events";
 import { circuitGuard, recordFailure, resetCircuit } from "../utils/circuitBreaker";
 import { retry } from "../utils/retry";
+import { config } from "../config";
 
 function detectIntent(message: string): "faq" | "prequal" | "escalation" {
   const lower = message.toLowerCase();
@@ -53,7 +54,7 @@ function extractPrequalData(message: string): {
 }
 
 async function createAiResponse(prompt: string, context: string[]): Promise<string> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = config.openai.apiKey;
   if (!apiKey) {
     return `I can help with Boreal Marketplace questions. Based on our knowledge base: ${context
       .slice(0, 2)

@@ -13,7 +13,8 @@
       "@/*": [
         "src/*"
       ]
-    }
+    },
+    "noImplicitAny": true
   },
   "include": [
     "src/**/*.ts",

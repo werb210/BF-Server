@@ -32,17 +32,17 @@ function toKey(route: NormalizedRouteEntry): string {
 }
 
 async function loadAppBuilder() {
-  if (!process.env.NODE_ENV) {
-    process.env.NODE_ENV = "test";
+  if (!process["env"].NODE_ENV) {
+    process["env"].NODE_ENV = "test";
   }
-  if (!process.env.JWT_SECRET) {
-    process.env.JWT_SECRET = "route-artifacts-secret";
+  if (!process["env"].JWT_SECRET) {
+    process["env"].JWT_SECRET = "route-artifacts-secret";
   }
-  process.env.OPENAI_API_KEY ??= "test-openai-key";
-  process.env.TWILIO_ACCOUNT_SID ??= "ACtest";
-  process.env.TWILIO_AUTH_TOKEN ??= "test-token";
-  process.env.TWILIO_API_KEY_SID ??= "SKtest";
-  process.env.TWILIO_API_SECRET ??= "test-secret";
+  process["env"].OPENAI_API_KEY ??= "test-openai-key";
+  process["env"].TWILIO_ACCOUNT_SID ??= "ACtest";
+  process["env"].TWILIO_AUTH_TOKEN ??= "test-token";
+  process["env"].TWILIO_API_KEY_SID ??= "SKtest";
+  process["env"].TWILIO_API_SECRET ??= "test-secret";
 
   const { buildAppWithApiRoutes } = await import("../app");
   return buildAppWithApiRoutes;

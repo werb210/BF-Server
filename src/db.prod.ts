@@ -5,29 +5,15 @@ import pg, {
   type QueryResult,
   type QueryResultRow,
 } from "pg";
+import { config } from "./config";
 import { logError, logInfo, logWarn } from "./observability/logger";
 import { markNotReady } from "./startupState";
 
 const { Pool } = pg;
 
 function buildPoolConfig(): PoolConfig {
-  const connectionString = process.env.DATABASE_URL?.trim();
-
+  const connectionString = config.db.url.trim();
   if (!connectionString) {
-    if (process.env.NODE_ENV === "test") {
-      return {
-        connectionString: "postgres://test:test@127.0.0.1:5432/test",
-        ssl: false,
-        max: Number(process.env.DB_POOL_MAX ?? 20),
-      };
-    }
-    if (process.env.NODE_ENV !== "production") {
-      return {
-        connectionString: "postgres://postgres:postgres@127.0.0.1:5432/staff_dev",
-        ssl: false,
-        max: Number(process.env.DB_POOL_MAX ?? 20),
-      };
-    }
     markNotReady("db_unavailable");
     throw new Error("DATABASE_URL is missing");
   }
@@ -40,7 +26,7 @@ function buildPoolConfig(): PoolConfig {
   return {
     connectionString,
     ssl: isAzure ? { rejectUnauthorized: true } : isLocal ? false : false,
-    max: Number(process.env.DB_POOL_MAX ?? 20),
+    max: 20,
   };
 }
 
@@ -68,9 +54,9 @@ export async function dbQuery<T extends QueryResultRow = QueryResultRow>(
 }
 
 export function assertPoolHealthy(): void {
-  const waitingCount = (pool ).waitingCount ?? 0;
-  const totalCount = (pool ).totalCount ?? 0;
-  const max = (pool ).options?.max ?? 0;
+  const waitingCount = pool.waitingCount ?? 0;
+  const totalCount = pool.totalCount ?? 0;
+  const max = pool.options?.max ?? 0;
   if (max > 0 && waitingCount > 0 && totalCount >= max) {
     throw new Error("db_pool_exhausted");
   }
@@ -89,17 +75,9 @@ export async function fetchInstrumentedClient(): Promise<PoolClient> {
   return pool.connect();
 }
 
-export function setDbTestPoolMetricsOverride(): void {
-  // no-op in production
-}
-
-export function setDbTestFailureInjection(): void {
-  // no-op in production
-}
-
-export function clearDbTestFailureInjection(): void {
-  // no-op in production
-}
+export function setDbTestPoolMetricsOverride(): void {}
+export function setDbTestFailureInjection(): void {}
+export function clearDbTestFailureInjection(): void {}
 
 pool.on("connect", () => logInfo("db_client_connected"));
 

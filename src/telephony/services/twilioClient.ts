@@ -1,21 +1,10 @@
-import Twilio from "twilio";
-
-const accountSid =
-  process.env.TWILIO_ACCOUNT_SID || "AC00000000000000000000000000000000";
-const authToken = process.env.TWILIO_AUTH_TOKEN || "test_token";
-
-/*
-Twilio must always be constructed with `new`.
-This allows the CI test suite to inject TwilioMock
-without triggering the "cannot be invoked without new" error.
-*/
-
-export const twilioClient = new Twilio(accountSid, authToken);
+import { config } from "../../config";
+import { twilioClient } from "../../platform/twilioClient";
 
 export const twilioVoiceGrantConfig = {
-  outgoingApplicationSid:
-    process.env.TWILIO_VOICE_APP_SID,
-  incomingAllow: true
+  outgoingApplicationSid: config.twilio.voiceAppSid,
+  incomingAllow: true,
 };
 
+export { twilioClient };
 export default twilioClient;

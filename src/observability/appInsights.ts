@@ -1,6 +1,7 @@
 import * as appInsights from "applicationinsights";
 import { runtimeEnv } from "src/server/config/config";
 import { logInfo, logWarn } from "./logger";
+import { config } from "../config";
 
 type RequestTelemetry = {
   name: string;
@@ -56,9 +57,7 @@ export function initializeAppInsights(): void {
   initialized = true;
 
   try {
-    const connectionString =
-      process.env.APPINSIGHTS_CONNECTION_STRING ??
-      process.env.APPLICATIONINSIGHTS_CONNECTION_STRING;
+    const connectionString = config.telemetry.appInsightsConnectionString;
 
     if (!connectionString?.trim()) {
       logWarn("appinsights_disabled", {
