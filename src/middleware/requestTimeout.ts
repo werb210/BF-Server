@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { getRequestDbProcessIds } from './requestContext';
+import { fetchRequestDbProcessIds } from './requestContext';
 
 export function requestTimeout(
   _req: Request,
@@ -7,6 +7,6 @@ export function requestTimeout(
   next: NextFunction
 ) {
   // placeholder (safe)
-  getRequestDbProcessIds();
+  fetchRequestDbProcessIds();
   next();
 }

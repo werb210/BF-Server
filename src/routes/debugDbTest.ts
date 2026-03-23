@@ -55,7 +55,7 @@ function valueForColumn(columnName: string, dataType: string, runId: string): un
   return `debug-${runId}-${lowerName}`;
 }
 
-async function getExistingTable(): Promise<DebugTable | null> {
+async function fetchExistingTable(): Promise<DebugTable | null> {
   const result = await pool.query(
     `
       SELECT table_name
@@ -199,7 +199,7 @@ debugRouter.get("/db-test", async (_req: any, res: any) => {
 
   try {
     const runId = Date.now().toString(36);
-    usedTable = await getExistingTable();
+    usedTable = await fetchExistingTable();
 
     if (!usedTable) {
       throw new Error("No test table found (checked: crm_contacts, users, lenders)");

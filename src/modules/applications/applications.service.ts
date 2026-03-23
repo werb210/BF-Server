@@ -13,7 +13,7 @@ import {
   findDocumentVersionById,
   findDocumentVersionReview,
   findActiveDocumentVersion,
-  getLatestDocumentVersion,
+  fetchLatestDocumentVersion,
   listApplicationRequiredDocuments,
   listDocumentsWithLatestVersion,
   updateApplicationFirstOpenedAt,
@@ -50,7 +50,7 @@ import {
 import { type ApplicationResponse, type ProcessingStatusResponse } from "./application.dto";
 import {
   advanceProcessingStage,
-  getProcessingStageFlags,
+  fetchProcessingStageFlags,
 } from "./processingStage.service";
 import {
   createBankingAnalysisJob,
@@ -687,7 +687,7 @@ export async function listDocumentsForApplication(params: {
   );
 }
 
-export async function getProcessingStatus(
+export async function fetchProcessingStatus(
   applicationId: string
 ): Promise<ProcessingStatusResponse> {
   const application = await findApplicationById(applicationId);
@@ -738,7 +738,7 @@ export async function getProcessingStatus(
   const allAccepted = Object.values(requiredMap).every(
     (document) => document.status === "accepted"
   );
-  const stageFlags = getProcessingStageFlags(application.processing_stage);
+  const stageFlags = fetchProcessingStageFlags(application.processing_stage);
 
   return {
     applicationId: application.id,
@@ -1027,7 +1027,7 @@ export async function uploadDocument(params: {
       isNewDocument = true;
     }
 
-    const currentVersion = await getLatestDocumentVersion(documentId, client);
+    const currentVersion = await fetchLatestDocumentVersion(documentId, client);
     const nextVersion = currentVersion + 1;
     if (nextVersion <= currentVersion) {
       await client.query("rollback");
@@ -1601,6 +1601,6 @@ export async function rejectDocument(params: {
   }
 }
 
-export function getPipelineStates(): string[] {
+export function fetchPipelineStates(): string[] {
   return [...PIPELINE_STATES];
 }

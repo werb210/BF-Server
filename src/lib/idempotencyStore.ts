@@ -17,7 +17,7 @@ let redisClient: Redis | null = null;
 let redisReady = false;
 let redisAttempted = false;
 
-function getRedisClient(): Redis | null {
+function fetchRedisClient(): Redis | null {
   if (redisAttempted) {
     return redisReady ? redisClient : null;
   }
@@ -62,8 +62,8 @@ function memoryFallbackSet(key: string, value: StoredResponse): void {
   }, ONE_HOUR_IN_MILLISECONDS);
 }
 
-export async function getStoredResponse(key: string): Promise<StoredResponse | undefined> {
-  const client = getRedisClient();
+export async function fetchStoredResponse(key: string): Promise<StoredResponse | undefined> {
+  const client = fetchRedisClient();
   if (client) {
     try {
       const payload = await client.get(`${REDIS_KEY_PREFIX}${key}`);
@@ -80,7 +80,7 @@ export async function getStoredResponse(key: string): Promise<StoredResponse | u
 }
 
 export async function storeResponse(key: string, value: StoredResponse): Promise<void> {
-  const client = getRedisClient();
+  const client = fetchRedisClient();
   if (client) {
     try {
       await client.set(

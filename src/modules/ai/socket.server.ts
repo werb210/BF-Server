@@ -31,7 +31,7 @@ function safeParsePayload(data: RawData): SocketPayload | null {
   }
 }
 
-function getOrCreatePresence(sessionId: string): SessionPresence {
+function ensurePresence(sessionId: string): SessionPresence {
   const existing = sessionMap.get(sessionId);
   if (existing) {
     return existing;
@@ -113,7 +113,7 @@ async function attachTranscriptToCrm(sessionId: string): Promise<void> {
 }
 
 async function setSessionState(sessionId: string, state: ChatSessionState): Promise<void> {
-  const presence = getOrCreatePresence(sessionId);
+  const presence = ensurePresence(sessionId);
   presence.state = state;
   presence.updatedAt = Date.now();
 
@@ -190,7 +190,7 @@ export function initChatSocket(server: Server): WebSocketServer {
 
           await ensureChatSessionExists(payload.sessionId);
 
-          const presence = getOrCreatePresence(payload.sessionId);
+          const presence = ensurePresence(payload.sessionId);
           presence.sockets.add(ws);
           presence.updatedAt = Date.now();
 
@@ -222,7 +222,7 @@ export function initChatSocket(server: Server): WebSocketServer {
 
           await ensureChatSessionExists(payload.sessionId);
 
-          const presence = getOrCreatePresence(payload.sessionId);
+          const presence = ensurePresence(payload.sessionId);
           presence.sockets.add(ws);
 
           await setSessionState(payload.sessionId, "HUMAN_ACTIVE");

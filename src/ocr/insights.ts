@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { getOcrFieldDefinitions, getOcrFieldsForDocumentType } from "./fieldRegistry";
+import { fetchOcrFieldDefinitions, fetchOcrFieldsForDocumentType } from "./fieldRegistry";
 import {
   findApplicationOcrSnapshot,
   updateApplicationOcrInsights,
@@ -117,10 +117,10 @@ function setsEqual(a: string[], b: string[]): boolean {
 
 export function buildOcrInsights(results: OcrDocumentResult[]): OcrInsights {
   const valuesByField = new Map<string, string[]>();
-  const registry = getOcrFieldDefinitions();
+  const registry = fetchOcrFieldDefinitions();
 
   results.forEach((result) => {
-    const fieldsForDoc = getOcrFieldsForDocumentType();
+    const fieldsForDoc = fetchOcrFieldsForDocumentType();
     fieldsForDoc.forEach((field) => {
       const extracted = extractFieldValue(result.extractedJson, field.field_key);
       if (!extracted) {

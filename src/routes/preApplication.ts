@@ -8,7 +8,7 @@ type ContinuationJwt = {
 
 const router = Router();
 
-function getJwtSecret(): string {
+function fetchJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
     throw new Error("JWT_SECRET is not configured");
@@ -58,7 +58,7 @@ router.post("/continue-application", async (req: any, res: any, next: any) => {
       return res.status(500).json({ error: "Failed to create pre-application" });
     }
 
-    const token = jwt.sign({ preAppId: record.id }, getJwtSecret(), {
+    const token = jwt.sign({ preAppId: record.id }, fetchJwtSecret(), {
       expiresIn: "30m",
     });
 
@@ -79,7 +79,7 @@ router.get("/continue-application", async (req: any, res: any, next: any) => {
       return res.status(401).json({ error: "Missing token" });
     }
 
-    const decoded = jwt.verify(token, getJwtSecret()) as ContinuationJwt;
+    const decoded = jwt.verify(token, fetchJwtSecret()) as ContinuationJwt;
 
     const result = await dbQuery(
       `select

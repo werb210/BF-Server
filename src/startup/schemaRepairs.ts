@@ -23,7 +23,7 @@ async function ensureIdempotencyTable(): Promise<void> {
   );
 }
 
-async function getIdempotencyColumns(): Promise<Map<string, ColumnInfo>> {
+async function fetchIdempotencyColumns(): Promise<Map<string, ColumnInfo>> {
   const res = await pool.query<ColumnInfo>(
     `select column_name, is_nullable, data_type
      from information_schema.columns
@@ -58,7 +58,7 @@ async function dropNotNullIfPresent(
 
 async function alignIdempotencySchema(): Promise<void> {
   await ensureIdempotencyTable();
-  const columns = await getIdempotencyColumns();
+  const columns = await fetchIdempotencyColumns();
 
   await addColumnIfMissing(columns, "id", "id text");
   await addColumnIfMissing(columns, "key", "key text");

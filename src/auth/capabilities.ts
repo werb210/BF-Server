@@ -121,7 +121,7 @@ const ROLE_CAPABILITIES: Record<Role, readonly Capability[]> = {
  * Returns a defensive copy.
  * Never return the internal array.
  */
-export function getCapabilitiesForRole(role: Role): Capability[] {
+export function fetchCapabilitiesForRole(role: Role): Capability[] {
   const caps = ROLE_CAPABILITIES[role];
   if (!caps) {
     // Compile-time safety should prevent this, but runtime must still guard
@@ -134,7 +134,7 @@ export function isCapability(value: unknown): value is Capability {
   return typeof value === "string" && CAPABILITY_SET.has(value as Capability);
 }
 
-export function getRolesForCapabilities(
+export function fetchRolesForCapabilities(
   required: readonly Capability[]
 ): Role[] {
   const requiredList = [...required];

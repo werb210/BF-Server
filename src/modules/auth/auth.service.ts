@@ -25,7 +25,7 @@ import { recordAuditEvent } from "../audit/audit.service";
 import { pool } from "../../db";
 import { type Role, isRole } from "../../auth/roles";
 import { logError, logInfo, logWarn } from "../../observability/logger";
-import { getRequestId } from "../../middleware/requestContext";
+import { fetchRequestId } from "../../middleware/requestContext";
 import { normalizeOtpPhone } from "./phone";
 import { ensureOtpTableExists } from "../../db/ensureOtpTable";
 import { config, runtimeEnv } from "src/server/config/config";
@@ -35,8 +35,8 @@ import {
 } from "../../auth/jwt";
 import { DEFAULT_AUTH_SILO } from "../../auth/silo";
 import { hashRefreshToken } from "../../auth/tokenUtils";
-import { getCapabilitiesForRole } from "../../auth/capabilities";
-import { getTwilioClient, getVerifyServiceSid } from "../../services/twilio";
+import { fetchCapabilitiesForRole } from "../../auth/capabilities";
+import { fetchTwilioClient, fetchVerifyServiceSid } from "../../services/twilio";
 import { assertLenderBinding } from "../../auth/lenderBinding";
 
 const OTP_TRACE = (...args: any[]) => {
@@ -226,7 +226,7 @@ const OTP_VERIFICATION_MAX_AGE_MS = 10 * 60 * 1000;
 const OTP_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const OTP_MAX_VERIFY_ATTEMPTS = 5;
 const otpAttemptState = new Map<string, { count: number; resetAt: number; lastCodeHash: string }>();
-function getOrCreateTestOtp(phoneE164: string): string {
+function ensureTestOtp(phoneE164: string): string {
   const forcedTestOtp = process.env.TEST_OTP_CODE?.trim();
   if (forcedTestOtp) {
     return forcedTestOtp;
@@ -291,7 +291,7 @@ function clearVerifyAttempt(phoneE164: string): void {
   }
 }
 
-function getTwilioErrorDetails(error: unknown): TwilioErrorDetails {
+function fetchTwilioErrorDetails(error: unknown): TwilioErrorDetails {
   if (error && typeof error === "object") {
     const err = error as {
       code?: unknown;
@@ -474,7 +474,7 @@ function mapTwilioVerifyCheckFailure(
   };
 }
 
-function getPhoneTail(phoneE164: string): string {
+function fetchPhoneTail(phoneE164: string): string {
   return phoneE164.slice(-2);
 }
 
@@ -611,7 +611,7 @@ function shouldLogFullOtpPhone(): boolean {
 function otpLogMeta(requestId: string, phoneE164: string): { requestId: string; phoneTail: string; normalizedPhone?: string } {
   return {
     requestId,
-    phoneTail: getPhoneTail(phoneE164),
+    phoneTail: fetchPhoneTail(phoneE164),
     ...(shouldLogFullOtpPhone() ? { normalizedPhone: phoneE164 } : {}),
   };
 }
@@ -626,7 +626,7 @@ function generatePlaceholderPhoneNumber(): string {
 }
 
 async function createVerification(params: {
-  twilioClient: ReturnType<typeof getTwilioClient>;
+  twilioClient: ReturnType<typeof fetchTwilioClient>;
   serviceSid: string;
   to: string;
 }): Promise<{ sid?: string; status?: string }> {
@@ -638,7 +638,7 @@ async function createVerification(params: {
 }
 
 async function createVerificationCheck(params: {
-  twilioClient: ReturnType<typeof getTwilioClient>;
+  twilioClient: ReturnType<typeof fetchTwilioClient>;
   serviceSid: string;
   to: string;
   code: string;
@@ -653,7 +653,7 @@ async function createVerificationCheck(params: {
 export async function startOtp(
   phone: unknown
 ): Promise<{ ok: true; sid: string; otp?: string }> {
-  const requestId = getRequestId() ?? "unknown";
+  const requestId = fetchRequestId() ?? "unknown";
   try {
     try {
       await ensureOtpTableExists();
@@ -665,7 +665,7 @@ export async function startOtp(
     try {
       phoneE164 = assertE164(phone);
     } catch {
-      const phoneTail = typeof phone === "string" ? getPhoneTail(phone.trim()) : "";
+      const phoneTail = typeof phone === "string" ? fetchPhoneTail(phone.trim()) : "";
       logWarn("otp_start_received", {
         requestId,
         phoneTail,
@@ -681,12 +681,12 @@ export async function startOtp(
       ok: true,
     });
 
-    const twilioClient = getTwilioClient();
-    const serviceSid = getVerifyServiceSid();
+    const twilioClient = fetchTwilioClient();
+    const serviceSid = fetchVerifyServiceSid();
     clearOtpAttemptLimit(phoneE164);
 
     if (runtimeEnv.isTest) {
-      const generatedOtp = getOrCreateTestOtp(phoneE164);
+      const generatedOtp = ensureTestOtp(phoneE164);
       await createOtpCode({
         phone: phoneE164,
         code: generatedOtp,
@@ -765,7 +765,7 @@ export async function startOtp(
       }
       return { ok: true, sid: verification.sid ?? session.id };
     } catch (err: any) {
-      const details = getTwilioErrorDetails(err);
+      const details = fetchTwilioErrorDetails(err);
       logError("auth_twilio_verify_failed", {
         action: "otp_start",
         ...startMeta,
@@ -796,7 +796,7 @@ export async function verifyOtpCode(params: {
   route?: string;
   method?: string;
 }): Promise<VerifyOtpSuccess | VerifyOtpFailure> {
-  const requestId = getRequestId() ?? "unknown";
+  const requestId = fetchRequestId() ?? "unknown";
   let dedupPhone: string | null = null;
   try {
     try {
@@ -810,7 +810,7 @@ export async function verifyOtpCode(params: {
     if (!code || !phoneE164) {
       logWarn("otp_verify_received", {
         requestId,
-        phoneTail: typeof params.phone === "string" ? getPhoneTail(params.phone) : "",
+        phoneTail: typeof params.phone === "string" ? fetchPhoneTail(params.phone) : "",
         providerStatus: "not_checked",
         userFound: false,
         tokenCreated: false,
@@ -873,8 +873,8 @@ export async function verifyOtpCode(params: {
       providerStatus = "approved";
     }
 
-    const twilioClient = getTwilioClient();
-    const serviceSid = getVerifyServiceSid();
+    const twilioClient = fetchTwilioClient();
+    const serviceSid = fetchVerifyServiceSid();
 
     if (providerStatus !== "approved") {
       try {
@@ -895,7 +895,7 @@ export async function verifyOtpCode(params: {
         if (runtimeEnv.isTest) {
           providerStatus = undefined;
         } else {
-          const details = getTwilioErrorDetails(err);
+          const details = fetchTwilioErrorDetails(err);
           logError("auth_twilio_verify_failed", {
             action: "otp_verify",
             ...meta,
@@ -991,7 +991,7 @@ export async function verifyOtpCode(params: {
           tokenVersion,
           phone: userRecord.phoneNumber,
           silo: resolveAuthSilo(userRecord.silo),
-          capabilities: getCapabilitiesForRole(role),
+          capabilities: fetchCapabilitiesForRole(role),
         });
         refresh = issueRefreshToken({ userId: userRecord.id, tokenVersion });
         await storeRefreshToken({ userId: userRecord.id, token: refresh.token, tokenHash: refresh.tokenHash, expiresAt: refresh.expiresAt, client: db });
@@ -1050,7 +1050,7 @@ export async function verifyOtpCode(params: {
     if (err instanceof AppError && err.status < 500) {
       logWarn("otp_verify_response", {
         requestId,
-        phoneTail: dedupPhone ? getPhoneTail(dedupPhone) : "",
+        phoneTail: dedupPhone ? fetchPhoneTail(dedupPhone) : "",
         providerStatus: "error",
         userFound: false,
         tokenCreated: false,
@@ -1110,7 +1110,7 @@ export async function refreshSession(params: {
       error: { code: string; message: string };
     }
 > {
-  const requestId = getRequestId() ?? "unknown";
+  const requestId = fetchRequestId() ?? "unknown";
   const replayGraceMs = 2 * 60 * 1000;
   const rawRefreshToken = params.refreshToken?.trim();
   try {
@@ -1203,7 +1203,7 @@ export async function refreshSession(params: {
             tokenVersion,
             phone: userRecord.phoneNumber,
             silo: resolveAuthSilo(userRecord.silo),
-            capabilities: getCapabilitiesForRole(role),
+            capabilities: fetchCapabilitiesForRole(role),
           });
 
           await dbClient.query("commit");
@@ -1268,7 +1268,7 @@ export async function refreshSession(params: {
         tokenVersion,
         phone: userRecord.phoneNumber,
         silo: resolveAuthSilo(userRecord.silo),
-        capabilities: getCapabilitiesForRole(role),
+        capabilities: fetchCapabilitiesForRole(role),
       });
       const refreshed = issueRefreshToken({
         userId: userRecord.id,

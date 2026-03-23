@@ -1,7 +1,7 @@
 import { pool } from "../../db";
 import { AppError } from "../../middleware/errors";
 import { recordAuditEvent } from "../audit/audit.service";
-import { getCircuitBreaker } from "../../utils/circuitBreaker";
+import { fetchCircuitBreaker } from "../../utils/circuitBreaker";
 import type { Role } from "../../auth/roles";
 import { runtimeEnv } from "src/server/config/config";
 import { assertRetryAllowed } from "./retryPolicy";
@@ -18,20 +18,20 @@ type RetryJobResult = {
   nextRetryInMs: number;
 };
 
-const OCR_BREAKER = getCircuitBreaker("ocr_job_creation", {
+const OCR_BREAKER = fetchCircuitBreaker("ocr_job_creation", {
   failureThreshold: 3,
   cooldownMs: 60_000,
 });
-const BANKING_BREAKER = getCircuitBreaker("banking_job_creation", {
+const BANKING_BREAKER = fetchCircuitBreaker("banking_job_creation", {
   failureThreshold: 3,
   cooldownMs: 60_000,
 });
-const CREDIT_BREAKER = getCircuitBreaker("credit_summary_generation", {
+const CREDIT_BREAKER = fetchCircuitBreaker("credit_summary_generation", {
   failureThreshold: 3,
   cooldownMs: 60_000,
 });
 
-function getBreaker(jobType: RetryJobResult["jobType"]) {
+function fetchBreaker(jobType: RetryJobResult["jobType"]) {
   switch (jobType) {
     case "ocr":
       return OCR_BREAKER;
@@ -78,7 +78,7 @@ export async function retryProcessingJob(params: {
       const row = ocrJob.rows[0];
       const retryCount = row.retry_count ?? 0;
       const maxRetries = row.max_retries ?? 3;
-      const breaker = getBreaker("ocr");
+      const breaker = fetchBreaker("ocr");
       if (!params.force && !breaker.canRequest()) {
         throw new AppError("circuit_open", "OCR circuit breaker is open.", 503);
       }
@@ -164,7 +164,7 @@ export async function retryProcessingJob(params: {
       const row = bankingJob.rows[0];
       const retryCount = row.retry_count ?? 0;
       const maxRetries = row.max_retries ?? 2;
-      const breaker = getBreaker("banking");
+      const breaker = fetchBreaker("banking");
       if (!params.force && !breaker.canRequest()) {
         throw new AppError("circuit_open", "Banking circuit breaker is open.", 503);
       }
@@ -249,7 +249,7 @@ export async function retryProcessingJob(params: {
       const row = creditJob.rows[0];
       const retryCount = row.retry_count ?? 0;
       const maxRetries = row.max_retries ?? 1;
-      const breaker = getBreaker("credit_summary");
+      const breaker = fetchBreaker("credit_summary");
       if (!params.force && !breaker.canRequest()) {
         throw new AppError("circuit_open", "Credit summary circuit breaker is open.", 503);
       }

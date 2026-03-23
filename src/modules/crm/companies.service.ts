@@ -41,7 +41,7 @@ function normalizeCompany(row: CompanyRepoRow): CompanyRecord {
   };
 }
 
-export async function getCompanies(): Promise<CompanyRecord[]> {
+export async function fetchCompanies(): Promise<CompanyRecord[]> {
   const rows = await listCompanies();
   if (rows.length === 0) {
     return [];
@@ -49,7 +49,7 @@ export async function getCompanies(): Promise<CompanyRecord[]> {
   return rows.map((row) => normalizeCompany(row));
 }
 
-export async function getCompanyById(companyId: string): Promise<CompanyRecord | null> {
+export async function fetchCompanyById(companyId: string): Promise<CompanyRecord | null> {
   const row = await findCompanyById({ companyId });
   if (!row) {
     return null;

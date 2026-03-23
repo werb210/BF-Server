@@ -6,7 +6,7 @@ export type OcrStorageInput = {
 };
 
 export type OcrStorage = {
-  getBuffer: (input: OcrStorageInput) => Promise<Buffer>;
+  fetchBuffer: (input: OcrStorageInput) => Promise<Buffer>;
 };
 
 const AZURE_BLOB_HOST_SUFFIXES = [
@@ -81,7 +81,7 @@ async function downloadAzureBlobFromPath(pathValue: string): Promise<Buffer> {
 
 export function createOcrStorage(): OcrStorage {
   return {
-    async getBuffer(input: OcrStorageInput): Promise<Buffer> {
+    async fetchBuffer(input: OcrStorageInput): Promise<Buffer> {
       const dataUrlBuffer = parseDataUrl(input.content);
       if (dataUrlBuffer) {
         return dataUrlBuffer;

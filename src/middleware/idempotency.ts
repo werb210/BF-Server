@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { type NextFunction, type Request, type Response } from "express";
-import { getStoredResponse, storeResponse } from "../lib/idempotencyStore";
+import { fetchStoredResponse, storeResponse } from "../lib/idempotencyStore";
 import { logInfo, logWarn } from "../observability/logger";
 
 const IDEMPOTENCY_HEADER = "idempotency-key";
@@ -59,7 +59,7 @@ export async function idempotencyMiddleware(
   const existingInFlight = inFlightRequests.get(storeKey);
   if (existingInFlight) {
     await existingInFlight;
-    const replay = await getStoredResponse(storeKey);
+    const replay = await fetchStoredResponse(storeKey);
     if (replay) {
       logInfo("idempotent_request_replayed", { key, route: req.path });
       res.status(replay.statusCode).json(replay.body);
@@ -67,7 +67,7 @@ export async function idempotencyMiddleware(
     }
   }
 
-  const cached = await getStoredResponse(storeKey);
+  const cached = await fetchStoredResponse(storeKey);
   if (cached) {
     if (cached.requestHash !== hash) {
       res.status(409).json({

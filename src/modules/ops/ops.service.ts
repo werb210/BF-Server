@@ -10,7 +10,7 @@ export const OPS_KILL_SWITCH_KEYS = [
 
 export type OpsKillSwitchKey = (typeof OPS_KILL_SWITCH_KEYS)[number];
 
-function getEnvKillSwitch(key: OpsKillSwitchKey): boolean {
+function fetchEnvKillSwitch(key: OpsKillSwitchKey): boolean {
   if (key === "replay") {
     return runtimeEnv.opsKillSwitchReplay;
   }
@@ -33,7 +33,7 @@ export async function listKillSwitches(): Promise<
     result.rows.map((row) => [row.key, Boolean(row.enabled)])
   );
   return OPS_KILL_SWITCH_KEYS.map((key) => {
-    const envEnabled = getEnvKillSwitch(key);
+    const envEnabled = fetchEnvKillSwitch(key);
     const dbEnabled = dbMap.get(key) ?? false;
     return {
       key,
@@ -60,7 +60,7 @@ export async function setKillSwitch(
 export async function isKillSwitchEnabled(
   key: OpsKillSwitchKey
 ): Promise<boolean> {
-  if (getEnvKillSwitch(key)) {
+  if (fetchEnvKillSwitch(key)) {
     return true;
   }
   const result = await pool.query<{ enabled: boolean }>(

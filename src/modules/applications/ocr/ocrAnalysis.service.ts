@@ -1,6 +1,6 @@
 import {
-  getOcrFieldDefinitionByKey,
-  getOcrFieldRegistry,
+  fetchOcrFieldDefinitionByKey,
+  fetchOcrFieldRegistry,
   type OcrFieldDefinition,
 } from "../../ocr/ocrFieldRegistry";
 import { listOcrFieldsForApplication } from "../../ocr/ocr.repo";
@@ -88,7 +88,7 @@ export function analyzeOcrFields(params: {
     value: string;
   }>;
 }): OcrInsightsSummary {
-  const registry = getOcrFieldRegistry();
+  const registry = fetchOcrFieldRegistry();
   const valuesByField = new Map<string, string[]>();
 
   params.entries.forEach((entry) => {
@@ -161,14 +161,14 @@ export async function analyzeOcrForApplication(
   });
 }
 
-function getFieldCategories(field: OcrFieldDefinition): string[] {
+function fetchFieldCategories(field: OcrFieldDefinition): string[] {
   if (field.applies_to === "all") {
     return ["general"];
   }
   return field.applies_to.length > 0 ? field.applies_to : ["general"];
 }
 
-export async function getOcrInsightsForApplication(
+export async function fetchOcrInsightsForApplication(
   applicationId: string
 ): Promise<OcrInsightsResponse> {
   const rows = await listOcrFieldsForApplication(applicationId);
@@ -216,7 +216,7 @@ export async function getOcrInsightsForApplication(
   });
 
   const groupedByFieldCategory: Record<string, Record<string, OcrInsightField>> = {};
-  const registry = getOcrFieldRegistry();
+  const registry = fetchOcrFieldRegistry();
   const registryByKey = new Map(registry.map((field) => [field.field_key, field]));
 
   Object.entries(fields).forEach(([fieldKey, insight]) => {
@@ -228,7 +228,7 @@ export async function getOcrInsightsForApplication(
     if (normalizedValue) {
       insight.value = normalizedValue;
     }
-    const categories = getFieldCategories(field);
+    const categories = fetchFieldCategories(field);
     categories.forEach((category) => {
       if (!groupedByFieldCategory[category]) {
         groupedByFieldCategory[category] = {};
@@ -257,13 +257,13 @@ export async function getOcrInsightsForApplication(
 }
 
 export function isNumericOcrField(fieldKey: string): boolean {
-  return isNumericField(getOcrFieldDefinitionByKey(fieldKey));
+  return isNumericField(fetchOcrFieldDefinitionByKey(fieldKey));
 }
 
 export async function refreshOcrInsightsForApplication(
   applicationId: string
 ): Promise<OcrInsightsResponse> {
-  const insights = await getOcrInsightsForApplication(applicationId);
+  const insights = await fetchOcrInsightsForApplication(applicationId);
   const normalizedValues: Record<string, string> = {};
   Object.entries(insights.fields).forEach(([key, field]) => {
     const normalized = normalizeTextValue(field.value);

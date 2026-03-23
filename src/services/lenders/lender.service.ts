@@ -5,7 +5,7 @@ export const lenderService = {
     return db.lender.findMany();
   },
 
-  async getById(id: string) {
+  async byId(id: string) {
     return db.lender.findUnique({
       where: { id },
       include: { products: true },
@@ -14,7 +14,7 @@ export const lenderService = {
 
 
 
-  async getWithProducts(id: string) {
+  async withProducts(id: string) {
     return db.lender.findUnique({
       where: { id },
       include: { products: true },

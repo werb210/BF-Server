@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth, requireAuthorization } from "../middleware/auth";
 import {
-  getMe,
+  fetchMe,
   updateMe,
   listUsers,
   adminUpdateUser,
@@ -16,7 +16,7 @@ const router = Router();
 /**
  * Self profile
  */
-router.get("/me", requireAuth, requireAuthorization({ roles: ALL_ROLES }), getMe);
+router.get("/me", requireAuth, requireAuthorization({ roles: ALL_ROLES }), fetchMe);
 router.patch(
   "/me",
   requireAuth,

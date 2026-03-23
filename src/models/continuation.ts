@@ -24,7 +24,7 @@ export async function createContinuation(applicationId: string): Promise<string>
   return token;
 }
 
-export async function getContinuation(token: string): Promise<string | null> {
+export async function fetchContinuation(token: string): Promise<string | null> {
   const { rows } = await db.query<{ application_id: string }>(
     `
       select application_id

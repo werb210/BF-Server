@@ -38,7 +38,7 @@ export async function listLenderProductRequirements(params: {
   return res.rows;
 }
 
-export async function getLenderProductRequirementById(params: {
+export async function fetchLenderProductRequirementById(params: {
   id: string;
   client?: Queryable;
 }): Promise<LenderProductRequirementRecord | null> {

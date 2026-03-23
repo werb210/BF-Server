@@ -16,7 +16,7 @@ function startOfMonth(date: Date): Date {
   return value;
 }
 
-export function getPeriodKey(date: Date, groupBy: GroupBy): string {
+export function fetchPeriodKey(date: Date, groupBy: GroupBy): string {
   const normalized = new Date(date);
   normalized.setUTCHours(0, 0, 0, 0);
   if (groupBy === "week") {

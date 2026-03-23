@@ -36,7 +36,7 @@ export const SupportController = {
     res.json({ success: true, session });
   },
 
-  getQueue(_req: Request, res: Response): void {
+  fetchQueue(_req: Request, res: Response): void {
     res.json({ sessions: supportSessions.filter((session) => session.status === "open") });
   },
 
@@ -53,7 +53,7 @@ export const SupportController = {
     res.json({ success: true });
   },
 
-  getIssues(_req: Request, res: Response): void {
+  fetchIssues(_req: Request, res: Response): void {
     res.json({ issues: issueReports });
   },
 
@@ -68,7 +68,7 @@ export const SupportController = {
     res.json({ success: true });
   },
 
-  getWebLeads(_req: Request, res: Response): void {
+  fetchWebLeads(_req: Request, res: Response): void {
     res.json({ leads: webLeads });
   },
 
@@ -83,7 +83,7 @@ export const SupportController = {
     res.json({ success: true });
   },
 
-  getEvents(_req: Request, res: Response): void {
+  fetchEvents(_req: Request, res: Response): void {
     res.json({ events: websiteEvents.slice(-100) });
   },
 };

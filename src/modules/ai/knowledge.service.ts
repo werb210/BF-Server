@@ -12,7 +12,7 @@ type KnowledgeEntry = {
 const KNOWLEDGE_PATH = path.resolve("storage/knowledge.json");
 let openaiClient: OpenAI | null = null;
 
-function getOpenAIClient(): OpenAI {
+function fetchOpenAIClient(): OpenAI {
   if (openaiClient) {
     return openaiClient;
   }
@@ -56,7 +56,7 @@ export async function embedAndStore(
   sourceType: string,
   sourceId?: string
 ): Promise<void> {
-  const embedding = await getOpenAIClient().embeddings.create({
+  const embedding = await fetchOpenAIClient().embeddings.create({
     model: "text-embedding-3-small",
     input: content,
   });
@@ -78,7 +78,7 @@ export async function retrieveContext(
   db: Queryable,
   question: string
 ): Promise<string> {
-  const embedding = await getOpenAIClient().embeddings.create({
+  const embedding = await fetchOpenAIClient().embeddings.create({
     model: "text-embedding-3-small",
     input: question,
   });

@@ -9,7 +9,7 @@ import {
 import { AppError } from "../middleware/errors";
 import { logError, logInfo, logWarn } from "../observability/logger";
 import { trackEvent } from "../observability/appInsights";
-import { getRequestContext } from "../observability/requestContext";
+import { fetchRequestContext } from "../observability/requestContext";
 import { type Role } from "../auth/roles";
 
 export type PushLevel = "normal" | "high" | "critical";
@@ -124,7 +124,7 @@ function buildWebPushPayload(
   };
 }
 
-function getAuditEntry(payload: PushPayload): {
+function fetchAuditEntry(payload: PushPayload): {
   level: string;
   title: string;
   body: string;
@@ -226,7 +226,7 @@ export function validatePushEnvironmentAtStartup(): void {
   initializePushService();
 }
 
-export function getPushStatus(): PushStatus {
+export function fetchPushStatus(): PushStatus {
   if (!pushInitAttempted) {
     return initializePushService();
   }
@@ -247,11 +247,11 @@ export async function sendNotification(
   }
   ensurePayloadSize(payload);
   const subscriptions = await listPwaSubscriptionsByUser(target.userId);
-  const requestId = getRequestContext()?.requestId ?? "unknown";
+  const requestId = fetchRequestContext()?.requestId ?? "unknown";
 
   const messagePayload = buildWebPushPayload(payload, target);
   const payloadHash = hashPayload(messagePayload);
-  const auditEntry = getAuditEntry(payload);
+  const auditEntry = fetchAuditEntry(payload);
   await createPwaNotificationAudit({
     userId: target.userId,
     level: auditEntry.level,

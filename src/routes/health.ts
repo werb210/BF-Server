@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { dbHealth } from "../health/dbHealth";
-import { getStatus } from "../startupState";
+import { fetchStatus } from "../startupState";
 
 const router = Router();
 
@@ -11,7 +11,7 @@ router.get("/healthz", async (_req, res) => {
 });
 
 router.get("/readyz", (_req, res) => {
-  const status = getStatus();
+  const status = fetchStatus();
   const ready = status.ready && !status.reason;
   res.status(ready ? 200 : 503).json({ ready, status });
 });

@@ -6,7 +6,7 @@ function normalizeOrigin(value: string): string {
   return value.trim().replace(/\/$/, "").toLowerCase();
 }
 
-function getTrustedOrigins(): Set<string> {
+function fetchTrustedOrigins(): Set<string> {
   const trustedOrigins = [process.env.CLIENT_URL, process.env.PORTAL_URL, process.env.WEBSITE_URL];
 
   if (process.env.NODE_ENV !== "production") {
@@ -45,7 +45,7 @@ export const csrfProtection: RequestHandler = (req: any, res: any, next: any) =>
     return;
   }
 
-  const trustedOrigins = getTrustedOrigins();
+  const trustedOrigins = fetchTrustedOrigins();
   const normalizedOrigin = normalizeOrigin(origin);
 
   if (!trustedOrigins.has(normalizedOrigin)) {

@@ -35,7 +35,7 @@ function consumeRateLimit(buckets: Map<string, Bucket>, key: string, max: number
   return true;
 }
 
-function getIpKey(req: { ip?: string; headers: Record<string, unknown> }): string {
+function fetchIpKey(req: { ip?: string; headers: Record<string, unknown> }): string {
   const forwarded = typeof req.headers["x-forwarded-for"] === "string" ? req.headers["x-forwarded-for"].split(",")[0] : null;
   return (forwarded?.trim() || req.ip || "unknown").toLowerCase();
 }
@@ -61,7 +61,7 @@ async function resolveStaffUserId(req: { body?: Record<string, unknown>; query?:
 }
 
 const dialerRateLimit: RequestHandler = async (req: any, res: any, next: any) => {
-  const ipKey = getIpKey(req);
+  const ipKey = fetchIpKey(req);
   if (!consumeRateLimit(ipBuckets, ipKey, 30)) {
     res.status(429).json({ code: "rate_limited", message: "Too many requests." });
     return;

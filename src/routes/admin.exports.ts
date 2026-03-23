@@ -87,7 +87,7 @@ async function handleExport(params: {
   });
 }
 
-function getAuditContext(req: Request): { ip: string | null; userAgent: string | null } {
+function fetchAuditContext(req: Request): { ip: string | null; userAgent: string | null } {
   return {
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
@@ -118,7 +118,7 @@ router.post("/pipeline", safeHandler(async (req: any, res: any, next: any) => {
         targetUserId: null,
         targetType: "export",
         targetId: "pipeline_summary",
-        ...getAuditContext(req),
+        ...fetchAuditContext(req),
         success: true,
       });
       res.end();
@@ -139,7 +139,7 @@ router.post("/pipeline", safeHandler(async (req: any, res: any, next: any) => {
       targetUserId: null,
       targetType: "export",
       targetId: "pipeline_summary",
-      ...getAuditContext(req),
+      ...fetchAuditContext(req),
       success: true,
     });
     res.json({ data: rows });
@@ -150,7 +150,7 @@ router.post("/pipeline", safeHandler(async (req: any, res: any, next: any) => {
       targetUserId: null,
       targetType: "export",
       targetId: "pipeline_summary",
-      ...getAuditContext(req),
+      ...fetchAuditContext(req),
       success: false,
     });
     const message = err instanceof Error ? err.message : "unknown error";
@@ -183,7 +183,7 @@ router.post("/lenders", safeHandler(async (req: any, res: any, next: any) => {
         targetUserId: null,
         targetType: "export",
         targetId: "lender_performance",
-        ...getAuditContext(req),
+        ...fetchAuditContext(req),
         success: true,
       });
       res.end();
@@ -204,7 +204,7 @@ router.post("/lenders", safeHandler(async (req: any, res: any, next: any) => {
       targetUserId: null,
       targetType: "export",
       targetId: "lender_performance",
-      ...getAuditContext(req),
+      ...fetchAuditContext(req),
       success: true,
     });
     res.json({ data: rows });
@@ -215,7 +215,7 @@ router.post("/lenders", safeHandler(async (req: any, res: any, next: any) => {
       targetUserId: null,
       targetType: "export",
       targetId: "lender_performance",
-      ...getAuditContext(req),
+      ...fetchAuditContext(req),
       success: false,
     });
     const message = err instanceof Error ? err.message : "unknown error";
@@ -248,7 +248,7 @@ router.post("/applications", safeHandler(async (req: any, res: any, next: any) =
         targetUserId: null,
         targetType: "export",
         targetId: "application_volume",
-        ...getAuditContext(req),
+        ...fetchAuditContext(req),
         success: true,
       });
       res.end();
@@ -269,7 +269,7 @@ router.post("/applications", safeHandler(async (req: any, res: any, next: any) =
       targetUserId: null,
       targetType: "export",
       targetId: "application_volume",
-      ...getAuditContext(req),
+      ...fetchAuditContext(req),
       success: true,
     });
     res.json({ data: rows });
@@ -280,7 +280,7 @@ router.post("/applications", safeHandler(async (req: any, res: any, next: any) =
       targetUserId: null,
       targetType: "export",
       targetId: "application_volume",
-      ...getAuditContext(req),
+      ...fetchAuditContext(req),
       success: false,
     });
     const message = err instanceof Error ? err.message : "unknown error";

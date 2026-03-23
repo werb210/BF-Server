@@ -46,7 +46,7 @@ export async function setOtp(phone: string, code: string) {
   await requireRedis().set(`otp:${phone}`, code, "EX", 300);
 }
 
-export async function getOtp(phone: string) {
+export async function fetchOtp(phone: string) {
   return requireRedis().get(`otp:${phone}`);
 }
 

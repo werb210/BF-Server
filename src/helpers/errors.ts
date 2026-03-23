@@ -21,7 +21,7 @@ export function isHttpishError(error: unknown): error is HttpishError {
  * Extract a safe HTTP status code.
  * Defaults to 500 if invalid or out of range.
  */
-export function getStatus(error: unknown): number {
+export function fetchStatus(error: unknown): number {
   if (isHttpishError(error)) {
     const { status } = error;
     if (status >= 400 && status <= 599) {

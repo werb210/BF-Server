@@ -4,14 +4,14 @@ import { recordAuditEvent } from "../audit/audit.service";
 import {
   enqueueOcrForApplication,
   enqueueOcrForDocument,
-  getOcrJobStatus,
-  getOcrResult,
+  fetchOcrJobStatus,
+  fetchOcrResult,
   retryOcrJob,
 } from "./ocr.service";
 
 const router = Router();
 
-function getAuditContext(req: Request): { ip: string | null; userAgent: string | null } {
+function fetchAuditContext(req: Request): { ip: string | null; userAgent: string | null } {
   return {
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
@@ -27,7 +27,7 @@ router.post("/documents/:documentId/enqueue", async (req: any, res: any, next: a
       targetUserId: null,
       targetType: "ocr_job",
       targetId: job.id,
-      ...getAuditContext(req),
+      ...fetchAuditContext(req),
       success: true,
     });
     res.status(202).json({ job });
@@ -38,7 +38,7 @@ router.post("/documents/:documentId/enqueue", async (req: any, res: any, next: a
       targetUserId: null,
       targetType: "ocr_job",
       targetId: req.params.documentId,
-      ...getAuditContext(req),
+      ...fetchAuditContext(req),
       success: false,
     });
     next(err);
@@ -54,7 +54,7 @@ router.post("/applications/:applicationId/enqueue", async (req: any, res: any, n
       targetUserId: null,
       targetType: "application",
       targetId: req.params.applicationId,
-      ...getAuditContext(req),
+      ...fetchAuditContext(req),
       success: true,
     });
     res.status(202).json({ jobs });
@@ -65,7 +65,7 @@ router.post("/applications/:applicationId/enqueue", async (req: any, res: any, n
       targetUserId: null,
       targetType: "application",
       targetId: req.params.applicationId,
-      ...getAuditContext(req),
+      ...fetchAuditContext(req),
       success: false,
     });
     next(err);
@@ -74,7 +74,7 @@ router.post("/applications/:applicationId/enqueue", async (req: any, res: any, n
 
 router.get("/documents/:documentId/status", async (req: any, res: any, next: any) => {
   try {
-    const job = await getOcrJobStatus(req.params.documentId);
+    const job = await fetchOcrJobStatus(req.params.documentId);
     if (!job) {
       throw new AppError("not_found", "OCR job not found.", 404);
     }
@@ -84,7 +84,7 @@ router.get("/documents/:documentId/status", async (req: any, res: any, next: any
       targetUserId: null,
       targetType: "ocr_job",
       targetId: job.id,
-      ...getAuditContext(req),
+      ...fetchAuditContext(req),
       success: true,
     });
     res.json({ job });
@@ -95,7 +95,7 @@ router.get("/documents/:documentId/status", async (req: any, res: any, next: any
       targetUserId: null,
       targetType: "ocr_job",
       targetId: req.params.documentId,
-      ...getAuditContext(req),
+      ...fetchAuditContext(req),
       success: false,
     });
     next(err);
@@ -104,7 +104,7 @@ router.get("/documents/:documentId/status", async (req: any, res: any, next: any
 
 router.get("/documents/:documentId/result", async (req: any, res: any, next: any) => {
   try {
-    const result = await getOcrResult(req.params.documentId);
+    const result = await fetchOcrResult(req.params.documentId);
     if (!result) {
       throw new AppError("not_found", "OCR result not found.", 404);
     }
@@ -114,7 +114,7 @@ router.get("/documents/:documentId/result", async (req: any, res: any, next: any
       targetUserId: null,
       targetType: "ocr_result",
       targetId: result.id,
-      ...getAuditContext(req),
+      ...fetchAuditContext(req),
       success: true,
     });
     res.json({ result });
@@ -125,7 +125,7 @@ router.get("/documents/:documentId/result", async (req: any, res: any, next: any
       targetUserId: null,
       targetType: "ocr_result",
       targetId: req.params.documentId,
-      ...getAuditContext(req),
+      ...fetchAuditContext(req),
       success: false,
     });
     next(err);
@@ -141,7 +141,7 @@ router.post("/documents/:documentId/retry", async (req: any, res: any, next: any
       targetUserId: null,
       targetType: "ocr_job",
       targetId: job.id,
-      ...getAuditContext(req),
+      ...fetchAuditContext(req),
       success: true,
     });
     res.status(202).json({ job });
@@ -152,7 +152,7 @@ router.post("/documents/:documentId/retry", async (req: any, res: any, next: any
       targetUserId: null,
       targetType: "ocr_job",
       targetId: req.params.documentId,
-      ...getAuditContext(req),
+      ...fetchAuditContext(req),
       success: false,
     });
     next(err);

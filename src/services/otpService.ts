@@ -27,7 +27,7 @@ export async function storeOtp(phone: string, code: string): Promise<void> {
   });
 }
 
-export async function getOtp(phone: string): Promise<string | null> {
+export async function fetchOtp(phone: string): Promise<string | null> {
   const key = otpKey(phone);
 
   if (redis) {

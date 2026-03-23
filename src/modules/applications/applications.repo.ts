@@ -715,7 +715,7 @@ export async function deleteDocumentById(params: {
   );
 }
 
-export async function getLatestDocumentVersion(
+export async function fetchLatestDocumentVersion(
   documentId: string,
   client?: Queryable
 ): Promise<number> {

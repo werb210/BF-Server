@@ -21,7 +21,7 @@ export type ChatMessageRecord = {
 
 const tableColumnCache = new Map<string, Set<string>>();
 
-async function getTableColumns(table: string): Promise<Set<string>> {
+async function fetchTableColumns(table: string): Promise<Set<string>> {
   const cached = tableColumnCache.get(table);
   if (cached) {
     return cached;
@@ -44,7 +44,7 @@ export async function createSession(params: {
   channel?: string;
   leadId?: string | null;
 }): Promise<ChatSessionRecord> {
-  const columns = await getTableColumns("chat_sessions");
+  const columns = await fetchTableColumns("chat_sessions");
   const id = randomUUID();
 
   if (columns.has("user_type") && !columns.has("channel")) {
@@ -119,7 +119,7 @@ export async function createSession(params: {
   };
 }
 
-export async function getSessionById(sessionId: string): Promise<ChatSessionRecord | null> {
+export async function fetchSessionById(sessionId: string): Promise<ChatSessionRecord | null> {
   const { rows } = await pool.query<{
     id: string;
     source: string;
@@ -173,7 +173,7 @@ export async function addMessage(params: {
   message: string;
   metadata?: Record<string, unknown> | null;
 }): Promise<void> {
-  const columns = await getTableColumns("chat_messages");
+  const columns = await fetchTableColumns("chat_messages");
   const payload = params.metadata ? JSON.stringify(params.metadata) : null;
 
   if (columns.has("content")) {
@@ -219,7 +219,7 @@ export async function listMessagesBySession(sessionId: string): Promise<ChatMess
   }));
 }
 
-export async function getMessageCount(sessionId: string): Promise<number> {
+export async function fetchMessageCount(sessionId: string): Promise<number> {
   const { rows } = await pool.query<{ count: string }>(
     `select count(*)::text as count from chat_messages where session_id = $1`,
     [sessionId]

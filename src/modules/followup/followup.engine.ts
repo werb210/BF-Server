@@ -15,7 +15,7 @@ function minutesBetween(now: Date, then: Date): number {
   return (now.getTime() - then.getTime()) / 60000;
 }
 
-function getMetadataValue(
+function fetchMetadataValue(
   metadata: Record<string, unknown> | null | undefined,
   key: string
 ): unknown {
@@ -36,11 +36,11 @@ export function isConditionMet(
   const { triggerEvent, now, store } = params;
 
   if (condition.type === "metadata_equals") {
-    return getMetadataValue(triggerEvent.metadata, condition.key) === condition.value;
+    return fetchMetadataValue(triggerEvent.metadata, condition.key) === condition.value;
   }
 
   if (condition.type === "metadata_number_gte") {
-    const value = getMetadataValue(triggerEvent.metadata, condition.key);
+    const value = fetchMetadataValue(triggerEvent.metadata, condition.key);
     return typeof value === "number" && value >= condition.value;
   }
 

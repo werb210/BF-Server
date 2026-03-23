@@ -90,7 +90,7 @@ export async function createContinuation(
   return token;
 }
 
-export async function getContinuation(token: string): Promise<Record<string, unknown> | null> {
+export async function fetchContinuation(token: string): Promise<Record<string, unknown> | null> {
   const { rows } = await pool.query(
     "SELECT * FROM application_continuations WHERE token = $1",
     [token]

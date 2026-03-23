@@ -13,6 +13,6 @@ export function addVersion(version: DocumentVersion): void {
   versions.push(version);
 }
 
-export function getVersions(documentId: string): DocumentVersion[] {
+export function fetchVersions(documentId: string): DocumentVersion[] {
   return versions.filter((version) => version.documentId === documentId);
 }

@@ -36,7 +36,7 @@ export function isDbConnectionFailure(err: unknown): boolean {
   );
 }
 
-export function getDbFailureCategory(
+export function fetchDbFailureCategory(
   err: unknown
 ): "pool_exhausted" | "connection_failure" | null {
   if (!(err instanceof Error)) {

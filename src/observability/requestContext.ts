@@ -26,23 +26,23 @@ export function requestContextMiddleware(req: Request, res: Response, next: Next
   storage.run(store, next);
 }
 
-export function getRequestContext(): RequestContextStore | undefined {
+export function fetchRequestContext(): RequestContextStore | undefined {
   return storage.getStore();
 }
 
-export function getRequestId(): string {
+export function fetchRequestId(): string {
   return storage.getStore()?.requestId ?? "unknown";
 }
 
-export function getRequestRoute(): string {
+export function fetchRequestRoute(): string {
   return storage.getStore()?.route ?? "";
 }
 
-export function getRequestIdempotencyKeyHash(): string {
+export function fetchRequestIdempotencyKeyHash(): string {
   return storage.getStore()?.idempotencyKeyHash ?? "";
 }
 
-export function getRequestDbProcessIds(): string[] {
+export function fetchRequestDbProcessIds(): string[] {
   return storage.getStore()?.dbProcessIds ?? [];
 }
 

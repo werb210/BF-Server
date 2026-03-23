@@ -85,7 +85,7 @@ function normalizeMessage(row: MessageRepoRow): CommunicationMessage {
   };
 }
 
-export async function getCommunications(params: {
+export async function fetchCommunications(params: {
   contactId?: string | null;
 }): Promise<CommunicationRecord[]> {
   const rows = await listCommunications({
@@ -98,7 +98,7 @@ export async function getCommunications(params: {
   return rows.map((row) => normalizeCommunication(row));
 }
 
-export async function getMessageFeed(params: {
+export async function fetchMessageFeed(params: {
   contactId?: string | null;
   page: number;
   pageSize: number;

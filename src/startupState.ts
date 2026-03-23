@@ -1,1 +1,1 @@
-export { markReady, markNotReady, isReady, getStatus, resetStartupState } from "./server/startupState";
+export { markReady, markNotReady, isReady, fetchStatus, resetStartupState } from "./server/startupState";

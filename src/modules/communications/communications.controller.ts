@@ -1,7 +1,7 @@
 import { type Request, type Response } from "express";
 import { logError } from "../../observability/logger";
 import { respondOk } from "../../utils/respondOk";
-import { getCommunications, getMessageFeed } from "./communications.service";
+import { fetchCommunications, fetchMessageFeed } from "./communications.service";
 
 function logCommunicationsError(event: string, error: unknown): void {
   logError(event, {
@@ -18,7 +18,7 @@ export async function handleListCommunications(
   try {
     const contactId =
       typeof req.query.contactId === "string" ? req.query.contactId : null;
-    const communications = await getCommunications({ contactId });
+    const communications = await fetchCommunications({ contactId });
     respondOk(res, communications);
   } catch (error) {
     logCommunicationsError("communications_list_failed", error);
@@ -36,7 +36,7 @@ export async function handleListMessages(
     const contactId =
       typeof req.query.contactId === "string" ? req.query.contactId : null;
 
-    const messageFeed = await getMessageFeed({ contactId, page, pageSize });
+    const messageFeed = await fetchMessageFeed({ contactId, page, pageSize });
     respondOk(
       res,
       { messages: messageFeed.messages, total: messageFeed.total },

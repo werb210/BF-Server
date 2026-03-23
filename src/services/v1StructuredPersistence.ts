@@ -27,7 +27,7 @@ type StructuredInput = {
   }>;
 };
 
-function getClient(client?: PoolClient): PoolClient | typeof pool {
+function fetchClient(client?: PoolClient): PoolClient | typeof pool {
   return client ?? pool;
 }
 
@@ -35,7 +35,7 @@ export async function upsertStructuredApplicationData(
   input: StructuredInput,
   client?: PoolClient
 ): Promise<void> {
-  const db = getClient(client);
+  const db = fetchClient(client);
   const existingBorrower = await db.query<{ id: string }>(
     `select id from borrowers where application_id = $1 limit 1`,
     [input.applicationId]

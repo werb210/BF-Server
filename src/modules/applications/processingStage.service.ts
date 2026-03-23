@@ -137,12 +137,12 @@ export function normalizeProcessingStage(value: string | null): ProcessingStage 
   return "pending";
 }
 
-export function getProcessingStageFlags(stage: string | null): ProcessingStageFlags {
+export function fetchProcessingStageFlags(stage: string | null): ProcessingStageFlags {
   const normalized = normalizeProcessingStage(stage);
   return PROCESSING_STAGE_FLAGS[normalized];
 }
 
-async function getDocumentStatusSummary(params: {
+async function fetchDocumentStatusSummary(params: {
   applicationId: string;
   productType: string;
   lenderProductId: string | null;
@@ -339,7 +339,7 @@ async function advanceProcessingStageInternal(params: {
     [params.applicationId]
   );
 
-  const documentStatus = await getDocumentStatusSummary({
+  const documentStatus = await fetchDocumentStatusSummary({
     applicationId: params.applicationId,
     productType: applicationRecord.product_type,
     lenderProductId: applicationRecord.lender_product_id,

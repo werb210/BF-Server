@@ -20,7 +20,7 @@ import { createOpenAiOcrProvider, type OcrProvider } from "./ocr.provider";
 import { createOcrStorage, OcrStorageValidationError, type OcrStorage } from "./ocr.storage";
 import { type OcrJobRecord } from "./ocr.types";
 import { logError, logInfo } from "../../observability/logger";
-import { getOcrFieldRegistry, type OcrFieldDefinition } from "./ocrFieldRegistry";
+import { fetchOcrFieldRegistry, type OcrFieldDefinition } from "./ocrFieldRegistry";
 import {
   isNumericOcrField,
   refreshOcrInsightsForApplication,
@@ -262,7 +262,7 @@ export function extractOcrFields(text: string): Array<{
   confidence: number;
   page: number | null;
 }> {
-  return extractFieldsFromText(text, getOcrFieldRegistry());
+  return extractFieldsFromText(text, fetchOcrFieldRegistry());
 }
 
 export async function enqueueOcrForDocument(documentId: string): Promise<OcrJobRecord> {
@@ -295,11 +295,11 @@ export async function enqueueOcrForApplication(applicationId: string): Promise<O
   return jobs;
 }
 
-export async function getOcrJobStatus(documentId: string): Promise<OcrJobRecord | null> {
+export async function fetchOcrJobStatus(documentId: string): Promise<OcrJobRecord | null> {
   return findOcrJobByDocumentId(documentId);
 }
 
-export async function getOcrResult(documentId: string): Promise<ReturnType<typeof findOcrResultByDocumentId>> {
+export async function fetchOcrResult(documentId: string): Promise<ReturnType<typeof findOcrResultByDocumentId>> {
   return findOcrResultByDocumentId(documentId);
 }
 
@@ -341,7 +341,7 @@ export async function processOcrJob(
       throw new Error("document_version_missing");
     }
     const { mimeType, fileName } = parseMetadata(version.metadata);
-    const buffer = await storage.getBuffer({ content: version.content });
+    const buffer = await storage.fetchBuffer({ content: version.content });
     const extractPayload = {
       buffer,
       mimeType,

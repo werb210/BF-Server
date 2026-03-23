@@ -1,12 +1,12 @@
 import { type Request, type Response } from "express";
 import { AppError, forbiddenError } from "../../middleware/errors";
 import { type Role, isRole, ROLES } from "../../auth/roles";
-import { getProcessingStatus } from "./applications.service";
+import { fetchProcessingStatus } from "./applications.service";
 import { toStringSafe } from "../../utils/toStringSafe";
 
 const STAFF_ROLES = new Set<Role>([ROLES.ADMIN, ROLES.STAFF, ROLES.OPS]);
 
-export async function getApplicationProcessingStatus(
+export async function fetchApplicationProcessingStatus(
   req: Request,
   res: Response
 ): Promise<void> {
@@ -24,6 +24,6 @@ export async function getApplicationProcessingStatus(
   if (!applicationId) {
     throw new AppError("validation_error", "application id is required.", 400);
   }
-  const status = await getProcessingStatus(applicationId);
+  const status = await fetchProcessingStatus(applicationId);
   res.status(200).json(status);
 }

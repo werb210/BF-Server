@@ -9,7 +9,7 @@ export type AIMessage = {
 
 let client: OpenAI | null = null;
 
-function getClient(): OpenAI {
+function fetchClient(): OpenAI {
   if (client) return client;
 
   const apiKey = process.env.OPENAI_API_KEY;
@@ -22,7 +22,7 @@ function getClient(): OpenAI {
 }
 
 export async function askAI(messages: AIMessage[]): Promise<string> {
-  const completion = await getClient().chat.completions.create({
+  const completion = await fetchClient().chat.completions.create({
     model: process.env.OPENAI_CHAT_MODEL ?? "gpt-4o-mini",
     messages,
     temperature: 0.4,

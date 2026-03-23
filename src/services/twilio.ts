@@ -11,7 +11,7 @@ function isConfigured() {
   )
 }
 
-function getClient() {
+function fetchClient() {
   if (!isConfigured()) {
     throw new Error("Missing required environment variable")
   }
@@ -26,11 +26,11 @@ function getClient() {
   return client
 }
 
-export function getTwilioClient() {
-  return getClient()
+export function fetchTwilioClient() {
+  return fetchClient()
 }
 
-export function getVerifyServiceSid() {
+export function fetchVerifyServiceSid() {
   if (!process.env.TWILIO_VERIFY_SERVICE_SID) {
     throw new Error("Missing required environment variable")
   }
@@ -39,10 +39,10 @@ export function getVerifyServiceSid() {
 }
 
 export async function startVerification(phone: string) {
-  const twilio = getClient()
+  const twilio = fetchClient()
 
   return twilio.verify.v2
-    .services(getVerifyServiceSid())
+    .services(fetchVerifyServiceSid())
     .verifications.create({
       to: phone,
       channel: "sms",
@@ -50,10 +50,10 @@ export async function startVerification(phone: string) {
 }
 
 export async function checkVerification(phone: string, code: string) {
-  const twilio = getClient()
+  const twilio = fetchClient()
 
   return twilio.verify.v2
-    .services(getVerifyServiceSid())
+    .services(fetchVerifyServiceSid())
     .verificationChecks.create({
       to: phone,
       code,

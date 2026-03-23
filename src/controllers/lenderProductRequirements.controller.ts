@@ -17,4 +17,4 @@ export const deleteLenderProductRequirementHandler = async (_req: Request, res: 
 };
 
 // aliases (backward compatibility)
-export const getLenderRequirements = listLenderProductRequirementsHandler;
+export const fetchLenderRequirements = listLenderProductRequirementsHandler;

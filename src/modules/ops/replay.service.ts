@@ -104,7 +104,7 @@ export async function createReplayJob(scope: string): Promise<{
   return { id, scope, status: "queued" };
 }
 
-export async function getReplayJobStatus(
+export async function fetchReplayJobStatus(
   id: string
 ): Promise<{ id: string; scope: ReplayScope; status: string; startedAt: string | null; completedAt: string | null } | null> {
   const result = await pool.query<{

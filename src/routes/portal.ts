@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { Router, type Request, type Response } from "express";
-import { getStatus as getStartupStatus, isReady } from "../startupState";
+import { fetchStatus as startupStatus, isReady } from "../startupState";
 import { pool } from "../db";
 import {
   findActiveDocumentVersion,
@@ -32,7 +32,7 @@ import { listLenders } from "../repositories/lenders.repo";
 import { eventBus } from "../events/eventBus";
 import {
   convertReadinessLeadToApplication,
-  getReadinessLeadByApplicationId,
+  fetchReadinessLeadByApplicationId,
   listReadinessLeads,
 } from "../modules/readiness/readiness.service";
 import { toStringSafe } from "../utils/toStringSafe";
@@ -42,7 +42,7 @@ const portalLimiter = portalRateLimit();
 
 function ensureReady(res: Response): boolean {
   if (!isReady()) {
-    const status = getStartupStatus();
+    const status = startupStatus();
     res.status(503).json({
       ok: false,
       code: "service_not_ready",
@@ -231,7 +231,7 @@ router.get(
     if (!applicationId) {
       throw new AppError("validation_error", "Application id is required.", 400);
     }
-    const readinessLead = await getReadinessLeadByApplicationId(applicationId);
+    const readinessLead = await fetchReadinessLeadByApplicationId(applicationId);
     if (!readinessLead) {
       res.status(404).json({ error: "not_found" });
       return;

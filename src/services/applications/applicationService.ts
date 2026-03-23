@@ -1,6 +1,6 @@
 import { pool } from "../../db";
 
-export async function getLatestIncompleteApplication(userId: string) {
+export async function fetchLatestIncompleteApplication(userId: string) {
   const result = await pool.query(
     `select *
      from applications

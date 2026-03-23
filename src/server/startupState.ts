@@ -24,7 +24,7 @@ export function isReady(): boolean {
   return state.ready;
 }
 
-export function getStatus(): StartupStatus {
+export function fetchStatus(): StartupStatus {
   return { ...state };
 }
 
