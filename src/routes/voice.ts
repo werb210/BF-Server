@@ -165,7 +165,7 @@ router.post(
     capabilities: [CAPABILITIES.COMMUNICATIONS_CALL],
   }),
   voiceRateLimit(),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     assertVoiceEnabled();
     const parsed = voiceTokenSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -190,7 +190,7 @@ router.post(
     capabilities: [CAPABILITIES.COMMUNICATIONS_CALL],
   }),
   voiceRateLimit(),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     assertVoiceEnabled();
     const parsed = callCreateSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -227,7 +227,7 @@ router.post(
     capabilities: [CAPABILITIES.COMMUNICATIONS_CALL],
   }),
   voiceRateLimit(),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     assertVoiceEnabled();
     const parsed = callStartSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -266,7 +266,7 @@ router.post(
     capabilities: [CAPABILITIES.COMMUNICATIONS_CALL],
   }),
   voiceRateLimit(),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     assertVoiceEnabled();
     const parsed = callControlSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -293,7 +293,7 @@ router.post(
     capabilities: [CAPABILITIES.COMMUNICATIONS_CALL],
   }),
   voiceRateLimit(),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     assertVoiceEnabled();
     const parsed = callControlSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -320,7 +320,7 @@ router.post(
     capabilities: [CAPABILITIES.COMMUNICATIONS_CALL],
   }),
   voiceRateLimit(),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     assertVoiceEnabled();
     const parsed = callControlSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -347,7 +347,7 @@ router.post(
     capabilities: [CAPABILITIES.COMMUNICATIONS_CALL],
   }),
   voiceRateLimit(),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     assertVoiceEnabled();
     const parsed = callControlSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -374,7 +374,7 @@ router.post(
     capabilities: [CAPABILITIES.COMMUNICATIONS_CALL],
   }),
   voiceRateLimit(),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     assertVoiceEnabled();
     const parsed = callEndSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -404,7 +404,7 @@ router.post(
     capabilities: [CAPABILITIES.COMMUNICATIONS_CALL],
   }),
   voiceRateLimit(),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     assertVoiceEnabled();
     const parsed = callStatusSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -454,7 +454,7 @@ router.post(
     capabilities: [CAPABILITIES.COMMUNICATIONS_CALL],
   }),
   voiceRateLimit(),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     assertVoiceEnabled();
     const parsed = callRecordingSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -494,7 +494,7 @@ router.get(
     capabilities: [CAPABILITIES.COMMUNICATIONS_CALL],
   }),
   voiceRateLimit(),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     assertVoiceEnabled();
     const contextInput =
       typeof req.query.context === "string" ? req.query.context : undefined;

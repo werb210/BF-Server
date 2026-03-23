@@ -3,7 +3,7 @@ import { getContinuation, updateContinuationStep } from "../models/continuation"
 
 const router = Router();
 
-router.get("/:token", async (req, res, next) => {
+router.get("/:token", async (req: any, res: any, next: any) => {
   const token = req.params.token;
   const stepParam = typeof req.query.step === "string" ? Number(req.query.step) : null;
   const currentStep =

@@ -9,7 +9,7 @@ const router = Router();
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.CALENDAR_READ]));
 
-router.get("/", safeHandler((req, res) => {
+router.get("/", safeHandler((req: any, res: any) => {
   const page = Number(req.query.page) || 1;
   const pageSize = Number(req.query.pageSize) || 25;
   respondOk(

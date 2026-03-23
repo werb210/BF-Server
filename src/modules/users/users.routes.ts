@@ -18,7 +18,7 @@ function buildRequestMetadata(req: Request): { ip?: string; userAgent?: string }
   return metadata;
 }
 
-router.post("/", async (req, res, next) => {
+router.post("/", async (req: any, res: any, next: any) => {
   try {
     const { email, phoneNumber, role, lenderId } = req.body;
     const normalizedRole = typeof role === "string" ? normalizeRole(role) : null;
@@ -50,7 +50,7 @@ router.post("/", async (req, res, next) => {
   }
 });
 
-router.post("/:id/role", async (req, res, next) => {
+router.post("/:id/role", async (req: any, res: any, next: any) => {
   try {
     const actorId = req.user?.userId;
     if (!actorId) {
@@ -73,7 +73,7 @@ router.post("/:id/role", async (req, res, next) => {
   }
 });
 
-router.post("/:id/disable", async (req, res, next) => {
+router.post("/:id/disable", async (req: any, res: any, next: any) => {
   try {
     const actorId = req.user?.userId;
     if (!actorId) {
@@ -95,7 +95,7 @@ router.post("/:id/disable", async (req, res, next) => {
   }
 });
 
-router.post("/:id/enable", async (req, res, next) => {
+router.post("/:id/enable", async (req: any, res: any, next: any) => {
   try {
     const actorId = req.user?.userId;
     if (!actorId) {

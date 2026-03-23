@@ -106,7 +106,7 @@ router.get(
 router.get(
   "/applications/stages",
   portalLimiter,
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     if (!ensureReady(res)) {
       return;
     }
@@ -200,7 +200,7 @@ router.post(
   requireAuth,
   portalLimiter,
   requireAuthorization({ roles: [ROLES.ADMIN] }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const leadId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     if (!leadId) {
       throw new AppError("validation_error", "Lead id is required.", 400);
@@ -226,7 +226,7 @@ router.get(
   requireAuth,
   portalLimiter,
   requireAuthorization({ roles: [ROLES.ADMIN] }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const applicationId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     if (!applicationId) {
       throw new AppError("validation_error", "Application id is required.", 400);
@@ -245,7 +245,7 @@ router.get(
   requireAuth,
   portalLimiter,
   requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     ensureAuditHistoryEnabled();
     const applicationId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     if (!applicationId) {
@@ -309,7 +309,7 @@ router.get(
   requireAuth,
   portalLimiter,
   requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     ensureAuditHistoryEnabled();
     const jobId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     if (!jobId) {
@@ -370,7 +370,7 @@ router.get(
   requireAuth,
   portalLimiter,
   requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     ensureAuditHistoryEnabled();
     const documentId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     if (!documentId) {
@@ -423,7 +423,7 @@ router.post(
   requireAuth,
   portalLimiter,
   requireAuthorization({ roles: [ROLES.ADMIN] }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     if (!req.user) {
       throw new AppError("missing_token", "Authorization token is required.", 401);
     }
@@ -451,7 +451,7 @@ router.post(
   requireAuth,
   portalLimiter,
   requireAuthorization({ roles: [ROLES.ADMIN] }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     if (!req.user) {
       throw new AppError("missing_token", "Authorization token is required.", 401);
     }
@@ -478,7 +478,7 @@ router.post(
   requireAuth,
   portalLimiter,
   requireAuthorization({ roles: [ROLES.ADMIN] }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     if (!req.user) {
       throw new AppError("missing_token", "Authorization token is required.", 401);
     }
@@ -555,7 +555,7 @@ router.patch(
   requireAuth,
   portalLimiter,
   requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     if (!req.user) {
       throw new AppError("missing_token", "Authorization token is required.", 401);
     }
@@ -589,7 +589,7 @@ router.post(
   requireAuth,
   portalLimiter,
   requireAuthorization({ roles: [ROLES.ADMIN] }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     if (!req.user) {
       throw new AppError("missing_token", "Authorization token is required.", 401);
     }
@@ -625,7 +625,7 @@ router.post(
   requireAuth,
   portalLimiter,
   requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const applicationId = typeof req.body?.application_id === "string" ? req.body.application_id.trim() : "";
     const selectedLenders = Array.isArray(req.body?.selected_lenders) ? req.body.selected_lenders : [];
     if (!applicationId || selectedLenders.length === 0) {
@@ -662,7 +662,7 @@ router.post(
 router.get(
   "/offers",
   portalLimiter,
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const applicationId = typeof toStringSafe(req.query.applicationId) === "string" ? toStringSafe(req.query.applicationId).trim() : "";
     const query = applicationId
       ? {
@@ -689,7 +689,7 @@ router.post(
   requireAuth,
   portalLimiter,
   requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
     const lenderName = typeof req.body?.lenderName === "string" ? req.body.lenderName.trim() : "";
     if (!applicationId || !lenderName) {
@@ -726,7 +726,7 @@ router.patch(
   requireAuth,
   portalLimiter,
   requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const id = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     const status = typeof req.body?.status === "string" ? req.body.status.trim() : "";
     const allowed = new Set(["created", "sent", "accepted", "declined"]);

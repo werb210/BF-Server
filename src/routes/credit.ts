@@ -18,7 +18,7 @@ const creditSchema = z.object({
   existingDebt: z.boolean().default(false),
 });
 
-router.post("/score", async (req, res, next) => {
+router.post("/score", async (req: any, res: any, next: any) => {
   const parsed = creditSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid payload" });

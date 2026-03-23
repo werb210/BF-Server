@@ -31,7 +31,7 @@ const patchSchema = z.object({
 
 router.post(
   "/applications",
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {
       throw new AppError("validation_error", "Invalid application payload.", 400);
@@ -86,7 +86,7 @@ router.post(
 
 router.patch(
   "/applications/:id",
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const applicationId = typeof req.params.id === "string" ? req.params.id.trim() : "";
     if (!applicationId) {
       throw new AppError("validation_error", "Application id is required.", 400);
@@ -129,7 +129,7 @@ router.patch(
 
 router.get(
   "/application/:id/status",
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const applicationId = typeof req.params.id === "string" ? req.params.id.trim() : "";
     if (!applicationId) {
       throw new AppError("validation_error", "Application id is required.", 400);

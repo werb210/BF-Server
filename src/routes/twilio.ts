@@ -60,7 +60,7 @@ async function resolveStaffUserId(req: { body?: Record<string, unknown>; query?:
   return callLog?.staff_user_id ?? null;
 }
 
-const dialerRateLimit: RequestHandler = async (req, res, next) => {
+const dialerRateLimit: RequestHandler = async (req: any, res: any, next: any) => {
   const ipKey = getIpKey(req);
   if (!consumeRateLimit(ipBuckets, ipKey, 30)) {
     res.status(429).json({ code: "rate_limited", message: "Too many requests." });
@@ -119,7 +119,7 @@ router.get(
     roles: [ROLES.ADMIN, ROLES.STAFF],
     capabilities: [CAPABILITIES.COMMUNICATIONS_CALL],
   }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const identity = req.user?.userId;
     if (!identity) {
       throw new AppError("invalid_token", "Invalid or expired token.", 401);
@@ -159,7 +159,7 @@ router.get(
 router.post(
   "/twilio/voice",
   dialerRateLimit,
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     assertValidTwilioSignature(req);
 
     const from = typeof req.body?.From === "string" ? req.body.From : "";
@@ -218,7 +218,7 @@ router.post(
 router.post(
   "/twilio/voice/action",
   dialerRateLimit,
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     assertValidTwilioSignature(req);
     const dialStatus = typeof req.body?.DialCallStatus === "string" ? req.body.DialCallStatus : "";
 
@@ -241,7 +241,7 @@ router.post(
 router.post(
   "/twilio/recording",
   dialerRateLimit,
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     assertValidTwilioSignature(req);
 
     const recordingUrl = typeof req.body?.RecordingUrl === "string" ? req.body.RecordingUrl : "";
@@ -276,7 +276,7 @@ router.post(
 router.post(
   "/twilio/status",
   dialerRateLimit,
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     assertValidTwilioSignature(req);
     const callSid = typeof req.body?.CallSid === "string" ? req.body.CallSid : "";
     const callStatus = typeof req.body?.CallStatus === "string" ? req.body.CallStatus : "";

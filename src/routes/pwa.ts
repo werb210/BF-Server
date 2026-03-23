@@ -59,7 +59,7 @@ router.post(
   "/subscribe",
   requireAuth,
   requireAuthorization({ roles: ALL_ROLES }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const requestId = res.locals.requestId ?? "unknown";
     const parsedResult = subscriptionSchema.safeParse(req.body ?? {});
     if (!parsedResult.success) {
@@ -85,7 +85,7 @@ router.delete(
   "/unsubscribe",
   requireAuth,
   requireAuthorization({ roles: ALL_ROLES }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const parsedResult = unsubscribeSchema.safeParse(req.body ?? {});
     if (!parsedResult.success) {
       throw new AppError("validation_error", "Invalid unsubscribe payload.", 400);
@@ -108,7 +108,7 @@ router.delete(
   "/unsubscribe/owned",
   requireAuth,
   requireAuthorization({ roles: ALL_ROLES }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const parsedResult = unsubscribeSchema.safeParse(req.body ?? {});
     if (!parsedResult.success) {
       throw new AppError("validation_error", "Invalid unsubscribe payload.", 400);
@@ -137,7 +137,7 @@ router.get(
   requireAuth,
   requireAuthorization({ roles: ALL_ROLES }),
   perUserNotificationReadLimiter,
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const limitRaw = typeof toStringSafe(req.query.limit) === "string" ? Number(toStringSafe(req.query.limit)) : DEFAULT_NOTIFICATION_LIMIT;
     const offsetRaw = typeof toStringSafe(req.query.offset) === "string" ? Number(toStringSafe(req.query.offset)) : 0;
     const limit = Number.isFinite(limitRaw)
@@ -168,7 +168,7 @@ router.post(
   requireAuth,
   requireAuthorization({ roles: ALL_ROLES }),
   perUserNotificationAckLimiter,
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const id = toStringSafe(req.params.id);
     if (!id) {
       throw new AppError("validation_error", "id is required.", 400);
@@ -185,7 +185,7 @@ router.post(
   "/sync",
   requireAuth,
   requireAuthorization({ roles: ALL_ROLES }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const requestId = res.locals.requestId ?? "unknown";
     const user = req.user!;
     const replayUser = {

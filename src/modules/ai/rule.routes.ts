@@ -4,7 +4,7 @@ import { embedAndStore } from "./knowledge.service";
 
 const router = Router();
 
-router.post("/ai/rule", async (req, res, next) => {
+router.post("/ai/rule", async (req: any, res: any, next: any) => {
   const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
 
   if (!content) {

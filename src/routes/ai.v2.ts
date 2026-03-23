@@ -5,7 +5,7 @@ import { generateAIResponse } from "../modules/ai/ai.service";
 
 const router = Router();
 
-router.post("/ai/start", async (req, res, next) => {
+router.post("/ai/start", async (req: any, res: any, next: any) => {
   const id = randomUUID();
 
   await pool.query(
@@ -17,7 +17,7 @@ router.post("/ai/start", async (req, res, next) => {
   res.json({ sessionId: id });
 });
 
-router.post("/ai/message", async (req, res, next) => {
+router.post("/ai/message", async (req: any, res: any, next: any) => {
   const { sessionId, message } = req.body as {
     sessionId: string;
     message: string;
@@ -34,7 +34,7 @@ router.post("/ai/message", async (req, res, next) => {
   res.json(JSON.parse(reply) as unknown);
 });
 
-router.post("/ai/escalate", async (req, res, next) => {
+router.post("/ai/escalate", async (req: any, res: any, next: any) => {
   const { sessionId } = req.body as { sessionId: string };
 
   await pool.query(
@@ -52,7 +52,7 @@ router.post("/ai/escalate", async (req, res, next) => {
   res.json({ status: "queued" });
 });
 
-router.post("/ai/close", async (req, res, next) => {
+router.post("/ai/close", async (req: any, res: any, next: any) => {
   const { sessionId } = req.body as { sessionId: string };
 
   await pool.query(
@@ -64,7 +64,7 @@ router.post("/ai/close", async (req, res, next) => {
   res.json({ status: "closed" });
 });
 
-router.post("/ai/confidence-check", async (req, res, next) => {
+router.post("/ai/confidence-check", async (req: any, res: any, next: any) => {
   const { sessionId, score, reason } = req.body as {
     sessionId: string;
     score: number;
@@ -85,7 +85,7 @@ router.post("/ai/confidence-check", async (req, res, next) => {
   res.json({ ok: true, escalateRecommended: score < 0.65 });
 });
 
-router.post("/ai/startup-interest", async (req, res, next) => {
+router.post("/ai/startup-interest", async (req: any, res: any, next: any) => {
   const { sessionId, tags } = req.body as {
     sessionId: string;
     tags: string[];

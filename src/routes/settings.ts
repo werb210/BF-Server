@@ -17,7 +17,7 @@ router.get("/preferences", safeHandler((_req, res) => {
   respondOk(res, { preferences: {} });
 }));
 
-router.get("/me", safeHandler((req, res) => {
+router.get("/me", safeHandler((req: any, res: any) => {
   respondOk(res, {
     userId: req.user?.userId ?? null,
     role: req.user?.role ?? null,

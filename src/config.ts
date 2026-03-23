@@ -208,9 +208,10 @@ export function getVoiceRestrictedNumbers(): string[] {
 
 // -------- BUILD --------
 
+
 export function getBuildInfo() {
   return {
-    commit: process.env.COMMIT_SHA || 'dev',
-    env: process.env.NODE_ENV || 'dev'
+    commitHash: process.env.COMMIT_SHA || 'dev',
+    buildTimestamp: new Date().toISOString(),
   };
 }

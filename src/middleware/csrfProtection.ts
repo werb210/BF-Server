@@ -28,7 +28,7 @@ function isCsrfExemptPath(path: string): boolean {
   );
 }
 
-export const csrfProtection: RequestHandler = (req, res, next) => {
+export const csrfProtection: RequestHandler = (req: any, res: any, next: any) => {
   if (SAFE_METHODS.has(req.method.toUpperCase())) {
     next();
     return;

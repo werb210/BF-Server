@@ -17,7 +17,7 @@ router.use(requireCapability([CAPABILITIES.OPS_MANAGE]));
 
 router.post(
   "/ocr/:applicationId/complete",
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const applicationId =
       typeof req.params.applicationId === "string"
         ? req.params.applicationId.trim()
@@ -32,7 +32,7 @@ router.post(
 
 router.post(
   "/banking/:applicationId/complete",
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const applicationId =
       typeof req.params.applicationId === "string"
         ? req.params.applicationId.trim()
@@ -47,7 +47,7 @@ router.post(
 
 router.post(
   "/ocr/:applicationId/fail",
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const applicationId =
       typeof req.params.applicationId === "string"
         ? req.params.applicationId.trim()
@@ -62,7 +62,7 @@ router.post(
 
 router.post(
   "/banking/:applicationId/fail",
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const applicationId =
       typeof req.params.applicationId === "string"
         ? req.params.applicationId.trim()

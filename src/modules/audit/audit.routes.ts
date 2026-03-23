@@ -5,7 +5,7 @@ import { recordAuditEvent } from "./audit.service";
 
 const router = Router();
 
-router.get("/events", async (req, res, next) => {
+router.get("/events", async (req: any, res: any, next: any) => {
   try {
     const { actorUserId, targetUserId, action, from, to, limit, offset } =
       req.query ?? {};

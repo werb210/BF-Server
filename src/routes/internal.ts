@@ -34,7 +34,7 @@ router.get("/version", (_req, res) => {
   res.json({ commitHash, buildTimestamp });
 });
 
-router.post("/bootstrap-admin", async (req, res, next) => {
+router.post("/bootstrap-admin", async (req: any, res: any, next: any) => {
   try {
     logInfo("bootstrap_admin_attempt", {
       disabled: bootstrapAdminDisabled,

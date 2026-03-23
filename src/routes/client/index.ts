@@ -14,7 +14,7 @@ import {
 const router = Router();
 const clientReadLimiter = clientReadRateLimit();
 
-router.use((req, res, next) => {
+router.use((req: any, res: any, next: any) => {
   if (req.method === "GET") {
     clientReadLimiter(req, res, next);
     return;
