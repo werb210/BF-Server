@@ -1,17 +1,18 @@
 import pino from "pino";
-import { getRequestContext } from "../middleware/requestContext";
+import { getRequestId } from "../observability/requestContext";
 
 const base = pino({
   level: process.env.LOG_LEVEL || "info",
 });
 
 export const logger = {
-  info: (msg: string, extra: any = {}) => {
-    const ctx = getRequestContext();
-    base.info({ ...extra, requestId: ctx?.requestId }, msg);
+  info: (msg: string, extra: Record<string, unknown> = {}) => {
+    base.info({ ...extra, requestId: getRequestId() }, msg);
   },
-  error: (msg: string, extra: any = {}) => {
-    const ctx = getRequestContext();
-    base.error({ ...extra, requestId: ctx?.requestId }, msg);
+  warn: (msg: string, extra: Record<string, unknown> = {}) => {
+    base.warn({ ...extra, requestId: getRequestId() }, msg);
+  },
+  error: (msg: string, extra: Record<string, unknown> = {}) => {
+    base.error({ ...extra, requestId: getRequestId() }, msg);
   },
 };

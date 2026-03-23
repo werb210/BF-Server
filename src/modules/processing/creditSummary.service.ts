@@ -3,7 +3,7 @@ import { pool } from "../../db";
 import { AppError } from "../../middleware/errors";
 import { getCircuitBreaker } from "../../utils/circuitBreaker";
 import type { PoolClient } from "pg";
-import { getRetryPolicyEnabled } from "../../server/config/env.compat";
+import { getRetryPolicyEnabled, runtimeEnv } from "../../server/config/config";
 import { assertRetryAllowed } from "./retryPolicy";
 
 type Queryable = Pick<PoolClient, "query">;
@@ -45,7 +45,7 @@ export async function ensureCreditSummaryJob(params: {
   );
   if (existing.rows[0]) {
     const existingRecord = existing.rows[0];
-    if (getRetryPolicyEnabled() && existingRecord.status === "failed") {
+    if (runtimeEnv.retryPolicyEnabled && existingRecord.status === "failed") {
       const retryCount = existingRecord.retry_count ?? 0;
       const maxRetries = existingRecord.max_retries ?? 1;
       assertRetryAllowed({

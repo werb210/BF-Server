@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { pool } from "../../db";
 import { type PoolClient } from "pg";
-import { getOcrLockTimeoutMinutes } from "../../server/config/env.compat";
+import { getOcrLockTimeoutMinutes, runtimeEnv } from "../../server/config/config";
 import {
   type OcrDocumentResultRecord,
   type OcrJobRecord,
@@ -68,7 +68,7 @@ export async function lockOcrJobs(params: {
   client?: Queryable;
 }): Promise<OcrJobRecord[]> {
   const runner = params.client ?? pool;
-  const lockTimeoutMinutes = getOcrLockTimeoutMinutes();
+  const lockTimeoutMinutes = runtimeEnv.ocrLockTimeoutMinutes;
   const res = await runner.query<OcrJobRecord>(
     `with candidates as (
        select id
@@ -97,7 +97,7 @@ export async function lockOcrJobs(params: {
 
 export async function clearExpiredOcrLocks(params?: { client?: Queryable }): Promise<number> {
   const runner = params?.client ?? pool;
-  const lockTimeoutMinutes = getOcrLockTimeoutMinutes();
+  const lockTimeoutMinutes = runtimeEnv.ocrLockTimeoutMinutes;
   const res = await runner.query<{ count: string }>(
     `update ocr_jobs
      set locked_at = null,

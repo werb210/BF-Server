@@ -2,7 +2,7 @@
 
 import type { Express } from "express";
 import type { Server } from "http";
-import { validateServerEnv } from "./config/env";
+import { validateServerEnv } from "./config/config";
 import { logger } from "./utils/logger";
 import { markReady } from "../startupState";
 import { createServer } from "./createServer";
@@ -73,7 +73,7 @@ export async function startServer() {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL missing");
   }
-  console.log("DB CONNECTED:", process.env.DATABASE_URL);
+  logger.info("db_connected", { databaseUrl: process.env.DATABASE_URL });
   if (!process.env.JWT_SECRET) {
     throw new Error("JWT_SECRET missing");
   }
@@ -82,7 +82,7 @@ export async function startServer() {
   validateServerEnv();
   await assertDatabaseHealthy();
   if (process.env.RUN_DB_MIGRATIONS === "true") {
-    console.log("Running database migrations...");
+    logger.info("Running database migrations...");
     await runMigrations();
   }
   await runStartupMigrations(pool);
@@ -91,16 +91,16 @@ export async function startServer() {
   registerOtpCleanupJob();
 
   const listRoutes = (expressApp: Express) => {
-    console.log("\n=== REGISTERED ROUTES ===");
+    logger.info("\n=== REGISTERED ROUTES ===");
 
     expressApp?._router?.stack
       ?.filter((r: any) => r.route)
       ?.forEach((r: any) => {
         const methods = Object.keys(r.route.methods).join(",").toUpperCase();
-        console.log(`${methods} ${r.route.path}`);
+        logger.info(`${methods} ${r.route.path}`);
       });
 
-    console.log("=========================\n");
+    logger.info("=========================\n");
   };
 
   setTimeout(() => {
@@ -109,7 +109,7 @@ export async function startServer() {
         listRoutes(app);
       }
     } catch (e) {
-      console.error("Route listing failed", e);
+      logger.error("route_listing_failed", { error: e instanceof Error ? e.message : String(e) });
     }
   }, 1000);
 
@@ -124,7 +124,7 @@ export async function startServer() {
         app.set("server", listener);
       }
       logger.info("server_listening", { port });
-      console.log(`Server running on port ${port}`);
+      logger.info(`Server running on port ${port}`);
       void runSelfTest(port);
       resolve(listener);
     });

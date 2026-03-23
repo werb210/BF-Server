@@ -1,3 +1,4 @@
+import { runtimeEnv } from "../server/config/config";
 import { pool } from "../db";
 import { isTestEnvironment } from "../dbRuntime";
 import { logError, logInfo, logWarn } from "../observability/logger";
@@ -39,7 +40,7 @@ async function hasColumn(table: string, column: string): Promise<boolean> {
 }
 
 export async function runStartupConsistencyCheck(): Promise<void> {
-  if (isTestEnvironment()) {
+  if (runtimeEnv.isTest) {
     return;
   }
   try {

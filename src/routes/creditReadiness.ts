@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { db } from "../db";
-import { getClientSubmissionOwnerUserId } from "../server/config/env.compat";
+import { getClientSubmissionOwnerUserId, config } from "../server/config/config";
 import { ApplicationStage } from "../modules/applications/pipelineState";
 import { sendSms } from "../modules/notifications/sms.service";
 import { createContinuation } from "../models/continuation";
@@ -55,7 +55,7 @@ router.post("/", async (req: any, res: any, next: any) => {
     `,
     [
       applicationId,
-      getClientSubmissionOwnerUserId(),
+      config.client.submissionOwnerUserId,
       companyName,
       JSON.stringify({
         contactName: fullName,

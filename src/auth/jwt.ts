@@ -3,7 +3,9 @@ import {
   getAccessTokenExpiresIn,
   getAccessTokenSecret,
   getJwtClockSkewSeconds,
-} from "../server/config/env.compat";
+  config,
+  runtimeEnv
+} from "../server/config/config";
 import { type Role, isRole } from "./roles";
 import { type Capability, isCapability } from "./capabilities";
 import { findAuthUserById, type AuthUser } from "../modules/auth/auth.repo";
@@ -35,7 +37,7 @@ export class AccessTokenVerificationError extends Error {
 }
 
 function requireJwtSecret(): string {
-  const secret = getAccessTokenSecret();
+  const secret = config.auth.jwtSecret;
   if (!secret || typeof secret !== "string") {
     throw new AccessTokenSigningError("JWT secret is missing or invalid");
   }
@@ -92,7 +94,7 @@ function validatePayload(payload: unknown): asserts payload is AccessTokenPayloa
 
 export function signAccessToken(payload: AccessTokenPayload): string {
   const secret = requireJwtSecret();
-  const expiresIn = getAccessTokenExpiresIn() as SignOptions["expiresIn"];
+  const expiresIn = config.auth.accessExpiresIn as SignOptions["expiresIn"];
   const options: SignOptions = {
     algorithm: "HS256",
     issuer: JWT_ISSUER,
@@ -117,7 +119,7 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
   try {
     decoded = jwt.verify(token, secret, {
       algorithms: ["HS256"],
-      clockTolerance: getJwtClockSkewSeconds(),
+      clockTolerance: runtimeEnv.jwtClockSkewSeconds,
       issuer: JWT_ISSUER,
       audience: JWT_AUDIENCE,
     });

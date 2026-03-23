@@ -6,7 +6,7 @@ import { startCall, updateCallStatus, updateCallRecording } from "../calls/calls
 import { findCallLogByTwilioSid } from "../calls/calls.repo";
 import { getTwilioClient } from "../../services/twilio";
 import { type CallStatus, type CallLogRecord } from "../calls/calls.repo";
-import { getVoiceRestrictedNumbers } from "../../server/config/env.compat";
+import { getVoiceRestrictedNumbers, runtimeEnv } from "../../server/config/config";
 import { recordAuditEvent } from "../audit/audit.service";
 
 const VOICE_TOKEN_TTL_SECONDS = 15 * 60;
@@ -131,7 +131,7 @@ function getVoiceStatusCallbackUrl(): string | null {
 }
 
 function normalizeRestrictedNumbers(): Set<string> {
-  const restricted = getVoiceRestrictedNumbers();
+  const restricted = runtimeEnv.voiceRestrictedNumbers;
   const normalized = restricted
     .map((entry: any) => normalizePhoneNumber(entry))
     .filter((entry): entry is string => Boolean(entry));

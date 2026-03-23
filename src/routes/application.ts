@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { z } from "zod";
 import { db } from "../db";
 import { createApplication } from "../modules/applications/applications.repo";
-import { getClientSubmissionOwnerUserId } from "../server/config/env.compat";
+import { getClientSubmissionOwnerUserId, config } from "../server/config/config";
 
 const router = Router();
 
@@ -62,7 +62,7 @@ router.post("/", async (req: any, res: any, next: any) => {
     }
 
     const created = await createApplication({
-      ownerUserId: getClientSubmissionOwnerUserId(),
+      ownerUserId: config.client.submissionOwnerUserId,
       name: readiness.company_name,
       metadata: {
         readinessSessionId: readiness.id,

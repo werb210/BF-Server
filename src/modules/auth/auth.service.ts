@@ -34,7 +34,7 @@ import {
   getRefreshTokenSecret,
   getJwtClockSkewSeconds,
   isTestEnvironment,
-} from "../../server/config/env.compat";
+} from "../../server/config/config";
 import {
   signAccessToken,
   type AccessTokenPayload,

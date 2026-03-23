@@ -1,3 +1,4 @@
+import { runtimeEnv } from "../server/config/config";
 
 
 import { pool } from "../db";
@@ -127,7 +128,7 @@ async function alignIdempotencySchema(): Promise<void> {
 }
 
 export async function ensureSchemaRepairs(): Promise<void> {
-  if (isTestEnvironment()) {
+  if (runtimeEnv.isTest) {
     return;
   }
   try {

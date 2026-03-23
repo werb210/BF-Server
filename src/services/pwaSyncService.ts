@@ -21,7 +21,7 @@ import {
   getPwaSyncActionMaxBytes,
   getPwaSyncBatchMaxBytes,
   getPwaSyncMaxActions,
-} from "../server/config/env.compat";
+} from "../server/config/config";
 
 type ReplayUserContext = {
   userId: string;

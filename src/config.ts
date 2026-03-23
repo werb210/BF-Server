@@ -1,5 +1,2 @@
-import { ENV } from './server/config/env.compat';
-
-export const config = ENV;
-
-export default config;
+export { config, runtimeEnv, assertEnv } from "./server/config/config";
+export { config as default } from "./server/config/config";

@@ -1,7 +1,7 @@
 import { pool } from "./db";
-import { logger } from "./server/utils/logger";
+import { logger } from "./platform/logger";
 
-export function isTestEnvironment(): boolean {
+export function isTestEnv(): boolean {
   return process.env.NODE_ENV === "test";
 }
 
@@ -69,3 +69,5 @@ export async function cancelDbWork(processIds: number[]): Promise<void> {
     logger.error("db_cancel_error", { message });
   }
 }
+
+export const isTestEnvironment = isTestEnv;

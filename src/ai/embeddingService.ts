@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { createHash, randomUUID } from "crypto";
-import { getAiEmbeddingModel } from "../server/config/env.compat";
+import { getAiEmbeddingModel, runtimeEnv } from "../server/config/config";
 import { pool } from "../db";
 
 const APPROX_CHUNK_SIZE = 800;
@@ -42,7 +42,7 @@ export async function generateEmbedding(
 
   const openai = client ?? new OpenAI({ apiKey });
   const response = await openai.embeddings.create({
-    model: getAiEmbeddingModel(),
+    model: runtimeEnv.aiEmbeddingModel,
     input: trimmed,
   });
 

@@ -5,7 +5,7 @@ import { pool } from "../db";
 import { safeHandler } from "../middleware/safeHandler";
 import { retrieveTopKnowledgeChunks } from "./retrievalService";
 import { matchLenders } from "./lenderMatchEngine";
-import { getAiModel } from "../server/config/env.compat";
+import { getAiModel, runtimeEnv } from "../server/config/config";
 import { emitAiEscalation } from "../realtime/events";
 import { circuitGuard, recordFailure, resetCircuit } from "../utils/circuitBreaker";
 import { retry } from "../utils/retry";
@@ -65,7 +65,7 @@ async function createAiResponse(prompt: string, context: string[]): Promise<stri
     circuitGuard();
     try {
       const completion = await client.chat.completions.create({
-        model: getAiModel(),
+        model: runtimeEnv.aiModel,
         messages: [
           {
             role: "system",
