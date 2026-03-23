@@ -39,7 +39,7 @@ jobs:
 
       - name: Smoke test
         run: |
-          node dist/index.js & sleep 5 && kill $!
+          node dist/src/index.js & sleep 5 && kill $!
 
       - name: Enforce architecture rules
         run: |
