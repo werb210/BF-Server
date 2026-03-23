@@ -39,7 +39,7 @@ jobs:
 
       - name: Smoke test
         run: |
-          node dist/src/index.js & sleep 5 && kill $!
+          TS_NODE_BASEURL=./dist node -r tsconfig-paths/register dist/src/index.js & sleep 5 && kill $!
 
       - name: Enforce architecture rules
         run: |
