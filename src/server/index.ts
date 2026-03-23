@@ -75,14 +75,20 @@ export async function startServer() {
   installProcessHandlers();
   validateStartup();
   validateServerEnv();
-  await assertDatabaseHealthy();
-  if (config.flags.runDbMigrations) {
-    logger.info("Running database migrations...");
-    await runMigrations();
+  if (!config.flags.skipDbConnection) {
+    await assertDatabaseHealthy();
+    if (config.flags.runDbMigrations) {
+      logger.info("Running database migrations...");
+      await runMigrations();
+    }
+    await runStartupMigrations(pool);
+  } else {
+    logger.info("db_connection_skipped", { reason: "SKIP_DB_CONNECTION=true" });
   }
-  await runStartupMigrations(pool);
   app = await createServer();
-  await createOtpSessionsTable();
+  if (!config.flags.skipDbConnection) {
+    await createOtpSessionsTable();
+  }
   registerOtpCleanupJob();
 
   const listRoutes = (expressApp: Express) => {

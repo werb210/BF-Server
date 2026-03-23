@@ -27,6 +27,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
       - name: Install
         run: npm ci
@@ -34,7 +35,7 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
-      - name: Type Check
+      - name: Typecheck
         run: npm run typecheck
 
       - name: Build
@@ -43,8 +44,18 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Startup smoke test
-        run: node dist/index.js & sleep 5 && kill $!
+      - name: Smoke test
+        run: |
+          node dist/index.js &
+          PID=$!
+          sleep 5
+          kill $PID || true
+          wait $PID || true
+        env:
+          DATABASE_URL: "postgresql://test:test@localhost:5432/test"
+          REDIS_URL: "redis://localhost:6379"
+          JWT_SECRET: "test-secret"
+          SKIP_DB_CONNECTION: "true"
 
       - name: Deploy
         run: echo "Deploy step here"

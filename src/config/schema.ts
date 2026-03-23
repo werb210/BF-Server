@@ -25,6 +25,7 @@ export const EnvSchema = z
     APPLICATIONINSIGHTS_CONNECTION_STRING: z.string().min(1).optional(),
     API_V1_ALLOW_UNFROZEN: boolString.optional(),
     RUN_DB_MIGRATIONS: boolString.optional(),
+    SKIP_DB_CONNECTION: boolString.optional(),
     TWILIO_API_KEY: z.string().min(1).optional(),
     TWILIO_API_SECRET: z.string().min(1).optional(),
     TWILIO_VOICE_APP_SID: z.string().min(1).optional(),

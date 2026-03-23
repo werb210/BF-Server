@@ -180,6 +180,7 @@ export const config = Object.freeze({
   flags: Object.freeze({
     allowUnfrozenApiV1: parsed.API_V1_ALLOW_UNFROZEN === "true",
     runDbMigrations: parsed.RUN_DB_MIGRATIONS === "true",
+    skipDbConnection: parsed.SKIP_DB_CONNECTION === "true",
     idempotencyEnabled: toBool(parsed.IDEMPOTENCY_ENABLED, false),
     auditHistoryEnabled: toBool(parsed.AUDIT_HISTORY_ENABLED, false),
     retryPolicyEnabled: toBool(parsed.RETRY_POLICY_ENABLED, true),
