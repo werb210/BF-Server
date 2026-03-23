@@ -1,25 +1,5 @@
-
 import { ENV } from './server/config/env';
 
-export const config = {
-  NODE_ENV: ENV.NODE_ENV,
-  DATABASE_URL: ENV.DATABASE_URL,
-
-  /* RATE LIMIT */
-  RATE_LIMIT_WINDOW_MS: ENV.RATE_LIMIT_WINDOW_MS,
-  RATE_LIMIT_MAX: ENV.RATE_LIMIT_MAX,
-
-  /* URLS */
-  CLIENT_URL: ENV.CLIENT_URL,
-  PORTAL_URL: ENV.PORTAL_URL,
-
-  /* AUTH */
-  JWT_SECRET: ENV.JWT_SECRET,
-  JWT_REFRESH_SECRET: ENV.JWT_REFRESH_SECRET,
-
-  /* FLAGS */
-  TEST_MODE: ENV.TEST_MODE,
-};
+export const config = ENV;
 
 export default config;
-
