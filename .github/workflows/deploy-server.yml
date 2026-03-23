@@ -32,8 +32,11 @@ jobs:
           echo "Checking for forbidden get* helpers..."
           grep -r "function get" src && exit 1 || echo "OK"
 
-          echo "Checking for illegal get usage..."
-          grep -r "get[A-Z]" src | grep -v "Date.get" && exit 1 || echo "OK"
+          echo "Checking for illegal get* function declarations..."
+          grep -rE "function get[A-Z]" src && exit 1 || echo "OK"
+
+          echo "Checking for illegal exported get* helpers..."
+          grep -rE "export (const|function) get[A-Z]" src && exit 1 || echo "OK"
 
           echo "Checking for direct process.env usage..."
           grep -r "process.env" src | grep -v "config" && exit 1 || echo "OK"
