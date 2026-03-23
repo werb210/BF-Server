@@ -75,7 +75,7 @@ export async function startServer() {
   installProcessHandlers();
   validateStartup();
   validateServerEnv();
-  if (!config.flags.skipDbConnection) {
+  if (!config.db.skip) {
     await assertDatabaseHealthy();
     if (config.flags.runDbMigrations) {
       logger.info("Running database migrations...");
@@ -86,7 +86,7 @@ export async function startServer() {
     logger.info("db_connection_skipped", { reason: "SKIP_DB_CONNECTION=true" });
   }
   app = await createServer();
-  if (!config.flags.skipDbConnection) {
+  if (!config.db.skip) {
     await createOtpSessionsTable();
   }
   registerOtpCleanupJob();

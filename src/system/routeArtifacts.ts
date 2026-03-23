@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { listRouteInventory, type RouteEntry } from "../debug/printRoutes";
+import { ENV } from "../config";
 
 export type NormalizedRouteEntry = {
   method: string;
@@ -32,17 +33,17 @@ function toKey(route: NormalizedRouteEntry): string {
 }
 
 async function loadAppBuilder() {
-  if (!process["env"].NODE_ENV) {
-    process["env"].NODE_ENV = "test";
+  if (!ENV.NODE_ENV) {
+    ENV.NODE_ENV = "test";
   }
-  if (!process["env"].JWT_SECRET) {
-    process["env"].JWT_SECRET = "route-artifacts-secret";
+  if (!ENV.JWT_SECRET) {
+    ENV.JWT_SECRET = "route-artifacts-secret";
   }
-  process["env"].OPENAI_API_KEY ??= "test-openai-key";
-  process["env"].TWILIO_ACCOUNT_SID ??= "ACtest";
-  process["env"].TWILIO_AUTH_TOKEN ??= "test-token";
-  process["env"].TWILIO_API_KEY_SID ??= "SKtest";
-  process["env"].TWILIO_API_SECRET ??= "test-secret";
+  ENV.OPENAI_API_KEY ??= "test-openai-key";
+  ENV.TWILIO_ACCOUNT_SID ??= "ACtest";
+  ENV.TWILIO_AUTH_TOKEN ??= "test-token";
+  ENV.TWILIO_API_KEY_SID ??= "SKtest";
+  ENV.TWILIO_API_SECRET ??= "test-secret";
 
   const { buildAppWithApiRoutes } = await import("../app");
   return buildAppWithApiRoutes;

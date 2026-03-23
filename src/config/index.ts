@@ -1,7 +1,22 @@
-import { EnvSchema } from "./schema";
+import { z } from "zod";
+import { EnvSchema as LegacyEnvSchema } from "./schema";
 
-const env = process["env"] as Record<string, string | undefined>;
-const parsed = EnvSchema.parse(env);
+const EnvSchema = z.object({
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  PORT: z.string().default("3000"),
+  DATABASE_URL: z.string(),
+  JWT_SECRET: z.string(),
+  REDIS_URL: z.string().optional(),
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_MODEL: z.string().default("gpt-4o-mini"),
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_PHONE: z.string().optional(),
+  SKIP_DB_CONNECTION: z.string().optional(),
+});
+
+const env = EnvSchema.parse(process.env);
+const parsed = LegacyEnvSchema.parse(process.env as Record<string, string | undefined>);
 
 const toNumber = (value: string | undefined, fallback: number): number => {
   const candidate = value ?? "";
@@ -24,8 +39,8 @@ const csv = (value: string | undefined, fallback: string[]): string[] => {
 };
 
 export const config = Object.freeze({
-  env: parsed.NODE_ENV,
-  port: parsed.PORT ? Number(parsed.PORT) : 3000,
+  env: env.NODE_ENV,
+  port: Number(env.PORT),
   logLevel: parsed.LOG_LEVEL,
   commitSha: parsed.COMMIT_SHA ?? "unknown",
   buildTimestamp: parsed.BUILD_TIMESTAMP ?? new Date(0).toISOString(),
@@ -38,10 +53,10 @@ export const config = Object.freeze({
     testMode: parsed.TEST_MODE,
   }),
   auth: Object.freeze({
+    jwtSecret: env.JWT_SECRET,
     debugOtpPhone: parsed.AUTH_DEBUG_OTP_PHONE,
     otpHashSalt: parsed.OTP_HASH_SALT,
     testOtpCode: parsed.TEST_OTP_CODE,
-    jwtSecret: parsed.JWT_SECRET,
     refreshSecret: parsed.JWT_REFRESH_SECRET ?? "dev-refresh-secret",
     accessExpiresIn: parsed.JWT_ACCESS_EXPIRES_IN ?? "1h",
     refreshExpiresMs: toNumber(parsed.JWT_REFRESH_EXPIRES_MS, 7 * 24 * 60 * 60 * 1000),
@@ -74,7 +89,8 @@ export const config = Object.freeze({
     webhookUrl: parsed.CRM_WEBHOOK_URL,
   }),
   db: Object.freeze({
-    url: parsed.DATABASE_URL,
+    url: env.DATABASE_URL,
+    skip: env.SKIP_DB_CONNECTION === "true",
     host: parsed.DB_HOST,
     ssl: parsed.DB_SSL,
   }),
@@ -112,10 +128,10 @@ export const config = Object.freeze({
     }),
   }),
   openai: Object.freeze({
-    apiKey: parsed.OPENAI_API_KEY,
+    apiKey: env.OPENAI_API_KEY,
     chatModel: parsed.OPENAI_CHAT_MODEL,
     embedModel: parsed.OPENAI_EMBED_MODEL,
-    model: parsed.OPENAI_MODEL,
+    model: env.OPENAI_MODEL,
     ocrModel: parsed.OPENAI_OCR_MODEL ?? "gpt-4o-mini",
   }),
   ai: Object.freeze({
@@ -149,16 +165,18 @@ export const config = Object.freeze({
     max: toNumber(parsed.RATE_LIMIT_MAX, 100),
   }),
   redis: Object.freeze({
-    url: parsed.REDIS_URL,
+    url: env.REDIS_URL ?? "",
   }),
   twilio: Object.freeze({
-    accountSid: parsed.TWILIO_ACCOUNT_SID,
+    sid: env.TWILIO_ACCOUNT_SID ?? "",
+    token: env.TWILIO_AUTH_TOKEN ?? "",
+    phone: env.TWILIO_PHONE,
+    accountSid: env.TWILIO_ACCOUNT_SID ?? "",
     apiKey: parsed.TWILIO_API_KEY,
     apiSecret: parsed.TWILIO_API_SECRET,
-    authToken: parsed.TWILIO_AUTH_TOKEN,
+    authToken: env.TWILIO_AUTH_TOKEN ?? "",
     from: parsed.TWILIO_FROM,
     number: parsed.TWILIO_NUMBER,
-    phone: parsed.TWILIO_PHONE,
     phoneNumber: parsed.TWILIO_PHONE_NUMBER,
     verifyServiceSid: parsed.TWILIO_VERIFY_SERVICE_SID,
     voiceAppSid: parsed.TWILIO_VOICE_APP_SID,
@@ -180,7 +198,7 @@ export const config = Object.freeze({
   flags: Object.freeze({
     allowUnfrozenApiV1: parsed.API_V1_ALLOW_UNFROZEN === "true",
     runDbMigrations: parsed.RUN_DB_MIGRATIONS === "true",
-    skipDbConnection: parsed.SKIP_DB_CONNECTION === "true",
+    skipDbConnection: env.SKIP_DB_CONNECTION === "true",
     idempotencyEnabled: toBool(parsed.IDEMPOTENCY_ENABLED, false),
     auditHistoryEnabled: toBool(parsed.AUDIT_HISTORY_ENABLED, false),
     retryPolicyEnabled: toBool(parsed.RETRY_POLICY_ENABLED, true),
@@ -192,6 +210,10 @@ export const config = Object.freeze({
     opsKillSwitchOcr: toBool(parsed.OPS_KILL_SWITCH_OCR, false),
     opsKillSwitchLenderTransmission: toBool(parsed.OPS_KILL_SWITCH_LENDER_TRANSMISSION, false),
   }),
+  runtime: Object.freeze({
+    isProd: env.NODE_ENV === "production",
+    isTest: env.NODE_ENV === "test",
+  }),
   features: Object.freeze({
     ocrEnabled: toBool(parsed.OCR_ENABLED, true),
   }),
@@ -202,10 +224,9 @@ export const config = Object.freeze({
     vapidSubject: parsed.VAPID_SUBJECT ?? "mailto:dev@example.com",
     voiceRestrictedNumbers: csv(parsed.VOICE_RESTRICTED_NUMBERS, []),
   }),
-  isProduction: parsed.NODE_ENV === "production",
+  isProduction: env.NODE_ENV === "production",
 });
-
-export const ENV = env;
+export const ENV = process.env as Record<string, string | undefined>;
 
 export const validateServerEnv = (): void => {
   if (!config.db.url) throw new Error("DATABASE_URL missing");
