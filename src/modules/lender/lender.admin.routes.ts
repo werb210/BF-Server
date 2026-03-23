@@ -21,7 +21,7 @@ function buildRequestMetadata(req: Request): { ip?: string; userAgent?: string }
   return metadata;
 }
 
-router.get("/applications/:id/transmission-status", async (req, res, next) => {
+router.get("/applications/:id/transmission-status", async (req: any, res: any, next: any) => {
   try {
     const applicationId = req.params.id;
     if (!applicationId) {
@@ -34,7 +34,7 @@ router.get("/applications/:id/transmission-status", async (req, res, next) => {
   }
 });
 
-router.post("/transmissions/:id/retry", async (req, res, next) => {
+router.post("/transmissions/:id/retry", async (req: any, res: any, next: any) => {
   try {
     if (!req.user) {
       throw new AppError("missing_token", "Authorization token is required.", 401);
@@ -54,7 +54,7 @@ router.post("/transmissions/:id/retry", async (req, res, next) => {
   }
 });
 
-router.post("/transmissions/:id/cancel", async (req, res, next) => {
+router.post("/transmissions/:id/cancel", async (req: any, res: any, next: any) => {
   try {
     if (!req.user) {
       throw new AppError("missing_token", "Authorization token is required.", 401);

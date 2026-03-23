@@ -4,7 +4,7 @@ import { dbQuery } from "../db";
 
 const router = Router();
 
-router.post("/", async (req, res, next) => {
+router.post("/", async (req: any, res: any, next: any) => {
   const { message, screenshot, pageUrl, browserInfo, sessionId, url } = req.body as {
     message?: string;
     screenshot?: string;

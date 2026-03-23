@@ -16,7 +16,7 @@ const websiteLimiter = rateLimit({
 const websiteBodyLimitBytes = 64 * 1024;
 
 router.use(websiteLimiter);
-router.use((req, res, next) => {
+router.use((req: any, res: any, next: any) => {
   const contentLength = Number(req.headers["content-length"] ?? 0);
   if (Number.isFinite(contentLength) && contentLength > websiteBodyLimitBytes) {
     res.status(413).json({ error: "Payload too large" });

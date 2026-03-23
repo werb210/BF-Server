@@ -28,7 +28,7 @@ router.get("/version", (_req, res) => {
   });
 });
 
-router.get("/routes", (req, res) => {
+router.get("/routes", (req: any, res: any) => {
   const routes = listRouteInventory(req.app);
   res.status(200).json({ routes });
 });

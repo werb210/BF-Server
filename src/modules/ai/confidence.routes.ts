@@ -5,7 +5,7 @@ import { logWarn } from "../../observability/logger";
 
 const router = Router();
 
-router.post("/ai/confidence", async (req, res, next) => {
+router.post("/ai/confidence", async (req: any, res: any, next: any) => {
   const {
     companyName,
     fullName,

@@ -11,7 +11,7 @@ type ContinuationApplicationRow = {
 
 const router = Router();
 
-router.get("/", requireAuth, async (req, res, next) => {
+router.get("/", requireAuth, async (req: any, res: any, next: any) => {
   if (!req.user?.userId) {
     res.status(401).json({ ok: false, error: "invalid_token" });
     return;

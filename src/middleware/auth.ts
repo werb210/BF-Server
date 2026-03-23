@@ -28,7 +28,7 @@ function authErrorBody(req: Parameters<RequestHandler>[0], code: string, message
   };
 }
 
-export const requireAuth: RequestHandler = (req, res, next) => {
+export const requireAuth: RequestHandler = (req: any, res: any, next: any) => {
   req.id = String(req.id);
   const token = resolveToken(req);
   if (!token) {
@@ -141,7 +141,7 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
   const requiredRoles = options.roles ?? [];
   const requiredCapabilities = options.capabilities ?? [];
 
-  return (req, res, next) => {
+  return (req: any, res: any, next: any) => {
     const user = (req ).user;
 
     if (!user) {
@@ -170,7 +170,7 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
 export function requireCapability(cap: string | string[]): RequestHandler {
   const required = Array.isArray(cap) ? cap : [cap];
 
-  return (req, res, next) => {
+  return (req: any, res: any, next: any) => {
     const user = (req ).user;
 
     if (!user) {

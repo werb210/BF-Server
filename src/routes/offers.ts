@@ -9,7 +9,7 @@ const router = Router();
 
 router.get(
   "/",
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const applicationId = typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : "";
     const query = applicationId
       ? {
@@ -29,7 +29,7 @@ router.get(
 
 router.post(
   "/",
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
     const lender = typeof req.body?.lender === "string" ? req.body.lender.trim() : "";
     if (!applicationId || !lender) {
@@ -63,7 +63,7 @@ router.post(
 
 router.patch(
   "/:id/status",
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
     const status = typeof req.body?.status === "string" ? req.body.status.trim() : "";
     const allowed = new Set(["created", "sent", "accepted", "declined"]);

@@ -10,7 +10,7 @@ function resolvePublicWebhookUrl(req: Request): string {
   return `${protocol}://${host}${req.originalUrl}`;
 }
 
-export const twilioWebhookValidation: RequestHandler = (req, res, next) => {
+export const twilioWebhookValidation: RequestHandler = (req: any, res: any, next: any) => {
   const authToken = process.env.TWILIO_AUTH_TOKEN?.trim();
 
   if (!authToken) {

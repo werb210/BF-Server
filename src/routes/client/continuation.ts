@@ -6,7 +6,7 @@ const router = Router();
 /**
  * GET /api/client/continuation/:token
  */
-router.get("/continuation/:token", async (req, res, next) => {
+router.get("/continuation/:token", async (req: any, res: any, next: any) => {
   const token = req.params.token;
 
   if (!token) {

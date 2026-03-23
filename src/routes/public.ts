@@ -18,7 +18,7 @@ const readinessLimiter = rateLimit({
   skip: () => process.env.NODE_ENV === "test",
 });
 
-router.post("/readiness", readinessLimiter, async (req, res) => {
+router.post("/readiness", readinessLimiter, async (req: any, res: any) => {
   try {
     const { leadId } = await createReadinessLead(req.body ?? {});
     res.status(201).json({ leadId, status: "created" });

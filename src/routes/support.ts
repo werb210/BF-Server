@@ -26,7 +26,7 @@ async function getTableColumns(table: string): Promise<Set<string>> {
   return columns;
 }
 
-router.post("/live", async (req, res, next) => {
+router.post("/live", async (req: any, res: any, next: any) => {
   const { source, sessionId } = req.body as {
     source?: "website" | "client";
     sessionId?: string;
@@ -64,7 +64,7 @@ router.get("/live/count", async (_req, res) => {
   res.json({ count: Number(rows[0]?.count ?? "0") });
 });
 
-router.post("/human", async (req, res, next) => {
+router.post("/human", async (req: any, res: any, next: any) => {
   const { message, user } = req.body as {
     message?: string;
     user?: string;
@@ -82,7 +82,7 @@ router.post("/human", async (req, res, next) => {
   res.json({ success: true });
 });
 
-router.post("/report", async (req, res, next) => {
+router.post("/report", async (req: any, res: any, next: any) => {
   const { message, description, screenshot, route } = req.body as {
     message?: string;
     description?: string;
@@ -142,7 +142,7 @@ router.post("/report", async (req, res, next) => {
   res.json({ success: true });
 });
 
-router.post("/contact", async (req, res, next) => {
+router.post("/contact", async (req: any, res: any, next: any) => {
   const { company, firstName, lastName, email, phone } = req.body as {
     company?: string;
     firstName?: string;
@@ -182,7 +182,7 @@ router.post("/contact", async (req, res, next) => {
   return res.json({ success: true });
 });
 
-router.post("/track", async (req, res, next) => {
+router.post("/track", async (req: any, res: any, next: any) => {
   const { event, metadata } = req.body as {
     event?: string;
     metadata?: Record<string, unknown>;

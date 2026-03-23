@@ -76,7 +76,7 @@ function recommendations(score: number): string[] {
   return ["invoice-financing", "revenue-advance"];
 }
 
-router.post("/capital-readiness", readinessLimiter, async (req, res, next) => {
+router.post("/capital-readiness", readinessLimiter, async (req: any, res: any, next: any) => {
   const payload = req.body as ReadinessPayload;
   const score = calculateScore(payload);
   const tier = scoreToTier(score);

@@ -94,7 +94,7 @@ function getAuditContext(req: Request): { ip: string | null; userAgent: string |
   };
 }
 
-router.post("/pipeline", safeHandler(async (req, res, next) => {
+router.post("/pipeline", safeHandler(async (req: any, res: any, next: any) => {
   try {
     await assertExportsEnabled();
     const format = parseFormat(req.body?.format);
@@ -159,7 +159,7 @@ router.post("/pipeline", safeHandler(async (req, res, next) => {
   }
 }));
 
-router.post("/lenders", safeHandler(async (req, res, next) => {
+router.post("/lenders", safeHandler(async (req: any, res: any, next: any) => {
   try {
     await assertExportsEnabled();
     const format = parseFormat(req.body?.format);
@@ -224,7 +224,7 @@ router.post("/lenders", safeHandler(async (req, res, next) => {
   }
 }));
 
-router.post("/applications", safeHandler(async (req, res, next) => {
+router.post("/applications", safeHandler(async (req: any, res: any, next: any) => {
   try {
     await assertExportsEnabled();
     const format = parseFormat(req.body?.format);

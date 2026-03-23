@@ -27,7 +27,7 @@ function buildWebhookUrl(req: { protocol: string; get: (name: string) => string 
 
 router.post(
   "/twilio/voice",
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const signature = req.get("x-twilio-signature");
     if (!signature) {
       logWarn("voice_webhook_missing_signature", { path: req.originalUrl });

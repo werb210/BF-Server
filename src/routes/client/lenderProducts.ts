@@ -16,7 +16,7 @@ router.get(
 
 router.get(
   "/lender-products/:id/requirements",
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const lenderProductId = typeof req.params.id === "string" ? req.params.id.trim() : "";
     if (!lenderProductId) {
       throw new AppError("validation_error", "Invalid request", 400);
@@ -28,7 +28,7 @@ router.get(
 
 router.get(
   "/lender-products/requirements",
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: any, res: any, next: any) => {
     const category = typeof req.query.category === "string" ? req.query.category.trim() : "";
     if (!category) {
       throw new AppError("validation_error", "Invalid request", 400);

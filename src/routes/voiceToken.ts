@@ -55,7 +55,7 @@ function resolveVoiceIdentity(params: {
   return isStaffRole ? "staff_portal" : null;
 }
 
-router.get("/voice/token", requireAuth, (req, res) => {
+router.get("/voice/token", requireAuth, (req: any, res: any) => {
   const user = req.user;
   if (!user) {
     res.status(401).json({ ok: false, error: "missing_token" });
