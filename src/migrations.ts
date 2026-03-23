@@ -407,7 +407,7 @@ export async function runMigrations(options?: {
   }
 }
 
-export async function getPendingMigrations(): Promise<string[]> {
+export async function fetchPendingMigrations(): Promise<string[]> {
   await ensureMigrationsTable();
   const migrationFiles = listMigrationFiles();
   const applied = await fetchAppliedMigrations();
@@ -415,13 +415,13 @@ export async function getPendingMigrations(): Promise<string[]> {
 }
 
 export async function assertNoPendingMigrations(): Promise<void> {
-  const pending = await getPendingMigrations();
+  const pending = await fetchPendingMigrations();
   if (pending.length > 0) {
     throw new Error(`pending_migrations:${pending.join(",")}`);
   }
 }
 
-export async function getSchemaVersion(): Promise<string> {
+export async function fetchSchemaVersion(): Promise<string> {
   await ensureMigrationsTable();
   const res = await pool.query<{ id: string }>(
     `select id

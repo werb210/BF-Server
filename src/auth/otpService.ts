@@ -1,4 +1,4 @@
-import { deleteOtp, getOtp, storeOtp as persistOtp } from "../services/otpService";
+import { deleteOtp, fetchOtp, storeOtp as persistOtp } from "../services/otpService";
 import { ENV } from "src/server/config/config";
 
 function normalizePhone(phone: string): string {
@@ -41,7 +41,7 @@ export async function verifyOtp(phone: string, code: string): Promise<{ ok: true
   }
 
   const normalized = normalizePhone(phone);
-  const stored = await getOtp(normalized);
+  const stored = await fetchOtp(normalized);
 
   console.log("[OTP VERIFY]", normalized, stored, code);
 

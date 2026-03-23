@@ -1,9 +1,9 @@
 export {
   requestContextMiddleware,
-  getRequestContext,
-  getRequestId,
-  getRequestRoute,
-  getRequestIdempotencyKeyHash,
-  getRequestDbProcessIds,
+  fetchRequestContext,
+  fetchRequestId,
+  fetchRequestRoute,
+  fetchRequestIdempotencyKeyHash,
+  fetchRequestDbProcessIds,
   runWithRequestContext,
 } from "../observability/requestContext";

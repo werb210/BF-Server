@@ -1,19 +1,19 @@
 import { pool } from "../../db";
 import { AppError } from "../../middleware/errors";
-import { getDocumentTypeAliases } from "../../db/schema/requiredDocuments";
+import { fetchDocumentTypeAliases } from "../../db/schema/requiredDocuments";
 import { advanceProcessingStage } from "../applications/processingStage.service";
 import type { PoolClient } from "pg";
 import { randomUUID } from "crypto";
-import { getCircuitBreaker } from "../../utils/circuitBreaker";
+import { fetchCircuitBreaker } from "../../utils/circuitBreaker";
 import { runtimeEnv } from "src/server/config/config";
 import { assertRetryAllowed } from "./retryPolicy";
 
 const BANK_STATEMENT_CATEGORY = "bank_statements_6_months";
-const OCR_BREAKER = getCircuitBreaker("ocr_job_creation", {
+const OCR_BREAKER = fetchCircuitBreaker("ocr_job_creation", {
   failureThreshold: 3,
   cooldownMs: 60_000,
 });
-const BANKING_BREAKER = getCircuitBreaker("banking_job_creation", {
+const BANKING_BREAKER = fetchCircuitBreaker("banking_job_creation", {
   failureThreshold: 3,
   cooldownMs: 60_000,
 });
@@ -296,7 +296,7 @@ export async function createBankingAnalysisJob(
       BANKING_BREAKER.recordSuccess();
       return existingRecord;
     }
-    const aliases = getDocumentTypeAliases(BANK_STATEMENT_CATEGORY);
+    const aliases = fetchDocumentTypeAliases(BANK_STATEMENT_CATEGORY);
     const countRes = await client.query<{ count: number }>(
       `select count(*)::int as count
        from documents

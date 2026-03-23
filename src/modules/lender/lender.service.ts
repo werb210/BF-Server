@@ -12,7 +12,7 @@ import { ApplicationStage, isPipelineState } from "../applications/pipelineState
 import { transitionPipelineState } from "../applications/applications.service";
 import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService";
 import {
-  getDocumentTypeAliases,
+  fetchDocumentTypeAliases,
   normalizeRequiredDocumentKey,
 } from "../../db/schema/requiredDocuments";
 import {
@@ -284,7 +284,7 @@ async function buildSubmissionPacket(params: {
     .map((req) => req.documentType);
   const requiredAliases = requiredTypes.flatMap((type) => {
     const normalized = normalizeRequiredDocumentKey(type);
-    return normalized ? getDocumentTypeAliases(normalized) : [type];
+    return normalized ? fetchDocumentTypeAliases(normalized) : [type];
   });
 
   const documents = await listLatestAcceptedDocumentVersions({
@@ -928,7 +928,7 @@ export async function submitApplication(params: {
   }
 }
 
-export async function getSubmissionStatus(id: string): Promise<{
+export async function fetchSubmissionStatus(id: string): Promise<{
   id: string;
   status: string;
   applicationId: string;
@@ -946,7 +946,7 @@ export async function getSubmissionStatus(id: string): Promise<{
   };
 }
 
-export async function getTransmissionStatus(applicationId: string): Promise<{
+export async function fetchTransmissionStatus(applicationId: string): Promise<{
   applicationId: string;
   submissionId: string;
   status: string;

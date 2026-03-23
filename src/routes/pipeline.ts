@@ -3,7 +3,7 @@ import { pool } from "../db";
 import { requireAuth, requireCapability } from "../middleware/auth";
 import { CAPABILITIES } from "../auth/capabilities";
 import { safeHandler } from "../middleware/safeHandler";
-import { getPipelineStates } from "../modules/applications/applications.service";
+import { fetchPipelineStates } from "../modules/applications/applications.service";
 import { ApplicationStage } from "../modules/applications/pipelineState";
 
 const router = Router();
@@ -39,7 +39,7 @@ router.get(
   requireAuth,
   requireCapability([CAPABILITIES.APPLICATION_READ]),
   safeHandler(async (_req: any, res: any) => {
-    res.status(200).json({ stages: getPipelineStates() });
+    res.status(200).json({ stages: fetchPipelineStates() });
   })
 );
 

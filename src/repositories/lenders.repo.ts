@@ -27,7 +27,7 @@ type ColumnCheckResult = {
   missing: string[];
 };
 
-async function getLenderColumns(): Promise<Set<string>> {
+async function fetchLenderColumns(): Promise<Set<string>> {
   const result = await pool.query<{ column_name: string }>(
     `select column_name
      from information_schema.columns
@@ -44,7 +44,7 @@ async function assertLenderColumnsExist(params: {
   required?: string[];
 }): Promise<ColumnCheckResult> {
   try {
-    const existing = await getLenderColumns();
+    const existing = await fetchLenderColumns();
     const missing = params.columns.filter((column) => !existing.has(column));
     const required = params.required ?? [];
     const missingRequired = required.filter((column) => !existing.has(column));
@@ -134,7 +134,7 @@ export const LIST_LENDERS_SQL = `
 `;
 
 export async function listLenders(db: { query: typeof pool.query }) {
-  const existing = await getLenderColumns();
+  const existing = await fetchLenderColumns();
   const selectColumns = buildSelectColumns(existing);
   const { rows } = await db.query(`
     SELECT
@@ -145,7 +145,7 @@ export async function listLenders(db: { query: typeof pool.query }) {
   return rows;
 }
 
-export async function getLenderById(id: string) {
+export async function fetchLenderById(id: string) {
   const check = await assertLenderColumnsExist({
     route: "/api/lenders/:id",
     columns: [
@@ -199,7 +199,7 @@ export async function createLender(
     submission_config,
     website,
   } = input;
-  const existingColumns = await getLenderColumns();
+  const existingColumns = await fetchLenderColumns();
   const includeActive = existingColumns.has("active");
   const normalizedStatus =
     typeof input.status === "string"
@@ -342,7 +342,7 @@ export async function updateLender(
     active?: boolean;
   }
 ) {
-  const existingColumns = await getLenderColumns();
+  const existingColumns = await fetchLenderColumns();
   const updates: Array<{ name: string; value: unknown }> = [];
   const normalizedStatus =
     typeof params.status === "string"
@@ -413,7 +413,7 @@ export async function updateLender(
   }
 
   if (updates.length === 0) {
-    return getLenderById(params.id);
+    return fetchLenderById(params.id);
   }
 
   const setClauses = updates.map((entry, index) =>

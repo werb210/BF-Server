@@ -1,12 +1,12 @@
 import { type Request, type Response } from "express";
 import { DEFAULT_AUTH_SILO } from "../../auth/silo";
-import { getRequestId } from "../../observability/requestContext";
+import { fetchRequestId } from "../../observability/requestContext";
 import { findAuthUserById } from "../../modules/auth/auth.repo";
 import { logError } from "../../observability/logger";
 import { validateAuthMe } from "../../validation/auth.validation";
 
-function getAuthRequestId(res: Response): string {
-  return res.locals.requestId ?? getRequestId() ?? "unknown";
+function fetchAuthRequestId(res: Response): string {
+  return res.locals.requestId ?? fetchRequestId() ?? "unknown";
 }
 
 function respondAuthError(
@@ -15,7 +15,7 @@ function respondAuthError(
   code: string,
   message: string
 ): void {
-  const requestId = getAuthRequestId(res);
+  const requestId = fetchAuthRequestId(res);
   res.set("Cache-Control", "no-store");
   res.status(status).json({
     success: false,
@@ -57,7 +57,7 @@ export async function authMeHandler(
   res: Response
 ): Promise<void> {
   const route = "/api/auth/me";
-  const requestId = getAuthRequestId(res);
+  const requestId = fetchAuthRequestId(res);
 
   try {
     const user = req.user;

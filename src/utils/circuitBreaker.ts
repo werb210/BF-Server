@@ -20,7 +20,7 @@ class CircuitBreaker {
 
   constructor(private readonly options: CircuitBreakerOptions) {}
 
-  getSnapshot(): CircuitBreakerSnapshot {
+  fetchSnapshot(): CircuitBreakerSnapshot {
     return {
       state: this.state,
       failures: this.failures,
@@ -60,7 +60,7 @@ class CircuitBreaker {
   }
 }
 
-export function getCircuitBreaker(
+export function fetchCircuitBreaker(
   name: string,
   options: CircuitBreakerOptions
 ): CircuitBreaker {

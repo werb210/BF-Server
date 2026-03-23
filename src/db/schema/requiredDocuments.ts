@@ -79,7 +79,7 @@ export function isRequiredDocumentKey(value: string): value is RequiredDocumentK
   return Boolean(normalizeRequiredDocumentKey(value));
 }
 
-export function getDocumentTypeAliases(
+export function fetchDocumentTypeAliases(
   value: RequiredDocumentKey
 ): string[] {
   return DOCUMENT_TYPE_ALIASES[value] ?? [value];

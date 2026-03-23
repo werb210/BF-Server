@@ -1,7 +1,7 @@
 import { type Request, type Response } from "express";
 import { logError } from "../../observability/logger";
 import { respondOk } from "../../utils/respondOk";
-import { getCompanies, getCompanyById } from "./companies.service";
+import { fetchCompanies, fetchCompanyById } from "./companies.service";
 import { toStringSafe } from "../../utils/toStringSafe";
 
 function logCrmError(event: string, error: unknown): void {
@@ -17,7 +17,7 @@ export async function handleListCompanies(
   res: Response
 ): Promise<void> {
   try {
-    const companies = await getCompanies();
+    const companies = await fetchCompanies();
     respondOk(res, companies);
   } catch (error) {
     logCrmError("crm_companies_list_failed", error);
@@ -39,7 +39,7 @@ export async function handleGetCompanyById(
       });
       return;
     }
-    const company = await getCompanyById(companyId);
+    const company = await fetchCompanyById(companyId);
     if (!company) {
       res.status(404).json({
         code: "not_found",

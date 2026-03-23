@@ -1,6 +1,6 @@
 import { Request, RequestHandler } from "express";
 import jwt from "jsonwebtoken";
-import { getCapabilitiesForRole } from "../auth/capabilities";
+import { fetchCapabilitiesForRole } from "../auth/capabilities";
 import { verifyAccessToken } from "../auth/jwt";
 import { DEFAULT_AUTH_SILO } from "../auth/silo";
 import { isRole } from "../auth/roles";
@@ -133,7 +133,7 @@ function resolveAuthenticatedUser(decoded: string | jwt.JwtPayload): Authenticat
     siloFromToken: typeof decoded.silo === "string" && decoded.silo.trim().length > 0,
     lenderId: null,
     phone: typeof decoded.phone === "string" ? decoded.phone : null,
-    capabilities: getCapabilitiesForRole(role),
+    capabilities: fetchCapabilitiesForRole(role),
   };
 }
 

@@ -92,7 +92,7 @@ function resolveRetryableError(error: unknown): boolean {
   return false;
 }
 
-function getPathValue(source: unknown, path: string): unknown {
+function fetchPathValue(source: unknown, path: string): unknown {
   if (!path) {
     return undefined;
   }
@@ -116,7 +116,7 @@ function getPathValue(source: unknown, path: string): unknown {
 }
 
 function resolveMappedValue(payload: GoogleSheetsPayload, path: string): string | number | null {
-  const resolved = getPathValue(payload, path);
+  const resolved = fetchPathValue(payload, path);
   if (resolved === null || resolved === undefined) {
     return null;
   }

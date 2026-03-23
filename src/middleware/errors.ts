@@ -2,7 +2,7 @@ import { type NextFunction, type Request, type Response } from "express";
 import { isDbConnectionFailure } from "../dbRuntime";
 import { logError, logWarn } from "../observability/logger";
 import { trackException } from "../observability/appInsights";
-import { getStatus as getErrorStatus, isHttpishError } from "../helpers/errors";
+import { fetchStatus as errorStatusFor, isHttpishError } from "../helpers/errors";
 
 export class AppError extends Error {
   status: number;
@@ -113,7 +113,7 @@ function normalizeAuthError(
 
   if (isHttpishError(err)) {
     return {
-      status: getErrorStatus(err),
+      status: errorStatusFor(err),
       code: "auth_failed",
       message: "Authentication failed.",
     };

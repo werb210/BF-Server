@@ -2,8 +2,8 @@ import { Router, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
 import {
   closeChatSession,
-  getHumanSessions,
-  getSessionMessages,
+  fetchHumanSessions,
+  fetchSessionMessages,
   processChatMessage,
   requestHumanTakeover,
   startChatSession,
@@ -90,12 +90,12 @@ router.get("/chat/sessions", async (req: any, res: any, next: any) => {
     return;
   }
 
-  const sessions = await getHumanSessions();
+  const sessions = await fetchHumanSessions();
   res.json({ sessions });
 });
 
 router.get("/chat/:sessionId/messages", async (req: any, res: any, next: any) => {
-  const messages = await getSessionMessages(req.params.sessionId);
+  const messages = await fetchSessionMessages(req.params.sessionId);
   res.json({ messages });
 });
 

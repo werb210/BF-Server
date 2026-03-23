@@ -1,7 +1,7 @@
 export {
   OCR_FIELD_REGISTRY,
-  getOcrFieldDefinitionByKey,
-  getOcrFieldDefinitionByLabel,
-  getOcrFieldRegistry,
+  fetchOcrFieldDefinitionByKey,
+  fetchOcrFieldDefinitionByLabel,
+  fetchOcrFieldRegistry,
 } from "../modules/ocr/ocrFieldRegistry";
 export type { OcrFieldDefinition, OcrDocumentCategory } from "../modules/ocr/ocrFieldRegistry";

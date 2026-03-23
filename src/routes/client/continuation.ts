@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getContinuation as getClientContinuation } from "../../modules/continuation/continuation.service";
+import { fetchContinuation as clientContinuation } from "../../modules/continuation/continuation.service";
 
 const router = Router();
 
@@ -14,7 +14,7 @@ router.get("/continuation/:token", async (req: any, res: any, next: any) => {
   }
 
   try {
-    const result = await getClientContinuation(token);
+    const result = await clientContinuation(token);
 
     if (!result) {
       return res.status(401).json({ error: "Invalid token" });

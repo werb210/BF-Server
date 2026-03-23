@@ -1,5 +1,5 @@
 import { runtimeEnv } from "src/server/config/config";
-import { getRequestRoute } from "../observability/requestContext";
+import { fetchRequestRoute } from "../observability/requestContext";
 
 const instanceId = process.env.INSTANCE_ID ?? process.env.HOSTNAME ?? "unknown";
 
@@ -10,7 +10,7 @@ export function buildTelemetryProperties(
   const resolvedRoute =
     route ??
     (typeof properties?.route === "string" ? properties.route : undefined) ??
-    getRequestRoute();
+    fetchRequestRoute();
   const merged: Record<string, unknown> = {
     ...properties,
     instanceId,

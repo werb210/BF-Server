@@ -1,6 +1,6 @@
 import { type PoolClient } from "pg";
 import { pool } from "../../db";
-import { getRequestId } from "../../observability/requestContext";
+import { fetchRequestId } from "../../observability/requestContext";
 
 type Queryable = Pick<PoolClient, "query">;
 
@@ -22,7 +22,7 @@ export type AuditParams = {
 
 export async function recordAuditEvent(params: AuditParams): Promise<void> {
   const runner = params.client ?? pool;
-  const requestId = params.requestId ?? getRequestId() ?? null;
+  const requestId = params.requestId ?? fetchRequestId() ?? null;
   const eventType = params.eventType ?? params.action;
   const eventAction = params.eventAction ?? params.action;
   const metadata =

@@ -3,7 +3,7 @@ import { Router } from "express";
 import { retry, withRetry } from "../utils/retry";
 import { createSupportThread } from "../services/supportService";
 import { dbQuery } from "../db";
-import { getTwilioClient } from "../services/twilio";
+import { fetchTwilioClient } from "../services/twilio";
 import { pushLeadToCRM } from "../services/crmWebhook";
 import { SupportController } from "../modules/support/support.controller";
 import { logger } from "../server/utils/logger";
@@ -12,7 +12,7 @@ const router = Router();
 
 const tableColumnCache = new Map<string, Set<string>>();
 
-async function getTableColumns(table: string): Promise<Set<string>> {
+async function fetchTableColumns(table: string): Promise<Set<string>> {
   const cached = tableColumnCache.get(table);
   if (cached) {
     return cached;
@@ -92,7 +92,7 @@ router.post("/report", async (req: any, res: any, next: any) => {
 
   const resolvedDescription = description ?? message;
 
-  const columns = await getTableColumns("issue_reports");
+  const columns = await fetchTableColumns("issue_reports");
 
   const insertColumns: string[] = [];
   const placeholderParts: string[] = [];
@@ -161,7 +161,7 @@ router.post("/contact", async (req: any, res: any, next: any) => {
     [company, firstName, lastName, email, phone]
   );
 
-  const client = getTwilioClient();
+  const client = fetchTwilioClient();
   await retry(async () =>
     client.messages.create({
       body: `New Contact: ${company} - ${firstName} ${lastName} - ${phone}`,
@@ -193,10 +193,10 @@ router.post("/track", async (req: any, res: any, next: any) => {
 });
 
 router.post("/session", SupportController.createSession);
-router.get("/queue", SupportController.getQueue);
+router.get("/queue", SupportController.fetchQueue);
 router.post("/issue", SupportController.createIssue);
-router.get("/issues", SupportController.getIssues);
+router.get("/issues", SupportController.fetchIssues);
 router.post("/event", SupportController.trackEvent);
-router.get("/events", SupportController.getEvents);
+router.get("/events", SupportController.fetchEvents);
 
 export default router;

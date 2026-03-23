@@ -1,5 +1,5 @@
 import { Router, type Request } from "express";
-import { getTransmissionStatus, retrySubmission, cancelSubmissionRetry } from "./lender.service";
+import { fetchTransmissionStatus, retrySubmission, cancelSubmissionRetry } from "./lender.service";
 import { AppError } from "../../middleware/errors";
 import { requireAuth, requireCapability } from "../../middleware/auth";
 import { CAPABILITIES } from "../../auth/capabilities";
@@ -27,7 +27,7 @@ router.get("/applications/:id/transmission-status", async (req: any, res: any, n
     if (!applicationId) {
       throw new AppError("validation_error", "application id is required.", 400);
     }
-    const status = await getTransmissionStatus(applicationId);
+    const status = await fetchTransmissionStatus(applicationId);
     res.json({ transmission: status });
   } catch (err) {
     next(err);

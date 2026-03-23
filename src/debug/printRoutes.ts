@@ -15,7 +15,7 @@ type Layer = {
   regexp?: RegExp & { fast_slash?: boolean };
 };
 
-function getLayerPath(layer: Layer): string {
+function fetchLayerPath(layer: Layer): string {
   if (typeof layer.path === "string") {
     return layer.path;
   }
@@ -82,7 +82,7 @@ function walkStack(stack: Layer[], prefix: string, routes: RouteEntry[]) {
     }
 
     if (layer.name === "router" && layer.handle?.stack) {
-      const layerPath = getLayerPath(layer);
+      const layerPath = fetchLayerPath(layer);
       const nextPrefix = joinPaths(prefix, layerPath);
       walkStack(layer.handle.stack, nextPrefix, routes);
     }
@@ -110,7 +110,7 @@ function walkStackGrouped(
     }
 
     if (layer.name === "router" && layer.handle?.stack) {
-      const layerPath = getLayerPath(layer);
+      const layerPath = fetchLayerPath(layer);
       const nextPrefix = joinPaths(prefix, layerPath);
       walkStackGrouped(layer.handle.stack, nextPrefix, groups);
     }

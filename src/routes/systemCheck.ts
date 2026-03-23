@@ -3,7 +3,7 @@ import { Router } from "express";
 
 import { pool } from "../lib/dbClient";
 import { redis } from "../lib/redis";
-import { getOtp, storeOtp } from "../services/otpService";
+import { fetchOtp, storeOtp } from "../services/otpService";
 
 type TestStatus = "ok" | "fail";
 type RedisStatus = TestStatus | "missing";
@@ -117,7 +117,7 @@ systemCheckRouter.get("/system-check", async (_req: any, res: any) => {
     const phone = "+15555550123";
     const expected = tests.otp.expected;
     await storeOtp(phone, expected);
-    const stored = await getOtp(phone);
+    const stored = await fetchOtp(phone);
 
     tests.otp.stored = stored;
     tests.otp.status = stored === expected ? "ok" : "fail";

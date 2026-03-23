@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getContinuation, updateContinuationStep } from "../models/continuation";
+import { fetchContinuation, updateContinuationStep } from "../models/continuation";
 
 const router = Router();
 
@@ -10,7 +10,7 @@ router.get("/:token", async (req: any, res: any, next: any) => {
     typeof stepParam === "number" && Number.isInteger(stepParam) && stepParam > 0
       ? stepParam
       : 2;
-  const applicationId = await getContinuation(token);
+  const applicationId = await fetchContinuation(token);
 
   if (!applicationId) {
     res.status(404).json({ error: "Invalid token" });

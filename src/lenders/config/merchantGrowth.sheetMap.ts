@@ -33,33 +33,33 @@ export type GoogleSheetsSheetMap = {
 
 export const MERCHANT_GROWTH_LENDER_NAME = "Merchant Growth";
 
-function getMetadata(payload: GoogleSheetsPayload): Record<string, unknown> {
+function fetchMetadata(payload: GoogleSheetsPayload): Record<string, unknown> {
   if (payload.application.metadata && typeof payload.application.metadata === "object") {
     return payload.application.metadata as Record<string, unknown>;
   }
   return {};
 }
 
-function getApplicant(payload: GoogleSheetsPayload): Record<string, unknown> {
-  const metadata = getMetadata(payload);
+function fetchApplicant(payload: GoogleSheetsPayload): Record<string, unknown> {
+  const metadata = fetchMetadata(payload);
   const applicant = metadata.applicant;
   return applicant && typeof applicant === "object" ? (applicant as Record<string, unknown>) : {};
 }
 
-function getBusiness(payload: GoogleSheetsPayload): Record<string, unknown> {
-  const metadata = getMetadata(payload);
+function fetchBusiness(payload: GoogleSheetsPayload): Record<string, unknown> {
+  const metadata = fetchMetadata(payload);
   const business = metadata.business;
   return business && typeof business === "object" ? (business as Record<string, unknown>) : {};
 }
 
-function getBusinessAddress(payload: GoogleSheetsPayload): Record<string, unknown> {
-  const business = getBusiness(payload);
+function fetchBusinessAddress(payload: GoogleSheetsPayload): Record<string, unknown> {
+  const business = fetchBusiness(payload);
   const address = business.address;
   return address && typeof address === "object" ? (address as Record<string, unknown>) : {};
 }
 
-function getFinancials(payload: GoogleSheetsPayload): Record<string, unknown> {
-  const metadata = getMetadata(payload);
+function fetchFinancials(payload: GoogleSheetsPayload): Record<string, unknown> {
+  const metadata = fetchMetadata(payload);
   const financials = metadata.financials ?? metadata.revenue ?? metadata.banking;
   return financials && typeof financials === "object"
     ? (financials as Record<string, unknown>)
@@ -97,51 +97,51 @@ export const MERCHANT_GROWTH_SHEET_MAP: GoogleSheetsSheetMap = {
     },
     {
       header: "Applicant First Name",
-      value: (payload) => asString(getApplicant(payload).firstName),
+      value: (payload) => asString(fetchApplicant(payload).firstName),
     },
     {
       header: "Applicant Last Name",
-      value: (payload) => asString(getApplicant(payload).lastName),
+      value: (payload) => asString(fetchApplicant(payload).lastName),
     },
     {
       header: "Applicant Email",
-      value: (payload) => asString(getApplicant(payload).email),
+      value: (payload) => asString(fetchApplicant(payload).email),
     },
     {
       header: "Applicant Phone",
-      value: (payload) => asString(getApplicant(payload).phone),
+      value: (payload) => asString(fetchApplicant(payload).phone),
     },
     {
       header: "Business Legal Name",
-      value: (payload) => asString(getBusiness(payload).legalName),
+      value: (payload) => asString(fetchBusiness(payload).legalName),
     },
     {
       header: "Business Tax ID",
-      value: (payload) => asString(getBusiness(payload).taxId),
+      value: (payload) => asString(fetchBusiness(payload).taxId),
     },
     {
       header: "Business Entity Type",
-      value: (payload) => asString(getBusiness(payload).entityType),
+      value: (payload) => asString(fetchBusiness(payload).entityType),
     },
     {
       header: "Business Address Line 1",
-      value: (payload) => asString(getBusinessAddress(payload).line1),
+      value: (payload) => asString(fetchBusinessAddress(payload).line1),
     },
     {
       header: "Business City",
-      value: (payload) => asString(getBusinessAddress(payload).city),
+      value: (payload) => asString(fetchBusinessAddress(payload).city),
     },
     {
       header: "Business State",
-      value: (payload) => asString(getBusinessAddress(payload).state),
+      value: (payload) => asString(fetchBusinessAddress(payload).state),
     },
     {
       header: "Business Postal Code",
-      value: (payload) => asString(getBusinessAddress(payload).postalCode),
+      value: (payload) => asString(fetchBusinessAddress(payload).postalCode),
     },
     {
       header: "Business Country",
-      value: (payload) => asString(getBusinessAddress(payload).country),
+      value: (payload) => asString(fetchBusinessAddress(payload).country),
     },
     {
       header: "Requested Amount",
@@ -153,21 +153,21 @@ export const MERCHANT_GROWTH_SHEET_MAP: GoogleSheetsSheetMap = {
     },
     {
       header: "Requested Term",
-      value: (payload) => asString(getFinancials(payload).term),
+      value: (payload) => asString(fetchFinancials(payload).term),
     },
     {
       header: "Annual Revenue",
       value: (payload) =>
-        asNumber((getFinancials(payload).annualRevenue ?? getFinancials(payload).annual) as unknown),
+        asNumber((fetchFinancials(payload).annualRevenue ?? fetchFinancials(payload).annual) as unknown),
     },
     {
       header: "Monthly Revenue",
       value: (payload) =>
-        asNumber((getFinancials(payload).monthlyRevenue ?? getFinancials(payload).monthly) as unknown),
+        asNumber((fetchFinancials(payload).monthlyRevenue ?? fetchFinancials(payload).monthly) as unknown),
     },
     {
       header: "Banking Summary",
-      value: (payload) => asString(getFinancials(payload).bankingSummary),
+      value: (payload) => asString(fetchFinancials(payload).bankingSummary),
     },
   ],
 };

@@ -13,8 +13,8 @@ import {
   updateVoiceCallStatus,
   recordVoiceCallRecording,
   controlVoiceCall,
-  getVoiceAvailability,
-  getVoiceCallStatus,
+  fetchVoiceAvailability,
+  fetchVoiceCallStatus,
 } from "../modules/voice/voice.service";
 import { listCalls } from "../modules/calls/calls.service";
 
@@ -145,7 +145,7 @@ function resolveStaffUserId(params: {
 }
 
 function assertVoiceEnabled(): void {
-  const availability = getVoiceAvailability();
+  const availability = fetchVoiceAvailability();
   if (!availability.enabled) {
     const error = new AppError(
       "voice_disabled",
@@ -412,7 +412,7 @@ router.post(
     }
 
     if (!parsed.data.status && !parsed.data.callStatus) {
-      const current = await getVoiceCallStatus({
+      const current = await fetchVoiceCallStatus({
         callSid: parsed.data.callSid,
         staffUserId: req.user?.userId ?? null,
       });

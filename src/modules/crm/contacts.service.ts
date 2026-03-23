@@ -56,7 +56,7 @@ function normalizeContact(row: ContactRepoRow): ContactRecord {
   };
 }
 
-export async function getContacts(params: {
+export async function fetchContacts(params: {
   companyId?: string | null;
 }): Promise<ContactRecord[]> {
   const rows = await listContacts({

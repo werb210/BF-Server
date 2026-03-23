@@ -332,7 +332,7 @@ export async function convertReadinessLeadToApplication(id: string, ownerUserId:
   return { applicationId: app.id };
 }
 
-export async function getReadinessLeadByApplicationId(applicationId: string): Promise<ReadinessLeadRow | null> {
+export async function fetchReadinessLeadByApplicationId(applicationId: string): Promise<ReadinessLeadRow | null> {
   const result = await dbQuery<ReadinessLeadRow>(
     `select id, company_name, full_name, phone, email, industry, years_in_business,
             monthly_revenue, annual_revenue, ar_outstanding, existing_debt, source,

@@ -4,8 +4,8 @@ import { generateAIResponse } from "./ai.service";
 import {
   addMessage,
   createSession,
-  getMessageCount,
-  getSessionById,
+  fetchMessageCount,
+  fetchSessionById,
   listMessagesBySession,
   listSessionsByStatus,
   type ChatMessageRecord,
@@ -112,7 +112,7 @@ export async function processChatMessage(params: {
 }): Promise<{ status: string; response: string; session: ChatSessionRecord }> {
   assertMessageLength(params.message);
 
-  const session = await getSessionById(params.sessionId);
+  const session = await fetchSessionById(params.sessionId);
   if (!session) {
     throw new Error("Chat session not found.");
   }
@@ -123,7 +123,7 @@ export async function processChatMessage(params: {
     return { status: session.status, response: "A human specialist will continue this conversation shortly.", session };
   }
 
-  const count = await getMessageCount(params.sessionId);
+  const count = await fetchMessageCount(params.sessionId);
   if (count > MAX_MESSAGES_BEFORE_COMPRESSION) {
     await addMessage({
       sessionId: params.sessionId,
@@ -158,11 +158,11 @@ export async function closeChatSession(sessionId: string): Promise<void> {
   await updateSessionStatus(sessionId, "closed");
 }
 
-export async function getHumanSessions(): Promise<ChatSessionRecord[]> {
+export async function fetchHumanSessions(): Promise<ChatSessionRecord[]> {
   return listSessionsByStatus("human");
 }
 
-export async function getSessionMessages(sessionId: string): Promise<ChatMessageRecord[]> {
+export async function fetchSessionMessages(sessionId: string): Promise<ChatMessageRecord[]> {
   return listMessagesBySession(sessionId);
 }
 

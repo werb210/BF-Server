@@ -1,5 +1,5 @@
 import pino from "pino";
-import { getRequestId } from "../observability/requestContext";
+import { fetchRequestId } from "../observability/requestContext";
 
 const base = pino({
   level: process.env.LOG_LEVEL || "info",
@@ -7,12 +7,12 @@ const base = pino({
 
 export const logger = {
   info: (msg: string, extra: Record<string, unknown> = {}) => {
-    base.info({ ...extra, requestId: getRequestId() }, msg);
+    base.info({ ...extra, requestId: fetchRequestId() }, msg);
   },
   warn: (msg: string, extra: Record<string, unknown> = {}) => {
-    base.warn({ ...extra, requestId: getRequestId() }, msg);
+    base.warn({ ...extra, requestId: fetchRequestId() }, msg);
   },
   error: (msg: string, extra: Record<string, unknown> = {}) => {
-    base.error({ ...extra, requestId: getRequestId() }, msg);
+    base.error({ ...extra, requestId: fetchRequestId() }, msg);
   },
 };

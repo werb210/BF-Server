@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-function getAzureClient(): OpenAI {
+function fetchAzureClient(): OpenAI {
   if (!process.env.AZURE_OPENAI_KEY || !process.env.AZURE_OPENAI_ENDPOINT) {
     throw new Error("Azure OpenAI credentials are not configured.");
   }
@@ -23,7 +23,7 @@ Return a score from 1-10 and a short reason.
 ${JSON.stringify(data)}
 `;
 
-  const openai = getAzureClient();
+  const openai = fetchAzureClient();
   const response = await openai.chat.completions.create({
     model: process.env.AZURE_OPENAI_DEPLOYMENT,
     messages: [{ role: "user", content: prompt }],

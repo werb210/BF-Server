@@ -13,7 +13,7 @@ import {
 } from "../modules/ops/ops.service";
 import {
   createReplayJob,
-  getReplayJobStatus,
+  fetchReplayJobStatus,
   REPLAY_SCOPES,
   runReplayJob,
 } from "../modules/ops/replay.service";
@@ -30,7 +30,7 @@ function assertKillSwitchKey(key: string): asserts key is OpsKillSwitchKey {
   }
 }
 
-function getAuditContext(req: Request): { ip: string | null; userAgent: string | null } {
+function fetchAuditContext(req: Request): { ip: string | null; userAgent: string | null } {
   return {
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
@@ -45,7 +45,7 @@ router.get("/kill-switches", safeHandler(async (req: any, res: any, next: any) =
     targetUserId: null,
     targetType: "ops",
     targetId: "kill_switches",
-    ...getAuditContext(req),
+    ...fetchAuditContext(req),
     success: true,
   });
   res.json({ switches });
@@ -61,7 +61,7 @@ router.post("/kill-switches/:key/enable", safeHandler(async (req: any, res: any,
     targetUserId: null,
     targetType: "ops_kill_switch",
     targetId: key,
-    ...getAuditContext(req),
+    ...fetchAuditContext(req),
     success: true,
   });
   res.json({ key, enabled: true });
@@ -77,7 +77,7 @@ router.post("/kill-switches/:key/disable", safeHandler(async (req: any, res: any
     targetUserId: null,
     targetType: "ops_kill_switch",
     targetId: key,
-    ...getAuditContext(req),
+    ...fetchAuditContext(req),
     success: true,
   });
   res.json({ key, enabled: false });
@@ -95,7 +95,7 @@ router.post("/replay/:scope", safeHandler(async (req: any, res: any, next: any) 
     targetUserId: null,
     targetType: "ops_replay",
     targetId: job.scope,
-    ...getAuditContext(req),
+    ...fetchAuditContext(req),
     success: true,
   });
   setImmediate(() => {
@@ -112,7 +112,7 @@ router.get("/replay/:id/status", safeHandler(async (req: any, res: any, next: an
   if (!jobId) {
     throw new AppError("validation_error", "Replay job id is required.", 400);
   }
-  const job = await getReplayJobStatus(jobId);
+  const job = await fetchReplayJobStatus(jobId);
   if (!job) {
     throw new AppError("not_found", "Replay job not found.", 404);
   }
@@ -122,7 +122,7 @@ router.get("/replay/:id/status", safeHandler(async (req: any, res: any, next: an
     targetUserId: null,
     targetType: "ops_replay",
     targetId: job.id,
-    ...getAuditContext(req),
+    ...fetchAuditContext(req),
     success: true,
   });
   res.json({ job });

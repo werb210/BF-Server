@@ -133,7 +133,7 @@ export async function createOrReuseReadinessSession(payload: ReadinessSessionInp
   return { sessionId: id, token, reused: false, crmLeadId: crmLead.id };
 }
 
-export async function getActiveReadinessSessionByToken(sessionId: string): Promise<null | {
+export async function fetchActiveReadinessSessionByToken(sessionId: string): Promise<null | {
   sessionId: string;
   readinessToken: string;
   leadId: string | null;

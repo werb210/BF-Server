@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { pool } from "../../db";
 import { AppError } from "../../middleware/errors";
-import { getCircuitBreaker } from "../../utils/circuitBreaker";
+import { fetchCircuitBreaker } from "../../utils/circuitBreaker";
 import type { PoolClient } from "pg";
 import { runtimeEnv } from "src/server/config/config";
 import { assertRetryAllowed } from "./retryPolicy";
@@ -22,7 +22,7 @@ export type CreditSummaryJobRecord = {
   updated_at: Date;
 };
 
-const CREDIT_BREAKER = getCircuitBreaker("credit_summary_generation", {
+const CREDIT_BREAKER = fetchCircuitBreaker("credit_summary_generation", {
   failureThreshold: 3,
   cooldownMs: 60_000,
 });

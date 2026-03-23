@@ -1,7 +1,7 @@
 import { pool } from "../../db";
 import { AppError } from "../../middleware/errors";
 import {
-  getDocumentTypeAliases,
+  fetchDocumentTypeAliases,
   normalizeRequiredDocumentKey,
 } from "../../db/schema/requiredDocuments";
 import type { PoolClient } from "pg";
@@ -17,14 +17,14 @@ import {
   updateDocumentProcessingJob,
 } from "./documentProcessing.repo";
 import { advanceProcessingStage } from "../applications/processingStage.service";
-import { getCircuitBreaker } from "../../utils/circuitBreaker";
+import { fetchCircuitBreaker } from "../../utils/circuitBreaker";
 
 const BANK_STATEMENT_CATEGORY = "bank_statements_6_months";
-const OCR_BREAKER = getCircuitBreaker("ocr_job_creation", {
+const OCR_BREAKER = fetchCircuitBreaker("ocr_job_creation", {
   failureThreshold: 3,
   cooldownMs: 60_000,
 });
-const BANKING_BREAKER = getCircuitBreaker("banking_job_creation", {
+const BANKING_BREAKER = fetchCircuitBreaker("banking_job_creation", {
   failureThreshold: 3,
   cooldownMs: 60_000,
 });
@@ -66,7 +66,7 @@ export async function handleDocumentUploadProcessing(params: {
     }
   }
 
-  const aliases = getDocumentTypeAliases(BANK_STATEMENT_CATEGORY);
+  const aliases = fetchDocumentTypeAliases(BANK_STATEMENT_CATEGORY);
   const bankDocs = await listBankStatementDocuments({
     applicationId: params.applicationId,
     documentTypes: aliases,

@@ -8,7 +8,7 @@ import { ROLES, normalizeRole } from "../auth/roles";
 import { createUserAccount } from "../modules/auth/auth.service";
 import { createLender } from "../repositories/lenders.repo";
 import { createLenderProductService } from "./lenderProductsService";
-import { getLenderById } from "../repositories/lenders.repo";
+import { fetchLenderById } from "../repositories/lenders.repo";
 import { trackEvent } from "../observability/appInsights";
 import { logInfo } from "../observability/logger";
 import { type JsonObject, type JsonValue, type RequiredDocuments } from "../db/schema/lenderProducts";
@@ -353,7 +353,7 @@ async function executeReplayAction(
         throw new AppError("forbidden", "Access denied.", 403);
       }
     }
-    const lender = await getLenderById(parsed.lenderId);
+    const lender = await fetchLenderById(parsed.lenderId);
     if (!lender) {
       throw new AppError("not_found", "Lender not found.", 404);
     }

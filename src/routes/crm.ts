@@ -56,6 +56,6 @@ router.get("/contacts", safeHandler((req: any, res: any) => {
 }));
 
 router.get("/timeline", safeHandler(handleListCrmTimeline));
-router.get("/web-leads", SupportController.getWebLeads);
+router.get("/web-leads", SupportController.fetchWebLeads);
 
 export default router;

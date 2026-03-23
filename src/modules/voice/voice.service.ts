@@ -4,7 +4,7 @@ import { logError, logInfo, logWarn } from "../../observability/logger";
 import { normalizePhoneNumber } from "../auth/phone";
 import { startCall, updateCallStatus, updateCallRecording } from "../calls/calls.service";
 import { findCallLogByTwilioSid } from "../calls/calls.repo";
-import { getTwilioClient } from "../../services/twilio";
+import { fetchTwilioClient } from "../../services/twilio";
 import { type CallStatus, type CallLogRecord } from "../calls/calls.repo";
 import { runtimeEnv } from "src/server/config/config";
 import { recordAuditEvent } from "../audit/audit.service";
@@ -40,7 +40,7 @@ const NORMALIZED_LIFECYCLE_STATUSES: CallStatus[] = [
   "failed",
 ];
 
-export function getVoiceAvailability(): { enabled: boolean; missing: string[] } {
+export function fetchVoiceAvailability(): { enabled: boolean; missing: string[] } {
   const missing = VOICE_ENV_KEYS.filter((key) => {
     const value = process.env[key];
     return !value || !value.trim();
@@ -63,7 +63,7 @@ function requireVoiceEnv(name: string): string {
 }
 
 function assertVoiceEnabled(): void {
-  const availability = getVoiceAvailability();
+  const availability = fetchVoiceAvailability();
   if (!availability.enabled) {
     const error = new AppError(
       "voice_disabled",
@@ -75,7 +75,7 @@ function assertVoiceEnabled(): void {
   }
 }
 
-function getVoiceConfig(): {
+function fetchVoiceConfig(): {
   accountSid: string;
   authToken: string;
   apiKey: string;
@@ -124,7 +124,7 @@ function buildRequestMetadata(params: {
   return metadata;
 }
 
-function getVoiceStatusCallbackUrl(): string | null {
+function fetchVoiceStatusCallbackUrl(): string | null {
   const baseUrl = process.env.BASE_URL?.trim();
   if (!baseUrl) return null;
   return `${baseUrl.replace(/\/$/, "")}/api/webhooks/twilio/voice`;
@@ -200,7 +200,7 @@ function mapTwilioStatus(status: string | null | undefined): CallStatus | null {
 
 export function issueVoiceToken(params: { userId: string }): string {
   assertVoiceEnabled();
-  const { accountSid, apiKey, apiSecret, applicationSid } = getVoiceConfig();
+  const { accountSid, apiKey, apiSecret, applicationSid } = fetchVoiceConfig();
 
   const token = new AccessToken(accountSid, apiKey, apiSecret, {
     identity: params.userId,
@@ -233,14 +233,14 @@ export async function startVoiceCall(params: {
     throw new AppError("invalid_phone", "Phone number must be in E.164 format.", 400);
   }
 
-  const { callerId, applicationSid } = getVoiceConfig();
-  const statusCallbackUrl = getVoiceStatusCallbackUrl();
+  const { callerId, applicationSid } = fetchVoiceConfig();
+  const statusCallbackUrl = fetchVoiceStatusCallbackUrl();
 
   const shouldCreateTwilioCall = params.createTwilioCall ?? !params.callSid;
   let callSid = params.callSid ?? "";
   if (shouldCreateTwilioCall) {
     try {
-      const client = getTwilioClient();
+      const client = fetchTwilioClient();
       const callOptions: {
         to: string;
         from: string;
@@ -322,7 +322,7 @@ export async function endVoiceCall(params: {
   let twilioError: AppError | null = null;
   if (!isTerminal) {
     try {
-      const client = getTwilioClient();
+      const client = fetchTwilioClient();
       await client.calls(params.callSid).update({ status: "completed" });
     } catch (error) {
       const details = normalizeTwilioError(error);
@@ -398,7 +398,7 @@ export async function updateVoiceCallStatus(params: {
   return updated;
 }
 
-export async function getVoiceCallStatus(params: {
+export async function fetchVoiceCallStatus(params: {
   callSid: string;
   staffUserId: string | null;
 }): Promise<CallLogRecord> {
@@ -440,7 +440,7 @@ export async function controlVoiceCall(params: {
 
   let twilioError: AppError | null = null;
   try {
-    const client = getTwilioClient();
+    const client = fetchTwilioClient();
     if (params.action === "hangup") {
       await client.calls(params.callSid).update({ status: "completed" });
     } else if (twiml) {

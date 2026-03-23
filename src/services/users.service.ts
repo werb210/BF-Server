@@ -89,7 +89,7 @@ function handleUserError(
 /**
  * GET /api/users/me
  */
-export async function getMe(req: Request, res: Response) {
+export async function fetchMe(req: Request, res: Response) {
   const userId = req.user!.userId;
 
   const { rows } = await db.query(

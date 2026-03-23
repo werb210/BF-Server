@@ -275,7 +275,7 @@ export async function listLenderProductsByLenderId(
   return res.rows;
 }
 
-export async function getLenderProductById(
+export async function fetchLenderProductById(
   id: string,
   client?: Queryable
 ): Promise<LenderProductRecord | null> {

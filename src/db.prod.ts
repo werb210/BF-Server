@@ -51,7 +51,7 @@ export function query(text: string, params?: any[]): Promise<QueryResult> {
   return pool.query(text, params);
 }
 
-export function getClient() {
+export function fetchClient() {
   return pool;
 }
 
@@ -85,7 +85,7 @@ export async function warmUpDatabase(): Promise<void> {
   assertPoolHealthy();
 }
 
-export async function getInstrumentedClient(): Promise<PoolClient> {
+export async function fetchInstrumentedClient(): Promise<PoolClient> {
   return pool.connect();
 }
 

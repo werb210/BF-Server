@@ -13,7 +13,7 @@ import {
 } from "../repositories/pwa.repo";
 import { AppError } from "../middleware/errors";
 import { runtimeEnv } from "src/server/config/config";
-import { getPushStatus } from "../services/pushService";
+import { fetchPushStatus } from "../services/pushService";
 import { replaySyncBatch } from "../services/pwaSyncService";
 import { pool } from "../db";
 import { ALL_ROLES, ROLES } from "../auth/roles";
@@ -214,7 +214,7 @@ router.get(
   safeHandler(async (_req: any, res: any) => {
     const commitHash = runtimeEnv.commitSha;
     const buildTimestamp = runtimeEnv.buildTimestamp;
-    const pushStatus = getPushStatus();
+    const pushStatus = fetchPushStatus();
     res.status(200).json({
       push_enabled: pushStatus.enabled,
       background_sync_enabled: true,
@@ -232,7 +232,7 @@ router.get(
   requireAuth,
   requireAuthorization({ roles: [ROLES.ADMIN] }),
   safeHandler(async (_req: any, res: any) => {
-    const pushStatus = getPushStatus();
+    const pushStatus = fetchPushStatus();
     let dbWriteable = false;
     let queueProcessingHealthy: boolean | null = null;
     const warnings: string[] = [];

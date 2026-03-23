@@ -105,17 +105,17 @@ export const OCR_FIELD_REGISTRY: OcrFieldDefinition[] = [
   },
 ];
 
-export function getOcrFieldRegistry(): OcrFieldDefinition[] {
+export function fetchOcrFieldRegistry(): OcrFieldDefinition[] {
   return [...OCR_FIELD_REGISTRY];
 }
 
-export function getOcrFieldDefinitionByKey(
+export function fetchOcrFieldDefinitionByKey(
   key: string
 ): OcrFieldDefinition | undefined {
   return OCR_FIELD_REGISTRY.find((field) => field.field_key === key);
 }
 
-export function getOcrFieldDefinitionByLabel(
+export function fetchOcrFieldDefinitionByLabel(
   label: string
 ): OcrFieldDefinition | undefined {
   const normalized = label.trim().toLowerCase();

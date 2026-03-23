@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { Router } from "express";
-import { getStatus, isReady } from "../startupState";
+import { fetchStatus, isReady } from "../startupState";
 
 const router = Router();
 
@@ -10,7 +10,7 @@ export function healthHandler(_req: Request, res: Response): void {
 
 export function readyHandler(_req: Request, res: Response): void {
   if (!isReady()) {
-    const status = getStatus();
+    const status = fetchStatus();
     res.status(503).json({
       ok: false,
       code: "service_not_ready",

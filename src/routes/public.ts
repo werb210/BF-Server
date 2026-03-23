@@ -1,12 +1,12 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { getActiveLenderCount } from "../services/publicService";
+import { fetchActiveLenderCount } from "../services/publicService";
 import { createReadinessLead } from "../modules/readiness/readiness.service";
 
 const router = Router();
 
 router.get("/lender-count", async (_req: any, res: any) => {
-  const count = await getActiveLenderCount();
+  const count = await fetchActiveLenderCount();
   res.json({ count });
 });
 
