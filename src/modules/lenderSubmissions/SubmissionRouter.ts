@@ -1,3 +1,4 @@
+import { config } from "@/config";
 import { type SubmissionAdapter, type SubmissionResult } from "./SubmissionAdapter";
 import {
   GoogleSheetsAdapter,

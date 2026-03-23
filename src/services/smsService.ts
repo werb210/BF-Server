@@ -1,5 +1,5 @@
 import { fetchTwilioClient } from "./twilio";
-import { config } from "../config";
+import { config } from "@/config";
 
 export async function sendSMS(to: string, body: string): Promise<{ success: boolean } | void> {
   if (config.app.testMode === "true") {

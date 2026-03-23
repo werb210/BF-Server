@@ -27,7 +27,7 @@ import {
   assertPipelineTransition,
   resolveNextPipelineStage,
 } from "../modules/applications/applicationLifecycle.service";
-import { runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import { listLenders } from "../repositories/lenders.repo";
 import { eventBus } from "../events/eventBus";
 import {
@@ -54,7 +54,7 @@ function ensureReady(res: Response): boolean {
 }
 
 function ensureAuditHistoryEnabled(): void {
-  if (!runtimeEnv.auditHistoryEnabled) {
+  if (!config.flags.auditHistoryEnabled) {
     throw new AppError("not_found", "Audit history is disabled.", 404);
   }
 }

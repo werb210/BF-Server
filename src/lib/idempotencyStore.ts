@@ -1,6 +1,6 @@
 import Redis from "ioredis";
 import { logWarn } from "../observability/logger";
-import { config } from "../config";
+import { config } from "@/config";
 
 const ONE_HOUR_IN_SECONDS = 60 * 60;
 const ONE_HOUR_IN_MILLISECONDS = ONE_HOUR_IN_SECONDS * 1000;

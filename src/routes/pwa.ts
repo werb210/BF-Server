@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
-import { config } from "../config";
 import { requireAuth, requireAuthorization } from "../middleware/auth";
 import { safeHandler } from "../middleware/safeHandler";
 import {
@@ -13,7 +12,7 @@ import {
   deletePwaSubscriptionLegacy,
 } from "../repositories/pwa.repo";
 import { AppError } from "../middleware/errors";
-import { runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import { fetchPushStatus } from "../services/pushService";
 import { replaySyncBatch } from "../services/pwaSyncService";
 import { pool } from "../db";
@@ -213,8 +212,8 @@ router.get(
   requireAuth,
   requireAuthorization({ roles: ALL_ROLES }),
   safeHandler(async (_req: any, res: any) => {
-    const commitHash = runtimeEnv.commitSha;
-    const buildTimestamp = runtimeEnv.buildTimestamp;
+    const commitHash = config.commitSha;
+    const buildTimestamp = config.buildTimestamp;
     const pushStatus = fetchPushStatus();
     res.status(200).json({
       push_enabled: pushStatus.enabled,

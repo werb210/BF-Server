@@ -2,7 +2,7 @@
 
 import type { Express } from "express";
 import type { Server } from "http";
-import { validateServerEnv } from "src/server/config/config";
+import { validateServerEnv } from "@/config";
 import { logger } from "./utils/logger";
 import { markReady } from "../startupState";
 import { createServer } from "./createServer";
@@ -16,7 +16,7 @@ import { runMigrations as runStartupMigrations } from "../startup/runMigrations"
 import { pool } from "../db";
 import { assertDatabaseHealthy } from "../health/dbHealth";
 import { runSelfTest } from "../_internal/selfTest";
-import { config } from "../config";
+import { config } from "@/config";
 
 let processHandlersInstalled = false;
 let server: Server | null = null;

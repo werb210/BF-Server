@@ -13,7 +13,7 @@ import { updateCallStatus } from "../modules/calls/calls.service";
 import { findCallLogByTwilioSid } from "../modules/calls/calls.repo";
 import { createVoicemail } from "../modules/voice/voicemail.repo";
 import { logInfo, logWarn } from "../observability/logger";
-import { config } from "../config";
+import { config } from "@/config";
 
 const router = Router();
 const oneMinuteMs = 60_000;

@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import { config } from "../config";
+import { config } from "@/config";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 

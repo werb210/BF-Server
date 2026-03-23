@@ -1,6 +1,6 @@
 import { AppError } from "../../middleware/errors";
 import { recordAuditEvent } from "../audit/audit.service";
-import { runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import {
   findApplicationById,
   findDocumentById,
@@ -32,7 +32,7 @@ const OCR_RETRY_MAX_MS = 15 * 60 * 1000;
 const OCR_FUZZY_THRESHOLD = 0.85;
 
 function resolveProvider(): OcrProvider {
-  const provider = runtimeEnv.ocrProvider;
+  const provider = config.ocr.provider;
   if (provider === "openai") {
     return createOpenAiOcrProvider();
   }
@@ -273,7 +273,7 @@ export async function enqueueOcrForDocument(documentId: string): Promise<OcrJobR
   return createOcrJob({
     documentId: document.id,
     applicationId: document.application_id,
-    maxAttempts: runtimeEnv.ocrMaxAttempts,
+    maxAttempts: config.ocr.maxAttempts,
   });
 }
 
@@ -288,7 +288,7 @@ export async function enqueueOcrForApplication(applicationId: string): Promise<O
     const job = await createOcrJob({
       documentId: document.id,
       applicationId: document.application_id,
-      maxAttempts: runtimeEnv.ocrMaxAttempts,
+      maxAttempts: config.ocr.maxAttempts,
     });
     jobs.push(job);
   }
@@ -323,7 +323,7 @@ export async function processOcrJob(
   const storage = options?.storage ?? createOcrStorage();
   const maxAttempts = Number.isFinite(job.max_attempts) && job.max_attempts > 0
     ? job.max_attempts
-    : runtimeEnv.ocrMaxAttempts;
+    : config.ocr.maxAttempts;
 
   logInfo("ocr_job_started", {
     jobId: job.id,

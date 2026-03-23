@@ -1,4 +1,4 @@
-import { config, runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import { logWarn } from "../../observability/logger";
 
 export type OcrExtractionResult = {
@@ -62,12 +62,12 @@ function parseStructuredJson(text: string): unknown | null {
 export function createOpenAiOcrProvider(): OcrProvider {
   return {
     async extract(params) {
-      const apiKey = runtimeEnv.openAiApiKey;
+      const apiKey = config.openai.apiKey;
       if (!apiKey) {
         logWarn("openai_api_key_missing", { code: "openai_api_key_missing" });
         throw new Error("missing_openai_api_key");
       }
-      const model = runtimeEnv.openAiOcrModel;
+      const model = config.openai.ocrModel;
       const timeoutMs = config.ocr.timeoutMs;
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);

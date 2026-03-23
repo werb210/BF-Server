@@ -1,4 +1,4 @@
-import { config } from "./index";
+import { config } from "@/config";
 
 function requireValue(name: string, value: string | undefined): string {
   if (!value) {

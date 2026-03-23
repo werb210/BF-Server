@@ -1,3 +1,4 @@
+import { config } from "@/config";
 import pg, {
   type Pool as PgPool,
   type PoolClient,
@@ -5,7 +6,6 @@ import pg, {
   type QueryResult,
   type QueryResultRow,
 } from "pg";
-import { config } from "./config";
 import { logError, logInfo, logWarn } from "./observability/logger";
 import { markNotReady } from "./startupState";
 

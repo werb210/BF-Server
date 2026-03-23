@@ -1,5 +1,5 @@
 import { pool } from "../../db";
-import { runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 
 export const OPS_KILL_SWITCH_KEYS = [
   "replay",
@@ -12,15 +12,15 @@ export type OpsKillSwitchKey = (typeof OPS_KILL_SWITCH_KEYS)[number];
 
 function fetchEnvKillSwitch(key: OpsKillSwitchKey): boolean {
   if (key === "replay") {
-    return runtimeEnv.opsKillSwitchReplay;
+    return config.flags.opsKillSwitchReplay;
   }
   if (key === "exports") {
-    return runtimeEnv.opsKillSwitchExports;
+    return config.flags.opsKillSwitchExports;
   }
   if (key === "ocr") {
-    return runtimeEnv.opsKillSwitchOcr;
+    return config.flags.opsKillSwitchOcr;
   }
-  return runtimeEnv.opsKillSwitchLenderTransmission;
+  return config.flags.opsKillSwitchLenderTransmission;
 }
 
 export async function listKillSwitches(): Promise<

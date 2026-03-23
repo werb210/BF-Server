@@ -1,5 +1,5 @@
 import { v4 as uuid } from "uuid";
-import { config } from "../../config";
+import { config } from "@/config";
 
 const twilioModule = require("twilio");
 const AccessToken = twilioModule.jwt.AccessToken;

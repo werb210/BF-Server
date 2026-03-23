@@ -1,18 +1,17 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { requireAuth, requireAuthorization } from "../../middleware/auth";
 import { safeHandler } from "../../middleware/safeHandler";
-import { runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import { sendNotification } from "../../services/pushService";
 import { pushSendRateLimit } from "../../middleware/rateLimit";
 import { replaySyncBatch } from "../../services/pwaSyncService";
 import { AppError } from "../../middleware/errors";
 import { ALL_ROLES } from "../../auth/roles";
-import { config } from "../../config";
 
 const router = Router();
 
 function assertIntPwaAllowed(): void {
-  if (runtimeEnv.isProduction) {
+  if (config.isProduction) {
     throw new AppError("not_found", "Not available in production.", 404);
   }
   if (config.internal.enableTestRoutes !== "true") {

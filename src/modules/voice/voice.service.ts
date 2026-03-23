@@ -6,9 +6,8 @@ import { startCall, updateCallStatus, updateCallRecording } from "../calls/calls
 import { findCallLogByTwilioSid } from "../calls/calls.repo";
 import { fetchTwilioClient } from "../../services/twilio";
 import { type CallStatus, type CallLogRecord } from "../calls/calls.repo";
-import { runtimeEnv } from "src/server/config/config";
-import { recordAuditEvent } from "../audit/audit.service";
 import { config } from "@/config";
+import { recordAuditEvent } from "../audit/audit.service";
 
 const VOICE_TOKEN_TTL_SECONDS = 15 * 60;
 const DEFAULT_HOLD_TWIML =
@@ -145,7 +144,7 @@ function fetchVoiceStatusCallbackUrl(): string | null {
 }
 
 function normalizeRestrictedNumbers(): Set<string> {
-  const restricted = runtimeEnv.voiceRestrictedNumbers;
+  const restricted = config.security.voiceRestrictedNumbers;
   const normalized = restricted
     .map((entry: any) => normalizePhoneNumber(entry))
     .filter((entry): entry is string => Boolean(entry));

@@ -5,11 +5,10 @@ import { pool } from "../db";
 import { safeHandler } from "../middleware/safeHandler";
 import { retrieveTopKnowledgeChunks } from "./retrievalService";
 import { matchLenders } from "./lenderMatchEngine";
-import { runtimeEnv } from "src/server/config/config";
+import { config } from "@/config";
 import { emitAiEscalation } from "../realtime/events";
 import { circuitGuard, recordFailure, resetCircuit } from "../utils/circuitBreaker";
 import { retry } from "../utils/retry";
-import { config } from "../config";
 
 function detectIntent(message: string): "faq" | "prequal" | "escalation" {
   const lower = message.toLowerCase();
@@ -66,7 +65,7 @@ async function createAiResponse(prompt: string, context: string[]): Promise<stri
     circuitGuard();
     try {
       const completion = await client.chat.completions.create({
-        model: runtimeEnv.aiModel,
+        model: config.ai.model,
         messages: [
           {
             role: "system",
