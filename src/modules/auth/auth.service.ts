@@ -28,13 +28,7 @@ import { logError, logInfo, logWarn } from "../../observability/logger";
 import { getRequestId } from "../../middleware/requestContext";
 import { normalizeOtpPhone } from "./phone";
 import { ensureOtpTableExists } from "../../db/ensureOtpTable";
-import {
-  getAccessTokenSecret,
-  getRefreshTokenExpiresInMs,
-  getRefreshTokenSecret,
-  getJwtClockSkewSeconds,
-  isTestEnvironment,
-} from "../../server/config/config";
+import { config, runtimeEnv } from "src/server/config/config";
 import {
   signAccessToken,
   type AccessTokenPayload,
@@ -106,7 +100,7 @@ export function issueRefreshToken(params: {
   userId: string;
   tokenVersion: number;
 }): { token: string; tokenHash: string; expiresAt: Date } {
-  const secret = getRefreshTokenSecret();
+  const secret = config.auth.refreshSecret;
   if (!secret) {
     throw new AppError("auth_misconfigured", "Auth is not configured.", 500);
   }
@@ -116,7 +110,7 @@ export function issueRefreshToken(params: {
     type: "refresh",
     jti: randomUUID(),
   };
-  const expiresIn = getRefreshTokenExpiresInMs() as SignOptions["expiresIn"];
+  const expiresIn = config.auth.refreshExpiresMs as SignOptions["expiresIn"];
   const options: SignOptions = {
     algorithm: "HS256",
   };
@@ -127,19 +121,19 @@ export function issueRefreshToken(params: {
   return {
     token,
     tokenHash: hashRefreshToken(token),
-    expiresAt: new Date(Date.now() + getRefreshTokenExpiresInMs()),
+    expiresAt: new Date(Date.now() + config.auth.refreshExpiresMs),
   };
 }
 
 function verifyRefreshToken(token: string): RefreshTokenPayload {
-  const secret = getRefreshTokenSecret();
+  const secret = config.auth.refreshSecret;
   if (!secret) {
     throw new AppError("auth_misconfigured", "Auth is not configured.", 500);
   }
   try {
     return jwt.verify(token, secret, {
       algorithms: ["HS256"],
-      clockTolerance: getJwtClockSkewSeconds(),
+      clockTolerance: runtimeEnv.jwtClockSkewSeconds,
     }) as RefreshTokenPayload;
   } catch {
     throw new AppError("invalid_refresh_token", "Invalid refresh token.", 401);
@@ -213,8 +207,8 @@ export function assertUserActive(params: {
 }
 
 export function assertAuthSubsystem(): void {
-  const accessSecret = getAccessTokenSecret();
-  const refreshSecret = getRefreshTokenSecret();
+  const accessSecret = config.auth.jwtSecret;
+  const refreshSecret = config.auth.refreshSecret;
   if (!accessSecret || !refreshSecret) {
     throw new AppError("auth_misconfigured", "Auth is not configured.", 500);
   }
@@ -273,7 +267,7 @@ function clearOtpAttemptLimit(phoneE164: string): void {
 }
 
 function assertSingleVerifyAttempt(phoneE164: string): void {
-  if (isTestEnvironment()) {
+  if (runtimeEnv.isTest) {
     return;
   }
   if (otpVerifyInFlight.has(phoneE164)) {
@@ -691,7 +685,7 @@ export async function startOtp(
     const serviceSid = getVerifyServiceSid();
     clearOtpAttemptLimit(phoneE164);
 
-    if (isTestEnvironment()) {
+    if (runtimeEnv.isTest) {
       const generatedOtp = getOrCreateTestOtp(phoneE164);
       await createOtpCode({
         phone: phoneE164,
@@ -859,7 +853,7 @@ export async function verifyOtpCode(params: {
     }
 
     let latestVerification = await safeFindLatestOtpVerificationByPhone(phoneE164, requestId);
-    if ((!latestVerification || !isOtpVerificationFresh(latestVerification)) && !isTestEnvironment()) {
+    if ((!latestVerification || !isOtpVerificationFresh(latestVerification)) && !runtimeEnv.isTest) {
       logWarn("otp_verify_response", {
         ...meta,
         providerStatus: "not_checked",
@@ -898,7 +892,7 @@ export async function verifyOtpCode(params: {
           tokenCreated: false,
         });
       } catch (err) {
-        if (isTestEnvironment()) {
+        if (runtimeEnv.isTest) {
           providerStatus = undefined;
         } else {
           const details = getTwilioErrorDetails(err);
@@ -918,7 +912,7 @@ export async function verifyOtpCode(params: {
         }
       }
 
-      if (isTestEnvironment() && providerStatus !== "approved") {
+      if (runtimeEnv.isTest && providerStatus !== "approved") {
         const otpRecord = await findLatestOtpCodeByPhone({ phone: phoneE164 });
         if (!otpRecord) {
           recordOtpAttempt(phoneE164, codeHash);

@@ -1,4 +1,4 @@
-import { runtimeEnv } from "../server/config/config";
+import { runtimeEnv } from "src/server/config/config";
 import { pool } from "../db";
 import { isTestEnvironment } from "../dbRuntime";
 import { logError, logInfo, logWarn } from "../observability/logger";

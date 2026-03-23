@@ -1,11 +1,5 @@
 import jwt, { type SignOptions, type JwtPayload } from "jsonwebtoken";
-import {
-  getAccessTokenExpiresIn,
-  getAccessTokenSecret,
-  getJwtClockSkewSeconds,
-  config,
-  runtimeEnv
-} from "../server/config/config";
+import { config, runtimeEnv } from "src/server/config/config";
 import { type Role, isRole } from "./roles";
 import { type Capability, isCapability } from "./capabilities";
 import { findAuthUserById, type AuthUser } from "../modules/auth/auth.repo";

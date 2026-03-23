@@ -2,7 +2,7 @@
 
 import type { Express } from "express";
 import type { Server } from "http";
-import { validateServerEnv } from "./config/config";
+import { validateServerEnv } from "src/server/config/config";
 import { logger } from "./utils/logger";
 import { markReady } from "../startupState";
 import { createServer } from "./createServer";
@@ -154,11 +154,5 @@ process.on("SIGTERM", async () => {
   }
   process.exit(0);
 });
-
-if (require.main === module && process.env.NODE_ENV !== "test") {
-  startServer().catch((err) => {
-    logger.error("server_start_failed", { err: err instanceof Error ? err.message : String(err) });
-  });
-}
 
 export { server };

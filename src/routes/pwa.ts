@@ -12,7 +12,7 @@ import {
   deletePwaSubscriptionLegacy,
 } from "../repositories/pwa.repo";
 import { AppError } from "../middleware/errors";
-import { getBuildInfo } from "../server/config/config";
+import { runtimeEnv } from "src/server/config/config";
 import { getPushStatus } from "../services/pushService";
 import { replaySyncBatch } from "../services/pwaSyncService";
 import { pool } from "../db";
@@ -212,7 +212,8 @@ router.get(
   requireAuth,
   requireAuthorization({ roles: ALL_ROLES }),
   safeHandler(async (_req: any, res: any) => {
-    const { commitHash, buildTimestamp } = getBuildInfo();
+    const commitHash = runtimeEnv.commitSha;
+    const buildTimestamp = runtimeEnv.buildTimestamp;
     const pushStatus = getPushStatus();
     res.status(200).json({
       push_enabled: pushStatus.enabled,

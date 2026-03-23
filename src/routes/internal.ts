@@ -1,6 +1,6 @@
 import { Router, type Request } from "express";
 import { pool } from "../db";
-import { getBuildInfo } from "../server/config/config";
+import { runtimeEnv } from "src/server/config/config";
 import { listKillSwitches } from "../modules/ops/ops.service";
 import { listActiveReplayJobs } from "../modules/ops/replay.service";
 import { listRecentExports } from "../modules/exports/export.service";
@@ -30,7 +30,8 @@ router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.OPS_MANAGE]));
 
 router.get("/version", (_req: any, res: any) => {
-  const { commitHash, buildTimestamp } = getBuildInfo();
+  const commitHash = runtimeEnv.commitSha;
+  const buildTimestamp = runtimeEnv.buildTimestamp;
   res.json({ commitHash, buildTimestamp });
 });
 

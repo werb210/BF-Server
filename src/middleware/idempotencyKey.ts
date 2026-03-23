@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { type NextFunction, type Request, type Response } from "express";
-import { getIdempotencyEnabled, runtimeEnv } from "../server/config/config";
+import { runtimeEnv } from "src/server/config/config";
 
 const IDEMPOTENCY_HEADER = "idempotency-key";
 const enforceMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);

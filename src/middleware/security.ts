@@ -1,7 +1,7 @@
 import { type NextFunction, type Request, type Response } from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import { isProductionEnvironment, runtimeEnv } from "../server/config/config";
+import { runtimeEnv } from "src/server/config/config";
 import { logger } from "../server/utils/logger";
 
 function isLoopback(req: Request): boolean {
