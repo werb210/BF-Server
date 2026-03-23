@@ -2,7 +2,7 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { fetchActiveLenderCount } from "../services/publicService";
 import { createReadinessLead } from "../modules/readiness/readiness.service";
-import { config } from "@/config";
+import { config } from "../config";
 
 const router = Router();
 

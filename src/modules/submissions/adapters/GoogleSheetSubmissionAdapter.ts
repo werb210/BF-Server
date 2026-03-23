@@ -1,4 +1,4 @@
-import { config } from "@/config";
+import { config } from "../../../config";
 import { google } from "googleapis";
 import { logError, logInfo } from "../../../observability/logger";
 import {

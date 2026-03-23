@@ -1,5 +1,5 @@
 
-import { config } from "@/config";
+import { config } from "../config";
 export const env = {
   NODE_ENV: config.env,
   DATABASE_URL: config.db.url,

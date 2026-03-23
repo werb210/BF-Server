@@ -10,7 +10,7 @@ import {
   upsertStaffActivityWindow,
 } from "./reporting.repo";
 import { pool } from "../../db";
-import { config } from "@/config";
+import { config } from "../../config";
 import { runWithRequestContext } from "../../middleware/requestContext";
 import { logError, logInfo } from "../../observability/logger";
 import { type PoolClient } from "pg";

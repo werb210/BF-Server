@@ -4,7 +4,7 @@ import { AppError } from "../middleware/errors";
 import { safeHandler } from "../middleware/safeHandler";
 import { logWarn } from "../observability/logger";
 import { handleVoiceStatusWebhook } from "../modules/voice/voice.service";
-import { config } from "@/config";
+import { config } from "../config";
 
 const router = Router();
 

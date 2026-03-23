@@ -12,7 +12,7 @@ import {
   deletePwaSubscriptionLegacy,
 } from "../repositories/pwa.repo";
 import { AppError } from "../middleware/errors";
-import { config } from "@/config";
+import { config } from "../config";
 import { fetchPushStatus } from "../services/pushService";
 import { replaySyncBatch } from "../services/pwaSyncService";
 import { pool } from "../db";

@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { config } from "@/config";
+import { config } from "../../config";
 import { isKillSwitchEnabled } from "../ops/ops.service";
 import { clearExpiredOcrLocks, lockOcrJobs } from "./ocr.repo";
 import { processOcrJob } from "./ocr.service";

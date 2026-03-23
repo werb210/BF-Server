@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { requireAuth, requireAuthorization } from "../../middleware/auth";
 import { safeHandler } from "../../middleware/safeHandler";
-import { config } from "@/config";
+import { config } from "../../config";
 import { sendNotification } from "../../services/pushService";
 import { pushSendRateLimit } from "../../middleware/rateLimit";
 import { replaySyncBatch } from "../../services/pwaSyncService";

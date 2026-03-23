@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { Router } from "express";
-import { config } from "@/config";
+import { config } from "../config";
 
 import { pool } from "../lib/dbClient";
 import { redis } from "../lib/redis";

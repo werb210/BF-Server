@@ -1,6 +1,6 @@
 import pino from "pino";
 import { fetchRequestId } from "../observability/requestContext";
-import { config } from "@/config";
+import { config } from "../config";
 
 const base = pino({
   level: config.logLevel ?? "info",

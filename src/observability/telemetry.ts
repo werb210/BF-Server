@@ -1,4 +1,4 @@
-import { config } from "@/config";
+import { config } from "../config";
 import { fetchRequestRoute } from "../observability/requestContext";
 
 const instanceId = config.telemetry.instanceId;

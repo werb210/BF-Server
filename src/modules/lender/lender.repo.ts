@@ -1,4 +1,4 @@
-import { config } from "@/config";
+import { config } from "../../config";
 import { randomUUID } from "crypto";
 import { pool } from "../../db";
 import { isTestEnvironment } from "../../dbRuntime";

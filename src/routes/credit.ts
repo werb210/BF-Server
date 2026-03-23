@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { createCRMLead } from "../services/crmService";
 import { sendSMS } from "../services/smsService";
-import { config } from "@/config";
+import { config } from "../config";
 
 const router = Router();
 

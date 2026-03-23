@@ -1,4 +1,4 @@
-import { config } from "@/config";
+import { config } from "../config";
 import { AppError } from "../middleware/errors";
 import { logInfo, logWarn } from "../observability/logger";
 import { pool } from "../db";

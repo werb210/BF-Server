@@ -3,7 +3,7 @@ import { AppError } from "../../middleware/errors";
 import { recordAuditEvent } from "../audit/audit.service";
 import { fetchCircuitBreaker } from "../../utils/circuitBreaker";
 import type { Role } from "../../auth/roles";
-import { config } from "@/config";
+import { config } from "../../config";
 import { assertRetryAllowed } from "./retryPolicy";
 
 type RetryJobResult = {

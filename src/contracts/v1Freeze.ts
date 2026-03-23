@@ -1,5 +1,5 @@
 import { API_ROUTE_MOUNTS } from "../routes/routeRegistry";
-import { config } from "@/config";
+import { config } from "../config";
 
 export const API_V1_FROZEN = true;
 

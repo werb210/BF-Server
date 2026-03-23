@@ -1,4 +1,4 @@
-import { config } from "@/config";
+import { config } from "./";
 
 function requireValue(name: string, value: string | undefined): string {
   if (!value) {

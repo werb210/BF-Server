@@ -26,7 +26,7 @@ import {
   updateSubmissionStatus,
   upsertSubmissionRetryState,
 } from "./lender.repo";
-import { config } from "@/config";
+import { config } from "../../config";
 import { isKillSwitchEnabled } from "../ops/ops.service";
 import { logInfo, logWarn } from "../../observability/logger";
 import { recordTransactionRollback } from "../../observability/transactionTelemetry";

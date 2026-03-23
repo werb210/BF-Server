@@ -1,5 +1,5 @@
 import AccessToken, { VoiceGrant } from "twilio/lib/jwt/AccessToken";
-import { config } from "@/config";
+import { config } from "../../config";
 
 function requireTokenConfig(value: string | undefined, name: string): string {
   if (!value) {

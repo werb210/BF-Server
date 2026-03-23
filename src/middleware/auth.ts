@@ -5,7 +5,7 @@ import { verifyAccessToken } from "../auth/jwt";
 import { DEFAULT_AUTH_SILO } from "../auth/silo";
 import { isRole } from "../auth/roles";
 import { type AuthenticatedUser } from "../types/auth";
-import { config } from "@/config";
+import { config } from "../config";
 
 export interface AuthRequest extends Request {
   user?: AuthenticatedUser;

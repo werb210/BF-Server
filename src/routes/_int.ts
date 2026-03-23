@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { config } from "@/config";
+import { config } from "../config";
 import packageJson from "../../package.json";
 import { listRouteInventory } from "../debug/printRoutes";
 import { readyHandler } from "./ready";

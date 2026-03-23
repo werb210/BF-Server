@@ -1,4 +1,4 @@
-import { config } from "@/config";
+import { config } from "../../config";
 import { logWarn } from "../../observability/logger";
 
 export type OcrExtractionResult = {

@@ -1,5 +1,5 @@
 import { pool } from "../../db";
-import { config } from "@/config";
+import { config } from "../../config";
 
 export const OPS_KILL_SWITCH_KEYS = [
   "replay",

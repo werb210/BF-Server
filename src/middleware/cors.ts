@@ -1,4 +1,4 @@
-import { config } from "@/config";
+import { config } from "../config";
 export function corsMiddleware(req: any, res: any, next: any) {
   const allowed = (config.cors.allowedOrigins || "")
     .split(",")

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { db } from "../db";
-import { config } from "@/config";
+import { config } from "../config";
 import { ApplicationStage } from "../modules/applications/pipelineState";
 import { sendSms } from "../modules/notifications/sms.service";
 import { createContinuation } from "../models/continuation";

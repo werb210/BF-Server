@@ -1,4 +1,4 @@
-import { config } from "@/config";
+import { config } from "../../config";
 import { Router, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
 import {

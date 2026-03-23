@@ -1,5 +1,5 @@
 import * as appInsights from "applicationinsights";
-import { config } from "@/config";
+import { config } from "../config";
 import { logInfo, logWarn } from "./logger";
 
 type RequestTelemetry = {

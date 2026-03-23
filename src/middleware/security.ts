@@ -1,7 +1,7 @@
 import { type NextFunction, type Request, type Response } from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import { config } from "@/config";
+import { config } from "../config";
 import { logger } from "../server/utils/logger";
 
 function isLoopback(req: Request): boolean {

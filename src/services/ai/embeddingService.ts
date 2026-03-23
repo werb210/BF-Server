@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { config } from "@/config";
+import { config } from "../../config";
 
 const client = new OpenAI({
   apiKey: config.openai.apiKey || "test-openai-key",

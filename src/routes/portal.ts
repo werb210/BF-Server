@@ -27,7 +27,7 @@ import {
   assertPipelineTransition,
   resolveNextPipelineStage,
 } from "../modules/applications/applicationLifecycle.service";
-import { config } from "@/config";
+import { config } from "../config";
 import { listLenders } from "../repositories/lenders.repo";
 import { eventBus } from "../events/eventBus";
 import {

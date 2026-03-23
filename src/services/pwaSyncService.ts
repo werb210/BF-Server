@@ -17,7 +17,7 @@ import {
   normalizeRequiredDocumentKey,
   type RequiredDocumentKey,
 } from "../db/schema/requiredDocuments";
-import { config } from "@/config";
+import { config } from "../config";
 
 type ReplayUserContext = {
   userId: string;

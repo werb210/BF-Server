@@ -3,7 +3,7 @@ import rateLimit from "express-rate-limit";
 import { pool } from "../../db";
 import { recordAuditEvent } from "../audit/audit.service";
 import { upsertLead } from "./chat.service";
-import { config } from "@/config";
+import { config } from "../../config";
 
 const router = Router();
 

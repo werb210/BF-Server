@@ -1,6 +1,6 @@
 import { Router } from "express";
 import twilio from "twilio";
-import { config } from "@/config";
+import { config } from "../config";
 
 const router = Router();
 

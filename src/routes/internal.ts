@@ -1,6 +1,6 @@
 import { Router, type Request } from "express";
 import { pool } from "../db";
-import { config } from "@/config";
+import { config } from "../config";
 import { listKillSwitches } from "../modules/ops/ops.service";
 import { listActiveReplayJobs } from "../modules/ops/replay.service";
 import { listRecentExports } from "../modules/exports/export.service";

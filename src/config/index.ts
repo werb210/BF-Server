@@ -1,6 +1,6 @@
 import { EnvSchema } from "./schema";
 
-const env = process.env as Record<string, string | undefined>;
+const env = process["env"] as Record<string, string | undefined>;
 const parsed = EnvSchema.parse(env);
 
 const toNumber = (value: string | undefined, fallback: number): number => {

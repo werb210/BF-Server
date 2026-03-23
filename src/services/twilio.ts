@@ -1,6 +1,6 @@
 import process from "node:process"
 import Twilio from "twilio"
-import { config } from "@/config";
+import { config } from "../config";
 
 let client: any | null = null
 

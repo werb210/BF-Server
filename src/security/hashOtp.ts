@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { config } from "@/config";
+import { config } from "../config";
 
 const OTP_SECRET = config.security.otpHashSecret ?? config.jwt.secret;
 

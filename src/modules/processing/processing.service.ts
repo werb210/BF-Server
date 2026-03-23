@@ -5,7 +5,7 @@ import { advanceProcessingStage } from "../applications/processingStage.service"
 import type { PoolClient } from "pg";
 import { randomUUID } from "crypto";
 import { fetchCircuitBreaker } from "../../utils/circuitBreaker";
-import { config } from "@/config";
+import { config } from "../../config";
 import { assertRetryAllowed } from "./retryPolicy";
 
 const BANK_STATEMENT_CATEGORY = "bank_statements_6_months";

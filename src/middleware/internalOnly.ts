@@ -1,5 +1,5 @@
 import { type NextFunction, type Request, type Response } from "express";
-import { config } from "@/config";
+import { config } from "../config";
 
 export function internalOnly(req: Request, res: Response, next: NextFunction): void {
   if (config.env === "test") {

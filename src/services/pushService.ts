@@ -1,6 +1,6 @@
 import webpush from "web-push";
 import { createHash } from "crypto";
-import { config } from "@/config";
+import { config } from "../config";
 import {
   createPwaNotificationAudit,
   deletePwaSubscriptionByEndpoint,

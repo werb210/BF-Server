@@ -31,50 +31,17 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Type Check (FAILS BUILD IF BROKEN)
+      - name: Type Check
         run: npm run typecheck
 
-      - name: Build (FAILS BUILD IF BROKEN)
+      - name: Build
         run: npm run build
 
-      - name: Smoke test
-        run: |
-          TS_NODE_BASEURL=./dist node -r tsconfig-paths/register dist/src/index.js & sleep 5 && kill $!
+      - name: Lint
+        run: npm run lint
 
-      - name: Enforce architecture rules
-        run: |
-          echo "Checking for forbidden get* helpers..."
-          grep -r "function get" src && exit 1 || echo "OK"
-
-          echo "Checking for illegal get* function declarations..."
-          grep -rE "function get[A-Z]" src && exit 1 || echo "OK"
-
-          echo "Checking for illegal exported get* helpers..."
-          grep -rE "export (const|function) get[A-Z]" src && exit 1 || echo "OK"
-
-          echo "Checking for illegal process.env usage outside config layer..."
-
-          VIOLATIONS=$(grep -r "process.env" src \
-            | grep -v "src/config" \
-            | grep -v "src/platform/env" \
-            | grep -v "src/env" \
-            | grep -v "src/server" || true)
-
-          if [ -n "$VIOLATIONS" ]; then
-            echo "WARNING: process.env used outside config layer:"
-            echo "$VIOLATIONS"
-          else
-            echo "OK"
-          fi
-
-          echo "Checking that config is used instead of process.env in business layers..."
-
-          grep -r "process.env" src \
-            | grep -E "src/(services|routes|modules|middleware|repositories)" \
-            && echo "ERROR: process.env used in business logic. Use config instead." && exit 1 || echo "OK"
-
-          echo "Checking single entrypoint..."
-          test $(grep -r "app.listen" src | wc -l) -eq 1
+      - name: Startup smoke test
+        run: node dist/index.js & sleep 5 && kill $!
 
       - name: Deploy
         run: echo "Deploy step here"

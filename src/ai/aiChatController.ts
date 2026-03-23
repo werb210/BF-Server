@@ -5,7 +5,7 @@ import { pool } from "../db";
 import { safeHandler } from "../middleware/safeHandler";
 import { retrieveTopKnowledgeChunks } from "./retrievalService";
 import { matchLenders } from "./lenderMatchEngine";
-import { config } from "@/config";
+import { config } from "../config";
 import { emitAiEscalation } from "../realtime/events";
 import { circuitGuard, recordFailure, resetCircuit } from "../utils/circuitBreaker";
 import { retry } from "../utils/retry";

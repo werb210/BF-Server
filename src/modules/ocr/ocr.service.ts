@@ -1,6 +1,6 @@
 import { AppError } from "../../middleware/errors";
 import { recordAuditEvent } from "../audit/audit.service";
-import { config } from "@/config";
+import { config } from "../../config";
 import {
   findApplicationById,
   findDocumentById,

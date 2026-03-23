@@ -1,4 +1,4 @@
-import { config } from "@/config";
+import { config } from "../config";
 import { pool } from "../db";
 import { isTestEnvironment } from "../dbRuntime";
 import { logError, logInfo, logWarn } from "../observability/logger";

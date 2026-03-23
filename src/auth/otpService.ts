@@ -1,5 +1,5 @@
 import { deleteOtp, fetchOtp, storeOtp as persistOtp } from "../services/otpService";
-import { config } from "@/config";
+import { config } from "../config";
 
 function normalizePhone(phone: string): string {
   let p = phone.replace(/\D/g, "");

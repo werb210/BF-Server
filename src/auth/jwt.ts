@@ -1,5 +1,5 @@
 import jwt, { type SignOptions, type JwtPayload } from "jsonwebtoken";
-import { config } from "@/config";
+import { config } from "../config";
 import { type Role, isRole } from "./roles";
 import { type Capability, isCapability } from "./capabilities";
 import { findAuthUserById, type AuthUser } from "../modules/auth/auth.repo";

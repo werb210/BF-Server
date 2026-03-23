@@ -1,6 +1,6 @@
 import { pool } from "./db";
 import { logger } from "./platform/logger";
-import { config } from "@/config";
+import { config } from "./config";
 
 export function isTestEnv(): boolean {
   return config.env === "test";
