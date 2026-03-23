@@ -7,15 +7,15 @@ const router = Router();
 
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.CALENDAR_READ]));
-router.get("/", safeHandler((_req, res) => {
+router.get("/", safeHandler((_req: any, res: any) => {
   res.status(200).json({ items: [] });
 }));
 
-router.get("/tasks", safeHandler((_req, res) => {
+router.get("/tasks", safeHandler((_req: any, res: any) => {
   res.status(200).json({ items: [] });
 }));
 
-router.get("/events", safeHandler((_req, res) => {
+router.get("/events", safeHandler((_req: any, res: any) => {
   res.status(200).json({ items: [] });
 }));
 

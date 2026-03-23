@@ -1,7 +1,7 @@
 import { Handler } from "../types/handler";
 import { lenderProductsService } from "../services/lenderProducts/lenderProducts.service";
 
-export const listLenderProductsHandler: Handler = async (_req, res) => {
+export const listLenderProductsHandler: Handler = async (_req: any, res: any) => {
   const data = await lenderProductsService.list();
   res.json({ success: true, data });
 };

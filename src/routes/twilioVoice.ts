@@ -22,7 +22,7 @@ router.post(
   "/twilio/voice",
   express.urlencoded({ extended: false }),
   twilioWebhookValidation,
-  (_req, res) => {
+  (_req: any, res: any) => {
   const VoiceResponse = twilioRuntime.twiml.VoiceResponse;
   const response = new VoiceResponse();
 

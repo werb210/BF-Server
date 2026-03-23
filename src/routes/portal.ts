@@ -70,7 +70,7 @@ function parsePagination(query: Request["query"]): { limit: number; offset: numb
 router.get(
   "/applications",
   portalLimiter,
-  safeHandler(async (_req, res) => {
+  safeHandler(async (_req: any, res: any) => {
     if (!ensureReady(res)) {
       return;
     }
@@ -110,7 +110,7 @@ router.get(
     if (!ensureReady(res)) {
       return;
     }
-    await listApplicationStages(req, res);
+    await listApplicationStages(req: any, res: any);
   })
 );
 
@@ -189,7 +189,7 @@ router.get(
   requireAuth,
   portalLimiter,
   requireAuthorization({ roles: [ROLES.ADMIN] }),
-  safeHandler(async (_req, res) => {
+  safeHandler(async (_req: any, res: any) => {
     const items = await listReadinessLeads();
     res.status(200).json({ items });
   })
@@ -614,7 +614,7 @@ router.post(
 router.get(
   "/lenders",
   portalLimiter,
-  safeHandler(async (_req, res) => {
+  safeHandler(async (_req: any, res: any) => {
     const lenders = await listLenders(pool);
     res.status(200).json({ items: lenders ?? [] });
   })

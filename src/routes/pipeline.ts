@@ -12,7 +12,7 @@ router.get(
   "/",
   requireAuth,
   requireCapability([CAPABILITIES.APPLICATION_READ]),
-  safeHandler(async (_req, res) => {
+  safeHandler(async (_req: any, res: any) => {
     const result = await pool.query<{
       id: string;
       name: string | null;
@@ -38,7 +38,7 @@ router.get(
   "/stages",
   requireAuth,
   requireCapability([CAPABILITIES.APPLICATION_READ]),
-  safeHandler(async (_req, res) => {
+  safeHandler(async (_req: any, res: any) => {
     res.status(200).json({ stages: getPipelineStates() });
   })
 );

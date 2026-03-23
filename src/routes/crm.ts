@@ -14,7 +14,7 @@ router.post("/web-leads", SupportController.createWebLead);
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.CRM_READ]));
 
-router.get("/", safeHandler((_req, res) => {
+router.get("/", safeHandler((_req: any, res: any) => {
   respondOk(res, {
     customers: [],
     contacts: [],

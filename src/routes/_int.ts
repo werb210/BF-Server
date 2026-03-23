@@ -15,12 +15,12 @@ const router = Router();
 router.get("/health", intHealthHandler);
 router.get("/runtime", runtimeHandler);
 router.get("/ready", readyHandler);
-router.get("/build", (_req, res) => {
+router.get("/build", (_req: any, res: any) => {
   const { buildTimestamp } = getBuildInfo();
   res.status(200).json({ buildTimestamp });
 });
 
-router.get("/version", (_req, res) => {
+router.get("/version", (_req: any, res: any) => {
   const { commitHash, buildTimestamp } = getBuildInfo();
   res.status(200).json({
     version: packageJson.version ?? buildTimestamp ?? "unknown",
@@ -33,7 +33,7 @@ router.get("/routes", (req: any, res: any) => {
   res.status(200).json({ routes });
 });
 
-router.get("/env", (_req, res) =>
+router.get("/env", (_req: any, res: any) =>
   res.json({
     twilioAvailable: Boolean(
       process.env.TWILIO_ACCOUNT_SID &&
@@ -47,7 +47,7 @@ router.post(
   "/twilio-test",
   requireAuth,
   requireAuthorization({ roles: ALL_ROLES }),
-  async (_req, res) => {
+  async (_req: any, res: any) => {
   return res.json({ ok: true });
 });
 

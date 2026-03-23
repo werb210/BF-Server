@@ -9,11 +9,11 @@ const router = Router();
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.SETTINGS_READ]));
 
-router.get("/", safeHandler((_req, res) => {
+router.get("/", safeHandler((_req: any, res: any) => {
   respondOk(res, { status: "ok" });
 }));
 
-router.get("/preferences", safeHandler((_req, res) => {
+router.get("/preferences", safeHandler((_req: any, res: any) => {
   respondOk(res, { preferences: {} });
 }));
 

@@ -60,7 +60,7 @@ router.post("/ai/confidence", async (req: any, res: any, next: any) => {
   });
 });
 
-router.post("/ai/voice/token", async (_req, res) => {
+router.post("/ai/voice/token", async (_req: any, res: any) => {
   res.json({ token: "voice-ready-placeholder" });
 });
 

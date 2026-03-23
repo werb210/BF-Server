@@ -13,11 +13,11 @@ const createApplicationSchema = z.object({
 });
 
 
-router.get("/update", async (_req, res) => {
+router.get("/update", async (_req: any, res: any) => {
   res.status(200).json({ ok: true });
 });
 
-router.post("/update", async (_req, res) => {
+router.post("/update", async (_req: any, res: any) => {
   res.status(200).json({ ok: true });
 });
 

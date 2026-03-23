@@ -8,7 +8,7 @@ const router = Router();
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.STAFF_OVERVIEW]));
 
-router.get("/overview", safeHandler((_req, res) => {
+router.get("/overview", safeHandler((_req: any, res: any) => {
   res.json({ ok: true });
 }));
 

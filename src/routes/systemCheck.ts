@@ -35,7 +35,7 @@ function toErrorMessage(error: unknown): string {
   return "unknown_error";
 }
 
-systemCheckRouter.get("/system-check", async (_req, res) => {
+systemCheckRouter.get("/system-check", async (_req: any, res: any) => {
   const tests: DiagnosticResponse["tests"] = {
     db: { status: "fail" },
     users: { status: "fail" },

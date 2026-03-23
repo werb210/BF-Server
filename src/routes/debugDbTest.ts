@@ -192,7 +192,7 @@ async function insertAndReadFromCrmContacts(runId: string) {
   };
 }
 
-debugRouter.get("/db-test", async (_req, res) => {
+debugRouter.get("/db-test", async (_req: any, res: any) => {
   // TEMPORARY ROUTE: remove after DB connectivity verification is complete.
   let usedTable: DebugTable | null = null;
   let insertedId: string | null = null;

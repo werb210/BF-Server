@@ -21,13 +21,13 @@ const mockApplications = [
   },
 ];
 
-router.get("/", (_req, res) => {
+router.get("/", (_req: any, res: any) => {
   res.json({
     ok: true,
   });
 });
 
-router.get("/pipeline", async (_req, res) => {
+router.get("/pipeline", async (_req: any, res: any) => {
   const stages = [
     "New",
     "Review",
@@ -45,11 +45,11 @@ router.get("/pipeline", async (_req, res) => {
   res.json(pipeline);
 });
 
-router.get("/actions", async (_req, res) => {
+router.get("/actions", async (_req: any, res: any) => {
   res.json({ count: 0 });
 });
 
-router.get("/document-health", async (_req, res) => {
+router.get("/document-health", async (_req: any, res: any) => {
   res.json({
     missingStatements: 0,
     missingAR: 0,
@@ -57,7 +57,7 @@ router.get("/document-health", async (_req, res) => {
   });
 });
 
-router.get("/lender-activity", async (_req, res) => {
+router.get("/lender-activity", async (_req: any, res: any) => {
   res.json({
     recent: 0,
     awaiting: 0,
@@ -65,7 +65,7 @@ router.get("/lender-activity", async (_req, res) => {
   });
 });
 
-router.get("/offers", async (_req, res) => {
+router.get("/offers", async (_req: any, res: any) => {
   res.json({
     new: 0,
     accepted: 0,
@@ -73,7 +73,7 @@ router.get("/offers", async (_req, res) => {
   });
 });
 
-router.get("/metrics", async (_req, res) => {
+router.get("/metrics", async (_req: any, res: any) => {
   res.json({
     pipeline: 0,
     actions: 0,

@@ -2,7 +2,7 @@ import { Router, type RequestHandler } from "express";
 
 const router = Router();
 
-router.get("/test", (_req, res) => {
+router.get("/test", (_req: any, res: any) => {
   res.json({ ok: true, route: "test" });
 });
 

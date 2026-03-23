@@ -5,7 +5,7 @@ import { createReadinessLead } from "../modules/readiness/readiness.service";
 
 const router = Router();
 
-router.get("/lender-count", async (_req, res) => {
+router.get("/lender-count", async (_req: any, res: any) => {
   const count = await getActiveLenderCount();
   res.json({ count });
 });

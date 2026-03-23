@@ -39,7 +39,7 @@ router.post("/", async (req: any, res: any, next: any) => {
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.CRM_READ]));
 
-router.get("/", async (_req, res) => {
+router.get("/", async (_req: any, res: any) => {
   try {
     const leads = await listCrmLeads();
     res.json(leads);

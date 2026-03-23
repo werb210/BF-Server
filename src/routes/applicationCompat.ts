@@ -11,15 +11,15 @@ router.post("/api/application", async (req: any, res: any, next: any) => {
   });
 });
 
-router.post("/api/application/update", async (_req, res) => {
+router.post("/api/application/update", async (_req: any, res: any) => {
   return res.json({ success: true });
 });
 
-router.post("/api/application/continuation", async (_req, res) => {
+router.post("/api/application/continuation", async (_req: any, res: any) => {
   return res.json({ success: true });
 });
 
-router.post("/api/readiness/submit", async (_req, res) => {
+router.post("/api/readiness/submit", async (_req: any, res: any) => {
   return res.json({
     success: true,
     status: "submitted",

@@ -2,7 +2,7 @@ import { Router } from "express";
 
 const router = Router();
 
-router.get("/health", (_req, res) => {
+router.get("/health", (_req: any, res: any) => {
   res.status(200).json({
     status: "ok",
     service: "bf-server",
@@ -10,20 +10,20 @@ router.get("/health", (_req, res) => {
   });
 });
 
-router.get("/health/db", (_req, res) => {
+router.get("/health/db", (_req: any, res: any) => {
   res.status(200).json({
     status: "db-ok",
   });
 });
 
-router.get("/ready", (_req, res) => {
+router.get("/ready", (_req: any, res: any) => {
   res.status(200).json({
     ready: true,
   });
 });
 
 // Backward compatible endpoint.
-router.get("/system/health", (_req, res) => {
+router.get("/system/health", (_req: any, res: any) => {
   res.status(200).json({
     status: "ok",
     uptime: process.uptime(),

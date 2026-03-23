@@ -7,7 +7,7 @@ const router = Router();
  * Returns a placeholder response so the
  * client step flow can load in development.
  */
-router.get("/continuation", async (_req, res) => {
+router.get("/continuation", async (_req: any, res: any) => {
   res.json({
     status: "ok",
     data: {},

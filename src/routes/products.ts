@@ -6,7 +6,7 @@ import { logError } from "../observability/logger";
 
 const router = Router();
 
-router.get("/", async (_req, res) => {
+router.get("/", async (_req: any, res: any) => {
   try {
     const result = await db.query(
       `select id, lender_id, name, category, status, terms_summary, created_at
@@ -28,7 +28,7 @@ router.get("/", async (_req, res) => {
   }
 });
 
-router.get("/knowledge", async (_req, res) => {
+router.get("/knowledge", async (_req: any, res: any) => {
   try {
     const docs = await db.query(
       `select id, source_type, source_id, content, created_at

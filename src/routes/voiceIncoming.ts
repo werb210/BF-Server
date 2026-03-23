@@ -20,7 +20,7 @@ type TwilioRuntime = {
 
 const twilioRuntime = twilio as unknown as TwilioRuntime;
 
-router.post("/voice/incoming", (_req, res) => {
+router.post("/voice/incoming", (_req: any, res: any) => {
   const VoiceResponse = twilioRuntime.twiml.VoiceResponse;
   const twiml = new VoiceResponse();
 

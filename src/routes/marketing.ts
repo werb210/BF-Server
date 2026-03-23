@@ -9,7 +9,7 @@ const router = Router();
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.MARKETING_READ]));
 
-router.get("/", safeHandler((_req, res) => {
+router.get("/", safeHandler((_req: any, res: any) => {
   respondOk(res, { status: "ok" });
 }));
 

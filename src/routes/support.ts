@@ -45,7 +45,7 @@ router.post("/live", async (req: any, res: any, next: any) => {
   return res.json({ success: true });
 });
 
-router.get("/live", async (_req, res) => {
+router.get("/live", async (_req: any, res: any) => {
   const { rows } = await dbQuery(
     `select id, source, session_id, status, created_at
      from live_chat_requests
@@ -55,7 +55,7 @@ router.get("/live", async (_req, res) => {
   res.json(rows);
 });
 
-router.get("/live/count", async (_req, res) => {
+router.get("/live/count", async (_req: any, res: any) => {
   const { rows } = await dbQuery<{ count: string }>(
     `select count(*)::text as count
      from live_chat_requests

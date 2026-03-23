@@ -126,7 +126,7 @@ router.get(
   "/subscriptions",
   requireAuth,
   requireAuthorization({ roles: [ROLES.ADMIN] }),
-  safeHandler(async (_req, res) => {
+  safeHandler(async (_req: any, res: any) => {
     const subscriptions = await listPwaSubscriptions();
     res.status(200).json({ ok: true, subscriptions });
   })
@@ -211,7 +211,7 @@ router.get(
   "/runtime",
   requireAuth,
   requireAuthorization({ roles: ALL_ROLES }),
-  safeHandler(async (_req, res) => {
+  safeHandler(async (_req: any, res: any) => {
     const { commitHash, buildTimestamp } = getBuildInfo();
     const pushStatus = getPushStatus();
     res.status(200).json({
@@ -230,7 +230,7 @@ router.get(
   "/health",
   requireAuth,
   requireAuthorization({ roles: [ROLES.ADMIN] }),
-  safeHandler(async (_req, res) => {
+  safeHandler(async (_req: any, res: any) => {
     const pushStatus = getPushStatus();
     let dbWriteable = false;
     let queueProcessingHealthy: boolean | null = null;

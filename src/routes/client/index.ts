@@ -16,7 +16,7 @@ const clientReadLimiter = clientReadRateLimit();
 
 router.use((req: any, res: any, next: any) => {
   if (req.method === "GET") {
-    clientReadLimiter(req, res, next);
+    clientReadLimiter(req: any, res: any, next: any);
     return;
   }
   next();

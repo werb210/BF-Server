@@ -2,7 +2,7 @@ import { Router } from 'express'
 
 const router = Router()
 
-router.get('/api/telephony/token', (_req, res) => {
+router.get('/api/telephony/token', (_req: any, res: any) => {
   return res.status(200).json({
     ok: true,
     token: 'fake-telephony-token'

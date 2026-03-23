@@ -8,7 +8,7 @@ const router = Router();
 
 router.get(
   "/lender-products",
-  safeHandler(async (_req, res) => {
+  safeHandler(async (_req: any, res: any) => {
     const products = await listLenderProducts();
     res.status(200).json(products.map((p) => ({ id: p.id, name: p.name, type: p.category })));
   })

@@ -29,7 +29,7 @@ function buildRequestMetadata(req: Request): { ip?: string; userAgent?: string }
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.OPS_MANAGE]));
 
-router.get("/version", (_req, res) => {
+router.get("/version", (_req: any, res: any) => {
   const { commitHash, buildTimestamp } = getBuildInfo();
   res.json({ commitHash, buildTimestamp });
 });

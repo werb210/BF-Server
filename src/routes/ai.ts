@@ -96,7 +96,7 @@ router.post(
   "/chat",
   safeHandler(async (req: MulterRequest, res, next) => {
     if (req.body?.mode !== "core") {
-      await chatHandler(req, res);
+      await chatHandler(req: any, res: any);
       return;
     }
 
@@ -174,7 +174,7 @@ router.get("/knowledge", AIKnowledgeController.list);
 
 router.get(
   "/knowledge/db",
-  safeHandler(async (_req, res) => {
+  safeHandler(async (_req: any, res: any) => {
     const { rows } = await pool.query<{
       id: string;
       content: string;

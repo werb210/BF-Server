@@ -23,3 +23,7 @@ export const lenderSubmissionRateLimit = rateLimit({
 export function pushSendRateLimit() {
   return (_req: any, _res: any, next: any) => next();
 }
+
+export function adminRateLimit() {
+  return (_req: any, _res: any, next: any) => next();
+}
