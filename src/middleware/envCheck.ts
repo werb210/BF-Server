@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { logger } from "../server/utils/logger";
-import { config } from "../config";
+import { config } from "@/config";
 
 export default function envCheck(_req: Request, res: Response, next: NextFunction): void {
   if (config.env === "test") {
@@ -8,8 +8,14 @@ export default function envCheck(_req: Request, res: Response, next: NextFunctio
     return;
   }
 
-  const required = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER"];
-  const missing = required.filter((key) => !process.env[key]);
+  const required = [
+    { key: "TWILIO_ACCOUNT_SID", value: config.twilio.accountSid },
+    { key: "TWILIO_AUTH_TOKEN", value: config.twilio.authToken },
+    { key: "TWILIO_PHONE_NUMBER", value: config.twilio.phoneNumber },
+  ] as const;
+  const missing = required
+    .filter(({ value }) => !value || !value.trim())
+    .map(({ key }) => key);
 
   if (missing.length) {
     logger.error("env_missing", { missing });

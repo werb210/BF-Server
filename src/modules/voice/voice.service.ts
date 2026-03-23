@@ -8,7 +8,7 @@ import { fetchTwilioClient } from "../../services/twilio";
 import { type CallStatus, type CallLogRecord } from "../calls/calls.repo";
 import { runtimeEnv } from "src/server/config/config";
 import { recordAuditEvent } from "../audit/audit.service";
-import { config } from "../../config";
+import { config } from "@/config";
 
 const VOICE_TOKEN_TTL_SECONDS = 15 * 60;
 const DEFAULT_HOLD_TWIML =
@@ -22,6 +22,19 @@ const VOICE_ENV_KEYS = [
   "TWILIO_VOICE_APP_SID",
   "TWILIO_VOICE_CALLER_ID",
 ] as const;
+
+const VOICE_ENV_MAP: Record<(typeof VOICE_ENV_KEYS)[number], string | undefined> = {
+  TWILIO_ACCOUNT_SID: config.twilio.accountSid,
+  TWILIO_AUTH_TOKEN: config.twilio.authToken,
+  TWILIO_API_KEY_SID: config.twilio.apiKey,
+  TWILIO_API_SECRET: config.twilio.apiSecret,
+  TWILIO_VOICE_APP_SID: config.twilio.voiceAppSid,
+  TWILIO_VOICE_CALLER_ID:
+    config.twilio.from ??
+    config.twilio.number ??
+    config.twilio.phone ??
+    config.twilio.phoneNumber,
+};
 
 const TERMINAL_STATUSES: CallStatus[] = [
   "completed",
@@ -43,14 +56,14 @@ const NORMALIZED_LIFECYCLE_STATUSES: CallStatus[] = [
 
 export function fetchVoiceAvailability(): { enabled: boolean; missing: string[] } {
   const missing = VOICE_ENV_KEYS.filter((key) => {
-    const value = process.env[key];
+    const value = VOICE_ENV_MAP[key];
     return !value || !value.trim();
   });
   return { enabled: missing.length === 0, missing };
 }
 
-function requireVoiceEnv(name: string): string {
-  const value = process.env[name];
+function requireVoiceEnv(name: keyof typeof VOICE_ENV_MAP): string {
+  const value = VOICE_ENV_MAP[name];
   if (!value || !value.trim()) {
     const error = new AppError(
       "voice_disabled",
