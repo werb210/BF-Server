@@ -1,6 +1,7 @@
 import webpush from "web-push";
 import { createHash } from "crypto";
 import { runtimeEnv } from "src/server/config/config";
+import { config } from "../config";
 import {
   createPwaNotificationAudit,
   deletePwaSubscriptionByEndpoint,
@@ -155,7 +156,7 @@ function shouldDeleteSubscription(statusCode: number | undefined): boolean {
 }
 
 function isPushEnabled(): boolean {
-  const raw = process.env.PWA_PUSH_ENABLED;
+  const raw = config.pwa.pushEnabled;
   if (raw === undefined) {
     return true;
   }

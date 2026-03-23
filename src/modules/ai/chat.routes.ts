@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
+import { config } from "../../config";
 import {
   closeChatSession,
   fetchHumanSessions,
@@ -17,7 +18,7 @@ const chatLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many chat requests" },
-  skip: () => process.env.NODE_ENV === "test",
+  skip: () => config.env === "test",
 });
 
 async function createSessionHandler(req: Request, res: Response): Promise<void> {

@@ -1,7 +1,8 @@
 import { fetchTwilioClient } from "../../services/twilio";
+import { config } from "../../config";
 
 export async function sendSms({ to, message }: { to: string; message: string }) {
-  if (process.env.TEST_MODE === "true") {
+  if (config.app.testMode === "true") {
     console.log("[TEST_MODE] SMS skipped");
     return { success: true };
   }
@@ -9,7 +10,7 @@ export async function sendSms({ to, message }: { to: string; message: string }) 
   const client = fetchTwilioClient();
   return client.messages.create({
     body: message,
-    from: process.env.TWILIO_FROM || process.env.TWILIO_NUMBER || process.env.TWILIO_PHONE,
+    from: config.twilio.from || config.twilio.number || config.twilio.phone,
     to,
   });
 }

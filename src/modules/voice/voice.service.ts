@@ -8,6 +8,7 @@ import { fetchTwilioClient } from "../../services/twilio";
 import { type CallStatus, type CallLogRecord } from "../calls/calls.repo";
 import { runtimeEnv } from "src/server/config/config";
 import { recordAuditEvent } from "../audit/audit.service";
+import { config } from "../../config";
 
 const VOICE_TOKEN_TTL_SECONDS = 15 * 60;
 const DEFAULT_HOLD_TWIML =
@@ -125,7 +126,7 @@ function buildRequestMetadata(params: {
 }
 
 function fetchVoiceStatusCallbackUrl(): string | null {
-  const baseUrl = process.env.BASE_URL?.trim();
+  const baseUrl = config.app.baseUrl?.trim();
   if (!baseUrl) return null;
   return `${baseUrl.replace(/\/$/, "")}/api/webhooks/twilio/voice`;
 }

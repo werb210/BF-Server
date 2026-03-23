@@ -1,13 +1,14 @@
 import process from "node:process"
 import Twilio from "twilio"
+import { config } from "../config";
 
 let client: any | null = null
 
 function isConfigured() {
   return !!(
-    process.env.TWILIO_ACCOUNT_SID &&
-    process.env.TWILIO_AUTH_TOKEN &&
-    process.env.TWILIO_VERIFY_SERVICE_SID
+    config.twilio.accountSid &&
+    config.twilio.authToken &&
+    config.twilio.verifyServiceSid
   )
 }
 
@@ -18,8 +19,8 @@ function fetchClient() {
 
   if (!client) {
     client = Twilio(
-      process.env.TWILIO_ACCOUNT_SID!,
-      process.env.TWILIO_AUTH_TOKEN!
+      config.twilio.accountSid!,
+      config.twilio.authToken!
     )
   }
 
@@ -31,11 +32,11 @@ export function fetchTwilioClient() {
 }
 
 export function fetchVerifyServiceSid() {
-  if (!process.env.TWILIO_VERIFY_SERVICE_SID) {
+  if (!config.twilio.verifyServiceSid) {
     throw new Error("Missing required environment variable")
   }
 
-  return process.env.TWILIO_VERIFY_SERVICE_SID
+  return config.twilio.verifyServiceSid
 }
 
 export async function startVerification(phone: string) {

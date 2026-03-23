@@ -5,6 +5,7 @@ import { verifyAccessToken } from "../auth/jwt";
 import { DEFAULT_AUTH_SILO } from "../auth/silo";
 import { isRole } from "../auth/roles";
 import { type AuthenticatedUser } from "../types/auth";
+import { config } from "../config";
 
 export interface AuthRequest extends Request {
   user?: AuthenticatedUser;
@@ -59,7 +60,7 @@ function verifyJwtPayload(token: string): jwt.JwtPayload {
     const payload = verifyAccessToken(token);
     return payload as jwt.JwtPayload;
   } catch {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string, {
+    const decoded = jwt.verify(token, config.jwt.secret as string, {
       algorithms: ["HS256"],
     });
     if (!decoded || typeof decoded !== "object") {

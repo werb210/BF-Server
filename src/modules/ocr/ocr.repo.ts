@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { pool } from "../../db";
 import { type PoolClient } from "pg";
+import { config } from "../../config";
 import { runtimeEnv } from "src/server/config/config";
 import {
   type OcrDocumentResultRecord,
@@ -18,7 +19,7 @@ export async function createOcrJob(params: {
   client?: Queryable;
 }): Promise<OcrJobRecord> {
   const runner = params.client ?? pool;
-  if (process.env.NODE_ENV === "test") {
+  if (config.env === "test") {
     const existing = await runner.query<OcrJobRecord>(
       `select id, document_id, application_id, status, attempt_count, max_attempts,
               next_attempt_at, locked_at, locked_by, last_error, created_at, updated_at

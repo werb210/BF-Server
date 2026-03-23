@@ -9,6 +9,7 @@ import { intHealthHandler } from "./_int/health";
 import { runtimeHandler } from "./_int/runtime";
 import pwaInternalRoutes from "./_int/pwa";
 import { ALL_ROLES } from "../auth/roles";
+import { config } from "../config";
 
 const router = Router();
 
@@ -37,9 +38,9 @@ router.get("/routes", (req: any, res: any) => {
 router.get("/env", (_req: any, res: any) =>
   res.json({
     twilioAvailable: Boolean(
-      process.env.TWILIO_ACCOUNT_SID &&
-        process.env.TWILIO_AUTH_TOKEN &&
-        process.env.TWILIO_VERIFY_SERVICE_SID
+      config.twilio.accountSid &&
+        config.twilio.authToken &&
+        config.twilio.verifyServiceSid
     ),
   })
 );

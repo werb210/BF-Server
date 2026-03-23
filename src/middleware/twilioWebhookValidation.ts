@@ -1,6 +1,7 @@
 import type { Request, RequestHandler } from "express";
 import { validateRequest } from "twilio/lib/webhooks/webhooks";
 import { logWarn } from "../observability/logger";
+import { config } from "../config";
 
 function resolvePublicWebhookUrl(req: Request): string {
   const forwardedProto = req.get("X-Forwarded-Proto");
@@ -11,7 +12,7 @@ function resolvePublicWebhookUrl(req: Request): string {
 }
 
 export const twilioWebhookValidation: RequestHandler = (req: any, res: any, next: any) => {
-  const authToken = process.env.TWILIO_AUTH_TOKEN?.trim();
+  const authToken = config.twilio.authToken?.trim();
 
   if (!authToken) {
     logWarn("twilio_webhook_auth_token_missing", { path: req.originalUrl });

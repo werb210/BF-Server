@@ -1,5 +1,6 @@
+import { config } from "../config";
 export function corsMiddleware(req: any, res: any, next: any) {
-  const allowed = (process.env.CORS_ALLOWED_ORIGINS || "")
+  const allowed = (config.cors.allowedOrigins || "")
     .split(",")
     .map(s => s.trim())
     .filter(Boolean);

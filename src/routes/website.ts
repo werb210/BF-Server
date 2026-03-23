@@ -2,6 +2,7 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { submitContactForm } from "../modules/website/contact.controller";
 import { submitCreditReadiness } from "../modules/website/website.controller";
+import { config } from "../config";
 
 const router = Router();
 
@@ -10,7 +11,7 @@ const websiteLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => process.env.NODE_ENV === "test",
+  skip: () => config.env === "test",
 });
 
 const websiteBodyLimitBytes = 64 * 1024;

@@ -1,9 +1,10 @@
 import express from 'express'
+import { config } from "../../config";
 
 const router = express.Router()
 
 router.get('/token', (req: any, res: any) => {
-  if (process.env.NODE_ENV === 'test') {
+  if (config.env === 'test') {
     return res.status(200).json({
       token: 'test-token',
     })

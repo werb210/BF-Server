@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { Router } from "express";
+import { config } from "../config";
 
 import { pool } from "../lib/dbClient";
 import { redis } from "../lib/redis";
@@ -44,10 +45,10 @@ systemCheckRouter.get("/system-check", async (_req: any, res: any) => {
     otp: { status: "fail", stored: null, expected: "123456" },
     redis: { status: "missing" },
     env: {
-      db: Boolean(process.env.DB_HOST?.trim()),
-      dbSsl: String(process.env.DB_SSL ?? "").trim().toLowerCase() === "true",
-      redis: Boolean(process.env.REDIS_URL?.trim()),
-      jwt: Boolean(process.env.JWT_SECRET?.trim()),
+      db: Boolean(config.db.host?.trim()),
+      dbSsl: String(config.db.ssl ?? "").trim().toLowerCase() === "true",
+      redis: Boolean(config.redis.url?.trim()),
+      jwt: Boolean(config.jwt.secret?.trim()),
     },
   };
 

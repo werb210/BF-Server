@@ -10,6 +10,7 @@ import { AppError } from "../middleware/errors";
 import { logInfo, logWarn } from "../observability/logger";
 import { requireAuth, requireCapability } from "../middleware/auth";
 import { CAPABILITIES } from "../auth/capabilities";
+import { config } from "../config";
 
 const router = Router();
 let bootstrapAdminDisabled = false;
@@ -49,7 +50,7 @@ router.post("/bootstrap-admin", async (req: any, res: any, next: any) => {
       );
     }
 
-    const phoneNumber = process.env.BOOTSTRAP_ADMIN_PHONE;
+    const phoneNumber = config.bootstrap.adminPhone;
     if (!phoneNumber) {
       throw new AppError(
         "bootstrap_missing_phone",

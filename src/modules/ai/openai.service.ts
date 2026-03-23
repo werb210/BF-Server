@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { config } from "../../config";
 
 type ChatRole = "system" | "user" | "assistant";
 
@@ -12,7 +13,7 @@ let client: OpenAI | null = null;
 function fetchClient(): OpenAI {
   if (client) return client;
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = config.openai.apiKey;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is required for AI chat.");
   }
@@ -23,7 +24,7 @@ function fetchClient(): OpenAI {
 
 export async function askAI(messages: AIMessage[]): Promise<string> {
   const completion = await fetchClient().chat.completions.create({
-    model: process.env.OPENAI_CHAT_MODEL ?? "gpt-4o-mini",
+    model: config.openai.chatModel ?? "gpt-4o-mini",
     messages,
     temperature: 0.4,
   });
