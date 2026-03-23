@@ -102,7 +102,7 @@ export async function submitGoogleSheetsApplication(
           );
 
     const applicationIdIndex = params.sheetMap.columns.findIndex(
-      (column) => column.header === params.sheetMap.applicationIdHeader
+      (column: any) => column.header === params.sheetMap.applicationIdHeader
     );
     if (applicationIdIndex === -1) {
       throw new Error("Application ID column is missing from sheet map.");
@@ -145,7 +145,7 @@ export async function submitGoogleSheetsApplication(
       };
     }
 
-    const row = params.sheetMap.columns.map((column) =>
+    const row = params.sheetMap.columns.map((column: any) =>
       normalizeCellValue(column.value(params.payload))
     );
     const endColumnLetter = columnIndexToLetter(params.sheetMap.columns.length - 1);
