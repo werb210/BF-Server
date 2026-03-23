@@ -101,3 +101,17 @@ export function getRateLimitWindowMs(): number {
 export function getFollowUpJobsIntervalMs(): number {
   return 5 * 60 * 1000; // 5 minutes
 }
+
+// --- LENDER RETRY CONFIG ---
+
+export function getLenderRetryBaseDelayMs(): number {
+  return 1000;
+}
+
+export function getLenderRetryMaxDelayMs(): number {
+  return 30000;
+}
+
+export function getLenderRetryMaxCount(): number {
+  return 3;
+}

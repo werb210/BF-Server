@@ -14,3 +14,8 @@ export const clientSubmissionRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 25,
 });
+
+export const lenderSubmissionRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 25,
+});
