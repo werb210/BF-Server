@@ -1,5 +1,6 @@
 import { google } from "googleapis";
 import { logError, logInfo } from "../../observability/logger";
+import { config } from "../../config";
 import {
   type SubmissionAdapter,
   type SubmissionResult,
@@ -39,8 +40,8 @@ export type GoogleSheetsSubmissionConfig = {
 const APPLICATION_ID_PATH = "application.id";
 
 function assertServiceAccountEnv(): { client_email: string; private_key: string } {
-  const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim();
-  const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.trim();
+  const clientEmail = config.google.serviceAccountEmail?.trim();
+  const privateKey = config.google.serviceAccountPrivateKey?.trim();
   if (!clientEmail || !privateKey) {
     throw new Error("Missing Google service account credentials.");
   }

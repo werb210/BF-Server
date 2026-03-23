@@ -3,6 +3,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { runtimeEnv } from "src/server/config/config";
 import { logger } from "../server/utils/logger";
+import { config } from "../config";
 
 function isLoopback(req: Request): boolean {
   const ip = req.ip || "";
@@ -11,9 +12,9 @@ function isLoopback(req: Request): boolean {
 
 function isCodespacesRuntime(): boolean {
   return (
-    process.env.CODESPACES === "true" ||
-    Boolean(process.env.CODESPACE_NAME) ||
-    Boolean(process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN)
+    config.codespaces.enabled === "true" ||
+    Boolean(config.codespaces.name) ||
+    Boolean(config.codespaces.portForwardingDomain)
   );
 }
 
@@ -70,7 +71,7 @@ export const apiLimiter = rateLimit({
 });
 
 export function productionLogger(req: Request, _res: Response, next: NextFunction): void {
-  if (process.env.NODE_ENV === "production") {
+  if (config.env === "production") {
     logger.info("production_request", { method: req.method, url: req.originalUrl });
   }
   next();

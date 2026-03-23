@@ -1,4 +1,5 @@
 import type { RequestHandler } from "express";
+import { config } from "../config";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -7,9 +8,9 @@ function normalizeOrigin(value: string): string {
 }
 
 function fetchTrustedOrigins(): Set<string> {
-  const trustedOrigins = [process.env.CLIENT_URL, process.env.PORTAL_URL, process.env.WEBSITE_URL];
+  const trustedOrigins = [config.client.url, config.portal.url, config.website.url];
 
-  if (process.env.NODE_ENV !== "production") {
+  if (config.env !== "production") {
     trustedOrigins.push("http://localhost", "http://localhost:3000", "http://localhost:5173");
   }
 

@@ -13,6 +13,7 @@ import { updateCallStatus } from "../modules/calls/calls.service";
 import { findCallLogByTwilioSid } from "../modules/calls/calls.repo";
 import { createVoicemail } from "../modules/voice/voicemail.repo";
 import { logInfo, logWarn } from "../observability/logger";
+import { config } from "../config";
 
 const router = Router();
 const oneMinuteMs = 60_000;
@@ -87,7 +88,7 @@ const twilioRuntime = twilio as unknown as {
 };
 
 function buildWebhookUrl(req: { protocol: string; get: (name: string) => string | undefined; originalUrl: string }): string {
-  const baseUrl = process.env.BASE_URL?.trim();
+  const baseUrl = config.app.baseUrl?.trim();
   if (baseUrl) {
     return `${baseUrl.replace(/\/$/, "")}/api${req.originalUrl}`;
   }
@@ -97,7 +98,7 @@ function buildWebhookUrl(req: { protocol: string; get: (name: string) => string 
 }
 
 function assertValidTwilioSignature(req: { headers: Record<string, unknown>; get: (name: string) => string | undefined; body: unknown; protocol: string; originalUrl: string }): void {
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const authToken = config.twilio.authToken;
   if (!authToken || !authToken.trim()) {
     throw new AppError("twilio_misconfigured", "Twilio auth token is missing.", 500);
   }
@@ -139,15 +140,15 @@ router.get(
     }
 
     const token = new AccessToken(
-      process.env.TWILIO_ACCOUNT_SID ?? "",
-      process.env.TWILIO_API_KEY ?? "",
-      process.env.TWILIO_API_SECRET ?? "",
+      config.twilio.accountSid ?? "",
+      config.twilio.apiKey ?? "",
+      config.twilio.apiSecret ?? "",
       { identity, ttl: 3600 }
     );
 
     token.addGrant(
       new VoiceGrant({
-        outgoingApplicationSid: process.env.TWILIO_VOICE_APP_SID,
+        outgoingApplicationSid: config.twilio.voiceAppSid,
         incomingAllow: true,
       })
     );
@@ -164,7 +165,7 @@ router.post(
 
     const from = typeof req.body?.From === "string" ? req.body.From : "";
     const callSid = typeof req.body?.CallSid === "string" ? req.body.CallSid : "";
-    const dialAction = `${process.env.BASE_URL?.replace(/\/$/, "") ?? ""}/api/twilio/voice/action`;
+    const dialAction = `${config.app.baseUrl?.replace(/\/$/, "") ?? ""}/api/twilio/voice/action`;
 
     const response = new twilioRuntime.twiml.VoiceResponse();
     const client = await pool.connect();
@@ -229,7 +230,7 @@ router.post(
         maxLength: 120,
         timeout: 5,
         playBeep: true,
-        recordingStatusCallback: `${process.env.BASE_URL?.replace(/\/$/, "") ?? ""}/api/twilio/recording?clientId=${typeof req.query.clientId === "string" ? req.query.clientId : ""}&callSid=${typeof req.query.callSid === "string" ? req.query.callSid : ""}`,
+        recordingStatusCallback: `${config.app.baseUrl?.replace(/\/$/, "") ?? ""}/api/twilio/recording?clientId=${typeof req.query.clientId === "string" ? req.query.clientId : ""}&callSid=${typeof req.query.callSid === "string" ? req.query.callSid : ""}`,
         recordingStatusCallbackMethod: "POST",
       });
     }

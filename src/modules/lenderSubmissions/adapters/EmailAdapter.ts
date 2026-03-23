@@ -1,4 +1,5 @@
 import { type SubmissionAdapter, type SubmissionResult } from "../SubmissionAdapter";
+import { config } from "../../../config";
 
 export class EmailAdapter implements SubmissionAdapter {
   private to: string;
@@ -9,7 +10,7 @@ export class EmailAdapter implements SubmissionAdapter {
   }
 
   async submit(_applicationId: string): Promise<SubmissionResult> {
-    if (process.env.TEST_MODE === "true") {
+    if (config.app.testMode === "true") {
       console.log("[TEST_MODE] EMAIL skipped");
       return {
         success: true,

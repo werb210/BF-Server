@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import OpenAI from "openai";
 import { v4 as uuid } from "uuid";
+import { config } from "../../config";
 
 type KnowledgeEntry = {
   title: string;
@@ -17,7 +18,7 @@ function fetchOpenAIClient(): OpenAI {
     return openaiClient;
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = config.openai.apiKey;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is required for AI knowledge embeddings.");
   }

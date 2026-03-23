@@ -1,9 +1,10 @@
 import OpenAI from "openai";
 import { db } from "../../db";
 import { retrieveRelevantContext } from "./retrievalService";
+import { config } from "../../config";
 
 const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "test-openai-key",
+  apiKey: config.openai.apiKey || "test-openai-key",
 });
 
 type RuleRow = {
@@ -40,7 +41,7 @@ export async function generateAIResponse(userMessage: string): Promise<string> {
     loadSystemRules(),
   ]);
 
-  const systemName = process.env.AI_SYSTEM_NAME ?? "Maya";
+  const systemName = config.ai.systemName ?? "Maya";
 
   const systemPrompt = `
 You are ${systemName}, Boreal Financial's AI assistant.
@@ -53,7 +54,7 @@ ${context}
 `;
 
   const response = await client.chat.completions.create({
-    model: process.env.OPENAI_MODEL ?? process.env.AI_MODEL ?? "gpt-4o-mini",
+    model: config.openai.model ?? config.ai.model ?? "gpt-4o-mini",
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userMessage },

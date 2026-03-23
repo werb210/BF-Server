@@ -7,6 +7,7 @@ import { fetchTwilioClient } from "../services/twilio";
 import { pushLeadToCRM } from "../services/crmWebhook";
 import { SupportController } from "../modules/support/support.controller";
 import { logger } from "../server/utils/logger";
+import { config } from "../config";
 
 const router = Router();
 
@@ -165,7 +166,7 @@ router.post("/contact", async (req: any, res: any, next: any) => {
   await retry(async () =>
     client.messages.create({
       body: `New Contact: ${company} - ${firstName} ${lastName} - ${phone}`,
-      from: process.env.TWILIO_PHONE as string,
+      from: config.twilio.phone as string,
       to: "+15878881837",
     })
   );

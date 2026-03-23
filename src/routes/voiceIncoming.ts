@@ -1,5 +1,6 @@
 import { Router } from "express";
 import twilio from "twilio";
+import { config } from "../config";
 
 const router = Router();
 
@@ -26,7 +27,7 @@ router.post("/voice/incoming", (_req: any, res: any) => {
 
   const dial = twiml.dial({
     timeout: 20,
-    callerId: process.env.TWILIO_PHONE_NUMBER,
+    callerId: config.twilio.phoneNumber,
     statusCallback: "/api/voice/status",
     statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
     statusCallbackMethod: "POST",

@@ -1,5 +1,6 @@
 import { BlobClient, BlobServiceClient } from "@azure/storage-blob";
 import { logWarn } from "../../observability/logger";
+import { config } from "../../config";
 
 export type OcrStorageInput = {
   content: string;
@@ -62,7 +63,7 @@ async function downloadAzureBlobFromPath(pathValue: string): Promise<Buffer> {
   if (!match) {
     throw new Error("invalid_azure_blob_path");
   }
-  const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+  const connectionString = config.azureStorage.connectionString;
   if (!connectionString) {
     logWarn("azure_storage_missing_connection_string", {
       code: "azure_storage_missing_connection_string",

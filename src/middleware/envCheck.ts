@@ -1,8 +1,9 @@
 import type { NextFunction, Request, Response } from "express";
 import { logger } from "../server/utils/logger";
+import { config } from "../config";
 
 export default function envCheck(_req: Request, res: Response, next: NextFunction): void {
-  if (process.env.NODE_ENV === "test") {
+  if (config.env === "test") {
     next();
     return;
   }

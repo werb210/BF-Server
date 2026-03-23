@@ -1,12 +1,13 @@
 import OpenAI from "openai";
+import { config } from "../../config";
 
 const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "test-openai-key",
+  apiKey: config.openai.apiKey || "test-openai-key",
 });
 
 export async function generateEmbedding(text: string): Promise<number[]> {
   const response = await client.embeddings.create({
-    model: process.env.OPENAI_EMBED_MODEL ?? process.env.AI_EMBED_MODEL ?? "text-embedding-3-small",
+    model: config.openai.embedModel ?? config.ai.embedModel ?? "text-embedding-3-small",
     input: text,
   });
 

@@ -1,9 +1,10 @@
 import express from 'express'
+import { config } from "../../config";
 
 const router = express.Router()
 
 router.get('/', async (req: any, res: any) => {
-  if (process.env.NODE_ENV === 'test') {
+  if (config.env === 'test') {
     throw new Error('Lender route failure')
   }
 

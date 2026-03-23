@@ -4,11 +4,12 @@ import { AppError } from "../middleware/errors";
 import { safeHandler } from "../middleware/safeHandler";
 import { logWarn } from "../observability/logger";
 import { handleVoiceStatusWebhook } from "../modules/voice/voice.service";
+import { config } from "../config";
 
 const router = Router();
 
 function fetchTwilioAuthToken(): string {
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const authToken = config.twilio.authToken;
   if (!authToken || !authToken.trim()) {
     throw new AppError("twilio_misconfigured", "Twilio auth token is missing.", 500);
   }
@@ -16,7 +17,7 @@ function fetchTwilioAuthToken(): string {
 }
 
 function buildWebhookUrl(req: { protocol: string; get: (name: string) => string | undefined; originalUrl: string }): string {
-  const baseUrl = process.env.BASE_URL?.trim();
+  const baseUrl = config.app.baseUrl?.trim();
   if (baseUrl) {
     return `${baseUrl.replace(/\/$/, "")}/api/webhooks/twilio/voice`;
   }

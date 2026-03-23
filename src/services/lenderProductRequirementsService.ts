@@ -2,6 +2,7 @@ import { AppError } from "../middleware/errors";
 import { logInfo, logWarn } from "../observability/logger";
 import { pool } from "../db";
 import { randomUUID } from "crypto";
+import { config } from "../config";
 import {
   ALWAYS_REQUIRED_DOCUMENTS,
   normalizeRequiredDocumentKey,
@@ -294,7 +295,7 @@ export async function resolveRequirementsForProductType(params: {
   });
   if (products.length === 0) {
     logWarn("lender_product_type_missing", { productType: params.productType });
-    if (process.env.NODE_ENV === "test") {
+    if (config.env === "test") {
       const requirements = ensureAlwaysRequired([]);
       return { requirements, lenderProductId: null };
     }

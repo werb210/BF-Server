@@ -5,6 +5,7 @@ import { type Role } from "../../auth/roles";
 import { AppError } from "../../middleware/errors";
 import { normalizePhoneNumber } from "./phone";
 import { logger } from "../../server/utils/logger";
+import { config } from "../../config";
 
 type Queryable = Pick<PoolClient, "query">;
 
@@ -16,7 +17,7 @@ async function runAuthQuery<T extends QueryResultRow = QueryResultRow>(
   try {
     return await runner.query<T>(text, params);
   } catch (err: any) {
-    if (process.env.NODE_ENV !== "test") {
+    if (config.env !== "test") {
       logger.error("auth_query_error", { error: err?.message ?? "unknown_error" });
     }
     throw err;
@@ -59,7 +60,7 @@ export async function findAuthUserByPhone(
   if (!normalizedPhone) {
     return null;
   }
-  if (process.env.NODE_ENV === "test") {
+  if (config.env === "test") {
     const res = await runAuthQuery<AuthUser>(
       runner,
       `select u.id,

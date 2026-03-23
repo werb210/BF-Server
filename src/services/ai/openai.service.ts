@@ -1,5 +1,6 @@
 import OpenAI from "openai";
+import { config } from "../../config";
 
 export const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "test-openai-key",
+  apiKey: config.openai.apiKey || "test-openai-key",
 });

@@ -1,18 +1,19 @@
 import OpenAI from "openai";
+import { config } from "../config";
 
 function fetchAzureClient(): OpenAI {
-  if (!process.env.AZURE_OPENAI_KEY || !process.env.AZURE_OPENAI_ENDPOINT) {
+  if (!config.azureOpenai.key || !config.azureOpenai.endpoint) {
     throw new Error("Azure OpenAI credentials are not configured.");
   }
 
   return new OpenAI({
-    apiKey: process.env.AZURE_OPENAI_KEY,
-    baseURL: process.env.AZURE_OPENAI_ENDPOINT,
+    apiKey: config.azureOpenai.key,
+    baseURL: config.azureOpenai.endpoint,
   });
 }
 
 export async function scorePreApplication(data: unknown): Promise<string | null> {
-  if (!process.env.AZURE_OPENAI_DEPLOYMENT) {
+  if (!config.azureOpenai.deployment) {
     throw new Error("AZURE_OPENAI_DEPLOYMENT is not configured.");
   }
 
@@ -25,7 +26,7 @@ ${JSON.stringify(data)}
 
   const openai = fetchAzureClient();
   const response = await openai.chat.completions.create({
-    model: process.env.AZURE_OPENAI_DEPLOYMENT,
+    model: config.azureOpenai.deployment,
     messages: [{ role: "user", content: prompt }],
   });
 

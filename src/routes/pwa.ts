@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { config } from "../config";
 import { requireAuth, requireAuthorization } from "../middleware/auth";
 import { safeHandler } from "../middleware/safeHandler";
 import {
@@ -29,7 +30,7 @@ const perUserNotificationReadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => req.user?.userId ?? ipKeyGenerator(req.ip ?? ""),
-  skip: () => process.env.NODE_ENV === "test" || process.env.RATE_LIMIT_ENABLED === "false",
+  skip: () => config.env === "test" || config.rateLimit.enabled === "false",
 });
 
 const perUserNotificationAckLimiter = rateLimit({
@@ -38,7 +39,7 @@ const perUserNotificationAckLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => req.user?.userId ?? ipKeyGenerator(req.ip ?? ""),
-  skip: () => process.env.NODE_ENV === "test" || process.env.RATE_LIMIT_ENABLED === "false",
+  skip: () => config.env === "test" || config.rateLimit.enabled === "false",
 });
 
 const subscriptionSchema = z.object({

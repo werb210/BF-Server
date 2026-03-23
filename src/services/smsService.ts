@@ -1,12 +1,13 @@
 import { fetchTwilioClient } from "./twilio";
+import { config } from "../config";
 
 export async function sendSMS(to: string, body: string): Promise<{ success: boolean } | void> {
-  if (process.env.TEST_MODE === "true") {
+  if (config.app.testMode === "true") {
     console.log("[TEST_MODE] SMS skipped");
     return { success: true };
   }
 
-  const from = process.env.TWILIO_NUMBER || process.env.TWILIO_PHONE;
+  const from = config.twilio.number || config.twilio.phone;
   if (!from || !to) {
     return;
   }

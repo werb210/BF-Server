@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { v4 as uuid } from "uuid";
 import { AiMessage, AiSession } from "./ai.types";
 import { dbQuery } from "../../db";
+import { config } from "../../config";
 
 type AiReply = {
   reply: string;
@@ -21,8 +22,8 @@ const LEGACY_SYSTEM_PROMPT = [
   "If user asks qualification-related questions, ask intake questions before recommendations.",
 ].join("\n");
 
-const client = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const client = config.openai.apiKey
+  ? new OpenAI({ apiKey: config.openai.apiKey })
   : null;
 
 const sessions = new Map<string, AiSession>();
@@ -111,7 +112,7 @@ ${aiRules.join("\n")}` : ""}
   }
 
   const response = await client.chat.completions.create({
-    model: process.env.AI_MODEL || "gpt-4o-mini",
+    model: config.ai.model || "gpt-4o-mini",
     messages: [
       { role: "system", content: systemPrompt },
       ...messages
@@ -166,7 +167,7 @@ export async function generateAIResponse(_sessionId: string, message: string): P
   const aiRules = await loadActiveAiRules();
 
   const response = await client.chat.completions.create({
-    model: process.env.OPENAI_CHAT_MODEL ?? "gpt-4.1-mini",
+    model: config.openai.chatModel ?? "gpt-4.1-mini",
     temperature: 0.2,
     response_format: { type: "json_object" },
     messages: [

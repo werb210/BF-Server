@@ -3,6 +3,7 @@ import AccessToken from "twilio/lib/jwt/AccessToken";
 import { VoiceGrant } from "twilio/lib/jwt/AccessToken";
 import { requireAuth } from "../middleware/auth";
 import { ROLES, type Role } from "../auth/roles";
+import { config } from "../config";
 
 const router = Router();
 
@@ -73,10 +74,10 @@ router.get("/voice/token", requireAuth, (req: any, res: any) => {
     return;
   }
 
-  const accountSid = process.env.TWILIO_ACCOUNT_SID!;
-  const apiKey = process.env.TWILIO_API_KEY!;
-  const apiSecret = process.env.TWILIO_API_SECRET!;
-  const twimlAppSid = process.env.TWILIO_VOICE_APP_SID!;
+  const accountSid = config.twilio.accountSid!;
+  const apiKey = config.twilio.apiKey!;
+  const apiSecret = config.twilio.apiSecret!;
+  const twimlAppSid = config.twilio.voiceAppSid!;
 
   const token = new AccessToken(accountSid, apiKey, apiSecret, { identity });
 
