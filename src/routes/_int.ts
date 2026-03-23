@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getBuildInfo } from "../server/config/config";
+import { runtimeEnv } from "src/server/config/config";
 import packageJson from "../../package.json";
 import { listRouteInventory } from "../debug/printRoutes";
 import { readyHandler } from "./ready";
@@ -16,12 +16,13 @@ router.get("/health", intHealthHandler);
 router.get("/runtime", runtimeHandler);
 router.get("/ready", readyHandler);
 router.get("/build", (_req: any, res: any) => {
-  const { buildTimestamp } = getBuildInfo();
+  const buildTimestamp = runtimeEnv.buildTimestamp;
   res.status(200).json({ buildTimestamp });
 });
 
 router.get("/version", (_req: any, res: any) => {
-  const { commitHash, buildTimestamp } = getBuildInfo();
+  const commitHash = runtimeEnv.commitSha;
+  const buildTimestamp = runtimeEnv.buildTimestamp;
   res.status(200).json({
     version: packageJson.version ?? buildTimestamp ?? "unknown",
     commitHash,

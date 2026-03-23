@@ -1,4 +1,4 @@
-import { assertEnv } from "./config";
+import { assertEnv } from "src/server/config/config";
 import { dbQuery } from "./db";
 import { assertNoPendingMigrations, runMigrations } from "./migrations";
 import { logError, logInfo } from "./observability/logger";

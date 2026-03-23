@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../../db";
-import { getClientSubmissionOwnerUserId, config } from "../../server/config/config";
+import { config } from "src/server/config/config";
 import { AppError } from "../../middleware/errors";
 import { safeHandler } from "../../middleware/safeHandler";
 import { ApplicationStage } from "../../modules/applications/pipelineState";

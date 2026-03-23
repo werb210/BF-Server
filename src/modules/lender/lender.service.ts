@@ -26,11 +26,7 @@ import {
   updateSubmissionStatus,
   upsertSubmissionRetryState,
 } from "./lender.repo";
-import {
-  getLenderRetryBaseDelayMs,
-  getLenderRetryMaxCount,
-  getLenderRetryMaxDelayMs,
-} from "../../server/config/config";
+import { config } from "src/server/config/config";
 import { isKillSwitchEnabled } from "../ops/ops.service";
 import { logInfo, logWarn } from "../../observability/logger";
 import { recordTransactionRollback } from "../../observability/transactionTelemetry";
@@ -335,8 +331,8 @@ async function buildSubmissionPacket(params: {
 }
 
 function calculateNextAttempt(attemptCount: number): Date {
-  const baseDelay = getLenderRetryBaseDelayMs();
-  const maxDelay = getLenderRetryMaxDelayMs();
+  const baseDelay = config.lender.retry.baseDelayMs;
+  const maxDelay = config.lender.retry.maxDelayMs;
   const delay = Math.min(maxDelay, baseDelay * Math.pow(2, Math.max(0, attemptCount - 1)));
   return new Date(Date.now() + delay);
 }
@@ -1014,7 +1010,7 @@ export async function retrySubmission(params: {
 
     const retryState = await findSubmissionRetryState(submission.id, client);
     const attemptCount = retryState?.attempt_count ?? 0;
-    const maxRetries = getLenderRetryMaxCount();
+    const maxRetries = config.lender.retry.maxCount;
     if (attemptCount >= maxRetries) {
       throw new AppError("retry_exhausted", "Retry limit reached.", 409);
     }

@@ -1,4 +1,4 @@
-import { runtimeEnv } from "../server/config/config";
+import { runtimeEnv } from "src/server/config/config";
 import { getRequestRoute } from "../observability/requestContext";
 
 const instanceId = process.env.INSTANCE_ID ?? process.env.HOSTNAME ?? "unknown";

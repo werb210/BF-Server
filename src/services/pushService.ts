@@ -1,12 +1,6 @@
 import webpush from "web-push";
 import { createHash } from "crypto";
-import {
-  getPwaPushPayloadMaxBytes,
-  getVapidPrivateKey,
-  getVapidPublicKey,
-  getVapidSubject,
-  isProductionEnvironment,
-} from "../server/config/config";
+import { runtimeEnv } from "src/server/config/config";
 import {
   createPwaNotificationAudit,
   deletePwaSubscriptionByEndpoint,
@@ -68,7 +62,7 @@ function hashPayload(payload: unknown): string {
 }
 
 function ensurePayloadSize(payload: unknown): void {
-  const maxBytes = getPwaPushPayloadMaxBytes();
+  const maxBytes = runtimeEnv.pwaPushPayloadMaxBytes;
   const size = Buffer.byteLength(JSON.stringify(payload), "utf8");
   if (size > maxBytes) {
     throw new AppError(
@@ -181,9 +175,9 @@ export function initializePushService(): PushStatus {
     return cachedStatus;
   }
 
-  const publicKey = getVapidPublicKey();
-  const privateKey = getVapidPrivateKey();
-  const subject = getVapidSubject();
+  const publicKey = runtimeEnv.vapidPublicKey;
+  const privateKey = runtimeEnv.vapidPrivateKey;
+  const subject = runtimeEnv.vapidSubject;
 
   if (!publicKey || !privateKey || !subject) {
     const error = "missing_vapid";
@@ -193,7 +187,7 @@ export function initializePushService(): PushStatus {
       error,
       subject,
     };
-    if (isProductionEnvironment()) {
+    if (runtimeEnv.isProduction) {
       throw new Error("VAPID configuration is required in production when push is enabled.");
     }
     logWarn("push_vapid_missing", { subject: subject ?? null, publicKey: Boolean(publicKey) });
@@ -218,7 +212,7 @@ export function initializePushService(): PushStatus {
       subject,
     };
     cachedStatus = status;
-    if (isProductionEnvironment()) {
+    if (runtimeEnv.isProduction) {
       throw error instanceof Error ? error : new Error("invalid_vapid");
     }
     logWarn("push_init_failed", {

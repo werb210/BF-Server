@@ -86,55 +86,7 @@ export const runtimeEnv = {
 export const ENV = process.env;
 export const COMMIT_SHA = runtimeEnv.commitSha;
 
-export const getBuildInfo = () => ({ commitHash: runtimeEnv.commitSha, buildTimestamp: runtimeEnv.buildTimestamp });
 export const validateServerEnv = (): void => { if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL missing"); };
 export const assertEnv = validateServerEnv;
 
 export default config;
-
-// Temporary compat exports while callers migrate.
-export const getAccessTokenSecret = () => config.auth.jwtSecret;
-export const getRefreshTokenSecret = () => config.auth.refreshSecret;
-export const getAccessTokenExpiresIn = () => config.auth.accessExpiresIn;
-export const getRefreshTokenExpiresInMs = () => config.auth.refreshExpiresMs;
-export const getDocumentAllowedMimeTypes = () => config.documents.allowedMimeTypes;
-export const getDocumentMaxSizeBytes = () => config.documents.maxSizeBytes;
-export const getOcrTimeoutMs = () => config.ocr.timeoutMs;
-export const getLenderRetryBaseDelayMs = () => config.lender.retry.baseDelayMs;
-export const getLenderRetryMaxDelayMs = () => config.lender.retry.maxDelayMs;
-export const getLenderRetryMaxCount = () => config.lender.retry.maxCount;
-export const getFollowUpJobsEnabled = () => config.followUp.enabled;
-export const getFollowUpJobsIntervalMs = () => config.followUp.intervalMs;
-export const getClientSubmissionOwnerUserId = () => config.client.submissionOwnerUserId;
-export const getIdempotencyEnabled = () => runtimeEnv.idempotencyEnabled;
-export const getAuditHistoryEnabled = () => runtimeEnv.auditHistoryEnabled;
-export const getJwtClockSkewSeconds = () => runtimeEnv.jwtClockSkewSeconds;
-export const getAiModel = () => runtimeEnv.aiModel;
-export const getAiEmbeddingModel = () => runtimeEnv.aiEmbeddingModel;
-export const getOpenAiApiKey = () => runtimeEnv.openAiApiKey;
-export const getOpenAiOcrModel = () => runtimeEnv.openAiOcrModel;
-export const getOcrEnabled = () => runtimeEnv.ocrEnabled;
-export const getOcrProvider = () => runtimeEnv.ocrProvider;
-export const getOcrMaxAttempts = () => runtimeEnv.ocrMaxAttempts;
-export const getOcrPollIntervalMs = () => runtimeEnv.ocrPollIntervalMs;
-export const getOcrWorkerConcurrency = () => runtimeEnv.ocrWorkerConcurrency;
-export const getOcrLockTimeoutMinutes = () => runtimeEnv.ocrLockTimeoutMinutes;
-export const getPwaSyncMaxActions = () => runtimeEnv.pwaSyncMaxActions;
-export const getPwaSyncActionMaxBytes = () => runtimeEnv.pwaSyncActionMaxBytes;
-export const getPwaSyncBatchMaxBytes = () => runtimeEnv.pwaSyncBatchMaxBytes;
-export const getPwaPushPayloadMaxBytes = () => runtimeEnv.pwaPushPayloadMaxBytes;
-export const getVapidPublicKey = () => runtimeEnv.vapidPublicKey;
-export const getVapidPrivateKey = () => runtimeEnv.vapidPrivateKey;
-export const getVapidSubject = () => runtimeEnv.vapidSubject;
-export const getRetryPolicyEnabled = () => runtimeEnv.retryPolicyEnabled;
-export const getReportingJobsEnabled = () => runtimeEnv.reportingJobsEnabled;
-export const getReportingDailyIntervalMs = () => runtimeEnv.reportingDailyIntervalMs;
-export const getReportingHourlyIntervalMs = () => runtimeEnv.reportingHourlyIntervalMs;
-export const getVoiceRestrictedNumbers = () => runtimeEnv.voiceRestrictedNumbers;
-export const getOpsKillSwitchReplay = () => runtimeEnv.opsKillSwitchReplay;
-export const getOpsKillSwitchExports = () => runtimeEnv.opsKillSwitchExports;
-export const getOpsKillSwitchOcr = () => runtimeEnv.opsKillSwitchOcr;
-export const getOpsKillSwitchLenderTransmission = () => runtimeEnv.opsKillSwitchLenderTransmission;
-export const isProductionEnvironment = () => runtimeEnv.isProduction;
-export const isTestEnvironment = () => runtimeEnv.isTest;
-export const isTest = () => runtimeEnv.isTest;
