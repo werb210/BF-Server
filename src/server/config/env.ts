@@ -43,3 +43,24 @@ export const getJwtClockSkewSeconds = () => 0;
 
 export const getAiModel = () => 'gpt-4';
 export const getAiEmbeddingModel = () => 'text-embedding-3-small';
+
+/* =========================
+   BACKWARD COMPAT HELPERS
+   ========================= */
+
+export const isTestEnvironment = () => ENV.TEST_MODE;
+
+export const getRefreshTokenSecret = () => ENV.JWT_REFRESH_SECRET;
+
+export const getRefreshTokenExpiresInMs = () => 1000 * 60 * 60 * 24 * 7; // 7 days
+
+export const getDocumentAllowedMimeTypes = () => [
+  'application/pdf',
+  'image/jpeg',
+  'image/png'
+];
+
+export const getDocumentMaxSizeBytes = () => 10 * 1024 * 1024; // 10MB
+
+export const isTest = () => ENV.TEST_MODE;
+
