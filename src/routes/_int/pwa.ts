@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { requireAuth, requireAuthorization } from "../../middleware/auth";
 import { safeHandler } from "../../middleware/safeHandler";
 import { isProductionEnvironment } from "../../config";
@@ -24,7 +24,7 @@ router.post(
   requireAuth,
   requireAuthorization({ roles: ALL_ROLES }),
   pushSendRateLimit(),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: Request, res: Response, _next: NextFunction) => {
     assertIntPwaAllowed();
     const payload = {
       type: "alert" as const,
@@ -46,7 +46,7 @@ router.post(
   "/pwa/test-sync",
   requireAuth,
   requireAuthorization({ roles: ALL_ROLES }),
-  safeHandler(async (req, res, next) => {
+  safeHandler(async (req: Request, res: Response, _next: NextFunction) => {
     assertIntPwaAllowed();
     const requestId = res.locals.requestId ?? "unknown";
     const user = req.user!;

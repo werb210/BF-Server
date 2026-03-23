@@ -19,3 +19,7 @@ export const lenderSubmissionRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 25,
 });
+
+export function pushSendRateLimit() {
+  return (_req: any, _res: any, next: any) => next();
+}

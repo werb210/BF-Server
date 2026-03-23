@@ -205,3 +205,12 @@ export const COMMIT_SHA = process.env.COMMIT_SHA || 'dev';
 export function getVoiceRestrictedNumbers(): string[] {
   return [];
 }
+
+// -------- BUILD --------
+
+export function getBuildInfo() {
+  return {
+    commit: process.env.COMMIT_SHA || 'dev',
+    env: process.env.NODE_ENV || 'dev'
+  };
+}

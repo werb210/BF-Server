@@ -55,7 +55,7 @@ async function runWithTransaction<T>(fn: (client: PoolClient) => Promise<T>): Pr
 async function runJobWithLogging(name: string, fn: () => Promise<number>): Promise<void> {
   const requestId = randomUUID();
   const startedAt = Date.now();
-  await runWithRequestContext({ requestId }, async () => {
+  await runWithRequestContext(async () => {
     logInfo("reporting_job_started", { requestId, name });
     try {
       const rowCount = await fn();

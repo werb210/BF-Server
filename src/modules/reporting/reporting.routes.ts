@@ -6,7 +6,7 @@ router.get('/', (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
-router.post('/', (req: Request, res: Response, next: NextFunction) => {
+router.post('/', (req: Request, res: Response, _next: NextFunction) => {
   res.json({ ok: true });
 });
 
