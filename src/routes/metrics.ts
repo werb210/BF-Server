@@ -1,11 +1,18 @@
-import express from "express";
-import { registry } from "../metrics/registry";
+import { Router } from 'express';
 
-const router = express.Router();
+const router = Router();
 
-router.get("/", async (_req, res) => {
-  res.set("Content-Type", registry.contentType);
-  res.end(await registry.metrics());
+let requestCount = 0;
+
+export function trackRequest() {
+  requestCount++;
+}
+
+router.get('/metrics', (_req, res) => {
+  res.json({
+    uptime: process.uptime(),
+    requests: requestCount
+  });
 });
 
 export default router;

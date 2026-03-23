@@ -1,10 +1,14 @@
-import { RequestHandler } from "express";
+import { Request, RequestHandler } from "express";
 import jwt from "jsonwebtoken";
 import { getCapabilitiesForRole } from "../auth/capabilities";
 import { verifyAccessToken } from "../auth/jwt";
 import { DEFAULT_AUTH_SILO } from "../auth/silo";
 import { isRole } from "../auth/roles";
 import { type AuthenticatedUser } from "../types/auth";
+
+export interface AuthRequest extends Request {
+  user?: AuthenticatedUser;
+}
 
 type AuthorizationOptions = {
   roles?: string[];

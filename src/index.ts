@@ -7,16 +7,20 @@ import { logger } from './lib/logger';
 import { ENV } from './config/env';
 import { globalRateLimit } from './middleware/rateLimit';
 import { requestLogger } from './middleware/requestLogger';
+import { requestId } from './middleware/requestId';
+import metricsRouter from './routes/metrics';
 
 const app = express();
 
 app.use(helmet());
 app.use(globalRateLimit);
+app.use(requestId);
 app.use(requestLogger);
 app.use(cors());
 app.use(express.json());
 
 app.use('/', healthRouter);
+app.use('/', metricsRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Not Found' });
