@@ -39,7 +39,7 @@ import {
   assertPipelineState,
   assertPipelineTransition,
 } from "./applicationLifecycle.service";
-import { getDocumentAllowedMimeTypes, getDocumentMaxSizeBytes } from "../../server/config/env.compat";
+import { getDocumentAllowedMimeTypes, getDocumentMaxSizeBytes, config } from "../../server/config/config";
 import { recordTransactionRollback } from "../../observability/transactionTelemetry";
 import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService";
 import { uploadDocumentBuffer } from "../../services/storage/blobStorage";
@@ -192,11 +192,11 @@ function assertMetadata(value: unknown): asserts value is MetadataPayload {
 }
 
 function validateDocumentMetadata(metadata: MetadataPayload): void {
-  const allowed = getDocumentAllowedMimeTypes();
+  const allowed = config.documents.allowedMimeTypes;
   if (!allowed.includes(metadata.mimeType)) {
     throw new AppError("invalid_mime_type", "Unsupported document MIME type.", 400);
   }
-  const maxSize = getDocumentMaxSizeBytes();
+  const maxSize = config.documents.maxSizeBytes;
   if (metadata.size > maxSize) {
     throw new AppError("document_too_large", "Document exceeds max size.", 400);
   }

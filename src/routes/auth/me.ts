@@ -1,6 +1,6 @@
 import { type Request, type Response } from "express";
 import { DEFAULT_AUTH_SILO } from "../../auth/silo";
-import { getRequestId } from "../../middleware/requestContext";
+import { getRequestId } from "../../observability/requestContext";
 import { findAuthUserById } from "../../modules/auth/auth.repo";
 import { logError } from "../../observability/logger";
 import { validateAuthMe } from "../../validation/auth.validation";

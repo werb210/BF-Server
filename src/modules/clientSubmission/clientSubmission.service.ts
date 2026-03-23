@@ -3,7 +3,7 @@ import { pool } from "../../db";
 import { createApplication, createDocument, createDocumentVersion } from "../applications/applications.repo";
 import { ApplicationStage } from "../applications/pipelineState";
 import { recordAuditEvent } from "../audit/audit.service";
-import { getDocumentAllowedMimeTypes, getDocumentMaxSizeBytes, getClientSubmissionOwnerUserId } from "../../server/config/env.compat";
+import { getDocumentAllowedMimeTypes, getDocumentMaxSizeBytes, getClientSubmissionOwnerUserId, config } from "../../server/config/config";
 import { createClientSubmission, findClientSubmissionByKey } from "./clientSubmission.repo";
 import { logInfo, logWarn } from "../../observability/logger";
 import { recordTransactionRollback } from "../../observability/transactionTelemetry";
@@ -235,8 +235,8 @@ function enforceDocumentRules(
 }
 
 function enforceDocumentMetadata(documents: SubmissionDocument[]): void {
-  const allowed = getDocumentAllowedMimeTypes();
-  const maxSize = getDocumentMaxSizeBytes();
+  const allowed = config.documents.allowedMimeTypes;
+  const maxSize = config.documents.maxSizeBytes;
   for (const doc of documents) {
     if (!allowed.includes(doc.metadata.mimeType)) {
       throw new AppError("invalid_mime_type", "Unsupported document MIME type.", 400);
@@ -292,7 +292,7 @@ export async function submitClientApplication(params: {
       };
     }
 
-    const ownerUserId = getClientSubmissionOwnerUserId();
+    const ownerUserId = config.client.submissionOwnerUserId;
     const application = await createApplication({
       ownerUserId,
       name: submission.business.legalName,

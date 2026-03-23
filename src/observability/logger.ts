@@ -1,11 +1,5 @@
-export const logInfo = (...args: any[]) => console.log('[INFO]', ...args);
-export const logError = (...args: any[]) => console.error('[ERROR]', ...args);
-export const logWarn = (...args: any[]) => console.warn('[WARN]', ...args);
-export const logDebug = (...args: any[]) => console.debug('[DEBUG]', ...args);
+import { logger } from "../platform/logger";
 
-export const logger = {
-  info: logInfo,
-  error: logError,
-  warn: logWarn,
-  debug: logDebug
-};
+export const logInfo = (message: string, meta: Record<string, unknown> = {}) => logger.info(message, meta);
+export const logWarn = (message: string, meta: Record<string, unknown> = {}) => logger.warn(message, meta);
+export const logError = (message: string, meta: Record<string, unknown> = {}) => logger.error(message, meta);

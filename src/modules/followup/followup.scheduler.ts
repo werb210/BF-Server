@@ -1,4 +1,4 @@
-import { getFollowUpJobsEnabled, getFollowUpJobsIntervalMs } from "../../server/config/env.compat";
+import { getFollowUpJobsEnabled, getFollowUpJobsIntervalMs, config } from "../../server/config/config";
 import { logError } from "../../observability/logger";
 import { createFollowUpActionHandlers } from "./followup.actions";
 import { evaluateFollowUpRules } from "./followup.engine";
@@ -9,11 +9,11 @@ import {
 } from "./followup.store";
 
 export function startFollowUpJobs(): { stop: () => void } {
-  if (!getFollowUpJobsEnabled()) {
+  if (!config.followUp.enabled) {
     return { stop: () => undefined };
   }
 
-  const intervalMs = getFollowUpJobsIntervalMs();
+  const intervalMs = config.followUp.intervalMs;
   const handlers = createFollowUpActionHandlers();
 
   const runOnce = () => {

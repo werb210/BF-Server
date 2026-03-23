@@ -1,4 +1,4 @@
-import { getRequestId, getRequestRoute, getRequestIdempotencyKeyHash } from "../middleware/requestContext";
+import { getRequestId, getRequestRoute, getRequestIdempotencyKeyHash } from "../observability/requestContext";
 import { logWarn } from "./logger";
 import { trackEvent } from "./appInsights";
 

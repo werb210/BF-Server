@@ -4,7 +4,7 @@ import {
   getOpsKillSwitchLenderTransmission,
   getOpsKillSwitchOcr,
   getOpsKillSwitchReplay,
-} from "../../server/config/env.compat";
+} from "../../server/config/config";
 
 export const OPS_KILL_SWITCH_KEYS = [
   "replay",

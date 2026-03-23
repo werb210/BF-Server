@@ -84,7 +84,7 @@ systemCheckRouter.get("/system-check", async (_req: any, res: any) => {
     await pool.query("DELETE FROM users WHERE id = $1", [userId]);
     userId = null;
 
-    tests.users.status = read.rowCount > 0 ? "ok" : "fail";
+    tests.users.status = (read.rowCount ?? 0) > 0 ? "ok" : "fail";
     if (tests.users.status === "fail") {
       tests.users.error = "inserted_user_not_found";
     }

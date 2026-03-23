@@ -1,6 +1,6 @@
 import { type PoolClient } from "pg";
 import { pool } from "../../db";
-import { getRequestId } from "../../middleware/requestContext";
+import { getRequestId } from "../../observability/requestContext";
 
 type Queryable = Pick<PoolClient, "query">;
 

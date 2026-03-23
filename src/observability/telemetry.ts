@@ -1,5 +1,5 @@
-import { COMMIT_SHA } from "../server/config/env.compat";
-import { getRequestRoute } from "../middleware/requestContext";
+import { runtimeEnv } from "../server/config/config";
+import { getRequestRoute } from "../observability/requestContext";
 
 const instanceId = process.env.INSTANCE_ID ?? process.env.HOSTNAME ?? "unknown";
 
@@ -14,7 +14,7 @@ export function buildTelemetryProperties(
   const merged: Record<string, unknown> = {
     ...properties,
     instanceId,
-    buildId: COMMIT_SHA,
+    buildId: runtimeEnv.commitSha,
   };
   if (resolvedRoute) {
     merged.route = resolvedRoute;

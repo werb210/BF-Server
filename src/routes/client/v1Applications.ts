@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../../db";
-import { getClientSubmissionOwnerUserId } from "../../server/config/env.compat";
+import { getClientSubmissionOwnerUserId, config } from "../../server/config/config";
 import { AppError } from "../../middleware/errors";
 import { safeHandler } from "../../middleware/safeHandler";
 import { ApplicationStage } from "../../modules/applications/pipelineState";
@@ -44,7 +44,7 @@ router.post(
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())`,
       [
         applicationId,
-        getClientSubmissionOwnerUserId(),
+        config.client.submissionOwnerUserId,
         business_name,
         {
           ...(kyc_responses ? { kyc_responses } : {}),

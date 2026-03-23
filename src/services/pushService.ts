@@ -6,7 +6,7 @@ import {
   getVapidPublicKey,
   getVapidSubject,
   isProductionEnvironment,
-} from "../server/config/env.compat";
+} from "../server/config/config";
 import {
   createPwaNotificationAudit,
   deletePwaSubscriptionByEndpoint,

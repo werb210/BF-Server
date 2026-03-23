@@ -5,7 +5,7 @@ import { advanceProcessingStage } from "../applications/processingStage.service"
 import type { PoolClient } from "pg";
 import { randomUUID } from "crypto";
 import { getCircuitBreaker } from "../../utils/circuitBreaker";
-import { getRetryPolicyEnabled } from "../../server/config/env.compat";
+import { getRetryPolicyEnabled, runtimeEnv } from "../../server/config/config";
 import { assertRetryAllowed } from "./retryPolicy";
 
 const BANK_STATEMENT_CATEGORY = "bank_statements_6_months";
@@ -98,7 +98,7 @@ export async function createDocumentProcessingJob(
     const existingRecord = existing.rows[0];
     if (existingRecord) {
       if (
-        getRetryPolicyEnabled() &&
+        runtimeEnv.retryPolicyEnabled &&
         existingRecord.status === "failed"
       ) {
         const retryCount = existingRecord.retry_count ?? 0;
@@ -263,7 +263,7 @@ export async function createBankingAnalysisJob(
     const existingRecord = existing.rows[0];
     if (existingRecord) {
       if (
-        getRetryPolicyEnabled() &&
+        runtimeEnv.retryPolicyEnabled &&
         existingRecord.status === "failed"
       ) {
         const retryCount = existingRecord.retry_count ?? 0;

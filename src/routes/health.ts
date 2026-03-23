@@ -1,15 +1,19 @@
-import { Router } from 'express';
-import { testDbConnection } from '../lib/dbClient';
+import { Router } from "express";
+import { dbHealth } from "../health/dbHealth";
+import { getStatus } from "../startupState";
 
 const router = Router();
 
-router.get('/health', async (_req: any, res: any) => {
-  const dbOk = await testDbConnection();
+router.get("/healthz", async (_req, res) => {
+  const health = await dbHealth();
+  const ok = health.db === "ok";
+  res.status(ok ? 200 : 503).json({ status: ok ? "ok" : "degraded", ...health });
+});
 
-  res.status(dbOk ? 200 : 500).json({
-    status: dbOk ? 'ok' : 'fail',
-    db: dbOk
-  });
+router.get("/readyz", (_req, res) => {
+  const status = getStatus();
+  const ready = status.ready && !status.reason;
+  res.status(ready ? 200 : 503).json({ ready, status });
 });
 
 export default router;
