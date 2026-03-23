@@ -34,3 +34,6 @@ export async function testDbConnection(): Promise<boolean> {
 export function query(text: string, params?: any[]) {
   return dbClient.query(text, params);
 }
+
+// backward compatibility
+export const pool = dbClient;

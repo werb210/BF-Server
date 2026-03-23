@@ -78,3 +78,6 @@ export const ENV: Env = {
 export function isTest(): boolean {
   return process.env.NODE_ENV === "test";
 }
+
+// backward compatibility
+export const getAuditHistoryEnabled = () => false;

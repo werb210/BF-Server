@@ -27,3 +27,9 @@ export function pushSendRateLimit() {
 export function adminRateLimit() {
   return (_req: any, _res: any, next: any) => next();
 }
+
+// backward compatibility exports
+export const voiceRateLimit = globalRateLimit;
+export const portalRateLimit = globalRateLimit;
+export const clientReadRateLimit = globalRateLimit;
+export const clientDocumentsRateLimit = globalRateLimit;
