@@ -13,7 +13,7 @@ router.get("/", safeHandler((_req: any, res: any) => {
   respondOk(res, { status: "ok" });
 }));
 
-router.get("/campaigns", safeHandler((req: any, res: any) => {
+router.get("/campaigns", safeHandler((req, res) => {
   const page = Number(req.query.page) || 1;
   const pageSize = Number(req.query.pageSize) || 25;
   respondOk(

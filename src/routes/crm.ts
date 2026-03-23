@@ -23,7 +23,7 @@ router.get("/", safeHandler((_req: any, res: any) => {
   });
 }));
 
-router.get("/customers", safeHandler((req: any, res: any) => {
+router.get("/customers", safeHandler((req, res) => {
   const page = Number(req.query.page) || 1;
   const pageSize = Number(req.query.pageSize) || 25;
   respondOk(
@@ -39,7 +39,7 @@ router.get("/customers", safeHandler((req: any, res: any) => {
   );
 }));
 
-router.get("/contacts", safeHandler((req: any, res: any) => {
+router.get("/contacts", safeHandler((req, res) => {
   const page = Number(req.query.page) || 1;
   const pageSize = Number(req.query.pageSize) || 25;
   respondOk(
