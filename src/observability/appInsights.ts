@@ -1,5 +1,5 @@
 import * as appInsights from "applicationinsights";
-import { isTestEnvironment } from "../server/config/env";
+import { isTestEnvironment } from "../server/config/env.compat";
 import { logInfo, logWarn } from "./logger";
 
 type RequestTelemetry = {

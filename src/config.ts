@@ -1,4 +1,4 @@
-import { ENV } from './server/config/env';
+import { ENV } from './server/config/env.compat';
 
 export const config = ENV;
 

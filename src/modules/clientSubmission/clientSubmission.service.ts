@@ -3,7 +3,7 @@ import { pool } from "../../db";
 import { createApplication, createDocument, createDocumentVersion } from "../applications/applications.repo";
 import { ApplicationStage } from "../applications/pipelineState";
 import { recordAuditEvent } from "../audit/audit.service";
-import { getDocumentAllowedMimeTypes, getDocumentMaxSizeBytes, getClientSubmissionOwnerUserId } from "../../server/config/env";
+import { getDocumentAllowedMimeTypes, getDocumentMaxSizeBytes, getClientSubmissionOwnerUserId } from "../../server/config/env.compat";
 import { createClientSubmission, findClientSubmissionByKey } from "./clientSubmission.repo";
 import { logInfo, logWarn } from "../../observability/logger";
 import { recordTransactionRollback } from "../../observability/transactionTelemetry";

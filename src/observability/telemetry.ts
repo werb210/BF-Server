@@ -1,4 +1,4 @@
-import { COMMIT_SHA } from "../server/config/env";
+import { COMMIT_SHA } from "../server/config/env.compat";
 import { getRequestRoute } from "../middleware/requestContext";
 
 const instanceId = process.env.INSTANCE_ID ?? process.env.HOSTNAME ?? "unknown";

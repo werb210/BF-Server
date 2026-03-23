@@ -5,7 +5,7 @@ import { pool } from "../db";
 import { safeHandler } from "../middleware/safeHandler";
 import { retrieveTopKnowledgeChunks } from "./retrievalService";
 import { matchLenders } from "./lenderMatchEngine";
-import { getAiModel } from "../server/config/env";
+import { getAiModel } from "../server/config/env.compat";
 import { emitAiEscalation } from "../realtime/events";
 import { circuitGuard, recordFailure, resetCircuit } from "../utils/circuitBreaker";
 import { retry } from "../utils/retry";

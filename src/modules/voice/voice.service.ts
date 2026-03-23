@@ -6,7 +6,7 @@ import { startCall, updateCallStatus, updateCallRecording } from "../calls/calls
 import { findCallLogByTwilioSid } from "../calls/calls.repo";
 import { getTwilioClient } from "../../services/twilio";
 import { type CallStatus, type CallLogRecord } from "../calls/calls.repo";
-import { getVoiceRestrictedNumbers } from "../../server/config/env";
+import { getVoiceRestrictedNumbers } from "../../server/config/env.compat";
 import { recordAuditEvent } from "../audit/audit.service";
 
 const VOICE_TOKEN_TTL_SECONDS = 15 * 60;

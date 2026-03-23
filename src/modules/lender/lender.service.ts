@@ -30,7 +30,7 @@ import {
   getLenderRetryBaseDelayMs,
   getLenderRetryMaxCount,
   getLenderRetryMaxDelayMs,
-} from "../../server/config/env";
+} from "../../server/config/env.compat";
 import { isKillSwitchEnabled } from "../ops/ops.service";
 import { logInfo, logWarn } from "../../observability/logger";
 import { recordTransactionRollback } from "../../observability/transactionTelemetry";

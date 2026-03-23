@@ -3,7 +3,7 @@ import {
   getAccessTokenExpiresIn,
   getAccessTokenSecret,
   getJwtClockSkewSeconds,
-} from "../server/config/env";
+} from "../server/config/env.compat";
 import { type Role, isRole } from "./roles";
 import { type Capability, isCapability } from "./capabilities";
 import { findAuthUserById, type AuthUser } from "../modules/auth/auth.repo";

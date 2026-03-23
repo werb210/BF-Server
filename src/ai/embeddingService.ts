@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { createHash, randomUUID } from "crypto";
-import { getAiEmbeddingModel } from "../server/config/env";
+import { getAiEmbeddingModel } from "../server/config/env.compat";
 import { pool } from "../db";
 
 const APPROX_CHUNK_SIZE = 800;

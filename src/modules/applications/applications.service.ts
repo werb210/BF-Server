@@ -39,7 +39,7 @@ import {
   assertPipelineState,
   assertPipelineTransition,
 } from "./applicationLifecycle.service";
-import { getDocumentAllowedMimeTypes, getDocumentMaxSizeBytes } from "../../server/config/env";
+import { getDocumentAllowedMimeTypes, getDocumentMaxSizeBytes } from "../../server/config/env.compat";
 import { recordTransactionRollback } from "../../observability/transactionTelemetry";
 import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService";
 import { uploadDocumentBuffer } from "../../services/storage/blobStorage";

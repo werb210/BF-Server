@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { db } from "../db";
-import { getClientSubmissionOwnerUserId } from "../server/config/env";
+import { getClientSubmissionOwnerUserId } from "../server/config/env.compat";
 import { ApplicationStage } from "../modules/applications/pipelineState";
 import { sendSms } from "../modules/notifications/sms.service";
 import { createContinuation } from "../models/continuation";

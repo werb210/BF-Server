@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { z } from "zod";
 import { db } from "../db";
 import { createApplication } from "../modules/applications/applications.repo";
-import { getClientSubmissionOwnerUserId } from "../server/config/env";
+import { getClientSubmissionOwnerUserId } from "../server/config/env.compat";
 
 const router = Router();
 

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { createOtp, verifyOtp } from './otpStore'
-import { isTest } from '../../server/config/env'
+import { isTest } from '../../server/config/env.compat'
 
 const router = Router()
 

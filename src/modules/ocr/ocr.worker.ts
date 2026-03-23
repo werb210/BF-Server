@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { getOcrEnabled, getOcrPollIntervalMs, getOcrWorkerConcurrency } from "../../server/config/env";
+import { getOcrEnabled, getOcrPollIntervalMs, getOcrWorkerConcurrency } from "../../server/config/env.compat";
 import { isKillSwitchEnabled } from "../ops/ops.service";
 import { clearExpiredOcrLocks, lockOcrJobs } from "./ocr.repo";
 import { processOcrJob } from "./ocr.service";
