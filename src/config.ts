@@ -185,3 +185,13 @@ export function getOpsKillSwitchExports(): boolean {
 export function getOcrWorkerConcurrency(): number {
   return 2;
 }
+
+// -------- REPORTING JOBS --------
+
+export function getReportingJobsEnabled(): boolean {
+  return true;
+}
+
+export function getReportingHourlyIntervalMs(): number {
+  return 60 * 60 * 1000; // hourly
+}

@@ -5,3 +5,9 @@ export function getRequestId(): string {
 export function getRequestDbProcessIds(): string[] {
   return [];
 }
+
+export async function runWithRequestContext<T>(
+  fn: () => Promise<T>
+): Promise<T> {
+  return await fn();
+}
