@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { logger } from '../lib/logger';
+import { logger } from '../server/utils/logger';
 
 export function errorHandler(
   err: unknown,

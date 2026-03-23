@@ -6,7 +6,7 @@ import { dbQuery } from "../db";
 import { getTwilioClient } from "../services/twilio";
 import { pushLeadToCRM } from "../services/crmWebhook";
 import { SupportController } from "../modules/support/support.controller";
-import { logger } from "../utils/logger";
+import { logger } from "../server/utils/logger";
 
 const router = Router();
 

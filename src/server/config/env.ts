@@ -20,6 +20,16 @@ export type ServerEnv = z.infer<typeof envSchema>;
 
 let cachedEnv: ServerEnv | null = null;
 
+export type Env = ServerEnv & {
+  PORT: string;
+  TEST_MODE?: string;
+  JWT_REFRESH_SECRET?: string;
+  CORS_ALLOWED_ORIGINS?: string;
+  RATE_LIMIT_WINDOW_MS?: string;
+  RATE_LIMIT_MAX?: string;
+  APPINSIGHTS_CONNECTION_STRING?: string;
+};
+
 export function validateServerEnv(): ServerEnv {
   if (cachedEnv) {
     return cachedEnv;
@@ -52,4 +62,19 @@ export function validateServerEnv(): ServerEnv {
 
   cachedEnv = parsed.data;
   return cachedEnv;
+}
+
+export const ENV: Env = {
+  ...validateServerEnv(),
+  PORT: process.env.PORT ?? "3000",
+  TEST_MODE: process.env.TEST_MODE,
+  JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
+  CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS,
+  RATE_LIMIT_WINDOW_MS: process.env.RATE_LIMIT_WINDOW_MS,
+  RATE_LIMIT_MAX: process.env.RATE_LIMIT_MAX,
+  APPINSIGHTS_CONNECTION_STRING: process.env.APPINSIGHTS_CONNECTION_STRING,
+};
+
+export function isTest(): boolean {
+  return process.env.NODE_ENV === "test";
 }

@@ -110,7 +110,7 @@ router.get(
     if (!ensureReady(res)) {
       return;
     }
-    await listApplicationStages(req: any, res: any);
+    await listApplicationStages(req, res);
   })
 );
 

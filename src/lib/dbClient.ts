@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { ENV } from '../config/env';
+import { ENV } from '../server/config/env';
 import { canExecute, recordFailure } from './circuitBreaker';
 import { retry } from './retry';
 

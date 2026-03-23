@@ -10,7 +10,7 @@ import { saveKnowledge as saveKnowledgeDb } from "../services/aiKnowledgeService
 import { loadKnowledge, saveKnowledge } from "../modules/ai/knowledge.service";
 import { AIKnowledgeController, upload as knowledgeUpload } from "../modules/ai/knowledge.controller";
 import { chatHandler } from "../modules/ai/ai.controller";
-import { logger } from "../utils/logger";
+import { logger } from "../server/utils/logger";
 import { generateAIResponse } from "../services/ai/aiService";
 
 const router = Router();
@@ -96,7 +96,7 @@ router.post(
   "/chat",
   safeHandler(async (req: MulterRequest, res, next) => {
     if (req.body?.mode !== "core") {
-      await chatHandler(req: any, res: any);
+      await chatHandler(req, res);
       return;
     }
 
