@@ -1,5 +1,111 @@
-export const config = {
-  env: process.env.NODE_ENV,
+export type Config = {
+  env: string;
+  api: {
+    baseUrl?: string;
+  };
+  app: {
+    baseUrl?: string;
+    testMode?: string;
+  };
+  auth: {
+    debugOtpPhone?: string;
+    otpHashSalt?: string;
+    testOtpCode?: string;
+  };
+  azureOpenai: {
+    deployment?: string;
+    endpoint?: string;
+    key?: string;
+  };
+  azureStorage: {
+    connectionString?: string;
+  };
+  bootstrap: {
+    adminPhone?: string;
+  };
+  client: {
+    url?: string;
+  };
+  codespaces: {
+    enabled?: string;
+    name?: string;
+    portForwardingDomain?: string;
+  };
+  cors: {
+    allowedOrigins?: string;
+  };
+  crm: {
+    webhookUrl?: string;
+  };
+  db: {
+    host: string;
+    ssl?: string;
+  };
+  google: {
+    serviceAccountEmail?: string;
+    serviceAccountPrivateKey?: string;
+  };
+  intake: {
+    smsNumber?: string;
+  };
+  internal: {
+    apiKey?: string;
+    enableTestRoutes?: string;
+  };
+  jwt: {
+    secret: string;
+  };
+  openai: {
+    apiKey?: string;
+    chatModel?: string;
+    embedModel?: string;
+    model?: string;
+  };
+  ai: {
+    embedModel?: string;
+    model?: string;
+    systemName?: string;
+  };
+  portal: {
+    url?: string;
+  };
+  pwa: {
+    pushEnabled?: string;
+  };
+  rateLimit: {
+    enabled?: string;
+  };
+  redis: {
+    url: string;
+  };
+  twilio: {
+    accountSid?: string;
+    apiKey?: string;
+    apiSecret?: string;
+    authToken?: string;
+    from?: string;
+    number?: string;
+    phone?: string;
+    phoneNumber?: string;
+    verifyServiceSid?: string;
+    voiceAppSid?: string;
+  };
+  allowedOrigins?: string;
+  website: {
+    url?: string;
+  };
+};
+
+const getRequiredEnv = (name: string): string => {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+};
+
+export const config: Config = {
+  env: process.env.NODE_ENV ?? "development",
   api: {
     baseUrl: process.env.API_BASE_URL,
   },
@@ -38,7 +144,7 @@ export const config = {
     webhookUrl: process.env.CRM_WEBHOOK_URL,
   },
   db: {
-    host: process.env.DB_HOST,
+    host: getRequiredEnv("DB_HOST"),
     ssl: process.env.DB_SSL,
   },
   google: {
@@ -53,7 +159,7 @@ export const config = {
     enableTestRoutes: process.env.ENABLE_INT_TEST_ROUTES,
   },
   jwt: {
-    secret: process.env.JWT_SECRET,
+    secret: getRequiredEnv("JWT_SECRET"),
   },
   openai: {
     apiKey: process.env.OPENAI_API_KEY,
@@ -76,7 +182,7 @@ export const config = {
     enabled: process.env.RATE_LIMIT_ENABLED,
   },
   redis: {
-    url: process.env.REDIS_URL,
+    url: getRequiredEnv("REDIS_URL"),
   },
   twilio: {
     accountSid: process.env.TWILIO_ACCOUNT_SID,
