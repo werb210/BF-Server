@@ -1,11 +1,7 @@
-import appInsights from 'applicationinsights';
-
-if (process.env.APPINSIGHTS_CONNECTION_STRING) {
-  appInsights.setup(process.env.APPINSIGHTS_CONNECTION_STRING)
-    .setAutoCollectRequests(true)
-    .setAutoCollectDependencies(true)
-    .setAutoCollectExceptions(true)
-    .start();
+export function initMonitoring(connectionString?: string) {
+  return {
+    setup: () => {
+      console.log('Monitoring initialized', connectionString || 'none');
+    },
+  };
 }
-
-export const client = appInsights.defaultClient;

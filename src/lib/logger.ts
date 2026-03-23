@@ -1,23 +1,14 @@
-type LogLevel = 'info' | 'error' | 'warn' | 'debug';
-
-function log(level: LogLevel, message: string, meta?: unknown) {
-  const entry = {
-    level,
-    message,
-    ...(meta && { meta }),
-    timestamp: new Date().toISOString()
-  };
-
-  if (level === 'error') {
-    console.error(JSON.stringify(entry));
-  } else {
-    console.log(JSON.stringify(entry));
-  }
-}
-
 export const logger = {
-  info: (msg: string, meta?: unknown) => log('info', msg, meta),
-  error: (msg: string, meta?: unknown) => log('error', msg, meta),
-  warn: (msg: string, meta?: unknown) => log('warn', msg, meta),
-  debug: (msg: string, meta?: unknown) => log('debug', msg, meta),
+  info: (msg: string, meta?: any) => {
+    console.log(JSON.stringify({ level: 'info', msg, meta, ts: new Date().toISOString() }));
+  },
+  error: (msg: string, meta?: any) => {
+    console.error(JSON.stringify({ level: 'error', msg, meta, ts: new Date().toISOString() }));
+  },
+  warn: (msg: string, meta?: any) => {
+    console.warn(JSON.stringify({ level: 'warn', msg, meta, ts: new Date().toISOString() }));
+  },
+  debug: (msg: string, meta?: any) => {
+    console.debug(JSON.stringify({ level: 'debug', msg, meta, ts: new Date().toISOString() }));
+  },
 };
