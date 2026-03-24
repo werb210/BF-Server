@@ -23,7 +23,6 @@
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
     "@prisma/client": "^7.5.0",
-    "@sentry/node": "^10.45.0",
     "applicationinsights": "^3.14.0",
     "bullmq": "^5.71.0",
     "dotenv": "^17.3.1",
