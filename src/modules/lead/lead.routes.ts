@@ -30,7 +30,32 @@ router.post(
   requireAuth,
   idempotencyMiddleware,
   async (req: Request<{}, {}, CreateLeadBody>, res: Response, next) => {
-    const body = createLeadSchema.parse(req.body);
+    if (
+      !req.body ||
+      typeof req.body !== "object" ||
+      !("source" in req.body) ||
+      typeof req.body.source !== "string" ||
+      !req.body.source.trim()
+    ) {
+      return res.status(400).json({
+        error: {
+          message: "invalid_lead_body",
+          code: "invalid_input",
+        },
+      });
+    }
+
+    const parseResult = createLeadSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({
+        error: {
+          message: "invalid_lead_body",
+          code: "invalid_input",
+        },
+      });
+    }
+
+    const body = parseResult.data;
 
     try {
       const lead = await createLead({

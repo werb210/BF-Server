@@ -18,8 +18,35 @@ type SendLenderPackageBody = z.infer<typeof sendLenderPackageSchema>;
 const router = Router();
 
 router.post("/send", requireAuth, idempotencyMiddleware, async (req: Request<{}, {}, SendLenderPackageBody>, res, next) => {
+  if (
+    !req.body ||
+    typeof req.body !== "object" ||
+    !("application" in req.body) ||
+    !req.body.application ||
+    typeof req.body.application !== "object" ||
+    !("id" in req.body.application) ||
+    !req.body.application.id
+  ) {
+    return res.status(400).json({
+      error: {
+        message: "invalid_lender_package_body",
+        code: "invalid_input",
+      },
+    });
+  }
+
   try {
-    const body = sendLenderPackageSchema.parse(req.body);
+    const parseResult = sendLenderPackageSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({
+        error: {
+          message: "invalid_lender_package_body",
+          code: "invalid_input",
+        },
+      });
+    }
+
+    const body = parseResult.data;
     const packageData = buildLenderPackage(body);
 
     const queue = getLenderQueue();
