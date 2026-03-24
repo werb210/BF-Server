@@ -8,22 +8,29 @@ import leadRoutes from "../modules/lead/lead.routes";
 import lenderRoutes from "../modules/lender/lender.routes";
 import healthRoutes from "../modules/health/health.routes";
 import { errorHandler } from "../middleware/errorHandler";
+import { securityHeaders } from "../middleware/security";
+import { corsMiddleware } from "../middleware/cors";
+import { logger } from "./utils/logger";
+import { httpMetricsMiddleware } from "../metrics/httpMetrics";
 
 const processedIdempotencyKeys = new Set<string>();
 
 export async function createServer(): Promise<Express> {
   const app = express();
 
+  app.use(securityHeaders);
+  app.use(corsMiddleware);
   app.use(express.json({ limit: "1mb" }));
   app.use(requestContextMiddleware);
+  app.use(httpMetricsMiddleware);
   app.use(requestTimeout);
   app.use((req, res, next) => {
     const start = Date.now();
     res.on("finish", () => {
-      console.log({
+      logger.info("http_request_completed", {
         path: req.path,
         status: res.statusCode,
-        duration: Date.now() - start,
+        durationMs: Date.now() - start,
       });
     });
     next();

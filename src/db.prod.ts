@@ -26,7 +26,9 @@ function buildPoolConfig(): PoolConfig {
   return {
     connectionString,
     ssl: isAzure ? { rejectUnauthorized: true } : isLocal ? false : false,
-    max: 20,
+    max: 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000,
   };
 }
 

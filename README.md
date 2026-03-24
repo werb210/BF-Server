@@ -259,3 +259,26 @@ Internal introspection (no auth):
 ```bash
 curl http://localhost:8080/api/_int/ops
 ```
+
+## Production safety defaults
+
+- Request body limit is locked to `1mb` in the server bootstrap.
+- Security headers are enabled globally via `helmet()`.
+- CORS is restricted to configured allow-listed origins (`CORS_ALLOWED_ORIGINS`).
+- Database pools are capped to avoid connection exhaustion.
+
+### Health check enforcement (example)
+
+```yaml
+healthcheck:
+  path: /healthz
+  interval: 30s
+```
+
+### Pre-scale load test
+
+Run this before promoting to production:
+
+```bash
+autocannon -c 50 -d 20 http://localhost:3000/api/leads
+```

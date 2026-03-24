@@ -1,6 +1,6 @@
 import { toStringSet } from "../utils/collectionSafe";
 import { Router } from "express";
-import { retry, withRetry } from "../utils/retry";
+import { withRetry, withRetryAndTimeout } from "../utils/retry";
 import { createSupportThread } from "../services/supportService";
 import { dbQuery } from "../db";
 import { fetchTwilioClient } from "../services/twilio";
@@ -8,6 +8,7 @@ import { pushLeadToCRM } from "../services/crmWebhook";
 import { SupportController } from "../modules/support/support.controller";
 import { logger } from "../server/utils/logger";
 import { config } from "../config";
+import { safeCall } from "../lib/circuitBreaker";
 
 const router = Router();
 
@@ -163,22 +164,34 @@ router.post("/contact", async (req: any, res: any, next: any) => {
   );
 
   const client = fetchTwilioClient();
-  await retry(async () =>
-    client.messages.create({
-      body: `New Contact: ${company} - ${firstName} ${lastName} - ${phone}`,
-      from: config.twilio.phone as string,
-      to: "+15878881837",
-    })
+  await safeCall(() =>
+    withRetryAndTimeout(
+      () =>
+        client.messages.create({
+          body: `New Contact: ${company} - ${firstName} ${lastName} - ${phone}`,
+          from: config.twilio.phone as string,
+          to: "+15878881837",
+        }),
+      3,
+      8_000
+    )
   );
 
-  await pushLeadToCRM({
-    type: "contact_form",
-    company,
-    firstName,
-    lastName,
-    email,
-    phone,
-  });
+  await safeCall(() =>
+    withRetryAndTimeout(
+      () =>
+        pushLeadToCRM({
+          type: "contact_form",
+          company,
+          firstName,
+          lastName,
+          email,
+          phone,
+        }),
+      3,
+      8_000
+    )
+  );
 
   return res.json({ success: true });
 });
