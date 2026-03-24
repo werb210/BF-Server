@@ -25,16 +25,38 @@ function authErrorBody(req: Request, code: string, message: string) {
   };
 }
 
+function getCookieToken(cookieHeader: string | undefined): string | null {
+  if (!cookieHeader) return null;
+
+  const cookies = cookieHeader.split(";");
+  for (const cookie of cookies) {
+    const [rawName, ...rest] = cookie.trim().split("=");
+    if (rawName !== "token") continue;
+    const value = rest.join("=").trim();
+    return value ? decodeURIComponent(value) : null;
+  }
+
+  return null;
+}
+
 export const requireAuth: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
   const auth = req.headers.authorization;
 
-  if (!auth?.startsWith("Bearer ")) {
-    return res.status(401).json({
-      error: { message: "missing_token" },
-    });
+  let token: string | null = null;
+
+  if (auth?.startsWith("Bearer ")) {
+    token = auth.split(" ")[1] ?? null;
   }
 
-  const token = auth.split(" ")[1];
+  if (!token) {
+    token = getCookieToken(req.headers.cookie);
+  }
+
+  if (!token) {
+    return res.status(401).json({
+      error: { message: "missing_token", code: "missing_token" },
+    });
+  }
 
   try {
     const decoded = jwt.verify(token, config.jwt.secret);
@@ -42,7 +64,7 @@ export const requireAuth: RequestHandler = (req: Request, res: Response, next: N
     return next();
   } catch (_err) {
     return res.status(401).json({
-      error: { message: "invalid_token" },
+      error: { message: "invalid_token", code: "invalid_token" },
     });
   }
 };
