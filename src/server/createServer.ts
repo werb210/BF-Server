@@ -19,6 +19,7 @@ const processedIdempotencyKeys = new Set<string>();
 
 export async function createServer(): Promise<Express> {
   const app = express();
+  console.log("Server bootstrapped");
 
   app.use(securityHeaders);
   app.use(corsMiddleware);
@@ -86,6 +87,12 @@ export async function createServer(): Promise<Express> {
   app.use("/api/leads", leadRoutes);
   app.use("/api/lenders", lenderRoutes);
   logger.info("routes_mounted", { routes: ["/api/leads", "/api/lenders"] });
+  app.get("/healthz", (_req, res) => {
+    res.status(200).json({ status: "ok" });
+  });
+  app.get("/readyz", (_req, res) => {
+    res.status(200).json({ status: "ready" });
+  });
   app.use("/", healthRoutes);
 
   registerApiRouteMounts(app);

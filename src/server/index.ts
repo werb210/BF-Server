@@ -155,3 +155,10 @@ process.on("SIGTERM", async () => {
 });
 
 export { server };
+
+if (require.main === module) {
+  void startServer().catch((err: unknown) => {
+    logger.error("fatal_startup_error", { err: err instanceof Error ? err.message : String(err) });
+    process.exit(1);
+  });
+}

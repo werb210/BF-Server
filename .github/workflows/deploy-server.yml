@@ -84,21 +84,12 @@ jobs:
       - name: Health check
         run: |
           set -euo pipefail
-          node dist/index.js &
+          node dist/server/index.js &
           PID=$!
-          for i in {1..20}; do
-            if curl -f http://localhost:3000/healthz >/dev/null; then
-              echo "Health check passed"
-              kill "$PID" || true
-              wait "$PID" || true
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Health check failed"
+          sleep 5
+          curl --fail http://localhost:3000/healthz
           kill "$PID" || true
           wait "$PID" || true
-          exit 1
         env:
           PORT: "3000"
           SKIP_DB_CONNECTION: "true"

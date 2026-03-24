@@ -1,6 +1,7 @@
 import Redis from "ioredis";
+import { config } from "../config";
 
-const redisUrl = process.env.REDIS_URL;
+const redisUrl = config.redis.url;
 
 export const redis = redisUrl
   ? new Redis(redisUrl, {

@@ -2,6 +2,7 @@ import { type NextFunction, type Request, type Response } from "express";
 import { getIdempotent, setIdempotent } from "../platform/idempotencyRedis";
 import { hashRequest } from "../utils/hash";
 import { logInfo, logWarn } from "../observability/logger";
+import { config } from "../config";
 
 const IDEMPOTENCY_HEADER = "idempotency-key";
 const ENFORCED_METHODS = new Set(["POST", "PATCH", "DELETE"]);
@@ -32,7 +33,7 @@ export async function idempotencyMiddleware(
     return;
   }
 
-  if (process.env.NODE_ENV === "test") {
+  if (config.env === "test") {
     next();
     return;
   }
