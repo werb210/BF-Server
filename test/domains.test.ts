@@ -14,8 +14,8 @@ vi.mock("../src/modules/lead/lead.service", () => ({
   getLeads: vi.fn(async () => []),
 }));
 
-import { createServer } from "../src/server/createServer";
 import * as leadService from "../src/modules/lead/lead.service";
+import { getTestApp } from "./setup";
 
 describe("Core domains", () => {
   let app: Express;
@@ -25,7 +25,7 @@ describe("Core domains", () => {
   });
 
   beforeAll(async () => {
-    app = await createServer();
+    app = await getTestApp();
   });
 
   it("creates lead", async () => {

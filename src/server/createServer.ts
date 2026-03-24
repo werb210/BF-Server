@@ -83,13 +83,19 @@ export async function createServer(): Promise<Express> {
   app.use("/api/v1/leads", leadRoutes);
   app.use("/api/v1/lenders", lenderRoutes);
 
-  if (config.flags.allowUnfrozenApiV1) {
-    app.use("/api/leads", leadRoutes);
-    app.use("/api/lenders", lenderRoutes);
-  }
+  app.use("/api/leads", leadRoutes);
+  app.use("/api/lenders", lenderRoutes);
+  logger.info("routes_mounted", { routes: ["/api/leads", "/api/lenders"] });
   app.use("/", healthRoutes);
 
   registerApiRouteMounts(app);
+
+  app.use((req, res) => {
+    res.status(404).json({
+      error: "Route not found",
+      path: req.path,
+    });
+  });
 
   bindSentryErrorHandler(app);
   app.use(errorHandler);

@@ -1,3 +1,4 @@
+import type { Express } from "express";
 import { afterAll, beforeAll, beforeEach, vi } from "vitest";
 
 process.env.NODE_ENV = "test";
@@ -38,3 +39,16 @@ beforeAll(async () => {
 afterAll(async () => {
   // cleanup if needed
 });
+
+let testApp: Express | null = null;
+let appPromise: Promise<Express> | null = null;
+
+export async function getTestApp(): Promise<Express> {
+  if (!testApp) {
+    if (!appPromise) {
+      appPromise = import("../src/server/createServer").then(({ createServer }) => createServer());
+    }
+    testApp = await appPromise;
+  }
+  return testApp;
+}

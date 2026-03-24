@@ -8,13 +8,13 @@ vi.mock("../src/middleware/auth", () => ({
   },
 }));
 
-import { createServer } from "../src/server/createServer";
+import { getTestApp } from "./setup";
 
 describe("Health", () => {
   let app: Express;
 
   beforeAll(async () => {
-    app = await createServer();
+    app = await getTestApp();
   });
 
   it("GET /healthz", async () => {
