@@ -1,23 +1,26 @@
 import { type Request, type Response, Router } from "express";
+import { z } from "zod";
 import { requireAuth } from "../../middleware/auth";
 import { createLead, getLeads } from "./lead.service";
 
-interface CreateLeadBody {
-  source?: string;
-  companyName?: string;
-  fullName?: string;
-  email?: string;
-  phone?: string;
-  yearsInBusiness?: string;
-  annualRevenue?: string;
-  monthlyRevenue?: string;
-  requestedAmount?: string;
-  creditScoreRange?: string;
-  productInterest?: string;
-  industryInterest?: string;
-  notes?: string;
-  tags?: unknown;
-}
+const createLeadSchema = z.object({
+  source: z.string().trim().min(1),
+  companyName: z.string().trim().optional(),
+  fullName: z.string().trim().optional(),
+  email: z.string().trim().optional(),
+  phone: z.string().trim().optional(),
+  yearsInBusiness: z.string().trim().optional(),
+  annualRevenue: z.string().trim().optional(),
+  monthlyRevenue: z.string().trim().optional(),
+  requestedAmount: z.string().trim().optional(),
+  creditScoreRange: z.string().trim().optional(),
+  productInterest: z.string().trim().optional(),
+  industryInterest: z.string().trim().optional(),
+  notes: z.string().trim().optional(),
+  tags: z.unknown().optional(),
+});
+
+type CreateLeadBody = z.infer<typeof createLeadSchema>;
 
 const router = Router();
 
@@ -25,28 +28,24 @@ router.post(
   "/",
   requireAuth,
   async (req: Request<{}, {}, CreateLeadBody>, res: Response, next) => {
-    const source = typeof req.body?.source === "string" ? req.body.source.trim() : "";
-    if (!source) {
-      res.status(400).json({ message: "source is required" });
-      return;
-    }
+    const body = createLeadSchema.parse(req.body);
 
     try {
       const lead = await createLead({
-        source,
-        companyName: req.body?.companyName,
-        fullName: req.body?.fullName,
-        email: req.body?.email,
-        phone: req.body?.phone,
-        yearsInBusiness: req.body?.yearsInBusiness,
-        annualRevenue: req.body?.annualRevenue,
-        monthlyRevenue: req.body?.monthlyRevenue,
-        requestedAmount: req.body?.requestedAmount,
-        creditScoreRange: req.body?.creditScoreRange,
-        productInterest: req.body?.productInterest,
-        industryInterest: req.body?.industryInterest,
-        notes: req.body?.notes,
-        tags: req.body?.tags,
+        source: body.source,
+        companyName: body.companyName,
+        fullName: body.fullName,
+        email: body.email,
+        phone: body.phone,
+        yearsInBusiness: body.yearsInBusiness,
+        annualRevenue: body.annualRevenue,
+        monthlyRevenue: body.monthlyRevenue,
+        requestedAmount: body.requestedAmount,
+        creditScoreRange: body.creditScoreRange,
+        productInterest: body.productInterest,
+        industryInterest: body.industryInterest,
+        notes: body.notes,
+        tags: body.tags,
       });
 
       res.status(201).json(lead);
