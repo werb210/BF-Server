@@ -3,13 +3,13 @@ import { Router } from "express";
 const router = Router();
 
 router.get("/", (_req, res) => {
-  res.json([]);
+  res.json({ ok: true, data: [] });
 });
 
 router.post("/", (req, res) => {
   res.json({
-    id: "app-1",
-    ...req.body,
+    ok: true,
+    data: { id: "app-1", ...req.body },
   });
 });
 

@@ -1,4 +1,3 @@
-import cookieParser from "cookie-parser";
 import express, { type NextFunction, type Request, type RequestHandler, type Response } from "express";
 
 import applicationsRoutes from "../routes/applications.routes";
@@ -21,26 +20,17 @@ interface AuthenticatedRequest extends Request {
 }
 
 const requireAuth: RequestHandler = (req: Request, res: Response, next: NextFunction): void => {
-  const authedReq = req as AuthenticatedRequest;
-  const authHeader = req.headers.authorization;
-  const cookieToken = req.cookies?.token as string | undefined;
+  const auth = req.headers.authorization;
 
-  let token: string | null = null;
-
-  if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
-    token = authHeader.split(" ")[1] ?? null;
-  } else if (cookieToken) {
-    token = cookieToken;
-  }
-
-  if (!token) {
+  if (!auth || !auth.startsWith("Bearer ")) {
     res.status(401).json({
       ok: false,
-      error: "unauthorized",
+      error: "Unauthorized",
     });
     return;
   }
 
+  const authedReq = req as AuthenticatedRequest;
   authedReq.user = { id: "dev-user" };
   next();
 };
@@ -49,7 +39,10 @@ export function createServer() {
   const app = express();
 
   app.use(express.json());
-  app.use(cookieParser());
+  app.use((req, _res, next) => {
+    if (!req.headers.cookie) req.headers.cookie = "";
+    next();
+  });
 
   // PUBLIC ROUTES (NO AUTH)
   app.use("/api/auth", authRoutes);

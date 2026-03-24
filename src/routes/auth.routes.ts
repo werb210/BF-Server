@@ -2,13 +2,17 @@ import { Router } from "express";
 
 const router = Router();
 
-router.post("/otp/start", async (_req, res) => {
-  return res.status(200).json({ sent: true });
+router.post("/otp/start", (_req, res) => {
+  res.json({
+    ok: true,
+    data: { sent: true },
+  });
 });
 
-router.post("/otp/verify", async (_req, res) => {
-  return res.status(200).json({
-    token: "dev-token",
+router.post("/otp/verify", (_req, res) => {
+  res.json({
+    ok: true,
+    data: { token: "dev-token" },
   });
 });
 

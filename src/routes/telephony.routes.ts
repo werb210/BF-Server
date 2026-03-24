@@ -3,8 +3,9 @@ import { Router } from "express";
 const router = Router();
 
 router.get("/token", (_req, res) => {
-  res.status(200).json({
-    token: "fake-telephony-token",
+  res.json({
+    ok: true,
+    data: { token: "fake-telephony-token" },
   });
 });
 
