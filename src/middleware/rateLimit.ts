@@ -1,5 +1,10 @@
 import rateLimit from 'express-rate-limit';
 
+export const apiRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 100,
+});
+
 export const globalRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
