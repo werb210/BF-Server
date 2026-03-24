@@ -4,20 +4,24 @@ on:
   push:
     branches:
       - main
+      - develop
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
     env:
       NODE_ENV: test
       REDIS_URL: redis://127.0.0.1:6379
-      JWT_SECRET: test-secret
+      JWT_SECRET: test-secret-12345
       OPENAI_API_KEY: test-key
       OPENAI_MODEL: gpt-4o-mini
       TWILIO_ACCOUNT_SID: ACtest
       TWILIO_AUTH_TOKEN: test-token
       TWILIO_PHONE: +10000000000
-      DATABASE_URL: "file:./dev.db"
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      SENTRY_DSN: https://examplePublicKey@o0.ingest.sentry.io/0
+      SLACK_ALERT_WEBHOOK_URL: https://hooks.slack.com/services/test/test/test
 
     steps:
       - name: Checkout
@@ -35,8 +39,14 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
+      - name: Enforce migrations
+        run: npx prisma migrate deploy
+
       - name: Lint
         run: npm run lint
+
+      - name: Architecture guardrails
+        run: npm run lint:architecture
 
       - name: Typecheck
         run: npm run typecheck
@@ -47,18 +57,34 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Smoke test
+      - name: Smoke + health check
         run: |
+          set -euo pipefail
           node dist/index.js &
           PID=$!
-          sleep 5
-          kill $PID || true
-          wait $PID || true
+          for i in {1..20}; do
+            if curl -sf http://127.0.0.1:3000/healthz >/dev/null; then
+              echo "Health check passed"
+              kill "$PID" || true
+              wait "$PID" || true
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Health check failed"
+          kill "$PID" || true
+          wait "$PID" || true
+          exit 1
         env:
-          DATABASE_URL: "file:./dev.db"
-          REDIS_URL: "redis://localhost:6379"
-          JWT_SECRET: "test-secret"
+          PORT: "3000"
           SKIP_DB_CONNECTION: "true"
 
       - name: Deploy
-        run: echo "Deploy step here"
+        id: deploy_step
+        run: echo "Deploying to ${{ github.ref_name == 'main' && 'production' || 'staging' }}"
+
+      - name: Automatic rollback on deploy failure
+        if: failure() && steps.deploy_step.outcome == 'failure'
+        run: |
+          git revert --no-edit HEAD
+          git push origin HEAD:${GITHUB_REF_NAME}

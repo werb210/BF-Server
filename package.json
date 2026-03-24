@@ -13,12 +13,16 @@
     "test": "vitest run",
     "prebuild": "prisma generate || true",
     "lint": "eslint src --ext .ts",
-    "ci:check": "npm run typecheck && npm run build",
-    "test:watch": "vitest"
+    "ci:check": "npm run lint && npm run lint:architecture && npm run typecheck && npm run build",
+    "test:watch": "vitest",
+    "lint:architecture": "node scripts/enforce-architecture-guardrails.mjs",
+    "db:backup": "bash scripts/backup-db.sh",
+    "db:verify-restore": "bash scripts/verify-backup-restore.sh"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
     "@prisma/client": "^7.5.0",
+    "@sentry/node": "^10.45.0",
     "applicationinsights": "^3.14.0",
     "bullmq": "^5.71.0",
     "dotenv": "^17.3.1",

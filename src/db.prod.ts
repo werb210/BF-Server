@@ -11,6 +11,8 @@ import { markNotReady } from "./startupState";
 
 const { Pool } = pg;
 
+const SLOW_QUERY_THRESHOLD_MS = 500;
+
 function buildPoolConfig(): PoolConfig {
   const connectionString = config.db.url.trim();
   if (!connectionString) {
@@ -35,8 +37,19 @@ function buildPoolConfig(): PoolConfig {
 export const pool: PgPool = new Pool(buildPoolConfig());
 export const db = pool;
 
-export function query(text: string, params?: any[]): Promise<QueryResult> {
-  return pool.query(text, params);
+export async function query(text: string, params?: any[]): Promise<QueryResult> {
+  const start = Date.now();
+  const result = await pool.query(text, params);
+  const durationMs = Date.now() - start;
+
+  if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
+    logWarn("db_slow_query", {
+      durationMs,
+      queryPreview: text.slice(0, 120),
+    });
+  }
+
+  return result;
 }
 
 export function fetchClient() {
@@ -48,7 +61,18 @@ export async function dbQuery<T extends QueryResultRow = QueryResultRow>(
   params?: any[]
 ): Promise<QueryResult<T>> {
   try {
-    return await pool.query<T>(text, params);
+    const start = Date.now();
+    const result = await pool.query<T>(text, params);
+    const durationMs = Date.now() - start;
+
+    if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
+      logWarn("db_slow_query", {
+        durationMs,
+        queryPreview: text.slice(0, 120),
+      });
+    }
+
+    return result;
   } catch (err: any) {
     logError("db_query_error", { message: err.message, code: err.code });
     throw err;

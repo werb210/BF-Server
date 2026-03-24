@@ -14,6 +14,9 @@ export const EnvSchema = z
     TWILIO_AUTH_TOKEN: z.string().min(1),
     TWILIO_PHONE: z.string().min(1),
 
+    SENTRY_DSN: z.string().min(1).optional(),
+    SLACK_ALERT_WEBHOOK_URL: z.string().min(1).optional(),
+
     PORT: numericString.optional(),
     API_BASE_URL: z.string().min(1).optional(),
     PUBLIC_BASE_URL: z.string().min(1).optional(),

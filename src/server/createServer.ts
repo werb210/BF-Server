@@ -12,6 +12,8 @@ import { securityHeaders } from "../middleware/security";
 import { corsMiddleware } from "../middleware/cors";
 import { logger } from "./utils/logger";
 import { httpMetricsMiddleware } from "../metrics/httpMetrics";
+import { bindSentryErrorHandler } from "../observability/sentry";
+import { config } from "../config";
 
 const processedIdempotencyKeys = new Set<string>();
 
@@ -24,6 +26,24 @@ export async function createServer(): Promise<Express> {
   app.use(requestContextMiddleware);
   app.use(httpMetricsMiddleware);
   app.use(requestTimeout);
+  app.use((req: any, res, next) => {
+    if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method.toUpperCase())) {
+      next();
+      return;
+    }
+
+    res.on("finish", () => {
+      logger.info("audit_event", {
+        event: "api_mutation",
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        userId: req.user?.userId ?? null,
+      });
+    });
+
+    next();
+  });
   app.use((req, res, next) => {
     const start = Date.now();
     res.on("finish", () => {
@@ -35,8 +55,11 @@ export async function createServer(): Promise<Express> {
     });
     next();
   });
-  app.use("/api/", apiRateLimit);
-  app.use("/api/", (req, res, next) => {
+  app.use("/api/v1/", apiRateLimit);
+  if (config.flags.allowUnfrozenApiV1) {
+    app.use("/api/", apiRateLimit);
+  }
+  app.use("/api/v1/", (req, res, next) => {
     if (req.method.toUpperCase() !== "POST") {
       next();
       return;
@@ -57,12 +80,18 @@ export async function createServer(): Promise<Express> {
     next();
   });
 
-  app.use("/api/leads", leadRoutes);
-  app.use("/api/lenders", lenderRoutes);
+  app.use("/api/v1/leads", leadRoutes);
+  app.use("/api/v1/lenders", lenderRoutes);
+
+  if (config.flags.allowUnfrozenApiV1) {
+    app.use("/api/leads", leadRoutes);
+    app.use("/api/lenders", lenderRoutes);
+  }
   app.use("/", healthRoutes);
 
   registerApiRouteMounts(app);
 
+  bindSentryErrorHandler(app);
   app.use(errorHandler);
 
   return app;

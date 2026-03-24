@@ -13,6 +13,8 @@ const EnvSchema = z.object({
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_PHONE: z.string().optional(),
   SKIP_DB_CONNECTION: z.string().optional(),
+  SENTRY_DSN: z.string().optional(),
+  SLACK_ALERT_WEBHOOK_URL: z.string().optional(),
 });
 
 const env = EnvSchema.parse(process.env);
@@ -57,7 +59,7 @@ export const config = Object.freeze({
     debugOtpPhone: parsed.AUTH_DEBUG_OTP_PHONE,
     otpHashSalt: parsed.OTP_HASH_SALT,
     testOtpCode: parsed.TEST_OTP_CODE,
-    refreshSecret: parsed.JWT_REFRESH_SECRET ?? "dev-refresh-secret",
+    refreshSecret: parsed.JWT_REFRESH_SECRET,
     accessExpiresIn: parsed.JWT_ACCESS_EXPIRES_IN ?? "1h",
     refreshExpiresMs: toNumber(parsed.JWT_REFRESH_EXPIRES_MS, 7 * 24 * 60 * 60 * 1000),
     jwtClockSkewSeconds: toNumber(parsed.JWT_CLOCK_SKEW_SECONDS, 0),
@@ -190,6 +192,12 @@ export const config = Object.freeze({
     publicBase: parsed.PUBLIC_BASE_URL,
     clientBase: parsed.CLIENT_BASE_URL,
   }),
+  sentry: Object.freeze({
+    dsn: env.SENTRY_DSN,
+  }),
+  alerting: Object.freeze({
+    slackWebhookUrl: env.SLACK_ALERT_WEBHOOK_URL,
+  }),
   telemetry: Object.freeze({
     instanceId: parsed.INSTANCE_ID ?? parsed.HOSTNAME ?? "unknown",
     appInsightsConnectionString:
@@ -221,7 +229,7 @@ export const config = Object.freeze({
     otpHashSecret: parsed.OTP_HASH_SECRET,
     vapidPublicKey: parsed.VAPID_PUBLIC_KEY ?? "",
     vapidPrivateKey: parsed.VAPID_PRIVATE_KEY ?? "",
-    vapidSubject: parsed.VAPID_SUBJECT ?? "mailto:dev@example.com",
+    vapidSubject: parsed.VAPID_SUBJECT,
     voiceRestrictedNumbers: csv(parsed.VOICE_RESTRICTED_NUMBERS, []),
   }),
   isProduction: env.NODE_ENV === "production",
