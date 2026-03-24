@@ -26,20 +26,24 @@ function authErrorBody(req: Request, code: string, message: string) {
 }
 
 export const requireAuth: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
-  const header = req.headers.authorization;
+  const auth = req.headers.authorization;
 
-  if (!header) {
-    return res.status(401).json({ error: "unauthorized" });
+  if (!auth?.startsWith("Bearer ")) {
+    return res.status(401).json({
+      error: { message: "missing_token" },
+    });
   }
 
-  try {
-    const token = header.replace("Bearer ", "").trim();
-    const decoded = jwt.verify(token, config.jwt.secret);
+  const token = auth.split(" ")[1];
 
+  try {
+    const decoded = jwt.verify(token, config.jwt.secret);
     req.user = decoded as Request["user"];
     return next();
-  } catch {
-    return res.status(401).json({ error: "invalid_token" });
+  } catch (_err) {
+    return res.status(401).json({
+      error: { message: "invalid_token" },
+    });
   }
 };
 

@@ -8,7 +8,7 @@ export async function startServer() {
   const app = createServer();
 
   return app.listen(config.port, () => {
-    console.log(`Server running on ${config.port}`);
+    console.log("Server started on port", config.port);
   });
 }
 
