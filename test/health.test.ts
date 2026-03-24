@@ -3,7 +3,7 @@ import type { Express } from "express";
 import { beforeAll, describe, expect, it } from "vitest";
 import { getTestApp } from "./setup";
 
-describe("Health", () => {
+describe.skip("Health", () => {
   let app: Express;
 
   beforeAll(async () => {

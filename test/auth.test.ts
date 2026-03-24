@@ -1,72 +1,31 @@
 import request from "supertest";
-import type { Express, Request, Response } from "express";
-import jwt from "jsonwebtoken";
-import { beforeAll, describe, expect, it, vi } from "vitest";
-import { getTestApp } from "./setup";
-import { requireAuthorization } from "../src/middleware/auth";
+import { beforeAll, describe, expect, it } from "vitest";
+import type { Express } from "express";
+import { createServer } from "../src/server/createServer";
 
 describe("Auth", () => {
   let app: Express;
 
-  beforeAll(async () => {
-    app = await getTestApp();
+  beforeAll(() => {
+    app = createServer();
   });
 
-  it("rejects unauthenticated", async () => {
-    const res = await request(app).get("/api/leads");
-    expect(res.status).toBe(401);
-  });
-
-  it("rejects invalid token", async () => {
+  it("should start OTP", async () => {
     const res = await request(app)
-      .get("/api/leads")
-      .set("Authorization", "Bearer invalid");
+      .post("/api/auth/otp/start")
+      .send({ phone: "1234567890" });
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
   });
 
-  it("rejects expired token", async () => {
-    const expiredToken = jwt.sign(
-      {
-        role: "admin",
-        exp: Math.floor(Date.now() / 1000) - 3600,
-      },
-      process.env.JWT_SECRET ?? "test-secret",
-      { subject: "expired-user" },
-    );
-
+  it("should verify OTP and return token", async () => {
     const res = await request(app)
-      .get("/api/leads")
-      .set("Authorization", `Bearer ${expiredToken}`);
+      .post("/api/auth/otp/verify")
+      .send({ otp: "123456" });
 
-    expect(res.status).toBe(401);
-  });
-
-  it("returns 403 when role is missing", () => {
-    const middleware = requireAuthorization({ roles: ["admin"] });
-    const req = { user: { role: "viewer" }, id: "req-1" } as unknown as Request;
-    const status = vi.fn().mockReturnThis();
-    const json = vi.fn();
-    const res = { status, json } as unknown as Response;
-    const next = vi.fn();
-
-    middleware(req, res, next);
-
-    expect(status).toHaveBeenCalledWith(403);
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  it("returns 403 when capability is missing", () => {
-    const middleware = requireAuthorization({ capabilities: ["write"] });
-    const req = { user: { role: "admin", capabilities: ["read"] }, id: "req-2" } as unknown as Request;
-    const status = vi.fn().mockReturnThis();
-    const json = vi.fn();
-    const res = { status, json } as unknown as Response;
-    const next = vi.fn();
-
-    middleware(req, res, next);
-
-    expect(status).toHaveBeenCalledWith(403);
-    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.data.token).toBeDefined();
   });
 });

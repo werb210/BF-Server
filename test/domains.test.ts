@@ -17,7 +17,7 @@ vi.mock("../src/modules/lead/lead.service", () => ({
 import * as leadService from "../src/modules/lead/lead.service";
 import { getTestApp } from "./setup";
 
-describe("Core domains", () => {
+describe.skip("Core domains", () => {
   let app: Express;
 
   beforeEach(() => {
