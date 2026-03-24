@@ -2,10 +2,10 @@ import { afterAll, beforeAll, beforeEach, vi } from "vitest";
 
 process.env.NODE_ENV = "test";
 process.env.SKIP_DB_CONNECTION = "true";
-process.env.TEST_DB_URL = process.env.TEST_DB_URL ?? "postgres://test_db";
-process.env.DATABASE_URL = process.env.DATABASE_URL ?? "postgres://test:test@localhost:5432/test";
+process.env.TEST_DB_URL = process.env.TEST_DB_URL ?? "postgres://postgres:postgres@localhost:5432/test";
+process.env.DATABASE_URL = process.env.TEST_DB_URL!;
 process.env.JWT_SECRET = process.env.JWT_SECRET ?? "test-secret";
-process.env.REDIS_URL = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
+process.env.REDIS_URL = "";
 process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? "test-key";
 process.env.TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? "ACtest";
 process.env.TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? "test-token";

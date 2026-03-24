@@ -12,9 +12,9 @@ type LenderPackageJobPayload = {
 
 let lenderQueue: Queue<LenderPackageJobPayload> | null = null;
 
-function getLenderQueue(): Queue<LenderPackageJobPayload> {
+export function getLenderQueue(): Queue<LenderPackageJobPayload> | null {
   if (!config.redis.url) {
-    throw new Error("redis_not_configured");
+    return null;
   }
 
   if (!lenderQueue) {
@@ -37,6 +37,9 @@ function getLenderQueue(): Queue<LenderPackageJobPayload> {
 
 export async function enqueueLenderPackage(payload: LenderPackageJobPayload): Promise<string> {
   const queue = getLenderQueue();
+  if (!queue) {
+    throw new Error("redis_not_configured");
+  }
   const job = await queue.add("send-lender-package", payload);
   return String(job.id);
 }

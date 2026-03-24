@@ -7,7 +7,7 @@ export const EnvSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]),
     DATABASE_URL: z.string().min(1),
-    REDIS_URL: z.string().min(1),
+    REDIS_URL: z.string().optional(),
     JWT_SECRET: z.string().min(10),
     OPENAI_API_KEY: z.string().min(1),
     TWILIO_ACCOUNT_SID: z.string().min(1),
