@@ -17,8 +17,10 @@ const EnvSchema = z.object({
   SLACK_ALERT_WEBHOOK_URL: z.string().optional(),
 });
 
+/* eslint-disable no-restricted-syntax */
 const env = EnvSchema.parse(process.env);
 const parsed = LegacyEnvSchema.parse(process.env as Record<string, string | undefined>);
+/* eslint-enable no-restricted-syntax */
 
 const toNumber = (value: string | undefined, fallback: number): number => {
   const candidate = value ?? "";
@@ -234,7 +236,9 @@ export const config = Object.freeze({
   }),
   isProduction: env.NODE_ENV === "production",
 });
+/* eslint-disable no-restricted-syntax */
 export const ENV = process.env as Record<string, string | undefined>;
+/* eslint-enable no-restricted-syntax */
 
 export const validateServerEnv = (): void => {
   if (!config.db.url) throw new Error("DATABASE_URL missing");

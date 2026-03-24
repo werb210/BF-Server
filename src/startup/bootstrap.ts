@@ -1,14 +1,12 @@
 import { config } from "../config";
-import { dbClient } from "../platform/dbClient";
-import { redisClient } from "../platform/redisClient";
-import { initializeAppInsights } from "../observability/appInsights";
-import { initializeSentry } from "../observability/sentry";
+import { prisma } from "../infra/db";
+import { redis } from "../infra/redis";
 
-export async function bootstrapStartup(): Promise<void> {
-  void config;
+export async function bootstrap(): Promise<void> {
+  await prisma.$connect();
 
-  await dbClient.query("select 1");
-  await redisClient.ping();
-  initializeAppInsights();
-  initializeSentry();
+  if (config.env !== "test" && config.redis.url && redis) {
+    await redis.connect();
+    await redis.ping();
+  }
 }

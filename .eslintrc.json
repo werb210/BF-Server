@@ -7,6 +7,19 @@
     "es2022": true
   },
   "rules": {
-    "@typescript-eslint/no-explicit-any": "off"
+    "@typescript-eslint/no-explicit-any": "off",
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "MemberExpression[object.name='process'][property.name='env']",
+        "message": "Use config"
+      }
+    ],
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": ["@/routes/*", "@/platform/*"]
+      }
+    ]
   }
 }

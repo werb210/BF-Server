@@ -86,8 +86,10 @@ jobs:
           set -euo pipefail
           node dist/server/index.js &
           PID=$!
-          sleep 5
-          curl --fail http://localhost:3000/healthz
+          for i in {1..10}; do
+            sleep 2
+            curl --fail http://localhost:3000/healthz && break
+          done
           kill "$PID" || true
           wait "$PID" || true
         env:

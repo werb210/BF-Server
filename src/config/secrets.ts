@@ -9,9 +9,11 @@ const RequiredSecretsSchema = z.object({
 
 export type RequiredSecrets = z.infer<typeof RequiredSecretsSchema>;
 
+/* eslint-disable no-restricted-syntax */
 export function loadRequiredSecrets(env: Record<string, string | undefined> = process.env): RequiredSecrets {
   return RequiredSecretsSchema.parse(env);
 }
+/* eslint-enable no-restricted-syntax */
 
 const requiredSecrets = loadRequiredSecrets();
 

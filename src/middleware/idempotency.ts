@@ -1,8 +1,6 @@
 import { type NextFunction, type Request, type Response } from "express";
-import { getIdempotent, setIdempotent } from "../platform/idempotencyRedis";
+import { fetchStoredResponse, storeResponse } from "../lib/idempotencyStore";
 import { hashRequest } from "../utils/hash";
-import { logInfo, logWarn } from "../observability/logger";
-import { config } from "../config";
 
 const IDEMPOTENCY_HEADER = "idempotency-key";
 const ENFORCED_METHODS = new Set(["POST", "PATCH", "DELETE"]);
@@ -19,21 +17,17 @@ function duplicateBody(body: unknown): unknown {
   return { data: body, status: "duplicate" };
 }
 
-function buildRedisKey(req: Request, key: string): string {
-  return `idemp:${req.path}:${key}`;
+function buildStorageKey(req: Request, key: string): string {
+  const userId = req.user?.id || "anon";
+  return `${userId}:${req.path}:${key}`;
 }
 
 export async function idempotencyMiddleware(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   if (!ENFORCED_METHODS.has(req.method.toUpperCase())) {
-    next();
-    return;
-  }
-
-  if (config.env === "test") {
     next();
     return;
   }
@@ -49,47 +43,32 @@ export async function idempotencyMiddleware(
     return;
   }
 
-  const redisKey = buildRedisKey(req, key);
+  const storageKey = buildStorageKey(req, key);
   const requestHash = hashRequest(req.body);
 
-  try {
-    const existing = await getIdempotent(redisKey);
-    if (existing) {
-      if (existing.requestHash !== requestHash) {
-        res.status(409).json({
-          code: "idempotency_conflict",
-          message: "Idempotency key reused with a different request payload.",
-        });
-        return;
-      }
-
-      logInfo("idempotent_request_replayed", { key, route: req.path });
-      res.status(200).json(duplicateBody(existing.response));
+  const existing = await fetchStoredResponse(storageKey);
+  if (existing) {
+    if (existing.requestHash !== requestHash) {
+      res.status(409).json({
+        code: "idempotency_conflict",
+        message: "Idempotency key reused with a different request payload.",
+      });
       return;
     }
-  } catch (error: unknown) {
-    logWarn("idempotency_redis_read_failed", {
-      key,
-      route: req.path,
-      error: error instanceof Error ? error.message : "redis_read_failed",
-    });
+
+    res.status(200).json(duplicateBody(existing.body));
+    return;
   }
 
   const originalJson = res.json.bind(res) as (body: unknown) => Response;
   res.json = ((body: unknown): Response => {
     if (res.statusCode < 500) {
-      void setIdempotent(redisKey, {
+      void storeResponse(storageKey, {
         requestHash,
-        response: body,
-      }).catch((error: unknown) => {
-        logWarn("idempotency_store_failed", {
-          key,
-          route: req.path,
-          error: error instanceof Error ? error.message : "store_failed",
-        });
+        body,
+        statusCode: res.statusCode,
+        storedAt: Date.now(),
       });
-
-      logInfo("idempotent_request_recorded", { key, route: req.path });
     }
 
     return originalJson(body);
