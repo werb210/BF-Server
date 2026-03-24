@@ -15,7 +15,6 @@ import { runMigrations } from "../db/migrationRunner";
 import { runMigrations as runStartupMigrations } from "../startup/runMigrations";
 import { pool } from "../db";
 import { assertDatabaseHealthy } from "../health/dbHealth";
-import { runSelfTest } from "../_internal/selfTest";
 import { config } from "../config";
 
 let processHandlersInstalled = false;
@@ -126,7 +125,6 @@ export async function startServer() {
       }
       logger.info("server_listening", { port });
       logger.info(`Server running on port ${port}`);
-      void runSelfTest(port);
       resolve(listener);
     });
   });
