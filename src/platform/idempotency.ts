@@ -32,7 +32,8 @@ function normalizePath(req: Request): string {
 }
 
 function buildStoreKey(req: Request, key: string): string {
-  return `${req.method}:${normalizePath(req)}:${key}`;
+  const userId = req.user?.id || "anon";
+  return `idemp:${userId}:${normalizePath(req)}:${key}`;
 }
 
 function allowReplayOnHashMismatch(req: Request): boolean {

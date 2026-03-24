@@ -19,7 +19,7 @@ function duplicateBody(body: unknown): unknown {
 
 function buildStorageKey(req: Request, key: string): string {
   const userId = req.user?.id || "anon";
-  return `${userId}:${req.path}:${key}`;
+  return `idemp:${userId}:${req.path}:${key}`;
 }
 
 export async function idempotencyMiddleware(

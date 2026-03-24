@@ -88,7 +88,7 @@ jobs:
           PID=$!
           for i in {1..10}; do
             sleep 2
-            curl --fail http://localhost:3000/healthz && break
+            curl -f http://localhost:3000/healthz && break
           done
           kill "$PID" || true
           wait "$PID" || true

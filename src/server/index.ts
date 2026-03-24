@@ -12,9 +12,13 @@ export async function startServer() {
   });
 }
 
+async function start() {
+  await startServer();
+}
+
 if (require.main === module) {
-  void startServer().catch((err: unknown) => {
-    console.error("Startup failed", err);
+  start().catch((err) => {
+    console.error(err);
     process.exit(1);
   });
 }

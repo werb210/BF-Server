@@ -4,8 +4,8 @@ import { EnvSchema as LegacyEnvSchema } from "./schema";
 const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.string().default("3000"),
-  DATABASE_URL: z.string(),
-  JWT_SECRET: z.string(),
+  DATABASE_URL: z.string().min(1),
+  JWT_SECRET: z.string().min(1),
   REDIS_URL: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-4o-mini"),
@@ -97,6 +97,9 @@ export const config = Object.freeze({
     skip: env.SKIP_DB_CONNECTION === "true",
     host: parsed.DB_HOST,
     ssl: parsed.DB_SSL,
+  }),
+  database: Object.freeze({
+    url: env.DATABASE_URL,
   }),
   documents: Object.freeze({
     maxSizeBytes: toNumber(parsed.DOCUMENT_MAX_SIZE_BYTES, 10 * 1024 * 1024),
