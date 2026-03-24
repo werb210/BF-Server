@@ -2,13 +2,13 @@ import request from "supertest";
 import type { Express } from "express";
 import jwt from "jsonwebtoken";
 import { beforeAll, describe, expect, it } from "vitest";
-import { createServer } from "../src/server/createServer";
+import { getTestApp } from "./setup";
 
 describe("Auth", () => {
   let app: Express;
 
   beforeAll(async () => {
-    app = await createServer();
+    app = await getTestApp();
   });
 
   it("rejects unauthenticated", async () => {
