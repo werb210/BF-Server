@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAuth } from "../../middleware/auth";
 import { buildLenderPackage } from "../../services/lenders/packageBuilder";
 import { lenderProductsService } from "../../services/lenderProducts/lenderProducts.service";
-import { enqueueLenderPackage } from "../../queue/lenderQueue";
+import { enqueueLenderPackage, getLenderQueue } from "../../queue/lenderQueue";
 import { logger } from "../../server/utils/logger";
 
 const sendLenderPackageSchema = z.object({
@@ -21,16 +21,20 @@ router.post("/send", requireAuth, async (req: Request<{}, {}, SendLenderPackageB
     const body = sendLenderPackageSchema.parse(req.body);
     const packageData = buildLenderPackage(body);
 
-    try {
-      const jobId = await enqueueLenderPackage(body);
-      res.status(202).json({ status: "queued", jobId, packagePreview: packageData });
-      return;
-    } catch (queueErr) {
-      logger.warn("lender_package_queue_unavailable", {
-        err: queueErr instanceof Error ? queueErr.message : String(queueErr),
-      });
-      res.json({ status: "sent", package: packageData, mode: "sync_fallback" });
+    const queue = getLenderQueue();
+    if (queue) {
+      try {
+        const jobId = await enqueueLenderPackage(body);
+        res.status(202).json({ status: "queued", jobId, packagePreview: packageData });
+        return;
+      } catch (queueErr) {
+        logger.warn("lender_package_queue_unavailable", {
+          err: queueErr instanceof Error ? queueErr.message : String(queueErr),
+        });
+      }
     }
+
+    res.json({ status: "sent", package: packageData, mode: "sync_fallback" });
   } catch (err) {
     next(err);
   }
