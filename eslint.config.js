@@ -22,10 +22,16 @@ module.exports = [
       "no-restricted-syntax": [
         "error",
         {
-          selector: "MemberExpression[object.name=\'process\'][property.name=\'env\']",
+          selector: "MemberExpression[object.name='process'][property.name='env']",
           message: "Use config instead of process.env",
         },
       ],
+    },
+  },
+  {
+    files: ["src/config/**"],
+    rules: {
+      "no-restricted-syntax": "off",
     },
   },
 ];
