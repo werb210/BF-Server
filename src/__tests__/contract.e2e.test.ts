@@ -3,22 +3,52 @@ import request from "supertest";
 import { app } from "../app";
 
 describe("server:contract:e2e", () => {
-  it("rejects invalid otp verify payload", async () => {
+  it("accepts canonical OTP start payload", async () => {
     const res = await request(app)
-      .post("/auth/otp/verify")
-      .send({}); // invalid
+      .post("/auth/otp/start")
+      .send({ phone: "+61400000000" });
 
-    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
   });
 
-  it("rejects missing auth on telephony", async () => {
+  it("rejects legacy otp-only verify payload", async () => {
+    const res = await request(app)
+      .post("/auth/otp/verify")
+      .send({ phone: "+61400000000", otp: "000000" });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("does not expose /api auth aliases", async () => {
+    const start = await request(app)
+      .post("/api/auth/otp/start")
+      .send({ phone: "+61400000000" });
+
+    const verify = await request(app)
+      .post("/api/auth/otp/verify")
+      .send({ phone: "+61400000000", code: "000000" });
+
+    expect(start.status).toBe(404);
+    expect(verify.status).toBe(404);
+  });
+
+  it("rejects missing bearer auth on telephony token", async () => {
     const res = await request(app)
       .get("/telephony/token");
 
     expect(res.status).toBe(401);
   });
 
-  it("full flow works", async () => {
+  it("rejects cookie-only auth on telephony token", async () => {
+    const res = await request(app)
+      .get("/telephony/token")
+      .set("Cookie", "token=not-a-bearer-token");
+
+    expect(res.status).toBe(401);
+  });
+
+  it("full flow works with top-level tokens", async () => {
     const start = await request(app)
       .post("/auth/otp/start")
       .send({ phone: "+61400000000" });
@@ -29,15 +59,25 @@ describe("server:contract:e2e", () => {
       .post("/auth/otp/verify")
       .send({ phone: "+61400000000", code: "000000" });
 
+    expect(verify.status).toBe(200);
     expect(verify.body.ok).toBe(true);
-    expect(verify.body.token).toBeTruthy();
+    expect(typeof verify.body.token).toBe("string");
+    expect(verify.body.data).toBeUndefined();
 
-    const tel = await request(app)
+    const telephony = await request(app)
       .get("/telephony/token")
       .set("Authorization", `Bearer ${verify.body.token}`);
 
-    expect(tel.status).toBe(200);
-    expect(tel.body.ok).toBe(true);
-    expect(tel.body.token).toBeTruthy();
+    expect(telephony.status).toBe(200);
+    expect(telephony.body.ok).toBe(true);
+    expect(typeof telephony.body.token).toBe("string");
+    expect(telephony.body.data).toBeUndefined();
+  });
+
+  it("does not expose /api telephony token alias", async () => {
+    const res = await request(app)
+      .get("/api/telephony/token");
+
+    expect(res.status).toBe(404);
   });
 });
