@@ -1,3 +1,4 @@
+import cors from "cors";
 import express, { type Request, type Response } from "express";
 
 import { requireAuth } from "../middleware/requireAuth";
@@ -23,24 +24,17 @@ offersRoutes.get("/", (_req, res) => {
 
 export function createServer() {
   const app = express();
-  const allowedOrigins = new Set([
-    "https://staff.boreal.financial",
-    "https://client.boreal.financial",
-  ]);
-
-  app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    if (typeof origin === "string" && allowedOrigins.has(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-    }
-    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-    if (req.method === "OPTIONS") {
-      res.status(204).end();
-      return;
-    }
-    next();
-  });
+  app.use(
+    cors({
+      origin: [
+        "https://staff.boreal.financial",
+        "https://client.boreal.financial",
+      ],
+      methods: ["GET", "POST", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+      credentials: false,
+    }),
+  );
   app.use(express.json());
 
   // PUBLIC ROUTES (NO AUTH)
