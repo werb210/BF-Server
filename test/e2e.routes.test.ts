@@ -1,5 +1,6 @@
 import request from "supertest"
 import { createServer } from "../src/server/createServer"
+import { getTestToken } from "./setup"
 
 describe("E2E SERVER AUDIT", () => {
   let app: any
@@ -44,6 +45,14 @@ describe("E2E SERVER AUDIT", () => {
   it("protected route requires auth", async () => {
     const res = await request(app).get("/telephony/token")
     expect(res.status).toBe(401)
+  })
+
+  it("protected route accepts valid auth", async () => {
+    const res = await request(app)
+      .get("/telephony/token")
+      .set("Authorization", `Bearer ${getTestToken()}`)
+
+    expect(res.status).toBe(200)
   })
 
   it("invalid input rejected", async () => {

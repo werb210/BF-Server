@@ -1,3 +1,4 @@
+import jwt from "jsonwebtoken";
 import type { Express } from "express";
 
 process.env.NODE_ENV = "test";
@@ -44,4 +45,9 @@ export async function getTestApp(): Promise<Express> {
     testApp = createServer();
   }
   return testApp;
+}
+
+
+export function getTestToken() {
+  return jwt.sign({ userId: "test-user" }, process.env.JWT_SECRET!);
 }
