@@ -1,4 +1,23 @@
-export const AUTH_CONTRACT = {
-  OTP_START: "/api/auth/otp/start",
-  OTP_VERIFY: "/api/auth/otp/verify",
-} as const;
+import { z } from "zod";
+
+export const OtpStart = {
+  request: z.object({
+    phone: z.string(),
+  }),
+  response: z.object({
+    ok: z.literal(true),
+  }),
+};
+
+export const OtpVerify = {
+  request: z.object({
+    phone: z.string(),
+    otp: z.string(),
+  }),
+  response: z.object({
+    ok: z.literal(true),
+    data: z.object({
+      token: z.string(),
+    }),
+  }),
+};
