@@ -52,12 +52,14 @@ export function createServer() {
 
   // PUBLIC ROUTES (NO AUTH)
   app.use("/api/auth", authRoutes);
+  app.use("/auth", authRoutes);
 
   // PROTECTED ROUTES
   app.use("/api/applications", requireAuth, applicationsRoutes);
   app.use("/api/leads", requireAuth, leadsRoutes);
   app.use("/api/lenders", requireAuth, lendersRoutes);
   app.use("/api/telephony", requireAuth, telephonyRoutes);
+  app.use("/telephony", requireAuth, telephonyRoutes);
   app.use("/api/documents", requireAuth, documentsRoutes);
   app.use("/api/offers", requireAuth, offersRoutes);
 

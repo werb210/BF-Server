@@ -1,3 +1,4 @@
+import { createServer } from "./server/createServer";
 import express from "express";
 import { registerApiRouteMounts } from "./routes/routeRegistry";
 import healthRoutes from "./routes/health";
@@ -19,3 +20,5 @@ export function buildAppWithApiRoutes() {
   app.use(errorHandler);
   return app;
 }
+
+export const app = createServer();

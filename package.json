@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "npm run test:e2e && tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate",
@@ -18,7 +18,8 @@
     "lint:architecture": "node scripts/enforce-architecture-guardrails.mjs",
     "db:backup": "bash scripts/backup-db.sh",
     "db:verify-restore": "bash scripts/verify-backup-restore.sh",
-    "guard:db-in-routes": "grep -r \"prisma\\.\" src/routes && echo \"WARNING: DB in routes\" || true"
+    "guard:db-in-routes": "grep -r \"prisma\\.\" src/routes && echo \"WARNING: DB in routes\" || true",
+    "test:e2e": "vitest run"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
