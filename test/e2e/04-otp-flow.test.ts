@@ -2,6 +2,7 @@ import request from "supertest";
 import type { Express } from "express";
 
 import { createServer } from "../../src/server/createServer";
+import { resetOtpStateForTests } from "../../src/routes/auth.routes";
 import { clearJwtSecretForAuthFailure } from "../utils/testEnv";
 
 describe("OTP flows", () => {
@@ -9,6 +10,7 @@ describe("OTP flows", () => {
 
   beforeEach(() => {
     process.env.JWT_SECRET = "test-secret";
+    resetOtpStateForTests();
     app = createServer();
   });
 
@@ -77,5 +79,68 @@ describe("OTP flows", () => {
     expect(res.body.error).toBe("OTP expired");
 
     nowSpy.mockRestore();
+  });
+
+  it("rate limits OTP start within 60 seconds", async () => {
+    const startTime = 1_700_000_000_000;
+    const nowSpy = jest.spyOn(Date, "now");
+    nowSpy.mockReturnValue(startTime);
+
+    const first = await request(app)
+      .post("/auth/otp/start")
+      .send({ phone: "+15555550100" });
+
+    const second = await request(app)
+      .post("/auth/otp/start")
+      .send({ phone: "+15555550100" });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(429);
+    expect(second.body.error).toBe("Too many requests");
+
+    nowSpy.mockRestore();
+  });
+
+  it("deletes OTP after too many invalid verify attempts", async () => {
+    await request(app)
+      .post("/auth/otp/start")
+      .send({ phone: "+15555550100" });
+
+    for (let i = 0; i < 5; i += 1) {
+      const res = await request(app)
+        .post("/auth/otp/verify")
+        .send({ phone: "+15555550100", code: "000000" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("Invalid code");
+    }
+
+    const locked = await request(app)
+      .post("/auth/otp/verify")
+      .send({ phone: "+15555550100", code: "000000" });
+    expect(locked.status).toBe(429);
+    expect(locked.body.error).toBe("Too many attempts");
+
+    const afterDelete = await request(app)
+      .post("/auth/otp/verify")
+      .send({ phone: "+15555550100", code: "123456" });
+    expect(afterDelete.status).toBe(400);
+    expect(afterDelete.body.error).toBe("Invalid code");
+  });
+
+  it("prevents OTP replay after successful verification", async () => {
+    await request(app)
+      .post("/auth/otp/start")
+      .send({ phone: "+15555550100" });
+
+    const first = await request(app)
+      .post("/auth/otp/verify")
+      .send({ phone: "+15555550100", code: "123456" });
+    expect(first.status).toBe(200);
+
+    const replay = await request(app)
+      .post("/auth/otp/verify")
+      .send({ phone: "+15555550100", code: "123456" });
+    expect(replay.status).toBe(400);
+    expect(replay.body.error).toBe("Invalid code");
   });
 });
