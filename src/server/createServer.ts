@@ -52,6 +52,30 @@ export function createServer() {
     res.send("ok");
   });
 
+
+  app.get("/debug/routes", (req, res) => {
+    const routes: any[] = [];
+
+    app._router.stack.forEach((layer: any) => {
+      if (layer.route) {
+        routes.push({
+          path: layer.route.path,
+          methods: Object.keys(layer.route.methods),
+        });
+      } else if (layer.name === "router") {
+        layer.handle.stack.forEach((handler: any) => {
+          if (handler.route) {
+            routes.push({
+              path: handler.route.path,
+              methods: Object.keys(handler.route.methods),
+            });
+          }
+        });
+      }
+    });
+
+    res.json(routes);
+  });
   app.use((_req: Request, res: Response) => {
     res.status(404).json({
       ok: false,
