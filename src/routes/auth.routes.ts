@@ -19,13 +19,13 @@ router.post("/otp/start", (req, res) => {
     return;
   }
 
-  res.status(200).json({ token: "" });
+  res.status(200).json({ ok: true });
 });
 
 router.post("/otp/verify", (req, res) => {
-  const { phone, otp } = req.body as { phone?: unknown; otp?: unknown };
+  const { phone, code } = req.body as { phone?: unknown; code?: unknown };
 
-  if (!isPhone(phone) || !isCode(otp)) {
+  if (!isPhone(phone) || !isCode(code)) {
     res.status(400).json({ error: "invalid_payload" });
     return;
   }
@@ -37,9 +37,7 @@ router.post("/otp/verify", (req, res) => {
   }
 
   const token = jwt.sign({ phone }, jwtSecret, { expiresIn: "7d" });
-
-  res.setHeader("Set-Cookie", `token=${token}; Path=/; HttpOnly`);
-  res.status(200).json({ token });
+  res.status(200).json({ ok: true, token });
 });
 
 export default router;

@@ -8,8 +8,8 @@ function ok(res: any, data: any = {}) {
 
 /* AUTH */
 
-router.post("/api/auth/otp/start", (_req: any, res: any) => ok(res));
-router.post("/api/auth/otp/verify", (_req: any, res: any) => ok(res, { token: "dev" }));
+router.post("/auth/otp/start", (_req: any, res: any) => ok(res));
+router.post("/auth/otp/verify", (_req: any, res: any) => res.json({ ok: true, token: "dev" }));
 router.get("/api/auth/me", (_req: any, res: any) => ok(res, { user: null }));
 router.post("/api/auth/logout", (_req: any, res: any) => ok(res));
 
@@ -37,7 +37,7 @@ router.get("/api/support/queue", (_req: any, res: any) => ok(res, { queue: [] })
 
 /* TELEPHONY */
 
-router.get("/api/telephony/token", (_req: any, res: any) => ok(res, { token: "dev" }));
+router.get("/telephony/token", (_req: any, res: any) => res.json({ ok: true, token: "dev" }));
 router.get("/api/telephony/presence", (_req: any, res: any) => ok(res, { online: [] }));
 
 /* LENDERS */

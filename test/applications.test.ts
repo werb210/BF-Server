@@ -13,7 +13,7 @@ describe("Applications", () => {
 
     const res = await request(app)
       .post("/auth/otp/verify")
-      .send({ phone: "+12345678901", otp: "123456" });
+      .send({ phone: "+12345678901", code: "123456" });
 
     token = res.body.token as string;
   });

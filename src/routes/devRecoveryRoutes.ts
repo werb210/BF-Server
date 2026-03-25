@@ -10,8 +10,9 @@ router.get("/api/dev/ready", async (_req: any, res: any) => {
   });
 });
 
-router.get("/api/telephony/token", async (_req: any, res: any) => {
+router.get("/telephony/token", async (_req: any, res: any) => {
   res.json({
+    ok: true,
     token: "dev-token",
     identity: "dev-user",
   });

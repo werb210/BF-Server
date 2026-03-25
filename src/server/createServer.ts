@@ -23,12 +23,25 @@ offersRoutes.get("/", (_req, res) => {
 
 export function createServer() {
   const app = express();
+  const allowedOrigins = new Set([
+    "https://staff.boreal.financial",
+    "https://client.boreal.financial",
+  ]);
 
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    req.headers.cookie = req.headers.cookie || "";
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (typeof origin === "string" && allowedOrigins.has(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+    }
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+    if (req.method === "OPTIONS") {
+      res.status(204).end();
+      return;
+    }
     next();
   });
+  app.use(express.json());
 
   // PUBLIC ROUTES (NO AUTH)
   app.use("/auth", authRoutes);

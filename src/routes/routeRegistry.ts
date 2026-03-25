@@ -113,11 +113,11 @@ export const V1_REQUIRED_ROUTE_SURFACE = [
 ] as const;
 
 export const ROUTES: ApiRoute[] = [
-  { method: "POST", path: "/api/auth/otp/start", roles: ALL_ROLES },
-  { method: "POST", path: "/api/auth/otp/verify", roles: ALL_ROLES },
+  { method: "POST", path: "/auth/otp/start", roles: ALL_ROLES },
+  { method: "POST", path: "/auth/otp/verify", roles: ALL_ROLES },
   { method: "GET", path: "/api/auth/me", roles: ALL_ROLES },
   { method: "POST", path: "/api/auth/logout", roles: ALL_ROLES },
-  { method: "POST", path: "/api/telephony/token", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { method: "GET", path: "/telephony/token", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "POST", path: "/api/telephony/outbound-call", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "POST", path: "/api/telephony/presence", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "POST", path: "/api/telephony/call-status", roles: [ROLES.ADMIN, ROLES.STAFF] },

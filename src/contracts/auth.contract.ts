@@ -12,12 +12,10 @@ export const OtpStart = {
 export const OtpVerify = {
   request: z.object({
     phone: z.string(),
-    otp: z.string(),
+    code: z.string(),
   }),
   response: z.object({
     ok: z.literal(true),
-    data: z.object({
-      token: z.string(),
-    }),
+    token: z.string(),
   }),
 };

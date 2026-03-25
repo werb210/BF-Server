@@ -27,8 +27,9 @@ describe("server:contract:e2e", () => {
 
     const verify = await request(app)
       .post("/auth/otp/verify")
-      .send({ phone: "+61400000000", otp: "000000" });
+      .send({ phone: "+61400000000", code: "000000" });
 
+    expect(verify.body.ok).toBe(true);
     expect(verify.body.token).toBeTruthy();
 
     const tel = await request(app)
@@ -36,6 +37,7 @@ describe("server:contract:e2e", () => {
       .set("Authorization", `Bearer ${verify.body.token}`);
 
     expect(tel.status).toBe(200);
+    expect(tel.body.ok).toBe(true);
     expect(tel.body.token).toBeTruthy();
   });
 });
