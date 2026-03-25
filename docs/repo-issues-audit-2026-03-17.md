@@ -5,7 +5,7 @@
 - `npm run typecheck`
 - `npm run lint`
 - `npm test`
-- `npx vitest run tests/submissionRetrySafety.test.ts src/modules/applications/__tests__/processingStage.service.test.ts src/modules/applications/__tests__/processingStatus.service.test.ts src/test/ai.backend.test.ts`
+- `npx jest run tests/submissionRetrySafety.test.ts src/modules/applications/__tests__/processingStage.service.test.ts src/modules/applications/__tests__/processingStatus.service.test.ts src/test/ai.backend.test.ts`
 
 ## Additional issues identified
 

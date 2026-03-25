@@ -1,17 +1,16 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
 
-const connectMock = vi.fn(async () => undefined);
-const pingMock = vi.fn(async () => "PONG");
+const connectMock = jest.fn(async () => undefined);
+const pingMock = jest.fn(async () => "PONG");
 
-vi.mock("../src/infra/db", () => ({
+jest.mock("../src/infra/db", () => ({
   prisma: {
     $connect: connectMock,
   },
 }));
 
-vi.mock("../src/infra/redis", () => ({
+jest.mock("../src/infra/redis", () => ({
   redis: {
-    connect: vi.fn(async () => undefined),
+    connect: jest.fn(async () => undefined),
     ping: pingMock,
   },
 }));

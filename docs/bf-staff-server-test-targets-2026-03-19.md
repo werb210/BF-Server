@@ -11,7 +11,7 @@ Date: 2026-03-19 (UTC)
 6. Critical integrations (Twilio mock, DB writes, unhandled rejections)
 
 ## Commands run
-- `npx vitest --hookTimeout 120000 --testTimeout 120000 tests/auth.otp.test.ts src/__tests__/authMe.contract.test.ts src/__tests__/intakePortal.contract.test.ts src/__tests__/routeIntegrity.test.ts src/__tests__/runtime.codespaces.health.test.ts src/__tests__/auth.no500.test.ts src/__tests__/twilio.startup.test.ts`
+- `npx jest --hookTimeout 120000 --testTimeout 120000 tests/auth.otp.test.ts src/__tests__/authMe.contract.test.ts src/__tests__/intakePortal.contract.test.ts src/__tests__/routeIntegrity.test.ts src/__tests__/runtime.codespaces.health.test.ts src/__tests__/auth.no500.test.ts src/__tests__/twilio.startup.test.ts`
 - `node --import tsx scripts/tmp_probe.ts` (temporary probe script used during run; removed after execution)
 
 ## Findings by target
