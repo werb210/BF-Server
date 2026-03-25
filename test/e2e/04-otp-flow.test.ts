@@ -22,6 +22,10 @@ describe("OTP flows", () => {
   });
 
   it("verifies OTP and returns a token", async () => {
+    await request(app)
+      .post("/auth/otp/start")
+      .send({ phone: "+15555550100" });
+
     const res = await request(app)
       .post("/auth/otp/verify")
       .send({ phone: "+15555550100", code: "123456" });
@@ -42,6 +46,10 @@ describe("OTP flows", () => {
   it("returns unauthorized when JWT secret is unavailable", async () => {
     clearJwtSecretForAuthFailure();
 
+    await request(app)
+      .post("/auth/otp/start")
+      .send({ phone: "+15555550100" });
+
     const res = await request(app)
       .post("/auth/otp/verify")
       .send({ phone: "+15555550100", code: "123456" });
@@ -50,13 +58,24 @@ describe("OTP flows", () => {
     expect(res.body.error).toBe("unauthorized");
   });
 
-  it("tracks missing OTP expiry protection (expected failure to expose gap)", async () => {
-    // Current implementation does not persist OTP state or enforce expiry windows.
-    // This test intentionally fails to expose that missing behavior.
+  it("returns 410 when OTP is expired", async () => {
+    const startTime = 1_700_000_000_000;
+    const nowSpy = jest.spyOn(Date, "now");
+    nowSpy.mockReturnValue(startTime);
+
+    await request(app)
+      .post("/auth/otp/start")
+      .send({ phone: "+15555550100" });
+
+    nowSpy.mockReturnValue(startTime + (5 * 60 * 1000) + 1);
+
     const res = await request(app)
       .post("/auth/otp/verify")
       .send({ phone: "+15555550100", code: "123456" });
 
     expect(res.status).toBe(410);
+    expect(res.body.error).toBe("OTP expired");
+
+    nowSpy.mockRestore();
   });
 });
