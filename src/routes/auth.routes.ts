@@ -1,3 +1,4 @@
+import jwt from "jsonwebtoken";
 import { Router } from "express";
 
 const router = Router();
@@ -14,32 +15,31 @@ router.post("/otp/start", (req, res) => {
   const { phone } = req.body as { phone?: unknown };
 
   if (!isPhone(phone)) {
-    res.status(400).json({ ok: false, error: "invalid_payload" });
+    res.status(400).json({ error: "invalid_payload" });
     return;
   }
 
-  res.json({ ok: true, data: { sent: true } });
+  res.status(200).json({ token: "" });
 });
 
 router.post("/otp/verify", (req, res) => {
-  const { phone, code, otp } = req.body as { phone?: unknown; code?: unknown; otp?: unknown };
+  const { phone, otp } = req.body as { phone?: unknown; otp?: unknown };
 
-  const validLegacyOtp = otp === undefined || isCode(otp);
-  const validContractPayload = isPhone(phone) && isCode(code);
-
-  if (!validLegacyOtp || (!validContractPayload && otp === undefined)) {
-    res.status(400).json({ ok: false, error: "invalid_payload" });
+  if (!isPhone(phone) || !isCode(otp)) {
+    res.status(400).json({ error: "invalid_payload" });
     return;
   }
 
-  const token = "dev-token";
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+
+  const token = jwt.sign({ phone }, jwtSecret, { expiresIn: "7d" });
 
   res.setHeader("Set-Cookie", `token=${token}; Path=/; HttpOnly`);
-  res.json({
-    ok: true,
-    token,
-    data: { token },
-  });
+  res.status(200).json({ token });
 });
 
 export default router;

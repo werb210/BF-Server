@@ -2,13 +2,9 @@ import { Router } from "express";
 
 const router = Router();
 
-router.get("/token", (req, res) => {
+router.get("/token", (_req, res) => {
   const token = "fake-telephony-token";
-  res.json({
-    ok: true,
-    token,
-    data: { token },
-  });
+  res.status(200).json({ token });
 });
 
 export default router;
