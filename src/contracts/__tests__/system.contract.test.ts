@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { APPLICATION_TABS, MATCHING_RULES, DOCUMENT_RULES } from '../system.contract';
 
 describe('SYSTEM CONTRACT ENFORCEMENT', () => {

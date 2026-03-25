@@ -22,7 +22,7 @@ Because the client/portal repos are unavailable in this environment, I ran serve
 
 Command:
 ```bash
-npx vitest run src/test/e2e/client-to-portal.e2e.test.ts src/test/api/voice.routes.security.integration.test.ts src/test/api/pipelineAutomation.integration.test.ts
+npx jest run src/test/e2e/client-to-portal.e2e.test.ts src/test/api/voice.routes.security.integration.test.ts src/test/api/pipelineAutomation.integration.test.ts
 ```
 Result:
 - `voice.routes.security.integration.test.ts` passed.

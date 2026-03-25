@@ -1,5 +1,4 @@
 import type { Express } from "express";
-import { afterAll, beforeAll, beforeEach, vi } from "vitest";
 
 process.env.NODE_ENV = "test";
 process.env.SKIP_DB_CONNECTION = "true";
@@ -12,9 +11,9 @@ process.env.TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID ?? "ACtest";
 process.env.TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? "test-token";
 process.env.TWILIO_PHONE = process.env.TWILIO_PHONE ?? "+10000000000";
 
-vi.mock("../src/services/lenderProducts/lenderProducts.service", () => ({
+jest.mock("../src/services/lenderProducts/lenderProducts.service", () => ({
   lenderProductsService: {
-    list: vi.fn(async () => []),
+    list: jest.fn(async () => []),
   },
 }));
 

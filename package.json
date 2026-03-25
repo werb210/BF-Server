@@ -14,7 +14,7 @@
     "prebuild": "prisma generate || true",
     "lint": "eslint src --ext .ts",
     "ci:check": "npm run lint && npm run lint:architecture && npm run typecheck && npm run build",
-    "test:watch": "vitest",
+    "test:watch": "jest --watch",
     "lint:architecture": "node scripts/enforce-architecture-guardrails.mjs",
     "db:backup": "bash scripts/backup-db.sh",
     "db:verify-restore": "bash scripts/verify-backup-restore.sh",
@@ -71,8 +71,7 @@
     "ts-jest": "^29.0.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
-    "typescript": "^5.0.0",
-    "vitest": "^4.1.0"
+    "typescript": "^5.0.0"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

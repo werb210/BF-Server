@@ -4,13 +4,13 @@
 
 - Full test run via `npm test` (Vitest across repository).
 - OTP-focused run via:
-  - `npx vitest run src/__tests__/auth.otp.verify.test.ts src/__tests__/auth/otp.start.test.ts src/__tests__/auth.otp.guard.test.ts tests/auth.verify-otp.route.test.ts tests/auth/otp.verify.contract.spec.ts tests/otpNormalization.test.ts`
-  - `npx vitest run src/tests/auth.otp.start.test.ts src/tests/auth.otp.flow.test.ts`
+  - `npx jest run src/__tests__/auth.otp.verify.test.ts src/__tests__/auth/otp.start.test.ts src/__tests__/auth.otp.guard.test.ts tests/auth.verify-otp.route.test.ts tests/auth/otp.verify.contract.spec.ts tests/otpNormalization.test.ts`
+  - `npx jest run src/tests/auth.otp.start.test.ts src/tests/auth.otp.flow.test.ts`
 
 ## Real OTP issues identified
 
 1. **Test bootstrap is not loading the intended OTP/Twilio setup.**
-   - `vitest.config.ts` loads only `src/test/setup.ts` and `src/tests/setup.ts`.
+   - `jest.config.ts` loads only `src/test/setup.ts` and `src/tests/setup.ts`.
    - The richer OTP/Twilio bootstrap (env defaults, schema bootstrap, `__twilioMocks`) is in `src/__tests__/setup.ts` and is currently not loaded by Vitest.
    - Impact: OTP tests fail with `Twilio mocks not initialized` and broader schema/env drift.
 
@@ -46,7 +46,7 @@
      - creates OTP-required schema with all constraints used by tests.
 
 2. **Standardize on Vitest APIs (P0).**
-   - Replace all `jest.*` usages in OTP tests with `vi.*` equivalents.
+   - Replace all `jest.*` usages in OTP tests with `jest.*` equivalents.
    - Replace `require(...)` + isolate modules patterns with `await import(...)` or Vitest module mocking patterns.
 
 3. **Pick one OTP API contract and align tests/routes (P0/P1).**

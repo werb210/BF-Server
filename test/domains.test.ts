@@ -1,17 +1,16 @@
 import request from "supertest";
 import type { Express } from "express";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/middleware/auth", () => ({
+jest.mock("../src/middleware/auth", () => ({
   requireAuth: (req: { user?: { id: string; role: string } }, _res: unknown, next: () => void) => {
     req.user = { id: "test", role: "admin" };
     next();
   },
 }));
 
-vi.mock("../src/modules/lead/lead.service", () => ({
-  createLead: vi.fn(async () => ({ id: "lead_test_1" })),
-  getLeads: vi.fn(async () => []),
+jest.mock("../src/modules/lead/lead.service", () => ({
+  createLead: jest.fn(async () => ({ id: "lead_test_1" })),
+  getLeads: jest.fn(async () => []),
 }));
 
 import * as leadService from "../src/modules/lead/lead.service";
@@ -21,7 +20,7 @@ describe.skip("Core domains", () => {
   let app: Express;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
   });
 
   beforeAll(async () => {
@@ -47,7 +46,7 @@ describe.skip("Core domains", () => {
   });
 
   it("handles lead service failure", async () => {
-    vi.spyOn(leadService, "createLead").mockRejectedValueOnce(new Error("fail"));
+    jest.spyOn(leadService, "createLead").mockRejectedValueOnce(new Error("fail"));
 
     const res = await request(app)
       .post("/api/leads")

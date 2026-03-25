@@ -1,18 +1,17 @@
 import request from "supertest";
 import type { Express } from "express";
-import { beforeAll, describe, expect, it, vi } from "vitest";
 import { getTestApp } from "./setup";
 
-vi.mock("../src/middleware/auth", () => ({
+jest.mock("../src/middleware/auth", () => ({
   requireAuth: (req: { user?: { id: string; role: string } }, _res: unknown, next: () => void) => {
     req.user = { id: "idempotency-user", role: "admin" };
     next();
   },
 }));
 
-vi.mock("../src/modules/lead/lead.service", () => ({
-  createLead: vi.fn(async () => ({ id: "lead_test_1" })),
-  getLeads: vi.fn(async () => []),
+jest.mock("../src/modules/lead/lead.service", () => ({
+  createLead: jest.fn(async () => ({ id: "lead_test_1" })),
+  getLeads: jest.fn(async () => []),
 }));
 
 describe.skip("Idempotency", () => {
