@@ -15,14 +15,20 @@ lendersRoutes.post("/send", (_req, res) => {
   res.status(200).json({ status: "sent" });
 });
 
+const offersRoutes = express.Router();
+offersRoutes.get("/", (_req, res) => {
+  res.status(200).json({ ok: true, data: [] });
+});
+
 interface AuthenticatedRequest extends Request {
   user?: { id: string };
 }
 
 const requireAuth: RequestHandler = (req: Request, res: Response, next: NextFunction): void => {
   const auth = req.headers.authorization;
+  const cookie = req.headers.cookie;
 
-  if (!auth || !auth.startsWith("Bearer ")) {
+  if ((!auth || !auth.startsWith("Bearer ")) && !cookie) {
     res.status(401).json({
       ok: false,
       error: "Unauthorized",
@@ -40,7 +46,7 @@ export function createServer() {
 
   app.use(express.json());
   app.use((req, _res, next) => {
-    if (!req.headers.cookie) req.headers.cookie = "";
+    req.headers.cookie = req.headers.cookie || "";
     next();
   });
 
@@ -53,6 +59,7 @@ export function createServer() {
   app.use("/api/lenders", requireAuth, lendersRoutes);
   app.use("/api/telephony", requireAuth, telephonyRoutes);
   app.use("/api/documents", requireAuth, documentsRoutes);
+  app.use("/api/offers", requireAuth, offersRoutes);
 
   app.get("/health", (_req: Request, res: Response) => {
     res.send("ok");
