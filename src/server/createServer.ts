@@ -32,17 +32,25 @@ export function createServer() {
 
   app.use(
     cors({
-      origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+      origin: (origin, callback) => {
+        // allow non-browser clients (tests, curl, server-to-server)
+        if (!origin) {
+          return callback(null, true);
+        }
+
+        if (allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error("Not allowed by CORS"));
+      },
       credentials: true,
       methods: ["GET", "POST", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization"],
-      optionsSuccessStatus: 200,
     }),
   );
 
-  app.options(/.*/, (_req: Request, res: Response) => {
-    return res.sendStatus(200);
-  });
+  app.options("*", cors());
 
   app.get("/health", (_req: Request, res: Response) => {
     return res.json({ ok: true });
