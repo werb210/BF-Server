@@ -10,9 +10,10 @@ export const EnvSchema = z
     REDIS_URL: z.string().optional(),
     JWT_SECRET: z.string().min(10),
     OPENAI_API_KEY: z.string().min(1),
-    TWILIO_ACCOUNT_SID: z.string().min(1),
-    TWILIO_AUTH_TOKEN: z.string().min(1),
-    TWILIO_PHONE: z.string().min(1),
+    ENABLE_TWILIO: boolString.optional(),
+    TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
+    TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
+    TWILIO_PHONE: z.string().min(1).optional(),
 
     SENTRY_DSN: z.string().min(1).optional(),
     SLACK_ALERT_WEBHOOK_URL: z.string().min(1).optional(),

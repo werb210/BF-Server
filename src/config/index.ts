@@ -9,8 +9,10 @@ const EnvSchema = z.object({
   REDIS_URL: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-4o-mini"),
+  ENABLE_TWILIO: z.string().optional(),
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_VOICE_APP_SID: z.string().optional(),
   TWILIO_PHONE: z.string().optional(),
   SKIP_DB_CONNECTION: z.string().optional(),
   SENTRY_DSN: z.string().optional(),
@@ -187,6 +189,18 @@ export const config = Object.freeze({
     phoneNumber: parsed.TWILIO_PHONE_NUMBER,
     verifyServiceSid: parsed.TWILIO_VERIFY_SERVICE_SID,
     voiceAppSid: process.env.TWILIO_VOICE_APP_SID || process.env.TWILIO_TWIML_APP_SID,
+    enabled: env.ENABLE_TWILIO === undefined
+      ? Boolean(
+        env.TWILIO_ACCOUNT_SID
+        && env.TWILIO_AUTH_TOKEN
+        && (env.TWILIO_VOICE_APP_SID || process.env.TWILIO_TWIML_APP_SID)
+      )
+      : env.ENABLE_TWILIO === "true"
+        && Boolean(
+          env.TWILIO_ACCOUNT_SID
+          && env.TWILIO_AUTH_TOKEN
+          && (env.TWILIO_VOICE_APP_SID || process.env.TWILIO_TWIML_APP_SID)
+        ),
   }),
   allowedOrigins: parsed.ALLOWED_ORIGINS,
   website: Object.freeze({
@@ -245,7 +259,6 @@ export const ENV = process.env as Record<string, string | undefined>;
 
 export const validateServerEnv = (): void => {
   if (!config.db.url) throw new Error("DATABASE_URL missing");
-  if (!config.twilio.voiceAppSid) throw new Error("Missing TWILIO_VOICE_APP_SID");
 };
 
 export const assertEnv = validateServerEnv;

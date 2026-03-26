@@ -2,14 +2,20 @@ import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 
 import authRoutes from "../modules/auth/auth.routes";
-import telephonyRoutes from "../routes/telephony.routes";
 
 const requiredEnv = [
   "JWT_SECRET",
-  "TWILIO_ACCOUNT_SID",
-  "TWILIO_AUTH_TOKEN",
-  "TWILIO_VOICE_APP_SID",
 ] as const;
+
+const hasTwilioCredentials = Boolean(
+  process.env.TWILIO_ACCOUNT_SID
+  && process.env.TWILIO_AUTH_TOKEN
+  && process.env.TWILIO_VOICE_APP_SID
+);
+
+const isTwilioEnabled = process.env.ENABLE_TWILIO === undefined
+  ? hasTwilioCredentials
+  : process.env.ENABLE_TWILIO === "true" && hasTwilioCredentials;
 
 function assertRequiredEnv(): void {
   for (const key of requiredEnv) {
@@ -67,7 +73,13 @@ export function createServer() {
   });
 
   app.use("/auth", authRoutes);
-  app.use("/telephony", telephonyRoutes);
+
+  if (isTwilioEnabled) {
+    const telephonyRoutes = require("../routes/telephony.routes").default;
+    app.use("/telephony", telephonyRoutes);
+  } else {
+    console.warn("⚠️ Twilio not configured — telephony routes disabled");
+  }
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     console.error("[SERVER ERROR]", err);
