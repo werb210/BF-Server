@@ -2,6 +2,7 @@ import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 
 import authRoutes from "../modules/auth/auth.routes";
+import telephonyRoutes from "../routes/telephony.routes";
 
 const requiredEnv = [
   "JWT_SECRET",
@@ -75,7 +76,6 @@ export function createServer() {
   app.use("/auth", authRoutes);
 
   if (isTwilioEnabled) {
-    const telephonyRoutes = require("../routes/telephony.routes").default;
     app.use("/telephony", telephonyRoutes);
   } else {
     console.warn("⚠️ Twilio not configured — telephony routes disabled");
