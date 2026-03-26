@@ -12,19 +12,27 @@ import { safeCall } from "../lib/circuitBreaker";
 
 const router = Router();
 
-const tableColumnCache = new Map<string, Set<string>>();
+const TABLE_CACHE_TTL_MS = 10 * 60 * 1000;
+const tableColumnCache = new Map<string, { columns: Set<string>; expiresAt: number }>();
+
+function setTableColumnsCache(table: string, columns: Set<string>): void {
+  tableColumnCache.set(table, { columns, expiresAt: Date.now() + TABLE_CACHE_TTL_MS });
+}
 
 async function fetchTableColumns(table: string): Promise<Set<string>> {
   const cached = tableColumnCache.get(table);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.columns;
+  }
   if (cached) {
-    return cached;
+    tableColumnCache.delete(table);
   }
   const { rows } = await dbQuery<{ column_name: string }>(
     `select column_name from information_schema.columns where table_schema = 'public' and table_name = $1`,
     [table]
   );
   const columns = toStringSet(rows.map((row) => row.column_name));
-  tableColumnCache.set(table, columns);
+  setTableColumnsCache(table, columns);
   return columns;
 }
 

@@ -13,6 +13,12 @@ type Issue = {
 };
 
 const issues: Issue[] = [];
+const MAX_ISSUES = 500;
+
+function pushBounded<T>(arr: T[], item: T): void {
+  arr.push(item);
+  if (arr.length > MAX_ISSUES) arr.shift();
+}
 
 const createIssueSchema = z.object({
   message: z.string().min(1),
@@ -34,7 +40,7 @@ router.post("/", async (req: any, res: any, next: any) => {
     resolved: false,
   };
 
-  issues.push(issue);
+  pushBounded(issues, issue);
 
   res.json({ success: true, id: issue.id });
 });

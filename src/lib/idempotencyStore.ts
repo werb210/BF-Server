@@ -14,6 +14,7 @@ type StoredResponse = {
 };
 
 const memoryStore = new Map<string, StoredResponse>();
+const MEMORY_STORE_MAX_ITEMS = 1_000;
 let redisClient: Redis | null = null;
 let redisReady = false;
 let redisAttempted = false;
@@ -60,7 +61,13 @@ function memoryFallbackSet(key: string, value: StoredResponse): void {
   memoryStore.set(key, value);
   setTimeout(() => {
     memoryStore.delete(key);
-  }, ONE_HOUR_IN_MILLISECONDS);
+  }, ONE_HOUR_IN_MILLISECONDS).unref();
+  if (memoryStore.size > MEMORY_STORE_MAX_ITEMS) {
+    const firstKey = memoryStore.keys().next().value;
+    if (firstKey) {
+      memoryStore.delete(firstKey);
+    }
+  }
 }
 
 export async function fetchStoredResponse(key: string): Promise<StoredResponse | undefined> {

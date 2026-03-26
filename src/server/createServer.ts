@@ -33,7 +33,16 @@ export function createServer() {
       .filter(Boolean),
   ];
 
-  app.use(express.json());
+  app.use(express.json({ limit: "1mb" }));
+  app.use(express.urlencoded({ limit: "1mb", extended: true }));
+
+  setInterval(() => {
+    const used = process.memoryUsage();
+    console.log("MEMORY:", {
+      rss: `${Math.round(used.rss / 1024 / 1024)}MB`,
+      heapUsed: `${Math.round(used.heapUsed / 1024 / 1024)}MB`,
+    });
+  }, 60_000).unref();
 
   app.use(cors({
     origin: (origin, callback) => {

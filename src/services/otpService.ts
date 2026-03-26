@@ -2,6 +2,7 @@ import { redis } from "../lib/redis";
 
 const OTP_TTL_SECONDS = 5 * 60;
 const OTP_TTL_MS = OTP_TTL_SECONDS * 1000;
+const MAX_OTP_ITEMS = 1000;
 
 const store = new Map<string, { code: string; expires: number }>();
 
@@ -25,6 +26,13 @@ export async function storeOtp(phone: string, code: string): Promise<void> {
     code,
     expires: Date.now() + OTP_TTL_MS,
   });
+  setTimeout(() => store.delete(key), OTP_TTL_MS).unref();
+  if (store.size > MAX_OTP_ITEMS) {
+    const firstKey = store.keys().next().value;
+    if (firstKey) {
+      store.delete(firstKey);
+    }
+  }
 }
 
 export async function fetchOtp(phone: string): Promise<string | null> {

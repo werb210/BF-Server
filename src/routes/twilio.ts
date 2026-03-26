@@ -17,6 +17,8 @@ import { config } from "../config";
 
 const router = Router();
 const oneMinuteMs = 60_000;
+const RATE_BUCKET_TTL_MS = 5 * oneMinuteMs;
+const MAX_BUCKETS = 1_000;
 
 type Bucket = { count: number; resetAt: number };
 const ipBuckets = new Map<string, Bucket>();
@@ -27,6 +29,12 @@ function consumeRateLimit(buckets: Map<string, Bucket>, key: string, max: number
   const current = buckets.get(key);
   if (!current || current.resetAt <= now) {
     buckets.set(key, { count: 1, resetAt: now + oneMinuteMs });
+    if (buckets.size > MAX_BUCKETS) {
+      const firstKey = buckets.keys().next().value;
+      if (firstKey) {
+        buckets.delete(firstKey);
+      }
+    }
     return true;
   }
   if (current.count >= max) {
@@ -35,6 +43,20 @@ function consumeRateLimit(buckets: Map<string, Bucket>, key: string, max: number
   current.count += 1;
   return true;
 }
+
+setInterval(() => {
+  const cutoff = Date.now() - RATE_BUCKET_TTL_MS;
+  for (const [key, value] of ipBuckets.entries()) {
+    if (value.resetAt < cutoff) {
+      ipBuckets.delete(key);
+    }
+  }
+  for (const [key, value] of staffBuckets.entries()) {
+    if (value.resetAt < cutoff) {
+      staffBuckets.delete(key);
+    }
+  }
+}, oneMinuteMs).unref();
 
 function fetchIpKey(req: { ip?: string; headers: Record<string, unknown> }): string {
   const forwarded = typeof req.headers["x-forwarded-for"] === "string" ? req.headers["x-forwarded-for"].split(",")[0] : null;

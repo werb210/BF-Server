@@ -69,13 +69,25 @@ type VerifyOtpFailure = {
 };
 
 const refreshReplayGuard = new Map<string, NodeJS.Timeout>();
+const MAX_RUNTIME_AUTH_ENTRIES = 1000;
+
+function trimMapSize(map: Map<string, unknown>, max = MAX_RUNTIME_AUTH_ENTRIES): void {
+  if (map.size > max) {
+    const firstKey = map.keys().next().value;
+    if (firstKey) {
+      map.delete(firstKey);
+    }
+  }
+}
 
 function registerRefreshReplay(tokenHash: string, windowMs: number): boolean {
   if (refreshReplayGuard.has(tokenHash)) {
     return false;
   }
   const timeout = setTimeout(() => refreshReplayGuard.delete(tokenHash), windowMs);
+  timeout.unref();
   refreshReplayGuard.set(tokenHash, timeout);
+  trimMapSize(refreshReplayGuard as unknown as Map<string, unknown>);
   return true;
 }
 
@@ -226,6 +238,16 @@ const OTP_VERIFICATION_MAX_AGE_MS = 10 * 60 * 1000;
 const OTP_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const OTP_MAX_VERIFY_ATTEMPTS = 5;
 const otpAttemptState = new Map<string, { count: number; resetAt: number; lastCodeHash: string }>();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [phone, state] of otpAttemptState.entries()) {
+    if (state.resetAt <= now) {
+      otpAttemptState.delete(phone);
+    }
+  }
+}, 60_000).unref();
+
 function ensureTestOtp(phoneE164: string): string {
   const forcedTestOtp = config.auth.testOtpCode?.trim();
   if (forcedTestOtp) {
@@ -256,6 +278,7 @@ function recordOtpAttempt(phoneE164: string, codeHash: string): void {
   const current = otpAttemptState.get(phoneE164);
   if (!current || current.resetAt <= now) {
     otpAttemptState.set(phoneE164, { count: 1, resetAt: now + OTP_ATTEMPT_WINDOW_MS, lastCodeHash: codeHash });
+    trimMapSize(otpAttemptState as unknown as Map<string, unknown>);
     return;
   }
   current.count += 1;
@@ -280,7 +303,9 @@ function assertSingleVerifyAttempt(phoneE164: string): void {
   const timeout = setTimeout(() => {
     otpVerifyInFlight.delete(phoneE164);
   }, OTP_VERIFY_DEDUP_WINDOW_MS);
+  timeout.unref();
   otpVerifyInFlight.set(phoneE164, timeout);
+  trimMapSize(otpVerifyInFlight as unknown as Map<string, unknown>);
 }
 
 function clearVerifyAttempt(phoneE164: string): void {

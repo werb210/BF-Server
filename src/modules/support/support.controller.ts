@@ -11,7 +11,7 @@ const supportSessions: Array<{
 const issueReports: Array<{
   id: string;
   description: string | undefined;
-  screenshot: string | undefined;
+  hasScreenshot: boolean;
   createdAt: number;
 }> = [];
 
@@ -22,6 +22,14 @@ const websiteEvents: Array<{
 }> = [];
 
 const webLeads: Array<Record<string, unknown> & { id: string; createdAt: number }> = [];
+const MAX_ITEMS = 500;
+
+function pushBounded<T>(arr: T[], item: T): void {
+  arr.push(item);
+  if (arr.length > MAX_ITEMS) {
+    arr.shift();
+  }
+}
 
 export const SupportController = {
   createSession(req: Request, res: Response): void {
@@ -32,7 +40,7 @@ export const SupportController = {
       status: "open" as const,
     };
 
-    supportSessions.push(session);
+    pushBounded(supportSessions, session);
     res.json({ success: true, session });
   },
 
@@ -45,11 +53,11 @@ export const SupportController = {
     const issue = {
       id: uuid(),
       description: payload.description,
-      screenshot: payload.screenshot,
+      hasScreenshot: Boolean(payload.screenshot),
       createdAt: Date.now(),
     };
 
-    issueReports.push(issue);
+    pushBounded(issueReports, issue);
     res.json({ success: true });
   },
 
@@ -64,7 +72,7 @@ export const SupportController = {
       createdAt: Date.now(),
     };
 
-    webLeads.push(lead);
+    pushBounded(webLeads, lead);
     res.json({ success: true });
   },
 
@@ -74,7 +82,7 @@ export const SupportController = {
 
   trackEvent(req: Request, res: Response): void {
     const payload = req.body as { event?: string; source?: string };
-    websiteEvents.push({
+    pushBounded(websiteEvents, {
       event: payload.event,
       source: payload.source,
       timestamp: Date.now(),

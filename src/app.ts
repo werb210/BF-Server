@@ -13,6 +13,7 @@ export function buildAppWithApiRoutes() {
   app.use(securityHeaders);
   app.use(corsMiddleware);
   app.use(express.json({ limit: "1mb" }));
+  app.use(express.urlencoded({ limit: "1mb", extended: true }));
   app.use(requestContextMiddleware);
   app.use(httpMetricsMiddleware);
   app.use(healthRoutes);

@@ -14,12 +14,32 @@ import { logger } from "../server/utils/logger";
 import { generateAIResponse } from "../services/ai/aiService";
 
 const router = Router();
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const uploadDir = "/tmp/uploads";
+
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+function cleanupFile(filePath: string): void {
+  fs.unlink(filePath, () => undefined);
+}
+
+function rejectOversizedPayload(req: any, res: any, next: any): void {
+  const contentLength = Number(req.headers["content-length"] ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > MAX_UPLOAD_BYTES) {
+    res.status(413).json({ error: "payload_too_large" });
+    return;
+  }
+  next();
+}
+
 const upload = multer({
   storage: multer.diskStorage({
-    destination: "/tmp",
+    destination: (_, __, cb) => cb(null, uploadDir),
     filename: (_, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
   }),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: MAX_UPLOAD_BYTES, files: 5 },
   fileFilter: (_req, file, cb) => {
     const allowedMimeTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
     if (!allowedMimeTypes.has(file.mimetype)) {
@@ -30,11 +50,11 @@ const upload = multer({
   },
 });
 
-const uploadDir = path.join(process.cwd(), "uploads", "ai-issues");
+const issueUploadDir = path.join(process.cwd(), "uploads", "ai-issues");
 
 function ensureUploadDir(): void {
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
+  if (!fs.existsSync(issueUploadDir)) {
+    fs.mkdirSync(issueUploadDir, { recursive: true });
   }
 }
 
@@ -172,7 +192,7 @@ router.post(
   })
 );
 
-router.post("/knowledge/upload", knowledgeUpload.single("file"), AIKnowledgeController.upload);
+router.post("/knowledge/upload", rejectOversizedPayload, knowledgeUpload.single("file"), AIKnowledgeController.upload);
 router.get("/knowledge", AIKnowledgeController.list);
 
 router.get(
@@ -224,6 +244,7 @@ router.post(
 
 router.post(
   "/report-issue",
+  rejectOversizedPayload,
   upload.single("screenshot"),
   safeHandler(async (req: any, res: any, next: any) => {
     const body = req.body as {
@@ -246,9 +267,9 @@ router.post(
       ensureUploadDir();
       const ext = path.extname(req.file.originalname || "") || ".png";
       const fileName = `${randomUUID()}${ext}`;
-      const fullPath = path.join(uploadDir, fileName);
+      const fullPath = path.join(issueUploadDir, fileName);
       fs.copyFileSync(req.file.path, fullPath);
-      fs.unlink(req.file.path, () => undefined);
+      cleanupFile(req.file.path);
       screenshotPath = path.relative(process.cwd(), fullPath);
     }
 

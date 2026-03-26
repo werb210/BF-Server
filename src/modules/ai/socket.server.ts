@@ -22,6 +22,16 @@ type SocketPayload = {
 };
 
 const sessionMap = new Map<string, SessionPresence>();
+const SESSION_TTL_MS = 30 * 60 * 1000;
+const MAX_WS_SESSIONS = 1000;
+
+function pruneSessionPresence(now = Date.now()): void {
+  for (const [sessionId, presence] of sessionMap.entries()) {
+    if (presence.sockets.size === 0 || now - presence.updatedAt > SESSION_TTL_MS) {
+      sessionMap.delete(sessionId);
+    }
+  }
+}
 
 function safeParsePayload(data: RawData): SocketPayload | null {
   try {
@@ -32,6 +42,7 @@ function safeParsePayload(data: RawData): SocketPayload | null {
 }
 
 function ensurePresence(sessionId: string): SessionPresence {
+  pruneSessionPresence();
   const existing = sessionMap.get(sessionId);
   if (existing) {
     return existing;
@@ -42,6 +53,12 @@ function ensurePresence(sessionId: string): SessionPresence {
     updatedAt: Date.now(),
   };
   sessionMap.set(sessionId, created);
+  if (sessionMap.size > MAX_WS_SESSIONS) {
+    const firstKey = sessionMap.keys().next().value;
+    if (firstKey) {
+      sessionMap.delete(firstKey);
+    }
+  }
   return created;
 }
 
@@ -162,6 +179,10 @@ function detachSocket(socket: SessionSocket): void {
 
 export function initChatSocket(server: Server): WebSocketServer {
   const wss = new WebSocketServer({ server, path: "/ws/chat" });
+
+  setInterval(() => {
+    pruneSessionPresence();
+  }, 60_000).unref();
 
   wss.on("connection", (ws: SessionSocket) => {
     ws.isAlive = true;

@@ -1,4 +1,17 @@
 const store = new Map<string, any>();
+const MAX_STORE_SIZE = 1000;
+const STORE_TTL_MS = 10 * 60 * 1000;
+
+function setWithTTL(key: string, value: any, ttlMs = STORE_TTL_MS): void {
+  store.set(key, value);
+  setTimeout(() => store.delete(key), ttlMs).unref();
+  if (store.size > MAX_STORE_SIZE) {
+    const firstKey = store.keys().next().value;
+    if (firstKey) {
+      store.delete(firstKey);
+    }
+  }
+}
 
 export function requireIdempotency(req: any, res: any, next: any) {
   const key = req.headers["idempotency-key"];
@@ -14,7 +27,7 @@ export function requireIdempotency(req: any, res: any, next: any) {
   const originalJson = res.json.bind(res);
 
   res.json = (body: any) => {
-    store.set(key, body);
+    setWithTTL(String(key), body);
     return originalJson(body);
   };
 

@@ -28,6 +28,27 @@ const client = config.openai.apiKey
 
 const sessions = new Map<string, AiSession>();
 const messages: AiMessage[] = [];
+const SESSION_TTL_MS = 30 * 60 * 1000;
+const MAX_SESSIONS = 500;
+const MAX_MESSAGES = 500;
+
+function trimMessages(): void {
+  if (messages.length > MAX_MESSAGES) {
+    messages.splice(0, messages.length - MAX_MESSAGES);
+  }
+}
+
+function pruneExpiredSessions(now = Date.now()): void {
+  for (const [sessionId, session] of sessions.entries()) {
+    if (now - session.createdAt.getTime() > SESSION_TTL_MS) {
+      sessions.delete(sessionId);
+    }
+  }
+}
+
+setInterval(() => {
+  pruneExpiredSessions();
+}, 60_000).unref();
 
 
 async function loadActiveAiRules(): Promise<string[]> {
@@ -59,6 +80,7 @@ async function loadActiveAiRules(): Promise<string[]> {
 }
 
 export function startSession(context: AiSession["context"]): AiSession {
+  pruneExpiredSessions();
   const id = uuid();
 
   const session: AiSession = {
@@ -69,6 +91,12 @@ export function startSession(context: AiSession["context"]): AiSession {
   };
 
   sessions.set(id, session);
+  if (sessions.size > MAX_SESSIONS) {
+    const firstKey = sessions.keys().next().value;
+    if (firstKey) {
+      sessions.delete(firstKey);
+    }
+  }
 
   return session;
 }
@@ -85,6 +113,7 @@ export async function handleMessage(sessionId: string, content: string): Promise
     content,
     createdAt: new Date(),
   });
+  trimMessages();
 
   const aiRules = await loadActiveAiRules();
   const systemPrompt = `
@@ -108,6 +137,7 @@ ${aiRules.join("\n")}` : ""}
       content: fallbackReply,
       createdAt: new Date(),
     });
+    trimMessages();
     return { reply: fallbackReply };
   }
 
@@ -132,6 +162,7 @@ ${aiRules.join("\n")}` : ""}
     content: reply,
     createdAt: new Date(),
   });
+  trimMessages();
 
   return { reply };
 }
