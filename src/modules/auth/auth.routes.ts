@@ -31,10 +31,7 @@ router.post('/otp/verify', (req: Request, res: Response) => {
     return res.status(400).json({ ok: false })
   }
 
-  return res.status(200).json({
-    ok: true,
-    token: 'test-token'
-  })
+  return res.status(200).json({ token: 'test-token' })
 })
 
 router.get('/me', (_req: Request, res: Response) => {

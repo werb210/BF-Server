@@ -59,18 +59,14 @@ describe("server:contract:e2e", () => {
       .send({ phone: "+61400000000", code: "000000" });
 
     expect(verify.status).toBe(200);
-    expect(verify.body.ok).toBe(true);
-    expect(typeof verify.body.token).toBe("string");
-    expect(verify.body.data).toBeUndefined();
+    expect(verify.body).toEqual({ token: expect.any(String) });
 
     const telephony = await request(app)
       .get("/telephony/token")
       .set("Authorization", `Bearer ${verify.body.token}`);
 
     expect(telephony.status).toBe(200);
-    expect(telephony.body.ok).toBe(true);
-    expect(typeof telephony.body.token).toBe("string");
-    expect(telephony.body.data).toBeUndefined();
+    expect(telephony.body).toEqual({ token: expect.any(String) });
   });
 
   it("does not expose /api telephony token alias", async () => {
