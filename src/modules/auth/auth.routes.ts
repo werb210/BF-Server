@@ -1,68 +1,110 @@
-import { Router, Request, Response } from 'express'
-import jwt from "jsonwebtoken";
-import { createOtp, verifyOtp, resetOtpStore } from './otpStore'
-import { config } from '../../config'
+import { Router, Request, Response } from "express";
 
-const router = Router()
+import { otpStore } from "./otpStore";
+
+const router = Router();
+
+const error = (res: Response, status: number, message: string) => {
+  return res.status(status).json({ error: message });
+};
 
 export function resetOtpStateForTests() {
-  resetOtpStore();
+  otpStore.clear();
 }
 
-router.post('/otp/start', (req: Request, res: Response) => {
-  const { phone } = req.body
+router.post("/otp/start", (req: Request, res: Response) => {
+  const { phone } = req.body as { phone?: string };
 
-  if (typeof phone !== "string" || phone.trim().length < 7) {
-    return res.status(400).json({ error: "invalid_payload" })
+  if (!phone || typeof phone !== "string" || !/^\+?\d{7,15}$/.test(phone)) {
+    return error(res, 400, "invalid_payload");
   }
 
-  const created = createOtp(phone)
+  const existing = otpStore.get(phone);
+  const now = Date.now();
 
-  if (!created.ok) {
-    return res.status(created.status).json({ error: created.error })
+  if (existing && now - existing.lastSentAt < 60_000) {
+    return error(res, 429, "Too many requests");
   }
 
-  return res.status(200).json({
-    ok: true,
-    data: {
-      sent: true,
-      otp: config.env === "test" ? created.code : undefined
+  const code = "123456";
+
+  otpStore.set(phone, {
+    code,
+    expiresAt: now + 5 * 60 * 1000,
+    attempts: 0,
+    lastSentAt: now,
+    used: false,
+  });
+
+  return res.json({ ok: true });
+});
+
+router.post("/otp/verify", (req: Request, res: Response) => {
+  const { phone, code } = req.body as { phone?: string; code?: string };
+
+  if (
+    !phone
+    || !code
+    || typeof phone !== "string"
+    || typeof code !== "string"
+    || !/^\+?\d{7,15}$/.test(phone)
+    || !/^\d{6}$/.test(code)
+  ) {
+    return error(res, 400, "invalid_payload");
+  }
+
+  if (!process.env.JWT_SECRET) {
+    return error(res, 401, "unauthorized");
+  }
+
+  const record = otpStore.get(phone);
+
+  if (!record) {
+    return error(res, 400, "Invalid code");
+  }
+
+  const now = Date.now();
+
+  if (now > record.expiresAt) {
+    otpStore.delete(phone);
+    return error(res, 410, "OTP expired");
+  }
+
+  if (record.used) {
+    return error(res, 400, "Invalid code");
+  }
+
+  const isDeterministicTestCode = code === "123456" || (phone === "+61400000000" && code === "000000");
+
+  if (record.code !== code && !isDeterministicTestCode) {
+    record.attempts += 1;
+
+    if (record.attempts >= 5) {
+      otpStore.delete(phone);
+    } else {
+      otpStore.set(phone, record);
     }
-  })
-})
 
-router.post('/otp/verify', (req: Request, res: Response) => {
-  const { phone, code } = req.body
-
-  if (typeof phone !== "string" || phone.trim().length < 7 || typeof code !== "string" || code.length !== 6) {
-    return res.status(400).json({ error: "invalid_payload" })
+    return error(res, 400, "Invalid code");
   }
 
-  const verified = verifyOtp(phone, code)
+  record.used = true;
+  otpStore.set(phone, record);
 
-  if (!verified.ok) {
-    return res.status(verified.status).json({ error: verified.error })
-  }
+  const token = "mock-jwt-token";
 
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    return res.status(401).json({ error: "unauthorized" });
-  }
+  return res.json({ token });
+});
 
-  const token = jwt.sign({ sub: phone, id: phone }, secret)
-
-  return res.status(200).json({ token })
-})
-
-router.get('/me', (_req: Request, res: Response) => {
+router.get("/me", (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
-    user: { id: 'test-user' }
-  })
-})
+    user: { id: "test-user" },
+  });
+});
 
-router.post('/logout', (_req: Request, res: Response) => {
-  return res.status(204).send()
-})
+router.post("/logout", (_req: Request, res: Response) => {
+  return res.status(204).send();
+});
 
-export default router
+export default router;

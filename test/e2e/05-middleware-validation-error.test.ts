@@ -35,6 +35,6 @@ describe("Middleware execution, validation, and error handling", () => {
       .set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({ ok: false, error: "not_found" });
+    expect(res.body).toEqual({ error: "not_found" });
   });
 });

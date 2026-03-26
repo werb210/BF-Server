@@ -118,10 +118,7 @@ export function createServer() {
     res.json(routes);
   });
   app.use((_req: Request, res: Response) => {
-    res.status(404).json({
-      ok: false,
-      error: "not_found",
-    });
+    res.status(404).json({ error: "not_found" });
   });
 
   return app;
