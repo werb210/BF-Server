@@ -95,12 +95,4 @@ router.post("/otp/verify", (req: Request, res: Response) => {
   return send.ok(res, { token });
 });
 
-router.get("/me", (_req: Request, res: Response) => {
-  return send.ok(res);
-});
-
-router.post("/logout", (_req: Request, res: Response) => {
-  return send.ok(res);
-});
-
 export default router;

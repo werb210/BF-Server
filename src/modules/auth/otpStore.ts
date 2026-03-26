@@ -7,10 +7,12 @@ type OTPRecord = {
 };
 
 const store = new Map<string, OTPRecord>();
+const OTP_TTL_MS = 10 * 60 * 1000;
 
 export const otpStore = {
   set(phone: string, record: OTPRecord) {
     store.set(phone, record);
+    setTimeout(() => store.delete(phone), OTP_TTL_MS);
   },
   get(phone: string) {
     return store.get(phone);

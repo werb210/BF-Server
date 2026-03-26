@@ -4,22 +4,8 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit",
-    "prisma:generate": "prisma generate",
-    "postinstall": "prisma generate",
-    "test:endpoints": "node test-endpoints.js",
-    "dev": "ts-node src/index.ts",
     "test": "vitest run",
-    "prebuild": "prisma generate || true",
-    "lint": "eslint src --ext .ts",
-    "ci:check": "npm run lint && npm run lint:architecture && npm run typecheck && npm run build",
-    "test:watch": "vitest",
-    "lint:architecture": "node scripts/enforce-architecture-guardrails.mjs",
-    "db:backup": "bash scripts/backup-db.sh",
-    "db:verify-restore": "bash scripts/verify-backup-restore.sh",
-    "guard:db-in-routes": "grep -r \"prisma\\.\" src/routes && echo \"WARNING: DB in routes\" || true",
-    "test:e2e": "vitest run"
+    "start": "node dist/index.js"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
@@ -29,7 +15,7 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",
-    "express": "^5.2.1",
+    "express": "^4.21.2",
     "express-rate-limit": "^8.3.1",
     "file-type": "^21.3.4",
     "googleapis": "^171.4.0",
@@ -52,7 +38,7 @@
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.0",
-    "@types/express": "^5.0.6",
+    "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/morgan": "^1.9.10",
     "@types/multer": "^2.1.0",

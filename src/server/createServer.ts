@@ -1,3 +1,4 @@
+import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 
 import authRoutes from "../modules/auth/auth.routes";
@@ -22,41 +23,38 @@ export function createServer() {
   assertRequiredEnv();
 
   const app = express();
-  const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || "")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
+
+  const allowedOrigins = [
+    "https://staff.boreal.financial",
+    "https://client.boreal.financial",
+    ...(process.env.CORS_ALLOWED_ORIGINS || "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  ];
 
   app.use(express.json());
 
-  // Force CORS headers manually.
+  app.use(cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+    optionsSuccessStatus: 200,
+  }));
+
+  app.options("/", (_: Request, res: Response) => res.sendStatus(200));
   app.use((req: Request, res: Response, next: NextFunction) => {
-    const origin = req.headers.origin;
-
-    // allow non-browser clients (tests, curl, server-to-server)
-    if (!origin) {
-      res.setHeader("Access-Control-Allow-Origin", "*");
-    } else if (allowedOrigins.length === 0) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-      res.setHeader("Vary", "Origin");
-    } else if (allowedOrigins.includes(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-      res.setHeader("Vary", "Origin");
-    }
-
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-
     if (req.method === "OPTIONS") {
       return res.sendStatus(200);
     }
-
     return next();
   });
 
   app.get("/health", (_req: Request, res: Response) => {
-    return res.json({ ok: true });
+    res.json({ ok: true });
   });
 
   app.use("/auth", authRoutes);
@@ -70,10 +68,8 @@ export function createServer() {
     });
   });
 
-  app.use((_req: Request, res: Response) => {
-    return res.status(404).json({
-      error: "not_found",
-    });
+  app.use((_: Request, res: Response) => {
+    res.status(404).json({ error: "not_found" });
   });
 
   return app;

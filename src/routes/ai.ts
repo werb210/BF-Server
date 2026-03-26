@@ -15,7 +15,10 @@ import { generateAIResponse } from "../services/ai/aiService";
 
 const router = Router();
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: "/tmp",
+    filename: (_, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+  }),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const allowedMimeTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -244,7 +247,8 @@ router.post(
       const ext = path.extname(req.file.originalname || "") || ".png";
       const fileName = `${randomUUID()}${ext}`;
       const fullPath = path.join(uploadDir, fileName);
-      fs.writeFileSync(fullPath, req.file.buffer);
+      fs.copyFileSync(req.file.path, fullPath);
+      fs.unlink(req.file.path, () => undefined);
       screenshotPath = path.relative(process.cwd(), fullPath);
     }
 
