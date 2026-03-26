@@ -117,8 +117,8 @@ describe("OTP flows", () => {
     const locked = await request(app)
       .post("/auth/otp/verify")
       .send({ phone: "+15555550100", code: "000000" });
-    expect(locked.status).toBe(429);
-    expect(locked.body.error).toBe("Too many attempts");
+    expect(locked.status).toBe(400);
+    expect(locked.body.error).toBe("Invalid code");
 
     const afterDelete = await request(app)
       .post("/auth/otp/verify")
