@@ -30,27 +30,27 @@ export function createServer() {
 
   app.use(express.json());
 
-  app.use(
-    cors({
-      origin: (origin, callback) => {
-        // allow non-browser clients (tests, curl, server-to-server)
-        if (!origin) {
-          return callback(null, true);
-        }
+  const corsOptions: cors.CorsOptions = {
+    origin: (origin, callback) => {
+      // allow non-browser clients (tests, curl, server-to-server)
+      if (!origin) {
+        return callback(null, true);
+      }
 
-        if (allowedOrigins.includes(origin)) {
-          return callback(null, true);
-        }
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, origin);
+      }
 
-        return callback(new Error("Not allowed by CORS"));
-      },
-      credentials: true,
-      methods: ["GET", "POST", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization"],
-    }),
-  );
+      return callback(null, false);
+    },
+    credentials: true,
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  };
 
-  app.options("*", cors());
+  app.use(cors(corsOptions));
+
+  app.options("*", cors(corsOptions));
 
   app.get("/health", (_req: Request, res: Response) => {
     return res.json({ ok: true });
