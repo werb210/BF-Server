@@ -24,19 +24,53 @@ offersRoutes.get("/", (_req, res) => {
 
 export function createServer() {
   const app = express();
-  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",").map((origin) =>
-    origin.trim(),
-  ).filter(Boolean);
+  const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS
+    ? process.env.CORS_ALLOWED_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean)
+    : ["*"];
 
   app.use(
     cors({
-      origin: allowedOrigins && allowedOrigins.length > 0 ? allowedOrigins : "*",
+      origin: (origin, callback) => {
+        if (!origin) {
+          return callback(null, true);
+        }
+
+        if (allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error("CORS blocked"), false);
+      },
+      credentials: true,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization"],
-      credentials: true,
+      optionsSuccessStatus: 200,
     }),
   );
   app.options(/.*/, cors());
+
+  app.use((req: Request, res: Response, next) => {
+    res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+    next();
+  });
+
+  app.use((req: Request, _res: Response, next) => {
+    if (req.method === "OPTIONS") {
+      console.log("Preflight:", req.path);
+    }
+    next();
+  });
+
+  app.use((req: Request, res: Response, next) => {
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(200);
+    }
+    return next();
+  });
+
   app.use(express.json());
 
   app.use("/auth", authRoutes);
