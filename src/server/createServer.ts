@@ -28,13 +28,20 @@ export function createServer() {
     "https://staff.boreal.financial",
     "https://client.boreal.financial",
     "https://portal.boreal.financial",
+    ...(process.env.CORS_ALLOWED_ORIGINS
+      ? process.env.CORS_ALLOWED_ORIGINS.split(",")
+          .map((origin) => origin.trim())
+          .filter(Boolean)
+      : []),
   ];
 
   const corsOptions: CorsOptions = {
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error("CORS blocked"), false);
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST", "OPTIONS"],
@@ -61,8 +68,10 @@ export function createServer() {
   });
 
   app.use((req: Request, res: Response) => {
-    console.error("404 ROUTE:", req.method, req.path);
-    return res.status(404).send(`Cannot ${req.method} ${req.path}`);
+    console.warn(`404 ROUTE: ${req.method} ${req.path}`);
+    return res.status(404).json({
+      error: "not_found",
+    });
   });
 
   return app;
