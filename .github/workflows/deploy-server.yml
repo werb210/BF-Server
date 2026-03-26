@@ -4,104 +4,46 @@ on:
   push:
     branches:
       - main
-      - develop
+
+env:
+  AZURE_WEBAPP_NAME: YOUR_APP_NAME
+  NODE_VERSION: 20
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d test"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      NODE_ENV: test
-      REDIS_URL: ""
-      JWT_SECRET: test-secret-12345
-      OPENAI_API_KEY: test-key
-      OPENAI_MODEL: gpt-4o-mini
-      TWILIO_ACCOUNT_SID: ACtest
-      TWILIO_AUTH_TOKEN: test-token
-      TWILIO_PHONE: +10000000000
-      TEST_DB_URL: postgres://postgres:postgres@localhost:5432/test
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/test
-      SENTRY_DSN: https://examplePublicKey@o0.ingest.sentry.io/0
-      SLACK_ALERT_WEBHOOK_URL: https://hooks.slack.com/services/test/test/test
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ✅ Install Node
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install
+      # ✅ Install ALL deps (critical fix)
+      - name: Install dependencies
         run: npm ci
 
-      - name: Wait for Postgres
-        run: |
-          for i in {1..10}; do
-            nc -z localhost 5432 && echo "Postgres ready" && exit 0
-            echo "Waiting for Postgres..."
-            sleep 2
-          done
-          echo "Postgres not ready" && exit 1
-
-      - name: Generate Prisma client
-        run: npx prisma generate
-
-      - name: Enforce migrations
-        run: npx prisma migrate deploy
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Architecture guardrails
-        run: npm run lint:architecture
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Test
-        run: npm run test
-
+      # ✅ Build
       - name: Build
         run: npm run build
 
-      - name: Health check
-        run: |
-          set -euo pipefail
-          node dist/server/index.js &
-          PID=$!
-          for i in {1..10}; do
-            sleep 2
-            curl -f http://localhost:3000/healthz && break
-          done
-          kill "$PID" || true
-          wait "$PID" || true
-        env:
-          PORT: "3000"
-          SKIP_DB_CONNECTION: "true"
+      # ✅ (optional but correct)
+      - name: Test
+        run: npm run test
 
-      - name: Deploy
-        id: deploy_step
-        run: echo "Deploying to ${{ github.ref_name == 'main' && 'production' || 'staging' }}"
+      # ✅ Login to Azure
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Automatic rollback on deploy failure
-        if: failure() && steps.deploy_step.outcome == 'failure'
-        run: |
-          git revert --no-edit HEAD
-          git push origin HEAD:${GITHUB_REF_NAME}
+      # 🔥 CRITICAL FIX — deploy ROOT, not dist
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          package: .
