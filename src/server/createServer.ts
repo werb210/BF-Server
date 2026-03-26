@@ -1,4 +1,3 @@
-import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 
 import authRoutes from "../modules/auth/auth.routes";
@@ -30,27 +29,28 @@ export function createServer() {
 
   app.use(express.json());
 
-  const corsOptions: cors.CorsOptions = {
-    origin: (origin, callback) => {
-      // allow non-browser clients (tests, curl, server-to-server)
-      if (!origin) {
-        return callback(null, true);
-      }
+  // Force CORS headers manually.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const origin = req.headers.origin;
 
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, origin);
-      }
+    // allow non-browser clients (tests, curl, server-to-server)
+    if (!origin) {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+    } else if (allowedOrigins.includes(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+    }
 
-      return callback(null, false);
-    },
-    credentials: true,
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  };
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
-  app.use(cors(corsOptions));
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(200);
+    }
 
-  app.options("*", cors(corsOptions));
+    return next();
+  });
 
   app.get("/health", (_req: Request, res: Response) => {
     return res.json({ ok: true });
