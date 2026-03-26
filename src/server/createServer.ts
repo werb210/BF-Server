@@ -24,17 +24,19 @@ offersRoutes.get("/", (_req, res) => {
 
 export function createServer() {
   const app = express();
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",").map((origin) =>
+    origin.trim(),
+  ).filter(Boolean);
+
   app.use(
     cors({
-      origin: [
-        "https://staff.boreal.financial",
-        "https://client.boreal.financial",
-      ],
-      methods: ["GET", "POST", "OPTIONS"],
+      origin: allowedOrigins && allowedOrigins.length > 0 ? allowedOrigins : "*",
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization"],
-      credentials: false,
+      credentials: true,
     }),
   );
+  app.options(/.*/, cors());
   app.use(express.json());
 
   // PUBLIC ROUTES (NO AUTH)
