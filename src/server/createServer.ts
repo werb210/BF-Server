@@ -24,9 +24,11 @@ export function createServer() {
   assertRequiredEnv();
 
   const app = express();
-  const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS
-    ? process.env.CORS_ALLOWED_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean)
-    : ["https://staff.boreal.financial", "https://client.boreal.financial"];
+  const allowedOrigins = [
+    "https://staff.boreal.financial",
+    "https://client.boreal.financial",
+    "https://portal.boreal.financial",
+  ];
 
   const corsOptions: CorsOptions = {
     origin: (origin, callback) => {
@@ -35,7 +37,7 @@ export function createServer() {
       return callback(new Error("CORS blocked"), false);
     },
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     optionsSuccessStatus: 200,
   };
@@ -58,8 +60,9 @@ export function createServer() {
     return send.error(res, 500, "internal_error");
   });
 
-  app.use((_req: Request, res: Response) => {
-    return send.error(res, 404, "not_found");
+  app.use((req: Request, res: Response) => {
+    console.error("404 ROUTE:", req.method, req.path);
+    return res.status(404).send(`Cannot ${req.method} ${req.path}`);
   });
 
   return app;

@@ -1,18 +1,9 @@
-import { config } from "./config";
-import { createServer } from "./server/createServer";
-import { bootstrap } from "./startup/bootstrap";
+import { createServer } from "./createServer";
 
-async function start() {
-  await bootstrap();
+const app = createServer();
 
-  const app = createServer();
+const PORT = process.env.PORT || 8080;
 
-  return app.listen(config.port, () => {
-    console.log("Server started on port", config.port);
-  });
-}
-
-void start().catch((err: unknown) => {
-  console.error("Startup failed", err);
-  process.exit(1);
+app.listen(PORT, () => {
+  console.log(`SERVER RUNNING ON ${PORT}`);
 });
