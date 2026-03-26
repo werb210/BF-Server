@@ -186,7 +186,7 @@ export const config = Object.freeze({
     number: parsed.TWILIO_NUMBER,
     phoneNumber: parsed.TWILIO_PHONE_NUMBER,
     verifyServiceSid: parsed.TWILIO_VERIFY_SERVICE_SID,
-    voiceAppSid: parsed.TWILIO_VOICE_APP_SID,
+    voiceAppSid: process.env.TWILIO_VOICE_APP_SID || process.env.TWILIO_TWIML_APP_SID,
   }),
   allowedOrigins: parsed.ALLOWED_ORIGINS,
   website: Object.freeze({
@@ -245,6 +245,7 @@ export const ENV = process.env as Record<string, string | undefined>;
 
 export const validateServerEnv = (): void => {
   if (!config.db.url) throw new Error("DATABASE_URL missing");
+  if (!config.twilio.voiceAppSid) throw new Error("Missing TWILIO_VOICE_APP_SID");
 };
 
 export const assertEnv = validateServerEnv;
