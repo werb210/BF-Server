@@ -30,10 +30,22 @@ The service expects these to be set (see `.env.example`):
 
 Additional configuration is optional but recommended (rate limits, lockout policy, token expirations).
 
+## API Contract (Critical)
+
+### Auth
+- `POST /auth/otp/start`
+- `POST /auth/otp/verify` → `{ token }`
+
+### Telephony
+- `GET /telephony/token` → `{ token }`
+
+### Health
+- `GET /health` → `{ ok: true }`
+
 ## Common commands
 
 - `npm run build` – compile TypeScript into `dist/`
-- `npm test` – run Jest tests
+- `npm test` – run Vitest test suites
 - `npm run migrate:check` – validate migrations and schema
 - `npm start` – run the compiled server
 

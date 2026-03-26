@@ -62,7 +62,7 @@ describe("OTP flows", () => {
 
   it("returns 410 when OTP is expired", async () => {
     const startTime = 1_700_000_000_000;
-    const nowSpy = jest.spyOn(Date, "now");
+    const nowSpy = vi.spyOn(Date, "now");
     nowSpy.mockReturnValue(startTime);
 
     await request(app)
@@ -83,7 +83,7 @@ describe("OTP flows", () => {
 
   it("rate limits OTP start within 60 seconds", async () => {
     const startTime = 1_700_000_000_000;
-    const nowSpy = jest.spyOn(Date, "now");
+    const nowSpy = vi.spyOn(Date, "now");
     nowSpy.mockReturnValue(startTime);
 
     const first = await request(app)
