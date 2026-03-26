@@ -1,3 +1,4 @@
+import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 
 import authRoutes from "../modules/auth/auth.routes";
@@ -22,32 +23,25 @@ export function createServer() {
   assertRequiredEnv();
 
   const app = express();
-  const allowedOrigins = (
-    process.env.CORS_ALLOWED_ORIGINS ||
-    "https://portal.boreal.financial,https://staff.boreal.financial"
-  )
+  const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || "")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
 
   app.use(express.json());
 
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    const origin = req.headers.origin;
+  app.use(
+    cors({
+      origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+      credentials: true,
+      methods: ["GET", "POST", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+      optionsSuccessStatus: 200,
+    }),
+  );
 
-    if (origin && allowedOrigins.includes(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-      res.setHeader("Vary", "Origin");
-      res.setHeader("Access-Control-Allow-Credentials", "true");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    }
-
-    if (req.method === "OPTIONS") {
-      return res.sendStatus(200);
-    }
-
-    next();
+  app.options(/.*/, (_req: Request, res: Response) => {
+    return res.sendStatus(200);
   });
 
   app.get("/health", (_req: Request, res: Response) => {
