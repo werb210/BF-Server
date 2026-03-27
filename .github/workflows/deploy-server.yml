@@ -1,4 +1,4 @@
-name: Deploy BF Server
+name: Deploy BF Server (Hard Reset Deploy)
 
 on:
   push:
@@ -6,11 +6,11 @@ on:
       - main
 
 concurrency:
-  group: bf-server-deploy
+  group: bf-server
   cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -28,45 +28,37 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Prepare package
+      - name: Prepare deploy package
         run: |
-          mkdir -p release
-          cp -r dist package.json package-lock.json release/
-          cd release
-          zip -r ../release.zip .
+          mkdir deploy
+          cp -r dist package.json package-lock.json deploy/
+          cd deploy
+          zip -r ../deploy.zip .
+
+      - name: Install Azure CLI
+        run: |
+          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 
       - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Get publishing profile
-        id: pubprofile
         run: |
-          az webapp deployment list-publishing-profiles \
+          az login --service-principal \
+            -u $(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .clientId) \
+            -p $(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .clientSecret) \
+            --tenant $(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .tenantId)
+
+      - name: HARD RESET DEPLOYMENT STATE
+        run: |
+          az webapp stop \
+            --name boreal-staff-server \
+            --resource-group boreal-staff-server_group || true
+
+          az webapp deployment source config-zip \
             --name boreal-staff-server \
             --resource-group boreal-staff-server_group \
-            --xml > publish.xml
+            --src deploy.zip
 
-      - name: Install xmllint
-        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
-
-      - name: Extract credentials
+      - name: START APP
         run: |
-          USER=$(xmllint --xpath "string(//publishProfile[@publishMethod='MSDeploy']/@userName)" publish.xml)
-          PASS=$(xmllint --xpath "string(//publishProfile[@publishMethod='MSDeploy']/@userPWD)" publish.xml)
-          echo "KUDU_USER=$USER" >> $GITHUB_ENV
-          echo "KUDU_PASS=$PASS" >> $GITHUB_ENV
-
-      - name: Deploy via Kudu ZIP (no OneDeploy)
-        run: |
-          curl -X POST \
-            -u "$KUDU_USER:$KUDU_PASS" \
-            --data-binary @release.zip \
-            https://boreal-staff-server.scm.azurewebsites.net/api/zipdeploy
-
-      - name: Restart app
-        run: |
-          az webapp restart \
+          az webapp start \
             --name boreal-staff-server \
             --resource-group boreal-staff-server_group
