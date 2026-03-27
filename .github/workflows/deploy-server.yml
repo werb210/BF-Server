@@ -13,6 +13,7 @@ env:
   AZURE_WEBAPP_NAME: boreal-staff-server
   NODE_VERSION: 20
   NODE_OPTIONS: --max-old-space-size=4096
+  DEPLOY_TIMEOUT_SECONDS: 300
 
 jobs:
   build-and-deploy:
@@ -38,23 +39,55 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Wait before deploy
-        run: sleep 15
+      - name: Reset OneDeploy state before deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESOURCE_GROUP="$(az webapp list --query \"[?name=='${AZURE_WEBAPP_NAME}'].resourceGroup | [0]\" -o tsv)"
+          if [[ -z "${RESOURCE_GROUP}" ]]; then
+            echo "Unable to find resource group for ${AZURE_WEBAPP_NAME}" >&2
+            exit 1
+          fi
+
+          echo "Restarting ${AZURE_WEBAPP_NAME} in ${RESOURCE_GROUP} (1/2)"
+          az webapp restart --resource-group "${RESOURCE_GROUP}" --name "${AZURE_WEBAPP_NAME}"
+
+          read -r KUDU_USER KUDU_PASS < <(
+            az webapp deployment list-publishing-credentials \
+              --resource-group "${RESOURCE_GROUP}" \
+              --name "${AZURE_WEBAPP_NAME}" \
+              --query "[publishingUserName,publishingPassword]" \
+              --output tsv
+          )
+          KUDU_URL="https://${AZURE_WEBAPP_NAME}.scm.azurewebsites.net/api/command"
+
+          echo "Clearing stale deployments under /home/site/deployments"
+          curl -fsS -u "${KUDU_USER}:${KUDU_PASS}" \
+            -H "Content-Type: application/json" \
+            --data '{"command":"rm -rf /home/site/deployments/*","dir":"/home/site"}' \
+            "${KUDU_URL}"
+
+          echo "Verifying deployment directory is empty"
+          curl -fsS -u "${KUDU_USER}:${KUDU_PASS}" \
+            -H "Content-Type: application/json" \
+            --data '{"command":"if [ -z \"$(ls -A /home/site/deployments 2>/dev/null)\" ]; then echo \"EMPTY\"; else ls -la /home/site/deployments; fi","dir":"/home/site"}' \
+            "${KUDU_URL}" | tee kudu-cleanup-output.json
+          grep -q "EMPTY" kudu-cleanup-output.json
+
+          echo "Restarting ${AZURE_WEBAPP_NAME} in ${RESOURCE_GROUP} (2/2)"
+          az webapp restart --resource-group "${RESOURCE_GROUP}" --name "${AZURE_WEBAPP_NAME}"
 
       - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          package: .
-
-      - name: Deploy to Azure Web App (retry)
         shell: bash
         run: |
           set -euo pipefail
           for i in 1 2 3; do
-            echo "Attempt $i"
-            npx azure-webapps-deploy \
+            echo "Deploy attempt ${i}/3"
+            timeout "${DEPLOY_TIMEOUT_SECONDS}" npx azure-webapps-deploy \
               --name "${AZURE_WEBAPP_NAME}" \
-              --src-path . && break
-            sleep 10
+              --src-path . && exit 0
+            echo "Attempt ${i} failed; waiting before retry..."
+            sleep 20
           done
+          echo "Deployment failed after 3 attempts" >&2
+          exit 1
