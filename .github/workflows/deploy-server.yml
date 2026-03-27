@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AZURE_WEBAPP_PREFIX: boreal-staff-server
+  AZURE_WEBAPP_NAME: boreal-staff-server
   NODE_VERSION: 20
   NODE_OPTIONS: --max-old-space-size=4096
 
@@ -38,47 +38,6 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Resolve Azure Web App target
-        shell: bash
-        env:
-          AZURE_WEBAPP_NAME_INPUT: ${{ vars.AZURE_WEBAPP_NAME }}
-          AZURE_RESOURCE_GROUP_INPUT: ${{ vars.AZURE_RESOURCE_GROUP }}
-        run: |
-          set -euo pipefail
-
-          echo "Logged in subscription:"
-          az account show --query "{subscription:id, name:name, tenantId:tenantId}" -o table
-
-          if [[ -n "${AZURE_WEBAPP_NAME_INPUT:-}" ]]; then
-            APP_NAME="${AZURE_WEBAPP_NAME_INPUT}"
-            RG_NAME="${AZURE_RESOURCE_GROUP_INPUT:-}"
-          else
-            mapfile -t APPS < <(az webapp list --query "[?starts_with(name, '${AZURE_WEBAPP_PREFIX}-')].[name,resourceGroup]" -o tsv)
-
-            if [[ "${#APPS[@]}" -eq 0 ]]; then
-              echo "No App Service found with prefix '${AZURE_WEBAPP_PREFIX}-' in the current subscription."
-              exit 1
-            fi
-
-            if [[ "${#APPS[@]}" -gt 1 ]]; then
-              echo "Multiple App Services matched prefix '${AZURE_WEBAPP_PREFIX}-'. Set repository variable AZURE_WEBAPP_NAME to disambiguate."
-              printf '%s\n' "${APPS[@]}"
-              exit 1
-            fi
-
-            APP_NAME="$(awk '{print $1}' <<< "${APPS[0]}")"
-            RG_NAME="$(awk '{print $2}' <<< "${APPS[0]}")"
-          fi
-
-          if [[ -z "${RG_NAME:-}" ]]; then
-            RG_NAME="$(az webapp list --query "[?name=='${APP_NAME}'].resourceGroup | [0]" -o tsv)"
-          fi
-
-          az webapp show --name "$APP_NAME" --resource-group "$RG_NAME" --query "{name:name, resourceGroup:resourceGroup, state:state, defaultHostName:defaultHostName}" -o table
-
-          echo "AZURE_WEBAPP_NAME=$APP_NAME" >> "$GITHUB_ENV"
-          echo "AZURE_RESOURCE_GROUP=$RG_NAME" >> "$GITHUB_ENV"
-
       - name: Wait before deploy
         run: sleep 15
 
@@ -87,7 +46,6 @@ jobs:
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           package: .
-          clean: true
 
       - name: Deploy to Azure Web App (retry)
         shell: bash
