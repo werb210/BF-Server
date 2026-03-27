@@ -1,4 +1,4 @@
-name: Deploy BF Server (Hard Reset Deploy)
+name: Deploy BF Server
 
 on:
   push:
@@ -21,44 +21,35 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
-      - name: Install deps
+      - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      - name: Build project
         run: npm run build
 
-      - name: Prepare deploy package
+      - name: Package deployment artifact
         run: |
-          mkdir deploy
+          mkdir -p deploy
           cp -r dist package.json package-lock.json deploy/
           cd deploy
           zip -r ../deploy.zip .
 
-      - name: Install Azure CLI
-        run: |
-          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Azure Login
+      - name: ZIP deploy to Azure Web App
         run: |
-          az login --service-principal \
-            -u $(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .clientId) \
-            -p $(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .clientSecret) \
-            --tenant $(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .tenantId)
-
-      - name: HARD RESET DEPLOYMENT STATE
-        run: |
-          az webapp stop \
-            --name boreal-staff-server \
-            --resource-group boreal-staff-server_group || true
-
           az webapp deployment source config-zip \
             --name boreal-staff-server \
-            --resource-group boreal-staff-server_group \
+            --resource-group boreal-financial-rg \
             --src deploy.zip
 
-      - name: START APP
+      - name: Restart Azure Web App
         run: |
-          az webapp start \
+          az webapp restart \
             --name boreal-staff-server \
-            --resource-group boreal-staff-server_group
+            --resource-group boreal-financial-rg
