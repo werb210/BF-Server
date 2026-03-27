@@ -54,11 +54,25 @@ Additional configuration is optional but recommended (rate limits, lockout polic
 Configure the App Service startup command to run the Node server entrypoint directly:
 
 ```bash
-node dist/server/index.js
+node dist/index.js
 ```
 
 Avoid static-site startup modes (such as `serve`, blank startup commands, or SPA defaults) so
 `/api/*` requests are handled by the Node server.
+
+For Azure App Service, set these app settings:
+
+```bash
+az webapp config appsettings set \
+  --resource-group boreal-financial-rg \
+  --name boreal-staff-server \
+  --settings STARTUP_COMMAND="node dist/index.js"
+
+az webapp config appsettings set \
+  --resource-group boreal-financial-rg \
+  --name boreal-staff-server \
+  --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true
+```
 
 ## Health endpoints
 
