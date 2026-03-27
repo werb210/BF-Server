@@ -20,9 +20,13 @@ function assertRequiredEnv(): void {
 }
 
 export function createServer() {
+  console.log("STEP 1: entering createServer");
+  console.log("STEP 2: checking env");
   assertRequiredEnv();
+  console.log("STEP 3: env OK");
 
   const app = express();
+  console.log("STEP 4: express created");
 
   const allowedOrigins = [
     "https://staff.boreal.financial",
@@ -66,9 +70,11 @@ export function createServer() {
     res.json({ ok: true });
   });
 
+  console.log("STEP 5: before routes");
   app.use("/auth", authRoutes);
 
   app.use("/telephony", telephonyRoutes);
+  console.log("STEP 6: routes mounted");
 
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     const anyErr = err as { status?: number; message?: string };
