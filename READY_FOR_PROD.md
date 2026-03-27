@@ -26,3 +26,6 @@
 - [ ] App Services running
 - [ ] Static Web Apps active
 - [ ] Env vars set
+- [ ] Startup Command set to `npm start`
+- [ ] `WEBSITES_PORT=8080`
+- [ ] `WEBSITES_CONTAINER_START_TIME_LIMIT=600`

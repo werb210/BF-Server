@@ -4,35 +4,8 @@ import express, { type NextFunction, type Request, type Response } from "express
 import authRoutes from "../routes/auth.routes";
 import telephonyRoutes from "../routes/telephony.routes";
 
-const requiredEnv = [
-  "JWT_SECRET",
-  "TWILIO_ACCOUNT_SID",
-  "TWILIO_AUTH_TOKEN",
-  "TWILIO_VERIFY_SERVICE_SID",
-] as const;
-
-function assertRequiredEnv(): void {
-  const missing = requiredEnv.filter((key) => !process.env[key]);
-
-  if (missing.length === 0) {
-    return;
-  }
-
-  if (process.env.NODE_ENV === "production") {
-    throw new Error(`Missing env: ${missing.join(", ")}`);
-  }
-
-  console.warn(`[STARTUP WARNING] Missing env: ${missing.join(", ")}`);
-}
-
 export function createServer() {
-  console.log("STEP 1: entering createServer");
-  console.log("STEP 2: checking env");
-  assertRequiredEnv();
-  console.log("STEP 3: env OK");
-
   const app = express();
-  console.log("STEP 4: express created");
 
   const allowedOrigins = [
     "https://staff.boreal.financial",
@@ -73,14 +46,12 @@ export function createServer() {
   });
 
   app.get("/health", (_req: Request, res: Response) => {
-    res.json({ ok: true });
+    res.status(200).send("OK");
   });
 
-  console.log("STEP 5: before routes");
   app.use("/auth", authRoutes);
 
   app.use("/telephony", telephonyRoutes);
-  console.log("STEP 6: routes mounted");
 
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     const anyErr = err as { status?: number; message?: string };

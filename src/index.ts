@@ -1,25 +1,23 @@
-console.log("ENTRYPOINT: BOOT");
-
-console.log("ENTRYPOINT: file loaded");
-
 import { createServer } from "./server/createServer";
+import { validateEnv } from "./bootstrap";
 
-console.log("ENTRYPOINT: imports completed");
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT:", err);
+});
+
+process.on("unhandledRejection", (err) => {
+  console.error("UNHANDLED:", err);
+});
 
 try {
-  console.log("ENTRYPOINT: creating server");
+  validateEnv();
 
   const app = createServer();
 
-  console.log("ENTRYPOINT: server created");
-
   const port = process.env.PORT || 8080;
 
-  console.log("ENTRYPOINT: starting listen");
-
   app.listen(port, () => {
-    console.log("ENTRYPOINT: server listening");
-    console.log(`Server running on ${port}`);
+    console.log(`Server running on port ${port}`);
   });
 
 } catch (err) {
