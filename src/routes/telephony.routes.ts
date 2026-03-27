@@ -29,7 +29,7 @@ router.get("/token", requireAuth, async (req, res) => {
 
   assertTwilioConfigured();
 
-  const { generateVoiceToken } = await import("../telephony/services/tokenService");
+  const { generateVoiceToken } = await import("../telephony/services/tokenService.js");
   const token = generateVoiceToken(userId);
   return send.ok(res, { token });
 });
