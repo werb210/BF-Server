@@ -28,7 +28,7 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Archive build
+      - name: Prepare package
         run: |
           mkdir -p release
           cp -r dist package.json package-lock.json release/
@@ -40,21 +40,33 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Force stop running app (prevents 409)
+      - name: Get publishing profile
+        id: pubprofile
         run: |
-          az webapp stop \
+          az webapp deployment list-publishing-profiles \
             --name boreal-staff-server \
-            --resource-group boreal-staff-server_group || true
-          sleep 10
+            --resource-group boreal-staff-server_group \
+            --xml > publish.xml
 
-      - name: Deploy
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: boreal-staff-server
-          package: release.zip
+      - name: Install xmllint
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+
+      - name: Extract credentials
+        run: |
+          USER=$(xmllint --xpath "string(//publishProfile[@publishMethod='MSDeploy']/@userName)" publish.xml)
+          PASS=$(xmllint --xpath "string(//publishProfile[@publishMethod='MSDeploy']/@userPWD)" publish.xml)
+          echo "KUDU_USER=$USER" >> $GITHUB_ENV
+          echo "KUDU_PASS=$PASS" >> $GITHUB_ENV
+
+      - name: Deploy via Kudu ZIP (no OneDeploy)
+        run: |
+          curl -X POST \
+            -u "$KUDU_USER:$KUDU_PASS" \
+            --data-binary @release.zip \
+            https://boreal-staff-server.scm.azurewebsites.net/api/zipdeploy
 
       - name: Restart app
         run: |
-          az webapp start \
+          az webapp restart \
             --name boreal-staff-server \
             --resource-group boreal-staff-server_group
