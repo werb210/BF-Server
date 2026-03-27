@@ -1,7 +1,7 @@
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 
-import authRoutes from "../modules/auth/auth.routes";
+import authRoutes from "../routes/auth.routes";
 import telephonyRoutes from "../routes/telephony.routes";
 
 const requiredEnv = [
@@ -81,11 +81,13 @@ export function createServer() {
     console.warn("⚠️ Twilio not configured — telephony routes disabled");
   }
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    const anyErr = err as { status?: number; message?: string };
+
     console.error("[SERVER ERROR]", err);
-    return res.status(err?.status || 500).json({
+    return res.status(anyErr?.status || 500).json({
       error: "internal_error",
-      ...(process.env.NODE_ENV !== "production" && { message: err?.message }),
+      ...(process.env.NODE_ENV !== "production" && { message: anyErr?.message }),
     });
   });
 

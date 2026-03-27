@@ -11,6 +11,15 @@ type AuthenticatedRequest = Request & {
 
 const router = Router();
 
+export function assertTwilioConfigured() {
+  if (
+    !process.env.TWILIO_ACCOUNT_SID
+    || !process.env.TWILIO_AUTH_TOKEN
+  ) {
+    throw new Error("Twilio not configured");
+  }
+}
+
 function isTwilioEnabled(): boolean {
   const hasTwilioCredentials = Boolean(
     process.env.TWILIO_ACCOUNT_SID

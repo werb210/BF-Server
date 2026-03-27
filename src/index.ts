@@ -1,8 +1,9 @@
-import { createServer } from "./createServer";
+import { createServer } from "./server/createServer";
 
 const app = createServer();
-const PORT = process.env.PORT || 8080;
 
-app.listen(PORT, () => {
-  console.log(`Server running on ${PORT}`);
+const port = process.env.PORT || 8080;
+
+app.listen(port, () => {
+  console.log(`Server running on ${port}`);
 });
