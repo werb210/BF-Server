@@ -5,33 +5,40 @@ on:
     branches:
       - main
 
-env:
-  AZURE_WEBAPP_NAME: boreal-staff-server
-  NODE_VERSION: 20
-  NODE_OPTIONS: --max-old-space-size=4096
-
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: 20
 
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-      - run: npm run build
+      - name: Build
+        run: npm run build
 
-      - run: ls -la dist
+      - name: Prepare deploy package
+        run: |
+          mkdir deploy
+          cp -r dist deploy/
+          cp package.json deploy/
+          cp package-lock.json deploy/
 
-      - uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Zip package
+        run: |
+          cd deploy
+          zip -r ../app.zip .
 
-      - uses: azure/webapps-deploy@v3
+      - name: Deploy to Azure
+        uses: azure/webapps-deploy@v3
         with:
           app-name: boreal-staff-server
-          package: .
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: app.zip
