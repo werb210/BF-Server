@@ -1,9 +1,21 @@
+console.log("BOOT: index.ts executing");
+
 import { createServer } from "./server/createServer";
 
-const app = createServer();
+try {
+  console.log("BOOT: creating server");
 
-const port = process.env.PORT || 8080;
+  const app = createServer();
 
-app.listen(port, () => {
-  console.log(`Server running on ${port}`);
-});
+  console.log("BOOT: server created");
+
+  const port = process.env.PORT || 8080;
+
+  app.listen(port, () => {
+    console.log(`Server running on ${port}`);
+  });
+
+} catch (err) {
+  console.error("FATAL STARTUP ERROR:", err);
+  process.exit(1);
+}
