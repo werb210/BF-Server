@@ -10,7 +10,7 @@ PHONE="${PHONE:-+15878881837}"
 CODE="${CODE:-654321}"
 HEALTH_PATH="${HEALTH_PATH:-/health}"
 WAIT_SECONDS="${WAIT_SECONDS:-90}"
-SERVER_BASE_URL="${SERVER_BASE_URL:-https://server.boreal.financial}"
+SERVER_BASE_URL="${SERVER_BASE_URL:-http://localhost:${PORT}}"
 PID=""
 
 cleanup() {
@@ -37,7 +37,7 @@ build_check() {
 
 start_server() {
   npm run build || true
-  node dist/index.js > server.log 2>&1 &
+  PORT="${PORT}" node dist/index.js > server.log 2>&1 &
   PID=$!
 
   for ((i=1; i<=WAIT_SECONDS; i++)); do

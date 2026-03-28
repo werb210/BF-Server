@@ -31,7 +31,7 @@ find_repo_dir() {
 SERVER_DIR=$(find_repo_dir "BF-Server")
 PORTAL_DIR=$(find_repo_dir "staff-portal")
 CLIENT_DIR=$(find_repo_dir "client")
-SERVER_BASE_URL="${SERVER_BASE_URL:-https://server.boreal.financial}"
+SERVER_BASE_URL="${SERVER_BASE_URL:-http://localhost:8080}"
 
 [ -d "$SERVER_DIR" ] || { echo "❌ BF-Server not found"; exit 1; }
 [ -d "$PORTAL_DIR" ] || { echo "❌ staff-portal not found"; exit 1; }

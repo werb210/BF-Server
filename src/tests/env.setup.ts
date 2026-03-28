@@ -1,7 +1,11 @@
 process.env.NODE_ENV = "test";
 process.env.SKIP_DB_CONNECTION = "true";
-process.env.TEST_DB_URL = "postgres://postgres:postgres@localhost:5432/test";
-process.env.DATABASE_URL = process.env.TEST_DB_URL;
+process.env.DATABASE_URL = process.env.DATABASE_URL || "file:./test.db";
+process.env.TEST_DB_URL =
+  process.env.TEST_DB_URL || "postgres://postgres:postgres@localhost:5432/test";
+if (process.env.DATABASE_URL.startsWith("file:")) {
+  process.env.DATABASE_URL = process.env.TEST_DB_URL;
+}
 
 process.env.JWT_SECRET = "test-secret";
 process.env.TWILIO_ACCOUNT_SID = "ACtest";

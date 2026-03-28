@@ -6,12 +6,14 @@ const router = express.Router()
 router.get('/token', (req: any, res: any) => {
   if (config.env === 'test') {
     return res.status(200).json({
-      token: 'test-token',
+      success: true,
+      data: { token: 'test-token' },
     })
   }
 
   return res.status(200).json({
-    token: 'real-token',
+    success: true,
+    data: { token: 'real-token' },
   })
 })
 

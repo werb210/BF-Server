@@ -3,6 +3,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 
 import { auth } from "../middleware/auth";
 import authRoutes from "../routes/auth.routes";
+import telephonyRoutes from "../routes/telephony/token";
 import applicationRoutes from "../routes/application";
 import documentRoutes from "../routes/documents";
 import crmRoutes from "../routes/crm";
@@ -17,19 +18,19 @@ export function createServer() {
 
   app.use(
     cors({
-      origin: [
-        "https://your-client-domain.com",
-        "http://localhost:5173",
-      ],
+      origin: true,
       credentials: true,
+      optionsSuccessStatus: 200,
     })
   );
+  app.options("*", cors({ origin: true, credentials: true, optionsSuccessStatus: 200 }));
 
   app.get("/health", (_req: Request, res: Response) => {
     res.json({ success: true });
   });
 
-  app.use("/api/auth", authRoutes);
+  app.use("/auth", authRoutes);
+  app.use("/telephony", auth, telephonyRoutes);
   app.use("/api/applications", applicationRoutes);
   app.use("/api/documents", documentRoutes);
   app.use("/api/crm", auth, crmRoutes);
@@ -44,7 +45,7 @@ export function createServer() {
   });
 
   app.use((_: Request, res: Response) => {
-    res.status(404).json(fail("Not found"));
+    res.status(404).json(fail("not_found"));
   });
 
   return app;
