@@ -30,7 +30,7 @@ describe("OTP flows", () => {
 
     const res = await request(app)
       .post("/auth/otp/verify")
-      .send({ phone: "+15555550100", code: "123456" });
+      .send({ phone: "+15555550100", code: "654321" });
 
     expect(res.status).toBe(200);
     expect(res.body.token).toBeDefined();
@@ -54,7 +54,7 @@ describe("OTP flows", () => {
 
     const res = await request(app)
       .post("/auth/otp/verify")
-      .send({ phone: "+15555550100", code: "123456" });
+      .send({ phone: "+15555550100", code: "654321" });
 
     expect(res.status).toBe(401);
     expect(res.body.error).toBe("unauthorized");
@@ -73,7 +73,7 @@ describe("OTP flows", () => {
 
     const res = await request(app)
       .post("/auth/otp/verify")
-      .send({ phone: "+15555550100", code: "123456" });
+      .send({ phone: "+15555550100", code: "654321" });
 
     expect(res.status).toBe(410);
     expect(res.body.error).toBe("OTP expired");
@@ -122,7 +122,7 @@ describe("OTP flows", () => {
 
     const afterDelete = await request(app)
       .post("/auth/otp/verify")
-      .send({ phone: "+15555550100", code: "123456" });
+      .send({ phone: "+15555550100", code: "654321" });
     expect(afterDelete.status).toBe(400);
     expect(afterDelete.body.error).toBe("Invalid code");
   });
@@ -134,12 +134,12 @@ describe("OTP flows", () => {
 
     const first = await request(app)
       .post("/auth/otp/verify")
-      .send({ phone: "+15555550100", code: "123456" });
+      .send({ phone: "+15555550100", code: "654321" });
     expect(first.status).toBe(200);
 
     const replay = await request(app)
       .post("/auth/otp/verify")
-      .send({ phone: "+15555550100", code: "123456" });
+      .send({ phone: "+15555550100", code: "654321" });
     expect(replay.status).toBe(400);
     expect(replay.body.error).toBe("Invalid code");
   });

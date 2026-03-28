@@ -11,7 +11,7 @@ const DEFAULT_TEST_ENV: Record<string, string> = {
   TWILIO_VOICE_APP_SID: "APtest",
   TWILIO_API_KEY: "SKtest",
   TWILIO_API_SECRET: "secret",
-  TEST_OTP_CODE: "123456",
+  TEST_OTP_CODE: "654321",
 };
 
 export function loadTestEnv(overrides: Partial<Record<string, string>> = {}): void {

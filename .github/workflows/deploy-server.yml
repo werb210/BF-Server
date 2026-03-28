@@ -15,11 +15,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
-      - run: npm ci
+      # Fix flaky npm network issues
+      - name: Configure npm
+        run: |
+          npm config set fetch-retries 5
+          npm config set fetch-retry-factor 2
+          npm config set fetch-retry-mintimeout 20000
+          npm config set fetch-retry-maxtimeout 120000
+          npm config set registry https://registry.npmjs.org/
 
-      - run: npm run build
+      # Use safer install (ci is failing due to network)
+      - name: Install dependencies (robust)
+        run: npm install --no-audit --prefer-offline
 
+      - name: Build
+        run: npm run build
+
+      # Ensure runtime dependencies exist in deployed artifact
       - name: Prepare deploy package
         run: |
           mkdir deploy
@@ -33,7 +47,7 @@ jobs:
           cd deploy
           zip -r ../app.zip .
 
-      - name: Deploy
+      - name: Deploy to Azure
         uses: azure/webapps-deploy@v3
         with:
           app-name: boreal-staff-server
