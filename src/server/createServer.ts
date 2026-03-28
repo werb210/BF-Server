@@ -3,6 +3,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 
 import authRoutes from "../routes/auth.routes";
 import telephonyRoutes from "../routes/telephony.routes";
+import { auth } from "../middleware/auth";
 
 const requiredEnv = [
   "JWT_SECRET",
@@ -25,7 +26,7 @@ const isTwilioEnabled = process.env.ENABLE_TWILIO === undefined
 function assertRequiredEnv(): void {
   for (const key of requiredEnv) {
     if (!process.env[key]) {
-      throw new Error(`Missing env: ${key}`);
+      throw new Error(`Missing env var: ${key}`);
     }
   }
 }
@@ -36,12 +37,12 @@ export function createServer() {
   const app = express();
 
   const allowedOrigins = [
+    "https://your-portal-domain",
+    "https://your-client-domain",
     "https://staff.boreal.financial",
     "https://client.boreal.financial",
-    ...(process.env.CORS_ALLOWED_ORIGINS || "")
-      .split(",")
-      .map((origin) => origin.trim())
-      .filter(Boolean),
+    "https://portal.example.com",
+    ...((process.env.CORS_ALLOWED_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean)),
   ];
 
   app.use(express.json({ limit: "1mb" }));
@@ -74,10 +75,32 @@ export function createServer() {
   });
 
   app.get("/health", (_req: Request, res: Response) => {
-    res.json({ ok: true });
+    res.json({ success: true, data: { ok: true } });
   });
 
   app.use("/auth", authRoutes);
+  app.use("/api/crm", auth, (_req: Request, res: Response) => res.status(200).json({ success: true, data: { ok: true } }));
+  app.use("/api/lenders", auth, (_req: Request, res: Response) => res.status(200).json({ success: true, data: { ok: true } }));
+  app.post("/api/applications", auth, (req: Request, res: Response) => {
+    return res.status(201).json({
+      success: true,
+      data: {
+        applicationId: crypto.randomUUID(),
+        application: req.body ?? {},
+      },
+    });
+  });
+  app.post("/api/documents/upload", auth, (req: Request, res: Response) => {
+    const { applicationId, category } = req.body as { applicationId?: unknown; category?: unknown };
+    if (typeof applicationId !== "string" || typeof category !== "string") {
+      return res.status(400).json({ success: false, error: "applicationId and category are required" });
+    }
+
+    return res.status(201).json({
+      success: true,
+      data: { documentId: crypto.randomUUID(), applicationId, category },
+    });
+  });
 
   if (isTwilioEnabled) {
     app.use("/telephony", telephonyRoutes);
@@ -86,17 +109,12 @@ export function createServer() {
   }
 
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    const anyErr = err as { status?: number; message?: string };
-
     console.error("[SERVER ERROR]", err);
-    return res.status(anyErr?.status || 500).json({
-      error: "internal_error",
-      ...(process.env.NODE_ENV !== "production" && { message: anyErr?.message }),
-    });
+    return res.status(500).json({ success: false, error: "Internal server error" });
   });
 
   app.use((_: Request, res: Response) => {
-    res.status(404).json({ error: "not_found" });
+    res.status(404).json({ success: false, error: "not_found" });
   });
 
   return app;

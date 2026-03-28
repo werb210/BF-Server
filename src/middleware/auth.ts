@@ -16,6 +16,25 @@ export interface AuthRequest extends Request {
   user?: AppUser;
 }
 
+export function auth(req: Request, res: Response, next: NextFunction) {
+  const header = req.headers.authorization;
+
+  if (!header) {
+    return res.status(401).json({ success: false, error: "No token" });
+  }
+
+  try {
+    const token = header.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({ success: false, error: "No token" });
+    }
+    req.user = jwt.verify(token, process.env.JWT_SECRET || config.jwt.secret) as Request["user"];
+    return next();
+  } catch {
+    return res.status(401).json({ success: false, error: "Invalid token" });
+  }
+}
+
 function authErrorBody(req: Request, code: string, message: string) {
   return {
     success: false,

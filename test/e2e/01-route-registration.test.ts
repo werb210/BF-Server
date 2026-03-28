@@ -35,14 +35,13 @@ describe("Route registration and prefix integrity", () => {
     const malformedPaths = [
       "/api/auth/otp/start",
       "/api/telephony/token",
-      "/api/applications",
       "/auth/auth/otp/start",
     ];
 
     for (const path of malformedPaths) {
       const res = await request(app).get(path);
       expect(res.status).toBe(404);
-      expect(res.body).toEqual({ error: "not_found" });
+      expect(res.body).toEqual({ success: false, error: "not_found" });
     }
   });
 });

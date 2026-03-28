@@ -8,7 +8,7 @@ describe("server:contract:e2e", () => {
       .send({ phone: "+61400000000" });
 
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
+    expect(res.body.success).toBe(true);
   });
 
   it("rejects legacy otp-only verify payload", async () => {
@@ -59,7 +59,8 @@ describe("server:contract:e2e", () => {
       .send({ phone: "+61400000000", code: "654321" });
 
     expect(verify.status).toBe(200);
-    expect(verify.body).toEqual({ token: "test-jwt-token" });
+    expect(verify.body.success).toBe(true);
+    expect(typeof verify.body.data.token).toBe("string");
   });
 
   it("does not expose /api telephony token alias", async () => {

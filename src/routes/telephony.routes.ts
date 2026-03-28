@@ -1,11 +1,12 @@
 import { Router, type Request } from "express";
 
-import { requireAuth } from "../middleware/requireAuth";
-import { send } from "../utils/contractResponse";
+import { auth } from "../middleware/auth";
 
 type AuthenticatedRequest = Request & {
   user?: {
     id?: string;
+    userId?: string;
+    sub?: string;
   };
 };
 
@@ -32,19 +33,22 @@ function isTwilioEnabled(): boolean {
     : process.env.ENABLE_TWILIO === "true" && hasTwilioCredentials;
 }
 
-router.get("/token", requireAuth, async (req, res) => {
+router.get("/token", auth, async (req, res) => {
   const userId = (req as AuthenticatedRequest).user?.id;
-  if (!userId) {
-    return send.error(res, 401, "unauthorized");
+  const resolvedUserId = userId
+    || (req as AuthenticatedRequest).user?.userId
+    || (req as AuthenticatedRequest).user?.sub;
+  if (!resolvedUserId) {
+    return res.status(401).json({ success: false, error: "unauthorized" });
   }
 
   if (!isTwilioEnabled()) {
-    return send.error(res, 503, "Telephony disabled");
+    return res.status(503).json({ success: false, error: "Telephony disabled" });
   }
 
   const { generateVoiceToken } = await import("../telephony/services/tokenService");
-  const token = generateVoiceToken(userId);
-  return send.ok(res, { token });
+  const token = generateVoiceToken(resolvedUserId);
+  return res.status(200).json({ success: true, data: { token } });
 });
 
 export default router;

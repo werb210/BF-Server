@@ -3,7 +3,7 @@ const DEFAULT_TEST_ENV: Record<string, string> = {
   SKIP_DB_CONNECTION: "true",
   TEST_DB_URL: "postgres://postgres:postgres@localhost:5432/test",
   JWT_SECRET: "test-secret",
-  REDIS_URL: "",
+  REDIS_URL: "redis://127.0.0.1:6379",
   OPENAI_API_KEY: "test-key",
   TWILIO_ACCOUNT_SID: "ACtest",
   TWILIO_AUTH_TOKEN: "test-token",

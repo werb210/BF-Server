@@ -20,7 +20,7 @@ describe("OTP flows", () => {
       .send({ phone: "+15555550100" });
 
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
+    expect(res.body.success).toBe(true);
   });
 
   it("verifies OTP and returns a token", async () => {
@@ -33,7 +33,8 @@ describe("OTP flows", () => {
       .send({ phone: "+15555550100", code: "654321" });
 
     expect(res.status).toBe(200);
-    expect(res.body.token).toBeDefined();
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.token).toBeDefined();
   });
 
   it("rejects invalid OTP payload", async () => {

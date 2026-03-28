@@ -14,7 +14,7 @@ describe("Auth enforcement", () => {
   it("returns 401 without Authorization header", async () => {
     const res = await request(app).get("/telephony/token");
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "unauthorized" });
+    expect(res.body).toEqual({ success: false, error: "No token" });
   });
 
   it("returns 200 with valid token", async () => {
@@ -25,7 +25,7 @@ describe("Auth enforcement", () => {
       .set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(200);
-    expect(typeof res.body.token).toBe("string");
+    expect(typeof res.body.data.token).toBe("string");
   });
 
   it("returns 401 for invalid token", async () => {

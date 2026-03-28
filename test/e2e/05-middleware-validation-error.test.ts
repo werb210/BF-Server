@@ -25,7 +25,7 @@ describe("Middleware execution, validation, and error handling", () => {
     const res = await request(app).post("/auth/otp/start").send({ phone: "" });
 
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({ error: "invalid_payload" });
+    expect(res.body).toEqual({ success: false, error: "invalid_payload" });
   });
 
   it("returns consistent 404 error envelope for unknown routes", async () => {
@@ -35,6 +35,6 @@ describe("Middleware execution, validation, and error handling", () => {
       .set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: "not_found" });
+    expect(res.body).toEqual({ success: false, error: "not_found" });
   });
 });
