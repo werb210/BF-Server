@@ -6,6 +6,10 @@ import telephonyRoutes from "../routes/telephony.routes";
 
 const requiredEnv = [
   "JWT_SECRET",
+  "REDIS_URL",
+  "TWILIO_ACCOUNT_SID",
+  "TWILIO_AUTH_TOKEN",
+  "TWILIO_PHONE",
 ] as const;
 
 const hasTwilioCredentials = Boolean(

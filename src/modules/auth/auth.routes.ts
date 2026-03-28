@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import jwt from "jsonwebtoken";
 
 import { otpStore } from "./otpStore";
 import { send } from "../../utils/contractResponse";
@@ -25,7 +26,7 @@ router.post("/otp/start", (req: Request, res: Response) => {
     return error(res, 429, "Too many requests");
   }
 
-  const code = "123456";
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
 
   otpStore.set(phone, {
     code,
@@ -73,9 +74,7 @@ router.post("/otp/verify", (req: Request, res: Response) => {
     return error(res, 400, "Invalid code");
   }
 
-  const isDeterministicTestCode = code === "123456" || (phone === "+61400000000" && code === "000000");
-
-  if (record.code !== code && !isDeterministicTestCode) {
+  if (record.code !== code) {
     record.attempts += 1;
 
     if (record.attempts >= 5) {
@@ -90,7 +89,12 @@ router.post("/otp/verify", (req: Request, res: Response) => {
   record.used = true;
   otpStore.set(phone, record);
 
-  const token = "mock-jwt-token";
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return error(res, 401, "unauthorized");
+  }
+
+  const token = jwt.sign({ phone }, jwtSecret, { expiresIn: "1d" });
 
   return send.ok(res, { token });
 });
