@@ -10,46 +10,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
-      # Fix flaky npm network issues
-      - name: Configure npm
-        run: |
-          npm config set fetch-retries 5
-          npm config set fetch-retry-factor 2
-          npm config set fetch-retry-mintimeout 20000
-          npm config set fetch-retry-maxtimeout 120000
-          npm config set registry https://registry.npmjs.org/
-
-      # Use safer install (ci is failing due to network)
-      - name: Install dependencies (robust)
-        run: npm install --no-audit --prefer-offline
+      - name: Install
+        run: npm ci
 
       - name: Build
         run: npm run build
 
-      # Ensure runtime dependencies exist in deployed artifact
-      - name: Prepare deploy package
-        run: |
-          mkdir deploy
-          cp -r dist deploy/
-          cp package.json deploy/
-          cp package-lock.json deploy/
-          cp -r node_modules deploy/
-
-      - name: Zip package
-        run: |
-          cd deploy
-          zip -r ../app.zip .
-
-      - name: Deploy to Azure
+      - name: Deploy
         uses: azure/webapps-deploy@v3
         with:
-          app-name: boreal-staff-server
+          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: app.zip
+          package: .
