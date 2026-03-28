@@ -42,7 +42,7 @@ systemCheckRouter.get("/system-check", async (_req: any, res: any) => {
     users: { status: "fail" },
     lenders: { status: "fail" },
     products: { status: "fail" },
-    otp: { status: "fail", stored: null, expected: "123456" },
+    otp: { status: "fail", stored: null, expected: "654321" },
     redis: { status: "missing" },
     env: {
       db: Boolean(config.db.host?.trim()),
