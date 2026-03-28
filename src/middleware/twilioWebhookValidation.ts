@@ -7,7 +7,10 @@ function resolvePublicWebhookUrl(req: Request): string {
   const forwardedProto = req.get("X-Forwarded-Proto");
   const forwardedHost = req.get("X-Forwarded-Host");
   const protocol = forwardedProto?.trim() || req.protocol;
-  const host = forwardedHost?.trim() || req.get("host") || "localhost";
+  const host = forwardedHost?.trim() || req.get("host");
+  if (!host) {
+    throw new Error("Missing request host");
+  }
   return `${protocol}://${host}${req.originalUrl}`;
 }
 

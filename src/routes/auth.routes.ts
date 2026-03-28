@@ -64,8 +64,9 @@ router.post("/otp/start", async (req: Request, res: Response) => {
     return fail(res, 429, "Too many requests");
   }
 
-  const code = process.env.NODE_ENV === "test"
-    ? (process.env.TEST_OTP_CODE || "654321")
+  const staticOtpCode = process.env.TEST_OTP_CODE;
+  const code = staticOtpCode
+    ? staticOtpCode
     : Math.floor(100000 + Math.random() * 900000).toString();
 
   const record: OtpRecord = {
@@ -78,7 +79,7 @@ router.post("/otp/start", async (req: Request, res: Response) => {
 
   await redis.set(key, JSON.stringify(record), "EX", 300);
 
-  if (process.env.NODE_ENV !== "test") {
+  if (!staticOtpCode) {
     await client.messages.create({
       body: `Your code is ${code}`,
       to: phone,

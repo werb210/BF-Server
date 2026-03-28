@@ -21,13 +21,10 @@ function buildPoolConfig(): PoolConfig {
   }
 
   const isAzure = connectionString.includes("postgres.database.azure.com");
-  const isLocal =
-    connectionString.includes("localhost") ||
-    connectionString.includes("127.0.0.1");
 
   return {
     connectionString,
-    ssl: isAzure ? { rejectUnauthorized: true } : isLocal ? false : false,
+    ssl: isAzure ? { rejectUnauthorized: true } : false,
     max: 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,

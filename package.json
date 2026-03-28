@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
-    "@prisma/adapter-pg": "^7.5.0",
+    "@prisma/adapter-pg": "^7.6.0",
     "@prisma/client": "^7.5.0",
     "applicationinsights": "^3.14.0",
     "bullmq": "^5.71.0",

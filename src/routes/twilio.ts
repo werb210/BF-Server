@@ -116,7 +116,10 @@ function buildWebhookUrl(req: { protocol: string; get: (name: string) => string 
   }
   const proto = req.get("x-forwarded-proto") ?? req.protocol;
   const host = req.get("x-forwarded-host") ?? req.get("host");
-  return `${proto}://${host ?? "localhost"}${req.originalUrl}`;
+  if (!host) {
+    throw new AppError("invalid_request", "Missing request host.", 400);
+  }
+  return `${proto}://${host}${req.originalUrl}`;
 }
 
 function assertValidTwilioSignature(req: { headers: Record<string, unknown>; get: (name: string) => string | undefined; body: unknown; protocol: string; originalUrl: string }): void {

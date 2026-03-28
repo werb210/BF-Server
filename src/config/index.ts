@@ -240,7 +240,6 @@ export const config = Object.freeze({
   }),
   runtime: Object.freeze({
     isProd: env.NODE_ENV === "production",
-    isTest: env.NODE_ENV === "test",
   }),
   features: Object.freeze({
     ocrEnabled: toBool(parsed.OCR_ENABLED, true),

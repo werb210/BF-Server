@@ -16,14 +16,45 @@ export function createServer() {
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ limit: "1mb", extended: true }));
 
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const originalJson = res.json.bind(res);
+
+    res.json = ((body?: unknown) => {
+      if (req.path === "/health") {
+        return originalJson(body);
+      }
+
+      if (body && typeof body === "object" && !Array.isArray(body)) {
+        const payload = body as Record<string, unknown>;
+        if (typeof payload.success === "boolean") {
+          return originalJson(payload);
+        }
+        if (typeof payload.error === "string") {
+          return originalJson({ success: false, error: payload.error });
+        }
+      }
+
+      return originalJson({ success: true, data: body });
+    }) as Response["json"];
+
+    next();
+  });
+
   app.use(
     cors({
-      origin: true,
+      origin: (origin, callback) => callback(null, origin ?? true),
       credentials: true,
       optionsSuccessStatus: 200,
     })
   );
-  app.options("*", cors({ origin: true, credentials: true, optionsSuccessStatus: 200 }));
+  app.options(
+    "*",
+    cors({
+      origin: (origin, callback) => callback(null, origin ?? true),
+      credentials: true,
+      optionsSuccessStatus: 200,
+    })
+  );
 
   app.get("/health", (_req: Request, res: Response) => {
     res.json({ success: true });
