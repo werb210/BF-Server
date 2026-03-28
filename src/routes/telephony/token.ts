@@ -1,13 +1,12 @@
-import express from 'express'
+import express from "express";
 
-const router = express.Router()
+import { ok } from "../../lib/response";
 
-router.get('/token', (_req: any, res: any) => {
+const router = express.Router();
+
+router.get("/token", (_req: any, res: any) => {
   const token = "real-token";
-  return res.status(200).json({
-    success: true,
-    data: { token },
-  })
-})
+  return ok(res, { token });
+});
 
-export default router
+export default router;

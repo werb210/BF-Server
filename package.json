@@ -6,7 +6,8 @@
     "build": "mkdir -p prisma/client && prisma generate && tsc",
     "start": "node dist/index.js",
     "dev": "mkdir -p prisma/client && prisma generate && tsx src/index.ts",
-    "test": "mkdir -p prisma/client && prisma generate && vitest run"
+    "test": "mkdir -p prisma/client && prisma generate && vitest run",
+    "ci:contract": "bash scripts/ci-contract-checks.sh"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
