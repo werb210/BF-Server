@@ -7,6 +7,7 @@ describe("System stability", () => {
     const app = createServer();
     const res = await request(app).get("/health");
 
-    expect(res.body).toEqual({ success: true });
+    expect(res.status).toBe(200);
+    expect(res.text).toBe("ok");
   });
 });

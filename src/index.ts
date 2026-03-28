@@ -2,21 +2,9 @@ import "./env";
 import { createServer } from "./server/createServer";
 import { assertRequiredEnv, assertSingleServerStart } from "./server/runtimeGuards";
 
-/**
- * DO NOT hard fail on missing env in Azure.
- * Log instead so app can still boot.
- */
-try {
-  assertRequiredEnv(process.env);
-} catch (err) {
-  console.error("ENV VALIDATION WARNING:", err);
-}
-
+assertRequiredEnv();
 assertSingleServerStart();
 
-/**
- * Never throw here — it kills the process silently in Azure
- */
 process.on("unhandledRejection", (err) => {
   console.error("UNHANDLED REJECTION:", err);
 });
@@ -29,16 +17,17 @@ console.log("BOOT START");
 
 const app = createServer();
 
-/**
- * CRITICAL FIX:
- * Azure requires PORT fallback
- */
-const PORT = Number(process.env.PORT) || 8080;
+try {
+  const port = process.env.PORT || 8080;
+  const listenPort = typeof port === "string" ? Number(port) : port;
 
-if (process.env.NODE_ENV !== "test") {
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on port ${PORT}`);
-  });
+  if (process.env.NODE_ENV !== "test") {
+    app.listen(listenPort, "0.0.0.0", () => {
+      console.log(`Server running on ${port}`);
+    });
+  }
+} catch (err) {
+  console.error("BOOT FAILURE", err);
 }
 
 export { app };

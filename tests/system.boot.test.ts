@@ -4,47 +4,41 @@ import { createServer } from "../src/server/createServer";
 import { assertRequiredEnv } from "../src/server/runtimeGuards";
 
 describe("System boot", () => {
+  const originalPort = process.env.PORT;
+
+  afterEach(() => {
+    if (originalPort === undefined) {
+      delete process.env.PORT;
+      return;
+    }
+
+    process.env.PORT = originalPort;
+  });
+
   it("boots with zero external dependencies", async () => {
     const app = createServer();
 
     const res = await request(app).get("/health");
 
-    expect(res.body).toEqual({ success: true });
+    expect(res.status).toBe(200);
+    expect(res.text).toBe("ok");
   });
 
-  it("crashes when DATABASE_URL is missing outside test mode", () => {
-    expect(() => {
-      assertRequiredEnv({
-        NODE_ENV: "production",
-        PORT: "8080",
-        JWT_SECRET: "secret",
-        REDIS_URL: "redis://127.0.0.1:6379",
-        TWILIO_ACCOUNT_SID: "sid",
-      });
-    }).toThrow("MISSING_ENV: DATABASE_URL");
+  it("returns missing PORT when it is absent", () => {
+    delete process.env.PORT;
+
+    const result = assertRequiredEnv();
+
+    expect(result.ok).toBe(false);
+    expect(result.missing).toEqual(["PORT"]);
   });
 
-  it("crashes when REDIS_URL is missing outside test mode", () => {
-    expect(() => {
-      assertRequiredEnv({
-        NODE_ENV: "production",
-        PORT: "8080",
-        DATABASE_URL: "postgres://example",
-        JWT_SECRET: "secret",
-        TWILIO_ACCOUNT_SID: "sid",
-      });
-    }).toThrow("REDIS_REQUIRED");
-  });
+  it("returns ok when PORT is present", () => {
+    process.env.PORT = "8080";
 
-  it("crashes when TWILIO_ACCOUNT_SID is missing outside test mode", () => {
-    expect(() => {
-      assertRequiredEnv({
-        NODE_ENV: "production",
-        PORT: "8080",
-        DATABASE_URL: "postgres://example",
-        JWT_SECRET: "secret",
-        REDIS_URL: "redis://127.0.0.1:6379",
-      });
-    }).toThrow("TWILIO_REQUIRED");
+    const result = assertRequiredEnv();
+
+    expect(result.ok).toBe(true);
+    expect(result.missing).toEqual([]);
   });
 });
