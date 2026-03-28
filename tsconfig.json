@@ -9,6 +9,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
+    "types": ["node", "vitest/globals"],
     "forceConsistentCasingInFileNames": true
   },
   "include": ["src"],
