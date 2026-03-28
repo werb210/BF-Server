@@ -45,7 +45,7 @@ async function loadAppBuilder() {
   ENV.TWILIO_API_KEY_SID ??= "SKtest";
   ENV.TWILIO_API_SECRET ??= "test-secret";
 
-  const { buildAppWithApiRoutes } = await import("../app");
+  const { buildAppWithApiRoutes } = await import("../app.js");
   return buildAppWithApiRoutes;
 }
 

@@ -46,7 +46,7 @@ router.get("/token", auth, async (req, res) => {
     return res.status(503).json({ success: false, error: "Telephony disabled" });
   }
 
-  const { generateVoiceToken } = await import("../telephony/services/tokenService");
+  const { generateVoiceToken } = await import("../telephony/services/tokenService.js");
   const token = generateVoiceToken(resolvedUserId);
   return res.status(200).json({ success: true, data: { token } });
 });
