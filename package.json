@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "main": "dist/index.js",
   "scripts": {
-    "build": "mkdir -p prisma/client && prisma generate && tsc",
+    "build": "tsc",
+    "postinstall": "prisma generate",
     "start": "node dist/index.js",
-    "dev": "mkdir -p prisma/client && prisma generate && tsx src/index.ts",
-    "test": "mkdir -p prisma/client && prisma generate && vitest run",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
     "ci:contract": "bash scripts/ci-contract-checks.sh"
   },
   "dependencies": {
