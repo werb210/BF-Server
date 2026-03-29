@@ -16,6 +16,19 @@ jobs:
         with:
           node-version: 20
 
-      - run: npm ci --prefer-offline --no-audit --no-fund
+      - run: npm ci
       - run: npm run build
-      - run: npm run test
+
+      - name: Run server + health check
+        env:
+          NODE_ENV: development
+          PORT: 8080
+          JWT_SECRET: ci-jwt-secret-123
+          JWT_REFRESH_SECRET: ci-refresh-secret-123
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          OPENAI_API_KEY: sk-ci-test-key
+          REDIS_URL: redis://127.0.0.1:6379
+        run: |
+          node dist/index.js &
+          sleep 5
+          curl -f http://localhost:8080/health
