@@ -14,7 +14,21 @@ import { createServer } from './server/createServer';
 import { assertEnv } from './env';
 import { assertSingleServerStart } from './server/runtimeGuards';
 
-async function boot() {
+async function initServices() {
+  const { getPrisma } = await import('./lib/db.js');
+  const { getRedisOrNull } = await import('./lib/redis.js');
+
+  // Initialize Prisma client lazily; do not block on DB handshakes here.
+  void getPrisma();
+
+  const redis = getRedisOrNull();
+  const redisWithConnect = redis as (typeof redis & { connect?: () => Promise<void> }) | null;
+  if (redisWithConnect?.connect) {
+    await redisWithConnect.connect();
+  }
+}
+
+function boot() {
   try {
     console.log('BOOT: env check');
     assertEnv();
@@ -25,7 +39,7 @@ async function boot() {
     console.log('BOOT: creating server');
     const app = createServer();
 
-    const port = process.env.PORT || 8080;
+    const port = Number(process.env.PORT) || 8080;
 
     console.log('BOOT: starting listen');
 
@@ -34,13 +48,19 @@ async function boot() {
       process.exit(1);
     }, 30000);
 
-    const server = app.listen(port, () => {
+    const server = app.listen(port, '0.0.0.0', async () => {
       console.log(`BOOT: listening on ${port}`);
       clearTimeout(startTimeout);
+
+      try {
+        await initServices();
+        console.log('BOOT: services ready');
+      } catch (err) {
+        console.error('BOOT: init failed', err);
+      }
     });
 
     server.setTimeout(30000);
-
   } catch (err) {
     console.error('BOOT FAILED:', err);
     process.exit(1);

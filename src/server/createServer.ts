@@ -3,9 +3,7 @@ import express, { type Request, type Response } from "express";
 
 import { auth } from "../middleware/auth";
 import { errorHandler } from "../middleware/errorHandler";
-import { getPrisma } from "../lib/db";
-import { getRedis } from "../lib/redis";
-import { fail, ok } from "../lib/response";
+import { fail } from "../lib/response";
 import authRoutes from "../routes/auth.routes";
 import telephonyRoutes from "../routes/telephony/token";
 import applicationRoutes from "../routes/application";
@@ -13,13 +11,9 @@ import documentRoutes from "../routes/documents";
 import crmRoutes from "../routes/crm";
 
 export function createServer() {
-  const prisma = getPrisma();
-  const redis = getRedis();
-  void prisma;
-  void redis;
-
   const app = express();
 
+  // MUST BE FIRST
   app.get("/health", (_req: Request, res: Response) => {
     res.status(200).send("OK");
   });
