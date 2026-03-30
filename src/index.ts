@@ -11,13 +11,13 @@ process.on('unhandledRejection', (err) => {
 });
 
 import { createServer } from './server/createServer';
-import { assertRequiredEnv } from './env';
+import { assertEnv } from './env';
 import { assertSingleServerStart } from './server/runtimeGuards';
 
 async function boot() {
   try {
     console.log('BOOT: env check');
-    assertRequiredEnv();
+    assertEnv();
 
     console.log('BOOT: guard check');
     assertSingleServerStart();
