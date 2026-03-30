@@ -13,6 +13,10 @@ import crmRoutes from "../routes/crm";
 export function createServer() {
   const app = express();
 
+  app.get("/health", (_req: Request, res: Response) => {
+    res.status(200).send("OK");
+  });
+
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ limit: "1mb", extended: true }));
 
@@ -33,9 +37,6 @@ export function createServer() {
     })
   );
 
-  app.get("/health", (_req: Request, res: Response) => {
-    res.status(200).send("ok");
-  });
   app.get("/", (_req: Request, res: Response) => res.status(200).send("Server is running"));
 
   app.use("/auth", authRoutes);

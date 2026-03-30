@@ -16,6 +16,9 @@ const documents_1 = __importDefault(require("../routes/documents"));
 const crm_1 = __importDefault(require("../routes/crm"));
 function createServer() {
     const app = (0, express_1.default)();
+    app.get("/health", (_req, res) => {
+        res.status(200).send("OK");
+    });
     app.use(express_1.default.json({ limit: "1mb" }));
     app.use(express_1.default.urlencoded({ limit: "1mb", extended: true }));
     app.use((0, cors_1.default)({
@@ -28,9 +31,6 @@ function createServer() {
         credentials: true,
         optionsSuccessStatus: 200,
     }));
-    app.get("/health", (_req, res) => {
-        res.status(200).send("ok");
-    });
     app.get("/", (_req, res) => res.status(200).send("Server is running"));
     app.use("/auth", auth_routes_1.default);
     app.use("/telephony", auth_1.auth, token_1.default);
