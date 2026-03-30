@@ -5,6 +5,9 @@ import cors from "cors";
 import express from 'express';
 import http from 'http';
 import { env } from './config';
+import authRoutes from "./routes/auth.routes";
+import { requireAuth } from "./middleware/auth";
+import { authMeHandler } from "./routes/auth/me";
 
 const app = express();
 
@@ -20,6 +23,13 @@ app.use(
 );
 app.use(cookieParser());
 app.use(express.json());
+
+// HARD mount — must exist or 404
+app.use("/auth", authRoutes);
+app.get("/api/auth/me", requireAuth, authMeHandler);
+
+// DEBUG: confirm route registration at boot
+console.log("AUTH ROUTES MOUNTED AT /auth");
 
 // Root (Azure health probe hits this)
 app.get('/', (_req, res) => {
