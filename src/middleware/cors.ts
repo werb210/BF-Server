@@ -4,10 +4,15 @@ export function corsMiddleware(req: any, res: any, next: any) {
     .split(",")
     .map((s: string) => s.trim())
     .filter(Boolean);
+  const defaultAllowed = [
+    "https://staff.boreal.financial",
+    "http://localhost:5173",
+  ];
+  const allowedOrigins = allowed.length > 0 ? allowed : defaultAllowed;
 
   const origin = req.headers.origin;
 
-  if (origin && allowed.includes(origin)) {
+  if (origin && allowedOrigins.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
 

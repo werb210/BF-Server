@@ -1,5 +1,6 @@
 import { createServer } from "./server/createServer";
 import express from "express";
+import cookieParser from "cookie-parser";
 import { registerApiRouteMounts } from "./routes/routeRegistry";
 import healthRoutes from "./routes/health";
 import { requestContextMiddleware } from "./observability/requestContext";
@@ -12,6 +13,7 @@ export function buildAppWithApiRoutes() {
   const app = express();
   app.use(securityHeaders);
   app.use(corsMiddleware);
+  app.use(cookieParser());
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ limit: "1mb", extended: true }));
   app.use(requestContextMiddleware);

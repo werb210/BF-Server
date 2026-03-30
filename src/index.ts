@@ -1,5 +1,7 @@
 import 'dotenv/config';
 
+import cookieParser from "cookie-parser";
+import cors from "cors";
 import express from 'express';
 import http from 'http';
 import { env } from './config';
@@ -7,6 +9,16 @@ import { env } from './config';
 const app = express();
 
 // Core middleware
+app.use(
+  cors({
+    origin: [
+      "https://staff.boreal.financial",
+      "http://localhost:5173",
+    ],
+    credentials: true,
+  }),
+);
+app.use(cookieParser());
 app.use(express.json());
 
 // Root (Azure health probe hits this)

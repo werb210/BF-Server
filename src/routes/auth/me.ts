@@ -66,8 +66,8 @@ export async function authMeHandler(
       respondAuthError(
         res,
         401,
-        "missing_token",
-        "Authorization token is required."
+        "AUTH_REQUIRED",
+        "Authentication required."
       );
       return;
     }
