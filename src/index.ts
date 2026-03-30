@@ -1,33 +1,50 @@
-import "./env";
-import { createServer } from "./server/createServer";
-import { assertRequiredEnv, assertSingleServerStart } from "./server/runtimeGuards";
+console.log('BOOT: start');
 
-assertRequiredEnv();
-assertSingleServerStart();
-
-process.on("unhandledRejection", (err) => {
-  console.error("UNHANDLED REJECTION:", err);
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err);
+  process.exit(1);
 });
 
-process.on("uncaughtException", (err) => {
-  console.error("UNCAUGHT EXCEPTION:", err);
+process.on('unhandledRejection', (err) => {
+  console.error('UNHANDLED REJECTION:', err);
+  process.exit(1);
 });
 
-console.log("BOOT START");
+import { createServer } from './server/createServer';
+import { assertRequiredEnv } from './env';
+import { assertSingleServerStart } from './server/runtimeGuards';
 
-const app = createServer();
+async function boot() {
+  try {
+    console.log('BOOT: env check');
+    assertRequiredEnv();
 
-try {
-  const port = process.env.PORT || 8080;
-  const listenPort = typeof port === "string" ? Number(port) : port;
+    console.log('BOOT: guard check');
+    assertSingleServerStart();
 
-  if (process.env.NODE_ENV !== "test") {
-    app.listen(listenPort, "0.0.0.0", () => {
-      console.log(`Server running on ${port}`);
+    console.log('BOOT: creating server');
+    const app = createServer();
+
+    const port = process.env.PORT || 8080;
+
+    console.log('BOOT: starting listen');
+
+    const server = app.listen(port, () => {
+      console.log(`BOOT: listening on ${port}`);
+      clearTimeout(startTimeout);
     });
+
+    server.setTimeout(30000);
+
+    const startTimeout = setTimeout(() => {
+      console.error('BOOT TIMEOUT: server failed to start in 30s');
+      process.exit(1);
+    }, 30000);
+
+  } catch (err) {
+    console.error('BOOT FAILED:', err);
+    process.exit(1);
   }
-} catch (err) {
-  console.error("BOOT FAILURE", err);
 }
 
-export { app };
+boot();
