@@ -20,7 +20,7 @@ async function retry(fn, retries = 3) {
 async function withRetry(fn, attempts = 3) {
     return retry(fn, attempts);
 }
-async function withTimeout(fn, timeoutMs = 10000) {
+async function withTimeout(fn, timeoutMs = 10_000) {
     let timeoutHandle;
     const timeoutPromise = new Promise((_, reject) => {
         timeoutHandle = setTimeout(() => {
@@ -36,6 +36,6 @@ async function withTimeout(fn, timeoutMs = 10000) {
         }
     }
 }
-async function withRetryAndTimeout(fn, retries = 3, timeoutMs = 10000) {
+async function withRetryAndTimeout(fn, retries = 3, timeoutMs = 10_000) {
     return withRetry(() => withTimeout(fn, timeoutMs), retries);
 }

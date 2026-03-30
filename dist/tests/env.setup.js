@@ -1,4 +1,5 @@
 "use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 process.env.NODE_ENV = "test";
 process.env.SKIP_DB_CONNECTION = "true";
 if (!process.env.DATABASE_URL)

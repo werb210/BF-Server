@@ -9,11 +9,12 @@ exports.circuitGuard = circuitGuard;
 exports.resetCircuit = resetCircuit;
 const breakers = new Map();
 class CircuitBreaker {
+    options;
+    failures = 0;
+    state = "CLOSED";
+    openedAt = null;
     constructor(options) {
         this.options = options;
-        this.failures = 0;
-        this.state = "CLOSED";
-        this.openedAt = null;
     }
     fetchSnapshot() {
         return {
@@ -73,7 +74,7 @@ function canProceed() {
 function recordFailure() {
     globalFailureCount += 1;
     if (globalFailureCount > 5) {
-        globalBlockedUntil = Date.now() + 60000;
+        globalBlockedUntil = Date.now() + 60_000;
     }
 }
 function recordSuccess() {
@@ -82,7 +83,7 @@ function recordSuccess() {
 }
 function circuitGuard() {
     const now = Date.now();
-    if (globalFailureCount > 5 && now - (globalBlockedUntil - 60000) < 30000 && now < globalBlockedUntil) {
+    if (globalFailureCount > 5 && now - (globalBlockedUntil - 60_000) < 30_000 && now < globalBlockedUntil) {
         throw new Error("AI temporarily disabled due to repeated failures.");
     }
     if (!canProceed()) {

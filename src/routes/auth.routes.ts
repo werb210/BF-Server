@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { requireAuth } from "../middleware/auth";
 import jwt from "jsonwebtoken";
 
 import { getRedis, resetRedisMock } from "../lib/redis";
@@ -27,12 +28,7 @@ export function resetOtpStateForTests() {
   resetRedisMock();
 }
 
-// HARD endpoint — must always exist
-router.get("/me", (req, res) => {
-  if (!req.user) {
-    return res.status(401).json({ code: "AUTH_REQUIRED" });
-  }
-
+router.get("/me", requireAuth, (req, res) => {
   return res.json(req.user);
 });
 

@@ -2,6 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppError = void 0;
 class AppError extends Error {
+    status;
+    code;
+    details;
     constructor(message, status = 500, code = "internal_error", details) {
         super(message);
         this.status = status;

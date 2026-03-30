@@ -8,7 +8,7 @@ exports.pushSendRateLimit = pushSendRateLimit;
 exports.adminRateLimit = adminRateLimit;
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 exports.apiRateLimit = (0, express_rate_limit_1.default)({
-    windowMs: 60000,
+    windowMs: 60_000,
     max: 100,
 });
 exports.globalRateLimit = (0, express_rate_limit_1.default)({

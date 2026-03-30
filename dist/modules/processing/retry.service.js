@@ -10,15 +10,15 @@ const config_1 = require("../../config");
 const retryPolicy_1 = require("./retryPolicy");
 const OCR_BREAKER = (0, circuitBreaker_1.fetchCircuitBreaker)("ocr_job_creation", {
     failureThreshold: 3,
-    cooldownMs: 60000,
+    cooldownMs: 60_000,
 });
 const BANKING_BREAKER = (0, circuitBreaker_1.fetchCircuitBreaker)("banking_job_creation", {
     failureThreshold: 3,
-    cooldownMs: 60000,
+    cooldownMs: 60_000,
 });
 const CREDIT_BREAKER = (0, circuitBreaker_1.fetchCircuitBreaker)("credit_summary_generation", {
     failureThreshold: 3,
-    cooldownMs: 60000,
+    cooldownMs: 60_000,
 });
 function fetchBreaker(jobType) {
     switch (jobType) {
@@ -56,7 +56,7 @@ async function retryProcessingJob(params) {
                     retryCount,
                     maxRetries,
                     lastRetryAt: row.last_retry_at,
-                    baseDelayMs: 30000,
+                    baseDelayMs: 30_000,
                 });
             const updated = await client.query(`update document_processing_jobs
          set status = 'pending',
@@ -120,7 +120,7 @@ async function retryProcessingJob(params) {
                     retryCount,
                     maxRetries,
                     lastRetryAt: row.last_retry_at,
-                    baseDelayMs: 30000,
+                    baseDelayMs: 30_000,
                 });
             const updated = await client.query(`update banking_analysis_jobs
          set status = 'pending',
@@ -184,7 +184,7 @@ async function retryProcessingJob(params) {
                     retryCount,
                     maxRetries,
                     lastRetryAt: row.last_retry_at,
-                    baseDelayMs: 30000,
+                    baseDelayMs: 30_000,
                 });
             const updated = await client.query(`update credit_summary_jobs
          set status = 'pending',

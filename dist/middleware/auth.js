@@ -8,7 +8,6 @@ exports.requireAuthorization = requireAuthorization;
 exports.requireCapability = requireCapability;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const response_1 = require("../utils/response");
-const config_1 = require("../config");
 const auth = (req, res, next) => {
     const header = req.headers.authorization;
     if (!header) {
@@ -51,7 +50,11 @@ const requireAuth = (req, res, next) => {
         return res.status(401).json((0, response_1.fail)("No token"));
     }
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, config_1.config.jwt.secret);
+        const jwtSecret = process.env.JWT_SECRET;
+        if (!jwtSecret) {
+            return res.status(401).json((0, response_1.fail)("Invalid token"));
+        }
+        const decoded = jsonwebtoken_1.default.verify(token, jwtSecret);
         req.user = decoded;
         return next();
     }
