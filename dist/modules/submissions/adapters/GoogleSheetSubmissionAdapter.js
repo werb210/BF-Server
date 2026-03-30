@@ -116,6 +116,8 @@ function parseUpdatedRowIndex(range) {
     return Number.isFinite(row) ? row : null;
 }
 class GoogleSheetSubmissionAdapter {
+    payload;
+    config;
     constructor(params) {
         this.payload = params.payload;
         this.config = params.config;

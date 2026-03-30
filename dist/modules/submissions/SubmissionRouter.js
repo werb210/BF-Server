@@ -72,6 +72,8 @@ async function resolveSubmissionProfile(lenderId, client) {
     };
 }
 class SubmissionRouter {
+    adapter;
+    payload;
     constructor(params) {
         this.payload = params.payload;
         const { profile } = params;

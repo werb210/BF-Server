@@ -4,9 +4,7 @@ exports.defaultFollowUpTaskStore = exports.defaultFollowUpIdempotencyStore = exp
 exports.recordFollowUpEvent = recordFollowUpEvent;
 const crypto_1 = require("crypto");
 class InMemoryFollowUpEventStore {
-    constructor() {
-        this.events = [];
-    }
+    events = [];
     addEvent(event) {
         this.events.push(event);
     }
@@ -30,9 +28,7 @@ class InMemoryFollowUpEventStore {
 }
 exports.InMemoryFollowUpEventStore = InMemoryFollowUpEventStore;
 class InMemoryFollowUpIdempotencyStore {
-    constructor() {
-        this.processed = new Set();
-    }
+    processed = new Set();
     has(key) {
         return this.processed.has(key);
     }
@@ -42,9 +38,7 @@ class InMemoryFollowUpIdempotencyStore {
 }
 exports.InMemoryFollowUpIdempotencyStore = InMemoryFollowUpIdempotencyStore;
 class InMemoryFollowUpTaskStore {
-    constructor() {
-        this.tasks = [];
-    }
+    tasks = [];
     list() {
         return [...this.tasks];
     }

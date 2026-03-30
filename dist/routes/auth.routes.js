@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.resetOtpStateForTests = resetOtpStateForTests;
 const express_1 = require("express");
+const auth_1 = require("../middleware/auth");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const redis_1 = require("../lib/redis");
 const response_1 = require("../lib/response");
@@ -15,11 +16,7 @@ const isCode = (value) => (typeof value === "string" && /^\d{6}$/.test(value.tri
 function resetOtpStateForTests() {
     (0, redis_1.resetRedisMock)();
 }
-// HARD endpoint — must always exist
-router.get("/me", (req, res) => {
-    if (!req.user) {
-        return res.status(401).json({ code: "AUTH_REQUIRED" });
-    }
+router.get("/me", auth_1.requireAuth, (req, res) => {
     return res.json(req.user);
 });
 router.post("/otp/start", async (req, res) => {
@@ -37,7 +34,7 @@ router.post("/otp/start", async (req, res) => {
     const key = `otp:${phone}`;
     const existingRaw = await redis.get(key);
     const existing = existingRaw ? JSON.parse(existingRaw) : null;
-    if (existing && now - existing.lastSentAt < 60000) {
+    if (existing && now - existing.lastSentAt < 60_000) {
         return (0, response_1.fail)(res, "Too many requests", 429);
     }
     const staticOtpCode = process.env.TEST_OTP_CODE;

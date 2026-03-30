@@ -6,7 +6,7 @@ exports.assertRetryAllowed = assertRetryAllowed;
 const errors_1 = require("../../middleware/errors");
 exports.DEFAULT_RETRY_POLICY = {
     maxRetries: 1,
-    baseDelayMs: 30000,
+    baseDelayMs: 30_000,
 };
 function computeRetryDelayMs(retryCount, baseDelayMs) {
     return baseDelayMs * 2 ** Math.max(0, retryCount);

@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmailSubmissionAdapter = void 0;
 const config_1 = require("../../../config");
 class EmailSubmissionAdapter {
+    to;
+    payload;
     constructor(params) {
         this.to = params.to;
         this.payload = params.payload;

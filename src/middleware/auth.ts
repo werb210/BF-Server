@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction, type RequestHandler } from "express";
 import jwt from "jsonwebtoken";
 import { fail } from "../utils/response";
-import { config } from "../config";
 
 type AuthorizationOptions = {
   roles?: string[];
@@ -66,7 +65,12 @@ export const requireAuth: RequestHandler = (req: Request, res: Response, next: N
   }
 
   try {
-    const decoded = jwt.verify(token, config.jwt.secret);
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return res.status(401).json(fail("Invalid token"));
+    }
+
+    const decoded = jwt.verify(token, jwtSecret);
     req.user = decoded as Request["user"];
     return next();
   } catch {

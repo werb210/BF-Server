@@ -12,6 +12,7 @@ const AZURE_BLOB_HOST_SUFFIXES = [
     ".blob.core.cloudapi.de",
 ];
 class OcrStorageValidationError extends Error {
+    url;
     constructor(url) {
         super("invalid_ocr_storage_url");
         this.name = "OcrStorageValidationError";

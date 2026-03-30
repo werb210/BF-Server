@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "dist/index.js",
   "scripts": {
-    "build": "rm -rf dist && tsc",
+    "build": "tsc",
     "postinstall": "echo skipping prisma generate in CI",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
