@@ -34,34 +34,29 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 console.log('BOOT: start');
 (async () => {
-    try {
-        console.log('BOOT: loading express');
-        const express = (await Promise.resolve().then(() => __importStar(require('express')))).default;
-        const app = express();
-        // MUST BE FIRST AND IMMEDIATE
-        app.get('/health', (_req, res) => {
-            res.status(200).send('OK');
-        });
-        const port = Number(process.env.PORT) || 8080;
-        console.log('BOOT: starting listen');
-        app.listen(port, '0.0.0.0', () => {
-            console.log(`BOOT: listening on ${port}`);
-        });
-        // LOAD EVERYTHING ELSE AFTER SERVER IS LIVE
-        setImmediate(async () => {
-            try {
-                console.log('BOOT: loading server module');
-                const { createServer } = await Promise.resolve().then(() => __importStar(require('./server/createServer.js')));
-                const router = await createServer();
-                app.use(router);
-                console.log('BOOT: server mounted');
-            }
-            catch (err) {
-                console.error('BOOT: server load failed', err);
-            }
-        });
-    }
-    catch (err) {
-        console.error('BOOT: fatal startup failure', err);
-    }
+    const express = (await Promise.resolve().then(() => __importStar(require('express')))).default;
+    const app = express();
+    // MUST RESPOND IMMEDIATELY — DO NOT TOUCH THIS
+    app.get('/health', (_req, res) => {
+        res.status(200).send('OK');
+    });
+    const port = Number(process.env.PORT) || 8080;
+    console.log('BOOT: starting listen');
+    app.listen(port, '0.0.0.0', () => {
+        console.log(`BOOT: listening on ${port}`);
+    });
+    // LOAD REAL SERVER AFTER
+    setImmediate(async () => {
+        try {
+            console.log('BOOT: loading server');
+            const { createServer } = await Promise.resolve().then(() => __importStar(require('./server/createServer')));
+            const router = await createServer();
+            // CRITICAL: MOUNT AT ROOT
+            app.use('/', router);
+            console.log('BOOT: server mounted');
+        }
+        catch (err) {
+            console.error('BOOT: mount failed', err);
+        }
+    });
 })();
