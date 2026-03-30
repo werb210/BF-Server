@@ -1,9 +1,9 @@
 export function assertEnv() {
-  if (!process.env.JWT_SECRET) {
-    throw new Error('Missing JWT_SECRET');
-  }
+  const required = ['JWT_SECRET', 'PORT'];
 
-  if (!process.env.PORT) {
-    throw new Error('Missing PORT');
+  for (const key of required) {
+    if (!process.env[key]) {
+      throw new Error(`Missing env var: ${key}`);
+    }
   }
 }
