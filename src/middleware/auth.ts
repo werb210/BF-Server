@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction, type RequestHandler } from "express";
 import jwt from "jsonwebtoken";
-import { fail } from "../utils/response";
 
 type AuthorizationOptions = {
   roles?: string[];
@@ -20,25 +19,7 @@ export const auth = (req: AuthRequest, res: Response, next: NextFunction) => {
   const header = req.headers.authorization;
 
   if (!header || !header.startsWith("Bearer ")) {
-    return res.status(401).json(fail("Unauthorized"));
-  }
-
-  const token = header.slice(7);
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!);
-    req.user = decoded;
-    next();
-  } catch {
-    return res.status(401).json(fail("Invalid token"));
-  }
-};
-
-export const requireAuth: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
-  const header = req.headers.authorization;
-
-  if (!header || !header.startsWith("Bearer ")) {
-    return res.status(401).json(fail("Unauthorized"));
+    return res.status(401).json({ error: "missing_token" });
   }
 
   const token = header.slice(7);
@@ -46,14 +27,36 @@ export const requireAuth: RequestHandler = (req: Request, res: Response, next: N
   try {
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) {
-      return res.status(401).json(fail("Invalid token"));
+      return res.status(401).json({ error: "invalid_token" });
+    }
+    const decoded = jwt.verify(token, jwtSecret);
+    req.user = decoded;
+    next();
+  } catch {
+    return res.status(401).json({ error: "invalid_token" });
+  }
+};
+
+export const requireAuth: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
+  const header = req.headers.authorization;
+
+  if (!header || !header.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "missing_token" });
+  }
+
+  const token = header.slice(7);
+
+  try {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return res.status(401).json({ error: "invalid_token" });
     }
 
     const decoded = jwt.verify(token, jwtSecret);
     req.user = decoded as Request["user"];
     return next();
   } catch {
-    return res.status(401).json(fail("Invalid token"));
+    return res.status(401).json({ error: "invalid_token" });
   }
 };
 
@@ -65,11 +68,11 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
     const user = req.user as AppUser | undefined;
 
     if (!user) {
-      return res.status(401).json(fail("No token"));
+      return res.status(401).json({ error: "missing_token" });
     }
 
     if (requiredRoles.length > 0 && (!user.role || !requiredRoles.includes(user.role))) {
-      return res.status(403).json(fail("Forbidden"));
+      return res.status(403).json({ error: "forbidden" });
     }
 
     if (requiredCapabilities.length > 0) {
@@ -77,7 +80,7 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
       const allowed = requiredCapabilities.some((capability) => userCapabilities.includes(capability));
 
       if (!allowed) {
-        return res.status(403).json(fail("Forbidden"));
+        return res.status(403).json({ error: "forbidden" });
       }
     }
 
