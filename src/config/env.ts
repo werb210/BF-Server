@@ -6,6 +6,10 @@ function required(name: string): string {
   return value;
 }
 
+export function validateEnv(): void {
+  required("JWT_SECRET");
+}
+
 export const config = {
   JWT_SECRET: required("JWT_SECRET"),
 };
