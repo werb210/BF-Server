@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.logError = exports.logWarn = exports.logInfo = void 0;
+const logger_1 = require("../platform/logger");
+const logInfo = (message, meta = {}) => logger_1.logger.info(message, meta);
+exports.logInfo = logInfo;
+const logWarn = (message, meta = {}) => logger_1.logger.warn(message, meta);
+exports.logWarn = logWarn;
+const logError = (message, meta = {}) => logger_1.logger.error(message, meta);
+exports.logError = logError;
