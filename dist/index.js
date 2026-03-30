@@ -1,58 +1,35 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 console.log('BOOT: start');
-process.on('uncaughtException', (err) => {
-    console.error('UNCAUGHT EXCEPTION:', err);
-    process.exit(1);
-});
-process.on('unhandledRejection', (err) => {
-    console.error('UNHANDLED REJECTION:', err);
-    process.exit(1);
-});
-const createServer_1 = require("./server/createServer");
-const env_1 = require("./env");
-const runtimeGuards_1 = require("./server/runtimeGuards");
-async function initServices() {
-    const { getPrisma } = await import('./lib/db.js');
-    const { getRedisOrNull } = await import('./lib/redis.js');
-    // Initialize Prisma client lazily; do not block on DB handshakes here.
-    void getPrisma();
-    const redis = getRedisOrNull();
-    const redisWithConnect = redis;
-    if (redisWithConnect?.connect) {
-        await redisWithConnect.connect();
-    }
-}
-function boot() {
+(async () => {
     try {
-        console.log('BOOT: env check');
-        (0, env_1.assertEnv)();
-        console.log('BOOT: guard check');
-        (0, runtimeGuards_1.assertSingleServerStart)();
-        console.log('BOOT: creating server');
-        const app = (0, createServer_1.createServer)();
+        console.log('BOOT: loading express');
+        const express = (await import('express')).default;
+        const app = express();
+        // MUST BE FIRST AND IMMEDIATE
+        app.get('/health', (_req, res) => {
+            res.status(200).send('OK');
+        });
         const port = Number(process.env.PORT) || 8080;
         console.log('BOOT: starting listen');
-        const startTimeout = setTimeout(() => {
-            console.error('BOOT TIMEOUT: server failed to start in 30s');
-            process.exit(1);
-        }, 30000);
-        const server = app.listen(port, '0.0.0.0', async () => {
+        app.listen(port, '0.0.0.0', () => {
             console.log(`BOOT: listening on ${port}`);
-            clearTimeout(startTimeout);
+        });
+        // LOAD EVERYTHING ELSE AFTER SERVER IS LIVE
+        setImmediate(async () => {
             try {
-                await initServices();
-                console.log('BOOT: services ready');
+                console.log('BOOT: loading server module');
+                const { createServer } = await import('./server/createServer.js');
+                const router = await createServer();
+                app.use(router);
+                console.log('BOOT: server mounted');
             }
             catch (err) {
-                console.error('BOOT: init failed', err);
+                console.error('BOOT: server load failed', err);
             }
         });
-        server.setTimeout(30000);
     }
     catch (err) {
-        console.error('BOOT FAILED:', err);
-        process.exit(1);
+        console.error('BOOT: fatal startup failure', err);
     }
-}
-boot();
+})();
