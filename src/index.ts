@@ -29,17 +29,17 @@ async function boot() {
 
     console.log('BOOT: starting listen');
 
+    const startTimeout = setTimeout(() => {
+      console.error('BOOT TIMEOUT: server failed to start in 30s');
+      process.exit(1);
+    }, 30000);
+
     const server = app.listen(port, () => {
       console.log(`BOOT: listening on ${port}`);
       clearTimeout(startTimeout);
     });
 
     server.setTimeout(30000);
-
-    const startTimeout = setTimeout(() => {
-      console.error('BOOT TIMEOUT: server failed to start in 30s');
-      process.exit(1);
-    }, 30000);
 
   } catch (err) {
     console.error('BOOT FAILED:', err);
