@@ -17,11 +17,11 @@ const retryPolicy_1 = require("./retryPolicy");
 const BANK_STATEMENT_CATEGORY = "bank_statements_6_months";
 const OCR_BREAKER = (0, circuitBreaker_1.fetchCircuitBreaker)("ocr_job_creation", {
     failureThreshold: 3,
-    cooldownMs: 60_000,
+    cooldownMs: 60000,
 });
 const BANKING_BREAKER = (0, circuitBreaker_1.fetchCircuitBreaker)("banking_job_creation", {
     failureThreshold: 3,
-    cooldownMs: 60_000,
+    cooldownMs: 60000,
 });
 async function lockDocument(params) {
     const res = await params.client.query("select application_id from documents where id = $1 for update", [params.documentId]);
@@ -61,7 +61,7 @@ async function createDocumentProcessingJob(applicationId, documentId) {
                     retryCount,
                     maxRetries,
                     lastRetryAt: existingRecord.last_retry_at ?? null,
-                    baseDelayMs: 30_000,
+                    baseDelayMs: 30000,
                 });
                 const updated = await client.query(`update document_processing_jobs
            set status = 'pending',
@@ -189,7 +189,7 @@ async function createBankingAnalysisJob(applicationId) {
                     retryCount,
                     maxRetries,
                     lastRetryAt: existingRecord.last_retry_at ?? null,
-                    baseDelayMs: 30_000,
+                    baseDelayMs: 30000,
                 });
                 const updated = await client.query(`update banking_analysis_jobs
            set status = 'pending',

@@ -20,7 +20,7 @@ router.post("/otp/start", (req, res) => {
     }
     const existing = otpStore_1.otpStore.get(phone);
     const now = Date.now();
-    if (existing && now - existing.lastSentAt < 60_000) {
+    if (existing && now - existing.lastSentAt < 60000) {
         return error(res, 429, "Too many requests");
     }
     const code = Math.floor(100000 + Math.random() * 900000).toString();

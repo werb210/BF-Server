@@ -176,7 +176,7 @@ setInterval(() => {
             otpAttemptState.delete(phone);
         }
     }
-}, 60_000).unref();
+}, 60000).unref();
 function ensureTestOtp(phoneE164) {
     const forcedTestOtp = config_1.config.auth.testOtpCode?.trim();
     if (forcedTestOtp) {

@@ -9,7 +9,7 @@ const config_1 = require("../../config");
 const retryPolicy_1 = require("./retryPolicy");
 const CREDIT_BREAKER = (0, circuitBreaker_1.fetchCircuitBreaker)("credit_summary_generation", {
     failureThreshold: 3,
-    cooldownMs: 60_000,
+    cooldownMs: 60000,
 });
 async function ensureCreditSummaryJob(params) {
     if (!CREDIT_BREAKER.canRequest()) {
@@ -30,7 +30,7 @@ async function ensureCreditSummaryJob(params) {
                 retryCount,
                 maxRetries,
                 lastRetryAt: existingRecord.last_retry_at ?? null,
-                baseDelayMs: 30_000,
+                baseDelayMs: 30000,
             });
             const updated = await runner.query(`update credit_summary_jobs
          set status = 'pending',

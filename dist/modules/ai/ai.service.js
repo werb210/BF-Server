@@ -45,7 +45,7 @@ function pruneExpiredSessions(now = Date.now()) {
 }
 setInterval(() => {
     pruneExpiredSessions();
-}, 60_000).unref();
+}, 60000).unref();
 async function loadActiveAiRules() {
     try {
         const modern = await (0, db_1.dbQuery)(`select rule_content

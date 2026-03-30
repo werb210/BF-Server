@@ -31,8 +31,8 @@ function buildPoolConfig() {
         connectionString,
         ssl: isAzure ? { rejectUnauthorized: true } : false,
         max: 10,
-        idleTimeoutMillis: 30_000,
-        connectionTimeoutMillis: 5_000,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 5000,
     };
 }
 exports.pool = new Pool(buildPoolConfig());

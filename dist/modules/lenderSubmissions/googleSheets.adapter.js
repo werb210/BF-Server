@@ -102,8 +102,6 @@ function normalizeMapping(mapping) {
     }, {});
 }
 class GoogleSheetsAdapter {
-    payload;
-    config;
     constructor(params) {
         this.payload = params.payload;
         this.config = params.config;

@@ -50,7 +50,7 @@ const router = (0, express_1.Router)();
 const DEFAULT_NOTIFICATION_LIMIT = 50;
 const MAX_NOTIFICATION_LIMIT = 100;
 const perUserNotificationReadLimiter = (0, express_rate_limit_1.default)({
-    windowMs: 60_000,
+    windowMs: 60000,
     max: 120,
     standardHeaders: true,
     legacyHeaders: false,
@@ -58,7 +58,7 @@ const perUserNotificationReadLimiter = (0, express_rate_limit_1.default)({
     skip: () => config_1.config.env === "test" || config_1.config.rateLimit.enabled === "false",
 });
 const perUserNotificationAckLimiter = (0, express_rate_limit_1.default)({
-    windowMs: 60_000,
+    windowMs: 60000,
     max: 120,
     standardHeaders: true,
     legacyHeaders: false,

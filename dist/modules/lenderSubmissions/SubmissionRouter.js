@@ -23,7 +23,6 @@ function asGoogleSheetsConfig(config) {
     };
 }
 class SubmissionRouter {
-    adapter;
     constructor(params) {
         if (params.method === "google_sheet") {
             const sheetConfig = asGoogleSheetsConfig(params.submissionConfig);

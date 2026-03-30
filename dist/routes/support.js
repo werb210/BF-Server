@@ -119,7 +119,7 @@ router.post("/contact", async (req, res, next) => {
         body: `New Contact: ${company} - ${firstName} ${lastName} - ${phone}`,
         from: config_1.config.twilio.phone,
         to: "+15878881837",
-    }), 3, 8_000));
+    }), 3, 8000));
     await (0, circuitBreaker_1.safeCall)(() => (0, retry_1.withRetryAndTimeout)(() => (0, crmWebhook_1.pushLeadToCRM)({
         type: "contact_form",
         company,
@@ -127,7 +127,7 @@ router.post("/contact", async (req, res, next) => {
         lastName,
         email,
         phone,
-    }), 3, 8_000));
+    }), 3, 8000));
     return res["json"]({ success: true });
 });
 router.post("/track", async (req, res, next) => {

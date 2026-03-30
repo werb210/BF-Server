@@ -131,7 +131,7 @@ function initChatSocket(server) {
     const wss = new ws_1.WebSocketServer({ server, path: "/ws/chat" });
     setInterval(() => {
         pruneSessionPresence();
-    }, 60_000).unref();
+    }, 60000).unref();
     wss.on("connection", (ws) => {
         ws.isAlive = true;
         ws.on("pong", () => {
