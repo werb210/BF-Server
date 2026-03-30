@@ -1,70 +1,23 @@
-import 'dotenv/config';
+import "dotenv/config";
+import { createServer } from "./server/createServer";
 
-import cookieParser from "cookie-parser";
-import cors from "cors";
-import express from 'express';
-import http from 'http';
-import { env } from './config';
-import authRoutes from "./routes/auth.routes";
-import { requireAuth } from "./middleware/auth";
-import { authMeHandler } from "./routes/auth/me";
+const app = createServer();
 
-const app = express();
+const port = Number(process.env.PORT) || 8080;
 
-// Core middleware
-app.use(
-  cors({
-    origin: [
-      "https://staff.boreal.financial",
-      "http://localhost:5173",
-    ],
-    credentials: true,
-  }),
-);
-app.use(cookieParser());
-app.use(express.json());
+console.log("BOOT: START");
+console.log("BOOT: LISTENING ON", port);
 
-// HARD mount — must exist or 404
-app.use("/auth", authRoutes);
-app.get("/api/auth/me", requireAuth, authMeHandler);
-
-// DEBUG: confirm route registration at boot
-console.log("AUTH ROUTES MOUNTED AT /auth");
-
-// Root (Azure health probe hits this)
-app.get('/', (_req, res) => {
-  res.status(200).send('ok');
+app.listen(port, "0.0.0.0", () => {
+  console.log(`SERVER RUNNING ON ${port}`);
 });
 
-// Explicit health endpoint
-app.get('/health', (_req, res) => {
-  res.status(200).json({ status: 'ok' });
-});
-
-// 🔴 CRITICAL: Azure requires process.env.PORT
-const port = Number(process.env.PORT) || env.PORT || 4000;
-
-// Hard visibility into runtime state
-console.log('BOOT: START');
-console.log('PORT CHECK', {
-  processEnv: process.env.PORT,
-  parsedEnv: env.PORT,
-  finalPort: port,
-});
-
-const server = http.createServer(app);
-
-server.listen(port, () => {
-  console.log(`BOOT: LISTENING ON ${port}`);
-});
-
-// Crash hard — never silent fail
-process.on('unhandledRejection', (err) => {
-  console.error('UNHANDLED REJECTION', err);
+process.on("unhandledRejection", (err) => {
+  console.error("UNHANDLED REJECTION", err);
   process.exit(1);
 });
 
-process.on('uncaughtException', (err) => {
-  console.error('UNCAUGHT EXCEPTION', err);
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT EXCEPTION", err);
   process.exit(1);
 });
