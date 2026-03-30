@@ -1,4 +1,4 @@
-import { redis } from "../lib/redis";
+import { getRedisOrNull } from "../lib/redis";
 
 const OTP_TTL_SECONDS = 5 * 60;
 const OTP_TTL_MS = OTP_TTL_SECONDS * 1000;
@@ -17,6 +17,7 @@ function isExpired(expires: number): boolean {
 export async function storeOtp(phone: string, code: string): Promise<void> {
   const key = otpKey(phone);
 
+  const redis = getRedisOrNull();
   if (redis) {
     await redis.set(key, code, "EX", OTP_TTL_SECONDS);
     return;
@@ -38,6 +39,7 @@ export async function storeOtp(phone: string, code: string): Promise<void> {
 export async function fetchOtp(phone: string): Promise<string | null> {
   const key = otpKey(phone);
 
+  const redis = getRedisOrNull();
   if (redis) {
     return redis.get(key);
   }
@@ -58,6 +60,7 @@ export async function fetchOtp(phone: string): Promise<string | null> {
 export async function deleteOtp(phone: string): Promise<void> {
   const key = otpKey(phone);
 
+  const redis = getRedisOrNull();
   if (redis) {
     await redis.del(key);
     return;

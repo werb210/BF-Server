@@ -100,20 +100,21 @@ systemCheckRouter.get("/system-check", async (_req, res) => {
             error: toErrorMessage(error),
         };
     }
-    if (!redis_1.redis) {
+    const redis = (0, redis_1.getRedisOrNull)();
+    if (!redis) {
         tests.redis.status = "missing";
     }
     else {
         try {
             const key = `system-check:${Date.now()}`;
             const expected = "ok";
-            await redis_1.redis.set(key, expected, "EX", 30);
-            const value = await redis_1.redis.get(key);
+            await redis.set(key, expected, "EX", 30);
+            const value = await redis.get(key);
             tests.redis.status = value === expected ? "ok" : "fail";
             if (tests.redis.status === "fail") {
                 tests.redis.error = "redis_set_get_mismatch";
             }
-            await redis_1.redis.del(key);
+            await redis.del(key);
         }
         catch (error) {
             tests.redis = { status: "fail", error: toErrorMessage(error) };

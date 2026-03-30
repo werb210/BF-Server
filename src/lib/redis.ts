@@ -23,25 +23,36 @@ function createInMemoryRedis(): RedisLike {
   };
 }
 
-export function getRedis(): RedisLike {
+export function getRedisOrNull(): RedisLike | null {
   if (process.env.NODE_ENV === "test") {
     return inMemoryStore;
   }
 
   if (!process.env.REDIS_URL) {
-    throw new Error("REDIS_URL required outside test");
+    return null;
   }
 
   if (!client) {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Redis = require("ioredis");
-    client = new Redis(process.env.REDIS_URL) as RedisLike;
+    client = new Redis(process.env.REDIS_URL, {
+      lazyConnect: true,
+      maxRetriesPerRequest: 1,
+      connectTimeout: 5000,
+      retryStrategy: () => null,
+    }) as RedisLike;
   }
 
   return client;
 }
 
-export const redis = getRedis();
+export function getRedis(): RedisLike {
+  const redis = getRedisOrNull();
+  if (!redis) {
+    throw new Error("REDIS_URL required outside test");
+  }
+  return redis;
+}
 
 export function resetRedisMock(): void {
   memoryStore.clear();

@@ -1,4 +1,4 @@
-import { redis } from "./redis";
+import { getRedis } from "./redis";
 
 const TTL_SECONDS = 60 * 60;
 
@@ -8,6 +8,7 @@ export type RedisIdempotencyRecord = {
 };
 
 export async function getIdempotent(key: string): Promise<RedisIdempotencyRecord | null> {
+  const redis = getRedis();
   if (!redis) {
     return null;
   }
@@ -17,6 +18,7 @@ export async function getIdempotent(key: string): Promise<RedisIdempotencyRecord
 }
 
 export async function setIdempotent(key: string, value: RedisIdempotencyRecord): Promise<void> {
+  const redis = getRedis();
   if (!redis) {
     return;
   }

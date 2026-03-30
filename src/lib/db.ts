@@ -1,12 +1,19 @@
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 
-const globalForPrisma = global as { prisma?: PrismaClient };
+let prismaInstance: PrismaClient | null = null;
 
-export const prisma =
-  globalForPrisma.prisma || new PrismaClient();
+export function getPrisma(): PrismaClient {
+  if (!prismaInstance) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { PrismaClient } = require("@prisma/client") as { PrismaClient: new () => PrismaClient };
+    prismaInstance = new PrismaClient();
+  }
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+  return prismaInstance;
 }
+
+export const prisma = new Proxy({} as PrismaClient, {
+  get: (_target, prop, receiver) => Reflect.get(getPrisma() as object, prop, receiver),
+}) as PrismaClient;
 
 export const db = prisma;

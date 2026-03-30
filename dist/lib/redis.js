@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.redis = void 0;
+exports.getRedisOrNull = getRedisOrNull;
 exports.getRedis = getRedis;
 exports.resetRedisMock = resetRedisMock;
 exports.setOtp = setOtp;
@@ -22,21 +22,32 @@ function createInMemoryRedis() {
         },
     };
 }
-function getRedis() {
+function getRedisOrNull() {
     if (process.env.NODE_ENV === "test") {
         return inMemoryStore;
     }
     if (!process.env.REDIS_URL) {
-        throw new Error("REDIS_URL required outside test");
+        return null;
     }
     if (!client) {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const Redis = require("ioredis");
-        client = new Redis(process.env.REDIS_URL);
+        client = new Redis(process.env.REDIS_URL, {
+            lazyConnect: true,
+            maxRetriesPerRequest: 1,
+            connectTimeout: 5000,
+            retryStrategy: () => null,
+        });
     }
     return client;
 }
-exports.redis = getRedis();
+function getRedis() {
+    const redis = getRedisOrNull();
+    if (!redis) {
+        throw new Error("REDIS_URL required outside test");
+    }
+    return redis;
+}
 function resetRedisMock() {
     memoryStore.clear();
     if (process.env.NODE_ENV === "test") {

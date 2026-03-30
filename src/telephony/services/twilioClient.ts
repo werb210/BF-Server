@@ -1,4 +1,4 @@
-import { twilioClient } from "../../platform/twilioClient";
+import { getTwilioClient } from "../../platform/twilioClient";
 import { config } from "../../config";
 
 export const twilioVoiceGrantConfig = {
@@ -6,5 +6,5 @@ export const twilioVoiceGrantConfig = {
   incomingAllow: true,
 };
 
-export { twilioClient };
-export default twilioClient;
+export { getTwilioClient };
+export default getTwilioClient;

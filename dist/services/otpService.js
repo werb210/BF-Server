@@ -16,8 +16,9 @@ function isExpired(expires) {
 }
 async function storeOtp(phone, code) {
     const key = otpKey(phone);
-    if (redis_1.redis) {
-        await redis_1.redis.set(key, code, "EX", OTP_TTL_SECONDS);
+    const redis = (0, redis_1.getRedisOrNull)();
+    if (redis) {
+        await redis.set(key, code, "EX", OTP_TTL_SECONDS);
         return;
     }
     store.set(key, {
@@ -34,8 +35,9 @@ async function storeOtp(phone, code) {
 }
 async function fetchOtp(phone) {
     const key = otpKey(phone);
-    if (redis_1.redis) {
-        return redis_1.redis.get(key);
+    const redis = (0, redis_1.getRedisOrNull)();
+    if (redis) {
+        return redis.get(key);
     }
     const entry = store.get(key);
     if (!entry) {
@@ -49,8 +51,9 @@ async function fetchOtp(phone) {
 }
 async function deleteOtp(phone) {
     const key = otpKey(phone);
-    if (redis_1.redis) {
-        await redis_1.redis.del(key);
+    const redis = (0, redis_1.getRedisOrNull)();
+    if (redis) {
+        await redis.del(key);
         return;
     }
     store.delete(key);

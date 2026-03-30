@@ -1,1 +1,1 @@
-export { prisma } from "../lib/db";
+export { getPrisma } from "../lib/db";

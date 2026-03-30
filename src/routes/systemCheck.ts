@@ -3,7 +3,7 @@ import { Router } from "express";
 import { config } from "../config";
 
 import { pool } from "../lib/dbClient";
-import { redis } from "../lib/redis";
+import { getRedisOrNull } from "../lib/redis";
 import { fetchOtp, storeOtp } from "../services/otpService";
 
 type TestStatus = "ok" | "fail";
@@ -130,6 +130,8 @@ systemCheckRouter.get("/system-check", async (_req: any, res: any) => {
       error: toErrorMessage(error),
     };
   }
+
+  const redis = getRedisOrNull();
 
   if (!redis) {
     tests.redis.status = "missing";

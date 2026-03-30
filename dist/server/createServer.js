@@ -8,6 +8,8 @@ const cors_1 = __importDefault(require("cors"));
 const express_1 = __importDefault(require("express"));
 const auth_1 = require("../middleware/auth");
 const errorHandler_1 = require("../middleware/errorHandler");
+const db_1 = require("../lib/db");
+const redis_1 = require("../lib/redis");
 const response_1 = require("../lib/response");
 const auth_routes_1 = __importDefault(require("../routes/auth.routes"));
 const token_1 = __importDefault(require("../routes/telephony/token"));
@@ -15,6 +17,10 @@ const application_1 = __importDefault(require("../routes/application"));
 const documents_1 = __importDefault(require("../routes/documents"));
 const crm_1 = __importDefault(require("../routes/crm"));
 function createServer() {
+    const prisma = (0, db_1.getPrisma)();
+    const redis = (0, redis_1.getRedis)();
+    void prisma;
+    void redis;
     const app = (0, express_1.default)();
     app.get("/health", (_req, res) => {
         res.status(200).send("OK");

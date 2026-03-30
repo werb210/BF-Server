@@ -1,15 +1,24 @@
 import express, { type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
-import twilio from "twilio";
 
-import { redis } from "../../lib/redis.js";
+import { getRedis } from "../../lib/redis.js";
 
 const router = express.Router();
 
-const client = twilio(
-  process.env.TWILIO_ACCOUNT_SID ?? "",
-  process.env.TWILIO_AUTH_TOKEN ?? "",
-);
+let twilioClient: any = null;
+
+function getTwilioClient() {
+  if (!twilioClient) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const twilio = require("twilio");
+    twilioClient = twilio(
+      process.env.TWILIO_ACCOUNT_SID ?? "",
+      process.env.TWILIO_AUTH_TOKEN ?? "",
+    );
+  }
+
+  return twilioClient;
+}
 
 const isPhone = (value: unknown): value is string => (
   typeof value === "string" && /^\+?[1-9]\d{7,14}$/.test(value.trim())
@@ -36,10 +45,11 @@ router.post("/start", async (req: Request, res: Response) => {
   }
 
   const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const redis = getRedis();
 
   await redis.set(`otp:${phone}`, code, "EX", 300);
 
-  await client.messages.create({
+  await getTwilioClient().messages.create({
     body: `Your code is ${code}`,
     to: phone,
     from: process.env.TWILIO_PHONE,
@@ -59,6 +69,7 @@ router.post("/verify", async (req: Request, res: Response) => {
     return res.status(500).json({ error: "missing_jwt_secret" });
   }
 
+  const redis = getRedis();
   const stored = await redis.get(`otp:${phone}`);
 
   if (!stored || stored !== code) {

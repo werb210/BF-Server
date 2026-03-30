@@ -5,10 +5,11 @@ const db_1 = require("../infra/db");
 const redis_1 = require("../infra/redis");
 const config_1 = require("../config");
 async function bootstrap() {
-    await db_1.prisma.$connect();
-    if (config_1.config.redis.url && config_1.config.env !== "test" && redis_1.redis) {
+    await (0, db_1.getPrisma)().$connect();
+    const redis = (0, redis_1.getRedis)();
+    if (config_1.config.redis.url && config_1.config.env !== "test" && redis) {
         try {
-            await redis_1.redis.ping();
+            await redis.ping();
         }
         catch {
             console.warn("Redis unavailable — continuing");
