@@ -2,21 +2,21 @@ const { randomUUID } = require("crypto");
 const http = require("http");
 
 process.env.NODE_ENV = "test";
-process.env.JWT_SECRET = process.env.JWT_SECRET || "test-access-secret";
-process.env.JWT_REFRESH_SECRET =
-  process.env.JWT_REFRESH_SECRET || "test-refresh-secret";
-process.env.JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "15m";
-process.env.JWT_REFRESH_EXPIRES_IN =
-  process.env.JWT_REFRESH_EXPIRES_IN || "30d";
-process.env.TWILIO_ACCOUNT_SID =
-  process.env.TWILIO_ACCOUNT_SID || "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
-process.env.TWILIO_AUTH_TOKEN =
-  process.env.TWILIO_AUTH_TOKEN || "test-auth-token";
-process.env.TWILIO_VERIFY_SERVICE_SID =
-  process.env.TWILIO_VERIFY_SERVICE_SID || "VA00000000000000000000000000000000";
-process.env.LOGIN_LOCKOUT_THRESHOLD = process.env.LOGIN_LOCKOUT_THRESHOLD || "2";
-process.env.LOGIN_LOCKOUT_MINUTES = process.env.LOGIN_LOCKOUT_MINUTES || "10";
-process.env.PASSWORD_MAX_AGE_DAYS = process.env.PASSWORD_MAX_AGE_DAYS || "30";
+if (!process.env.JWT_SECRET) process.env.JWT_SECRET = "test-access-secret";
+if (!process.env.JWT_REFRESH_SECRET)
+  process.env.JWT_REFRESH_SECRET = "test-refresh-secret";
+if (!process.env.JWT_EXPIRES_IN) process.env.JWT_EXPIRES_IN = "15m";
+if (!process.env.JWT_REFRESH_EXPIRES_IN)
+  process.env.JWT_REFRESH_EXPIRES_IN = "30d";
+if (!process.env.TWILIO_ACCOUNT_SID)
+  process.env.TWILIO_ACCOUNT_SID = "ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+if (!process.env.TWILIO_AUTH_TOKEN)
+  process.env.TWILIO_AUTH_TOKEN = "test-auth-token";
+if (!process.env.TWILIO_VERIFY_SERVICE_SID)
+  process.env.TWILIO_VERIFY_SERVICE_SID = "VA00000000000000000000000000000000";
+if (!process.env.LOGIN_LOCKOUT_THRESHOLD) process.env.LOGIN_LOCKOUT_THRESHOLD = "2";
+if (!process.env.LOGIN_LOCKOUT_MINUTES) process.env.LOGIN_LOCKOUT_MINUTES = "10";
+if (!process.env.PASSWORD_MAX_AGE_DAYS) process.env.PASSWORD_MAX_AGE_DAYS = "30";
 
 const { buildAppWithApiRoutes } = require("../dist/app");
 const { pool } = require("../dist/db");

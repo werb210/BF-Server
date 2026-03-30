@@ -4,7 +4,7 @@ const http = require("http");
 const https = require("https");
 const { URL } = require("url");
 
-const BASE_URL = process.env.SERVER_BASE_URL || "https://server.boreal.financial";
+const BASE_URL = process.env.SERVER_BASE_URL ?? "https://server.boreal.financial";
 
 const ADMIN_PHONE = process.env.ADMIN_PHONE;
 const ADMIN_OTP_CODE = process.env.ADMIN_OTP_CODE || process.env.OTP_CODE;

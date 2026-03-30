@@ -1,6 +1,6 @@
 const { randomUUID } = require("crypto");
 
-process.env.NODE_ENV = process.env.NODE_ENV || "test";
+if (!process.env.NODE_ENV) process.env.NODE_ENV = "test";
 
 async function run() {
   const { pool } = require("../dist/db");
