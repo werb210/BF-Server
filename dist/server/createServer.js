@@ -6,19 +6,22 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.createServer = createServer;
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
-const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const auth_routes_1 = __importDefault(require("../routes/auth.routes"));
+const applications_routes_1 = __importDefault(require("../routes/applications.routes"));
+const documents_1 = __importDefault(require("../routes/documents"));
 function createServer() {
     const app = (0, express_1.default)();
     app.use(express_1.default.json());
-    app.use((0, cookie_parser_1.default)());
     app.use((0, cors_1.default)({
         origin: [
             "https://portal.boreal.financial",
             "https://client.boreal.financial",
-            "http://localhost:5173"
+            "http://localhost:4173",
+            "http://localhost:3000"
         ],
-        credentials: true
+        methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allowedHeaders: ["Content-Type", "Authorization"],
+        credentials: false
     }));
     app.use((req, _res, next) => {
         console.log(`${req.method} ${req.path}`);
@@ -28,5 +31,7 @@ function createServer() {
         res.json({ status: "ok" });
     });
     app.use("/api/auth", auth_routes_1.default);
+    app.use("/api/application", applications_routes_1.default);
+    app.use("/api/documents", documents_1.default);
     return app;
 }
