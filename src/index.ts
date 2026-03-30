@@ -1,15 +1,36 @@
-import express from 'express';
+import 'dotenv/config';
 
-console.log('BOOT: START');
+import express from 'express';
+import http from 'http';
+import { env } from './config';
 
 const app = express();
 
+// Core middleware
+app.use(express.json());
+
+// Health check
 app.get('/health', (_req, res) => {
-  res.send('OK');
+  res.status(200).json({ status: 'ok' });
 });
 
-const port = process.env.PORT || 8080;
+// Server bootstrap
+const port = env.PORT || 4000;
 
-app.listen(port, '0.0.0.0', () => {
-  console.log('BOOT: LISTENING ON', port);
+const server = http.createServer(app);
+
+server.listen(port, () => {
+  console.log('BOOT: START');
+  console.log(`BOOT: LISTENING ON ${port}`);
+});
+
+// Hard crash handling (required in production)
+process.on('unhandledRejection', (err) => {
+  console.error('UNHANDLED REJECTION', err);
+  process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION', err);
+  process.exit(1);
 });

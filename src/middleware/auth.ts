@@ -66,7 +66,7 @@ export const requireAuth: RequestHandler = (req: Request, res: Response, next: N
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || config.jwt.secret);
+    const decoded = jwt.verify(token, config.jwt.secret);
     req.user = decoded as Request["user"];
     return next();
   } catch {

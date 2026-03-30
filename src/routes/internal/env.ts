@@ -7,7 +7,7 @@ const router = Router();
 router.get("/api/_int/env", (_req: any, res: any) => {
   res["json"]({
     apiBaseUrl: config.api.baseUrl ?? config.client.url ?? API_BASE_URL,
-    allowedOrigins: (config.allowedOrigins ?? "").split(",").map((v) => v.trim()).filter(Boolean),
+    allowedOrigins: (config.allowedOrigins ?? "").split(",").map((v: string) => v.trim()).filter(Boolean),
   });
 });
 

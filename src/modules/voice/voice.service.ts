@@ -147,7 +147,7 @@ function normalizeRestrictedNumbers(): Set<string> {
   const restricted = config.security.voiceRestrictedNumbers;
   const normalized = restricted
     .map((entry: any) => normalizePhoneNumber(entry))
-    .filter((entry): entry is string => Boolean(entry));
+    .filter((entry: string | null): entry is string => Boolean(entry));
   return new Set(normalized);
 }
 
