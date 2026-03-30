@@ -7,6 +7,7 @@ import { fail, ok } from "../lib/response";
 import { sendSMS } from "../lib/twilio";
 
 const router = Router();
+const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
 
 const isPhone = (value: unknown): value is string => (
   typeof value === "string" && /^\+?[1-9]\d{7,14}$/.test(value.trim())
@@ -35,8 +36,12 @@ router.get("/me", requireAuth, (req, res) => {
 router.post("/otp/start", async (req: Request, res: Response) => {
   const { phone } = req.body as { phone?: unknown };
 
+  if (!phone) {
+    return res.status(400).json({ error: "phone required" });
+  }
+
   if (!isPhone(phone)) {
-    return fail(res, "invalid_payload", 400);
+    return fail(res, "invalid_phone", 400);
   }
 
   if (
@@ -77,10 +82,10 @@ router.post("/otp/start", async (req: Request, res: Response) => {
   }
 
   if (process.env.NODE_ENV === "test") {
-    return ok(res, { otp: "123456" });
+    return res.json({ success: true });
   }
 
-  return ok(res, { sent: true });
+  return res.json({ success: true });
 });
 
 router.post("/otp/verify", async (req: Request, res: Response) => {
@@ -88,10 +93,6 @@ router.post("/otp/verify", async (req: Request, res: Response) => {
 
   if (!isPhone(phone) || !isCode(code)) {
     return fail(res, "invalid_payload", 400);
-  }
-
-  if (!process.env.JWT_SECRET) {
-    return fail(res, "unauthorized", 401);
   }
 
   const redis = getRedis();
@@ -125,13 +126,13 @@ router.post("/otp/verify", async (req: Request, res: Response) => {
 
   const token = jwt.sign(
     { phone },
-    process.env.JWT_SECRET,
-    { expiresIn: "1d" },
+    JWT_SECRET,
+    { expiresIn: "7d" },
   );
 
   await redis.del(`otp:${phone}`);
 
-  return ok(res, { token });
+  return res.json({ token, user: { phone } });
 });
 
 export default router;

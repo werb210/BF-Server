@@ -10,10 +10,10 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const response_1 = require("../utils/response");
 const auth = (req, res, next) => {
     const header = req.headers.authorization;
-    if (!header) {
-        return res.status(401).json((0, response_1.fail)("No token"));
+    if (!header || !header.startsWith("Bearer ")) {
+        return res.status(401).json((0, response_1.fail)("Unauthorized"));
     }
-    const token = header.replace("Bearer ", "");
+    const token = header.slice(7);
     try {
         const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
@@ -24,31 +24,12 @@ const auth = (req, res, next) => {
     }
 };
 exports.auth = auth;
-function getCookieToken(cookieHeader) {
-    if (!cookieHeader)
-        return null;
-    const cookies = cookieHeader.split(";");
-    for (const cookie of cookies) {
-        const [rawName, ...rest] = cookie.trim().split("=");
-        if (rawName !== "token")
-            continue;
-        const value = rest.join("=").trim();
-        return value ? decodeURIComponent(value) : null;
-    }
-    return null;
-}
 const requireAuth = (req, res, next) => {
     const header = req.headers.authorization;
-    let token = null;
-    if (header?.startsWith("Bearer ")) {
-        token = header.replace("Bearer ", "");
+    if (!header || !header.startsWith("Bearer ")) {
+        return res.status(401).json((0, response_1.fail)("Unauthorized"));
     }
-    if (!token) {
-        token = getCookieToken(req.headers.cookie);
-    }
-    if (!token) {
-        return res.status(401).json((0, response_1.fail)("No token"));
-    }
+    const token = header.slice(7);
     try {
         const jwtSecret = process.env.JWT_SECRET;
         if (!jwtSecret) {

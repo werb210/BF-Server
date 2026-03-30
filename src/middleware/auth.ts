@@ -19,11 +19,11 @@ export interface AuthRequest extends Request {
 export const auth = (req: AuthRequest, res: Response, next: NextFunction) => {
   const header = req.headers.authorization;
 
-  if (!header) {
-    return res.status(401).json(fail("No token"));
+  if (!header || !header.startsWith("Bearer ")) {
+    return res.status(401).json(fail("Unauthorized"));
   }
 
-  const token = header.replace("Bearer ", "");
+  const token = header.slice(7);
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET!);
@@ -34,35 +34,14 @@ export const auth = (req: AuthRequest, res: Response, next: NextFunction) => {
   }
 };
 
-function getCookieToken(cookieHeader: string | undefined): string | null {
-  if (!cookieHeader) return null;
-
-  const cookies = cookieHeader.split(";");
-  for (const cookie of cookies) {
-    const [rawName, ...rest] = cookie.trim().split("=");
-    if (rawName !== "token") continue;
-    const value = rest.join("=").trim();
-    return value ? decodeURIComponent(value) : null;
-  }
-
-  return null;
-}
-
 export const requireAuth: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
   const header = req.headers.authorization;
 
-  let token: string | null = null;
-  if (header?.startsWith("Bearer ")) {
-    token = header.replace("Bearer ", "");
+  if (!header || !header.startsWith("Bearer ")) {
+    return res.status(401).json(fail("Unauthorized"));
   }
 
-  if (!token) {
-    token = getCookieToken(req.headers.cookie);
-  }
-
-  if (!token) {
-    return res.status(401).json(fail("No token"));
-  }
+  const token = header.slice(7);
 
   try {
     const jwtSecret = process.env.JWT_SECRET;

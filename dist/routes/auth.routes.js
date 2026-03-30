@@ -11,6 +11,7 @@ const redis_1 = require("../lib/redis");
 const response_1 = require("../lib/response");
 const twilio_1 = require("../lib/twilio");
 const router = (0, express_1.Router)();
+const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
 const isPhone = (value) => (typeof value === "string" && /^\+?[1-9]\d{7,14}$/.test(value.trim()));
 const isCode = (value) => (typeof value === "string" && /^\d{6}$/.test(value.trim()));
 function resetOtpStateForTests() {
@@ -21,8 +22,11 @@ router.get("/me", auth_1.requireAuth, (req, res) => {
 });
 router.post("/otp/start", async (req, res) => {
     const { phone } = req.body;
+    if (!phone) {
+        return res.status(400).json({ error: "phone required" });
+    }
     if (!isPhone(phone)) {
-        return (0, response_1.fail)(res, "invalid_payload", 400);
+        return (0, response_1.fail)(res, "invalid_phone", 400);
     }
     if (!process.env.TWILIO_ACCOUNT_SID
         || !process.env.TWILIO_AUTH_TOKEN
@@ -53,17 +57,14 @@ router.post("/otp/start", async (req, res) => {
         await (0, twilio_1.sendSMS)(phone, `Your code is ${code}`);
     }
     if (process.env.NODE_ENV === "test") {
-        return (0, response_1.ok)(res, { otp: "123456" });
+        return res.json({ success: true });
     }
-    return (0, response_1.ok)(res, { sent: true });
+    return res.json({ success: true });
 });
 router.post("/otp/verify", async (req, res) => {
     const { phone, code } = req.body;
     if (!isPhone(phone) || !isCode(code)) {
         return (0, response_1.fail)(res, "invalid_payload", 400);
-    }
-    if (!process.env.JWT_SECRET) {
-        return (0, response_1.fail)(res, "unauthorized", 401);
     }
     const redis = (0, redis_1.getRedis)();
     const stored = await redis.get(`otp:${phone}`);
@@ -89,8 +90,8 @@ router.post("/otp/verify", async (req, res) => {
         }
         return (0, response_1.fail)(res, "Invalid code", 400);
     }
-    const token = jsonwebtoken_1.default.sign({ phone }, process.env.JWT_SECRET, { expiresIn: "1d" });
+    const token = jsonwebtoken_1.default.sign({ phone }, JWT_SECRET, { expiresIn: "7d" });
     await redis.del(`otp:${phone}`);
-    return (0, response_1.ok)(res, { token });
+    return res.json({ token, user: { phone } });
 });
 exports.default = router;
