@@ -6,7 +6,7 @@ const config_1 = require("../config");
 exports.dbClient = new pg_1.Pool({
     connectionString: config_1.config.db.url,
     max: 10,
-    idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
 });
 exports.default = exports.dbClient;

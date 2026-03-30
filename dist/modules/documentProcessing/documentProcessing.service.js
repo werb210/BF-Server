@@ -15,11 +15,11 @@ const circuitBreaker_1 = require("../../utils/circuitBreaker");
 const BANK_STATEMENT_CATEGORY = "bank_statements_6_months";
 const OCR_BREAKER = (0, circuitBreaker_1.fetchCircuitBreaker)("ocr_job_creation", {
     failureThreshold: 3,
-    cooldownMs: 60_000,
+    cooldownMs: 60000,
 });
 const BANKING_BREAKER = (0, circuitBreaker_1.fetchCircuitBreaker)("banking_job_creation", {
     failureThreshold: 3,
-    cooldownMs: 60_000,
+    cooldownMs: 60000,
 });
 function isBankStatementCategory(category) {
     const normalized = (0, requiredDocuments_1.normalizeRequiredDocumentKey)(category) ?? category;

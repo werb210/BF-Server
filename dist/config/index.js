@@ -108,7 +108,7 @@ exports.config = Object.freeze({
         allowedMimeTypes: csv(parsed.DOCUMENT_ALLOWED_MIME_TYPES, ["application/pdf", "image/jpeg", "image/png"]),
     }),
     followUp: Object.freeze({
-        intervalMs: toNumber(parsed.FOLLOW_UP_INTERVAL_MS, 60_000),
+        intervalMs: toNumber(parsed.FOLLOW_UP_INTERVAL_MS, 60000),
         enabled: toBool(parsed.FOLLOW_UP_ENABLED, true),
     }),
     google: Object.freeze({
@@ -132,7 +132,7 @@ exports.config = Object.freeze({
     lender: Object.freeze({
         retry: Object.freeze({
             baseDelayMs: toNumber(parsed.LENDER_RETRY_BASE_DELAY_MS, 500),
-            maxDelayMs: toNumber(parsed.LENDER_RETRY_MAX_DELAY_MS, 5_000),
+            maxDelayMs: toNumber(parsed.LENDER_RETRY_MAX_DELAY_MS, 5000),
             maxCount: toNumber(parsed.LENDER_RETRY_MAX_COUNT, 3),
         }),
     }),
@@ -152,9 +152,9 @@ exports.config = Object.freeze({
     ocr: Object.freeze({
         enabled: toBool(parsed.OCR_ENABLED, true),
         provider: parsed.OCR_PROVIDER ?? "openai",
-        timeoutMs: toNumber(parsed.OCR_TIMEOUT_MS, 30_000),
+        timeoutMs: toNumber(parsed.OCR_TIMEOUT_MS, 30000),
         maxAttempts: toNumber(parsed.OCR_MAX_ATTEMPTS, 3),
-        pollIntervalMs: toNumber(parsed.OCR_POLL_INTERVAL_MS, 5_000),
+        pollIntervalMs: toNumber(parsed.OCR_POLL_INTERVAL_MS, 5000),
         workerConcurrency: toNumber(parsed.OCR_WORKER_CONCURRENCY, 2),
         lockTimeoutMinutes: toNumber(parsed.OCR_LOCK_TIMEOUT_MINUTES, 30),
     }),
@@ -164,13 +164,13 @@ exports.config = Object.freeze({
     pwa: Object.freeze({
         pushEnabled: parsed.PWA_PUSH_ENABLED,
         syncMaxActions: toNumber(parsed.PWA_SYNC_MAX_ACTIONS, 100),
-        syncActionMaxBytes: toNumber(parsed.PWA_SYNC_ACTION_MAX_BYTES, 16_384),
-        syncBatchMaxBytes: toNumber(parsed.PWA_SYNC_BATCH_MAX_BYTES, 262_144),
+        syncActionMaxBytes: toNumber(parsed.PWA_SYNC_ACTION_MAX_BYTES, 16384),
+        syncBatchMaxBytes: toNumber(parsed.PWA_SYNC_BATCH_MAX_BYTES, 262144),
         pushPayloadMaxBytes: toNumber(parsed.PWA_PUSH_PAYLOAD_MAX_BYTES, 4096),
     }),
     rateLimit: Object.freeze({
         enabled: parsed.RATE_LIMIT_ENABLED,
-        windowMs: toNumber(parsed.RATE_LIMIT_WINDOW_MS, 60_000),
+        windowMs: toNumber(parsed.RATE_LIMIT_WINDOW_MS, 60000),
         max: toNumber(parsed.RATE_LIMIT_MAX, 100),
     }),
     redis: Object.freeze({

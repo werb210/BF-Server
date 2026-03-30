@@ -21,9 +21,9 @@ const voicemail_repo_1 = require("../modules/voice/voicemail.repo");
 const logger_1 = require("../observability/logger");
 const config_1 = require("../config");
 const router = (0, express_1.Router)();
-const oneMinuteMs = 60_000;
+const oneMinuteMs = 60000;
 const RATE_BUCKET_TTL_MS = 5 * oneMinuteMs;
-const MAX_BUCKETS = 1_000;
+const MAX_BUCKETS = 1000;
 const ipBuckets = new Map();
 const staffBuckets = new Map();
 function consumeRateLimit(buckets, key, max) {

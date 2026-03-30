@@ -10,8 +10,6 @@ const logger_1 = require("../observability/logger");
 const appInsights_1 = require("../observability/appInsights");
 const errors_1 = require("../helpers/errors");
 class AppError extends Error {
-    status;
-    code;
     constructor(code, message, status = 400) {
         super(message);
         this.code = code;

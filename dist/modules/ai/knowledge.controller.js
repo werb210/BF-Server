@@ -36,7 +36,7 @@ function pushBounded(arr, item, maxItems = MAX_KNOWLEDGE_DOCS) {
 function cleanupFile(filePath) {
     fs_1.default.unlink(filePath, () => undefined);
 }
-async function readTextPreview(filePath, maxChars = 200_000) {
+async function readTextPreview(filePath, maxChars = 200000) {
     const stream = fs_1.default.createReadStream(filePath, { encoding: "utf8" });
     const lineReader = readline_1.default.createInterface({ input: stream, crlfDelay: Infinity });
     let combined = "";

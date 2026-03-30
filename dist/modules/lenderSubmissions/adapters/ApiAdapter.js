@@ -2,9 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ApiAdapter = void 0;
 class ApiAdapter {
-    lenderId;
-    payload;
-    attempt;
     constructor(params) {
         this.lenderId = params.lenderId;
         this.payload = params.payload;
