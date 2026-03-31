@@ -12,76 +12,38 @@ type AppUser = NonNullable<Request["user"]> & {
 };
 
 export interface AuthRequest extends Request {
-  user?: any;
+  user?: Request["user"];
 }
 
-export function extractToken(req: any): string | null {
+if (!process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET_MISSING");
+}
+
+export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
 
-  if (!header || typeof header !== "string") {
-    return null;
+  if (!header || !header.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "UNAUTHORIZED" });
   }
 
-  if (!header.startsWith("Bearer ")) {
-    return null;
-  }
-
-  const token = header.slice(7).trim();
-
-  if (!token) {
-    return null;
-  }
-
-  return token;
-}
-
-function verifyJwt(token: string): Request["user"] {
-  const jwtSecret = process.env.JWT_SECRET;
-  if (!jwtSecret) {
-    throw new Error("JWT_SECRET NOT SET");
-  }
-
-  const decoded = jwt.verify(token, jwtSecret);
-  if (!decoded) {
-    throw new Error("invalid");
-  }
-
-  return decoded as Request["user"];
-}
-
-export const auth = (req: AuthRequest, res: Response, next: NextFunction) => {
-  const token = extractToken(req);
-
-  if (!token) {
-    console.error("[AUTH FAIL] Missing token", req.method, req.url);
-    return res.status(401).json({ error: "missing_token" });
-  }
+  const token = header.split(" ")[1];
 
   try {
-    req.user = verifyJwt(token);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string);
+
+    if (!decoded) {
+      throw new Error("INVALID_TOKEN");
+    }
+
+    req.user = decoded as Request["user"];
     return next();
-  } catch (err: any) {
-    console.error("[AUTH FAIL] Invalid token", err?.message ?? err);
-    return res.status(401).json({ error: "invalid_token" });
+  } catch {
+    return res.status(401).json({ error: "INVALID_TOKEN" });
   }
-};
+}
 
-export const requireAuth: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
-  const token = extractToken(req);
-
-  if (!token) {
-    console.error("[AUTH FAIL] Missing token", req.method, req.url);
-    return res.status(401).json({ error: "missing_token" });
-  }
-
-  try {
-    req.user = verifyJwt(token);
-    return next();
-  } catch (err: any) {
-    console.error("[AUTH FAIL] Invalid token", err?.message ?? err);
-    return res.status(401).json({ error: "invalid_token" });
-  }
-};
+export const auth = authMiddleware;
+export const requireAuth: RequestHandler = authMiddleware;
 
 export function requireAuthorization(options: AuthorizationOptions = {}): RequestHandler {
   const requiredRoles = options.roles ?? [];
@@ -91,11 +53,11 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
     const user = req.user as AppUser | undefined;
 
     if (!user) {
-      return res.status(401).json({ error: "unauthorized" });
+      return res.status(401).json({ error: "UNAUTHORIZED" });
     }
 
     if (requiredRoles.length > 0 && (!user.role || !requiredRoles.includes(user.role))) {
-      return res.status(403).json({ error: "forbidden" });
+      return res.status(403).json({ error: "FORBIDDEN" });
     }
 
     if (requiredCapabilities.length > 0) {
@@ -103,7 +65,7 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
       const allowed = requiredCapabilities.some((capability) => userCapabilities.includes(capability));
 
       if (!allowed) {
-        return res.status(403).json({ error: "forbidden" });
+        return res.status(403).json({ error: "FORBIDDEN" });
       }
     }
 

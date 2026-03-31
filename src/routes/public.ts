@@ -1,38 +1,42 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { fetchActiveLenderCount } from "../services/publicService";
-import { createReadinessLead } from "../modules/readiness/readiness.service";
-import { config } from "../config";
+import { dbQuery } from "../db";
+import { LeadSchema } from "../validation";
 
 const router = Router();
 
-router.get("/lender-count", async (_req: any, res: any) => {
-  const count = await fetchActiveLenderCount();
-  res["json"]({ count });
-});
-
-const readinessLimiter = rateLimit({
+const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 20,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => config.env === "test",
 });
 
-router.post("/readiness", readinessLimiter, async (req: any, res: any) => {
+router.post("/lead", limiter, async (req, res, next) => {
   try {
-    const { leadId } = await createReadinessLead(req.body ?? {});
-    res.status(201).json({ leadId, status: "created" });
+    const parsed = LeadSchema.safeParse(req.body ?? {});
+
+    if (!parsed.success) {
+      return res.status(400).json({ error: "INVALID_PAYLOAD" });
+    }
+
+    const data = parsed.data;
+    const result = await dbQuery<{ id: string }>(
+      `insert into crm_leads (email, phone, company_name, product_interest, requested_amount, source)
+       values ($1, $2, $3, $4, $5, 'public_api')
+       returning id`,
+      [data.email, data.phone, data.businessName, data.productType, data.requestedAmount ?? null],
+    );
+
+    const lead = result.rows[0];
+
+    if (!lead || !lead.id) {
+      throw new Error("LEAD_CREATION_FAILED");
+    }
+
+    return res.status(201).json({ leadId: lead.id });
   } catch (error) {
-    if (error instanceof Error && error.message === "invalid_phone") {
-      res.status(400).json({ error: "Invalid payload" });
-      return;
-    }
-    if (error && typeof error === "object" && "name" in error && (error as { name?: string }).name === "ZodError") {
-      res.status(400).json({ error: "Invalid payload" });
-      return;
-    }
-    res.status(500).json({ error: "Server error" });
+    return next(error);
   }
 });
 
