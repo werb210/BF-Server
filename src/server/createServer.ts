@@ -8,6 +8,11 @@ import documentRoutes from "../routes/documents";
 export function createServer() {
   const app = express();
 
+  // Azure health probe target must always be reachable and return a completed 2xx response.
+  app.get("/health", (_req, res) => {
+    res.status(200).set("Content-Type", "text/plain").send("ok");
+  });
+
   app.use(express.json());
 
   app.use(
@@ -34,9 +39,13 @@ export function createServer() {
     max: 5,
   });
 
-  app.get("/health", (_req, res) => {
-    res.status(200).send("ok");
-  });
+  if (!authRoutes) {
+    throw new Error("authRoutes failed to load");
+  }
+
+  if (!applicationRoutes) {
+    throw new Error("applicationRoutes failed to load");
+  }
 
   app.use("/api/auth/otp", otpLimiter);
   app.use("/api/auth", authRoutes);

@@ -21,7 +21,7 @@ async function boot() {
   const app = await createServer();
 
   app.listen(PORT, HOST, () => {
-    console.log(`[BOOT] server listening on ${HOST}:${PORT}`);
+    console.log(`[BOOT] listening on ${HOST}:${PORT}`);
   });
 }
 

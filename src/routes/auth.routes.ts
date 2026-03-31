@@ -8,6 +8,7 @@ import { sendSMS } from "../lib/twilio";
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
+console.log("[ROUTES LOADED] auth.routes");
 
 const isPhone = (value: unknown): value is string => (
   typeof value === "string" && /^\+?[1-9]\d{7,14}$/.test(value.trim())

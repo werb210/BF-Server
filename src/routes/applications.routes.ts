@@ -2,6 +2,7 @@ import { Router } from "express";
 import { requireAuth } from "../middleware/auth";
 
 const router = Router();
+console.log("[ROUTES LOADED] applications.routes");
 
 router.use(requireAuth);
 
