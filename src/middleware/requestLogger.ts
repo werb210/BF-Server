@@ -1,21 +1,20 @@
-import { Request, Response, NextFunction } from 'express';
-import { logger } from '../server/utils/logger';
-import { trackRequest } from '../routes/metrics';
+import { NextFunction, Request, Response } from "express";
+import { trackRequest } from "../routes/metrics";
 
 export function requestLogger(req: Request, res: Response, next: NextFunction) {
   trackRequest();
-  const start = Date.now();
 
-  res.on('finish', () => {
-    const duration = Date.now() - start;
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  req.requestId = id;
+  req.id = id;
 
-    logger.info('request', {
-      requestId: req.id,
-      method: req.method,
-      path: req.originalUrl,
-      status: res.statusCode,
-      duration
-    });
+  res.setHeader("X-Request-Id", id);
+
+  console.log({
+    id,
+    method: req.method,
+    path: req.path,
+    time: new Date().toISOString(),
   });
 
   next();

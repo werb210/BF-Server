@@ -1,19 +1,26 @@
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
 import { dbQuery } from "../db";
+import { requireFields } from "../middleware/validate";
 import { LeadSchema } from "../validation";
 
 const router = Router();
 
-const limiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+type LeadPayload = {
+  email?: string;
+  phone?: string;
+  productType?: string;
+  businessName?: string;
+  companyName?: string;
+  requestedAmount?: number;
+};
 
-async function createLead(payload: unknown): Promise<{ leadId?: string }> {
-  const parsed = LeadSchema.safeParse(payload ?? {});
+async function createLead(payload: LeadPayload): Promise<{ leadId?: string }> {
+  const normalizedPayload = {
+    ...payload,
+    businessName: payload.businessName ?? payload.companyName,
+  };
+
+  const parsed = LeadSchema.safeParse(normalizedPayload ?? {});
 
   if (!parsed.success) {
     return {};
@@ -30,19 +37,27 @@ async function createLead(payload: unknown): Promise<{ leadId?: string }> {
   return { leadId: result.rows[0]?.id };
 }
 
-router.post("/lead", limiter, async (req, res, next) => {
-  try {
-    const result = await createLead(req.body);
-
-    if (!result?.leadId) {
-      return res.status(500).json({ error: "LEAD_CREATION_FAILED" });
-    }
-
-    return res.json({ leadId: result.leadId });
-  } catch (error) {
-    return next(error);
-  }
+router.get("/test", (_req, res) => {
+  return res.json({ ok: true });
 });
+
+router.post(
+  "/lead",
+  requireFields(["companyName", "email"]),
+  async (req, res, next) => {
+    try {
+      const result = await createLead(req.body);
+
+      if (!result?.leadId) {
+        return res.status(400).json({ error: "INVALID_INPUT" });
+      }
+
+      return res.json({ leadId: result.leadId });
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
 
 router.all("/lead", (_req, res) => {
   return res.status(405).json({ error: "METHOD_NOT_ALLOWED" });

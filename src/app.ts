@@ -1,12 +1,18 @@
-import express from "express";
 import cors from "cors";
+import express from "express";
 
-import publicRouter from "./routes/public";
-import apiRouter from "./routes/api";
 import { createAuthMiddleware } from "./middleware/auth";
+import { publicLimiter } from "./middleware/publicLimiter";
+import { globalLimiter } from "./middleware/rateLimit";
+import { requestLogger } from "./middleware/requestLogger";
+import apiRouter from "./routes/api";
+import publicRouter from "./routes/public";
 
 export function createApp() {
   const app = express();
+
+  app.use(requestLogger);
+  app.use(globalLimiter);
 
   app.use(express.json({ limit: "1mb" }));
 
@@ -29,7 +35,7 @@ export function createApp() {
     }),
   );
 
-  app.use("/api/public", publicRouter);
+  app.use("/api/public", publicLimiter, publicRouter);
   app.use("/api", createAuthMiddleware(process.env.JWT_SECRET!), apiRouter);
 
   app.use("/api", (_req, res) => {

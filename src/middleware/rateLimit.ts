@@ -1,29 +1,18 @@
-import rateLimit from 'express-rate-limit';
+import { rateLimit } from "express-rate-limit";
 
-export const apiRateLimit = rateLimit({
-  windowMs: 60_000,
-  max: 100,
-});
-
-export const globalRateLimit = rateLimit({
+export const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  limit: 200,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
 });
 
-export const documentUploadRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 50,
-});
-
-export const clientSubmissionRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 25,
-});
-
-export const lenderSubmissionRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 25,
-});
+// Backward-compatible aliases for existing imports.
+export const globalRateLimit = globalLimiter;
+export const apiRateLimit = globalLimiter;
+export const documentUploadRateLimit = globalLimiter;
+export const clientSubmissionRateLimit = globalLimiter;
+export const lenderSubmissionRateLimit = globalLimiter;
 
 export function pushSendRateLimit() {
   return (_req: any, _res: any, next: any) => next();
@@ -33,8 +22,7 @@ export function adminRateLimit() {
   return (_req: any, _res: any, next: any) => next();
 }
 
-// compatibility wrappers
-export const voiceRateLimit = () => globalRateLimit;
-export const portalRateLimit = () => globalRateLimit;
-export const clientReadRateLimit = () => globalRateLimit;
-export const clientDocumentsRateLimit = () => globalRateLimit;
+export const voiceRateLimit = () => globalLimiter;
+export const portalRateLimit = () => globalLimiter;
+export const clientReadRateLimit = () => globalLimiter;
+export const clientDocumentsRateLimit = () => globalLimiter;
