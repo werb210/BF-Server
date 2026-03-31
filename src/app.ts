@@ -23,8 +23,14 @@ export function createApp() {
 
   app.use((req, res, next) => {
     const methodNeedsJson = ["POST", "PUT", "PATCH"].includes(req.method.toUpperCase());
+    const hasContentTypeHeader = typeof req.headers["content-type"] === "string";
 
-    if (methodNeedsJson && req.method.toUpperCase() !== "OPTIONS" && !req.is("application/json")) {
+    if (
+      methodNeedsJson &&
+      req.method.toUpperCase() !== "OPTIONS" &&
+      hasContentTypeHeader &&
+      !req.is("application/json")
+    ) {
       return res.status(400).json({ error: "INVALID_CONTENT_TYPE" });
     }
 
