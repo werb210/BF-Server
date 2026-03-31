@@ -15,11 +15,12 @@ export interface AuthRequest extends Request {
   user?: Request["user"];
 }
 
-if (!process.env.JWT_SECRET) {
-  throw new Error("JWT_SECRET_MISSING");
-}
-
 export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    return res.status(500).json({ error: "SERVER_MISCONFIG" });
+  }
+
   const header = req.headers.authorization;
 
   if (!header || !header.startsWith("Bearer ")) {
@@ -29,7 +30,7 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
   const token = header.split(" ")[1];
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string);
+    const decoded = jwt.verify(token, secret);
 
     if (!decoded) {
       throw new Error("INVALID_TOKEN");

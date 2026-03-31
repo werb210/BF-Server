@@ -1,4 +1,3 @@
-import dotenv from "dotenv";
 import express from "express";
 import cors from "cors";
 
@@ -6,13 +5,7 @@ import publicRouter from "./routes/public";
 import apiRouter from "./routes/api";
 import { authMiddleware } from "./middleware/auth";
 
-dotenv.config();
-
-export function buildAppWithApiRoutes() {
-  if (!process.env.JWT_SECRET) {
-    throw new Error("JWT_SECRET_MISSING");
-  }
-
+export function createApp() {
   const app = express();
 
   app.set("trust proxy", 1);
@@ -26,20 +19,12 @@ export function buildAppWithApiRoutes() {
     next();
   });
 
-  app.use((req, res, next) => {
-    if (!req.path.startsWith("/")) {
-      return res.status(400).json({ error: "INVALID_PATH" });
-    }
-
-    return next();
-  });
-
   app.use(express.json({ limit: "1mb" }));
 
   app.use((req, res, next) => {
     const methodNeedsJson = ["POST", "PUT", "PATCH"].includes(req.method.toUpperCase());
 
-    if (methodNeedsJson && !req.is("application/json")) {
+    if (methodNeedsJson && req.method.toUpperCase() !== "OPTIONS" && !req.is("application/json")) {
       return res.status(400).json({ error: "INVALID_CONTENT_TYPE" });
     }
 
@@ -53,6 +38,9 @@ export function buildAppWithApiRoutes() {
 
   app.use("/api/public", publicRouter);
   app.use("/api", authMiddleware, apiRouter);
+  app.use("/api", (_req, res) => {
+    res.status(404).json({ error: "NOT_FOUND" });
+  });
 
   app.use((req, res) => {
     res.status(404).json({ error: "NOT_FOUND" });
@@ -73,6 +61,6 @@ export function buildAppWithApiRoutes() {
   return app;
 }
 
-export const app = buildAppWithApiRoutes();
+export const buildAppWithApiRoutes = createApp;
 
-export default app;
+export default createApp;
