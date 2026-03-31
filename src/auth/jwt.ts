@@ -154,6 +154,16 @@ export function verifyJwt(token: string): { sub: string } {
   }
 }
 
+export function signJwt(payload: { sub: string }): string {
+  const secret = process.env.JWT_SECRET;
+
+  if (!secret) {
+    throw new Error("SERVER_MISCONFIG");
+  }
+
+  return jwt.sign(payload, secret, { expiresIn: "7d" });
+}
+
 export async function verifyAccessTokenWithUser(token: string): Promise<{
   payload: AccessTokenPayload;
   user: AuthUser;

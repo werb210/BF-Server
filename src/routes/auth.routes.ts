@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
 
 import { requireAuth } from "../middleware/auth";
+import { signJwt, verifyJwt } from "../auth/jwt";
 import { getRedis, resetRedisMock } from "../lib/redis";
 import { sendSMS } from "../lib/twilio";
 
@@ -28,8 +29,8 @@ async function startOtpHandler(req: Request, res: Response) {
   try {
     const { phone } = req.body as { phone?: unknown };
 
-    if (!phone) {
-      return res.status(400).json({ error: "PHONE_REQUIRED" });
+    if (typeof phone !== "string" || phone.length < 5) {
+      return res.status(400).json({ error: "INVALID_PHONE" });
     }
 
     const redis = getRedis();
@@ -80,7 +81,11 @@ async function verifyOtpHandler(req: Request, res: Response) {
   try {
     const { phone, code } = req.body as { phone?: unknown; code?: unknown };
 
-    if (!phone || !code) {
+    if (
+      typeof phone !== "string"
+      || typeof code !== "string"
+      || code.length < 4
+    ) {
       return res.status(400).json({ error: "INVALID_INPUT" });
     }
 
@@ -110,7 +115,7 @@ async function verifyOtpHandler(req: Request, res: Response) {
       } else {
         await redis.set(`otp:${phone}`, JSON.stringify(record), "EX", 300);
       }
-      return res.status(400).json({ error: "INVALID_TOKEN" });
+      return res.status(401).json({ error: "INVALID_CODE" });
     }
 
     if (!JWT_SECRET) {
@@ -133,6 +138,24 @@ async function verifyOtpHandler(req: Request, res: Response) {
 
 router.post("/start-otp", startOtpHandler);
 router.post("/verify-otp", verifyOtpHandler);
+router.post("/refresh", async (req, res) => {
+  const header = req.headers.authorization;
+
+  if (!header || !header.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "UNAUTHORIZED" });
+  }
+
+  const token = header.slice(7);
+
+  try {
+    const decoded = verifyJwt(token);
+    const newToken = signJwt(decoded);
+
+    return res.status(200).json({ token: newToken });
+  } catch {
+    return res.status(401).json({ error: "INVALID_TOKEN" });
+  }
+});
 
 router.post("/otp/start", startOtpHandler);
 router.post("/otp/verify", verifyOtpHandler);
