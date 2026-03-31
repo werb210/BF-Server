@@ -19,7 +19,6 @@ export const EnvSchema = z
     SLACK_ALERT_WEBHOOK_URL: z.string().min(1).optional(),
 
     PORT: numericString.optional(),
-    API_BASE_URL: z.string().min(1).optional(),
     PUBLIC_BASE_URL: z.string().min(1).optional(),
     CLIENT_BASE_URL: z.string().min(1).optional(),
     LOG_LEVEL: z.string().min(1).optional(),

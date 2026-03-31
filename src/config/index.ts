@@ -1,4 +1,5 @@
 import { EnvSchema } from "./schema";
+import { API_BASE } from "./api";
 
 const parsed = EnvSchema.parse(process.env);
 
@@ -31,7 +32,7 @@ export const config = {
   buildTimestamp: parsed.BUILD_TIMESTAMP ?? new Date(0).toISOString(),
 
   api: {
-    baseUrl: parsed.API_BASE_URL,
+    baseUrl: API_BASE,
   },
   app: {
     baseUrl: parsed.BASE_URL,
@@ -207,7 +208,7 @@ export const config = {
     webhookUrl: parsed.CRM_WEBHOOK_URL,
   },
   urls: {
-    apiBase: parsed.API_BASE_URL,
+    apiBase: API_BASE,
     publicBase: parsed.PUBLIC_BASE_URL,
     clientBase: parsed.CLIENT_BASE_URL,
   },
