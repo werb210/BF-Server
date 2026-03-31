@@ -129,4 +129,19 @@ router.get("/exports/recent", async (_req, res, next) => {
   }
 });
 
+router.get("/failed-jobs", async (_req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, type, error, retry_count, created_at
+       FROM failed_jobs
+       ORDER BY created_at DESC
+       LIMIT 100`
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

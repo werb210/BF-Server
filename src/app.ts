@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 
 import { requireAuth } from "./middleware/auth";
 import { pool } from "./db";
+import internalRoutes from "./routes/internal";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -154,6 +155,8 @@ export function createApp() {
   app.use("/api/private", requireAuth, (_req, res) => {
     res.json({ ok: true });
   });
+
+  app.use("/internal", internalRoutes);
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (err instanceof SyntaxError) {
