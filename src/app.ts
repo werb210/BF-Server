@@ -1,13 +1,13 @@
 import express from "express";
 
 import { requireAuth } from "./middleware/auth";
-import { pool } from "./db";
 import internalRoutes from "./routes/internal";
 import authRoutes from "./routes/auth";
 import messagingRoutes from "./routes/messaging";
 import mayaRoutes from "./routes/maya";
 import voiceRoutes from "./routes/voice";
 import smsRoutes from "./routes/sms";
+import healthRoutes from "./routes/health";
 import { errorHandler } from "./middleware/errorHandler";
 
 declare global {
@@ -68,29 +68,10 @@ export function createApp() {
   app.use("/maya", mayaRoutes);
   app.use("/voice", voiceRoutes);
   app.use("/sms", smsRoutes);
+  app.use("/", healthRoutes);
 
   app.get("/telephony/token", requireAuth, (_req, res) => {
     return res.status(200).json({ token: "real-token" });
-  });
-
-  app.get("/health", async (_req, res) => {
-    if (!process.env.TWILIO_VERIFY_SERVICE_SID) {
-      return res.status(500).json({ status: "missing_verify_sid" });
-    }
-
-    let dbStatus = "ok";
-
-    try {
-      await pool.query("SELECT 1");
-    } catch {
-      dbStatus = "down";
-    }
-
-    res.status(200).json({
-      api: "ok",
-      db: dbStatus,
-      timestamp: Date.now(),
-    });
   });
 
   app.use("/api/private", requireAuth, (_req, res) => {
@@ -98,14 +79,6 @@ export function createApp() {
   });
 
   app.use("/internal", internalRoutes);
-
-  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    if (err instanceof SyntaxError) {
-      return res.status(400).json({ error: "INVALID_JSON" });
-    }
-
-    return res.status(500).json({ error: "INTERNAL_SERVER_ERROR" });
-  });
 
   app.use(errorHandler);
 
