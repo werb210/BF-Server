@@ -12,21 +12,21 @@ export const pool = new Pool({
     rejectUnauthorized: false
   },
   connectionTimeoutMillis: 10000,
-  idleTimeoutMillis: 30000,
-  max: 10
+  query_timeout: 10000,
+  idleTimeoutMillis: 30000
 });
 
-pool.on('error', (err) => {
-  console.error('Unexpected PG error', err);
-});
+export async function testDb() {
+  const start = Date.now();
 
-export async function testDbConnection() {
   try {
     const client = await pool.connect();
-    console.log('DB CONNECTED');
+    await client.query('SELECT 1');
     client.release();
+
+    console.log('DB OK in', Date.now() - start, 'ms');
   } catch (err) {
-    console.error('DB CONNECTION FAILED:', err);
+    console.error('DB FAIL', err);
     process.exit(1);
   }
 }

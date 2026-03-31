@@ -2,7 +2,7 @@ import express from 'express';
 import healthRouter from './routes/health';
 import { logger } from './lib/logger';
 import { config } from '../../src/config';
-import { testDbConnection } from './db/client';
+import { testDb } from './db/client';
 
 const app = express();
 
@@ -17,7 +17,7 @@ app.use((req, res) => {
 const PORT = config.port || 3000;
 
 async function startServer() {
-  await testDbConnection();
+  await testDb();
 
   app.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
