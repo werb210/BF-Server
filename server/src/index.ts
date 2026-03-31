@@ -2,6 +2,7 @@ import express from 'express';
 import healthRouter from './routes/health';
 import { logger } from './lib/logger';
 import { config } from '../../src/config';
+import { testDbConnection } from './db/client';
 
 const app = express();
 
@@ -15,6 +16,13 @@ app.use((req, res) => {
 
 const PORT = config.port || 3000;
 
-app.listen(PORT, () => {
-  logger.info(`Server running on port ${PORT}`);
-});
+async function startServer() {
+  await testDbConnection();
+
+  app.listen(PORT, () => {
+    logger.info(`Server running on port ${PORT}`);
+    console.log('ENV DATABASE_URL:', process.env.DATABASE_URL?.replace(/:.+@/, ':****@'));
+  });
+}
+
+void startServer();
