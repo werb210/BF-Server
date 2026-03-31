@@ -12,32 +12,40 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-router.post("/lead", limiter, async (req, res, next) => {
-  try {
-    const parsed = LeadSchema.safeParse(req.body ?? {});
+async function createLead(payload: unknown): Promise<{ leadId?: string }> {
+  const parsed = LeadSchema.safeParse(payload ?? {});
 
-    if (!parsed.success) {
-      return res.status(400).json({ error: "INVALID_PAYLOAD" });
-    }
+  if (!parsed.success) {
+    return {};
+  }
 
-    const data = parsed.data;
-    const result = await dbQuery<{ id: string }>(
-      `insert into crm_leads (email, phone, company_name, product_interest, requested_amount, source)
+  const data = parsed.data;
+  const result = await dbQuery<{ id: string }>(
+    `insert into crm_leads (email, phone, company_name, product_interest, requested_amount, source)
        values ($1, $2, $3, $4, $5, 'public_api')
        returning id`,
-      [data.email, data.phone, data.businessName, data.productType, data.requestedAmount ?? null],
-    );
+    [data.email, data.phone, data.businessName, data.productType, data.requestedAmount ?? null],
+  );
 
-    const lead = result.rows[0];
+  return { leadId: result.rows[0]?.id };
+}
 
-    if (!lead || !lead.id) {
-      throw new Error("LEAD_CREATION_FAILED");
+router.post("/lead", limiter, async (req, res, next) => {
+  try {
+    const result = await createLead(req.body);
+
+    if (!result?.leadId) {
+      return res.status(500).json({ error: "LEAD_CREATION_FAILED" });
     }
 
-    return res.status(201).json({ leadId: lead.id });
+    return res.json({ leadId: result.leadId });
   } catch (error) {
     return next(error);
   }
+});
+
+router.all("/lead", (_req, res) => {
+  return res.status(405).json({ error: "METHOD_NOT_ALLOWED" });
 });
 
 export default router;

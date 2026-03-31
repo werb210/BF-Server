@@ -14,7 +14,6 @@ const logRequest = (method: ApiMethod, path: string): void => {
 export const apiFetch = (path: string, options?: RequestInit) => {
   logRequest((options?.method?.toLowerCase() as ApiMethod) ?? "get", path);
   return fetch(buildUrl(path), {
-    credentials: "include",
     ...options,
   });
 };
@@ -22,7 +21,7 @@ export const apiFetch = (path: string, options?: RequestInit) => {
 const api = {
   get: async (path: string, opts?: RequestInit) => {
     logRequest("get", path);
-    const res = await fetch(buildUrl(path), { credentials: "include", ...opts });
+    const res = await fetch(buildUrl(path), { ...opts });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res["json"]();
   },
@@ -30,7 +29,6 @@ const api = {
     logRequest("post", path);
     const res = await fetch(buildUrl(path), {
       method: "POST",
-      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       ...opts,

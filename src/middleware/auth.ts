@@ -15,33 +15,43 @@ export interface AuthRequest extends Request {
   user?: Request["user"];
 }
 
-export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
+export function createAuthMiddleware(secret: string): RequestHandler {
+  return function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
+    const header = req.headers.authorization;
+
+    if (!header || typeof header !== "string") {
+      return res.status(401).json({ error: "UNAUTHORIZED" });
+    }
+
+    if (!header.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "UNAUTHORIZED" });
+    }
+
+    const token = header.slice(7).trim();
+
+    if (!token || token === "undefined" || token === "null") {
+      return res.status(401).json({ error: "INVALID_TOKEN" });
+    }
+
+    try {
+      const decoded = jwt.verify(token, secret);
+      req.user = decoded as Request["user"];
+      return next();
+    } catch {
+      return res.status(401).json({ error: "INVALID_TOKEN" });
+    }
+  };
+}
+
+export const authMiddleware: RequestHandler = (req, res, next) => {
   const secret = process.env.JWT_SECRET;
+
   if (!secret) {
     return res.status(500).json({ error: "SERVER_MISCONFIG" });
   }
 
-  const header = req.headers.authorization;
-
-  if (!header || !header.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "UNAUTHORIZED" });
-  }
-
-  const token = header.split(" ")[1];
-
-  try {
-    const decoded = jwt.verify(token, secret);
-
-    if (!decoded) {
-      throw new Error("INVALID_TOKEN");
-    }
-
-    req.user = decoded as Request["user"];
-    return next();
-  } catch {
-    return res.status(401).json({ error: "INVALID_TOKEN" });
-  }
-}
+  return createAuthMiddleware(secret)(req, res, next);
+};
 
 export const auth = authMiddleware;
 export const requireAuth: RequestHandler = authMiddleware;
