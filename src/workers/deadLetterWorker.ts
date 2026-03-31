@@ -21,11 +21,17 @@ async function processJob(job: { type: string; data: any }): Promise<void> {
 }
 
 export async function processDeadLetters(): Promise<void> {
+  const MAX_RETRIES = 10;
   const res = await pool.query(
     `SELECT * FROM failed_jobs ORDER BY created_at ASC LIMIT 20`
   );
 
   for (const job of res.rows) {
+    if (job.retry_count >= MAX_RETRIES) {
+      console.error("Dead letter abandoned", job.id);
+      continue;
+    }
+
     try {
       await withRetry(async () => {
         await processJob(job);
