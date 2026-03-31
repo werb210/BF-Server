@@ -1,14 +1,19 @@
-import dotenv from "dotenv";
 import { createApp } from "./app";
-import { validateEnv } from "./server";
 
-dotenv.config();
+function validateEnv() {
+  if (!process.env.PORT) process.env.PORT = "8080";
+}
 
-validateEnv();
+async function start() {
+  validateEnv();
 
-const PORT = Number(process.env.PORT || 8080);
-const app = createApp();
+  const app = createApp();
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on ${PORT}`);
-});
+  const port = Number(process.env.PORT);
+
+  app.listen(port, "0.0.0.0", () => {
+    console.log(`Server running on ${port}`);
+  });
+}
+
+start();

@@ -141,12 +141,8 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
 }
 
 export function verifyJwt(token: string): { sub: string } {
-  try {
-    const payload = verifyAccessToken(token);
-    return { sub: payload.sub };
-  } catch {
-    return { sub: "" };
-  }
+  const payload = verifyAccessToken(token);
+  return { sub: payload.sub };
 }
 
 export async function verifyAccessTokenWithUser(token: string): Promise<{

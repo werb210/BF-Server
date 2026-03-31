@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction, type RequestHandler } from "express";
+
 import jwt from "jsonwebtoken";
 
 type AuthorizationOptions = {
@@ -15,22 +16,23 @@ export interface AuthRequest extends Request {
   user?: Request["user"];
 }
 
-export function createAuthMiddleware(secret: string): RequestHandler {
+export function createAuthMiddleware(): RequestHandler {
   return function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
-    const header = req.headers.authorization;
+    const auth = req.headers.authorization;
 
-    if (!header || typeof header !== "string") {
+    if (!auth || typeof auth !== "string" || !auth.startsWith("Bearer ")) {
       return res.status(401).json({ error: "UNAUTHORIZED" });
     }
 
-    if (!header.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "UNAUTHORIZED" });
-    }
-
-    const token = header.slice(7).trim();
+    const token = auth.split(" ")[1];
 
     if (!token || token === "undefined" || token === "null") {
       return res.status(401).json({ error: "INVALID_TOKEN" });
+    }
+
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      return res.status(500).json({ error: "SERVER_MISCONFIG" });
     }
 
     try {
@@ -44,13 +46,7 @@ export function createAuthMiddleware(secret: string): RequestHandler {
 }
 
 export const authMiddleware: RequestHandler = (req, res, next) => {
-  const secret = process.env.JWT_SECRET;
-
-  if (!secret) {
-    return res.status(500).json({ error: "SERVER_MISCONFIG" });
-  }
-
-  return createAuthMiddleware(secret)(req, res, next);
+  return createAuthMiddleware()(req, res, next);
 };
 
 export const auth = authMiddleware;

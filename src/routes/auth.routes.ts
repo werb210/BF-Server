@@ -1,22 +1,12 @@
 import { Router, type Request, type Response } from "express";
-import { requireAuth } from "../middleware/auth";
 import jwt from "jsonwebtoken";
 
+import { requireAuth } from "../middleware/auth";
 import { getRedis, resetRedisMock } from "../lib/redis";
-import { fail, ok } from "../lib/response";
 import { sendSMS } from "../lib/twilio";
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET as string;
-console.log("[ROUTES LOADED] auth.routes");
-
-const isPhone = (value: unknown): value is string => (
-  typeof value === "string" && /^\+?[1-9]\d{7,14}$/.test(value.trim())
-);
-
-const isCode = (value: unknown): value is string => (
-  typeof value === "string" && /^\d{6}$/.test(value.trim())
-);
 
 type OtpRecord = {
   code: string;
@@ -31,30 +21,15 @@ export function resetOtpStateForTests() {
 }
 
 router.get("/me", requireAuth, (req, res) => {
-  return res.json(req.user);
+  return res.status(200).json(req.user);
 });
 
-router.post("/otp/start", (req, _res, next) => {
-  console.log("[AUTH HIT] /auth/otp/start");
-  next();
-}, async (req: Request, res: Response) => {
+async function startOtpHandler(req: Request, res: Response) {
   try {
     const { phone } = req.body as { phone?: unknown };
 
     if (!phone) {
-      return res.status(400).json({ error: "phone required" });
-    }
-
-    if (!isPhone(phone)) {
-      return fail(res, "invalid_phone", 400);
-    }
-
-    if (
-      !process.env.TWILIO_ACCOUNT_SID
-      || !process.env.TWILIO_AUTH_TOKEN
-      || !process.env.TWILIO_PHONE
-    ) {
-      return fail(res, "missing_otp_env", 500);
+      return res.status(400).json({ error: "PHONE_REQUIRED" });
     }
 
     const redis = getRedis();
@@ -64,7 +39,7 @@ router.post("/otp/start", (req, _res, next) => {
     const existing = existingRaw ? JSON.parse(existingRaw) as OtpRecord : null;
 
     if (existing && now - existing.lastSentAt < 60_000) {
-      return fail(res, "Too many requests", 429);
+      return res.status(429).json({ error: "TOO_MANY_REQUESTS" });
     }
 
     const staticOtpCode = process.env.TEST_OTP_CODE;
@@ -82,34 +57,38 @@ router.post("/otp/start", (req, _res, next) => {
 
     await redis.set(key, JSON.stringify(record), "EX", 300);
 
-    if (!staticOtpCode) {
-      await sendSMS(phone, `Your code is ${code}`);
+    if (
+      !staticOtpCode
+      && process.env.TWILIO_ACCOUNT_SID
+      && process.env.TWILIO_AUTH_TOKEN
+      && process.env.TWILIO_PHONE
+    ) {
+      await sendSMS(String(phone), `Your code is ${code}`);
     }
 
     if (process.env.NODE_ENV === "test") {
-      return res.status(200).json({ ok: true });
+      return res.status(200).json({ success: true });
     }
 
-    return res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "otp_start_failed" });
+    return res.status(200).json({ success: true });
+  } catch {
+    return res.status(500).json({ error: "OTP_START_FAILED" });
   }
-});
+}
 
-router.post("/otp/verify", async (req: Request, res: Response) => {
+async function verifyOtpHandler(req: Request, res: Response) {
   try {
     const { phone, code } = req.body as { phone?: unknown; code?: unknown };
 
-    if (!isPhone(phone) || !isCode(code)) {
-      return fail(res, "invalid_payload", 400);
+    if (!phone || !code) {
+      return res.status(400).json({ error: "INVALID_INPUT" });
     }
 
     const redis = getRedis();
     const stored = await redis.get(`otp:${phone}`);
 
     if (!stored) {
-      return fail(res, "Invalid code", 400);
+      return res.status(400).json({ error: "INVALID_TOKEN" });
     }
 
     const record = JSON.parse(stored) as OtpRecord;
@@ -117,11 +96,11 @@ router.post("/otp/verify", async (req: Request, res: Response) => {
 
     if (now > record.expiresAt) {
       await redis.del(`otp:${phone}`);
-      return fail(res, "OTP expired", 410);
+      return res.status(410).json({ error: "OTP_EXPIRED" });
     }
 
     if (record.used) {
-      return fail(res, "Invalid code", 400);
+      return res.status(400).json({ error: "INVALID_TOKEN" });
     }
 
     if (record.code !== code) {
@@ -131,7 +110,11 @@ router.post("/otp/verify", async (req: Request, res: Response) => {
       } else {
         await redis.set(`otp:${phone}`, JSON.stringify(record), "EX", 300);
       }
-      return fail(res, "Invalid code", 400);
+      return res.status(400).json({ error: "INVALID_TOKEN" });
+    }
+
+    if (!JWT_SECRET) {
+      return res.status(500).json({ error: "SERVER_MISCONFIG" });
     }
 
     const token = jwt.sign(
@@ -142,11 +125,16 @@ router.post("/otp/verify", async (req: Request, res: Response) => {
 
     await redis.del(`otp:${phone}`);
 
-    return res.json({ token });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "otp_verify_failed" });
+    return res.status(200).json({ token });
+  } catch {
+    return res.status(500).json({ error: "OTP_VERIFY_FAILED" });
   }
-});
+}
+
+router.post("/start-otp", startOtpHandler);
+router.post("/verify-otp", verifyOtpHandler);
+
+router.post("/otp/start", startOtpHandler);
+router.post("/otp/verify", verifyOtpHandler);
 
 export default router;
