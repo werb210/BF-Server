@@ -15,81 +15,70 @@ export interface AuthRequest extends Request {
   user?: any;
 }
 
-function getAuthHeader(req: Request): string | null {
-  return (
-    req.headers.authorization
-    || (req.headers as Record<string, string | string[] | undefined>).Authorization as string | undefined
-    || req.get("authorization")
-    || null
-  );
+export function extractToken(req: any): string | null {
+  const header = req.headers.authorization;
+
+  if (!header || typeof header !== "string") {
+    return null;
+  }
+
+  if (!header.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = header.slice(7).trim();
+
+  if (!token) {
+    return null;
+  }
+
+  return token;
 }
 
-function getBearerToken(req: Request): string | null {
-  const authHeader = getAuthHeader(req);
-
-  if (!authHeader) {
-    return null;
+function verifyJwt(token: string): Request["user"] {
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    throw new Error("JWT_SECRET NOT SET");
   }
 
-  const parts = authHeader.split(" ");
-  if (parts.length !== 2 || parts[0] !== "Bearer") {
-    return null;
+  const decoded = jwt.verify(token, jwtSecret);
+  if (!decoded) {
+    throw new Error("invalid");
   }
 
-  return parts[1];
+  return decoded as Request["user"];
 }
 
 export const auth = (req: AuthRequest, res: Response, next: NextFunction) => {
-  const token = getBearerToken(req);
+  const token = extractToken(req);
+
   if (!token) {
-    return res.status(401).json({ error: "missing_auth_header" });
+    console.error("[AUTH FAIL] Missing token", req.method, req.url);
+    return res.status(401).json({ error: "missing_token" });
   }
 
   try {
-    const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret) {
-      return res.status(401).json({ error: "invalid_token" });
-    }
-
-    const decoded = jwt.verify(token, jwtSecret);
-    req.user = decoded;
+    req.user = verifyJwt(token);
     return next();
-  } catch (err) {
-    console.error("[JWT ERROR]", err);
+  } catch (err: any) {
+    console.error("[AUTH FAIL] Invalid token", err?.message ?? err);
     return res.status(401).json({ error: "invalid_token" });
   }
 };
 
 export const requireAuth: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
-  const authHeader = getAuthHeader(req);
+  const token = extractToken(req);
 
-  if (!authHeader) {
-    return res.status(401).json({ error: "missing_auth_header" });
+  if (!token) {
+    console.error("[AUTH FAIL] Missing token", req.method, req.url);
+    return res.status(401).json({ error: "missing_token" });
   }
-
-  const parts = authHeader.split(" ");
-  if (parts.length !== 2 || parts[0] !== "Bearer") {
-    return res.status(401).json({ error: "invalid_auth_format" });
-  }
-
-  const token = parts[1];
 
   try {
-    const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret) {
-      return res.status(401).json({ error: "invalid_token" });
-    }
-
-    const decoded = jwt.verify(token, jwtSecret);
-    req.user = decoded as Request["user"];
-
-    if (!req.user) {
-      return res.status(401).json({ error: "unauthorized" });
-    }
-
+    req.user = verifyJwt(token);
     return next();
-  } catch (err) {
-    console.error("[JWT ERROR]", err);
+  } catch (err: any) {
+    console.error("[AUTH FAIL] Invalid token", err?.message ?? err);
     return res.status(401).json({ error: "invalid_token" });
   }
 };
