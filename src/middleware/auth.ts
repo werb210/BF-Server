@@ -19,11 +19,16 @@ export interface AuthRequest extends Request {
 export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
 
-  if (!header || !header.startsWith("Bearer ")) {
+  if (!header) {
     return res.status(401).json({ error: "UNAUTHORIZED" });
   }
 
-  const token = header.split(" ")[1];
+  const bearerMatch = header.match(/^Bearer(?:\s+(.+))?$/i);
+  if (!bearerMatch) {
+    return res.status(401).json({ error: "UNAUTHORIZED" });
+  }
+
+  const token = bearerMatch[1]?.trim();
 
   if (!token || token === "null" || token === "undefined") {
     return res.status(401).json({ error: "INVALID_TOKEN" });
