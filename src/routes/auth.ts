@@ -1,6 +1,6 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { twilioClient, verifyServiceSid } from "../lib/twilioClient";
+import { twilioClient, twilioEnabled, verifyServiceSid } from "../lib/twilioClient";
 import { ok, fail } from "../middleware/response";
 
 const router = Router();
@@ -13,6 +13,9 @@ router.post("/send-otp", sendLimiter, async (req, res) => {
   const { phone } = req.body;
 
   if (!phone) return fail(res, 400, "phone_required");
+  if (!twilioEnabled || !twilioClient) {
+    return fail(res, 503, "twilio_not_configured");
+  }
 
   try {
     const verification = await twilioClient.verify.v2
@@ -31,6 +34,9 @@ router.post("/verify-otp", verifyLimiter, async (req, res) => {
 
   if (!phone || !code) {
     return fail(res, 400, "phone_and_code_required");
+  }
+  if (!twilioEnabled || !twilioClient) {
+    return fail(res, 503, "twilio_not_configured");
   }
 
   try {

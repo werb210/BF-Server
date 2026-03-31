@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { twilioClient, fromNumber, callerId } from "../lib/twilioClient";
+import { twilioClient, twilioEnabled, fromNumber, callerId } from "../lib/twilioClient";
 
 const router = Router();
 
@@ -8,6 +8,9 @@ router.post("/sms", async (req, res) => {
   const { to, body } = req.body;
 
   if (!to || !body) return res.status(400).json({ error: "to + body required" });
+  if (!twilioEnabled || !twilioClient) {
+    return res.status(503).json({ success: false, message: "twilio_not_configured" });
+  }
 
   try {
     const msg = await twilioClient.messages.create({
@@ -28,6 +31,9 @@ router.post("/call", async (req, res) => {
 
   if (!to || !twimlUrl) {
     return res.status(400).json({ error: "to + twimlUrl required" });
+  }
+  if (!twilioEnabled || !twilioClient) {
+    return res.status(503).json({ success: false, message: "twilio_not_configured" });
   }
 
   try {

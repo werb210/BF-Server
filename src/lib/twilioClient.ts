@@ -1,17 +1,12 @@
 import twilio from "twilio";
 
-const required = [
-  "TWILIO_ACCOUNT_SID",
-  "TWILIO_AUTH_TOKEN",
-  "TWILIO_VERIFY_SERVICE_SID",
-  "TWILIO_FROM_NUMBER",
-];
-
 const isTestEnv = process.env.NODE_ENV === "test";
-const missing = required.filter((key) => !process.env[key]);
+const isConfigured = Boolean(
+  process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
+);
 
-if (!isTestEnv && missing.length > 0) {
-  throw new Error(`Missing required env: ${missing[0]}`);
+if (!isTestEnv && !isConfigured) {
+  console.warn("Twilio not configured - disabled");
 }
 
 type VerifyResult = { status: string };
@@ -43,7 +38,15 @@ function createMockClient() {
 
 export const twilioClient: any = isTestEnv
   ? createMockClient()
-  : twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!);
+  : isConfigured
+    ? twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!)
+    : null;
+
+export const twilioEnabled = isTestEnv || isConfigured;
+
+export function getTwilioClient() {
+  return twilioEnabled ? twilioClient : null;
+}
 
 export const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID || "test_verify_service_sid";
 export const fromNumber = process.env.TWILIO_FROM_NUMBER || "+15555555555";
