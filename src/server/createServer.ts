@@ -19,6 +19,15 @@ export function createServer() {
 
   app.set("trust proxy", 1);
 
+  // Azure App Service may send x-arr-ssl without x-forwarded-proto.
+  // Ensure Express detects HTTPS so secure cookies are not dropped.
+  app.use((req, _res, next) => {
+    if (req.headers["x-arr-ssl"] && !req.headers["x-forwarded-proto"]) {
+      req.headers["x-forwarded-proto"] = "https";
+    }
+    next();
+  });
+
   app.use((req, _res, next) => {
     console.log(`[REQ] ${req.method} ${req.originalUrl}`);
     next();
