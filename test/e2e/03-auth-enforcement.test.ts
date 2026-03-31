@@ -14,7 +14,7 @@ describe("Auth enforcement", () => {
     app = createServer();
   });
 
-  it("returns 401 without Authorization header", async () => {
+  it("rejects missing header", async () => {
     const res = await request(app).get("/api/health");
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ error: "UNAUTHORIZED" });
@@ -33,7 +33,17 @@ describe("Auth enforcement", () => {
     expect(res.body).toEqual({ status: "ok" });
   });
 
-  it("returns 401 for malformed token", async () => {
+
+  it("rejects empty token", async () => {
+    const res = await request(app)
+      .get("/api/health")
+      .set("Authorization", "Bearer ");
+
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "INVALID_TOKEN" });
+  });
+
+  it("rejects malformed token", async () => {
     const res = await request(app)
       .get("/api/health")
       .set("Authorization", "Bearer not.a.valid.jwt");
@@ -42,7 +52,7 @@ describe("Auth enforcement", () => {
     expect(res.body).toEqual({ error: "INVALID_TOKEN" });
   });
 
-  it("returns 401 for expired token", async () => {
+  it("rejects expired token", async () => {
     const expired = jwt.sign({ userId: "test-user", role: "tester" }, testSecret, {
       expiresIn: -1,
     });
@@ -55,7 +65,7 @@ describe("Auth enforcement", () => {
     expect(res.body).toEqual({ error: "INVALID_TOKEN" });
   });
 
-  it("returns 401 for token signed with wrong secret", async () => {
+  it("rejects token signed with wrong secret", async () => {
     const wrongSecretToken = jwt.sign({ userId: "test-user", role: "tester" }, "wrong-secret", {
       expiresIn: "1h",
     });

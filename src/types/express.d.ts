@@ -1,10 +1,3 @@
-import { JwtPayload } from "jsonwebtoken";
-
-export interface AuthenticatedUser extends JwtPayload {
-  id?: string;
-  email?: string;
-}
-
 declare global {
   namespace Express {
     interface Request {
@@ -16,7 +9,7 @@ declare global {
         warn: (...args: any[]) => void;
         debug: (...args: any[]) => void;
       };
-      user?: AuthenticatedUser;
+      user?: any;
     }
   }
 }
