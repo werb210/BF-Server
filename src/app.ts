@@ -17,7 +17,7 @@ export function createApp() {
   app.use(express.json({ limit: "1mb" }));
 
   app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (err instanceof SyntaxError) {
+    if (err instanceof SyntaxError && "body" in err) {
       return res.status(400).json({ error: "INVALID_JSON" });
     }
 
