@@ -140,21 +140,15 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
   return payload;
 }
 
-export function verifyJwt(token: string): { sub: string } {
-  const secret = process.env.JWT_SECRET;
-
-  if (!secret) {
-    throw new Error("SERVER_MISCONFIG");
-  }
-
+export function verifyJwt(token: string) {
   try {
-    return jwt.verify(token, secret) as { sub: string };
+    return jwt.verify(token, process.env.JWT_SECRET!);
   } catch {
     throw new Error("INVALID_TOKEN");
   }
 }
 
-export function signJwt(payload: { sub: string }): string {
+export function signJwt(payload: string | object): string {
   const secret = process.env.JWT_SECRET;
 
   if (!secret) {
