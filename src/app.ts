@@ -2,7 +2,7 @@ import express from "express";
 
 import { requireAuth } from "./middleware/auth";
 import internalRoutes from "./routes/internal";
-import authRoutes from "./routes/auth";
+import authRoutes from "./modules/auth/auth.routes";
 import messagingRoutes from "./routes/messaging";
 import mayaRoutes from "./routes/maya";
 import voiceRoutes from "./routes/voice";

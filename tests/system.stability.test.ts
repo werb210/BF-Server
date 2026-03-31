@@ -8,6 +8,9 @@ describe("System stability", () => {
     const res = await request(app).get("/health");
 
     expect(res.status).toBe(200);
-    expect(res.text).toBe("ok");
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.server).toBe("ok");
+    expect(["configured", "missing"]).toContain(res.body.data.twilio);
+    expect(["ok", "degraded"]).toContain(res.body.data.db);
   });
 });

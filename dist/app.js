@@ -8,13 +8,13 @@ exports.resetOtpStateForTests = resetOtpStateForTests;
 exports.createApp = createApp;
 const express_1 = __importDefault(require("express"));
 const auth_1 = require("./middleware/auth");
-const db_1 = require("./db");
 const internal_1 = __importDefault(require("./routes/internal"));
 const auth_2 = __importDefault(require("./routes/auth"));
 const messaging_1 = __importDefault(require("./routes/messaging"));
 const maya_1 = __importDefault(require("./routes/maya"));
 const voice_1 = __importDefault(require("./routes/voice"));
 const sms_1 = __importDefault(require("./routes/sms"));
+const health_1 = __importDefault(require("./routes/health"));
 const errorHandler_1 = require("./middleware/errorHandler");
 let publicRequestCount = 0;
 function resetOtpStateForTests() {
@@ -57,36 +57,14 @@ function createApp() {
     app.use("/maya", maya_1.default);
     app.use("/voice", voice_1.default);
     app.use("/sms", sms_1.default);
+    app.use("/", health_1.default);
     app.get("/telephony/token", auth_1.requireAuth, (_req, res) => {
         return res.status(200).json({ token: "real-token" });
-    });
-    app.get("/health", async (_req, res) => {
-        if (!process.env.TWILIO_VERIFY_SERVICE_SID) {
-            return res.status(500).json({ status: "missing_verify_sid" });
-        }
-        let dbStatus = "ok";
-        try {
-            await db_1.pool.query("SELECT 1");
-        }
-        catch {
-            dbStatus = "down";
-        }
-        res.status(200).json({
-            api: "ok",
-            db: dbStatus,
-            timestamp: Date.now(),
-        });
     });
     app.use("/api/private", auth_1.requireAuth, (_req, res) => {
         res.json({ ok: true });
     });
     app.use("/internal", internal_1.default);
-    app.use((err, _req, res, _next) => {
-        if (err instanceof SyntaxError) {
-            return res.status(400).json({ error: "INVALID_JSON" });
-        }
-        return res.status(500).json({ error: "INTERNAL_SERVER_ERROR" });
-    });
     app.use(errorHandler_1.errorHandler);
     app.use((_req, res) => {
         res.status(404).json({ success: false, error: "not_found" });
