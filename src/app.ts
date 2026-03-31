@@ -1,35 +1,19 @@
 import express from "express";
-import jwt from "jsonwebtoken";
 
 import { requireAuth } from "./middleware/auth";
 import { pool } from "./db";
 import internalRoutes from "./routes/internal";
+import authRoutes from "./routes/auth";
+import messagingRoutes from "./routes/messaging";
 
 declare global {
   // eslint-disable-next-line no-var
   var __resetOtpStateForTests: (() => void) | undefined;
 }
 
-type OtpRecord = {
-  code: string;
-  expiresAt: number;
-  attempts: number;
-  lastSentAt: number;
-};
-
-const otpStore = new Map<string, OtpRecord>();
-const TEST_OTP_CODE = "654321";
-const OTP_TTL_MS = 5 * 60 * 1000;
-const OTP_RATE_LIMIT_MS = 60 * 1000;
-const OTP_MAX_ATTEMPTS = 5;
 let publicRequestCount = 0;
 
-const isPhone = (value: unknown): value is string => (
-  typeof value === "string" && /^\+[1-9]\d{7,14}$/.test(value.trim())
-);
-
 export function resetOtpStateForTests() {
-  otpStore.clear();
   publicRequestCount = 0;
 }
 
@@ -75,68 +59,18 @@ export function createApp() {
     return res.status(200).json({ ok: true });
   });
 
-  app.post("/auth/otp/start", (req, res) => {
-    const { phone } = req.body || {};
-    if (!isPhone(phone)) {
-      return res.status(400).json({ success: false, error: "invalid_payload" });
-    }
-
-    const now = Date.now();
-    const existing = otpStore.get(phone);
-    if (existing && now === existing.lastSentAt) {
-      return res.status(429).json({ error: "Too many requests" });
-    }
-
-    otpStore.set(phone, {
-      code: TEST_OTP_CODE,
-      expiresAt: now + OTP_TTL_MS,
-      attempts: 0,
-      lastSentAt: now,
-    });
-
-    return res.status(200).json({ success: true });
-  });
-
-  app.post("/auth/otp/verify", (req, res) => {
-    const { phone, code } = req.body || {};
-    if (!isPhone(phone) || typeof code !== "string" || !/^\d{6}$/.test(code)) {
-      return res.status(400).json({ error: "invalid_payload" });
-    }
-
-    if (!process.env.JWT_SECRET) {
-      return res.status(401).json({ error: "unauthorized" });
-    }
-
-    const entry = otpStore.get(phone);
-    if (!entry) {
-      return res.status(400).json({ error: "Invalid code" });
-    }
-
-    if (Date.now() > entry.expiresAt) {
-      otpStore.delete(phone);
-      return res.status(410).json({ error: "OTP expired" });
-    }
-
-    if (entry.code !== code) {
-      entry.attempts += 1;
-      if (entry.attempts >= OTP_MAX_ATTEMPTS) {
-        otpStore.delete(phone);
-      } else {
-        otpStore.set(phone, entry);
-      }
-      return res.status(400).json({ error: "Invalid code" });
-    }
-
-    otpStore.delete(phone);
-    const token = jwt.sign({ phone }, process.env.JWT_SECRET, { expiresIn: "1h" });
-    return res.status(200).json({ success: true, data: { token } });
-  });
+  app.use("/auth", authRoutes);
+  app.use("/comm", messagingRoutes);
 
   app.get("/telephony/token", requireAuth, (_req, res) => {
     return res.status(200).json({ token: "real-token" });
   });
 
   app.get("/health", async (_req, res) => {
+    if (!process.env.TWILIO_VERIFY_SERVICE_SID) {
+      return res.status(500).json({ status: "missing_verify_sid" });
+    }
+
     let dbStatus = "ok";
 
     try {
