@@ -2,6 +2,8 @@ import OpenAI from "openai";
 import { db } from "../../db";
 import { retrieveRelevantContext } from "./retrievalService";
 import { config } from "../../config";
+import { withRetry } from "../../lib/retry";
+import { pushDeadLetter } from "../../lib/deadLetter";
 
 const client = new OpenAI({
   apiKey: config.openai.apiKey || "test-openai-key",
@@ -53,13 +55,25 @@ Knowledge:
 ${context}
 `;
 
-  const response = await client.chat.completions.create({
-    model: config.openai.model ?? config.ai.model ?? "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
-    ],
-  });
+  let response;
+  try {
+    response = await withRetry(() =>
+      client.chat.completions.create({
+        model: config.openai.model ?? config.ai.model ?? "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMessage },
+        ],
+      })
+    );
+  } catch (error) {
+    await pushDeadLetter({
+      type: "ai_chat_completion",
+      data: { userMessage },
+      error: String(error),
+    });
+    throw error;
+  }
 
   return response.choices[0]?.message?.content ?? "";
 }

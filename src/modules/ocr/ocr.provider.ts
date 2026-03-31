@@ -1,5 +1,7 @@
 import { config } from "../../config";
 import { logWarn } from "../../observability/logger";
+import { withRetry } from "../../lib/retry";
+import { pushDeadLetter } from "../../lib/deadLetter";
 
 export type OcrExtractionResult = {
   text: string;
@@ -95,30 +97,35 @@ export function createOpenAiOcrProvider(): OcrProvider {
           throw new Error("unsupported_mime_type");
         }
 
-        const response = await fetch("https://api.openai.com/v1/responses", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model,
-            input: [
-              {
-                role: "user",
-                content,
-              },
-            ],
-          }),
-          signal: controller.signal,
+        const requestBody = {
+          model,
+          input: [
+            {
+              role: "user",
+              content,
+            },
+          ],
+        };
+
+        const payload = await withRetry(async () => {
+          const response = await fetch("https://api.openai.com/v1/responses", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal,
+          });
+
+          if (!response.ok) {
+            const message = await response.text();
+            throw new Error(`openai_ocr_failed:${response.status}:${message}`);
+          }
+
+          return (await response.json()) as Record<string, unknown>;
         });
 
-        if (!response.ok) {
-          const message = await response.text();
-          throw new Error(`openai_ocr_failed:${response.status}:${message}`);
-        }
-
-        const payload = (await response.json()) as Record<string, unknown>;
         const text = extractOutputText(payload);
         return {
           text,
@@ -127,6 +134,17 @@ export function createOpenAiOcrProvider(): OcrProvider {
           model,
           provider: "openai",
         };
+      } catch (error) {
+        await pushDeadLetter({
+          type: "ocr_openai",
+          data: {
+            mimeType: params.mimeType,
+            fileName: params.fileName ?? null,
+            bufferBase64: params.buffer.toString("base64"),
+          },
+          error: String(error),
+        });
+        throw error;
       } finally {
         clearTimeout(timeout);
       }

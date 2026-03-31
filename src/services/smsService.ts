@@ -1,5 +1,7 @@
 import { fetchTwilioClient } from "./twilio";
 import { config } from "../config";
+import { withRetry } from "../lib/retry";
+import { pushDeadLetter } from "../lib/deadLetter";
 
 export async function sendSMS(to: string, body: string): Promise<{ success: boolean } | void> {
   if (config.app.testMode === "true") {
@@ -13,5 +15,14 @@ export async function sendSMS(to: string, body: string): Promise<{ success: bool
   }
 
   const client = fetchTwilioClient();
-  await client.messages.create({ to, from, body });
+  try {
+    await withRetry(() => client.messages.create({ to, from, body }));
+  } catch (error) {
+    await pushDeadLetter({
+      type: "sms",
+      data: { to, from, body },
+      error: String(error),
+    });
+    throw error;
+  }
 }

@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS failed_jobs (
+  id SERIAL PRIMARY KEY,
+  type TEXT NOT NULL,
+  data JSONB NOT NULL,
+  error TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  retry_count INTEGER DEFAULT 0
+);

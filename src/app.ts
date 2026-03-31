@@ -2,6 +2,7 @@ import express from "express";
 import jwt from "jsonwebtoken";
 
 import { requireAuth } from "./middleware/auth";
+import { pool } from "./db";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -134,8 +135,20 @@ export function createApp() {
     return res.status(200).json({ token: "real-token" });
   });
 
-  app.get("/health", (_req, res) => {
-    res.type("text/plain").status(200).send("ok");
+  app.get("/health", async (_req, res) => {
+    let dbStatus = "ok";
+
+    try {
+      await pool.query("SELECT 1");
+    } catch {
+      dbStatus = "down";
+    }
+
+    res.status(200).json({
+      api: "ok",
+      db: dbStatus,
+      timestamp: Date.now(),
+    });
   });
 
   app.use("/api/private", requireAuth, (_req, res) => {
