@@ -1,27 +1,10 @@
-import "dotenv/config";
-import { createServer } from "./server/createServer";
+import dotenv from "dotenv";
+import app from "./app";
+
+dotenv.config();
+
 const PORT = Number(process.env.PORT || 8080);
-const HOST = "0.0.0.0";
 
-process.on("unhandledRejection", (err) => {
-  console.error("UNHANDLED REJECTION", err);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`[BOOT] server listening on 0.0.0.0:${PORT}`);
 });
-
-process.on("uncaughtException", (err) => {
-  console.error("UNCAUGHT EXCEPTION", err);
-});
-
-function boot() {
-  const app = createServer();
-
-  app.listen(PORT, HOST, () => {
-    console.log(`SERVER RUNNING ON ${PORT}`);
-  });
-}
-
-try {
-  boot();
-} catch (err) {
-  console.error("[FATAL BOOT ERROR]", err);
-  process.exit(1);
-}

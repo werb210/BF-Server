@@ -142,7 +142,7 @@ router.post("/otp/verify", async (req: Request, res: Response) => {
 
     await redis.del(`otp:${phone}`);
 
-    return res.json({ token, user: { phone } });
+    return res.json({ token });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "otp_verify_failed" });
