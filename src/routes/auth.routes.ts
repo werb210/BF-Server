@@ -116,7 +116,7 @@ router.post("/start-otp", otpLimiter, async (req, res) => {
   const phone = req.body?.phone;
 
   if (typeof phone !== "string" || phone.trim().length < 5) {
-    return res.status(400).json({ error: Errors.INVALID_PHONE });
+    return res.status(400).json({ error: "INVALID_PHONE" });
   }
 
   try {
@@ -135,31 +135,27 @@ router.post("/verify-otp", async (req, res) => {
   const { phone, code } = req.body || {};
 
   if (
-    typeof phone !== "string"
-    || typeof code !== "string"
-    || code.trim().length < 4
+    typeof phone !== "string" ||
+    typeof code !== "string" ||
+    code.trim().length < 4
   ) {
-    return res.status(400).json({ error: Errors.INVALID_INPUT });
+    return res.status(400).json({ error: "INVALID_INPUT" });
   }
 
-  try {
-    const token = await verifyOtp(phone, code);
+  const token = await verifyOtp(phone, code);
 
-    if (!token) {
-      return res.status(401).json({ error: Errors.INVALID_CODE });
-    }
-
-    return res.status(200).json({ token });
-  } catch {
-    return res.status(500).json({ error: Errors.OTP_VERIFY_FAILED });
+  if (!token) {
+    return res.status(401).json({ error: "INVALID_CODE" });
   }
+
+  return res.status(200).json({ token });
 });
 
 router.post("/refresh", async (req, res) => {
   const header = req.headers.authorization;
 
   if (!header || !header.startsWith("Bearer ")) {
-    return res.status(401).json({ error: Errors.UNAUTHORIZED });
+    return res.status(401).json({ error: "UNAUTHORIZED" });
   }
 
   const token = header.slice(7);
@@ -167,10 +163,9 @@ router.post("/refresh", async (req, res) => {
   try {
     const decoded = verifyJwt(token);
     const newToken = signJwt(decoded);
-
     return res.status(200).json({ token: newToken });
   } catch {
-    return res.status(401).json({ error: Errors.INVALID_TOKEN });
+    return res.status(401).json({ error: "INVALID_TOKEN" });
   }
 });
 

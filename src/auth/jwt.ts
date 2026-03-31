@@ -144,38 +144,24 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
 
 export function verifyJwt(token: string) {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
-      userId?: string;
-      v?: number;
-      [key: string]: unknown;
-    };
-
-    if (typeof decoded.userId !== "string") {
-      throw new Error(Errors.INVALID_TOKEN);
-    }
-
-    const current = getTokenVersion(decoded.userId);
-    if (decoded.v !== current) {
-      throw new Error(Errors.INVALID_TOKEN);
-    }
-
-    return decoded;
+    return jwt.verify(token, process.env.JWT_SECRET!);
   } catch {
-    throw new Error(Errors.INVALID_TOKEN);
+    throw new Error("INVALID_TOKEN");
   }
 }
 
-export function signJwt(payload: Record<string, unknown>): string {
+export function signJwt(payload: Record<string, unknown> | string): string {
   const secret = process.env.JWT_SECRET;
 
   if (!secret) {
     throw new Error(Errors.SERVER_MISCONFIG);
   }
 
-  const userId = typeof payload.userId === "string" ? payload.userId : null;
+  const normalized = typeof payload === "string" ? {} : payload;
+  const userId = typeof normalized.userId === "string" ? normalized.userId : null;
   const version = userId ? getTokenVersion(userId) : 0;
 
-  return jwt.sign({ ...payload, v: version }, secret, { expiresIn: "7d" });
+  return jwt.sign({ ...normalized, v: version }, secret, { expiresIn: "7d" });
 }
 
 export async function verifyAccessTokenWithUser(token: string): Promise<{
