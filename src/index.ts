@@ -19,7 +19,8 @@ async function boot() {
   const app = await createServer();
 
   app.listen(PORT, HOST, () => {
-    console.log(`[BOOT] listening on ${HOST}:${PORT}`);
+    console.log(`SERVER RUNNING ON PORT ${PORT}`);
+    console.log(`HEALTH: http://localhost:${PORT}/health`);
   });
 
   setInterval(() => {

@@ -8,6 +8,11 @@ import documentRoutes from "../routes/documents";
 export function createServer() {
   const app = express();
 
+  app.use((req, _res, next) => {
+    console.log(`[REQ] ${req.method} ${req.originalUrl}`);
+    next();
+  });
+
   // MUST remain first: bypasses middleware stack and guarantees probe completion.
   app.use((req, res, next) => {
     if (req.path === "/health") {
@@ -22,26 +27,22 @@ export function createServer() {
     res.status(200).type("text/plain").send("ok");
   });
 
+  app.get("/__test", (_req, res) => {
+    res.status(200).json({
+      ok: true,
+      message: "server reachable",
+      ts: Date.now(),
+    });
+  });
+
   app.use(express.json({ strict: false }));
 
   app.use(
     cors({
-      origin: [
-        "https://portal.boreal.financial",
-        "https://client.boreal.financial",
-        "http://localhost:3000",
-        "http://localhost:5173",
-      ],
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization"],
-      credentials: false,
+      origin: true,
+      credentials: true,
     }),
   );
-
-  app.use((req, _res, next) => {
-    console.log(`[REQ] ${req.method} ${req.url}`);
-    next();
-  });
 
   const otpLimiter = rateLimit({
     windowMs: 60 * 1000,
@@ -66,6 +67,11 @@ export function createServer() {
     res.status(500).json({
       error: "internal_error",
     });
+  });
+
+  app.use((req, res) => {
+    console.warn(`[MISS] ${req.method} ${req.originalUrl}`);
+    res.status(404).json({ error: "not_found" });
   });
 
   return app;

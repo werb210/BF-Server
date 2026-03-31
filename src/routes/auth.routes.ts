@@ -34,7 +34,10 @@ router.get("/me", requireAuth, (req, res) => {
   return res.json(req.user);
 });
 
-router.post("/otp/start", async (req: Request, res: Response) => {
+router.post("/otp/start", (req, _res, next) => {
+  console.log("[AUTH HIT] /auth/otp/start");
+  next();
+}, async (req: Request, res: Response) => {
   const { phone } = req.body as { phone?: unknown };
 
   if (!phone) {
