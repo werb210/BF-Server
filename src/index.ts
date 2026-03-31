@@ -3,7 +3,13 @@ import { ENV } from "./config/env";
 import { ensureDb } from "./db";
 
 async function start() {
-  await ensureDb();
+  if (process.env.NODE_ENV === "production") {
+    await ensureDb();
+  } else {
+    ensureDb().catch(() => {
+      console.warn("[DB] skipping in dev/test");
+    });
+  }
 
   const app = createApp();
 
