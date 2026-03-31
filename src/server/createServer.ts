@@ -34,10 +34,14 @@ export function createServer() {
   });
 
   app.use((req, _res, next) => {
-    console.log("[HEADERS]", {
-      origin: req.headers.origin,
-      auth: req.headers.authorization,
-    });
+    console.log("[AUTH HEADER]", req.headers.authorization || null);
+    next();
+  });
+
+  app.use((req, _res, next) => {
+    if (!req.headers.authorization) {
+      console.warn("[NO AUTH HEADER]", req.method, req.originalUrl);
+    }
     next();
   });
 

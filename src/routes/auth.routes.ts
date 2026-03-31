@@ -140,13 +140,6 @@ router.post("/otp/verify", async (req: Request, res: Response) => {
       { expiresIn: "7d" },
     );
 
-    res.cookie("session", token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-      path: "/",
-    });
-
     await redis.del(`otp:${phone}`);
 
     return res.json({ token, user: { phone } });

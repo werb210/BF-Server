@@ -15,33 +15,34 @@ export interface AuthRequest extends Request {
   user?: any;
 }
 
-function getToken(req: Request): string | null {
-  const header = req.headers.authorization;
-  if (header?.startsWith("Bearer ")) {
-    return header.slice(7);
-  }
+function getAuthHeader(req: Request): string | null {
+  return (
+    req.headers.authorization
+    || (req.headers as Record<string, string | string[] | undefined>).Authorization as string | undefined
+    || req.get("authorization")
+    || null
+  );
+}
 
-  const cookieHeader = req.headers.cookie;
-  if (!cookieHeader) {
+function getBearerToken(req: Request): string | null {
+  const authHeader = getAuthHeader(req);
+
+  if (!authHeader) {
     return null;
   }
 
-  const sessionCookie = cookieHeader
-    .split(";")
-    .map((cookie) => cookie.trim())
-    .find((cookie) => cookie.startsWith("session="));
-
-  if (!sessionCookie) {
+  const parts = authHeader.split(" ");
+  if (parts.length !== 2 || parts[0] !== "Bearer") {
     return null;
   }
 
-  return decodeURIComponent(sessionCookie.slice("session=".length));
+  return parts[1];
 }
 
 export const auth = (req: AuthRequest, res: Response, next: NextFunction) => {
-  const token = getToken(req);
+  const token = getBearerToken(req);
   if (!token) {
-    return res.status(401).json({ error: "missing_token" });
+    return res.status(401).json({ error: "missing_auth_header" });
   }
 
   try {
@@ -49,19 +50,29 @@ export const auth = (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!jwtSecret) {
       return res.status(401).json({ error: "invalid_token" });
     }
+
     const decoded = jwt.verify(token, jwtSecret);
     req.user = decoded;
-    next();
-  } catch {
+    return next();
+  } catch (err) {
+    console.error("[JWT ERROR]", err);
     return res.status(401).json({ error: "invalid_token" });
   }
 };
 
 export const requireAuth: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
-  const token = getToken(req);
-  if (!token) {
-    return res.status(401).json({ error: "missing_token" });
+  const authHeader = getAuthHeader(req);
+
+  if (!authHeader) {
+    return res.status(401).json({ error: "missing_auth_header" });
   }
+
+  const parts = authHeader.split(" ");
+  if (parts.length !== 2 || parts[0] !== "Bearer") {
+    return res.status(401).json({ error: "invalid_auth_format" });
+  }
+
+  const token = parts[1];
 
   try {
     const jwtSecret = process.env.JWT_SECRET;
@@ -71,8 +82,14 @@ export const requireAuth: RequestHandler = (req: Request, res: Response, next: N
 
     const decoded = jwt.verify(token, jwtSecret);
     req.user = decoded as Request["user"];
+
+    if (!req.user) {
+      return res.status(401).json({ error: "unauthorized" });
+    }
+
     return next();
-  } catch {
+  } catch (err) {
+    console.error("[JWT ERROR]", err);
     return res.status(401).json({ error: "invalid_token" });
   }
 };
@@ -85,7 +102,7 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
     const user = req.user as AppUser | undefined;
 
     if (!user) {
-      return res.status(401).json({ error: "missing_token" });
+      return res.status(401).json({ error: "unauthorized" });
     }
 
     if (requiredRoles.length > 0 && (!user.role || !requiredRoles.includes(user.role))) {
