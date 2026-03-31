@@ -6,6 +6,10 @@ import { checkOtp, sendOtp } from "../services/otp";
 
 const router = Router();
 
+export function resetOtpStateForTests() {
+  globalThis.__resetOtpStateForTests?.();
+}
+
 router.get("/me", requireAuth, (req, res) => {
   return res.status(200).json(req.user);
 });
@@ -20,7 +24,7 @@ router.post("/start-otp", async (req, res) => {
 
     await sendOtp(phone);
 
-    return res.status(200).json({ success: true });
+    return res.status(200).json({ ok: true });
   } catch {
     return res.status(500).json({ error: "INTERNAL_SERVER_ERROR" });
   }
@@ -37,7 +41,7 @@ router.post("/verify-otp", async (req, res) => {
     const valid = await checkOtp(phone, code);
 
     if (!valid) {
-      return res.status(401).json({ error: "INVALID_CODE" });
+      return res.status(400).json({ error: "INVALID_CODE" });
     }
 
     const token = signJwt({ phone });
