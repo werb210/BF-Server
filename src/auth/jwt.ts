@@ -141,8 +141,17 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
 }
 
 export function verifyJwt(token: string): { sub: string } {
-  const payload = verifyAccessToken(token);
-  return { sub: payload.sub };
+  const secret = process.env.JWT_SECRET;
+
+  if (!secret) {
+    throw new Error("SERVER_MISCONFIG");
+  }
+
+  try {
+    return jwt.verify(token, secret) as { sub: string };
+  } catch {
+    throw new Error("INVALID_TOKEN");
+  }
 }
 
 export async function verifyAccessTokenWithUser(token: string): Promise<{

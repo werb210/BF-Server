@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction, type RequestHandler } from "express";
-
-import jwt from "jsonwebtoken";
+import { verifyJwt } from "../auth/jwt";
 
 type AuthorizationOptions = {
   roles?: string[];
@@ -18,28 +17,29 @@ export interface AuthRequest extends Request {
 
 export function createAuthMiddleware(): RequestHandler {
   return function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
-    const auth = req.headers.authorization;
+    const header = req.headers.authorization;
 
-    if (!auth || typeof auth !== "string" || !auth.startsWith("Bearer ")) {
+    if (!header || !header.startsWith("Bearer ")) {
       return res.status(401).json({ error: "UNAUTHORIZED" });
     }
 
-    const token = auth.split(" ")[1];
+    const token = header.slice(7);
 
-    if (!token || token === "undefined" || token === "null") {
+    if (!token || token === "null" || token === "undefined") {
       return res.status(401).json({ error: "INVALID_TOKEN" });
     }
 
-    const secret = process.env.JWT_SECRET;
-    if (!secret) {
-      return res.status(500).json({ error: "SERVER_MISCONFIG" });
-    }
-
     try {
-      const decoded = jwt.verify(token, secret);
+      const decoded = verifyJwt(token);
       req.user = decoded as Request["user"];
       return next();
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "INVALID_TOKEN";
+
+      if (msg === "SERVER_MISCONFIG") {
+        return res.status(500).json({ error: "SERVER_MISCONFIG" });
+      }
+
       return res.status(401).json({ error: "INVALID_TOKEN" });
     }
   };
