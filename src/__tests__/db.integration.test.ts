@@ -1,8 +1,10 @@
-import { getDb } from "../lib/db";
+import { queryDb } from "../lib/db";
 
-const shouldRun = process.env.DATABASE_URL;
+test("db executes real queries", async () => {
+  await queryDb(`INSERT INTO health_check (status) VALUES ('ok')`);
 
-(shouldRun ? test : test.skip)("db must connect", async () => {
-  const res = await getDb().query("SELECT 1");
-  expect(res).toBeTruthy();
+  const res = await queryDb(`SELECT * FROM health_check`);
+
+  expect(res.rows.length).toBe(1);
+  expect(res.rows[0].status).toBe("ok");
 });

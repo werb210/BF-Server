@@ -7,7 +7,7 @@
     "postinstall": "echo skipping prisma generate in CI",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "test": "NODE_ENV=test vitest run",
+    "test": "NODE_ENV=test vitest",
     "ci:contract": "bash scripts/ci-contract-checks.sh",
     "prisma:generate": "prisma generate"
   },
@@ -57,6 +57,7 @@
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
     "eslint": "^8.57.1",
+    "pg-mem": "^3.0.14",
     "prisma": "^7.5.0",
     "supertest": "^6.3.0",
     "ts-node": "^10.9.2",
