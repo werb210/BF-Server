@@ -1,3 +1,13 @@
+process.on("unhandledRejection", (err) => {
+  console.error("UNHANDLED_REJECTION", err);
+  process.exit(1);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT_EXCEPTION", err);
+  process.exit(1);
+});
+
 import { createApp } from "./app";
 import { ensureDb } from "./db";
 import { processDeadLetters } from "./workers/deadLetterWorker";
