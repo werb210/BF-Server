@@ -1,9 +1,11 @@
 import express, { Request, Response } from "express";
+import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { sha256 } from "../lib/hash";
 import { ok, fail } from "../middleware/response";
 import { toStringSafe } from "../utils/toStringSafe";
 import { queryDb } from "../lib/db";
+import { validate } from "../middleware/validate";
 
 const router = express.Router();
 
@@ -16,7 +18,12 @@ type Document = {
 
 const inMemoryDb: Record<string, Document> = {};
 
-router.post("/upload", requireAuth, async (req: Request, res: Response) => {
+const documentUploadSchema = z.object({
+  applicationId: z.string().optional().nullable(),
+  filename: z.string().optional().nullable(),
+}).passthrough();
+
+router.post("/upload", requireAuth, validate(documentUploadSchema), async (req: Request, res: Response) => {
   const id = Date.now().toString();
   const bodyString = JSON.stringify(req.body ?? {});
   const hash = sha256(Buffer.from(bodyString));

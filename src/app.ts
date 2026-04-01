@@ -12,6 +12,8 @@ import healthRoutes from "./routes/health";
 import crmRoutes from "./routes/crm";
 import callRoutes from "./routes/calls";
 import leadRoutes from "./routes/lead";
+import applicationRoutes from "./routes/application";
+import documentsRoutes from "./routes/documents";
 import { errorHandler } from "./middleware/errorHandler";
 
 declare global {
@@ -31,6 +33,15 @@ export function createApp() {
   const app = express();
 
   app.use(express.json());
+  app.use((req, res, next) => {
+    console.log("REQ:", req.method, req.url);
+    const originalJson = res.json.bind(res);
+    res.json = ((body: unknown) => {
+      console.log("RES:", req.method, req.url, res.statusCode);
+      return originalJson(body);
+    }) as typeof res.json;
+    next();
+  });
   app.use(routeAlias);
 
   app.use((req, res, next) => {
@@ -68,6 +79,9 @@ export function createApp() {
   app.use("/api/auth", authRoutes);
   app.use("/api/crm", crmRoutes);
   app.use("/api/crm", leadRoutes);
+  app.use("/api", leadRoutes);
+  app.use("/api/application", applicationRoutes);
+  app.use("/api/documents", documentsRoutes);
   app.use("/api/maya", mayaRoutes);
   app.use("/api/voice", voiceRoutes);
   app.use("/api/call", callRoutes);
