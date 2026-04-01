@@ -5,6 +5,7 @@ import { db } from "../db";
 import { createApplication } from "../modules/applications/applications.repo";
 import { config } from "../config";
 import { fail, ok } from "../lib/response";
+import { validate } from "../middleware/validate";
 
 const router = Router();
 
@@ -22,9 +23,9 @@ router.post("/update", async (_req: any, res: any) => {
   ok(res, {});
 });
 
-router.post("/", async (req: any, res: any, next: any) => {
+async function handleApplicationSubmit(req: any, res: any) {
   try {
-    const { sessionId, source } = createApplicationSchema.parse(req.body ?? {});
+    const { sessionId, source } = req.validated as z.infer<typeof createApplicationSchema>;
 
     const mapped = await db.query<{ application_id: string }>(
       `select application_id from readiness_application_mappings where readiness_session_id = $1 limit 1`,
@@ -107,6 +108,9 @@ router.post("/", async (req: any, res: any, next: any) => {
     }
     fail(res, "server_error", 500);
   }
-});
+}
+
+router.post("/", validate(createApplicationSchema), handleApplicationSubmit);
+router.post("/submit", validate(createApplicationSchema), handleApplicationSubmit);
 
 export default router;

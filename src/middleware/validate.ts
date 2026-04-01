@@ -3,6 +3,13 @@ import type { ZodSchema } from "zod";
 
 export function validate<T>(schema: ZodSchema<T>) {
   return (req: Request, res: Response, next: NextFunction) => {
+    if (req.path !== "/upload" && !req.is("application/json")) {
+      return res.status(415).json({
+        success: false,
+        error: "Content-Type must be application/json",
+      });
+    }
+
     const result = schema.safeParse(req.body);
 
     if (!result.success) {
