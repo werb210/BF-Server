@@ -1,11 +1,11 @@
 import { type NextFunction, type Request, type Response } from "express";
 
-type RateLimitEntry = {
+type RateEntry = {
   count: number;
   ts: number;
 };
 
-const hits = new Map<string, RateLimitEntry>();
+const hits = new Map<string, RateEntry>();
 
 export function resetRateLimitForTests() {
   hits.clear();
@@ -13,9 +13,14 @@ export function resetRateLimitForTests() {
 
 export function rateLimit(limit = 100, windowMs = 60_000) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const key = req.ip;
+    const key =
+      (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      req.ip ||
+      "unknown";
+    const safeKey: string = key || "unknown";
     const now = Date.now();
-    const entry = hits.get(key) ?? { count: 0, ts: now };
+    const entry = hits.get(safeKey) || { count: 0, ts: now };
 
     if (now - entry.ts > windowMs) {
       entry.count = 0;
@@ -23,7 +28,7 @@ export function rateLimit(limit = 100, windowMs = 60_000) {
     }
 
     entry.count += 1;
-    hits.set(key, entry);
+    hits.set(safeKey, entry);
 
     if (entry.count > limit) {
       return res.status(429).json({ status: "error", error: "RATE_LIMIT" });
