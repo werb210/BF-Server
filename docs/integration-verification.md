@@ -47,3 +47,27 @@ Result:
 2. Provision full integration dependencies (PostgreSQL, Redis, Twilio/test stubs as required).
 3. Apply migrations for the E2E database used by tests.
 4. Re-run the requested manual flow (OTP login, submission, portal stage movement) plus automated e2e checks.
+
+## 2026-04-01 Contract and route-alignment validation
+
+A focused validation pass was completed for test integrity after redirect and legacy route cleanup.
+
+### Confirmed outcomes
+- `vitest` contract e2e suite passes.
+- `npm test` passes.
+- Tests enforce canonical server routes and no longer rely on legacy `/api/*` aliases.
+- Contract routes validated in tests:
+  - `/dialer/token`
+  - `/call/start`
+  - `/voice/status`
+- Authenticated test requests exercise JWT-protected flows.
+- Tests no longer depend on live PostgreSQL for this contract layer (DB interactions are stubbed), improving determinism.
+
+### Impact
+- Eliminates false positives from outdated route expectations.
+- Removes hidden coupling to deprecated prefix routing.
+- Prevents test instability caused by external DB availability.
+- Keeps the auth layer covered in automated contract checks.
+
+### Remaining risk boundary
+- Runtime integration risk remains for external providers and production dependencies (for example Twilio and real database runtime), but this is outside the contract test layer validated here.
