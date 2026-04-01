@@ -30,14 +30,16 @@ export function resetOtpStateForTests() {
 globalThis.__resetOtpStateForTests = resetOtpStateForTests;
 
 export function createApp() {
+  process.env.STRICT_API = "true";
+
   const app = express();
 
   app.use(express.json());
   app.use((req, res, next) => {
-    console.log("REQ:", req.method, req.url);
+    console.log("REQ:", req.method, req.path, req.body);
     const originalJson = res.json.bind(res);
     res.json = ((body: unknown) => {
-      console.log("RES:", req.method, req.url, res.statusCode);
+      console.log("RES:", res.statusCode);
       return originalJson(body);
     }) as typeof res.json;
     next();
@@ -71,9 +73,9 @@ export function createApp() {
   app.get("/api/public/test", (_req, res) => {
     publicRequestCount += 1;
     if (publicRequestCount > 300) {
-      return res.status(429).json({ error: "RATE_LIMITED" });
+      return res.status(429).json({ success: false, error: "RATE_LIMITED" });
     }
-    return res.status(200).json({ ok: true });
+    return res.status(200).json({ success: true, data: { ok: true } });
   });
 
   app.use("/api/auth", authRoutes);
@@ -90,11 +92,11 @@ export function createApp() {
   app.use("/api", healthRoutes);
 
   app.get("/api/voice/token", requireAuth, (_req, res) => {
-    return res.status(200).json({ token: "real-token" });
+    return res.status(200).json({ success: true, data: { token: "real-token" } });
   });
 
   app.use("/api/private", requireAuth, (_req, res) => {
-    res.json({ ok: true });
+    return res.json({ success: true, data: { ok: true } });
   });
 
   app.use("/api/internal", internalRoutes);

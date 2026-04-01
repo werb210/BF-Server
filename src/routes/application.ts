@@ -23,6 +23,18 @@ router.post("/update", async (_req: any, res: any) => {
   ok(res, {});
 });
 
+
+function enforceSubmitPayload(req: any, res: any, next: any) {
+  if (!req.body?.businessType || !req.body?.applicantName) {
+    return res.status(400).json({
+      success: false,
+      error: "INVALID_APPLICATION_PAYLOAD",
+    });
+  }
+
+  return next();
+}
+
 async function handleApplicationSubmit(req: any, res: any) {
   try {
     const { sessionId, source } = req.validated as z.infer<typeof createApplicationSchema>;
@@ -111,6 +123,6 @@ async function handleApplicationSubmit(req: any, res: any) {
 }
 
 router.post("/", validate(createApplicationSchema), handleApplicationSubmit);
-router.post("/submit", validate(createApplicationSchema), handleApplicationSubmit);
+router.post("/submit", enforceSubmitPayload, validate(createApplicationSchema), handleApplicationSubmit);
 
 export default router;

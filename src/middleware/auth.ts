@@ -20,25 +20,25 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   const header = req.headers.authorization;
 
   if (!header) {
-    return res.status(401).json({ error: "UNAUTHORIZED" });
+    return res.status(401).json({ success: false, error: "UNAUTHORIZED" });
   }
 
   const bearerMatch = header.match(/^Bearer(?:\s+(.+))?$/i);
   if (!bearerMatch) {
-    return res.status(401).json({ error: "UNAUTHORIZED" });
+    return res.status(401).json({ success: false, error: "UNAUTHORIZED" });
   }
 
   const token = bearerMatch[1]?.trim();
 
   if (!token || token === "null" || token === "undefined") {
-    return res.status(401).json({ error: "INVALID_TOKEN" });
+    return res.status(401).json({ success: false, error: "INVALID_TOKEN" });
   }
 
   try {
     req.user = verifyJwt(token) as Request["user"];
     return next();
   } catch {
-    return res.status(401).json({ error: "INVALID_TOKEN" });
+    return res.status(401).json({ success: false, error: "INVALID_TOKEN" });
   }
 }
 
@@ -57,11 +57,11 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
     const user = req.user as AppUser | undefined;
 
     if (!user) {
-      return res.status(401).json({ error: Errors.UNAUTHORIZED });
+      return res.status(401).json({ success: false, error: Errors.UNAUTHORIZED });
     }
 
     if (requiredRoles.length > 0 && (!user.role || !requiredRoles.includes(user.role))) {
-      return res.status(403).json({ error: "FORBIDDEN" });
+      return res.status(403).json({ success: false, error: "FORBIDDEN" });
     }
 
     if (requiredCapabilities.length > 0) {
@@ -69,7 +69,7 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
       const allowed = requiredCapabilities.some((capability) => userCapabilities.includes(capability));
 
       if (!allowed) {
-        return res.status(403).json({ error: "FORBIDDEN" });
+        return res.status(403).json({ success: false, error: "FORBIDDEN" });
       }
     }
 

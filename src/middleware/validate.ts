@@ -3,10 +3,14 @@ import type { ZodSchema } from "zod";
 
 export function validate<T>(schema: ZodSchema<T>) {
   return (req: Request, res: Response, next: NextFunction) => {
-    if (req.path !== "/upload" && !req.is("application/json")) {
+    if (
+      req.method === "POST" &&
+      !req.is("application/json") &&
+      !req.path.includes("/upload")
+    ) {
       return res.status(415).json({
         success: false,
-        error: "Content-Type must be application/json",
+        error: "JSON_REQUIRED",
       });
     }
 
@@ -28,7 +32,7 @@ export function requireFields(fields: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     for (const field of fields) {
       if (!req.body || (req.body as Record<string, unknown>)[field] === undefined) {
-        return res.status(400).json({ error: "INVALID_INPUT" });
+        return res.status(400).json({ success: false, error: "INVALID_INPUT" });
       }
     }
 
@@ -43,7 +47,7 @@ export const validationErrorHandler = (
   next: NextFunction,
 ) => {
   if (err?.type === "validation") {
-    return res.status(400).json({ error: "INVALID_INPUT" });
+    return res.status(400).json({ success: false, error: "INVALID_INPUT" });
   }
 
   return next(err);
