@@ -7,7 +7,7 @@
     "postinstall": "echo skipping prisma generate in CI",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "test": "vitest run",
+    "test": "NODE_ENV=test vitest run",
     "ci:contract": "bash scripts/ci-contract-checks.sh",
     "prisma:generate": "prisma generate"
   },

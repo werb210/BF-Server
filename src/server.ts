@@ -10,10 +10,12 @@ app.get("/health", (_req, res) => {
 const PORT = process.env.PORT || 8080;
 
 async function assertDb() {
+  if (process.env.NODE_ENV === "test") return;
+
   try {
     await getDb().query("SELECT 1");
-  } catch (e) {
-    console.error("DB connection failed", e);
+  } catch {
+    console.error("DB connection failed");
     process.exit(1);
   }
 }

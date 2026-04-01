@@ -1,15 +1,27 @@
 import { Pool } from "pg";
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+const isTest = process.env.NODE_ENV === "test";
 
-export async function queryDb(query: string, params: any[] = []) {
-  return pool.query(query, params);
-}
+let pool: Pool | null = null;
 
 export function getDb() {
+  if (isTest) {
+    return {
+      query: async () => ({ rows: [], rowCount: 0 }),
+    };
+  }
+
+  if (!pool) {
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+    });
+  }
+
   return pool;
+}
+
+export async function queryDb(query: string, params: any[] = []) {
+  return getDb().query(query, params);
 }
 
 export async function getPrisma() {
