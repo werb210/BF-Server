@@ -1,33 +1,27 @@
 import express from "express";
 import { validate } from "../middleware/validate";
-import { ok, fail } from "../lib/response";
+import { ok } from "../lib/apiResponse";
 import { MayaMessageSchema } from "../schemas";
+import { wrap } from "../lib/routeWrap";
 
 const router = express.Router();
 
 function requireMayaMessage(req: any, res: any, next: any) {
   if (!req.body?.message) {
-    return res.status(400).json({
-      success: false,
-      error: "INVALID_MESSAGE",
-    });
+    return next(new Error("INVALID_MESSAGE"));
   }
 
   return next();
 }
 
 async function handleMayaMessage(req: any, res: any) {
-  try {
     const { message } = req.validated as { message: string };
-    return ok(res, {
+    return ok({
       reply: `Maya received: ${message}`,
     });
-  } catch {
-    return fail(res, 500, "maya_error");
-  }
 }
 
-router.post("/chat", requireMayaMessage, validate(MayaMessageSchema), handleMayaMessage);
-router.post("/message", requireMayaMessage, validate(MayaMessageSchema), handleMayaMessage);
+router.post("/chat", requireMayaMessage, validate(MayaMessageSchema), wrap(handleMayaMessage));
+router.post("/message", requireMayaMessage, validate(MayaMessageSchema), wrap(handleMayaMessage));
 
 export default router;

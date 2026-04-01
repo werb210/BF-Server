@@ -4,8 +4,9 @@ import { z } from "zod";
 import { db } from "../db";
 import { createApplication } from "../modules/applications/applications.repo";
 import { config } from "../config";
-import { fail, ok } from "../lib/response";
+import { fail, ok } from "../lib/apiResponse";
 import { validate } from "../middleware/validate";
+import { wrap } from "../lib/routeWrap";
 
 const router = Router();
 
@@ -15,28 +16,20 @@ const createApplicationSchema = z.object({
 });
 
 
-router.get("/update", async (_req: any, res: any) => {
-  ok(res, {});
-});
+router.get("/update", wrap(async () => ok({})));
 
-router.post("/update", async (_req: any, res: any) => {
-  ok(res, {});
-});
+router.post("/update", wrap(async () => ok({})));
 
 
 function enforceSubmitPayload(req: any, res: any, next: any) {
   if (!req.body?.businessType || !req.body?.applicantName) {
-    return res.status(400).json({
-      success: false,
-      error: "INVALID_APPLICATION_PAYLOAD",
-    });
+    return next(new Error("INVALID_APPLICATION_PAYLOAD"));
   }
 
   return next();
 }
 
 async function handleApplicationSubmit(req: any, res: any) {
-  try {
     const { sessionId, source } = req.validated as z.infer<typeof createApplicationSchema>;
 
     const mapped = await db.query<{ application_id: string }>(
@@ -45,8 +38,7 @@ async function handleApplicationSubmit(req: any, res: any) {
     );
 
     if (mapped.rows[0]?.application_id) {
-      ok(res, { applicationId: mapped.rows[0].application_id, reused: true });
-      return;
+      return ok({ applicationId: mapped.rows[0].application_id, reused: true });
     }
 
     const session = await db.query<{
@@ -71,8 +63,7 @@ async function handleApplicationSubmit(req: any, res: any) {
 
     const readiness = session.rows[0];
     if (!readiness) {
-      fail(res, 404, "readiness_session_not_found");
-      return;
+      return fail(res, "readiness_session_not_found");
     }
 
     const created = await createApplication({
@@ -112,17 +103,10 @@ async function handleApplicationSubmit(req: any, res: any) {
       [readiness.id, created.id]
     );
 
-    return ok(res, { applicationId: created.id, leadId: readiness.crm_lead_id, reused: false });
-  } catch (error) {
-    if (error instanceof Error && error.name === "ZodError") {
-      fail(res, 400, "invalid_payload");
-      return;
-    }
-    fail(res, 500, "server_error");
-  }
+    return ok({ applicationId: created.id, leadId: readiness.crm_lead_id, reused: false });
 }
 
-router.post("/", validate(createApplicationSchema), handleApplicationSubmit);
-router.post("/submit", enforceSubmitPayload, validate(createApplicationSchema), handleApplicationSubmit);
+router.post("/", validate(createApplicationSchema), wrap(handleApplicationSubmit));
+router.post("/submit", enforceSubmitPayload, validate(createApplicationSchema), wrap(handleApplicationSubmit));
 
 export default router;
