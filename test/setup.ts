@@ -1,9 +1,25 @@
-import { loadTestEnv } from "./utils/testEnv";
-import { resetRedisMock } from "../src/lib/redis";
+import { jest } from "@jest/globals";
 
-loadTestEnv();
-if (!process.env.DATABASE_URL) process.env.DATABASE_URL = "file:./test.db";
+jest.mock("../src/brain/openaiClient", () => ({
+  __esModule: true,
+  runAI: jest.fn(),
+}));
 
-beforeEach(() => {
-  resetRedisMock();
+jest.mock("../src/db", () => {
+  const mockRequest = jest.fn(() => ({
+    input: jest.fn().mockReturnThis(),
+    query: jest.fn().mockResolvedValue({ recordset: [] }),
+  }));
+
+  return {
+    __esModule: true,
+    default: {
+      pool: {
+        request: mockRequest,
+      },
+    },
+    pool: {
+      request: mockRequest,
+    },
+  };
 });
