@@ -58,6 +58,14 @@ export async function dbQuery<T extends QueryResultRow = QueryResultRow>(text: s
   }
 }
 
+export async function safeQuery<T extends QueryResultRow = QueryResultRow>(
+  sql: string,
+  params?: any[],
+): Promise<QueryResult<T>> {
+  requireDb();
+  return pool.query<T>(sql, params);
+}
+
 export async function ensureDb(): Promise<void> {
   try {
     await dbImpl.runQuery(pool, "SELECT 1");
@@ -82,6 +90,7 @@ const dbExports = {
   getDb,
   runQuery,
   query,
+  safeQuery,
   fetchClient,
   dbQuery,
   assertPoolHealthy,

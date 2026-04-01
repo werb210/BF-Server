@@ -118,7 +118,10 @@ export function setDbTestPoolMetricsOverride(): void {}
 export function setDbTestFailureInjection(): void {}
 export function clearDbTestFailureInjection(): void {}
 
-pool.on("connect", () => {
+pool.on("connect", (client) => {
+  void client
+    .query("SET statement_timeout = 10000")
+    .catch((err: any) => logWarn("db_statement_timeout_set_failed", { message: err.message }));
   logInfo("db_client_connected");
 });
 
