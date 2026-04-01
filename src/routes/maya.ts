@@ -5,6 +5,17 @@ import { MayaMessageSchema } from "../schemas";
 
 const router = express.Router();
 
+function requireMayaMessage(req: any, res: any, next: any) {
+  if (!req.body?.message) {
+    return res.status(400).json({
+      success: false,
+      error: "INVALID_MESSAGE",
+    });
+  }
+
+  return next();
+}
+
 async function handleMayaMessage(req: any, res: any) {
   try {
     const { message } = req.validated as { message: string };
@@ -16,7 +27,7 @@ async function handleMayaMessage(req: any, res: any) {
   }
 }
 
-router.post("/chat", validate(MayaMessageSchema), handleMayaMessage);
-router.post("/message", validate(MayaMessageSchema), handleMayaMessage);
+router.post("/chat", requireMayaMessage, validate(MayaMessageSchema), handleMayaMessage);
+router.post("/message", requireMayaMessage, validate(MayaMessageSchema), handleMayaMessage);
 
 export default router;

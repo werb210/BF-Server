@@ -20,10 +20,16 @@ const inMemoryDb: Record<string, Document> = {};
 
 const documentUploadSchema = z.object({
   applicationId: z.string().optional().nullable(),
+  category: z.string().optional().nullable(),
   filename: z.string().optional().nullable(),
+  file: z.unknown().optional(),
 }).passthrough();
 
 router.post("/upload", requireAuth, validate(documentUploadSchema), async (req: Request, res: Response) => {
+  if (!req.body?.applicationId || !req.body?.category || (!req.body?.file && !((req as Request & { file?: unknown }).file))) {
+    return fail(res, 400, "INVALID_DOCUMENT_UPLOAD_PAYLOAD");
+  }
+
   const id = Date.now().toString();
   const bodyString = JSON.stringify(req.body ?? {});
   const hash = sha256(Buffer.from(bodyString));
