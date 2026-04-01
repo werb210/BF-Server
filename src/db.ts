@@ -33,3 +33,21 @@ export async function ensureDb(): Promise<void> {
 export function isDbReady(): boolean {
   return dbReady;
 }
+
+
+const dbExports = {
+  pool,
+  db,
+  query,
+  fetchClient,
+  dbQuery,
+  assertPoolHealthy,
+  checkDb,
+  warmUpDatabase,
+  fetchInstrumentedClient,
+  setDbTestPoolMetricsOverride,
+  setDbTestFailureInjection,
+  clearDbTestFailureInjection,
+};
+
+export default dbExports;
