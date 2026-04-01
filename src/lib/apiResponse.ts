@@ -1,17 +1,16 @@
-import type { Response } from "express";
-
-export function ok(res: Response, data: unknown): Response {
-  res.locals.__wrapped = true;
-  return res.status(200).json({ status: "ok", data });
+export function ok(data: unknown): { status: "ok"; data: unknown } {
+  if (data === undefined) {
+    throw new Error("OK_REQUIRES_DATA");
+  }
+  return { status: "ok", data };
 }
 
-export function fail(res: Response, code: number, message: string): Response {
-  res.locals.__wrapped = true;
-  return res.status(code).json({
+export function fail(_res: unknown, code: string, message?: string): { status: "error"; error: { code: string; message?: string } } {
+  if (!code) {
+    throw new Error("FAIL_REQUIRES_CODE");
+  }
+  return {
     status: "error",
-    error: {
-      code: String(code),
-      message,
-    },
-  });
+    error: { code, message },
+  };
 }

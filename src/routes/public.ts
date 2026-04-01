@@ -2,7 +2,8 @@ import { Router } from "express";
 import { dbQuery } from "../db";
 import { requireFields } from "../middleware/validate";
 import { LeadSchema } from "../validation";
-import { fail, ok } from "../lib/response";
+import { fail, ok } from "../lib/apiResponse";
+import { wrap } from "../lib/routeWrap";
 
 const router = Router();
 
@@ -38,30 +39,22 @@ async function createLead(payload: LeadPayload): Promise<{ leadId?: string }> {
   return { leadId: result.rows[0]?.id };
 }
 
-router.get("/test", (_req, res) => {
-  return ok(res, { ok: true });
-});
+router.get("/test", wrap(async () => ok({ ok: true })));
 
 router.post(
   "/lead",
   requireFields(["companyName", "email"]),
-  async (req, res, next) => {
-    try {
+  wrap(async (req, res) => {
       const result = await createLead(req.body);
 
       if (!result?.leadId) {
-        return fail(res, 400, "INVALID_INPUT");
+        return fail(res, "INVALID_INPUT");
       }
 
-      return ok(res, { leadId: result.leadId });
-    } catch (error) {
-      return next(error);
-    }
-  },
+      return ok({ leadId: result.leadId });
+    }),
 );
 
-router.all("/lead", (_req, res) => {
-  return fail(res, 405, "METHOD_NOT_ALLOWED");
-});
+router.all("/lead", wrap(async (_req, res) => fail(res, "METHOD_NOT_ALLOWED")));
 
 export default router;

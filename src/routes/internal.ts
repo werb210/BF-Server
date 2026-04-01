@@ -10,7 +10,8 @@ import { AppError } from "../middleware/errors";
 import { logInfo, logWarn } from "../observability/logger";
 import { requireAuth, requireCapability } from "../middleware/auth";
 import { CAPABILITIES } from "../auth/capabilities";
-import { ok } from "../lib/response";
+import { ok } from "../lib/apiResponse";
+import { wrap } from "../lib/routeWrap";
 
 const router = Router();
 let bootstrapAdminDisabled = false;
@@ -30,14 +31,13 @@ function buildRequestMetadata(req: Request): { ip?: string; userAgent?: string }
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.OPS_MANAGE]));
 
-router.get("/version", (_req: any, res: any) => {
+router.get("/version", wrap(async () => {
   const commitHash = config.commitSha;
   const buildTimestamp = config.buildTimestamp;
-  return ok(res, { commitHash, buildTimestamp });
-});
+  return ok({ commitHash, buildTimestamp });
+}));
 
-router.post("/bootstrap-admin", async (req: any, res: any, next: any) => {
-  try {
+router.post("/bootstrap-admin", wrap(async (req: any) => {
     logInfo("bootstrap_admin_attempt", {
       disabled: bootstrapAdminDisabled,
     });
@@ -90,7 +90,7 @@ router.post("/bootstrap-admin", async (req: any, res: any, next: any) => {
       role: user.role,
     });
 
-    return ok(res, {
+    return ok({
       ok: true,
       user: {
         id: user.id,
@@ -98,40 +98,24 @@ router.post("/bootstrap-admin", async (req: any, res: any, next: any) => {
         role: user.role,
       },
     });
-  } catch (err) {
-    next(err);
-  }
-});
+}));
 
-router.get("/ops", async (_req, res, next) => {
-  try {
-    const switches = await listKillSwitches();
-    return ok(res, { switches });
-  } catch (err) {
-    next(err);
-  }
-});
+router.get("/ops", wrap(async () => {
+  const switches = await listKillSwitches();
+  return ok({ switches });
+}));
 
-router.get("/jobs", async (_req, res, next) => {
-  try {
-    const jobs = await listActiveReplayJobs();
-    return ok(res, { jobs });
-  } catch (err) {
-    next(err);
-  }
-});
+router.get("/jobs", wrap(async () => {
+  const jobs = await listActiveReplayJobs();
+  return ok({ jobs });
+}));
 
-router.get("/exports/recent", async (_req, res, next) => {
-  try {
-    const exports = await listRecentExports();
-    return ok(res, { exports });
-  } catch (err) {
-    next(err);
-  }
-});
+router.get("/exports/recent", wrap(async () => {
+  const exports = await listRecentExports();
+  return ok({ exports });
+}));
 
-router.get("/failed-jobs", async (_req, res, next) => {
-  try {
+router.get("/failed-jobs", wrap(async () => {
     const result = await pool.runQuery(
       `SELECT id, type, error, retry_count, created_at
        FROM failed_jobs
@@ -139,10 +123,7 @@ router.get("/failed-jobs", async (_req, res, next) => {
        LIMIT 100`
     );
 
-    return ok(res, result.rows);
-  } catch (err) {
-    next(err);
-  }
-});
+    return ok(result.rows);
+}));
 
 export default router;

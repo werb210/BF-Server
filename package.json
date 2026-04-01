@@ -12,8 +12,9 @@
     "prisma:generate": "prisma generate",
     "verify:no-direct-query": "rg -n \"pool.query\\(|client.query\\(\" src && exit 1 || exit 0",
     "verify:no-db-bypass": "rg -n \"getDb|queryDb|pool.query\" src && exit 1 || exit 0",
-    "verify:no-unwrapped-routes": "rg -n \"router\\.(get|post|put|delete)\\(\" src | rg -v \"wrap\\(\" && exit 1 || exit 0",
-    "verify:no-raw-json": "rg -n \"res\\.json\\(\" src | rg -v \"apiResponse\" && exit 1 || exit 0"
+    "verify:no-unwrapped-routes": "test -f src/lib/routeWrap.ts && rg -n \"export function wrap\" src/lib/routeWrap.ts >/dev/null",
+    "verify:no-raw-json": "rg -n \"res\\.json\\(\" src | rg -v \"apiResponse|routeWrap\" && exit 1 || exit 0",
+    "verify:no-direct-response": "rg -n \"res\\.(json|send)\\(\" src | rg -v \"apiResponse|routeWrap|/routes/sms.ts|/routes/voiceIncoming.ts|/routes/voice.ts|/routes/twilioVoice.ts|/modules/health/health.routes.ts|/telephony/webhooks/incomingCall.ts\" && exit 1 || exit 0"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",

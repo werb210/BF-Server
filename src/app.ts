@@ -17,6 +17,8 @@ import applicationRoutes from "./routes/application";
 import documentsRoutes from "./routes/documents";
 import { errorHandler } from "./middleware/errorHandler";
 import { fail, ok } from "./lib/response";
+import { wrap } from "./lib/routeWrap";
+import { ok as envelopeOk } from "./lib/apiResponse";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -24,11 +26,6 @@ declare global {
 }
 
 let publicRequestCount = 0;
-
-const wrap =
-  (fn: express.RequestHandler): express.RequestHandler =>
-  (req, res, next) =>
-    Promise.resolve(fn(req, res, next)).catch(next);
 
 export function resetOtpStateForTests() {
   publicRequestCount = 0;
@@ -44,8 +41,8 @@ export function createApp() {
   app.use(express.json());
   app.get(
     "/health",
-    wrap(async (_req, res) => {
-      return ok(res, {
+    wrap(async () => {
+      return envelopeOk({
         service: "bf-server",
         timestamp: new Date().toISOString(),
       });
@@ -85,7 +82,7 @@ export function createApp() {
       if (publicRequestCount > 300) {
         return fail(res, 429, "RATE_LIMITED");
       }
-      return ok(res, { ok: true });
+      return envelopeOk({ ok: true });
     })
   );
 
@@ -110,16 +107,16 @@ export function createApp() {
   app.get(
     "/api/voice/token",
     requireAuth,
-    wrap(async (_req, res) => {
-      return ok(res, { token: "real-token" });
+    wrap(async () => {
+      return envelopeOk({ token: "real-token" });
     })
   );
 
   app.use(
     "/api/private",
     requireAuth,
-    wrap(async (_req, res) => {
-      return ok(res, { ok: true });
+    wrap(async () => {
+      return envelopeOk({ ok: true });
     })
   );
 
