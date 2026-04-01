@@ -1,4 +1,4 @@
-import { db } from "../lib/db";
+import { queryDb } from "../lib/db";
 
 export async function executeTool(
   callId: string,
@@ -12,16 +12,24 @@ export async function executeTool(
     try {
       const result = await fn();
 
-      await db.query("insert into tool_log values ($1)", [callId]);
+      await queryDb("insert into tool_log(call_id, name) values ($1,$2)", [
+        callId,
+        name,
+      ]);
 
       return result;
     } catch (err) {
       attempts++;
 
       if (attempts >= 3) {
-        await db.query("insert into dead_letter values ($1)", [callId]);
+        await queryDb("insert into dead_letter(call_id, name) values ($1,$2)", [
+          callId,
+          name,
+        ]);
         throw err;
       }
     }
   }
+
+  throw new Error(`Tool execution failed unexpectedly: ${name}`);
 }

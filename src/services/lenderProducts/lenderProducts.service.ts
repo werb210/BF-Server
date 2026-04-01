@@ -1,4 +1,4 @@
-import { db } from "../../lib/db";
+import { getPrisma } from "../../lib/db";
 import {
   CreateLenderProductDTO,
   UpdateLenderProductDTO,
@@ -6,15 +6,18 @@ import {
 
 export const lenderProductsService = {
   async list() {
-    return db.lenderProduct.findMany();
+    const prisma = (await getPrisma()) as any;
+    return prisma.lenderProduct.findMany();
   },
 
   async create(data: CreateLenderProductDTO) {
-    return db.lenderProduct.create({ data });
+    const prisma = (await getPrisma()) as any;
+    return prisma.lenderProduct.create({ data });
   },
 
   async update(id: string, data: UpdateLenderProductDTO) {
-    return db.lenderProduct.update({
+    const prisma = (await getPrisma()) as any;
+    return prisma.lenderProduct.update({
       where: { id },
       data,
     });

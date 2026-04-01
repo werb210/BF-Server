@@ -44,7 +44,7 @@ router.post("/upload", requireAuth, validate(documentUploadSchema), async (req: 
   inMemoryDb[id] = doc;
 
   try {
-    await queryDb.query(
+    await queryDb(
       "INSERT INTO documents (application_id, filename, hash) VALUES ($1,$2,$3)",
       [req.body?.applicationId ?? null, req.body?.filename ?? `upload-${id}.json`, hash]
     );

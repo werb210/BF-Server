@@ -1,13 +1,17 @@
-export const db: any = {
-  query: async (..._args: any[]) => {
-    return { rows: [], rowCount: 0 };
-  },
-};
+import { Pool } from "pg";
 
-export const queryDb: any = {
-  query: db.query,
-};
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
 
-export const getPrisma = (): any => {
-  return {};
-};
+export async function queryDb(query: string, params: any[] = []) {
+  return pool.query(query, params);
+}
+
+export function getDb() {
+  return pool;
+}
+
+export async function getPrisma() {
+  throw new Error("Prisma not implemented");
+}

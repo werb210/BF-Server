@@ -11,5 +11,5 @@ export async function runAI(
     });
   }
 
-  return Promise.resolve({ text: "ok" });
+  return { text: "ok" };
 }

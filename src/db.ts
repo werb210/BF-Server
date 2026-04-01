@@ -24,9 +24,10 @@ export async function ensureDb(): Promise<void> {
     await pool.query("SELECT 1");
     dbReady = true;
     console.log("DB connected");
-  } catch {
+  } catch (error) {
     dbReady = false;
-    console.warn("DB unavailable — continuing without DB");
+    console.error("DB connection failed", error);
+    throw error;
   }
 }
 
