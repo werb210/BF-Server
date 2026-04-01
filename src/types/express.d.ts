@@ -3,6 +3,7 @@ declare global {
     interface Request {
       id: string;
       requestId?: string;
+      rid?: string;
       log?: {
         info: (...args: any[]) => void;
         error: (...args: any[]) => void;

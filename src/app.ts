@@ -21,6 +21,9 @@ import { wrap } from "./lib/routeWrap";
 import { ok as envelopeOk } from "./lib/apiResponse";
 import { isReady } from "./system/ready";
 import { timeout } from "./system/timeout";
+import { requestId } from "./system/requestId";
+import { access } from "./system/access";
+import { incReq, metrics } from "./system/metrics";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -41,6 +44,12 @@ export function createApp() {
   const app = express();
 
   app.use(express.json());
+  app.use(requestId());
+  app.use(access());
+  app.use((req, _res, next) => {
+    incReq();
+    next();
+  });
   app.use(timeout(15000));
   app.get("/health", (_req, res) => {
     res.status(200).send("ok");
@@ -51,6 +60,10 @@ export function createApp() {
       return res.status(503).json({ status: "degraded" });
     }
     return res.json({ status: "ready" });
+  });
+
+  app.get("/metrics", (_req, res) => {
+    return res.json(metrics());
   });
 
   app.use(routeAlias);
