@@ -17,7 +17,7 @@ describe("Auth enforcement", () => {
   it("rejects missing header", async () => {
     const res = await request(app).get("/api/voice/token");
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "UNAUTHORIZED" });
+    expect(res.body).toEqual({ success: false, error: "UNAUTHORIZED" });
   });
 
   it("returns 200 with valid token", async () => {
@@ -30,7 +30,7 @@ describe("Auth enforcement", () => {
       .set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ token: "real-token" });
+    expect(res.body).toEqual({ success: true, data: { token: "real-token" } });
   });
 
 
@@ -40,7 +40,7 @@ describe("Auth enforcement", () => {
       .set("Authorization", "Bearer ");
 
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "INVALID_TOKEN" });
+    expect(res.body).toEqual({ success: false, error: "INVALID_TOKEN" });
   });
 
   it("rejects malformed token", async () => {
@@ -49,7 +49,7 @@ describe("Auth enforcement", () => {
       .set("Authorization", "Bearer not.a.valid.jwt");
 
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "INVALID_TOKEN" });
+    expect(res.body).toEqual({ success: false, error: "INVALID_TOKEN" });
   });
 
   it("rejects expired token", async () => {
@@ -62,7 +62,7 @@ describe("Auth enforcement", () => {
       .set("Authorization", `Bearer ${expired}`);
 
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "INVALID_TOKEN" });
+    expect(res.body).toEqual({ success: false, error: "INVALID_TOKEN" });
   });
 
   it("rejects token signed with wrong secret", async () => {
@@ -75,6 +75,6 @@ describe("Auth enforcement", () => {
       .set("Authorization", `Bearer ${wrongSecretToken}`);
 
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "INVALID_TOKEN" });
+    expect(res.body).toEqual({ success: false, error: "INVALID_TOKEN" });
   });
 });

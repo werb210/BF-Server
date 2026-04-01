@@ -3,10 +3,11 @@ import type { ZodSchema } from "zod";
 
 export function validate<T>(schema: ZodSchema<T>) {
   return (req: Request, res: Response, next: NextFunction) => {
+    const isUploadRoute = req.originalUrl.split("?")[0] === "/api/documents/upload";
     if (
       req.method === "POST" &&
       !req.is("application/json") &&
-      !req.path.includes("/upload")
+      !isUploadRoute
     ) {
       return res.status(415).json({
         success: false,

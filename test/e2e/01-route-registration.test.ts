@@ -31,11 +31,13 @@ describe("Route registration and prefix integrity", () => {
     }
   });
 
-  it("keeps legacy aliases functional during migration", async () => {
+  it("rejects legacy aliases", async () => {
     const authStart = await request(app).post("/auth/otp/start").send({ phone: "+15555550100" });
-    expect(authStart.status).not.toBe(404);
+    expect(authStart.status).toBe(410);
+    expect(authStart.body).toEqual({ success: false, error: "LEGACY_ROUTE_DISABLED" });
 
     const voiceToken = await request(app).get("/voice/token");
-    expect(voiceToken.status).toBe(401);
+    expect(voiceToken.status).toBe(410);
+    expect(voiceToken.body).toEqual({ success: false, error: "LEGACY_ROUTE_DISABLED" });
   });
 });

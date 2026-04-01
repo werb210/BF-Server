@@ -36,7 +36,7 @@ export function createApp() {
 
   app.use(express.json());
   app.use((req, res, next) => {
-    console.log("REQ:", req.method, req.path, req.body);
+    console.log("REQ:", req.method, req.path);
     const originalJson = res.json.bind(res);
     res.json = ((body: unknown) => {
       console.log("RES:", res.statusCode);

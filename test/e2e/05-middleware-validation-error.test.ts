@@ -34,8 +34,8 @@ describe("Middleware execution, validation, and error handling", () => {
       .get("/totally/unknown/path")
       .set("Authorization", `Bearer ${token}`);
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(410);
     expect(res.body.success).toBe(false);
-    expect(res.body.error).toContain("Route not found:");
+    expect(res.body.error).toBe("LEGACY_ROUTE_DISABLED");
   });
 });
