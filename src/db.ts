@@ -1,5 +1,7 @@
 import * as dbProd from "./db.prod";
 import type { QueryResult, QueryResultRow } from "pg";
+import { deps } from "./system/deps";
+import { requireDb } from "./system/requireDb";
 
 const dbImpl = dbProd;
 
@@ -16,22 +18,21 @@ export const {
   clearDbTestFailureInjection,
 } = dbImpl;
 
-function assertDbInitialized(): void {
-  if (!pool) {
-    throw new Error("DB_NOT_INITIALIZED");
-  }
-}
-
 type Queryable = {
   query: <T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]) => Promise<QueryResult<T>>;
 };
+
+export function getDb() {
+  requireDb();
+  return pool;
+}
 
 export async function runQuery<T extends QueryResultRow = QueryResultRow>(
   queryable: Queryable,
   text: string,
   params?: any[],
 ): Promise<QueryResult<T>> {
-  assertDbInitialized();
+  requireDb();
   try {
     return await dbImpl.runQuery<T>(queryable, text, params);
   } catch {
@@ -40,7 +41,7 @@ export async function runQuery<T extends QueryResultRow = QueryResultRow>(
 }
 
 export async function query<T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]): Promise<QueryResult<T>> {
-  assertDbInitialized();
+  requireDb();
   try {
     return await (dbImpl.query as unknown as (t: string, p?: any[]) => Promise<QueryResult<T>>)(text, params);
   } catch {
@@ -49,7 +50,7 @@ export async function query<T extends QueryResultRow = QueryResultRow>(text: str
 }
 
 export async function dbQuery<T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]): Promise<QueryResult<T>> {
-  assertDbInitialized();
+  requireDb();
   try {
     return await dbImpl.dbQuery<T>(text, params);
   } catch {
@@ -57,27 +58,28 @@ export async function dbQuery<T extends QueryResultRow = QueryResultRow>(text: s
   }
 }
 
-let dbReady = false;
-
 export async function ensureDb(): Promise<void> {
   try {
-    await pool.runQuery("SELECT 1");
-    dbReady = true;
+    await dbImpl.runQuery(pool, "SELECT 1");
+    deps.db.ready = true;
+    deps.db.error = null;
     console.log("DB connected");
   } catch (error) {
-    dbReady = false;
+    deps.db.ready = false;
+    deps.db.error = error;
     console.error("DB connection failed", error);
     throw error;
   }
 }
 
 export function isDbReady(): boolean {
-  return dbReady;
+  return deps.db.ready;
 }
 
 const dbExports = {
   pool,
   db,
+  getDb,
   runQuery,
   query,
   fetchClient,

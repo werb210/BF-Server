@@ -19,6 +19,7 @@ import { errorHandler } from "./middleware/errorHandler";
 import { fail, ok } from "./lib/response";
 import { wrap } from "./lib/routeWrap";
 import { ok as envelopeOk } from "./lib/apiResponse";
+import { deps } from "./system/deps";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -39,15 +40,16 @@ export function createApp() {
   const app = express();
 
   app.use(express.json());
-  app.get(
-    "/health",
-    wrap(async () => {
-      return envelopeOk({
-        service: "bf-server",
-        timestamp: new Date().toISOString(),
-      });
-    })
-  );
+  app.get("/health", (_req, res) => {
+    res.status(200).send("ok");
+  });
+
+  app.get("/ready", (_req, res) => {
+    if (!deps.db.ready) {
+      return res.status(503).json({ status: "degraded" });
+    }
+    return res.json({ status: "ready" });
+  });
 
   app.use(routeAlias);
 

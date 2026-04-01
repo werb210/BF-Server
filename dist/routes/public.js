@@ -4,7 +4,8 @@ const express_1 = require("express");
 const db_1 = require("../db");
 const validate_1 = require("../middleware/validate");
 const validation_1 = require("../validation");
-const response_1 = require("../lib/response");
+const apiResponse_1 = require("../lib/apiResponse");
+const routeWrap_1 = require("../lib/routeWrap");
 const router = (0, express_1.Router)();
 async function createLead(payload) {
     const normalizedPayload = {
@@ -21,22 +22,13 @@ async function createLead(payload) {
        returning id`, [data.email, data.phone, data.businessName, data.productType, data.requestedAmount ?? null]);
     return { leadId: result.rows[0]?.id };
 }
-router.get("/test", (_req, res) => {
-    return (0, response_1.ok)(res, { ok: true });
-});
-router.post("/lead", (0, validate_1.requireFields)(["companyName", "email"]), async (req, res, next) => {
-    try {
-        const result = await createLead(req.body);
-        if (!result?.leadId) {
-            return (0, response_1.fail)(res, 400, "INVALID_INPUT");
-        }
-        return (0, response_1.ok)(res, { leadId: result.leadId });
+router.get("/test", (0, routeWrap_1.wrap)(async () => (0, apiResponse_1.ok)({ ok: true })));
+router.post("/lead", (0, validate_1.requireFields)(["companyName", "email"]), (0, routeWrap_1.wrap)(async (req, res) => {
+    const result = await createLead(req.body);
+    if (!result?.leadId) {
+        return (0, apiResponse_1.fail)(res, "INVALID_INPUT");
     }
-    catch (error) {
-        return next(error);
-    }
-});
-router.all("/lead", (_req, res) => {
-    return (0, response_1.fail)(res, 405, "METHOD_NOT_ALLOWED");
-});
+    return (0, apiResponse_1.ok)({ leadId: result.leadId });
+}));
+router.all("/lead", (0, routeWrap_1.wrap)(async (_req, res) => (0, apiResponse_1.fail)(res, "METHOD_NOT_ALLOWED")));
 exports.default = router;

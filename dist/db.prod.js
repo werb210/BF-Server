@@ -28,7 +28,12 @@ function buildPoolConfig() {
     const connectionString = config_1.config.db.url.trim();
     if (!connectionString) {
         (0, startupState_1.markNotReady)("db_unavailable");
-        throw new Error("DATABASE_URL is missing");
+        (0, logger_1.logWarn)("db_connection_string_missing");
+        return {
+            max: 10,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 5000,
+        };
     }
     const isAzure = connectionString.includes("postgres.database.azure.com");
     return {
@@ -41,19 +46,9 @@ function buildPoolConfig() {
 }
 exports.pool = new Pool(buildPoolConfig());
 exports.db = exports.pool;
-const attachRunQuery = (queryable) => {
-    queryable.runQuery = (text, params) => runQuery(queryable, text, params);
-};
-attachRunQuery(exports.pool);
-const originalPoolConnect = exports.pool.connect.bind(exports.pool);
-exports.pool.connect = async (...args) => {
-    const client = await originalPoolConnect(...args);
-    attachRunQuery(client);
-    return client;
-};
 async function query(text, params) {
     const start = Date.now();
-    const result = await exports.pool.runQuery(text, params);
+    const result = await runQuery(exports.pool, text, params);
     const durationMs = Date.now() - start;
     if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
         (0, logger_1.logWarn)("db_slow_query", {
@@ -69,7 +64,7 @@ function fetchClient() {
 async function dbQuery(text, params) {
     try {
         const start = Date.now();
-        const result = await exports.pool.runQuery(text, params);
+        const result = await runQuery(exports.pool, text, params);
         const durationMs = Date.now() - start;
         if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
             (0, logger_1.logWarn)("db_slow_query", {
@@ -93,21 +88,21 @@ function assertPoolHealthy() {
     }
 }
 async function checkDb() {
-    await exports.pool.runQuery("select 1");
+    await runQuery(exports.pool, "select 1");
 }
 async function warmUpDatabase() {
-    await exports.pool.runQuery("select 1");
+    await runQuery(exports.pool, "select 1");
     assertPoolHealthy();
 }
 async function fetchInstrumentedClient() {
-    const client = await exports.pool.connect();
-    attachRunQuery(client);
-    return client;
+    return exports.pool.connect();
 }
 function setDbTestPoolMetricsOverride() { }
 function setDbTestFailureInjection() { }
 function clearDbTestFailureInjection() { }
-exports.pool.on("connect", () => (0, logger_1.logInfo)("db_client_connected"));
+exports.pool.on("connect", () => {
+    (0, logger_1.logInfo)("db_client_connected");
+});
 exports.pool.on("error", (err) => {
     (0, startupState_1.markNotReady)("db_unavailable");
     (0, logger_1.logWarn)("db_connection_error", { message: err.message });

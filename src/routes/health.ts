@@ -1,35 +1,30 @@
 import { Router } from "express";
-import { fetchStatus } from "../startupState";
-import { ok, fail } from "../middleware/response";
-import { runQuery } from "../lib/db";
+import { deps } from "../system/deps";
 
 const router = Router();
 
-async function healthResponse(res: Parameters<typeof ok>[0]) {
-  try {
-    await runQuery("SELECT 1");
-    return ok(res, { db: "ok" });
-  } catch {
-    return fail(res, 503, "DB_UNAVAILABLE");
-  }
-}
-
-router.get("/health", async (_req, res) => {
-  return healthResponse(res);
+router.get("/health", (_req, res) => {
+  res.status(200).send("ok");
 });
 
-router.get("/healthz", async (_req, res) => {
-  return healthResponse(res);
+router.get("/healthz", (_req, res) => {
+  res.status(200).send("ok");
+});
+
+router.get("/ready", (_req, res) => {
+  if (!deps.db.ready) {
+    return res.status(503).json({ status: "degraded" });
+  }
+
+  return res.json({ status: "ready" });
 });
 
 router.get("/readyz", (_req, res) => {
-  const status = fetchStatus();
-  const ready = status.ready && !status.reason;
-  if (!ready) {
-    return fail(res, 503, "not_ready");
+  if (!deps.db.ready) {
+    return res.status(503).json({ status: "degraded" });
   }
 
-  return ok(res, { ready, status });
+  return res.json({ status: "ready" });
 });
 
 export default router;

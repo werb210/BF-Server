@@ -28,7 +28,12 @@ function buildPoolConfig(): PoolConfig {
   const connectionString = config.db.url.trim();
   if (!connectionString) {
     markNotReady("db_unavailable");
-    throw new Error("DATABASE_URL is missing");
+    logWarn("db_connection_string_missing");
+    return {
+      max: 10,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 5_000,
+    };
   }
 
   const isAzure = connectionString.includes("postgres.database.azure.com");
@@ -44,19 +49,10 @@ function buildPoolConfig(): PoolConfig {
 
 export const pool: PgPool = new Pool(buildPoolConfig());
 export const db = pool;
-const attachRunQuery = (queryable?: (Queryable & Record<string, unknown>) | null) => {
-  if (!queryable) {
-    return;
-  }
-  queryable.runQuery = <T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]) =>
-    runQuery<T>(queryable, text, params);
-};
-
-attachRunQuery(pool as unknown as Queryable & Record<string, unknown>);
 
 export async function query(text: string, params?: any[]): Promise<QueryResult> {
   const start = Date.now();
-  const result = await pool.runQuery(text, params);
+  const result = await runQuery(pool, text, params);
   const durationMs = Date.now() - start;
 
   if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
@@ -79,7 +75,7 @@ export async function dbQuery<T extends QueryResultRow = QueryResultRow>(
 ): Promise<QueryResult<T>> {
   try {
     const start = Date.now();
-    const result = await pool.runQuery<T>(text, params);
+    const result = await runQuery<T>(pool, text, params);
     const durationMs = Date.now() - start;
 
     if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
@@ -106,26 +102,23 @@ export function assertPoolHealthy(): void {
 }
 
 export async function checkDb(): Promise<void> {
-  await pool.runQuery("select 1");
+  await runQuery(pool, "select 1");
 }
 
 export async function warmUpDatabase(): Promise<void> {
-  await pool.runQuery("select 1");
+  await runQuery(pool, "select 1");
   assertPoolHealthy();
 }
 
 export async function fetchInstrumentedClient(): Promise<PoolClient> {
-  const client = await pool.connect();
-  attachRunQuery(client as unknown as Queryable & Record<string, unknown>);
-  return client;
+  return pool.connect();
 }
 
 export function setDbTestPoolMetricsOverride(): void {}
 export function setDbTestFailureInjection(): void {}
 export function clearDbTestFailureInjection(): void {}
 
-pool.on("connect", (client) => {
-  attachRunQuery(client as unknown as Queryable & Record<string, unknown>);
+pool.on("connect", () => {
   logInfo("db_client_connected");
 });
 

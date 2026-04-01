@@ -1,7 +1,7 @@
 import app from "./app";
-import { ensureDb } from "./db";
 import { processDeadLetters } from "./workers/deadLetterWorker";
 import { verifyTwilioSetup } from "./startup/verifyCheck";
+import { initDependencies } from "./system/init";
 
 process.on("unhandledRejection", (err) => {
   console.error("[UNHANDLED REJECTION]", err);
@@ -14,13 +14,6 @@ process.on("uncaughtException", (err) => {
 async function start() {
   console.log("[BOOT] Starting server...");
 
-  if (process.env.NODE_ENV !== "test") {
-    try {
-      await ensureDb();
-    } catch (err) {
-      console.error("DB unavailable, continuing in degraded mode", err);
-    }
-  }
   await verifyTwilioSetup();
 
   setInterval(() => {
@@ -33,10 +26,12 @@ async function start() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`[BOOT] Server listening on ${PORT}`);
+    console.log("[BOOT] Server running");
   });
+
+  void initDependencies();
 }
 
 start().catch((err) => {
   console.error("UNHANDLED_STARTUP_ERROR", err);
-  process.exit(1);
 });

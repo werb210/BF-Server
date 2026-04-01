@@ -24,8 +24,10 @@ const application_1 = __importDefault(require("./routes/application"));
 const documents_1 = __importDefault(require("./routes/documents"));
 const errorHandler_1 = require("./middleware/errorHandler");
 const response_1 = require("./lib/response");
+const routeWrap_1 = require("./lib/routeWrap");
+const apiResponse_1 = require("./lib/apiResponse");
+const deps_1 = require("./system/deps");
 let publicRequestCount = 0;
-const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 function resetOtpStateForTests() {
     publicRequestCount = 0;
 }
@@ -34,12 +36,15 @@ function createApp() {
     process.env.STRICT_API = "true";
     const app = (0, express_1.default)();
     app.use(express_1.default.json());
-    app.get("/health", wrap(async (_req, res) => {
-        return (0, response_1.ok)(res, {
-            service: "bf-server",
-            timestamp: new Date().toISOString(),
-        });
-    }));
+    app.get("/health", (_req, res) => {
+        res.status(200).send("ok");
+    });
+    app.get("/ready", (_req, res) => {
+        if (!deps_1.deps.db.ready) {
+            return res.status(503).json({ status: "degraded" });
+        }
+        return res.json({ status: "ready" });
+    });
     app.use(routeAlias_1.routeAlias);
     app.use((req, res, next) => {
         const configured = (process.env.CORS_ALLOWED_ORIGINS ?? "https://staff.boreal.financial")
@@ -60,12 +65,12 @@ function createApp() {
         }
         return next();
     });
-    app.get("/api/public/test", wrap(async (_req, res) => {
+    app.get("/api/public/test", (0, routeWrap_1.wrap)(async (_req, res) => {
         publicRequestCount += 1;
         if (publicRequestCount > 300) {
             return (0, response_1.fail)(res, 429, "RATE_LIMITED");
         }
-        return (0, response_1.ok)(res, { ok: true });
+        return (0, apiResponse_1.ok)({ ok: true });
     }));
     app.use("/api/auth", auth_routes_1.default);
     app.use("/api/crm", crm_1.default);
@@ -83,11 +88,11 @@ function createApp() {
     app.use("/api/comm", messaging_1.default);
     app.use("/api/sms", sms_1.default);
     app.use("/api", health_1.default);
-    app.get("/api/voice/token", auth_1.requireAuth, wrap(async (_req, res) => {
-        return (0, response_1.ok)(res, { token: "real-token" });
+    app.get("/api/voice/token", auth_1.requireAuth, (0, routeWrap_1.wrap)(async () => {
+        return (0, apiResponse_1.ok)({ token: "real-token" });
     }));
-    app.use("/api/private", auth_1.requireAuth, wrap(async (_req, res) => {
-        return (0, response_1.ok)(res, { ok: true });
+    app.use("/api/private", auth_1.requireAuth, (0, routeWrap_1.wrap)(async () => {
+        return (0, apiResponse_1.ok)({ ok: true });
     }));
     app.use("/api/internal", internal_1.default);
     app.use((req, res) => {
