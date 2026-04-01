@@ -1,4 +1,4 @@
-import express, { type RequestHandler } from "express";
+import express from "express";
 
 import { requireAuth } from "./middleware/auth";
 import { routeAlias } from "./middleware/routeAlias";
@@ -29,18 +29,6 @@ export function resetOtpStateForTests() {
 }
 
 globalThis.__resetOtpStateForTests = resetOtpStateForTests;
-
-const dialerTokenHandler: RequestHandler = (_req, res) => {
-  return res.redirect(307, "/api/dialer/token");
-};
-
-const callStartHandler: RequestHandler = (_req, res) => {
-  return res.redirect(307, "/api/call/start");
-};
-
-const voiceStatusHandler: RequestHandler = (_req, res) => {
-  return res.redirect(307, "/api/voice/status");
-};
 
 export function createApp() {
   process.env.STRICT_API = "true";
@@ -99,16 +87,16 @@ export function createApp() {
     return res.status(200).json({ success: true, data: { ok: true } });
   });
 
-  app.get("/dialer/token", dialerTokenHandler);
-  app.post("/call/start", callStartHandler);
-  app.post("/voice/status", voiceStatusHandler);
-
   app.use("/api/auth", authRoutes);
   app.use("/api/crm", crmRoutes);
   app.use("/api/crm", leadRoutes);
   app.use("/api", leadRoutes);
   app.use("/api/application", applicationRoutes);
   app.use("/api/documents", documentsRoutes);
+  app.use("/voice", voiceRoutes);
+  app.use("/call", callRoutes);
+  app.use("/", twilioRoutes);
+
   app.use("/api/maya", mayaRoutes);
   app.use("/api/voice", voiceRoutes);
   app.use("/api/call", callRoutes);
