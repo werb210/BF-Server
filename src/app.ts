@@ -133,4 +133,4 @@ export const buildAppWithApiRoutes = createApp;
 
 export const app = createApp();
 
-export default createApp;
+export default app;

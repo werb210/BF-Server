@@ -1,23 +1,21 @@
-process.on("unhandledRejection", (err) => {
-  console.error("UNHANDLED_REJECTION", err);
-  process.exit(1);
-});
-
-process.on("uncaughtException", (err) => {
-  console.error("UNCAUGHT_EXCEPTION", err);
-  process.exit(1);
-});
-
-import { createApp } from "./app";
+import app from "./app";
 import { ensureDb } from "./db";
 import { processDeadLetters } from "./workers/deadLetterWorker";
 import { verifyTwilioSetup } from "./startup/verifyCheck";
 
+process.on("unhandledRejection", (err) => {
+  console.error("[UNHANDLED REJECTION]", err);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("[UNCAUGHT EXCEPTION]", err);
+});
+
 async function start() {
+  console.log("[BOOT] Starting server...");
+
   await ensureDb();
   await verifyTwilioSetup();
-
-  const app = createApp();
 
   setInterval(() => {
     processDeadLetters().catch((err) =>
@@ -28,12 +26,7 @@ async function start() {
   const PORT = Number(process.env.PORT || 8080);
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(JSON.stringify({
-      level: "info",
-      event: "server_start",
-      port: PORT,
-      env: process.env.NODE_ENV || "unknown"
-    }));
+    console.log(`[BOOT] Server listening on ${PORT}`);
   });
 }
 
