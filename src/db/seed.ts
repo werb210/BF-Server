@@ -15,7 +15,7 @@ export const SEEDED_LENDER_PRODUCT_LOC_ID = "00000000-0000-0000-0000-00000000020
 
 export async function seedAdminUser(): Promise<{ id: string; phoneNumber: string }> {
   const phoneNumber = SEEDED_ADMIN_PHONE;
-  await pool.query(
+  await pool.runQuery(
     `insert into users (
         id,
         email,
@@ -48,7 +48,7 @@ export async function seedSecondAdminUser(): Promise<{
   phoneNumber: string;
 }> {
   const phoneNumber = SEEDED_ADMIN2_PHONE;
-  await pool.query(
+  await pool.runQuery(
     `insert into users (
         id,
         email,
@@ -77,7 +77,7 @@ export async function seedSecondAdminUser(): Promise<{
 }
 
 export async function seedBaselineLenders(): Promise<void> {
-  const { rows: tableRows } = await pool.query<{ table_name: string }>(
+  const { rows: tableRows } = await pool.runQuery<{ table_name: string }>(
     `select table_name
        from information_schema.tables
       where table_schema = 'public'
@@ -93,14 +93,14 @@ export async function seedBaselineLenders(): Promise<void> {
     return;
   }
 
-  const { rows } = await pool.query<{ count: number }>(
+  const { rows } = await pool.runQuery<{ count: number }>(
     "select count(*)::int as count from lenders"
   );
   if ((rows[0]?.count ?? 0) > 0) {
     return;
   }
 
-  await pool.query(
+  await pool.runQuery(
     `insert into lenders
      (id, name, active, status, submission_method, website, country, created_at, updated_at)
      values ($1, $2, true, 'ACTIVE', 'email', $3, $4, now(), now())`,
@@ -112,7 +112,7 @@ export async function seedBaselineLenders(): Promise<void> {
     ]
   );
 
-  await pool.query(
+  await pool.runQuery(
     `insert into lender_products
      (id, lender_id, name, category, country, rate_type, interest_min, interest_max, term_min, term_max, term_unit, active, required_documents, created_at, updated_at)
      values

@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchLatestIncompleteApplication = fetchLatestIncompleteApplication;
 const db_1 = require("../../db");
 async function fetchLatestIncompleteApplication(userId) {
-    const result = await db_1.pool.query(`select *
+    const result = await db_1.pool.runQuery(`select *
      from applications
      where owner_user_id = $1
        and lower(coalesce(pipeline_state, '')) not in ('submitted', 'funded', 'rejected')

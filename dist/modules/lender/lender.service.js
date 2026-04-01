@@ -63,7 +63,7 @@ function resolveApplicationCountry(metadata) {
         : null;
 }
 async function assertLenderProduct(params) {
-    const res = await params.client.query(`select lender_id
+    const res = await params.client.runQuery(`select lender_id
      from lender_products
      where id = $1
      limit 1`, [params.lenderProductId]);
@@ -145,7 +145,7 @@ async function sendToLender(params) {
     }
 }
 async function resolveSubmissionMethod(params) {
-    const res = await params.client.query(`select submission_method
+    const res = await params.client.runQuery(`select submission_method
      from lenders
      where id = $1
      limit 1`, [params.lenderId]);
@@ -628,12 +628,12 @@ async function submitApplication(params) {
     }
     const client = await db_1.pool.connect();
     try {
-        await client.query("begin");
+        await client.runQuery("begin");
         const lockKey = createAdvisoryLockKey(`transmission:${params.applicationId}:${params.lenderId}`);
         if (!(0, dbRuntime_1.isTestEnvironment)()) {
-            await client.query("select pg_advisory_xact_lock($1, $2)", lockKey);
+            await client.runQuery("select pg_advisory_xact_lock($1, $2)", lockKey);
         }
-        await client.query("select id from applications where id = $1 for update", [
+        await client.runQuery("select id from applications where id = $1 for update", [
             params.applicationId,
         ]);
         if (params.idempotencyKey) {
@@ -649,7 +649,7 @@ async function submitApplication(params) {
                     success: true,
                     client,
                 });
-                await client.query("commit");
+                await client.runQuery("commit");
                 return {
                     statusCode: 200,
                     value: { id: existingSubmission.id, status: existingSubmission.status },
@@ -669,7 +669,7 @@ async function submitApplication(params) {
                 success: true,
                 client,
             });
-            await client.query("commit");
+            await client.runQuery("commit");
             return {
                 statusCode: 200,
                 value: { id: existingSubmission.id, status: existingSubmission.status },
@@ -694,12 +694,12 @@ async function submitApplication(params) {
                 : {}),
             client,
         });
-        await client.query("commit");
+        await client.runQuery("commit");
         return result;
     }
     catch (err) {
         (0, transactionTelemetry_1.recordTransactionRollback)(err);
-        await client.query("rollback");
+        await client.runQuery("rollback");
         throw err;
     }
     finally {
@@ -746,13 +746,13 @@ async function retrySubmission(params) {
     }
     const client = await db_1.pool.connect();
     try {
-        await client.query("begin");
+        await client.runQuery("begin");
         const submission = await (0, lender_repo_1.findSubmissionById)(params.submissionId, client);
         if (!submission) {
             throw new errors_1.AppError("not_found", "Submission not found.", 404);
         }
         if (submission.status === "submitted") {
-            await client.query("commit");
+            await client.runQuery("commit");
             return { id: submission.id, status: submission.status, retryStatus: "already_submitted" };
         }
         const retryState = await (0, lender_repo_1.findSubmissionRetryState)(submission.id, client);
@@ -798,11 +798,11 @@ async function retrySubmission(params) {
             success: status === "submitted",
             client,
         });
-        await client.query("commit");
+        await client.runQuery("commit");
         return { id: submission.id, status: result.value.status, retryStatus };
     }
     catch (err) {
-        await client.query("rollback");
+        await client.runQuery("rollback");
         throw err;
     }
     finally {
@@ -812,7 +812,7 @@ async function retrySubmission(params) {
 async function cancelSubmissionRetry(params) {
     const client = await db_1.pool.connect();
     try {
-        await client.query("begin");
+        await client.runQuery("begin");
         const submission = await (0, lender_repo_1.findSubmissionById)(params.submissionId, client);
         if (!submission) {
             throw new errors_1.AppError("not_found", "Submission not found.", 404);
@@ -840,11 +840,11 @@ async function cancelSubmissionRetry(params) {
             success: true,
             client,
         });
-        await client.query("commit");
+        await client.runQuery("commit");
         return { id: submission.id, status: "canceled" };
     }
     catch (err) {
-        await client.query("rollback");
+        await client.runQuery("rollback");
         throw err;
     }
     finally {

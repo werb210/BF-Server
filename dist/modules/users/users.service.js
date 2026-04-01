@@ -21,7 +21,7 @@ async function setUserStatus(params) {
     }
     const client = await db_1.pool.connect();
     try {
-        await client.query("begin");
+        await client.runQuery("begin");
         await (0, auth_repo_1.setUserActive)(params.userId, params.active, client);
         if (!params.active) {
             await (0, auth_repo_1.incrementTokenVersion)(params.userId, client);
@@ -45,10 +45,10 @@ async function setUserStatus(params) {
             success: true,
             client,
         });
-        await client.query("commit");
+        await client.runQuery("commit");
     }
     catch (err) {
-        await client.query("rollback");
+        await client.runQuery("rollback");
         await (0, audit_service_1.recordAuditEvent)({
             action: params.active ? "user_enabled" : "user_disabled",
             actorUserId: params.actorId,
@@ -78,7 +78,7 @@ async function changeUserRole(params) {
     }
     const client = await db_1.pool.connect();
     try {
-        await client.query("begin");
+        await client.runQuery("begin");
         await (0, auth_repo_1.updateUserRoleById)(params.userId, params.role, client);
         await (0, auth_repo_1.incrementTokenVersion)(params.userId, client);
         await (0, auth_repo_1.revokeRefreshTokensForUser)(params.userId, client);
@@ -100,10 +100,10 @@ async function changeUserRole(params) {
             success: true,
             client,
         });
-        await client.query("commit");
+        await client.runQuery("commit");
     }
     catch (err) {
-        await client.query("rollback");
+        await client.runQuery("rollback");
         await (0, audit_service_1.recordAuditEvent)({
             action: "user_role_changed",
             actorUserId: params.actorId,

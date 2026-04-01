@@ -32,7 +32,7 @@ systemCheckRouter.get("/system-check", async (_req, res) => {
         },
     };
     try {
-        await dbClient_1.pool.query("SELECT 1");
+        await dbClient_1.pool.runQuery("SELECT 1");
         tests.db.status = "ok";
     }
     catch (error) {
@@ -42,17 +42,17 @@ systemCheckRouter.get("/system-check", async (_req, res) => {
     try {
         userId = crypto_1.default.randomUUID();
         const email = `system-check+${Date.now()}@example.com`;
-        await dbClient_1.pool.query(`
+        await dbClient_1.pool.runQuery(`
         INSERT INTO users (id, email, password_hash, role, active)
         VALUES ($1, $2, $3, $4, $5)
       `, [userId, email, "system-check", "admin", true]);
-        const read = await dbClient_1.pool.query(`
+        const read = await dbClient_1.pool.runQuery(`
         SELECT id
         FROM users
         WHERE id = $1
         LIMIT 1
       `, [userId]);
-        await dbClient_1.pool.query("DELETE FROM users WHERE id = $1", [userId]);
+        await dbClient_1.pool.runQuery("DELETE FROM users WHERE id = $1", [userId]);
         userId = null;
         tests.users.status = (read.rowCount ?? 0) > 0 ? "ok" : "fail";
         if (tests.users.status === "fail") {
@@ -63,7 +63,7 @@ systemCheckRouter.get("/system-check", async (_req, res) => {
         tests.users = { status: "fail", error: toErrorMessage(error) };
         if (userId) {
             try {
-                await dbClient_1.pool.query("DELETE FROM users WHERE id = $1", [userId]);
+                await dbClient_1.pool.runQuery("DELETE FROM users WHERE id = $1", [userId]);
             }
             catch {
                 // best-effort cleanup
@@ -71,14 +71,14 @@ systemCheckRouter.get("/system-check", async (_req, res) => {
         }
     }
     try {
-        const result = await dbClient_1.pool.query("SELECT count(*)::int AS count FROM lenders");
+        const result = await dbClient_1.pool.runQuery("SELECT count(*)::int AS count FROM lenders");
         tests.lenders = { status: "ok", count: result.rows[0]?.count ?? 0 };
     }
     catch (error) {
         tests.lenders = { status: "fail", error: toErrorMessage(error) };
     }
     try {
-        const result = await dbClient_1.pool.query("SELECT count(*)::int AS count FROM lender_products");
+        const result = await dbClient_1.pool.runQuery("SELECT count(*)::int AS count FROM lender_products");
         tests.products = { status: "ok", count: result.rows[0]?.count ?? 0 };
     }
     catch (error) {

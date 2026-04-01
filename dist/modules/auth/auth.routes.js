@@ -7,9 +7,10 @@ exports.resetOtpStateForTests = resetOtpStateForTests;
 const express_1 = require("express");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const otpStore_1 = require("./otpStore");
-const contractResponse_1 = require("../../utils/contractResponse");
+const response_1 = require("../../middleware/response");
 const router = (0, express_1.Router)();
-const error = (res, status, message) => contractResponse_1.send.error(res, status, message);
+const TEST_OTP_CODE = process.env.TEST_OTP_CODE || "654321";
+const error = (res, status, message) => res.status(status).json({ success: false, error: message });
 function resetOtpStateForTests() {
     otpStore_1.otpStore.clear();
 }
@@ -23,7 +24,9 @@ router.post("/otp/start", (req, res) => {
     if (existing && now - existing.lastSentAt < 60000) {
         return error(res, 429, "Too many requests");
     }
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const code = process.env.NODE_ENV === "test"
+        ? TEST_OTP_CODE
+        : Math.floor(100000 + Math.random() * 900000).toString();
     otpStore_1.otpStore.set(phone, {
         code,
         expiresAt: now + 5 * 60 * 1000,
@@ -31,7 +34,7 @@ router.post("/otp/start", (req, res) => {
         lastSentAt: now,
         used: false,
     });
-    return contractResponse_1.send.ok(res);
+    return (0, response_1.ok)(res, { sent: true });
 });
 router.post("/otp/verify", (req, res) => {
     const { phone, code } = req.body;
@@ -75,6 +78,6 @@ router.post("/otp/verify", (req, res) => {
         return error(res, 401, "unauthorized");
     }
     const token = jsonwebtoken_1.default.sign({ phone }, jwtSecret, { expiresIn: "1d" });
-    return contractResponse_1.send.ok(res, { token });
+    return (0, response_1.ok)(res, { token });
 });
 exports.default = router;

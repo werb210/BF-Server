@@ -17,7 +17,7 @@ async function embedText(text) {
 }
 async function searchRelevantDocs(query) {
     const embedding = await embedText(query);
-    const result = await db_1.pool.query(`
+    const result = await db_1.pool.runQuery(`
     select content
     from ai_embeddings
     where embedding is not null

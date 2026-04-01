@@ -263,7 +263,7 @@ export async function submitClientApplication(params: {
 
   const client = await pool.connect();
   try {
-    await client.query("begin");
+    await client.runQuery("begin");
     const existing = await findClientSubmissionByKey(submission.submissionKey, client);
     if (existing) {
       await recordAuditEvent({
@@ -277,7 +277,7 @@ export async function submitClientApplication(params: {
         success: true,
         client,
       });
-      await client.query("commit");
+      await client.runQuery("commit");
       logInfo("client_submission_retried", {
         submissionKey: submission.submissionKey,
         applicationId: existing.application_id,
@@ -378,7 +378,7 @@ export async function submitClientApplication(params: {
       client,
     });
 
-    await client.query("commit");
+    await client.runQuery("commit");
     logInfo("client_submission_created", {
       submissionKey: submission.submissionKey,
       applicationId: application.id,
@@ -390,7 +390,7 @@ export async function submitClientApplication(params: {
     };
   } catch (err) {
     recordTransactionRollback(err);
-    await client.query("rollback");
+    await client.runQuery("rollback");
     await recordAuditEvent({
       action: "client_submission_failed",
       actorUserId: null,

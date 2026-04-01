@@ -9,7 +9,7 @@ export async function ensureApplicationSubmissionState(params: {
   actorUserId: string;
   ip?: string;
   userAgent?: string;
-  client: Pick<PoolClient, "query">;
+  client: Pick<PoolClient, "query" | "runQuery">;
 }): Promise<void> {
   const requestMetadata = {
     ...(params.ip ? { ip: params.ip } : {}),

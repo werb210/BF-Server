@@ -19,7 +19,7 @@ async function logCheckResult(params: {
 }
 
 async function hasTable(table: string): Promise<boolean> {
-  const res = await pool.query<{ count: number }>(
+  const res = await pool.runQuery<{ count: number }>(
     `select count(*)::int as count
      from information_schema.tables
      where table_name = $1`,
@@ -29,7 +29,7 @@ async function hasTable(table: string): Promise<boolean> {
 }
 
 async function hasColumn(table: string, column: string): Promise<boolean> {
-  const res = await pool.query<{ count: number }>(
+  const res = await pool.runQuery<{ count: number }>(
     `select count(*)::int as count
      from information_schema.columns
      where table_name = $1
@@ -52,14 +52,14 @@ export async function runStartupConsistencyCheck(): Promise<void> {
         reason: "missing_documents_or_applications",
       });
     } else {
-      const orphanDocumentsCount = await pool.query<{ count: number }>(
+      const orphanDocumentsCount = await pool.runQuery<{ count: number }>(
         `select count(*)::int as count
          from documents d
          where not exists (
            select 1 from applications a where a.id = d.application_id
          )`
       );
-      const orphanDocumentsSample = await pool.query<SampleRow>(
+      const orphanDocumentsSample = await pool.runQuery<SampleRow>(
         `select d.id, d.application_id
          from documents d
          where not exists (
@@ -81,14 +81,14 @@ export async function runStartupConsistencyCheck(): Promise<void> {
         reason: "missing_applications_users_or_owner",
       });
     } else {
-      const orphanApplicationsCount = await pool.query<{ count: number }>(
+      const orphanApplicationsCount = await pool.runQuery<{ count: number }>(
         `select count(*)::int as count
          from applications a
          where not exists (
            select 1 from users u where u.id = a.owner_user_id
          )`
       );
-      const orphanApplicationsSample = await pool.query<SampleRow>(
+      const orphanApplicationsSample = await pool.runQuery<SampleRow>(
         `select a.id, a.owner_user_id
          from applications a
          where not exists (
@@ -109,13 +109,13 @@ export async function runStartupConsistencyCheck(): Promise<void> {
         reason: "missing_applications_or_pipeline_state",
       });
     } else {
-      const invalidPipelineCount = await pool.query<{ count: number }>(
+      const invalidPipelineCount = await pool.runQuery<{ count: number }>(
         `select count(*)::int as count
          from applications
          where not (pipeline_state = any($1::text[]))`,
         [PIPELINE_STATES]
       );
-      const invalidPipelineSample = await pool.query<SampleRow>(
+      const invalidPipelineSample = await pool.runQuery<SampleRow>(
         `select id, pipeline_state
          from applications
          where not (pipeline_state = any($1::text[]))

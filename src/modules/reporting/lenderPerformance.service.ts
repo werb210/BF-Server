@@ -2,7 +2,7 @@ import { pool } from "../../db";
 import { type PoolClient } from "pg";
 import { formatPeriod, type GroupBy } from "./reporting.utils";
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 export type LenderPerformanceRow = {
   period: string;

@@ -26,7 +26,7 @@ function fetchEnvKillSwitch(key: OpsKillSwitchKey): boolean {
 export async function listKillSwitches(): Promise<
   Array<{ key: OpsKillSwitchKey; enabled: boolean; envEnabled: boolean; dbEnabled: boolean }>
 > {
-  const result = await pool.query<{ key: OpsKillSwitchKey; enabled: unknown }>(
+  const result = await pool.runQuery<{ key: OpsKillSwitchKey; enabled: unknown }>(
     "select key, enabled from ops_kill_switches"
   );
   const dbMap = new Map<OpsKillSwitchKey, boolean>(
@@ -48,7 +48,7 @@ export async function setKillSwitch(
   key: OpsKillSwitchKey,
   enabled: boolean
 ): Promise<void> {
-  await pool.query(
+  await pool.runQuery(
     `insert into ops_kill_switches (key, enabled, updated_at)
      values ($1, $2, now())
      on conflict (key)
@@ -63,7 +63,7 @@ export async function isKillSwitchEnabled(
   if (fetchEnvKillSwitch(key)) {
     return true;
   }
-  const result = await pool.query<{ enabled: boolean }>(
+  const result = await pool.runQuery<{ enabled: boolean }>(
     "select enabled from ops_kill_switches where key = $1",
     [key]
   );

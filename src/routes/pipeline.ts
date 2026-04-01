@@ -13,7 +13,7 @@ router.get(
   requireAuth,
   requireCapability([CAPABILITIES.APPLICATION_READ]),
   safeHandler(async (_req: any, res: any) => {
-    const result = await pool.query<{
+    const result = await pool.runQuery<{
       id: string;
       name: string | null;
       pipeline_state: string | null;

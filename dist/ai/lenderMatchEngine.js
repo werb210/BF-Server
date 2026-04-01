@@ -5,7 +5,7 @@ const db_1 = require("../db");
 const scoringEngine_1 = require("./scoringEngine");
 async function matchLenders(input) {
     const requestedAmount = input.requestedAmount ?? null;
-    const { rows } = await db_1.pool.query(`select lp.id,
+    const { rows } = await db_1.pool.runQuery(`select lp.id,
             lp.lender_id,
             lp.name as product_name,
             lp.country,

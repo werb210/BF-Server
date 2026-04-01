@@ -72,13 +72,13 @@ function listMigrationFiles() {
     return files;
 }
 async function ensureMigrationsTable() {
-    await db_1.pool.query(`create table if not exists schema_migrations (
+    await db_1.pool.runQuery(`create table if not exists schema_migrations (
       id text,
       applied_at timestamp
     )`);
 }
 async function assertMigrationsTableExists() {
-    const res = await db_1.pool.query("select to_regclass('public.schema_migrations') as exists");
+    const res = await db_1.pool.runQuery("select to_regclass('public.schema_migrations') as exists");
     if (!res.rows[0]?.exists) {
         throw new Error("migrations_table_missing");
     }
@@ -185,7 +185,7 @@ function hasExecutableSql(statement) {
     return stripSqlComments(statement).trim().length > 0;
 }
 async function fetchAppliedMigrations() {
-    const res = await db_1.pool.query("select id from schema_migrations");
+    const res = await db_1.pool.runQuery("select id from schema_migrations");
     return new Set(res.rows.map((row) => row.id));
 }
 async function runMigrations(options) {
@@ -199,7 +199,7 @@ async function runMigrations(options) {
         const rawSql = fs_1.default.readFileSync(path_1.default.join(migrationsDir, file), "utf8");
         const client = await db_1.pool.connect();
         try {
-            await client.query("begin");
+            await client.runQuery("begin");
             const statements = splitSql(rawSql).filter(hasExecutableSql);
             for (const statement of statements) {
                 if (!hasExecutableSql(statement)) {
@@ -235,7 +235,7 @@ async function runMigrations(options) {
                     executableStatement = statement.replace(/create table if not exists/i, "create table");
                 }
                 try {
-                    await client.query(executableStatement);
+                    await client.runQuery(executableStatement);
                 }
                 catch (err) {
                     if (options?.ignoreMissingRelations) {
@@ -304,12 +304,12 @@ async function runMigrations(options) {
                     throw err;
                 }
             }
-            await client.query("insert into schema_migrations (id, applied_at) values ($1, now())", [file]);
+            await client.runQuery("insert into schema_migrations (id, applied_at) values ($1, now())", [file]);
             (0, logger_1.logInfo)("migration_applied", { migration: file });
-            await client.query("commit");
+            await client.runQuery("commit");
         }
         catch (err) {
-            await client.query("rollback");
+            await client.runQuery("rollback");
             throw err;
         }
         finally {
@@ -331,7 +331,7 @@ async function assertNoPendingMigrations() {
 }
 async function fetchSchemaVersion() {
     await ensureMigrationsTable();
-    const res = await db_1.pool.query(`select id
+    const res = await db_1.pool.runQuery(`select id
      from schema_migrations
      order by applied_at desc, id desc
      limit 1`);

@@ -8,7 +8,7 @@ const contacts_repo_1 = require("../crm/contacts.repo");
 async function submitReferral(payload) {
     const client = await db_1.pool.connect();
     try {
-        await client.query("begin");
+        await client.runQuery("begin");
         const companyId = (0, crypto_1.randomUUID)();
         const contactId = (0, crypto_1.randomUUID)();
         await (0, companies_repo_1.createCompany)({
@@ -33,11 +33,11 @@ async function submitReferral(payload) {
             referrerId: payload.referrerId,
             client,
         });
-        await client.query("commit");
+        await client.runQuery("commit");
         return { companyId, contactId };
     }
     catch (error) {
-        await client.query("rollback");
+        await client.runQuery("rollback");
         throw error;
     }
     finally {

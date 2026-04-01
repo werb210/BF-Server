@@ -20,7 +20,7 @@ exports.SEEDED_LENDER_PRODUCT_TERM_ID = "00000000-0000-0000-0000-000000000201";
 exports.SEEDED_LENDER_PRODUCT_LOC_ID = "00000000-0000-0000-0000-000000000202";
 async function seedAdminUser() {
     const phoneNumber = exports.SEEDED_ADMIN_PHONE;
-    await db_1.pool.query(`insert into users (
+    await db_1.pool.runQuery(`insert into users (
         id,
         email,
         phone_number,
@@ -46,7 +46,7 @@ async function seedAdminUser() {
 }
 async function seedSecondAdminUser() {
     const phoneNumber = exports.SEEDED_ADMIN2_PHONE;
-    await db_1.pool.query(`insert into users (
+    await db_1.pool.runQuery(`insert into users (
         id,
         email,
         phone_number,
@@ -71,7 +71,7 @@ async function seedSecondAdminUser() {
     return { id: exports.SEEDED_ADMIN2_ID, phoneNumber };
 }
 async function seedBaselineLenders() {
-    const { rows: tableRows } = await db_1.pool.query(`select table_name
+    const { rows: tableRows } = await db_1.pool.runQuery(`select table_name
        from information_schema.tables
       where table_schema = 'public'
         and table_name in ('lenders', 'lender_products')`);
@@ -84,11 +84,11 @@ async function seedBaselineLenders() {
         });
         return;
     }
-    const { rows } = await db_1.pool.query("select count(*)::int as count from lenders");
+    const { rows } = await db_1.pool.runQuery("select count(*)::int as count from lenders");
     if ((rows[0]?.count ?? 0) > 0) {
         return;
     }
-    await db_1.pool.query(`insert into lenders
+    await db_1.pool.runQuery(`insert into lenders
      (id, name, active, status, submission_method, website, country, created_at, updated_at)
      values ($1, $2, true, 'ACTIVE', 'email', $3, $4, now(), now())`, [
         exports.SEEDED_LENDER_ID,
@@ -96,7 +96,7 @@ async function seedBaselineLenders() {
         "https://atlascapital.example.com",
         "US",
     ]);
-    await db_1.pool.query(`insert into lender_products
+    await db_1.pool.runQuery(`insert into lender_products
      (id, lender_id, name, category, country, rate_type, interest_min, interest_max, term_min, term_max, term_unit, active, required_documents, created_at, updated_at)
      values
      ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'MONTHS', true, $11, now(), now()),

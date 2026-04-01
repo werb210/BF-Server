@@ -60,7 +60,7 @@ async function cancelDbWork(processIds) {
         return;
     }
     try {
-        await db_1.pool.query("select pg_cancel_backend(pid) from unnest($1::int[]) as pid", [
+        await db_1.pool.runQuery("select pg_cancel_backend(pid) from unnest($1::int[]) as pid", [
             processIds,
         ]);
     }

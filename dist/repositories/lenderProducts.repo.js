@@ -15,7 +15,7 @@ const LENDER_PRODUCTS_REPO = "src/repositories/lenderProducts.repo.ts";
 const LENDER_PRODUCTS_TABLE = "lender_products";
 async function assertLenderProductColumnsExist(params) {
     try {
-        const result = await params.client.query(`select column_name
+        const result = await params.client.runQuery(`select column_name
        from information_schema.columns
        where table_schema = 'public'
          and table_name = $1`, [LENDER_PRODUCTS_TABLE]);

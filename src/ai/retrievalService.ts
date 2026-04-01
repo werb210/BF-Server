@@ -53,7 +53,7 @@ export async function retrieveTopKnowledgeChunks(
   limit = 5
 ): Promise<RetrievedChunk[]> {
   const queryVector = await generateEmbedding(question);
-  const { rows } = await pool.query<ChunkRow>(
+  const { rows } = await pool.runQuery<ChunkRow>(
     `select id, document_id, content, embedding
      from ai_knowledge_chunks
      order by created_at desc

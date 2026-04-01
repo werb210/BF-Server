@@ -12,7 +12,7 @@ const logger_1 = require("../observability/logger");
 const LENDERS_REPO = "src/repositories/lenders.repo.ts";
 const LENDERS_TABLE = "lenders";
 async function fetchLenderColumns() {
-    const result = await db_1.pool.query(`select column_name
+    const result = await db_1.pool.runQuery(`select column_name
      from information_schema.columns
      where table_schema = 'public'
        and table_name = $1`, [LENDERS_TABLE]);
@@ -137,7 +137,7 @@ async function fetchLenderById(id) {
         required: ["id", "name", "country"],
     });
     const selectColumns = buildSelectColumns(check.existing);
-    const result = await db_1.pool.query(`
+    const result = await db_1.pool.runQuery(`
     SELECT
       ${selectColumns}
     FROM lenders

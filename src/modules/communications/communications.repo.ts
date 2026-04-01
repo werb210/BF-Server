@@ -1,7 +1,7 @@
 import { type PoolClient } from "pg";
 import { pool } from "../../db";
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 export type CommunicationRepoRow = {
   id: string;

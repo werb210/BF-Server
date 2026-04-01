@@ -1,40 +1,82 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.queryDb = exports.db = exports.prisma = void 0;
+exports.getDb = getDb;
+exports.queryDb = queryDb;
+exports.withDbTransaction = withDbTransaction;
 exports.getPrisma = getPrisma;
-const pg_1 = __importDefault(require("pg"));
-const { Pool } = pg_1.default;
-let prismaInstance = null;
-function getPrisma() {
-    if (!prismaInstance) {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { PrismaClient } = require("@prisma/client");
-        prismaInstance = new PrismaClient();
+const node_async_hooks_1 = require("node:async_hooks");
+const pg_1 = require("pg");
+const db_test_1 = require("./db.test");
+let pool = null;
+const transactionContext = new node_async_hooks_1.AsyncLocalStorage();
+function getDb() {
+    if (process.env.NODE_ENV === "test") {
+        return (0, db_test_1.getTestDb)();
     }
-    return prismaInstance;
+    if (!pool) {
+        if (!process.env.DATABASE_URL) {
+            console.error("Missing DATABASE_URL");
+            process.exit(1);
+        }
+        pool = new pg_1.Pool({
+            connectionString: process.env.DATABASE_URL,
+        });
+    }
+    return pool;
 }
-exports.prisma = new Proxy({}, {
-    get: (_target, prop, receiver) => Reflect.get(getPrisma(), prop, receiver)
-});
-exports.db = exports.prisma;
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-});
-async function queryWithRetry(text, params = [], retries = 3) {
+function validateQueryInputs(sql, params) {
+    if (typeof sql !== "string" || !sql.trim()) {
+        throw new Error("queryDb requires a non-empty SQL query string");
+    }
+    if (sql.includes("undefined")) {
+        throw new Error("queryDb SQL must not contain undefined");
+    }
+    if (typeof params !== "undefined" && !Array.isArray(params)) {
+        throw new Error("queryDb params must be an array when provided");
+    }
+    if (params && params.some((param) => typeof param === "undefined")) {
+        throw new Error("queryDb params must not include undefined values");
+    }
+}
+async function executeQuery(queryable, sql, params) {
+    validateQueryInputs(sql, params);
+    return queryable.query(sql, params);
+}
+async function runQuery(queryable, sql, params) {
+    if (transactionContext.getStore()) {
+        return executeQuery(queryable, sql, params);
+    }
+    return withDbTransaction(async () => {
+        return transactionContext.run(true, async () => executeQuery(queryable, sql, params));
+    });
+}
+async function queryDb(query, params) {
+    return runQuery(getDb(), query, params);
+}
+async function withDbTransaction(fn) {
+    if (process.env.NODE_ENV === "test") {
+        const db = getDb();
+        await executeQuery(db, "BEGIN");
+        try {
+            const result = await transactionContext.run(true, async () => fn(queryDb));
+            return result;
+        }
+        finally {
+            await executeQuery(db, "ROLLBACK");
+        }
+    }
+    const db = getDb();
+    const client = await db.connect();
+    const transactionalQuery = (query, params) => executeQuery(client, query, params);
+    await transactionalQuery("BEGIN");
     try {
-        return await pool.query(text, params);
+        return await transactionContext.run(true, async () => fn(transactionalQuery));
     }
-    catch (err) {
-        if (retries <= 0)
-            throw err;
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        return queryWithRetry(text, params, retries - 1);
+    finally {
+        await transactionalQuery("ROLLBACK");
+        client.release();
     }
 }
-exports.queryDb = {
-    query: queryWithRetry
-};
+async function getPrisma() {
+    throw new Error("Prisma not implemented");
+}

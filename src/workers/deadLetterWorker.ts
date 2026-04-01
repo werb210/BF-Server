@@ -22,7 +22,7 @@ async function processJob(job: { type: string; data: any }): Promise<void> {
 
 export async function processDeadLetters(): Promise<void> {
   const MAX_RETRIES = 10;
-  const res = await pool.query(
+  const res = await pool.runQuery<{ id: string; retry_count: number; type: string; data: any }>(
     `SELECT * FROM failed_jobs ORDER BY created_at ASC LIMIT 20`
   );
 
@@ -37,9 +37,9 @@ export async function processDeadLetters(): Promise<void> {
         await processJob(job);
       });
 
-      await pool.query(`DELETE FROM failed_jobs WHERE id = $1`, [job.id]);
+      await pool.runQuery(`DELETE FROM failed_jobs WHERE id = $1`, [job.id]);
     } catch {
-      await pool.query(
+      await pool.runQuery(
         `UPDATE failed_jobs SET retry_count = retry_count + 1 WHERE id = $1`,
         [job.id]
       );

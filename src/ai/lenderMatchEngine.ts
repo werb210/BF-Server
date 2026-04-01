@@ -20,7 +20,7 @@ export type LenderMatch = {
 
 export async function matchLenders(input: PrequalInput): Promise<LenderMatch[]> {
   const requestedAmount = input.requestedAmount ?? null;
-  const { rows } = await pool.query<ProductRow>(
+  const { rows } = await pool.runQuery<ProductRow>(
     `select lp.id,
             lp.lender_id,
             lp.name as product_name,

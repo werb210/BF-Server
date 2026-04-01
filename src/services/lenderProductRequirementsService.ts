@@ -164,7 +164,7 @@ async function fetchProductById(params: {
   id: string;
   requireActive?: boolean;
 }): Promise<LenderProductRecord | null> {
-  const res = await pool.query<LenderProductRecord>(
+  const res = await pool.runQuery<LenderProductRecord>(
     `select lp.id,
             lp.category,
             lp.country,
@@ -202,7 +202,7 @@ async function listMatchingProducts(params: {
   if (amount !== null) {
     values.push(amount);
   }
-  const res = await pool.query<LenderProductRecord>(
+  const res = await pool.runQuery<LenderProductRecord>(
     `select lp.id,
             lp.category,
             lp.country,
@@ -370,7 +370,7 @@ export async function createRequirementForProduct(params: {
     maxAmount: params.maxAmount ?? null,
   };
   documents.push(newEntry);
-  await pool.query(
+  await pool.runQuery(
     `update lender_products
      set required_documents = $1,
          updated_at = now()
@@ -391,7 +391,7 @@ export async function updateRequirementForProduct(params: {
   minAmount?: number | null;
   maxAmount?: number | null;
 }): Promise<LenderProductRequirement> {
-  const res = await pool.query<{ id: string; required_documents: unknown }>(
+  const res = await pool.runQuery<{ id: string; required_documents: unknown }>(
     `select id, required_documents
      from lender_products
      where required_documents @> $1::jsonb
@@ -415,7 +415,7 @@ export async function updateRequirementForProduct(params: {
     minAmount: params.minAmount ?? null,
     maxAmount: params.maxAmount ?? null,
   };
-  await pool.query(
+  await pool.runQuery(
     `update lender_products
      set required_documents = $1,
          updated_at = now()
@@ -432,7 +432,7 @@ export async function updateRequirementForProduct(params: {
 export async function deleteRequirementForProduct(params: {
   id: string;
 }): Promise<LenderProductRequirement> {
-  const res = await pool.query<{ id: string; required_documents: unknown }>(
+  const res = await pool.runQuery<{ id: string; required_documents: unknown }>(
     `select id, required_documents
      from lender_products
      where required_documents @> $1::jsonb
@@ -452,7 +452,7 @@ export async function deleteRequirementForProduct(params: {
   if (!removed) {
     throw new AppError("data_error", "Invalid requirement payload.", 500);
   }
-  await pool.query(
+  await pool.runQuery(
     `update lender_products
      set required_documents = $1,
          updated_at = now()

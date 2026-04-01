@@ -35,7 +35,7 @@ async function fetchTableColumns(table: string): Promise<Set<string>> {
     tableColumnCache.delete(table);
   }
 
-  const { rows } = await pool.query<{ column_name: string }>(
+  const { rows } = await pool.runQuery<{ column_name: string }>(
     `select column_name
      from information_schema.columns
      where table_schema = 'public' and table_name = $1`,
@@ -56,7 +56,7 @@ export async function createSession(params: {
   const id = randomUUID();
 
   if (columns.has("user_type") && !columns.has("channel")) {
-    const { rows } = await pool.query<{
+    const { rows } = await pool.runQuery<{
       id: string;
       source: string | null;
       status: string;
@@ -82,7 +82,7 @@ export async function createSession(params: {
     };
   }
 
-  const rows = await pool.query<{
+  const rows = await pool.runQuery<{
     id: string;
     source: string;
     channel: string;
@@ -94,7 +94,7 @@ export async function createSession(params: {
      returning id, source, channel, status, lead_id`,
     [id, params.source, params.channel ?? "text", params.leadId ?? null]
   ).then((res) => res.rows).catch(async () => {
-    const legacy = await pool.query<{
+    const legacy = await pool.runQuery<{
       id: string;
       source: string | null;
       status: string;
@@ -128,7 +128,7 @@ export async function createSession(params: {
 }
 
 export async function fetchSessionById(sessionId: string): Promise<ChatSessionRecord | null> {
-  const { rows } = await pool.query<{
+  const { rows } = await pool.runQuery<{
     id: string;
     source: string;
     channel: string;
@@ -158,13 +158,13 @@ export async function updateSessionStatus(
   sessionId: string,
   status: "ai" | "human" | "closed"
 ): Promise<void> {
-  let result = await pool.query(
+  let result = await pool.runQuery(
     `update chat_sessions set status = $2, updated_at = now() where id = $1`,
     [sessionId, status]
   ).catch(() => null);
 
   if (!result && status === "human") {
-    result = await pool.query(
+    result = await pool.runQuery(
       `update chat_sessions set status = 'escalated', updated_at = now() where id = $1`,
       [sessionId]
     );
@@ -185,7 +185,7 @@ export async function addMessage(params: {
   const payload = params.metadata ? JSON.stringify(params.metadata) : null;
 
   if (columns.has("content")) {
-    await pool.query(
+    await pool.runQuery(
       `insert into chat_messages (id, session_id, role, message, content, metadata)
        values ($1, $2, $3, $4, $4, $5::jsonb)`,
       [randomUUID(), params.sessionId, params.role, params.message, payload]
@@ -193,7 +193,7 @@ export async function addMessage(params: {
     return;
   }
 
-  await pool.query(
+  await pool.runQuery(
     `insert into chat_messages (id, session_id, role, message, metadata)
      values ($1, $2, $3, $4, $5::jsonb)`,
     [randomUUID(), params.sessionId, params.role, params.message, payload]
@@ -228,7 +228,7 @@ export async function listMessagesBySession(sessionId: string): Promise<ChatMess
 }
 
 export async function fetchMessageCount(sessionId: string): Promise<number> {
-  const { rows } = await pool.query<{ count: string }>(
+  const { rows } = await pool.runQuery<{ count: string }>(
     `select count(*)::text as count from chat_messages where session_id = $1`,
     [sessionId]
   );
@@ -237,7 +237,7 @@ export async function fetchMessageCount(sessionId: string): Promise<number> {
 
 export async function listSessionsByStatus(status: "human" | "ai" | "closed"): Promise<ChatSessionRecord[]> {
   const mappedStatus = status === "human" ? ["human", "escalated"] : [status];
-  const { rows } = await pool.query<{
+  const { rows } = await pool.runQuery<{
     id: string;
     source: string;
     channel: string;

@@ -563,7 +563,7 @@ async function safeCreateOtpVerification(params: {
   verificationSid?: string | null;
   status: "pending" | "approved" | "expired";
   verifiedAt?: Date | null;
-  client?: Pick<PoolClient, "query">;
+  client?: Pick<PoolClient, "query" | "runQuery">;
   requestId: string;
 }): Promise<void> {
   try {
@@ -588,7 +588,7 @@ async function safeUpdateOtpVerificationStatus(params: {
   id: string;
   status: "pending" | "approved" | "expired";
   verifiedAt?: Date | null;
-  client?: Pick<PoolClient, "query">;
+  client?: Pick<PoolClient, "query" | "runQuery">;
   requestId: string;
 }): Promise<void> {
   try {

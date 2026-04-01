@@ -78,7 +78,7 @@ function broadcast(sessionId: string, payload: Record<string, unknown>): void {
 
 async function ensureChatSessionExists(sessionId: string): Promise<void> {
   try {
-    await pool.query(
+    await pool.runQuery(
       `insert into chat_sessions (id, source, channel, status)
        values ($1, 'website', 'text', 'ai')
        on conflict (id) do nothing`,
@@ -90,7 +90,7 @@ async function ensureChatSessionExists(sessionId: string): Promise<void> {
   }
 
   try {
-    await pool.query(
+    await pool.runQuery(
       `insert into chat_sessions (id, user_type, status, source)
        values ($1, 'guest', 'active', 'website')
        on conflict (id) do nothing`,
@@ -102,14 +102,14 @@ async function ensureChatSessionExists(sessionId: string): Promise<void> {
 }
 
 async function attachTranscriptToCrm(sessionId: string): Promise<void> {
-  const sessionResult = await pool.query<{ lead_id: string | null }>(
+  const sessionResult = await pool.runQuery<{ lead_id: string | null }>(
     "select lead_id from chat_sessions where id = $1 limit 1",
     [sessionId]
   );
   const leadId = sessionResult.rows[0]?.lead_id;
   if (!leadId) return;
 
-  const messages = await pool.query<{ role: string; message: string | null; content: string | null; created_at: string }>(
+  const messages = await pool.runQuery<{ role: string; message: string | null; content: string | null; created_at: string }>(
     `select role, message, content, created_at
      from chat_messages
      where session_id = $1
@@ -117,7 +117,7 @@ async function attachTranscriptToCrm(sessionId: string): Promise<void> {
     [sessionId]
   );
 
-  await pool.query(
+  await pool.runQuery(
     `insert into crm_lead_activities (id, lead_id, activity_type, payload)
      values ($1, $2, $3, $4::jsonb)`,
     [
@@ -134,7 +134,7 @@ async function setSessionState(sessionId: string, state: ChatSessionState): Prom
   presence.state = state;
   presence.updatedAt = Date.now();
 
-  await pool.query(
+  await pool.runQuery(
     `update chat_sessions
      set status = $2,
          staff_override = $3,
@@ -142,7 +142,7 @@ async function setSessionState(sessionId: string, state: ChatSessionState): Prom
      where id = $1`,
     [sessionId, state === "HUMAN_ACTIVE" ? "human" : "active", state === "HUMAN_ACTIVE"]
   ).catch(async () => {
-    await pool.query(
+    await pool.runQuery(
       `update chat_sessions
        set status = $2,
            updated_at = now()
@@ -276,7 +276,7 @@ export function initChatSocket(server: Server): WebSocketServer {
 
         if ((messageType === "staff_message" || messageType === "user_message" || messageType === "ai_message") && payload.sessionId && payload.content) {
           const role = messageType === "staff_message" ? "staff" : messageType === "ai_message" ? "ai" : "user";
-          await pool.query(
+          await pool.runQuery(
             `insert into chat_messages (id, session_id, role, content)
              values ($1, $2, $3, $4)`,
             [randomUUID(), payload.sessionId, role, payload.content]
@@ -291,7 +291,7 @@ export function initChatSocket(server: Server): WebSocketServer {
         }
 
         if ((messageType === "close_chat" || messageType === "close_session") && payload.sessionId) {
-          await pool.query(
+          await pool.runQuery(
             `update chat_sessions set status = 'closed', updated_at = now() where id = $1`,
             [payload.sessionId]
           );

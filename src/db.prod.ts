@@ -12,6 +12,17 @@ import { markNotReady } from "./startupState";
 const { Pool } = pg;
 
 const SLOW_QUERY_THRESHOLD_MS = 500;
+type Queryable = {
+  query: <T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]) => Promise<QueryResult<T>>;
+};
+
+export async function runQuery<T extends QueryResultRow = QueryResultRow>(
+  queryable: Queryable,
+  text: string,
+  params?: any[]
+): Promise<QueryResult<T>> {
+  return queryable.query<T>(text, params);
+}
 
 function buildPoolConfig(): PoolConfig {
   const connectionString = config.db.url.trim();
@@ -33,10 +44,22 @@ function buildPoolConfig(): PoolConfig {
 
 export const pool: PgPool = new Pool(buildPoolConfig());
 export const db = pool;
+const attachRunQuery = (queryable: Queryable & Record<string, unknown>) => {
+  queryable.runQuery = <T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]) =>
+    runQuery<T>(queryable, text, params);
+};
+
+attachRunQuery(pool as unknown as Queryable & Record<string, unknown>);
+const originalPoolConnect = pool.connect.bind(pool);
+(pool as any).connect = async (...args: any[]) => {
+  const client = await (originalPoolConnect as any)(...args);
+  attachRunQuery(client as unknown as Queryable & Record<string, unknown>);
+  return client;
+};
 
 export async function query(text: string, params?: any[]): Promise<QueryResult> {
   const start = Date.now();
-  const result = await pool.query(text, params);
+  const result = await pool.runQuery(text, params);
   const durationMs = Date.now() - start;
 
   if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
@@ -59,7 +82,7 @@ export async function dbQuery<T extends QueryResultRow = QueryResultRow>(
 ): Promise<QueryResult<T>> {
   try {
     const start = Date.now();
-    const result = await pool.query<T>(text, params);
+    const result = await pool.runQuery<T>(text, params);
     const durationMs = Date.now() - start;
 
     if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
@@ -86,16 +109,18 @@ export function assertPoolHealthy(): void {
 }
 
 export async function checkDb(): Promise<void> {
-  await pool.query("select 1");
+  await pool.runQuery("select 1");
 }
 
 export async function warmUpDatabase(): Promise<void> {
-  await pool.query("select 1");
+  await pool.runQuery("select 1");
   assertPoolHealthy();
 }
 
 export async function fetchInstrumentedClient(): Promise<PoolClient> {
-  return pool.connect();
+  const client = await pool.connect();
+  attachRunQuery(client as unknown as Queryable & Record<string, unknown>);
+  return client;
 }
 
 export function setDbTestPoolMetricsOverride(): void {}

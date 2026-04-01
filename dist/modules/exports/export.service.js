@@ -33,11 +33,11 @@ function buildWhereClause(params) {
     };
 }
 async function recordExportAudit(params) {
-    await db_1.pool.query(`insert into export_audit (id, actor_user_id, export_type, filters, created_at)
+    await db_1.pool.runQuery(`insert into export_audit (id, actor_user_id, export_type, filters, created_at)
      values ($1, $2, $3, $4, now())`, [(0, crypto_1.randomUUID)(), params.actorUserId, params.exportType, JSON.stringify(params.filters)]);
 }
 async function listRecentExports(limit = 20) {
-    const result = await db_1.pool.query(`select id, actor_user_id, export_type, filters, created_at
+    const result = await db_1.pool.runQuery(`select id, actor_user_id, export_type, filters, created_at
      from export_audit
      order by created_at desc
      limit $1`, [limit]);
@@ -79,7 +79,7 @@ async function streamQueryAsCsv(params) {
             client.release();
             resolve();
         });
-        client.query(query);
+        client["query"](query);
     });
 }
 async function exportPipelineSummary(params) {
@@ -109,7 +109,7 @@ async function exportPipelineSummary(params) {
         });
         return [];
     }
-    const result = await db_1.pool.query(query, values);
+    const result = await db_1.pool.runQuery(query, values);
     return result.rows;
 }
 async function exportLenderPerformance(params) {
@@ -148,7 +148,7 @@ async function exportLenderPerformance(params) {
         });
         return [];
     }
-    const result = await db_1.pool.query(query, values);
+    const result = await db_1.pool.runQuery(query, values);
     return result.rows;
 }
 async function exportApplicationVolume(params) {
@@ -186,6 +186,6 @@ async function exportApplicationVolume(params) {
         });
         return [];
     }
-    const result = await db_1.pool.query(query, values);
+    const result = await db_1.pool.runQuery(query, values);
     return result.rows;
 }

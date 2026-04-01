@@ -7,7 +7,7 @@ import { normalizePhoneNumber } from "./phone";
 import { logger } from "../../server/utils/logger";
 import { config } from "../../config";
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 async function runAuthQuery<T extends QueryResultRow = QueryResultRow>(
   runner: Queryable,

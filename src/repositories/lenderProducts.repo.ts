@@ -9,7 +9,7 @@ import {
 import { AppError } from "../middleware/errors";
 import { logError } from "../observability/logger";
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 const LENDER_PRODUCTS_REPO = "src/repositories/lenderProducts.repo.ts";
 const LENDER_PRODUCTS_TABLE = "lender_products";
@@ -21,7 +21,7 @@ async function assertLenderProductColumnsExist(params: {
   allowMissing?: boolean;
 }): Promise<Set<string>> {
   try {
-    const result = await params.client.query<{ column_name: string }>(
+    const result = await params.client.runQuery<{ column_name: string }>(
       `select column_name
        from information_schema.columns
        where table_schema = 'public'

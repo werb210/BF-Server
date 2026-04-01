@@ -10,7 +10,7 @@ export type RequirementSeedInput = {
   maxAmount?: number | null;
 };
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 export async function listLenderProductRequirements(params: {
   lenderProductId: string;

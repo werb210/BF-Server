@@ -5,7 +5,7 @@ const db_1 = require("../infra/db");
 const redis_1 = require("../infra/redis");
 const config_1 = require("../config");
 async function bootstrap() {
-    await (0, db_1.getPrisma)().$connect();
+    await (0, db_1.getPrisma)();
     const redis = (0, redis_1.getRedis)();
     if (config_1.config.redis.url && config_1.config.env !== "test" && redis) {
         try {

@@ -4,7 +4,7 @@ import { pool } from "../../db";
 import { isTestEnvironment } from "../../dbRuntime";
 import { type PoolClient } from "pg";
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 export type LenderSubmissionRecord = {
   id: string;

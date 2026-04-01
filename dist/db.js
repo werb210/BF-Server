@@ -33,24 +33,41 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.clearDbTestFailureInjection = exports.setDbTestFailureInjection = exports.setDbTestPoolMetricsOverride = exports.fetchInstrumentedClient = exports.warmUpDatabase = exports.checkDb = exports.assertPoolHealthy = exports.dbQuery = exports.fetchClient = exports.query = exports.db = exports.pool = void 0;
+exports.clearDbTestFailureInjection = exports.setDbTestFailureInjection = exports.setDbTestPoolMetricsOverride = exports.fetchInstrumentedClient = exports.warmUpDatabase = exports.checkDb = exports.assertPoolHealthy = exports.dbQuery = exports.fetchClient = exports.query = exports.runQuery = exports.db = exports.pool = void 0;
 exports.ensureDb = ensureDb;
 exports.isDbReady = isDbReady;
 const dbProd = __importStar(require("./db.prod"));
 const dbImpl = dbProd;
-exports.pool = dbImpl.pool, exports.db = dbImpl.db, exports.query = dbImpl.query, exports.fetchClient = dbImpl.fetchClient, exports.dbQuery = dbImpl.dbQuery, exports.assertPoolHealthy = dbImpl.assertPoolHealthy, exports.checkDb = dbImpl.checkDb, exports.warmUpDatabase = dbImpl.warmUpDatabase, exports.fetchInstrumentedClient = dbImpl.fetchInstrumentedClient, exports.setDbTestPoolMetricsOverride = dbImpl.setDbTestPoolMetricsOverride, exports.setDbTestFailureInjection = dbImpl.setDbTestFailureInjection, exports.clearDbTestFailureInjection = dbImpl.clearDbTestFailureInjection;
+exports.pool = dbImpl.pool, exports.db = dbImpl.db, exports.runQuery = dbImpl.runQuery, exports.query = dbImpl.query, exports.fetchClient = dbImpl.fetchClient, exports.dbQuery = dbImpl.dbQuery, exports.assertPoolHealthy = dbImpl.assertPoolHealthy, exports.checkDb = dbImpl.checkDb, exports.warmUpDatabase = dbImpl.warmUpDatabase, exports.fetchInstrumentedClient = dbImpl.fetchInstrumentedClient, exports.setDbTestPoolMetricsOverride = dbImpl.setDbTestPoolMetricsOverride, exports.setDbTestFailureInjection = dbImpl.setDbTestFailureInjection, exports.clearDbTestFailureInjection = dbImpl.clearDbTestFailureInjection;
 let dbReady = false;
 async function ensureDb() {
     try {
-        await exports.pool.query("SELECT 1");
+        await exports.pool.runQuery("SELECT 1");
         dbReady = true;
         console.log("DB connected");
     }
-    catch {
+    catch (error) {
         dbReady = false;
-        console.warn("DB unavailable — continuing without DB");
+        console.error("DB connection failed", error);
+        throw error;
     }
 }
 function isDbReady() {
     return dbReady;
 }
+const dbExports = {
+    pool: exports.pool,
+    db: exports.db,
+    runQuery: exports.runQuery,
+    query: exports.query,
+    fetchClient: exports.fetchClient,
+    dbQuery: exports.dbQuery,
+    assertPoolHealthy: exports.assertPoolHealthy,
+    checkDb: exports.checkDb,
+    warmUpDatabase: exports.warmUpDatabase,
+    fetchInstrumentedClient: exports.fetchInstrumentedClient,
+    setDbTestPoolMetricsOverride: exports.setDbTestPoolMetricsOverride,
+    setDbTestFailureInjection: exports.setDbTestFailureInjection,
+    clearDbTestFailureInjection: exports.clearDbTestFailureInjection,
+};
+exports.default = dbExports;

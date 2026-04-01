@@ -57,7 +57,7 @@ function broadcast(sessionId, payload) {
 }
 async function ensureChatSessionExists(sessionId) {
     try {
-        await db_1.pool.query(`insert into chat_sessions (id, source, channel, status)
+        await db_1.pool.runQuery(`insert into chat_sessions (id, source, channel, status)
        values ($1, 'website', 'text', 'ai')
        on conflict (id) do nothing`, [sessionId]);
         return;
@@ -66,7 +66,7 @@ async function ensureChatSessionExists(sessionId) {
         // continue to legacy fallback
     }
     try {
-        await db_1.pool.query(`insert into chat_sessions (id, user_type, status, source)
+        await db_1.pool.runQuery(`insert into chat_sessions (id, user_type, status, source)
        values ($1, 'guest', 'active', 'website')
        on conflict (id) do nothing`, [sessionId]);
     }
@@ -75,15 +75,15 @@ async function ensureChatSessionExists(sessionId) {
     }
 }
 async function attachTranscriptToCrm(sessionId) {
-    const sessionResult = await db_1.pool.query("select lead_id from chat_sessions where id = $1 limit 1", [sessionId]);
+    const sessionResult = await db_1.pool.runQuery("select lead_id from chat_sessions where id = $1 limit 1", [sessionId]);
     const leadId = sessionResult.rows[0]?.lead_id;
     if (!leadId)
         return;
-    const messages = await db_1.pool.query(`select role, message, content, created_at
+    const messages = await db_1.pool.runQuery(`select role, message, content, created_at
      from chat_messages
      where session_id = $1
      order by created_at asc`, [sessionId]);
-    await db_1.pool.query(`insert into crm_lead_activities (id, lead_id, activity_type, payload)
+    await db_1.pool.runQuery(`insert into crm_lead_activities (id, lead_id, activity_type, payload)
      values ($1, $2, $3, $4::jsonb)`, [
         (0, crypto_1.randomUUID)(),
         leadId,
@@ -95,12 +95,12 @@ async function setSessionState(sessionId, state) {
     const presence = ensurePresence(sessionId);
     presence.state = state;
     presence.updatedAt = Date.now();
-    await db_1.pool.query(`update chat_sessions
+    await db_1.pool.runQuery(`update chat_sessions
      set status = $2,
          staff_override = $3,
          updated_at = now()
      where id = $1`, [sessionId, state === "HUMAN_ACTIVE" ? "human" : "active", state === "HUMAN_ACTIVE"]).catch(async () => {
-        await db_1.pool.query(`update chat_sessions
+        await db_1.pool.runQuery(`update chat_sessions
        set status = $2,
            updated_at = now()
        where id = $1`, [sessionId, state === "HUMAN_ACTIVE" ? "escalated" : "active"]).catch(() => undefined);
@@ -210,7 +210,7 @@ function initChatSocket(server) {
                 }
                 if ((messageType === "staff_message" || messageType === "user_message" || messageType === "ai_message") && payload.sessionId && payload.content) {
                     const role = messageType === "staff_message" ? "staff" : messageType === "ai_message" ? "ai" : "user";
-                    await db_1.pool.query(`insert into chat_messages (id, session_id, role, content)
+                    await db_1.pool.runQuery(`insert into chat_messages (id, session_id, role, content)
              values ($1, $2, $3, $4)`, [(0, crypto_1.randomUUID)(), payload.sessionId, role, payload.content]);
                     broadcast(payload.sessionId, {
                         type: messageType,
@@ -221,7 +221,7 @@ function initChatSocket(server) {
                     return;
                 }
                 if ((messageType === "close_chat" || messageType === "close_session") && payload.sessionId) {
-                    await db_1.pool.query(`update chat_sessions set status = 'closed', updated_at = now() where id = $1`, [payload.sessionId]);
+                    await db_1.pool.runQuery(`update chat_sessions set status = 'closed', updated_at = now() where id = $1`, [payload.sessionId]);
                     await attachTranscriptToCrm(payload.sessionId);
                     broadcast(payload.sessionId, {
                         type: "close_session",

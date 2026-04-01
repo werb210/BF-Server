@@ -21,7 +21,7 @@ export const PROCESSING_STAGES = [
 
 export type ProcessingStage = (typeof PROCESSING_STAGES)[number];
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 type ProcessingStageFlags = {
   ocrCompleted: boolean;
@@ -288,7 +288,7 @@ async function advanceProcessingStageInternal(params: {
   applicationId: string;
   client: Queryable;
 }): Promise<ProcessingStage> {
-  const application = await params.client.query<{
+  const application = await params.client.runQuery<{
     id: string;
     processing_stage: string | null;
     ocr_completed_at: Date | null;
@@ -324,14 +324,14 @@ async function advanceProcessingStageInternal(params: {
     );
   }
 
-  const ocrJobs = await params.client.query<{ count: number }>(
+  const ocrJobs = await params.client.runQuery<{ count: number }>(
     `select count(*)::int as count
      from document_processing_jobs
      where application_id = $1
        and status = 'pending'`,
     [params.applicationId]
   );
-  const bankingJobs = await params.client.query<{ count: number }>(
+  const bankingJobs = await params.client.runQuery<{ count: number }>(
     `select count(*)::int as count
      from banking_analysis_jobs
      where application_id = $1
@@ -373,7 +373,7 @@ async function advanceProcessingStageInternal(params: {
   }
 
   if (currentStage !== applicationRecord.processing_stage) {
-    await params.client.query(
+    await params.client.runQuery(
       `update applications
        set processing_stage = $2,
            updated_at = now()
@@ -402,15 +402,15 @@ export async function advanceProcessingStage(params: {
 
   const client = await pool.connect();
   try {
-    await client.query("begin");
+    await client.runQuery("begin");
     const stage = await advanceProcessingStageInternal({
       applicationId: params.applicationId,
       client,
     });
-    await client.query("commit");
+    await client.runQuery("commit");
     return stage;
   } catch (err) {
-    await client.query("rollback");
+    await client.runQuery("rollback");
     throw err;
   } finally {
     client.release();

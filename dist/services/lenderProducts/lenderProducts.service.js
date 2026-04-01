@@ -4,13 +4,16 @@ exports.lenderProductsService = void 0;
 const db_1 = require("../../lib/db");
 exports.lenderProductsService = {
     async list() {
-        return db_1.db.lenderProduct.findMany();
+        const prisma = (await (0, db_1.getPrisma)());
+        return prisma.lenderProduct.findMany();
     },
     async create(data) {
-        return db_1.db.lenderProduct.create({ data });
+        const prisma = (await (0, db_1.getPrisma)());
+        return prisma.lenderProduct.create({ data });
     },
     async update(id, data) {
-        return db_1.db.lenderProduct.update({
+        const prisma = (await (0, db_1.getPrisma)());
+        return prisma.lenderProduct.update({
             where: { id },
             data,
         });

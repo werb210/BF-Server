@@ -17,7 +17,7 @@ router.post(
     }
 
     const id = randomUUID();
-    await pool.query(
+    await pool.runQuery(
       `insert into communications_messages (id, type, direction, status, contact_id, body, created_at)
        values ($1, 'message', coalesce($2, 'inbound'), 'received', null, $3, now())`,
       [id, typeof req.body?.direction === "string" ? req.body.direction : "inbound", body]

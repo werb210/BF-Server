@@ -72,7 +72,7 @@ export async function ingestKnowledgeDocument(params: {
   content: string;
 }): Promise<{ documentId: string; chunksInserted: number }> {
   const documentId = randomUUID();
-  await pool.query(
+  await pool.runQuery(
     `insert into ai_knowledge_documents (id, filename, category, active, created_at, updated_at)
      values ($1, $2, $3, true, now(), now())`,
     [documentId, params.filename, params.category]
@@ -82,7 +82,7 @@ export async function ingestKnowledgeDocument(params: {
   let count = 0;
   for (const chunk of chunks) {
     const embedding = await generateEmbedding(chunk);
-    await pool.query(
+    await pool.runQuery(
       `insert into ai_knowledge_chunks (id, document_id, content, embedding, created_at)
        values ($1, $2, $3, $4::jsonb, now())`,
       [randomUUID(), documentId, chunk, JSON.stringify(embedding)]

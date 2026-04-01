@@ -3,7 +3,7 @@ import { type PoolClient } from "pg";
 import { formatPeriod, type GroupBy } from "./reporting.utils";
 import { PIPELINE_STATES } from "../applications/pipelineState";
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 export type PipelineSnapshotRow = {
   period: string;

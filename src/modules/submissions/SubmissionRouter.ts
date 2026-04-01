@@ -22,7 +22,7 @@ export type SubmissionProfile = {
   submissionConfig: Record<string, unknown> | null;
 };
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 export function normalizeSubmissionMethod(value: unknown): SubmissionMethod | null {
   if (typeof value !== "string") {

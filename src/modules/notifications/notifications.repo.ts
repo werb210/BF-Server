@@ -13,7 +13,7 @@ export type NotificationRecord = {
   read_at: Date | null;
 };
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 export async function createNotification(params: {
   notificationId: string;

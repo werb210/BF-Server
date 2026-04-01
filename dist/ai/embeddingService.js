@@ -67,13 +67,13 @@ async function extractTextFromBuffer(fileBuffer, mimeType) {
 }
 async function ingestKnowledgeDocument(params) {
     const documentId = (0, crypto_1.randomUUID)();
-    await db_1.pool.query(`insert into ai_knowledge_documents (id, filename, category, active, created_at, updated_at)
+    await db_1.pool.runQuery(`insert into ai_knowledge_documents (id, filename, category, active, created_at, updated_at)
      values ($1, $2, $3, true, now(), now())`, [documentId, params.filename, params.category]);
     const chunks = chunkText(params.content);
     let count = 0;
     for (const chunk of chunks) {
         const embedding = await generateEmbedding(chunk);
-        await db_1.pool.query(`insert into ai_knowledge_chunks (id, document_id, content, embedding, created_at)
+        await db_1.pool.runQuery(`insert into ai_knowledge_chunks (id, document_id, content, embedding, created_at)
        values ($1, $2, $3, $4::jsonb, now())`, [(0, crypto_1.randomUUID)(), documentId, chunk, JSON.stringify(embedding)]);
         count += 1;
     }

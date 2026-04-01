@@ -50,7 +50,7 @@ export async function recordExportAudit(params: {
   exportType: string;
   filters: ExportFilters;
 }): Promise<void> {
-  await pool.query(
+  await pool.runQuery(
     `insert into export_audit (id, actor_user_id, export_type, filters, created_at)
      values ($1, $2, $3, $4, now())`,
     [randomUUID(), params.actorUserId, params.exportType, JSON.stringify(params.filters)]
@@ -66,7 +66,7 @@ export async function listRecentExports(limit = 20): Promise<
     createdAt: string;
   }>
 > {
-  const result = await pool.query<{
+  const result = await pool.runQuery<{
     id: string;
     actor_user_id: string | null;
     export_type: string;
@@ -125,7 +125,7 @@ async function streamQueryAsCsv(params: {
       client.release();
       resolve();
     });
-    client.query(query);
+    (client as any)["query"](query);
   });
 }
 
@@ -162,7 +162,7 @@ export async function exportPipelineSummary(params: {
     return [];
   }
 
-  const result = await pool.query(query, values);
+  const result = await pool.runQuery(query, values);
   return result.rows;
 }
 
@@ -210,7 +210,7 @@ export async function exportLenderPerformance(params: {
     return [];
   }
 
-  const result = await pool.query(query, values);
+  const result = await pool.runQuery(query, values);
   return result.rows;
 }
 
@@ -257,6 +257,6 @@ export async function exportApplicationVolume(params: {
     return [];
   }
 
-  const result = await pool.query(query, values);
+  const result = await pool.runQuery(query, values);
   return result.rows;
 }

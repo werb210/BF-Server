@@ -18,7 +18,7 @@ const BANKING_BREAKER = fetchCircuitBreaker("banking_job_creation", {
   cooldownMs: 60_000,
 });
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 type DocumentProcessingJobRecord = {
   id: string;
@@ -51,7 +51,7 @@ async function lockDocument(params: {
   documentId: string;
   client: Queryable;
 }): Promise<void> {
-  const res = await params.client.query<{ application_id: string }>(
+  const res = await params.client.runQuery<{ application_id: string }>(
     "select application_id from documents where id = $1 for update",
     [params.documentId]
   );
@@ -68,7 +68,7 @@ async function lockApplication(params: {
   applicationId: string;
   client: Queryable;
 }): Promise<void> {
-  const res = await params.client.query(
+  const res = await params.client.runQuery(
     "select id from applications where id = $1 for update",
     [params.applicationId]
   );
@@ -86,9 +86,9 @@ export async function createDocumentProcessingJob(
   }
   const client = await pool.connect();
   try {
-    await client.query("begin");
+    await client.runQuery("begin");
     await lockDocument({ applicationId, documentId, client });
-    const existing = await client.query<DocumentProcessingJobRecord>(
+    const existing = await client.runQuery<DocumentProcessingJobRecord>(
       `select id, application_id, document_id, status, created_at, completed_at,
               retry_count, last_retry_at, max_retries, updated_at
        from document_processing_jobs
@@ -109,7 +109,7 @@ export async function createDocumentProcessingJob(
           lastRetryAt: existingRecord.last_retry_at ?? null,
           baseDelayMs: 30_000,
         });
-        const updated = await client.query<DocumentProcessingJobRecord>(
+        const updated = await client.runQuery<DocumentProcessingJobRecord>(
           `update document_processing_jobs
            set status = 'pending',
                retry_count = retry_count + 1,
@@ -123,14 +123,14 @@ export async function createDocumentProcessingJob(
           [existingRecord.id]
         );
         await advanceProcessingStage({ applicationId, client });
-        await client.query("commit");
+        await client.runQuery("commit");
         OCR_BREAKER.recordSuccess();
         return updated.rows[0] ?? existingRecord;
       }
-      await client.query("commit");
+      await client.runQuery("commit");
       return existingRecord;
     }
-    const inserted = await client.query<DocumentProcessingJobRecord>(
+    const inserted = await client.runQuery<DocumentProcessingJobRecord>(
       `insert into document_processing_jobs
        (id, application_id, document_id, status)
        values ($1, $2, $3, 'pending')
@@ -138,7 +138,7 @@ export async function createDocumentProcessingJob(
       [randomUUID(), applicationId, documentId]
     );
     await advanceProcessingStage({ applicationId, client });
-    await client.query("commit");
+    await client.runQuery("commit");
     const insertedRecord = inserted.rows[0];
     if (!insertedRecord) {
       throw new AppError("data_error", "OCR job not created.", 500);
@@ -152,7 +152,7 @@ export async function createDocumentProcessingJob(
     ) {
       OCR_BREAKER.recordFailure();
     }
-    await client.query("rollback");
+    await client.runQuery("rollback");
     throw err;
   } finally {
     client.release();
@@ -164,8 +164,8 @@ export async function markDocumentProcessingCompleted(
 ): Promise<DocumentProcessingJobRecord[]> {
   const client = await pool.connect();
   try {
-    await client.query("begin");
-    const existing = await client.query<DocumentProcessingJobRecord>(
+    await client.runQuery("begin");
+    const existing = await client.runQuery<DocumentProcessingJobRecord>(
       `select id, application_id, document_id, status, created_at, completed_at
        from document_processing_jobs
        where application_id = $1
@@ -175,13 +175,13 @@ export async function markDocumentProcessingCompleted(
     if (existing.rows.length === 0) {
       throw new AppError("not_found", "OCR jobs not found.", 404);
     }
-    await client.query(
+    await client.runQuery(
       `update document_processing_jobs
        set status = 'completed', completed_at = now()
        where application_id = $1 and status = 'pending'`,
       [applicationId]
     );
-    await client.query(
+    await client.runQuery(
       `update applications
        set ocr_completed_at = coalesce(ocr_completed_at, now()),
            updated_at = now()
@@ -189,16 +189,16 @@ export async function markDocumentProcessingCompleted(
       [applicationId]
     );
     await advanceProcessingStage({ applicationId, client });
-    const updated = await client.query<DocumentProcessingJobRecord>(
+    const updated = await client.runQuery<DocumentProcessingJobRecord>(
       `select id, application_id, document_id, status, created_at, completed_at
        from document_processing_jobs
        where application_id = $1`,
       [applicationId]
     );
-    await client.query("commit");
+    await client.runQuery("commit");
     return updated.rows;
   } catch (err) {
-    await client.query("rollback");
+    await client.runQuery("rollback");
     throw err;
   } finally {
     client.release();
@@ -210,8 +210,8 @@ export async function markDocumentProcessingFailed(
 ): Promise<DocumentProcessingJobRecord[]> {
   const client = await pool.connect();
   try {
-    await client.query("begin");
-    const existing = await client.query<DocumentProcessingJobRecord>(
+    await client.runQuery("begin");
+    const existing = await client.runQuery<DocumentProcessingJobRecord>(
       `select id, application_id, document_id, status, created_at, completed_at
        from document_processing_jobs
        where application_id = $1
@@ -221,22 +221,22 @@ export async function markDocumentProcessingFailed(
     if (existing.rows.length === 0) {
       throw new AppError("not_found", "OCR jobs not found.", 404);
     }
-    await client.query(
+    await client.runQuery(
       `update document_processing_jobs
        set status = 'failed', completed_at = now()
        where application_id = $1 and status = 'pending'`,
       [applicationId]
     );
-    const updated = await client.query<DocumentProcessingJobRecord>(
+    const updated = await client.runQuery<DocumentProcessingJobRecord>(
       `select id, application_id, document_id, status, created_at, completed_at
        from document_processing_jobs
        where application_id = $1`,
       [applicationId]
     );
-    await client.query("commit");
+    await client.runQuery("commit");
     return updated.rows;
   } catch (err) {
-    await client.query("rollback");
+    await client.runQuery("rollback");
     throw err;
   } finally {
     client.release();
@@ -251,9 +251,9 @@ export async function createBankingAnalysisJob(
   }
   const client = await pool.connect();
   try {
-    await client.query("begin");
+    await client.runQuery("begin");
     await lockApplication({ applicationId, client });
-    const existing = await client.query<BankingAnalysisJobRecord>(
+    const existing = await client.runQuery<BankingAnalysisJobRecord>(
       `select id, application_id, status, created_at, completed_at,
               retry_count, last_retry_at, max_retries, updated_at
        from banking_analysis_jobs
@@ -274,7 +274,7 @@ export async function createBankingAnalysisJob(
           lastRetryAt: existingRecord.last_retry_at ?? null,
           baseDelayMs: 30_000,
         });
-        const updated = await client.query<BankingAnalysisJobRecord>(
+        const updated = await client.runQuery<BankingAnalysisJobRecord>(
           `update banking_analysis_jobs
            set status = 'pending',
                retry_count = retry_count + 1,
@@ -288,16 +288,16 @@ export async function createBankingAnalysisJob(
           [existingRecord.id]
         );
         await advanceProcessingStage({ applicationId, client });
-        await client.query("commit");
+        await client.runQuery("commit");
         BANKING_BREAKER.recordSuccess();
         return updated.rows[0] ?? existingRecord;
       }
-      await client.query("commit");
+      await client.runQuery("commit");
       BANKING_BREAKER.recordSuccess();
       return existingRecord;
     }
     const aliases = fetchDocumentTypeAliases(BANK_STATEMENT_CATEGORY);
-    const countRes = await client.query<{ count: number }>(
+    const countRes = await client.runQuery<{ count: number }>(
       `select count(*)::int as count
        from documents
        where application_id = $1
@@ -307,11 +307,11 @@ export async function createBankingAnalysisJob(
     );
     const count = countRes.rows[0]?.count ?? 0;
     if (count < 6) {
-      await client.query("commit");
+      await client.runQuery("commit");
       BANKING_BREAKER.recordSuccess();
       return null;
     }
-    const inserted = await client.query<BankingAnalysisJobRecord>(
+    const inserted = await client.runQuery<BankingAnalysisJobRecord>(
       `insert into banking_analysis_jobs
        (id, application_id, status)
        values ($1, $2, 'pending')
@@ -319,7 +319,7 @@ export async function createBankingAnalysisJob(
       [randomUUID(), applicationId]
     );
     await advanceProcessingStage({ applicationId, client });
-    await client.query("commit");
+    await client.runQuery("commit");
     const insertedRecord = inserted.rows[0];
     if (!insertedRecord) {
       throw new AppError("data_error", "Banking analysis job not created.", 500);
@@ -333,7 +333,7 @@ export async function createBankingAnalysisJob(
     ) {
       BANKING_BREAKER.recordFailure();
     }
-    await client.query("rollback");
+    await client.runQuery("rollback");
     throw err;
   } finally {
     client.release();
@@ -345,8 +345,8 @@ export async function markBankingAnalysisCompleted(
 ): Promise<BankingAnalysisJobRecord[]> {
   const client = await pool.connect();
   try {
-    await client.query("begin");
-    const existing = await client.query<BankingAnalysisJobRecord>(
+    await client.runQuery("begin");
+    const existing = await client.runQuery<BankingAnalysisJobRecord>(
       `select id, application_id, status, created_at, completed_at
        from banking_analysis_jobs
        where application_id = $1
@@ -357,7 +357,7 @@ export async function markBankingAnalysisCompleted(
       throw new AppError("not_found", "Banking analysis job not found.", 404);
     }
     const alreadyCompleted = existing.rows.some((row) => row.status === "completed");
-    const updatedPending = await client.query<BankingAnalysisJobRecord>(
+    const updatedPending = await client.runQuery<BankingAnalysisJobRecord>(
       `update banking_analysis_jobs
        set status = 'completed', completed_at = now()
        where application_id = $1 and status = 'pending'
@@ -365,7 +365,7 @@ export async function markBankingAnalysisCompleted(
       [applicationId]
     );
     if (updatedPending.rows.length > 0 || alreadyCompleted) {
-      await client.query(
+      await client.runQuery(
         `update applications
          set banking_completed_at = coalesce(banking_completed_at, now()),
              updated_at = now()
@@ -374,16 +374,16 @@ export async function markBankingAnalysisCompleted(
       );
     }
     await advanceProcessingStage({ applicationId, client });
-    const updated = await client.query<BankingAnalysisJobRecord>(
+    const updated = await client.runQuery<BankingAnalysisJobRecord>(
       `select id, application_id, status, created_at, completed_at
        from banking_analysis_jobs
        where application_id = $1`,
       [applicationId]
     );
-    await client.query("commit");
+    await client.runQuery("commit");
     return updated.rows;
   } catch (err) {
-    await client.query("rollback");
+    await client.runQuery("rollback");
     throw err;
   } finally {
     client.release();
@@ -395,8 +395,8 @@ export async function markBankingAnalysisFailed(
 ): Promise<BankingAnalysisJobRecord[]> {
   const client = await pool.connect();
   try {
-    await client.query("begin");
-    const existing = await client.query<BankingAnalysisJobRecord>(
+    await client.runQuery("begin");
+    const existing = await client.runQuery<BankingAnalysisJobRecord>(
       `select id, application_id, status, created_at, completed_at
        from banking_analysis_jobs
        where application_id = $1
@@ -406,22 +406,22 @@ export async function markBankingAnalysisFailed(
     if (existing.rows.length === 0) {
       throw new AppError("not_found", "Banking analysis job not found.", 404);
     }
-    await client.query(
+    await client.runQuery(
       `update banking_analysis_jobs
        set status = 'failed', completed_at = now()
        where application_id = $1 and status = 'pending'`,
       [applicationId]
     );
-    const updated = await client.query<BankingAnalysisJobRecord>(
+    const updated = await client.runQuery<BankingAnalysisJobRecord>(
       `select id, application_id, status, created_at, completed_at
        from banking_analysis_jobs
        where application_id = $1`,
       [applicationId]
     );
-    await client.query("commit");
+    await client.runQuery("commit");
     return updated.rows;
   } catch (err) {
-    await client.query("rollback");
+    await client.runQuery("rollback");
     throw err;
   } finally {
     client.release();

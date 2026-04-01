@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.db = exports.pool = void 0;
+exports.runQuery = runQuery;
 exports.query = query;
 exports.fetchClient = fetchClient;
 exports.dbQuery = dbQuery;
@@ -20,6 +21,9 @@ const logger_1 = require("./observability/logger");
 const startupState_1 = require("./startupState");
 const { Pool } = pg_1.default;
 const SLOW_QUERY_THRESHOLD_MS = 500;
+async function runQuery(queryable, text, params) {
+    return queryable.query(text, params);
+}
 function buildPoolConfig() {
     const connectionString = config_1.config.db.url.trim();
     if (!connectionString) {
@@ -37,9 +41,19 @@ function buildPoolConfig() {
 }
 exports.pool = new Pool(buildPoolConfig());
 exports.db = exports.pool;
+const attachRunQuery = (queryable) => {
+    queryable.runQuery = (text, params) => runQuery(queryable, text, params);
+};
+attachRunQuery(exports.pool);
+const originalPoolConnect = exports.pool.connect.bind(exports.pool);
+exports.pool.connect = async (...args) => {
+    const client = await originalPoolConnect(...args);
+    attachRunQuery(client);
+    return client;
+};
 async function query(text, params) {
     const start = Date.now();
-    const result = await exports.pool.query(text, params);
+    const result = await exports.pool.runQuery(text, params);
     const durationMs = Date.now() - start;
     if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
         (0, logger_1.logWarn)("db_slow_query", {
@@ -55,7 +69,7 @@ function fetchClient() {
 async function dbQuery(text, params) {
     try {
         const start = Date.now();
-        const result = await exports.pool.query(text, params);
+        const result = await exports.pool.runQuery(text, params);
         const durationMs = Date.now() - start;
         if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
             (0, logger_1.logWarn)("db_slow_query", {
@@ -79,14 +93,16 @@ function assertPoolHealthy() {
     }
 }
 async function checkDb() {
-    await exports.pool.query("select 1");
+    await exports.pool.runQuery("select 1");
 }
 async function warmUpDatabase() {
-    await exports.pool.query("select 1");
+    await exports.pool.runQuery("select 1");
     assertPoolHealthy();
 }
 async function fetchInstrumentedClient() {
-    return exports.pool.connect();
+    const client = await exports.pool.connect();
+    attachRunQuery(client);
+    return client;
 }
 function setDbTestPoolMetricsOverride() { }
 function setDbTestFailureInjection() { }

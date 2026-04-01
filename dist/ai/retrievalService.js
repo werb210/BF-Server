@@ -40,7 +40,7 @@ function parseEmbedding(input) {
 }
 async function retrieveTopKnowledgeChunks(question, limit = 5) {
     const queryVector = await (0, embeddingService_1.generateEmbedding)(question);
-    const { rows } = await db_1.pool.query(`select id, document_id, content, embedding
+    const { rows } = await db_1.pool.runQuery(`select id, document_id, content, embedding
      from ai_knowledge_chunks
      order by created_at desc
      limit 500`);

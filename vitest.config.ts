@@ -6,7 +6,6 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["./src/tests/env.setup.ts", "./src/tests/setup.ts"],
     isolate: true,
-    pool: false,
     include: ["src/__tests__/**/*.test.ts"],
     exclude: ["src/lib/db.test.ts", "node_modules/**"],
   },

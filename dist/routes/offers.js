@@ -20,7 +20,7 @@ router.get("/", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
                  from offers order by updated_at desc limit 100`,
             values: [],
         };
-    const rows = await db_1.pool.query(query.text, query.values);
+    const rows = await db_1.pool.runQuery(query.text, query.values);
     res.status(200).json({ items: rows.rows });
 }));
 router.post("/", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
@@ -29,7 +29,7 @@ router.post("/", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
     if (!applicationId || !lender) {
         throw new errors_1.AppError("validation_error", "applicationId and lender are required.", 400);
     }
-    const result = await db_1.pool.query(`insert into offers (id, application_id, lender_name, amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at)
+    const result = await db_1.pool.runQuery(`insert into offers (id, application_id, lender_name, amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'created',$11,now(),now())
        returning id, application_id, lender_name, amount::text as amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at`, [
         (0, crypto_1.randomUUID)(),
@@ -55,7 +55,7 @@ router.patch("/:id/status", (0, safeHandler_1.safeHandler)(async (req, res, next
     if (!id || !allowed.has(status)) {
         throw new errors_1.AppError("validation_error", "Valid status is required.", 400);
     }
-    const updated = await db_1.pool.query(`update offers set status = $2, updated_at = now()
+    const updated = await db_1.pool.runQuery(`update offers set status = $2, updated_at = now()
        where id = $1
        returning id, application_id, lender_name, amount::text as amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at`, [id, status]);
     const offer = updated.rows[0];

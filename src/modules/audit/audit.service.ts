@@ -2,7 +2,7 @@ import { type PoolClient } from "pg";
 import { pool } from "../../db";
 import { fetchRequestId } from "../../observability/requestContext";
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 export type AuditParams = {
   actorUserId: string | null;

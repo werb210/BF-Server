@@ -14,7 +14,9 @@ process.on("uncaughtException", (err) => {
 async function start() {
   console.log("[BOOT] Starting server...");
 
-  await ensureDb();
+  if (process.env.NODE_ENV !== "test") {
+    await ensureDb();
+  }
   await verifyTwilioSetup();
 
   setInterval(() => {

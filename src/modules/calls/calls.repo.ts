@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { type PoolClient } from "pg";
 import { pool } from "../../db";
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 export type CallDirection = "outbound" | "inbound";
 export type CallStatus =

@@ -151,7 +151,7 @@ router.get(
       throw new AppError("invalid_token", "Invalid or expired token.", 401);
     }
 
-    const activeCalls = await pool.query<{ count: string }>(
+    const activeCalls = await pool.runQuery<{ count: string }>(
       `select count(*)::text as count
        from call_logs
        where staff_user_id = $1
@@ -195,7 +195,7 @@ router.post(
     const response = new twilioRuntime.twiml.VoiceResponse();
     const client = await pool.connect();
     try {
-      const assignedRes = await client.query<{ staff_user_id: string | null; client_id: string | null }>(
+      const assignedRes = await client.runQuery<{ staff_user_id: string | null; client_id: string | null }>(
         `select cl.staff_user_id, cl.crm_contact_id as client_id
          from call_logs cl
          where cl.phone_number = $1 and cl.staff_user_id is not null
@@ -211,7 +211,7 @@ router.post(
         dial.client(assignedStaff);
       }
 
-      const fallbackStaff = await client.query<{ id: string }>(
+      const fallbackStaff = await client.runQuery<{ id: string }>(
         `select id
          from users
          where role in ('admin','staff')
@@ -335,7 +335,7 @@ router.post(
     });
 
     const priceEstimateCents = isCompleted && typeof durationSeconds === "number" ? durationSeconds * 3 : null;
-    await pool.query(
+    await pool.runQuery(
       `update call_logs
        set answered = $1,
            ended_reason = $2,
@@ -345,12 +345,12 @@ router.post(
     );
 
     if (callStatus === "no-answer") {
-      const hasVoicemail = await pool.query<{ count: string }>(
+      const hasVoicemail = await pool.runQuery<{ count: string }>(
         "select count(*)::text as count from voicemails where call_sid = $1",
         [callSid]
       );
       if (Number(hasVoicemail.rows[0]?.count ?? "0") === 0) {
-        await pool.query(
+        await pool.runQuery(
           `insert into crm_task (id, type, staff_id, phone_number, created_at)
            values ($1, 'missed_call', $2, $3, now())`,
           [randomUUID(), found.staff_user_id, found.phone_number]

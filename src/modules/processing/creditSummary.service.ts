@@ -6,7 +6,7 @@ import type { PoolClient } from "pg";
 import { config } from "../../config";
 import { assertRetryAllowed } from "./retryPolicy";
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 export type CreditSummaryJobRecord = {
   id: string;

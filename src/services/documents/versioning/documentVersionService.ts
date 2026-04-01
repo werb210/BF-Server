@@ -24,6 +24,6 @@ export async function createDocumentVersionRecord(params: {
     returning *
   `;
 
-  const result = await pool.query(q, [randomUUID(), params.documentId, params.blobName, params.hash, params.metadata]);
+  const result = await pool.runQuery(q, [randomUUID(), params.documentId, params.blobName, params.hash, params.metadata]);
   return result.rows[0];
 }

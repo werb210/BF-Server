@@ -170,7 +170,7 @@ async function submitClientApplication(params) {
     enforceDocumentMetadata(submission.documents);
     const client = await db_1.pool.connect();
     try {
-        await client.query("begin");
+        await client.runQuery("begin");
         const existing = await (0, clientSubmission_repo_1.findClientSubmissionByKey)(submission.submissionKey, client);
         if (existing) {
             await (0, audit_service_1.recordAuditEvent)({
@@ -184,7 +184,7 @@ async function submitClientApplication(params) {
                 success: true,
                 client,
             });
-            await client.query("commit");
+            await client.runQuery("commit");
             (0, logger_1.logInfo)("client_submission_retried", {
                 submissionKey: submission.submissionKey,
                 applicationId: existing.application_id,
@@ -278,7 +278,7 @@ async function submitClientApplication(params) {
             success: true,
             client,
         });
-        await client.query("commit");
+        await client.runQuery("commit");
         (0, logger_1.logInfo)("client_submission_created", {
             submissionKey: submission.submissionKey,
             applicationId: application.id,
@@ -291,7 +291,7 @@ async function submitClientApplication(params) {
     }
     catch (err) {
         (0, transactionTelemetry_1.recordTransactionRollback)(err);
-        await client.query("rollback");
+        await client.runQuery("rollback");
         await (0, audit_service_1.recordAuditEvent)({
             action: "client_submission_failed",
             actorUserId: null,

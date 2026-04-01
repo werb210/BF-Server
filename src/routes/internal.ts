@@ -58,7 +58,7 @@ router.post("/bootstrap-admin", async (req: any, res: any, next: any) => {
       );
     }
 
-    const countRes = await pool.query<{ count: number }>(
+    const countRes = await pool.runQuery<{ count: number }>(
       "select count(*)::int as count from users where role = $1",
       [ROLES.ADMIN]
     );
@@ -131,7 +131,7 @@ router.get("/exports/recent", async (_req, res, next) => {
 
 router.get("/failed-jobs", async (_req, res, next) => {
   try {
-    const result = await pool.query(
+    const result = await pool.runQuery(
       `SELECT id, type, error, retry_count, created_at
        FROM failed_jobs
        ORDER BY created_at DESC

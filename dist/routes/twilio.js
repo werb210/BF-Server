@@ -131,7 +131,7 @@ router.get("/dialer/token", auth_1.requireAuth, (0, auth_1.requireAuthorization)
     if (!identity) {
         throw new errors_1.AppError("invalid_token", "Invalid or expired token.", 401);
     }
-    const activeCalls = await db_1.pool.query(`select count(*)::text as count
+    const activeCalls = await db_1.pool.runQuery(`select count(*)::text as count
        from call_logs
        where staff_user_id = $1
          and status in ('ringing', 'in_progress')`, [identity]);
@@ -154,7 +154,7 @@ router.post("/twilio/voice", dialerRateLimit, (0, safeHandler_1.safeHandler)(asy
     const response = new twilioRuntime.twiml.VoiceResponse();
     const client = await db_1.pool.connect();
     try {
-        const assignedRes = await client.query(`select cl.staff_user_id, cl.crm_contact_id as client_id
+        const assignedRes = await client.runQuery(`select cl.staff_user_id, cl.crm_contact_id as client_id
          from call_logs cl
          where cl.phone_number = $1 and cl.staff_user_id is not null
          order by cl.created_at desc
@@ -165,7 +165,7 @@ router.post("/twilio/voice", dialerRateLimit, (0, safeHandler_1.safeHandler)(asy
         if (assignedStaff) {
             dial.client(assignedStaff);
         }
-        const fallbackStaff = await client.query(`select id
+        const fallbackStaff = await client.runQuery(`select id
          from users
          where role in ('admin','staff')
            and active = true
@@ -261,15 +261,15 @@ router.post("/twilio/status", dialerRateLimit, (0, safeHandler_1.safeHandler)(as
         toNumber: typeof req.body?.To === "string" ? req.body.To : undefined,
     });
     const priceEstimateCents = isCompleted && typeof durationSeconds === "number" ? durationSeconds * 3 : null;
-    await db_1.pool.query(`update call_logs
+    await db_1.pool.runQuery(`update call_logs
        set answered = $1,
            ended_reason = $2,
            price_estimate_cents = $3
        where id = $4`, [isCompleted, callStatus || null, priceEstimateCents, found.id]);
     if (callStatus === "no-answer") {
-        const hasVoicemail = await db_1.pool.query("select count(*)::text as count from voicemails where call_sid = $1", [callSid]);
+        const hasVoicemail = await db_1.pool.runQuery("select count(*)::text as count from voicemails where call_sid = $1", [callSid]);
         if (Number(hasVoicemail.rows[0]?.count ?? "0") === 0) {
-            await db_1.pool.query(`insert into crm_task (id, type, staff_id, phone_number, created_at)
+            await db_1.pool.runQuery(`insert into crm_task (id, type, staff_id, phone_number, created_at)
            values ($1, 'missed_call', $2, $3, now())`, [(0, crypto_1.randomUUID)(), found.staff_user_id, found.phone_number]);
         }
     }

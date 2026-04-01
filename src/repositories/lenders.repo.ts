@@ -28,7 +28,7 @@ type ColumnCheckResult = {
 };
 
 async function fetchLenderColumns(): Promise<Set<string>> {
-  const result = await pool.query<{ column_name: string }>(
+  const result = await pool.runQuery<{ column_name: string }>(
     `select column_name
      from information_schema.columns
      where table_schema = 'public'
@@ -169,7 +169,7 @@ export async function fetchLenderById(id: string) {
     required: ["id", "name", "country"],
   });
   const selectColumns = buildSelectColumns(check.existing);
-  const result = await pool.query(
+  const result = await pool.runQuery(
     `
     SELECT
       ${selectColumns}

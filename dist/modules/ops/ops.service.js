@@ -25,7 +25,7 @@ function fetchEnvKillSwitch(key) {
     return config_1.config.flags.opsKillSwitchLenderTransmission;
 }
 async function listKillSwitches() {
-    const result = await db_1.pool.query("select key, enabled from ops_kill_switches");
+    const result = await db_1.pool.runQuery("select key, enabled from ops_kill_switches");
     const dbMap = new Map(result.rows.map((row) => [row.key, Boolean(row.enabled)]));
     return exports.OPS_KILL_SWITCH_KEYS.map((key) => {
         const envEnabled = fetchEnvKillSwitch(key);
@@ -39,7 +39,7 @@ async function listKillSwitches() {
     });
 }
 async function setKillSwitch(key, enabled) {
-    await db_1.pool.query(`insert into ops_kill_switches (key, enabled, updated_at)
+    await db_1.pool.runQuery(`insert into ops_kill_switches (key, enabled, updated_at)
      values ($1, $2, now())
      on conflict (key)
      do update set enabled = excluded.enabled, updated_at = excluded.updated_at`, [key, enabled]);
@@ -48,6 +48,6 @@ async function isKillSwitchEnabled(key) {
     if (fetchEnvKillSwitch(key)) {
         return true;
     }
-    const result = await db_1.pool.query("select enabled from ops_kill_switches where key = $1", [key]);
+    const result = await db_1.pool.runQuery("select enabled from ops_kill_switches where key = $1", [key]);
     return result.rows[0]?.enabled ?? false;
 }

@@ -36,8 +36,8 @@ async function retryProcessingJob(params) {
     }
     const client = await db_1.pool.connect();
     try {
-        await client.query("begin");
-        const ocrJob = await client.query(`select id, application_id, document_id, status, retry_count, last_retry_at, max_retries
+        await client.runQuery("begin");
+        const ocrJob = await client.runQuery(`select id, application_id, document_id, status, retry_count, last_retry_at, max_retries
        from document_processing_jobs
        where id = $1
        limit 1
@@ -58,7 +58,7 @@ async function retryProcessingJob(params) {
                     lastRetryAt: row.last_retry_at,
                     baseDelayMs: 30000,
                 });
-            const updated = await client.query(`update document_processing_jobs
+            const updated = await client.runQuery(`update document_processing_jobs
          set status = 'pending',
              completed_at = null,
              error_message = null,
@@ -88,7 +88,7 @@ async function retryProcessingJob(params) {
                 },
                 client,
             });
-            await client.query("commit");
+            await client.runQuery("commit");
             return {
                 jobId: updatedRow.id,
                 jobType: "ocr",
@@ -101,7 +101,7 @@ async function retryProcessingJob(params) {
                 nextRetryInMs,
             };
         }
-        const bankingJob = await client.query(`select id, application_id, status, retry_count, last_retry_at, max_retries
+        const bankingJob = await client.runQuery(`select id, application_id, status, retry_count, last_retry_at, max_retries
        from banking_analysis_jobs
        where id = $1
        limit 1
@@ -122,7 +122,7 @@ async function retryProcessingJob(params) {
                     lastRetryAt: row.last_retry_at,
                     baseDelayMs: 30000,
                 });
-            const updated = await client.query(`update banking_analysis_jobs
+            const updated = await client.runQuery(`update banking_analysis_jobs
          set status = 'pending',
              completed_at = null,
              error_message = null,
@@ -152,7 +152,7 @@ async function retryProcessingJob(params) {
                 },
                 client,
             });
-            await client.query("commit");
+            await client.runQuery("commit");
             return {
                 jobId: updatedRow.id,
                 jobType: "banking",
@@ -165,7 +165,7 @@ async function retryProcessingJob(params) {
                 nextRetryInMs,
             };
         }
-        const creditJob = await client.query(`select id, application_id, status, retry_count, last_retry_at, max_retries
+        const creditJob = await client.runQuery(`select id, application_id, status, retry_count, last_retry_at, max_retries
        from credit_summary_jobs
        where id = $1
        limit 1
@@ -186,7 +186,7 @@ async function retryProcessingJob(params) {
                     lastRetryAt: row.last_retry_at,
                     baseDelayMs: 30000,
                 });
-            const updated = await client.query(`update credit_summary_jobs
+            const updated = await client.runQuery(`update credit_summary_jobs
          set status = 'pending',
              completed_at = null,
              error_message = null,
@@ -216,7 +216,7 @@ async function retryProcessingJob(params) {
                 },
                 client,
             });
-            await client.query("commit");
+            await client.runQuery("commit");
             return {
                 jobId: updatedRow.id,
                 jobType: "credit_summary",
@@ -232,7 +232,7 @@ async function retryProcessingJob(params) {
         throw new errors_1.AppError("not_found", "Processing job not found.", 404);
     }
     catch (err) {
-        await client.query("rollback");
+        await client.runQuery("rollback");
         throw err;
     }
     finally {
@@ -240,7 +240,7 @@ async function retryProcessingJob(params) {
     }
 }
 async function retryProcessingJobForApplication(params) {
-    const job = await db_1.pool.query(`select id, job_type
+    const job = await db_1.pool.runQuery(`select id, job_type
      from (
        select id, 'ocr'::text as job_type, updated_at
        from document_processing_jobs

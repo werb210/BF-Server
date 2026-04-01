@@ -10,7 +10,7 @@ export type CrmTimelineRecord = {
   metadata: Record<string, unknown> | null;
 };
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 function parseMetadata(value: unknown): Record<string, unknown> | null {
   if (!value) {

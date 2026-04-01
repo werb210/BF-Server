@@ -3,7 +3,7 @@ import { pool } from "../db";
 type PgError = { code?: string; message?: string };
 
 export async function ensureOtpTableExists(): Promise<void> {
-  const tableResult = await pool.query(
+  const tableResult = await pool.runQuery(
     `
       select 1
       from information_schema.tables
@@ -15,7 +15,7 @@ export async function ensureOtpTableExists(): Promise<void> {
 
   if (tableResult.rowCount === 0) {
     try {
-      await pool.query(`
+      await pool.runQuery(`
       create table if not exists otp_verifications (
         id uuid primary key,
         user_id uuid not null references users(id) on delete cascade,
@@ -33,7 +33,7 @@ export async function ensureOtpTableExists(): Promise<void> {
         error.message?.includes("already exists") ||
         error.message?.includes("otp_verifications_pkey")
       ) {
-        await pool.query(`
+        await pool.runQuery(`
           create table if not exists otp_verifications (
             id uuid not null,
             user_id uuid not null references users(id) on delete cascade,
@@ -50,7 +50,7 @@ export async function ensureOtpTableExists(): Promise<void> {
     }
   }
 
-  const constraintResult = await pool.query(
+  const constraintResult = await pool.runQuery(
     `
       select 1
       from pg_constraint
@@ -61,7 +61,7 @@ export async function ensureOtpTableExists(): Promise<void> {
 
   if (constraintResult.rowCount === 0) {
     try {
-      await pool.query(`
+      await pool.runQuery(`
         alter table otp_verifications
         add constraint otp_verifications_status_check
         check (status in ('pending','approved','expired'));

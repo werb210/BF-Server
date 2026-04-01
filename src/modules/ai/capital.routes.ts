@@ -90,7 +90,7 @@ router.post("/capital-readiness", readinessLimiter, async (req: any, res: any, n
     tag: "capital_readiness",
   });
 
-  await pool.query(
+  await pool.runQuery(
     `insert into capital_readiness (id, lead_id, score, tier, payload)
      values (gen_random_uuid(), $1, $2, $3, $4::jsonb)`,
     [leadId, score, tier, JSON.stringify(payload)]

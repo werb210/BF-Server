@@ -110,7 +110,7 @@ type IdempotentResult<T> = {
   idempotent: boolean;
 };
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 function buildRequestMetadata(params: {
   ip?: string;
@@ -496,8 +496,8 @@ export async function createApplicationForUser(params: {
 }): Promise<IdempotentResult<ApplicationResponse>> {
   const client = await pool.connect();
   try {
-    await client.query("begin");
-    await client.query("select id from users where id = $1 for update", [
+    await client.runQuery("begin");
+    await client.runQuery("select id from users where id = $1 for update", [
       params.ownerUserId,
     ]);
 
@@ -548,11 +548,11 @@ export async function createApplicationForUser(params: {
       ocrInsights: EMPTY_OCR_INSIGHTS,
     };
 
-    await client.query("commit");
+    await client.runQuery("commit");
     return { status: 201, value: response, idempotent: false };
   } catch (err) {
     recordTransactionRollback(err);
-    await client.query("rollback");
+    await client.runQuery("rollback");
     throw err;
   } finally {
     client.release();
@@ -571,7 +571,7 @@ export async function openApplicationForStaff(params: {
   }
   const client = await pool.connect();
   try {
-    await client.query("begin");
+    await client.runQuery("begin");
     const application = await findApplicationById(params.applicationId, client);
     if (!application) {
       throw new AppError("not_found", "Application not found.", 404);
@@ -600,9 +600,9 @@ export async function openApplicationForStaff(params: {
       });
     }
 
-    await client.query("commit");
+    await client.runQuery("commit");
   } catch (err) {
-    await client.query("rollback");
+    await client.runQuery("rollback");
     throw err;
   } finally {
     client.release();
@@ -779,7 +779,7 @@ export async function removeDocument(params: {
 }): Promise<void> {
   const client = await pool.connect();
   try {
-    await client.query("begin");
+    await client.runQuery("begin");
     const application = await findApplicationById(params.applicationId, client);
     if (!application) {
       throw new AppError("not_found", "Application not found.", 404);
@@ -832,9 +832,9 @@ export async function removeDocument(params: {
       });
     }
 
-    await client.query("commit");
+    await client.runQuery("commit");
   } catch (err) {
-    await client.query("rollback");
+    await client.runQuery("rollback");
     throw err;
   } finally {
     client.release();
@@ -846,7 +846,7 @@ export async function markCreditSummaryCompleted(params: {
   client?: Queryable;
 }): Promise<void> {
   if (params.client) {
-    await params.client.query(
+    await params.client.runQuery(
       `update applications
        set credit_summary_completed_at = now(),
            updated_at = now()
@@ -862,8 +862,8 @@ export async function markCreditSummaryCompleted(params: {
 
   const client = await pool.connect();
   try {
-    await client.query("begin");
-    await client.query(
+    await client.runQuery("begin");
+    await client.runQuery(
       `update applications
        set credit_summary_completed_at = now(),
            updated_at = now()
@@ -874,9 +874,9 @@ export async function markCreditSummaryCompleted(params: {
       applicationId: params.applicationId,
       client,
     });
-    await client.query("commit");
+    await client.runQuery("commit");
   } catch (err) {
-    await client.query("rollback");
+    await client.runQuery("rollback");
     throw err;
   } finally {
     client.release();
@@ -971,11 +971,11 @@ export async function uploadDocument(params: {
   let documentId: string | null = params.documentId ?? null;
   let isNewDocument = false;
   try {
-    await client.query("begin");
+    await client.runQuery("begin");
     if (documentId) {
       const existingDoc = await findDocumentById(documentId, client);
       if (!existingDoc || existingDoc.application_id !== params.applicationId) {
-        await client.query("rollback");
+        await client.runQuery("rollback");
         throw new AppError("not_found", "Document not found.", 404);
       }
       const incomingType = params.documentType ?? existingDoc.document_type;
@@ -1030,7 +1030,7 @@ export async function uploadDocument(params: {
     const currentVersion = await fetchLatestDocumentVersion(documentId, client);
     const nextVersion = currentVersion + 1;
     if (nextVersion <= currentVersion) {
-      await client.query("rollback");
+      await client.runQuery("rollback");
       throw new AppError("version_conflict", "Invalid document version.", 409);
     }
 
@@ -1081,7 +1081,7 @@ export async function uploadDocument(params: {
       version: version.version,
     };
 
-    await client.query("commit");
+    await client.runQuery("commit");
     if (isNewDocument) {
       if (normalizedCategory === BANK_STATEMENT_CATEGORY) {
         await createBankingAnalysisJob(params.applicationId);
@@ -1094,7 +1094,7 @@ export async function uploadDocument(params: {
   } catch (err) {
     recordTransactionRollback(err);
     try {
-      await client.query("rollback");
+      await client.runQuery("rollback");
     } catch {
       // ignore rollback
     }
@@ -1179,7 +1179,7 @@ export async function acceptDocumentVersion(params: {
   assertStaffReviewRole(params.actorRole);
   const client = await pool.connect();
   try {
-    await client.query("begin");
+    await client.runQuery("begin");
     const application = await findApplicationById(params.applicationId, client);
     if (!application) {
       throw new AppError("not_found", "Application not found.", 404);
@@ -1202,7 +1202,7 @@ export async function acceptDocumentVersion(params: {
     if (!document || document.application_id !== params.applicationId) {
       throw new AppError("not_found", "Document not found.", 404);
     }
-    await client.query("select id from document_versions where id = $1 for update", [
+    await client.runQuery("select id from document_versions where id = $1 for update", [
       params.documentVersionId,
     ]);
     const version = await findDocumentVersionById(params.documentVersionId, client);
@@ -1308,9 +1308,9 @@ export async function acceptDocumentVersion(params: {
       client,
     });
 
-    await client.query("commit");
+    await client.runQuery("commit");
   } catch (err) {
-    await client.query("rollback");
+    await client.runQuery("rollback");
     throw err;
   } finally {
     client.release();
@@ -1329,7 +1329,7 @@ export async function rejectDocumentVersion(params: {
   assertStaffReviewRole(params.actorRole);
   const client = await pool.connect();
   try {
-    await client.query("begin");
+    await client.runQuery("begin");
     const application = await findApplicationById(params.applicationId, client);
     if (!application) {
       throw new AppError("not_found", "Application not found.", 404);
@@ -1357,7 +1357,7 @@ export async function rejectDocumentVersion(params: {
       documentType: document.document_type,
       client,
     });
-    await client.query("select id from document_versions where id = $1 for update", [
+    await client.runQuery("select id from document_versions where id = $1 for update", [
       params.documentVersionId,
     ]);
     const version = await findDocumentVersionById(params.documentVersionId, client);
@@ -1419,9 +1419,9 @@ export async function rejectDocumentVersion(params: {
       client,
     });
 
-    await client.query("commit");
+    await client.runQuery("commit");
   } catch (err) {
-    await client.query("rollback");
+    await client.runQuery("rollback");
     throw err;
   } finally {
     client.release();
@@ -1438,7 +1438,7 @@ export async function acceptDocument(params: {
   assertStaffReviewRole(params.actorRole);
   const client = await pool.connect();
   try {
-    await client.query("begin");
+    await client.runQuery("begin");
     const document = await findDocumentById(params.documentId, client);
     if (!document) {
       throw new AppError("not_found", "Document not found.", 404);
@@ -1501,9 +1501,9 @@ export async function acceptDocument(params: {
       client,
     });
 
-    await client.query("commit");
+    await client.runQuery("commit");
   } catch (err) {
-    await client.query("rollback");
+    await client.runQuery("rollback");
     throw err;
   } finally {
     client.release();
@@ -1521,7 +1521,7 @@ export async function rejectDocument(params: {
   assertStaffReviewRole(params.actorRole);
   const client = await pool.connect();
   try {
-    await client.query("begin");
+    await client.runQuery("begin");
     const document = await findDocumentById(params.documentId, client);
     if (!document) {
       throw new AppError("not_found", "Document not found.", 404);
@@ -1592,9 +1592,9 @@ export async function rejectDocument(params: {
       client,
     });
 
-    await client.query("commit");
+    await client.runQuery("commit");
   } catch (err) {
-    await client.query("rollback");
+    await client.runQuery("rollback");
     throw err;
   } finally {
     client.release();

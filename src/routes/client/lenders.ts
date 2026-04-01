@@ -9,7 +9,7 @@ const router = Router();
  */
 router.get("/", async (_req, res, next) => {
   try {
-    const { rows } = await pool.query(
+    const { rows } = await pool.runQuery(
       `
       SELECT id, name
       FROM lenders

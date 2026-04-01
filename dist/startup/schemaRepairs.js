@@ -5,7 +5,7 @@ const config_1 = require("../config");
 const db_1 = require("../db");
 const logger_1 = require("../observability/logger");
 async function ensureIdempotencyTable() {
-    await db_1.pool.query(`create table if not exists idempotency_keys (
+    await db_1.pool.runQuery(`create table if not exists idempotency_keys (
        id text primary key,
        key text not null,
        route text not null,
@@ -18,7 +18,7 @@ async function ensureIdempotencyTable() {
      )`);
 }
 async function fetchIdempotencyColumns() {
-    const res = await db_1.pool.query(`select column_name, is_nullable, data_type
+    const res = await db_1.pool.runQuery(`select column_name, is_nullable, data_type
      from information_schema.columns
      where table_name = 'idempotency_keys'`);
     return new Map(res.rows.map((row) => [row.column_name, row]));
@@ -27,7 +27,7 @@ async function addColumnIfMissing(columns, name, definition) {
     if (columns.has(name)) {
         return;
     }
-    await db_1.pool.query(`alter table idempotency_keys add column if not exists ${definition}`);
+    await db_1.pool.runQuery(`alter table idempotency_keys add column if not exists ${definition}`);
     columns.set(name, { column_name: name, is_nullable: "YES", data_type: "" });
 }
 async function dropNotNullIfPresent(columns, name) {
@@ -35,7 +35,7 @@ async function dropNotNullIfPresent(columns, name) {
     if (!column || column.is_nullable === "YES") {
         return;
     }
-    await db_1.pool.query(`alter table idempotency_keys alter column ${name} drop not null`);
+    await db_1.pool.runQuery(`alter table idempotency_keys alter column ${name} drop not null`);
     columns.set(name, { ...column, is_nullable: "YES" });
 }
 async function alignIdempotencySchema() {
@@ -54,30 +54,30 @@ async function alignIdempotencySchema() {
     await dropNotNullIfPresent(columns, "idempotency_key");
     await dropNotNullIfPresent(columns, "status_code");
     if (columns.has("idempotency_key") && columns.has("key")) {
-        await db_1.pool.query("update idempotency_keys set key = idempotency_key where key is null");
+        await db_1.pool.runQuery("update idempotency_keys set key = idempotency_key where key is null");
     }
     if (columns.has("scope") && columns.has("route")) {
-        await db_1.pool.query("update idempotency_keys set route = scope where route is null");
+        await db_1.pool.runQuery("update idempotency_keys set route = scope where route is null");
     }
     if (columns.has("status_code") && columns.has("response_code")) {
-        await db_1.pool.query("update idempotency_keys set response_code = status_code where response_code is null");
+        await db_1.pool.runQuery("update idempotency_keys set response_code = status_code where response_code is null");
     }
-    await db_1.pool.query("update idempotency_keys set request_hash = '' where request_hash is null");
-    await db_1.pool.query("update idempotency_keys set response_code = 200 where response_code is null");
-    await db_1.pool.query("update idempotency_keys set response_body = '{}'::jsonb where response_body is null");
-    await db_1.pool.query("update idempotency_keys set created_at = now() where created_at is null");
+    await db_1.pool.runQuery("update idempotency_keys set request_hash = '' where request_hash is null");
+    await db_1.pool.runQuery("update idempotency_keys set response_code = 200 where response_code is null");
+    await db_1.pool.runQuery("update idempotency_keys set response_body = '{}'::jsonb where response_body is null");
+    await db_1.pool.runQuery("update idempotency_keys set created_at = now() where created_at is null");
     if (columns.has("method")) {
-        await db_1.pool.query("update idempotency_keys set method = 'POST' where method is null");
-        await db_1.pool.query("alter table idempotency_keys alter column method set default 'POST'");
-        await db_1.pool.query("alter table idempotency_keys alter column method set not null");
+        await db_1.pool.runQuery("update idempotency_keys set method = 'POST' where method is null");
+        await db_1.pool.runQuery("alter table idempotency_keys alter column method set default 'POST'");
+        await db_1.pool.runQuery("alter table idempotency_keys alter column method set not null");
     }
     const idColumn = columns.get("id");
     if (idColumn?.data_type !== "uuid") {
-        await db_1.pool.query("update idempotency_keys set id = md5(coalesce(key, '') || ':' || coalesce(route, '')) where id is null");
+        await db_1.pool.runQuery("update idempotency_keys set id = md5(coalesce(key, '') || ':' || coalesce(route, '')) where id is null");
     }
-    await db_1.pool.query("alter table idempotency_keys alter column id set not null");
-    await db_1.pool.query("create unique index if not exists idempotency_keys_id_unique_idx on idempotency_keys (id)");
-    await db_1.pool.query("create unique index if not exists idempotency_keys_key_route_unique_idx on idempotency_keys (key, route)");
+    await db_1.pool.runQuery("alter table idempotency_keys alter column id set not null");
+    await db_1.pool.runQuery("create unique index if not exists idempotency_keys_id_unique_idx on idempotency_keys (id)");
+    await db_1.pool.runQuery("create unique index if not exists idempotency_keys_key_route_unique_idx on idempotency_keys (key, route)");
 }
 async function ensureSchemaRepairs() {
     if (config_1.config.env === "test") {

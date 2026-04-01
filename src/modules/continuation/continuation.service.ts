@@ -53,7 +53,7 @@ export async function createContinuation(
 ): Promise<string> {
   const token = randomBytes(24).toString("hex");
 
-  await pool.query(
+  await pool.runQuery(
     `
     INSERT INTO application_continuations (
       token,
@@ -91,7 +91,7 @@ export async function createContinuation(
 }
 
 export async function fetchContinuation(token: string): Promise<Record<string, unknown> | null> {
-  const { rows } = await pool.query(
+  const { rows } = await pool.runQuery(
     "SELECT * FROM application_continuations WHERE token = $1",
     [token]
   );
@@ -103,7 +103,7 @@ export async function convertContinuation(
   token: string,
   applicationId: string
 ): Promise<void> {
-  await pool.query(
+  await pool.runQuery(
     `
     UPDATE application_continuations
     SET converted_application_id = $1,

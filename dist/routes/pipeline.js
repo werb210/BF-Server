@@ -9,7 +9,7 @@ const applications_service_1 = require("../modules/applications/applications.ser
 const pipelineState_1 = require("../modules/applications/pipelineState");
 const router = (0, express_1.Router)();
 router.get("/", auth_1.requireAuth, (0, auth_1.requireCapability)([capabilities_1.CAPABILITIES.APPLICATION_READ]), (0, safeHandler_1.safeHandler)(async (_req, res) => {
-    const result = await db_1.pool.query(`select id, name, pipeline_state, updated_at
+    const result = await db_1.pool.runQuery(`select id, name, pipeline_state, updated_at
        from applications
        order by updated_at desc`);
     res.status(200).json({

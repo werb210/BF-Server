@@ -81,7 +81,7 @@ async function handleDocumentUploadProcessing(params) {
 async function markOcrCompleted(documentId) {
     const client = await db_1.pool.connect();
     try {
-        await client.query("begin");
+        await client.runQuery("begin");
         const job = await (0, documentProcessing_repo_1.updateDocumentProcessingJob)({
             documentId,
             jobType: "ocr",
@@ -93,7 +93,7 @@ async function markOcrCompleted(documentId) {
         if (!job) {
             throw new errors_1.AppError("not_found", "OCR job not found.", 404);
         }
-        const appRes = await client.query(`update applications
+        const appRes = await client.runQuery(`update applications
        set ocr_completed_at = now(),
            updated_at = now()
        where id = (select application_id from documents where id = $1)
@@ -106,11 +106,11 @@ async function markOcrCompleted(documentId) {
             throw new errors_1.AppError("not_found", "Application not found.", 404);
         }
         await (0, processingStage_service_1.advanceProcessingStage)({ applicationId, client });
-        await client.query("commit");
+        await client.runQuery("commit");
         return job;
     }
     catch (err) {
-        await client.query("rollback");
+        await client.runQuery("rollback");
         throw err;
     }
     finally {
@@ -120,7 +120,7 @@ async function markOcrCompleted(documentId) {
 async function markOcrFailed(params) {
     const client = await db_1.pool.connect();
     try {
-        await client.query("begin");
+        await client.runQuery("begin");
         const job = await (0, documentProcessing_repo_1.updateDocumentProcessingJob)({
             documentId: params.documentId,
             jobType: "ocr",
@@ -132,11 +132,11 @@ async function markOcrFailed(params) {
         if (!job) {
             throw new errors_1.AppError("not_found", "OCR job not found.", 404);
         }
-        await client.query("commit");
+        await client.runQuery("commit");
         return job;
     }
     catch (err) {
-        await client.query("rollback");
+        await client.runQuery("rollback");
         throw err;
     }
     finally {
@@ -146,7 +146,7 @@ async function markOcrFailed(params) {
 async function markBankingCompleted(params) {
     const client = await db_1.pool.connect();
     try {
-        await client.query("begin");
+        await client.runQuery("begin");
         const job = await (0, documentProcessing_repo_1.updateBankingAnalysisJob)({
             applicationId: params.applicationId,
             status: "completed",
@@ -158,16 +158,16 @@ async function markBankingCompleted(params) {
         if (!job) {
             throw new errors_1.AppError("not_found", "Banking analysis job not found.", 404);
         }
-        await client.query(`update applications
+        await client.runQuery(`update applications
        set banking_completed_at = now(),
            updated_at = now()
        where id = $1`, [params.applicationId]);
         await (0, processingStage_service_1.advanceProcessingStage)({ applicationId: params.applicationId, client });
-        await client.query("commit");
+        await client.runQuery("commit");
         return job;
     }
     catch (err) {
-        await client.query("rollback");
+        await client.runQuery("rollback");
         throw err;
     }
     finally {
@@ -177,7 +177,7 @@ async function markBankingCompleted(params) {
 async function markBankingFailed(params) {
     const client = await db_1.pool.connect();
     try {
-        await client.query("begin");
+        await client.runQuery("begin");
         const job = await (0, documentProcessing_repo_1.updateBankingAnalysisJob)({
             applicationId: params.applicationId,
             status: "failed",
@@ -189,11 +189,11 @@ async function markBankingFailed(params) {
         if (!job) {
             throw new errors_1.AppError("not_found", "Banking analysis job not found.", 404);
         }
-        await client.query("commit");
+        await client.runQuery("commit");
         return job;
     }
     catch (err) {
-        await client.query("rollback");
+        await client.runQuery("rollback");
         throw err;
     }
     finally {

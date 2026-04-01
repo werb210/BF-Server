@@ -38,7 +38,7 @@ router.post(
     }
     const { business_name, requested_amount, lender_id, product_id, product_category, kyc_responses } = parsed.data;
     const applicationId = randomUUID();
-    await pool.query(
+    await pool.runQuery(
       `insert into applications
        (id, owner_user_id, name, metadata, product_type, pipeline_state, status, lender_id, lender_product_id, requested_amount, source, created_at, updated_at)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())`,
@@ -104,7 +104,7 @@ router.patch(
       parsed.data.requested_amount ?? application.requested_amount ?? null;
     const nextMetadata = parsed.data.metadata ?? application.metadata ?? null;
     const nextCurrentStep = parsed.data.current_step ?? null;
-    await pool.query(
+    await pool.runQuery(
       `update applications
        set name = $2,
            requested_amount = $3,

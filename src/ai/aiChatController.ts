@@ -105,14 +105,14 @@ export const postAiChat = safeHandler(async (req: Request, res: Response) => {
 
   const sessionId = body.sessionId ?? randomUUID();
   const userType = body.userType ?? "guest";
-  await pool.query(
+  await pool.runQuery(
     `insert into chat_sessions (id, user_type, status, escalated_to, created_at, updated_at)
      values ($1, $2, 'active', null, now(), now())
      on conflict (id) do update set updated_at = now()`,
     [sessionId, userType]
   );
 
-  await pool.query(
+  await pool.runQuery(
     `insert into chat_messages (id, session_id, role, message, metadata, created_at)
      values ($1, $2, 'user', $3, null, now())`,
     [randomUUID(), sessionId, body.message]
@@ -129,7 +129,7 @@ export const postAiChat = safeHandler(async (req: Request, res: Response) => {
   let lenderMatches: Awaited<ReturnType<typeof matchLenders>> | undefined;
 
   if (shouldStorePrequal) {
-    await pool.query(
+    await pool.runQuery(
       `insert into ai_prequal_sessions
        (id, session_id, revenue, industry, time_in_business, province, requested_amount, lender_matches, created_at)
        values ($1, $2, $3, null, $4, $5, $6, $7::jsonb, now())`,
@@ -155,7 +155,7 @@ export const postAiChat = safeHandler(async (req: Request, res: Response) => {
       ...(prequal.province !== undefined ? { province: prequal.province } : {}),
     });
 
-    await pool.query(
+    await pool.runQuery(
       `update ai_prequal_sessions
        set lender_matches = $2::jsonb
        where session_id = $1`,
@@ -169,7 +169,7 @@ export const postAiChat = safeHandler(async (req: Request, res: Response) => {
     knowledge.map((chunk) => chunk.content)
   );
 
-  await pool.query(
+  await pool.runQuery(
     `insert into chat_messages (id, session_id, role, message, metadata, created_at)
      values ($1, $2, 'ai', $3, $4::jsonb, now())`,
     [randomUUID(), sessionId, aiMessage, JSON.stringify({ intent })]
@@ -199,14 +199,14 @@ export const postAiEscalate = safeHandler(async (req: Request, res: Response) =>
     return;
   }
 
-  await pool.query(
+  await pool.runQuery(
     `update chat_sessions
      set status = 'escalated', escalated_to = $2, updated_at = now()
      where id = $1`,
     [sessionId, escalatedTo ?? null]
   );
 
-  await pool.query(
+  await pool.runQuery(
     `insert into ai_escalations (id, session_id, messages, status, created_at)
      values ($1, $2, $3::jsonb, 'open', now())`,
     [randomUUID(), sessionId, JSON.stringify(messages ?? [])]

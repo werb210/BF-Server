@@ -5,7 +5,7 @@ import { type PoolClient } from "pg";
 import { logError } from "../../observability/logger";
 import { AppError } from "../../middleware/errors";
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 const PIPELINE_ERROR_CODES = new Set(["22P02", "23514"]);
 

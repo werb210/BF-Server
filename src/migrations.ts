@@ -94,7 +94,7 @@ function listMigrationFiles(): string[] {
 }
 
 async function ensureMigrationsTable(): Promise<void> {
-  await pool.query(
+  await pool.runQuery(
     `create table if not exists schema_migrations (
       id text,
       applied_at timestamp
@@ -103,7 +103,7 @@ async function ensureMigrationsTable(): Promise<void> {
 }
 
 export async function assertMigrationsTableExists(): Promise<void> {
-  const res = await pool.query<{ exists: string | null }>(
+  const res = await pool.runQuery<{ exists: string | null }>(
     "select to_regclass('public.schema_migrations') as exists"
   );
   if (!res.rows[0]?.exists) {
@@ -226,7 +226,7 @@ function hasExecutableSql(statement: string): boolean {
 }
 
 async function fetchAppliedMigrations(): Promise<Set<string>> {
-  const res = await pool.query<{ id: string }>(
+  const res = await pool.runQuery<{ id: string }>(
     "select id from schema_migrations"
   );
   return new Set(res.rows.map((row) => row.id));
@@ -250,7 +250,7 @@ export async function runMigrations(options?: {
     const rawSql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
     const client = await pool.connect();
     try {
-      await client.query("begin");
+      await client.runQuery("begin");
       const statements = splitSql(rawSql).filter(hasExecutableSql);
       for (const statement of statements) {
         if (!hasExecutableSql(statement)) {
@@ -300,7 +300,7 @@ export async function runMigrations(options?: {
           );
         }
         try {
-          await client.query(executableStatement);
+          await client.runQuery(executableStatement);
         } catch (err) {
           if (options?.ignoreMissingRelations) {
             const message = err instanceof Error ? err.message : String(err);
@@ -392,14 +392,14 @@ export async function runMigrations(options?: {
           throw err;
         }
       }
-      await client.query(
+      await client.runQuery(
         "insert into schema_migrations (id, applied_at) values ($1, now())",
         [file]
       );
       logInfo("migration_applied", { migration: file });
-      await client.query("commit");
+      await client.runQuery("commit");
     } catch (err) {
-      await client.query("rollback");
+      await client.runQuery("rollback");
       throw err;
     } finally {
       client.release();
@@ -423,7 +423,7 @@ export async function assertNoPendingMigrations(): Promise<void> {
 
 export async function fetchSchemaVersion(): Promise<string> {
   await ensureMigrationsTable();
-  const res = await pool.query<{ id: string }>(
+  const res = await pool.runQuery<{ id: string }>(
     `select id
      from schema_migrations
      order by applied_at desc, id desc

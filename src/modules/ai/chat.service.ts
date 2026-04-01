@@ -32,7 +32,7 @@ async function upsertLead(params: {
   const email = params.email?.trim().toLowerCase() ?? null;
   const phone = params.phone?.trim() ?? null;
 
-  const existing = await pool.query<{ id: string }>(
+  const existing = await pool.runQuery<{ id: string }>(
     `select id from contacts where (email = $1 and $1 is not null) or (phone = $2 and $2 is not null) limit 1`,
     [email, phone]
   );
@@ -40,7 +40,7 @@ async function upsertLead(params: {
   const leadId = existing.rows[0]?.id;
 
   if (leadId) {
-    await pool.query(
+    await pool.runQuery(
       `update contacts
        set name = coalesce($2, name),
            email = coalesce($3, email),
@@ -65,7 +65,7 @@ async function upsertLead(params: {
     return leadId;
   }
 
-  const created = await pool.query<{ id: string }>(
+  const created = await pool.runQuery<{ id: string }>(
     `insert into contacts (id, name, email, phone, status, created_at, updated_at)
      values (gen_random_uuid(), $1, $2, $3, 'prospect', now(), now())
      returning id`,

@@ -5,6 +5,7 @@ const dbImpl = dbProd;
 export const {
   pool,
   db,
+  runQuery,
   query,
   fetchClient,
   dbQuery,
@@ -21,7 +22,7 @@ let dbReady = false;
 
 export async function ensureDb(): Promise<void> {
   try {
-    await pool.query("SELECT 1");
+    await pool.runQuery("SELECT 1");
     dbReady = true;
     console.log("DB connected");
   } catch (error) {
@@ -39,6 +40,7 @@ export function isDbReady(): boolean {
 const dbExports = {
   pool,
   db,
+  runQuery,
   query,
   fetchClient,
   dbQuery,

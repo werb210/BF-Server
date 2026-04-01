@@ -9,7 +9,7 @@ import {
   type OcrResultRecord,
 } from "./ocr.types";
 
-export type Queryable = Pick<PoolClient, "query">;
+export type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 export async function createOcrJob(params: {
   documentId: string;

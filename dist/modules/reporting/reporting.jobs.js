@@ -33,13 +33,13 @@ function startOfHour(date) {
 async function runWithTransaction(fn) {
     const client = await db_1.pool.connect();
     try {
-        await client.query("begin");
+        await client.runQuery("begin");
         const result = await fn(client);
-        await client.query("commit");
+        await client.runQuery("commit");
         return result;
     }
     catch (error) {
-        await client.query("rollback");
+        await client.runQuery("rollback");
         throw error;
     }
     finally {

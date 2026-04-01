@@ -10,7 +10,7 @@ export async function ingestProductEmbedding(params: {
 }): Promise<void> {
   const embedding = await embedText(params.productDescription);
 
-  await pool.query(
+  await pool.runQuery(
     `insert into ai_embeddings (id, source_type, source_id, content, embedding)
      values ($1, $2, $3, $4, $5::vector)`,
     [uuid(), "product", params.productId, params.productDescription, `[${embedding.join(",")}]`]
@@ -38,7 +38,7 @@ export async function ingestPdfText(params: {
 
   for (const chunk of chunks) {
     const embedding = await embedText(chunk);
-    await pool.query(
+    await pool.runQuery(
       `insert into ai_embeddings (id, source_type, source_id, content, embedding)
        values ($1, $2, $3, $4, $5::vector)`,
       [uuid(), "pdf", params.sourceId, chunk, `[${embedding.join(",")}]`]

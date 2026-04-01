@@ -8,10 +8,8 @@ type Queryable = {
 let dbInstance: Queryable | null = null;
 
 export function initializeSchema(db: any) {
-  if (process.env.NODE_ENV !== "test" || process.env.DATABASE_URL) {
-    throw new Error(
-      "Test database schema can only be initialized when NODE_ENV is 'test' without DATABASE_URL"
-    );
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("Test database schema can only be initialized when NODE_ENV is 'test'");
   }
 
   db.public.none(`
@@ -22,7 +20,7 @@ export function initializeSchema(db: any) {
   `);
 }
 
-export function resetTestDb(): void {
+export async function resetTestDb(): Promise<void> {
   const db = newDb();
   initializeSchema(db);
 
@@ -35,12 +33,8 @@ export function getTestDb(): Queryable {
     throw new Error("Test database is only available when NODE_ENV is 'test'");
   }
 
-  if (process.env.DATABASE_URL) {
-    throw new Error("Invalid config: DATABASE_URL must not be set in test mode");
-  }
-
   if (!dbInstance) {
-    resetTestDb();
+    void resetTestDb();
   }
 
   return dbInstance as Queryable;

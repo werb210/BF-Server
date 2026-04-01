@@ -21,7 +21,7 @@ function assertScope(scope: string): asserts scope is ReplayScope {
 
 async function fetchBatch(scope: ReplayScope): Promise<string[]> {
   if (scope === "audit_events") {
-    const result = await pool.query<{ id: string }>(
+    const result = await pool.runQuery<{ id: string }>(
       `select id
        from audit_events
        where id not in (
@@ -35,7 +35,7 @@ async function fetchBatch(scope: ReplayScope): Promise<string[]> {
     return result.rows.map((row) => row.id);
   }
   if (scope === "lender_submissions") {
-    const result = await pool.query<{ id: string }>(
+    const result = await pool.runQuery<{ id: string }>(
       `select id
        from lender_submissions
        where id not in (
@@ -48,7 +48,7 @@ async function fetchBatch(scope: ReplayScope): Promise<string[]> {
     );
     return result.rows.map((row) => row.id);
   }
-  const result = await pool.query<{ id: string }>(
+  const result = await pool.runQuery<{ id: string }>(
     `select id
      from reporting_daily_metrics
      where id not in (
@@ -80,7 +80,7 @@ async function insertReplayEvents(
   sourceIds.forEach((id) => {
     insertParams.push(randomUUID(), replayJobId, scope, id, new Date());
   });
-  await pool.query(
+  await pool.runQuery(
     `insert into ops_replay_events
      (id, replay_job_id, source_table, source_id, processed_at)
      values ${insertValues}
@@ -96,7 +96,7 @@ export async function createReplayJob(scope: string): Promise<{
 }> {
   assertScope(scope);
   const id = randomUUID();
-  await pool.query(
+  await pool.runQuery(
     `insert into ops_replay_jobs (id, scope, started_at, completed_at, status)
      values ($1, $2, null, null, 'queued')`,
     [id, scope]
@@ -107,7 +107,7 @@ export async function createReplayJob(scope: string): Promise<{
 export async function fetchReplayJobStatus(
   id: string
 ): Promise<{ id: string; scope: ReplayScope; status: string; startedAt: string | null; completedAt: string | null } | null> {
-  const result = await pool.query<{
+  const result = await pool.runQuery<{
     id: string;
     scope: ReplayScope;
     status: string;
@@ -135,7 +135,7 @@ export async function fetchReplayJobStatus(
 export async function listActiveReplayJobs(): Promise<
   Array<{ id: string; scope: ReplayScope; status: string; startedAt: string | null }>
 > {
-  const result = await pool.query<{
+  const result = await pool.runQuery<{
     id: string;
     scope: ReplayScope;
     status: string;
@@ -156,7 +156,7 @@ export async function listActiveReplayJobs(): Promise<
 
 export async function runReplayJob(id: string, scope: ReplayScope): Promise<void> {
   const startedAt = new Date();
-  await pool.query(
+  await pool.runQuery(
     `update ops_replay_jobs
      set status = 'running', started_at = $2
      where id = $1`,
@@ -165,7 +165,7 @@ export async function runReplayJob(id: string, scope: ReplayScope): Promise<void
 
   try {
     if (await isKillSwitchEnabled("replay")) {
-      await pool.query(
+      await pool.runQuery(
         `update ops_replay_jobs
          set status = 'aborted', completed_at = now()
          where id = $1`,
@@ -176,7 +176,7 @@ export async function runReplayJob(id: string, scope: ReplayScope): Promise<void
 
     while (true) {
       if (await isKillSwitchEnabled("replay")) {
-        await pool.query(
+        await pool.runQuery(
           `update ops_replay_jobs
            set status = 'aborted', completed_at = now()
            where id = $1`,
@@ -191,7 +191,7 @@ export async function runReplayJob(id: string, scope: ReplayScope): Promise<void
       await insertReplayEvents(id, scope, batch);
     }
 
-    await pool.query(
+    await pool.runQuery(
       `update ops_replay_jobs
        set status = 'completed', completed_at = now()
        where id = $1`,
@@ -200,7 +200,7 @@ export async function runReplayJob(id: string, scope: ReplayScope): Promise<void
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";
     logError("replay_failed", { code: "replay_failed", message });
-    await pool.query(
+    await pool.runQuery(
       `update ops_replay_jobs
        set status = 'failed', completed_at = now()
        where id = $1`,

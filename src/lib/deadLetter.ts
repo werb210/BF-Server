@@ -6,7 +6,7 @@ export async function pushDeadLetter(payload: {
   error: string;
 }): Promise<void> {
   try {
-    await pool.query(
+    await pool.runQuery(
       `
       INSERT INTO failed_jobs (type, data, error, created_at)
       VALUES ($1, $2::jsonb, $3, NOW())

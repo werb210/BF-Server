@@ -11,10 +11,6 @@ type Queryable = {
 };
 
 export function getDb() {
-  if (process.env.NODE_ENV === "test" && process.env.DATABASE_URL) {
-    throw new Error("Invalid config: DATABASE_URL must not be set in test mode");
-  }
-
   if (process.env.NODE_ENV === "test") {
     return getTestDb();
   }

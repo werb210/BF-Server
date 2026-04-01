@@ -8,7 +8,7 @@ import type {
   ProcessingJobStatus,
 } from "./documentProcessing.types";
 
-type Queryable = Pick<PoolClient, "query">;
+type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 export type BankStatementDocumentRow = {
   id: string;

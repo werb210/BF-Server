@@ -2,6 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const zod_1 = require("zod");
+const schemas_1 = require("../schemas");
+const validate_1 = require("../middleware/validate");
+const response_1 = require("../lib/response");
+const requireAuth_1 = require("../middleware/requireAuth");
 const auth_1 = require("../middleware/auth");
 const safeHandler_1 = require("../middleware/safeHandler");
 const roles_1 = require("../auth/roles");
@@ -61,6 +65,10 @@ function buildRequestMetadata(req) {
     }
     return metadata;
 }
+router.post("/start", requireAuth_1.requireAuth, (0, validate_1.validate)(schemas_1.CallStartSchema), (req, res) => {
+    const { to } = req.validated;
+    return (0, response_1.ok)(res, { started: true, to });
+});
 router.post("/log", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
     const parsed = zod_1.z
         .object({

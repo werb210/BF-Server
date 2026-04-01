@@ -7,6 +7,7 @@ const db_1 = require("../db");
 const applications_repo_1 = require("../modules/applications/applications.repo");
 const config_1 = require("../config");
 const response_1 = require("../lib/response");
+const validate_1 = require("../middleware/validate");
 const router = (0, express_1.Router)();
 const createApplicationSchema = zod_1.z.object({
     sessionId: zod_1.z.string().uuid(),
@@ -18,9 +19,18 @@ router.get("/update", async (_req, res) => {
 router.post("/update", async (_req, res) => {
     (0, response_1.ok)(res, {});
 });
-router.post("/", async (req, res, next) => {
+function enforceSubmitPayload(req, res, next) {
+    if (!req.body?.businessType || !req.body?.applicantName) {
+        return res.status(400).json({
+            success: false,
+            error: "INVALID_APPLICATION_PAYLOAD",
+        });
+    }
+    return next();
+}
+async function handleApplicationSubmit(req, res) {
     try {
-        const { sessionId, source } = createApplicationSchema.parse(req.body ?? {});
+        const { sessionId, source } = req.validated;
         const mapped = await db_1.db.query(`select application_id from readiness_application_mappings where readiness_session_id = $1 limit 1`, [sessionId]);
         if (mapped.rows[0]?.application_id) {
             (0, response_1.ok)(res, { applicationId: mapped.rows[0].application_id, reused: true });
@@ -71,5 +81,7 @@ router.post("/", async (req, res, next) => {
         }
         (0, response_1.fail)(res, "server_error", 500);
     }
-});
+}
+router.post("/", (0, validate_1.validate)(createApplicationSchema), handleApplicationSubmit);
+router.post("/submit", enforceSubmitPayload, (0, validate_1.validate)(createApplicationSchema), handleApplicationSubmit);
 exports.default = router;

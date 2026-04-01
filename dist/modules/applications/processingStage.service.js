@@ -234,7 +234,7 @@ function resolveNextStage(currentStage, data) {
     }
 }
 async function advanceProcessingStageInternal(params) {
-    const application = await params.client.query(`select id, processing_stage, ocr_completed_at, banking_completed_at,
+    const application = await params.client.runQuery(`select id, processing_stage, ocr_completed_at, banking_completed_at,
             credit_summary_completed_at, product_type, lender_product_id,
             requested_amount, metadata
      from applications
@@ -248,11 +248,11 @@ async function advanceProcessingStageInternal(params) {
         !isProcessingStage(applicationRecord.processing_stage)) {
         throw new errors_1.AppError("invalid_state", "Processing stage is invalid.", 400);
     }
-    const ocrJobs = await params.client.query(`select count(*)::int as count
+    const ocrJobs = await params.client.runQuery(`select count(*)::int as count
      from document_processing_jobs
      where application_id = $1
        and status = 'pending'`, [params.applicationId]);
-    const bankingJobs = await params.client.query(`select count(*)::int as count
+    const bankingJobs = await params.client.runQuery(`select count(*)::int as count
      from banking_analysis_jobs
      where application_id = $1
        and status = 'pending'`, [params.applicationId]);
@@ -282,7 +282,7 @@ async function advanceProcessingStageInternal(params) {
         currentStage = nextStage;
     }
     if (currentStage !== applicationRecord.processing_stage) {
-        await params.client.query(`update applications
+        await params.client.runQuery(`update applications
        set processing_stage = $2,
            updated_at = now()
        where id = $1`, [params.applicationId, currentStage]);
@@ -301,16 +301,16 @@ async function advanceProcessingStage(params) {
     }
     const client = await db_1.pool.connect();
     try {
-        await client.query("begin");
+        await client.runQuery("begin");
         const stage = await advanceProcessingStageInternal({
             applicationId: params.applicationId,
             client,
         });
-        await client.query("commit");
+        await client.runQuery("commit");
         return stage;
     }
     catch (err) {
-        await client.query("rollback");
+        await client.runQuery("rollback");
         throw err;
     }
     finally {

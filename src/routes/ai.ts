@@ -65,14 +65,14 @@ async function tryStoreEscalation(payload: {
 }): Promise<string> {
   const escalationId = randomUUID();
   try {
-    await pool.query(
+    await pool.runQuery(
       `update chat_sessions
        set status = 'escalated', escalated_to = $2, updated_at = now()
        where id = $1`,
       [payload.sessionId, payload.escalatedTo ?? null]
     );
 
-    await pool.query(
+    await pool.runQuery(
       `insert into ai_escalations (id, session_id, messages, status, created_at)
        values ($1, $2, $3::jsonb, 'open', now())`,
       [escalationId, payload.sessionId, JSON.stringify(payload.messages ?? [])]
@@ -95,7 +95,7 @@ async function tryStoreReport(payload: {
   const reportId = randomUUID();
 
   try {
-    await pool.query(
+    await pool.runQuery(
       `insert into issue_reports (id, description, screenshot_base64, user_agent, status, created_at)
        values ($1, $2, $3, $4, 'open', now())`,
       [
@@ -198,7 +198,7 @@ router.get("/knowledge", AIKnowledgeController.list);
 router.get(
   "/knowledge/db",
   safeHandler(async (_req: any, res: any) => {
-    const { rows } = await pool.query<{
+    const { rows } = await pool.runQuery<{
       id: string;
       content: string;
       created_at: string;
@@ -274,7 +274,7 @@ router.post(
     }
 
     const id = randomUUID();
-    await pool.query(
+    await pool.runQuery(
       `insert into issue_reports
        (id, session_id, description, page_url, browser_info, screenshot_path, status, created_at)
        values ($1, $2, $3, $4, $5, $6, 'open', now())`,

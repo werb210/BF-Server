@@ -87,10 +87,10 @@ exports.postAiChat = (0, safeHandler_1.safeHandler)(async (req, res) => {
     }
     const sessionId = body.sessionId ?? (0, crypto_1.randomUUID)();
     const userType = body.userType ?? "guest";
-    await db_1.pool.query(`insert into chat_sessions (id, user_type, status, escalated_to, created_at, updated_at)
+    await db_1.pool.runQuery(`insert into chat_sessions (id, user_type, status, escalated_to, created_at, updated_at)
      values ($1, $2, 'active', null, now(), now())
      on conflict (id) do update set updated_at = now()`, [sessionId, userType]);
-    await db_1.pool.query(`insert into chat_messages (id, session_id, role, message, metadata, created_at)
+    await db_1.pool.runQuery(`insert into chat_messages (id, session_id, role, message, metadata, created_at)
      values ($1, $2, 'user', $3, null, now())`, [(0, crypto_1.randomUUID)(), sessionId, body.message]);
     const intent = detectIntent(body.message);
     const prequal = extractPrequalData(body.message);
@@ -100,7 +100,7 @@ exports.postAiChat = (0, safeHandler_1.safeHandler)(async (req, res) => {
         prequal.province !== undefined;
     let lenderMatches;
     if (shouldStorePrequal) {
-        await db_1.pool.query(`insert into ai_prequal_sessions
+        await db_1.pool.runQuery(`insert into ai_prequal_sessions
        (id, session_id, revenue, industry, time_in_business, province, requested_amount, lender_matches, created_at)
        values ($1, $2, $3, null, $4, $5, $6, $7::jsonb, now())`, [
             (0, crypto_1.randomUUID)(),
@@ -121,13 +121,13 @@ exports.postAiChat = (0, safeHandler_1.safeHandler)(async (req, res) => {
                 : {}),
             ...(prequal.province !== undefined ? { province: prequal.province } : {}),
         });
-        await db_1.pool.query(`update ai_prequal_sessions
+        await db_1.pool.runQuery(`update ai_prequal_sessions
        set lender_matches = $2::jsonb
        where session_id = $1`, [sessionId, JSON.stringify(lenderMatches)]);
     }
     const knowledge = await (0, retrievalService_1.retrieveTopKnowledgeChunks)(body.message, 5);
     const aiMessage = await createAiResponse(body.message, knowledge.map((chunk) => chunk.content));
-    await db_1.pool.query(`insert into chat_messages (id, session_id, role, message, metadata, created_at)
+    await db_1.pool.runQuery(`insert into chat_messages (id, session_id, role, message, metadata, created_at)
      values ($1, $2, 'ai', $3, $4::jsonb, now())`, [(0, crypto_1.randomUUID)(), sessionId, aiMessage, JSON.stringify({ intent })]);
     res.status(200).json({
         sessionId,
@@ -147,10 +147,10 @@ exports.postAiEscalate = (0, safeHandler_1.safeHandler)(async (req, res) => {
         res.status(400).json({ code: "invalid_request", message: "sessionId is required" });
         return;
     }
-    await db_1.pool.query(`update chat_sessions
+    await db_1.pool.runQuery(`update chat_sessions
      set status = 'escalated', escalated_to = $2, updated_at = now()
      where id = $1`, [sessionId, escalatedTo ?? null]);
-    await db_1.pool.query(`insert into ai_escalations (id, session_id, messages, status, created_at)
+    await db_1.pool.runQuery(`insert into ai_escalations (id, session_id, messages, status, created_at)
      values ($1, $2, $3::jsonb, 'open', now())`, [(0, crypto_1.randomUUID)(), sessionId, JSON.stringify(messages ?? [])]);
     (0, events_1.emitAiEscalation)({
         sessionId,
