@@ -111,7 +111,7 @@ async function addMessage(params) {
      values ($1, $2, $3, $4, $5::jsonb)`, [(0, crypto_1.randomUUID)(), params.sessionId, params.role, params.message, payload]);
 }
 async function listMessagesBySession(sessionId) {
-    const { rows } = await db_1.pool.query(`select id, session_id, role, message, content, metadata, created_at
+    const { rows } = await db_1.pool.runQuery(`select id, session_id, role, message, content, metadata, created_at
      from chat_messages
      where session_id = $1
      order by created_at asc`, [sessionId]);

@@ -1,15 +1,17 @@
 import type { Response } from "express";
 
 export function ok(res: Response, data: unknown): Response {
-  return res.json({
-    success: true,
-    data,
-  });
+  res.locals.__wrapped = true;
+  return res.json({ status: "ok", data });
 }
 
-export function fail(res: Response, message: string, code = 400): Response {
+export function fail(res: Response, codeOrMessage: number | string, messageOrCode?: string | number): Response {
+  const code = typeof codeOrMessage === "number" ? codeOrMessage : Number(messageOrCode ?? 500);
+  const message = typeof codeOrMessage === "number" ? String(messageOrCode ?? "error") : codeOrMessage;
+
+  res.locals.__wrapped = true;
   return res.status(code).json({
-    success: false,
-    error: message,
+    status: "error",
+    error: { code: String(code), message },
   });
 }

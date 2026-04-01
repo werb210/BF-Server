@@ -20,7 +20,8 @@ describe("OTP flows", () => {
       .send({ phone: "+15555550100" });
 
     expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
+    expect(res.body).toHaveProperty("status", "ok");
+    expect(res.body).toHaveProperty("data");
   });
 
   it("verifies OTP and returns a token", async () => {
@@ -33,7 +34,8 @@ describe("OTP flows", () => {
       .send({ phone: "+15555550100", code: "654321" });
 
     expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
+    expect(res.body).toHaveProperty("status", "ok");
+    expect(res.body).toHaveProperty("data");
     expect(res.body.data.token).toBeDefined();
   });
 
@@ -43,7 +45,8 @@ describe("OTP flows", () => {
       .send({ phone: "bad-phone", code: "abc" });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe("invalid_payload");
+    expect(res.body).toHaveProperty("status", "error");
+    expect(res.body.error).toHaveProperty("message", "invalid_payload");
   });
 
   it("returns unauthorized when JWT secret is unavailable", async () => {
@@ -58,7 +61,8 @@ describe("OTP flows", () => {
       .send({ phone: "+15555550100", code: "654321" });
 
     expect(res.status).toBe(401);
-    expect(res.body.error).toBe("unauthorized");
+    expect(res.body).toHaveProperty("status", "error");
+    expect(res.body.error).toHaveProperty("message", "unauthorized");
   });
 
   it("returns 410 when OTP is expired", async () => {
@@ -77,7 +81,7 @@ describe("OTP flows", () => {
       .send({ phone: "+15555550100", code: "654321" });
 
     expect(res.status).toBe(410);
-    expect(res.body.error).toBe("OTP expired");
+    expect(res.body.error).toHaveProperty("message", "OTP expired");
 
     nowSpy.mockRestore();
   });
@@ -97,7 +101,7 @@ describe("OTP flows", () => {
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(429);
-    expect(second.body.error).toBe("Too many requests");
+    expect(second.body.error).toHaveProperty("message", "Too many requests");
 
     nowSpy.mockRestore();
   });
@@ -112,20 +116,20 @@ describe("OTP flows", () => {
         .post("/api/auth/otp/verify")
         .send({ phone: "+15555550100", code: "000000" });
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe("Invalid code");
+      expect(res.body.error).toHaveProperty("message", "Invalid code");
     }
 
     const locked = await request(app)
       .post("/api/auth/otp/verify")
       .send({ phone: "+15555550100", code: "000000" });
     expect(locked.status).toBe(400);
-    expect(locked.body.error).toBe("Invalid code");
+    expect(locked.body.error).toHaveProperty("message", "Invalid code");
 
     const afterDelete = await request(app)
       .post("/api/auth/otp/verify")
       .send({ phone: "+15555550100", code: "654321" });
     expect(afterDelete.status).toBe(400);
-    expect(afterDelete.body.error).toBe("Invalid code");
+    expect(afterDelete.body.error).toHaveProperty("message", "Invalid code");
   });
 
   it("prevents OTP replay after successful verification", async () => {
@@ -142,6 +146,6 @@ describe("OTP flows", () => {
       .post("/api/auth/otp/verify")
       .send({ phone: "+15555550100", code: "654321" });
     expect(replay.status).toBe(400);
-    expect(replay.body.error).toBe("Invalid code");
+    expect(replay.body.error).toHaveProperty("message", "Invalid code");
   });
 });

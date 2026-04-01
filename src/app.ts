@@ -16,7 +16,7 @@ import leadRoutes from "./routes/lead";
 import applicationRoutes from "./routes/application";
 import documentsRoutes from "./routes/documents";
 import { errorHandler } from "./middleware/errorHandler";
-import { ok as okPayload, fail as failPayload } from "./lib/apiResponse";
+import { fail, ok } from "./lib/response";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -24,6 +24,11 @@ declare global {
 }
 
 let publicRequestCount = 0;
+
+const wrap =
+  (fn: express.RequestHandler): express.RequestHandler =>
+  (req, res, next) =>
+    Promise.resolve(fn(req, res, next)).catch(next);
 
 export function resetOtpStateForTests() {
   publicRequestCount = 0;
@@ -37,46 +42,16 @@ export function createApp() {
   const app = express();
 
   app.use(express.json());
-  app.get("/health", (_req, res) => {
-    return res.status(200).json({
-      status: "ok",
-      service: "bf-server",
-      timestamp: new Date().toISOString(),
-    });
-  });
+  app.get(
+    "/health",
+    wrap(async (_req, res) => {
+      return ok(res, {
+        service: "bf-server",
+        timestamp: new Date().toISOString(),
+      });
+    })
+  );
 
-  app.use((req, res, next) => {
-    console.log("REQ:", req.method, req.path);
-    const originalJson = res.json.bind(res);
-    res.json = ((body: unknown) => {
-      console.log("RES:", res.statusCode);
-      const isContractShape =
-        !!body &&
-        typeof body === "object" &&
-        "status" in (body as Record<string, unknown>) &&
-        "data" in (body as Record<string, unknown>) &&
-        "error" in (body as Record<string, unknown>);
-
-      if (isContractShape) {
-        return originalJson(body);
-      }
-
-      if (res.statusCode === 401) {
-        return originalJson(failPayload("AUTH", "Unauthorized"));
-      }
-
-      if (res.statusCode >= 400) {
-        const message =
-          body && typeof body === "object" && "error" in (body as Record<string, unknown>)
-            ? String((body as Record<string, unknown>).error)
-            : "Request failed";
-        return originalJson(failPayload(String(res.statusCode), message));
-      }
-
-      return originalJson(okPayload(body));
-    }) as typeof res.json;
-    next();
-  });
   app.use(routeAlias);
 
   app.use((req, res, next) => {
@@ -96,20 +71,23 @@ export function createApp() {
     res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
 
     if (req.method === "OPTIONS") {
+      res.locals.__wrapped = true;
       return res.status(200).send();
     }
 
     return next();
   });
 
-
-  app.get("/api/public/test", (_req, res) => {
-    publicRequestCount += 1;
-    if (publicRequestCount > 300) {
-      return res.status(429).json({ success: false, error: "RATE_LIMITED" });
-    }
-    return res.status(200).json({ success: true, data: { ok: true } });
-  });
+  app.get(
+    "/api/public/test",
+    wrap(async (_req, res) => {
+      publicRequestCount += 1;
+      if (publicRequestCount > 300) {
+        return fail(res, 429, "RATE_LIMITED");
+      }
+      return ok(res, { ok: true });
+    })
+  );
 
   app.use("/api/auth", authRoutes);
   app.use("/api/crm", crmRoutes);
@@ -129,25 +107,52 @@ export function createApp() {
   app.use("/api/sms", smsRoutes);
   app.use("/api", healthRoutes);
 
-  app.get("/api/voice/token", requireAuth, (_req, res) => {
-    return res.status(200).json({ success: true, data: { token: "real-token" } });
-  });
+  app.get(
+    "/api/voice/token",
+    requireAuth,
+    wrap(async (_req, res) => {
+      return ok(res, { token: "real-token" });
+    })
+  );
 
-  app.use("/api/private", requireAuth, (_req, res) => {
-    return res.json({ success: true, data: { ok: true } });
-  });
+  app.use(
+    "/api/private",
+    requireAuth,
+    wrap(async (_req, res) => {
+      return ok(res, { ok: true });
+    })
+  );
 
   app.use("/api/internal", internalRoutes);
 
+  app.use((req, res) => {
+    if (!res.locals.__wrapped) {
+      return res.status(500).json({
+        status: "error",
+        error: { code: "UNWRAPPED_RESPONSE", message: "Response not wrapped" },
+      });
+    }
+    return undefined;
+  });
+
   app.use(errorHandler);
 
-  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    console.error("UNHANDLED_ERROR", err);
-    res.status(500).json({ error: "internal_error" });
+  app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (res.headersSent) return next(err);
+
+    res.locals.__wrapped = true;
+
+    return res.status(500).json({
+      status: "error",
+      error: {
+        code: "INTERNAL_ERROR",
+        message: err instanceof Error ? err.message : "Internal server error",
+      },
+    });
   });
 
   app.use((_req: express.Request, res: express.Response) => {
-    res.status(404).json({ error: "not_found" });
+    return fail(res, 410, "LEGACY_ROUTE_DISABLED");
   });
 
   return app;

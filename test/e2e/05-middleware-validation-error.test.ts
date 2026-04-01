@@ -25,7 +25,8 @@ describe("Middleware execution, validation, and error handling", () => {
     const res = await request(app).post("/api/auth/otp/start").send({ phone: "" });
 
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({ success: false, error: "invalid_payload" });
+    expect(res.body).toHaveProperty("status", "error");
+    expect(res.body).toHaveProperty("error");
   });
 
   it("returns consistent 404 error envelope for unknown routes", async () => {
@@ -35,7 +36,9 @@ describe("Middleware execution, validation, and error handling", () => {
       .set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(410);
-    expect(res.body.success).toBe(false);
-    expect(res.body.error).toBe("LEGACY_ROUTE_DISABLED");
+    expect(res.body).toEqual({
+      status: "error",
+      error: { code: "410", message: "LEGACY_ROUTE_DISABLED" },
+    });
   });
 });

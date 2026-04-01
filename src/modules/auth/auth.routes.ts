@@ -2,14 +2,14 @@ import { Router, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 
 import { otpStore } from "./otpStore";
-import { ok } from "../../middleware/response";
+import { fail, ok } from "../../middleware/response";
 
 const router = Router();
 
 const TEST_OTP_CODE = process.env.TEST_OTP_CODE || "654321";
 
 const error = (res: Response, status: number, message: string) =>
-  res.status(status).json({ success: false, error: message });
+  fail(res, status, message);
 
 export function resetOtpStateForTests() {
   otpStore.clear();

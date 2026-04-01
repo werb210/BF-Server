@@ -23,8 +23,9 @@ const lead_1 = __importDefault(require("./routes/lead"));
 const application_1 = __importDefault(require("./routes/application"));
 const documents_1 = __importDefault(require("./routes/documents"));
 const errorHandler_1 = require("./middleware/errorHandler");
-const apiResponse_1 = require("./lib/apiResponse");
+const response_1 = require("./lib/response");
 let publicRequestCount = 0;
+const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 function resetOtpStateForTests() {
     publicRequestCount = 0;
 }
@@ -33,39 +34,12 @@ function createApp() {
     process.env.STRICT_API = "true";
     const app = (0, express_1.default)();
     app.use(express_1.default.json());
-    app.get("/health", (_req, res) => {
-        return res.status(200).json({
-            status: "ok",
+    app.get("/health", wrap(async (_req, res) => {
+        return (0, response_1.ok)(res, {
             service: "bf-server",
             timestamp: new Date().toISOString(),
         });
-    });
-    app.use((req, res, next) => {
-        console.log("REQ:", req.method, req.path);
-        const originalJson = res.json.bind(res);
-        res.json = ((body) => {
-            console.log("RES:", res.statusCode);
-            const isContractShape = !!body &&
-                typeof body === "object" &&
-                "status" in body &&
-                "data" in body &&
-                "error" in body;
-            if (isContractShape) {
-                return originalJson(body);
-            }
-            if (res.statusCode === 401) {
-                return originalJson((0, apiResponse_1.fail)("AUTH", "Unauthorized"));
-            }
-            if (res.statusCode >= 400) {
-                const message = body && typeof body === "object" && "error" in body
-                    ? String(body.error)
-                    : "Request failed";
-                return originalJson((0, apiResponse_1.fail)(String(res.statusCode), message));
-            }
-            return originalJson((0, apiResponse_1.ok)(body));
-        });
-        next();
-    });
+    }));
     app.use(routeAlias_1.routeAlias);
     app.use((req, res, next) => {
         const configured = (process.env.CORS_ALLOWED_ORIGINS ?? "https://staff.boreal.financial")
@@ -81,17 +55,18 @@ function createApp() {
         res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
         res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
         if (req.method === "OPTIONS") {
+            res.locals.__wrapped = true;
             return res.status(200).send();
         }
         return next();
     });
-    app.get("/api/public/test", (_req, res) => {
+    app.get("/api/public/test", wrap(async (_req, res) => {
         publicRequestCount += 1;
         if (publicRequestCount > 300) {
-            return res.status(429).json({ success: false, error: "RATE_LIMITED" });
+            return (0, response_1.fail)(res, 429, "RATE_LIMITED");
         }
-        return res.status(200).json({ success: true, data: { ok: true } });
-    });
+        return (0, response_1.ok)(res, { ok: true });
+    }));
     app.use("/api/auth", auth_routes_1.default);
     app.use("/api/crm", crm_1.default);
     app.use("/api/crm", lead_1.default);
@@ -108,20 +83,37 @@ function createApp() {
     app.use("/api/comm", messaging_1.default);
     app.use("/api/sms", sms_1.default);
     app.use("/api", health_1.default);
-    app.get("/api/voice/token", auth_1.requireAuth, (_req, res) => {
-        return res.status(200).json({ success: true, data: { token: "real-token" } });
-    });
-    app.use("/api/private", auth_1.requireAuth, (_req, res) => {
-        return res.json({ success: true, data: { ok: true } });
-    });
+    app.get("/api/voice/token", auth_1.requireAuth, wrap(async (_req, res) => {
+        return (0, response_1.ok)(res, { token: "real-token" });
+    }));
+    app.use("/api/private", auth_1.requireAuth, wrap(async (_req, res) => {
+        return (0, response_1.ok)(res, { ok: true });
+    }));
     app.use("/api/internal", internal_1.default);
+    app.use((req, res) => {
+        if (!res.locals.__wrapped) {
+            return res.status(500).json({
+                status: "error",
+                error: { code: "UNWRAPPED_RESPONSE", message: "Response not wrapped" },
+            });
+        }
+        return undefined;
+    });
     app.use(errorHandler_1.errorHandler);
-    app.use((err, _req, res, _next) => {
-        console.error("UNHANDLED_ERROR", err);
-        res.status(500).json({ error: "internal_error" });
+    app.use((err, _req, res, next) => {
+        if (res.headersSent)
+            return next(err);
+        res.locals.__wrapped = true;
+        return res.status(500).json({
+            status: "error",
+            error: {
+                code: "INTERNAL_ERROR",
+                message: err instanceof Error ? err.message : "Internal server error",
+            },
+        });
     });
     app.use((_req, res) => {
-        res.status(404).json({ error: "not_found" });
+        return (0, response_1.fail)(res, 410, "LEGACY_ROUTE_DISABLED");
     });
     return app;
 }

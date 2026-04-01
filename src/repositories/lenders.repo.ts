@@ -133,7 +133,9 @@ export const LIST_LENDERS_SQL = `
   ORDER BY created_at DESC
 `;
 
-export async function listLenders(db: { query: typeof pool.query }) {
+type QueryExecutor = { query: (text: string, params?: unknown[]) => Promise<{ rows: any[] }> };
+
+export async function listLenders(db: QueryExecutor) {
   const existing = await fetchLenderColumns();
   const selectColumns = buildSelectColumns(existing);
   const { rows } = await db.query(`
@@ -184,7 +186,7 @@ export async function fetchLenderById(id: string) {
 }
 
 export async function createLender(
-  db: { query: typeof pool.query },
+  db: QueryExecutor,
   input: CreateLenderInput
 ) {
   const {
@@ -324,7 +326,7 @@ export async function createLender(
 }
 
 export async function updateLender(
-  db: { query: typeof pool.query },
+  db: QueryExecutor,
   params: {
     id: string;
     name?: string | null;

@@ -34,10 +34,10 @@ describe("Route registration and prefix integrity", () => {
   it("rejects legacy aliases", async () => {
     const authStart = await request(app).post("/auth/otp/start").send({ phone: "+15555550100" });
     expect(authStart.status).toBe(410);
-    expect(authStart.body).toEqual({ success: false, error: "LEGACY_ROUTE_DISABLED" });
+    expect(authStart.body).toEqual({ status: "error", error: { code: "410", message: "LEGACY_ROUTE_DISABLED" } });
 
     const voiceToken = await request(app).get("/voice/token");
     expect(voiceToken.status).toBe(410);
-    expect(voiceToken.body).toEqual({ success: false, error: "LEGACY_ROUTE_DISABLED" });
+    expect(voiceToken.body).toEqual({ status: "error", error: { code: "410", message: "LEGACY_ROUTE_DISABLED" } });
   });
 });

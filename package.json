@@ -10,7 +10,8 @@
     "test": "NODE_ENV=test vitest",
     "ci:contract": "bash scripts/ci-contract-checks.sh",
     "prisma:generate": "prisma generate",
-    "verify:no-direct-query": "rg -n \"pool.query\\(|client.query\\(\" src && exit 1 || exit 0"
+    "verify:no-direct-query": "rg -n \"pool.query\\(|client.query\\(\" src && exit 1 || exit 0",
+    "verify:no-db-bypass": "rg -n \"getDb|queryDb|pool.query\" src && exit 1 || exit 0"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",

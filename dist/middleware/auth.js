@@ -6,26 +6,26 @@ exports.createAuthMiddleware = createAuthMiddleware;
 exports.requireAuthorization = requireAuthorization;
 exports.requireCapability = requireCapability;
 const jwt_1 = require("../auth/jwt");
-const errors_1 = require("../errors");
+const response_1 = require("../lib/response");
 function requireAuth(req, res, next) {
     const header = req.headers.authorization;
     if (!header) {
-        return res.status(401).json({ success: false, error: "UNAUTHORIZED" });
+        return (0, response_1.fail)(res, 401, "Unauthorized");
     }
     const bearerMatch = header.match(/^Bearer(?:\s+(.+))?$/i);
     if (!bearerMatch) {
-        return res.status(401).json({ success: false, error: "UNAUTHORIZED" });
+        return (0, response_1.fail)(res, 401, "Unauthorized");
     }
     const token = bearerMatch[1]?.trim();
     if (!token || token === "null" || token === "undefined") {
-        return res.status(401).json({ success: false, error: "INVALID_TOKEN" });
+        return (0, response_1.fail)(res, 401, "Unauthorized");
     }
     try {
         req.user = (0, jwt_1.verifyJwt)(token);
         return next();
     }
     catch {
-        return res.status(401).json({ success: false, error: "INVALID_TOKEN" });
+        return (0, response_1.fail)(res, 401, "Unauthorized");
     }
 }
 function createAuthMiddleware() {
@@ -39,7 +39,7 @@ function requireAuthorization(options = {}) {
     return (req, res, next) => {
         const user = req.user;
         if (!user) {
-            return res.status(401).json({ success: false, error: errors_1.Errors.UNAUTHORIZED });
+            return (0, response_1.fail)(res, 401, "Unauthorized");
         }
         if (requiredRoles.length > 0 && (!user.role || !requiredRoles.includes(user.role))) {
             return res.status(403).json({ success: false, error: "FORBIDDEN" });

@@ -1,14 +1,17 @@
 import type { NextFunction, Request, Response } from "express";
 
-export function errorHandler(err: any, _req: Request, res: Response, _next: NextFunction) {
-  console.error("SERVER ERROR:", err);
-
-  if (err?.name === "UnauthorizedError") {
-    return res.status(401).json({ success: false, error: "Unauthorized" });
+export function errorHandler(err: any, _req: Request, res: Response, next: NextFunction) {
+  if (res.headersSent) {
+    return next(err);
   }
 
+  res.locals.__wrapped = true;
+
   return res.status(500).json({
-    success: false,
-    error: "Internal server error",
+    status: "error",
+    error: {
+      code: "INTERNAL_ERROR",
+      message: err?.message || "Internal server error",
+    },
   });
 }

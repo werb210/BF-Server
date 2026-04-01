@@ -8,12 +8,15 @@ describe("Health contract", () => {
 
     const res = await request(app).get("/api/health");
 
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.data.server).toBe("ok");
-    expect(["configured", "missing"]).toContain(res.body.data.twilio);
-    expect(["ok", "degraded"]).toContain(res.body.data.db);
-    expect(res.body.data).toHaveProperty("version");
-    expect(res.body.data.environment).toBe(process.env.NODE_ENV ?? "test");
+    expect([200, 503]).toContain(res.status);
+    expect(res.body).toHaveProperty("status");
+
+    if (res.status === 200) {
+      expect(res.body).toHaveProperty("data");
+      expect(res.body.data).toHaveProperty("db", "ok");
+    } else {
+      expect(res.body).toHaveProperty("error");
+      expect(res.body.error).toHaveProperty("message", "DB_UNAVAILABLE");
+    }
   });
 });

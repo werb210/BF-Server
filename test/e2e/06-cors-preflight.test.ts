@@ -52,6 +52,6 @@ describe("Global CORS and deterministic preflight behavior", () => {
       .set("Access-Control-Request-Method", "POST");
 
     expect(res.status).toBe(410);
-    expect(res.body).toEqual({ success: false, error: "LEGACY_ROUTE_DISABLED" });
+    expect(res.body).toEqual({ status: "error", error: { code: "410", message: "LEGACY_ROUTE_DISABLED" } });
   });
 });

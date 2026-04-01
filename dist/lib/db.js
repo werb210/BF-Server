@@ -3,7 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.runQuery = runQuery;
 exports.getPrisma = getPrisma;
 const pg_1 = require("pg");
-const db_test_1 = require("./db.test");
 let pool = null;
 function validateQueryInputs(sql, params) {
     if (typeof sql !== "string" || !sql.trim()) {
@@ -12,29 +11,39 @@ function validateQueryInputs(sql, params) {
     if (sql.includes("undefined")) {
         throw new Error("runQuery SQL must not contain undefined");
     }
-    if (typeof params !== "undefined" && !Array.isArray(params)) {
+    if (!Array.isArray(params)) {
         throw new Error("runQuery params must be an array when provided");
     }
-    if (params && params.some((param) => typeof param === "undefined")) {
+    if (params.some((param) => typeof param === "undefined")) {
         throw new Error("runQuery params must not include undefined values");
     }
 }
-function getQueryable() {
-    if (process.env.NODE_ENV === "test") {
-        return (0, db_test_1.getTestDb)();
-    }
+function initPool() {
+    if (pool)
+        return;
     if (!process.env.DATABASE_URL) {
-        console.error("Missing DATABASE_URL");
-        process.exit(1);
+        throw new Error("DB_POOL_NOT_INITIALIZED");
     }
-    if (!pool) {
-        pool = new pg_1.Pool({ connectionString: process.env.DATABASE_URL });
-    }
-    return pool;
+    pool = new pg_1.Pool({ connectionString: process.env.DATABASE_URL });
 }
-async function runQuery(sql, params) {
+async function runQuery(sql, params = []) {
     validateQueryInputs(sql, params);
-    return getQueryable().query(sql, params);
+    initPool();
+    if (!pool) {
+        throw new Error("DB_POOL_NOT_INITIALIZED");
+    }
+    const client = await pool.connect();
+    try {
+        const result = await client.query(sql, params);
+        return result;
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`DB_QUERY_FAILED: ${message}`);
+    }
+    finally {
+        client.release();
+    }
 }
 async function getPrisma() {
     throw new Error("Prisma not implemented");

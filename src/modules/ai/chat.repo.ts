@@ -201,7 +201,7 @@ export async function addMessage(params: {
 }
 
 export async function listMessagesBySession(sessionId: string): Promise<ChatMessageRecord[]> {
-  const { rows } = await pool.query<{
+  const { rows } = await pool.runQuery<{
     id: string;
     session_id: string;
     role: "user" | "ai" | "staff" | "system";

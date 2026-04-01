@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction, type RequestHandler } from "express";
 import { verifyJwt } from "../auth/jwt";
-import { Errors } from "../errors";
+import { fail } from "../lib/response";
 
 type AuthorizationOptions = {
   roles?: string[];
@@ -20,25 +20,25 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   const header = req.headers.authorization;
 
   if (!header) {
-    return res.status(401).json({ success: false, error: "UNAUTHORIZED" });
+    return fail(res, 401, "Unauthorized");
   }
 
   const bearerMatch = header.match(/^Bearer(?:\s+(.+))?$/i);
   if (!bearerMatch) {
-    return res.status(401).json({ success: false, error: "UNAUTHORIZED" });
+    return fail(res, 401, "Unauthorized");
   }
 
   const token = bearerMatch[1]?.trim();
 
   if (!token || token === "null" || token === "undefined") {
-    return res.status(401).json({ success: false, error: "INVALID_TOKEN" });
+    return fail(res, 401, "Unauthorized");
   }
 
   try {
     req.user = verifyJwt(token) as Request["user"];
     return next();
   } catch {
-    return res.status(401).json({ success: false, error: "INVALID_TOKEN" });
+    return fail(res, 401, "Unauthorized");
   }
 }
 
@@ -57,7 +57,7 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
     const user = req.user as AppUser | undefined;
 
     if (!user) {
-      return res.status(401).json({ success: false, error: Errors.UNAUTHORIZED });
+      return fail(res, 401, "Unauthorized");
     }
 
     if (requiredRoles.length > 0 && (!user.role || !requiredRoles.includes(user.role))) {

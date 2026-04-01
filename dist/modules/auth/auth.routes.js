@@ -10,7 +10,7 @@ const otpStore_1 = require("./otpStore");
 const response_1 = require("../../middleware/response");
 const router = (0, express_1.Router)();
 const TEST_OTP_CODE = process.env.TEST_OTP_CODE || "654321";
-const error = (res, status, message) => res.status(status).json({ success: false, error: message });
+const error = (res, status, message) => (0, response_1.fail)(res, status, message);
 function resetOtpStateForTests() {
     otpStore_1.otpStore.clear();
 }

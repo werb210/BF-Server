@@ -9,22 +9,21 @@ app.get("/health", (_req, res) => {
 
 const PORT = process.env.PORT || 8080;
 
-async function assertDb() {
-  if (process.env.NODE_ENV === "test") return;
-
-  try {
-    await runQuery("SELECT 1");
-  } catch {
-    console.error("DB connection failed");
-    process.exit(1);
+async function startServer() {
+  if (process.env.NODE_ENV !== "test") {
+    try {
+      await runQuery("SELECT 1");
+    } catch {
+      console.error("DB not ready, exiting");
+      process.exit(1);
+    }
   }
+
+  app.listen(PORT, () => {
+    console.log(`Server running on ${PORT}`);
+  });
 }
 
 if (process.env.NODE_ENV !== "test") {
-  void (async () => {
-    await assertDb();
-    app.listen(PORT, () => {
-      console.log(`Server running on ${PORT}`);
-    });
-  })();
+  void startServer();
 }
