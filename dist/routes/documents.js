@@ -34,7 +34,7 @@ router.post("/upload", auth_js_1.requireAuth, (0, validate_1.validate)(documentU
     };
     inMemoryDb[id] = doc;
     try {
-        await (0, db_1.queryDb)("INSERT INTO documents (application_id, filename, hash) VALUES ($1,$2,$3)", [req.body?.applicationId ?? null, req.body?.filename ?? `upload-${id}.json`, hash]);
+        await (0, db_1.runQuery)("INSERT INTO documents (application_id, filename, hash) VALUES ($1,$2,$3)", [req.body?.applicationId ?? null, req.body?.filename ?? `upload-${id}.json`, hash]);
     }
     catch (error) {
         console.error("document hash insert failed", error);

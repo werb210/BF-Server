@@ -31,11 +31,17 @@ async function buildHealthPayload() {
 
 router.get("/health", async (_req, res) => {
   const payload = await buildHealthPayload();
+  if (payload.db !== "ok") {
+    return fail(res, 503, "DB unavailable");
+  }
   return ok(res, payload);
 });
 
 router.get("/healthz", async (_req, res) => {
   const payload = await buildHealthPayload();
+  if (payload.db !== "ok") {
+    return fail(res, 503, "DB unavailable");
+  }
   return ok(res, payload);
 });
 

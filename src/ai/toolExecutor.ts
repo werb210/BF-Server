@@ -1,4 +1,4 @@
-import { queryDb } from "../lib/db";
+import { runQuery } from "../lib/db";
 
 export async function executeTool(
   callId: string,
@@ -12,7 +12,7 @@ export async function executeTool(
     try {
       const result = await fn();
 
-      await queryDb("insert into tool_log(call_id, name) values ($1,$2)", [
+      await runQuery("insert into tool_log(call_id, name) values ($1,$2)", [
         callId,
         name,
       ]);
@@ -22,7 +22,7 @@ export async function executeTool(
       attempts++;
 
       if (attempts >= 3) {
-        await queryDb("insert into dead_letter(call_id, name) values ($1,$2)", [
+        await runQuery("insert into dead_letter(call_id, name) values ($1,$2)", [
           callId,
           name,
         ]);

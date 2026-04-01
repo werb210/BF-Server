@@ -23,6 +23,7 @@ const lead_1 = __importDefault(require("./routes/lead"));
 const application_1 = __importDefault(require("./routes/application"));
 const documents_1 = __importDefault(require("./routes/documents"));
 const errorHandler_1 = require("./middleware/errorHandler");
+const apiResponse_1 = require("./lib/apiResponse");
 let publicRequestCount = 0;
 function resetOtpStateForTests() {
     publicRequestCount = 0;
@@ -44,7 +45,24 @@ function createApp() {
         const originalJson = res.json.bind(res);
         res.json = ((body) => {
             console.log("RES:", res.statusCode);
-            return originalJson(body);
+            const isContractShape = !!body &&
+                typeof body === "object" &&
+                "status" in body &&
+                "data" in body &&
+                "error" in body;
+            if (isContractShape) {
+                return originalJson(body);
+            }
+            if (res.statusCode === 401) {
+                return originalJson((0, apiResponse_1.fail)("AUTH", "Unauthorized"));
+            }
+            if (res.statusCode >= 400) {
+                const message = body && typeof body === "object" && "error" in body
+                    ? String(body.error)
+                    : "Request failed";
+                return originalJson((0, apiResponse_1.fail)(String(res.statusCode), message));
+            }
+            return originalJson((0, apiResponse_1.ok)(body));
         });
         next();
     });

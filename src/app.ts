@@ -16,6 +16,7 @@ import leadRoutes from "./routes/lead";
 import applicationRoutes from "./routes/application";
 import documentsRoutes from "./routes/documents";
 import { errorHandler } from "./middleware/errorHandler";
+import { ok as okPayload, fail as failPayload } from "./lib/apiResponse";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -49,7 +50,30 @@ export function createApp() {
     const originalJson = res.json.bind(res);
     res.json = ((body: unknown) => {
       console.log("RES:", res.statusCode);
-      return originalJson(body);
+      const isContractShape =
+        !!body &&
+        typeof body === "object" &&
+        "status" in (body as Record<string, unknown>) &&
+        "data" in (body as Record<string, unknown>) &&
+        "error" in (body as Record<string, unknown>);
+
+      if (isContractShape) {
+        return originalJson(body);
+      }
+
+      if (res.statusCode === 401) {
+        return originalJson(failPayload("AUTH", "Unauthorized"));
+      }
+
+      if (res.statusCode >= 400) {
+        const message =
+          body && typeof body === "object" && "error" in (body as Record<string, unknown>)
+            ? String((body as Record<string, unknown>).error)
+            : "Request failed";
+        return originalJson(failPayload(String(res.statusCode), message));
+      }
+
+      return originalJson(okPayload(body));
     }) as typeof res.json;
     next();
   });

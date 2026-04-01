@@ -4,7 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { sha256 } from "../lib/hash";
 import { ok, fail } from "../middleware/response";
 import { toStringSafe } from "../utils/toStringSafe";
-import { queryDb } from "../lib/db";
+import { runQuery } from "../lib/db";
 import { validate } from "../middleware/validate";
 
 const router = express.Router();
@@ -44,7 +44,7 @@ router.post("/upload", requireAuth, validate(documentUploadSchema), async (req: 
   inMemoryDb[id] = doc;
 
   try {
-    await queryDb(
+    await runQuery(
       "INSERT INTO documents (application_id, filename, hash) VALUES ($1,$2,$3)",
       [req.body?.applicationId ?? null, req.body?.filename ?? `upload-${id}.json`, hash]
     );

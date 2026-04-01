@@ -1,5 +1,5 @@
 import express from "express";
-import { getDb } from "./lib/db";
+import { runQuery } from "./lib/db";
 
 export const app = express();
 
@@ -13,7 +13,7 @@ async function assertDb() {
   if (process.env.NODE_ENV === "test") return;
 
   try {
-    await getDb().query("SELECT 1");
+    await runQuery("SELECT 1");
   } catch {
     console.error("DB connection failed");
     process.exit(1);
