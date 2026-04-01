@@ -1,19 +1,15 @@
 export async function runAI(
   source: string,
-  message?: string,
-  history: any[] = [],
+  message: string,
+  history: any[],
   context: { role?: string } = {}
 ): Promise<any> {
   if (context?.role && context.role !== "staff" && context.role !== "system") {
-    const err: any = new Error("forbidden");
-    err.code = "forbidden";
-    err.status = 403;
-    throw err;
+    return Promise.reject({
+      code: "forbidden",
+      status: 403,
+    });
   }
 
-  if (typeof message === "undefined") {
-    return { text: source };
-  }
-
-  return { text: "ok" };
+  return Promise.resolve({ text: "ok" });
 }
