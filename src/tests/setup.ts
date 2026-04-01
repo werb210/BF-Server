@@ -2,6 +2,7 @@ import { beforeAll, beforeEach } from "vitest";
 
 import { pool } from "../db";
 import { resetRedisMock } from "../lib/redis";
+import { resetTestDb } from "../lib/db.test";
 import { resetOtpStateForTests } from "../modules/auth/auth.routes";
 
 beforeAll(async () => {
@@ -32,6 +33,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  resetTestDb();
   resetRedisMock();
   resetOtpStateForTests();
 });

@@ -3,16 +3,11 @@ if (!process.env.DATABASE_URL) {
 } else {
   describe("real db integration", () => {
     const originalNodeEnv = process.env.NODE_ENV;
-    let realDbAvailable = true;
 
     beforeAll(async () => {
       process.env.NODE_ENV = "development";
-      try {
-        const { queryDb } = await import("../lib/db");
-        await queryDb("SELECT 1");
-      } catch {
-        realDbAvailable = false;
-      }
+      const { queryDb } = await import("../lib/db");
+      await expect(queryDb("SELECT 1")).resolves.toBeDefined();
     });
 
     afterAll(() => {
@@ -20,10 +15,6 @@ if (!process.env.DATABASE_URL) {
     });
 
     test("real db connection works", async () => {
-      if (!realDbAvailable) {
-        return;
-      }
-
       const { queryDb } = await import("../lib/db");
       const res = await queryDb("SELECT 1 as ok");
       expect(res.rows).toHaveLength(1);
@@ -31,10 +22,6 @@ if (!process.env.DATABASE_URL) {
     });
 
     test("real db supports transaction rollback", async () => {
-      if (!realDbAvailable) {
-        return;
-      }
-
       const { queryDb, withDbTransaction } = await import("../lib/db");
       const marker = `from_real_test_${Date.now()}`;
 

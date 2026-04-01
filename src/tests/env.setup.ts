@@ -1,11 +1,6 @@
 process.env.NODE_ENV = "test";
 process.env.SKIP_DB_CONNECTION = "true";
-if (!process.env.DATABASE_URL) process.env.DATABASE_URL = "file:./test.db";
-if (!process.env.TEST_DB_URL)
-  process.env.TEST_DB_URL = "postgres://postgres:postgres@127.0.0.1:5432/test";
-if (process.env.DATABASE_URL.startsWith("file:")) {
-  process.env.DATABASE_URL = process.env.TEST_DB_URL;
-}
+delete process.env.DATABASE_URL;
 
 if (process.env.NODE_ENV === "test") {
   process.env.JWT_SECRET = "test-secret";
