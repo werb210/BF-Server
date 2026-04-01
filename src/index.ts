@@ -1,5 +1,4 @@
 import { createApp } from "./app";
-import { ENV } from "./config/env";
 import { ensureDb } from "./db";
 import { processDeadLetters } from "./workers/deadLetterWorker";
 import { verifyTwilioSetup } from "./startup/verifyCheck";
@@ -16,8 +15,10 @@ async function start() {
     );
   }, 15000);
 
-  app.listen(Number(ENV.PORT), "0.0.0.0", () => {
-    console.log(`Running on ${ENV.PORT}`);
+  const PORT = Number(process.env.PORT) || 8080;
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT}`);
   });
 }
 
