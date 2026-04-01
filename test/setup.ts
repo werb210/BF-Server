@@ -1,9 +1,6 @@
 import { jest } from "@jest/globals";
 
-jest.mock("../src/brain/openaiClient", () => ({
-  __esModule: true,
-  runAI: jest.fn(),
-}));
+jest.mock("../src/brain/openaiClient", () => require("./mocks/openaiClientMock"));
 
 jest.mock("../src/db", () => {
   const mockRequest = jest.fn(() => ({
@@ -22,4 +19,9 @@ jest.mock("../src/db", () => {
       request: mockRequest,
     },
   };
+});
+
+beforeEach(() => {
+  const { runAI } = require("./mocks/openaiClientMock");
+  runAI.mockReset();
 });
