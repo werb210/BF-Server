@@ -4,7 +4,9 @@ import { processDeadLetters } from "./workers/deadLetterWorker";
 import { verifyTwilioSetup } from "./startup/verifyCheck";
 import { initDependencies } from "./system/init";
 import { setupShutdown } from "./system/shutdown";
-import { ENV } from "./system/env";
+import { validateEnv } from "./system/env";
+
+validateEnv();
 
 async function start() {
   console.log("[BOOT] Starting server...");
@@ -17,7 +19,7 @@ async function start() {
     );
   }, 15000);
 
-  const PORT = Number(ENV.PORT);
+  const PORT = Number(process.env.PORT);
 
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`[BOOT] Server listening on ${PORT}`);
