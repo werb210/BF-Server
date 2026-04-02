@@ -35,7 +35,19 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Validate required CI env
+        env:
+          DB_URL: ${{ secrets.DB_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: |
+          test -n "$DB_URL" || (echo "DB_URL is missing" && exit 1)
+          test -n "$JWT_SECRET" || (echo "JWT_SECRET is missing" && exit 1)
+
       - name: Build
+        env:
+          DB_URL: ${{ secrets.DB_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          PORT: 8080
         run: npm run build
 
       - name: Predeploy safety check
