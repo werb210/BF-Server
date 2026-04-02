@@ -9,7 +9,7 @@ import {
   upsertPipelineSnapshotAt,
   upsertStaffActivityWindow,
 } from "./reporting.repo";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { config } from "../../config";
 import { runWithRequestContext } from "../../middleware/requestContext";
 import { logError, logInfo } from "../../observability/logger";

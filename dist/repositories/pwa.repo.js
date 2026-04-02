@@ -14,7 +14,7 @@ const crypto_1 = require("crypto");
 const db_1 = require("../db");
 const errors_1 = require("../middleware/errors");
 async function upsertPwaSubscription(params) {
-    const existing = await db_1.pool.runQuery(`select id, user_id, endpoint, p256dh, auth, device_type, created_at, updated_at
+    const existing = await (0, db_1.runQuery)(`select id, user_id, endpoint, p256dh, auth, device_type, created_at, updated_at
      from pwa_subscriptions
      where endpoint = $1
      limit 1`, [params.endpoint]);
@@ -23,7 +23,7 @@ async function upsertPwaSubscription(params) {
         throw new errors_1.AppError("endpoint_in_use", "Subscription endpoint is already registered.", 409);
     }
     if (row) {
-        const updated = await db_1.pool.runQuery(`update pwa_subscriptions
+        const updated = await (0, db_1.runQuery)(`update pwa_subscriptions
        set p256dh = $1,
            auth = $2,
            device_type = $3,
@@ -36,7 +36,7 @@ async function upsertPwaSubscription(params) {
         }
         return updatedRow;
     }
-    const created = await db_1.pool.runQuery(`insert into pwa_subscriptions
+    const created = await (0, db_1.runQuery)(`insert into pwa_subscriptions
      (id, user_id, endpoint, p256dh, auth, device_type, created_at, updated_at)
      values ($1, $2, $3, $4, $5, $6, now(), now())
      returning id, user_id, endpoint, p256dh, auth, device_type, created_at, updated_at`, [
@@ -54,35 +54,35 @@ async function upsertPwaSubscription(params) {
     return createdRow;
 }
 async function deletePwaSubscription(params) {
-    const result = await db_1.pool.runQuery(`delete from pwa_subscriptions
+    const result = await (0, db_1.runQuery)(`delete from pwa_subscriptions
      where user_id = $1 and endpoint = $2`, [params.userId, params.endpoint]);
     return (result.rowCount ?? 0) > 0;
 }
 async function deletePwaSubscriptionLegacy(endpoint) {
-    const result = await db_1.pool.runQuery(`delete from pwa_subscriptions
+    const result = await (0, db_1.runQuery)(`delete from pwa_subscriptions
      where endpoint = $1`, [endpoint]);
     return (result.rowCount ?? 0) > 0;
 }
 async function listPwaSubscriptionsByUser(userId) {
-    const result = await db_1.pool.runQuery(`select id, user_id, endpoint, p256dh, auth, device_type, created_at, updated_at
+    const result = await (0, db_1.runQuery)(`select id, user_id, endpoint, p256dh, auth, device_type, created_at, updated_at
      from pwa_subscriptions
      where user_id = $1
      order by updated_at desc`, [userId]);
     return result.rows;
 }
 async function listPwaSubscriptions() {
-    const result = await db_1.pool.runQuery(`select id, user_id, endpoint, p256dh, auth, device_type, created_at, updated_at
+    const result = await (0, db_1.runQuery)(`select id, user_id, endpoint, p256dh, auth, device_type, created_at, updated_at
      from pwa_subscriptions
      order by updated_at desc`);
     return result.rows;
 }
 async function deletePwaSubscriptionByEndpoint(params) {
-    await db_1.pool.runQuery(`delete from pwa_subscriptions
+    await (0, db_1.runQuery)(`delete from pwa_subscriptions
      where user_id = $1 and endpoint = $2`, [params.userId, params.endpoint]);
 }
 async function createPwaNotificationAudit(params) {
     const duplicateWindowSeconds = params.duplicateWindowSeconds ?? 120;
-    const existing = await db_1.pool.runQuery(`select id, user_id, level, title, body, delivered_at, acknowledged_at, payload_hash
+    const existing = await (0, db_1.runQuery)(`select id, user_id, level, title, body, delivered_at, acknowledged_at, payload_hash
      from pwa_notifications
      where user_id = $1
        and payload_hash = $2
@@ -95,7 +95,7 @@ async function createPwaNotificationAudit(params) {
             return latest;
         }
     }
-    const result = await db_1.pool.runQuery(`insert into pwa_notifications
+    const result = await (0, db_1.runQuery)(`insert into pwa_notifications
      (id, user_id, level, title, body, delivered_at, acknowledged_at, payload_hash)
      values ($1, $2, $3, $4, $5, $6, null, $7)
      returning id, user_id, level, title, body, delivered_at, acknowledged_at, payload_hash`, [
@@ -115,13 +115,13 @@ async function createPwaNotificationAudit(params) {
 }
 async function listPwaNotificationsForUser(params) {
     const [result, countResult] = await Promise.all([
-        db_1.pool.runQuery(`select id, user_id, level, title, body, delivered_at, acknowledged_at, payload_hash
+        (0, db_1.runQuery)(`select id, user_id, level, title, body, delivered_at, acknowledged_at, payload_hash
        from pwa_notifications
        where user_id = $1
        order by delivered_at desc
        limit $2
        offset $3`, [params.userId, params.limit, params.offset]),
-        db_1.pool.runQuery(`select count(*)::int as count
+        (0, db_1.runQuery)(`select count(*)::int as count
        from pwa_notifications
        where user_id = $1`, [params.userId]),
     ]);
@@ -131,13 +131,13 @@ async function listPwaNotificationsForUser(params) {
     };
 }
 async function acknowledgePwaNotification(params) {
-    const result = await db_1.pool.runQuery(`update pwa_notifications
+    const result = await (0, db_1.runQuery)(`update pwa_notifications
      set acknowledged_at = now()
      where id = $1 and user_id = $2 and acknowledged_at is null`, [params.notificationId, params.userId]);
     return (result.rowCount ?? 0) > 0;
 }
 async function purgeOldPwaNotifications(retentionDays) {
-    const result = await db_1.pool.runQuery(`delete from pwa_notifications
+    const result = await (0, db_1.runQuery)(`delete from pwa_notifications
      where delivered_at < now() - ($1::text || ' days')::interval`, [retentionDays]);
     return result.rowCount ?? 0;
 }

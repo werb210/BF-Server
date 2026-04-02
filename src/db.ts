@@ -18,35 +18,28 @@ export const {
   clearDbTestFailureInjection,
 } = dbImpl;
 
-type Queryable = {
-  query: <T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]) => Promise<QueryResult<T>>;
-};
-
 export function getDb() {
   requireDb();
   return pool;
 }
 
 export async function runQuery<T extends QueryResultRow = QueryResultRow>(
-  queryable: Queryable,
   text: string,
   params?: any[],
 ): Promise<QueryResult<T>> {
   requireDb();
+  if (typeof (pool as any).runQuery !== "undefined") {
+    throw new Error("DO NOT ATTACH METHODS TO pool");
+  }
   try {
-    return await dbImpl.runQuery<T>(queryable, text, params);
+    return await pool.query<T>(text, params);
   } catch {
     throw new Error("DB_QUERY_FAILED");
   }
 }
 
 export async function query<T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]): Promise<QueryResult<T>> {
-  requireDb();
-  try {
-    return await (dbImpl.query as unknown as (t: string, p?: any[]) => Promise<QueryResult<T>>)(text, params);
-  } catch {
-    throw new Error("DB_QUERY_FAILED");
-  }
+  return runQuery<T>(text, params);
 }
 
 export async function dbQuery<T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]): Promise<QueryResult<T>> {
@@ -62,13 +55,12 @@ export async function safeQuery<T extends QueryResultRow = QueryResultRow>(
   sql: string,
   params?: any[],
 ): Promise<QueryResult<T>> {
-  requireDb();
-  return pool.query<T>(sql, params);
+  return runQuery<T>(sql, params);
 }
 
 export async function ensureDb(): Promise<void> {
   try {
-    await dbImpl.runQuery(pool, "SELECT 1");
+    await runQuery("SELECT 1");
     deps.db.ready = true;
     deps.db.error = null;
     console.log("DB connected");

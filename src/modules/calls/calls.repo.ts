@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { type PoolClient } from "pg";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 
 type Queryable = Pick<PoolClient, "query" | "runQuery">;
 

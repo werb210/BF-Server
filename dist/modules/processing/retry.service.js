@@ -240,7 +240,7 @@ async function retryProcessingJob(params) {
     }
 }
 async function retryProcessingJobForApplication(params) {
-    const job = await db_1.pool.runQuery(`select id, job_type
+    const job = await (0, db_1.runQuery)(`select id, job_type
      from (
        select id, 'ocr'::text as job_type, updated_at
        from document_processing_jobs

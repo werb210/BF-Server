@@ -1,4 +1,4 @@
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 import { fetchLenderById, listLenders } from "../repositories/lenders.repo";
 
 export async function listLendersService() {

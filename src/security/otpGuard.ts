@@ -1,9 +1,9 @@
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 
 const MAX_ATTEMPTS = 5;
 
 export async function checkOtpAttempts(phone: string): Promise<void> {
-  const result = await pool.runQuery(
+  const result = await runQuery(
     `SELECT failed_count FROM otp_verifications
 WHERE phone=$1
 ORDER BY created_at DESC

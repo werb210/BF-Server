@@ -18,7 +18,7 @@ async function runMigrations(pool) {
     for (const file of files) {
         const sql = fs_1.default.readFileSync(path_1.default.join(migrationsDir, file), "utf8");
         try {
-            await pool.runQuery(sql);
+            await pool.query(sql);
             console.log(`migration_applied: ${file}`);
         }
         catch (err) {

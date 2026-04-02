@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 
 const router = Router();
 
@@ -9,7 +9,7 @@ const router = Router();
  */
 router.get("/", async (_req, res, next) => {
   try {
-    const { rows } = await pool.runQuery(
+    const { rows } = await runQuery(
       `
       SELECT id, name
       FROM lenders

@@ -1,5 +1,5 @@
 import { Router, type Request } from "express";
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 import { config } from "../config";
 import { listKillSwitches } from "../modules/ops/ops.service";
 import { listActiveReplayJobs } from "../modules/ops/replay.service";
@@ -59,7 +59,7 @@ router.post("/bootstrap-admin", wrap(async (req: any) => {
       );
     }
 
-    const countRes = await pool.runQuery<{ count: number }>(
+    const countRes = await runQuery<{ count: number }>(
       "select count(*)::int as count from users where role = $1",
       [ROLES.ADMIN]
     );
@@ -116,7 +116,7 @@ router.get("/exports/recent", wrap(async () => {
 }));
 
 router.get("/failed-jobs", wrap(async () => {
-    const result = await pool.runQuery(
+    const result = await runQuery(
       `SELECT id, type, error, retry_count, created_at
        FROM failed_jobs
        ORDER BY created_at DESC

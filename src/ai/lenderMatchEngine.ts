@@ -1,4 +1,4 @@
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 import { normalizeToPercent, scoreAmountFit, type PrequalInput } from "./scoringEngine";
 
 type ProductRow = {
@@ -20,7 +20,7 @@ export type LenderMatch = {
 
 export async function matchLenders(input: PrequalInput): Promise<LenderMatch[]> {
   const requestedAmount = input.requestedAmount ?? null;
-  const { rows } = await pool.runQuery<ProductRow>(
+  const { rows } = await runQuery<ProductRow>(
     `select lp.id,
             lp.lender_id,
             lp.name as product_name,

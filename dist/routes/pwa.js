@@ -203,8 +203,8 @@ router.get("/health", auth_1.requireAuth, (0, auth_1.requireAuthorization)({ rol
     let queueProcessingHealthy = null;
     const warnings = [];
     try {
-        await db_1.pool.runQuery("create temporary table if not exists pwa_health_check (id int)");
-        await db_1.pool.runQuery("insert into pwa_health_check (id) values (1)");
+        await (0, db_1.runQuery)("create temporary table if not exists pwa_health_check (id int)");
+        await (0, db_1.runQuery)("insert into pwa_health_check (id) values (1)");
         dbWriteable = true;
     }
     catch {
@@ -212,13 +212,13 @@ router.get("/health", auth_1.requireAuth, (0, auth_1.requireAuthorization)({ rol
         warnings.push("db_write_failed");
     }
     try {
-        const tableCheck = await db_1.pool.runQuery("select to_regclass('public.ops_replay_jobs') as exists");
+        const tableCheck = await (0, db_1.runQuery)("select to_regclass('public.ops_replay_jobs') as exists");
         if (!tableCheck.rows[0]?.exists) {
             queueProcessingHealthy = null;
             warnings.push("queue_table_missing");
         }
         else {
-            const result = await db_1.pool.runQuery(`select count(*)::int as count
+            const result = await (0, db_1.runQuery)(`select count(*)::int as count
            from ops_replay_jobs
            where status in ('queued', 'running')
              and started_at is not null

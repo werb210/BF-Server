@@ -1,4 +1,4 @@
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 import { generateEmbedding } from "./embeddingService";
 
 type ChunkRow = {
@@ -53,7 +53,7 @@ export async function retrieveTopKnowledgeChunks(
   limit = 5
 ): Promise<RetrievedChunk[]> {
   const queryVector = await generateEmbedding(question);
-  const { rows } = await pool.runQuery<ChunkRow>(
+  const { rows } = await runQuery<ChunkRow>(
     `select id, document_id, content, embedding
      from ai_knowledge_chunks
      order by created_at desc

@@ -18,7 +18,7 @@ export async function runMigrations(pool: Pool): Promise<void> {
     const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
 
     try {
-      await pool.runQuery(sql);
+      await pool.query(sql);
       console.log(`migration_applied: ${file}`);
     } catch (err) {
       console.warn(`migration_skipped_or_failed: ${file}`, err);

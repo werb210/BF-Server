@@ -57,10 +57,10 @@ function ensureUploadDir() {
 async function tryStoreEscalation(payload) {
     const escalationId = (0, crypto_1.randomUUID)();
     try {
-        await db_1.pool.runQuery(`update chat_sessions
+        await (0, db_1.runQuery)(`update chat_sessions
        set status = 'escalated', escalated_to = $2, updated_at = now()
        where id = $1`, [payload.sessionId, payload.escalatedTo ?? null]);
-        await db_1.pool.runQuery(`insert into ai_escalations (id, session_id, messages, status, created_at)
+        await (0, db_1.runQuery)(`insert into ai_escalations (id, session_id, messages, status, created_at)
        values ($1, $2, $3::jsonb, 'open', now())`, [escalationId, payload.sessionId, JSON.stringify(payload.messages ?? [])]);
     }
     catch (error) {
@@ -74,7 +74,7 @@ async function tryStoreEscalation(payload) {
 async function tryStoreReport(payload) {
     const reportId = (0, crypto_1.randomUUID)();
     try {
-        await db_1.pool.runQuery(`insert into issue_reports (id, description, screenshot_base64, user_agent, status, created_at)
+        await (0, db_1.runQuery)(`insert into issue_reports (id, description, screenshot_base64, user_agent, status, created_at)
        values ($1, $2, $3, $4, 'open', now())`, [
             reportId,
             payload.message,
@@ -147,7 +147,7 @@ router.post("/report", (0, safeHandler_1.safeHandler)(async (req, res, next) => 
 router.post("/knowledge/upload", rejectOversizedPayload, knowledge_controller_1.upload.single("file"), knowledge_controller_1.AIKnowledgeController.upload);
 router.get("/knowledge", knowledge_controller_1.AIKnowledgeController.list);
 router.get("/knowledge/db", (0, safeHandler_1.safeHandler)(async (_req, res) => {
-    const { rows } = await db_1.pool.runQuery(`select id, content, created_at
+    const { rows } = await (0, db_1.runQuery)(`select id, content, created_at
        from ai_knowledge
        order by created_at desc`);
     res["json"]({ success: true, data: rows });
@@ -190,7 +190,7 @@ router.post("/report-issue", rejectOversizedPayload, upload.single("screenshot")
         screenshotPath = path_1.default.relative(process.cwd(), fullPath);
     }
     const id = (0, crypto_1.randomUUID)();
-    await db_1.pool.runQuery(`insert into issue_reports
+    await (0, db_1.runQuery)(`insert into issue_reports
        (id, session_id, description, page_url, browser_info, screenshot_path, status, created_at)
        values ($1, $2, $3, $4, $5, $6, 'open', now())`, [
         id,

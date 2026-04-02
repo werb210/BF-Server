@@ -37,7 +37,7 @@ function toNullableBoolean(value) {
 }
 async function createContinuation(payload, crmLeadId) {
     const token = (0, node_crypto_1.randomBytes)(24).toString("hex");
-    await db_1.pool.runQuery(`
+    await (0, db_1.runQuery)(`
     INSERT INTO application_continuations (
       token,
       company_name,
@@ -70,11 +70,11 @@ async function createContinuation(payload, crmLeadId) {
     return token;
 }
 async function fetchContinuation(token) {
-    const { rows } = await db_1.pool.runQuery("SELECT * FROM application_continuations WHERE token = $1", [token]);
+    const { rows } = await (0, db_1.runQuery)("SELECT * FROM application_continuations WHERE token = $1", [token]);
     return rows[0] ?? null;
 }
 async function convertContinuation(token, applicationId) {
-    await db_1.pool.runQuery(`
+    await (0, db_1.runQuery)(`
     UPDATE application_continuations
     SET converted_application_id = $1,
         converted_at = NOW()

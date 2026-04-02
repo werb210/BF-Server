@@ -15,7 +15,7 @@ import { AppError } from "../middleware/errors";
 import { config } from "../config";
 import { fetchPushStatus } from "../services/pushService";
 import { replaySyncBatch } from "../services/pwaSyncService";
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 import { ALL_ROLES, ROLES } from "../auth/roles";
 import { toStringSafe } from "../utils/toStringSafe";
 
@@ -238,8 +238,8 @@ router.get(
     const warnings: string[] = [];
 
     try {
-      await pool.runQuery("create temporary table if not exists pwa_health_check (id int)");
-      await pool.runQuery("insert into pwa_health_check (id) values (1)");
+      await runQuery("create temporary table if not exists pwa_health_check (id int)");
+      await runQuery("insert into pwa_health_check (id) values (1)");
       dbWriteable = true;
     } catch {
       dbWriteable = false;
@@ -247,14 +247,14 @@ router.get(
     }
 
     try {
-      const tableCheck = await pool.runQuery<{ exists: string | null }>(
+      const tableCheck = await runQuery<{ exists: string | null }>(
         "select to_regclass('public.ops_replay_jobs') as exists"
       );
       if (!tableCheck.rows[0]?.exists) {
         queueProcessingHealthy = null;
         warnings.push("queue_table_missing");
       } else {
-        const result = await pool.runQuery<{ count: number }>(
+        const result = await runQuery<{ count: number }>(
           `select count(*)::int as count
            from ops_replay_jobs
            where status in ('queued', 'running')

@@ -45,7 +45,7 @@ router.post("/bootstrap-admin", (0, routeWrap_1.wrap)(async (req) => {
     if (!phoneNumber) {
         throw new errors_1.AppError("bootstrap_missing_phone", "BOOTSTRAP_ADMIN_PHONE is required.", 500);
     }
-    const countRes = await db_1.pool.runQuery("select count(*)::int as count from users where role = $1", [roles_1.ROLES.ADMIN]);
+    const countRes = await (0, db_1.runQuery)("select count(*)::int as count from users where role = $1", [roles_1.ROLES.ADMIN]);
     const adminCount = countRes.rows[0]?.count ?? 0;
     (0, logger_1.logInfo)("bootstrap_admin_count", { adminCount });
     if (adminCount > 0) {
@@ -87,7 +87,7 @@ router.get("/exports/recent", (0, routeWrap_1.wrap)(async () => {
     return (0, apiResponse_1.ok)({ exports });
 }));
 router.get("/failed-jobs", (0, routeWrap_1.wrap)(async () => {
-    const result = await db_1.pool.runQuery(`SELECT id, type, error, retry_count, created_at
+    const result = await (0, db_1.runQuery)(`SELECT id, type, error, retry_count, created_at
        FROM failed_jobs
        ORDER BY created_at DESC
        LIMIT 100`);

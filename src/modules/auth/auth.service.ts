@@ -22,7 +22,7 @@ import {
 } from "./auth.repo";
 import { AppError, forbiddenError } from "../../middleware/errors";
 import { recordAuditEvent } from "../audit/audit.service";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { type Role, isRole } from "../../auth/roles";
 import { logError, logInfo, logWarn } from "../../observability/logger";
 import { fetchRequestId } from "../../middleware/requestContext";

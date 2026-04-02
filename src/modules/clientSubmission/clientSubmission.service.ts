@@ -1,5 +1,5 @@
 import { AppError } from "../../middleware/errors";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { createApplication, createDocument, createDocumentVersion } from "../applications/applications.repo";
 import { ApplicationStage } from "../applications/pipelineState";
 import { recordAuditEvent } from "../audit/audit.service";

@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 
 type UploadInput = {
   applicationId: string;
@@ -10,7 +10,7 @@ type UploadInput = {
 };
 
 export async function uploadDocumentIdempotent(input: UploadInput) {
-  const existing = await pool.runQuery(
+  const existing = await runQuery(
     `select id, application_id, document_type as category, filename, storage_key as "storageKey", 0::int as size
      from documents
      where application_id = $1
@@ -28,7 +28,7 @@ export async function uploadDocumentIdempotent(input: UploadInput) {
   const documentId = randomUUID();
   const storageKey = `documents/${documentId}/${input.filename}`;
 
-  const created = await pool.runQuery(
+  const created = await runQuery(
     `insert into documents (id, application_id, owner_user_id, title, document_type, status, filename, storage_key, uploaded_by, created_at, updated_at)
      values ($1, $2, null, $3, $4, 'uploaded', $3, $5, 'client', now(), now())
      returning id, application_id, document_type as category, filename, storage_key as "storageKey", 0::int as size`,

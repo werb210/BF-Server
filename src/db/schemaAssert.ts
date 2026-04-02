@@ -1,4 +1,4 @@
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 
 type RequiredColumn = {
   table: string;
@@ -45,7 +45,7 @@ export async function assertRequiredSchema(): Promise<void> {
     where cols.column_name is null
   `;
 
-  const res = await pool.runQuery<{ table_name: string; column_name: string }>(
+  const res = await runQuery<{ table_name: string; column_name: string }>(
     query,
     params
   );

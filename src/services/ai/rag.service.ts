@@ -1,4 +1,4 @@
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { openai } from "./openai.service";
 import { config } from "../../config";
 
@@ -18,7 +18,7 @@ export async function embedText(text: string): Promise<number[]> {
 export async function searchRelevantDocs(query: string): Promise<string[]> {
   const embedding = await embedText(query);
 
-  const result = await pool.runQuery<{ content: string }>(
+  const result = await runQuery<{ content: string }>(
     `
     select content
     from ai_embeddings

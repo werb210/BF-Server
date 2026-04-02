@@ -1,10 +1,10 @@
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 import { deps } from "./deps";
 
 async function tryConnect(retries = 5): Promise<boolean> {
   for (let attempt = 0; attempt < retries; attempt += 1) {
     try {
-      await pool.query("select 1");
+      await runQuery("select 1");
       return true;
     } catch (err) {
       deps.db.error = err;

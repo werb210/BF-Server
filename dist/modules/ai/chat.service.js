@@ -21,10 +21,10 @@ function assertMessageLength(message) {
 async function upsertLead(params) {
     const email = params.email?.trim().toLowerCase() ?? null;
     const phone = params.phone?.trim() ?? null;
-    const existing = await db_1.pool.runQuery(`select id from contacts where (email = $1 and $1 is not null) or (phone = $2 and $2 is not null) limit 1`, [email, phone]);
+    const existing = await (0, db_1.runQuery)(`select id from contacts where (email = $1 and $1 is not null) or (phone = $2 and $2 is not null) limit 1`, [email, phone]);
     const leadId = existing.rows[0]?.id;
     if (leadId) {
-        await db_1.pool.runQuery(`update contacts
+        await (0, db_1.runQuery)(`update contacts
        set name = coalesce($2, name),
            email = coalesce($3, email),
            phone = coalesce($4, phone),
@@ -43,7 +43,7 @@ async function upsertLead(params) {
         });
         return leadId;
     }
-    const created = await db_1.pool.runQuery(`insert into contacts (id, name, email, phone, status, created_at, updated_at)
+    const created = await (0, db_1.runQuery)(`insert into contacts (id, name, email, phone, status, created_at, updated_at)
      values (gen_random_uuid(), $1, $2, $3, 'prospect', now(), now())
      returning id`, [params.fullName ?? null, email, phone]);
     const createdLeadId = created.rows[0]?.id ?? null;

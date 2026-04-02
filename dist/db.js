@@ -50,23 +50,20 @@ function getDb() {
     (0, requireDb_1.requireDb)();
     return exports.pool;
 }
-async function runQuery(queryable, text, params) {
+async function runQuery(text, params) {
     (0, requireDb_1.requireDb)();
+    if (typeof exports.pool.runQuery !== "undefined") {
+        throw new Error("DO NOT ATTACH METHODS TO pool");
+    }
     try {
-        return await dbImpl.runQuery(queryable, text, params);
+        return await exports.pool.query(text, params);
     }
     catch {
         throw new Error("DB_QUERY_FAILED");
     }
 }
 async function query(text, params) {
-    (0, requireDb_1.requireDb)();
-    try {
-        return await dbImpl.query(text, params);
-    }
-    catch {
-        throw new Error("DB_QUERY_FAILED");
-    }
+    return runQuery(text, params);
 }
 async function dbQuery(text, params) {
     (0, requireDb_1.requireDb)();
@@ -78,12 +75,11 @@ async function dbQuery(text, params) {
     }
 }
 async function safeQuery(sql, params) {
-    (0, requireDb_1.requireDb)();
-    return exports.pool.query(sql, params);
+    return runQuery(sql, params);
 }
 async function ensureDb() {
     try {
-        await dbImpl.runQuery(exports.pool, "SELECT 1");
+        await runQuery("SELECT 1");
         deps_1.deps.db.ready = true;
         deps_1.deps.db.error = null;
         console.log("DB connected");

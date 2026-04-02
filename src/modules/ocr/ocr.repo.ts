@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { type PoolClient } from "pg";
 import { config } from "../../config";
 import {

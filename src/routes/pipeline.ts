@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 import { requireAuth, requireCapability } from "../middleware/auth";
 import { CAPABILITIES } from "../auth/capabilities";
 import { safeHandler } from "../middleware/safeHandler";
@@ -13,7 +13,7 @@ router.get(
   requireAuth,
   requireCapability([CAPABILITIES.APPLICATION_READ]),
   safeHandler(async (_req: any, res: any) => {
-    const result = await pool.runQuery<{
+    const result = await runQuery<{
       id: string;
       name: string | null;
       pipeline_state: string | null;

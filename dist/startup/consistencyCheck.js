@@ -13,13 +13,13 @@ async function logCheckResult(params) {
     (0, logger_1.logInfo)(params.event, { count: params.count });
 }
 async function hasTable(table) {
-    const res = await db_1.pool.runQuery(`select count(*)::int as count
+    const res = await (0, db_1.runQuery)(`select count(*)::int as count
      from information_schema.tables
      where table_name = $1`, [table]);
     return (res.rows[0]?.count ?? 0) > 0;
 }
 async function hasColumn(table, column) {
-    const res = await db_1.pool.runQuery(`select count(*)::int as count
+    const res = await (0, db_1.runQuery)(`select count(*)::int as count
      from information_schema.columns
      where table_name = $1
        and column_name = $2`, [table, column]);
@@ -39,12 +39,12 @@ async function runStartupConsistencyCheck() {
             });
         }
         else {
-            const orphanDocumentsCount = await db_1.pool.runQuery(`select count(*)::int as count
+            const orphanDocumentsCount = await (0, db_1.runQuery)(`select count(*)::int as count
          from documents d
          where not exists (
            select 1 from applications a where a.id = d.application_id
          )`);
-            const orphanDocumentsSample = await db_1.pool.runQuery(`select d.id, d.application_id
+            const orphanDocumentsSample = await (0, db_1.runQuery)(`select d.id, d.application_id
          from documents d
          where not exists (
            select 1 from applications a where a.id = d.application_id
@@ -64,12 +64,12 @@ async function runStartupConsistencyCheck() {
             });
         }
         else {
-            const orphanApplicationsCount = await db_1.pool.runQuery(`select count(*)::int as count
+            const orphanApplicationsCount = await (0, db_1.runQuery)(`select count(*)::int as count
          from applications a
          where not exists (
            select 1 from users u where u.id = a.owner_user_id
          )`);
-            const orphanApplicationsSample = await db_1.pool.runQuery(`select a.id, a.owner_user_id
+            const orphanApplicationsSample = await (0, db_1.runQuery)(`select a.id, a.owner_user_id
          from applications a
          where not exists (
            select 1 from users u where u.id = a.owner_user_id
@@ -88,10 +88,10 @@ async function runStartupConsistencyCheck() {
             });
         }
         else {
-            const invalidPipelineCount = await db_1.pool.runQuery(`select count(*)::int as count
+            const invalidPipelineCount = await (0, db_1.runQuery)(`select count(*)::int as count
          from applications
          where not (pipeline_state = any($1::text[]))`, [pipelineState_1.PIPELINE_STATES]);
-            const invalidPipelineSample = await db_1.pool.runQuery(`select id, pipeline_state
+            const invalidPipelineSample = await (0, db_1.runQuery)(`select id, pipeline_state
          from applications
          where not (pipeline_state = any($1::text[]))
          limit 10`, [pipelineState_1.PIPELINE_STATES]);

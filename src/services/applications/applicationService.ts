@@ -1,7 +1,7 @@
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 
 export async function fetchLatestIncompleteApplication(userId: string) {
-  const result = await pool.runQuery(
+  const result = await runQuery(
     `select *
      from applications
      where owner_user_id = $1

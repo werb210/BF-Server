@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { type PoolClient, type QueryResult, type QueryResultRow } from "pg";
 import { type Role } from "../../auth/roles";
 import { AppError } from "../../middleware/errors";

@@ -1,4 +1,4 @@
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { type PoolClient } from "pg";
 import { formatPeriod, type GroupBy } from "./reporting.utils";
 import { PIPELINE_STATES } from "../applications/pipelineState";

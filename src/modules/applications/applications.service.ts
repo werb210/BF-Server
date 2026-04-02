@@ -26,7 +26,7 @@ import type {
   ApplicationRecord,
   ApplicationRequiredDocumentRecord,
 } from "./applications.repo";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { type Role, ROLES } from "../../auth/roles";
 import { type PoolClient } from "pg";
 import {

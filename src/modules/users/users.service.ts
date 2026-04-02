@@ -8,7 +8,7 @@ import {
   updateUserRoleById,
 } from "../auth/auth.repo";
 import { type Role } from "../../auth/roles";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 
 export async function setUserStatus(params: {
   userId: string;

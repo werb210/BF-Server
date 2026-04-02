@@ -9,7 +9,7 @@ import { ROLES } from "../auth/roles";
 import { AppError } from "../middleware/errors";
 import { fail, ok } from "../lib/apiResponse";
 import { wrap } from "../lib/routeWrap";
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 import { updateCallStatus } from "../modules/calls/calls.service";
 import { findCallLogByTwilioSid } from "../modules/calls/calls.repo";
 import { createVoicemail } from "../modules/voice/voicemail.repo";
@@ -152,7 +152,7 @@ router.get(
       throw new AppError("invalid_token", "Invalid or expired token.", 401);
     }
 
-    const activeCalls = await pool.runQuery<{ count: string }>(
+    const activeCalls = await runQuery<{ count: string }>(
       `select count(*)::text as count
        from call_logs
        where staff_user_id = $1
@@ -334,7 +334,7 @@ router.post(
     });
 
     const priceEstimateCents = isCompleted && typeof durationSeconds === "number" ? durationSeconds * 3 : null;
-    await pool.runQuery(
+    await runQuery(
       `update call_logs
        set answered = $1,
            ended_reason = $2,
@@ -344,12 +344,12 @@ router.post(
     );
 
     if (callStatus === "no-answer") {
-      const hasVoicemail = await pool.runQuery<{ count: string }>(
+      const hasVoicemail = await runQuery<{ count: string }>(
         "select count(*)::text as count from voicemails where call_sid = $1",
         [callSid]
       );
       if (Number(hasVoicemail.rows[0]?.count ?? "0") === 0) {
-        await pool.runQuery(
+        await runQuery(
           `insert into crm_task (id, type, staff_id, phone_number, created_at)
            values ($1, 'missed_call', $2, $3, now())`,
           [randomUUID(), found.staff_user_id, found.phone_number]

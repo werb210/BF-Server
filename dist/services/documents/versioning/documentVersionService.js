@@ -20,6 +20,6 @@ async function createDocumentVersionRecord(params) {
       )
     returning *
   `;
-    const result = await db_1.pool.runQuery(q, [(0, crypto_1.randomUUID)(), params.documentId, params.blobName, params.hash, params.metadata]);
+    const result = await (0, db_1.runQuery)(q, [(0, crypto_1.randomUUID)(), params.documentId, params.blobName, params.hash, params.metadata]);
     return result.rows[0];
 }

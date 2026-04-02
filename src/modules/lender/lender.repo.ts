@@ -1,6 +1,6 @@
 import { config } from "../../config";
 import { randomUUID } from "crypto";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { isTestEnvironment } from "../../dbRuntime";
 import { type PoolClient } from "pg";
 

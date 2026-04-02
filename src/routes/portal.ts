@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { Router, type Request, type Response } from "express";
 import { fetchStatus as startupStatus, isReady } from "../startupState";
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 import {
   findActiveDocumentVersion,
   findApplicationById,
@@ -75,7 +75,7 @@ router.get(
       return;
     }
     try {
-      const result = await pool.runQuery<{
+      const result = await runQuery<{
         id: string;
         name: string;
         pipeline_state: string | null;
@@ -280,7 +280,7 @@ router.get(
     }
     values.push(limit, offset);
     const filterClause = filters.length > 0 ? `and ${filters.join(" and ")}` : "";
-    const result = await pool.runQuery<{
+    const result = await runQuery<{
       application_id: string;
       from_stage: string | null;
       to_stage: string;
@@ -338,7 +338,7 @@ router.get(
     }
     values.push(limit, offset);
     const filterClause = filters.length > 0 ? `and ${filters.join(" and ")}` : "";
-    const result = await pool.runQuery<{
+    const result = await runQuery<{
       job_id: string;
       job_type: string;
       application_id: string | null;
@@ -393,7 +393,7 @@ router.get(
     }
     values.push(limit, offset);
     const filterClause = filters.length > 0 ? `and ${filters.join(" and ")}` : "";
-    const result = await pool.runQuery<{
+    const result = await runQuery<{
       application_id: string;
       document_id: string;
       document_type: string;
@@ -634,7 +634,7 @@ router.post(
 
     const submissions = [];
     for (const lenderId of selectedLenders) {
-      const result = await pool.runQuery(
+      const result = await runQuery(
         `insert into lender_submissions (id, application_id, lender_id, status, idempotency_key, payload, submitted_at, created_at, updated_at)
          values ($1, $2, $3, 'submitted', $4, $5, now(), now(), now())
          on conflict (application_id, lender_id) do update
@@ -679,7 +679,7 @@ router.get(
                  limit 100`,
           values: [],
         };
-    const rows = await pool.runQuery(query.text, query.values);
+    const rows = await runQuery(query.text, query.values);
     res.status(200).json({ items: rows.rows });
   })
 );
@@ -695,7 +695,7 @@ router.post(
     if (!applicationId || !lenderName) {
       throw new AppError("validation_error", "applicationId and lenderName are required.", 400);
     }
-    const result = await pool.runQuery(
+    const result = await runQuery(
       `insert into offers (id, application_id, lender_name, amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, coalesce($11, 'created'), $12, now(), now())
        returning id, application_id, lender_name, amount::text as amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at`,
@@ -733,7 +733,7 @@ router.patch(
     if (!id || !allowed.has(status)) {
       throw new AppError("validation_error", "Valid status is required.", 400);
     }
-    const updated = await pool.runQuery(
+    const updated = await runQuery(
       `update offers
        set status = $2, updated_at = now()
        where id = $1
