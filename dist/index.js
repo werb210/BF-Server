@@ -14,9 +14,9 @@ const env_1 = require("./system/env");
 async function start() {
     console.log("[BOOT] Starting server...");
     await (0, verifyCheck_1.verifyTwilioSetup)();
-    setInterval(() => {
-        (0, deadLetterWorker_1.processDeadLetters)().catch((err) => console.error("Dead letter worker failed", err));
-    }, 15000);
+    if (process.env.NODE_ENV !== "test") {
+        (0, deadLetterWorker_1.startDeadLetterWorker)();
+    }
     const PORT = Number(process.env.PORT);
     const server = app_1.default.listen(PORT, "0.0.0.0", () => {
         console.log(`[BOOT] Server listening on ${PORT}`);

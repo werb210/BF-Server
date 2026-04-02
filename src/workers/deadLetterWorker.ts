@@ -46,3 +46,16 @@ export async function processDeadLetters(): Promise<void> {
     }
   }
 }
+
+async function safeProcess(): Promise<void> {
+  try {
+    await processDeadLetters();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("dead-letter-failed", message);
+  }
+}
+
+export function startDeadLetterWorker(): NodeJS.Timeout {
+  return setInterval(safeProcess, 15000);
+}
