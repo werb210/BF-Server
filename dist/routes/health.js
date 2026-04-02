@@ -1,24 +1,21 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.health = health;
+exports.ready = ready;
 const express_1 = require("express");
-const deps_1 = require("../system/deps");
+const ready_1 = require("../system/ready");
 const router = (0, express_1.Router)();
-router.get("/health", (_req, res) => {
-    res.status(200).send("ok");
-});
-router.get("/healthz", (_req, res) => {
-    res.status(200).send("ok");
-});
-router.get("/ready", (_req, res) => {
-    if (!deps_1.deps.db.ready) {
-        return res.status(503).json({ status: "degraded" });
+function health(_req, res) {
+    return res.status(200).json({ status: "ok" });
+}
+function ready(_req, res) {
+    if (!(0, ready_1.isReady)()) {
+        return res.status(503).json({ status: "not_ready" });
     }
     return res.json({ status: "ready" });
-});
-router.get("/readyz", (_req, res) => {
-    if (!deps_1.deps.db.ready) {
-        return res.status(503).json({ status: "degraded" });
-    }
-    return res.json({ status: "ready" });
-});
+}
+router.get("/health", health);
+router.get("/healthz", health);
+router.get("/ready", ready);
+router.get("/readyz", ready);
 exports.default = router;

@@ -39,7 +39,6 @@ const telephonyRoutes_1 = __importDefault(require("../telephony/routes/telephony
 const webhooks_1 = __importDefault(require("./webhooks"));
 const website_1 = __importDefault(require("./website"));
 const _canonicalMount_1 = require("./_canonicalMount");
-const config_1 = require("../config");
 const ALL_ROLES = [
     roles_1.ROLES.ADMIN,
     roles_1.ROLES.STAFF,
@@ -153,7 +152,4 @@ function registerApiRouteMounts(app) {
         (0, _canonicalMount_1.mount)(apiRouter, entry.path, entry.router);
     });
     app.use("/api/v1", apiRouter);
-    if (config_1.config.flags.allowUnfrozenApiV1) {
-        app.use("/api", apiRouter);
-    }
 }

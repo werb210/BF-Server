@@ -100,7 +100,10 @@ async function fetchInstrumentedClient() {
 function setDbTestPoolMetricsOverride() { }
 function setDbTestFailureInjection() { }
 function clearDbTestFailureInjection() { }
-exports.pool.on("connect", () => {
+exports.pool.on("connect", (client) => {
+    void client
+        .query("SET statement_timeout = 10000")
+        .catch((err) => (0, logger_1.logWarn)("db_statement_timeout_set_failed", { message: err.message }));
     (0, logger_1.logInfo)("db_client_connected");
 });
 exports.pool.on("error", (err) => {
