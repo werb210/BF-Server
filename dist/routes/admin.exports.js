@@ -94,8 +94,7 @@ router.post("/pipeline", (0, safeHandler_1.safeHandler)(async (req, res, next) =
                 ...fetchAuditContext(req),
                 success: true,
             });
-            res.end();
-            return;
+            return res.status(200).json({ status: "ok" });
         }
         const rows = await handleExport({
             reqBody: req.body ?? {},
@@ -157,8 +156,7 @@ router.post("/lenders", (0, safeHandler_1.safeHandler)(async (req, res, next) =>
                 ...fetchAuditContext(req),
                 success: true,
             });
-            res.end();
-            return;
+            return res.status(200).json({ status: "ok" });
         }
         const rows = await handleExport({
             reqBody: req.body ?? {},
@@ -220,8 +218,7 @@ router.post("/applications", (0, safeHandler_1.safeHandler)(async (req, res, nex
                 ...fetchAuditContext(req),
                 success: true,
             });
-            res.end();
-            return;
+            return res.status(200).json({ status: "ok" });
         }
         const rows = await handleExport({
             reqBody: req.body ?? {},

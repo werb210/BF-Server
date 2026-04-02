@@ -8,5 +8,5 @@ function incomingCallHandler(_req, res) {
     const dial = response.dial();
     dial.client("staff");
     res.type("text/xml");
-    res.send(response.toString());
+    return res.json(response.toString());
 }

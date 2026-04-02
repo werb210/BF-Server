@@ -46,10 +46,10 @@ router.post("/voice/status", express_1.default.urlencoded({ extended: false }), 
             To,
             Duration,
         });
-        res.status(200).send("ok");
+        return res.status(200).json("ok");
     }
     catch {
-        res.status(500).send("error");
+        return res.status(500).json("error");
     }
 });
 exports.default = router;

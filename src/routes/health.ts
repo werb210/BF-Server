@@ -2,8 +2,14 @@ import { Router } from "express";
 
 const router = Router();
 
+/**
+ * MUST remain:
+ * - synchronous
+ * - dependency-free
+ * - zero middleware reliance
+ */
 router.get("/", (_req, res) => {
-  return res.status(200).json({ status: "ok" });
+  res.status(200).send("ok");
 });
 
 export default router;

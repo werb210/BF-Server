@@ -58,19 +58,6 @@ function registerApiRoutes(app: express.Express) {
   app.use(corsMiddleware);
   app.use(express.json({ limit: "2mb" }));
 
-  app.use((req, res, next) => {
-    const originalJson = res.json;
-
-    res.json = function (body) {
-      if (!body || typeof body !== "object" || !("status" in body)) {
-        console.error("INVALID RESPONSE SHAPE:", body);
-      }
-      return originalJson.call(this, body);
-    };
-
-    next();
-  });
-
   app.use(timeout(CONFIG.REQUEST_TIMEOUT_MS));
   app.use(rateLimit());
   app.use((req, res, next) => {
@@ -110,7 +97,6 @@ function registerApiRoutes(app: express.Express) {
   app.use("/api/v1/crm", leadRoutes);
   app.use("/api/v1/application", applicationRoutes);
   app.use("/api/v1/documents", documentsRoutes);
-  app.use("/", twilioRoutes);
 
   app.use("/api/v1/maya", mayaRoutes);
   app.use("/api/v1/voice", voiceRoutes);
@@ -137,13 +123,6 @@ function registerApiRoutes(app: express.Express) {
 
   app.use("/api/v1/internal", internalRoutes);
 
-  app.use((req, res) => {
-    if (!res.headersSent && !res.locals.__wrapped) {
-      return fail(res, "Unwrapped response", 500);
-    }
-    return undefined;
-  });
-
   app.use((_req: express.Request, res: express.Response) => {
     if (!res.headersSent) {
       return fail(res, "Route not found", 404);
@@ -168,11 +147,15 @@ export function createApp(deps: Deps) {
 
   registerCommonMiddleware(app);
 
-  // health + readiness FIRST (no wrappers)
+  // ===== ROUTE ORDER (DO NOT CHANGE) =====
+
+  // HEALTH FIRST — NEVER MOVE
   app.use("/health", healthRouter);
+
+  // READINESS SECOND
   app.get("/ready", readyHandler);
 
-  // register remaining routes AFTER
+  // ALL OTHER ROUTES AFTER
   registerApiRoutes(app);
 
   return app;

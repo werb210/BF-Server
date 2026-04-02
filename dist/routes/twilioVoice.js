@@ -52,6 +52,6 @@ router.post("/twilio/voice", express_1.default.urlencoded({ extended: false }), 
     dial.client("staff_portal");
     dial.client("staff_mobile");
     res.type("text/xml");
-    res.send(response.toString());
+    return res.json(response.toString());
 });
 exports.default = router;

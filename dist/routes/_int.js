@@ -10,12 +10,10 @@ const printRoutes_1 = require("../debug/printRoutes");
 const ready_1 = require("./ready");
 const auth_1 = require("../middleware/auth");
 const internal_1 = __importDefault(require("./internal"));
-const health_1 = require("./_int/health");
 const runtime_1 = require("./_int/runtime");
 const pwa_1 = __importDefault(require("./_int/pwa"));
 const roles_1 = require("../auth/roles");
 const router = (0, express_1.Router)();
-router.get("/health", health_1.intHealthHandler);
 router.get("/runtime", runtime_1.runtimeHandler);
 router.get("/ready", ready_1.readyHandler);
 router.get("/build", (_req, res) => {

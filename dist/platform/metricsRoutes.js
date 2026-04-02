@@ -8,6 +8,6 @@ const metrics_1 = require("./metrics");
 const router = express_1.default.Router();
 router.get("/metrics", async (_req, res) => {
     res.set("Content-Type", metrics_1.registry.contentType);
-    res.end(await metrics_1.registry.metrics());
+    return res.json(await metrics_1.registry.metrics());
 });
 exports.default = router;

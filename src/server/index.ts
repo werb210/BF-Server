@@ -3,8 +3,16 @@ import { bootstrap } from "../startup/bootstrap";
 import { deps } from "../system/deps";
 
 export async function startServer() {
-  await bootstrap();
-  return createServer(deps);
+  const server = createServer(deps);
+
+  // NON-BLOCKING BOOTSTRAP
+  setImmediate(() => {
+    bootstrap().catch((err) => {
+      console.error("Bootstrap failed:", err);
+    });
+  });
+
+  return server;
 }
 
 async function start() {

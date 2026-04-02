@@ -44,6 +44,7 @@ const promises_1 = require("node:fs/promises");
 const node_path_1 = __importDefault(require("node:path"));
 const printRoutes_1 = require("../debug/printRoutes");
 const config_1 = require("../config");
+const deps_1 = require("./deps");
 exports.DEFAULT_ROUTE_ARTIFACT_PATH = "artifacts/server-routes.json";
 function normalizeRoutePath(routePath) {
     if (!routePath || routePath === "//") {
@@ -77,7 +78,7 @@ async function loadAppBuilder() {
 }
 async function buildNormalizedRouteEntries() {
     const buildAppWithApiRoutes = await loadAppBuilder();
-    const app = buildAppWithApiRoutes();
+    const app = buildAppWithApiRoutes(deps_1.deps);
     const routeInventory = (0, printRoutes_1.listRouteInventory)(app);
     const normalized = routeInventory.flatMap(({ routerBase, routes }) => routes.map((route) => ({
         method: route.method.toUpperCase(),

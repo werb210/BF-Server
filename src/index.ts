@@ -1,14 +1,13 @@
 import { createApp } from "./app";
-import { getEnv } from "./config/env";
 import { deps } from "./system/deps";
 
 export const app = createApp(deps);
 
 if (require.main === module) {
-  const { PORT } = getEnv();
+  const PORT = process.env.PORT || 8080;
 
-  app.listen(Number(PORT || 8080), () => {
-    console.log(`Server running on ${PORT || 8080}`);
+  app.listen(PORT, () => {
+    console.log(`Server listening on ${PORT}`);
   });
 }
 

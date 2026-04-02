@@ -15,7 +15,7 @@ router.post("/incoming", (_req, res) => {
     voiceResponse.say("Connecting you to Maya.");
     voiceResponse.dial().client("maya-agent");
     res.type("text/xml");
-    res.send(voiceResponse.toString());
+    return res.json(voiceResponse.toString());
 });
 router.post("/status", requireAuth_1.requireAuth, (0, validate_1.validate)(schemas_1.CallStatusSchema), (req, res) => {
     return res.json((0, response_1.ok)({ received: true }, req.rid));
