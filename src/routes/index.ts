@@ -1,7 +1,14 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth";
+import { endpoints } from "../contracts/endpoints";
 
 const router = Router();
+
+const API_PREFIX = "/api/v1";
+
+function routeFromContract(endpoint: string): string {
+  return endpoint.startsWith(API_PREFIX) ? endpoint.slice(API_PREFIX.length) : endpoint;
+}
 
 function createLeadHandler(_req: any, res: any) {
   res.locals.__wrapped = true;
@@ -23,9 +30,9 @@ function sendMessageHandler(_req: any, res: any) {
   return res.status(200).json({ status: "ok", data: { reply: "ok" } });
 }
 
-router.post("/leads", requireAuth, createLeadHandler);
-router.post("/calls/start", requireAuth, startCallHandler);
-router.post("/calls/status", requireAuth, updateCallStatusHandler);
-router.post("/maya/message", requireAuth, sendMessageHandler);
+router.post(routeFromContract(endpoints.createLead), requireAuth, createLeadHandler);
+router.post(routeFromContract(endpoints.startCall), requireAuth, startCallHandler);
+router.post(routeFromContract(endpoints.updateCallStatus), requireAuth, updateCallStatusHandler);
+router.post(routeFromContract(endpoints.sendMessage), requireAuth, sendMessageHandler);
 
 export default router;
