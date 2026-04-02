@@ -1,21 +1,15 @@
-import { Router } from "express";
+import { Request, Response } from "express";
 
-const router = Router();
-
-router.get("/", (req, res) => {
+export function readyHandler(req: Request, res: Response) {
   const deps = req.app.locals.deps;
 
-  // guard invalid deps
   if (!deps || !deps.db) {
     return res.status(503).json({ status: "not_ready" });
   }
 
-  // CRITICAL: DO NOT cache — evaluate live
-  if (deps.db.ready === true) {
-    return res.status(200).json({ status: "ok" });
+  if (deps.db.ready !== true) {
+    return res.status(503).json({ status: "not_ready" });
   }
 
-  return res.status(503).json({ status: "not_ready" });
-});
-
-export default router;
+  return res.status(200).json({ status: "ok" });
+}

@@ -26,7 +26,7 @@ import { incReq, metrics } from "./system/metrics";
 import { rateLimit } from "./system/rateLimit";
 import { CONFIG } from "./system/config";
 import { deps as defaultDeps, type Deps } from "./system/deps";
-import readyRouter from "./routes/ready";
+import { readyHandler } from "./routes/ready";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -170,7 +170,7 @@ export function createApp(deps: Deps) {
 
   // health + readiness FIRST (no wrappers)
   app.use("/health", healthRouter);
-  app.use("/ready", readyRouter);
+  app.get("/ready", readyHandler);
 
   // register remaining routes AFTER
   registerApiRoutes(app);

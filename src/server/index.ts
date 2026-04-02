@@ -1,9 +1,10 @@
 import { createServer } from "./createServer";
 import { bootstrap } from "../startup/bootstrap";
+import { deps } from "../system/deps";
 
 export async function startServer() {
   await bootstrap();
-  return createServer();
+  return createServer(deps);
 }
 
 async function start() {
