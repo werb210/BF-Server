@@ -1,5 +1,6 @@
 import express from "express";
 import { runQuery } from "./lib/db";
+import { CONFIG } from "./system/config";
 
 export const app = express();
 
@@ -7,10 +8,10 @@ app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
-const PORT = process.env.PORT || 8080;
+const PORT = CONFIG.PORT;
 
 async function startServer() {
-  if (process.env.NODE_ENV !== "test") {
+  if (CONFIG.NODE_ENV !== "test") {
     try {
       await runQuery("SELECT 1");
     } catch {
@@ -24,6 +25,6 @@ async function startServer() {
   });
 }
 
-if (process.env.NODE_ENV !== "test") {
+if (CONFIG.NODE_ENV !== "test") {
   void startServer();
 }

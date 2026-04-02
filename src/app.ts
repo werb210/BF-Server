@@ -25,6 +25,7 @@ import { requestId } from "./system/requestId";
 import { access } from "./system/access";
 import { incReq, metrics } from "./system/metrics";
 import { rateLimit } from "./system/rateLimit";
+import { CONFIG } from "./system/config";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -36,7 +37,7 @@ export function resetOtpStateForTests() {}
 globalThis.__resetOtpStateForTests = resetOtpStateForTests;
 
 export function createApp() {
-  process.env.STRICT_API = "true";
+  process.env.STRICT_API = CONFIG.STRICT_API;
 
   const app = express();
 
@@ -47,7 +48,7 @@ export function createApp() {
     incReq();
     next();
   });
-  app.use(timeout(15000));
+  app.use(timeout(CONFIG.REQUEST_TIMEOUT_MS));
   app.use(rateLimit());
 
   app.use((req, res, next) => {
@@ -74,7 +75,7 @@ export function createApp() {
   app.use(routeAlias);
 
   app.use((req, res, next) => {
-    const configured = (process.env.CORS_ALLOWED_ORIGINS ?? "https://staff.boreal.financial")
+    const configured = CONFIG.CORS_ALLOWED_ORIGINS
       .split(",")
       .map((origin) => origin.trim())
       .filter(Boolean);

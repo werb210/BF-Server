@@ -1,3 +1,5 @@
+import { CONFIG } from "./config";
+
 function req(name: string) {
   const v = process.env[name];
   if (!v) {
@@ -6,24 +8,22 @@ function req(name: string) {
   return v;
 }
 
-const port = process.env.PORT || "8080";
-if (!/^\d+$/.test(port)) {
+if (!Number.isFinite(CONFIG.PORT) || CONFIG.PORT <= 0) {
   throw new Error("ENV_INVALID_PORT");
 }
 
-const nodeEnv = process.env.NODE_ENV || "production";
-if (!["development", "test", "production"].includes(nodeEnv)) {
+if (!["development", "test", "production"].includes(CONFIG.NODE_ENV)) {
   throw new Error("ENV_INVALID_NODE_ENV");
 }
 
-if (nodeEnv === "production") {
+if (CONFIG.NODE_ENV === "production") {
   req("JWT_SECRET");
 }
 
 export const ENV = {
-  PORT: port,
-  NODE_ENV: nodeEnv,
-  DATABASE_URL: process.env.DATABASE_URL || "",
+  PORT: String(CONFIG.PORT),
+  NODE_ENV: CONFIG.NODE_ENV,
+  DATABASE_URL: CONFIG.DATABASE_URL,
 };
 
 export { req };

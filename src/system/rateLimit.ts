@@ -1,4 +1,5 @@
 import { type NextFunction, type Request, type Response } from "express";
+import { CONFIG } from "./config";
 
 type RateEntry = {
   count: number;
@@ -11,16 +12,20 @@ export function resetRateLimitForTests() {
   hits.clear();
 }
 
-export function rateLimit(limit = 100, windowMs = 60_000) {
+export function rateLimit() {
+  const limit = CONFIG.RATE_LIMIT;
+  const windowMs = CONFIG.RATE_WINDOW_MS;
+
   return (req: Request, res: Response, next: NextFunction) => {
-    const key =
-      (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+    const raw =
+      (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ||
       req.socket?.remoteAddress ||
       req.ip ||
       "unknown";
-    const safeKey: string = key || "unknown";
+
+    const key: string = raw || "unknown";
     const now = Date.now();
-    const entry = hits.get(safeKey) || { count: 0, ts: now };
+    const entry = hits.get(key) || { count: 0, ts: now };
 
     if (now - entry.ts > windowMs) {
       entry.count = 0;
@@ -28,7 +33,7 @@ export function rateLimit(limit = 100, windowMs = 60_000) {
     }
 
     entry.count += 1;
-    hits.set(safeKey, entry);
+    hits.set(key, entry);
 
     if (entry.count > limit) {
       return res.status(429).json({ status: "error", error: "RATE_LIMIT" });
