@@ -20,7 +20,7 @@ describe("system/env", () => {
   });
 
   it("throws MISSING_JWT_SECRET when JWT_SECRET is missing", () => {
-    process.env.PORT = "8080";
+    process.env.PORT = String(Date.now());
     delete process.env.JWT_SECRET;
     process.env.DB_URL = "postgres://localhost:5432/test";
 

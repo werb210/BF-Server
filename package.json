@@ -6,15 +6,17 @@
     "build": "tsc",
     "postinstall": "echo skipping prisma generate in CI",
     "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
-    "test": "NODE_ENV=test vitest",
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run",
     "ci:contract": "bash scripts/ci-contract-checks.sh",
     "prisma:generate": "prisma generate",
     "verify:no-direct-query": "rg -n \"pool.query\\(|client.query\\(\" src && exit 1 || exit 0",
     "verify:no-db-bypass": "rg -n \"getDb|queryDb|pool.query\" src && exit 1 || exit 0",
     "verify:no-unwrapped-routes": "test -f src/lib/routeWrap.ts && rg -n \"export function wrap\" src/lib/routeWrap.ts >/dev/null",
     "verify:no-raw-json": "rg -n \"res\\.json\\(\" src | rg -v \"apiResponse|routeWrap\" && exit 1 || exit 0",
-    "verify:no-direct-response": "rg -n \"res\\.(json|send)\\(\" src | rg -v \"apiResponse|routeWrap|/routes/sms.ts|/routes/voiceIncoming.ts|/routes/voice.ts|/routes/twilioVoice.ts|/modules/health/health.routes.ts|/telephony/webhooks/incomingCall.ts\" && exit 1 || exit 0"
+    "verify:no-direct-response": "rg -n \"res\\.(json|send)\\(\" src | rg -v \"apiResponse|routeWrap|/routes/sms.ts|/routes/voiceIncoming.ts|/routes/voice.ts|/routes/twilioVoice.ts|/modules/health/health.routes.ts|/telephony/webhooks/incomingCall.ts\" && exit 1 || exit 0",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
