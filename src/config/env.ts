@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+if (!process.env.DATABASE_URL) throw new Error("MISSING_DATABASE_URL");
+if (!process.env.PORT) throw new Error("MISSING_PORT");
+
 const base = {
   PORT: z.string().default("8080"),
 };

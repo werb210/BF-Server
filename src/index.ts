@@ -1,6 +1,6 @@
 import "./system/errors";
 import app from "./app";
-import { processDeadLetters } from "./workers/deadLetterWorker";
+import { startDeadLetterWorker } from "./workers/deadLetterWorker";
 import { verifyTwilioSetup } from "./startup/verifyCheck";
 import { initDependencies } from "./system/init";
 import { setupShutdown } from "./system/shutdown";
@@ -13,11 +13,9 @@ async function start() {
 
   await verifyTwilioSetup();
 
-  setInterval(() => {
-    processDeadLetters().catch((err) =>
-      console.error("Dead letter worker failed", err)
-    );
-  }, 15000);
+  if (process.env.NODE_ENV !== "test") {
+    startDeadLetterWorker();
+  }
 
   const PORT = Number(process.env.PORT);
 
