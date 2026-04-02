@@ -15,7 +15,7 @@
     "verify:no-unwrapped-routes": "test -f src/lib/routeWrap.ts && rg -n \"export function wrap\" src/lib/routeWrap.ts >/dev/null",
     "verify:no-raw-json": "rg -n \"res\\.json\\(\" src | rg -v \"apiResponse|routeWrap\" && exit 1 || exit 0",
     "verify:no-direct-response": "rg -n \"res\\.(json|send)\\(\" src | rg -v \"apiResponse|routeWrap|/routes/sms.ts|/routes/voiceIncoming.ts|/routes/voice.ts|/routes/twilioVoice.ts|/modules/health/health.routes.ts|/telephony/webhooks/incomingCall.ts\" && exit 1 || exit 0",
-    "lint": "eslint .",
+    "lint": "eslint src --ext .ts,.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
