@@ -17,7 +17,8 @@
     "verify:no-direct-response": "rg -n \"res\\.(json|send)\\(\" src | rg -v \"apiResponse|routeWrap|/routes/sms.ts|/routes/voiceIncoming.ts|/routes/voice.ts|/routes/twilioVoice.ts|/modules/health/health.routes.ts|/telephony/webhooks/incomingCall.ts\" && exit 1 || exit 0",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
-    "prebuild": "node scripts/no-raw-response-check.js"
+    "prebuild": "node scripts/no-raw-response-check.js",
+    "test:e2e": "concurrently \"npm run dev\" \"vitest run src/e2e\""
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
@@ -65,6 +66,7 @@
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
+    "concurrently": "^9.2.1",
     "eslint": "^8.57.1",
     "pg-mem": "^3.0.14",
     "prisma": "^7.5.0",
