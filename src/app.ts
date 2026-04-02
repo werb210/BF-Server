@@ -93,17 +93,13 @@ export function createApp() {
   app.get(
     "/ready",
     (req, res) => {
-      try {
-        const isReady = req.app.locals?.deps?.db?.ready;
+      const isReady = deps.db.ready;
 
-        if (!isReady) {
-          return res.status(503).json({ status: "not_ready" });
-        }
-
-        return res.status(200).json({ status: "ok" });
-      } catch (_err) {
+      if (!isReady) {
         return res.status(503).json({ status: "not_ready" });
       }
+
+      return res.status(200).json({ status: "ok" });
     },
   );
 
