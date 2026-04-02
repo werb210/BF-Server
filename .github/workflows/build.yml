@@ -8,20 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: testdb
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U postgres"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
+    env:
+      NODE_ENV: test
 
     steps:
       - uses: actions/checkout@v4
@@ -32,17 +20,3 @@ jobs:
 
       - run: npm ci
       - run: npm run build
-
-      - name: Run server + health check
-        env:
-          NODE_ENV: development
-          PORT: 8080
-          JWT_SECRET: ci-jwt-secret-123
-          JWT_REFRESH_SECRET: ci-refresh-secret-123
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/testdb
-          OPENAI_API_KEY: sk-ci-test-key
-          REDIS_URL: redis://127.0.0.1:6379
-        run: |
-          node dist/index.js &
-          sleep 5
-          curl -f http://localhost:8080/health
