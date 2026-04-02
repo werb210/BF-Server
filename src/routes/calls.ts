@@ -72,10 +72,21 @@ function buildRequestMetadata(req: Request): { ip?: string; userAgent?: string }
 }
 
 
+router.post("/start", requireApiAuth, validate(CallStartSchema), async (req, res, next) => {
+  try {
+    const { to } = req.validated as { to: string };
+    const record = await startCall({
+      phoneNumber: to,
+      direction: "outbound",
+      status: "initiated",
+      staffUserId: (req.user?.userId as string | undefined) ?? null,
+      ...buildRequestMetadata(req),
+    });
 
-router.post("/start", requireApiAuth, validate(CallStartSchema), (req, res) => {
-  const { to } = req.validated as { to: string };
-  return ok(res, { started: true, to });
+    return ok(res, { started: true, to, callId: record.id, status: record.status });
+  } catch (error) {
+    return next(error);
+  }
 });
 router.post(
   "/log",
