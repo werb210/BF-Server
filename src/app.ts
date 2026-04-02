@@ -10,7 +10,7 @@ import messagingRoutes from "./routes/messaging";
 import mayaRoutes from "./routes/maya";
 import voiceRoutes from "./routes/voice";
 import smsRoutes from "./routes/sms";
-import healthRoutes from "./routes/health";
+import healthRouter from "./routes/health";
 import crmRoutes from "./routes/crm";
 import callRoutes from "./routes/calls";
 import twilioRoutes from "./routes/twilio";
@@ -37,11 +37,8 @@ export function resetOtpStateForTests() {}
 
 globalThis.__resetOtpStateForTests = resetOtpStateForTests;
 
-export function createApp(deps: Deps) {
+function registerApiRoutes(app: express.Express) {
   process.env.STRICT_API = CONFIG.STRICT_API;
-
-  const app = express();
-  app.locals.deps = deps;
 
   app.use(requestContext);
   app.use(corsMiddleware);
@@ -86,15 +83,6 @@ export function createApp(deps: Deps) {
   });
 
   app.get(
-    "/health",
-    wrap(async () => {
-      return { status: "ok" };
-    }),
-  );
-
-  app.use("/ready", readyRouter);
-
-  app.get(
     "/metrics",
     wrap(async () => {
       return {
@@ -128,7 +116,6 @@ export function createApp(deps: Deps) {
   app.use("/api/v1", twilioRoutes);
   app.use("/api/v1/comm", messagingRoutes);
   app.use("/api/v1/sms", smsRoutes);
-  app.use("/api/v1", healthRoutes);
 
   app.get(
     "/api/v1/voice/token",
@@ -163,6 +150,23 @@ export function createApp(deps: Deps) {
   });
 
   app.use(errorHandler);
+}
+
+export function createApp(deps: Deps) {
+  const app = express();
+
+  // SINGLE shared reference used everywhere
+  app.locals.deps = deps;
+  Object.defineProperty(app.locals, "deps", {
+    writable: false,
+    configurable: false,
+  });
+
+  // register routes AFTER deps is attached
+  app.use("/health", healthRouter);
+  app.use("/ready", readyRouter);
+
+  registerApiRoutes(app);
 
   return app;
 }

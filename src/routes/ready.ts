@@ -1,23 +1,21 @@
 import { Router } from "express";
-import type { Request, Response } from "express";
 
 const router = Router();
 
-export function readyHandler(req: Request, res: Response) {
+router.get("/", (req, res) => {
   const deps = req.app.locals.deps;
 
+  // hard guard
   if (!deps || !deps.db) {
     return res.status(503).json({ status: "not_ready" });
   }
 
-  if (!deps.db.ready) {
+  // CRITICAL: read LIVE value every request
+  if (deps.db.ready !== true) {
     return res.status(503).json({ status: "not_ready" });
   }
 
   return res.status(200).json({ status: "ok" });
-}
-
-router.get("/", readyHandler);
-router.get("/ready", readyHandler);
+});
 
 export default router;
