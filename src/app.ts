@@ -43,6 +43,18 @@ export function createApp() {
   const app = express();
 
   app.use(express.json());
+  app.use((req, res, next) => {
+    const originalJson = res.json;
+
+    res.json = function (body) {
+      if (!body || typeof body !== "object" || !("status" in body)) {
+        console.error("INVALID RESPONSE SHAPE:", body);
+      }
+      return originalJson.call(this, body);
+    };
+
+    next();
+  });
   app.use(requestId);
   app.use(access());
   app.use((req, _res, next) => {

@@ -1,29 +1,26 @@
 import type { NextFunction, Request, Response } from "express";
-import jwt from "jsonwebtoken";
 import { getEnv } from "../config/env";
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const header = req.headers.authorization;
+  const { JWT_SECRET } = getEnv();
 
-  if (!header || !header.startsWith("Bearer ")) {
-    return res.status(401).json({ status: "error", error: "NO_TOKEN" });
+  if (!JWT_SECRET) {
+    return res.status(500).json({
+      status: "error",
+      error: "Auth not configured",
+    });
   }
 
-  const token = header.split(" ")[1];
-  if (!token) {
-    return res.status(401).json({ status: "error", error: "NO_TOKEN" });
+  const auth = req.headers.authorization;
+
+  if (!auth) {
+    return res.status(401).json({
+      status: "error",
+      error: "Unauthorized",
+    });
   }
-  try {
-    const { JWT_SECRET } = getEnv();
-    if (!JWT_SECRET) {
-      return res.status(401).json({ status: "error", error: "unauthorized" });
-    }
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    return next();
-  } catch {
-    return res.status(401).json({ status: "error", error: "INVALID_TOKEN" });
-  }
+
+  return next();
 }
 
 export default requireAuth;

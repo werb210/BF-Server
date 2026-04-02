@@ -1,4 +1,4 @@
-import type { NextFunction, Request, Response } from "express";
+import type { Request, Response } from "express";
 import { describe, expect, it } from "vitest";
 
 import { wrap } from "../lib/routeWrap";
@@ -27,31 +27,29 @@ describe("routeWrap handling", () => {
       throw Object.assign(new Error("BROKEN_HANDLER"), { status: 418 });
     });
 
-    const req = { rid: "rid-throw" } as Request;
+    const req = {} as Request;
     const res = createMockRes();
 
-    await handler(req, res, (() => undefined) as unknown as NextFunction);
+    await handler(req, res);
 
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({
       status: "error",
       error: "BROKEN_HANDLER",
-      rid: "rid-throw",
     });
   });
 
   it("returns status ok with data when handler resolves undefined", async () => {
     const handler = wrap(async () => undefined);
 
-    const req = { rid: "rid-empty" } as Request;
+    const req = {} as Request;
     const res = createMockRes();
 
-    await handler(req, res, (() => undefined) as unknown as NextFunction);
+    await handler(req, res);
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({
       status: "ok",
-      rid: "rid-empty",
       data: undefined,
     });
   });
@@ -59,15 +57,14 @@ describe("routeWrap handling", () => {
   it("returns wrapped data payload for successful responses", async () => {
     const handler = wrap(async () => ({ ok: true }));
 
-    const req = { rid: "rid-envelope" } as Request;
+    const req = {} as Request;
     const res = createMockRes();
 
-    await handler(req, res, (() => undefined) as unknown as NextFunction);
+    await handler(req, res);
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({
       status: "ok",
-      rid: "rid-envelope",
       data: { ok: true },
     });
   });

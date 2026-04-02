@@ -30,7 +30,10 @@ export function auth(req: Request, res: Response, next: NextFunction) {
     const { JWT_SECRET } = getEnv();
 
     if (!JWT_SECRET) {
-      return next(); // test mode fallback
+      return res.status(500).json({
+        status: "error",
+        error: "Auth not configured",
+      });
     }
 
     const decoded = jwt.verify(token, JWT_SECRET);
