@@ -8,7 +8,7 @@ import messagingRoutes from "./routes/messaging";
 import mayaRoutes from "./routes/maya";
 import voiceRoutes from "./routes/voice";
 import smsRoutes from "./routes/sms";
-import healthRoutes from "./routes/health";
+import healthRoutes, { health, ready } from "./routes/health";
 import crmRoutes from "./routes/crm";
 import callRoutes from "./routes/calls";
 import twilioRoutes from "./routes/twilio";
@@ -19,7 +19,6 @@ import { errorHandler } from "./middleware/errorHandler";
 import { fail, ok } from "./lib/response";
 import { wrap } from "./lib/routeWrap";
 import { ok as envelopeOk } from "./lib/apiResponse";
-import { isReady } from "./system/ready";
 import { timeout } from "./system/timeout";
 import { requestId } from "./system/requestId";
 import { access } from "./system/access";
@@ -57,16 +56,9 @@ export function createApp() {
     res.setHeader("X-XSS-Protection", "1; mode=block");
     next();
   });
-  app.get("/health", (_req, res) => {
-    res.status(200).send("ok");
-  });
+  app.get("/health", health);
 
-  app.get("/ready", (_req, res) => {
-    if (!isReady()) {
-      return res.status(503).json({ status: "degraded" });
-    }
-    return res.json({ status: "ready" });
-  });
+  app.get("/ready", ready);
 
   app.get("/metrics", (_req, res) => {
     return res.json(metrics());

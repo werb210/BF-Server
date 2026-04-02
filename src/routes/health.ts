@@ -1,30 +1,27 @@
 import { Router } from "express";
 import { isReady } from "../system/ready";
+import type { Request, Response } from "express";
 
 const router = Router();
 
-router.get("/health", (_req, res) => {
-  res.status(200).send("ok");
-});
+export function health(_req: Request, res: Response) {
+  return res.status(200).json({ status: "ok" });
+}
 
-router.get("/healthz", (_req, res) => {
-  res.status(200).send("ok");
-});
-
-router.get("/ready", (_req, res) => {
+export function ready(_req: Request, res: Response) {
   if (!isReady()) {
-    return res.status(503).json({ status: "degraded" });
+    return res.status(503).json({ status: "not_ready" });
   }
 
   return res.json({ status: "ready" });
-});
+}
 
-router.get("/readyz", (_req, res) => {
-  if (!isReady()) {
-    return res.status(503).json({ status: "degraded" });
-  }
+router.get("/health", health);
 
-  return res.json({ status: "ready" });
-});
+router.get("/healthz", health);
+
+router.get("/ready", ready);
+
+router.get("/readyz", ready);
 
 export default router;
