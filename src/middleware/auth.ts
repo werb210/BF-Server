@@ -1,5 +1,6 @@
-import { NextFunction, Request, Response, type RequestHandler } from "express";
+import { Request, Response, NextFunction, type RequestHandler } from "express";
 import jwt from "jsonwebtoken";
+import { getEnv } from "../config/env";
 
 type AuthorizationOptions = {
   roles?: string[];
@@ -15,33 +16,37 @@ export interface AuthRequest extends Request {
   user?: Request["user"];
 }
 
-export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
-  const token = req.headers.authorization?.split(" ")[1];
+export function auth(req: Request, res: Response, next: NextFunction) {
+  const token = req.headers.authorization?.replace("Bearer ", "");
 
   if (!token) {
-    return res.status(401).json({ status: "error", error: "NO_TOKEN" });
-  }
-
-  const jwtSecret = process.env.JWT_SECRET;
-  if (!jwtSecret) {
-    return res.status(401).json({ status: "error", error: "NO_TOKEN" });
+    return res.status(401).json({
+      status: "error",
+      error: "NO_TOKEN",
+    });
   }
 
   try {
-    const decoded = jwt.verify(token, jwtSecret);
-    req.user = decoded as Request["user"];
-    return next();
+    const { JWT_SECRET } = getEnv();
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    (req as any).user = decoded;
+    next();
   } catch {
-    return res.status(401).json({ status: "error", error: "NO_TOKEN" });
+    return res.status(401).json({
+      status: "error",
+      error: "INVALID_TOKEN",
+    });
   }
 }
+
+export const requireAuth: RequestHandler = auth;
 
 export function createAuthMiddleware(): RequestHandler {
   return requireAuth;
 }
 
 export const authMiddleware: RequestHandler = requireAuth;
-export const auth = authMiddleware;
 
 export function requireAuthorization(options: AuthorizationOptions = {}): RequestHandler {
   const requiredRoles = options.roles ?? [];

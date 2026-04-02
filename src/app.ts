@@ -44,13 +44,6 @@ export function createApp() {
 
   app.use(express.json());
   app.use(requestId);
-  app.use((req, res, next) => {
-    const rid = (req as any).rid;
-    if (rid) {
-      res.setHeader("x-request-id", rid);
-    }
-    next();
-  });
   app.use(access());
   app.use((req, _res, next) => {
     incReq();
@@ -101,7 +94,7 @@ export function createApp() {
 
   app.get(
     "/api/v1/public/test",
-    wrap(async (_req, res) => {
+    wrap(async (_req, _res) => {
       return { ok: true };
     })
   );

@@ -2,6 +2,7 @@ import express, { type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
 
 import { getRedis } from "../../lib/redis.js";
+import { getEnv } from "../../config/env";
 
 const router = express.Router();
 
@@ -55,7 +56,7 @@ router.post("/start", async (req: Request, res: Response) => {
     from: process.env.TWILIO_PHONE,
   });
 
-  return res.status(200).json({ success: true });
+  return res.status(200).json({ status: "ok", data: { sent: true } });
 });
 
 router.post("/verify", async (req: Request, res: Response) => {
@@ -65,10 +66,6 @@ router.post("/verify", async (req: Request, res: Response) => {
     return res.status(400).json({ error: "invalid_payload" });
   }
 
-  if (!process.env.JWT_SECRET) {
-    return res.status(500).json({ error: "missing_jwt_secret" });
-  }
-
   const redis = getRedis();
   const stored = await redis.get(`otp:${phone}`);
 
@@ -76,9 +73,10 @@ router.post("/verify", async (req: Request, res: Response) => {
     return res.status(400).json({ error: "Invalid code" });
   }
 
+  const { JWT_SECRET } = getEnv();
   const token = jwt.sign(
     { phone },
-    process.env.JWT_SECRET,
+    JWT_SECRET,
     { expiresIn: "1d" },
   );
 

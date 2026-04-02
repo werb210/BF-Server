@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 
 import { otpStore } from "./otpStore";
 import { fail, ok } from "../../middleware/response";
+import { getEnv } from "../../config/env";
 
 const router = Router();
 
@@ -58,10 +59,6 @@ router.post("/otp/verify", (req: Request, res: Response) => {
     return error(res, 400, "invalid_payload");
   }
 
-  if (!process.env.JWT_SECRET) {
-    return error(res, 401, "unauthorized");
-  }
-
   const record = otpStore.get(phone);
 
   if (!record) {
@@ -94,12 +91,8 @@ router.post("/otp/verify", (req: Request, res: Response) => {
   record.used = true;
   otpStore.set(phone, record);
 
-  const jwtSecret = process.env.JWT_SECRET;
-  if (!jwtSecret) {
-    return error(res, 401, "unauthorized");
-  }
-
-  const token = jwt.sign({ phone }, jwtSecret, { expiresIn: "1d" });
+  const { JWT_SECRET } = getEnv();
+  const token = jwt.sign({ phone }, JWT_SECRET, { expiresIn: "1d" });
 
   return ok(res, { token });
 });
