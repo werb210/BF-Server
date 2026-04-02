@@ -11,6 +11,7 @@ import { logError, logInfo, logWarn } from "../observability/logger";
 import { trackEvent } from "../observability/appInsights";
 import { fetchRequestContext } from "../observability/requestContext";
 import { type Role } from "../auth/roles";
+import { stripUndefined } from "../utils/clean";
 
 export type PushLevel = "normal" | "high" | "critical";
 
@@ -181,12 +182,12 @@ export function initializePushService(): PushStatus {
 
   if (!publicKey || !privateKey || !subject) {
     const error = "missing_vapid";
-    cachedStatus = {
+    cachedStatus = stripUndefined({
       configured: false,
       enabled,
       error,
       subject,
-    };
+    });
     if (config.isProduction) {
       throw new Error("VAPID configuration is required in production when push is enabled.");
     }
@@ -205,12 +206,12 @@ export function initializePushService(): PushStatus {
     logInfo("push_initialized", { subject });
     return cachedStatus;
   } catch (error) {
-    const status: PushStatus = {
+    const status: PushStatus = stripUndefined({
       configured: false,
       enabled,
       error: error instanceof Error ? error.message : "invalid_vapid",
       subject,
-    };
+    }) as PushStatus;
     cachedStatus = status;
     if (config.isProduction) {
       throw error instanceof Error ? error : new Error("invalid_vapid");

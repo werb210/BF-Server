@@ -22,9 +22,13 @@ export async function sendOtp(phone: string) {
   if (!client) {
     throw new Error("Twilio client not initialized");
   }
+  const verifyServiceSid = ENV.TWILIO_VERIFY_SERVICE_SID;
+  if (!verifyServiceSid) {
+    throw new Error("Twilio verify service is not configured");
+  }
 
   return client.verify.v2
-    .services(ENV.TWILIO_VERIFY_SERVICE_SID)
+    .services(verifyServiceSid)
     .verifications.create({
       to: phone,
       channel: "sms",
@@ -39,9 +43,13 @@ export async function checkOtp(phone: string, code: string): Promise<boolean> {
   if (!client) {
     throw new Error("Twilio client not initialized");
   }
+  const verifyServiceSid = ENV.TWILIO_VERIFY_SERVICE_SID;
+  if (!verifyServiceSid) {
+    throw new Error("Twilio verify service is not configured");
+  }
 
   const result = await client.verify.v2
-    .services(ENV.TWILIO_VERIFY_SERVICE_SID)
+    .services(verifyServiceSid)
     .verificationChecks.create({
       to: phone,
       code,

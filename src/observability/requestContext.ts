@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { type NextFunction, type Request, type Response } from "express";
+import { stripUndefined } from "../utils/clean";
 
 type RequestContextStore = {
   requestId: string;
@@ -47,11 +48,11 @@ export function fetchRequestDbProcessIds(): string[] {
 }
 
 export function runWithRequestContext<T>(fn: () => Promise<T>, context?: Partial<RequestContextStore>): Promise<T> {
-  const base: RequestContextStore = {
+  const base = stripUndefined({
     requestId: context?.requestId ?? randomUUID(),
     route: context?.route,
     idempotencyKeyHash: context?.idempotencyKeyHash,
     dbProcessIds: context?.dbProcessIds ?? [],
-  };
+  }) as RequestContextStore;
   return storage.run(base, fn);
 }

@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { createCrmLead } from "../crm/crm.service";
 import { sendSms } from "../notifications/sms.service";
 import { createContinuation } from "../continuation/continuation.service";
+import { stripUndefined } from "../../utils/clean";
 
 export async function submitCreditReadiness(req: Request, res: Response) {
   try {
@@ -26,7 +27,7 @@ export async function submitCreditReadiness(req: Request, res: Response) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    const lead = await createCrmLead({
+    const lead = await createCrmLead(stripUndefined({
       companyName,
       fullName,
       phone,
@@ -43,7 +44,7 @@ export async function submitCreditReadiness(req: Request, res: Response) {
       existingDebt,
       source: "website_credit_readiness",
       tags: ["credit_readiness"],
-    });
+    }));
 
     const token = await createContinuation(req.body, lead.id);
 

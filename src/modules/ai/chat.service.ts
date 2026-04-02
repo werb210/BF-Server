@@ -1,6 +1,7 @@
 import { pool, runQuery } from "../../db";
 import { recordAuditEvent } from "../audit/audit.service";
 import { generateAIResponse } from "./ai.service";
+import { stripUndefined } from "../../utils/clean";
 import {
   addMessage,
   createSession,
@@ -102,7 +103,7 @@ export async function startChatSession(params: {
   };
 }): Promise<ChatSessionRecord> {
   const leadId = await upsertLead({ ...(params.lead ?? {}), tag: "chat_intake" });
-  return createSession({ source: params.source, channel: params.channel, leadId });
+  return createSession(stripUndefined({ source: params.source, channel: params.channel, leadId }));
 }
 
 export async function processChatMessage(params: {

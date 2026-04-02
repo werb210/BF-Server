@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { z } from "zod";
+import { stripUndefined } from "../utils/clean";
 
 const router = Router();
 
@@ -32,13 +33,13 @@ router.post("/", async (req: any, res: any, next: any) => {
     return;
   }
 
-  const issue: Issue = {
+  const issue: Issue = stripUndefined({
     id: uuidv4(),
     message: parsed.data.message,
     screenshot: parsed.data.screenshot,
     createdAt: new Date(),
     resolved: false,
-  };
+  }) as Issue;
 
   pushBounded(issues, issue);
 

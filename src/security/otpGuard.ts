@@ -13,7 +13,8 @@ LIMIT 1`,
 
   if (result.rows.length === 0) return;
 
-  if (result.rows[0].failed_count >= MAX_ATTEMPTS) {
+  const latest = result.rows[0];
+  if (latest && latest.failed_count >= MAX_ATTEMPTS) {
     throw new Error("OTP attempts exceeded");
   }
 }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAuth } from "../../middleware/auth";
 import { idempotencyMiddleware } from "../../middleware/idempotency";
 import { createLead, getLeads } from "./lead.service";
+import { stripUndefined } from "../../utils/clean";
 
 const createLeadSchema = z.object({
   source: z.string().trim().min(1),
@@ -58,7 +59,7 @@ router.post(
     const body = parseResult.data;
 
     try {
-      const lead = await createLead({
+      const lead = await createLead(stripUndefined({
         source: body.source,
         companyName: body.companyName,
         fullName: body.fullName,
@@ -73,7 +74,7 @@ router.post(
         industryInterest: body.industryInterest,
         notes: body.notes,
         tags: body.tags,
-      });
+      }));
 
       res.status(201).json(lead);
     } catch (err) {

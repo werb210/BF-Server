@@ -60,6 +60,9 @@ router.post("/refresh", async (req, res) => {
   }
 
   const token = header.split(" ")[1];
+  if (!token) {
+    return res.status(401).json({ error: "UNAUTHORIZED" });
+  }
 
   try {
     const payload = verifyJwt(token);

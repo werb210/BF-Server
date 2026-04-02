@@ -56,6 +56,9 @@ router.post(
     );
 
     const offer = result.rows[0];
+    if (!offer) {
+      throw new AppError("create_failed", "Offer could not be created.", 500);
+    }
     eventBus.emit("offer_created", { offerId: offer.id, applicationId });
     res.status(201).json({ offer });
   })

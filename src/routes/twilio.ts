@@ -15,6 +15,7 @@ import { findCallLogByTwilioSid } from "../modules/calls/calls.repo";
 import { createVoicemail } from "../modules/voice/voicemail.repo";
 import { logInfo, logWarn } from "../observability/logger";
 import { config } from "../config";
+import { stripUndefined, toNullable } from "../utils/clean";
 
 const router = Router();
 const oneMinuteMs = 60_000;
@@ -172,10 +173,10 @@ router.get(
     );
 
     token.addGrant(
-      new VoiceGrant({
+      new VoiceGrant(stripUndefined({
         outgoingApplicationSid: config.twilio.voiceAppSid,
         incomingAllow: true,
-      })
+      }))
     );
 
     return ok({ token: token.toJwt() });
@@ -323,15 +324,15 @@ router.post(
     const durationSeconds = typeof req.body?.CallDuration === "string" ? Number(req.body.CallDuration) : undefined;
     const isCompleted = callStatus === "completed";
 
-    await updateCallStatus({
+    await updateCallStatus(stripUndefined({
       id: found.id,
       status,
-      durationSeconds,
-      errorCode: typeof req.body?.ErrorCode === "string" ? req.body.ErrorCode : undefined,
-      errorMessage: typeof req.body?.ErrorMessage === "string" ? req.body.ErrorMessage : undefined,
-      fromNumber: typeof req.body?.From === "string" ? req.body.From : undefined,
-      toNumber: typeof req.body?.To === "string" ? req.body.To : undefined,
-    });
+      durationSeconds: toNullable(durationSeconds),
+      errorCode: toNullable(typeof req.body?.ErrorCode === "string" ? req.body.ErrorCode : undefined),
+      errorMessage: toNullable(typeof req.body?.ErrorMessage === "string" ? req.body.ErrorMessage : undefined),
+      fromNumber: toNullable(typeof req.body?.From === "string" ? req.body.From : undefined),
+      toNumber: toNullable(typeof req.body?.To === "string" ? req.body.To : undefined),
+    }));
 
     const priceEstimateCents = isCompleted && typeof durationSeconds === "number" ? durationSeconds * 3 : null;
     await runQuery(

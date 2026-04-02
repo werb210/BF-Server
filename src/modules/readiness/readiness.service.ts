@@ -4,6 +4,7 @@ import { dbQuery } from "../../db";
 import { normalizePhoneNumber } from "../auth/phone";
 import { createApplication } from "../applications/applications.repo";
 import { upsertCrmLead } from "../crm/leadUpsert.service";
+import { stripUndefined, toNullable } from "../../utils/clean";
 
 const readinessSourceSchema = z.enum(["website", "client"]);
 
@@ -178,22 +179,22 @@ export async function createReadinessLead(input: CreateReadinessLeadInput): Prom
     phone,
   });
 
-  await upsertCrmLead({
+  await upsertCrmLead(stripUndefined({
     companyName: parsed.companyName,
     fullName: parsed.fullName,
     email,
     phone,
     industry: parsed.industry,
-    yearsInBusiness: parsed.yearsInBusiness,
-    monthlyRevenue: parsed.monthlyRevenue,
-    annualRevenue: parsed.annualRevenue,
-    arOutstanding: parsed.arOutstanding,
-    existingDebt: parsed.existingDebt,
+    yearsInBusiness: toNullable(parsed.yearsInBusiness),
+    monthlyRevenue: toNullable(parsed.monthlyRevenue),
+    annualRevenue: toNullable(parsed.annualRevenue),
+    arOutstanding: toNullable(parsed.arOutstanding),
+    existingDebt: toNullable(parsed.existingDebt),
     source: `readiness_${source}`,
     tags: ["readiness"],
     activityType: "readiness_submission",
     activityPayload: { source },
-  });
+  }));
 
   await dbQuery(
     `insert into readiness_leads (

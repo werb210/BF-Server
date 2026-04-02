@@ -4,6 +4,7 @@ import { db } from "../db";
 import { sendSMS } from "../services/smsService";
 import { type ContinuationRecord } from "../db/schema/continuation";
 import { upsertCrmLead } from "../modules/crm/leadUpsert.service";
+import { stripUndefined, toNullable } from "../utils/clean";
 
 const router = Router();
 
@@ -62,21 +63,21 @@ router.post("/", async (req: any, res: any, next: any) => {
     ]
   );
 
-  await upsertCrmLead({
+  await upsertCrmLead(stripUndefined({
     companyName: data.companyName,
     fullName: data.fullName,
     email: data.email,
     phone: data.phone,
     industry: data.industry,
-    yearsInBusiness: data.yearsInBusiness,
-    monthlyRevenue: data.monthlyRevenue,
-    annualRevenue: data.annualRevenue,
-    arOutstanding: data.arOutstanding,
-    existingDebt: data.existingDebt,
+    yearsInBusiness: toNullable(data.yearsInBusiness),
+    monthlyRevenue: toNullable(data.monthlyRevenue),
+    annualRevenue: toNullable(data.annualRevenue),
+    arOutstanding: toNullable(data.arOutstanding),
+    existingDebt: toNullable(data.existingDebt),
     source: "capital_readiness",
     tags: ["readiness"],
     activityType: "capital_readiness_submission",
-  });
+  }));
 
   await sendSMS(
     "+15878881837",

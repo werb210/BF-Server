@@ -10,6 +10,7 @@ import { createOrReuseReadinessSession } from "../modules/readiness/readinessSes
 import { upsertCrmLead } from "../modules/crm/leadUpsert.service";
 import { retry } from "../utils/retry";
 import { logError } from "../observability/logger";
+import { stripUndefined, toNullable } from "../utils/clean";
 
 const router = Router();
 
@@ -75,24 +76,24 @@ router.post("/", async (req: any, res: any, next: any) => {
     ]
   );
 
-  const crmLead = await upsertCrmLead({
+  const crmLead = await upsertCrmLead(stripUndefined({
     companyName,
     fullName,
     phone,
     email,
     industry,
-    yearsInBusiness,
-    monthlyRevenue,
-    annualRevenue,
-    arOutstanding,
-    existingDebt,
+    yearsInBusiness: toNullable(yearsInBusiness),
+    monthlyRevenue: toNullable(monthlyRevenue),
+    annualRevenue: toNullable(annualRevenue),
+    arOutstanding: toNullable(arOutstanding),
+    existingDebt: toNullable(existingDebt),
     source: "website_credit_readiness",
     tags: ["readiness"],
     activityType: "credit_readiness_submission",
     activityPayload: { applicationId },
-  });
+  }));
 
-  const readinessSession = await createOrReuseReadinessSession({
+  const readinessSession = await createOrReuseReadinessSession(stripUndefined({
     companyName,
     fullName,
     phone,
@@ -103,7 +104,7 @@ router.post("/", async (req: any, res: any, next: any) => {
     annualRevenue,
     arOutstanding,
     existingDebt,
-  });
+  }));
 
   const continuationToken = await createContinuation(applicationId);
 

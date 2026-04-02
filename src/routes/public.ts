@@ -4,6 +4,7 @@ import { requireFields } from "../middleware/validate";
 import { LeadSchema } from "../validation";
 import { fail, ok } from "../lib/apiResponse";
 import { wrap } from "../lib/routeWrap";
+import { stripUndefined } from "../utils/clean";
 
 const router = Router();
 
@@ -36,7 +37,7 @@ async function createLead(payload: LeadPayload): Promise<{ leadId?: string }> {
     [data.email, data.phone, data.businessName, data.productType, data.requestedAmount ?? null],
   );
 
-  return { leadId: result.rows[0]?.id };
+  return stripUndefined({ leadId: result.rows[0]?.id });
 }
 
 router.get("/test", wrap(async () => ok({ ok: true })));

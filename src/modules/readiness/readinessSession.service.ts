@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { dbQuery } from "../../db";
 import { upsertCrmLead } from "../crm/leadUpsert.service";
+import { stripUndefined, toNullable } from "../../utils/clean";
 
 type ReadinessSessionInput = {
   companyName: string;
@@ -65,22 +66,22 @@ export async function createOrReuseReadinessSession(payload: ReadinessSessionInp
 
   const startupInterest = String(payload.industry ?? "").toLowerCase().includes("startup");
 
-  const crmLead = await upsertCrmLead({
+  const crmLead = await upsertCrmLead(stripUndefined({
     companyName: payload.companyName,
     fullName: payload.fullName,
     email,
     phone: payload.phone,
     industry: payload.industry,
-    yearsInBusiness: payload.yearsInBusiness,
-    monthlyRevenue: payload.monthlyRevenue,
-    annualRevenue: payload.annualRevenue,
-    arOutstanding: payload.arOutstanding,
-    existingDebt: payload.existingDebt,
+    yearsInBusiness: toNullable(payload.yearsInBusiness),
+    monthlyRevenue: toNullable(payload.monthlyRevenue),
+    annualRevenue: toNullable(payload.annualRevenue),
+    arOutstanding: toNullable(payload.arOutstanding),
+    existingDebt: toNullable(payload.existingDebt),
     source: "credit_readiness",
     tags: startupInterest ? ["readiness", "startup_interest"] : ["readiness"],
     activityType: "readiness_submission",
     activityPayload: { email },
-  });
+  }));
 
   if (existing.rows[0]) {
     await dbQuery(

@@ -1,5 +1,6 @@
 import { dbQuery } from "../../db";
 import { createCrmLead, listCrmLeads } from "../crm/crm.service";
+import { stripUndefined } from "../../utils/clean";
 
 type LeadPayload = {
   source: string;
@@ -33,7 +34,7 @@ export async function createLead(payload: LeadPayload) {
     return { success: true };
   }
 
-  return createCrmLead({
+  return createCrmLead(stripUndefined({
     companyName: payload.companyName ?? "",
     fullName: payload.fullName ?? "",
     email: payload.email ?? "",
@@ -48,7 +49,7 @@ export async function createLead(payload: LeadPayload) {
     source: payload.source,
     notes: payload.notes,
     tags: Array.isArray(payload.tags) ? payload.tags : [],
-  });
+  }));
 }
 
 export const getLeads = listCrmLeads;

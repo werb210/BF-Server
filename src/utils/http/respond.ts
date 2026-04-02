@@ -1,5 +1,6 @@
 import type { Response } from "express";
 import type { ApiResponse } from "../../types/api";
+import { stripUndefined } from "../clean";
 
 export function ok<T>(res: Response, data: T, status = 200): Response {
   const body: ApiResponse<T> = { success: true, data };
@@ -16,7 +17,7 @@ export function fail(
 ): Response {
   const body: ApiResponse<never> = {
     success: false,
-    error: { message, code, details },
+    error: stripUndefined({ message, code, details }),
   };
 
   res.locals.__wrapped = true;

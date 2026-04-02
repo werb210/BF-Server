@@ -9,6 +9,9 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
 
   const token = header.split(" ")[1];
+  if (!token) {
+    return res.status(401).json({ success: false, error: "Missing token" });
+  }
   const jwtSecret = process.env.JWT_SECRET;
 
   if (!jwtSecret) {

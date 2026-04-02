@@ -2,7 +2,7 @@ import type { MulterRequest } from "../types/multer";
 import fs from "fs";
 import path from "path";
 import multer from "multer";
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import { randomUUID } from "crypto";
 import { safeHandler } from "../middleware/safeHandler";
 import { pool, runQuery } from "../db";
@@ -192,7 +192,11 @@ router.post(
   })
 );
 
-router.post("/knowledge/upload", rejectOversizedPayload, knowledgeUpload.single("file"), AIKnowledgeController.upload);
+const knowledgeUploadHandler: RequestHandler = async (req, res) => {
+  await AIKnowledgeController.upload(req as MulterRequest, res);
+};
+
+router.post("/knowledge/upload", rejectOversizedPayload, knowledgeUpload.single("file"), knowledgeUploadHandler);
 router.get("/knowledge", AIKnowledgeController.list);
 
 router.get(

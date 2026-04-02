@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createCRMLead } from "../services/crmService";
 import { sendSMS } from "../services/smsService";
 import { config } from "../config";
+import { stripUndefined } from "../utils/clean";
 
 const router = Router();
 
@@ -47,7 +48,7 @@ router.post("/score", async (req: any, res: any, next: any) => {
 
   score = Math.min(score, 85);
 
-  await createCRMLead({
+  await createCRMLead(stripUndefined({
     companyName,
     fullName,
     email,
@@ -62,7 +63,7 @@ router.post("/score", async (req: any, res: any, next: any) => {
       existingDebt,
       score,
     },
-  });
+  }));
 
   if (config.intake.smsNumber) {
     await sendSMS(
