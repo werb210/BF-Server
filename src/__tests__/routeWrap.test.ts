@@ -22,7 +22,7 @@ function createMockRes(): Response & { body?: unknown; statusCode?: number } {
 }
 
 describe("routeWrap handling", () => {
-  it("returns consistent error shape for thrown errors", async () => {
+  it("returns simple error shape for thrown errors", async () => {
     const handler = wrap(async () => {
       throw Object.assign(new Error("BROKEN_HANDLER"), { status: 418 });
     });
@@ -34,31 +34,28 @@ describe("routeWrap handling", () => {
 
     expect(res.statusCode).toBe(418);
     expect(res.body).toEqual({
-      status: "error",
-      rid: "test-rid",
       error: "BROKEN_HANDLER",
     });
   });
 
-  it("returns status ok without data when handler resolves undefined", async () => {
+  it("does not auto-send when handler resolves undefined", async () => {
     const handler = wrap(async () => undefined);
 
-    const req = { rid: "test-rid" } as Request;
+    const req = {} as Request;
     const res = createMockRes();
 
     await handler(req, res);
 
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({
-      status: "ok",
-      rid: "test-rid",
-    });
+    expect(res.body).toBeUndefined();
   });
 
-  it("returns wrapped data payload for successful responses", async () => {
-    const handler = wrap(async () => ({ ok: true }));
+  it("does not override explicit successful responses", async () => {
+    const handler = wrap(async (_req, response) => {
+      response.status(200).json({ status: "ok" });
+    });
 
-    const req = { rid: "test-rid" } as Request;
+    const req = {} as Request;
     const res = createMockRes();
 
     await handler(req, res);
@@ -66,8 +63,6 @@ describe("routeWrap handling", () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({
       status: "ok",
-      rid: "test-rid",
-      data: { ok: true },
     });
   });
 });

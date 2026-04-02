@@ -1,22 +1,23 @@
-import type { Request, Response } from "express";
 import { Router } from "express";
-import { isReady } from "../startupState";
+import type { Request, Response } from "express";
 
 const router = Router();
 
-export function healthHandler(_req: Request, res: Response): void {
-  res.status(200).json({ ok: true });
-}
+export function readyHandler(req: Request, res: Response) {
+  const deps = req.app.locals.deps;
 
-export function readyHandler(_req: Request, res: Response): void {
-  if (!isReady()) {
-    res.status(503).json({ status: "not_ready" });
-    return;
+  if (!deps || !deps.db) {
+    return res.status(503).json({ status: "not_ready" });
   }
-  res.status(200).json({ ok: true });
+
+  if (!deps.db.ready) {
+    return res.status(503).json({ status: "not_ready" });
+  }
+
+  return res.status(200).json({ status: "ok" });
 }
 
-router.get("/health", healthHandler);
+router.get("/", readyHandler);
 router.get("/ready", readyHandler);
 
 export default router;

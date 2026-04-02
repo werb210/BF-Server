@@ -1,7 +1,8 @@
 import { createApp } from "./app";
 import { getEnv } from "./config/env";
+import { deps } from "./system/deps";
 
-export const app = createApp();
+export const app = createApp(deps);
 
 if (require.main === module) {
   const { PORT } = getEnv();

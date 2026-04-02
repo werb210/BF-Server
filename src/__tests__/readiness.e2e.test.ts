@@ -1,9 +1,21 @@
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { app, resetOtpStateForTests } from "../app";
-import { deps } from "../system/deps";
+import { createApp, resetOtpStateForTests } from "../app";
+import type { Deps } from "../system/deps";
+
+function createTestDeps(): Deps {
+  return {
+    db: {
+      ready: false,
+      error: null,
+    },
+  };
+}
 
 describe("server:readiness:e2e", () => {
+  const deps = createTestDeps();
+  const app = createApp(deps);
+
   beforeEach(() => {
     resetOtpStateForTests();
     vi.useFakeTimers();

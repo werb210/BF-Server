@@ -25,7 +25,8 @@ import { access } from "./system/access";
 import { incReq, metrics } from "./system/metrics";
 import { rateLimit } from "./system/rateLimit";
 import { CONFIG } from "./system/config";
-import { deps } from "./system/deps";
+import { deps as defaultDeps, type Deps } from "./system/deps";
+import readyRouter from "./routes/ready";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -36,10 +37,11 @@ export function resetOtpStateForTests() {}
 
 globalThis.__resetOtpStateForTests = resetOtpStateForTests;
 
-export function createApp() {
+export function createApp(deps: Deps) {
   process.env.STRICT_API = CONFIG.STRICT_API;
 
   const app = express();
+  app.locals.deps = deps;
 
   app.use(requestContext);
   app.use(corsMiddleware);
@@ -90,18 +92,7 @@ export function createApp() {
     }),
   );
 
-  app.get(
-    "/ready",
-    (req, res) => {
-      const isReady = deps.db.ready;
-
-      if (!isReady) {
-        return res.status(503).json({ status: "not_ready" });
-      }
-
-      return res.status(200).json({ status: "ok" });
-    },
-  );
+  app.use("/ready", readyRouter);
 
   app.get(
     "/metrics",
@@ -177,11 +168,11 @@ export function createApp() {
 }
 
 export async function buildApp() {
-  return createApp();
+  return createApp(defaultDeps);
 }
 
 export const buildAppWithApiRoutes = createApp;
 
-export const app = createApp();
+export const app = createApp(defaultDeps);
 
 export default app;
