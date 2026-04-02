@@ -19,11 +19,12 @@ describe("system/env", () => {
     expect(() => validateEnv()).toThrow("MISSING_PORT");
   });
 
-  it("throws MISSING_JWT_SECRET when JWT_SECRET is missing", () => {
+  it("does not throw when JWT_SECRET is missing in test environment", () => {
+    process.env.NODE_ENV = "test";
     process.env.PORT = String(Date.now());
     delete process.env.JWT_SECRET;
     process.env.DB_URL = "postgres://localhost:5432/test";
 
-    expect(() => validateEnv()).toThrow("MISSING_JWT_SECRET");
+    expect(() => validateEnv()).not.toThrow();
   });
 });

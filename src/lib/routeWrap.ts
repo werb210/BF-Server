@@ -22,7 +22,7 @@ export function routeWrap(handler: Handler) {
       res.status(status).json({
         status: "error",
         rid,
-        error: err?.message || "Internal Server Error",
+        error: err?.message || "Internal error",
       });
     }
   };
