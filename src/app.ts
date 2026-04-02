@@ -21,7 +21,7 @@ import { errorHandler } from "./middleware/errorHandler";
 import { fail } from "./utils/http/respond";
 import { wrap } from "./lib/routeWrap";
 import { timeout } from "./system/timeout";
-import { requestId } from "./system/requestId";
+import { requestId } from "./middleware/requestId";
 import { access } from "./system/access";
 import { incReq, metrics } from "./system/metrics";
 import { rateLimit } from "./system/rateLimit";
@@ -43,7 +43,14 @@ export function createApp() {
   const app = express();
 
   app.use(express.json());
-  app.use(requestId());
+  app.use(requestId);
+  app.use((req, res, next) => {
+    const rid = (req as any).rid;
+    if (rid) {
+      res.setHeader("x-request-id", rid);
+    }
+    next();
+  });
   app.use(access());
   app.use((req, _res, next) => {
     incReq();
@@ -78,11 +85,14 @@ export function createApp() {
       return res.status(503).json({ status: "not_ready" });
     }
 
-    return res.status(200).json({ status: "ready" });
+    res.json({ status: "ok" });
   });
 
   app.get("/metrics", (_req, res) => {
-    return res.status(200).json(metrics());
+    res.json({
+      requests: metrics().requests,
+      errors: metrics().errors,
+    });
   });
 
   app.use(routeAlias);

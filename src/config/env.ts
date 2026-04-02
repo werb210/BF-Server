@@ -1,11 +1,14 @@
 import { z } from "zod";
 
 const schema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  PORT: z.string().default("8080"),
-  DATABASE_URL: z.string().min(1).default("postgres://localhost/test"),
-  JWT_SECRET: z.string().min(1).default("test-jwt-secret"),
+  NODE_ENV: z.enum(["development", "test", "production"]),
 });
 
-export const env = schema.parse(process.env);
-export const ENV = env as typeof env & Record<string, string>;
+let cached: z.infer<typeof schema> | null = null;
+
+export function getEnv() {
+  if (!cached) {
+    cached = schema.parse(process.env);
+  }
+  return cached;
+}

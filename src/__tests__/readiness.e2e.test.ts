@@ -36,6 +36,6 @@ describe("server:readiness:e2e", () => {
     deps.db.ready = true;
     const ready = await request(app).get("/ready");
     expect(ready.status).toBe(200);
-    expect(ready.body).toEqual({ status: "ready" });
+    expect(ready.body).toEqual({ status: "ok" });
   });
 });

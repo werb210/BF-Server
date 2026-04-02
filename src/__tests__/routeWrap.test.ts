@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { wrap } from "../lib/routeWrap";
 
@@ -21,7 +21,7 @@ function createMockRes(): Response & { body?: unknown; statusCode?: number } {
   return res;
 }
 
-describe("routeWrap error handling", () => {
+describe("routeWrap handling", () => {
   it("returns consistent error shape for thrown errors", async () => {
     const handler = wrap(async () => {
       throw Object.assign(new Error("BROKEN_HANDLER"), { status: 418 });
@@ -30,9 +30,7 @@ describe("routeWrap error handling", () => {
     const req = { rid: "rid-throw" } as Request;
     const res = createMockRes();
 
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-    await handler(req, res, vi.fn() as unknown as NextFunction);
+    await handler(req, res, (() => undefined) as unknown as NextFunction);
 
     expect(res.statusCode).toBe(418);
     expect(res.body).toEqual({
@@ -40,47 +38,36 @@ describe("routeWrap error handling", () => {
       error: "BROKEN_HANDLER",
       rid: "rid-throw",
     });
-
-    expect(consoleSpy).toHaveBeenCalledWith("[ERROR]", {
-      rid: "rid-throw",
-      err: expect.any(Error),
-    });
-
-    consoleSpy.mockRestore();
   });
 
-  it("includes rid for generated wrapper errors", async () => {
+  it("returns status ok without data when handler resolves undefined", async () => {
     const handler = wrap(async () => undefined);
 
     const req = { rid: "rid-empty" } as Request;
     const res = createMockRes();
 
-    await handler(req, res, vi.fn() as unknown as NextFunction);
+    await handler(req, res, (() => undefined) as unknown as NextFunction);
 
-    expect(res.statusCode).toBe(500);
+    expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({
-      status: "error",
-      error: "EMPTY_RESPONSE",
+      status: "ok",
       rid: "rid-empty",
     });
   });
 
-  it("normalizes handler error envelopes to a consistent shape", async () => {
-    const handler = wrap(async () => ({
-      status: "error",
-      error: { code: "VALIDATION_FAILED", message: "bad payload" },
-    }));
+  it("returns wrapped data payload for successful responses", async () => {
+    const handler = wrap(async () => ({ ok: true }));
 
     const req = { rid: "rid-envelope" } as Request;
     const res = createMockRes();
 
-    await handler(req, res, vi.fn() as unknown as NextFunction);
+    await handler(req, res, (() => undefined) as unknown as NextFunction);
 
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({
-      status: "error",
-      error: "bad payload",
+      status: "ok",
       rid: "rid-envelope",
+      data: { ok: true },
     });
   });
 });

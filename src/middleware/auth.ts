@@ -24,7 +24,7 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
 
   const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) {
-    return res.status(401).json({ status: "error", error: "INVALID_TOKEN" });
+    return res.status(401).json({ status: "error", error: "NO_TOKEN" });
   }
 
   try {
@@ -32,7 +32,7 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
     req.user = decoded as Request["user"];
     return next();
   } catch {
-    return res.status(401).json({ status: "error", error: "INVALID_TOKEN" });
+    return res.status(401).json({ status: "error", error: "NO_TOKEN" });
   }
 }
 

@@ -1,4 +1,4 @@
-import { pool, runQuery } from "../db";
+import { pool } from "../db";
 import { withRetry } from "../lib/retry";
 import { sendSms } from "../modules/notifications/sms.service";
 import { pushLeadToCRM } from "../services/crmWebhook";
@@ -22,7 +22,7 @@ async function processJob(job: { type: string; data: any }): Promise<void> {
 
 export async function processDeadLetters(): Promise<void> {
   const MAX_RETRIES = 10;
-  const res = await runQuery<{ id: string; retry_count: number; type: string; data: any }>(
+  const res = await pool.query<{ id: string; retry_count: number; type: string; data: any }>(
     `SELECT * FROM failed_jobs ORDER BY created_at ASC LIMIT 20`
   );
 
@@ -37,9 +37,9 @@ export async function processDeadLetters(): Promise<void> {
         await processJob(job);
       });
 
-      await runQuery(`DELETE FROM failed_jobs WHERE id = $1`, [job.id]);
+      await pool.query(`DELETE FROM failed_jobs WHERE id = $1`, [job.id]);
     } catch {
-      await runQuery(
+      await pool.query(
         `UPDATE failed_jobs SET retry_count = retry_count + 1 WHERE id = $1`,
         [job.id]
       );

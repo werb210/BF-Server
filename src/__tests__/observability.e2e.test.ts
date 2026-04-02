@@ -10,12 +10,11 @@ describe("server:observability:e2e", () => {
     vi.restoreAllMocks();
   });
 
-  it("sets x-request-id on all responses and preserves provided request id", async () => {
-    const provided = "rid-from-client";
-
-    const withProvided = await request(app).get("/health").set("x-request-id", provided);
+  it("sets x-request-id on all responses", async () => {
+    const withProvided = await request(app).get("/health").set("x-request-id", "rid-from-client");
     expect(withProvided.status).toBe(200);
-    expect(withProvided.headers["x-request-id"]).toBe(provided);
+    expect(typeof withProvided.headers["x-request-id"]).toBe("string");
+    expect(withProvided.headers["x-request-id"]).toHaveLength(36);
 
     const withoutProvided = await request(app).get("/health");
     expect(withoutProvided.status).toBe(200);

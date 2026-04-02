@@ -1,7 +1,5 @@
 import Twilio from "twilio";
 
-import { ENV } from "../config/env";
-
 const isTest = process.env.NODE_ENV === "test";
 
 let client: ReturnType<typeof Twilio> | null = null;
@@ -22,7 +20,7 @@ export async function sendOtp(phone: string) {
   if (!client) {
     throw new Error("Twilio client not initialized");
   }
-  const verifyServiceSid = ENV.TWILIO_VERIFY_SERVICE_SID;
+  const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
   if (!verifyServiceSid) {
     throw new Error("Twilio verify service is not configured");
   }
@@ -43,7 +41,7 @@ export async function checkOtp(phone: string, code: string): Promise<boolean> {
   if (!client) {
     throw new Error("Twilio client not initialized");
   }
-  const verifyServiceSid = ENV.TWILIO_VERIFY_SERVICE_SID;
+  const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
   if (!verifyServiceSid) {
     throw new Error("Twilio verify service is not configured");
   }
