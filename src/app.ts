@@ -86,7 +86,7 @@ export function createApp() {
   app.get(
     "/health",
     wrap(async () => {
-      return { healthy: true };
+      return { status: "ok" };
     }),
   );
 
@@ -95,7 +95,7 @@ export function createApp() {
     wrap(async (_req, res) => {
       if (!deps.db.ready) {
         res.status(503);
-        return { status: "error", error: "not_ready" };
+        return { status: "not_ready" };
       }
       return { ready: true };
     }),
@@ -172,6 +172,10 @@ export function createApp() {
   app.use(errorHandler);
 
   return app;
+}
+
+export async function buildApp() {
+  return createApp();
 }
 
 export const buildAppWithApiRoutes = createApp;
