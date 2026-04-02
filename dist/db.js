@@ -38,6 +38,7 @@ exports.getDb = getDb;
 exports.runQuery = runQuery;
 exports.query = query;
 exports.dbQuery = dbQuery;
+exports.safeQuery = safeQuery;
 exports.ensureDb = ensureDb;
 exports.isDbReady = isDbReady;
 const dbProd = __importStar(require("./db.prod"));
@@ -76,6 +77,10 @@ async function dbQuery(text, params) {
         throw new Error("DB_QUERY_FAILED");
     }
 }
+async function safeQuery(sql, params) {
+    (0, requireDb_1.requireDb)();
+    return exports.pool.query(sql, params);
+}
 async function ensureDb() {
     try {
         await dbImpl.runQuery(exports.pool, "SELECT 1");
@@ -99,6 +104,7 @@ const dbExports = {
     getDb,
     runQuery,
     query,
+    safeQuery,
     fetchClient: exports.fetchClient,
     dbQuery,
     assertPoolHealthy: exports.assertPoolHealthy,

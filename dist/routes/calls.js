@@ -65,9 +65,21 @@ function buildRequestMetadata(req) {
     }
     return metadata;
 }
-router.post("/start", requireAuth_1.requireAuth, (0, validate_1.validate)(schemas_1.CallStartSchema), (req, res) => {
-    const { to } = req.validated;
-    return (0, response_1.ok)(res, { started: true, to });
+router.post("/start", requireAuth_1.requireAuth, (0, validate_1.validate)(schemas_1.CallStartSchema), async (req, res, next) => {
+    try {
+        const { to } = req.validated;
+        const record = await (0, calls_service_1.startCall)({
+            phoneNumber: to,
+            direction: "outbound",
+            status: "initiated",
+            staffUserId: req.user?.userId ?? null,
+            ...buildRequestMetadata(req),
+        });
+        return (0, response_1.ok)(res, { started: true, to, callId: record.id, status: record.status });
+    }
+    catch (error) {
+        return next(error);
+    }
 });
 router.post("/log", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
     const parsed = zod_1.z
