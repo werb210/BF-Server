@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction, type RequestHandler } from "express";
-import { verifyJwt } from "../auth/jwt";
-import { fail } from "../lib/response";
+import jwt from "jsonwebtoken";
 
 type AuthorizationOptions = {
   roles?: string[];
@@ -17,28 +16,23 @@ export interface AuthRequest extends Request {
 }
 
 export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
-  const header = req.headers.authorization;
+  const token = req.headers.authorization?.split(" ")[1];
 
-  if (!header) {
-    return fail(res, 401, "Unauthorized");
+  if (!token) {
+    return res.status(401).json({ status: "error", error: "NO_TOKEN" });
   }
 
-  const bearerMatch = header.match(/^Bearer(?:\s+(.+))?$/i);
-  if (!bearerMatch) {
-    return fail(res, 401, "Unauthorized");
-  }
-
-  const token = bearerMatch[1]?.trim();
-
-  if (!token || token === "null" || token === "undefined") {
-    return fail(res, 401, "Unauthorized");
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return res.status(401).json({ status: "error", error: "INVALID_TOKEN" });
   }
 
   try {
-    req.user = verifyJwt(token) as Request["user"];
+    const decoded = jwt.verify(token, jwtSecret);
+    req.user = decoded as Request["user"];
     return next();
   } catch {
-    return fail(res, 401, "Unauthorized");
+    return res.status(401).json({ status: "error", error: "INVALID_TOKEN" });
   }
 }
 
@@ -57,7 +51,7 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
     const user = req.user as AppUser | undefined;
 
     if (!user) {
-      return fail(res, 401, "Unauthorized");
+      return res.status(401).json({ status: "error", error: "NO_TOKEN" });
     }
 
     if (requiredRoles.length > 0 && (!user.role || !requiredRoles.includes(user.role))) {

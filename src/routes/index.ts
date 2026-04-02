@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { requireAuth } from "../middleware/auth";
 
 const router = Router();
 
@@ -22,9 +23,9 @@ function sendMessageHandler(_req: any, res: any) {
   return res.status(200).json({ status: "ok", data: { reply: "ok" } });
 }
 
-router.post("/leads", createLeadHandler);
-router.post("/calls/start", startCallHandler);
-router.post("/calls/status", updateCallStatusHandler);
-router.post("/maya/message", sendMessageHandler);
+router.post("/leads", requireAuth, createLeadHandler);
+router.post("/calls/start", requireAuth, startCallHandler);
+router.post("/calls/status", requireAuth, updateCallStatusHandler);
+router.post("/maya/message", requireAuth, sendMessageHandler);
 
 export default router;
