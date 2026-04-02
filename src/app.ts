@@ -1,4 +1,5 @@
 import express from "express";
+import { corsMiddleware } from "./middleware/cors";
 
 import { requireAuth } from "./middleware/auth";
 import { routeAlias } from "./middleware/routeAlias";
@@ -51,6 +52,7 @@ export function createApp() {
   });
   app.use(timeout(CONFIG.REQUEST_TIMEOUT_MS));
   app.use(rateLimit());
+  app.use(corsMiddleware);
   app.use((req, res, next) => {
     if (["POST", "PUT", "PATCH"].includes(req.method)) {
       const body = req.body;
@@ -77,30 +79,6 @@ export function createApp() {
   });
 
   app.use(routeAlias);
-
-  app.use((req, res, next) => {
-    const configured = CONFIG.CORS_ALLOWED_ORIGINS
-      .split(",")
-      .map((origin) => origin.trim())
-      .filter(Boolean);
-    const origin = req.headers.origin;
-
-    if (origin && (configured.includes("*") || configured.includes(origin))) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-      res.setHeader("Access-Control-Allow-Credentials", "true");
-    }
-
-    res.setHeader("Vary", "Origin");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
-
-    if (req.method === "OPTIONS") {
-      res.locals.__wrapped = true;
-      return res.status(200).send();
-    }
-
-    return next();
-  });
 
   app.use("/api/v1", router);
 

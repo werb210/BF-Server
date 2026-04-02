@@ -37,7 +37,7 @@ describe("System boot", () => {
   });
 
   it("returns ok when PORT is present", () => {
-    process.env.PORT = "8080";
+    process.env.PORT = String(Date.now());
 
     const result = assertRequiredEnv();
 
