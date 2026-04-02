@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "crypto";
 import { z } from "zod";
 import { AppError } from "../middleware/errors";
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 import { findIdempotencyRecord, createIdempotencyRecord } from "../modules/idempotency/idempotency.repo";
 import { CAPABILITIES } from "../auth/capabilities";
 import { ROLES, normalizeRole } from "../auth/roles";

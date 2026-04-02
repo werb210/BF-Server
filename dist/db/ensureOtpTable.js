@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ensureOtpTableExists = ensureOtpTableExists;
 const db_1 = require("../db");
 async function ensureOtpTableExists() {
-    const tableResult = await db_1.pool.runQuery(`
+    const tableResult = await (0, db_1.runQuery)(`
       select 1
       from information_schema.tables
       where table_schema = 'public'
@@ -12,7 +12,7 @@ async function ensureOtpTableExists() {
     `);
     if (tableResult.rowCount === 0) {
         try {
-            await db_1.pool.runQuery(`
+            await (0, db_1.runQuery)(`
       create table if not exists otp_verifications (
         id uuid primary key,
         user_id uuid not null references users(id) on delete cascade,
@@ -29,7 +29,7 @@ async function ensureOtpTableExists() {
             if (error.code === "42P07" ||
                 error.message?.includes("already exists") ||
                 error.message?.includes("otp_verifications_pkey")) {
-                await db_1.pool.runQuery(`
+                await (0, db_1.runQuery)(`
           create table if not exists otp_verifications (
             id uuid not null,
             user_id uuid not null references users(id) on delete cascade,
@@ -46,14 +46,14 @@ async function ensureOtpTableExists() {
             }
         }
     }
-    const constraintResult = await db_1.pool.runQuery(`
+    const constraintResult = await (0, db_1.runQuery)(`
       select 1
       from pg_constraint
       where conname = $1
     `, ["otp_verifications_status_check"]);
     if (constraintResult.rowCount === 0) {
         try {
-            await db_1.pool.runQuery(`
+            await (0, db_1.runQuery)(`
         alter table otp_verifications
         add constraint otp_verifications_status_check
         check (status in ('pending','approved','expired'));

@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 
 export type VoicemailRecord = {
   id: string;
@@ -16,7 +16,7 @@ export async function createVoicemail(params: {
   recordingSid: string;
   recordingUrl: string;
 }): Promise<VoicemailRecord> {
-  const result = await pool.runQuery<VoicemailRecord>(
+  const result = await runQuery<VoicemailRecord>(
     `insert into voicemails (id, client_id, call_sid, recording_sid, recording_url, created_at)
      values ($1, $2, $3, $4, $5, now())
      returning id, client_id, call_sid, recording_sid, recording_url, created_at`,

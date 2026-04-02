@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { createCompany } from "../crm/companies.repo";
 import { createContact } from "../crm/contacts.repo";
 

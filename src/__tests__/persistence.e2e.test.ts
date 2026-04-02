@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { app } from "../app";
 import { signJwt } from "../auth/jwt";
 import { CAPABILITIES } from "../auth/capabilities";
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 import { deps } from "../system/deps";
 
 type LeadRow = {

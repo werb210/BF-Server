@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { Router } from "express";
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 import { AppError } from "../middleware/errors";
 import { safeHandler } from "../middleware/safeHandler";
 import { eventBus } from "../events/eventBus";
@@ -22,7 +22,7 @@ router.get(
                  from offers order by updated_at desc limit 100`,
           values: [],
         };
-    const rows = await pool.runQuery(query.text, query.values);
+    const rows = await runQuery(query.text, query.values);
     res.status(200).json({ items: rows.rows });
   })
 );
@@ -36,7 +36,7 @@ router.post(
       throw new AppError("validation_error", "applicationId and lender are required.", 400);
     }
 
-    const result = await pool.runQuery(
+    const result = await runQuery(
       `insert into offers (id, application_id, lender_name, amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'created',$11,now(),now())
        returning id, application_id, lender_name, amount::text as amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at`,
@@ -71,7 +71,7 @@ router.patch(
       throw new AppError("validation_error", "Valid status is required.", 400);
     }
 
-    const updated = await pool.runQuery(
+    const updated = await runQuery(
       `update offers set status = $2, updated_at = now()
        where id = $1
        returning id, application_id, lender_name, amount::text as amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at`,

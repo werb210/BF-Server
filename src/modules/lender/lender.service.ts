@@ -1,7 +1,7 @@
 import { AppError } from "../../middleware/errors";
 import { createHash } from "crypto";
 import { recordAuditEvent } from "../audit/audit.service";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { type PoolClient } from "pg";
 import {
   findApplicationById,

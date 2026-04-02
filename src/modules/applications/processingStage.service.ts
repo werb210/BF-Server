@@ -1,4 +1,4 @@
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { AppError } from "../../middleware/errors";
 import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService";
 import { normalizeRequiredDocumentKey } from "../../db/schema/requiredDocuments";

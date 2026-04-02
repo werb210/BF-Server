@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 
 export type ContinuationPayload = {
   companyName?: string;
@@ -53,7 +53,7 @@ export async function createContinuation(
 ): Promise<string> {
   const token = randomBytes(24).toString("hex");
 
-  await pool.runQuery(
+  await runQuery(
     `
     INSERT INTO application_continuations (
       token,
@@ -91,7 +91,7 @@ export async function createContinuation(
 }
 
 export async function fetchContinuation(token: string): Promise<Record<string, unknown> | null> {
-  const { rows } = await pool.runQuery(
+  const { rows } = await runQuery(
     "SELECT * FROM application_continuations WHERE token = $1",
     [token]
   );
@@ -103,7 +103,7 @@ export async function convertContinuation(
   token: string,
   applicationId: string
 ): Promise<void> {
-  await pool.runQuery(
+  await runQuery(
     `
     UPDATE application_continuations
     SET converted_application_id = $1,

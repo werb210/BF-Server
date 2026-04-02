@@ -1,4 +1,4 @@
-import { pool } from "./db";
+import { pool, runQuery } from "./db";
 import { logger } from "./platform/logger";
 import { config } from "./config";
 
@@ -62,7 +62,7 @@ export async function cancelDbWork(processIds: number[]): Promise<void> {
     return;
   }
   try {
-    await pool.runQuery("select pg_cancel_backend(pid) from unnest($1::int[]) as pid", [
+    await runQuery("select pg_cancel_backend(pid) from unnest($1::int[]) as pid", [
       processIds,
     ]);
   } catch (err) {

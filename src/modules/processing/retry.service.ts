@@ -1,4 +1,4 @@
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { AppError } from "../../middleware/errors";
 import { recordAuditEvent } from "../audit/audit.service";
 import { fetchCircuitBreaker } from "../../utils/circuitBreaker";
@@ -332,7 +332,7 @@ export async function retryProcessingJobForApplication(params: {
   ip?: string | null;
   userAgent?: string | null;
 }): Promise<RetryJobResult> {
-  const job = await pool.runQuery<{
+  const job = await runQuery<{
     id: string;
     job_type: RetryJobResult["jobType"];
   }>(

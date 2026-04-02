@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { pool } from "./db";
+import { pool, runQuery } from "./db";
 import { logInfo } from "./observability/logger";
 
 const migrationsDir = path.join(process.cwd(), "migrations");
@@ -94,7 +94,7 @@ function listMigrationFiles(): string[] {
 }
 
 async function ensureMigrationsTable(): Promise<void> {
-  await pool.runQuery(
+  await runQuery(
     `create table if not exists schema_migrations (
       id text,
       applied_at timestamp
@@ -103,7 +103,7 @@ async function ensureMigrationsTable(): Promise<void> {
 }
 
 export async function assertMigrationsTableExists(): Promise<void> {
-  const res = await pool.runQuery<{ exists: string | null }>(
+  const res = await runQuery<{ exists: string | null }>(
     "select to_regclass('public.schema_migrations') as exists"
   );
   if (!res.rows[0]?.exists) {
@@ -226,7 +226,7 @@ function hasExecutableSql(statement: string): boolean {
 }
 
 async function fetchAppliedMigrations(): Promise<Set<string>> {
-  const res = await pool.runQuery<{ id: string }>(
+  const res = await runQuery<{ id: string }>(
     "select id from schema_migrations"
   );
   return new Set(res.rows.map((row) => row.id));
@@ -423,7 +423,7 @@ export async function assertNoPendingMigrations(): Promise<void> {
 
 export async function fetchSchemaVersion(): Promise<string> {
   await ensureMigrationsTable();
-  const res = await pool.runQuery<{ id: string }>(
+  const res = await runQuery<{ id: string }>(
     `select id
      from schema_migrations
      order by applied_at desc, id desc

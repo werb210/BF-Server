@@ -1,5 +1,5 @@
 import { type PoolClient } from "pg";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 
 export type NotificationRecord = {
   id: string;

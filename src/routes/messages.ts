@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { Router } from "express";
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 import { AppError } from "../middleware/errors";
 import { safeHandler } from "../middleware/safeHandler";
 import { eventBus } from "../events/eventBus";
@@ -21,7 +21,7 @@ router.post(
     }
 
     const id = randomUUID();
-    await pool.runQuery(
+    await runQuery(
       `insert into communications_messages (id, type, direction, status, contact_id, body, created_at)
        values ($1, 'message', coalesce($2, 'inbound'), 'received', null, $3, now())`,
       [id, optionalString(req.body?.direction) ?? "inbound", body]

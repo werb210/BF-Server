@@ -4,7 +4,7 @@ exports.checkOtpAttempts = checkOtpAttempts;
 const db_1 = require("../db");
 const MAX_ATTEMPTS = 5;
 async function checkOtpAttempts(phone) {
-    const result = await db_1.pool.runQuery(`SELECT failed_count FROM otp_verifications
+    const result = await (0, db_1.runQuery)(`SELECT failed_count FROM otp_verifications
 WHERE phone=$1
 ORDER BY created_at DESC
 LIMIT 1`, [phone]);

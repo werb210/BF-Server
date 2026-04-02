@@ -121,7 +121,7 @@ function ensureAlwaysRequired(requirements) {
     return [...requirements, ...additions];
 }
 async function fetchProductById(params) {
-    const res = await db_1.pool.runQuery(`select lp.id,
+    const res = await (0, db_1.runQuery)(`select lp.id,
             lp.category,
             lp.country,
             lp.rate_type,
@@ -151,7 +151,7 @@ async function listMatchingProducts(params) {
     if (amount !== null) {
         values.push(amount);
     }
-    const res = await db_1.pool.runQuery(`select lp.id,
+    const res = await (0, db_1.runQuery)(`select lp.id,
             lp.category,
             lp.country,
             lp.rate_type,
@@ -285,7 +285,7 @@ async function createRequirementForProduct(params) {
         maxAmount: params.maxAmount ?? null,
     };
     documents.push(newEntry);
-    await db_1.pool.runQuery(`update lender_products
+    await (0, db_1.runQuery)(`update lender_products
      set required_documents = $1,
          updated_at = now()
      where id = $2`, [JSON.stringify(documents), params.lenderProductId]);
@@ -296,7 +296,7 @@ async function createRequirementForProduct(params) {
     return requirement;
 }
 async function updateRequirementForProduct(params) {
-    const res = await db_1.pool.runQuery(`select id, required_documents
+    const res = await (0, db_1.runQuery)(`select id, required_documents
      from lender_products
      where required_documents @> $1::jsonb
      limit 1`, [JSON.stringify([{ id: params.id }])]);
@@ -317,7 +317,7 @@ async function updateRequirementForProduct(params) {
         minAmount: params.minAmount ?? null,
         maxAmount: params.maxAmount ?? null,
     };
-    await db_1.pool.runQuery(`update lender_products
+    await (0, db_1.runQuery)(`update lender_products
      set required_documents = $1,
          updated_at = now()
      where id = $2`, [JSON.stringify(documents), product.id]);
@@ -328,7 +328,7 @@ async function updateRequirementForProduct(params) {
     return requirement;
 }
 async function deleteRequirementForProduct(params) {
-    const res = await db_1.pool.runQuery(`select id, required_documents
+    const res = await (0, db_1.runQuery)(`select id, required_documents
      from lender_products
      where required_documents @> $1::jsonb
      limit 1`, [JSON.stringify([{ id: params.id }])]);
@@ -345,7 +345,7 @@ async function deleteRequirementForProduct(params) {
     if (!removed) {
         throw new errors_1.AppError("data_error", "Invalid requirement payload.", 500);
     }
-    await db_1.pool.runQuery(`update lender_products
+    await (0, db_1.runQuery)(`update lender_products
      set required_documents = $1,
          updated_at = now()
      where id = $2`, [JSON.stringify(documents), product.id]);

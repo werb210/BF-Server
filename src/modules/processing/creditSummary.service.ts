@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { AppError } from "../../middleware/errors";
 import { fetchCircuitBreaker } from "../../utils/circuitBreaker";
 import type { PoolClient } from "pg";

@@ -54,7 +54,7 @@ router.get("/applications", portalLimiter, (0, safeHandler_1.safeHandler)(async 
         return;
     }
     try {
-        const result = await db_1.pool.runQuery(`select id,
+        const result = await (0, db_1.runQuery)(`select id,
           coalesce(name, business_legal_name) as name,
           pipeline_state,
           created_at
@@ -204,7 +204,7 @@ router.get("/applications/:id/history", auth_1.requireAuth, portalLimiter, (0, a
     }
     values.push(limit, offset);
     const filterClause = filters.length > 0 ? `and ${filters.join(" and ")}` : "";
-    const result = await db_1.pool.runQuery(`select application_id, from_stage, to_stage, trigger, actor_id, actor_role,
+    const result = await (0, db_1.runQuery)(`select application_id, from_stage, to_stage, trigger, actor_id, actor_role,
               actor_type, occurred_at, reason
        from application_pipeline_history
        where application_id = $1
@@ -239,7 +239,7 @@ router.get("/jobs/:id/history", auth_1.requireAuth, portalLimiter, (0, auth_1.re
     }
     values.push(limit, offset);
     const filterClause = filters.length > 0 ? `and ${filters.join(" and ")}` : "";
-    const result = await db_1.pool.runQuery(`select job_id, job_type, application_id, document_id, previous_status, next_status,
+    const result = await (0, db_1.runQuery)(`select job_id, job_type, application_id, document_id, previous_status, next_status,
               reason, retry_count, last_retry_at, occurred_at, actor_type, actor_id
        from processing_job_history
        where job_id = $1
@@ -269,7 +269,7 @@ router.get("/documents/:id/history", auth_1.requireAuth, portalLimiter, (0, auth
     }
     values.push(limit, offset);
     const filterClause = filters.length > 0 ? `and ${filters.join(" and ")}` : "";
-    const result = await db_1.pool.runQuery(`select application_id, document_id, document_type, actor_id, actor_role, actor_type,
+    const result = await (0, db_1.runQuery)(`select application_id, document_id, document_type, actor_id, actor_role, actor_type,
               previous_status, next_status, reason, occurred_at
        from document_status_history
        where document_id = $1
@@ -442,7 +442,7 @@ router.post("/lender-submissions", auth_1.requireAuth, portalLimiter, (0, auth_1
     }
     const submissions = [];
     for (const lenderId of selectedLenders) {
-        const result = await db_1.pool.runQuery(`insert into lender_submissions (id, application_id, lender_id, status, idempotency_key, payload, submitted_at, created_at, updated_at)
+        const result = await (0, db_1.runQuery)(`insert into lender_submissions (id, application_id, lender_id, status, idempotency_key, payload, submitted_at, created_at, updated_at)
          values ($1, $2, $3, 'submitted', $4, $5, now(), now(), now())
          on conflict (application_id, lender_id) do update
          set status = excluded.status,
@@ -478,7 +478,7 @@ router.get("/offers", portalLimiter, (0, safeHandler_1.safeHandler)(async (req, 
                  limit 100`,
             values: [],
         };
-    const rows = await db_1.pool.runQuery(query.text, query.values);
+    const rows = await (0, db_1.runQuery)(query.text, query.values);
     res.status(200).json({ items: rows.rows });
 }));
 router.post("/offers", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuthorization)({ roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] }), (0, safeHandler_1.safeHandler)(async (req, res, next) => {
@@ -487,7 +487,7 @@ router.post("/offers", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuth
     if (!applicationId || !lenderName) {
         throw new errors_1.AppError("validation_error", "applicationId and lenderName are required.", 400);
     }
-    const result = await db_1.pool.runQuery(`insert into offers (id, application_id, lender_name, amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at)
+    const result = await (0, db_1.runQuery)(`insert into offers (id, application_id, lender_name, amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, coalesce($11, 'created'), $12, now(), now())
        returning id, application_id, lender_name, amount::text as amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at`, [
         (0, crypto_1.randomUUID)(),
@@ -515,7 +515,7 @@ router.patch("/offers/:id/status", auth_1.requireAuth, portalLimiter, (0, auth_1
     if (!id || !allowed.has(status)) {
         throw new errors_1.AppError("validation_error", "Valid status is required.", 400);
     }
-    const updated = await db_1.pool.runQuery(`update offers
+    const updated = await (0, db_1.runQuery)(`update offers
        set status = $2, updated_at = now()
        where id = $1
        returning id, application_id, lender_name, amount::text as amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at`, [id, status]);

@@ -39,7 +39,7 @@ async function assertRequiredSchema() {
       and cols.column_name = req.column_name
     where cols.column_name is null
   `;
-    const res = await db_1.pool.runQuery(query, params);
+    const res = await (0, db_1.runQuery)(query, params);
     if (res.rows.length === 0) {
         return;
     }

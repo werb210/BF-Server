@@ -9,7 +9,7 @@ const router = (0, express_1.Router)();
  */
 router.get("/", async (_req, res, next) => {
     try {
-        const { rows } = await db_1.pool.runQuery(`
+        const { rows } = await (0, db_1.runQuery)(`
       SELECT id, name
       FROM lenders
       WHERE active = true

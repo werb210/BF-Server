@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 import { AppError } from "../middleware/errors";
 import { logError } from "../observability/logger";
 
@@ -28,7 +28,7 @@ type ColumnCheckResult = {
 };
 
 async function fetchLenderColumns(): Promise<Set<string>> {
-  const result = await pool.runQuery<{ column_name: string }>(
+  const result = await runQuery<{ column_name: string }>(
     `select column_name
      from information_schema.columns
      where table_schema = 'public'
@@ -171,7 +171,7 @@ export async function fetchLenderById(id: string) {
     required: ["id", "name", "country"],
   });
   const selectColumns = buildSelectColumns(check.existing);
-  const result = await pool.runQuery(
+  const result = await runQuery(
     `
     SELECT
       ${selectColumns}

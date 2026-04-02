@@ -72,13 +72,13 @@ function listMigrationFiles() {
     return files;
 }
 async function ensureMigrationsTable() {
-    await db_1.pool.runQuery(`create table if not exists schema_migrations (
+    await (0, db_1.runQuery)(`create table if not exists schema_migrations (
       id text,
       applied_at timestamp
     )`);
 }
 async function assertMigrationsTableExists() {
-    const res = await db_1.pool.runQuery("select to_regclass('public.schema_migrations') as exists");
+    const res = await (0, db_1.runQuery)("select to_regclass('public.schema_migrations') as exists");
     if (!res.rows[0]?.exists) {
         throw new Error("migrations_table_missing");
     }
@@ -185,7 +185,7 @@ function hasExecutableSql(statement) {
     return stripSqlComments(statement).trim().length > 0;
 }
 async function fetchAppliedMigrations() {
-    const res = await db_1.pool.runQuery("select id from schema_migrations");
+    const res = await (0, db_1.runQuery)("select id from schema_migrations");
     return new Set(res.rows.map((row) => row.id));
 }
 async function runMigrations(options) {
@@ -331,7 +331,7 @@ async function assertNoPendingMigrations() {
 }
 async function fetchSchemaVersion() {
     await ensureMigrationsTable();
-    const res = await db_1.pool.runQuery(`select id
+    const res = await (0, db_1.runQuery)(`select id
      from schema_migrations
      order by applied_at desc, id desc
      limit 1`);

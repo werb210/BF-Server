@@ -1,4 +1,4 @@
-import { pool } from "../db";
+import { pool, runQuery } from "../db";
 
 export async function pushDeadLetter(payload: {
   type: string;
@@ -6,7 +6,7 @@ export async function pushDeadLetter(payload: {
   error: string;
 }): Promise<void> {
   try {
-    await pool.runQuery(
+    await runQuery(
       `
       INSERT INTO failed_jobs (type, data, error, created_at)
       VALUES ($1, $2::jsonb, $3, NOW())

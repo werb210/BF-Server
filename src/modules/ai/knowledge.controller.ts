@@ -4,7 +4,7 @@ import fs from "fs";
 import readline from "readline";
 import multer from "multer";
 import { v4 as uuid } from "uuid";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { embedAndStore } from "./knowledge.service";
 
 const uploadDir = "/tmp/uploads";

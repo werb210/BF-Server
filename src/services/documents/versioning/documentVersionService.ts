@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { pool } from "../../../db";
+import { pool, runQuery } from "../../../db";
 
 export async function createDocumentVersionRecord(params: {
   documentId: string;
@@ -24,6 +24,6 @@ export async function createDocumentVersionRecord(params: {
     returning *
   `;
 
-  const result = await pool.runQuery(q, [randomUUID(), params.documentId, params.blobName, params.hash, params.metadata]);
+  const result = await runQuery(q, [randomUUID(), params.documentId, params.blobName, params.hash, params.metadata]);
   return result.rows[0];
 }

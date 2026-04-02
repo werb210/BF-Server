@@ -84,7 +84,7 @@ router.post("/capital-readiness", readinessLimiter, async (req, res, next) => {
         companyName: payload.companyName,
         tag: "capital_readiness",
     });
-    await db_1.pool.runQuery(`insert into capital_readiness (id, lead_id, score, tier, payload)
+    await (0, db_1.runQuery)(`insert into capital_readiness (id, lead_id, score, tier, payload)
      values (gen_random_uuid(), $1, $2, $3, $4::jsonb)`, [leadId, score, tier, JSON.stringify(payload)]);
     if (leadId) {
         await (0, audit_service_1.recordAuditEvent)({

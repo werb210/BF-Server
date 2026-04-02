@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { Query } from "pg";
 import { PIPELINE_STATES } from "../applications/pipelineState";
 
@@ -50,7 +50,7 @@ export async function recordExportAudit(params: {
   exportType: string;
   filters: ExportFilters;
 }): Promise<void> {
-  await pool.runQuery(
+  await runQuery(
     `insert into export_audit (id, actor_user_id, export_type, filters, created_at)
      values ($1, $2, $3, $4, now())`,
     [randomUUID(), params.actorUserId, params.exportType, JSON.stringify(params.filters)]
@@ -66,7 +66,7 @@ export async function listRecentExports(limit = 20): Promise<
     createdAt: string;
   }>
 > {
-  const result = await pool.runQuery<{
+  const result = await runQuery<{
     id: string;
     actor_user_id: string | null;
     export_type: string;
@@ -162,7 +162,7 @@ export async function exportPipelineSummary(params: {
     return [];
   }
 
-  const result = await pool.runQuery(query, values);
+  const result = await runQuery(query, values);
   return result.rows;
 }
 
@@ -210,7 +210,7 @@ export async function exportLenderPerformance(params: {
     return [];
   }
 
-  const result = await pool.runQuery(query, values);
+  const result = await runQuery(query, values);
   return result.rows;
 }
 
@@ -257,6 +257,6 @@ export async function exportApplicationVolume(params: {
     return [];
   }
 
-  const result = await pool.runQuery(query, values);
+  const result = await runQuery(query, values);
   return result.rows;
 }

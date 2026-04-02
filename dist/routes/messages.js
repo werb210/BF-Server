@@ -19,7 +19,7 @@ router.post("/", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
         throw new errors_1.AppError("validation_error", "applicationId and body are required.", 400);
     }
     const id = (0, crypto_1.randomUUID)();
-    await db_1.pool.runQuery(`insert into communications_messages (id, type, direction, status, contact_id, body, created_at)
+    await (0, db_1.runQuery)(`insert into communications_messages (id, type, direction, status, contact_id, body, created_at)
        values ($1, 'message', coalesce($2, 'inbound'), 'received', null, $3, now())`, [id, (0, validate_1.optionalString)(req.body?.direction) ?? "inbound", body]);
     eventBus_1.eventBus.emit("message_received", { messageId: id, applicationId });
     res.status(201).json({ message: { id, applicationId, body } });

@@ -132,7 +132,7 @@ router.get("/dialer/token", auth_1.requireAuth, (0, auth_1.requireAuthorization)
     if (!identity) {
         throw new errors_1.AppError("invalid_token", "Invalid or expired token.", 401);
     }
-    const activeCalls = await db_1.pool.runQuery(`select count(*)::text as count
+    const activeCalls = await (0, db_1.runQuery)(`select count(*)::text as count
        from call_logs
        where staff_user_id = $1
          and status in ('ringing', 'in_progress')`, [identity]);
@@ -260,15 +260,15 @@ router.post("/twilio/status", dialerRateLimit, (0, routeWrap_1.wrap)(async (req,
         toNumber: typeof req.body?.To === "string" ? req.body.To : undefined,
     });
     const priceEstimateCents = isCompleted && typeof durationSeconds === "number" ? durationSeconds * 3 : null;
-    await db_1.pool.runQuery(`update call_logs
+    await (0, db_1.runQuery)(`update call_logs
        set answered = $1,
            ended_reason = $2,
            price_estimate_cents = $3
        where id = $4`, [isCompleted, callStatus || null, priceEstimateCents, found.id]);
     if (callStatus === "no-answer") {
-        const hasVoicemail = await db_1.pool.runQuery("select count(*)::text as count from voicemails where call_sid = $1", [callSid]);
+        const hasVoicemail = await (0, db_1.runQuery)("select count(*)::text as count from voicemails where call_sid = $1", [callSid]);
         if (Number(hasVoicemail.rows[0]?.count ?? "0") === 0) {
-            await db_1.pool.runQuery(`insert into crm_task (id, type, staff_id, phone_number, created_at)
+            await (0, db_1.runQuery)(`insert into crm_task (id, type, staff_id, phone_number, created_at)
            values ($1, 'missed_call', $2, $3, now())`, [(0, crypto_1.randomUUID)(), found.staff_user_id, found.phone_number]);
         }
     }

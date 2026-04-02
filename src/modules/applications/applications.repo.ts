@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { pool } from "../../db";
+import { pool, runQuery } from "../../db";
 import { ApplicationStage } from "./pipelineState";
 import { type PoolClient } from "pg";
 import { logError } from "../../observability/logger";
