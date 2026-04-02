@@ -4,15 +4,19 @@ import { pool } from "../db";
 import { AppError } from "../middleware/errors";
 import { safeHandler } from "../middleware/safeHandler";
 import { eventBus } from "../events/eventBus";
+import { optionalString, requireString } from "../system/validate";
 
 const router = Router();
 
 router.post(
   "/",
   safeHandler(async (req: any, res: any, next: any) => {
-    const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
-    const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
-    if (!applicationId || !body) {
+    let applicationId = "";
+    let body = "";
+    try {
+      applicationId = requireString(req.body?.applicationId, "APPLICATION_ID");
+      body = requireString(req.body?.body, "BODY");
+    } catch (_err) {
       throw new AppError("validation_error", "applicationId and body are required.", 400);
     }
 
@@ -20,7 +24,7 @@ router.post(
     await pool.runQuery(
       `insert into communications_messages (id, type, direction, status, contact_id, body, created_at)
        values ($1, 'message', coalesce($2, 'inbound'), 'received', null, $3, now())`,
-      [id, typeof req.body?.direction === "string" ? req.body.direction : "inbound", body]
+      [id, optionalString(req.body?.direction) ?? "inbound", body]
     );
 
     eventBus.emit("message_received", { messageId: id, applicationId });
