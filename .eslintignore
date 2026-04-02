@@ -1,3 +1,5 @@
-dist/
-build/
-node_modules/
+dist
+node_modules
+coverage
+src/**/__tests__/**
+**/*.test.ts
