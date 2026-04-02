@@ -14,7 +14,7 @@ router.post("/incoming", (_req, res) => {
   voiceResponse.dial().client("maya-agent");
 
   res.type("text/xml");
-  res.send(voiceResponse.toString());
+  return res.json(voiceResponse.toString());
 });
 
 router.post("/status", requireAuth, validate(CallStatusSchema), (req, res) => {

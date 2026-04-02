@@ -18,7 +18,7 @@ router.get("/readyz", async (_req, res) => {
 
 router.get("/metrics", async (_req, res) => {
   res.set("Content-Type", registry.contentType);
-  res.send(await registry.metrics());
+  return res.json(await registry.metrics());
 });
 
 export default router;

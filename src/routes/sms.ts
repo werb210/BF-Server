@@ -4,7 +4,7 @@ const router = express.Router();
 
 router.post("/incoming", (req, res) => {
   console.log("Inbound SMS:", req.body);
-  res.send("<Response></Response>");
+  return res.json("<Response></Response>");
 });
 
 export default router;

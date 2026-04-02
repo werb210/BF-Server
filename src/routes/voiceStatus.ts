@@ -21,9 +21,9 @@ router.post("/voice/status", express.urlencoded({ extended: false }), twilioWebh
       Duration,
     });
 
-    res.status(200).send("ok");
+    return res.status(200).json("ok");
   } catch {
-    res.status(500).send("error");
+    return res.status(500).json("error");
   }
 });
 

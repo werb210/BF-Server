@@ -36,7 +36,7 @@ router.post(
   dial.client("staff_mobile");
 
     res.type("text/xml");
-    res.send(response.toString());
+    return res.json(response.toString());
   }
 );
 

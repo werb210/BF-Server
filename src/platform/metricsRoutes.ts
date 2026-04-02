@@ -5,7 +5,7 @@ const router = express.Router();
 
 router.get("/metrics", async (_req: any, res: any) => {
   res.set("Content-Type", registry.contentType);
-  res.end(await registry.metrics());
+  return res.json(await registry.metrics());
 });
 
 export default router;

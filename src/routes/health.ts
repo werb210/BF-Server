@@ -6,7 +6,8 @@ import { error, ok } from "../lib/response";
 const router = Router();
 
 export function health(_req: Request, res: Response) {
-  return res.json({ status: "ok" });
+  const payload = { status: "ok" };
+  return res.json(payload);
 }
 
 export function ready(req: Request, res: Response) {

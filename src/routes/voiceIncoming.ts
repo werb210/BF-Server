@@ -37,7 +37,7 @@ router.post("/voice/incoming", (_req: any, res: any) => {
   dial.client("staff_mobile");
 
   res.type("text/xml");
-  res.send(twiml.toString());
+  return res.json(twiml.toString());
 });
 
 export default router;
