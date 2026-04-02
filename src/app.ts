@@ -92,13 +92,19 @@ export function createApp() {
 
   app.get(
     "/ready",
-    wrap(async (_req, res) => {
-      if (!deps.db.ready) {
-        res.status(503);
-        return { status: "not_ready" };
+    (req, res) => {
+      try {
+        const isReady = req.app.locals?.deps?.db?.ready;
+
+        if (!isReady) {
+          return res.status(503).json({ status: "not_ready" });
+        }
+
+        return res.status(200).json({ status: "ok" });
+      } catch (_err) {
+        return res.status(503).json({ status: "not_ready" });
       }
-      return { ready: true };
-    }),
+    },
   );
 
   app.get(
