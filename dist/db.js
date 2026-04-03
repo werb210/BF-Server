@@ -42,37 +42,21 @@ exports.safeQuery = safeQuery;
 exports.ensureDb = ensureDb;
 exports.isDbReady = isDbReady;
 const dbProd = __importStar(require("./db.prod"));
-const deps_1 = require("./system/deps");
-const requireDb_1 = require("./system/requireDb");
+const index_1 = require("@/db/index");
+const deps_1 = require("@/system/deps");
 const dbImpl = dbProd;
 exports.pool = dbImpl.pool, exports.db = dbImpl.db, exports.fetchClient = dbImpl.fetchClient, exports.assertPoolHealthy = dbImpl.assertPoolHealthy, exports.checkDb = dbImpl.checkDb, exports.warmUpDatabase = dbImpl.warmUpDatabase, exports.fetchInstrumentedClient = dbImpl.fetchInstrumentedClient, exports.setDbTestPoolMetricsOverride = dbImpl.setDbTestPoolMetricsOverride, exports.setDbTestFailureInjection = dbImpl.setDbTestFailureInjection, exports.clearDbTestFailureInjection = dbImpl.clearDbTestFailureInjection;
 function getDb() {
-    (0, requireDb_1.requireDb)();
     return exports.pool;
 }
 async function runQuery(text, params) {
-    (0, requireDb_1.requireDb)();
-    if (typeof exports.pool.runQuery !== "undefined") {
-        throw new Error("DO NOT ATTACH METHODS TO pool");
-    }
-    try {
-        return await exports.pool.query(text, params);
-    }
-    catch {
-        throw new Error("DB_QUERY_FAILED");
-    }
+    return (0, index_1.runQuery)(text, params);
 }
 async function query(text, params) {
     return runQuery(text, params);
 }
 async function dbQuery(text, params) {
-    (0, requireDb_1.requireDb)();
-    try {
-        return await dbImpl.dbQuery(text, params);
-    }
-    catch {
-        throw new Error("DB_QUERY_FAILED");
-    }
+    return runQuery(text, params);
 }
 async function safeQuery(sql, params) {
     return runQuery(sql, params);
@@ -81,12 +65,10 @@ async function ensureDb() {
     try {
         await runQuery("SELECT 1");
         deps_1.deps.db.ready = true;
-        deps_1.deps.db.error = null;
         console.log("DB connected");
     }
     catch (error) {
         deps_1.deps.db.ready = false;
-        deps_1.deps.db.error = error;
         console.error("DB connection failed", error);
         throw error;
     }

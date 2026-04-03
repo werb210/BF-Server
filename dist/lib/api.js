@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.safeApiFetch = exports.apiFetch = void 0;
-const shared_contract_1 = require("@boreal/shared-contract");
+const contracts_1 = require("@/contracts");
 const api_1 = require("../config/api");
 const buildUrl = (path) => `${api_1.API_BASE}${path}`;
 const logRequest = (method, path) => {
@@ -10,9 +10,10 @@ const logRequest = (method, path) => {
         method,
     });
 };
-const safeJson = async (res) => {
+const safeJson = async (response) => {
     try {
-        return await res.json();
+        const text = await response.text();
+        return text ? JSON.parse(text) : null;
     }
     catch {
         return null;
@@ -20,7 +21,7 @@ const safeJson = async (res) => {
 };
 const parseApiResponse = async (res) => {
     const json = await safeJson(res);
-    const parsed = shared_contract_1.ApiResponseSchema.safeParse(json);
+    const parsed = contracts_1.ApiResponseSchema.safeParse(json);
     if (!parsed.success) {
         throw new Error("API contract violation");
     }

@@ -2,12 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const router = (0, express_1.Router)();
-/**
- * MUST remain:
- * - synchronous
- * - dependency-free
- * - zero middleware reliance
- */
 router.get("/", (_req, res) => {
     res.status(200).send("ok");
 });

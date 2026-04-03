@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.requestLogger = requestLogger;
-const metrics_1 = require("../routes/metrics");
+const metrics_1 = require("../system/metrics");
 function requestLogger(req, res, next) {
     (0, metrics_1.trackRequest)();
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;

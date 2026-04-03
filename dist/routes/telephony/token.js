@@ -4,10 +4,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
-const response_1 = require("../../lib/response");
+const respond_1 = require("@/lib/respond");
 const router = express_1.default.Router();
 router.get("/token", (req, res) => {
     const token = "real-token";
-    return res.json((0, response_1.ok)({ token }, req.rid));
+    return (0, respond_1.ok)(res, { token });
 });
 exports.default = router;
