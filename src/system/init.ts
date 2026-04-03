@@ -1,38 +1,18 @@
-import { pool } from '../db';
-import { deps } from './deps';
-
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 100;
-
-function delay(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+import { pool } from "../db";
+import { deps } from "./deps";
 
 export async function initDependencies(): Promise<void> {
-  // always reset before attempting init
-  deps.db.ready = false;
+  let success = false;
 
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+  for (let i = 0; i < 3; i++) {
     try {
-      // this should hit your DB ping
-      await pool.query('SELECT 1');
-
-      // CRITICAL: mutate the SAME shared object reference
-      deps.db.ready = true;
-
-      return;
+      await pool.query("SELECT 1");
+      success = true;
+      break;
     } catch {
-      // keep it explicitly false during retries
-      deps.db.ready = false;
-
-      if (attempt < MAX_RETRIES) {
-        await delay(RETRY_DELAY_MS);
-      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
 
-  // final state after all retries exhausted
-  deps.db.ready = false;
-
-  // do NOT throw — tests expect server to stay alive
+  deps.db.ready = success;
 }

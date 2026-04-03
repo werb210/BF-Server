@@ -55,6 +55,11 @@ function requireBearerToken(header?: string): string | null {
   return token.length > 0 ? token : null;
 }
 
+
+const wrap =
+  (fn: (req: Request, res: Response, next: express.NextFunction) => unknown | Promise<unknown>) =>
+  (req: Request, res: Response, next: express.NextFunction) =>
+    Promise.resolve(fn(req, res, next)).catch(next);
 function verifyJwtToken(token: string): boolean {
   const secret = process.env.JWT_SECRET || getEnv().JWT_SECRET;
   if (!secret) {
@@ -268,7 +273,7 @@ export function createApp() {
   });
 
   app.get("/api/v1/voice/token", (req, res) => v1Ok(res, { token: "real-token" }, (req as Request & { rid?: string }).rid));
-  app.post("/api/v1/call/start", async (req, res) => {
+  app.post("/api/v1/call/start", wrap(async (req, res) => {
     const callId = `call-${Date.now()}`;
     const { to } = req.body ?? {};
 
@@ -278,13 +283,13 @@ export function createApp() {
     );
 
     return v1Ok(res, { callId, started: true }, (req as Request & { rid?: string }).rid);
-  });
+  }));
   app.post("/api/v1/calls/start", (_req, res) => res.status(200).json({ status: "ok", data: { started: true } }));
   app.post("/api/v1/voice/status", (req, res) => v1Ok(res, { accepted: true }, (req as Request & { rid?: string }).rid));
   app.post("/api/v1/calls/status", (req, res) => v1Ok(res, { accepted: true }, (req as Request & { rid?: string }).rid));
   app.post("/api/v1/maya/message", (req, res) => v1Ok(res, { accepted: true }, (req as Request & { rid?: string }).rid));
 
-  app.post("/api/v1/crm/lead", async (req, res) => {
+  app.post("/api/v1/crm/lead", wrap(async (req, res) => {
     const { email, phone, businessName, productType } = req.body ?? {};
     if (email && typeof email === "string" && !email.includes("@")) {
       return v1Err(res, 400, "INVALID_EMAIL", (req as Request & { rid?: string }).rid);
@@ -299,14 +304,14 @@ export function createApp() {
     );
 
     return v1Ok(res, { id: result.rows[0]?.id }, (req as Request & { rid?: string }).rid);
-  });
+  }));
 
-  app.post("/api/v1/call/:id/status", async (req, res) => {
+  app.post("/api/v1/call/:id/status", wrap(async (req, res) => {
     const { id } = req.params;
     const { status, durationSeconds } = req.body ?? {};
     await runQuery("update call_logs set status = $1, duration_seconds = $2 where id = $3 returning id", [status ?? "completed", durationSeconds ?? null, id]);
     return v1Ok(res, { updated: true }, (req as Request & { rid?: string }).rid);
-  });
+  }));
 
   app.post("/api/v1/leads", (_req, res) => {
     return v1Ok(res, { accepted: true }, undefined);
@@ -323,9 +328,12 @@ export function createApp() {
     return apiError(res, 404, "404", "not_found");
   });
 
-  app.use((err: unknown, _req: Request, res: Response, _next: express.NextFunction) => {
+  app.use((err: any, _req: Request, res: Response, _next: express.NextFunction) => {
     incErr();
-    return apiError(res, 500, "500", err instanceof Error ? err.message : "Internal Server Error");
+    return res.status(err?.status || 500).json({
+      status: "error",
+      error: err instanceof Error ? err.message : String(err),
+    });
   });
 
   return app;
