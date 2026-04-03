@@ -1,20 +1,17 @@
-import express from "express";
-import healthRouter from "./routes/health";
+import app from "./app";
 
-const app = express();
+const PORT = Number(process.env.PORT) || 8080;
 
-app.use(express.json());
-
-// MUST BE FIRST
-app.use("/health", healthRouter);
-
-// BASIC READY
-app.get("/ready", (_req, res) => {
-  res.status(200).send("ready");
+const server = app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on port ${PORT}`);
 });
 
-const PORT = process.env.PORT || 8080;
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received. Shutting down.");
+  server.close(() => process.exit(0));
+});
 
-app.listen(PORT, () => {
-  console.log(`Server listening on ${PORT}`);
+process.on("SIGINT", () => {
+  console.log("SIGINT received. Shutting down.");
+  server.close(() => process.exit(0));
 });
