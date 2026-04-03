@@ -11,6 +11,7 @@ import { AppError } from "../middleware/errors";
 import { endCall, listCalls, startCall, updateCallStatus } from "../modules/calls/calls.service";
 import { type CallStatus } from "../modules/calls/calls.repo";
 import { toStringSafe } from "../utils/toStringSafe";
+import { ok as respondOk } from "@/lib/respond";
 
 const router = Router();
 
@@ -83,7 +84,7 @@ router.post("/start", requireApiAuth, validate(CallStartSchema), async (req, res
       ...buildRequestMetadata(req),
     });
 
-    return res.json(ok({ started: true, to, callId: record.id, status: record.status }, (req as any).rid));
+    return respondOk(res, { started: true, to, callId: record.id, status: record.status });
   } catch (error) {
     return next(error);
   }

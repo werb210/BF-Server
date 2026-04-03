@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { LeadSchema } from "../schemas";
 import { validate } from "../middleware/validate";
-import { ok } from "../lib/response";
+import { ok } from "@/lib/respond";
 import { dbQuery } from "../db";
 
 const router = Router();
@@ -32,7 +32,7 @@ router.post("/lead", validate(LeadSchema), async (req, res, next) => {
       [lead.email, lead.phone, lead.businessName ?? lead.name, lead.productType ?? null, "crm_api"],
     );
 
-    return res.json(ok({
+    return ok(res, {
       id: created.rows[0]?.id,
       name: lead.name,
       email: created.rows[0]?.email ?? lead.email,
@@ -40,7 +40,7 @@ router.post("/lead", validate(LeadSchema), async (req, res, next) => {
       businessName: created.rows[0]?.company_name ?? lead.businessName ?? lead.name,
       productType: created.rows[0]?.product_interest ?? lead.productType ?? null,
       source: created.rows[0]?.source ?? "crm_api",
-    }, (req as any).rid));
+    });
   } catch (error) {
     return next(error);
   }

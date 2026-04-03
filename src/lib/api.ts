@@ -12,9 +12,10 @@ const logRequest = (method: ApiMethod, path: string): void => {
   });
 };
 
-const safeJson = async (res: Response): Promise<unknown> => {
+const safeJson = async (response: Response): Promise<unknown> => {
   try {
-    return await res.json();
+    const text = await response.text();
+    return text ? JSON.parse(text) : null;
   } catch {
     return null;
   }

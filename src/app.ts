@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 
 import cors from "cors";
-import express, { type Request, type Response } from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
 
 import { getEnv } from "./config/env";
@@ -238,7 +238,7 @@ export function createApp() {
     return res.status(200).json({ status: "ok", data: { started: true } });
   });
 
-  app.use("/api/v1/public/test", ((req: Request & { _publicCount?: number }, res, _next) => {
+  app.use("/api/v1/public/test", ((req: Request & { _publicCount?: number }, res: Response, _next: NextFunction) => {
     (req as any);
     const key = "__public_rate_count";
     const count = ((globalThis as any)[key] ?? 0) + 1;

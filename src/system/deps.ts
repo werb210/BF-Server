@@ -8,3 +8,5 @@ export const deps = {
     errors: 0,
   },
 };
+
+export type Deps = typeof deps;
