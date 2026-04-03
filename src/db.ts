@@ -1,8 +1,8 @@
 import * as dbProd from "./db.prod";
 import type { QueryResult, QueryResultRow } from "pg";
 
-import { runQuery as runQueryFromDeps } from "@/db/index";
-import { deps } from "@/system/deps";
+import { runQuery as runQueryFromDeps } from "./db/index";
+import { deps } from "./system/deps";
 
 const dbImpl = dbProd;
 

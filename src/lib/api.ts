@@ -1,4 +1,4 @@
-import { ApiResponseSchema } from "@/contracts";
+import { ApiResponseSchema } from "../contracts";
 import { API_BASE } from "../config/api";
 
 type ApiMethod = "get" | "post";

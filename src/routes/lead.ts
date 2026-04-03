@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { LeadSchema } from "../schemas";
 import { validate } from "../middleware/validate";
-import { ok } from "@/lib/respond";
+import { ok } from "../lib/respond";
 import { dbQuery } from "../db";
 
 const router = Router();
