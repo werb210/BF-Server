@@ -4,15 +4,10 @@ import { signJwt, verifyJwt } from "../auth/jwt";
 import { requireAuth } from "../middleware/auth";
 import { checkOtp, sendOtp } from "../services/otp";
 
-interface GlobalThis {
-  __resetOtpStateForTests?: () => void;
-}
-
-
 const router = Router();
 
 export function resetOtpStateForTests() {
-  globalThis.__resetOtpStateForTests?.();
+  (globalThis as { __resetOtpStateForTests?: () => void }).__resetOtpStateForTests?.();
 }
 
 router.get("/me", requireAuth, (req, res) => {

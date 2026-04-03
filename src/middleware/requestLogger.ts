@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from "express";
-import { trackRequest } from "../routes/metrics";
+import { trackRequest } from "../system/metrics";
 
 export function requestLogger(req: Request, res: Response, next: NextFunction) {
   trackRequest();

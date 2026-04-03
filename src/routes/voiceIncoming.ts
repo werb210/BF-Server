@@ -1,6 +1,7 @@
 import { Router } from "express";
 import twilio from "twilio";
 import { config } from "../config";
+import { ok } from "@/lib/respond";
 
 const router = Router();
 
@@ -36,8 +37,7 @@ router.post("/voice/incoming", (_req: any, res: any) => {
   dial.client("staff_portal");
   dial.client("staff_mobile");
 
-  res.type("text/xml");
-  return res.json(twiml.toString());
+  return ok(res, twiml.toString());
 });
 
 export default router;

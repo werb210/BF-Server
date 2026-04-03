@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { ok } from "@/lib/respond";
 
 const twilioModule = require("twilio") ;
 
@@ -10,6 +11,5 @@ export function incomingCallHandler(_req: Request, res: Response): Response {
 
   dial.client("staff");
 
-  res.type("text/xml");
-  return res.json(response.toString());
+  return ok(res, response.toString());
 }

@@ -31,7 +31,7 @@ function sendValidatedResponse(res: Response, payload: unknown): Response {
     return res.status(500).json(error("Invalid response shape", resolveRid(res.req)));
   }
 
-  return res.json(validated.data);
+  return res.status(200).send(validated.data);
 }
 
 export function wrap(handler: WrappedHandler) {
