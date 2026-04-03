@@ -1,5 +1,8 @@
-if (!process.env.DATABASE_URL) {
-  test.skip("real db not configured", () => {});
+const hasRealDbConfig = Boolean(process.env.DATABASE_URL);
+const runRealDbIntegration = process.env.RUN_REAL_DB_TESTS === "1" && hasRealDbConfig;
+
+if (!runRealDbIntegration) {
+  test.skip("real db not configured for CI", () => {});
 } else {
   describe("real db integration", () => {
     const originalNodeEnv = process.env.NODE_ENV;
