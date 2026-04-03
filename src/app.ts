@@ -10,9 +10,9 @@ import jwt from "jsonwebtoken";
 import { getEnv } from "./config/env";
 import { runQuery } from "./db";
 import { initDb } from "./db/init";
-import { wrap } from "@/lib/routeWrap";
-import { deps } from "@/system/deps";
-import { incErr, incReq, metrics } from "@/system/metrics";
+import { wrap } from "./lib/routeWrap";
+import { deps } from "./system/deps";
+import { incErr, incReq, metrics } from "./system/metrics";
 
 const otpStore = new Map<string, { code: string; expires: number; attempts: number; used: boolean }>();
 const otpRequestTimestamps = new Map<string, number>();
