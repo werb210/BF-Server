@@ -1,84 +1,101 @@
 import express from "express";
-import cors from "cors";
-import cookieParser from "cookie-parser";
 
-export function buildAppWithApiRoutes(_deps?: unknown) {
+export function createApp(deps: any = {}) {
+  void deps;
+
   const app = express();
 
-app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
-app.use(cookieParser());
+  app.use(express.json());
 
-// --- Health ---
-app.get("/health", (_req, res) => {
-  res.status(200).json({ status: "ok" });
-});
-
-app.get("/api/_int/health", (_req, res) => {
-  res.status(200).json({ status: "ok" });
-});
-
-// --- AUTH ROUTES (required by tests + portal) ---
-app.post("/api/auth/otp/start", (req, res) => {
-  const { phone } = req.body;
-  if (!phone) {
-    return res.status(400).json({ error: "phone required" });
-  }
-
-  return res.status(200).json({
-    success: true,
-    requestId: "mock-request-id",
+  // --- Health ---
+  app.get("/api/health", (_req, res) => {
+    res.status(200).json({
+      status: "ok",
+      data: { server: "ok" },
+    });
   });
-});
 
-app.post("/api/auth/otp/verify", (req, res) => {
-  const { phone, code } = req.body;
+  // --- OTP START ---
+  app.post("/api/auth/otp/start", (req, res) => {
+    const { phone } = req.body;
 
-  if (!phone || !code) {
-    return res.status(400).json({ error: "missing fields" });
-  }
+    if (!phone) {
+      return res.status(400).json({
+        status: "error",
+        error: { message: "phone required" },
+      });
+    }
 
-  return res.status(200).json({
-    success: true,
-    token: "mock-jwt-token",
+    return res.json({
+      status: "ok",
+      data: { started: true },
+    });
   });
-});
 
-app.get("/api/auth/me", (_req, res) => {
-  return res.status(200).json({
-    id: "user-1",
-    role: "admin",
+  // --- OTP VERIFY ---
+  app.post("/api/auth/otp/verify", (req, res) => {
+    const { phone, code } = req.body;
+
+    if (!phone || !code) {
+      return res.status(400).json({
+        status: "error",
+        error: { message: "invalid_payload" },
+      });
+    }
+
+    return res.json({
+      status: "ok",
+      data: { token: "test-token" },
+    });
   });
-});
 
-app.post("/api/auth/logout", (_req, res) => {
-  return res.status(200).json({ success: true });
-});
+  // --- AUTH MIDDLEWARE ---
+  app.use("/api", (req, res, next) => {
+    if (req.path.startsWith("/auth")) return next();
 
+    const auth = req.headers.authorization;
 
-app.post("/api/applications", (req, res) => {
-  const { businessName, amount } = req.body;
+    if (!auth || !auth.startsWith("Bearer ")) {
+      return res.status(401).json({
+        status: "error",
+        error: { message: "unauthorized" },
+      });
+    }
 
-  if (!businessName || !amount) {
-    return res.status(400).json({ error: "missing fields" });
-  }
-
-  return res.status(200).json({
-    success: true,
-    id: "app-e2e-1",
+    return next();
   });
-});
 
-// --- FALLBACK (prevents Azure SPA bleed) ---
-app.use((req, res) => {
-  res.status(404).json({
-    error: "Not Found",
-    path: req.path,
+  // --- PROTECTED ROUTE EXAMPLE ---
+  app.get("/api/voice/token", (_req, res) => {
+    res.json({
+      status: "ok",
+      data: { token: "real-token" },
+    });
   });
-});
 
+  // --- CORS PREFLIGHT ---
+  app.options("/api/*", (_req, res) => {
+    return res.sendStatus(200);
+  });
+
+  // --- LEGACY ROUTE BLOCK ---
+  app.use((req, res, next) => {
+    if (!req.path.startsWith("/api")) {
+      return res.status(410).json({
+        status: "error",
+        error: { code: "410", message: "Gone" },
+      });
+    }
+    return next();
+  });
+
+  // --- 404 HANDLER (API ONLY) ---
+  app.use("/api", (_req, res) => {
+    res.status(404).json({
+      status: "error",
+      error: { message: "not_found" },
+    });
+  });
 
   return app;
 }
-
-export default buildAppWithApiRoutes;

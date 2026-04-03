@@ -1,8 +1,8 @@
-import buildAppWithApiRoutes from "./app";
+import { createApp } from "./app";
 
 const PORT = Number(process.env.PORT) || 8080;
 
-const app = buildAppWithApiRoutes();
+const app = createApp();
 
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
