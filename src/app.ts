@@ -2,7 +2,8 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 
-const app = express();
+export function buildAppWithApiRoutes(_deps?: unknown) {
+  const app = express();
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
@@ -76,4 +77,8 @@ app.use((req, res) => {
   });
 });
 
-export default app;
+
+  return app;
+}
+
+export default buildAppWithApiRoutes;
