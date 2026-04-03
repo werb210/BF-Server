@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import { sendError, sendSuccess } from "./utils/response.js";
 
 /**
  * TEMP in-memory OTP store (replace later with Redis/DB)
@@ -43,17 +44,6 @@ export function createApp() {
   );
 
   /**
-   * --- GLOBAL RESPONSE HELPERS ---
-   */
-  const ok = (res: any, data: any) => res.json({ status: "ok", data });
-
-  const err = (res: any, status: number, message: string) =>
-    res.status(status).json({
-      status: "error",
-      error: { message },
-    });
-
-  /**
    * --- CORS PREFLIGHT (FIXES CORS TEST FAILURES) ---
    */
   app.options("/api/*", (_req, res) => res.sendStatus(200));
@@ -62,7 +52,7 @@ export function createApp() {
    * --- HEALTH ---
    */
   app.get("/api/health", (_req, res) => {
-    return ok(res, { server: "ok" });
+    return sendSuccess(res, { server: "ok" });
   });
 
   /**
@@ -71,14 +61,14 @@ export function createApp() {
   app.post("/api/auth/otp/start", (req, res) => {
     const { phone } = req.body;
 
-    if (!phone) return err(res, 400, "phone required");
+    if (!phone) return sendError(res, "phone required", 400);
 
     const now = Date.now();
 
     // rate limit
     const last = otpRequestTimestamps.get(phone);
     if (last && now - last < OTP_RATE_LIMIT_MS) {
-      return err(res, 429, "Too many requests");
+      return sendError(res, "Too many requests", 429);
     }
 
     otpRequestTimestamps.set(phone, now);
@@ -91,7 +81,7 @@ export function createApp() {
       attempts: 0,
     });
 
-    return ok(res, { started: true });
+    return sendSuccess(res, { started: true });
   });
 
   /**
@@ -100,15 +90,15 @@ export function createApp() {
   app.post("/api/auth/otp/verify", (req, res) => {
     const { phone, code } = req.body;
 
-    if (!phone || !code) return err(res, 400, "invalid_payload");
+    if (!phone || !code) return sendError(res, "invalid_payload", 400);
 
     const record = otpStore.get(phone);
 
-    if (!record) return err(res, 400, "Invalid code");
+    if (!record) return sendError(res, "Invalid code", 400);
 
     if (Date.now() > record.expires) {
       otpStore.delete(phone);
-      return err(res, 410, "OTP expired");
+      return sendError(res, "OTP expired", 410);
     }
 
     if (record.code !== code) {
@@ -118,16 +108,16 @@ export function createApp() {
         otpStore.delete(phone);
       }
 
-      return err(res, 400, "Invalid code");
+      return sendError(res, "Invalid code", 400);
     }
 
     otpStore.delete(phone);
 
     if (!process.env.JWT_SECRET) {
-      return err(res, 401, "unauthorized");
+      return sendError(res, "unauthorized", 401);
     }
 
-    return ok(res, { token: "real-token" });
+    return sendSuccess(res, { token: "real-token" });
   });
 
   /**
@@ -139,7 +129,7 @@ export function createApp() {
     const auth = req.headers.authorization;
 
     if (!auth || !auth.startsWith("Bearer ")) {
-      return err(res, 401, "unauthorized");
+      return sendError(res, "unauthorized", 401);
     }
 
     return next();
@@ -149,11 +139,11 @@ export function createApp() {
    * --- PROTECTED ROUTES ---
    */
   app.get("/api/voice/token", (_req, res) => {
-    return ok(res, { token: "real-token" });
+    return sendSuccess(res, { token: "real-token" });
   });
 
   app.post("/api/call/start", (_req, res) => {
-    return ok(res, { started: true });
+    return sendSuccess(res, { started: true });
   });
 
   /**
@@ -161,10 +151,7 @@ export function createApp() {
    */
   app.use((req, res, next) => {
     if (!req.path.startsWith("/api")) {
-      return res.status(410).json({
-        status: "error",
-        error: { code: "410", message: "Gone" },
-      });
+      return sendError(res, { code: "410", message: "Gone" }, 410);
     }
     return next();
   });
@@ -173,7 +160,7 @@ export function createApp() {
    * --- API 404 ---
    */
   app.use("/api", (_req, res) => {
-    return err(res, 404, "not_found");
+    return sendError(res, "not_found", 404);
   });
 
   return app;
