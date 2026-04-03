@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth";
 import { endpoints } from "../contracts/endpoints";
+import authRoutes from "./auth";
+import { ok } from "../lib/response";
 
 const router = Router();
 
@@ -11,24 +13,22 @@ function routeFromContract(endpoint: string): string {
 }
 
 function createLeadHandler(_req: any, res: any) {
-  res.locals.__wrapped = true;
-  return res.status(200).json({ status: "ok", data: { saved: true } });
+  return ok(res, { saved: true });
 }
 
 function startCallHandler(_req: any, res: any) {
-  res.locals.__wrapped = true;
-  return res.status(200).json({ status: "ok", data: { started: true } });
+  return ok(res, { started: true });
 }
 
 function updateCallStatusHandler(_req: any, res: any) {
-  res.locals.__wrapped = true;
-  return res.status(200).json({ status: "ok", data: { recorded: true } });
+  return ok(res, { recorded: true });
 }
 
 function sendMessageHandler(_req: any, res: any) {
-  res.locals.__wrapped = true;
-  return res.status(200).json({ status: "ok", data: { reply: "ok" } });
+  return ok(res, { reply: "ok" });
 }
+
+router.use("/auth", authRoutes);
 
 router.post(routeFromContract(endpoints.createLead), requireAuth, createLeadHandler);
 router.post(routeFromContract(endpoints.startCall), requireAuth, startCallHandler);

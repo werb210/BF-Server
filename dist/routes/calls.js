@@ -12,6 +12,7 @@ const roles_1 = require("../auth/roles");
 const errors_1 = require("../middleware/errors");
 const calls_service_1 = require("../modules/calls/calls.service");
 const toStringSafe_1 = require("../utils/toStringSafe");
+const respond_1 = require("@/lib/respond");
 const router = (0, express_1.Router)();
 const callStartSchema = zod_1.z.object({
     phoneNumber: zod_1.z.string().min(1),
@@ -75,7 +76,7 @@ router.post("/start", requireAuth_1.requireAuth, (0, validate_1.validate)(schema
             staffUserId: req.user?.userId ?? null,
             ...buildRequestMetadata(req),
         });
-        return res.json((0, response_1.ok)({ started: true, to, callId: record.id, status: record.status }, req.rid));
+        return (0, respond_1.ok)(res, { started: true, to, callId: record.id, status: record.status });
     }
     catch (error) {
         return next(error);

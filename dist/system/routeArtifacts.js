@@ -44,7 +44,6 @@ const promises_1 = require("node:fs/promises");
 const node_path_1 = __importDefault(require("node:path"));
 const printRoutes_1 = require("../debug/printRoutes");
 const config_1 = require("../config");
-const deps_1 = require("./deps");
 exports.DEFAULT_ROUTE_ARTIFACT_PATH = "artifacts/server-routes.json";
 function normalizeRoutePath(routePath) {
     if (!routePath || routePath === "//") {
@@ -73,12 +72,12 @@ async function loadAppBuilder() {
     config_1.ENV.TWILIO_AUTH_TOKEN ?? (config_1.ENV.TWILIO_AUTH_TOKEN = "test-token");
     config_1.ENV.TWILIO_API_KEY_SID ?? (config_1.ENV.TWILIO_API_KEY_SID = "SKtest");
     config_1.ENV.TWILIO_API_SECRET ?? (config_1.ENV.TWILIO_API_SECRET = "test-secret");
-    const { buildAppWithApiRoutes } = await Promise.resolve().then(() => __importStar(require("../app.js")));
-    return buildAppWithApiRoutes;
+    const { createApp } = await Promise.resolve().then(() => __importStar(require("../app.js")));
+    return createApp;
 }
 async function buildNormalizedRouteEntries() {
-    const buildAppWithApiRoutes = await loadAppBuilder();
-    const app = buildAppWithApiRoutes(deps_1.deps);
+    const createApp = await loadAppBuilder();
+    const app = await createApp();
     const routeInventory = (0, printRoutes_1.listRouteInventory)(app);
     const normalized = routeInventory.flatMap(({ routerBase, routes }) => routes.map((route) => ({
         method: route.method.toUpperCase(),
