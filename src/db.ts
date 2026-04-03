@@ -27,14 +27,22 @@ export async function runQuery<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: any[],
 ): Promise<QueryResult<T>> {
+  if (!process.env.DATABASE_URL && !deps.db.ready) {
+    throw new Error("DB_POOL_NOT_INITIALIZED");
+  }
+
   requireDb();
   if (typeof (pool as any).runQuery !== "undefined") {
     throw new Error("DO NOT ATTACH METHODS TO pool");
   }
   try {
     return await pool.query<T>(text, params);
-  } catch {
-    throw new Error("DB_QUERY_FAILED");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("DB_POOL_NOT_INITIALIZED")) {
+      throw new Error("DB_POOL_NOT_INITIALIZED");
+    }
+    throw new Error(`DB_QUERY_FAILED:${message}`);
   }
 }
 
@@ -55,6 +63,7 @@ export async function safeQuery<T extends QueryResultRow = QueryResultRow>(
   sql: string,
   params?: any[],
 ): Promise<QueryResult<T>> {
+  requireDb();
   return runQuery<T>(sql, params);
 }
 

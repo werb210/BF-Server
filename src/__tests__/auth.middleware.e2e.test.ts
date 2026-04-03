@@ -17,11 +17,11 @@ describe("auth middleware enforcement", () => {
     process.env.JWT_SECRET = originalSecret;
   });
 
-  it("returns 401 NO_TOKEN when auth header is missing", async () => {
+  it("returns canonical 401 envelope when auth header is missing", async () => {
     const res = await request(app).post("/api/v1/leads").send({ leadId: "1" });
 
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ status: "error", error: "NO_TOKEN" });
+    expect(res.body).toEqual({ status: "error", error: { code: "401", message: "Unauthorized" } });
   });
 
   it("returns success with valid JWT token", async () => {

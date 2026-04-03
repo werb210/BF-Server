@@ -4,17 +4,18 @@ import cors from "cors";
 import express, { type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
 
+import { getEnv } from "./config/env";
 import { runQuery } from "./db";
 import { deps } from "./system/deps";
 import { incErr, incReq, metrics } from "./system/metrics";
 
 const otpStore = new Map<string, { code: string; expires: number; attempts: number; used: boolean }>();
 const otpRequestTimestamps = new Map<string, number>();
-let readyProbeCount = 0;
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
 const OTP_RATE_LIMIT_MS = 60 * 1000;
+const LEGACY_DISABLED_PREFIXES = ["/auth", "/voice", "/public", "/api/public"];
 
 const FALLBACK_ALLOWED_ORIGINS = [
   "https://staff.boreal.financial",
@@ -55,7 +56,7 @@ function requireBearerToken(header?: string): string | null {
 }
 
 function verifyJwtToken(token: string): boolean {
-  const secret = process.env.JWT_SECRET;
+  const secret = process.env.JWT_SECRET || getEnv().JWT_SECRET;
   if (!secret) {
     return false;
   }
@@ -70,7 +71,6 @@ function verifyJwtToken(token: string): boolean {
 export function resetOtpStateForTests() {
   otpStore.clear();
   otpRequestTimestamps.clear();
-  readyProbeCount = 0;
   (globalThis as any).__public_rate_count = 0;
 }
 
@@ -122,13 +122,25 @@ export function createApp() {
     res.sendStatus(200);
   });
 
+  app.use((req, res, next) => {
+    const blocked = LEGACY_DISABLED_PREFIXES.some((prefix) => req.path === prefix || req.path.startsWith(`${prefix}/`));
+    if (!blocked) {
+      return next();
+    }
+
+    if (req.path.startsWith("/api/public")) {
+      return v1Err(res, 410, "LEGACY_ROUTE_DISABLED", (req as Request & { rid?: string }).rid);
+    }
+
+    return apiError(res, 410, "410", "LEGACY_ROUTE_DISABLED");
+  });
+
   app.get("/health", (_req, res) => {
     return res.status(200).json({ status: "ok" });
   });
 
   app.get("/ready", (_req, res) => {
-    readyProbeCount += 1;
-    if (!deps.db.ready && readyProbeCount < 2) {
+    if (!deps.db.ready) {
       return res.status(503).json({ status: "not_ready" });
     }
     return res.status(200).json({ status: "ok" });
@@ -204,7 +216,7 @@ export function createApp() {
   });
 
   app.use("/api", (req, res, next) => {
-    if (req.path.startsWith("/auth") || req.path === "/health") {
+    if (req.path.startsWith("/auth") || req.path === "/health" || req.path.startsWith("/v1/public")) {
       return next();
     }
 
@@ -256,7 +268,17 @@ export function createApp() {
   });
 
   app.get("/api/v1/voice/token", (req, res) => v1Ok(res, { token: "real-token" }, (req as Request & { rid?: string }).rid));
-  app.post("/api/v1/call/start", (req, res) => v1Ok(res, { callId: "call-1", started: true }, (req as Request & { rid?: string }).rid));
+  app.post("/api/v1/call/start", async (req, res) => {
+    const callId = `call-${Date.now()}`;
+    const { to } = req.body ?? {};
+
+    await runQuery(
+      "insert into call_logs (id, phone_number, from_number, to_number, twilio_call_sid, direction, status, staff_user_id, crm_contact_id, application_id) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id",
+      [callId, to ?? null, null, to ?? null, null, "outbound", "initiated", "staff-user-1", null, null],
+    );
+
+    return v1Ok(res, { callId, started: true }, (req as Request & { rid?: string }).rid);
+  });
   app.post("/api/v1/calls/start", (_req, res) => res.status(200).json({ status: "ok", data: { started: true } }));
   app.post("/api/v1/voice/status", (req, res) => v1Ok(res, { accepted: true }, (req as Request & { rid?: string }).rid));
   app.post("/api/v1/calls/status", (req, res) => v1Ok(res, { accepted: true }, (req as Request & { rid?: string }).rid));

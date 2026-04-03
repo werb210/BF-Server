@@ -1,19 +1,9 @@
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, resetOtpStateForTests } from "../app";
-import type { Deps } from "../system/deps";
-
-function createTestDeps(): Deps {
-  return {
-    db: {
-      ready: false,
-      error: null,
-    },
-  };
-}
+import { deps } from "../system/deps";
 
 describe("server:readiness:e2e", () => {
-  const deps = createTestDeps();
   const app = createApp();
 
   beforeEach(() => {
