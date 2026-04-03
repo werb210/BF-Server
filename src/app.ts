@@ -1,15 +1,8 @@
-import cors from "cors";
 import express from "express";
 
+import { corsMiddleware } from "./middleware/cors";
 import routes from "./routes";
 import { fail } from "./lib/response";
-
-const allowed = [
-  "https://www.borealfinancial.ca",
-  "https://boreal.financial",
-  "https://portal.boreal.financial",
-  "https://client.boreal.financial",
-];
 
 export function createApp() {
   const app = express();
@@ -17,15 +10,7 @@ export function createApp() {
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
   app.use(express.json());
-
-  app.use(cors({
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true);
-      if (allowed.includes(origin)) return cb(null, true);
-      return cb(new Error("Not allowed"), false);
-    },
-    credentials: true,
-  }));
+  app.use(corsMiddleware);
 
   app.get("/health", (_req, res) => {
     res.status(200).send("ok");
@@ -38,6 +23,7 @@ export function createApp() {
     });
   });
 
+  app.use("/api/auth", require("./routes/auth").default);
   app.use("/api/v1", routes);
 
   app.use((_req, res) => fail(res, "not_found", 404));
