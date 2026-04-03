@@ -48,6 +48,13 @@ function v1Err(res: Response, statusCode: number, message: string, requestId?: s
   return res.status(statusCode).json(body);
 }
 
+function createMockCall() {
+  return {
+    callId: `mock-call-${Date.now()}`,
+    status: "queued",
+  };
+}
+
 function requireBearerToken(header?: string): string | null {
   if (!header || !header.startsWith("Bearer ")) {
     return null;
@@ -271,13 +278,25 @@ export function createApp() {
 
   app.get("/api/v1/voice/token", (req, res) => v1Ok(res, { token: "real-token" }, (req as Request & { rid?: string }).rid));
   app.post("/api/v1/call/start", wrap(async (req, res) => {
+    const isProd = process.env.NODE_ENV === "production";
     const callId = `call-${Date.now()}`;
     const { to } = req.body ?? {};
 
-    await runQuery(
-      "insert into call_logs (id, phone_number, from_number, to_number, twilio_call_sid, direction, status, staff_user_id, crm_contact_id, application_id) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id",
-      [callId, to ?? null, null, to ?? null, null, "outbound", "initiated", "staff-user-1", null, null],
-    );
+    try {
+      await runQuery(
+        "insert into call_logs (id, phone_number, from_number, to_number, twilio_call_sid, direction, status, staff_user_id, crm_contact_id, application_id) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id",
+        [callId, to ?? null, null, to ?? null, null, "outbound", "initiated", "staff-user-1", null, null],
+      );
+    } catch (error: any) {
+      const isDependencyFailure = error?.status === 503 || error?.message === "DB_NOT_READY";
+      if (isDependencyFailure && !isProd) {
+        return v1Ok(res, createMockCall(), (req as Request & { rid?: string }).rid);
+      }
+      if (isDependencyFailure) {
+        return v1Err(res, 503, "Voice service unavailable", (req as Request & { rid?: string }).rid);
+      }
+      throw error;
+    }
 
     return v1Ok(res, { callId, started: true }, (req as Request & { rid?: string }).rid);
   }));
