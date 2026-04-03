@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { ok } from "@/lib/respond";
+import { ok } from "../../lib/respond";
 
 const twilioModule = require("twilio") ;
 

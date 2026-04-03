@@ -1,7 +1,7 @@
 import { Router } from "express";
 import twilio from "twilio";
 import { config } from "../config";
-import { ok } from "@/lib/respond";
+import { ok } from "../lib/respond";
 
 const router = Router();
 

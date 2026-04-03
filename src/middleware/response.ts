@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { ApiResponseSchema } from "@/contracts";
+import { ApiResponseSchema } from "../contracts";
 import { error, ok } from "../lib/response";
 
 type WrappedBody = {

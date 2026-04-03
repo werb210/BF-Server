@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 
-import { deps } from "@/system/deps";
+import { deps } from "../system/deps";
 
 export function readyRoute(_req: Request, res: Response) {
   if (!deps.db.ready) {

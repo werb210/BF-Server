@@ -11,7 +11,7 @@ import { AppError } from "../middleware/errors";
 import { endCall, listCalls, startCall, updateCallStatus } from "../modules/calls/calls.service";
 import { type CallStatus } from "../modules/calls/calls.repo";
 import { toStringSafe } from "../utils/toStringSafe";
-import { ok as respondOk } from "@/lib/respond";
+import { ok as respondOk } from "../lib/respond";
 
 const router = Router();
 

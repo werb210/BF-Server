@@ -16,7 +16,8 @@ const websiteLimiter = rateLimit({
 
 const websiteBodyLimitBytes = 64 * 1024;
 
-router.use(websiteLimiter);
+// Temporarily disabled in production while Azure proxy/rate limit behavior is stabilized.
+// router.use(websiteLimiter);
 router.use((req: any, res: any, next: any) => {
   const contentLength = Number(req.headers["content-length"] ?? 0);
   if (Number.isFinite(contentLength) && contentLength > websiteBodyLimitBytes) {
