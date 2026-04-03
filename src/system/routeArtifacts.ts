@@ -51,7 +51,7 @@ async function loadAppBuilder() {
 
 export async function buildNormalizedRouteEntries(): Promise<NormalizedRouteEntry[]> {
   const createApp = await loadAppBuilder();
-  const app = createApp();
+  const app = await createApp();
   const routeInventory = listRouteInventory(app);
 
   const normalized = routeInventory.flatMap(({ routerBase, routes }) =>

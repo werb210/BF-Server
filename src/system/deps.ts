@@ -1,13 +1,10 @@
-export type Deps = {
-  db: {
-    ready: boolean;
-    error: unknown;
-  };
-};
-
-export const deps: Deps = {
+export const deps = {
   db: {
     ready: false,
-    error: null,
+    client: null as any,
+  },
+  metrics: {
+    requests: 0,
+    errors: 0,
   },
 };

@@ -4,7 +4,11 @@ import { createApp, resetOtpStateForTests } from "../app";
 import { deps } from "../system/deps";
 
 describe("server:readiness:e2e", () => {
-  const app = createApp();
+  let app: Awaited<ReturnType<typeof createApp>>;
+
+  beforeAll(async () => {
+    app = await createApp();
+  });
 
   beforeEach(() => {
     resetOtpStateForTests();

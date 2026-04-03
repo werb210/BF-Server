@@ -6,8 +6,9 @@ import jwt from "jsonwebtoken";
 
 import { getEnv } from "./config/env";
 import { runQuery } from "./db";
-import { deps } from "./system/deps";
-import { incErr, incReq, metrics } from "./system/metrics";
+import { wrap } from "@/lib/routeWrap";
+import { deps } from "@/system/deps";
+import { incErr, incReq, metrics } from "@/system/metrics";
 
 const otpStore = new Map<string, { code: string; expires: number; attempts: number; used: boolean }>();
 const otpRequestTimestamps = new Map<string, number>();
@@ -56,10 +57,6 @@ function requireBearerToken(header?: string): string | null {
 }
 
 
-const wrap =
-  (fn: (req: Request, res: Response, next: express.NextFunction) => unknown | Promise<unknown>) =>
-  (req: Request, res: Response, next: express.NextFunction) =>
-    Promise.resolve(fn(req, res, next)).catch(next);
 function verifyJwtToken(token: string): boolean {
   const secret = process.env.JWT_SECRET || getEnv().JWT_SECRET;
   if (!secret) {

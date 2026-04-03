@@ -47,6 +47,7 @@ describe("server persistence e2e", () => {
     leads.length = 0;
     calls.length = 0;
     deps.db.ready = true;
+    deps.db.client = pool;
 
     vi.spyOn(pool, "query").mockImplementation(async (text: any, params?: any[]) => {
       const sql = String(text).toLowerCase().replace(/\s+/g, " ").trim();

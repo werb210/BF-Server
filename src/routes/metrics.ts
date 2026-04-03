@@ -1,18 +1,16 @@
-import { Router } from 'express';
+import type { Request, Response } from "express";
+import { Router } from "express";
 
-const router = Router();
+import { getMetrics } from "@/system/metrics";
 
-let requestCount = 0;
-
-export function trackRequest() {
-  requestCount++;
+export function metricsRoute(_req: Request, res: Response) {
+  return res.json({
+    status: "ok",
+    data: getMetrics(),
+  });
 }
 
-router.get('/metrics', (_req: any, res: any) => {
-  res["json"]({
-    uptime: process.uptime(),
-    requests: requestCount
-  });
-});
+const router = Router();
+router.get("/metrics", metricsRoute);
 
 export default router;

@@ -1,21 +1,25 @@
-const counters = {
-  requests: 0,
-  errors: 0,
-};
+import { deps } from "@/system/deps";
 
-export function incReq(): void {
-  counters.requests += 1;
+export function trackRequest() {
+  deps.metrics.requests++;
 }
 
-export function incErr(): void {
-  counters.errors += 1;
+export function trackError() {
+  deps.metrics.errors++;
 }
 
-export function metrics() {
-  return { ...counters };
+export function getMetrics() {
+  return {
+    requests: deps.metrics.requests,
+    errors: deps.metrics.errors,
+  };
 }
 
-export function resetMetrics(): void {
-  counters.requests = 0;
-  counters.errors = 0;
+export function resetMetrics() {
+  deps.metrics.requests = 0;
+  deps.metrics.errors = 0;
 }
+
+export const incReq = trackRequest;
+export const incErr = trackError;
+export const metrics = getMetrics;

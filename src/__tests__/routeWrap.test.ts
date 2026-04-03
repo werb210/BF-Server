@@ -1,5 +1,5 @@
-import type { Request, Response } from "express";
-import { describe, expect, it } from "vitest";
+import type { NextFunction, Request, Response } from "express";
+import { describe, expect, it, vi } from "vitest";
 
 import { wrap } from "../lib/routeWrap";
 
@@ -22,20 +22,19 @@ function createMockRes(): Response & { body?: unknown; statusCode?: number } {
 }
 
 describe("routeWrap handling", () => {
-  it("returns simple error shape for thrown errors", async () => {
+  it("forwards errors to next for centralized handling", async () => {
     const handler = wrap(async () => {
       throw Object.assign(new Error("BROKEN_HANDLER"), { status: 418 });
     });
 
     const req = { rid: "test-rid" } as Request;
     const res = createMockRes();
+    const next = vi.fn() as NextFunction;
 
-    await handler(req, res);
+    await handler(req, res, next);
 
-    expect(res.statusCode).toBe(418);
-    expect(res.body).toEqual({
-      error: "BROKEN_HANDLER",
-    });
+    expect(next).toHaveBeenCalledTimes(1);
+    expect((next as any).mock.calls[0][0].message).toBe("BROKEN_HANDLER");
   });
 
   it("does not auto-send when handler resolves undefined", async () => {
@@ -43,8 +42,9 @@ describe("routeWrap handling", () => {
 
     const req = {} as Request;
     const res = createMockRes();
+    const next = vi.fn() as NextFunction;
 
-    await handler(req, res);
+    await handler(req, res, next);
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toBeUndefined();
@@ -57,8 +57,9 @@ describe("routeWrap handling", () => {
 
     const req = {} as Request;
     const res = createMockRes();
+    const next = vi.fn() as NextFunction;
 
-    await handler(req, res);
+    await handler(req, res, next);
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({
