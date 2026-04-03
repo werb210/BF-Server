@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth";
 import { endpoints } from "../contracts/endpoints";
-import authRoutes from "./auth";
 import { ok } from "../lib/response";
 
 const router = Router();
@@ -27,8 +26,6 @@ function updateCallStatusHandler(_req: any, res: any) {
 function sendMessageHandler(_req: any, res: any) {
   return ok(res, { reply: "ok" });
 }
-
-router.use("/auth", authRoutes);
 
 router.post(routeFromContract(endpoints.createLead), requireAuth, createLeadHandler);
 router.post(routeFromContract(endpoints.startCall), requireAuth, startCallHandler);
