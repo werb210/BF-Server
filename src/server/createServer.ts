@@ -1,8 +1,10 @@
 import { createApp } from "../app";
-import type { Deps } from "../system/deps";
 
-export function createServer(deps: Deps) {
-  return createApp(deps);
+/**
+ * Canonical server factory — NO ARGS
+ */
+export function createServer() {
+  return createApp();
 }
 
 export default createServer;

@@ -2,7 +2,6 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { listRouteInventory, type RouteEntry } from "../debug/printRoutes";
 import { ENV } from "../config";
-import { deps } from "./deps";
 
 export type NormalizedRouteEntry = {
   method: string;
@@ -52,7 +51,7 @@ async function loadAppBuilder() {
 
 export async function buildNormalizedRouteEntries(): Promise<NormalizedRouteEntry[]> {
   const createApp = await loadAppBuilder();
-  const app = createApp(deps);
+  const app = createApp();
   const routeInventory = listRouteInventory(app);
 
   const normalized = routeInventory.flatMap(({ routerBase, routes }) =>

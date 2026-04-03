@@ -1,9 +1,8 @@
 import { createServer } from "./createServer";
 import { bootstrap } from "../startup/bootstrap";
-import { deps } from "../system/deps";
 
 export async function startServer() {
-  const server = createServer(deps);
+  const server = createServer();
 
   // NON-BLOCKING BOOTSTRAP
   setImmediate(() => {

@@ -14,7 +14,7 @@ function createTestDeps(): Deps {
 
 describe("server:readiness:e2e", () => {
   const deps = createTestDeps();
-  const app = createApp(deps);
+  const app = createApp();
 
   beforeEach(() => {
     resetOtpStateForTests();
