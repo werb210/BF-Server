@@ -46,13 +46,13 @@ async function loadAppBuilder() {
   ENV.TWILIO_API_KEY_SID ??= "SKtest";
   ENV.TWILIO_API_SECRET ??= "test-secret";
 
-  const { buildAppWithApiRoutes } = await import("../app.js");
-  return buildAppWithApiRoutes;
+  const { createApp } = await import("../app.js");
+  return createApp;
 }
 
 export async function buildNormalizedRouteEntries(): Promise<NormalizedRouteEntry[]> {
-  const buildAppWithApiRoutes = await loadAppBuilder();
-  const app = buildAppWithApiRoutes(deps);
+  const createApp = await loadAppBuilder();
+  const app = createApp(deps);
   const routeInventory = listRouteInventory(app);
 
   const normalized = routeInventory.flatMap(({ routerBase, routes }) =>
