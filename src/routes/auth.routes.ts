@@ -4,9 +4,10 @@ import { signJwt, verifyJwt } from "../auth/jwt";
 import { requireAuth } from "../middleware/auth";
 import { checkOtp, sendOtp } from "../services/otp";
 
-declare global {
-  var __resetOtpStateForTests: (() => void) | undefined;
+interface GlobalThis {
+  __resetOtpStateForTests?: () => void;
 }
+
 
 const router = Router();
 
