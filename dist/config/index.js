@@ -3,15 +3,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.COMMIT_SHA = exports.assertEnv = exports.validateServerEnv = exports.ENV = exports.config = exports.env = void 0;
 const schema_1 = require("./schema");
 const api_1 = require("./api");
-const env_1 = require("./env");
-const { NODE_ENV } = (0, env_1.getEnv)();
-if (!process.env.OPENAI_API_KEY) {
-    console.warn("OPENAI_API_KEY missing — AI features disabled");
-}
 const parsed = schema_1.EnvSchema.parse({
-    NODE_ENV,
-    DATABASE_URL: process.env.DATABASE_URL ?? "postgres://localhost:5432/dev",
-    JWT_SECRET: (0, env_1.getEnv)().JWT_SECRET ?? "dev-secret",
+    NODE_ENV: process.env.NODE_ENV,
+    DATABASE_URL: process.env.DATABASE_URL,
+    JWT_SECRET: process.env.JWT_SECRET,
     ...process.env,
 });
 const toNumber = (value, defaultValue) => {

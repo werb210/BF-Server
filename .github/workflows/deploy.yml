@@ -24,6 +24,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Verify dist completeness
+        run: node scripts/verify-build.js
+
+      - name: Verify startup requires
+        run: node -e "require('./dist/routes'); require('./dist/routes/auth'); require('./dist/config/env');"
+
       - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3
         with:

@@ -10,22 +10,32 @@ const cors_1 = require("./middleware/cors");
 const routes_1 = __importDefault(require("./routes"));
 const auth_1 = __importDefault(require("./routes/auth"));
 const response_1 = require("./lib/response");
-function extractHost(host) {
-    if (!host)
-        return null;
-    return host.split(":")[0];
-}
-const allowedHosts = ["server.boreal.financial"];
+const env_1 = require("./config/env");
+const allowedProductionHosts = ["server.boreal.financial"];
 function createApp() {
     const app = (0, express_1.default)();
+    app.get("/health", (_req, res) => {
+        res.status(200).send("healthy");
+    });
+    app.get("/api/_int/health", (_req, res) => {
+        res.json({
+            status: "ok",
+            uptime: process.uptime(),
+        });
+    });
     app.use((req, res, next) => {
-        const host = extractHost(req.headers.host);
-        if (process.env.NODE_ENV !== "production") {
-            if (host === "localhost" || host === "127.0.0.1") {
+        if (req.path === "/health" || req.path === "/api/_int/health") {
+            return next();
+        }
+        const raw = req.headers.host || "";
+        const normalized = raw.split(":")[0];
+        const { NODE_ENV } = (0, env_1.getEnv)();
+        if (NODE_ENV !== "production") {
+            if (normalized === "localhost" || normalized === "127.0.0.1") {
                 return next();
             }
         }
-        if (!host || !allowedHosts.includes(host)) {
+        if (!allowedProductionHosts.includes(normalized)) {
             return res.status(403).send("Forbidden");
         }
         next();
@@ -38,15 +48,6 @@ function createApp() {
         res.status(200).json({
             status: "ok",
             service: "boreal-staff-server",
-        });
-    });
-    app.get("/health", (_req, res) => {
-        res.status(200).send("healthy");
-    });
-    app.get("/api/_int/health", (_req, res) => {
-        res.json({
-            status: "ok",
-            uptime: process.uptime(),
         });
     });
     app.use("/api/auth", auth_1.default);
