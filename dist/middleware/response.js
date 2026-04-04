@@ -5,7 +5,7 @@ exports.wrap = wrap;
 exports.okResponse = okResponse;
 exports.ok = okResponse;
 exports.fail = fail;
-const contracts_1 = require("@/contracts");
+const contracts_1 = require("../contracts");
 const response_1 = require("../lib/response");
 Object.defineProperty(exports, "error", { enumerable: true, get: function () { return response_1.error; } });
 function resolveRid(req) {

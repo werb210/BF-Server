@@ -42,8 +42,8 @@ exports.safeQuery = safeQuery;
 exports.ensureDb = ensureDb;
 exports.isDbReady = isDbReady;
 const dbProd = __importStar(require("./db.prod"));
-const index_1 = require("@/db/index");
-const deps_1 = require("@/system/deps");
+const index_1 = require("./db/index");
+const deps_1 = require("./system/deps");
 const dbImpl = dbProd;
 exports.pool = dbImpl.pool, exports.db = dbImpl.db, exports.fetchClient = dbImpl.fetchClient, exports.assertPoolHealthy = dbImpl.assertPoolHealthy, exports.checkDb = dbImpl.checkDb, exports.warmUpDatabase = dbImpl.warmUpDatabase, exports.fetchInstrumentedClient = dbImpl.fetchInstrumentedClient, exports.setDbTestPoolMetricsOverride = dbImpl.setDbTestPoolMetricsOverride, exports.setDbTestFailureInjection = dbImpl.setDbTestFailureInjection, exports.clearDbTestFailureInjection = dbImpl.clearDbTestFailureInjection;
 function getDb() {

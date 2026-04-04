@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const twilio_1 = __importDefault(require("twilio"));
 const config_1 = require("../config");
-const respond_1 = require("@/lib/respond");
+const respond_1 = require("../lib/respond");
 const router = (0, express_1.Router)();
 const twilioRuntime = twilio_1.default;
 router.post("/voice/incoming", (_req, res) => {

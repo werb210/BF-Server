@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.incomingCallHandler = incomingCallHandler;
-const respond_1 = require("@/lib/respond");
+const respond_1 = require("../../lib/respond");
 const twilioModule = require("twilio");
 function incomingCallHandler(_req, res) {
     const VoiceResponse = twilioModule.twiml.VoiceResponse;

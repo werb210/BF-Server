@@ -12,7 +12,7 @@ const roles_1 = require("../auth/roles");
 const errors_1 = require("../middleware/errors");
 const calls_service_1 = require("../modules/calls/calls.service");
 const toStringSafe_1 = require("../utils/toStringSafe");
-const respond_1 = require("@/lib/respond");
+const respond_1 = require("../lib/respond");
 const router = (0, express_1.Router)();
 const callStartSchema = zod_1.z.object({
     phoneNumber: zod_1.z.string().min(1),

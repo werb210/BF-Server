@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.safeApiFetch = exports.apiFetch = void 0;
-const contracts_1 = require("@/contracts");
+const contracts_1 = require("../contracts");
 const api_1 = require("../config/api");
 const buildUrl = (path) => `${api_1.API_BASE}${path}`;
 const logRequest = (method, path) => {

@@ -33,7 +33,7 @@ exports.env = {
 };
 exports.config = {
     env: parsed.NODE_ENV,
-    port: exports.env.PORT ?? 3000,
+    port: exports.env.PORT ?? 8080,
     isProduction: parsed.NODE_ENV === "production",
     logLevel: parsed.LOG_LEVEL,
     commitSha: parsed.COMMIT_SHA ?? "unknown",

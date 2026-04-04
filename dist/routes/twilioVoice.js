@@ -39,7 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importStar(require("express"));
 const twilio_1 = __importDefault(require("twilio"));
 const twilioWebhookValidation_1 = require("../middleware/twilioWebhookValidation");
-const respond_1 = require("@/lib/respond");
+const respond_1 = require("../lib/respond");
 const router = (0, express_1.Router)();
 const twilioRuntime = twilio_1.default;
 router.post("/twilio/voice", express_1.default.urlencoded({ extended: false }), twilioWebhookValidation_1.twilioWebhookValidation, (_req, res) => {

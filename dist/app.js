@@ -5,30 +5,16 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createApp = createApp;
 exports.resetOtpStateForTests = resetOtpStateForTests;
-const cors_1 = __importDefault(require("cors"));
 const express_1 = __importDefault(require("express"));
+const cors_1 = require("./middleware/cors");
 const routes_1 = __importDefault(require("./routes"));
 const response_1 = require("./lib/response");
-const allowed = [
-    "https://www.borealfinancial.ca",
-    "https://boreal.financial",
-    "https://portal.boreal.financial",
-    "https://client.boreal.financial",
-];
 function createApp() {
     const app = (0, express_1.default)();
     app.disable("x-powered-by");
+    app.set("trust proxy", 1);
     app.use(express_1.default.json());
-    app.use((0, cors_1.default)({
-        origin: (origin, cb) => {
-            if (!origin)
-                return cb(null, true);
-            if (allowed.includes(origin))
-                return cb(null, true);
-            return cb(new Error("Not allowed"), false);
-        },
-        credentials: true,
-    }));
+    app.use(cors_1.corsMiddleware);
     app.get("/health", (_req, res) => {
         res.status(200).send("ok");
     });
@@ -38,6 +24,7 @@ function createApp() {
             uptime: process.uptime(),
         });
     });
+    app.use("/api/auth", require("./routes/auth").default);
     app.use("/api/v1", routes_1.default);
     app.use((_req, res) => (0, response_1.fail)(res, "not_found", 404));
     return app;
