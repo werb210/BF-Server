@@ -4,11 +4,14 @@ import { getEnv } from "./env";
 
 const { NODE_ENV } = getEnv();
 
+if (!process.env.OPENAI_API_KEY) {
+  console.warn("OPENAI_API_KEY missing — AI features disabled");
+}
+
 const parsed = EnvSchema.parse({
   NODE_ENV,
   DATABASE_URL: process.env.DATABASE_URL ?? "postgres://localhost:5432/dev",
   JWT_SECRET: getEnv().JWT_SECRET ?? "dev-secret",
-  OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "dummy",
   ...process.env,
 });
 
@@ -61,7 +64,7 @@ export const config = {
     secret: parsed.JWT_SECRET,
   },
   openai: {
-    apiKey: parsed.OPENAI_API_KEY,
+    apiKey: process.env.OPENAI_API_KEY,
     chatModel: parsed.OPENAI_CHAT_MODEL,
     embedModel: parsed.OPENAI_EMBED_MODEL,
     model: parsed.OPENAI_MODEL ?? "gpt-4o-mini",

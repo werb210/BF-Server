@@ -10,17 +10,22 @@ const cors_1 = require("./middleware/cors");
 const routes_1 = __importDefault(require("./routes"));
 const auth_1 = __importDefault(require("./routes/auth"));
 const response_1 = require("./lib/response");
+function extractHost(host) {
+    if (!host)
+        return null;
+    return host.split(":")[0];
+}
+const allowedHosts = ["server.boreal.financial"];
 function createApp() {
     const app = (0, express_1.default)();
     app.use((req, res, next) => {
-        const host = req.headers.host || "";
-        const allowedHosts = [
-            "server.boreal.financial",
-        ];
+        const host = extractHost(req.headers.host);
         if (process.env.NODE_ENV !== "production") {
-            allowedHosts.push("localhost:3000", "127.0.0.1:3000");
+            if (host === "localhost" || host === "127.0.0.1") {
+                return next();
+            }
         }
-        if (!allowedHosts.includes(host)) {
+        if (!host || !allowedHosts.includes(host)) {
             return res.status(403).send("Forbidden");
         }
         next();

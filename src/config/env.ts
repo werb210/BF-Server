@@ -3,7 +3,7 @@ import { z } from "zod";
 const schema = z.object({
   PORT: z.string().optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  JWT_SECRET: z.string().min(1),
+  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 chars"),
 });
 
 let cached: z.infer<typeof schema> | undefined;

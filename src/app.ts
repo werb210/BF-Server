@@ -5,24 +5,26 @@ import routes from "./routes";
 import authRouter from "./routes/auth";
 import { fail } from "./lib/response";
 
+function extractHost(host: string | undefined): string | null {
+  if (!host) return null;
+  return host.split(":")[0];
+}
+
+const allowedHosts = ["server.boreal.financial"];
+
 export function createApp() {
   const app = express();
 
   app.use((req, res, next) => {
-    const host = req.headers.host || "";
-
-    const allowedHosts = [
-      "server.boreal.financial",
-    ];
+    const host = extractHost(req.headers.host);
 
     if (process.env.NODE_ENV !== "production") {
-      allowedHosts.push(
-        "localhost:3000",
-        "127.0.0.1:3000",
-      );
+      if (host === "localhost" || host === "127.0.0.1") {
+        return next();
+      }
     }
 
-    if (!allowedHosts.includes(host)) {
+    if (!host || !allowedHosts.includes(host)) {
       return res.status(403).send("Forbidden");
     }
 

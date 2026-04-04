@@ -5,11 +5,13 @@ const schema_1 = require("./schema");
 const api_1 = require("./api");
 const env_1 = require("./env");
 const { NODE_ENV } = (0, env_1.getEnv)();
+if (!process.env.OPENAI_API_KEY) {
+    console.warn("OPENAI_API_KEY missing — AI features disabled");
+}
 const parsed = schema_1.EnvSchema.parse({
     NODE_ENV,
     DATABASE_URL: process.env.DATABASE_URL ?? "postgres://localhost:5432/dev",
     JWT_SECRET: (0, env_1.getEnv)().JWT_SECRET ?? "dev-secret",
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "dummy",
     ...process.env,
 });
 const toNumber = (value, defaultValue) => {
@@ -59,7 +61,7 @@ exports.config = {
         secret: parsed.JWT_SECRET,
     },
     openai: {
-        apiKey: parsed.OPENAI_API_KEY,
+        apiKey: process.env.OPENAI_API_KEY,
         chatModel: parsed.OPENAI_CHAT_MODEL,
         embedModel: parsed.OPENAI_EMBED_MODEL,
         model: parsed.OPENAI_MODEL ?? "gpt-4o-mini",
