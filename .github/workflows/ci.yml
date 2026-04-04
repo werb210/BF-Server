@@ -30,5 +30,8 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Verify dist completeness
+        run: node scripts/verify-build.js
+
       - name: Test
         run: npm run test
