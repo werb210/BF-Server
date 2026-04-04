@@ -8,13 +8,19 @@ exports.resetOtpStateForTests = resetOtpStateForTests;
 const express_1 = __importDefault(require("express"));
 const cors_1 = require("./middleware/cors");
 const routes_1 = __importDefault(require("./routes"));
+const auth_1 = __importDefault(require("./routes/auth"));
 const response_1 = require("./lib/response");
 function createApp() {
     const app = (0, express_1.default)();
-    const allowedHost = "server.boreal.financial";
     app.use((req, res, next) => {
-        const host = req.headers.host;
-        if (!host || host !== allowedHost) {
+        const host = req.headers.host || "";
+        const allowedHosts = [
+            "server.boreal.financial",
+        ];
+        if (process.env.NODE_ENV !== "production") {
+            allowedHosts.push("localhost:3000", "127.0.0.1:3000");
+        }
+        if (!allowedHosts.includes(host)) {
             return res.status(403).send("Forbidden");
         }
         next();
@@ -38,7 +44,7 @@ function createApp() {
             uptime: process.uptime(),
         });
     });
-    app.use("/api/auth", require("./routes/auth").default);
+    app.use("/api/auth", auth_1.default);
     app.use("/api/v1", routes_1.default);
     app.use((_req, res) => (0, response_1.fail)(res, "not_found", 404));
     return app;

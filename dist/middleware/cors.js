@@ -13,7 +13,9 @@ exports.corsMiddleware = (0, cors_1.default)({
     origin: (origin, callback) => {
         if (!origin)
             return callback(null, true);
-        if (allowedOrigins.includes(origin) || origin.includes("localhost")) {
+        const isLocalhost = process.env.NODE_ENV !== "production" &&
+            /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin || "");
+        if (allowedOrigins.includes(origin) || isLocalhost) {
             return callback(null, true);
         }
         return callback(new Error(`CORS blocked: ${origin}`));
