@@ -15,8 +15,14 @@ function createApp() {
     app.set("trust proxy", 1);
     app.use(express_1.default.json());
     app.use(cors_1.corsMiddleware);
+    app.get("/", (_req, res) => {
+        res.status(200).json({
+            status: "ok",
+            service: "boreal-staff-server",
+        });
+    });
     app.get("/health", (_req, res) => {
-        res.status(200).send("ok");
+        res.status(200).send("healthy");
     });
     app.get("/api/_int/health", (_req, res) => {
         res.json({

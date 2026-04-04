@@ -12,8 +12,15 @@ export function createApp() {
   app.use(express.json());
   app.use(corsMiddleware);
 
+  app.get("/", (_req, res) => {
+    res.status(200).json({
+      status: "ok",
+      service: "boreal-staff-server",
+    });
+  });
+
   app.get("/health", (_req, res) => {
-    res.status(200).send("ok");
+    res.status(200).send("healthy");
   });
 
   app.get("/api/_int/health", (_req, res) => {
