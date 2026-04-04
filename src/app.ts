@@ -23,7 +23,11 @@ export function createApp() {
   });
 
   app.use((req, res, next) => {
-    if (req.path === "/health" || req.path === "/api/_int/health") {
+    if (
+      req.path === "/" ||
+      req.path === "/health" ||
+      req.path === "/api/_int/health"
+    ) {
       return next();
     }
 
