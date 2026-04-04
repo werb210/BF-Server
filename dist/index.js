@@ -1,19 +1,19 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const app_1 = __importDefault(require("./app"));
-const env_1 = require("./config/env");
-const init_1 = require("./db/init");
-const ioredis_1 = __importDefault(require("ioredis"));
-console.log("=== BOOT START ===");
+console.log("BOOT START");
 process.on("uncaughtException", (err) => {
-    console.error("UNCAUGHT EXCEPTION:", err);
+    console.error("UNCAUGHT", err);
 });
 process.on("unhandledRejection", (err) => {
-    console.error("UNHANDLED REJECTION:", err);
+    console.error("UNHANDLED", err);
 });
+console.log("LOADING ENV...");
+const { validateRuntimeEnvOrExit } = require("./config/env");
+console.log("LOADING APP...");
+const loadedApp = require("./app");
+const app = loadedApp.default || loadedApp;
+const { initDb } = require("./db/init");
+const Redis = require("ioredis");
+console.log("STARTING SERVER...");
 function runStartupSelfTest() {
     try {
         require("./routes");
@@ -25,7 +25,7 @@ function runStartupSelfTest() {
         console.error(`Startup self-test failed: ${message}`);
     }
 }
-(0, env_1.validateRuntimeEnvOrExit)();
+validateRuntimeEnvOrExit();
 runStartupSelfTest();
 void (async () => {
     if (process.env.SKIP_DATABASE === "true") {
@@ -33,7 +33,7 @@ void (async () => {
     }
     else {
         try {
-            await (0, init_1.initDb)();
+            await initDb();
             console.log("DB CONNECTED");
         }
         catch (err) {
@@ -43,7 +43,7 @@ void (async () => {
     let redis;
     try {
         if (process.env.REDIS_URL) {
-            redis = new ioredis_1.default(process.env.REDIS_URL);
+            redis = new Redis(process.env.REDIS_URL);
             console.log("REDIS CONNECTING");
         }
         else {
@@ -55,7 +55,12 @@ void (async () => {
     }
     void redis;
     const port = Number(process.env.PORT) || 8080;
-    app_1.default.listen(port, "0.0.0.0", () => {
+    const startGuard = setTimeout(() => {
+        console.error("SERVER DID NOT START — EXITING");
+        process.exit(1);
+    }, 15000);
+    app.listen(port, "0.0.0.0", () => {
+        clearTimeout(startGuard);
         console.log(`SERVER STARTED ON ${port}`);
     });
 })();
