@@ -1,17 +1,10 @@
 import { EnvSchema } from "./schema";
 import { API_BASE } from "./api";
-import { getEnv } from "./env";
-
-const { NODE_ENV } = getEnv();
-
-if (!process.env.OPENAI_API_KEY) {
-  console.warn("OPENAI_API_KEY missing — AI features disabled");
-}
 
 const parsed = EnvSchema.parse({
-  NODE_ENV,
-  DATABASE_URL: process.env.DATABASE_URL ?? "postgres://localhost:5432/dev",
-  JWT_SECRET: getEnv().JWT_SECRET ?? "dev-secret",
+  NODE_ENV: process.env.NODE_ENV,
+  DATABASE_URL: process.env.DATABASE_URL,
+  JWT_SECRET: process.env.JWT_SECRET,
   ...process.env,
 });
 
