@@ -9,9 +9,9 @@ export function createApp() {
   const allowedHost = "server.boreal.financial";
 
   app.use((req, res, next) => {
-    const host = req.headers.host;
+    const host = req.headers.host || "";
 
-    if (!host || host !== allowedHost) {
+    if (!host.startsWith(allowedHost)) {
       return res.status(403).send("Forbidden");
     }
 
