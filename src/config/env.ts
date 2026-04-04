@@ -6,7 +6,7 @@ const envSchema = z.object({
   JWT_SECRET: z
     .string()
     .min(32, "JWT_SECRET must be at least 32 chars")
-    .refine((value) => !value.includes("REPLACE"), "invalid jwt secret"),
+    .refine((value) => !value.includes("REPLACE"), { message: "invalid jwt secret" }),
   OPENAI_API_KEY: z.string().min(10, "OPENAI_API_KEY is required"),
 });
 

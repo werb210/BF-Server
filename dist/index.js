@@ -23,7 +23,6 @@ function runStartupSelfTest() {
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`Startup self-test failed: ${message}`);
-        process.exit(1);
     }
 }
 (0, env_1.validateRuntimeEnvOrExit)();

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "dist/index.js",
   "scripts": {
-    "build": "rm -rf dist && tsc && tsc-alias",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && tsc-alias",
     "start": "node dist/index.js",
     "start:debug": "node --trace-warnings --unhandled-rejections=strict dist/index.js",
     "typecheck": "tsc --noEmit",
