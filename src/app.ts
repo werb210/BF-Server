@@ -4,27 +4,40 @@ import { corsMiddleware } from "./middleware/cors";
 import routes from "./routes";
 import authRouter from "./routes/auth";
 import { fail } from "./lib/response";
+import { getEnv } from "./config/env";
 
-function extractHost(host: string | undefined): string | null {
-  if (!host) return null;
-  return host.split(":")[0];
-}
-
-const allowedHosts = ["server.boreal.financial"];
+const allowedProductionHosts: string[] = ["server.boreal.financial"];
 
 export function createApp() {
   const app = express();
 
-  app.use((req, res, next) => {
-    const host = extractHost(req.headers.host);
+  app.get("/health", (_req, res) => {
+    res.status(200).send("healthy");
+  });
 
-    if (process.env.NODE_ENV !== "production") {
-      if (host === "localhost" || host === "127.0.0.1") {
+  app.get("/api/_int/health", (_req, res) => {
+    res.json({
+      status: "ok",
+      uptime: process.uptime(),
+    });
+  });
+
+  app.use((req, res, next) => {
+    if (req.path === "/health" || req.path === "/api/_int/health") {
+      return next();
+    }
+
+    const raw = req.headers.host || "";
+    const normalized = raw.split(":")[0];
+    const { NODE_ENV } = getEnv();
+
+    if (NODE_ENV !== "production") {
+      if (normalized === "localhost" || normalized === "127.0.0.1") {
         return next();
       }
     }
 
-    if (!host || !allowedHosts.includes(host)) {
+    if (!allowedProductionHosts.includes(normalized)) {
       return res.status(403).send("Forbidden");
     }
 
@@ -40,17 +53,6 @@ export function createApp() {
     res.status(200).json({
       status: "ok",
       service: "boreal-staff-server",
-    });
-  });
-
-  app.get("/health", (_req, res) => {
-    res.status(200).send("healthy");
-  });
-
-  app.get("/api/_int/health", (_req, res) => {
-    res.json({
-      status: "ok",
-      uptime: process.uptime(),
     });
   });
 

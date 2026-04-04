@@ -2,11 +2,11 @@ import { z } from "zod";
 
 const schema = z.object({
   PORT: z.string().optional(),
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  NODE_ENV: z.enum(["development", "test", "production"]).optional(),
   JWT_SECRET: z
     .string()
     .min(32, "JWT_SECRET must be at least 32 chars")
-    .refine((value) => !value.includes("REPLACE_"), "JWT_SECRET contains insecure placeholder text"),
+    .refine((value) => !value.includes("REPLACE"), "invalid jwt secret"),
   OPENAI_API_KEY: z.string().min(10, "OPENAI_API_KEY is required"),
 });
 
@@ -23,6 +23,16 @@ export function getEnv() {
   }
 
   return cached;
+}
+
+export function validateRuntimeEnvOrExit() {
+  try {
+    return getEnv();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Environment validation failed: ${message}`);
+    process.exit(1);
+  }
 }
 
 export function resetEnvCacheForTests() {

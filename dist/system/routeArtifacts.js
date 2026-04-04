@@ -43,7 +43,7 @@ exports.exportServerRoutesArtifact = exportServerRoutesArtifact;
 const promises_1 = require("node:fs/promises");
 const node_path_1 = __importDefault(require("node:path"));
 const printRoutes_1 = require("../debug/printRoutes");
-const config_1 = require("../config");
+const env_1 = require("../config/env");
 exports.DEFAULT_ROUTE_ARTIFACT_PATH = "artifacts/server-routes.json";
 function normalizeRoutePath(routePath) {
     if (!routePath || routePath === "//") {
@@ -61,17 +61,7 @@ function toKey(route) {
     return `${route.method} ${route.path} ${route.source ?? ""}`;
 }
 async function loadAppBuilder() {
-    if (!config_1.ENV.NODE_ENV) {
-        config_1.ENV.NODE_ENV = "test";
-    }
-    if (!config_1.ENV.JWT_SECRET) {
-        config_1.ENV.JWT_SECRET = "route-artifacts-secret";
-    }
-    config_1.ENV.OPENAI_API_KEY ?? (config_1.ENV.OPENAI_API_KEY = "test-openai-key");
-    config_1.ENV.TWILIO_ACCOUNT_SID ?? (config_1.ENV.TWILIO_ACCOUNT_SID = "ACtest");
-    config_1.ENV.TWILIO_AUTH_TOKEN ?? (config_1.ENV.TWILIO_AUTH_TOKEN = "test-token");
-    config_1.ENV.TWILIO_API_KEY_SID ?? (config_1.ENV.TWILIO_API_KEY_SID = "SKtest");
-    config_1.ENV.TWILIO_API_SECRET ?? (config_1.ENV.TWILIO_API_SECRET = "test-secret");
+    (0, env_1.getEnv)();
     const { createApp } = await Promise.resolve().then(() => __importStar(require("../app.js")));
     return createApp;
 }

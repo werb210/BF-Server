@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { listRouteInventory, type RouteEntry } from "../debug/printRoutes";
-import { ENV } from "../config";
+import { getEnv } from "../config/env";
 
 export type NormalizedRouteEntry = {
   method: string;
@@ -33,17 +33,7 @@ function toKey(route: NormalizedRouteEntry): string {
 }
 
 async function loadAppBuilder() {
-  if (!ENV.NODE_ENV) {
-    ENV.NODE_ENV = "test";
-  }
-  if (!ENV.JWT_SECRET) {
-    ENV.JWT_SECRET = "route-artifacts-secret";
-  }
-  ENV.OPENAI_API_KEY ??= "test-openai-key";
-  ENV.TWILIO_ACCOUNT_SID ??= "ACtest";
-  ENV.TWILIO_AUTH_TOKEN ??= "test-token";
-  ENV.TWILIO_API_KEY_SID ??= "SKtest";
-  ENV.TWILIO_API_SECRET ??= "test-secret";
+  getEnv();
 
   const { createApp } = await import("../app.js");
   return createApp;
