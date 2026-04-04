@@ -1,17 +1,24 @@
-import app from "./app";
-import { validateRuntimeEnvOrExit } from "./config/env";
-import { initDb } from "./db/init";
-import Redis from "ioredis";
-
-console.log("=== BOOT START ===");
+console.log("BOOT START");
 
 process.on("uncaughtException", (err) => {
-  console.error("UNCAUGHT EXCEPTION:", err);
+  console.error("UNCAUGHT", err);
 });
 
 process.on("unhandledRejection", (err) => {
-  console.error("UNHANDLED REJECTION:", err);
+  console.error("UNHANDLED", err);
 });
+
+console.log("LOADING ENV...");
+const { validateRuntimeEnvOrExit } = require("./config/env");
+
+console.log("LOADING APP...");
+const loadedApp = require("./app");
+const app = loadedApp.default || loadedApp;
+
+const { initDb } = require("./db/init");
+const Redis = require("ioredis");
+
+console.log("STARTING SERVER...");
 
 function runStartupSelfTest() {
   try {
@@ -56,7 +63,13 @@ void (async () => {
 
   const port = Number(process.env.PORT) || 8080;
 
+  const startGuard = setTimeout(() => {
+    console.error("SERVER DID NOT START — EXITING");
+    process.exit(1);
+  }, 15000);
+
   app.listen(port, "0.0.0.0", () => {
+    clearTimeout(startGuard);
     console.log(`SERVER STARTED ON ${port}`);
   });
 })();
