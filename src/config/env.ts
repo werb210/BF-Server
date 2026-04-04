@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const schema = z.object({
+const envSchema = z.object({
   PORT: z.string().optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).optional(),
   JWT_SECRET: z
@@ -10,29 +10,35 @@ const schema = z.object({
   OPENAI_API_KEY: z.string().min(10, "OPENAI_API_KEY is required"),
 });
 
-let cached: z.infer<typeof schema> | undefined;
+let cached: z.infer<typeof envSchema> | undefined;
 
 export function getEnv() {
   if (!cached) {
-    cached = schema.parse({
+    const safeEnv = envSchema.safeParse({
       PORT: process.env.PORT,
       NODE_ENV: process.env.NODE_ENV,
       JWT_SECRET: process.env.JWT_SECRET,
       OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     });
+
+    if (!safeEnv.success) {
+      console.error("ENV VALIDATION FAILED:", safeEnv.error.flatten());
+      cached = {
+        PORT: process.env.PORT,
+        NODE_ENV: process.env.NODE_ENV as "development" | "test" | "production" | undefined,
+        JWT_SECRET: process.env.JWT_SECRET ?? "",
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
+      };
+    } else {
+      cached = safeEnv.data;
+    }
   }
 
   return cached;
 }
 
 export function validateRuntimeEnvOrExit() {
-  try {
-    return getEnv();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`Environment validation failed: ${message}`);
-    process.exit(1);
-  }
+  return getEnv();
 }
 
 export function resetEnvCacheForTests() {

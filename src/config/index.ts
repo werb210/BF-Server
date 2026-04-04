@@ -1,12 +1,22 @@
 import { EnvSchema } from "./schema";
 import { API_BASE } from "./api";
 
-const parsed = EnvSchema.parse({
+const safeEnv = EnvSchema.safeParse({
   NODE_ENV: process.env.NODE_ENV,
   DATABASE_URL: process.env.DATABASE_URL,
   JWT_SECRET: process.env.JWT_SECRET,
   ...process.env,
 });
+
+if (!safeEnv.success) {
+  console.error("ENV VALIDATION FAILED:", safeEnv.error.flatten());
+}
+
+const parsed = {
+  ...(safeEnv.success ? safeEnv.data : process.env),
+  DATABASE_URL: process.env.DATABASE_URL ?? "",
+  JWT_SECRET: process.env.JWT_SECRET ?? "",
+} as Record<string, string | undefined>;
 
 const toNumber = (value: string | undefined, defaultValue: number): number => {
   if (!value) return defaultValue;
@@ -44,7 +54,7 @@ export const config = {
     testMode: parsed.TEST_MODE,
   },
   auth: {
-    jwtSecret: parsed.JWT_SECRET,
+    jwtSecret: parsed.JWT_SECRET ?? "",
     debugOtpPhone: parsed.AUTH_DEBUG_OTP_PHONE,
     otpHashSalt: parsed.OTP_HASH_SALT,
     testOtpCode: parsed.TEST_OTP_CODE,
@@ -54,7 +64,7 @@ export const config = {
     jwtClockSkewSeconds: toNumber(parsed.JWT_CLOCK_SKEW_SECONDS, 0),
   },
   jwt: {
-    secret: parsed.JWT_SECRET,
+    secret: parsed.JWT_SECRET ?? "",
   },
   openai: {
     apiKey: process.env.OPENAI_API_KEY,
@@ -73,7 +83,7 @@ export const config = {
     url: parsed.REDIS_URL ?? "",
   },
   db: {
-    url: parsed.DATABASE_URL,
+    url: parsed.DATABASE_URL ?? "",
     skip: parsed.SKIP_DB_CONNECTION === "true",
     host: parsed.DB_HOST,
     ssl: parsed.DB_SSL,
