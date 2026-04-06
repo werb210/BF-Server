@@ -1,22 +1,17 @@
-import { fileTypeFromBuffer } from "file-type";
 import { AppError } from "../middleware/errors";
-import { config } from "../config";
 
-const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
+const allowedMagic = [
+  { mime: "application/pdf", sig: Buffer.from([0x25, 0x50, 0x44, 0x46]) },
+  { mime: "image/png", sig: Buffer.from([0x89, 0x50, 0x4e, 0x47]) },
+  { mime: "image/jpeg", sig: Buffer.from([0xff, 0xd8, 0xff]) },
+] as const;
 
 export async function validateFile(buffer: Buffer) {
-  const type = await fileTypeFromBuffer(buffer);
-
-  if (!type) {
-    if (config.env === "test") {
-      return { ext: "pdf", mime: "application/pdf" };
+  for (const entry of allowedMagic) {
+    if (buffer.subarray(0, entry.sig.length).equals(entry.sig)) {
+      return { ext: entry.mime.split("/")[1], mime: entry.mime };
     }
-    throw new AppError("validation_error", "Unable to detect file type.", 400);
   }
 
-  if (!allowedTypes.has(type.mime)) {
-    throw new AppError("validation_error", "Invalid file type.", 400);
-  }
-
-  return type;
+  throw new AppError("validation_error", "Invalid file type.", 400);
 }

@@ -3,7 +3,7 @@ import { deps } from "@/system/deps";
 import { resetMetrics } from "@/system/metrics";
 
 if (process.env.NODE_ENV === "test") {
-  process.env.JWT_SECRET = "test-secret";
+  process.env.JWT_SECRET = "test-secret-at-least-32-characters-long";
 }
 
 process.env.DATABASE_URL =

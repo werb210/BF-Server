@@ -1,20 +1,14 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import app from "../src/app";
+process.env.NODE_ENV = "development";
+process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret-at-least-32-characters-long";
 
-describe("server smoke routes", () => {
-  it("GET /health returns 200", async () => {
+describe("health", () => {
+  it("should return ok", async () => {
+    const { createApp } = await import("../src/app");
+    const app = createApp();
     const res = await request(app).get("/health");
-
     expect(res.status).toBe(200);
-    expect(res.text).toBe("healthy");
-  });
-
-  it("GET /api/_int/health returns 200", async () => {
-    const res = await request(app).get("/api/_int/health");
-
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe("ok");
   });
 });

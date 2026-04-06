@@ -1,3 +1,2 @@
-import { startServer } from "./index";
-
-void startServer();
+// Deprecated entry point. Use src/index.ts.
+export {};

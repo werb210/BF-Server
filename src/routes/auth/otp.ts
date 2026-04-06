@@ -2,7 +2,7 @@ import express, { type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
 
 import { getRedis } from "../../lib/redis.js";
-import { getEnv } from "../../config/env";
+import { env } from "../../config/env";
 
 const router = express.Router();
 
@@ -29,7 +29,11 @@ const isCode = (value: unknown): value is string => (
   typeof value === "string" && /^\d{6}$/.test(value.trim())
 );
 
-router.post("/start", async (req: Request, res: Response) => {
+export function resetOtpStateForTests() {
+  twilioClient = null;
+}
+
+router.post("/otp/start", async (req: Request, res: Response) => {
   const { phone } = req.body as { phone?: unknown };
 
   if (!isPhone(phone)) {
@@ -59,7 +63,7 @@ router.post("/start", async (req: Request, res: Response) => {
   return res.status(200).json({ status: "ok", data: { sent: true } });
 });
 
-router.post("/verify", async (req: Request, res: Response) => {
+router.post("/otp/verify", async (req: Request, res: Response) => {
   const { phone, code } = req.body as { phone?: unknown; code?: unknown };
 
   if (!isPhone(phone) || !isCode(code)) {
@@ -73,19 +77,18 @@ router.post("/verify", async (req: Request, res: Response) => {
     return res.status(400).json({ error: "Invalid code" });
   }
 
-  const { JWT_SECRET } = getEnv();
-  if (!JWT_SECRET) {
-    return res.status(401).json({ error: "unauthorized" });
-  }
   const token = jwt.sign(
     { phone },
-    JWT_SECRET,
+    env.JWT_SECRET,
     { expiresIn: "1d" },
   );
 
   await redis.del(`otp:${phone}`);
 
-  return res.status(200).json({ token });
+  return res.status(200).json({
+    success: true,
+    token,
+  });
 });
 
 export default router;

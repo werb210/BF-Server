@@ -1,3 +1,2 @@
-import { startServer } from "./index";
-
-void startServer();
+// Deprecated bootstrap. Use src/index.ts.
+export {};
