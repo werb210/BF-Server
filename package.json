@@ -3,5 +3,21 @@
     "build": "rm -rf dist && tsc -p tsconfig.build.json && tsc-alias",
     "start": "node dist/index.js",
     "postinstall": "npm run build"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "ioredis": "^5.10.1",
+    "openai": "^6.33.0",
+    "pg": "^8.20.0",
+    "uuid": "^13.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.5.2",
+    "@types/uuid": "^10.0.0",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^6.0.2"
   }
 }
