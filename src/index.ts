@@ -61,7 +61,9 @@ void (async () => {
 
   void redis;
 
+  console.log("PORT ENV:", process.env.PORT ?? "(undefined)");
   const port = Number(process.env.PORT) || 8080;
+  console.log("PORT BOUND:", port);
 
   const startGuard = setTimeout(() => {
     console.error("SERVER DID NOT START — EXITING");
