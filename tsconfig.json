@@ -12,9 +12,17 @@
     ],
     "moduleResolution": "node",
     "ignoreDeprecations": "6.0",
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true
   },
   "include": [
     "src/**/*"
+  ],
+  "exclude": [
+    "src/**/__tests__/**",
+    "src/**/*.test.ts",
+    "src/**/*.e2e.test.ts",
+    "src/tests/**",
+    "src/pg-runquery.d.ts"
   ]
 }
