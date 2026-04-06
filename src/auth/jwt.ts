@@ -32,11 +32,11 @@ export class AccessTokenVerificationError extends Error {
 }
 
 function requireJwtSecret(): string {
-  const secret = config.auth.jwtSecret;
-  if (!secret || typeof secret !== "string") {
+  const { JWT_SECRET } = getEnv();
+  if (!JWT_SECRET || typeof JWT_SECRET !== "string") {
     throw new AccessTokenSigningError("JWT secret is missing or invalid");
   }
-  return secret;
+  return JWT_SECRET;
 }
 
 function validatePayload(payload: unknown): asserts payload is AccessTokenPayload {

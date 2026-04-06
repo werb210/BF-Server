@@ -1,6 +1,18 @@
-import * as appInsights from "applicationinsights";
 import { config } from "../config";
 import { logInfo, logWarn } from "./logger";
+
+type AppInsightsModule = {
+  setup?: (connectionString: string) => {
+    setAutoCollectConsole: (collect: boolean, collectWarnAndError: boolean) => any;
+    setAutoCollectExceptions: (collect: boolean) => any;
+    setAutoCollectPerformance: (collect: boolean, collectExtendedMetrics: boolean) => any;
+    setAutoCollectRequests: (collect: boolean) => any;
+    setAutoCollectDependencies: (collect: boolean) => any;
+    setSendLiveMetrics: (enable: boolean) => any;
+    start: () => void;
+  };
+  defaultClient?: TelemetryClient;
+};
 
 type RequestTelemetry = {
   name: string;
@@ -40,6 +52,15 @@ type TelemetryClient = {
 let telemetryClient: TelemetryClient | null = null;
 let initialized = false;
 
+function loadAppInsights(): AppInsightsModule | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require("applicationinsights") as AppInsightsModule;
+  } catch {
+    return null;
+  }
+}
+
 function isValidConnectionString(connectionString: string): boolean {
   const match = connectionString.match(/InstrumentationKey=([0-9a-fA-F-]{36})/);
   if (!match || !match[1]) {
@@ -74,9 +95,10 @@ export function initializeAppInsights(): void {
       return;
     }
 
-    if (typeof appInsights.setup !== "function") {
+    const appInsights = loadAppInsights();
+    if (!appInsights || typeof appInsights.setup !== "function") {
       logWarn("appinsights_disabled", {
-        reason: "setup_unavailable",
+        reason: "module_missing_or_setup_unavailable",
       });
       return;
     }
@@ -91,8 +113,7 @@ export function initializeAppInsights(): void {
       .setSendLiveMetrics(false)
       .start();
 
-    telemetryClient =
-      (appInsights as { defaultClient?: TelemetryClient }).defaultClient ?? null;
+    telemetryClient = appInsights.defaultClient ?? null;
     logInfo("appinsights_initialized");
   } catch (error) {
     logWarn("appinsights_disabled", {
@@ -102,26 +123,18 @@ export function initializeAppInsights(): void {
   }
 }
 
-export function trackRequest(
-  telemetry: RequestTelemetry
-): void {
+export function trackRequest(telemetry: RequestTelemetry): void {
   telemetryClient?.trackRequest(telemetry);
 }
 
-export function trackDependency(
-  telemetry: DependencyTelemetry
-): void {
+export function trackDependency(telemetry: DependencyTelemetry): void {
   telemetryClient?.trackDependency(telemetry);
 }
 
-export function trackException(
-  telemetry: ExceptionTelemetry
-): void {
+export function trackException(telemetry: ExceptionTelemetry): void {
   telemetryClient?.trackException(telemetry);
 }
 
-export function trackEvent(
-  telemetry: EventTelemetry
-): void {
+export function trackEvent(telemetry: EventTelemetry): void {
   telemetryClient?.trackEvent?.(telemetry);
 }

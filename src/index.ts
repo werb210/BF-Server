@@ -1,40 +1,7 @@
-console.log("BOOT START");
+import app from "./app";
+import { initDb } from "./db/init";
 
-process.on("uncaughtException", (err) => {
-  console.error("UNCAUGHT", err);
-});
-
-process.on("unhandledRejection", (err) => {
-  console.error("UNHANDLED", err);
-});
-
-console.log("LOADING ENV...");
-const { validateRuntimeEnvOrExit } = require("./config/env");
-
-console.log("LOADING APP...");
-const loadedApp = require("./app");
-const app = loadedApp.default || loadedApp;
-
-const { initDb } = require("./db/init");
-const Redis = require("ioredis");
-
-console.log("STARTING SERVER...");
-
-function runStartupSelfTest() {
-  try {
-    require("./routes");
-    require("./routes/auth");
-    require("./config/env");
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`Startup self-test failed: ${message}`);
-  }
-}
-
-validateRuntimeEnvOrExit();
-runStartupSelfTest();
-
-void (async () => {
+export async function startServer() {
   if (process.env.SKIP_DATABASE === "true") {
     console.log("DB SKIPPED");
   } else {
@@ -46,30 +13,16 @@ void (async () => {
     }
   }
 
-  let redis;
-
-  try {
-    if (process.env.REDIS_URL) {
-      redis = new Redis(process.env.REDIS_URL);
-      console.log("REDIS CONNECTING");
-    } else {
-      console.log("REDIS SKIPPED");
-    }
-  } catch (err) {
-    console.error("REDIS FAILED:", err);
-  }
-
-  void redis;
-
   const port = Number(process.env.PORT) || 8080;
 
-  const startGuard = setTimeout(() => {
-    console.error("SERVER DID NOT START — EXITING");
-    process.exit(1);
-  }, 15000);
-
-  app.listen(port, "0.0.0.0", () => {
-    clearTimeout(startGuard);
+  return app.listen(port, "0.0.0.0", () => {
     console.log(`SERVER STARTED ON ${port}`);
   });
-})();
+}
+
+if (require.main === module) {
+  startServer().catch((err) => {
+    console.error("SERVER FAILED TO START", err);
+    process.exit(1);
+  });
+}

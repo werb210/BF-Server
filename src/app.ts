@@ -1,22 +1,34 @@
 import express from "express";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 
 import { corsMiddleware } from "./middleware/cors";
-import routes from "./routes";
 import authRouter from "./routes/auth";
 import { fail } from "./lib/response";
 import { getEnv } from "./config/env";
+import apiRouter from "./routes";
 
 const allowedProductionHosts: string[] = ["server.boreal.financial"];
 
 export function createApp() {
   const app = express();
 
+  app.disable("x-powered-by");
+  app.set("trust proxy", 1);
+  app.use(helmet());
+  app.use(express.json());
+  app.use(corsMiddleware);
+
+  app.get("/", (_req, res) => {
+    res.status(200).send("OK");
+  });
+
   app.get("/health", (_req, res) => {
     res.status(200).send("healthy");
   });
 
   app.get("/api/_int/health", (_req, res) => {
-    res.json({
+    res.status(200).json({
       status: "ok",
       uptime: process.uptime(),
     });
@@ -45,20 +57,21 @@ export function createApp() {
       return res.status(403).send("Forbidden");
     }
 
-    next();
+    return next();
   });
 
-  app.disable("x-powered-by");
-  app.set("trust proxy", 1);
-  app.use(express.json());
-  app.use(corsMiddleware);
-
-  app.get("/", (_req, res) => {
-    res.status(200).send("OK");
-  });
+  app.use(
+    "/api/auth/otp",
+    rateLimit({
+      windowMs: 60 * 1000,
+      max: 10,
+      standardHeaders: true,
+      legacyHeaders: false,
+    }),
+  );
 
   app.use("/api/auth", authRouter);
-  app.use("/api/v1", routes);
+  app.use("/api", apiRouter);
 
   app.use((_req, res) => fail(res, "not_found", 404));
 
@@ -70,13 +83,5 @@ export function resetOtpStateForTests() {
 }
 
 const app = createApp();
-
-if (require.main === module) {
-  const port = Number(process.env.PORT) || 8080;
-
-  app.listen(port, "0.0.0.0", () => {
-    console.log(`SERVER STARTED ON ${port}`);
-  });
-}
 
 export default app;

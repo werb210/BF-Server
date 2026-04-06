@@ -1,3 +1,3 @@
-import './index';
+import { startServer } from "./index";
 
-console.log("Server bootstrap attempted");
+void startServer();

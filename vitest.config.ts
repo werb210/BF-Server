@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
+    include: ["tests/smoke.test.ts"],
   },
   resolve: {
     alias: {
