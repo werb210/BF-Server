@@ -1,5 +1,5 @@
-import crypto from "crypto";
-import fs from "fs";
+import crypto from "node:crypto";
+import fs from "node:fs";
 
 export async function sha256File(path: string): Promise<string> {
   return new Promise((resolve, reject) => {

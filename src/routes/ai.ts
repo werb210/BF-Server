@@ -1,9 +1,9 @@
 import type { MulterRequest } from "../types/multer";
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 import multer from "multer";
 import { Router, type RequestHandler } from "express";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { safeHandler } from "../middleware/safeHandler";
 import { pool, runQuery } from "../db";
 import { saveKnowledge as saveKnowledgeDb } from "../services/aiKnowledgeService";

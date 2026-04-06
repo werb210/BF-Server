@@ -1,4 +1,4 @@
-import crypto from "crypto";
+import crypto from "node:crypto";
 import { config } from "../config";
 
 const OTP_SECRET = config.security.otpHashSecret ?? config.jwt.secret;

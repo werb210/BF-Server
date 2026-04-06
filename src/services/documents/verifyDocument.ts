@@ -1,4 +1,4 @@
-import fs from "fs";
+import fs from "node:fs";
 import { sha256File } from "./hashFile";
 
 export async function verifyDocument(path: string, expectedHash?: string): Promise<true> {

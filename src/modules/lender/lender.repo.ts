@@ -1,5 +1,5 @@
 import { config } from "../../config";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { pool, runQuery } from "../../db";
 import { isTestEnvironment } from "../../dbRuntime";
 import { type PoolClient } from "pg";

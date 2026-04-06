@@ -1,5 +1,5 @@
 import { AppError } from "../../middleware/errors";
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 import { recordAuditEvent } from "../audit/audit.service";
 import { pool, runQuery } from "../../db";
 import { type PoolClient } from "pg";

@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import { fetchStatus as startupStatus, isReady } from "../startupState";
 import { pool, runQuery } from "../db";

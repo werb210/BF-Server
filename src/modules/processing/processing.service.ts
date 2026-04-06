@@ -3,7 +3,7 @@ import { AppError } from "../../middleware/errors";
 import { fetchDocumentTypeAliases } from "../../db/schema/requiredDocuments";
 import { advanceProcessingStage } from "../applications/processingStage.service";
 import type { PoolClient } from "pg";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { fetchCircuitBreaker } from "../../utils/circuitBreaker";
 import { config } from "../../config";
 import { assertRetryAllowed } from "./retryPolicy";

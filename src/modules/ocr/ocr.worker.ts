@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { config } from "../../config";
 import { isKillSwitchEnabled } from "../ops/ops.service";
 import { clearExpiredOcrLocks, lockOcrJobs } from "./ocr.repo";

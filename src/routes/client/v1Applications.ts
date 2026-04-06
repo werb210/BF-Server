@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { pool, runQuery } from "../../db";

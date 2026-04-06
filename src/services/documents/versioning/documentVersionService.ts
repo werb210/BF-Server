@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { pool, runQuery } from "../../../db";
 
 export async function createDocumentVersionRecord(params: {

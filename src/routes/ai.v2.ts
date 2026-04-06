@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { pool, runQuery } from "../db";
 import { generateAIResponse } from "../modules/ai/ai.service";
 

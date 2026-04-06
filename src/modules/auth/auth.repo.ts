@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { pool, runQuery } from "../../db";
 import { type PoolClient, type QueryResult, type QueryResultRow } from "pg";
 import { type Role } from "../../auth/roles";

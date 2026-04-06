@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { pool, runQuery } from "../../db";
 import { createCompany } from "../crm/companies.repo";
 import { createContact } from "../crm/contacts.repo";

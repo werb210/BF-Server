@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { pool, runQuery } from "../../db";
 import { Query } from "pg";
 import { PIPELINE_STATES } from "../applications/pipelineState";

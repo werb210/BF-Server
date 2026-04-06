@@ -1,28 +1,18 @@
 {
   "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src",
-    "module": "commonjs",
-    "target": "ES2020",
+    "target": "ES2022",
+    "module": "CommonJS",
     "moduleResolution": "node",
+    "rootDir": "./src",
+    "outDir": "./dist",
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
     "strict": false,
+    "skipLibCheck": true,
     "types": ["node"],
-    "ignoreDeprecations": "6.0",
-    "skipLibCheck": true
+    "lib": ["ES2022"],
+    "allowSyntheticDefaultImports": true
   },
-  "include": ["src/**/*", "test/**/*.d.ts"],
-  "exclude": [
-    "dist",
-    "node_modules",
-    "coverage",
-    "src/**/__tests__/**",
-    "src/**/*.test.ts",
-    "src/**/*.e2e.test.ts",
-    "src/tests/**",
-    "src/e2e/**",
-    "src/pg-runquery.d.ts"
-  ]
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
 }

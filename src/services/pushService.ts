@@ -1,5 +1,5 @@
 import webpush from "web-push";
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 import { config } from "../config";
 import {
   createPwaNotificationAudit,

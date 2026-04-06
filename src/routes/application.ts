@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db } from "../db";
 import { createApplication } from "../modules/applications/applications.repo";

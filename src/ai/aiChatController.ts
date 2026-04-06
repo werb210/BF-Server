@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import OpenAI from "openai";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { pool, runQuery } from "../db";
 import { safeHandler } from "../middleware/safeHandler";
 import { retrieveTopKnowledgeChunks } from "./retrievalService";

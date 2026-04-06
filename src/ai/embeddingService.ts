@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { createHash, randomUUID } from "crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { config } from "../config";
 import { pool, runQuery } from "../db";
 

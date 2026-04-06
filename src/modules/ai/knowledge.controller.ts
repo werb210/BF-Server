@@ -1,6 +1,6 @@
 import type { MulterRequest } from "../../types/multer";
 import type { Request, Response } from "express";
-import fs from "fs";
+import fs from "node:fs";
 import readline from "readline";
 import multer from "multer";
 import { v4 as uuid } from "uuid";

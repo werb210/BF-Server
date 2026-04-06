@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 
 export function requestId(req: Request, res: Response, next: NextFunction) {
   const rid = randomUUID();

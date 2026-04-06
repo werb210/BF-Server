@@ -2,7 +2,7 @@ import { config } from "../config";
 import { AppError } from "../middleware/errors";
 import { logInfo, logWarn } from "../observability/logger";
 import { pool, runQuery } from "../db";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import {
   ALWAYS_REQUIRED_DOCUMENTS,
   normalizeRequiredDocumentKey,

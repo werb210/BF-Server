@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { type NextFunction, type Request, type Response } from "express";
 import { config } from "../config";
 

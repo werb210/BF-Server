@@ -1,5 +1,5 @@
 import { toStringSet } from "../../utils/collectionSafe";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { pool, runQuery } from "../../db";
 
 export type ChatSessionRecord = {

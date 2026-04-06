@@ -1,5 +1,5 @@
-import { readFileSync } from "fs";
-import { resolve } from "path";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 export type OpenApiDoc = {
   paths: Record<string, Record<string, { responses?: Record<string, { content?: { "application/json"?: { schema?: unknown } } }> }>>;

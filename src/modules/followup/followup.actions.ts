@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { logError, logWarn } from "../../observability/logger";
 import { recordAuditEvent } from "../audit/audit.service";
 import {

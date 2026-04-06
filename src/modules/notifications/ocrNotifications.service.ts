@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { createNotification } from "./notifications.repo";
 
 export async function notifyOcrWarnings(params: {

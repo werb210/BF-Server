@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 import { type NextFunction, type Request, type Response } from "express";
 import { fetchStoredResponse, storeResponse } from "../lib/idempotencyStore";
 import { logInfo, logWarn } from "../observability/logger";
