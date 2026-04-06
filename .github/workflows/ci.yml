@@ -3,10 +3,13 @@ name: server-ci
 on:
   push:
     branches: [main]
-  pull_request:
+
+concurrency:
+  group: azure-deploy-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  build_and_deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -28,9 +31,7 @@ jobs:
         run: npm run lint
 
       - name: Build
-        run: |
-          npm ci
-          npm run build
+        run: npm run build
 
       - name: Verify dist completeness
         run: node scripts/verify-build.js
@@ -40,3 +41,10 @@ jobs:
 
       - name: Test
         run: npm run test
+
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: boreal-staff-server
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: ./dist
