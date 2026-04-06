@@ -1,7 +1,7 @@
 import { createApp } from "./app";
 import { initDb } from "./db/init";
 
-const port = process.env.PORT || 8080;
+const port = Number(process.env.PORT ?? 8080);
 
 void (async () => {
   try {
