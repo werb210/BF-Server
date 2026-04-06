@@ -9,10 +9,20 @@
     "resolveJsonModule": true,
     "strict": false,
     "skipLibCheck": true,
-    "types": ["node"],
-    "lib": ["ES2022"],
-    "allowSyntheticDefaultImports": true
+    "types": [
+      "node"
+    ],
+    "lib": [
+      "ES2022"
+    ],
+    "allowSyntheticDefaultImports": true,
+    "ignoreDeprecations": "6.0"
   },
-  "include": ["src"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }
