@@ -1,19 +1,27 @@
 import jwt from 'jsonwebtoken';
-import { redis } from '../lib/redis';
+import { db } from '../db/db';
+import { sendOtp, checkOtp } from '../lib/twilio';
 
-const OTP_PREFIX = 'otp:';
-
-export async function storeOtp(phone: string, code: string) {
-  await redis.set(`${OTP_PREFIX}${phone}`, code, 'EX', 300);
+export async function startOtp(phone: string) {
+  await sendOtp(phone);
 }
 
 export async function verifyOtp(phone: string, code: string) {
-  const stored = await redis.get(`${OTP_PREFIX}${phone}`);
-  return stored === code;
+  const valid = await checkOtp(phone, code);
+  if (!valid) return null;
+
+  const result = await db.query(
+    'INSERT INTO users (phone) VALUES ($1) ON CONFLICT (phone) DO UPDATE SET phone = EXCLUDED.phone RETURNING *',
+    [phone]
+  );
+
+  return result.rows[0];
 }
 
-export function issueToken(payload: any) {
-  return jwt.sign(payload, process.env.JWT_SECRET!, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '1h'
-  });
+export function issueToken(user: any) {
+  return jwt.sign(
+    { id: user.id, phone: user.phone },
+    process.env.JWT_SECRET!,
+    { expiresIn: process.env.JWT_EXPIRES_IN }
+  );
 }

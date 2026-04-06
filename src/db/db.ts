@@ -1,12 +1,13 @@
-import { Pool, type QueryResult, type QueryResultRow } from "pg";
+import { Pool } from 'pg';
 
-const pool = new Pool({
+export const db = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-export async function query<T extends QueryResultRow = QueryResultRow>(
-  text: string,
-  params: unknown[] = []
-): Promise<QueryResult<T>> {
-  return pool.query<T>(text, params);
-}
+db.on('connect', () => {
+  console.log('Postgres connected');
+});
+
+db.on('error', (err) => {
+  console.error('Postgres error', err);
+});
