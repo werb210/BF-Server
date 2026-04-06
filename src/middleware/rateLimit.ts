@@ -1,13 +1,16 @@
 import { rateLimit } from "express-rate-limit";
 
-export const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 200,
-  standardHeaders: "draft-8",
+const limiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 100,
+  standardHeaders: true,
   legacyHeaders: false,
 });
 
+export default limiter;
+
 // Backward-compatible aliases for existing imports.
+export const globalLimiter = limiter;
 export const globalRateLimit = globalLimiter;
 export const apiRateLimit = globalLimiter;
 export const documentUploadRateLimit = globalLimiter;
@@ -30,6 +33,6 @@ export const clientDocumentsRateLimit = () => globalLimiter;
 export const otpLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 5,
-  standardHeaders: "draft-8",
+  standardHeaders: true,
   legacyHeaders: false,
 });
