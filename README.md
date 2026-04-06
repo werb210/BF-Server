@@ -51,14 +51,9 @@ Additional configuration is optional but recommended (rate limits, lockout polic
 
 ## Azure App Service startup
 
-Configure the App Service startup command to run the compiled server entrypoint directly:
-
-```bash
-az webapp config set \
-  --resource-group <your-rg> \
-  --name <your-app-name> \
-  --startup-file "node dist/index.js"
-```
+Use the default startup behavior on App Service (leave **Startup Command** blank).
+When deploying from GitHub Actions, deploy the repository root (`package: .`) so Azure has
+access to `package.json`, `node_modules`, and local file dependencies before running `npm start`.
 
 Recommended app settings for Node 20 + Oryx build on App Service:
 
@@ -72,7 +67,7 @@ az webapp config appsettings set \
     WEBSITE_NODE_DEFAULT_VERSION=20
 ```
 
-Avoid static-site startup modes (such as `serve`, blank startup commands, or SPA defaults) so
+Avoid static-site startup modes (such as `serve` or SPA defaults) so
 `/api/*` requests are handled by the Node server process.
 
 ## Health endpoints
