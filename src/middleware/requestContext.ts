@@ -1,5 +1,5 @@
 import { type NextFunction, type Request, type Response } from "express";
-import { v4 as uuid } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 import {
   requestContextMiddleware,
   fetchRequestContext,
@@ -15,7 +15,7 @@ export function requestContext(req: Request, res: Response, next: NextFunction):
   const rid =
     typeof headerRid === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(headerRid)
       ? headerRid
-      : uuid();
+      : uuidv4();
 
   req.id = rid;
   req.rid = rid;

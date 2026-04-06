@@ -1,8 +1,9 @@
 import express from "express";
+import helmet from "helmet";
 
 import { corsMiddleware } from "./middleware/cors";
-import routes from "./routes";
 import authRouter from "./routes/auth";
+import { registerApiRouteMounts } from "./routes/routeRegistry";
 import { fail } from "./lib/response";
 import { getEnv } from "./config/env";
 
@@ -50,6 +51,7 @@ export function createApp() {
 
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
+  app.use(helmet());
   app.use(express.json());
   app.use(corsMiddleware);
 
@@ -58,7 +60,7 @@ export function createApp() {
   });
 
   app.use("/api/auth", authRouter);
-  app.use("/api/v1", routes);
+  registerApiRouteMounts(app);
 
   app.use((_req, res) => fail(res, "not_found", 404));
 
@@ -69,6 +71,3 @@ export function resetOtpStateForTests() {
   // No in-process OTP store is used by this app.
 }
 
-const app = createApp();
-
-export default app;

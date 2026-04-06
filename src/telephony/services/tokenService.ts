@@ -1,4 +1,4 @@
-import { v4 as uuid } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 import { config } from "../../config";
 
 const twilioModule = require("twilio");
@@ -13,7 +13,7 @@ function requireTokenConfig(value: string | undefined, name: string): string {
 }
 
 export function generateVoiceToken(identity: string): string {
-  const resolvedIdentity = identity?.trim().length ? identity : uuid();
+  const resolvedIdentity = identity?.trim().length ? identity : uuidv4();
 
   const token = new AccessToken(
     config.twilio.accountSid,

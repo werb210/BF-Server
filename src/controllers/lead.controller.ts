@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { v4 as uuid } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 import { CreateLeadDTO, Lead } from "../models/lead.model";
 
 const leads: Lead[] = [];
@@ -18,7 +18,7 @@ export const createLead = (req: Request, res: Response) => {
   }
 
   const newLead: Lead = {
-    id: uuid(),
+    id: uuidv4(),
     createdAt: new Date(),
     ...body,
   };

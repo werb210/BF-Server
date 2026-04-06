@@ -1,4 +1,4 @@
-import { v4 as uuid } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 import { pool, runQuery } from "../../db";
 import { embedText } from "./rag.service";
 
@@ -13,7 +13,7 @@ export async function ingestProductEmbedding(params: {
   await runQuery(
     `insert into ai_embeddings (id, source_type, source_id, content, embedding)
      values ($1, $2, $3, $4, $5::vector)`,
-    [uuid(), "product", params.productId, params.productDescription, `[${embedding.join(",")}]`]
+    [uuidv4(), "product", params.productId, params.productDescription, `[${embedding.join(",")}]`]
   );
 }
 
@@ -41,7 +41,7 @@ export async function ingestPdfText(params: {
     await runQuery(
       `insert into ai_embeddings (id, source_type, source_id, content, embedding)
        values ($1, $2, $3, $4, $5::vector)`,
-      [uuid(), "pdf", params.sourceId, chunk, `[${embedding.join(",")}]`]
+      [uuidv4(), "pdf", params.sourceId, chunk, `[${embedding.join(",")}]`]
     );
   }
 

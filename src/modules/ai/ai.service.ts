@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { v4 as uuid } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 import { AiMessage, AiSession } from "./ai.types";
 import { dbQuery } from "../../db";
 import { config } from "../../config";
@@ -81,7 +81,7 @@ async function loadActiveAiRules(): Promise<string[]> {
 
 export function startSession(context: AiSession["context"]): AiSession {
   pruneExpiredSessions();
-  const id = uuid();
+  const id = uuidv4();
 
   const session: AiSession = {
     id,

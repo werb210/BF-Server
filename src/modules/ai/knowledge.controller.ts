@@ -3,7 +3,7 @@ import type { Request, Response } from "express";
 import fs from "fs";
 import readline from "readline";
 import multer from "multer";
-import { v4 as uuid } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 import { pool, runQuery } from "../../db";
 import { embedAndStore } from "./knowledge.service";
 
@@ -69,7 +69,7 @@ export const AIKnowledgeController = {
       return;
     }
 
-    const sheetId = uuid();
+    const sheetId = uuidv4();
     pushBounded(knowledgeDocs, {
       id: sheetId,
       filename: file.originalname,

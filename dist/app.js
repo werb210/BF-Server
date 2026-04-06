@@ -6,9 +6,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.createApp = createApp;
 exports.resetOtpStateForTests = resetOtpStateForTests;
 const express_1 = __importDefault(require("express"));
+const helmet_1 = __importDefault(require("helmet"));
 const cors_1 = require("./middleware/cors");
-const routes_1 = __importDefault(require("./routes"));
 const auth_1 = __importDefault(require("./routes/auth"));
+const routeRegistry_1 = require("./routes/routeRegistry");
 const response_1 = require("./lib/response");
 const env_1 = require("./config/env");
 const allowedProductionHosts = ["server.boreal.financial"];
@@ -44,18 +45,17 @@ function createApp() {
     });
     app.disable("x-powered-by");
     app.set("trust proxy", 1);
+    app.use((0, helmet_1.default)());
     app.use(express_1.default.json());
     app.use(cors_1.corsMiddleware);
     app.get("/", (_req, res) => {
         res.status(200).send("OK");
     });
     app.use("/api/auth", auth_1.default);
-    app.use("/api/v1", routes_1.default);
+    (0, routeRegistry_1.registerApiRouteMounts)(app);
     app.use((_req, res) => (0, response_1.fail)(res, "not_found", 404));
     return app;
 }
 function resetOtpStateForTests() {
     // No in-process OTP store is used by this app.
 }
-const app = createApp();
-exports.default = app;

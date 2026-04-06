@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import OpenAI from "openai";
-import { v4 as uuid } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 import { config } from "../../config";
 
 type KnowledgeEntry = {
@@ -70,7 +70,7 @@ export async function embedAndStore(
       if (!vector) {
         throw new Error("Failed to generate embedding.");
       }
-      return [uuid(), sourceType, sourceId ?? null, content, toVectorLiteral(vector)];
+      return [uuidv4(), sourceType, sourceId ?? null, content, toVectorLiteral(vector)];
     })()
   );
 }

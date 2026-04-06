@@ -17,6 +17,9 @@ function isAllowedOrigin(origin, nodeEnv) {
     if (allowedProductionOrigins.includes(origin)) {
         return true;
     }
+    if (process.env.NODE_ENV !== "production" && origin?.includes("localhost")) {
+        return true;
+    }
     if (nodeEnv !== "production") {
         return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
     }

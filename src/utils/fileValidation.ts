@@ -1,14 +1,14 @@
-import { fileTypeFromBuffer } from "file-type";
 import { AppError } from "../middleware/errors";
-import { config } from "../config";
+import { getEnv } from "../config/env";
 
 const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
 
 export async function validateFile(buffer: Buffer) {
-  const type = await fileTypeFromBuffer(buffer);
+  const fileType = await import("file-type");
+  const type = await fileType.fileTypeFromBuffer(buffer);
 
   if (!type) {
-    if (config.env === "test") {
+    if (getEnv().NODE_ENV === "test") {
       return { ext: "pdf", mime: "application/pdf" };
     }
     throw new AppError("validation_error", "Unable to detect file type.", 400);

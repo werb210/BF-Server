@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { v4 as uuid } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 
 const supportSessions: Array<{
   id: string;
@@ -34,7 +34,7 @@ function pushBounded<T>(arr: T[], item: T): void {
 export const SupportController = {
   createSession(req: Request, res: Response): void {
     const session = {
-      id: uuid(),
+      id: uuidv4(),
       source: (req.body as { source?: string }).source ?? "website",
       createdAt: Date.now(),
       status: "open" as const,
@@ -51,7 +51,7 @@ export const SupportController = {
   createIssue(req: Request, res: Response): void {
     const payload = req.body as { description?: string; screenshot?: string };
     const issue = {
-      id: uuid(),
+      id: uuidv4(),
       description: payload.description,
       hasScreenshot: Boolean(payload.screenshot),
       createdAt: Date.now(),
@@ -67,7 +67,7 @@ export const SupportController = {
 
   createWebLead(req: Request, res: Response): void {
     const lead = {
-      id: uuid(),
+      id: uuidv4(),
       ...(req.body as Record<string, unknown>),
       createdAt: Date.now(),
     };
