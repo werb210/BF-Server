@@ -3,7 +3,7 @@ import { ok } from "../../lib/response";
 
 const twilioModule = require("twilio") ;
 
-export function incomingCallHandler(_req: Request, res: Response): Response {
+export function incomingCallHandler(req: Request, res: Response): void {
   const VoiceResponse = twilioModule.twiml.VoiceResponse;
   const response = new VoiceResponse();
 
@@ -11,5 +11,6 @@ export function incomingCallHandler(_req: Request, res: Response): Response {
 
   dial.client("staff");
 
-  return ok(res, response.toString());
+  res.json(ok(response.toString(), req.rid));
+  return;
 }

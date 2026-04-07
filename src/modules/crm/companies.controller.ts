@@ -1,6 +1,6 @@
 import { type Request, type Response } from "express";
 import { logError } from "../../observability/logger";
-import { respondOk } from "../../lib/response";
+import { ok } from "../../lib/response";
 import { fetchCompanies, fetchCompanyById } from "./companies.service";
 import { toStringSafe } from "../../utils/toStringSafe";
 
@@ -13,22 +13,22 @@ function logCrmError(event: string, error: unknown): void {
 }
 
 export async function handleListCompanies(
-  _req: Request,
-  res: Response
-): Promise<void> {
+  req: Request,
+  _res: Response
+): Promise<ReturnType<typeof ok>> {
   try {
     const companies = await fetchCompanies();
-    respondOk(res, companies);
+    return ok(companies, req.rid);
   } catch (error) {
     logCrmError("crm_companies_list_failed", error);
-    respondOk(res, []);
+    return ok([], req.rid);
   }
 }
 
 export async function handleGetCompanyById(
   req: Request,
   res: Response
-): Promise<void> {
+): Promise<void | ReturnType<typeof ok>> {
   try {
     const companyId = toStringSafe(req.params.id);
     if (!companyId) {
@@ -48,9 +48,9 @@ export async function handleGetCompanyById(
       });
       return;
     }
-    respondOk(res, company);
+    return ok(company, req.rid);
   } catch (error) {
     logCrmError("crm_companies_fetch_failed", error);
-    respondOk(res, []);
+    return ok([], req.rid);
   }
 }

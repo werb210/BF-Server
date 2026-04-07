@@ -5,7 +5,7 @@ const router = express.Router();
 
 router.get("/token", (req: any, res: any) => {
   const token = "real-token";
-  return ok(res, { token });
+  return ok({ token }, req.rid);
 });
 
 export default router;

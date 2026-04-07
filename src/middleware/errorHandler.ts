@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { error } from "../lib/response";
+import { fail } from "../lib/response";
 
 export function errorHandler(err: unknown, req: Request, res: Response, next: NextFunction): Response | void {
   const headerRid = req.headers["x-request-id"];
@@ -15,5 +15,5 @@ export function errorHandler(err: unknown, req: Request, res: Response, next: Ne
     return next(err);
   }
 
-  return res.status(500).json(error("Internal server error", rid));
+  return res.status(500).json(fail("Internal server error", rid));
 }

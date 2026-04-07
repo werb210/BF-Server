@@ -1,11 +1,11 @@
 import { type Request, type Response } from "express";
-import { respondOk } from "../../lib/response";
+import { ok } from "../../lib/response";
 import { listCrmTimeline } from "./timeline.repo";
 
 export async function handleListCrmTimeline(
   req: Request,
-  res: Response
-): Promise<void> {
+  _res: Response
+): Promise<ReturnType<typeof ok>> {
   const page = Number(req.query.page) || 1;
   const pageSize = Number(req.query.pageSize) || 25;
   const entityType =
@@ -25,15 +25,13 @@ export async function handleListCrmTimeline(
     offset,
   });
 
-  respondOk(
-    res,
+  return ok(
     {
       entries,
       total: entries.length,
-    },
-    {
       page,
       pageSize: limit,
-    }
+    },
+    req.rid,
   );
 }

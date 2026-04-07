@@ -36,7 +36,9 @@ export async function query<T extends QueryResultRow = QueryResultRow>(text: str
 
 export async function dbQuery<T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]): Promise<QueryResult<T>> {
   if (process.env.NODE_ENV === "test") {
-    return { rows: [] } as QueryResult<T>;
+    return {
+  rows: [] as T[],
+} as unknown as QueryResult<T>;
   }
   return runQuery<T>(text, params);
 }

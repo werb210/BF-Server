@@ -1,6 +1,6 @@
 import { type Request, type Response } from "express";
 import { logError } from "../../observability/logger";
-import { respondOk } from "../../lib/response";
+import { ok } from "../../lib/response";
 import { fetchContacts } from "./contacts.service";
 
 function logCrmError(event: string, error: unknown): void {
@@ -13,15 +13,15 @@ function logCrmError(event: string, error: unknown): void {
 
 export async function handleListContacts(
   req: Request,
-  res: Response
-): Promise<void> {
+  _res: Response
+): Promise<ReturnType<typeof ok>> {
   try {
     const companyId =
       typeof req.query.companyId === "string" ? req.query.companyId : null;
     const contacts = await fetchContacts({ companyId });
-    respondOk(res, contacts);
+    return ok(contacts, req.rid);
   } catch (error) {
     logCrmError("crm_contacts_list_failed", error);
-    respondOk(res, []);
+    return ok([], req.rid);
   }
 }

@@ -1,24 +1,27 @@
-export function ok(data: unknown, rid?: string) {
-  return { status: "ok" as const, data, rid };
-}
+export type ApiSuccess<T = unknown> = {
+  status: "ok";
+  data: T;
+  rid?: string;
+};
 
-export function fail(error: unknown, rid?: string) {
+export type ApiError = {
+  status: "error";
+  error: string;
+  rid?: string;
+};
+
+export function ok<T = unknown>(data: T, rid?: string): ApiSuccess<T> {
   return {
-    status: "error" as const,
-    error: error instanceof Error ? error.message : String(error),
+    status: "ok",
+    data,
     rid,
   };
 }
 
-export function error(message: string, rid?: string) {
+export function fail(error: string, rid?: string): ApiError {
   return {
-    status: "error" as const,
-    error: message,
+    status: "error",
+    error,
     rid,
   };
-}
-
-
-export function respondOk(res: any, data: unknown) {
-  return res.status(200).json(ok(data, res?.getHeader?.("x-request-id") as string | undefined));
 }
