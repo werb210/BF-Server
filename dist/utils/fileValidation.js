@@ -36,11 +36,17 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.validateFile = validateFile;
 const errors_1 = require("../middleware/errors");
 const env_1 = require("../config/env");
+const FileType = __importStar(require("file-type"));
 const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
 async function validateFile(buffer) {
-    const fileType = await Promise.resolve().then(() => __importStar(require("file-type")));
-    const type = await fileType.fileTypeFromBuffer(buffer);
-    if (!type) {
+    let type = null;
+    if (FileType.fileTypeFromBuffer) {
+        type = await FileType.fileTypeFromBuffer(buffer);
+    }
+    else if (FileType.fromBuffer) {
+        type = await FileType.fromBuffer(buffer);
+    }
+    if (!type || !type.mime) {
         if ((0, env_1.getEnv)().NODE_ENV === "test") {
             return { ext: "pdf", mime: "application/pdf" };
         }
@@ -49,5 +55,5 @@ async function validateFile(buffer) {
     if (!allowedTypes.has(type.mime)) {
         throw new errors_1.AppError("validation_error", "Invalid file type.", 400);
     }
-    return type;
+    return { ext: type.ext ?? "bin", mime: type.mime };
 }

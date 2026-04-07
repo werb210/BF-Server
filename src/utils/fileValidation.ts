@@ -1,13 +1,20 @@
 import { AppError } from "../middleware/errors";
 import { getEnv } from "../config/env";
+import * as FileType from "file-type";
 
 const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
+type DetectedFileType = { ext: string; mime: string };
 
-export async function validateFile(buffer: Buffer) {
-  const fileType = await import("file-type");
-  const type = await fileType.fileTypeFromBuffer(buffer);
+export async function validateFile(buffer: Buffer): Promise<DetectedFileType> {
+  let type: { ext?: string; mime?: string } | null = null;
 
-  if (!type) {
+  if ((FileType as any).fileTypeFromBuffer) {
+    type = await (FileType as any).fileTypeFromBuffer(buffer);
+  } else if ((FileType as any).fromBuffer) {
+    type = await (FileType as any).fromBuffer(buffer);
+  }
+
+  if (!type || !type.mime) {
     if (getEnv().NODE_ENV === "test") {
       return { ext: "pdf", mime: "application/pdf" };
     }
@@ -18,5 +25,5 @@ export async function validateFile(buffer: Buffer) {
     throw new AppError("validation_error", "Invalid file type.", 400);
   }
 
-  return type;
+  return { ext: type.ext ?? "bin", mime: type.mime };
 }
