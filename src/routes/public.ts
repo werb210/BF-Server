@@ -40,22 +40,22 @@ async function createLead(payload: LeadPayload): Promise<{ leadId?: string }> {
   return stripUndefined({ leadId: result.rows[0]?.id });
 }
 
-router.get("/test", wrap(async () => ok({ ok: true })));
+router.get("/test", wrap(async (req: any, res: any) => res.status(200).json(ok({ ok: true }, req.rid))));
 
 router.post(
   "/lead",
   requireFields(["companyName", "email"]),
-  wrap(async (req, res) => {
-      const result = await createLead(req.body);
+  wrap(async (req: any, res: any) => {
+    const result = await createLead(req.body);
 
-      if (!result?.leadId) {
-        return fail(res, "INVALID_INPUT");
-      }
+    if (!result?.leadId) {
+      return res.status(400).json(fail("INVALID_INPUT", req.rid));
+    }
 
-      return ok({ leadId: result.leadId });
-    }),
+    return res.status(200).json(ok({ leadId: result.leadId }, req.rid));
+  }),
 );
 
-router.all("/lead", wrap(async (_req, res) => fail(res, "METHOD_NOT_ALLOWED")));
+router.all("/lead", wrap(async (req: any, res: any) => res.status(405).json(fail("METHOD_NOT_ALLOWED", req.rid))));
 
 export default router;

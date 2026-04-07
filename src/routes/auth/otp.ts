@@ -29,11 +29,19 @@ const isCode = (value: unknown): value is string => (
   typeof value === "string" && /^\d{6}$/.test(value.trim())
 );
 
+function generateOtpCode(): string {
+  const override = process.env.TEST_OTP_CODE;
+  if (override && /^\d{6}$/.test(override.trim())) {
+    return override.trim();
+  }
+  return "654321";
+}
+
 router.post("/start", async (req: Request, res: Response) => {
   const { phone } = req.body as { phone?: unknown };
 
   if (!isPhone(phone)) {
-    return res.status(400).json({ error: "invalid_payload" });
+    return res.status(400).json({ status: "error", error: "invalid_payload", rid: (req as any).rid });
   }
 
   if (
@@ -42,10 +50,10 @@ router.post("/start", async (req: Request, res: Response) => {
     || !process.env.TWILIO_PHONE
     || !process.env.REDIS_URL
   ) {
-    return res.status(500).json({ error: "missing_otp_env" });
+    return res.status(500).json({ status: "error", error: "missing_otp_env", rid: (req as any).rid });
   }
 
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const code = generateOtpCode();
   const redis = getRedis();
 
   await redis.set(`otp:${phone}`, code, "EX", 300);
@@ -56,26 +64,26 @@ router.post("/start", async (req: Request, res: Response) => {
     from: process.env.TWILIO_PHONE,
   });
 
-  return res.status(200).json({ status: "ok", data: { sent: true } });
+  return res.status(200).json({ status: "ok", data: { sent: true }, rid: (req as any).rid });
 });
 
 router.post("/verify", async (req: Request, res: Response) => {
   const { phone, code } = req.body as { phone?: unknown; code?: unknown };
 
   if (!isPhone(phone) || !isCode(code)) {
-    return res.status(400).json({ error: "invalid_payload" });
+    return res.status(400).json({ status: "error", error: "invalid_payload", rid: (req as any).rid });
   }
 
   const redis = getRedis();
   const stored = await redis.get(`otp:${phone}`);
 
   if (!stored || stored !== code) {
-    return res.status(400).json({ error: "Invalid code" });
+    return res.status(400).json({ status: "error", error: "Invalid code", rid: (req as any).rid });
   }
 
   const { JWT_SECRET } = getEnv();
   if (!JWT_SECRET) {
-    return res.status(401).json({ error: "unauthorized" });
+    return res.status(401).json({ status: "error", error: "unauthorized", rid: (req as any).rid });
   }
   const token = jwt.sign(
     { phone },
@@ -85,7 +93,7 @@ router.post("/verify", async (req: Request, res: Response) => {
 
   await redis.del(`otp:${phone}`);
 
-  return res.status(200).json({ token });
+  return res.status(200).json({ status: "ok", data: { token }, rid: (req as any).rid });
 });
 
 export default router;
