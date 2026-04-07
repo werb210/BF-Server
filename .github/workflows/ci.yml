@@ -13,23 +13,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # OPTIONAL: Node build (remove if not needed)
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install deps
-        run: npm install
+      - run: npm install
+      - run: npm run build --if-present
 
-      - name: Build
-        run: npm run build --if-present
+      # 🔴 CRITICAL: remove node_modules before deploy
+      - run: rm -rf node_modules
 
-      # THIS IS THE ONLY DEPLOY STEP THAT MATTERS
-      - name: Deploy to Azure
+      # (optional but safer)
+      - run: rm -rf .git
+
+      - name: Deploy
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
