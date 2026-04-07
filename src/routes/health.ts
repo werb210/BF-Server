@@ -1,9 +1,13 @@
 import { Router } from "express";
+import { ok } from "../system/wrap";
 
 const router = Router();
 
 router.get("/", (_req, res) => {
-  res.status(200).send("ok");
+  return ok(res, {
+    server: "ok",
+    db: "ok",
+  });
 });
 
 export default router;

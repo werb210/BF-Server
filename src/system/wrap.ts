@@ -17,10 +17,15 @@ export function wrap(
 }
 
 export function ok(res: Response, data: any) {
-  return res.json(data);
+  return res.json({
+    status: "ok",
+    data,
+  });
 }
 
 export function error(res: Response, message: string, status = 400) {
-  return res.status(status).json({ error: message });
+  return res.status(status).json({
+    status: "error",
+    error: message,
+  });
 }
-
