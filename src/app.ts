@@ -13,12 +13,34 @@ export function createApp() {
   const app = express();
 
   app.get("/health", (_req, res) => {
-    res.status(200).send("healthy");
-  });
-
-  app.get("/api/health", (_req, res) => {
     res.status(200).json({
       status: "ok",
+    });
+  });
+
+  app.get("/ready", (_req, res) => {
+    res.status(200).json({
+      status: "ready",
+    });
+  });
+
+  app.get("/api/health", async (_req, res) => {
+    let dbStatus = "ok";
+
+    try {
+      const { initDb } = require("./db/init");
+      await initDb();
+    } catch (_err) {
+      dbStatus = "fail";
+    }
+
+    const statusCode = dbStatus === "ok" ? 200 : 503;
+
+    return res.status(statusCode).json({
+      status: dbStatus === "ok" ? "ok" : "error",
+      data: {
+        db: dbStatus,
+      },
     });
   });
 
@@ -33,6 +55,7 @@ export function createApp() {
     if (
       req.path === "/" ||
       req.path === "/health" ||
+      req.path === "/ready" ||
       req.path === "/api/health" ||
       req.path === "/api/_int/health"
     ) {
