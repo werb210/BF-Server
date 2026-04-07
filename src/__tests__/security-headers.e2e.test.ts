@@ -1,7 +1,8 @@
 import request from "supertest";
-import { app } from "../app";
+import { createApp } from "../app";
 
 describe("security headers", () => {
+  const app = createApp();
   it("adds baseline security headers", async () => {
     const res = await request(app).get("/health");
 

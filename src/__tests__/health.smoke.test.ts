@@ -1,7 +1,8 @@
 import request from "supertest";
-import { app } from "../app";
+import { createApp } from "../app";
 
 describe("Health check", () => {
+  const app = createApp();
   it("GET /health returns ok", async () => {
     const res = await request(app).get("/health");
 

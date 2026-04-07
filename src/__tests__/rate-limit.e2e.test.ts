@@ -1,7 +1,8 @@
 import request from "supertest";
-import { app } from "../app";
+import { createApp } from "../app";
 
 describe("public rate limiting", () => {
+  const app = createApp();
   it("limits excessive requests", async () => {
     for (let i = 0; i < 100; i += 1) {
       await request(app).get("/api/v1/public/test");

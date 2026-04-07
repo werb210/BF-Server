@@ -1,9 +1,10 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
-import { app } from "../app";
+import { createApp } from "../app";
 import { endpoints } from "../contracts/endpoints";
 
 describe("contracts", () => {
+  const app = createApp();
   it("all endpoints exist", async () => {
     const contractEndpoints = Object.values(endpoints);
 

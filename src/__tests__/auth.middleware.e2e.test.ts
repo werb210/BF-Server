@@ -1,8 +1,9 @@
 import request from "supertest";
 import jwt from "jsonwebtoken";
-import { app } from "../app";
+import { createApp } from "../app";
 
 describe("auth middleware enforcement", () => {
+  const app = createApp();
   const originalSecret = process.env.JWT_SECRET;
 
   beforeAll(() => {

@@ -1,11 +1,12 @@
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { app } from "../app";
+import { createApp } from "../app";
 import { signJwt } from "../auth/jwt";
 import { CAPABILITIES } from "../auth/capabilities";
 import { pool, runQuery } from "../db";
 
 describe("server:contract:e2e", () => {
+  const app = createApp();
   const authHeader = () =>
     `Bearer ${signJwt({
       userId: "test-user",

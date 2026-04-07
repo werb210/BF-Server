@@ -1,7 +1,7 @@
 import express, { type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
 
-import { getRedis } from "../../lib/redis.js";
+import { getRedis } from "../../lib/redis";
 import { getEnv } from "../../config/env";
 
 const router = express.Router();

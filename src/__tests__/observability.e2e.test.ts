@@ -1,9 +1,10 @@
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { app, resetOtpStateForTests } from "../app";
+import { createApp, resetOtpStateForTests } from "../app";
 import { resetMetrics } from "../system/metrics";
 
 describe("server:observability:e2e", () => {
+  const app = createApp();
   beforeEach(() => {
     resetOtpStateForTests();
     resetMetrics();

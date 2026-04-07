@@ -15,7 +15,9 @@ app.get("/ready", (_req, res) => {
 
 void (async () => {
   try {
-    await verifyRuntime();
+    if (process.env.NODE_ENV !== "test") {
+      await verifyRuntime();
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("Runtime verification failed:", message);
