@@ -3,10 +3,10 @@ import { getEnv } from "../config/env";
 import * as FileType from "file-type";
 
 const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
-type DetectedFileType = { ext: string; mime: string };
+type DetectedFileType = { mime: string; ext: string } | null;
 
-export async function validateFile(buffer: Buffer): Promise<DetectedFileType> {
-  let type: { ext?: string; mime?: string } | null = null;
+export async function validateFile(buffer: Buffer): Promise<Exclude<DetectedFileType, null>> {
+  let type: DetectedFileType = null;
 
   if ((FileType as any).fileTypeFromBuffer) {
     type = await (FileType as any).fileTypeFromBuffer(buffer);

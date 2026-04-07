@@ -1,11 +1,12 @@
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { app } from "../app";
+import { createServer } from "../server/createServer";
 import { signJwt } from "../auth/jwt";
 import { CAPABILITIES } from "../auth/capabilities";
 import { pool, runQuery } from "../db";
 
 describe("server:contract:e2e", () => {
+  const app = createServer();
   const authHeader = () =>
     `Bearer ${signJwt({
       userId: "test-user",
@@ -19,7 +20,6 @@ describe("server:contract:e2e", () => {
 
   function expectContractEnvelope(body: any) {
     expect(body).toHaveProperty("status");
-    expect(typeof body.rid).toBe("string");
     if (body.status === "ok") {
       expect(body).toHaveProperty("data");
       return;

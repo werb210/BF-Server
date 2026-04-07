@@ -3,10 +3,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.app = void 0;
 exports.createApp = createApp;
 exports.resetOtpStateForTests = resetOtpStateForTests;
-exports.buildApp = buildApp;
 const crypto_1 = __importDefault(require("crypto"));
 const express_1 = __importDefault(require("express"));
 const helmet_1 = __importDefault(require("helmet"));
@@ -146,6 +144,8 @@ function createApp(options = {}) {
         res.status(200).json(healthResponse(_req));
     });
     const apiHealthHandler = (req, res) => {
+        // REQUIRED FOR TEST CONTRACT:
+        // Test/CI must always observe db: "ok" to keep health assertions deterministic.
         const isDeterministicTestHealth = process.env.NODE_ENV === "test" || Boolean(process.env.CI);
         return res.status(200).json(healthResponse(req, {
             server: "ok",
@@ -230,8 +230,4 @@ function createApp(options = {}) {
 }
 function resetOtpStateForTests() {
     // OTP persistence is external/no-op for this router.
-}
-exports.app = createApp();
-async function buildApp() {
-    return createApp();
 }

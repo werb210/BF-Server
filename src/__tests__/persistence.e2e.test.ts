@@ -1,6 +1,6 @@
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { app } from "../app";
+import { createServer } from "../server/createServer";
 import { signJwt } from "../auth/jwt";
 import { CAPABILITIES } from "../auth/capabilities";
 import { pool, runQuery } from "../db";
@@ -37,6 +37,7 @@ type CallRow = {
 };
 
 describe("server persistence e2e", () => {
+  const app = createServer();
   const authHeader = () =>
     `Bearer ${signJwt({ userId: "staff-user-1", role: "Admin", capabilities: [CAPABILITIES.CRM_READ] })}`;
 

@@ -38,6 +38,8 @@ const isCode = (value: unknown): value is string => (
 );
 
 function generateOtpCode(): string {
+  // REQUIRED FOR TEST CONTRACT:
+  // OTP must be deterministic in tests to prevent flaky auth assertions.
   if (process.env.NODE_ENV === "test") {
     return process.env.TEST_OTP_CODE ?? "654321";
   }
@@ -119,6 +121,8 @@ router.post("/start", async (req: Request, res: Response) => {
     lastSentAt: Date.now(),
   });
 
+  // REQUIRED FOR TEST CONTRACT:
+  // External Twilio calls are skipped in tests to avoid nondeterministic/networked behavior.
   if (process.env.NODE_ENV !== "test") {
     await getTwilioClient().messages.create({
       body: `Your code is ${code}`,

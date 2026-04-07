@@ -1,11 +1,11 @@
 import request from "supertest";
-import { buildApp } from "../app"; // adjust if different
+import { createServer } from "../server/createServer";
 
 describe("End-to-End Application Flow", () => {
   let app: any;
 
   beforeAll(async () => {
-    app = await buildApp();
+    app = createServer();
   });
 
   test("login", async () => {

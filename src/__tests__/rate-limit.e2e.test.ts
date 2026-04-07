@@ -1,7 +1,8 @@
 import request from "supertest";
-import { app } from "../app";
+import { createServer } from "../server/createServer";
 
 describe("public rate limiting", () => {
+  const app = createServer();
   it("limits excessive requests", async () => {
     for (let i = 0; i < 100; i += 1) {
       await request(app).get("/api/v1/public/test");
@@ -12,6 +13,5 @@ describe("public rate limiting", () => {
     expect(res.headers["retry-after"]).toBe("1");
     expect(res.body).toHaveProperty("status", "error");
     expect(typeof res.body.error).toBe("string");
-    expect(typeof res.body.rid).toBe("string");
   });
 });

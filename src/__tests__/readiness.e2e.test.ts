@@ -1,13 +1,14 @@
 import request from "supertest";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp, resetOtpStateForTests } from "../app";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetOtpStateForTests } from "../app";
+import { createServer } from "../server/createServer";
 import { deps } from "../system/deps";
 
 describe("server:readiness:e2e", () => {
-  let app: Awaited<ReturnType<typeof createApp>>;
+  let app: ReturnType<typeof createServer>;
 
   beforeAll(async () => {
-    app = await createApp();
+    app = createServer();
   });
 
   beforeEach(() => {

@@ -35,13 +35,13 @@ function toKey(route: NormalizedRouteEntry): string {
 async function loadAppBuilder() {
   getEnv();
 
-  const { createApp } = await import("../app.js");
-  return createApp;
+  const { createServer } = await import("../server/createServer.js");
+  return createServer;
 }
 
 export async function buildNormalizedRouteEntries(): Promise<NormalizedRouteEntry[]> {
-  const createApp = await loadAppBuilder();
-  const app = await createApp();
+  const createServer = await loadAppBuilder();
+  const app = await createServer();
   const routeInventory = listRouteInventory(app);
 
   const normalized = routeInventory.flatMap(({ routerBase, routes }) =>

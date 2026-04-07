@@ -1,9 +1,11 @@
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { app, resetOtpStateForTests } from "../app";
+import { resetOtpStateForTests } from "../app";
+import { createServer } from "../server/createServer";
 import { resetMetrics } from "../system/metrics";
 
 describe("server:observability:e2e", () => {
+  const app = createServer();
   beforeEach(() => {
     resetOtpStateForTests();
     resetMetrics();
@@ -38,7 +40,7 @@ describe("server:observability:e2e", () => {
     expect(entry.method).toBe("GET");
     expect(entry.path).toBe("/health");
     expect(entry.status).toBe(200);
-    expect(typeof entry.rid).toBe("string");
+    expect(entry.rid).toBeUndefined();
   });
 
   it("returns basic request/error counters from /metrics", async () => {

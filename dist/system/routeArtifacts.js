@@ -62,12 +62,12 @@ function toKey(route) {
 }
 async function loadAppBuilder() {
     (0, env_1.getEnv)();
-    const { createApp } = await Promise.resolve().then(() => __importStar(require("../app.js")));
-    return createApp;
+    const { createServer } = await Promise.resolve().then(() => __importStar(require("../server/createServer.js")));
+    return createServer;
 }
 async function buildNormalizedRouteEntries() {
-    const createApp = await loadAppBuilder();
-    const app = await createApp();
+    const createServer = await loadAppBuilder();
+    const app = await createServer();
     const routeInventory = (0, printRoutes_1.listRouteInventory)(app);
     const normalized = routeInventory.flatMap(({ routerBase, routes }) => routes.map((route) => ({
         method: route.method.toUpperCase(),
