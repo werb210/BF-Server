@@ -1,5 +1,7 @@
 console.log("BOOT START");
 
+import type { Request, Response } from "express";
+
 process.on("uncaughtException", (err) => {
   console.error("UNCAUGHT", err);
 });
@@ -20,16 +22,14 @@ const Redis = require("ioredis");
 
 console.log("STARTING SERVER...");
 
-// 🔴 STATE FLAGS (critical for health)
 let isReady = false;
 
-// ✅ HARD HEALTH ENDPOINT (ALWAYS FAST)
-app.get("/health", (_req, res) => {
+// ✅ FIXED TYPES HERE
+app.get("/health", (_req: Request, res: Response) => {
   res.status(200).send("ok");
 });
 
-// ✅ READINESS ENDPOINT (real status)
-app.get("/ready", (_req, res) => {
+app.get("/ready", (_req: Request, res: Response) => {
   if (isReady) {
     return res.status(200).send("ready");
   }
@@ -87,8 +87,6 @@ void (async () => {
   app.listen(port, "0.0.0.0", () => {
     clearTimeout(startGuard);
     console.log(`SERVER STARTED ON ${port}`);
-
-    // 🔴 mark ready ONLY after server actually listening
     isReady = true;
   });
 })();
