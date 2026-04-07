@@ -39,7 +39,7 @@ const env_1 = require("../config/env");
 const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
 async function validateFile(buffer) {
     const fileType = await Promise.resolve().then(() => __importStar(require("file-type")));
-    const type = await fileType.fromBuffer(buffer);
+    const type = await fileType.fileTypeFromBuffer(buffer);
     if (!type) {
         if ((0, env_1.getEnv)().NODE_ENV === "test") {
             return { ext: "pdf", mime: "application/pdf" };

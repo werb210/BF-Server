@@ -5,7 +5,7 @@ const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
 
 export async function validateFile(buffer: Buffer) {
   const fileType = await import("file-type");
-  const type = await fileType.fromBuffer(buffer);
+  const type = await fileType.fileTypeFromBuffer(buffer);
 
   if (!type) {
     if (getEnv().NODE_ENV === "test") {

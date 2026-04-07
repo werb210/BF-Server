@@ -21,8 +21,8 @@ function getTwilioClient() {
 const isPhone = (value) => (typeof value === "string" && /^\+?[1-9]\d{7,14}$/.test(value.trim()));
 const isCode = (value) => (typeof value === "string" && /^\d{6}$/.test(value.trim()));
 function generateOtpCode() {
-    if (process.env.NODE_ENV === "test" && process.env.TEST_OTP_CODE) {
-        return process.env.TEST_OTP_CODE;
+    if (process.env.NODE_ENV === "test") {
+        return process.env.TEST_OTP_CODE ?? "654321";
     }
     return String(Math.floor(100000 + Math.random() * 900000));
 }

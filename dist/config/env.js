@@ -23,7 +23,7 @@ const envSchema = zod_1.z.object({
 });
 function getEnv() {
     const nodeEnv = process.env.NODE_ENV ?? "development";
-    if (nodeEnv !== "production") {
+    if (nodeEnv === "development") {
         process.env.JWT_SECRET = process.env.JWT_SECRET ?? "test-secret-32-characters-minimum!!";
         process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? "test-openai-key-1234567890";
     }

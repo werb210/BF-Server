@@ -38,8 +38,8 @@ const isCode = (value: unknown): value is string => (
 );
 
 function generateOtpCode(): string {
-  if (process.env.NODE_ENV === "test" && process.env.TEST_OTP_CODE) {
-    return process.env.TEST_OTP_CODE;
+  if (process.env.NODE_ENV === "test") {
+    return process.env.TEST_OTP_CODE ?? "654321";
   }
 
   return String(Math.floor(100000 + Math.random() * 900000));

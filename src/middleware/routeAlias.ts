@@ -13,9 +13,7 @@ export function routeAlias(req: Request, res: Response, next: NextFunction) {
 
   if (path.startsWith("/api/public")) {
     res.locals.__wrapped = true;
-    return res.status(410).json(
-      fail("LEGACY_ROUTE_DISABLED", (req as Request & { rid?: string }).rid),
-    );
+    return res.status(410).json(fail("LEGACY_ROUTE_DISABLED", (req as Request & { rid?: string }).rid));
   }
 
   if (path.startsWith("/api/") || path.startsWith("/api/v1/") || CANONICAL_NON_API_ROUTES.has(path)) {

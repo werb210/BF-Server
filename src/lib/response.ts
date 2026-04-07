@@ -15,7 +15,6 @@ export function ok<T = unknown>(data: T, rid?: string): ApiSuccess<T> {
     status: "ok",
     data,
   };
-
   if (rid !== undefined) {
     result.rid = rid;
   }
@@ -28,7 +27,6 @@ export function fail(error: string, rid?: string): ApiError {
     status: "error",
     error,
   };
-
   if (rid !== undefined) {
     result.rid = rid;
   }

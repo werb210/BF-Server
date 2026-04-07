@@ -2,11 +2,12 @@ import { Router } from "express";
 
 import otp from "./otp";
 import { authMeHandler } from "./me";
+import { resetRedisMock } from "../../lib/redis";
 
 const router = Router();
 
 export function resetOtpStateForTests() {
-  // OTP persistence is external/no-op for this router.
+  resetRedisMock();
 }
 
 router.use("/otp", otp);
