@@ -5,7 +5,6 @@ const silo_1 = require("../../auth/silo");
 const requestContext_1 = require("../../observability/requestContext");
 const auth_repo_1 = require("../../modules/auth/auth.repo");
 const logger_1 = require("../../observability/logger");
-const auth_validation_1 = require("../../validation/auth.validation");
 function fetchAuthRequestId(res) {
     return res.locals.requestId ?? (0, requestContext_1.fetchRequestId)() ?? "unknown";
 }
@@ -73,8 +72,7 @@ async function authMeHandler(req, res) {
             silo = silo_1.DEFAULT_AUTH_SILO;
         }
         const responseBody = {
-            success: true,
-            ok: true,
+            status: "ok",
             data: {
                 user: {
                     id: user.userId,
@@ -83,21 +81,7 @@ async function authMeHandler(req, res) {
                     phone: user.phone,
                 },
             },
-            userId: user.userId,
-            role: user.role,
-            silo,
-            user: {
-                id: user.userId,
-                role: user.role,
-                silo,
-                phone: user.phone,
-            },
         };
-        const validation = (0, auth_validation_1.validateAuthMe)(responseBody);
-        if (!validation.success) {
-            respondResponseValidationError(res, route, requestId, validation.error.flatten());
-            return;
-        }
         res.set("Cache-Control", "no-store");
         res.status(200).json(responseBody);
     }

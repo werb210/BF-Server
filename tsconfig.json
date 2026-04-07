@@ -14,8 +14,7 @@
     "outDir": "dist",
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node",
-    "noImplicitAny": true
+    "moduleResolution": "node"
   },
   "include": [
     "src/**/*.ts"

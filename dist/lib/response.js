@@ -2,42 +2,23 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ok = ok;
 exports.fail = fail;
-exports.error = error;
-exports.respondOk = respondOk;
-function isResponse(value) {
-    return Boolean(value
-        && typeof value === "object"
-        && "status" in value
-        && "json" in value);
-}
-function ok(first, second) {
-    if (isResponse(first)) {
-        return first.status(200).json({ status: "ok", data: second });
-    }
-    return {
+function ok(data, rid) {
+    const result = {
         status: "ok",
-        data: first,
-        rid: typeof second === "string" ? second : undefined,
+        data,
     };
-}
-function fail(first, second, third = 400, _code, _details) {
-    if (isResponse(first)) {
-        const message = typeof second === "string" ? second : "error";
-        return first.status(third).json({ status: "error", error: message });
+    if (rid !== undefined) {
+        result.rid = rid;
     }
-    return {
-        status: "error",
-        error: first instanceof Error ? first.message : String(first),
-        rid: typeof second === "string" ? second : undefined,
-    };
+    return result;
 }
-function error(message, rid) {
-    return {
+function fail(error, rid) {
+    const result = {
         status: "error",
-        error: message,
-        rid,
+        error,
     };
-}
-function respondOk(res, data, _meta) {
-    return ok(res, data);
+    if (rid !== undefined) {
+        result.rid = rid;
+    }
+    return result;
 }

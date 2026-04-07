@@ -11,14 +11,14 @@ function logCrmError(event, error) {
         stack: error instanceof Error ? error.stack : undefined,
     });
 }
-async function handleListContacts(req, res) {
+async function handleListContacts(req, _res) {
     try {
         const companyId = typeof req.query.companyId === "string" ? req.query.companyId : null;
         const contacts = await (0, contacts_service_1.fetchContacts)({ companyId });
-        (0, response_1.respondOk)(res, contacts);
+        return (0, response_1.ok)(contacts, req.rid);
     }
     catch (error) {
         logCrmError("crm_contacts_list_failed", error);
-        (0, response_1.respondOk)(res, []);
+        return (0, response_1.ok)([], req.rid);
     }
 }

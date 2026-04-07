@@ -8,15 +8,9 @@ const response_1 = require("../lib/response");
 const router = (0, express_1.Router)();
 router.use(auth_1.requireAuth);
 router.use((0, auth_1.requireCapability)([capabilities_1.CAPABILITIES.CALENDAR_READ]));
-router.get("/", (0, safeHandler_1.safeHandler)((req, res) => {
+router.get("/", (0, safeHandler_1.safeHandler)((req) => {
     const page = Number(req.query.page) || 1;
     const pageSize = Number(req.query.pageSize) || 25;
-    (0, response_1.respondOk)(res, {
-        tasks: [],
-        total: 0,
-    }, {
-        page,
-        pageSize,
-    });
+    return (0, response_1.ok)({ tasks: [], total: 0, page, pageSize }, req.rid);
 }));
 exports.default = router;

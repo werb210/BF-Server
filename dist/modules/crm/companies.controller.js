@@ -13,14 +13,14 @@ function logCrmError(event, error) {
         stack: error instanceof Error ? error.stack : undefined,
     });
 }
-async function handleListCompanies(_req, res) {
+async function handleListCompanies(req, _res) {
     try {
         const companies = await (0, companies_service_1.fetchCompanies)();
-        (0, response_1.respondOk)(res, companies);
+        return (0, response_1.ok)(companies, req.rid);
     }
     catch (error) {
         logCrmError("crm_companies_list_failed", error);
-        (0, response_1.respondOk)(res, []);
+        return (0, response_1.ok)([], req.rid);
     }
 }
 async function handleGetCompanyById(req, res) {
@@ -43,10 +43,10 @@ async function handleGetCompanyById(req, res) {
             });
             return;
         }
-        (0, response_1.respondOk)(res, company);
+        return (0, response_1.ok)(company, req.rid);
     }
     catch (error) {
         logCrmError("crm_companies_fetch_failed", error);
-        (0, response_1.respondOk)(res, []);
+        return (0, response_1.ok)([], req.rid);
     }
 }

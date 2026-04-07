@@ -2,6 +2,7 @@ import request from "supertest";
 import type { Express } from "express";
 
 import { createServer } from "../../src/server/createServer";
+import { loadTestEnv } from "../utils/testEnv";
 
 interface RouteCheck {
   method: "get" | "post";
@@ -14,6 +15,7 @@ describe("Route registration and prefix integrity", () => {
   let app: Express;
 
   beforeAll(() => {
+    loadTestEnv();
     app = createServer();
   });
 

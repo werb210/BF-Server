@@ -9,8 +9,8 @@ import { registerApiRouteMounts } from "./routes/routeRegistry";
 import { fail, ok } from "./lib/response";
 import { getEnv } from "./config/env";
 import routeAlias from "./middleware/routeAlias";
-import { otpStore } from "./modules/auth/otpStore";
 import { deps, globalState } from "./system/deps";
+import { corsMiddleware } from "./middleware/cors";
 
 const allowedProductionHosts: string[] = ["server.boreal.financial"];
 
@@ -96,24 +96,7 @@ export function createApp() {
     return next();
   });
 
-  app.use((req, res, next) => {
-    if (req.path.startsWith("/api")) {
-      const configuredOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "")
-        .split(",")
-        .map((value) => value.trim())
-        .filter(Boolean);
-      const origin = req.header("origin");
-      const allowOrigin = origin && configuredOrigins.includes(origin) ? origin : configuredOrigins[0] ?? "*";
-
-      res.setHeader("access-control-allow-origin", allowOrigin);
-      res.setHeader("access-control-allow-credentials", "true");
-      res.setHeader("access-control-allow-headers", "content-type, authorization");
-      if (req.method === "OPTIONS") {
-        return res.status(200).end();
-      }
-    }
-    next();
-  });
+  app.use(corsMiddleware);
 
   app.get("/health", (req, res) => {
     return res.status(200).json(healthResponse(req));
@@ -226,18 +209,6 @@ export function createApp() {
 
   registerApiRouteMounts(app);
 
-  app.use((_req, _res, next) => {
-    const now = Date.now();
-    const store = otpStore.records();
-
-    Object.keys(store).forEach((key) => {
-      if (now > (store[key]?.expiresAt ?? Number.POSITIVE_INFINITY)) {
-        delete store[key];
-      }
-    });
-
-    next();
-  });
 
   app.use((req: any, res) => {
     res.status(404).json(fail("not_found", req.rid));
@@ -255,7 +226,6 @@ export function createApp() {
   return app;
 }
 
-export const app = createApp();
 
 export function resetOtpStateForTests() {
   // OTP persistence is external/no-op for this router.

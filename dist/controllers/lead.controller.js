@@ -10,14 +10,15 @@ function pushBounded(arr, item) {
         arr.shift();
 }
 const createLead = (req, res) => {
-    const body = req.body;
-    if (!body.companyName || !body.fullName || !body.email) {
+    const lead = (req.body || {});
+    lead.address || (lead.address = {});
+    if (!lead.companyName || !lead.fullName || !lead.email) {
         return res.status(400).json({ message: "Missing required fields" });
     }
     const newLead = {
         id: (0, uuid_1.v4)(),
         createdAt: new Date(),
-        ...body,
+        ...lead,
     };
     pushBounded(leads, newLead);
     return res.status(201).json({

@@ -6,7 +6,7 @@ function timeout(ms = 15000) {
     return (_req, res, next) => {
         const id = setTimeout(() => {
             if (!res.headersSent) {
-                (0, response_1.fail)(res, "Request timeout", 503, "TIMEOUT");
+                res.status(503).json((0, response_1.fail)("Request timeout", _req.rid));
             }
         }, ms);
         res.on("finish", () => clearTimeout(id));

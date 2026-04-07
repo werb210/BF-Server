@@ -13,6 +13,10 @@ const allowedProductionOrigins = [
     "https://staff.boreal.financial",
     "https://server.boreal.financial",
 ];
+function isLegacyRoute(req) {
+    const url = req.url ?? "";
+    return url.startsWith("/api/public");
+}
 function isAllowedOrigin(origin, nodeEnv) {
     if (allowedProductionOrigins.includes(origin)) {
         return true;
@@ -26,6 +30,15 @@ function isAllowedOrigin(origin, nodeEnv) {
     return false;
 }
 exports.corsMiddleware = (0, cors_1.default)((req, callback) => {
+    if (isLegacyRoute(req)) {
+        return callback(null, {
+            origin: true,
+            credentials: true,
+            methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            preflightContinue: false,
+            optionsSuccessStatus: 410,
+        });
+    }
     const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
     const { NODE_ENV } = (0, env_1.getEnv)();
     if (!origin) {

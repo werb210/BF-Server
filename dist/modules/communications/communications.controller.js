@@ -12,27 +12,27 @@ function logCommunicationsError(event, error) {
         stack: error instanceof Error ? error.stack : undefined,
     });
 }
-async function handleListCommunications(req, res) {
+async function handleListCommunications(req, _res) {
     try {
         const contactId = typeof req.query.contactId === "string" ? req.query.contactId : null;
         const communications = await (0, communications_service_1.fetchCommunications)({ contactId });
-        (0, response_1.respondOk)(res, communications);
+        return (0, response_1.ok)(communications, req.rid);
     }
     catch (error) {
         logCommunicationsError("communications_list_failed", error);
-        (0, response_1.respondOk)(res, []);
+        return (0, response_1.ok)([], req.rid);
     }
 }
-async function handleListMessages(req, res) {
+async function handleListMessages(req, _res) {
     try {
         const page = Number(req.query.page) || 1;
         const pageSize = Number(req.query.pageSize) || 25;
         const contactId = typeof req.query.contactId === "string" ? req.query.contactId : null;
         const messageFeed = await (0, communications_service_1.fetchMessageFeed)({ contactId, page, pageSize });
-        (0, response_1.respondOk)(res, { messages: messageFeed.messages, total: messageFeed.total }, { page, pageSize });
+        return (0, response_1.ok)({ messages: messageFeed.messages, total: messageFeed.total, page, pageSize }, req.rid);
     }
     catch (error) {
         logCommunicationsError("communications_messages_list_failed", error);
-        (0, response_1.respondOk)(res, { messages: [], total: 0 }, { page: 1, pageSize: 25 });
+        return (0, response_1.ok)({ messages: [], total: 0, page: 1, pageSize: 25 }, req.rid);
     }
 }

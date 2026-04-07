@@ -1,3 +1,5 @@
+import { beforeEach, vi } from "vitest";
+
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });

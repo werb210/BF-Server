@@ -10,7 +10,7 @@ const allowedProductionOrigins = [
 ];
 
 function isLegacyRoute(req: cors.CorsRequest): boolean {
-  const url = req.url ?? "";
+  const url = (req as any).url ?? "";
   return url.startsWith("/api/public");
 }
 

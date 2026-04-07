@@ -1,48 +1,41 @@
-import express, { type Request, type Response } from "express";
-import jwt from "jsonwebtoken";
+import express from "express";
+
 import VoiceResponse from "twilio/lib/twiml/VoiceResponse";
 import { requireAuth } from "../middleware/requireAuth";
 import { validate } from "../middleware/validate";
 import { CallStatusSchema } from "../schemas";
-import { getEnv } from "../config/env";
+import { fail } from "../lib/response";
 
 const router = express.Router();
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const twilioSdk = require("twilio") as any;
+const AccessToken = twilioSdk.jwt.AccessToken;
+const VoiceGrant = AccessToken.VoiceGrant;
 
-function unauthorized(req: Request, res: Response): Response {
-  return res.status(401).json({ status: "error", error: "Unauthorized", rid: (req as any).rid });
-}
+router.get("/token", requireAuth, (req, res) => {
+  const user = (req as any).user;
+  const identity = user?.userId ?? user?.phone ?? user?.sub ?? "unknown";
+  const rid = (req as any).rid;
 
-router.get("/token", (req, res) => {
-  const auth = req.header("authorization") ?? req.header("Authorization");
-  if (!auth) {
-    return unauthorized(req, res);
+  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_API_KEY || !process.env.TWILIO_API_SECRET) {
+    return res.status(500).json(fail("missing_voice_env", rid));
   }
 
-  const match = auth.match(/^Bearer\s+(.+)$/i);
-  if (!match) {
-    return unauthorized(req, res);
-  }
+  const token = new AccessToken(
+    process.env.TWILIO_ACCOUNT_SID,
+    process.env.TWILIO_API_KEY,
+    process.env.TWILIO_API_SECRET,
+    { identity },
+  );
 
-  const token = match[1];
-  if (!token) {
-    return unauthorized(req, res);
-  }
+  const grant = new VoiceGrant({
+    outgoingApplicationSid: process.env.TWILIO_TWIML_APP_SID ?? process.env.TWILIO_VOICE_APP_SID,
+    incomingAllow: true,
+  });
 
-  const { JWT_SECRET: secret } = getEnv();
-  if (!secret) {
-    return unauthorized(req, res);
-  }
+  token.addGrant(grant);
 
-  try {
-    const decoded = jwt.verify(token, secret) as { sub?: string; role?: string } | undefined;
-    if ((!decoded?.sub && !(decoded as any)?.userId) || !decoded?.role) {
-      return unauthorized(req, res);
-    }
-  } catch {
-    return unauthorized(req, res);
-  }
-
-  return res.status(200).json({ status: "ok", data: { token: "real-token" }, rid: (req as any).rid });
+  return res.status(200).json({ status: "ok", data: { token: token.toJwt() }, rid });
 });
 
 router.post("/incoming", (req, res) => {

@@ -1,13 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.error = void 0;
 exports.wrap = wrap;
 exports.okResponse = okResponse;
 exports.ok = okResponse;
 exports.fail = fail;
 const contracts_1 = require("../contracts");
 const response_1 = require("../lib/response");
-Object.defineProperty(exports, "error", { enumerable: true, get: function () { return response_1.error; } });
 function resolveRid(req) {
     const headerRid = req.headers["x-request-id"];
     const requestRid = req.id ?? req.rid;
@@ -23,7 +21,7 @@ function sendValidatedResponse(res, payload) {
     const validated = contracts_1.ApiResponseSchema.safeParse(payload);
     if (!validated.success) {
         console.error("INVALID RESPONSE SHAPE:", payload);
-        return res.status(500).json((0, response_1.error)("Invalid response shape", resolveRid(res.req)));
+        return res.status(500).json((0, response_1.fail)("Invalid response shape", resolveRid(res.req)));
     }
     return res.status(200).send(validated.data);
 }
@@ -55,10 +53,10 @@ function fail(res, a, b) {
     if (typeof a === "number") {
         const message = typeof b === "string" ? b : "Request failed";
         res.locals.__wrapped = true;
-        return res.status(a).json((0, response_1.error)(message, rid));
+        return res.status(a).json((0, response_1.fail)(message, rid));
     }
     const message = a;
     const statusCode = typeof b === "number" ? b : 400;
     res.locals.__wrapped = true;
-    return res.status(statusCode).json((0, response_1.error)(message, rid));
+    return res.status(statusCode).json((0, response_1.fail)(message, rid));
 }

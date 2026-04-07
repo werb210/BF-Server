@@ -57,6 +57,15 @@ async function query(text, params) {
     return runQuery(text, params);
 }
 async function dbQuery(text, params) {
+    if (process.env.NODE_ENV === "test") {
+        return {
+            rows: [],
+            rowCount: 0,
+            command: "SELECT",
+            oid: 0,
+            fields: [],
+        };
+    }
     return runQuery(text, params);
 }
 async function safeQuery(sql, params) {

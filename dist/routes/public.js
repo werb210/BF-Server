@@ -23,13 +23,13 @@ async function createLead(payload) {
        returning id`, [data.email, data.phone, data.businessName, data.productType, data.requestedAmount ?? null]);
     return (0, clean_1.stripUndefined)({ leadId: result.rows[0]?.id });
 }
-router.get("/test", (0, routeWrap_1.wrap)(async () => (0, response_1.ok)({ ok: true })));
+router.get("/test", (0, routeWrap_1.wrap)(async (req, res) => res.status(200).json((0, response_1.ok)({ ok: true }, req.rid))));
 router.post("/lead", (0, validate_1.requireFields)(["companyName", "email"]), (0, routeWrap_1.wrap)(async (req, res) => {
     const result = await createLead(req.body);
     if (!result?.leadId) {
-        return (0, response_1.fail)(res, "INVALID_INPUT");
+        return res.status(400).json((0, response_1.fail)("INVALID_INPUT", req.rid));
     }
-    return (0, response_1.ok)({ leadId: result.leadId });
+    return res.status(200).json((0, response_1.ok)({ leadId: result.leadId }, req.rid));
 }));
-router.all("/lead", (0, routeWrap_1.wrap)(async (_req, res) => (0, response_1.fail)(res, "METHOD_NOT_ALLOWED")));
+router.all("/lead", (0, routeWrap_1.wrap)(async (req, res) => res.status(405).json((0, response_1.fail)("METHOD_NOT_ALLOWED", req.rid))));
 exports.default = router;
