@@ -1,35 +1,48 @@
 import { Router } from "express";
-import { requireAuth } from "../middleware/auth";
-import { endpoints } from "../contracts/endpoints";
-import { ok } from "../lib/response";
+import { createLead } from "../modules/lead/lead.service";
+import { startCall, updateCallStatus } from "../modules/calls/calls.service";
+import { sendMessage } from "../modules/messaging/service";
 
 const router = Router();
 
-const API_PREFIX = "/api/v1";
+router.post("/lead", async (req, res) => {
+  try {
+    const result = await createLead(req.body);
+    res.json(result);
+  } catch (err) {
+    console.error("createLead failed:", err);
+    res.status(500).json({ error: "create_lead_failed" });
+  }
+});
 
-function routeFromContract(endpoint: string): string {
-  return endpoint.startsWith(API_PREFIX) ? endpoint.slice(API_PREFIX.length) : endpoint;
-}
+router.post("/call/start", async (req, res) => {
+  try {
+    const result = await startCall(req.body);
+    res.json(result);
+  } catch (err) {
+    console.error("startCall failed:", err);
+    res.status(500).json({ error: "call_start_failed" });
+  }
+});
 
-function createLeadHandler(_req: any, res: any) {
-  return ok(res, { saved: true });
-}
+router.post("/call/status", async (req, res) => {
+  try {
+    const result = await updateCallStatus(req.body);
+    res.json(result);
+  } catch (err) {
+    console.error("updateCallStatus failed:", err);
+    res.status(500).json({ error: "call_status_failed" });
+  }
+});
 
-function startCallHandler(_req: any, res: any) {
-  return ok(res, { started: true });
-}
-
-function updateCallStatusHandler(_req: any, res: any) {
-  return ok(res, { recorded: true });
-}
-
-function sendMessageHandler(_req: any, res: any) {
-  return ok(res, { reply: "ok" });
-}
-
-router.post(routeFromContract(endpoints.createLead), requireAuth, createLeadHandler);
-router.post(routeFromContract(endpoints.startCall), requireAuth, startCallHandler);
-router.post(routeFromContract(endpoints.updateCallStatus), requireAuth, updateCallStatusHandler);
-router.post(routeFromContract(endpoints.sendMessage), requireAuth, sendMessageHandler);
+router.post("/message", async (req, res) => {
+  try {
+    const result = await sendMessage(req.body);
+    res.json(result);
+  } catch (err) {
+    console.error("sendMessage failed:", err);
+    res.status(500).json({ error: "message_failed" });
+  }
+});
 
 export default router;

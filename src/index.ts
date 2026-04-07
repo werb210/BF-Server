@@ -4,6 +4,15 @@ import { verifyRuntime } from "./startup/verifyRuntime";
 
 const app = createApp();
 
+app.get("/health", (_req, res) => {
+  res.status(200).send("ok");
+});
+
+app.get("/ready", (_req, res) => {
+  res.status(200).send("ready");
+});
+
+
 void (async () => {
   try {
     await verifyRuntime();

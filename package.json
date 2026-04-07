@@ -3,12 +3,13 @@
   "version": "1.0.0",
   "main": "dist/index.js",
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && tsc-alias",
+    "build": "tsc",
     "start": "node dist/index.js",
     "start:debug": "node --trace-warnings --unhandled-rejections=strict dist/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "node scripts/guard-getenv-scope.js",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests=false",
+    "postinstall": "npm run build"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
