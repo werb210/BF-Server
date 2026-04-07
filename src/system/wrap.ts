@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { Request, Response, NextFunction } from "express";
 
 export function wrap(
@@ -27,5 +28,6 @@ export function error(res: Response, message: string, status = 400) {
   return res.status(status).json({
     status: "error",
     error: message,
+    rid: crypto.randomUUID(),
   });
 }
