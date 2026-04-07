@@ -5,6 +5,7 @@ import routes from "./routes";
 import { fail } from "./lib/response";
 import { getEnv } from "./config/env";
 import { registerApiRouteMounts } from "./routes/routeRegistry";
+import { corsMiddleware } from "./middleware/cors";
 
 const allowedProductionHosts: string[] = ["server.boreal.financial"];
 
@@ -29,16 +30,7 @@ export function createApp() {
     return res.sendStatus(204);
   });
 
-  app.use((req, res, next) => {
-    const origin = req.headers.origin;
-
-    if (origin) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-      res.setHeader("Access-Control-Allow-Credentials", "true");
-    }
-
-    next();
-  });
+  app.use(corsMiddleware);
 
   app.get("/health", (_req, res) => {
     res.status(200).json({

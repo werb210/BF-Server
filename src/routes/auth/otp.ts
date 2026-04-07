@@ -89,7 +89,7 @@ router.post("/verify", async (req: Request, res: Response) => {
 
   await redis.del(`otp:${phone}`);
 
-  return res.status(200).json({ token });
+  return res.status(200).json({ status: "ok", data: { token } });
 });
 
 export default router;

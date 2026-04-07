@@ -2,10 +2,11 @@ import { Router } from "express";
 import { createLead } from "../modules/lead/lead.service";
 import { startCall, updateCallStatus } from "../modules/calls/calls.service";
 import { sendMessage } from "../modules/messaging/service";
+import { requireAuth } from "../middleware/requireAuth";
 
 const router = Router();
 
-router.post("/lead", async (req, res) => {
+router.post("/lead", requireAuth, async (req, res) => {
   try {
     const result = await createLead(req.body);
     res.json(result);
@@ -15,7 +16,7 @@ router.post("/lead", async (req, res) => {
   }
 });
 
-router.post("/call/start", async (req, res) => {
+router.post("/call/start", requireAuth, async (req, res) => {
   try {
     const result = await startCall(req.body);
     res.json(result);

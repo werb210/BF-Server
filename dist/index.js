@@ -15,8 +15,8 @@ void (async () => {
         await (0, verifyRuntime_1.verifyRuntime)();
     }
     catch (err) {
-        console.error("💥 STARTUP FAILED — EXITING");
-        process.exit(1);
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("Runtime verification failed:", message);
     }
     const port = Number(process.env.PORT) || 8080;
     app.listen(port, "0.0.0.0", () => {

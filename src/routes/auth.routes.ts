@@ -46,7 +46,7 @@ router.post("/verify-otp", async (req, res) => {
 
     const token = signJwt({ phone });
 
-    return res.status(200).json({ token });
+    return res.status(200).json({ status: "ok", data: { token } });
   } catch {
     return res.status(500).json({ error: "INTERNAL_SERVER_ERROR" });
   }
