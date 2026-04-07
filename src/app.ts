@@ -1,10 +1,10 @@
 import express from "express";
 
 import { corsMiddleware } from "./middleware/cors";
-import routes from "./routes";
 import authRouter from "./routes/auth";
 import { fail } from "./lib/response";
 import { getEnv } from "./config/env";
+import { registerApiRouteMounts } from "./routes/routeRegistry";
 
 const allowedProductionHosts: string[] = ["server.boreal.financial"];
 
@@ -58,7 +58,7 @@ export function createApp() {
   });
 
   app.use("/api/auth", authRouter);
-  app.use("/api/v1", routes);
+  registerApiRouteMounts(app);
 
   app.use((_req, res) => fail(res, "not_found", 404));
 

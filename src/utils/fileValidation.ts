@@ -1,4 +1,4 @@
-import { fileTypeFromBuffer } from "file-type";
+import { fromBuffer as fileTypeFromBuffer } from "file-type";
 import { AppError } from "../middleware/errors";
 import { config } from "../config";
 

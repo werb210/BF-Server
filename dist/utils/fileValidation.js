@@ -6,7 +6,7 @@ const errors_1 = require("../middleware/errors");
 const config_1 = require("../config");
 const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
 async function validateFile(buffer) {
-    const type = await (0, file_type_1.fileTypeFromBuffer)(buffer);
+    const type = await (0, file_type_1.fromBuffer)(buffer);
     if (!type) {
         if (config_1.config.env === "test") {
             return { ext: "pdf", mime: "application/pdf" };

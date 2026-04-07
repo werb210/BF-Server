@@ -7,10 +7,10 @@ exports.createApp = createApp;
 exports.resetOtpStateForTests = resetOtpStateForTests;
 const express_1 = __importDefault(require("express"));
 const cors_1 = require("./middleware/cors");
-const routes_1 = __importDefault(require("./routes"));
 const auth_1 = __importDefault(require("./routes/auth"));
 const response_1 = require("./lib/response");
 const env_1 = require("./config/env");
+const routeRegistry_1 = require("./routes/routeRegistry");
 const allowedProductionHosts = ["server.boreal.financial"];
 function createApp() {
     const app = (0, express_1.default)();
@@ -50,7 +50,7 @@ function createApp() {
         res.status(200).send("OK");
     });
     app.use("/api/auth", auth_1.default);
-    app.use("/api/v1", routes_1.default);
+    (0, routeRegistry_1.registerApiRouteMounts)(app);
     app.use((_req, res) => (0, response_1.fail)(res, "not_found", 404));
     return app;
 }
