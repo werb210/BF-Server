@@ -11,20 +11,20 @@ function routeFromContract(endpoint: string): string {
   return endpoint.startsWith(API_PREFIX) ? endpoint.slice(API_PREFIX.length) : endpoint;
 }
 
-function createLeadHandler(_req: any, res: any) {
-  return ok(res, { saved: true });
+function createLeadHandler(req: any, _res: any) {
+  return ok({ saved: true }, req.rid);
 }
 
-function startCallHandler(_req: any, res: any) {
-  return ok(res, { started: true });
+function startCallHandler(req: any, _res: any) {
+  return ok({ started: true }, req.rid);
 }
 
-function updateCallStatusHandler(_req: any, res: any) {
-  return ok(res, { recorded: true });
+function updateCallStatusHandler(req: any, _res: any) {
+  return ok({ recorded: true }, req.rid);
 }
 
-function sendMessageHandler(_req: any, res: any) {
-  return ok(res, { reply: "ok" });
+function sendMessageHandler(req: any, _res: any) {
+  return ok({ reply: "ok" }, req.rid);
 }
 
 router.post(routeFromContract(endpoints.createLead), requireAuth, createLeadHandler);

@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { ApiResponseSchema } from "../contracts";
-import { error, ok } from "../lib/response";
+import { fail as failResponse, ok } from "../lib/response";
 
 type WrappedBody = {
   status?: string;
@@ -28,7 +28,7 @@ function sendValidatedResponse(res: Response, payload: unknown): Response {
 
   if (!validated.success) {
     console.error("INVALID RESPONSE SHAPE:", payload);
-    return res.status(500).json(error("Invalid response shape", resolveRid(res.req)));
+    return res.status(500).json(failResponse("Invalid response shape", resolveRid(res.req)));
   }
 
   return res.status(200).send(validated.data);
@@ -68,13 +68,13 @@ export function fail(res: Response, a: number | string, b?: string | number): Re
   if (typeof a === "number") {
     const message = typeof b === "string" ? b : "Request failed";
     res.locals.__wrapped = true;
-    return res.status(a).json(error(message, rid));
+    return res.status(a).json(failResponse(message, rid));
   }
 
   const message = a;
   const statusCode = typeof b === "number" ? b : 400;
   res.locals.__wrapped = true;
-  return res.status(statusCode).json(error(message, rid));
+  return res.status(statusCode).json(failResponse(message, rid));
 }
 
-export { okResponse as ok, error };
+export { okResponse as ok };

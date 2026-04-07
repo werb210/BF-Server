@@ -5,7 +5,7 @@ export function timeout(ms = 15000) {
   return (_req: Request, res: Response, next: NextFunction) => {
     const id = setTimeout(() => {
       if (!res.headersSent) {
-        fail(res, "Request timeout", 503, "TIMEOUT");
+        res.status(503).json(fail("Request timeout", (_req as Request & { rid?: string }).rid));
       }
     }, ms);
 

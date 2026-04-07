@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAuth, requireCapability } from "../middleware/auth";
 import { CAPABILITIES } from "../auth/capabilities";
 import { safeHandler } from "../middleware/safeHandler";
-import { respondOk } from "../lib/response";
+import { ok } from "../lib/response";
 import { submitReferral } from "../modules/referrals/referrals.service";
 import { AppError } from "../middleware/errors";
 
@@ -22,7 +22,7 @@ router.use(requireCapability([CAPABILITIES.APPLICATION_CREATE]));
 
 router.post(
   "/",
-  safeHandler(async (req: any, res: any, next: any) => {
+  safeHandler(async (req: any) => {
     const parsed = referralSchema.safeParse(req.body);
     if (!parsed.success) {
       throw new AppError("invalid_payload", "Invalid referral payload.", 400);
@@ -41,8 +41,7 @@ router.post(
       referrerId: req.user?.userId ?? null,
     });
 
-    res.status(201);
-    respondOk(res, result);
+    return ok(result, req.rid);
   })
 );
 

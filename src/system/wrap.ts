@@ -1,22 +1,17 @@
-import type { Request, Response } from "express";
-import { fail, ok } from "../lib/response";
-import { ok as respondOk, fail as respondFail } from "../lib/response";
+import { Request, Response, NextFunction } from "express";
 
-export function wrap(handler: (req: Request, res: Response) => Promise<any> | any) {
-  return async (req: Request, res: Response) => {
+export function wrap(
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<any> | any
+) {
+  return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await handler(req, res);
-      if (!res.headersSent) {
-        respondOk(res, ok(result, (req as Request & { rid?: string }).rid));
+      const result = await fn(req, res, next);
+
+      if (!res.headersSent && result !== undefined) {
+        res.json(result);
       }
-    } catch (err: any) {
-      if (!res.headersSent) {
-        const status = err.status || 500;
-        if (status === 429) {
-          res.setHeader("Retry-After", "1");
-        }
-        respondFail(res, fail(err, (req as Request & { rid?: string }).rid).error, status);
-      }
+    } catch (err) {
+      next(err);
     }
   };
 }

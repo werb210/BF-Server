@@ -162,7 +162,7 @@ router.get(
     );
 
     if (Number(activeCalls.rows[0]?.count ?? "0") > 0) {
-      return fail(null, "active_call_in_progress");
+      return fail("active_call_in_progress", req.rid);
     }
 
     const token = new AccessToken(
