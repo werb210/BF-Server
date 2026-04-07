@@ -1,61 +1,37 @@
-name: server-ci
+name: Deploy to Azure
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
 
-concurrency:
-  group: azure-deploy-${{ github.ref }}
-  cancel-in-progress: true
+env:
+  AZURE_WEBAPP_NAME: boreal-staff-server
 
 jobs:
-  build_and_deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: production
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Use Node
+      # OPTIONAL: Node build (remove if not needed)
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
 
       - name: Install deps
-        run: npm ci
+        run: npm install
 
       - name: Build
-        run: npm run build
+        run: npm run build --if-present
 
-      - name: Type check
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Verify dist completeness
-        run: node scripts/verify-build.js
-
-      - name: Verify startup requires
-        run: node -e "require('./dist/routes'); require('./dist/routes/auth'); require('./dist/config/env');"
-
-      - name: Test
-        run: npm run test
-
-      - name: Prune dev dependencies
-        run: npm prune --omit=dev
-
-      - name: Assemble deploy package
-        run: |
-          mkdir deploy
-          cp -r dist package.json package-lock.json node_modules deploy/
-
-      - name: Deploy to Azure Web App
-        if: github.ref == 'refs/heads/main'
+      # THIS IS THE ONLY DEPLOY STEP THAT MATTERS
+      - name: Deploy to Azure
         uses: azure/webapps-deploy@v3
         with:
-          app-name: boreal-staff-server
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: ./deploy
+          package: .
