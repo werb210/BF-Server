@@ -9,6 +9,11 @@ const allowedProductionOrigins = [
   "https://server.boreal.financial",
 ];
 
+function isLegacyRoute(req: cors.CorsRequest): boolean {
+  const url = req.url ?? "";
+  return url.startsWith("/api/public");
+}
+
 function isAllowedOrigin(origin: string, nodeEnv: string | undefined): boolean {
   if (allowedProductionOrigins.includes(origin)) {
     return true;
@@ -26,6 +31,16 @@ function isAllowedOrigin(origin: string, nodeEnv: string | undefined): boolean {
 }
 
 export const corsMiddleware = cors((req, callback) => {
+  if (isLegacyRoute(req)) {
+    return callback(null, {
+      origin: true,
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      preflightContinue: false,
+      optionsSuccessStatus: 410,
+    });
+  }
+
   const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
   const { NODE_ENV } = getEnv();
 
