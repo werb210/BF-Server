@@ -2,6 +2,7 @@ import express from "express";
 
 import { corsMiddleware } from "./middleware/cors";
 import authRouter from "./routes/auth";
+import routes from "./routes";
 import { fail } from "./lib/response";
 import { getEnv } from "./config/env";
 import { registerApiRouteMounts } from "./routes/routeRegistry";
@@ -58,6 +59,7 @@ export function createApp() {
   });
 
   app.use("/api/auth", authRouter);
+  app.use("/api/v1", routes);
   registerApiRouteMounts(app);
 
   app.use((_req, res) => fail(res, "not_found", 404));

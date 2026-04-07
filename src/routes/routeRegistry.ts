@@ -31,7 +31,7 @@ import pipelineRoutes from "./pipeline";
 import telephonyRoutes from "../telephony/routes/telephonyRoutes";
 import webhooksRoutes from "./webhooks";
 import websiteRoutes from "./website";
-import { mount } from "./_canonicalMount";
+import { mount, resetMountedRoutes } from "./_canonicalMount";
 
 export type ApiRoute = {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -158,6 +158,7 @@ export const ROUTES: ApiRoute[] = [
 ];
 
 export function registerApiRouteMounts(app: Router): void {
+  resetMountedRoutes();
   const apiRouter = Router();
 
   API_ROUTE_MOUNTS.forEach((entry) => {

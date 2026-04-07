@@ -38,6 +38,17 @@ function getEnv() {
     return cached;
 }
 function validateRuntimeEnvOrExit() {
+    const required = [
+        "DATABASE_URL",
+        "JWT_SECRET",
+        "OPENAI_API_KEY",
+    ];
+    for (const key of required) {
+        if (!process.env[key]) {
+            console.error(`❌ Missing env: ${key}`);
+            process.exit(1);
+        }
+    }
     return getEnv();
 }
 function resetEnvCacheForTests() {

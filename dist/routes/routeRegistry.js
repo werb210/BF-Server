@@ -147,6 +147,7 @@ exports.ROUTES = [
     { method: "GET", path: "/api/portal/applications/:id/readiness", roles: [roles_1.ROLES.ADMIN] },
 ];
 function registerApiRouteMounts(app) {
+    (0, _canonicalMount_1.resetMountedRoutes)();
     const apiRouter = (0, express_1.Router)();
     exports.API_ROUTE_MOUNTS.forEach((entry) => {
         (0, _canonicalMount_1.mount)(apiRouter, entry.path, entry.router);
