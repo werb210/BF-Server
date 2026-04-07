@@ -1,24 +1,35 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.wrap = wrap;
-const response_1 = require("../lib/response");
-const response_2 = require("../lib/response");
-function wrap(handler) {
-    return async (req, res) => {
+exports.ok = ok;
+exports.error = error;
+const crypto_1 = __importDefault(require("crypto"));
+function wrap(fn) {
+    return async (req, res, next) => {
         try {
-            const result = await handler(req, res);
-            if (!res.headersSent) {
-                (0, response_2.ok)(res, (0, response_1.ok)(result, req.rid));
+            const result = await fn(req, res, next);
+            if (!res.headersSent && result !== undefined) {
+                res.json(result);
             }
         }
         catch (err) {
-            if (!res.headersSent) {
-                const status = err.status || 500;
-                if (status === 429) {
-                    res.setHeader("Retry-After", "1");
-                }
-                (0, response_2.fail)(res, (0, response_1.fail)(err, req.rid).error, status);
-            }
+            next(err);
         }
     };
+}
+function ok(res, data) {
+    return res.json({
+        status: "ok",
+        data,
+    });
+}
+function error(res, message, status = 400) {
+    return res.status(status).json({
+        status: "error",
+        error: message,
+        rid: crypto_1.default.randomUUID(),
+    });
 }

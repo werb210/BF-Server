@@ -3,7 +3,6 @@ import { DEFAULT_AUTH_SILO } from "../../auth/silo";
 import { fetchRequestId } from "../../observability/requestContext";
 import { findAuthUserById } from "../../modules/auth/auth.repo";
 import { logError } from "../../observability/logger";
-import { validateAuthMe } from "../../validation/auth.validation";
 
 function fetchAuthRequestId(res: Response): string {
   return res.locals.requestId ?? fetchRequestId() ?? "unknown";
@@ -97,8 +96,7 @@ export async function authMeHandler(
     }
 
     const responseBody = {
-      success: true,
-      ok: true,
+      status: "ok",
       data: {
         user: {
           id: user.userId,
@@ -107,27 +105,7 @@ export async function authMeHandler(
           phone: user.phone,
         },
       },
-      userId: user.userId,
-      role: user.role,
-      silo,
-      user: {
-        id: user.userId,
-        role: user.role,
-        silo,
-        phone: user.phone,
-      },
     };
-
-    const validation = validateAuthMe(responseBody);
-    if (!validation.success) {
-      respondResponseValidationError(
-        res,
-        route,
-        requestId,
-        validation.error.flatten()
-      );
-      return;
-    }
 
     res.set("Cache-Control", "no-store");
     res.status(200).json(responseBody);

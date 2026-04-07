@@ -6,7 +6,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const twilio_1 = __importDefault(require("twilio"));
 const config_1 = require("../config");
-const response_1 = require("../lib/response");
 const router = (0, express_1.Router)();
 const twilioRuntime = twilio_1.default;
 router.post("/voice/incoming", (_req, res) => {
@@ -21,6 +20,6 @@ router.post("/voice/incoming", (_req, res) => {
     });
     dial.client("staff_portal");
     dial.client("staff_mobile");
-    return (0, response_1.ok)(res, twiml.toString());
+    return res.type("text/xml").send(twiml.toString());
 });
 exports.default = router;

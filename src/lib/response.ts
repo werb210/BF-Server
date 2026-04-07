@@ -11,17 +11,27 @@ export type ApiError = {
 };
 
 export function ok<T = unknown>(data: T, rid?: string): ApiSuccess<T> {
-  return {
+  const result: ApiSuccess<T> = {
     status: "ok",
     data,
-    rid,
   };
+
+  if (rid !== undefined) {
+    result.rid = rid;
+  }
+
+  return result;
 }
 
 export function fail(error: string, rid?: string): ApiError {
-  return {
+  const result: ApiError = {
     status: "error",
     error,
-    rid,
   };
+
+  if (rid !== undefined) {
+    result.rid = rid;
+  }
+
+  return result;
 }

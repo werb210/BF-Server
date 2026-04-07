@@ -1,6 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.routeWrap = exports.wrap = void 0;
-const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+exports.routeWrap = void 0;
 exports.wrap = wrap;
-exports.routeWrap = exports.wrap;
+function wrap(fn) {
+    return async (req, res, next) => {
+        try {
+            const result = await fn(req, res, next);
+            if (!res.headersSent && result) {
+                res.json(result);
+            }
+        }
+        catch (err) {
+            next(err);
+        }
+    };
+}
+exports.routeWrap = wrap;

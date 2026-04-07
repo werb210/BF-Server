@@ -13,5 +13,5 @@ function errorHandler(err, req, res, next) {
     if (res.headersSent) {
         return next(err);
     }
-    return res.status(500).json((0, response_1.error)("Internal server error", rid));
+    return res.status(500).json((0, response_1.fail)("Internal server error", rid));
 }

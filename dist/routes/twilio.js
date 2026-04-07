@@ -138,7 +138,7 @@ router.get("/dialer/token", auth_1.requireAuth, (0, auth_1.requireAuthorization)
        where staff_user_id = $1
          and status in ('ringing', 'in_progress')`, [identity]);
     if (Number(activeCalls.rows[0]?.count ?? "0") > 0) {
-        return (0, response_1.fail)(null, "active_call_in_progress");
+        return (0, response_1.fail)("active_call_in_progress", req.rid);
     }
     const token = new AccessToken_1.default(config_1.config.twilio.accountSid ?? "", config_1.config.twilio.apiKey ?? "", config_1.config.twilio.apiSecret ?? "", { identity, ttl: 3600 });
     token.addGrant(new AccessToken_2.VoiceGrant((0, clean_1.stripUndefined)({

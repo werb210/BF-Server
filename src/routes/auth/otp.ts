@@ -1,7 +1,7 @@
 import express, { type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
 
-import { getRedis } from "../../lib/redis.js";
+import { getRedis } from "../../lib/redis";
 import { getEnv } from "../../config/env";
 import { fail, ok } from "../../lib/response";
 
@@ -38,7 +38,11 @@ const isCode = (value: unknown): value is string => (
 );
 
 function generateOtpCode(): string {
-  return "654321";
+  if (process.env.NODE_ENV === "test" && process.env.TEST_OTP_CODE) {
+    return process.env.TEST_OTP_CODE;
+  }
+
+  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 function sessionKey(phone: string): string {
@@ -90,6 +94,13 @@ router.post("/start", async (req: Request, res: Response) => {
     return res.status(500).json(fail("missing_otp_env", rid));
   }
 
+  let redis;
+  try {
+    redis = getRedis();
+  } catch {
+    return res.status(503).json(fail("service_unavailable", rid));
+  }
+
   const existing = await readSession(phone);
   if (existing && Date.now() - existing.lastSentAt < 60_000) {
     return res.status(429).json(fail("Too many requests", rid));
@@ -105,11 +116,13 @@ router.post("/start", async (req: Request, res: Response) => {
     lastSentAt: Date.now(),
   });
 
-  await getTwilioClient().messages.create({
-    body: `Your code is ${code}`,
-    to: phone,
-    from: process.env.TWILIO_PHONE,
-  });
+  if (process.env.NODE_ENV !== "test") {
+    await getTwilioClient().messages.create({
+      body: `Your code is ${code}`,
+      to: phone,
+      from: process.env.TWILIO_PHONE,
+    });
+  }
 
   return res.status(200).json(ok({ sent: true }, rid));
 });
@@ -122,7 +135,12 @@ router.post("/verify", async (req: Request, res: Response) => {
     return res.status(400).json(fail("invalid_payload", rid));
   }
 
-  const redis = getRedis();
+  let redis;
+  try {
+    redis = getRedis();
+  } catch {
+    return res.status(503).json(fail("service_unavailable", rid));
+  }
   const session = await readSession(phone);
 
   if (!session) {

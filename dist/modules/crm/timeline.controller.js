@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.handleListCrmTimeline = handleListCrmTimeline;
 const response_1 = require("../../lib/response");
 const timeline_repo_1 = require("./timeline.repo");
-async function handleListCrmTimeline(req, res) {
+async function handleListCrmTimeline(req, _res) {
     const page = Number(req.query.page) || 1;
     const pageSize = Number(req.query.pageSize) || 25;
     const entityType = typeof req.query.entityType === "string" ? req.query.entityType : null;
@@ -18,11 +18,10 @@ async function handleListCrmTimeline(req, res) {
         limit,
         offset,
     });
-    (0, response_1.respondOk)(res, {
+    return (0, response_1.ok)({
         entries,
         total: entries.length,
-    }, {
         page,
         pageSize: limit,
-    });
+    }, req.rid);
 }

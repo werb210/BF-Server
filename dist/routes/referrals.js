@@ -18,7 +18,7 @@ const referralSchema = zod_1.z.object({
 });
 router.use(auth_1.requireAuth);
 router.use((0, auth_1.requireCapability)([capabilities_1.CAPABILITIES.APPLICATION_CREATE]));
-router.post("/", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.post("/", (0, safeHandler_1.safeHandler)(async (req) => {
     const parsed = referralSchema.safeParse(req.body);
     if (!parsed.success) {
         throw new errors_1.AppError("invalid_payload", "Invalid referral payload.", 400);
@@ -34,7 +34,6 @@ router.post("/", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
         phone,
         referrerId: req.user?.userId ?? null,
     });
-    res.status(201);
-    (0, response_1.respondOk)(res, result);
+    return (0, response_1.ok)(result, req.rid);
 }));
 exports.default = router;

@@ -39,7 +39,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importStar(require("express"));
 const twilio_1 = __importDefault(require("twilio"));
 const twilioWebhookValidation_1 = require("../middleware/twilioWebhookValidation");
-const response_1 = require("../lib/response");
 const router = (0, express_1.Router)();
 const twilioRuntime = twilio_1.default;
 router.post("/twilio/voice", express_1.default.urlencoded({ extended: false }), twilioWebhookValidation_1.twilioWebhookValidation, (_req, res) => {
@@ -52,6 +51,6 @@ router.post("/twilio/voice", express_1.default.urlencoded({ extended: false }), 
     // Ring all staff endpoints simultaneously
     dial.client("staff_portal");
     dial.client("staff_mobile");
-    return (0, response_1.ok)(res, response.toString());
+    return res.type("text/xml").send(response.toString());
 });
 exports.default = router;

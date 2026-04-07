@@ -8,18 +8,17 @@ const response_1 = require("../lib/response");
 const router = (0, express_1.Router)();
 router.use(auth_1.requireAuth);
 router.use((0, auth_1.requireCapability)([capabilities_1.CAPABILITIES.COMMUNICATIONS_READ]));
-router.get("/", (0, safeHandler_1.safeHandler)((_req, res) => {
-    (0, response_1.respondOk)(res, { status: "ok" });
+router.get("/", (0, safeHandler_1.safeHandler)((req) => {
+    return (0, response_1.ok)({ status: "ok" }, req.rid);
 }));
-router.get("/messages", (0, safeHandler_1.safeHandler)((req, res) => {
+router.get("/messages", (0, safeHandler_1.safeHandler)((req) => {
     const page = Number(req.query.page) || 1;
     const pageSize = Number(req.query.pageSize) || 25;
-    (0, response_1.respondOk)(res, {
+    return (0, response_1.ok)({
         messages: [],
         total: 0,
-    }, {
         page,
         pageSize,
-    });
+    }, req.rid);
 }));
 exports.default = router;

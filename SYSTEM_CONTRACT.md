@@ -231,3 +231,8 @@ The system must support without breaking changes:
 	•	Changes require an explicit contract revision
 
 ⸻
+
+
+## Route Alias Behavior
+
+Non-API paths not in the canonical allowlist (`/`, `/health`, `/ready`, `/metrics`) are intentionally rejected with `410 LEGACY_ROUTE_DISABLED` by `routeAlias`.
