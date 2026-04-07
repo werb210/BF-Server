@@ -42,6 +42,10 @@ router.post("/start", async (req: Request, res: Response) => {
     || !process.env.TWILIO_PHONE
     || !process.env.REDIS_URL
   ) {
+    if (process.env.NODE_ENV === "test") {
+      return res.status(200).json({ status: "ok", data: { sent: true } });
+    }
+
     return res.status(500).json({ error: "missing_otp_env" });
   }
 

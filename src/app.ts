@@ -29,6 +29,17 @@ export function createApp() {
     return res.sendStatus(204);
   });
 
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+
+    if (origin) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    }
+
+    next();
+  });
+
   app.get("/health", (_req, res) => {
     res.status(200).json({
       status: "ok",
