@@ -41,3 +41,6 @@ jobs:
 
       - name: Test
         run: npm run test:ci
+
+      - name: CI tests complete marker
+        run: echo "CI_TESTS_COMPLETE"

@@ -6,6 +6,9 @@ export default defineConfig({
     environment: "node",
     globals: true,
     setupFiles: ["src/tests/setupEnv.ts"],
+    sequence: {
+      shuffle: false,
+    },
   },
   resolve: {
     alias: {

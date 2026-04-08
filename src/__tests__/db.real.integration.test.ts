@@ -2,6 +2,10 @@ const hasRealDbConfig = Boolean(process.env.DATABASE_URL);
 const isTestEnv = process.env.NODE_ENV === "test";
 const runRealDbIntegration = !isTestEnv && process.env.RUN_REAL_DB_TESTS === "1" && hasRealDbConfig;
 
+if (process.env.NODE_ENV === "test" && process.env.CI === "true") {
+  throw new Error("REAL_DB_TEST_BLOCKED_IN_CI");
+}
+
 if (runRealDbIntegration) {
   describe("real db integration", () => {
     const originalNodeEnv = process.env.NODE_ENV;

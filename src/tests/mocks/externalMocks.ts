@@ -50,14 +50,18 @@ vi.mock("ioredis", () => {
   return { default: Redis };
 });
 
-const fetchMock = vi.fn(() => {
+const mockFetch = vi.fn(() => {
   throw new Error("Real network call blocked in test");
-}) as unknown as typeof global.fetch;
+});
+
+const blockedFetch = new Proxy(mockFetch as unknown as typeof global.fetch, {
+  apply() {
+    throw new Error("NETWORK_CALL_BLOCKED");
+  },
+});
 
 Object.defineProperty(global, "fetch", {
   configurable: false,
   writable: false,
-  value: fetchMock,
+  value: blockedFetch,
 });
-
-Object.freeze(global.fetch);
