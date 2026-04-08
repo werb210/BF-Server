@@ -11,6 +11,6 @@ describe("Health contract", () => {
     expect([200, 503]).toContain(res.status);
     expect(res.body).toHaveProperty("status");
     expect(res.body).toHaveProperty("data");
-    expect(res.body.data).toHaveProperty("db");
+    expect(res.body.data).toHaveProperty("server");
   });
 });
