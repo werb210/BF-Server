@@ -26,7 +26,7 @@ router.post("/call/start", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/call/status", async (req, res) => {
+router.post("/call/status", requireAuth, async (req, res) => {
   try {
     const result = await updateCallStatus(req.body);
     res.json(result);
@@ -36,7 +36,7 @@ router.post("/call/status", async (req, res) => {
   }
 });
 
-router.post("/message", async (req, res) => {
+router.post("/message", requireAuth, async (req, res) => {
   try {
     const result = await sendMessage(req.body);
     res.json(result);

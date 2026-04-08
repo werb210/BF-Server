@@ -39,7 +39,6 @@ export function createApp() {
 
   // routers
   app.use("/api/auth", authRouter);
-  app.use("/api", routes);
   app.use("/api/v1", routes);
 
   // CRITICAL: mounts all remaining endpoints
