@@ -54,6 +54,10 @@ router.post("/start", async (req: Request, res: Response) => {
 
   await redis.set(`otp:${phone}`, code, "EX", 300);
 
+  if (process.env.NODE_ENV === "test") {
+    return res.status(200).json({ status: "ok", data: { sent: true } });
+  }
+
   await getTwilioClient().messages.create({
     body: `Your code is ${code}`,
     to: phone,

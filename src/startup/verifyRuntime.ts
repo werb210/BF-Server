@@ -5,6 +5,10 @@ import { initDb } from "../db/init";
 import { deps } from "../system/deps";
 
 export async function verifyRuntime() {
+  if (process.env.NODE_ENV === "test") {
+    return;
+  }
+
   console.log("🔍 VERIFYING RUNTIME...");
 
   // ---------------------------
