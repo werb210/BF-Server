@@ -159,6 +159,6 @@ if (require.main === module) {
     .catch(async (err) => {
       process.stderr.write(`${String(err)}\n`);
       await pool.end();
-      process.exit(1);
+      throw err;
     });
 }

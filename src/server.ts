@@ -21,11 +21,3 @@ export async function startServer() {
     console.log(`SERVER STARTED ON ${port}`);
   });
 }
-
-if (require.main === module) {
-  void startServer().catch((err) => {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("Server startup failed:", message);
-    process.exitCode = 1;
-  });
-}
