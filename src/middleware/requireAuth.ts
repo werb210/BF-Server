@@ -1,6 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
-import { getEnv } from "../config/env";
 import { error } from "../lib/response";
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -16,7 +15,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!token) {
     return res.status(401).json(error("Unauthorized", rid));
   }
-  const { JWT_SECRET } = getEnv();
+  const JWT_SECRET = process.env.JWT_SECRET;
 
   if (!JWT_SECRET) {
     return res.status(500).json(error("Auth not configured", rid));

@@ -3,7 +3,6 @@ import { randomInt } from "crypto";
 import jwt from "jsonwebtoken";
 
 import { getRedis } from "../../lib/redis";
-import { getEnv } from "../../config/env";
 
 const router = express.Router();
 
@@ -82,7 +81,7 @@ router.post("/verify", async (req: Request, res: Response) => {
     return res.status(400).json({ error: "Invalid code" });
   }
 
-  const { JWT_SECRET } = getEnv();
+  const JWT_SECRET = process.env.JWT_SECRET;
   if (!JWT_SECRET) {
     return res.status(401).json({ error: "unauthorized" });
   }

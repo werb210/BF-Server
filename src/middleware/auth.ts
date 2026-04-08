@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction, type RequestHandler } from "express";
 import jwt from "jsonwebtoken";
-import { getEnv } from "../config/env";
 
 type AuthorizationOptions = {
   roles?: string[];
@@ -27,7 +26,7 @@ export function auth(req: Request, res: Response, next: NextFunction) {
   }
 
   try {
-    const { JWT_SECRET } = getEnv();
+    const JWT_SECRET = process.env.JWT_SECRET;
 
     if (!JWT_SECRET) {
       return res.status(500).json({

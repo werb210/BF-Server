@@ -1,6 +1,5 @@
 import jwt, { type SignOptions, type JwtPayload } from "jsonwebtoken";
 import { config } from "../config";
-import { getEnv } from "../config/env";
 import { type Role, isRole } from "./roles";
 import { type Capability, isCapability } from "./capabilities";
 import { findAuthUserById, type AuthUser } from "../modules/auth/auth.repo";
@@ -143,7 +142,7 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
 
 export function verifyJwt(token: string) {
   try {
-    const { JWT_SECRET: secret } = getEnv();
+    const secret = process.env.JWT_SECRET;
     if (!secret) throw new Error("INVALID_TOKEN");
     return jwt.verify(token, secret);
   } catch {
@@ -152,7 +151,7 @@ export function verifyJwt(token: string) {
 }
 
 export function signJwt(payload: any) {
-  const { JWT_SECRET: secret } = getEnv();
+  const secret = process.env.JWT_SECRET;
   if (!secret) throw new Error("INVALID_TOKEN");
   return jwt.sign(payload, secret, {
     expiresIn: "1h",

@@ -1,5 +1,4 @@
 import cors from "cors";
-import { getEnv } from "../config/env";
 
 const allowedProductionOrigins = [
   "https://boreal.financial",
@@ -34,7 +33,7 @@ function isAllowedOrigin(origin: string, nodeEnv: string | undefined): boolean {
 
 export const corsMiddleware = cors((req, callback) => {
   const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
-  const { NODE_ENV } = getEnv();
+  const NODE_ENV = process.env.NODE_ENV;
 
   if (!origin) {
     return callback(null, { origin: false, credentials: false });

@@ -1,7 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { listRouteInventory, type RouteEntry } from "../debug/printRoutes";
-import { getEnv } from "../config/env";
 
 export type NormalizedRouteEntry = {
   method: string;
@@ -33,8 +32,6 @@ function toKey(route: NormalizedRouteEntry): string {
 }
 
 async function loadAppBuilder() {
-  getEnv();
-
   const { createApp } = await import("../app.js");
   return createApp;
 }
