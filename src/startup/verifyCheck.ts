@@ -11,6 +11,6 @@ export async function verifyTwilioSetup() {
     console.log("Twilio Verify OK");
   } catch (err) {
     console.error("Twilio Verify FAILED");
-    process.exit(1);
+    throw err;
   }
 }

@@ -1,4 +1,4 @@
-name: server-ci
+name: CI
 
 on:
   push:
@@ -13,10 +13,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate workflow YAML
+        run: npx --yes yaml@2.8.1 valid .github/workflows/ci.yml
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Install
         run: npm ci
@@ -24,10 +28,39 @@ jobs:
       - name: Guard
         run: npm run test:guard
 
-      - name: Run tests
+      - name: Run tests (capture output)
         run: |
+          set -e
           npm run test:ci | tee ci_output.log
+
+      - name: Fail if output file empty
+        run: |
+          if [ ! -s ci_output.log ]; then
+            echo "No test output captured"
+            exit 1
+          fi
 
       - name: Enforce completion marker
         run: |
           grep -q "CI_TESTS_COMPLETE" ci_output.log
+
+      - name: Enforce deterministic exit (5 runs)
+        run: |
+          for i in 1 2 3 4 5; do
+            echo "RUN $i"
+            npm run ci:validate || exit 1
+          done
+
+      - name: Ensure no forbidden exit usage
+        run: |
+          if grep -R "process.exit(" src; then
+            echo "process.exit found - forbidden"
+            exit 1
+          fi
+
+      - name: Ensure no exitCode mutation outside index
+        run: |
+          if grep -R "process.exitCode" src | grep -v "src/index.ts"; then
+            echo "Illegal exitCode mutation"
+            exit 1
+          fi

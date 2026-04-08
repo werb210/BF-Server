@@ -32,7 +32,9 @@ console.log = (...args: unknown[]) => {
 };
 
 afterAll(() => {
-  console.log("CI_TESTS_COMPLETE");
+  if (process.env.CI_VALIDATE === "true") {
+    console.log("CI_TESTS_COMPLETE");
+  }
 });
 
 process.on("unhandledRejection", (err) => {
