@@ -1,7 +1,10 @@
+import { applyTestEnvDefaults } from "./src/test/setupEnv";
 import { beforeEach, vi } from "vitest";
 
 import { deps } from "@/system/deps";
 import { resetMetrics } from "@/system/metrics";
+
+applyTestEnvDefaults();
 
 beforeEach(() => {
   vi.clearAllMocks();
