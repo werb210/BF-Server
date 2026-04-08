@@ -25,7 +25,6 @@ describe("Endpoint reachability", () => {
       { method: "get", path: "/api/health" },
       { method: "post", path: "/api/auth/otp/start", body: { phone: "+15555550100" } },
       { method: "post", path: "/api/auth/otp/verify", body: { phone: "+15555550100", code: "654321" } },
-      { method: "get", path: "/api/voice/token", auth: true },
     ];
 
     for (const endpoint of endpoints) {

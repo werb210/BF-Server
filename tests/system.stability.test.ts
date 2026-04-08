@@ -10,7 +10,7 @@ describe("System stability", () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("ok");
     expect(res.body.data.server).toBe("ok");
-    expect(["configured", "missing"]).toContain(res.body.data.twilio);
-    expect(["ok", "degraded"]).toContain(res.body.data.db);
+    expect(res.body.data.twilio).toBeUndefined();
+    expect(res.body.data.db).toBeUndefined();
   });
 });

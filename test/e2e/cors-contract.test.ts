@@ -5,15 +5,15 @@ import { createApp } from "../../src/app";
 describe("CORS contract", () => {
   const app = createApp();
 
-  it("returns 410 when origin missing", async () => {
+  it("returns 404 when origin is missing", async () => {
     const res = await request(app)
       .options("/anything")
       .set("Access-Control-Request-Method", "POST");
 
-    expect(res.status).toBe(410);
+    expect(res.status).toBe(404);
     expect(res.body).toEqual({
       status: "error",
-      error: "LEGACY_ROUTE_DEPRECATED",
+      error: "NOT_FOUND",
     });
   });
 });

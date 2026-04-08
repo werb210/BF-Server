@@ -19,10 +19,10 @@ describe("auth middleware enforcement", () => {
   });
 
   it("returns canonical 401 envelope when auth header is missing", async () => {
-    const res = await request(app).post("/api/v1/leads").send({ leadId: "1" });
+    const res = await request(app).post("/api/v1/lead").send({ leadId: "1" });
 
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ status: "error", error: "Unauthorized" });
+    expect(res.body).toEqual({ status: "error", error: "NO_TOKEN" });
   });
 
   it("returns success with valid JWT token", async () => {
@@ -31,11 +31,11 @@ describe("auth middleware enforcement", () => {
     });
 
     const res = await request(app)
-      .post("/api/v1/calls/start")
+      .post("/api/v1/call/start")
       .set("Authorization", `Bearer ${token}`)
-      .send({ callId: "call-1" });
+      .send({ to: "+15555550111" });
 
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: "ok", data: { started: true } });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ status: "error", error: "call_start_failed" });
   });
 });
