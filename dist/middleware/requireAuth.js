@@ -5,7 +5,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.requireAuth = requireAuth;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const env_1 = require("../config/env");
 const response_1 = require("../lib/response");
 function requireAuth(req, res, next) {
     const auth = req.headers.authorization;
@@ -17,7 +16,7 @@ function requireAuth(req, res, next) {
     if (!token) {
         return res.status(401).json((0, response_1.error)("Unauthorized", rid));
     }
-    const { JWT_SECRET } = (0, env_1.getEnv)();
+    const JWT_SECRET = process.env.JWT_SECRET;
     if (!JWT_SECRET) {
         return res.status(500).json((0, response_1.error)("Auth not configured", rid));
     }

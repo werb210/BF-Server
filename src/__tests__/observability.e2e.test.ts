@@ -14,11 +14,11 @@ describe("server:observability:e2e", () => {
   it("returns stable health responses", async () => {
     const withProvided = await request(app).get("/health").set("x-request-id", "rid-from-client");
     expect(withProvided.status).toBe(200);
-    expect(withProvided.body).toEqual({ status: "ok", data: {} });
+    expect(withProvided.body).toMatchObject({ db: expect.any(Boolean), openai: expect.any(Boolean), twilio: expect.any(Boolean) });
 
     const withoutProvided = await request(app).get("/health");
     expect(withoutProvided.status).toBe(200);
-    expect(withoutProvided.body).toEqual({ status: "ok", data: {} });
+    expect(withoutProvided.body).toMatchObject({ db: expect.any(Boolean), openai: expect.any(Boolean), twilio: expect.any(Boolean) });
   });
 
   it("does not require access log side effects", async () => {

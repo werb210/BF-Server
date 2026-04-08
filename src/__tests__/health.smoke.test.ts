@@ -6,6 +6,6 @@ describe("Health check", () => {
   it("GET /health returns ok", async () => {
     const res = await request(app).get("/health");
 
-    expect(res.body).toEqual({ status: "ok", data: {} });
+    expect(res.body).toMatchObject({ db: expect.any(Boolean), openai: expect.any(Boolean), twilio: expect.any(Boolean) });
   });
 });

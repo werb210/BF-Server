@@ -5,7 +5,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.corsMiddleware = void 0;
 const cors_1 = __importDefault(require("cors"));
-const env_1 = require("../config/env");
 const allowedProductionOrigins = [
     "https://boreal.financial",
     "https://www.boreal.financial",
@@ -34,7 +33,7 @@ function isAllowedOrigin(origin, nodeEnv) {
 }
 exports.corsMiddleware = (0, cors_1.default)((req, callback) => {
     const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
-    const { NODE_ENV } = (0, env_1.getEnv)();
+    const NODE_ENV = process.env.NODE_ENV;
     if (!origin) {
         return callback(null, { origin: false, credentials: false });
     }

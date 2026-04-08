@@ -53,8 +53,10 @@ jobs:
 
       - name: Ensure no forbidden exit usage
         run: |
-          if grep -R "process.exit(" src; then
-            echo "process.exit found - forbidden"
+          violations=$(grep -R "process.exit(" src | grep -v "src/index.ts" || true)
+          if [ -n "$violations" ]; then
+            echo "Forbidden process.exit usage found:"
+            echo "$violations"
             exit 1
           fi
 

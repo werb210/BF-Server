@@ -7,7 +7,6 @@ const express_1 = __importDefault(require("express"));
 const crypto_1 = require("crypto");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const redis_1 = require("../../lib/redis");
-const env_1 = require("../../config/env");
 const router = express_1.default.Router();
 let twilioClient = null;
 function getTwilioClient() {
@@ -57,7 +56,7 @@ router.post("/verify", async (req, res) => {
     if (!stored || stored !== code) {
         return res.status(400).json({ error: "Invalid code" });
     }
-    const { JWT_SECRET } = (0, env_1.getEnv)();
+    const JWT_SECRET = process.env.JWT_SECRET;
     if (!JWT_SECRET) {
         return res.status(401).json({ error: "unauthorized" });
     }

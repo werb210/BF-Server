@@ -7,10 +7,18 @@ exports.createApp = createApp;
 exports.resetOtpStateForTests = resetOtpStateForTests;
 const express_1 = __importDefault(require("express"));
 const helmet_1 = __importDefault(require("helmet"));
+const pg_1 = require("pg");
+const openai_1 = __importDefault(require("openai"));
+const twilio_1 = __importDefault(require("twilio"));
 const cors_1 = require("./middleware/cors");
 const auth_1 = __importDefault(require("./routes/auth"));
 const routes_1 = __importDefault(require("./routes"));
 const routeRegistry_1 = require("./routes/routeRegistry");
+const pool = new pg_1.Pool({ connectionString: process.env.DATABASE_URL });
+const openai = new openai_1.default({ apiKey: process.env.OPENAI_API_KEY });
+const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
+    ? (0, twilio_1.default)(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+    : null;
 function createApp() {
     const app = (0, express_1.default)();
     // core middleware
@@ -18,9 +26,30 @@ function createApp() {
     app.use((0, helmet_1.default)());
     // security + cors
     app.use(cors_1.corsMiddleware);
-    // base health (non-prefixed)
-    app.get("/health", (_req, res) => {
-        res.status(200).json({ status: "ok", data: {} });
+    app.get("/health", async (_req, res) => {
+        const status = {
+            db: false,
+            openai: false,
+            twilio: false,
+        };
+        try {
+            await pool.query("SELECT 1");
+            status.db = true;
+        }
+        catch { }
+        try {
+            await openai.models.list();
+            status.openai = true;
+        }
+        catch { }
+        if (twilioClient) {
+            try {
+                await twilioClient.api.accounts.list({ limit: 1 });
+                status.twilio = true;
+            }
+            catch { }
+        }
+        return res.json(status);
     });
     // api health (tests expect this)
     app.get("/api/health", (_req, res) => {
@@ -67,6 +96,8 @@ function createApp() {
     });
     return app;
 }
+const app = createApp();
+exports.default = app;
 function resetOtpStateForTests() {
     // no-op — OTP is now handled in route layer (redis / stateless)
 }

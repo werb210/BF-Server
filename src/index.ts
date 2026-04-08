@@ -1,18 +1,21 @@
+import app from "./app";
 import { validateEnv } from "./config/env";
-import { startServer } from "./server";
+
+const PORT = process.env.PORT || 8080;
 
 async function start() {
   try {
+    // Only validate env — do NOT call external services
     validateEnv();
-    await startServer();
 
-    if (process.env.CI_VALIDATE === "true") {
-      console.log("CI_TESTS_COMPLETE");
-    }
+    app.listen(PORT, () => {
+      console.log(`SERVER STARTED ON ${PORT}`);
+    });
+
   } catch (err) {
-    console.error("Server startup failed:", err);
+    console.error("Startup failed:", err);
     process.exit(1);
   }
 }
 
-void start();
+start();

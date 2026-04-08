@@ -1,6 +1,9 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-const execa_1 = require("execa");
+const execa_1 = __importDefault(require("execa"));
 const BASE_URL = "http://127.0.0.1:8080";
 function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
@@ -58,7 +61,7 @@ async function runChecks() {
 }
 function startServer() {
     console.log("→ Starting BF-Server...");
-    const server = (0, execa_1.execa)("npm", ["run", "dev"], {
+    const server = (0, execa_1.default)("npm", ["run", "dev"], {
         cwd: ".",
         stdout: "inherit",
         stderr: "inherit",

@@ -11,7 +11,6 @@ exports.signJwt = signJwt;
 exports.verifyAccessTokenWithUser = verifyAccessTokenWithUser;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const config_1 = require("../config");
-const env_1 = require("../config/env");
 const roles_1 = require("./roles");
 const capabilities_1 = require("./capabilities");
 const auth_repo_1 = require("../modules/auth/auth.repo");
@@ -117,7 +116,7 @@ function verifyAccessToken(token) {
 }
 function verifyJwt(token) {
     try {
-        const { JWT_SECRET: secret } = (0, env_1.getEnv)();
+        const secret = process.env.JWT_SECRET;
         if (!secret)
             throw new Error("INVALID_TOKEN");
         return jsonwebtoken_1.default.verify(token, secret);
@@ -127,7 +126,7 @@ function verifyJwt(token) {
     }
 }
 function signJwt(payload) {
-    const { JWT_SECRET: secret } = (0, env_1.getEnv)();
+    const secret = process.env.JWT_SECRET;
     if (!secret)
         throw new Error("INVALID_TOKEN");
     return jsonwebtoken_1.default.sign(payload, secret, {

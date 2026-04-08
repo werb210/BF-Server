@@ -1,10 +1,20 @@
 import express from "express";
 import helmet from "helmet";
+import { Pool } from "pg";
+import OpenAI from "openai";
+import twilio from "twilio";
 
 import { corsMiddleware } from "./middleware/cors";
 import authRouter from "./routes/auth";
 import routes from "./routes";
 import { registerApiRouteMounts } from "./routes/routeRegistry";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
+  ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+  : null;
 
 export function createApp() {
   const app = express();
@@ -16,9 +26,31 @@ export function createApp() {
   // security + cors
   app.use(corsMiddleware);
 
-  // base health (non-prefixed)
-  app.get("/health", (_req, res) => {
-    res.status(200).json({ status: "ok", data: {} });
+  app.get("/health", async (_req, res) => {
+    const status = {
+      db: false,
+      openai: false,
+      twilio: false,
+    };
+
+    try {
+      await pool.query("SELECT 1");
+      status.db = true;
+    } catch {}
+
+    try {
+      await openai.models.list();
+      status.openai = true;
+    } catch {}
+
+    if (twilioClient) {
+      try {
+        await twilioClient.api.accounts.list({ limit: 1 });
+        status.twilio = true;
+      } catch {}
+    }
+
+    return res.json(status);
   });
 
   // api health (tests expect this)
@@ -73,6 +105,10 @@ export function createApp() {
 
   return app;
 }
+
+const app = createApp();
+
+export default app;
 
 export function resetOtpStateForTests() {
   // no-op — OTP is now handled in route layer (redis / stateless)

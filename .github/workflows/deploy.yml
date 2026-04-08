@@ -44,7 +44,8 @@ jobs:
                "node_modules/.cache/*" \
                "src/*" \
                "test/*" \
-               ".github/*"
+               ".github/*" \
+               ".env"
 
       # 🔴 THIS IS THE FIX
       - name: Azure Login

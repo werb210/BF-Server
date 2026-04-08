@@ -2,7 +2,6 @@ import "dotenv/config";
 
 import { createApp } from "./app";
 import { initDb } from "./db/init";
-import { verifyRuntime } from "./startup/verifyRuntime";
 
 export async function buildApp() {
   return createApp();
@@ -11,7 +10,6 @@ export async function buildApp() {
 export async function startServer() {
   if (process.env.NODE_ENV !== "test") {
     await initDb();
-    await verifyRuntime();
   }
 
   const app = await buildApp();

@@ -25,12 +25,12 @@ describe("server:readiness:e2e", () => {
     deps.db.ready = false;
     const notReady = await request(app).get("/health");
     expect(notReady.status).toBe(200);
-    expect(notReady.body).toEqual({ status: "ok", data: {} });
+    expect(notReady.body).toMatchObject({ db: expect.any(Boolean), openai: expect.any(Boolean), twilio: expect.any(Boolean) });
 
     deps.db.ready = true;
     const ready = await request(app).get("/health");
     expect(ready.status).toBe(200);
-    expect(ready.body).toEqual({ status: "ok", data: {} });
+    expect(ready.body).toMatchObject({ db: expect.any(Boolean), openai: expect.any(Boolean), twilio: expect.any(Boolean) });
   });
 
   it("returns 200 from /ready regardless of readiness state", async () => {

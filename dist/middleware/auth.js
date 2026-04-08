@@ -9,7 +9,6 @@ exports.createAuthMiddleware = createAuthMiddleware;
 exports.requireAuthorization = requireAuthorization;
 exports.requireCapability = requireCapability;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const env_1 = require("../config/env");
 function auth(req, res, next) {
     const token = req.headers.authorization?.replace("Bearer ", "");
     if (!token) {
@@ -19,7 +18,7 @@ function auth(req, res, next) {
         });
     }
     try {
-        const { JWT_SECRET } = (0, env_1.getEnv)();
+        const JWT_SECRET = process.env.JWT_SECRET;
         if (!JWT_SECRET) {
             return res.status(500).json({
                 status: "error",

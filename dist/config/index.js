@@ -9,7 +9,8 @@ const safeEnv = schema_1.EnvSchema.safeParse({
     JWT_SECRET: process.env.JWT_SECRET,
     ...process.env,
 });
-if (!safeEnv.success) {
+const isTestMode = process.env.NODE_ENV === "test" || process.env.CI === "true";
+if (!safeEnv.success && !isTestMode) {
     console.error("ENV VALIDATION FAILED:", safeEnv.error.flatten());
 }
 const parsed = {

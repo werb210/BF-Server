@@ -43,7 +43,6 @@ exports.exportServerRoutesArtifact = exportServerRoutesArtifact;
 const promises_1 = require("node:fs/promises");
 const node_path_1 = __importDefault(require("node:path"));
 const printRoutes_1 = require("../debug/printRoutes");
-const env_1 = require("../config/env");
 exports.DEFAULT_ROUTE_ARTIFACT_PATH = "artifacts/server-routes.json";
 function normalizeRoutePath(routePath) {
     if (!routePath || routePath === "//") {
@@ -61,7 +60,6 @@ function toKey(route) {
     return `${route.method} ${route.path} ${route.source ?? ""}`;
 }
 async function loadAppBuilder() {
-    (0, env_1.getEnv)();
     const { createApp } = await Promise.resolve().then(() => __importStar(require("../app.js")));
     return createApp;
 }
