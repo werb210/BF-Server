@@ -11,7 +11,7 @@ router.use("/documents", documentRoutes);
 router.use("/users", userRoutes);
 
 router.get("/health", (_req, res) => {
-  res.status(200).json({ status: "ok" });
+  res.status(200).json({ status: "ok", data: {} });
 });
 
 export default router;

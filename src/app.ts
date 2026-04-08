@@ -23,10 +23,7 @@ export function createApp() {
 
   // api health (tests expect this)
   app.get("/api/health", (_req, res) => {
-    res.status(200).json({
-      status: "ok",
-      data: { server: "ok" },
-    });
+    res.status(200).json({ status: "ok", data: {} });
   });
 
   // readiness
