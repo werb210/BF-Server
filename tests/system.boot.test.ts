@@ -22,9 +22,7 @@ describe("System boot", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("ok");
-    expect(res.body.data.server).toBe("ok");
-    expect(res.body.data.twilio).toBeUndefined();
-    expect(res.body.data.db).toBeUndefined();
+    expect(res.body.data).toEqual({});
   });
 
   it("returns missing PORT when it is absent", () => {

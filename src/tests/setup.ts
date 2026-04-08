@@ -1,4 +1,4 @@
-import { beforeEach } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
 import { resetRedisMock } from "../lib/redis";
 import { resetTestDb } from "../lib/dbTestUtils";
 import { resetOtpStateForTests } from "../app";
@@ -9,4 +9,8 @@ beforeEach(async () => {
   resetRedisMock();
   resetOtpStateForTests();
   resetRateLimitForTests();
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
 });
