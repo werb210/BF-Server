@@ -40,7 +40,10 @@ jobs:
         run: npm run test:guard
 
       - name: Test
-        run: npm run test:ci
+        run: grep -q "CI_TESTS_COMPLETE" <(npm run test:ci)
 
-      - name: CI tests complete marker
-        run: echo "CI_TESTS_COMPLETE"
+      - name: Verify Vitest isolate mode locked
+        run: grep -q "isolate: true" vitest.config.ts
+
+      - name: Verify Vitest config unchanged
+        run: git diff --exit-code vitest.config.ts
