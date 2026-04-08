@@ -1,5 +1,6 @@
 import "./mocks/externalMocks";
 import "./setup";
+import { afterAll } from "vitest";
 
 process.env.NODE_ENV = "test";
 process.env.DATABASE_URL = "postgresql://user:pass@127.0.0.1:5432/bf_test";
@@ -20,6 +21,19 @@ process.env.SKIP_DB_CONNECTION = "true";
 if (process.env.CI === "true") {
   process.env = Object.freeze({ ...process.env });
 }
+
+const originalLog = console.log;
+let done = false;
+
+console.log = (...args: unknown[]) => {
+  if (done) return;
+  if (args.includes("CI_TESTS_COMPLETE")) done = true;
+  originalLog(...args);
+};
+
+afterAll(() => {
+  console.log("CI_TESTS_COMPLETE");
+});
 
 process.on("unhandledRejection", (err) => {
   if (String(err).toLowerCase().includes("network")) {
