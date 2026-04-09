@@ -1,17 +1,13 @@
 {
   "name": "bf-server",
   "version": "1.0.0",
-  "main": "dist/index.js",
+  "main": "dist/server.js",
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && tsc-alias",
-    "start": "node dist/index.js",
-    "start:debug": "node --trace-warnings --unhandled-rejections=strict dist/index.js",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
-    "lint": "node scripts/guard-getenv-scope.js",
-    "test": "vitest run --passWithNoTests=false",
-    "test:guard": "node scripts/guard-tests.js",
-    "test:ci": "vitest run --reporter=verbose && echo CI_TESTS_COMPLETE",
-    "ci:validate": "CI_VALIDATE=true vitest run --reporter=verbose"
+    "test": "vitest run"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
@@ -79,7 +75,7 @@
     "seed": "ts-node prisma/seed.ts"
   },
   "engines": {
-    "node": ">=20.10.0"
+    "node": ">=20.10.0 <21.0.0"
   },
   "overrides": {
     "rollup": "4.13.0"

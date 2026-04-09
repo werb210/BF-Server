@@ -1,105 +1,61 @@
 import express from "express";
-import helmet from "helmet";
-import { Pool } from "pg";
-import OpenAI from "openai";
-import twilio from "twilio";
+import cors from "cors";
+import cookieParser from "cookie-parser";
 
-import { corsMiddleware } from "./middleware/cors";
-import authRouter from "./routes/auth";
-import routes from "./routes";
-import { registerApiRouteMounts } from "./routes/routeRegistry";
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
-  ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
-  : null;
+import authRoutes from "./routes/auth";
+import callRoutes from "./routes/call";
+import healthRoutes from "./routes/health";
 
 export function createApp() {
   const app = express();
 
-  // core middleware
-  app.use(express.json());
-  app.use(helmet());
+  /**
+   * CORE MIDDLEWARE
+   */
+  app.use(cors({
+    origin: true,
+    credentials: true,
+  }));
 
-  // security + cors
-  app.use(corsMiddleware);
+  app.use(express.json({ limit: "10mb" }));
+  app.use(cookieParser());
 
-  app.get("/health", async (_req, res) => {
-    const status = {
-      db: false,
-      openai: false,
-      twilio: false,
-    };
-
-    try {
-      await pool.query("SELECT 1");
-      status.db = true;
-    } catch {}
-
-    try {
-      await openai.models.list();
-      status.openai = true;
-    } catch {}
-
-    if (twilioClient) {
-      try {
-        await twilioClient.api.accounts.list({ limit: 1 });
-        status.twilio = true;
-      } catch {}
-    }
-
-    return res.json(status);
+  /**
+   * HEALTH (MUST NOT BE CAUGHT BY FRONTEND)
+   */
+  app.get("/health", (_req, res) => {
+    res.status(200).json({ status: "ok" });
   });
 
-  // api health (tests expect this)
-  app.get("/api/health", (_req, res) => {
-    res.status(200).json({ status: "ok", data: {} });
+  app.get("/api/_int/health", (_req, res) => {
+    res.status(200).json({ status: "ok" });
   });
 
-  // readiness
-  app.get("/ready", (_req, res) => {
-    res.status(200).json({
-      status: "ok",
-      data: {},
-    });
-  });
+  /**
+   * API ROUTES (LOCKED PREFIX)
+   */
+  app.use("/api/auth", authRoutes);
+  app.use("/api/call", callRoutes);
+  app.use("/api/health", healthRoutes);
 
-  // routers
-  app.use("/api/auth", authRouter);
-  app.use("/api/v1", routes);
-
-  // CRITICAL: mounts all remaining endpoints
-  registerApiRouteMounts(app);
-
-  // metrics (basic contract)
-  app.get("/metrics", (_req, res) => {
-    res.status(200).json({
-      status: "ok",
-      data: {
-        requests: 0,
-        errors: 0,
-      },
-    });
-  });
-
-  // legacy route handling (tests expect 410, not 404)
-  app.use((req, res, next) => {
-    if (req.path.startsWith("/auth") || req.path.startsWith("/api/public")) {
-      return res.status(410).json({
-        status: "error",
-        error: "LEGACY_ROUTE_DISABLED",
-      });
-    }
-    next();
-  });
-
-  // final 404 handler (structured)
-  app.use((_req, res) => {
+  /**
+   * 404 HANDLER
+   */
+  app.use((req, res) => {
     res.status(404).json({
-      status: "error",
-      error: "NOT_FOUND",
+      error: "Route not found",
+      path: req.originalUrl,
+    });
+  });
+
+  /**
+   * GLOBAL ERROR HANDLER
+   */
+  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error("SERVER ERROR:", err);
+    res.status(500).json({
+      error: "Internal Server Error",
+      message: err?.message ?? "Unknown error",
     });
   });
 
@@ -111,5 +67,5 @@ const app = createApp();
 export default app;
 
 export function resetOtpStateForTests() {
-  // no-op — OTP is now handled in route layer (redis / stateless)
+  // no-op: current auth flow is route-local in-memory state
 }

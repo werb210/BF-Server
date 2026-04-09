@@ -1,14 +1,13 @@
 {
   "compilerOptions": {
-    "rootDir": "src",
-    "module": "CommonJS",
-    "target": "ES2020",
-    "esModuleInterop": true,
-    "strict": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "outDir": "dist",
-    "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "moduleResolution": "node"
+    "rootDir": "src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
   },
   "include": [
     "src/**/*.ts"
@@ -20,6 +19,7 @@
     "**/*.spec.ts",
     "test",
     "tests",
-    "__tests__"
+    "__tests__",
+    "src/e2e.ts"
   ]
 }

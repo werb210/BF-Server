@@ -1,21 +1,7 @@
-import "dotenv/config";
+import app from "./app";
 
-import { createApp } from "./app";
-import { initDb } from "./db/init";
+const PORT = Number(process.env.PORT) || 8080;
 
-export async function buildApp() {
-  return createApp();
-}
-
-export async function startServer() {
-  if (process.env.NODE_ENV !== "test") {
-    await initDb();
-  }
-
-  const app = await buildApp();
-  const port = Number(process.env.PORT) || 8080;
-
-  return app.listen(port, "0.0.0.0", () => {
-    console.log(`SERVER STARTED ON ${port}`);
-  });
-}
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`BF-Server running on port ${PORT}`);
+});
