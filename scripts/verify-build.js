@@ -1,17 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const distPath = path.resolve("dist");
+const dist = path.resolve("dist");
+const serverFile = path.join(dist, "server.js");
 
-if (!fs.existsSync(distPath)) {
-  console.error("Build verification failed: dist folder missing");
+if (!fs.existsSync(dist)) {
+  console.error("dist folder missing");
   process.exit(1);
 }
 
-const serverFile = path.join(distPath, "server.js");
-
 if (!fs.existsSync(serverFile)) {
-  console.error("Build verification failed: server.js missing");
+  console.error("dist/server.js missing");
   process.exit(1);
 }
 
