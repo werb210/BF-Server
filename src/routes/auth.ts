@@ -1,5 +1,6 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
+import { createRequire } from "node:module";
 
 const router = Router();
 
@@ -9,23 +10,24 @@ const JWT_SECRET = process.env.JWT_SECRET;
 let twilioClient: any = null;
 let VERIFY_SID: string | undefined;
 
-try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const twilio = require("twilio");
+if (
+  process.env.TWILIO_ACCOUNT_SID &&
+  process.env.TWILIO_AUTH_TOKEN &&
+  process.env.TWILIO_VERIFY_SID
+) {
+  try {
+    const require = createRequire(import.meta.url);
+    const twilio = require("twilio");
 
-  if (
-    process.env.TWILIO_ACCOUNT_SID &&
-    process.env.TWILIO_AUTH_TOKEN &&
-    process.env.TWILIO_VERIFY_SID
-  ) {
     twilioClient = twilio(
       process.env.TWILIO_ACCOUNT_SID,
       process.env.TWILIO_AUTH_TOKEN
     );
     VERIFY_SID = process.env.TWILIO_VERIFY_SID;
+  } catch {
+    console.warn("Twilio init failed — OTP running in test mode");
+    twilioClient = null;
   }
-} catch {
-  twilioClient = null;
 }
 
 /**
