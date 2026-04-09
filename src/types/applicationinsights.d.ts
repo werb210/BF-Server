@@ -1,4 +1,26 @@
 declare module "applicationinsights" {
+  export namespace Contracts {
+    interface RequestTelemetry {
+      [key: string]: unknown;
+    }
+    interface DependencyTelemetry {
+      [key: string]: unknown;
+    }
+    interface ExceptionTelemetry {
+      [key: string]: unknown;
+    }
+    interface EventTelemetry {
+      [key: string]: unknown;
+    }
+  }
+
+  export interface TelemetryClient {
+    trackRequest(telemetry: Contracts.RequestTelemetry): void;
+    trackDependency(telemetry: Contracts.DependencyTelemetry): void;
+    trackException(telemetry: Contracts.ExceptionTelemetry): void;
+    trackEvent(telemetry: Contracts.EventTelemetry): void;
+  }
+
   interface Setup {
     setAutoCollectRequests(value: boolean): Setup;
     setAutoCollectDependencies(value: boolean): Setup;
@@ -10,8 +32,11 @@ declare module "applicationinsights" {
   }
 
   export function setup(connectionString?: string): Setup;
+
   const appInsights: {
     setup: typeof setup;
-  } & Setup;
+    defaultClient?: TelemetryClient;
+  };
+
   export default appInsights;
 }
