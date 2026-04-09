@@ -1,4 +1,3 @@
-import * as appInsights from "applicationinsights";
 import { config } from "../config/index.js";
 import { logInfo, logWarn } from "./logger.js";
 
@@ -37,62 +36,51 @@ type TelemetryClient = {
   trackEvent?: (telemetry: EventTelemetry) => void;
 };
 
+type AppInsightsModule = {
+  setup: (connectionString: string) => {
+    setAutoCollectRequests: (enabled: boolean) => unknown;
+    setAutoCollectPerformance: (enabled: boolean) => unknown;
+    setAutoCollectExceptions: (enabled: boolean) => unknown;
+    start: () => unknown;
+  };
+  defaultClient?: TelemetryClient;
+};
+
+let appInsights: AppInsightsModule | null = null;
 let telemetryClient: TelemetryClient | null = null;
 let initialized = false;
 
-function isValidConnectionString(connectionString: string): boolean {
-  const match = connectionString.match(/InstrumentationKey=([0-9a-fA-F-]{36})/);
-  if (!match || !match[1]) {
-    return false;
-  }
-  const guidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
-  return guidPattern.test(match[1]);
-}
+export function initAppInsights(): void {
+  const key = config.telemetry.appInsightsConnectionString;
 
-export function initializeAppInsights(): void {
-  if (initialized) {
+  if (!key?.trim()) {
+    logWarn("appinsights_disabled", {
+      reason: "missing_connection_string",
+      testEnvironment: config.env === "test",
+    });
     return;
   }
-  initialized = true;
 
   try {
-    const connectionString = config.telemetry.appInsightsConnectionString;
+    const mod = requireSafe("applicationinsights") as AppInsightsModule | null;
 
-    if (!connectionString?.trim()) {
+    if (!mod) {
       logWarn("appinsights_disabled", {
-        reason: "missing_connection_string",
-        testEnvironment: config.env === "test",
+        reason: "package_missing",
       });
       return;
     }
 
-    if (!isValidConnectionString(connectionString)) {
-      logWarn("appinsights_disabled", {
-        reason: "invalid_connection_string",
-      });
-      telemetryClient = null;
-      return;
-    }
-
-    if (typeof appInsights.setup !== "function") {
-      logWarn("appinsights_disabled", {
-        reason: "setup_unavailable",
-      });
-      return;
-    }
+    appInsights = mod;
 
     appInsights
-      .setup(connectionString)
-      .setAutoCollectConsole(false, false)
-      .setAutoCollectExceptions(true)
-      .setAutoCollectPerformance(false, false)
+      .setup(key)
       .setAutoCollectRequests(true)
-      .setAutoCollectDependencies(true)
-      .setSendLiveMetrics(false)
+      .setAutoCollectPerformance(true)
+      .setAutoCollectExceptions(true)
       .start();
 
-    telemetryClient =
-      (appInsights as { defaultClient?: TelemetryClient }).defaultClient ?? null;
+    telemetryClient = appInsights.defaultClient ?? null;
     logInfo("appinsights_initialized");
   } catch (error) {
     logWarn("appinsights_disabled", {
@@ -102,26 +90,35 @@ export function initializeAppInsights(): void {
   }
 }
 
-export function trackRequest(
-  telemetry: RequestTelemetry
-): void {
+export function initializeAppInsights(): void {
+  if (initialized) {
+    return;
+  }
+
+  initialized = true;
+  initAppInsights();
+}
+
+function requireSafe(pkg: string): unknown {
+  try {
+    return eval("require")(pkg);
+  } catch {
+    return null;
+  }
+}
+
+export function trackRequest(telemetry: RequestTelemetry): void {
   telemetryClient?.trackRequest(telemetry);
 }
 
-export function trackDependency(
-  telemetry: DependencyTelemetry
-): void {
+export function trackDependency(telemetry: DependencyTelemetry): void {
   telemetryClient?.trackDependency(telemetry);
 }
 
-export function trackException(
-  telemetry: ExceptionTelemetry
-): void {
+export function trackException(telemetry: ExceptionTelemetry): void {
   telemetryClient?.trackException(telemetry);
 }
 
-export function trackEvent(
-  telemetry: EventTelemetry
-): void {
+export function trackEvent(telemetry: EventTelemetry): void {
   telemetryClient?.trackEvent?.(telemetry);
 }
