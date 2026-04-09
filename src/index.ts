@@ -1,22 +1,44 @@
-import app from "./app.js";
-import { validateEnv } from "./config/env.js";
+import express from "express";
 
-const PORT = process.env.PORT || 8080;
-const LISTEN_PORT = typeof PORT === "string" ? Number.parseInt(PORT, 10) : PORT;
+const app = express();
 
-async function start() {
-  try {
-    // Only validate env — do NOT call external services
-    validateEnv();
+/**
+ * CRITICAL: TRUST AZURE PROXY
+ */
+app.set("trust proxy", true);
 
-    app.listen(LISTEN_PORT, "0.0.0.0", () => {
-      console.log(`SERVER STARTED ON ${PORT}`);
-    });
+/**
+ * FORCE ACCEPT ALL HOST HEADERS
+ * (Azure sometimes forwards unexpected host values)
+ */
+app.use((req, res, next) => {
+  req.headers.host = req.headers.host || "server.boreal.financial";
+  next();
+});
 
-  } catch (err) {
-    console.error("Startup failed:", err);
-    process.exit(1);
-  }
-}
+/**
+ * HARD HEALTH ENDPOINT (TOP PRIORITY)
+ */
+app.get("/health", (req, res) => {
+  return res.status(200).json({ status: "ok" });
+});
 
-start();
+app.get("/api/_int/health", (req, res) => {
+  return res.status(200).json({ status: "ok" });
+});
+
+/**
+ * BASIC ROOT CHECK
+ */
+app.get("/", (req, res) => {
+  res.status(200).send("BF-SERVER OK");
+});
+
+/**
+ * START SERVER
+ */
+const port = process.env.PORT || 8080;
+
+app.listen(port, "0.0.0.0", () => {
+  console.log(`SERVER STARTED ON ${port}`);
+});
