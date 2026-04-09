@@ -24,6 +24,10 @@ function validateQueryInputs(sql: string, params: unknown[]) {
 function initPool(): void {
   if (pool) return;
 
+  if (process.env.SKIP_DB_CONNECTION === "true") {
+    throw new Error("DB_POOL_NOT_INITIALIZED");
+  }
+
   if (!process.env.DATABASE_URL) {
     throw new Error("DB_POOL_NOT_INITIALIZED");
   }
