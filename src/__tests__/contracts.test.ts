@@ -9,8 +9,8 @@ describe("contracts", () => {
     expect(otpStart.status).not.toBe(404);
 
     const me = await request(app).get("/api/auth/me");
-    expect(me.status).toBe(200);
-    expect(me.body).toHaveProperty("user");
+    expect(me.status).toBe(401);
+    expect(me.body).toEqual({ error: "missing token" });
 
     const callStats = await request(app).get("/api/call/stats");
     expect(callStats.status).toBe(200);

@@ -1,81 +1,121 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
+import twilio from "twilio";
 
 const router = Router();
 
-/**
- * TEMP IN-MEM STORE (REPLACE WITH DB LATER)
- */
-const otpStore = new Map<string, string>();
+function getTwilioClient() {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
 
-/**
- * START OTP
- * POST /api/auth/otp/start
- */
-router.post("/otp/start", (req, res) => {
-  const { phone } = req.body;
-
-  if (!phone) {
-    return res.status(400).json({ error: "Phone is required" });
+  if (!accountSid || !authToken) {
+    return null;
   }
 
-  const code = "123456"; // TEMP (replace with Twilio)
+  return twilio(accountSid, authToken);
+}
 
-  otpStore.set(phone, code);
-
-  return res.json({ success: true });
-});
-
-/**
- * VERIFY OTP
- * POST /api/auth/otp/verify
- */
-router.post("/otp/verify", (req, res) => {
-  const { phone, code } = req.body;
-
-  const stored = otpStore.get(phone);
-
-  if (!stored || stored !== code) {
-    return res.status(401).json({ error: "Invalid code" });
-  }
-
+function getRequiredSecrets() {
+  const verifySid = process.env.TWILIO_VERIFY_SID;
   const jwtSecret = process.env.JWT_SECRET;
-  if (!jwtSecret) {
-    return res.status(500).json({ error: "JWT secret is not configured" });
+
+  if (!verifySid || !jwtSecret) {
+    return null;
   }
 
-  otpStore.delete(phone);
+  return {
+    verifySid,
+    jwtSecret,
+  };
+}
 
-  const token = jwt.sign({ id: phone, phone }, jwtSecret, { expiresIn: "7d" });
-
-  return res.json({
-    token,
-    user: {
-      id: phone,
-      phone,
-    },
-  });
-});
-
-/**
- * GET CURRENT USER
- */
-router.get("/me", (req, res) => {
-  const auth = req.headers.authorization?.split(" ")[1];
-  if (!auth) {
-    return res.status(200).json({ user: null });
-  }
-
-  const jwtSecret = process.env.JWT_SECRET;
-  if (!jwtSecret) {
-    return res.status(500).json({ error: "JWT secret is not configured" });
-  }
-
+// START OTP
+router.post("/otp/start", async (req, res) => {
   try {
-    const user = jwt.verify(auth, jwtSecret);
-    return res.json({ user });
+    const { phone } = req.body as { phone?: string };
+
+    if (!phone) {
+      return res.status(400).json({ error: "phone required" });
+    }
+
+    const client = getTwilioClient();
+    const secrets = getRequiredSecrets();
+
+    if (!client || !secrets) {
+      return res.status(500).json({ error: "auth provider not configured" });
+    }
+
+    await client.verify.v2.services(secrets.verifySid).verifications.create({
+      to: phone,
+      channel: "sms",
+    });
+
+    return res.json({ success: true });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "otp start failed";
+    return res.status(500).json({ error: message });
+  }
+});
+
+// VERIFY OTP
+router.post("/otp/verify", async (req, res) => {
+  try {
+    const { phone, code } = req.body as { phone?: string; code?: string };
+
+    if (!phone || !code) {
+      return res.status(400).json({ error: "phone + code required" });
+    }
+
+    const client = getTwilioClient();
+    const secrets = getRequiredSecrets();
+
+    if (!client || !secrets) {
+      return res.status(500).json({ error: "auth provider not configured" });
+    }
+
+    const check = await client.verify.v2.services(secrets.verifySid).verificationChecks.create({
+      to: phone,
+      code,
+    });
+
+    if (check.status !== "approved") {
+      return res.status(401).json({ error: "invalid code" });
+    }
+
+    const token = jwt.sign({ phone }, secrets.jwtSecret, { expiresIn: "7d" });
+
+    return res.json({ token });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "otp verify failed";
+    return res.status(500).json({ error: message });
+  }
+});
+
+// GET CURRENT USER
+router.get("/me", (req, res) => {
+  try {
+    const auth = req.headers.authorization;
+
+    if (!auth) {
+      return res.status(401).json({ error: "missing token" });
+    }
+
+    const token = auth.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({ error: "missing token" });
+    }
+
+    const secrets = getRequiredSecrets();
+
+    if (!secrets) {
+      return res.status(500).json({ error: "auth provider not configured" });
+    }
+
+    const decoded = jwt.verify(token, secrets.jwtSecret);
+
+    return res.json({ user: decoded });
   } catch {
-    return res.status(401).json({ error: "Invalid token" });
+    return res.status(401).json({ error: "invalid token" });
   }
 });
 
