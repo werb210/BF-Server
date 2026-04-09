@@ -11,6 +11,7 @@ import documentsRouter from "./routes/documents.js";
 import pipelineRouter from "./routes/pipeline.js";
 import usersRouter from "./routes/users.js";
 import crmRouter from "./routes/crm.js";
+import voiceTokenRouter from "./routes/voiceToken.js";
 import { requireAuth } from "./middleware/auth.js";
 import { createLead } from "./modules/lead/lead.service.js";
 import { respondOk } from "./utils/respondOk.js";
@@ -89,6 +90,8 @@ export function createApp() {
   app.post("/api/sms/send", requireAuth, (_req, res) => {
     res.json({ status: "ok", data: { sent: true } });
   });
+
+  app.use("/api", voiceTokenRouter);
 
   app.post("/api/v1/crm/lead", async (req: any, res: any) => {
     try {

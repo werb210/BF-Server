@@ -113,7 +113,7 @@ router.post("/otp/verify", async (req, res) => {
       // clear OTP (important for replay test)
       otpStore.delete(phone);
 
-      return res.status(200).json({ token });
+      return res.status(200).json({ status: "ok", data: { token } });
     }
 
     // PRODUCTION
@@ -134,7 +134,7 @@ router.post("/otp/verify", async (req, res) => {
 
     const token = jwt.sign({ id: phone, phone, role: "Staff" }, JWT_SECRET);
 
-    return res.status(200).json({ token });
+    return res.status(200).json({ status: "ok", data: { token } });
   } catch {
     // CRITICAL: force contract compliance
     return res.status(401).json({ error: "Invalid code" });

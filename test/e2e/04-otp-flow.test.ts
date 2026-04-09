@@ -41,8 +41,9 @@ describe("OTP flows", () => {
       .send({ phone: "+15555550100", code: "123456" });
 
     expect(res.status).toBe(200);
-    expect(typeof res.body.token).toBe("string");
-    expect(res.body.token.length).toBeGreaterThan(20);
+    expect(res.body.status).toBe("ok");
+    expect(typeof res.body.data?.token).toBe("string");
+    expect(res.body.data.token.length).toBeGreaterThan(20);
   });
 
   it("rejects wrong OTP code", async () => {
