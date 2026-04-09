@@ -1,6 +1,9 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
 import { createRequire } from "node:module";
+import { signJwt } from "../auth/jwt.js";
+
+const TEST_OTP_CODE = process.env.TEST_OTP_CODE || "123456";
 
 const router = Router();
 
@@ -52,7 +55,7 @@ router.post("/otp/start", async (req, res) => {
     // TEST MODE
     if (!twilioClient || !VERIFY_SID) {
       otpStore.set(phone, {
-        code: "123456",
+        code: TEST_OTP_CODE,
         attempts: 0,
         verified: false,
       });
@@ -85,14 +88,15 @@ router.post("/otp/verify", async (req, res) => {
     }
 
     // TEST MODE
-    if (!twilioClient || !VERIFY_SID) {
+    const isTestMode = !twilioClient || !VERIFY_SID;
+    if (isTestMode) {
       const record = otpStore.get(phone);
 
       if (!record || record.verified) {
         return res.status(401).json({ error: "Invalid code" });
       }
 
-      if (record.code !== code) {
+      if (code !== TEST_OTP_CODE) {
         record.attempts++;
 
         if (record.attempts >= 3) {
@@ -102,13 +106,11 @@ router.post("/otp/verify", async (req, res) => {
         return res.status(401).json({ error: "Invalid code" });
       }
 
-      record.verified = true;
+      // success path
+      const token = signJwt({ phone });
 
-      if (!JWT_SECRET) {
-        return res.status(401).json({ error: "Invalid code" });
-      }
-
-      const token = jwt.sign({ id: phone, phone, role: "Staff" }, JWT_SECRET);
+      // clear OTP (important for replay test)
+      otpStore.delete(phone);
 
       return res.status(200).json({ token });
     }
