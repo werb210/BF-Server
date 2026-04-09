@@ -3,42 +3,36 @@ import express from "express";
 const app = express();
 
 /**
- * CRITICAL: TRUST AZURE PROXY
+ * Trust Azure proxy
  */
 app.set("trust proxy", true);
 
 /**
- * FORCE ACCEPT ALL HOST HEADERS
- * (Azure sometimes forwards unexpected host values)
+ * Health endpoints
  */
-app.use((req, res, next) => {
-  req.headers.host = req.headers.host || "server.boreal.financial";
-  next();
+app.get("/health", (_req, res) => {
+  res.status(200).json({ status: "ok" });
+});
+
+app.get("/api/_int/health", (_req, res) => {
+  res.status(200).json({ status: "ok" });
 });
 
 /**
- * HARD HEALTH ENDPOINT (TOP PRIORITY)
+ * Root check
  */
-app.get("/health", (req, res) => {
-  return res.status(200).json({ status: "ok" });
-});
-
-app.get("/api/_int/health", (req, res) => {
-  return res.status(200).json({ status: "ok" });
-});
-
-/**
- * BASIC ROOT CHECK
- */
-app.get("/", (req, res) => {
+app.get("/", (_req, res) => {
   res.status(200).send("BF-SERVER OK");
 });
 
 /**
- * START SERVER
+ * FIX: PORT MUST BE NUMBER
  */
-const port = process.env.PORT || 8080;
+const port = Number(process.env.PORT) || 8080;
 
+/**
+ * Start server
+ */
 app.listen(port, "0.0.0.0", () => {
   console.log(`SERVER STARTED ON ${port}`);
 });
