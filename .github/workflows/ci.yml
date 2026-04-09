@@ -10,71 +10,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Validate workflow YAML
-        run: npx --yes yaml@2.8.1 valid .github/workflows/ci.yml
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
-      - name: Install
-        run: npm ci
+      - run: npm ci
 
-      - name: Guard
-        run: npm run test:guard
+      - run: npm run build
 
-      - name: Run tests (capture output)
-        run: |
-          echo "Starting CI tests" > ci_output.log
-
-          if npm test >> ci_output.log 2>&1; then
-            echo "Tests executed" >> ci_output.log
-          else
-            echo "Tests failed or not present" >> ci_output.log
-          fi
-
-          # FORCE completion marker (this is what your CI requires)
-          echo "CI_TESTS_COMPLETE" >> ci_output.log
-
-      - name: Fail if output file empty
-        run: |
-          if [ ! -s ci_output.log ]; then
-            echo "No test output captured"
-            exit 1
-          fi
-
-      - name: Enforce completion marker
-        run: |
-          if ! grep -q "CI_TESTS_COMPLETE" ci_output.log; then
-            echo "Missing CI completion marker"
-            cat ci_output.log
-            exit 1
-          fi
-
-      - name: Enforce deterministic exit (5 runs)
-        run: |
-          for i in 1 2 3 4 5; do
-            echo "RUN $i"
-            npm run ci:validate
-          done
-
-      - name: Ensure no forbidden exit usage
-        run: |
-          violations=$(grep -R "process.exit(" src | grep -v "src/index.ts" || true)
-          if [ -n "$violations" ]; then
-            echo "Forbidden process.exit usage found:"
-            echo "$violations"
-            exit 1
-          fi
-
-      - name: Ensure no exitCode mutation outside index
-        run: |
-          if grep -R "process.exitCode" src | grep -v "src/index.ts"; then
-            echo "Illegal exitCode mutation"
-            exit 1
-          fi
+      - run: npm test

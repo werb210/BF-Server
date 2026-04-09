@@ -5,7 +5,6 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
-    "ci:validate": "echo CI_VALIDATION_OK",
     "start": "node dist/server.js",
     "test": "node scripts/ci-test.js",
     "test:guard": "echo \"guard passed\"",
