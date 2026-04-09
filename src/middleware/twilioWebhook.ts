@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 
-import { verifyTwilioSignature } from "../security/twilioVerify";
+import { verifyTwilioSignature } from "../security/twilioVerify.js";
 
 export function validateTwilioWebhook(req: Request, res: Response, next: NextFunction): void {
   const signature = req.headers["x-twilio-signature"];

@@ -1,23 +1,17 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.AppError = void 0;
-exports.isAppError = isAppError;
-exports.forbiddenError = forbiddenError;
-exports.notFoundHandler = notFoundHandler;
-exports.errorHandler = errorHandler;
-const dbRuntime_1 = require("../dbRuntime");
-const logger_1 = require("../observability/logger");
-const appInsights_1 = require("../observability/appInsights");
-const errors_1 = require("../helpers/errors");
-class AppError extends Error {
+import { isDbConnectionFailure } from "../dbRuntime.js";
+import { logError, logWarn } from "../observability/logger.js";
+import { trackException } from "../observability/appInsights.js";
+import { fetchStatus as errorStatusFor, isHttpishError } from "../helpers/errors.js";
+export class AppError extends Error {
+    status;
+    code;
     constructor(code, message, status = 400) {
         super(message);
         this.code = code;
         this.status = status;
     }
 }
-exports.AppError = AppError;
-function isAppError(value) {
+export function isAppError(value) {
     if (value instanceof AppError) {
         return true;
     }
@@ -34,7 +28,7 @@ function isAppError(value) {
         typeof message === "string" &&
         message.length > 0);
 }
-function forbiddenError(message = "Access denied.") {
+export function forbiddenError(message = "Access denied.") {
     return new AppError("forbidden", message, 403);
 }
 const AUTH_FAILURE_CODES = new Set([
@@ -77,7 +71,7 @@ function resolveFailureReason(err) {
     }
     if (isConstraintViolation(err))
         return "constraint_violation";
-    if ((0, dbRuntime_1.isDbConnectionFailure)(err)) {
+    if (isDbConnectionFailure(err)) {
         return isTimeoutError(err) ? "db_timeout" : "db_unavailable";
     }
     return "server_error";
@@ -91,16 +85,16 @@ function normalizeAuthError(err) {
             details: err.details,
         };
     }
-    if ((0, dbRuntime_1.isDbConnectionFailure)(err)) {
+    if (isDbConnectionFailure(err)) {
         return {
             status: 500,
             code: "db_unavailable",
             message: "Database unavailable.",
         };
     }
-    if ((0, errors_1.isHttpishError)(err)) {
+    if (isHttpishError(err)) {
         return {
-            status: (0, errors_1.fetchStatus)(err),
+            status: errorStatusFor(err),
             code: "auth_failed",
             message: "Authentication failed.",
         };
@@ -111,7 +105,7 @@ function normalizeAuthError(err) {
         message: "Authentication failed.",
     };
 }
-function notFoundHandler(req, res) {
+export function notFoundHandler(req, res) {
     const requestId = res.locals.requestId ?? "unknown";
     if (isAuthRoute(req)) {
         res.status(404).json({
@@ -131,7 +125,7 @@ function notFoundHandler(req, res) {
         requestId,
     });
 }
-function errorHandler(err, req, res, _next) {
+export function errorHandler(err, req, res, _next) {
     const requestId = res.locals.requestId ?? "unknown";
     const durationMs = res.locals.requestStart
         ? Date.now() - Number(res.locals.requestStart)
@@ -157,13 +151,13 @@ function errorHandler(err, req, res, _next) {
                 message: normalized.message,
                 ...(normalized.details ? { details: normalized.details } : {}),
             };
-        (0, logger_1.logError)("auth_request_failed", {
+        logError("auth_request_failed", {
             ...logBase,
             status,
             code: normalized.code,
             message: normalized.message,
         });
-        (0, appInsights_1.trackException)({
+        trackException({
             exception: err,
             properties: {
                 requestId,
@@ -183,13 +177,13 @@ function errorHandler(err, req, res, _next) {
     }
     // APPLICATION ERRORS
     if (isAppError(err)) {
-        (0, logger_1.logWarn)("request_error", {
+        logWarn("request_error", {
             ...logBase,
             status: err.status,
             code: err.code,
             message: err.message,
         });
-        (0, appInsights_1.trackException)({
+        trackException({
             exception: err,
             properties: {
                 requestId,
@@ -210,12 +204,12 @@ function errorHandler(err, req, res, _next) {
     }
     // DB CONSTRAINTS
     if (isConstraintViolation(err)) {
-        (0, logger_1.logWarn)("request_error", {
+        logWarn("request_error", {
             ...logBase,
             status: 409,
             code: "constraint_violation",
         });
-        (0, appInsights_1.trackException)({
+        trackException({
             exception: err,
             properties: {
                 requestId,
@@ -233,13 +227,13 @@ function errorHandler(err, req, res, _next) {
         return;
     }
     // DB CONNECTION ERRORS
-    if ((0, dbRuntime_1.isDbConnectionFailure)(err)) {
-        (0, logger_1.logError)("request_error", {
+    if (isDbConnectionFailure(err)) {
+        logError("request_error", {
             ...logBase,
             status: 500,
             code: "db_unavailable",
         });
-        (0, appInsights_1.trackException)({
+        trackException({
             exception: err,
             properties: {
                 requestId,
@@ -257,13 +251,13 @@ function errorHandler(err, req, res, _next) {
         return;
     }
     // UNKNOWN
-    (0, logger_1.logError)("request_error", {
+    logError("request_error", {
         ...logBase,
         status: 500,
         code: "internal_error",
         message: err.message,
     });
-    (0, appInsights_1.trackException)({
+    trackException({
         exception: err,
         properties: {
             requestId,

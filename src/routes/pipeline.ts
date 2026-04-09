@@ -1,10 +1,10 @@
 import { Router } from "express";
-import { pool, runQuery } from "../db";
-import { requireAuth, requireCapability } from "../middleware/auth";
-import { CAPABILITIES } from "../auth/capabilities";
-import { safeHandler } from "../middleware/safeHandler";
-import { fetchPipelineStates } from "../modules/applications/applications.service";
-import { ApplicationStage } from "../modules/applications/pipelineState";
+import { pool, runQuery } from "../db.js";
+import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { CAPABILITIES } from "../auth/capabilities.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { fetchPipelineStates } from "../modules/applications/applications.service.js";
+import { ApplicationStage } from "../modules/applications/pipelineState.js";
 
 const router = Router();
 

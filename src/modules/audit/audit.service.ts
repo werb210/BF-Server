@@ -1,6 +1,6 @@
 import { type PoolClient } from "pg";
-import { pool, runQuery } from "../../db";
-import { fetchRequestId } from "../../observability/requestContext";
+import { pool, runQuery } from "../../db.js";
+import { fetchRequestId } from "../../observability/requestContext.js";
 
 type Queryable = Pick<PoolClient, "query" | "runQuery">;
 

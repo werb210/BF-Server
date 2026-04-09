@@ -1,10 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const auth_1 = require("../middleware/auth");
-const router = (0, express_1.Router)();
+import { Router } from "express";
+import { requireAuth } from "../middleware/auth.js";
+const router = Router();
 console.log("[ROUTES LOADED] applications.routes");
-router.use(auth_1.requireAuth);
+router.use(requireAuth);
 router.get("/", (req, res) => {
     res["json"]({ ok: true, data: [] });
 });
@@ -17,4 +15,4 @@ router.get("/:id", (req, res) => {
 router.get("/:id/documents", (req, res) => {
     res["json"]({ ok: true, data: [] });
 });
-exports.default = router;
+export default router;

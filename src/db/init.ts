@@ -1,6 +1,6 @@
 import { Pool } from "pg";
 
-import { deps } from "../system/deps";
+import { deps } from "../system/deps.js";
 
 export async function initDb() {
   if (process.env.NODE_ENV === "test") {

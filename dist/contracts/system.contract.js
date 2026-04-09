@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.MATCHING_RULES = exports.DOCUMENT_RULES = exports.DATA_ACCESS = exports.APPLICATION_TABS = void 0;
-exports.APPLICATION_TABS = [
+export const APPLICATION_TABS = [
     'Application',
     'Financials',
     'Banking Analysis',
@@ -10,7 +7,7 @@ exports.APPLICATION_TABS = [
     'Notes',
     'Lender Matching'
 ];
-exports.DATA_ACCESS = {
+export const DATA_ACCESS = {
     client: {
         application: true,
         documents: true,
@@ -39,12 +36,12 @@ exports.DATA_ACCESS = {
         commission: true
     }
 };
-exports.DOCUMENT_RULES = {
+export const DOCUMENT_RULES = {
     immutableAfterAcceptance: true,
     versioned: true,
     deletable: false
 };
-exports.MATCHING_RULES = {
+export const MATCHING_RULES = {
     useLenderHQ: false,
     useProductCountryOnly: true,
     freezeAfterAcceptance: true

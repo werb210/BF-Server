@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { fail } from "../utils/http/respond";
+import { fail } from "../utils/http/respond.js";
 
 export function timeout(ms = 15000) {
   return (_req: Request, res: Response, next: NextFunction) => {

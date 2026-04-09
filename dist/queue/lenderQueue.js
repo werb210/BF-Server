@@ -1,25 +1,20 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.LENDER_QUEUE_NAME = void 0;
-exports.getLenderQueue = getLenderQueue;
-exports.enqueueLenderPackage = enqueueLenderPackage;
-const bullmq_1 = require("bullmq");
-const redis_1 = require("./redis");
-const config_1 = require("../config");
-exports.LENDER_QUEUE_NAME = "lender-package";
+import { Queue } from "bullmq";
+import { redisConnection } from "./redis.js";
+import { config } from "../config/index.js";
+export const LENDER_QUEUE_NAME = "lender-package";
 let lenderQueue = null;
-function getLenderQueue() {
-    if (!config_1.config.redis.url) {
+export function getLenderQueue() {
+    if (!config.redis.url) {
         return null;
     }
     if (!lenderQueue) {
-        lenderQueue = new bullmq_1.Queue(exports.LENDER_QUEUE_NAME, {
-            connection: redis_1.redisConnection,
+        lenderQueue = new Queue(LENDER_QUEUE_NAME, {
+            connection: redisConnection,
             defaultJobOptions: {
                 attempts: 3,
                 backoff: {
                     type: "exponential",
-                    delay: 2000,
+                    delay: 2_000,
                 },
                 removeOnComplete: true,
                 removeOnFail: false,
@@ -28,7 +23,7 @@ function getLenderQueue() {
     }
     return lenderQueue;
 }
-async function enqueueLenderPackage(payload) {
+export async function enqueueLenderPackage(payload) {
     const queue = getLenderQueue();
     if (!queue) {
         throw new Error("redis_not_configured");

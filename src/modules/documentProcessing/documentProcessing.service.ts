@@ -1,23 +1,23 @@
-import { pool, runQuery } from "../../db";
-import { AppError } from "../../middleware/errors";
+import { pool, runQuery } from "../../db.js";
+import { AppError } from "../../middleware/errors.js";
 import {
   fetchDocumentTypeAliases,
   normalizeRequiredDocumentKey,
-} from "../../db/schema/requiredDocuments";
+} from "../../db/schema/requiredDocuments.js";
 import type { PoolClient } from "pg";
 import type {
   BankingAnalysisJobRecord,
   DocumentProcessingJobRecord,
-} from "./documentProcessing.types";
+} from "./documentProcessing.types.js";
 import {
   createBankingAnalysisJob,
   createDocumentProcessingJob,
   listBankStatementDocuments,
   updateBankingAnalysisJob,
   updateDocumentProcessingJob,
-} from "./documentProcessing.repo";
-import { advanceProcessingStage } from "../applications/processingStage.service";
-import { fetchCircuitBreaker } from "../../utils/circuitBreaker";
+} from "./documentProcessing.repo.js";
+import { advanceProcessingStage } from "../applications/processingStage.service.js";
+import { fetchCircuitBreaker } from "../../utils/circuitBreaker.js";
 
 const BANK_STATEMENT_CATEGORY = "bank_statements_6_months";
 const OCR_BREAKER = fetchCircuitBreaker("ocr_job_creation", {

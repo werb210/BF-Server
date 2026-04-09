@@ -1,9 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.COMMIT_SHA = exports.assertEnv = exports.validateServerEnv = exports.ENV = exports.config = exports.env = void 0;
-const schema_1 = require("./schema");
-const api_1 = require("./api");
-const safeEnv = schema_1.EnvSchema.safeParse({
+import { EnvSchema } from "./schema.js";
+import { API_BASE } from "./api.js";
+const safeEnv = EnvSchema.safeParse({
     NODE_ENV: process.env.NODE_ENV,
     DATABASE_URL: process.env.DATABASE_URL,
     JWT_SECRET: process.env.JWT_SECRET,
@@ -34,18 +31,18 @@ const csv = (value, defaultValue) => {
         return defaultValue;
     return value.split(",").map((entry) => entry.trim()).filter(Boolean);
 };
-exports.env = {
+export const env = {
     PORT: parsed.PORT ? Number(parsed.PORT) : undefined,
 };
-exports.config = {
+export const config = {
     env: parsed.NODE_ENV,
-    port: exports.env.PORT ?? 8080,
+    port: env.PORT ?? 8080,
     isProduction: parsed.NODE_ENV === "production",
     logLevel: parsed.LOG_LEVEL,
     commitSha: parsed.COMMIT_SHA ?? "unknown",
     buildTimestamp: parsed.BUILD_TIMESTAMP ?? new Date(0).toISOString(),
     api: {
-        baseUrl: api_1.API_BASE,
+        baseUrl: API_BASE,
     },
     app: {
         baseUrl: parsed.BASE_URL,
@@ -171,18 +168,18 @@ exports.config = {
     },
     rateLimit: {
         enabled: parsed.RATE_LIMIT_ENABLED,
-        windowMs: toNumber(parsed.RATE_LIMIT_WINDOW_MS, 60000),
+        windowMs: toNumber(parsed.RATE_LIMIT_WINDOW_MS, 60_000),
         max: toNumber(parsed.RATE_LIMIT_MAX, 100),
     },
     lender: {
         retry: {
             baseDelayMs: toNumber(parsed.LENDER_RETRY_BASE_DELAY_MS, 500),
-            maxDelayMs: toNumber(parsed.LENDER_RETRY_MAX_DELAY_MS, 5000),
+            maxDelayMs: toNumber(parsed.LENDER_RETRY_MAX_DELAY_MS, 5_000),
             maxCount: toNumber(parsed.LENDER_RETRY_MAX_COUNT, 3),
         },
     },
     followUp: {
-        intervalMs: toNumber(parsed.FOLLOW_UP_INTERVAL_MS, 60000),
+        intervalMs: toNumber(parsed.FOLLOW_UP_INTERVAL_MS, 60_000),
         enabled: toBool(parsed.FOLLOW_UP_ENABLED, true),
     },
     documents: {
@@ -192,16 +189,16 @@ exports.config = {
     pwa: {
         pushEnabled: parsed.PWA_PUSH_ENABLED,
         syncMaxActions: toNumber(parsed.PWA_SYNC_MAX_ACTIONS, 100),
-        syncActionMaxBytes: toNumber(parsed.PWA_SYNC_ACTION_MAX_BYTES, 16384),
-        syncBatchMaxBytes: toNumber(parsed.PWA_SYNC_BATCH_MAX_BYTES, 262144),
+        syncActionMaxBytes: toNumber(parsed.PWA_SYNC_ACTION_MAX_BYTES, 16_384),
+        syncBatchMaxBytes: toNumber(parsed.PWA_SYNC_BATCH_MAX_BYTES, 262_144),
         pushPayloadMaxBytes: toNumber(parsed.PWA_PUSH_PAYLOAD_MAX_BYTES, 4096),
     },
     ocr: {
         enabled: toBool(parsed.OCR_ENABLED, true),
         provider: parsed.OCR_PROVIDER ?? "openai",
-        timeoutMs: toNumber(parsed.OCR_TIMEOUT_MS, 30000),
+        timeoutMs: toNumber(parsed.OCR_TIMEOUT_MS, 30_000),
         maxAttempts: toNumber(parsed.OCR_MAX_ATTEMPTS, 3),
-        pollIntervalMs: toNumber(parsed.OCR_POLL_INTERVAL_MS, 5000),
+        pollIntervalMs: toNumber(parsed.OCR_POLL_INTERVAL_MS, 5_000),
         workerConcurrency: toNumber(parsed.OCR_WORKER_CONCURRENCY, 2),
         lockTimeoutMinutes: toNumber(parsed.OCR_LOCK_TIMEOUT_MINUTES, 30),
     },
@@ -220,16 +217,15 @@ exports.config = {
         webhookUrl: parsed.CRM_WEBHOOK_URL,
     },
     urls: {
-        apiBase: api_1.API_BASE,
+        apiBase: API_BASE,
         publicBase: parsed.PUBLIC_BASE_URL,
         clientBase: parsed.CLIENT_BASE_URL,
     },
 };
-exports.ENV = process.env;
-const validateServerEnv = () => {
-    if (!exports.config.db.url)
+export const ENV = process.env;
+export const validateServerEnv = () => {
+    if (!config.db.url)
         throw new Error("DATABASE_URL missing");
 };
-exports.validateServerEnv = validateServerEnv;
-exports.assertEnv = exports.validateServerEnv;
-exports.COMMIT_SHA = exports.config.commitSha;
+export const assertEnv = validateServerEnv;
+export const COMMIT_SHA = config.commitSha;

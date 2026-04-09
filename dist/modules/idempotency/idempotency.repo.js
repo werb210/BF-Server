@@ -1,13 +1,7 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.findIdempotencyRecord = findIdempotencyRecord;
-exports.deleteExpiredIdempotencyRecord = deleteExpiredIdempotencyRecord;
-exports.purgeExpiredIdempotencyKeys = purgeExpiredIdempotencyKeys;
-exports.createIdempotencyRecord = createIdempotencyRecord;
-const crypto_1 = require("crypto");
-const db_1 = require("../../db");
-async function findIdempotencyRecord(params) {
-    const runner = params.client ?? db_1.pool;
+import { randomUUID } from "node:crypto";
+import { pool } from "../../db.js";
+export async function findIdempotencyRecord(params) {
+    const runner = params.client ?? pool;
     const res = await runner.query(`select id, key, route, request_hash, response_code, response_body, created_at
      from idempotency_keys
      where route = $1
@@ -16,15 +10,15 @@ async function findIdempotencyRecord(params) {
      limit 1`, [params.route, params.idempotencyKey]);
     return res.rows[0] ?? null;
 }
-async function deleteExpiredIdempotencyRecord(params) {
-    const runner = params.client ?? db_1.pool;
+export async function deleteExpiredIdempotencyRecord(params) {
+    const runner = params.client ?? pool;
     await runner.query(`delete from idempotency_keys
      where route = $1
        and key = $2
        and created_at < (localtimestamp - interval '24 hours')`, [params.route, params.idempotencyKey]);
 }
-async function purgeExpiredIdempotencyKeys(client) {
-    const runner = client ?? db_1.pool;
+export async function purgeExpiredIdempotencyKeys(client) {
+    const runner = client ?? pool;
     await runner.query(`delete from idempotency_keys
      where created_at < (localtimestamp - interval '24 hours')`);
 }
@@ -33,9 +27,9 @@ function isUndefinedColumnError(error, column) {
     const message = error instanceof Error ? error.message.toLowerCase() : "";
     return code === "42703" || message.includes(column.toLowerCase());
 }
-async function createIdempotencyRecord(params) {
-    const runner = params.client ?? db_1.pool;
-    const id = (0, crypto_1.randomUUID)();
+export async function createIdempotencyRecord(params) {
+    const runner = params.client ?? pool;
+    const id = randomUUID();
     if (params.method) {
         try {
             await runner.query(`insert into idempotency_keys

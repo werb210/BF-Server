@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
-import { fail, ok } from "./response";
-import { ok as respondOk, error as respondError } from "../lib/respond";
+import { fail, ok } from "./response.js";
+import { ok as respondOk, error as respondError } from "../lib/respond.js";
 
 export function wrap(handler: (req: Request, res: Response) => Promise<any> | any) {
   return async (req: Request, res: Response) => {

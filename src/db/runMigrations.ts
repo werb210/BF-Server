@@ -1,4 +1,4 @@
-import { runMigrations } from "./migrate";
+import { runMigrations } from "./migrate.js";
 
 (async () => {
   try {

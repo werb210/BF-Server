@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { requireAuth, requireCapability } from '../../middleware/auth';
-import { CAPABILITIES } from '../../auth/capabilities';
-import { pool } from '../../db';
-import { AppError } from '../../middleware/errors';
-import { safeHandler } from '../../middleware/safeHandler';
+import { requireAuth, requireCapability } from '../../middleware/auth.js';
+import { CAPABILITIES } from '../../auth/capabilities.js';
+import { pool } from '../../db.js';
+import { AppError } from '../../middleware/errors.js';
+import { safeHandler } from '../../middleware/safeHandler.js';
 
 const router = Router();
 

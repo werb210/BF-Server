@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { z } from "zod";
-import { stripUndefined } from "../utils/clean";
+import { stripUndefined } from "../utils/clean.js";
 
 const router = Router();
 

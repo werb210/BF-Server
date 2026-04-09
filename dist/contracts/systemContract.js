@@ -1,10 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.SYSTEM_CONTRACT = void 0;
-exports.assertPipelineOrder = assertPipelineOrder;
-exports.assertNoClientExposure = assertNoClientExposure;
-exports.assertImmutableAfterAcceptance = assertImmutableAfterAcceptance;
-exports.SYSTEM_CONTRACT = {
+export const SYSTEM_CONTRACT = {
     pipelineTabs: [
         'Application',
         'Financials',
@@ -26,19 +20,19 @@ exports.SYSTEM_CONTRACT = {
         'commission'
     ]
 };
-function assertPipelineOrder(tabs) {
-    if (JSON.stringify(tabs) !== JSON.stringify(exports.SYSTEM_CONTRACT.pipelineTabs)) {
+export function assertPipelineOrder(tabs) {
+    if (JSON.stringify(tabs) !== JSON.stringify(SYSTEM_CONTRACT.pipelineTabs)) {
         throw new Error('Pipeline tab order violation');
     }
 }
-function assertNoClientExposure(payload) {
-    for (const field of exports.SYSTEM_CONTRACT.restrictedFields) {
+export function assertNoClientExposure(payload) {
+    for (const field of SYSTEM_CONTRACT.restrictedFields) {
         if (payload[field]) {
             throw new Error(`Restricted field exposed: ${field}`);
         }
     }
 }
-function assertImmutableAfterAcceptance(status, changes) {
+export function assertImmutableAfterAcceptance(status, changes) {
     if (status === 'ACCEPTED' && Object.keys(changes).length > 0) {
         throw new Error('Mutation after acceptance is not allowed');
     }

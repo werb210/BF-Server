@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 
-import { wrap } from "../lib/routeWrap";
+import { wrap } from "../lib/routeWrap.js";
 
 function createMockRes(): Response & { body?: unknown; statusCode?: number } {
   const res = {

@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
-import { requireAuth, requireAuthorization } from "../middleware/auth";
-import { safeHandler } from "../middleware/safeHandler";
+import { requireAuth, requireAuthorization } from "../middleware/auth.js";
+import { safeHandler } from "../middleware/safeHandler.js";
 import {
   listPwaNotificationsForUser,
   listPwaSubscriptions,
@@ -10,14 +10,14 @@ import {
   deletePwaSubscription,
   acknowledgePwaNotification,
   deletePwaSubscriptionLegacy,
-} from "../repositories/pwa.repo";
-import { AppError } from "../middleware/errors";
-import { config } from "../config";
-import { fetchPushStatus } from "../services/pushService";
-import { replaySyncBatch } from "../services/pwaSyncService";
-import { pool, runQuery } from "../db";
-import { ALL_ROLES, ROLES } from "../auth/roles";
-import { toStringSafe } from "../utils/toStringSafe";
+} from "../repositories/pwa.repo.js";
+import { AppError } from "../middleware/errors.js";
+import { config } from "../config/index.js";
+import { fetchPushStatus } from "../services/pushService.js";
+import { replaySyncBatch } from "../services/pwaSyncService.js";
+import { pool, runQuery } from "../db.js";
+import { ALL_ROLES, ROLES } from "../auth/roles.js";
+import { toStringSafe } from "../utils/toStringSafe.js";
 
 const router = Router();
 const DEFAULT_NOTIFICATION_LIMIT = 50;

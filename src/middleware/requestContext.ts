@@ -8,7 +8,7 @@ import {
   fetchRequestIdempotencyKeyHash,
   fetchRequestDbProcessIds,
   runWithRequestContext,
-} from "../observability/requestContext";
+} from "../observability/requestContext.js";
 
 export function requestContext(req: Request, res: Response, next: NextFunction): void {
   const headerRid = req.headers["x-request-id"];

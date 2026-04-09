@@ -1,13 +1,8 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = __importDefault(require("express"));
-const uuid_1 = require("uuid");
-const auth_1 = require("../../middleware/auth");
-const tokenService_1 = require("../services/tokenService");
-const router = express_1.default.Router();
+import express from "express";
+import { v4 as uuid } from "uuid";
+import { auth } from "../../middleware/auth.js";
+import { generateVoiceToken } from "../services/tokenService.js";
+const router = express.Router();
 function isTwilioEnabled() {
     return Boolean(process.env.TWILIO_ACCOUNT_SID &&
         process.env.TWILIO_AUTH_TOKEN &&
@@ -16,16 +11,16 @@ function isTwilioEnabled() {
         process.env.TWILIO_API_SECRET);
 }
 // Voice token — used by portal dialer to initialise Twilio.Device
-router.get("/token", auth_1.auth, async (req, res) => {
+router.get("/token", auth, async (req, res) => {
     if (!isTwilioEnabled()) {
         return res.status(503).json({ success: false, error: "Telephony not configured" });
     }
     const identity = req.user?.userId ||
         req.user?.id ||
         req.user?.sub ||
-        (0, uuid_1.v4)();
+        uuid();
     try {
-        const token = (0, tokenService_1.generateVoiceToken)(identity);
+        const token = generateVoiceToken(identity);
         return res.status(200).json({ success: true, data: { token } });
     }
     catch (err) {
@@ -45,4 +40,4 @@ router.post("/outbound-call", (_req, res) => {
 router.post("/call-status", (_req, res) => {
     res.json({ updated: true });
 });
-exports.default = router;
+export default router;

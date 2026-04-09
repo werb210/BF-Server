@@ -1,13 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.SubmissionRouter = void 0;
-exports.normalizeSubmissionMethod = normalizeSubmissionMethod;
-exports.resolveSubmissionProfile = resolveSubmissionProfile;
-const db_1 = require("../../db");
-const EmailSubmissionAdapter_1 = require("./adapters/EmailSubmissionAdapter");
-const ApiSubmissionAdapter_1 = require("./adapters/ApiSubmissionAdapter");
-const GoogleSheetSubmissionAdapter_1 = require("./adapters/GoogleSheetSubmissionAdapter");
-function normalizeSubmissionMethod(value) {
+import { pool } from "../../db.js";
+import { EmailSubmissionAdapter } from "./adapters/EmailSubmissionAdapter.js";
+import { ApiSubmissionAdapter } from "./adapters/ApiSubmissionAdapter.js";
+import { GoogleSheetSubmissionAdapter, } from "./adapters/GoogleSheetSubmissionAdapter.js";
+export function normalizeSubmissionMethod(value) {
     if (typeof value !== "string") {
         return null;
     }
@@ -38,8 +33,8 @@ function parseGoogleSheetConfig(config) {
     }
     return { spreadsheetId, sheetName, columnMapVersion };
 }
-async function resolveSubmissionProfile(lenderId, client) {
-    const runner = client ?? db_1.pool;
+export async function resolveSubmissionProfile(lenderId, client) {
+    const runner = client ?? pool;
     const res = await runner.query(`select submission_method, submission_email, name, submission_config
      from lenders
      where id = $1
@@ -71,13 +66,15 @@ async function resolveSubmissionProfile(lenderId, client) {
         submissionConfig,
     };
 }
-class SubmissionRouter {
+export class SubmissionRouter {
+    adapter;
+    payload;
     constructor(params) {
         this.payload = params.payload;
         const { profile } = params;
         if (profile.submissionMethod === "google_sheet") {
             const sheetConfig = parseGoogleSheetConfig(profile.submissionConfig);
-            this.adapter = new GoogleSheetSubmissionAdapter_1.GoogleSheetSubmissionAdapter({
+            this.adapter = new GoogleSheetSubmissionAdapter({
                 payload: params.payload,
                 config: sheetConfig,
             });
@@ -88,11 +85,11 @@ class SubmissionRouter {
             if (!target) {
                 throw new Error("Submission email is required.");
             }
-            this.adapter = new EmailSubmissionAdapter_1.EmailSubmissionAdapter({ to: target, payload: params.payload });
+            this.adapter = new EmailSubmissionAdapter({ to: target, payload: params.payload });
             return;
         }
         if (profile.submissionMethod === "api") {
-            this.adapter = new ApiSubmissionAdapter_1.ApiSubmissionAdapter({
+            this.adapter = new ApiSubmissionAdapter({
                 lenderId: profile.lenderId,
                 payload: params.payload,
                 attempt: params.attempt,
@@ -105,4 +102,3 @@ class SubmissionRouter {
         return this.adapter.submit(this.payload);
     }
 }
-exports.SubmissionRouter = SubmissionRouter;

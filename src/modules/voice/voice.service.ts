@@ -1,13 +1,13 @@
 import AccessToken from "twilio/lib/jwt/AccessToken";
-import { AppError } from "../../middleware/errors";
-import { logError, logInfo, logWarn } from "../../observability/logger";
-import { normalizePhoneNumber } from "../auth/phone";
-import { startCall, updateCallStatus, updateCallRecording } from "../calls/calls.service";
-import { findCallLogByTwilioSid } from "../calls/calls.repo";
-import { fetchTwilioClient } from "../../services/twilio";
-import { type CallStatus, type CallLogRecord } from "../calls/calls.repo";
-import { config } from "../../config";
-import { recordAuditEvent } from "../audit/audit.service";
+import { AppError } from "../../middleware/errors.js";
+import { logError, logInfo, logWarn } from "../../observability/logger.js";
+import { normalizePhoneNumber } from "../auth/phone.js";
+import { startCall, updateCallStatus, updateCallRecording } from "../calls/calls.service.js";
+import { findCallLogByTwilioSid } from "../calls/calls.repo.js";
+import { fetchTwilioClient } from "../../services/twilio.js";
+import { type CallStatus, type CallLogRecord } from "../calls/calls.repo.js";
+import { config } from "../../config/index.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
 
 const VOICE_TOKEN_TTL_SECONDS = 15 * 60;
 const DEFAULT_HOLD_TWIML =

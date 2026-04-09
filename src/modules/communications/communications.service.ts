@@ -3,7 +3,7 @@ import {
   type MessageRepoRow,
   listCommunications,
   listMessages,
-} from "./communications.repo";
+} from "./communications.repo.js";
 
 export type CommunicationParticipant = {
   id: string;

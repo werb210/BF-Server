@@ -1,9 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.createDocumentVersionRecord = createDocumentVersionRecord;
-const crypto_1 = require("crypto");
-const db_1 = require("../../../db");
-async function createDocumentVersionRecord(params) {
+import { randomUUID } from "node:crypto";
+import { runQuery } from "../../../db.js";
+export async function createDocumentVersionRecord(params) {
     const q = `
     insert into document_versions
       (id, document_id, version, blob_name, hash, metadata, content, created_at)
@@ -20,6 +17,6 @@ async function createDocumentVersionRecord(params) {
       )
     returning *
   `;
-    const result = await (0, db_1.runQuery)(q, [(0, crypto_1.randomUUID)(), params.documentId, params.blobName, params.hash, params.metadata]);
+    const result = await runQuery(q, [randomUUID(), params.documentId, params.blobName, params.hash, params.metadata]);
     return result.rows[0];
 }

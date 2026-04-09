@@ -1,31 +1,25 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.__resetTwilioRateLimitsForTest = __resetTwilioRateLimitsForTest;
-const express_1 = require("express");
-const crypto_1 = require("crypto");
-const twilio_1 = __importDefault(require("twilio"));
-const AccessToken_1 = __importDefault(require("twilio/lib/jwt/AccessToken"));
-const AccessToken_2 = require("twilio/lib/jwt/AccessToken");
-const auth_1 = require("../middleware/auth");
-const capabilities_1 = require("../auth/capabilities");
-const roles_1 = require("../auth/roles");
-const errors_1 = require("../middleware/errors");
-const apiResponse_1 = require("../lib/apiResponse");
-const routeWrap_1 = require("../lib/routeWrap");
-const db_1 = require("../db");
-const calls_service_1 = require("../modules/calls/calls.service");
-const calls_repo_1 = require("../modules/calls/calls.repo");
-const voicemail_repo_1 = require("../modules/voice/voicemail.repo");
-const logger_1 = require("../observability/logger");
-const config_1 = require("../config");
-const clean_1 = require("../utils/clean");
-const router = (0, express_1.Router)();
-const oneMinuteMs = 60000;
+import { Router } from "express";
+import { randomUUID } from "node:crypto";
+import twilio from "twilio";
+import AccessToken from "twilio/lib/jwt/AccessToken";
+import { VoiceGrant } from "twilio/lib/jwt/AccessToken";
+import { requireAuth, requireAuthorization } from "../middleware/auth.js";
+import { CAPABILITIES } from "../auth/capabilities.js";
+import { ROLES } from "../auth/roles.js";
+import { AppError } from "../middleware/errors.js";
+import { fail, ok } from "../lib/apiResponse.js";
+import { wrap } from "../lib/routeWrap.js";
+import { pool, runQuery } from "../db.js";
+import { updateCallStatus } from "../modules/calls/calls.service.js";
+import { findCallLogByTwilioSid } from "../modules/calls/calls.repo.js";
+import { createVoicemail } from "../modules/voice/voicemail.repo.js";
+import { logInfo, logWarn } from "../observability/logger.js";
+import { config } from "../config/index.js";
+import { stripUndefined, toNullable } from "../utils/clean.js";
+const router = Router();
+const oneMinuteMs = 60_000;
 const RATE_BUCKET_TTL_MS = 5 * oneMinuteMs;
-const MAX_BUCKETS = 1000;
+const MAX_BUCKETS = 1_000;
 const ipBuckets = new Map();
 const staffBuckets = new Map();
 function consumeRateLimit(buckets, key, max) {
@@ -77,7 +71,7 @@ async function resolveStaffUserId(req) {
     if (!callSid) {
         return null;
     }
-    const callLog = await (0, calls_repo_1.findCallLogByTwilioSid)(callSid);
+    const callLog = await findCallLogByTwilioSid(callSid);
     return callLog?.staff_user_id ?? null;
 }
 const dialerRateLimit = async (req, res, next) => {
@@ -93,67 +87,67 @@ const dialerRateLimit = async (req, res, next) => {
     }
     next();
 };
-function __resetTwilioRateLimitsForTest() {
+export function __resetTwilioRateLimitsForTest() {
     ipBuckets.clear();
     staffBuckets.clear();
 }
-const twilioRuntime = twilio_1.default;
+const twilioRuntime = twilio;
 function buildWebhookUrl(req) {
-    const baseUrl = config_1.config.app.baseUrl?.trim();
+    const baseUrl = config.app.baseUrl?.trim();
     if (baseUrl) {
         return `${baseUrl.replace(/\/$/, "")}/api${req.originalUrl}`;
     }
     const proto = req.get("x-forwarded-proto") ?? req.protocol;
     const host = req.get("x-forwarded-host") ?? req.get("host");
     if (!host) {
-        throw new errors_1.AppError("invalid_request", "Missing request host.", 400);
+        throw new AppError("invalid_request", "Missing request host.", 400);
     }
     return `${proto}://${host}${req.originalUrl}`;
 }
 function assertValidTwilioSignature(req) {
-    const authToken = config_1.config.twilio.authToken;
+    const authToken = config.twilio.authToken;
     if (!authToken || !authToken.trim()) {
-        throw new errors_1.AppError("twilio_misconfigured", "Twilio auth token is missing.", 500);
+        throw new AppError("twilio_misconfigured", "Twilio auth token is missing.", 500);
     }
     const signature = req.get("x-twilio-signature");
     if (!signature) {
-        throw new errors_1.AppError("invalid_signature", "Missing Twilio signature.", 403);
+        throw new AppError("invalid_signature", "Missing Twilio signature.", 403);
     }
     const fullUrl = buildWebhookUrl(req);
     const valid = twilioRuntime.validateRequest(authToken.trim(), signature, fullUrl, (req.body ?? {}));
     if (!valid) {
-        throw new errors_1.AppError("invalid_signature", "Invalid Twilio signature.", 403);
+        throw new AppError("invalid_signature", "Invalid Twilio signature.", 403);
     }
 }
-router.get("/dialer/token", auth_1.requireAuth, (0, auth_1.requireAuthorization)({
-    roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF],
-    capabilities: [capabilities_1.CAPABILITIES.COMMUNICATIONS_CALL],
-}), (0, routeWrap_1.wrap)(async (req) => {
+router.get("/dialer/token", requireAuth, requireAuthorization({
+    roles: [ROLES.ADMIN, ROLES.STAFF],
+    capabilities: [CAPABILITIES.COMMUNICATIONS_CALL],
+}), wrap(async (req) => {
     const identity = req.user?.userId;
     if (!identity) {
-        throw new errors_1.AppError("invalid_token", "Invalid or expired token.", 401);
+        throw new AppError("invalid_token", "Invalid or expired token.", 401);
     }
-    const activeCalls = await (0, db_1.runQuery)(`select count(*)::text as count
+    const activeCalls = await runQuery(`select count(*)::text as count
        from call_logs
        where staff_user_id = $1
          and status in ('ringing', 'in_progress')`, [identity]);
     if (Number(activeCalls.rows[0]?.count ?? "0") > 0) {
-        return (0, apiResponse_1.fail)(null, "active_call_in_progress");
+        return fail(null, "active_call_in_progress");
     }
-    const token = new AccessToken_1.default(config_1.config.twilio.accountSid ?? "", config_1.config.twilio.apiKey ?? "", config_1.config.twilio.apiSecret ?? "", { identity, ttl: 3600 });
-    token.addGrant(new AccessToken_2.VoiceGrant((0, clean_1.stripUndefined)({
-        outgoingApplicationSid: config_1.config.twilio.voiceAppSid,
+    const token = new AccessToken(config.twilio.accountSid ?? "", config.twilio.apiKey ?? "", config.twilio.apiSecret ?? "", { identity, ttl: 3600 });
+    token.addGrant(new VoiceGrant(stripUndefined({
+        outgoingApplicationSid: config.twilio.voiceAppSid,
         incomingAllow: true,
     })));
-    return (0, apiResponse_1.ok)({ token: token.toJwt() });
+    return ok({ token: token.toJwt() });
 }));
-router.post("/twilio/voice", dialerRateLimit, (0, routeWrap_1.wrap)(async (req, res) => {
+router.post("/twilio/voice", dialerRateLimit, wrap(async (req, res) => {
     assertValidTwilioSignature(req);
     const from = typeof req.body?.From === "string" ? req.body.From : "";
     const callSid = typeof req.body?.CallSid === "string" ? req.body.CallSid : "";
-    const dialAction = `${config_1.config.app.baseUrl?.replace(/\/$/, "") ?? ""}/api/twilio/voice/action`;
+    const dialAction = `${config.app.baseUrl?.replace(/\/$/, "") ?? ""}/api/twilio/voice/action`;
     const response = new twilioRuntime.twiml.VoiceResponse();
-    const client = await db_1.pool.connect();
+    const client = await pool.connect();
     try {
         const assignedRes = await client.runQuery(`select cl.staff_user_id, cl.crm_contact_id as client_id
          from call_logs cl
@@ -177,7 +171,7 @@ router.post("/twilio/voice", dialerRateLimit, (0, routeWrap_1.wrap)(async (req, 
                 dial.client(row.id);
             }
         }
-        (0, logger_1.logInfo)("dialer.call_started", {
+        logInfo("dialer.call_started", {
             staff_id: assignedStaff,
             application_id: null,
             silo: "twilio",
@@ -190,7 +184,7 @@ router.post("/twilio/voice", dialerRateLimit, (0, routeWrap_1.wrap)(async (req, 
     }
     res.type("text/xml").send(response.toString());
 }));
-router.post("/twilio/voice/action", dialerRateLimit, (0, routeWrap_1.wrap)(async (req, res) => {
+router.post("/twilio/voice/action", dialerRateLimit, wrap(async (req, res) => {
     assertValidTwilioSignature(req);
     const dialStatus = typeof req.body?.DialCallStatus === "string" ? req.body.DialCallStatus : "";
     const response = new twilioRuntime.twiml.VoiceResponse();
@@ -200,47 +194,47 @@ router.post("/twilio/voice/action", dialerRateLimit, (0, routeWrap_1.wrap)(async
             maxLength: 120,
             timeout: 5,
             playBeep: true,
-            recordingStatusCallback: `${config_1.config.app.baseUrl?.replace(/\/$/, "") ?? ""}/api/twilio/recording?clientId=${typeof req.query.clientId === "string" ? req.query.clientId : ""}&callSid=${typeof req.query.callSid === "string" ? req.query.callSid : ""}`,
+            recordingStatusCallback: `${config.app.baseUrl?.replace(/\/$/, "") ?? ""}/api/twilio/recording?clientId=${typeof req.query.clientId === "string" ? req.query.clientId : ""}&callSid=${typeof req.query.callSid === "string" ? req.query.callSid : ""}`,
             recordingStatusCallbackMethod: "POST",
         });
     }
     res.type("text/xml").send(response.toString());
 }));
-router.post("/twilio/recording", dialerRateLimit, (0, routeWrap_1.wrap)(async (req) => {
+router.post("/twilio/recording", dialerRateLimit, wrap(async (req) => {
     assertValidTwilioSignature(req);
     const recordingUrl = typeof req.body?.RecordingUrl === "string" ? req.body.RecordingUrl : "";
     const recordingSid = typeof req.body?.RecordingSid === "string" ? req.body.RecordingSid : "";
     const callSid = typeof req.body?.CallSid === "string" ? req.body.CallSid : (typeof req.query.callSid === "string" ? req.query.callSid : "");
     const clientId = typeof req.query.clientId === "string" ? req.query.clientId : null;
     if (!recordingUrl || !recordingSid || !callSid) {
-        throw new errors_1.AppError("validation_error", "Missing recording payload.", 400);
+        throw new AppError("validation_error", "Missing recording payload.", 400);
     }
-    await (0, voicemail_repo_1.createVoicemail)({
+    await createVoicemail({
         clientId,
         callSid,
         recordingSid,
         recordingUrl,
     });
-    const callLog = await (0, calls_repo_1.findCallLogByTwilioSid)(callSid);
-    (0, logger_1.logInfo)("dialer.voicemail_recorded", {
+    const callLog = await findCallLogByTwilioSid(callSid);
+    logInfo("dialer.voicemail_recorded", {
         staff_id: callLog?.staff_user_id ?? null,
         application_id: callLog?.application_id ?? null,
         silo: "twilio",
         duration: null,
         call_sid: callSid,
     });
-    return (0, apiResponse_1.ok)({ ok: true });
+    return ok({ ok: true });
 }));
-router.post("/twilio/status", dialerRateLimit, (0, routeWrap_1.wrap)(async (req, res) => {
+router.post("/twilio/status", dialerRateLimit, wrap(async (req, res) => {
     assertValidTwilioSignature(req);
     const callSid = typeof req.body?.CallSid === "string" ? req.body.CallSid : "";
     const callStatus = typeof req.body?.CallStatus === "string" ? req.body.CallStatus : "";
     if (!callSid) {
-        throw new errors_1.AppError("validation_error", "Missing CallSid.", 400);
+        throw new AppError("validation_error", "Missing CallSid.", 400);
     }
-    const found = await (0, calls_repo_1.findCallLogByTwilioSid)(callSid);
+    const found = await findCallLogByTwilioSid(callSid);
     if (!found) {
-        return (0, apiResponse_1.ok)({ ok: true });
+        return ok({ ok: true });
     }
     let status = "failed";
     if (callStatus === "ringing")
@@ -251,30 +245,30 @@ router.post("/twilio/status", dialerRateLimit, (0, routeWrap_1.wrap)(async (req,
         status = "completed";
     const durationSeconds = typeof req.body?.CallDuration === "string" ? Number(req.body.CallDuration) : undefined;
     const isCompleted = callStatus === "completed";
-    await (0, calls_service_1.updateCallStatus)((0, clean_1.stripUndefined)({
+    await updateCallStatus(stripUndefined({
         id: found.id,
         status,
-        durationSeconds: (0, clean_1.toNullable)(durationSeconds),
-        errorCode: (0, clean_1.toNullable)(typeof req.body?.ErrorCode === "string" ? req.body.ErrorCode : undefined),
-        errorMessage: (0, clean_1.toNullable)(typeof req.body?.ErrorMessage === "string" ? req.body.ErrorMessage : undefined),
-        fromNumber: (0, clean_1.toNullable)(typeof req.body?.From === "string" ? req.body.From : undefined),
-        toNumber: (0, clean_1.toNullable)(typeof req.body?.To === "string" ? req.body.To : undefined),
+        durationSeconds: toNullable(durationSeconds),
+        errorCode: toNullable(typeof req.body?.ErrorCode === "string" ? req.body.ErrorCode : undefined),
+        errorMessage: toNullable(typeof req.body?.ErrorMessage === "string" ? req.body.ErrorMessage : undefined),
+        fromNumber: toNullable(typeof req.body?.From === "string" ? req.body.From : undefined),
+        toNumber: toNullable(typeof req.body?.To === "string" ? req.body.To : undefined),
     }));
     const priceEstimateCents = isCompleted && typeof durationSeconds === "number" ? durationSeconds * 3 : null;
-    await (0, db_1.runQuery)(`update call_logs
+    await runQuery(`update call_logs
        set answered = $1,
            ended_reason = $2,
            price_estimate_cents = $3
        where id = $4`, [isCompleted, callStatus || null, priceEstimateCents, found.id]);
     if (callStatus === "no-answer") {
-        const hasVoicemail = await (0, db_1.runQuery)("select count(*)::text as count from voicemails where call_sid = $1", [callSid]);
+        const hasVoicemail = await runQuery("select count(*)::text as count from voicemails where call_sid = $1", [callSid]);
         if (Number(hasVoicemail.rows[0]?.count ?? "0") === 0) {
-            await (0, db_1.runQuery)(`insert into crm_task (id, type, staff_id, phone_number, created_at)
-           values ($1, 'missed_call', $2, $3, now())`, [(0, crypto_1.randomUUID)(), found.staff_user_id, found.phone_number]);
+            await runQuery(`insert into crm_task (id, type, staff_id, phone_number, created_at)
+           values ($1, 'missed_call', $2, $3, now())`, [randomUUID(), found.staff_user_id, found.phone_number]);
         }
     }
     if (callStatus === "completed") {
-        (0, logger_1.logInfo)("dialer.call_completed", {
+        logInfo("dialer.call_completed", {
             staff_id: found.staff_user_id,
             application_id: found.application_id,
             silo: "twilio",
@@ -283,7 +277,7 @@ router.post("/twilio/status", dialerRateLimit, (0, routeWrap_1.wrap)(async (req,
         });
     }
     else if (callStatus === "failed" || callStatus === "busy" || callStatus === "no-answer") {
-        (0, logger_1.logWarn)("dialer.call_failed", {
+        logWarn("dialer.call_failed", {
             staff_id: found.staff_user_id,
             application_id: found.application_id,
             silo: "twilio",
@@ -292,6 +286,6 @@ router.post("/twilio/status", dialerRateLimit, (0, routeWrap_1.wrap)(async (req,
             ended_reason: callStatus,
         });
     }
-    return (0, apiResponse_1.ok)({ ok: true });
+    return ok({ ok: true });
 }));
-exports.default = router;
+export default router;

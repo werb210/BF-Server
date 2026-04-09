@@ -1,34 +1,18 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.transitionPipelineState = transitionPipelineState;
-exports.createApplicationForUser = createApplicationForUser;
-exports.openApplicationForStaff = openApplicationForStaff;
-exports.listDocumentsForApplication = listDocumentsForApplication;
-exports.fetchProcessingStatus = fetchProcessingStatus;
-exports.removeDocument = removeDocument;
-exports.markCreditSummaryCompleted = markCreditSummaryCompleted;
-exports.uploadDocument = uploadDocument;
-exports.changePipelineState = changePipelineState;
-exports.acceptDocumentVersion = acceptDocumentVersion;
-exports.rejectDocumentVersion = rejectDocumentVersion;
-exports.acceptDocument = acceptDocument;
-exports.rejectDocument = rejectDocument;
-exports.fetchPipelineStates = fetchPipelineStates;
-const errors_1 = require("../../middleware/errors");
-const audit_service_1 = require("../audit/audit.service");
-const applications_repo_1 = require("./applications.repo");
-const db_1 = require("../../db");
-const roles_1 = require("../../auth/roles");
-const pipelineState_1 = require("./pipelineState");
-const applicationLifecycle_service_1 = require("./applicationLifecycle.service");
-const config_1 = require("../../config");
-const transactionTelemetry_1 = require("../../observability/transactionTelemetry");
-const lenderProductRequirementsService_1 = require("../../services/lenderProductRequirementsService");
-const blobStorage_1 = require("../../services/storage/blobStorage");
-const fileValidation_1 = require("../../utils/fileValidation");
-const requiredDocuments_1 = require("../../db/schema/requiredDocuments");
-const processingStage_service_1 = require("./processingStage.service");
-const processing_service_1 = require("../processing/processing.service");
+import { AppError } from "../../middleware/errors.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { createApplication, createApplicationStageEvent, createDocument, createDocumentVersion, createDocumentVersionReview, deleteDocumentById, findApplicationById, findDocumentById, findAcceptedDocumentVersion, findDocumentVersionById, findDocumentVersionReview, findActiveDocumentVersion, fetchLatestDocumentVersion, listApplicationRequiredDocuments, listDocumentsWithLatestVersion, updateApplicationFirstOpenedAt, updateApplicationPipelineState, upsertApplicationRequiredDocument, updateDocumentStatus, updateDocumentUploadDetails, } from "./applications.repo.js";
+import { pool } from "../../db.js";
+import { ROLES } from "../../auth/roles.js";
+import { PIPELINE_STATES, ApplicationStage, isPipelineState, } from "./pipelineState.js";
+import { assertPipelineState, assertPipelineTransition, } from "./applicationLifecycle.service.js";
+import { config } from "../../config/index.js";
+import { recordTransactionRollback } from "../../observability/transactionTelemetry.js";
+import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService.js";
+import { uploadDocumentBuffer } from "../../services/storage/blobStorage.js";
+import { validateFile } from "../../utils/fileValidation.js";
+import { normalizeRequiredDocumentKey, } from "../../db/schema/requiredDocuments.js";
+import { advanceProcessingStage, fetchProcessingStageFlags, } from "./processingStage.service.js";
+import { createBankingAnalysisJob, createDocumentProcessingJob, } from "../processing/processing.service.js";
 const BANK_STATEMENT_CATEGORY = "bank_statements_6_months";
 const EMPTY_OCR_INSIGHTS = {
     fields: {},
@@ -76,11 +60,11 @@ function normalizeDocumentStatus(status) {
         ? status
         : "missing";
 }
-const DEFAULT_PIPELINE_STAGE = pipelineState_1.ApplicationStage.RECEIVED;
+const DEFAULT_PIPELINE_STAGE = ApplicationStage.RECEIVED;
 const STAFF_REVIEW_ROLES = new Set([
-    roles_1.ROLES.ADMIN,
-    roles_1.ROLES.STAFF,
-    roles_1.ROLES.OPS,
+    ROLES.ADMIN,
+    ROLES.STAFF,
+    ROLES.OPS,
 ]);
 const DOCUMENT_STATUS_VALUES = new Set([
     "missing",
@@ -93,23 +77,23 @@ function normalizePipelineStage(stage) {
 }
 function assertMetadata(value) {
     if (!value || typeof value !== "object") {
-        throw new errors_1.AppError("invalid_metadata", "Metadata is required.", 400);
+        throw new AppError("invalid_metadata", "Metadata is required.", 400);
     }
     const record = value;
     if (typeof record.fileName !== "string" ||
         typeof record.mimeType !== "string" ||
         typeof record.size !== "number") {
-        throw new errors_1.AppError("invalid_metadata", "Metadata is invalid.", 400);
+        throw new AppError("invalid_metadata", "Metadata is invalid.", 400);
     }
 }
 function validateDocumentMetadata(metadata) {
-    const allowed = config_1.config.documents.allowedMimeTypes;
+    const allowed = config.documents.allowedMimeTypes;
     if (!allowed.includes(metadata.mimeType)) {
-        throw new errors_1.AppError("invalid_mime_type", "Unsupported document MIME type.", 400);
+        throw new AppError("invalid_mime_type", "Unsupported document MIME type.", 400);
     }
-    const maxSize = config_1.config.documents.maxSizeBytes;
+    const maxSize = config.documents.maxSizeBytes;
     if (metadata.size > maxSize) {
-        throw new errors_1.AppError("document_too_large", "Document exceeds max size.", 400);
+        throw new AppError("document_too_large", "Document exceeds max size.", 400);
     }
 }
 async function recordDocumentUploadFailure(params) {
@@ -122,30 +106,30 @@ async function recordDocumentUploadFailure(params) {
         success: false,
         ...(params.client ? { client: params.client } : {}),
     };
-    await (0, audit_service_1.recordAuditEvent)(auditPayload);
+    await recordAuditEvent(auditPayload);
 }
 function canAccessApplication(role, ownerUserId, actorId) {
     if (ownerUserId && actorId === ownerUserId) {
         return true;
     }
-    return role === roles_1.ROLES.ADMIN || role === roles_1.ROLES.STAFF;
+    return role === ROLES.ADMIN || role === ROLES.STAFF;
 }
 function resolveUploadedBy(role) {
     return STAFF_REVIEW_ROLES.has(role) ? "staff" : "client";
 }
 function assertStaffReviewRole(role) {
     if (!STAFF_REVIEW_ROLES.has(role)) {
-        throw new errors_1.AppError("forbidden", "Not authorized.", 403);
+        throw new AppError("forbidden", "Not authorized.", 403);
     }
 }
 async function ensureRequiredDocuments(params) {
-    const existing = await (0, applications_repo_1.listApplicationRequiredDocuments)({
+    const existing = await listApplicationRequiredDocuments({
         applicationId: params.application.id,
         ...(params.client ? { client: params.client } : {}),
     });
     const existingMap = new Map(existing.map((entry) => [entry.document_category, entry]));
     return params.requirements.map((requirement) => {
-        const key = (0, requiredDocuments_1.normalizeRequiredDocumentKey)(requirement.documentType);
+        const key = normalizeRequiredDocumentKey(requirement.documentType);
         const documentCategory = key ?? requirement.documentType;
         const match = existingMap.get(documentCategory);
         if (match) {
@@ -162,15 +146,15 @@ async function ensureRequiredDocuments(params) {
     });
 }
 async function resolveRequirementForDocument(params) {
-    const { requirements } = await (0, lenderProductRequirementsService_1.resolveRequirementsForApplication)({
+    const { requirements } = await resolveRequirementsForApplication({
         lenderProductId: params.application.lender_product_id ?? null,
         productType: params.application.product_type,
         requestedAmount: params.application.requested_amount ?? null,
         country: resolveApplicationCountry(params.application.metadata),
     });
-    const normalizedRequested = (0, requiredDocuments_1.normalizeRequiredDocumentKey)(params.documentType);
+    const normalizedRequested = normalizeRequiredDocumentKey(params.documentType);
     const requirement = requirements.find((item) => {
-        const normalizedRequirement = (0, requiredDocuments_1.normalizeRequiredDocumentKey)(item.documentType);
+        const normalizedRequirement = normalizeRequiredDocumentKey(item.documentType);
         return normalizedRequirement && normalizedRequested
             ? normalizedRequirement === normalizedRequested
             : item.documentType === params.documentType;
@@ -181,10 +165,10 @@ async function resolveRequirementForDocument(params) {
     };
 }
 async function enforceDocumentsRequiredStage(params) {
-    if (params.application.pipeline_state !== pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED) {
+    if (params.application.pipeline_state !== ApplicationStage.DOCUMENTS_REQUIRED) {
         await transitionPipelineState({
             applicationId: params.application.id,
-            nextState: pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED,
+            nextState: ApplicationStage.DOCUMENTS_REQUIRED,
             actorUserId: params.actorUserId,
             actorRole: params.actorRole,
             trigger: params.trigger,
@@ -193,8 +177,8 @@ async function enforceDocumentsRequiredStage(params) {
         return;
     }
 }
-async function transitionPipelineState(params) {
-    const application = await (0, applications_repo_1.findApplicationById)(params.applicationId, params.client);
+export async function transitionPipelineState(params) {
+    const application = await findApplicationById(params.applicationId, params.client);
     if (!application) {
         const auditPayload = {
             action: "pipeline_state_changed",
@@ -205,8 +189,8 @@ async function transitionPipelineState(params) {
             success: false,
             ...(params.client ? { client: params.client } : {}),
         };
-        await (0, audit_service_1.recordAuditEvent)(auditPayload);
-        throw new errors_1.AppError("not_found", "Application not found.", 404);
+        await recordAuditEvent(auditPayload);
+        throw new AppError("not_found", "Application not found.", 404);
     }
     if (params.actorUserId && params.actorRole) {
         if (!canAccessApplication(params.actorRole, application.owner_user_id, params.actorUserId)) {
@@ -219,14 +203,14 @@ async function transitionPipelineState(params) {
                 success: false,
                 ...(params.client ? { client: params.client } : {}),
             };
-            await (0, audit_service_1.recordAuditEvent)(auditPayload);
-            throw new errors_1.AppError("forbidden", "Not authorized.", 403);
+            await recordAuditEvent(auditPayload);
+            throw new AppError("forbidden", "Not authorized.", 403);
         }
     }
-    const currentStage = (0, applicationLifecycle_service_1.assertPipelineState)(application.pipeline_state);
+    const currentStage = assertPipelineState(application.pipeline_state);
     let transition;
     try {
-        transition = (0, applicationLifecycle_service_1.assertPipelineTransition)({
+        transition = assertPipelineTransition({
             currentStage,
             nextStage: params.nextState,
         });
@@ -241,18 +225,18 @@ async function transitionPipelineState(params) {
             success: false,
             ...(params.client ? { client: params.client } : {}),
         };
-        await (0, audit_service_1.recordAuditEvent)(auditPayload);
+        await recordAuditEvent(auditPayload);
         throw error;
     }
     if (!transition.shouldTransition) {
         return;
     }
-    await (0, applications_repo_1.updateApplicationPipelineState)({
+    await updateApplicationPipelineState({
         applicationId: params.applicationId,
         pipelineState: params.nextState,
         ...(params.client ? { client: params.client } : {}),
     });
-    await (0, applications_repo_1.createApplicationStageEvent)({
+    await createApplicationStageEvent({
         applicationId: params.applicationId,
         fromStage: currentStage,
         toStage: params.nextState,
@@ -270,7 +254,7 @@ async function transitionPipelineState(params) {
         success: true,
         ...(params.client ? { client: params.client } : {}),
     };
-    await (0, audit_service_1.recordAuditEvent)(auditSuccessPayload);
+    await recordAuditEvent(auditSuccessPayload);
     const auditStagePayload = {
         action: "pipeline_stage_changed",
         actorUserId: params.actorUserId,
@@ -286,17 +270,17 @@ async function transitionPipelineState(params) {
         },
         ...(params.client ? { client: params.client } : {}),
     };
-    await (0, audit_service_1.recordAuditEvent)(auditStagePayload);
+    await recordAuditEvent(auditStagePayload);
 }
 async function evaluateRequirements(params) {
-    const application = await (0, applications_repo_1.findApplicationById)(params.applicationId, params.client);
+    const application = await findApplicationById(params.applicationId, params.client);
     if (!application) {
-        throw new errors_1.AppError("not_found", "Application not found.", 404);
+        throw new AppError("not_found", "Application not found.", 404);
     }
-    if (!(0, pipelineState_1.isPipelineState)(application.pipeline_state)) {
-        throw new errors_1.AppError("invalid_state", "Pipeline state is invalid.", 400);
+    if (!isPipelineState(application.pipeline_state)) {
+        throw new AppError("invalid_state", "Pipeline state is invalid.", 400);
     }
-    const { requirements } = await (0, lenderProductRequirementsService_1.resolveRequirementsForApplication)({
+    const { requirements } = await resolveRequirementsForApplication({
         lenderProductId: application.lender_product_id ?? null,
         productType: application.product_type,
         requestedAmount: application.requested_amount ?? null,
@@ -313,10 +297,10 @@ async function evaluateRequirements(params) {
         }
         return doc.status !== "accepted";
     });
-    if (missingRequired && application.pipeline_state === pipelineState_1.ApplicationStage.RECEIVED) {
+    if (missingRequired && application.pipeline_state === ApplicationStage.RECEIVED) {
         await transitionPipelineState({
             applicationId: application.id,
-            nextState: pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED,
+            nextState: ApplicationStage.DOCUMENTS_REQUIRED,
             actorUserId: params.actorUserId,
             actorRole: params.actorRole,
             trigger: "requirements_missing",
@@ -327,14 +311,14 @@ async function evaluateRequirements(params) {
     }
     return { missingRequired };
 }
-async function createApplicationForUser(params) {
-    const client = await db_1.pool.connect();
+export async function createApplicationForUser(params) {
+    const client = await pool.connect();
     try {
         await client.runQuery("begin");
         await client.runQuery("select id from users where id = $1 for update", [
             params.ownerUserId,
         ]);
-        const application = await (0, applications_repo_1.createApplication)({
+        const application = await createApplication({
             ownerUserId: params.ownerUserId,
             name: params.name,
             metadata: params.metadata,
@@ -343,7 +327,7 @@ async function createApplicationForUser(params) {
             triggeredBy: params.actorUserId ?? "system",
             client,
         });
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "application_created",
             actorUserId: params.actorUserId,
             targetUserId: params.ownerUserId,
@@ -355,13 +339,13 @@ async function createApplicationForUser(params) {
         await evaluateRequirements({
             applicationId: application.id,
             actorUserId: params.actorUserId,
-            actorRole: params.actorRole ?? (params.actorUserId ? roles_1.ROLES.REFERRER : null),
+            actorRole: params.actorRole ?? (params.actorUserId ? ROLES.REFERRER : null),
             ...buildRequestMetadata(params),
             client,
         });
-        const updated = await (0, applications_repo_1.findApplicationById)(application.id, client);
+        const updated = await findApplicationById(application.id, client);
         if (!updated) {
-            throw new errors_1.AppError("not_found", "Application not found.", 404);
+            throw new AppError("not_found", "Application not found.", 404);
         }
         const response = {
             id: updated.id,
@@ -381,7 +365,7 @@ async function createApplicationForUser(params) {
         return { status: 201, value: response, idempotent: false };
     }
     catch (err) {
-        (0, transactionTelemetry_1.recordTransactionRollback)(err);
+        recordTransactionRollback(err);
         await client.runQuery("rollback");
         throw err;
     }
@@ -389,31 +373,31 @@ async function createApplicationForUser(params) {
         client.release();
     }
 }
-async function openApplicationForStaff(params) {
-    if (params.actorRole !== roles_1.ROLES.ADMIN && params.actorRole !== roles_1.ROLES.STAFF) {
-        throw new errors_1.AppError("forbidden", "Not authorized.", 403);
+export async function openApplicationForStaff(params) {
+    if (params.actorRole !== ROLES.ADMIN && params.actorRole !== ROLES.STAFF) {
+        throw new AppError("forbidden", "Not authorized.", 403);
     }
-    const client = await db_1.pool.connect();
+    const client = await pool.connect();
     try {
         await client.runQuery("begin");
-        const application = await (0, applications_repo_1.findApplicationById)(params.applicationId, client);
+        const application = await findApplicationById(params.applicationId, client);
         if (!application) {
-            throw new errors_1.AppError("not_found", "Application not found.", 404);
+            throw new AppError("not_found", "Application not found.", 404);
         }
         if (!canAccessApplication(params.actorRole, application.owner_user_id, params.actorUserId)) {
-            throw new errors_1.AppError("forbidden", "Not authorized.", 403);
+            throw new AppError("forbidden", "Not authorized.", 403);
         }
-        if (!(0, pipelineState_1.isPipelineState)(application.pipeline_state)) {
-            throw new errors_1.AppError("invalid_state", "Pipeline state is invalid.", 400);
+        if (!isPipelineState(application.pipeline_state)) {
+            throw new AppError("invalid_state", "Pipeline state is invalid.", 400);
         }
-        const didOpen = await (0, applications_repo_1.updateApplicationFirstOpenedAt)({
+        const didOpen = await updateApplicationFirstOpenedAt({
             applicationId: params.applicationId,
             client,
         });
-        if (didOpen && application.pipeline_state === pipelineState_1.ApplicationStage.RECEIVED) {
+        if (didOpen && application.pipeline_state === ApplicationStage.RECEIVED) {
             await transitionPipelineState({
                 applicationId: params.applicationId,
-                nextState: pipelineState_1.ApplicationStage.IN_REVIEW,
+                nextState: ApplicationStage.IN_REVIEW,
                 actorUserId: params.actorUserId,
                 actorRole: params.actorRole,
                 trigger: "first_opened",
@@ -431,15 +415,15 @@ async function openApplicationForStaff(params) {
         client.release();
     }
 }
-async function listDocumentsForApplication(params) {
-    const application = await (0, applications_repo_1.findApplicationById)(params.applicationId);
+export async function listDocumentsForApplication(params) {
+    const application = await findApplicationById(params.applicationId);
     if (!application) {
-        throw new errors_1.AppError("not_found", "Application not found.", 404);
+        throw new AppError("not_found", "Application not found.", 404);
     }
     if (!canAccessApplication(params.actorRole, application.owner_user_id, params.actorUserId)) {
-        throw new errors_1.AppError("forbidden", "Not authorized.", 403);
+        throw new AppError("forbidden", "Not authorized.", 403);
     }
-    const { requirements } = await (0, lenderProductRequirementsService_1.resolveRequirementsForApplication)({
+    const { requirements } = await resolveRequirementsForApplication({
         lenderProductId: application.lender_product_id ?? null,
         productType: application.product_type,
         requestedAmount: application.requested_amount ?? null,
@@ -449,7 +433,7 @@ async function listDocumentsForApplication(params) {
         application,
         requirements,
     });
-    const documents = await (0, applications_repo_1.listDocumentsWithLatestVersion)({
+    const documents = await listDocumentsWithLatestVersion({
         applicationId: params.applicationId,
     });
     const grouped = new Map();
@@ -493,12 +477,12 @@ async function listDocumentsForApplication(params) {
     }
     return Array.from(grouped.values()).sort((a, b) => a.documentCategory.localeCompare(b.documentCategory));
 }
-async function fetchProcessingStatus(applicationId) {
-    const application = await (0, applications_repo_1.findApplicationById)(applicationId);
+export async function fetchProcessingStatus(applicationId) {
+    const application = await findApplicationById(applicationId);
     if (!application) {
-        throw new errors_1.AppError("not_found", "Application not found.", 404);
+        throw new AppError("not_found", "Application not found.", 404);
     }
-    const { requirements } = await (0, lenderProductRequirementsService_1.resolveRequirementsForApplication)({
+    const { requirements } = await resolveRequirementsForApplication({
         lenderProductId: application.lender_product_id ?? null,
         productType: application.product_type,
         requestedAmount: application.requested_amount ?? null,
@@ -509,12 +493,12 @@ async function fetchProcessingStatus(applicationId) {
         if (requirement.required === false) {
             continue;
         }
-        const normalized = (0, requiredDocuments_1.normalizeRequiredDocumentKey)(requirement.documentType);
+        const normalized = normalizeRequiredDocumentKey(requirement.documentType);
         if (normalized) {
             requiredDocuments.add(normalized);
         }
     }
-    const requiredEntries = await (0, applications_repo_1.listApplicationRequiredDocuments)({ applicationId });
+    const requiredEntries = await listApplicationRequiredDocuments({ applicationId });
     const requiredMap = {};
     for (const key of requiredDocuments) {
         requiredMap[key] = { status: "missing", updatedAt: null };
@@ -523,7 +507,7 @@ async function fetchProcessingStatus(applicationId) {
         if (!entry.is_required) {
             continue;
         }
-        const normalized = (0, requiredDocuments_1.normalizeRequiredDocumentKey)(entry.document_category);
+        const normalized = normalizeRequiredDocumentKey(entry.document_category);
         if (!normalized) {
             continue;
         }
@@ -534,7 +518,7 @@ async function fetchProcessingStatus(applicationId) {
         };
     }
     const allAccepted = Object.values(requiredMap).every((document) => document.status === "accepted");
-    const stageFlags = (0, processingStage_service_1.fetchProcessingStageFlags)(application.processing_stage);
+    const stageFlags = fetchProcessingStageFlags(application.processing_stage);
     return {
         applicationId: application.id,
         status: {
@@ -563,26 +547,26 @@ async function fetchProcessingStatus(applicationId) {
         },
     };
 }
-async function removeDocument(params) {
-    const client = await db_1.pool.connect();
+export async function removeDocument(params) {
+    const client = await pool.connect();
     try {
         await client.runQuery("begin");
-        const application = await (0, applications_repo_1.findApplicationById)(params.applicationId, client);
+        const application = await findApplicationById(params.applicationId, client);
         if (!application) {
-            throw new errors_1.AppError("not_found", "Application not found.", 404);
+            throw new AppError("not_found", "Application not found.", 404);
         }
         if (!canAccessApplication(params.actorRole, application.owner_user_id, params.actorUserId)) {
-            throw new errors_1.AppError("forbidden", "Not authorized.", 403);
+            throw new AppError("forbidden", "Not authorized.", 403);
         }
-        if (!(0, pipelineState_1.isPipelineState)(application.pipeline_state)) {
-            throw new errors_1.AppError("invalid_state", "Pipeline state is invalid.", 400);
+        if (!isPipelineState(application.pipeline_state)) {
+            throw new AppError("invalid_state", "Pipeline state is invalid.", 400);
         }
-        const document = await (0, applications_repo_1.findDocumentById)(params.documentId, client);
+        const document = await findDocumentById(params.documentId, client);
         if (!document || document.application_id !== params.applicationId) {
-            throw new errors_1.AppError("not_found", "Document not found.", 404);
+            throw new AppError("not_found", "Document not found.", 404);
         }
-        await (0, applications_repo_1.deleteDocumentById)({ documentId: params.documentId, client });
-        await (0, audit_service_1.recordAuditEvent)({
+        await deleteDocumentById({ documentId: params.documentId, client });
+        await recordAuditEvent({
             action: "document_deleted",
             actorUserId: params.actorUserId,
             targetUserId: application.owner_user_id,
@@ -601,10 +585,10 @@ async function removeDocument(params) {
             client,
         });
         if (evaluation.missingRequired &&
-            application.pipeline_state !== pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED) {
+            application.pipeline_state !== ApplicationStage.DOCUMENTS_REQUIRED) {
             await transitionPipelineState({
                 applicationId: params.applicationId,
-                nextState: pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED,
+                nextState: ApplicationStage.DOCUMENTS_REQUIRED,
                 actorUserId: params.actorUserId,
                 actorRole: params.actorRole,
                 trigger: "requirements_missing",
@@ -622,26 +606,26 @@ async function removeDocument(params) {
         client.release();
     }
 }
-async function markCreditSummaryCompleted(params) {
+export async function markCreditSummaryCompleted(params) {
     if (params.client) {
         await params.client.runQuery(`update applications
        set credit_summary_completed_at = now(),
            updated_at = now()
        where id = $1`, [params.applicationId]);
-        await (0, processingStage_service_1.advanceProcessingStage)({
+        await advanceProcessingStage({
             applicationId: params.applicationId,
             client: params.client,
         });
         return;
     }
-    const client = await db_1.pool.connect();
+    const client = await pool.connect();
     try {
         await client.runQuery("begin");
         await client.runQuery(`update applications
        set credit_summary_completed_at = now(),
            updated_at = now()
        where id = $1`, [params.applicationId]);
-        await (0, processingStage_service_1.advanceProcessingStage)({
+        await advanceProcessingStage({
             applicationId: params.applicationId,
             client,
         });
@@ -655,7 +639,7 @@ async function markCreditSummaryCompleted(params) {
         client.release();
     }
 }
-async function uploadDocument(params) {
+export async function uploadDocument(params) {
     assertMetadata(params.metadata);
     try {
         validateDocumentMetadata(params.metadata);
@@ -668,9 +652,9 @@ async function uploadDocument(params) {
         });
         throw err;
     }
-    const application = await (0, applications_repo_1.findApplicationById)(params.applicationId);
+    const application = await findApplicationById(params.applicationId);
     if (!application) {
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "document_uploaded",
             actorUserId: params.actorUserId,
             targetUserId: null,
@@ -678,10 +662,10 @@ async function uploadDocument(params) {
             userAgent: params.userAgent ?? null,
             success: false,
         });
-        throw new errors_1.AppError("not_found", "Application not found.", 404);
+        throw new AppError("not_found", "Application not found.", 404);
     }
     if (!canAccessApplication(params.actorRole, application.owner_user_id, params.actorUserId)) {
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "document_uploaded",
             actorUserId: params.actorUserId,
             targetUserId: application.owner_user_id,
@@ -689,21 +673,21 @@ async function uploadDocument(params) {
             userAgent: params.userAgent ?? null,
             success: false,
         });
-        throw new errors_1.AppError("forbidden", "Not authorized.", 403);
+        throw new AppError("forbidden", "Not authorized.", 403);
     }
-    if (!(0, pipelineState_1.isPipelineState)(application.pipeline_state)) {
-        throw new errors_1.AppError("invalid_state", "Pipeline state is invalid.", 400);
+    if (!isPipelineState(application.pipeline_state)) {
+        throw new AppError("invalid_state", "Pipeline state is invalid.", 400);
     }
-    const { requirements } = await (0, lenderProductRequirementsService_1.resolveRequirementsForApplication)({
+    const { requirements } = await resolveRequirementsForApplication({
         lenderProductId: application.lender_product_id ?? null,
         productType: application.product_type,
         requestedAmount: application.requested_amount ?? null,
         country: resolveApplicationCountry(application.metadata),
     });
     const requestedType = params.documentType ?? params.title;
-    const normalizedRequested = (0, requiredDocuments_1.normalizeRequiredDocumentKey)(requestedType);
+    const normalizedRequested = normalizeRequiredDocumentKey(requestedType);
     const requirement = requirements.find((item) => {
-        const normalizedRequirement = (0, requiredDocuments_1.normalizeRequiredDocumentKey)(item.documentType);
+        const normalizedRequirement = normalizeRequiredDocumentKey(item.documentType);
         return normalizedRequirement && normalizedRequested
             ? normalizedRequirement === normalizedRequested
             : item.documentType === requestedType;
@@ -714,30 +698,30 @@ async function uploadDocument(params) {
             targetUserId: application.owner_user_id,
             ...buildRequestMetadata(params),
         });
-        throw new errors_1.AppError("invalid_document_type", "Document type is not allowed.", 400);
+        throw new AppError("invalid_document_type", "Document type is not allowed.", 400);
     }
     const buffer = Buffer.from(params.content, "base64");
-    const detectedType = await (0, fileValidation_1.validateFile)(buffer);
-    const uploaded = await (0, blobStorage_1.uploadDocumentBuffer)({
+    const detectedType = await validateFile(buffer);
+    const uploaded = await uploadDocumentBuffer({
         buffer,
         filename: params.metadata.fileName,
         contentType: detectedType.mime,
     });
     const normalizedCategory = normalizedRequested ?? requestedType;
-    const client = await db_1.pool.connect();
+    const client = await pool.connect();
     let documentId = params.documentId ?? null;
     let isNewDocument = false;
     try {
         await client.runQuery("begin");
         if (documentId) {
-            const existingDoc = await (0, applications_repo_1.findDocumentById)(documentId, client);
+            const existingDoc = await findDocumentById(documentId, client);
             if (!existingDoc || existingDoc.application_id !== params.applicationId) {
                 await client.runQuery("rollback");
-                throw new errors_1.AppError("not_found", "Document not found.", 404);
+                throw new AppError("not_found", "Document not found.", 404);
             }
             const incomingType = params.documentType ?? existingDoc.document_type;
-            const normalizedExisting = (0, requiredDocuments_1.normalizeRequiredDocumentKey)(existingDoc.document_type);
-            const normalizedIncoming = (0, requiredDocuments_1.normalizeRequiredDocumentKey)(incomingType);
+            const normalizedExisting = normalizeRequiredDocumentKey(existingDoc.document_type);
+            const normalizedIncoming = normalizeRequiredDocumentKey(incomingType);
             if (normalizedExisting &&
                 normalizedIncoming
                 ? normalizedExisting !== normalizedIncoming
@@ -748,9 +732,9 @@ async function uploadDocument(params) {
                     ...buildRequestMetadata(params),
                     client,
                 });
-                throw new errors_1.AppError("document_type_mismatch", "Document type mismatch.", 400);
+                throw new AppError("document_type_mismatch", "Document type mismatch.", 400);
             }
-            const accepted = await (0, applications_repo_1.findAcceptedDocumentVersion)({
+            const accepted = await findAcceptedDocumentVersion({
                 documentId,
                 client,
             });
@@ -761,11 +745,11 @@ async function uploadDocument(params) {
                     ...buildRequestMetadata(params),
                     client,
                 });
-                throw new errors_1.AppError("document_immutable", "Accepted document versions cannot be modified.", 409);
+                throw new AppError("document_immutable", "Accepted document versions cannot be modified.", 409);
             }
         }
         else {
-            const doc = await (0, applications_repo_1.createDocument)({
+            const doc = await createDocument({
                 applicationId: params.applicationId,
                 ownerUserId: application.owner_user_id,
                 title: params.title,
@@ -778,13 +762,13 @@ async function uploadDocument(params) {
             documentId = doc.id;
             isNewDocument = true;
         }
-        const currentVersion = await (0, applications_repo_1.fetchLatestDocumentVersion)(documentId, client);
+        const currentVersion = await fetchLatestDocumentVersion(documentId, client);
         const nextVersion = currentVersion + 1;
         if (nextVersion <= currentVersion) {
             await client.runQuery("rollback");
-            throw new errors_1.AppError("version_conflict", "Invalid document version.", 409);
+            throw new AppError("version_conflict", "Invalid document version.", 409);
         }
-        const version = await (0, applications_repo_1.createDocumentVersion)({
+        const version = await createDocumentVersion({
             documentId,
             version: nextVersion,
             blobName: uploaded.blobName,
@@ -799,7 +783,7 @@ async function uploadDocument(params) {
             content: "",
             client,
         });
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "document_uploaded",
             actorUserId: params.actorUserId,
             targetUserId: application.owner_user_id,
@@ -808,7 +792,7 @@ async function uploadDocument(params) {
             success: true,
             client,
         });
-        await (0, applications_repo_1.updateDocumentUploadDetails)({
+        await updateDocumentUploadDetails({
             documentId,
             status: "uploaded",
             filename: params.metadata.fileName,
@@ -816,7 +800,7 @@ async function uploadDocument(params) {
             uploadedBy: resolveUploadedBy(params.actorRole),
             client,
         });
-        await (0, applications_repo_1.upsertApplicationRequiredDocument)({
+        await upsertApplicationRequiredDocument({
             applicationId: params.applicationId,
             documentCategory: normalizedCategory,
             isRequired: requirement?.required === true,
@@ -831,16 +815,16 @@ async function uploadDocument(params) {
         await client.runQuery("commit");
         if (isNewDocument) {
             if (normalizedCategory === BANK_STATEMENT_CATEGORY) {
-                await (0, processing_service_1.createBankingAnalysisJob)(params.applicationId);
+                await createBankingAnalysisJob(params.applicationId);
             }
             else {
-                await (0, processing_service_1.createDocumentProcessingJob)(params.applicationId, documentId);
+                await createDocumentProcessingJob(params.applicationId, documentId);
             }
         }
         return { status: 201, value: response, idempotent: false };
     }
     catch (err) {
-        (0, transactionTelemetry_1.recordTransactionRollback)(err);
+        recordTransactionRollback(err);
         try {
             await client.runQuery("rollback");
         }
@@ -853,35 +837,35 @@ async function uploadDocument(params) {
         client.release();
     }
 }
-async function changePipelineState(params) {
+export async function changePipelineState(params) {
     const requestedState = params.nextState.trim().toUpperCase();
     const isDeclinedAlias = requestedState === "DECLINED";
-    if (!isDeclinedAlias && !(0, pipelineState_1.isPipelineState)(requestedState)) {
-        throw new errors_1.AppError("invalid_state", "Pipeline state is invalid.", 400);
+    if (!isDeclinedAlias && !isPipelineState(requestedState)) {
+        throw new AppError("invalid_state", "Pipeline state is invalid.", 400);
     }
-    const application = await (0, applications_repo_1.findApplicationById)(params.applicationId);
+    const application = await findApplicationById(params.applicationId);
     if (!application) {
-        throw new errors_1.AppError("not_found", "Application not found.", 404);
+        throw new AppError("not_found", "Application not found.", 404);
     }
     if (!canAccessApplication(params.actorRole, application.owner_user_id, params.actorUserId)) {
-        throw new errors_1.AppError("forbidden", "Not authorized.", 403);
+        throw new AppError("forbidden", "Not authorized.", 403);
     }
-    const currentStage = (0, applicationLifecycle_service_1.assertPipelineState)(application.pipeline_state);
+    const currentStage = assertPipelineState(application.pipeline_state);
     const nextStage = isDeclinedAlias ? "DECLINED" : requestedState;
     if (!params.override &&
-        (currentStage === pipelineState_1.ApplicationStage.RECEIVED ||
-            currentStage === pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED) &&
-        nextStage === pipelineState_1.ApplicationStage.OFF_TO_LENDER) {
-        throw new errors_1.AppError("invalid_transition", "Invalid pipeline transition.", 400);
+        (currentStage === ApplicationStage.RECEIVED ||
+            currentStage === ApplicationStage.DOCUMENTS_REQUIRED) &&
+        nextStage === ApplicationStage.OFF_TO_LENDER) {
+        throw new AppError("invalid_transition", "Invalid pipeline transition.", 400);
     }
     if (currentStage === nextStage) {
         return;
     }
-    await (0, applications_repo_1.updateApplicationPipelineState)({
+    await updateApplicationPipelineState({
         applicationId: params.applicationId,
         pipelineState: nextStage,
     });
-    await (0, applications_repo_1.createApplicationStageEvent)({
+    await createApplicationStageEvent({
         applicationId: params.applicationId,
         fromStage: currentStage,
         toStage: nextStage,
@@ -889,7 +873,7 @@ async function changePipelineState(params) {
         triggeredBy: params.actorUserId,
         reason: params.override ? "override" : null,
     });
-    await (0, audit_service_1.recordAuditEvent)({
+    await recordAuditEvent({
         action: "pipeline_state_changed",
         actorUserId: params.actorUserId,
         targetUserId: application.owner_user_id,
@@ -899,39 +883,39 @@ async function changePipelineState(params) {
         metadata: { from: currentStage, to: nextStage, override: params.override === true },
     });
 }
-async function acceptDocumentVersion(params) {
+export async function acceptDocumentVersion(params) {
     assertStaffReviewRole(params.actorRole);
-    const client = await db_1.pool.connect();
+    const client = await pool.connect();
     try {
         await client.runQuery("begin");
-        const application = await (0, applications_repo_1.findApplicationById)(params.applicationId, client);
+        const application = await findApplicationById(params.applicationId, client);
         if (!application) {
-            throw new errors_1.AppError("not_found", "Application not found.", 404);
+            throw new AppError("not_found", "Application not found.", 404);
         }
         if (!canAccessApplication(params.actorRole, application.owner_user_id, params.actorUserId)) {
-            throw new errors_1.AppError("forbidden", "Not authorized.", 403);
+            throw new AppError("forbidden", "Not authorized.", 403);
         }
-        if (application.pipeline_state !== pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED &&
-            application.pipeline_state !== pipelineState_1.ApplicationStage.RECEIVED) {
-            throw new errors_1.AppError("invalid_state", "Documents can only be reviewed while in DOCUMENTS_REQUIRED.", 400);
+        if (application.pipeline_state !== ApplicationStage.DOCUMENTS_REQUIRED &&
+            application.pipeline_state !== ApplicationStage.RECEIVED) {
+            throw new AppError("invalid_state", "Documents can only be reviewed while in DOCUMENTS_REQUIRED.", 400);
         }
-        const document = await (0, applications_repo_1.findDocumentById)(params.documentId, client);
+        const document = await findDocumentById(params.documentId, client);
         if (!document || document.application_id !== params.applicationId) {
-            throw new errors_1.AppError("not_found", "Document not found.", 404);
+            throw new AppError("not_found", "Document not found.", 404);
         }
         await client.runQuery("select id from document_versions where id = $1 for update", [
             params.documentVersionId,
         ]);
-        const version = await (0, applications_repo_1.findDocumentVersionById)(params.documentVersionId, client);
+        const version = await findDocumentVersionById(params.documentVersionId, client);
         if (!version || version.document_id !== params.documentId) {
-            throw new errors_1.AppError("not_found", "Document version not found.", 404);
+            throw new AppError("not_found", "Document version not found.", 404);
         }
-        const review = await (0, applications_repo_1.findDocumentVersionReview)(params.documentVersionId, client);
+        const review = await findDocumentVersionReview(params.documentVersionId, client);
         if (review) {
-            throw new errors_1.AppError("version_reviewed", "Document version already reviewed.", 409);
+            throw new AppError("version_reviewed", "Document version already reviewed.", 409);
         }
         try {
-            await (0, applications_repo_1.createDocumentVersionReview)({
+            await createDocumentVersionReview({
                 documentVersionId: params.documentVersionId,
                 status: "accepted",
                 reviewedByUserId: params.actorUserId,
@@ -940,11 +924,11 @@ async function acceptDocumentVersion(params) {
         }
         catch (error) {
             if (error.code === "23505") {
-                throw new errors_1.AppError("version_reviewed", "Document version already reviewed.", 409);
+                throw new AppError("version_reviewed", "Document version already reviewed.", 409);
             }
             throw error;
         }
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "document_accepted",
             actorUserId: params.actorUserId,
             targetUserId: application.owner_user_id,
@@ -958,39 +942,39 @@ async function acceptDocumentVersion(params) {
             documentType: document.document_type,
             client,
         });
-        await (0, applications_repo_1.updateDocumentStatus)({
+        await updateDocumentStatus({
             documentId: params.documentId,
             status: "accepted",
             rejectionReason: null,
             client,
         });
-        await (0, applications_repo_1.upsertApplicationRequiredDocument)({
+        await upsertApplicationRequiredDocument({
             applicationId: params.applicationId,
             documentCategory: requirement.documentCategory,
             isRequired: requirement.isRequired,
             status: "accepted",
             client,
         });
-        const requiredDocuments = await (0, applications_repo_1.listApplicationRequiredDocuments)({
+        const requiredDocuments = await listApplicationRequiredDocuments({
             applicationId: params.applicationId,
             client,
         });
         const hasPendingDocuments = requiredDocuments.some((doc) => doc.status !== "accepted");
-        if (!hasPendingDocuments && application.pipeline_state === pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED) {
-            await (0, applications_repo_1.updateApplicationPipelineState)({
+        if (!hasPendingDocuments && application.pipeline_state === ApplicationStage.DOCUMENTS_REQUIRED) {
+            await updateApplicationPipelineState({
                 applicationId: params.applicationId,
-                pipelineState: pipelineState_1.ApplicationStage.IN_REVIEW,
+                pipelineState: ApplicationStage.IN_REVIEW,
                 client,
             });
-            await (0, applications_repo_1.createApplicationStageEvent)({
+            await createApplicationStageEvent({
                 applicationId: params.applicationId,
-                fromStage: pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED,
-                toStage: pipelineState_1.ApplicationStage.IN_REVIEW,
+                fromStage: ApplicationStage.DOCUMENTS_REQUIRED,
+                toStage: ApplicationStage.IN_REVIEW,
                 trigger: "requirements_satisfied",
                 triggeredBy: params.actorUserId,
                 client,
             });
-            await (0, audit_service_1.recordAuditEvent)({
+            await recordAuditEvent({
                 action: "pipeline_state_changed",
                 actorUserId: params.actorUserId,
                 targetUserId: application.owner_user_id,
@@ -999,7 +983,7 @@ async function acceptDocumentVersion(params) {
                 success: true,
                 client,
             });
-            await (0, audit_service_1.recordAuditEvent)({
+            await recordAuditEvent({
                 action: "pipeline_stage_changed",
                 actorUserId: params.actorUserId,
                 targetUserId: application.owner_user_id,
@@ -1009,13 +993,13 @@ async function acceptDocumentVersion(params) {
                 userAgent: params.userAgent ?? null,
                 success: true,
                 metadata: {
-                    from: pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED,
-                    to: pipelineState_1.ApplicationStage.IN_REVIEW,
+                    from: ApplicationStage.DOCUMENTS_REQUIRED,
+                    to: ApplicationStage.IN_REVIEW,
                 },
                 client,
             });
         }
-        await (0, processingStage_service_1.advanceProcessingStage)({
+        await advanceProcessingStage({
             applicationId: params.applicationId,
             client,
         });
@@ -1029,25 +1013,25 @@ async function acceptDocumentVersion(params) {
         client.release();
     }
 }
-async function rejectDocumentVersion(params) {
+export async function rejectDocumentVersion(params) {
     assertStaffReviewRole(params.actorRole);
-    const client = await db_1.pool.connect();
+    const client = await pool.connect();
     try {
         await client.runQuery("begin");
-        const application = await (0, applications_repo_1.findApplicationById)(params.applicationId, client);
+        const application = await findApplicationById(params.applicationId, client);
         if (!application) {
-            throw new errors_1.AppError("not_found", "Application not found.", 404);
+            throw new AppError("not_found", "Application not found.", 404);
         }
         if (!canAccessApplication(params.actorRole, application.owner_user_id, params.actorUserId)) {
-            throw new errors_1.AppError("forbidden", "Not authorized.", 403);
+            throw new AppError("forbidden", "Not authorized.", 403);
         }
-        if (application.pipeline_state !== pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED &&
-            application.pipeline_state !== pipelineState_1.ApplicationStage.RECEIVED) {
-            throw new errors_1.AppError("invalid_state", "Documents can only be reviewed while in DOCUMENTS_REQUIRED.", 400);
+        if (application.pipeline_state !== ApplicationStage.DOCUMENTS_REQUIRED &&
+            application.pipeline_state !== ApplicationStage.RECEIVED) {
+            throw new AppError("invalid_state", "Documents can only be reviewed while in DOCUMENTS_REQUIRED.", 400);
         }
-        const document = await (0, applications_repo_1.findDocumentById)(params.documentId, client);
+        const document = await findDocumentById(params.documentId, client);
         if (!document || document.application_id !== params.applicationId) {
-            throw new errors_1.AppError("not_found", "Document not found.", 404);
+            throw new AppError("not_found", "Document not found.", 404);
         }
         const requirement = await resolveRequirementForDocument({
             application,
@@ -1057,16 +1041,16 @@ async function rejectDocumentVersion(params) {
         await client.runQuery("select id from document_versions where id = $1 for update", [
             params.documentVersionId,
         ]);
-        const version = await (0, applications_repo_1.findDocumentVersionById)(params.documentVersionId, client);
+        const version = await findDocumentVersionById(params.documentVersionId, client);
         if (!version || version.document_id !== params.documentId) {
-            throw new errors_1.AppError("not_found", "Document version not found.", 404);
+            throw new AppError("not_found", "Document version not found.", 404);
         }
-        const review = await (0, applications_repo_1.findDocumentVersionReview)(params.documentVersionId, client);
+        const review = await findDocumentVersionReview(params.documentVersionId, client);
         if (review) {
-            throw new errors_1.AppError("version_reviewed", "Document version already reviewed.", 409);
+            throw new AppError("version_reviewed", "Document version already reviewed.", 409);
         }
         try {
-            await (0, applications_repo_1.createDocumentVersionReview)({
+            await createDocumentVersionReview({
                 documentVersionId: params.documentVersionId,
                 status: "rejected",
                 reviewedByUserId: params.actorUserId,
@@ -1075,11 +1059,11 @@ async function rejectDocumentVersion(params) {
         }
         catch (error) {
             if (error.code === "23505") {
-                throw new errors_1.AppError("version_reviewed", "Document version already reviewed.", 409);
+                throw new AppError("version_reviewed", "Document version already reviewed.", 409);
             }
             throw error;
         }
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "document_rejected",
             actorUserId: params.actorUserId,
             targetUserId: application.owner_user_id,
@@ -1088,13 +1072,13 @@ async function rejectDocumentVersion(params) {
             success: true,
             client,
         });
-        await (0, applications_repo_1.updateDocumentStatus)({
+        await updateDocumentStatus({
             documentId: params.documentId,
             status: "rejected",
             rejectionReason: null,
             client,
         });
-        await (0, applications_repo_1.upsertApplicationRequiredDocument)({
+        await upsertApplicationRequiredDocument({
             applicationId: params.applicationId,
             documentCategory: requirement.documentCategory,
             isRequired: requirement.isRequired,
@@ -1108,7 +1092,7 @@ async function rejectDocumentVersion(params) {
             trigger: "document_rejected",
             client,
         });
-        await (0, processingStage_service_1.advanceProcessingStage)({
+        await advanceProcessingStage({
             applicationId: params.applicationId,
             client,
         });
@@ -1122,18 +1106,18 @@ async function rejectDocumentVersion(params) {
         client.release();
     }
 }
-async function acceptDocument(params) {
+export async function acceptDocument(params) {
     assertStaffReviewRole(params.actorRole);
-    const client = await db_1.pool.connect();
+    const client = await pool.connect();
     try {
         await client.runQuery("begin");
-        const document = await (0, applications_repo_1.findDocumentById)(params.documentId, client);
+        const document = await findDocumentById(params.documentId, client);
         if (!document) {
-            throw new errors_1.AppError("not_found", "Document not found.", 404);
+            throw new AppError("not_found", "Document not found.", 404);
         }
-        const application = await (0, applications_repo_1.findApplicationById)(document.application_id, client);
+        const application = await findApplicationById(document.application_id, client);
         if (!application) {
-            throw new errors_1.AppError("not_found", "Application not found.", 404);
+            throw new AppError("not_found", "Application not found.", 404);
         }
         const requirement = await resolveRequirementForDocument({
             application,
@@ -1141,23 +1125,23 @@ async function acceptDocument(params) {
             client,
         });
         if (!canAccessApplication(params.actorRole, application.owner_user_id, params.actorUserId)) {
-            throw new errors_1.AppError("forbidden", "Not authorized.", 403);
+            throw new AppError("forbidden", "Not authorized.", 403);
         }
-        const version = await (0, applications_repo_1.findActiveDocumentVersion)({ documentId: params.documentId, client });
+        const version = await findActiveDocumentVersion({ documentId: params.documentId, client });
         if (!version) {
-            throw new errors_1.AppError("not_found", "Document version not found.", 404);
+            throw new AppError("not_found", "Document version not found.", 404);
         }
-        const review = await (0, applications_repo_1.findDocumentVersionReview)(version.id, client);
+        const review = await findDocumentVersionReview(version.id, client);
         if (review) {
-            throw new errors_1.AppError("version_reviewed", "Document version already reviewed.", 409);
+            throw new AppError("version_reviewed", "Document version already reviewed.", 409);
         }
-        await (0, applications_repo_1.createDocumentVersionReview)({
+        await createDocumentVersionReview({
             documentVersionId: version.id,
             status: "accepted",
             reviewedByUserId: params.actorUserId,
             client,
         });
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "document_accepted",
             actorUserId: params.actorUserId,
             targetUserId: application.owner_user_id,
@@ -1166,20 +1150,20 @@ async function acceptDocument(params) {
             success: true,
             client,
         });
-        await (0, applications_repo_1.updateDocumentStatus)({
+        await updateDocumentStatus({
             documentId: params.documentId,
             status: "accepted",
             rejectionReason: null,
             client,
         });
-        await (0, applications_repo_1.upsertApplicationRequiredDocument)({
+        await upsertApplicationRequiredDocument({
             applicationId: application.id,
             documentCategory: requirement.documentCategory,
             isRequired: requirement.isRequired,
             status: "accepted",
             client,
         });
-        await (0, processingStage_service_1.advanceProcessingStage)({
+        await advanceProcessingStage({
             applicationId: application.id,
             client,
         });
@@ -1193,18 +1177,18 @@ async function acceptDocument(params) {
         client.release();
     }
 }
-async function rejectDocument(params) {
+export async function rejectDocument(params) {
     assertStaffReviewRole(params.actorRole);
-    const client = await db_1.pool.connect();
+    const client = await pool.connect();
     try {
         await client.runQuery("begin");
-        const document = await (0, applications_repo_1.findDocumentById)(params.documentId, client);
+        const document = await findDocumentById(params.documentId, client);
         if (!document) {
-            throw new errors_1.AppError("not_found", "Document not found.", 404);
+            throw new AppError("not_found", "Document not found.", 404);
         }
-        const application = await (0, applications_repo_1.findApplicationById)(document.application_id, client);
+        const application = await findApplicationById(document.application_id, client);
         if (!application) {
-            throw new errors_1.AppError("not_found", "Application not found.", 404);
+            throw new AppError("not_found", "Application not found.", 404);
         }
         const requirement = await resolveRequirementForDocument({
             application,
@@ -1212,23 +1196,23 @@ async function rejectDocument(params) {
             client,
         });
         if (!canAccessApplication(params.actorRole, application.owner_user_id, params.actorUserId)) {
-            throw new errors_1.AppError("forbidden", "Not authorized.", 403);
+            throw new AppError("forbidden", "Not authorized.", 403);
         }
-        const version = await (0, applications_repo_1.findActiveDocumentVersion)({ documentId: params.documentId, client });
+        const version = await findActiveDocumentVersion({ documentId: params.documentId, client });
         if (!version) {
-            throw new errors_1.AppError("not_found", "Document version not found.", 404);
+            throw new AppError("not_found", "Document version not found.", 404);
         }
-        const review = await (0, applications_repo_1.findDocumentVersionReview)(version.id, client);
+        const review = await findDocumentVersionReview(version.id, client);
         if (review) {
-            throw new errors_1.AppError("version_reviewed", "Document version already reviewed.", 409);
+            throw new AppError("version_reviewed", "Document version already reviewed.", 409);
         }
-        await (0, applications_repo_1.createDocumentVersionReview)({
+        await createDocumentVersionReview({
             documentVersionId: version.id,
             status: "rejected",
             reviewedByUserId: params.actorUserId,
             client,
         });
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "document_rejected",
             actorUserId: params.actorUserId,
             targetUserId: application.owner_user_id,
@@ -1237,13 +1221,13 @@ async function rejectDocument(params) {
             success: true,
             client,
         });
-        await (0, applications_repo_1.updateDocumentStatus)({
+        await updateDocumentStatus({
             documentId: params.documentId,
             status: "rejected",
             rejectionReason: params.rejectionReason,
             client,
         });
-        await (0, applications_repo_1.upsertApplicationRequiredDocument)({
+        await upsertApplicationRequiredDocument({
             applicationId: application.id,
             documentCategory: requirement.documentCategory,
             isRequired: requirement.isRequired,
@@ -1257,7 +1241,7 @@ async function rejectDocument(params) {
             trigger: "document_rejected",
             client,
         });
-        await (0, processingStage_service_1.advanceProcessingStage)({
+        await advanceProcessingStage({
             applicationId: application.id,
             client,
         });
@@ -1271,6 +1255,6 @@ async function rejectDocument(params) {
         client.release();
     }
 }
-function fetchPipelineStates() {
-    return [...pipelineState_1.PIPELINE_STATES];
+export function fetchPipelineStates() {
+    return [...PIPELINE_STATES];
 }

@@ -1,19 +1,16 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.submitLenderSubmission = submitLenderSubmission;
-const errors_1 = require("../../middleware/errors");
-const applications_repo_1 = require("../applications/applications.repo");
-const lender_service_1 = require("../lender/lender.service");
-async function submitLenderSubmission(params) {
-    const application = await (0, applications_repo_1.findApplicationById)(params.applicationId);
+import { AppError } from "../../middleware/errors.js";
+import { findApplicationById } from "../applications/applications.repo.js";
+import { submitApplication } from "../lender/lender.service.js";
+export async function submitLenderSubmission(params) {
+    const application = await findApplicationById(params.applicationId);
     if (!application) {
-        throw new errors_1.AppError("not_found", "Application not found.", 404);
+        throw new AppError("not_found", "Application not found.", 404);
     }
     if (!application.lender_id) {
-        throw new errors_1.AppError("missing_lender", "Application lender is not set.", 400);
+        throw new AppError("missing_lender", "Application lender is not set.", 400);
     }
     if (!application.lender_product_id) {
-        throw new errors_1.AppError("missing_product", "Application lender product is not set.", 400);
+        throw new AppError("missing_product", "Application lender product is not set.", 400);
     }
     const submitPayload = {
         applicationId: params.applicationId,
@@ -27,6 +24,6 @@ async function submitLenderSubmission(params) {
         ...(params.ip ? { ip: params.ip } : {}),
         ...(params.userAgent ? { userAgent: params.userAgent } : {}),
     };
-    const result = await (0, lender_service_1.submitApplication)(submitPayload);
+    const result = await submitApplication(submitPayload);
     return { statusCode: result.statusCode, value: result.value };
 }

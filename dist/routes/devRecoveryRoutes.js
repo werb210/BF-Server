@@ -1,7 +1,5 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const router = (0, express_1.Router)();
+import { Router } from "express";
+const router = Router();
 router.get("/api/dev/ready", async (_req, res) => {
     res["json"]({
         ok: true,
@@ -28,4 +26,4 @@ router.post("/api/application/update", async (_req, res) => {
         saved: true,
     });
 });
-exports.default = router;
+export default router;

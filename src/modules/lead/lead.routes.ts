@@ -1,9 +1,9 @@
 import { type Request, type Response, Router } from "express";
 import { z } from "zod";
-import { requireAuth } from "../../middleware/auth";
-import { idempotencyMiddleware } from "../../middleware/idempotency";
-import { createLead, getLeads } from "./lead.service";
-import { stripUndefined } from "../../utils/clean";
+import { requireAuth } from "../../middleware/auth.js";
+import { idempotencyMiddleware } from "../../middleware/idempotency.js";
+import { createLead, getLeads } from "./lead.service.js";
+import { stripUndefined } from "../../utils/clean.js";
 
 const createLeadSchema = z.object({
   source: z.string().trim().min(1),

@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { type NextFunction, type Request, type Response } from "express";
-import { stripUndefined } from "../utils/clean";
+import { stripUndefined } from "../utils/clean.js";
 
 type RequestContextStore = {
   requestId: string;

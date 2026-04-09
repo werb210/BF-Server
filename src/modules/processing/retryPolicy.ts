@@ -1,4 +1,4 @@
-import { AppError } from "../../middleware/errors";
+import { AppError } from "../../middleware/errors.js";
 
 export type RetryPolicy = {
   maxRetries: number;

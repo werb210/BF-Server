@@ -1,23 +1,21 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const zod_1 = require("zod");
-const crmService_1 = require("../services/crmService");
-const smsService_1 = require("../services/smsService");
-const config_1 = require("../config");
-const clean_1 = require("../utils/clean");
-const router = (0, express_1.Router)();
-const creditSchema = zod_1.z.object({
-    companyName: zod_1.z.string().min(1),
-    fullName: zod_1.z.string().min(1),
-    email: zod_1.z.string().email(),
-    phone: zod_1.z.string().min(1),
-    industry: zod_1.z.string().optional(),
-    yearsInBusiness: zod_1.z.number().nonnegative().default(0),
-    monthlyRevenue: zod_1.z.number().nonnegative().optional(),
-    annualRevenue: zod_1.z.number().nonnegative().default(0),
-    arOutstanding: zod_1.z.number().nonnegative().optional(),
-    existingDebt: zod_1.z.boolean().default(false),
+import { Router } from "express";
+import { z } from "zod";
+import { createCRMLead } from "../services/crmService.js";
+import { sendSMS } from "../services/smsService.js";
+import { config } from "../config/index.js";
+import { stripUndefined } from "../utils/clean.js";
+const router = Router();
+const creditSchema = z.object({
+    companyName: z.string().min(1),
+    fullName: z.string().min(1),
+    email: z.string().email(),
+    phone: z.string().min(1),
+    industry: z.string().optional(),
+    yearsInBusiness: z.number().nonnegative().default(0),
+    monthlyRevenue: z.number().nonnegative().optional(),
+    annualRevenue: z.number().nonnegative().default(0),
+    arOutstanding: z.number().nonnegative().optional(),
+    existingDebt: z.boolean().default(false),
 });
 router.post("/score", async (req, res, next) => {
     const parsed = creditSchema.safeParse(req.body);
@@ -34,7 +32,7 @@ router.post("/score", async (req, res, next) => {
     if (!existingDebt)
         score += 10;
     score = Math.min(score, 85);
-    await (0, crmService_1.createCRMLead)((0, clean_1.stripUndefined)({
+    await createCRMLead(stripUndefined({
         companyName,
         fullName,
         email,
@@ -50,12 +48,12 @@ router.post("/score", async (req, res, next) => {
             score,
         },
     }));
-    if (config_1.config.intake.smsNumber) {
-        await (0, smsService_1.sendSMS)(config_1.config.intake.smsNumber, `New Credit Check Lead: ${companyName} (${score})`);
+    if (config.intake.smsNumber) {
+        await sendSMS(config.intake.smsNumber, `New Credit Check Lead: ${companyName} (${score})`);
     }
     res["json"]({
         score,
         message: "Preliminary assessment complete.",
     });
 });
-exports.default = router;
+export default router;

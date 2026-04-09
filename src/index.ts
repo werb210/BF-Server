@@ -1,5 +1,5 @@
-import app from "./app";
-import { validateEnv } from "./config/env";
+import app from "./app.js";
+import { validateEnv } from "./config/env.js";
 
 const PORT = process.env.PORT || 8080;
 

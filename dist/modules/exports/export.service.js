@@ -1,15 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.recordExportAudit = recordExportAudit;
-exports.listRecentExports = listRecentExports;
-exports.exportPipelineSummary = exportPipelineSummary;
-exports.exportLenderPerformance = exportLenderPerformance;
-exports.exportApplicationVolume = exportApplicationVolume;
-const crypto_1 = require("crypto");
-const db_1 = require("../../db");
-const pg_1 = require("pg");
-const pipelineState_1 = require("../applications/pipelineState");
-const PIPELINE_ORDER_CASE_SQL = `case pipeline_state ${pipelineState_1.PIPELINE_STATES.map((state, index) => `when '${state}' then ${index + 1}`).join(" ")} else 999 end`;
+import { randomUUID } from "node:crypto";
+import { pool, runQuery } from "../../db.js";
+import { Query } from "pg";
+import { PIPELINE_STATES } from "../applications/pipelineState.js";
+const PIPELINE_ORDER_CASE_SQL = `case pipeline_state ${PIPELINE_STATES.map((state, index) => `when '${state}' then ${index + 1}`).join(" ")} else 999 end`;
 function buildWhereClause(params) {
     const clauses = [];
     const values = [];
@@ -32,12 +25,12 @@ function buildWhereClause(params) {
         values,
     };
 }
-async function recordExportAudit(params) {
-    await (0, db_1.runQuery)(`insert into export_audit (id, actor_user_id, export_type, filters, created_at)
-     values ($1, $2, $3, $4, now())`, [(0, crypto_1.randomUUID)(), params.actorUserId, params.exportType, JSON.stringify(params.filters)]);
+export async function recordExportAudit(params) {
+    await runQuery(`insert into export_audit (id, actor_user_id, export_type, filters, created_at)
+     values ($1, $2, $3, $4, now())`, [randomUUID(), params.actorUserId, params.exportType, JSON.stringify(params.filters)]);
 }
-async function listRecentExports(limit = 20) {
-    const result = await (0, db_1.runQuery)(`select id, actor_user_id, export_type, filters, created_at
+export async function listRecentExports(limit = 20) {
+    const result = await runQuery(`select id, actor_user_id, export_type, filters, created_at
      from export_audit
      order by created_at desc
      limit $1`, [limit]);
@@ -64,8 +57,8 @@ function csvValue(value) {
     return text;
 }
 async function streamQueryAsCsv(params) {
-    const client = await db_1.pool.connect();
-    const query = new pg_1.Query(params.query, params.values);
+    const client = await pool.connect();
+    const query = new Query(params.query, params.values);
     return new Promise((resolve, reject) => {
         query.on("row", (row) => {
             const line = params.columns.map((col) => csvValue(row[col])).join(",");
@@ -82,7 +75,7 @@ async function streamQueryAsCsv(params) {
         client["query"](query);
     });
 }
-async function exportPipelineSummary(params) {
+export async function exportPipelineSummary(params) {
     const { clause, values } = buildWhereClause({
         column: "snapshot_date",
         from: params.filters.from,
@@ -109,10 +102,10 @@ async function exportPipelineSummary(params) {
         });
         return [];
     }
-    const result = await (0, db_1.runQuery)(query, values);
+    const result = await runQuery(query, values);
     return result.rows;
 }
-async function exportLenderPerformance(params) {
+export async function exportLenderPerformance(params) {
     const { clause, values } = buildWhereClause({
         column: "period_start",
         from: params.filters.from,
@@ -148,10 +141,10 @@ async function exportLenderPerformance(params) {
         });
         return [];
     }
-    const result = await (0, db_1.runQuery)(query, values);
+    const result = await runQuery(query, values);
     return result.rows;
 }
-async function exportApplicationVolume(params) {
+export async function exportApplicationVolume(params) {
     const { clause, values } = buildWhereClause({
         column: "metric_date",
         from: params.filters.from,
@@ -186,6 +179,6 @@ async function exportApplicationVolume(params) {
         });
         return [];
     }
-    const result = await (0, db_1.runQuery)(query, values);
+    const result = await runQuery(query, values);
     return result.rows;
 }

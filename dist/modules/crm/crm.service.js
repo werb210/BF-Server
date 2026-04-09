@@ -1,12 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.createCrmLead = createCrmLead;
-exports.listCrmLeads = listCrmLeads;
-const node_crypto_1 = require("node:crypto");
-const db_1 = require("../../db");
-async function createCrmLead(input) {
-    const id = (0, node_crypto_1.randomUUID)();
-    await (0, db_1.dbQuery)(`insert into crm_leads (
+import { randomUUID } from "node:crypto";
+import { dbQuery } from "../../db.js";
+export async function createCrmLead(input) {
+    const id = randomUUID();
+    await dbQuery(`insert into crm_leads (
       id,
       company_name,
       full_name,
@@ -49,8 +45,8 @@ async function createCrmLead(input) {
     ]);
     return { id };
 }
-async function listCrmLeads() {
-    const result = await (0, db_1.dbQuery)(`select
+export async function listCrmLeads() {
+    const result = await dbQuery(`select
       id,
       company_name,
       full_name,

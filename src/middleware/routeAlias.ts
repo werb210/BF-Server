@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { fail } from "../system/response";
+import { fail } from "../system/response.js";
 
 const CANONICAL_NON_API_ROUTES = new Set([
   "/health",

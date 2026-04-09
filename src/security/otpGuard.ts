@@ -1,4 +1,4 @@
-import { pool, runQuery } from "../db";
+import { pool, runQuery } from "../db.js";
 
 const MAX_ATTEMPTS = 5;
 

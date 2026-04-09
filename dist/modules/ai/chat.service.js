@@ -1,17 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.startChatSession = startChatSession;
-exports.processChatMessage = processChatMessage;
-exports.requestHumanTakeover = requestHumanTakeover;
-exports.closeChatSession = closeChatSession;
-exports.fetchHumanSessions = fetchHumanSessions;
-exports.fetchSessionMessages = fetchSessionMessages;
-exports.upsertLead = upsertLead;
-const db_1 = require("../../db");
-const audit_service_1 = require("../audit/audit.service");
-const ai_service_1 = require("./ai.service");
-const clean_1 = require("../../utils/clean");
-const chat_repo_1 = require("./chat.repo");
+import { runQuery } from "../../db.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { generateAIResponse } from "./ai.service.js";
+import { stripUndefined } from "../../utils/clean.js";
+import { addMessage, createSession, fetchMessageCount, fetchSessionById, listMessagesBySession, listSessionsByStatus, updateSessionStatus, } from "./chat.repo.js";
 const MAX_MESSAGE_LENGTH = 2000;
 const MAX_MESSAGES_BEFORE_COMPRESSION = 30;
 function assertMessageLength(message) {
@@ -22,16 +13,16 @@ function assertMessageLength(message) {
 async function upsertLead(params) {
     const email = params.email?.trim().toLowerCase() ?? null;
     const phone = params.phone?.trim() ?? null;
-    const existing = await (0, db_1.runQuery)(`select id from contacts where (email = $1 and $1 is not null) or (phone = $2 and $2 is not null) limit 1`, [email, phone]);
+    const existing = await runQuery(`select id from contacts where (email = $1 and $1 is not null) or (phone = $2 and $2 is not null) limit 1`, [email, phone]);
     const leadId = existing.rows[0]?.id;
     if (leadId) {
-        await (0, db_1.runQuery)(`update contacts
+        await runQuery(`update contacts
        set name = coalesce($2, name),
            email = coalesce($3, email),
            phone = coalesce($4, phone),
            updated_at = now()
        where id = $1`, [leadId, params.fullName ?? null, email, phone]);
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             actorUserId: null,
             targetUserId: null,
             targetType: "contact",
@@ -44,12 +35,12 @@ async function upsertLead(params) {
         });
         return leadId;
     }
-    const created = await (0, db_1.runQuery)(`insert into contacts (id, name, email, phone, status, created_at, updated_at)
+    const created = await runQuery(`insert into contacts (id, name, email, phone, status, created_at, updated_at)
      values (gen_random_uuid(), $1, $2, $3, 'prospect', now(), now())
      returning id`, [params.fullName ?? null, email, phone]);
     const createdLeadId = created.rows[0]?.id ?? null;
     if (createdLeadId) {
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             actorUserId: null,
             targetUserId: null,
             targetType: "contact",
@@ -63,36 +54,36 @@ async function upsertLead(params) {
     }
     return createdLeadId;
 }
-async function startChatSession(params) {
+export async function startChatSession(params) {
     const leadId = await upsertLead({ ...(params.lead ?? {}), tag: "chat_intake" });
-    return (0, chat_repo_1.createSession)((0, clean_1.stripUndefined)({ source: params.source, channel: params.channel, leadId }));
+    return createSession(stripUndefined({ source: params.source, channel: params.channel, leadId }));
 }
-async function processChatMessage(params) {
+export async function processChatMessage(params) {
     assertMessageLength(params.message);
-    const session = await (0, chat_repo_1.fetchSessionById)(params.sessionId);
+    const session = await fetchSessionById(params.sessionId);
     if (!session) {
         throw new Error("Chat session not found.");
     }
-    await (0, chat_repo_1.addMessage)({ sessionId: params.sessionId, role: "user", message: params.message, metadata: { source: params.source } });
+    await addMessage({ sessionId: params.sessionId, role: "user", message: params.message, metadata: { source: params.source } });
     if (session.status !== "ai") {
         return { status: session.status, response: "A human specialist will continue this conversation shortly.", session };
     }
-    const count = await (0, chat_repo_1.fetchMessageCount)(params.sessionId);
+    const count = await fetchMessageCount(params.sessionId);
     if (count > MAX_MESSAGES_BEFORE_COMPRESSION) {
-        await (0, chat_repo_1.addMessage)({
+        await addMessage({
             sessionId: params.sessionId,
             role: "system",
             message: "Conversation compressed after 30 messages to preserve performance.",
             metadata: { compressed: true, originalMessageCount: count },
         });
     }
-    const aiResponse = JSON.parse(await (0, ai_service_1.generateAIResponse)(params.sessionId, params.message));
-    await (0, chat_repo_1.addMessage)({ sessionId: params.sessionId, role: "ai", message: aiResponse.reply });
+    const aiResponse = JSON.parse(await generateAIResponse(params.sessionId, params.message));
+    await addMessage({ sessionId: params.sessionId, role: "ai", message: aiResponse.reply });
     return { status: session.status, response: aiResponse.reply, session };
 }
-async function requestHumanTakeover(sessionId) {
-    await (0, chat_repo_1.updateSessionStatus)(sessionId, "human");
-    await (0, audit_service_1.recordAuditEvent)({
+export async function requestHumanTakeover(sessionId) {
+    await updateSessionStatus(sessionId, "human");
+    await recordAuditEvent({
         actorUserId: null,
         targetUserId: null,
         targetType: "chat_session",
@@ -104,12 +95,13 @@ async function requestHumanTakeover(sessionId) {
         metadata: { status: "human", portalNotification: "pending_websocket" },
     });
 }
-async function closeChatSession(sessionId) {
-    await (0, chat_repo_1.updateSessionStatus)(sessionId, "closed");
+export async function closeChatSession(sessionId) {
+    await updateSessionStatus(sessionId, "closed");
 }
-async function fetchHumanSessions() {
-    return (0, chat_repo_1.listSessionsByStatus)("human");
+export async function fetchHumanSessions() {
+    return listSessionsByStatus("human");
 }
-async function fetchSessionMessages(sessionId) {
-    return (0, chat_repo_1.listMessagesBySession)(sessionId);
+export async function fetchSessionMessages(sessionId) {
+    return listMessagesBySession(sessionId);
 }
+export { upsertLead };

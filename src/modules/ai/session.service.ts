@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { db } from "../../db";
+import { db } from "../../db.js";
 
 export type AISession = {
   id: string;

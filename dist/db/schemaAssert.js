@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.assertRequiredSchema = assertRequiredSchema;
-const db_1 = require("../db");
+import { runQuery } from "../db.js";
 const requiredColumns = [
     { table: "users", column: "lender_id" },
     { table: "lenders", column: "id" },
@@ -25,7 +22,7 @@ const requiredColumns = [
     { table: "ai_prequal_sessions", column: "id" },
     { table: "pre_applications", column: "id" },
 ];
-async function assertRequiredSchema() {
+export async function assertRequiredSchema() {
     const values = requiredColumns
         .map((_, index) => `($${index * 2 + 1}, $${index * 2 + 2})`)
         .join(", ");
@@ -39,7 +36,7 @@ async function assertRequiredSchema() {
       and cols.column_name = req.column_name
     where cols.column_name is null
   `;
-    const res = await (0, db_1.runQuery)(query, params);
+    const res = await runQuery(query, params);
     if (res.rows.length === 0) {
         return;
     }

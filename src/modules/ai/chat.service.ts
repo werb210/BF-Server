@@ -1,7 +1,7 @@
-import { pool, runQuery } from "../../db";
-import { recordAuditEvent } from "../audit/audit.service";
-import { generateAIResponse } from "./ai.service";
-import { stripUndefined } from "../../utils/clean";
+import { pool, runQuery } from "../../db.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { generateAIResponse } from "./ai.service.js";
+import { stripUndefined } from "../../utils/clean.js";
 import {
   addMessage,
   createSession,
@@ -12,7 +12,7 @@ import {
   type ChatMessageRecord,
   type ChatSessionRecord,
   updateSessionStatus,
-} from "./chat.repo";
+} from "./chat.repo.js";
 
 const MAX_MESSAGE_LENGTH = 2000;
 const MAX_MESSAGES_BEFORE_COMPRESSION = 30;

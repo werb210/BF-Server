@@ -1,30 +1,21 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.extractOcrFields = extractOcrFields;
-exports.enqueueOcrForDocument = enqueueOcrForDocument;
-exports.enqueueOcrForApplication = enqueueOcrForApplication;
-exports.fetchOcrJobStatus = fetchOcrJobStatus;
-exports.fetchOcrResult = fetchOcrResult;
-exports.retryOcrJob = retryOcrJob;
-exports.processOcrJob = processOcrJob;
-const errors_1 = require("../../middleware/errors");
-const audit_service_1 = require("../audit/audit.service");
-const config_1 = require("../../config");
-const applications_repo_1 = require("../applications/applications.repo");
-const ocr_repo_1 = require("./ocr.repo");
-const ocr_provider_1 = require("./ocr.provider");
-const ocr_storage_1 = require("./ocr.storage");
-const logger_1 = require("../../observability/logger");
-const ocrFieldRegistry_1 = require("./ocrFieldRegistry");
-const ocrAnalysis_service_1 = require("../applications/ocr/ocrAnalysis.service");
-const ocrNotifications_service_1 = require("../notifications/ocrNotifications.service");
+import { AppError } from "../../middleware/errors.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { config } from "../../config/index.js";
+import { findApplicationById, findDocumentById, findActiveDocumentVersion, listDocumentsByApplicationId, } from "../applications/applications.repo.js";
+import { createOcrJob, findOcrJobByDocumentId, findOcrResultByDocumentId, insertDocumentOcrFields, markOcrJobFailure, markOcrJobSuccess, resetOcrJob, } from "./ocr.repo.js";
+import { createOpenAiOcrProvider } from "./ocr.provider.js";
+import { createOcrStorage, OcrStorageValidationError } from "./ocr.storage.js";
+import { logError, logInfo } from "../../observability/logger.js";
+import { fetchOcrFieldRegistry } from "./ocrFieldRegistry.js";
+import { isNumericOcrField, refreshOcrInsightsForApplication, } from "../applications/ocr/ocrAnalysis.service.js";
+import { notifyOcrWarnings } from "../notifications/ocrNotifications.service.js";
 const OCR_RETRY_BASE_MS = 1000;
 const OCR_RETRY_MAX_MS = 15 * 60 * 1000;
 const OCR_FUZZY_THRESHOLD = 0.85;
 function resolveProvider() {
-    const provider = config_1.config.ocr.provider;
+    const provider = config.ocr.provider;
     if (provider === "openai") {
-        return (0, ocr_provider_1.createOpenAiOcrProvider)();
+        return createOpenAiOcrProvider();
     }
     throw new Error(`unsupported_ocr_provider:${provider}`);
 }
@@ -199,7 +190,7 @@ function extractFieldsFromText(text, registry) {
         if (!value) {
             return;
         }
-        const normalizedValue = (0, ocrAnalysis_service_1.isNumericOcrField)(field.field_key)
+        const normalizedValue = isNumericOcrField(field.field_key)
             ? parseNumericValue(value)
             : value.trim();
         results.push({
@@ -211,71 +202,71 @@ function extractFieldsFromText(text, registry) {
     });
     return results;
 }
-function extractOcrFields(text) {
-    return extractFieldsFromText(text, (0, ocrFieldRegistry_1.fetchOcrFieldRegistry)());
+export function extractOcrFields(text) {
+    return extractFieldsFromText(text, fetchOcrFieldRegistry());
 }
-async function enqueueOcrForDocument(documentId) {
-    const document = await (0, applications_repo_1.findDocumentById)(documentId);
+export async function enqueueOcrForDocument(documentId) {
+    const document = await findDocumentById(documentId);
     if (!document) {
-        throw new errors_1.AppError("not_found", "Document not found.", 404);
+        throw new AppError("not_found", "Document not found.", 404);
     }
-    return (0, ocr_repo_1.createOcrJob)({
+    return createOcrJob({
         documentId: document.id,
         applicationId: document.application_id,
-        maxAttempts: config_1.config.ocr.maxAttempts,
+        maxAttempts: config.ocr.maxAttempts,
     });
 }
-async function enqueueOcrForApplication(applicationId) {
-    const application = await (0, applications_repo_1.findApplicationById)(applicationId);
+export async function enqueueOcrForApplication(applicationId) {
+    const application = await findApplicationById(applicationId);
     if (!application) {
-        throw new errors_1.AppError("not_found", "Application not found.", 404);
+        throw new AppError("not_found", "Application not found.", 404);
     }
-    const documents = await (0, applications_repo_1.listDocumentsByApplicationId)(applicationId);
+    const documents = await listDocumentsByApplicationId(applicationId);
     const jobs = [];
     for (const document of documents) {
-        const job = await (0, ocr_repo_1.createOcrJob)({
+        const job = await createOcrJob({
             documentId: document.id,
             applicationId: document.application_id,
-            maxAttempts: config_1.config.ocr.maxAttempts,
+            maxAttempts: config.ocr.maxAttempts,
         });
         jobs.push(job);
     }
     return jobs;
 }
-async function fetchOcrJobStatus(documentId) {
-    return (0, ocr_repo_1.findOcrJobByDocumentId)(documentId);
+export async function fetchOcrJobStatus(documentId) {
+    return findOcrJobByDocumentId(documentId);
 }
-async function fetchOcrResult(documentId) {
-    return (0, ocr_repo_1.findOcrResultByDocumentId)(documentId);
+export async function fetchOcrResult(documentId) {
+    return findOcrResultByDocumentId(documentId);
 }
-async function retryOcrJob(documentId) {
-    const job = await (0, ocr_repo_1.findOcrJobByDocumentId)(documentId);
+export async function retryOcrJob(documentId) {
+    const job = await findOcrJobByDocumentId(documentId);
     if (!job) {
         return enqueueOcrForDocument(documentId);
     }
-    const updated = await (0, ocr_repo_1.resetOcrJob)({ jobId: job.id });
+    const updated = await resetOcrJob({ jobId: job.id });
     if (!updated) {
-        throw new errors_1.AppError("not_found", "OCR job not found.", 404);
+        throw new AppError("not_found", "OCR job not found.", 404);
     }
     return updated;
 }
-async function processOcrJob(job, options) {
+export async function processOcrJob(job, options) {
     const provider = options?.provider ?? resolveProvider();
-    const storage = options?.storage ?? (0, ocr_storage_1.createOcrStorage)();
+    const storage = options?.storage ?? createOcrStorage();
     const maxAttempts = Number.isFinite(job.max_attempts) && job.max_attempts > 0
         ? job.max_attempts
-        : config_1.config.ocr.maxAttempts;
-    (0, logger_1.logInfo)("ocr_job_started", {
+        : config.ocr.maxAttempts;
+    logInfo("ocr_job_started", {
         jobId: job.id,
         documentId: job.document_id,
         applicationId: job.application_id,
     });
     try {
-        const document = await (0, applications_repo_1.findDocumentById)(job.document_id);
+        const document = await findDocumentById(job.document_id);
         if (!document) {
             throw new Error("document_not_found");
         }
-        const version = await (0, applications_repo_1.findActiveDocumentVersion)({ documentId: document.id });
+        const version = await findActiveDocumentVersion({ documentId: document.id });
         if (!version) {
             throw new Error("document_version_missing");
         }
@@ -287,7 +278,7 @@ async function processOcrJob(job, options) {
             ...(fileName ? { fileName } : {}),
         };
         const result = await provider.extract(extractPayload);
-        await (0, ocr_repo_1.markOcrJobSuccess)({
+        await markOcrJobSuccess({
             jobId: job.id,
             documentId: job.document_id,
             provider: result.provider,
@@ -298,7 +289,7 @@ async function processOcrJob(job, options) {
         });
         const extractedFields = extractOcrFields(result.text);
         try {
-            await (0, ocr_repo_1.insertDocumentOcrFields)({
+            await insertDocumentOcrFields({
                 documentId: job.document_id,
                 applicationId: job.application_id,
                 documentType: document.document_type ?? null,
@@ -306,7 +297,7 @@ async function processOcrJob(job, options) {
             });
         }
         catch (insertError) {
-            (0, logger_1.logError)("ocr_field_insert_failed", {
+            logError("ocr_field_insert_failed", {
                 code: "ocr_field_insert_failed",
                 documentId: job.document_id,
                 applicationId: job.application_id,
@@ -314,21 +305,21 @@ async function processOcrJob(job, options) {
             });
         }
         try {
-            const summary = await (0, ocrAnalysis_service_1.refreshOcrInsightsForApplication)(job.application_id);
-            await (0, ocrNotifications_service_1.notifyOcrWarnings)({
+            const summary = await refreshOcrInsightsForApplication(job.application_id);
+            await notifyOcrWarnings({
                 applicationId: job.application_id,
                 missingFields: summary.missingFields,
                 conflictingFields: summary.conflictingFields,
             });
         }
         catch (insightError) {
-            (0, logger_1.logError)("ocr_insights_refresh_failed", {
+            logError("ocr_insights_refresh_failed", {
                 code: "ocr_insights_refresh_failed",
                 applicationId: job.application_id,
                 error: insightError instanceof Error ? insightError.message : "unknown_error",
             });
         }
-        (0, logger_1.logInfo)("ocr_job_succeeded", {
+        logInfo("ocr_job_succeeded", {
             jobId: job.id,
             documentId: job.document_id,
             applicationId: job.application_id,
@@ -336,15 +327,15 @@ async function processOcrJob(job, options) {
     }
     catch (error) {
         const message = error instanceof Error ? error.message : "unknown_error";
-        if (error instanceof ocr_storage_1.OcrStorageValidationError) {
-            (0, logger_1.logError)("ocr_storage_url_rejected", {
+        if (error instanceof OcrStorageValidationError) {
+            logError("ocr_storage_url_rejected", {
                 code: "ocr_storage_url_rejected",
                 jobId: job.id,
                 documentId: job.document_id,
                 url: error.url,
             });
             try {
-                await (0, audit_service_1.recordAuditEvent)({
+                await recordAuditEvent({
                     action: "ocr_storage_url_rejected",
                     actorUserId: null,
                     targetUserId: null,
@@ -354,7 +345,7 @@ async function processOcrJob(job, options) {
                 });
             }
             catch (auditError) {
-                (0, logger_1.logError)("ocr_storage_url_audit_failed", {
+                logError("ocr_storage_url_audit_failed", {
                     code: "ocr_storage_url_audit_failed",
                     jobId: job.id,
                     error: auditError instanceof Error ? auditError.message : "unknown_error",
@@ -364,7 +355,7 @@ async function processOcrJob(job, options) {
         const attemptCount = job.attempt_count + 1;
         const status = attemptCount >= maxAttempts ? "canceled" : "failed";
         const nextAttemptAt = status === "canceled" ? null : computeNextAttempt(job.attempt_count, maxAttempts);
-        await (0, ocr_repo_1.markOcrJobFailure)({
+        await markOcrJobFailure({
             jobId: job.id,
             attemptCount,
             status,
@@ -372,7 +363,7 @@ async function processOcrJob(job, options) {
             nextAttemptAt,
             maxAttempts,
         });
-        (0, logger_1.logError)("ocr_job_failed", {
+        logError("ocr_job_failed", {
             code: "ocr_job_failed",
             jobId: job.id,
             documentId: job.document_id,

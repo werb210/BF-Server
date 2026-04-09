@@ -1,7 +1,3 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.fetchPeriodKey = fetchPeriodKey;
-exports.formatPeriod = formatPeriod;
 function startOfWeek(date) {
     const value = new Date(date);
     const day = value.getUTCDay();
@@ -16,7 +12,7 @@ function startOfMonth(date) {
     value.setUTCHours(0, 0, 0, 0);
     return value;
 }
-function fetchPeriodKey(date, groupBy) {
+export function fetchPeriodKey(date, groupBy) {
     const normalized = new Date(date);
     normalized.setUTCHours(0, 0, 0, 0);
     if (groupBy === "week") {
@@ -27,7 +23,7 @@ function fetchPeriodKey(date, groupBy) {
     }
     return normalized.toISOString().slice(0, 10);
 }
-function formatPeriod(value) {
+export function formatPeriod(value) {
     if (value instanceof Date) {
         return value.toISOString().slice(0, 10);
     }

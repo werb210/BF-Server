@@ -1,23 +1,23 @@
-import { createHash, randomUUID } from "crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { AppError } from "../middleware/errors";
-import { pool, runQuery } from "../db";
-import { findIdempotencyRecord, createIdempotencyRecord } from "../modules/idempotency/idempotency.repo";
-import { CAPABILITIES } from "../auth/capabilities";
-import { ROLES, normalizeRole } from "../auth/roles";
-import { createUserAccount } from "../modules/auth/auth.service";
-import { createLender } from "../repositories/lenders.repo";
-import { createLenderProductService } from "./lenderProductsService";
-import { fetchLenderById } from "../repositories/lenders.repo";
-import { trackEvent } from "../observability/appInsights";
-import { logInfo } from "../observability/logger";
-import { type JsonObject, type JsonValue, type RequiredDocuments } from "../db/schema/lenderProducts";
+import { AppError } from "../middleware/errors.js";
+import { pool, runQuery } from "../db.js";
+import { findIdempotencyRecord, createIdempotencyRecord } from "../modules/idempotency/idempotency.repo.js";
+import { CAPABILITIES } from "../auth/capabilities.js";
+import { ROLES, normalizeRole } from "../auth/roles.js";
+import { createUserAccount } from "../modules/auth/auth.service.js";
+import { createLender } from "../repositories/lenders.repo.js";
+import { createLenderProductService } from "./lenderProductsService.js";
+import { fetchLenderById } from "../repositories/lenders.repo.js";
+import { trackEvent } from "../observability/appInsights.js";
+import { logInfo } from "../observability/logger.js";
+import { type JsonObject, type JsonValue, type RequiredDocuments } from "../db/schema/lenderProducts.js";
 import {
   ALWAYS_REQUIRED_DOCUMENTS,
   normalizeRequiredDocumentKey,
   type RequiredDocumentKey,
-} from "../db/schema/requiredDocuments";
-import { config } from "../config";
+} from "../db/schema/requiredDocuments.js";
+import { config } from "../config/index.js";
 
 type ReplayUserContext = {
   userId: string;

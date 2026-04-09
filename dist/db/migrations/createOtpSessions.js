@@ -1,11 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.createOtpSessionsTable = createOtpSessionsTable;
-const db_1 = require("../../db");
+import { db } from "../../db.js";
 let migrationPromise = null;
-async function createOtpSessionsTable() {
+export async function createOtpSessionsTable() {
     if (!migrationPromise) {
-        migrationPromise = db_1.db
+        migrationPromise = db
             .query(`
         CREATE TABLE IF NOT EXISTS otp_sessions (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -16,7 +13,7 @@ async function createOtpSessionsTable() {
         );
       `)
             .then(async () => {
-            await db_1.db.query("CREATE INDEX IF NOT EXISTS idx_otp_phone ON otp_sessions(phone);");
+            await db.query("CREATE INDEX IF NOT EXISTS idx_otp_phone ON otp_sessions(phone);");
         })
             .then(() => undefined)
             .catch((error) => {

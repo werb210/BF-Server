@@ -1,5 +1,5 @@
-import { ROLES, type Role } from "./roles";
-import { AppError } from "../middleware/errors";
+import { ROLES, type Role } from "./roles.js";
+import { AppError } from "../middleware/errors.js";
 
 export function assertLenderBinding(params: {
   role: Role;

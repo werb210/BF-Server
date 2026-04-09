@@ -1,9 +1,9 @@
 import { Router, type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
 
-import otp from "./otp";
-import { authMeHandler } from "./me";
-import { auth } from "../../middleware/auth";
+import otp from "./otp.js";
+import { authMeHandler } from "./me.js";
+import { auth } from "../../middleware/auth.js";
 
 const router = Router();
 

@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { dbQuery } from "../../db";
-import { normalizePhoneNumber } from "../auth/phone";
-import { createApplication } from "../applications/applications.repo";
-import { upsertCrmLead } from "../crm/leadUpsert.service";
-import { stripUndefined, toNullable } from "../../utils/clean";
+import { dbQuery } from "../../db.js";
+import { normalizePhoneNumber } from "../auth/phone.js";
+import { createApplication } from "../applications/applications.repo.js";
+import { upsertCrmLead } from "../crm/leadUpsert.service.js";
+import { stripUndefined, toNullable } from "../../utils/clean.js";
 
 const readinessSourceSchema = z.enum(["website", "client"]);
 

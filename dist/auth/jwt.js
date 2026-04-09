@@ -1,37 +1,24 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.AccessTokenVerificationError = exports.AccessTokenSigningError = void 0;
-exports.signAccessToken = signAccessToken;
-exports.verifyAccessToken = verifyAccessToken;
-exports.verifyJwt = verifyJwt;
-exports.signJwt = signJwt;
-exports.verifyAccessTokenWithUser = verifyAccessTokenWithUser;
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const config_1 = require("../config");
-const roles_1 = require("./roles");
-const capabilities_1 = require("./capabilities");
-const auth_repo_1 = require("../modules/auth/auth.repo");
+import jwt from "jsonwebtoken";
+import { config } from "../config/index.js";
+import { isRole } from "./roles.js";
+import { isCapability } from "./capabilities.js";
+import { findAuthUserById } from "../modules/auth/auth.repo.js";
 const JWT_ISSUER = "boreal-staff-server";
 const JWT_AUDIENCE = "boreal-staff-portal";
-class AccessTokenSigningError extends Error {
+export class AccessTokenSigningError extends Error {
     constructor(message) {
         super(message);
         this.name = "AccessTokenSigningError";
     }
 }
-exports.AccessTokenSigningError = AccessTokenSigningError;
-class AccessTokenVerificationError extends Error {
+export class AccessTokenVerificationError extends Error {
     constructor(message) {
         super(message);
         this.name = "AccessTokenVerificationError";
     }
 }
-exports.AccessTokenVerificationError = AccessTokenVerificationError;
 function requireJwtSecret() {
-    const secret = config_1.config.auth.jwtSecret;
+    const secret = config.auth.jwtSecret;
     if (!secret || typeof secret !== "string") {
         throw new AccessTokenSigningError("JWT secret is missing or invalid");
     }
@@ -45,7 +32,7 @@ function validatePayload(payload) {
     if (typeof raw.sub !== "string" || raw.sub.length === 0) {
         throw new AccessTokenVerificationError("Token subject (sub) is invalid");
     }
-    if (!(0, roles_1.isRole)(raw.role)) {
+    if (!isRole(raw.role)) {
         throw new AccessTokenVerificationError("Token role is invalid");
     }
     if (typeof raw.tokenVersion !== "number" ||
@@ -63,13 +50,13 @@ function validatePayload(payload) {
     }
     if (raw.capabilities !== undefined &&
         (!Array.isArray(raw.capabilities) ||
-            raw.capabilities.some((cap) => typeof cap !== "string" || !(0, capabilities_1.isCapability)(cap)))) {
+            raw.capabilities.some((cap) => typeof cap !== "string" || !isCapability(cap)))) {
         throw new AccessTokenVerificationError("Token capabilities claim is invalid");
     }
 }
-function signAccessToken(payload) {
+export function signAccessToken(payload) {
     const secret = requireJwtSecret();
-    const expiresIn = config_1.config.auth.accessExpiresIn;
+    const expiresIn = config.auth.accessExpiresIn;
     const options = {
         algorithm: "HS256",
         issuer: JWT_ISSUER,
@@ -79,19 +66,19 @@ function signAccessToken(payload) {
         options.expiresIn = expiresIn;
     }
     try {
-        return jsonwebtoken_1.default.sign(payload, secret, options);
+        return jwt.sign(payload, secret, options);
     }
     catch (err) {
         throw new AccessTokenSigningError("Failed to sign access token");
     }
 }
-function verifyAccessToken(token) {
+export function verifyAccessToken(token) {
     const secret = requireJwtSecret();
     let decoded;
     try {
-        decoded = jsonwebtoken_1.default.verify(token, secret, {
+        decoded = jwt.verify(token, secret, {
             algorithms: ["HS256"],
-            clockTolerance: config_1.config.auth.jwtClockSkewSeconds,
+            clockTolerance: config.auth.jwtClockSkewSeconds,
             issuer: JWT_ISSUER,
             audience: JWT_AUDIENCE,
         });
@@ -114,28 +101,28 @@ function verifyAccessToken(token) {
     }
     return payload;
 }
-function verifyJwt(token) {
+export function verifyJwt(token) {
     try {
         const secret = process.env.JWT_SECRET;
         if (!secret)
             throw new Error("INVALID_TOKEN");
-        return jsonwebtoken_1.default.verify(token, secret);
+        return jwt.verify(token, secret);
     }
     catch {
         throw new Error("INVALID_TOKEN");
     }
 }
-function signJwt(payload) {
+export function signJwt(payload) {
     const secret = process.env.JWT_SECRET;
     if (!secret)
         throw new Error("INVALID_TOKEN");
-    return jsonwebtoken_1.default.sign(payload, secret, {
+    return jwt.sign(payload, secret, {
         expiresIn: "1h",
     });
 }
-async function verifyAccessTokenWithUser(token) {
+export async function verifyAccessTokenWithUser(token) {
     const payload = verifyAccessToken(token);
-    const user = await (0, auth_repo_1.findAuthUserById)(payload.sub);
+    const user = await findAuthUserById(payload.sub);
     if (!user) {
         throw new AccessTokenVerificationError("Access token user not found");
     }

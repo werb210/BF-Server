@@ -1,8 +1,8 @@
-import { config } from "../config";
-import { pool, runQuery } from "../db";
-import { isTestEnvironment } from "../dbRuntime";
-import { logError, logInfo, logWarn } from "../observability/logger";
-import { PIPELINE_STATES } from "../modules/applications/pipelineState";
+import { config } from "../config/index.js";
+import { pool, runQuery } from "../db.js";
+import { isTestEnvironment } from "../dbRuntime.js";
+import { logError, logInfo, logWarn } from "../observability/logger.js";
+import { PIPELINE_STATES } from "../modules/applications/pipelineState.js";
 
 type SampleRow = Record<string, string>;
 

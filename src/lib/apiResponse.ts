@@ -1,4 +1,4 @@
-import type { ApiResponse } from "../contracts";
+import type { ApiResponse } from "../contracts/index.js";
 
 export function ok<T>(data: T): ApiResponse<T> {
   return { status: "ok", data };

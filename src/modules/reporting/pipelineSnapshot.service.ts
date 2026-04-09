@@ -1,7 +1,7 @@
-import { pool, runQuery } from "../../db";
+import { pool, runQuery } from "../../db.js";
 import { type PoolClient } from "pg";
-import { formatPeriod, type GroupBy } from "./reporting.utils";
-import { PIPELINE_STATES } from "../applications/pipelineState";
+import { formatPeriod, type GroupBy } from "./reporting.utils.js";
+import { PIPELINE_STATES } from "../applications/pipelineState.js";
 
 type Queryable = Pick<PoolClient, "query" | "runQuery">;
 

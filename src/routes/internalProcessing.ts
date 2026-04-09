@@ -1,12 +1,12 @@
 import { Router } from "express";
-import { AppError } from "../middleware/errors";
-import { safeHandler } from "../middleware/safeHandler";
-import { requireAuth, requireCapability } from "../middleware/auth";
-import { CAPABILITIES } from "../auth/capabilities";
+import { AppError } from "../middleware/errors.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { CAPABILITIES } from "../auth/capabilities.js";
 import {
   markBankingCompleted,
   markOcrCompleted,
-} from "../modules/documentProcessing/documentProcessing.service";
+} from "../modules/documentProcessing/documentProcessing.service.js";
 
 const router = Router();
 

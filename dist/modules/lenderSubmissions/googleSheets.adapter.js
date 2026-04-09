@@ -1,13 +1,10 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.GoogleSheetsAdapter = void 0;
-const config_1 = require("../../config");
-const googleapis_1 = require("googleapis");
-const logger_1 = require("../../observability/logger");
+import { config } from "../../config/index.js";
+import { google } from "googleapis";
+import { logError, logInfo } from "../../observability/logger.js";
 const APPLICATION_ID_PATH = "application.id";
 function assertServiceAccountEnv() {
-    const clientEmail = config_1.config.google.serviceAccountEmail?.trim();
-    const privateKey = config_1.config.google.serviceAccountPrivateKey?.trim();
+    const clientEmail = config.google.serviceAccountEmail?.trim();
+    const privateKey = config.google.serviceAccountPrivateKey?.trim();
     if (!clientEmail || !privateKey) {
         throw new Error("Missing Google service account credentials.");
     }
@@ -101,7 +98,9 @@ function normalizeMapping(mapping) {
         return acc;
     }, {});
 }
-class GoogleSheetsAdapter {
+export class GoogleSheetsAdapter {
+    payload;
+    config;
     constructor(params) {
         this.payload = params.payload;
         this.config = params.config;
@@ -109,12 +108,12 @@ class GoogleSheetsAdapter {
     async submit(applicationId) {
         const now = new Date().toISOString();
         const credentials = assertServiceAccountEnv();
-        const auth = new googleapis_1.google.auth.GoogleAuth({
+        const auth = new google.auth.GoogleAuth({
             credentials,
             scopes: ["https://www.googleapis.com/auth/spreadsheets"],
         });
-        const sheets = googleapis_1.google.sheets({ version: "v4", auth });
-        (0, logger_1.logInfo)("google_sheets_submission_attempt", {
+        const sheets = google.sheets({ version: "v4", auth });
+        logInfo("google_sheets_submission_attempt", {
             applicationId,
             sheetId: this.config.sheetId,
         });
@@ -163,7 +162,7 @@ class GoogleSheetsAdapter {
                 .filter((value) => typeof value === "string" && value.trim().length > 0)
                 .filter((value) => value !== applicationIdHeader));
             if (existingIds.has(this.payload.application.id)) {
-                (0, logger_1.logInfo)("google_sheets_submission_idempotent", {
+                logInfo("google_sheets_submission_idempotent", {
                     applicationId: this.payload.application.id,
                     sheetId: this.config.sheetId,
                 });
@@ -211,7 +210,7 @@ class GoogleSheetsAdapter {
             };
         }
         catch (error) {
-            (0, logger_1.logError)("google_sheets_submission_failed", {
+            logError("google_sheets_submission_failed", {
                 error,
                 applicationId: this.payload.application.id,
                 sheetId: this.config.sheetId,
@@ -230,4 +229,3 @@ class GoogleSheetsAdapter {
         }
     }
 }
-exports.GoogleSheetsAdapter = GoogleSheetsAdapter;

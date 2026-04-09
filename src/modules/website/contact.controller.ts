@@ -1,9 +1,9 @@
 import { Request, Response } from "express";
-import { createCrmLead } from "../crm/crm.service";
-import { sendSms } from "../notifications/sms.service";
-import { createContinuation } from "../continuation/continuation.service";
-import { logError } from "../../observability/logger";
-import { stripUndefined } from "../../utils/clean";
+import { createCrmLead } from "../crm/crm.service.js";
+import { sendSms } from "../notifications/sms.service.js";
+import { createContinuation } from "../continuation/continuation.service.js";
+import { logError } from "../../observability/logger.js";
+import { stripUndefined } from "../../utils/clean.js";
 
 export async function submitContactForm(req: Request, res: Response) {
   try {

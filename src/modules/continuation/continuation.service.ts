@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { pool, runQuery } from "../../db";
+import { pool, runQuery } from "../../db.js";
 
 export type ContinuationPayload = {
   companyName?: string;

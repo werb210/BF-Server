@@ -1,5 +1,5 @@
 import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
-import { createHash, randomUUID } from "crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { type PoolClient } from "pg";
 import {
   createUser,
@@ -19,25 +19,25 @@ import {
   findActiveRefreshTokenForUser,
   findRefreshTokenByHash,
   revokeRefreshToken,
-} from "./auth.repo";
-import { AppError, forbiddenError } from "../../middleware/errors";
-import { recordAuditEvent } from "../audit/audit.service";
-import { pool, runQuery } from "../../db";
-import { type Role, isRole } from "../../auth/roles";
-import { logError, logInfo, logWarn } from "../../observability/logger";
-import { fetchRequestId } from "../../middleware/requestContext";
-import { normalizeOtpPhone } from "./phone";
-import { ensureOtpTableExists } from "../../db/ensureOtpTable";
-import { config } from "../../config";
+} from "./auth.repo.js";
+import { AppError, forbiddenError } from "../../middleware/errors.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { pool, runQuery } from "../../db.js";
+import { type Role, isRole } from "../../auth/roles.js";
+import { logError, logInfo, logWarn } from "../../observability/logger.js";
+import { fetchRequestId } from "../../middleware/requestContext.js";
+import { normalizeOtpPhone } from "./phone.js";
+import { ensureOtpTableExists } from "../../db/ensureOtpTable.js";
+import { config } from "../../config/index.js";
 import {
   signAccessToken,
   type AccessTokenPayload,
-} from "../../auth/jwt";
-import { DEFAULT_AUTH_SILO } from "../../auth/silo";
-import { hashRefreshToken } from "../../auth/tokenUtils";
-import { fetchCapabilitiesForRole } from "../../auth/capabilities";
-import { fetchTwilioClient, fetchVerifyServiceSid } from "../../services/twilio";
-import { assertLenderBinding } from "../../auth/lenderBinding";
+} from "../../auth/jwt.js";
+import { DEFAULT_AUTH_SILO } from "../../auth/silo.js";
+import { hashRefreshToken } from "../../auth/tokenUtils.js";
+import { fetchCapabilitiesForRole } from "../../auth/capabilities.js";
+import { fetchTwilioClient, fetchVerifyServiceSid } from "../../services/twilio.js";
+import { assertLenderBinding } from "../../auth/lenderBinding.js";
 
 const OTP_TRACE = (...args: any[]) => {
   console.log("[OTP_TRACE]", ...args);

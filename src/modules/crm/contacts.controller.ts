@@ -1,7 +1,7 @@
 import { type Request, type Response } from "express";
-import { logError } from "../../observability/logger";
-import { respondOk } from "../../utils/respondOk";
-import { fetchContacts } from "./contacts.service";
+import { logError } from "../../observability/logger.js";
+import { respondOk } from "../../utils/respondOk.js";
+import { fetchContacts } from "./contacts.service.js";
 
 function logCrmError(event: string, error: unknown): void {
   logError(event, {

@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { validateRequest } from "twilio/lib/webhooks/webhooks";
-import { AppError } from "../middleware/errors";
-import { safeHandler } from "../middleware/safeHandler";
-import { logWarn } from "../observability/logger";
-import { handleVoiceStatusWebhook } from "../modules/voice/voice.service";
-import { config } from "../config";
+import { AppError } from "../middleware/errors.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { logWarn } from "../observability/logger.js";
+import { handleVoiceStatusWebhook } from "../modules/voice/voice.service.js";
+import { config } from "../config/index.js";
 
 const router = Router();
 

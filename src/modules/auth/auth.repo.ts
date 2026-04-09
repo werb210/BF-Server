@@ -1,11 +1,11 @@
-import { randomUUID } from "crypto";
-import { pool, runQuery } from "../../db";
+import { randomUUID } from "node:crypto";
+import { pool, runQuery } from "../../db.js";
 import { type PoolClient, type QueryResult, type QueryResultRow } from "pg";
-import { type Role } from "../../auth/roles";
-import { AppError } from "../../middleware/errors";
-import { normalizePhoneNumber } from "./phone";
-import { logger } from "../../server/utils/logger";
-import { config } from "../../config";
+import { type Role } from "../../auth/roles.js";
+import { AppError } from "../../middleware/errors.js";
+import { normalizePhoneNumber } from "./phone.js";
+import { logger } from "../../server/utils/logger.js";
+import { config } from "../../config/index.js";
 
 type Queryable = Pick<PoolClient, "query" | "runQuery">;
 

@@ -1,14 +1,11 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.submitGoogleSheetsApplication = submitGoogleSheetsApplication;
-const config_1 = require("../../config");
-const googleapis_1 = require("googleapis");
-const logger_1 = require("../../observability/logger");
+import { config } from "../../config/index.js";
+import { google } from "googleapis";
+import { logError, logInfo } from "../../observability/logger.js";
 function assertGoogleEnv() {
-    const clientId = config_1.config.google.clientId?.trim();
-    const clientSecret = config_1.config.google.clientSecret?.trim();
-    const redirectUri = config_1.config.google.redirectUri?.trim();
-    const refreshToken = config_1.config.google.refreshToken?.trim();
+    const clientId = config.google.clientId?.trim();
+    const clientSecret = config.google.clientSecret?.trim();
+    const redirectUri = config.google.redirectUri?.trim();
+    const refreshToken = config.google.refreshToken?.trim();
     if (!clientId || !clientSecret || !redirectUri || !refreshToken) {
         throw new Error("Missing Google Sheets OAuth environment configuration.");
     }
@@ -45,13 +42,13 @@ function resolveRetryableError(error) {
     }
     return false;
 }
-async function submitGoogleSheetsApplication(params) {
+export async function submitGoogleSheetsApplication(params) {
     const now = new Date().toISOString();
     const { clientId, clientSecret, redirectUri, refreshToken } = assertGoogleEnv();
-    const oauth2Client = new googleapis_1.google.auth.OAuth2(clientId, clientSecret, redirectUri);
+    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
     oauth2Client.setCredentials({ refresh_token: refreshToken });
-    const sheets = googleapis_1.google.sheets({ version: "v4", auth: oauth2Client });
-    (0, logger_1.logInfo)("google_sheets_submission_attempt", {
+    const sheets = google.sheets({ version: "v4", auth: oauth2Client });
+    logInfo("google_sheets_submission_attempt", {
         applicationId: params.payload.application.id,
         sheetId: params.sheetId,
     });
@@ -77,7 +74,7 @@ async function submitGoogleSheetsApplication(params) {
             .filter((value) => typeof value === "string" && value.trim().length > 0)
             .filter((value) => value !== params.sheetMap.applicationIdHeader));
         if (existingIds.has(params.payload.application.id)) {
-            (0, logger_1.logInfo)("google_sheets_submission_idempotent", {
+            logInfo("google_sheets_submission_idempotent", {
                 applicationId: params.payload.application.id,
                 sheetId: params.sheetId,
             });
@@ -116,7 +113,7 @@ async function submitGoogleSheetsApplication(params) {
         };
     }
     catch (error) {
-        (0, logger_1.logError)("google_sheets_submission_failed", {
+        logError("google_sheets_submission_failed", {
             error,
             applicationId: params.payload.application.id,
             sheetId: params.sheetId,

@@ -1,4 +1,4 @@
-import { stripUndefined } from "./stripUndefined";
+import { stripUndefined } from "./stripUndefined.js";
 
 export { stripUndefined };
 

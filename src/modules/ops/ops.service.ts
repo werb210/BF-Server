@@ -1,5 +1,5 @@
-import { pool, runQuery } from "../../db";
-import { config } from "../../config";
+import { pool, runQuery } from "../../db.js";
+import { config } from "../../config/index.js";
 
 export const OPS_KILL_SWITCH_KEYS = [
   "replay",

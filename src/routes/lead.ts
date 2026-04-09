@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { LeadSchema } from "../schemas";
-import { validate } from "../middleware/validate";
-import { ok } from "../lib/respond";
-import { dbQuery } from "../db";
+import { LeadSchema } from "../schemas/index.js";
+import { validate } from "../middleware/validate.js";
+import { ok } from "../lib/respond.js";
+import { dbQuery } from "../db.js";
 
 const router = Router();
 

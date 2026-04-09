@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.appInsights = void 0;
-exports.appInsights = {
+export const appInsights = {
     trackRequest: (data) => {
         console.log('trackRequest', data);
     },

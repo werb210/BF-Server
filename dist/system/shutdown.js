@@ -1,12 +1,9 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.setupShutdown = setupShutdown;
-const db_1 = require("../db");
-function setupShutdown(server) {
+import { pool } from "../db.js";
+export function setupShutdown(server) {
     const shutdown = async () => {
         console.log("[SHUTDOWN] closing");
         try {
-            await db_1.pool.end();
+            await pool.end();
         }
         catch {
             // noop

@@ -1,1 +1,1 @@
-export { logger } from "../../platform/logger";
+export { logger } from "../../platform/logger.js";

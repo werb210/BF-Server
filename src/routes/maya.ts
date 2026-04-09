@@ -1,8 +1,8 @@
 import express from "express";
-import { validate } from "../middleware/validate";
-import { ok } from "../lib/apiResponse";
-import { MayaMessageSchema } from "../schemas";
-import { wrap } from "../lib/routeWrap";
+import { validate } from "../middleware/validate.js";
+import { ok } from "../lib/apiResponse.js";
+import { MayaMessageSchema } from "../schemas/index.js";
+import { wrap } from "../lib/routeWrap.js";
 
 const router = express.Router();
 

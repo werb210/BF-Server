@@ -1,20 +1,12 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.createReadinessLeadSchema = void 0;
-exports.linkCrmContact = linkCrmContact;
-exports.createReadinessLead = createReadinessLead;
-exports.listReadinessLeads = listReadinessLeads;
-exports.convertReadinessLeadToApplication = convertReadinessLeadToApplication;
-exports.fetchReadinessLeadByApplicationId = fetchReadinessLeadByApplicationId;
-const node_crypto_1 = require("node:crypto");
-const zod_1 = require("zod");
-const db_1 = require("../../db");
-const phone_1 = require("../auth/phone");
-const applications_repo_1 = require("../applications/applications.repo");
-const leadUpsert_service_1 = require("../crm/leadUpsert.service");
-const clean_1 = require("../../utils/clean");
-const readinessSourceSchema = zod_1.z.enum(["website", "client"]);
-const numericFromUnknown = zod_1.z.preprocess((value) => {
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { dbQuery } from "../../db.js";
+import { normalizePhoneNumber } from "../auth/phone.js";
+import { createApplication } from "../applications/applications.repo.js";
+import { upsertCrmLead } from "../crm/leadUpsert.service.js";
+import { stripUndefined, toNullable } from "../../utils/clean.js";
+const readinessSourceSchema = z.enum(["website", "client"]);
+const numericFromUnknown = z.preprocess((value) => {
     if (value === null || value === undefined || value === "") {
         return undefined;
     }
@@ -26,8 +18,8 @@ const numericFromUnknown = zod_1.z.preprocess((value) => {
         return Number.isFinite(parsed) ? parsed : value;
     }
     return value;
-}, zod_1.z.number().finite().nonnegative().optional());
-const integerFromUnknown = zod_1.z.preprocess((value) => {
+}, z.number().finite().nonnegative().optional());
+const integerFromUnknown = z.preprocess((value) => {
     if (value === null || value === undefined || value === "") {
         return undefined;
     }
@@ -39,8 +31,8 @@ const integerFromUnknown = zod_1.z.preprocess((value) => {
         return Number.isFinite(parsed) ? parsed : value;
     }
     return value;
-}, zod_1.z.number().int().nonnegative().optional());
-const booleanFromUnknown = zod_1.z.preprocess((value) => {
+}, z.number().int().nonnegative().optional());
+const booleanFromUnknown = z.preprocess((value) => {
     if (value === null || value === undefined || value === "") {
         return undefined;
     }
@@ -57,13 +49,13 @@ const booleanFromUnknown = zod_1.z.preprocess((value) => {
         }
     }
     return value;
-}, zod_1.z.boolean().optional());
-exports.createReadinessLeadSchema = zod_1.z.object({
-    companyName: zod_1.z.string().trim().min(2),
-    fullName: zod_1.z.string().trim().min(2),
-    phone: zod_1.z.string().trim().min(7),
-    email: zod_1.z.string().trim().email(),
-    industry: zod_1.z.string().trim().min(2).optional(),
+}, z.boolean().optional());
+export const createReadinessLeadSchema = z.object({
+    companyName: z.string().trim().min(2),
+    fullName: z.string().trim().min(2),
+    phone: z.string().trim().min(7),
+    email: z.string().trim().email(),
+    industry: z.string().trim().min(2).optional(),
     yearsInBusiness: integerFromUnknown,
     monthlyRevenue: numericFromUnknown,
     annualRevenue: numericFromUnknown,
@@ -74,14 +66,14 @@ function normalizeEmail(email) {
     return email.trim().toLowerCase();
 }
 function normalizeRequiredPhone(phone) {
-    const normalized = (0, phone_1.normalizePhoneNumber)(phone);
+    const normalized = normalizePhoneNumber(phone);
     if (!normalized) {
         throw new Error("invalid_phone");
     }
     return normalized;
 }
 async function findExistingContactId(params) {
-    const result = await (0, db_1.dbQuery)(`select id
+    const result = await dbQuery(`select id
      from contacts
      where lower(email) = lower($1)
         or phone = $2
@@ -90,18 +82,18 @@ async function findExistingContactId(params) {
     return result.rows[0]?.id ?? null;
 }
 async function createContact(params) {
-    const id = (0, node_crypto_1.randomUUID)();
-    await (0, db_1.dbQuery)(`insert into contacts (id, name, email, phone, status, created_at, updated_at)
+    const id = randomUUID();
+    await dbQuery(`insert into contacts (id, name, email, phone, status, created_at, updated_at)
      values ($1, $2, $3, $4, $5, now(), now())`, [id, params.fullName, params.email, params.phone, params.sourceTag]);
     return id;
 }
-async function linkCrmContact(params) {
+export async function linkCrmContact(params) {
     const existingId = await findExistingContactId({
         email: params.email,
         phone: params.phone,
     });
     if (existingId) {
-        await (0, db_1.dbQuery)(`update contacts
+        await dbQuery(`update contacts
        set status = $2,
            updated_at = now()
        where id = $1`, [existingId, params.startupInterest ? "startup_interest" : "readiness_v1"]);
@@ -114,34 +106,34 @@ async function linkCrmContact(params) {
         sourceTag: params.startupInterest ? "startup_interest" : "readiness_v1",
     });
 }
-async function createReadinessLead(input) {
-    const parsed = exports.createReadinessLeadSchema.parse(input);
+export async function createReadinessLead(input) {
+    const parsed = createReadinessLeadSchema.parse(input);
     const email = normalizeEmail(parsed.email);
     const phone = normalizeRequiredPhone(parsed.phone);
-    const leadId = (0, node_crypto_1.randomUUID)();
+    const leadId = randomUUID();
     const source = readinessSourceSchema.parse(input.source ?? "website");
     const crmContactId = await linkCrmContact({
         fullName: parsed.fullName,
         email,
         phone,
     });
-    await (0, leadUpsert_service_1.upsertCrmLead)((0, clean_1.stripUndefined)({
+    await upsertCrmLead(stripUndefined({
         companyName: parsed.companyName,
         fullName: parsed.fullName,
         email,
         phone,
         industry: parsed.industry,
-        yearsInBusiness: (0, clean_1.toNullable)(parsed.yearsInBusiness),
-        monthlyRevenue: (0, clean_1.toNullable)(parsed.monthlyRevenue),
-        annualRevenue: (0, clean_1.toNullable)(parsed.annualRevenue),
-        arOutstanding: (0, clean_1.toNullable)(parsed.arOutstanding),
-        existingDebt: (0, clean_1.toNullable)(parsed.existingDebt),
+        yearsInBusiness: toNullable(parsed.yearsInBusiness),
+        monthlyRevenue: toNullable(parsed.monthlyRevenue),
+        annualRevenue: toNullable(parsed.annualRevenue),
+        arOutstanding: toNullable(parsed.arOutstanding),
+        existingDebt: toNullable(parsed.existingDebt),
         source: `readiness_${source}`,
         tags: ["readiness"],
         activityType: "readiness_submission",
         activityPayload: { source },
     }));
-    await (0, db_1.dbQuery)(`insert into readiness_leads (
+    await dbQuery(`insert into readiness_leads (
       id,
       company_name,
       full_name,
@@ -177,16 +169,16 @@ async function createReadinessLead(input) {
     ]);
     return { leadId };
 }
-async function listReadinessLeads() {
-    const result = await (0, db_1.dbQuery)(`select id, company_name, full_name, phone, email, industry, years_in_business,
+export async function listReadinessLeads() {
+    const result = await dbQuery(`select id, company_name, full_name, phone, email, industry, years_in_business,
             monthly_revenue, annual_revenue, ar_outstanding, existing_debt, source,
             status, crm_contact_id, application_id, created_at, updated_at
      from readiness_leads
      order by created_at desc`);
     return result.rows;
 }
-async function convertReadinessLeadToApplication(id, ownerUserId) {
-    const leadResult = await (0, db_1.dbQuery)(`select id, company_name, full_name, phone, email, industry, years_in_business,
+export async function convertReadinessLeadToApplication(id, ownerUserId) {
+    const leadResult = await dbQuery(`select id, company_name, full_name, phone, email, industry, years_in_business,
             monthly_revenue, annual_revenue, ar_outstanding, existing_debt, source,
             status, crm_contact_id, application_id, created_at, updated_at
      from readiness_leads
@@ -199,7 +191,7 @@ async function convertReadinessLeadToApplication(id, ownerUserId) {
     if (lead.application_id) {
         return { applicationId: lead.application_id };
     }
-    const app = await (0, applications_repo_1.createApplication)({
+    const app = await createApplication({
         ownerUserId,
         name: lead.company_name,
         metadata: {
@@ -220,13 +212,13 @@ async function convertReadinessLeadToApplication(id, ownerUserId) {
         productCategory: "standard",
         source: `readiness:${lead.source}`,
     });
-    await (0, db_1.dbQuery)(`update readiness_leads
+    await dbQuery(`update readiness_leads
      set application_id = $2,
          status = 'converted',
          updated_at = now()
      where id = $1`, [lead.id, app.id]);
     try {
-        await (0, db_1.dbQuery)(`with matched_session as (
+        await dbQuery(`with matched_session as (
          select id
          from readiness_sessions
          where lower(email) = lower($1)
@@ -239,7 +231,7 @@ async function convertReadinessLeadToApplication(id, ownerUserId) {
            is_active = false,
            updated_at = now()
        where id in (select id from matched_session)`, [lead.email, app.id]);
-        await (0, db_1.dbQuery)(`insert into readiness_application_mappings (readiness_session_id, application_id)
+        await dbQuery(`insert into readiness_application_mappings (readiness_session_id, application_id)
        select id, $2
        from readiness_sessions
        where lower(email) = lower($1)
@@ -251,8 +243,8 @@ async function convertReadinessLeadToApplication(id, ownerUserId) {
     }
     return { applicationId: app.id };
 }
-async function fetchReadinessLeadByApplicationId(applicationId) {
-    const result = await (0, db_1.dbQuery)(`select id, company_name, full_name, phone, email, industry, years_in_business,
+export async function fetchReadinessLeadByApplicationId(applicationId) {
+    const result = await dbQuery(`select id, company_name, full_name, phone, email, industry, years_in_business,
             monthly_revenue, annual_revenue, ar_outstanding, existing_debt, source,
             status, crm_contact_id, application_id, created_at, updated_at
      from readiness_leads

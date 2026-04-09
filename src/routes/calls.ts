@@ -1,17 +1,17 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
-import { CallStartSchema } from "../schemas";
-import { validate } from "../middleware/validate";
-import { ok } from "../lib/response";
-import { requireAuth as requireApiAuth } from "../middleware/requireAuth";
-import { requireAuth, requireAuthorization } from "../middleware/auth";
-import { safeHandler } from "../middleware/safeHandler";
-import { ROLES } from "../auth/roles";
-import { AppError } from "../middleware/errors";
-import { endCall, listCalls, startCall, updateCallStatus } from "../modules/calls/calls.service";
-import { type CallStatus } from "../modules/calls/calls.repo";
-import { toStringSafe } from "../utils/toStringSafe";
-import { ok as respondOk } from "../lib/respond";
+import { CallStartSchema } from "../schemas/index.js";
+import { validate } from "../middleware/validate.js";
+import { ok } from "../lib/response.js";
+import { requireAuth as requireApiAuth } from "../middleware/requireAuth.js";
+import { requireAuth, requireAuthorization } from "../middleware/auth.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { ROLES } from "../auth/roles.js";
+import { AppError } from "../middleware/errors.js";
+import { endCall, listCalls, startCall, updateCallStatus } from "../modules/calls/calls.service.js";
+import { type CallStatus } from "../modules/calls/calls.repo.js";
+import { toStringSafe } from "../utils/toStringSafe.js";
+import { ok as respondOk } from "../lib/respond.js";
 
 const router = Router();
 

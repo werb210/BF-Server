@@ -1,8 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const continuation_service_1 = require("../../modules/continuation/continuation.service");
-const router = (0, express_1.Router)();
+import { Router } from "express";
+import { fetchContinuation as clientContinuation } from "../../modules/continuation/continuation.service.js";
+const router = Router();
 /**
  * GET /api/client/continuation/:token
  */
@@ -12,7 +10,7 @@ router.get("/continuation/:token", async (req, res, next) => {
         return res.status(401).json({ error: "Invalid token" });
     }
     try {
-        const result = await (0, continuation_service_1.fetchContinuation)(token);
+        const result = await clientContinuation(token);
         if (!result) {
             return res.status(401).json({ error: "Invalid token" });
         }
@@ -22,4 +20,4 @@ router.get("/continuation/:token", async (req, res, next) => {
         return res.status(500).json({ error: "Internal error" });
     }
 });
-exports.default = router;
+export default router;

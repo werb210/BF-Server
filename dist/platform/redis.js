@@ -1,10 +1,7 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.getRedis = getRedis;
-const config_1 = require("../config");
+import { config } from "../config/index.js";
 let redisInstance = null;
-function getRedis() {
-    const redisUrl = config_1.config.redis.url;
+export function getRedis() {
+    const redisUrl = config.redis.url;
     if (!redisUrl) {
         return null;
     }

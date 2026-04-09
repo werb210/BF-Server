@@ -1,10 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.OCR_FIELD_REGISTRY = void 0;
-exports.fetchOcrFieldRegistry = fetchOcrFieldRegistry;
-exports.fetchOcrFieldDefinitionByKey = fetchOcrFieldDefinitionByKey;
-exports.fetchOcrFieldDefinitionByLabel = fetchOcrFieldDefinitionByLabel;
-exports.OCR_FIELD_REGISTRY = [
+export const OCR_FIELD_REGISTRY = [
     {
         field_key: "business_name",
         display_label: "Business Name",
@@ -90,15 +84,15 @@ exports.OCR_FIELD_REGISTRY = [
         aliases: ["Term Length", "Agreement Term"],
     },
 ];
-function fetchOcrFieldRegistry() {
-    return [...exports.OCR_FIELD_REGISTRY];
+export function fetchOcrFieldRegistry() {
+    return [...OCR_FIELD_REGISTRY];
 }
-function fetchOcrFieldDefinitionByKey(key) {
-    return exports.OCR_FIELD_REGISTRY.find((field) => field.field_key === key);
+export function fetchOcrFieldDefinitionByKey(key) {
+    return OCR_FIELD_REGISTRY.find((field) => field.field_key === key);
 }
-function fetchOcrFieldDefinitionByLabel(label) {
+export function fetchOcrFieldDefinitionByLabel(label) {
     const normalized = label.trim().toLowerCase();
-    return exports.OCR_FIELD_REGISTRY.find((field) => {
+    return OCR_FIELD_REGISTRY.find((field) => {
         if (field.display_label.trim().toLowerCase() === normalized) {
             return true;
         }

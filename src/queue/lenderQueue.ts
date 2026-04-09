@@ -1,6 +1,6 @@
 import { Queue } from "bullmq";
-import { redisConnection } from "./redis";
-import { config } from "../config";
+import { redisConnection } from "./redis.js";
+import { config } from "../config/index.js";
 
 export const LENDER_QUEUE_NAME = "lender-package";
 

@@ -1,6 +1,6 @@
 import { type NextFunction, type Request, type Response } from "express";
-import { fetchStoredResponse, storeResponse } from "../lib/idempotencyStore";
-import { hashRequest } from "../utils/hash";
+import { fetchStoredResponse, storeResponse } from "../lib/idempotencyStore.js";
+import { hashRequest } from "../utils/hash.js";
 
 const IDEMPOTENCY_HEADER = "idempotency-key";
 const ENFORCED_METHODS = new Set(["POST", "PATCH", "DELETE"]);

@@ -1,4 +1,4 @@
-import { APPLICATION_TABS, MATCHING_RULES } from '../contracts/system.contract';
+import { APPLICATION_TABS, MATCHING_RULES } from '../contracts/system.contract.js';
 
 export function enforceTabOrder(tabs: string[]) {
   if (JSON.stringify(tabs) !== JSON.stringify(APPLICATION_TABS)) {

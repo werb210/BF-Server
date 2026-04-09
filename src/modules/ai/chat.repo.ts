@@ -1,6 +1,6 @@
-import { toStringSet } from "../../utils/collectionSafe";
-import { randomUUID } from "crypto";
-import { pool, runQuery } from "../../db";
+import { toStringSet } from "../../utils/collectionSafe.js";
+import { randomUUID } from "node:crypto";
+import { pool, runQuery } from "../../db.js";
 
 export type ChatSessionRecord = {
   id: string;

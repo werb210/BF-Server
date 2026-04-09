@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
-import { pool, runQuery } from "./db";
-import { logInfo } from "./observability/logger";
+import { pool, runQuery } from "./db.js";
+import { logInfo } from "./observability/logger.js";
 
 const migrationsDir = path.join(process.cwd(), "migrations");
 

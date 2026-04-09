@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { randomUUID } from "crypto";
-import { pool, runQuery } from "../db";
-import { generateAIResponse } from "../modules/ai/ai.service";
+import { randomUUID } from "node:crypto";
+import { pool, runQuery } from "../db.js";
+import { generateAIResponse } from "../modules/ai/ai.service.js";
 
 const router = Router();
 

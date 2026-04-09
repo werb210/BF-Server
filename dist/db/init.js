@@ -1,17 +1,14 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.initDb = initDb;
-const pg_1 = require("pg");
-const deps_1 = require("../system/deps");
-async function initDb() {
+import { Pool } from "pg";
+import { deps } from "../system/deps.js";
+export async function initDb() {
     if (process.env.NODE_ENV === "test") {
-        deps_1.deps.db.ready = true;
-        deps_1.deps.db.client = {
+        deps.db.ready = true;
+        deps.db.client = {
             query: async () => ({ rows: [], rowCount: 1 }),
         };
         return;
     }
-    const pool = new pg_1.Pool({
+    const pool = new Pool({
         connectionString: process.env.DATABASE_URL,
     });
     let connected = false;
@@ -25,6 +22,6 @@ async function initDb() {
             await new Promise((r) => setTimeout(r, 100));
         }
     }
-    deps_1.deps.db.ready = connected;
-    deps_1.deps.db.client = connected ? pool : null;
+    deps.db.ready = connected;
+    deps.db.client = connected ? pool : null;
 }

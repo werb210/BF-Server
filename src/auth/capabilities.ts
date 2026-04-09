@@ -1,4 +1,4 @@
-import { type Role, ROLES } from "./roles";
+import { type Role, ROLES } from "./roles.js";
 
 export const CAPABILITIES = {
   STAFF_OVERVIEW: "staff:overview",

@@ -1,7 +1,7 @@
-import { randomUUID } from "crypto";
-import { pool, runQuery } from "../../db";
-import { createCompany } from "../crm/companies.repo";
-import { createContact } from "../crm/contacts.repo";
+import { randomUUID } from "node:crypto";
+import { pool, runQuery } from "../../db.js";
+import { createCompany } from "../crm/companies.repo.js";
+import { createContact } from "../crm/contacts.repo.js";
 
 export type ReferralPayload = {
   businessName: string;

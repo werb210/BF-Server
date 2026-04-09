@@ -1,9 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.fetchLatestIncompleteApplication = fetchLatestIncompleteApplication;
-const db_1 = require("../../db");
-async function fetchLatestIncompleteApplication(userId) {
-    const result = await (0, db_1.runQuery)(`select *
+import { runQuery } from "../../db.js";
+export async function fetchLatestIncompleteApplication(userId) {
+    const result = await runQuery(`select *
      from applications
      where owner_user_id = $1
        and lower(coalesce(pipeline_state, '')) not in ('submitted', 'funded', 'rejected')

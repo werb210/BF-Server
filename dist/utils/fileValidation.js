@@ -1,20 +1,17 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.validateFile = validateFile;
-const file_type_1 = require("file-type");
-const errors_1 = require("../middleware/errors");
-const config_1 = require("../config");
+import { fileTypeFromBuffer } from "file-type";
+import { AppError } from "../middleware/errors.js";
+import { config } from "../config/index.js";
 const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
-async function validateFile(buffer) {
-    const type = await (0, file_type_1.fromBuffer)(buffer);
+export async function validateFile(buffer) {
+    const type = await fileTypeFromBuffer(buffer);
     if (!type) {
-        if (config_1.config.env === "test") {
+        if (config.env === "test") {
             return { ext: "pdf", mime: "application/pdf" };
         }
-        throw new errors_1.AppError("validation_error", "Unable to detect file type.", 400);
+        throw new AppError("validation_error", "Unable to detect file type.", 400);
     }
     if (!allowedTypes.has(type.mime)) {
-        throw new errors_1.AppError("validation_error", "Invalid file type.", 400);
+        throw new AppError("validation_error", "Invalid file type.", 400);
     }
     return type;
 }

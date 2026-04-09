@@ -1,8 +1,5 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.chatHandler = chatHandler;
-const openai_service_1 = require("./openai.service");
-const session_service_1 = require("./session.service");
+import { askAI } from "./openai.service.js";
+import { addMessage, createSession } from "./session.service.js";
 const SYSTEM_PROMPT = `
 You are Maya, an AI assistant for Boreal Financial.
 You must:
@@ -12,7 +9,7 @@ You must:
 - Never guarantee approval.
 - Use institutional language.
 `;
-async function chatHandler(req, res) {
+export async function chatHandler(req, res) {
     const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
     const source = typeof req.body?.source === "string" ? req.body.source : "website";
     const sessionId = typeof req.body?.sessionId === "string" && req.body.sessionId.trim().length > 0
@@ -24,15 +21,15 @@ async function chatHandler(req, res) {
     }
     let session = sessionId;
     if (!session) {
-        const createdSession = await (0, session_service_1.createSession)(source);
+        const createdSession = await createSession(source);
         session = createdSession.id;
     }
-    await (0, session_service_1.addMessage)(session, "user", message, { source });
-    const reply = await (0, openai_service_1.askAI)([
+    await addMessage(session, "user", message, { source });
+    const reply = await askAI([
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: message },
     ]);
-    await (0, session_service_1.addMessage)(session, "assistant", reply);
+    await addMessage(session, "assistant", reply);
     res["json"]({
         sessionId: session,
         reply,

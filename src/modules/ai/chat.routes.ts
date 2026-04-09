@@ -1,4 +1,4 @@
-import { config } from "../../config";
+import { config } from "../../config/index.js";
 import { Router, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
 import {
@@ -8,7 +8,7 @@ import {
   processChatMessage,
   requestHumanTakeover,
   startChatSession,
-} from "./chat.service";
+} from "./chat.service.js";
 
 const router = Router();
 

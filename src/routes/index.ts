@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { createLead } from "../modules/lead/lead.service";
-import { startCall, updateCallStatus } from "../modules/calls/calls.service";
-import { sendMessage } from "../modules/messaging/service";
-import { requireAuth } from "../middleware/auth";
+import { createLead } from "../modules/lead/lead.service.js";
+import { startCall, updateCallStatus } from "../modules/calls/calls.service.js";
+import { sendMessage } from "../modules/messaging/service.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 

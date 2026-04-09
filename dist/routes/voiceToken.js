@@ -1,16 +1,11 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const AccessToken_1 = __importDefault(require("twilio/lib/jwt/AccessToken"));
-const AccessToken_2 = require("twilio/lib/jwt/AccessToken");
-const auth_1 = require("../middleware/auth");
-const roles_1 = require("../auth/roles");
-const config_1 = require("../config");
-const router = (0, express_1.Router)();
-const STAFF_VOICE_ROLES = new Set([roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF, roles_1.ROLES.OPS]);
+import { Router } from "express";
+import AccessToken from "twilio/lib/jwt/AccessToken";
+import { VoiceGrant } from "twilio/lib/jwt/AccessToken";
+import { requireAuth } from "../middleware/auth.js";
+import { ROLES } from "../auth/roles.js";
+import { config } from "../config/index.js";
+const router = Router();
+const STAFF_VOICE_ROLES = new Set([ROLES.ADMIN, ROLES.STAFF, ROLES.OPS]);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function isValidClientId(clientId) {
     return uuidPattern.test(clientId);
@@ -47,7 +42,7 @@ function resolveVoiceIdentity(params) {
     }
     return isStaffRole ? "staff_portal" : null;
 }
-router.get("/voice/token", auth_1.requireAuth, (req, res) => {
+router.get("/voice/token", requireAuth, (req, res) => {
     const user = req.user;
     if (!user) {
         res.status(401).json({ ok: false, error: "missing_token" });
@@ -62,12 +57,12 @@ router.get("/voice/token", auth_1.requireAuth, (req, res) => {
         res.status(400).json({ code: "invalid_identity", message: "Invalid voice identity." });
         return;
     }
-    const accountSid = config_1.config.twilio.accountSid;
-    const apiKey = config_1.config.twilio.apiKey;
-    const apiSecret = config_1.config.twilio.apiSecret;
-    const twimlAppSid = config_1.config.twilio.voiceAppSid;
-    const token = new AccessToken_1.default(accountSid, apiKey, apiSecret, { identity });
-    const voiceGrant = new AccessToken_2.VoiceGrant({
+    const accountSid = config.twilio.accountSid;
+    const apiKey = config.twilio.apiKey;
+    const apiSecret = config.twilio.apiSecret;
+    const twimlAppSid = config.twilio.voiceAppSid;
+    const token = new AccessToken(accountSid, apiKey, apiSecret, { identity });
+    const voiceGrant = new VoiceGrant({
         outgoingApplicationSid: twimlAppSid,
         incomingAllow: true,
     });
@@ -77,4 +72,4 @@ router.get("/voice/token", auth_1.requireAuth, (req, res) => {
         token: token.toJwt(),
     });
 });
-exports.default = router;
+export default router;

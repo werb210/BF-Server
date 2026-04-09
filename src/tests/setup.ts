@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, vi } from "vitest";
-import { resetRedisMock } from "../lib/redis";
-import { resetTestDb } from "../lib/dbTestUtils";
-import { resetOtpStateForTests } from "../app";
-import { resetRateLimitForTests } from "../system/rateLimit";
+import { resetRedisMock } from "../lib/redis.js";
+import { resetTestDb } from "../lib/dbTestUtils.js";
+import { resetOtpStateForTests } from "../app.js";
+import { resetRateLimitForTests } from "../system/rateLimit.js";
 
 beforeEach(async () => {
   await resetTestDb();

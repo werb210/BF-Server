@@ -1,4 +1,4 @@
-import { logger } from "../platform/logger";
+import { logger } from "../platform/logger.js";
 
 export const logInfo = (message: string, meta: Record<string, unknown> = {}) => logger.info(message, meta);
 export const logWarn = (message: string, meta: Record<string, unknown> = {}) => logger.warn(message, meta);

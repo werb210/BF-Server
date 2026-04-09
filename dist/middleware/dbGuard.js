@@ -1,8 +1,5 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.dbGuard = void 0;
-const startupState_1 = require("../startupState");
-const dbGuard = (req, res, next) => {
+import { isReady } from "../startupState.js";
+export const dbGuard = (req, res, next) => {
     const bypassPrefixes = [
         "/health",
         "/_int",
@@ -11,7 +8,7 @@ const dbGuard = (req, res, next) => {
     if (bypassPrefixes.some((prefix) => req.path.startsWith(prefix))) {
         return next();
     }
-    if (!(0, startupState_1.isReady)()) {
+    if (!isReady()) {
         return res.status(503).json({
             code: "DB_NOT_READY",
             message: "Database unavailable",
@@ -19,4 +16,3 @@ const dbGuard = (req, res, next) => {
     }
     next();
 };
-exports.dbGuard = dbGuard;

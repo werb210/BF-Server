@@ -1,22 +1,16 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.runMigrations = runMigrations;
-const fs_1 = __importDefault(require("fs"));
-const path_1 = __importDefault(require("path"));
-async function runMigrations(pool) {
-    const migrationsDir = path_1.default.join(process.cwd(), "server/migrations");
-    if (!fs_1.default.existsSync(migrationsDir)) {
+import fs from "fs";
+import path from "path";
+export async function runMigrations(pool) {
+    const migrationsDir = path.join(process.cwd(), "server/migrations");
+    if (!fs.existsSync(migrationsDir)) {
         return;
     }
-    const files = fs_1.default
+    const files = fs
         .readdirSync(migrationsDir)
         .filter((file) => file.endsWith(".sql"))
         .sort();
     for (const file of files) {
-        const sql = fs_1.default.readFileSync(path_1.default.join(migrationsDir, file), "utf8");
+        const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
         try {
             await pool.query(sql);
             console.log(`migration_applied: ${file}`);

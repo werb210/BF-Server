@@ -1,29 +1,24 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const fs_1 = __importDefault(require("fs"));
-const path_1 = __importDefault(require("path"));
-const multer_1 = __importDefault(require("multer"));
-const express_1 = require("express");
-const crypto_1 = require("crypto");
-const safeHandler_1 = require("../middleware/safeHandler");
-const db_1 = require("../db");
-const aiKnowledgeService_1 = require("../services/aiKnowledgeService");
-const knowledge_service_1 = require("../modules/ai/knowledge.service");
-const knowledge_controller_1 = require("../modules/ai/knowledge.controller");
-const ai_controller_1 = require("../modules/ai/ai.controller");
-const logger_1 = require("../server/utils/logger");
-const aiService_1 = require("../services/ai/aiService");
-const router = (0, express_1.Router)();
+import fs from "fs";
+import path from "path";
+import multer from "multer";
+import { Router } from "express";
+import { randomUUID } from "node:crypto";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { runQuery } from "../db.js";
+import { saveKnowledge as saveKnowledgeDb } from "../services/aiKnowledgeService.js";
+import { loadKnowledge, saveKnowledge } from "../modules/ai/knowledge.service.js";
+import { AIKnowledgeController, upload as knowledgeUpload } from "../modules/ai/knowledge.controller.js";
+import { chatHandler } from "../modules/ai/ai.controller.js";
+import { logger } from "../server/utils/logger.js";
+import { generateAIResponse } from "../services/ai/aiService.js";
+const router = Router();
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const uploadDir = "/tmp/uploads";
-if (!fs_1.default.existsSync(uploadDir)) {
-    fs_1.default.mkdirSync(uploadDir, { recursive: true });
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
 }
 function cleanupFile(filePath) {
-    fs_1.default.unlink(filePath, () => undefined);
+    fs.unlink(filePath, () => undefined);
 }
 function rejectOversizedPayload(req, res, next) {
     const contentLength = Number(req.headers["content-length"] ?? 0);
@@ -33,8 +28,8 @@ function rejectOversizedPayload(req, res, next) {
     }
     next();
 }
-const upload = (0, multer_1.default)({
-    storage: multer_1.default.diskStorage({
+const upload = multer({
+    storage: multer.diskStorage({
         destination: (_, __, cb) => cb(null, uploadDir),
         filename: (_, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
     }),
@@ -48,23 +43,23 @@ const upload = (0, multer_1.default)({
         cb(null, true);
     },
 });
-const issueUploadDir = path_1.default.join(process.cwd(), "uploads", "ai-issues");
+const issueUploadDir = path.join(process.cwd(), "uploads", "ai-issues");
 function ensureUploadDir() {
-    if (!fs_1.default.existsSync(issueUploadDir)) {
-        fs_1.default.mkdirSync(issueUploadDir, { recursive: true });
+    if (!fs.existsSync(issueUploadDir)) {
+        fs.mkdirSync(issueUploadDir, { recursive: true });
     }
 }
 async function tryStoreEscalation(payload) {
-    const escalationId = (0, crypto_1.randomUUID)();
+    const escalationId = randomUUID();
     try {
-        await (0, db_1.runQuery)(`update chat_sessions
+        await runQuery(`update chat_sessions
        set status = 'escalated', escalated_to = $2, updated_at = now()
        where id = $1`, [payload.sessionId, payload.escalatedTo ?? null]);
-        await (0, db_1.runQuery)(`insert into ai_escalations (id, session_id, messages, status, created_at)
+        await runQuery(`insert into ai_escalations (id, session_id, messages, status, created_at)
        values ($1, $2, $3::jsonb, 'open', now())`, [escalationId, payload.sessionId, JSON.stringify(payload.messages ?? [])]);
     }
     catch (error) {
-        logger_1.logger.warn("ai_escalation_store_failed", {
+        logger.warn("ai_escalation_store_failed", {
             sessionId: payload.sessionId,
             error: error instanceof Error ? error.message : "unknown_error",
         });
@@ -72,9 +67,9 @@ async function tryStoreEscalation(payload) {
     return escalationId;
 }
 async function tryStoreReport(payload) {
-    const reportId = (0, crypto_1.randomUUID)();
+    const reportId = randomUUID();
     try {
-        await (0, db_1.runQuery)(`insert into issue_reports (id, description, screenshot_base64, user_agent, status, created_at)
+        await runQuery(`insert into issue_reports (id, description, screenshot_base64, user_agent, status, created_at)
        values ($1, $2, $3, $4, 'open', now())`, [
             reportId,
             payload.message,
@@ -83,16 +78,16 @@ async function tryStoreReport(payload) {
         ]);
     }
     catch (error) {
-        logger_1.logger.warn("ai_report_store_failed", {
+        logger.warn("ai_report_store_failed", {
             reportId,
             error: error instanceof Error ? error.message : "unknown_error",
         });
     }
     return reportId;
 }
-router.post("/chat", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.post("/chat", safeHandler(async (req, res, next) => {
     if (req.body?.mode !== "core") {
-        await (0, ai_controller_1.chatHandler)(req, res);
+        await chatHandler(req, res);
         return;
     }
     const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
@@ -100,13 +95,13 @@ router.post("/chat", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
         res.status(400).json({ error: "message is required" });
         return;
     }
-    const reply = await (0, aiService_1.generateAIResponse)(message);
+    const reply = await generateAIResponse(message);
     res["json"]({ reply });
 }));
-router.post("/escalate", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.post("/escalate", safeHandler(async (req, res, next) => {
     const sessionId = typeof req.body?.sessionId === "string" && req.body.sessionId.trim().length > 0
         ? req.body.sessionId
-        : (0, crypto_1.randomUUID)();
+        : randomUUID();
     const escalationId = await tryStoreEscalation({
         sessionId,
         escalatedTo: typeof req.body?.escalatedTo === "string" ? req.body.escalatedTo : null,
@@ -119,7 +114,7 @@ router.post("/escalate", (0, safeHandler_1.safeHandler)(async (req, res, next) =
         sessionId,
     });
 }));
-router.post("/report", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.post("/report", safeHandler(async (req, res, next) => {
     const message = typeof req.body?.message === "string" && req.body.message.trim().length > 0
         ? req.body.message
         : "Issue report received";
@@ -134,7 +129,7 @@ router.post("/report", (0, safeHandler_1.safeHandler)(async (req, res, next) => 
             ? req.body
             : {},
     });
-    logger_1.logger.info("ai_report_received", {
+    logger.info("ai_report_received", {
         reportId,
         hasScreenshot: Boolean(screenshot),
         hasContext: Boolean(req.body?.context),
@@ -145,17 +140,17 @@ router.post("/report", (0, safeHandler_1.safeHandler)(async (req, res, next) => 
     });
 }));
 const knowledgeUploadHandler = async (req, res) => {
-    await knowledge_controller_1.AIKnowledgeController.upload(req, res);
+    await AIKnowledgeController.upload(req, res);
 };
-router.post("/knowledge/upload", rejectOversizedPayload, knowledge_controller_1.upload.single("file"), knowledgeUploadHandler);
-router.get("/knowledge", knowledge_controller_1.AIKnowledgeController.list);
-router.get("/knowledge/db", (0, safeHandler_1.safeHandler)(async (_req, res) => {
-    const { rows } = await (0, db_1.runQuery)(`select id, content, created_at
+router.post("/knowledge/upload", rejectOversizedPayload, knowledgeUpload.single("file"), knowledgeUploadHandler);
+router.get("/knowledge", AIKnowledgeController.list);
+router.get("/knowledge/db", safeHandler(async (_req, res) => {
+    const { rows } = await runQuery(`select id, content, created_at
        from ai_knowledge
        order by created_at desc`);
     res["json"]({ success: true, data: rows });
 }));
-router.post("/knowledge", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.post("/knowledge", safeHandler(async (req, res, next) => {
     const { title, content, sourceType } = req.body;
     if (!content) {
         res.status(400).json({ success: false, error: "Missing content" });
@@ -163,17 +158,17 @@ router.post("/knowledge", (0, safeHandler_1.safeHandler)(async (req, res, next) 
     }
     const resolvedTitle = title ?? "Knowledge Entry";
     const resolvedSourceType = sourceType ?? "internal";
-    await (0, aiKnowledgeService_1.saveKnowledge)({
+    await saveKnowledgeDb({
         title: resolvedTitle,
         content,
         sourceType: resolvedSourceType,
     });
-    const existing = (0, knowledge_service_1.loadKnowledge)();
+    const existing = loadKnowledge();
     existing.push({ title: resolvedTitle, content, createdAt: new Date().toISOString() });
-    (0, knowledge_service_1.saveKnowledge)(existing);
+    saveKnowledge(existing);
     res["json"]({ success: true, data: { saved: true } });
 }));
-router.post("/report-issue", rejectOversizedPayload, upload.single("screenshot"), (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.post("/report-issue", rejectOversizedPayload, upload.single("screenshot"), safeHandler(async (req, res, next) => {
     const body = req.body;
     if (!body.description || !body.page_url || !body.browser_info) {
         res.status(400).json({
@@ -185,15 +180,15 @@ router.post("/report-issue", rejectOversizedPayload, upload.single("screenshot")
     let screenshotPath = null;
     if (req.file) {
         ensureUploadDir();
-        const ext = path_1.default.extname(req.file.originalname || "") || ".png";
-        const fileName = `${(0, crypto_1.randomUUID)()}${ext}`;
-        const fullPath = path_1.default.join(issueUploadDir, fileName);
-        fs_1.default.copyFileSync(req.file.path, fullPath);
+        const ext = path.extname(req.file.originalname || "") || ".png";
+        const fileName = `${randomUUID()}${ext}`;
+        const fullPath = path.join(issueUploadDir, fileName);
+        fs.copyFileSync(req.file.path, fullPath);
         cleanupFile(req.file.path);
-        screenshotPath = path_1.default.relative(process.cwd(), fullPath);
+        screenshotPath = path.relative(process.cwd(), fullPath);
     }
-    const id = (0, crypto_1.randomUUID)();
-    await (0, db_1.runQuery)(`insert into issue_reports
+    const id = randomUUID();
+    await runQuery(`insert into issue_reports
        (id, session_id, description, page_url, browser_info, screenshot_path, status, created_at)
        values ($1, $2, $3, $4, $5, $6, 'open', now())`, [
         id,
@@ -208,4 +203,4 @@ router.post("/report-issue", rejectOversizedPayload, upload.single("screenshot")
         data: { id, screenshotPath },
     });
 }));
-exports.default = router;
+export default router;

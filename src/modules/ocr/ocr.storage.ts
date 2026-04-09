@@ -1,6 +1,6 @@
 import { BlobClient, BlobServiceClient } from "@azure/storage-blob";
-import { logWarn } from "../../observability/logger";
-import { config } from "../../config";
+import { logWarn } from "../../observability/logger.js";
+import { config } from "../../config/index.js";
 
 export type OcrStorageInput = {
   content: string;

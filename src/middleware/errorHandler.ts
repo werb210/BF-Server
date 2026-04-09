@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { error } from "../lib/response";
+import { error } from "../lib/response.js";
 
 export function errorHandler(err: unknown, req: Request, res: Response, next: NextFunction): Response | void {
   const headerRid = req.headers["x-request-id"];

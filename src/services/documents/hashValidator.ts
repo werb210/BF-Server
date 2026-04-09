@@ -1,4 +1,4 @@
-import crypto from "crypto";
+import crypto from "node:crypto";
 import fs from "fs";
 
 export function sha256File(path: string) {

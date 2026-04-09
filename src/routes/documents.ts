@@ -1,11 +1,11 @@
 import express, { Request, Response } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
-import { sha256 } from "../lib/hash";
-import { ok, fail } from "../middleware/response";
-import { toStringSafe } from "../utils/toStringSafe";
-import { runQuery } from "../lib/db";
-import { validate } from "../middleware/validate";
+import { sha256 } from "../lib/hash.js";
+import { ok, fail } from "../middleware/response.js";
+import { toStringSafe } from "../utils/toStringSafe.js";
+import { runQuery } from "../lib/db.js";
+import { validate } from "../middleware/validate.js";
 
 const router = express.Router();
 

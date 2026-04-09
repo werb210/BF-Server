@@ -1,4 +1,4 @@
-import { pool, runQuery } from "../../db";
+import { pool, runQuery } from "../../db.js";
 import { type PoolClient } from "pg";
 
 type Queryable = Pick<PoolClient, "query" | "runQuery">;

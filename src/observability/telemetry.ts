@@ -1,5 +1,5 @@
-import { config } from "../config";
-import { fetchRequestRoute } from "../observability/requestContext";
+import { config } from "../config/index.js";
+import { fetchRequestRoute } from "../observability/requestContext.js";
 
 const instanceId = config.telemetry.instanceId;
 

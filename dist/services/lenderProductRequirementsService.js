@@ -1,21 +1,9 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.listRequirementsForFilters = listRequirementsForFilters;
-exports.resolveLenderProductRequirements = resolveLenderProductRequirements;
-exports.resolveRequirementsForProductType = resolveRequirementsForProductType;
-exports.resolveRequirementsForApplication = resolveRequirementsForApplication;
-exports.listClientRequirements = listClientRequirements;
-exports.createRequirementForProduct = createRequirementForProduct;
-exports.updateRequirementForProduct = updateRequirementForProduct;
-exports.deleteRequirementForProduct = deleteRequirementForProduct;
-exports.ensureSeedRequirementsForProduct = ensureSeedRequirementsForProduct;
-exports.seedRequirementsForAllProducts = seedRequirementsForAllProducts;
-const config_1 = require("../config");
-const errors_1 = require("../middleware/errors");
-const logger_1 = require("../observability/logger");
-const db_1 = require("../db");
-const crypto_1 = require("crypto");
-const requiredDocuments_1 = require("../db/schema/requiredDocuments");
+import { config } from "../config/index.js";
+import { AppError } from "../middleware/errors.js";
+import { logInfo, logWarn } from "../observability/logger.js";
+import { runQuery } from "../db.js";
+import { randomUUID } from "node:crypto";
+import { ALWAYS_REQUIRED_DOCUMENTS, normalizeRequiredDocumentKey, } from "../db/schema/requiredDocuments.js";
 function normalizeCategory(productType) {
     const normalized = productType.trim().toUpperCase();
     if (normalized === "STANDARD" || normalized === "LOC" || normalized === "LINE_OF_CREDIT") {
@@ -51,7 +39,7 @@ function normalizeRequirementEntry(entry) {
     if (!rawType) {
         return null;
     }
-    const normalizedType = (0, requiredDocuments_1.normalizeRequiredDocumentKey)(rawType);
+    const normalizedType = normalizeRequiredDocumentKey(rawType);
     if (!normalizedType) {
         return null;
     }
@@ -66,7 +54,7 @@ function normalizeRequirementEntry(entry) {
             ? entry.max_amount
             : null;
     return {
-        id: typeof entry.id === "string" ? entry.id : (0, crypto_1.randomUUID)(),
+        id: typeof entry.id === "string" ? entry.id : randomUUID(),
         documentType: normalizedType,
         required: entry.required !== false,
         minAmount,
@@ -108,8 +96,8 @@ function dedupeRequirements(requirements) {
 }
 function ensureAlwaysRequired(requirements) {
     const existing = new Set(requirements.map((req) => req.documentType));
-    const additions = requiredDocuments_1.ALWAYS_REQUIRED_DOCUMENTS.filter((doc) => !existing.has(doc)).map((doc) => ({
-        id: (0, crypto_1.randomUUID)(),
+    const additions = ALWAYS_REQUIRED_DOCUMENTS.filter((doc) => !existing.has(doc)).map((doc) => ({
+        id: randomUUID(),
         documentType: doc,
         required: true,
         minAmount: null,
@@ -121,7 +109,7 @@ function ensureAlwaysRequired(requirements) {
     return [...requirements, ...additions];
 }
 async function fetchProductById(params) {
-    const res = await (0, db_1.runQuery)(`select lp.id,
+    const res = await runQuery(`select lp.id,
             lp.category,
             lp.country,
             lp.rate_type,
@@ -151,7 +139,7 @@ async function listMatchingProducts(params) {
     if (amount !== null) {
         values.push(amount);
     }
-    const res = await (0, db_1.runQuery)(`select lp.id,
+    const res = await runQuery(`select lp.id,
             lp.category,
             lp.country,
             lp.rate_type,
@@ -170,7 +158,7 @@ async function listMatchingProducts(params) {
      order by lp.created_at asc`, values);
     return res.rows;
 }
-async function listRequirementsForFilters(params) {
+export async function listRequirementsForFilters(params) {
     const category = normalizeCategory(params.category);
     const country = params.country?.trim().toUpperCase() ?? "BOTH";
     const products = await listMatchingProducts({
@@ -187,7 +175,7 @@ async function listRequirementsForFilters(params) {
     const normalized = ensureAlwaysRequired(dedupeRequirements(requirements));
     return normalized;
 }
-async function resolveLenderProductRequirements(params) {
+export async function resolveLenderProductRequirements(params) {
     const product = await fetchProductById({ id: params.lenderProductId });
     if (!product) {
         return [];
@@ -209,7 +197,7 @@ async function resolveLenderProductRequirements(params) {
         return true;
     });
     const normalized = ensureAlwaysRequired(dedupeRequirements(filtered));
-    (0, logger_1.logInfo)("lender_product_requirements_resolved", {
+    logInfo("lender_product_requirements_resolved", {
         lenderProductId: params.lenderProductId,
         requestedAmount: params.requestedAmount ?? null,
         total: normalized.length,
@@ -217,7 +205,7 @@ async function resolveLenderProductRequirements(params) {
     });
     return normalized;
 }
-async function resolveRequirementsForProductType(params) {
+export async function resolveRequirementsForProductType(params) {
     const category = normalizeCategory(params.productType);
     const country = params.country?.trim().toUpperCase() ?? "BOTH";
     const products = await listMatchingProducts({
@@ -226,12 +214,12 @@ async function resolveRequirementsForProductType(params) {
         requestedAmount: params.requestedAmount ?? null,
     });
     if (products.length === 0) {
-        (0, logger_1.logWarn)("lender_product_type_missing", { productType: params.productType });
-        if (config_1.config.env === "test") {
+        logWarn("lender_product_type_missing", { productType: params.productType });
+        if (config.env === "test") {
             const requirements = ensureAlwaysRequired([]);
             return { requirements, lenderProductId: null };
         }
-        throw new errors_1.AppError("invalid_product", "Unsupported product type.", 400);
+        throw new AppError("invalid_product", "Unsupported product type.", 400);
     }
     const requirements = products.flatMap((product) => {
         const docs = parseRequiredDocuments(product.required_documents);
@@ -242,7 +230,7 @@ async function resolveRequirementsForProductType(params) {
     const normalized = ensureAlwaysRequired(dedupeRequirements(requirements));
     return { requirements: normalized, lenderProductId: products[0]?.id ?? null };
 }
-async function resolveRequirementsForApplication(params) {
+export async function resolveRequirementsForApplication(params) {
     if (params.lenderProductId) {
         const requirements = await resolveLenderProductRequirements({
             lenderProductId: params.lenderProductId,
@@ -257,7 +245,7 @@ async function resolveRequirementsForApplication(params) {
     });
     return result;
 }
-async function listClientRequirements(params) {
+export async function listClientRequirements(params) {
     const product = await fetchProductById({
         id: params.lenderProductId,
         requireActive: true,
@@ -271,43 +259,43 @@ async function listClientRequirements(params) {
     });
     return requirements.filter((requirement) => requirement.required);
 }
-async function createRequirementForProduct(params) {
+export async function createRequirementForProduct(params) {
     const product = await fetchProductById({ id: params.lenderProductId });
     if (!product) {
-        throw new errors_1.AppError("not_found", "Lender product not found.", 404);
+        throw new AppError("not_found", "Lender product not found.", 404);
     }
     const documents = parseRequiredDocuments(product.required_documents);
     const newEntry = {
-        id: (0, crypto_1.randomUUID)(),
+        id: randomUUID(),
         type: params.documentType,
         required: params.required ?? true,
         minAmount: params.minAmount ?? null,
         maxAmount: params.maxAmount ?? null,
     };
     documents.push(newEntry);
-    await (0, db_1.runQuery)(`update lender_products
+    await runQuery(`update lender_products
      set required_documents = $1,
          updated_at = now()
      where id = $2`, [JSON.stringify(documents), params.lenderProductId]);
     const requirement = normalizeRequirementEntry(newEntry);
     if (!requirement) {
-        throw new errors_1.AppError("data_error", "Invalid requirement payload.", 500);
+        throw new AppError("data_error", "Invalid requirement payload.", 500);
     }
     return requirement;
 }
-async function updateRequirementForProduct(params) {
-    const res = await (0, db_1.runQuery)(`select id, required_documents
+export async function updateRequirementForProduct(params) {
+    const res = await runQuery(`select id, required_documents
      from lender_products
      where required_documents @> $1::jsonb
      limit 1`, [JSON.stringify([{ id: params.id }])]);
     const product = res.rows[0];
     if (!product) {
-        throw new errors_1.AppError("not_found", "Requirement not found.", 404);
+        throw new AppError("not_found", "Requirement not found.", 404);
     }
     const documents = parseRequiredDocuments(product.required_documents);
     const index = documents.findIndex((entry) => entry.id === params.id);
     if (index < 0) {
-        throw new errors_1.AppError("not_found", "Requirement not found.", 404);
+        throw new AppError("not_found", "Requirement not found.", 404);
     }
     documents[index] = {
         ...documents[index],
@@ -317,47 +305,47 @@ async function updateRequirementForProduct(params) {
         minAmount: params.minAmount ?? null,
         maxAmount: params.maxAmount ?? null,
     };
-    await (0, db_1.runQuery)(`update lender_products
+    await runQuery(`update lender_products
      set required_documents = $1,
          updated_at = now()
      where id = $2`, [JSON.stringify(documents), product.id]);
     const requirement = normalizeRequirementEntry(documents[index]);
     if (!requirement) {
-        throw new errors_1.AppError("data_error", "Invalid requirement payload.", 500);
+        throw new AppError("data_error", "Invalid requirement payload.", 500);
     }
     return requirement;
 }
-async function deleteRequirementForProduct(params) {
-    const res = await (0, db_1.runQuery)(`select id, required_documents
+export async function deleteRequirementForProduct(params) {
+    const res = await runQuery(`select id, required_documents
      from lender_products
      where required_documents @> $1::jsonb
      limit 1`, [JSON.stringify([{ id: params.id }])]);
     const product = res.rows[0];
     if (!product) {
-        throw new errors_1.AppError("not_found", "Requirement not found.", 404);
+        throw new AppError("not_found", "Requirement not found.", 404);
     }
     const documents = parseRequiredDocuments(product.required_documents);
     const index = documents.findIndex((entry) => entry.id === params.id);
     if (index < 0) {
-        throw new errors_1.AppError("not_found", "Requirement not found.", 404);
+        throw new AppError("not_found", "Requirement not found.", 404);
     }
     const [removed] = documents.splice(index, 1);
     if (!removed) {
-        throw new errors_1.AppError("data_error", "Invalid requirement payload.", 500);
+        throw new AppError("data_error", "Invalid requirement payload.", 500);
     }
-    await (0, db_1.runQuery)(`update lender_products
+    await runQuery(`update lender_products
      set required_documents = $1,
          updated_at = now()
      where id = $2`, [JSON.stringify(documents), product.id]);
     const requirement = normalizeRequirementEntry(removed);
     if (!requirement) {
-        throw new errors_1.AppError("data_error", "Invalid requirement payload.", 500);
+        throw new AppError("data_error", "Invalid requirement payload.", 500);
     }
     return requirement;
 }
-async function ensureSeedRequirementsForProduct() {
+export async function ensureSeedRequirementsForProduct() {
     return 0;
 }
-async function seedRequirementsForAllProducts() {
+export async function seedRequirementsForAllProducts() {
     return;
 }

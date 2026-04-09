@@ -1,5 +1,5 @@
 import fs from "fs";
-import { sha256File } from "./hashFile";
+import { sha256File } from "./hashFile.js";
 
 export async function verifyDocument(path: string, expectedHash?: string): Promise<true> {
   if (!fs.existsSync(path)) {

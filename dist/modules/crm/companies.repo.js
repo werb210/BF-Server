@@ -1,11 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.listCompanies = listCompanies;
-exports.findCompanyById = findCompanyById;
-exports.createCompany = createCompany;
-const db_1 = require("../../db");
-async function listCompanies(params) {
-    const runner = params?.client ?? db_1.pool;
+import { pool } from "../../db.js";
+export async function listCompanies(params) {
+    const runner = params?.client ?? pool;
     const result = await runner.query(`
       select
         c.id,
@@ -25,8 +20,8 @@ async function listCompanies(params) {
     `);
     return result.rows.length > 0 ? result.rows : [];
 }
-async function findCompanyById(params) {
-    const runner = params.client ?? db_1.pool;
+export async function findCompanyById(params) {
+    const runner = params.client ?? pool;
     const result = await runner.query(`
       select
         c.id,
@@ -48,8 +43,8 @@ async function findCompanyById(params) {
     const record = result.rows[0];
     return record ?? null;
 }
-async function createCompany(params) {
-    const runner = params.client ?? db_1.pool;
+export async function createCompany(params) {
+    const runner = params.client ?? pool;
     const result = await runner.query(`
       insert into companies
       (id, name, website, email, phone, status, owner_id, referrer_id, created_at, updated_at)

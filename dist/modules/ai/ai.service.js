@@ -1,17 +1,7 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.startSession = startSession;
-exports.handleMessage = handleMessage;
-exports.escalate = escalate;
-exports.reportIssue = reportIssue;
-exports.generateAIResponse = generateAIResponse;
-const openai_1 = __importDefault(require("openai"));
-const uuid_1 = require("uuid");
-const db_1 = require("../../db");
-const config_1 = require("../../config");
+import OpenAI from "openai";
+import { v4 as uuid } from "uuid";
+import { dbQuery } from "../../db.js";
+import { config } from "../../config/index.js";
 const LENDER_LANGUAGE = "We have lenders across different capital types, including Institutional lenders, Banking, and Private Capital sources as well as our own funding offerings.";
 const LEGACY_SYSTEM_PROMPT = [
     "You are a financing assistant for Boreal Financial.",
@@ -23,8 +13,8 @@ const LEGACY_SYSTEM_PROMPT = [
     "Never make fixed pricing promises.",
     "If user asks qualification-related questions, ask intake questions before recommendations.",
 ].join("\n");
-const client = config_1.config.openai.apiKey
-    ? new openai_1.default({ apiKey: config_1.config.openai.apiKey })
+const client = config.openai.apiKey
+    ? new OpenAI({ apiKey: config.openai.apiKey })
     : null;
 const sessions = new Map();
 const messages = [];
@@ -45,10 +35,10 @@ function pruneExpiredSessions(now = Date.now()) {
 }
 setInterval(() => {
     pruneExpiredSessions();
-}, 60000).unref();
+}, 60_000).unref();
 async function loadActiveAiRules() {
     try {
-        const modern = await (0, db_1.dbQuery)(`select rule_content
+        const modern = await dbQuery(`select rule_content
        from ai_rules
        where active = true
        order by priority desc, id asc`);
@@ -60,7 +50,7 @@ async function loadActiveAiRules() {
         // fallback to legacy schema
     }
     try {
-        const legacy = await (0, db_1.dbQuery)(`select rule_value
+        const legacy = await dbQuery(`select rule_value
        from ai_rules
        where coalesce(rule_value, '') <> ''
        order by updated_at desc`);
@@ -70,9 +60,9 @@ async function loadActiveAiRules() {
         return [];
     }
 }
-function startSession(context) {
+export function startSession(context) {
     pruneExpiredSessions();
-    const id = (0, uuid_1.v4)();
+    const id = uuid();
     const session = {
         id,
         context,
@@ -88,7 +78,7 @@ function startSession(context) {
     }
     return session;
 }
-async function handleMessage(sessionId, content) {
+export async function handleMessage(sessionId, content) {
     const session = sessions.get(sessionId);
     if (!session) {
         throw new Error("Session not found");
@@ -125,7 +115,7 @@ ${aiRules.join("\n")}` : ""}
         return { reply: fallbackReply };
     }
     const response = await client.chat.completions.create({
-        model: config_1.config.ai.model || "gpt-4o-mini",
+        model: config.ai.model || "gpt-4o-mini",
         messages: [
             { role: "system", content: systemPrompt },
             ...messages
@@ -146,7 +136,7 @@ ${aiRules.join("\n")}` : ""}
     trimMessages();
     return { reply };
 }
-function escalate(sessionId) {
+export function escalate(sessionId) {
     const session = sessions.get(sessionId);
     if (!session) {
         throw new Error("Session not found");
@@ -154,11 +144,11 @@ function escalate(sessionId) {
     session.escalated = true;
     return { success: true };
 }
-function reportIssue(sessionId, message, screenshot) {
+export function reportIssue(sessionId, message, screenshot) {
     void { sessionId, message, screenshot };
     return { success: true };
 }
-async function generateAIResponse(_sessionId, message) {
+export async function generateAIResponse(_sessionId, message) {
     if (!client) {
         return JSON.stringify({
             reply: `${LENDER_LANGUAGE} To guide qualification, could you share time in business, monthly revenue range, and existing obligations?`,
@@ -167,7 +157,7 @@ async function generateAIResponse(_sessionId, message) {
     }
     const aiRules = await loadActiveAiRules();
     const response = await client.chat.completions.create({
-        model: config_1.config.openai.chatModel ?? "gpt-4.1-mini",
+        model: config.openai.chatModel ?? "gpt-4.1-mini",
         temperature: 0.2,
         response_format: { type: "json_object" },
         messages: [

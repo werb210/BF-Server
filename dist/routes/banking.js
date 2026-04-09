@@ -1,13 +1,11 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const errors_1 = require("../middleware/errors");
-const safeHandler_1 = require("../middleware/safeHandler");
-const router = (0, express_1.Router)();
-router.post("/analysis", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+import { Router } from "express";
+import { AppError } from "../middleware/errors.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+const router = Router();
+router.post("/analysis", safeHandler(async (req, res, next) => {
     const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
     if (!applicationId) {
-        throw new errors_1.AppError("validation_error", "applicationId is required.", 400);
+        throw new AppError("validation_error", "applicationId is required.", 400);
     }
     const transactions = Array.isArray(req.body?.transactions) ? req.body.transactions : [];
     const balances = transactions
@@ -31,4 +29,4 @@ router.post("/analysis", (0, safeHandler_1.safeHandler)(async (req, res, next) =
         revenue_trend: revenueTrend,
     });
 }));
-exports.default = router;
+export default router;

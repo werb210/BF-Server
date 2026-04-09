@@ -1,10 +1,4 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.corsMiddleware = void 0;
-const cors_1 = __importDefault(require("cors"));
+import cors from "cors";
 const allowedProductionOrigins = [
     "https://boreal.financial",
     "https://www.boreal.financial",
@@ -31,7 +25,7 @@ function isAllowedOrigin(origin, nodeEnv) {
     }
     return false;
 }
-exports.corsMiddleware = (0, cors_1.default)((req, callback) => {
+export const corsMiddleware = cors((req, callback) => {
     const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
     const NODE_ENV = process.env.NODE_ENV;
     if (!origin) {

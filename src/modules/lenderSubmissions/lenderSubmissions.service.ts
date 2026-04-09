@@ -1,6 +1,6 @@
-import { AppError } from "../../middleware/errors";
-import { findApplicationById } from "../applications/applications.repo";
-import { submitApplication } from "../lender/lender.service";
+import { AppError } from "../../middleware/errors.js";
+import { findApplicationById } from "../applications/applications.repo.js";
+import { submitApplication } from "../lender/lender.service.js";
 
 export async function submitLenderSubmission(params: {
   applicationId: string;

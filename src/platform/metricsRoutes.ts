@@ -1,6 +1,6 @@
 import express from "express";
-import { ok } from "../lib/respond";
-import { registry } from "./metrics";
+import { ok } from "../lib/respond.js";
+import { registry } from "./metrics.js";
 
 const router = express.Router();
 

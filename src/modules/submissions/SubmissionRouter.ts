@@ -1,16 +1,16 @@
-import { pool, runQuery } from "../../db";
+import { pool, runQuery } from "../../db.js";
 import { type PoolClient } from "pg";
 import {
   type SubmissionAdapter,
   type SubmissionPayload,
   type SubmissionResult,
-} from "./adapters/SubmissionAdapter";
-import { EmailSubmissionAdapter } from "./adapters/EmailSubmissionAdapter";
-import { ApiSubmissionAdapter } from "./adapters/ApiSubmissionAdapter";
+} from "./adapters/SubmissionAdapter.js";
+import { EmailSubmissionAdapter } from "./adapters/EmailSubmissionAdapter.js";
+import { ApiSubmissionAdapter } from "./adapters/ApiSubmissionAdapter.js";
 import {
   GoogleSheetSubmissionAdapter,
   type GoogleSheetSubmissionConfig,
-} from "./adapters/GoogleSheetSubmissionAdapter";
+} from "./adapters/GoogleSheetSubmissionAdapter.js";
 
 export type SubmissionMethod = "google_sheet" | "email" | "api";
 

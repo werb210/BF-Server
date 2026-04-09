@@ -1,9 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.listRoutes = listRoutes;
-exports.listRouteInventory = listRouteInventory;
-exports.printRoutes = printRoutes;
-const logger_1 = require("../observability/logger");
+import { logInfo } from "../observability/logger.js";
 function fetchLayerPath(layer) {
     if (typeof layer.path === "string") {
         return layer.path;
@@ -82,7 +77,7 @@ function walkStackGrouped(stack, prefix, groups) {
         }
     });
 }
-function listRoutes(app) {
+export function listRoutes(app) {
     const routes = [];
     const stack = app._router?.stack;
     if (stack) {
@@ -91,7 +86,7 @@ function listRoutes(app) {
     routes.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
     return routes;
 }
-function listRouteInventory(app) {
+export function listRouteInventory(app) {
     const groups = new Map();
     const stack = app._router?.stack;
     if (stack) {
@@ -104,7 +99,7 @@ function listRouteInventory(app) {
     }))
         .sort((a, b) => a.routerBase.localeCompare(b.routerBase));
 }
-function printRoutes(app) {
+export function printRoutes(app) {
     const routes = listRoutes(app);
-    (0, logger_1.logInfo)("routes_registered", { routes });
+    logInfo("routes_registered", { routes });
 }

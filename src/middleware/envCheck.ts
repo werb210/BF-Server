@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
-import { logger } from "../server/utils/logger";
-import { config } from "../config";
+import { logger } from "../server/utils/logger.js";
+import { config } from "../config/index.js";
 
 export default function envCheck(_req: Request, res: Response, next: NextFunction): void {
   if (config.env === "test") {

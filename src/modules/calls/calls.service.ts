@@ -1,5 +1,5 @@
-import { AppError } from "../../middleware/errors";
-import { recordAuditEvent } from "../audit/audit.service";
+import { AppError } from "../../middleware/errors.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
 import {
   type CallLogRecord,
   type CallStatus,
@@ -7,7 +7,7 @@ import {
   findCallLogById,
   listCallLogs,
   updateCallLogStatus,
-} from "./calls.repo";
+} from "./calls.repo.js";
 
 export async function startCall(params: {
   phoneNumber: string;

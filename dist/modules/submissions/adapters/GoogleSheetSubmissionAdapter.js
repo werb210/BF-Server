@@ -1,9 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.GoogleSheetSubmissionAdapter = void 0;
-const config_1 = require("../../../config");
-const googleapis_1 = require("googleapis");
-const logger_1 = require("../../../observability/logger");
+import { config } from "../../../config/index.js";
+import { google } from "googleapis";
+import { logError, logInfo } from "../../../observability/logger.js";
 const COLUMN_MAPS = {
     v1: {
         "Application ID": "application.id",
@@ -16,8 +13,8 @@ const COLUMN_MAPS = {
 };
 const APPLICATION_ID_PATH = "application.id";
 function assertServiceAccountEnv() {
-    const clientEmail = config_1.config.google.serviceAccountEmail?.trim();
-    const privateKey = config_1.config.google.serviceAccountPrivateKey?.trim();
+    const clientEmail = config.google.serviceAccountEmail?.trim();
+    const privateKey = config.google.serviceAccountPrivateKey?.trim();
     if (!clientEmail || !privateKey) {
         throw new Error("Missing Google service account credentials.");
     }
@@ -115,7 +112,9 @@ function parseUpdatedRowIndex(range) {
     const row = Number(match[1]);
     return Number.isFinite(row) ? row : null;
 }
-class GoogleSheetSubmissionAdapter {
+export class GoogleSheetSubmissionAdapter {
+    payload;
+    config;
     constructor(params) {
         this.payload = params.payload;
         this.config = params.config;
@@ -123,12 +122,12 @@ class GoogleSheetSubmissionAdapter {
     async submit(_input) {
         const now = new Date().toISOString();
         const credentials = assertServiceAccountEnv();
-        const auth = new googleapis_1.google.auth.GoogleAuth({
+        const auth = new google.auth.GoogleAuth({
             credentials,
             scopes: ["https://www.googleapis.com/auth/spreadsheets"],
         });
-        const sheets = googleapis_1.google.sheets({ version: "v4", auth });
-        (0, logger_1.logInfo)("google_sheet_submission_attempt", {
+        const sheets = google.sheets({ version: "v4", auth });
+        logInfo("google_sheet_submission_attempt", {
             applicationId: this.payload.application.id,
             sheetId: this.config.spreadsheetId,
         });
@@ -184,7 +183,7 @@ class GoogleSheetSubmissionAdapter {
                 }
             });
             if (existingRowIndex) {
-                (0, logger_1.logInfo)("google_sheet_submission_idempotent", {
+                logInfo("google_sheet_submission_idempotent", {
                     applicationId: this.payload.application.id,
                     sheetId: this.config.spreadsheetId,
                     rowIndex: existingRowIndex,
@@ -234,7 +233,7 @@ class GoogleSheetSubmissionAdapter {
             };
         }
         catch (error) {
-            (0, logger_1.logError)("google_sheet_submission_failed", {
+            logError("google_sheet_submission_failed", {
                 error,
                 applicationId: this.payload.application.id,
                 sheetId: this.config.spreadsheetId,
@@ -253,4 +252,3 @@ class GoogleSheetSubmissionAdapter {
         }
     }
 }
-exports.GoogleSheetSubmissionAdapter = GoogleSheetSubmissionAdapter;

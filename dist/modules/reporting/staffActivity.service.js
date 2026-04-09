@@ -1,8 +1,5 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.listStaffActivity = listStaffActivity;
-const db_1 = require("../../db");
-const reporting_utils_1 = require("./reporting.utils");
+import { pool } from "../../db.js";
+import { formatPeriod } from "./reporting.utils.js";
 function buildWhereClause(params) {
     const clauses = [];
     const values = [];
@@ -36,8 +33,8 @@ function periodExpression(groupBy) {
     }
     return "metric_date";
 }
-async function listStaffActivity(params) {
-    const runner = params.client ?? db_1.pool;
+export async function listStaffActivity(params) {
+    const runner = params.client ?? pool;
     const { clause, values } = buildWhereClause({
         from: params.from,
         to: params.to,
@@ -57,7 +54,7 @@ async function listStaffActivity(params) {
      order by period desc, staff_user_id asc, action asc
      limit $${limitIndex} offset $${offsetIndex}`, [...values, params.limit, params.offset]);
     return res.rows.map((row) => ({
-        period: (0, reporting_utils_1.formatPeriod)(row.period),
+        period: formatPeriod(row.period),
         staffUserId: row.staff_user_id,
         action: row.action,
         activityCount: row.activity_count,

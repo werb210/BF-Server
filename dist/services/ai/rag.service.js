@@ -1,23 +1,19 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.embedText = embedText;
-exports.searchRelevantDocs = searchRelevantDocs;
-const db_1 = require("../../db");
-const openai_service_1 = require("./openai.service");
-const config_1 = require("../../config");
+import { runQuery } from "../../db.js";
+import { openai } from "./openai.service.js";
+import { config } from "../../config/index.js";
 function toVectorLiteral(values) {
     return `[${values.join(",")}]`;
 }
-async function embedText(text) {
-    const response = await openai_service_1.openai.embeddings.create({
-        model: config_1.config.openai.embedModel ?? "text-embedding-3-small",
+export async function embedText(text) {
+    const response = await openai.embeddings.create({
+        model: config.openai.embedModel ?? "text-embedding-3-small",
         input: text,
     });
     return response.data[0]?.embedding ?? [];
 }
-async function searchRelevantDocs(query) {
+export async function searchRelevantDocs(query) {
     const embedding = await embedText(query);
-    const result = await (0, db_1.runQuery)(`
+    const result = await runQuery(`
     select content
     from ai_embeddings
     where embedding is not null

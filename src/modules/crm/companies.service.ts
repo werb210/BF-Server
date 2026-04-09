@@ -1,4 +1,4 @@
-import { type CompanyRepoRow, findCompanyById, listCompanies } from "./companies.repo";
+import { type CompanyRepoRow, findCompanyById, listCompanies } from "./companies.repo.js";
 
 export type CompanyOwner = {
   id: string;

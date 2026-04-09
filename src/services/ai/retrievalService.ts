@@ -1,5 +1,5 @@
-import { db } from "../../db";
-import { generateEmbedding } from "./embeddingService";
+import { db } from "../../db.js";
+import { generateEmbedding } from "./embeddingService.js";
 
 function toVectorLiteral(values: number[]): string {
   return `[${values.join(",")}]`;

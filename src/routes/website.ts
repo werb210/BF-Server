@@ -1,8 +1,8 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { submitContactForm } from "../modules/website/contact.controller";
-import { submitCreditReadiness } from "../modules/website/website.controller";
-import { config } from "../config";
+import { submitContactForm } from "../modules/website/contact.controller.js";
+import { submitCreditReadiness } from "../modules/website/website.controller.js";
+import { config } from "../config/index.js";
 
 const router = Router();
 

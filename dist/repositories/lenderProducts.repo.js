@@ -1,16 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.LIST_LENDER_PRODUCTS_SQL = void 0;
-exports.createLenderProduct = createLenderProduct;
-exports.listLenderProducts = listLenderProducts;
-exports.listLenderProductsByLenderId = listLenderProductsByLenderId;
-exports.fetchLenderProductById = fetchLenderProductById;
-exports.updateLenderProduct = updateLenderProduct;
-const collectionSafe_1 = require("../utils/collectionSafe");
-const crypto_1 = require("crypto");
-const db_1 = require("../db");
-const errors_1 = require("../middleware/errors");
-const logger_1 = require("../observability/logger");
+import { toStringSet } from "../utils/collectionSafe.js";
+import { randomUUID } from "node:crypto";
+import { pool } from "../db.js";
+import { AppError } from "../middleware/errors.js";
+import { logError } from "../observability/logger.js";
 const LENDER_PRODUCTS_REPO = "src/repositories/lenderProducts.repo.ts";
 const LENDER_PRODUCTS_TABLE = "lender_products";
 async function assertLenderProductColumnsExist(params) {
@@ -19,13 +11,13 @@ async function assertLenderProductColumnsExist(params) {
        from information_schema.columns
        where table_schema = 'public'
          and table_name = $1`, [LENDER_PRODUCTS_TABLE]);
-        const existing = (0, collectionSafe_1.toStringSet)(result.rows.map((row) => row.column_name));
+        const existing = toStringSet(result.rows.map((row) => row.column_name));
         const missing = params.columns.filter((column) => !existing.has(column));
         if (missing.length === 0) {
             return existing;
         }
         for (const column of missing) {
-            (0, logger_1.logError)("schema_column_missing", {
+            logError("schema_column_missing", {
                 route: params.route,
                 repository: LENDER_PRODUCTS_REPO,
                 column,
@@ -33,22 +25,22 @@ async function assertLenderProductColumnsExist(params) {
             });
         }
         if (!params.allowMissing) {
-            throw new errors_1.AppError("db_schema_error", `Missing columns on ${LENDER_PRODUCTS_TABLE}: ${missing.join(", ")}`, 500);
+            throw new AppError("db_schema_error", `Missing columns on ${LENDER_PRODUCTS_TABLE}: ${missing.join(", ")}`, 500);
         }
         return existing;
     }
     catch (err) {
-        if (err instanceof errors_1.AppError) {
+        if (err instanceof AppError) {
             throw err;
         }
-        (0, logger_1.logError)("schema_column_check_failed", {
+        logError("schema_column_check_failed", {
             route: params.route,
             repository: LENDER_PRODUCTS_REPO,
             table: LENDER_PRODUCTS_TABLE,
             stack: err instanceof Error ? err.stack : undefined,
         });
         const error = err instanceof Error ? err : new Error("Unknown schema error.");
-        const appError = new errors_1.AppError("db_error", error.message, 500);
+        const appError = new AppError("db_error", error.message, 500);
         if (error.stack) {
             appError.stack = error.stack;
         }
@@ -83,8 +75,8 @@ function buildSelectColumns(existing) {
     })
         .join(", ");
 }
-async function createLenderProduct(params) {
-    const runner = params.client ?? db_1.pool;
+export async function createLenderProduct(params) {
+    const runner = params.client ?? pool;
     const existing = await assertLenderProductColumnsExist({
         route: "/api/lender-products",
         columns: [
@@ -108,7 +100,7 @@ async function createLenderProduct(params) {
     });
     const selectColumns = buildSelectColumns(existing);
     const columns = [
-        { name: "id", value: (0, crypto_1.randomUUID)() },
+        { name: "id", value: randomUUID() },
         { name: "lender_id", value: params.lenderId },
         { name: "name", value: params.name },
         { name: "category", value: params.category },
@@ -132,11 +124,11 @@ async function createLenderProduct(params) {
     const rows = res.rows;
     const created = rows[0];
     if (!created) {
-        throw new errors_1.AppError("db_error", "Failed to create lender product.", 500);
+        throw new AppError("db_error", "Failed to create lender product.", 500);
     }
     return created;
 }
-exports.LIST_LENDER_PRODUCTS_SQL = `select id,
+export const LIST_LENDER_PRODUCTS_SQL = `select id,
         lender_id,
         name,
         category,
@@ -153,8 +145,8 @@ exports.LIST_LENDER_PRODUCTS_SQL = `select id,
         updated_at
  from lender_products
  order by created_at desc`;
-async function listLenderProducts(client) {
-    const runner = client ?? db_1.pool;
+export async function listLenderProducts(client) {
+    const runner = client ?? pool;
     try {
         const existing = await assertLenderProductColumnsExist({
             route: "/api/lender-products",
@@ -185,21 +177,21 @@ async function listLenderProducts(client) {
         return res.rows;
     }
     catch (err) {
-        (0, logger_1.logError)("lender_products_query_failed", {
-            sql: exports.LIST_LENDER_PRODUCTS_SQL,
+        logError("lender_products_query_failed", {
+            sql: LIST_LENDER_PRODUCTS_SQL,
             params: [],
             stack: err instanceof Error ? err.stack : undefined,
         });
         const error = err instanceof Error ? err : new Error("Unknown database error.");
-        const appError = new errors_1.AppError("db_error", error.message, 500);
+        const appError = new AppError("db_error", error.message, 500);
         if (error.stack) {
             appError.stack = error.stack;
         }
         throw appError;
     }
 }
-async function listLenderProductsByLenderId(lenderId, client) {
-    const runner = client ?? db_1.pool;
+export async function listLenderProductsByLenderId(lenderId, client) {
+    const runner = client ?? pool;
     const existing = await assertLenderProductColumnsExist({
         route: "/api/lenders/:id/products",
         columns: [
@@ -229,8 +221,8 @@ async function listLenderProductsByLenderId(lenderId, client) {
      order by created_at desc`, [lenderId]);
     return res.rows;
 }
-async function fetchLenderProductById(id, client) {
-    const runner = client ?? db_1.pool;
+export async function fetchLenderProductById(id, client) {
+    const runner = client ?? pool;
     const existing = await assertLenderProductColumnsExist({
         route: "/api/lender-products/:id",
         columns: [
@@ -259,8 +251,8 @@ async function fetchLenderProductById(id, client) {
      limit 1`, [id]);
     return res.rows[0] ?? null;
 }
-async function updateLenderProduct(params) {
-    const runner = params.client ?? db_1.pool;
+export async function updateLenderProduct(params) {
+    const runner = params.client ?? pool;
     const existing = await assertLenderProductColumnsExist({
         route: "/api/lender-products/:id",
         columns: [

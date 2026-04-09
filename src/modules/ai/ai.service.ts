@@ -1,8 +1,8 @@
 import OpenAI from "openai";
 import { v4 as uuid } from "uuid";
-import { AiMessage, AiSession } from "./ai.types";
-import { dbQuery } from "../../db";
-import { config } from "../../config";
+import { AiMessage, AiSession } from "./ai.types.js";
+import { dbQuery } from "../../db.js";
+import { config } from "../../config/index.js";
 
 type AiReply = {
   reply: string;

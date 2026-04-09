@@ -1,17 +1,17 @@
 import webpush from "web-push";
-import { createHash } from "crypto";
-import { config } from "../config";
+import { createHash } from "node:crypto";
+import { config } from "../config/index.js";
 import {
   createPwaNotificationAudit,
   deletePwaSubscriptionByEndpoint,
   listPwaSubscriptionsByUser,
-} from "../repositories/pwa.repo";
-import { AppError } from "../middleware/errors";
-import { logError, logInfo, logWarn } from "../observability/logger";
-import { trackEvent } from "../observability/appInsights";
-import { fetchRequestContext } from "../observability/requestContext";
-import { type Role } from "../auth/roles";
-import { stripUndefined } from "../utils/clean";
+} from "../repositories/pwa.repo.js";
+import { AppError } from "../middleware/errors.js";
+import { logError, logInfo, logWarn } from "../observability/logger.js";
+import { trackEvent } from "../observability/appInsights.js";
+import { fetchRequestContext } from "../observability/requestContext.js";
+import { type Role } from "../auth/roles.js";
+import { stripUndefined } from "../utils/clean.js";
 
 export type PushLevel = "normal" | "high" | "critical";
 

@@ -1,16 +1,13 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.pushLeadToCRM = pushLeadToCRM;
-const config_1 = require("../config");
-const deadLetter_1 = require("../lib/deadLetter");
-const retry_1 = require("../lib/retry");
-async function pushLeadToCRM(data) {
-    if (!config_1.config.crm.webhookUrl) {
+import { config } from "../config/index.js";
+import { pushDeadLetter } from "../lib/deadLetter.js";
+import { withRetry } from "../lib/retry.js";
+export async function pushLeadToCRM(data) {
+    if (!config.crm.webhookUrl) {
         return;
     }
     try {
-        await (0, retry_1.withRetry)(async () => {
-            const response = await fetch(config_1.config.crm.webhookUrl, {
+        await withRetry(async () => {
+            const response = await fetch(config.crm.webhookUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(data),
@@ -21,7 +18,7 @@ async function pushLeadToCRM(data) {
         });
     }
     catch (error) {
-        await (0, deadLetter_1.pushDeadLetter)({
+        await pushDeadLetter({
             type: "partner_webhook",
             data,
             error: String(error),

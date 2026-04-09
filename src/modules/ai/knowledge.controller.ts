@@ -1,11 +1,11 @@
-import type { MulterRequest } from "../../types/multer";
+import type { MulterRequest } from "../../types/multer.js";
 import type { Request, Response } from "express";
 import fs from "fs";
 import readline from "readline";
 import multer from "multer";
 import { v4 as uuid } from "uuid";
-import { pool, runQuery } from "../../db";
-import { embedAndStore } from "./knowledge.service";
+import { pool, runQuery } from "../../db.js";
+import { embedAndStore } from "./knowledge.service.js";
 
 const uploadDir = "/tmp/uploads";
 if (!fs.existsSync(uploadDir)) {

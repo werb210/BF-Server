@@ -1,6 +1,6 @@
-import { dbQuery } from "../db";
-import type { AiKnowledgeSourceType } from "../models/aiKnowledge";
-import { logInfo } from "../observability/logger";
+import { dbQuery } from "../db.js";
+import type { AiKnowledgeSourceType } from "../models/aiKnowledge.js";
+import { logInfo } from "../observability/logger.js";
 
 type SaveKnowledgeInput = {
   title: string;

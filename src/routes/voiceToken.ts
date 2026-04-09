@@ -1,9 +1,9 @@
 import { Router } from "express";
 import AccessToken from "twilio/lib/jwt/AccessToken";
 import { VoiceGrant } from "twilio/lib/jwt/AccessToken";
-import { requireAuth } from "../middleware/auth";
-import { ROLES, type Role } from "../auth/roles";
-import { config } from "../config";
+import { requireAuth } from "../middleware/auth.js";
+import { ROLES, type Role } from "../auth/roles.js";
+import { config } from "../config/index.js";
 
 const router = Router();
 

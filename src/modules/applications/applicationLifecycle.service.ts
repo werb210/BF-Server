@@ -1,11 +1,11 @@
-import { AppError } from "../../middleware/errors";
+import { AppError } from "../../middleware/errors.js";
 import {
   ApplicationStage,
   LEGAL_TRANSITIONS,
   PIPELINE_STATES,
   type PipelineState,
   isPipelineState,
-} from "./pipelineState";
+} from "./pipelineState.js";
 
 const TERMINAL_APPLICATION_STATUSES = new Set([
   "completed",

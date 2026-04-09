@@ -1,22 +1,17 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = __importDefault(require("express"));
-const VoiceResponse_1 = __importDefault(require("twilio/lib/twiml/VoiceResponse"));
-const requireAuth_1 = require("../middleware/requireAuth");
-const validate_1 = require("../middleware/validate");
-const schemas_1 = require("../schemas");
-const respond_1 = require("../lib/respond");
-const router = express_1.default.Router();
+import express from "express";
+import VoiceResponse from "twilio/lib/twiml/VoiceResponse";
+import { requireAuth } from "../middleware/requireAuth.js";
+import { validate } from "../middleware/validate.js";
+import { CallStatusSchema } from "../schemas/index.js";
+import { ok as respondOk } from "../lib/respond.js";
+const router = express.Router();
 router.post("/incoming", (_req, res) => {
-    const voiceResponse = new VoiceResponse_1.default();
+    const voiceResponse = new VoiceResponse();
     voiceResponse.say("Connecting you to Maya.");
     voiceResponse.dial().client("maya-agent");
-    return (0, respond_1.ok)(res, voiceResponse.toString());
+    return respondOk(res, voiceResponse.toString());
 });
-router.post("/status", requireAuth_1.requireAuth, (0, validate_1.validate)(schemas_1.CallStatusSchema), (req, res) => {
-    return (0, respond_1.ok)(res, { received: true });
+router.post("/status", requireAuth, validate(CallStatusSchema), (req, res) => {
+    return respondOk(res, { received: true });
 });
-exports.default = router;
+export default router;

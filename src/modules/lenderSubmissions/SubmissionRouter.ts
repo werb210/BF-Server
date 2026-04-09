@@ -1,12 +1,12 @@
-import { config } from "../../config";
-import { type SubmissionAdapter, type SubmissionResult } from "./SubmissionAdapter";
+import { config } from "../../config/index.js";
+import { type SubmissionAdapter, type SubmissionResult } from "./SubmissionAdapter.js";
 import {
   GoogleSheetsAdapter,
   type GoogleSheetsPayload,
   type GoogleSheetsSubmissionConfig,
-} from "./googleSheets.adapter";
-import { EmailAdapter } from "./adapters/EmailAdapter";
-import { ApiAdapter } from "./adapters/ApiAdapter";
+} from "./googleSheets.adapter.js";
+import { EmailAdapter } from "./adapters/EmailAdapter.js";
+import { ApiAdapter } from "./adapters/ApiAdapter.js";
 
 export type SubmissionMethod = "google_sheet" | "email" | "api" | "manual";
 

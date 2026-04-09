@@ -1,21 +1,15 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.AIKnowledgeController = exports.upload = void 0;
-const fs_1 = __importDefault(require("fs"));
-const readline_1 = __importDefault(require("readline"));
-const multer_1 = __importDefault(require("multer"));
-const uuid_1 = require("uuid");
-const db_1 = require("../../db");
-const knowledge_service_1 = require("./knowledge.service");
+import fs from "fs";
+import readline from "readline";
+import multer from "multer";
+import { v4 as uuid } from "uuid";
+import { pool } from "../../db.js";
+import { embedAndStore } from "./knowledge.service.js";
 const uploadDir = "/tmp/uploads";
-if (!fs_1.default.existsSync(uploadDir)) {
-    fs_1.default.mkdirSync(uploadDir, { recursive: true });
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
 }
-const upload = (0, multer_1.default)({
-    storage: multer_1.default.diskStorage({
+const upload = multer({
+    storage: multer.diskStorage({
         destination: (_, __, cb) => cb(null, uploadDir),
         filename: (_, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
     }),
@@ -24,7 +18,7 @@ const upload = (0, multer_1.default)({
         files: 5,
     },
 });
-exports.upload = upload;
+export { upload };
 const knowledgeDocs = [];
 const MAX_KNOWLEDGE_DOCS = 500;
 function pushBounded(arr, item, maxItems = MAX_KNOWLEDGE_DOCS) {
@@ -34,11 +28,11 @@ function pushBounded(arr, item, maxItems = MAX_KNOWLEDGE_DOCS) {
     }
 }
 function cleanupFile(filePath) {
-    fs_1.default.unlink(filePath, () => undefined);
+    fs.unlink(filePath, () => undefined);
 }
-async function readTextPreview(filePath, maxChars = 200000) {
-    const stream = fs_1.default.createReadStream(filePath, { encoding: "utf8" });
-    const lineReader = readline_1.default.createInterface({ input: stream, crlfDelay: Infinity });
+async function readTextPreview(filePath, maxChars = 200_000) {
+    const stream = fs.createReadStream(filePath, { encoding: "utf8" });
+    const lineReader = readline.createInterface({ input: stream, crlfDelay: Infinity });
     let combined = "";
     for await (const line of lineReader) {
         if (combined.length >= maxChars) {
@@ -50,14 +44,14 @@ async function readTextPreview(filePath, maxChars = 200000) {
     stream.close();
     return combined.trim();
 }
-exports.AIKnowledgeController = {
+export const AIKnowledgeController = {
     async upload(req, res) {
         const file = req.file;
         if (!file) {
             res.status(400).json({ error: "No file uploaded" });
             return;
         }
-        const sheetId = (0, uuid_1.v4)();
+        const sheetId = uuid();
         pushBounded(knowledgeDocs, {
             id: sheetId,
             filename: file.originalname,
@@ -66,7 +60,7 @@ exports.AIKnowledgeController = {
         try {
             const extractedText = await readTextPreview(file.path);
             if (extractedText.length > 0) {
-                await (0, knowledge_service_1.embedAndStore)(db_1.pool, extractedText, "sheet", sheetId);
+                await embedAndStore(pool, extractedText, "sheet", sheetId);
             }
         }
         finally {

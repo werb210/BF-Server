@@ -1,30 +1,28 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const node_crypto_1 = require("node:crypto");
-const express_1 = require("express");
-const zod_1 = require("zod");
-const db_1 = require("../db");
-const config_1 = require("../config");
-const pipelineState_1 = require("../modules/applications/pipelineState");
-const sms_service_1 = require("../modules/notifications/sms.service");
-const continuation_1 = require("../models/continuation");
-const readinessSession_service_1 = require("../modules/readiness/readinessSession.service");
-const leadUpsert_service_1 = require("../modules/crm/leadUpsert.service");
-const retry_1 = require("../utils/retry");
-const logger_1 = require("../observability/logger");
-const clean_1 = require("../utils/clean");
-const router = (0, express_1.Router)();
-const payloadSchema = zod_1.z.object({
-    companyName: zod_1.z.string().min(1),
-    fullName: zod_1.z.string().min(1),
-    phone: zod_1.z.string().min(1),
-    email: zod_1.z.string().email(),
-    industry: zod_1.z.string().optional(),
-    yearsInBusiness: zod_1.z.union([zod_1.z.string(), zod_1.z.number()]).optional(),
-    monthlyRevenue: zod_1.z.union([zod_1.z.string(), zod_1.z.number()]).optional(),
-    annualRevenue: zod_1.z.union([zod_1.z.string(), zod_1.z.number()]).optional(),
-    arOutstanding: zod_1.z.union([zod_1.z.string(), zod_1.z.number()]).optional(),
-    existingDebt: zod_1.z.union([zod_1.z.string(), zod_1.z.boolean()]).optional(),
+import { randomUUID } from "node:crypto";
+import { Router } from "express";
+import { z } from "zod";
+import { db } from "../db.js";
+import { config } from "../config/index.js";
+import { ApplicationStage } from "../modules/applications/pipelineState.js";
+import { sendSms } from "../modules/notifications/sms.service.js";
+import { createContinuation } from "../models/continuation.js";
+import { createOrReuseReadinessSession } from "../modules/readiness/readinessSession.service.js";
+import { upsertCrmLead } from "../modules/crm/leadUpsert.service.js";
+import { retry } from "../utils/retry.js";
+import { logError } from "../observability/logger.js";
+import { stripUndefined, toNullable } from "../utils/clean.js";
+const router = Router();
+const payloadSchema = z.object({
+    companyName: z.string().min(1),
+    fullName: z.string().min(1),
+    phone: z.string().min(1),
+    email: z.string().email(),
+    industry: z.string().optional(),
+    yearsInBusiness: z.union([z.string(), z.number()]).optional(),
+    monthlyRevenue: z.union([z.string(), z.number()]).optional(),
+    annualRevenue: z.union([z.string(), z.number()]).optional(),
+    arOutstanding: z.union([z.string(), z.number()]).optional(),
+    existingDebt: z.union([z.string(), z.boolean()]).optional(),
 });
 router.post("/", async (req, res, next) => {
     const parsed = payloadSchema.safeParse(req.body);
@@ -33,14 +31,14 @@ router.post("/", async (req, res, next) => {
         return;
     }
     const { companyName, fullName, phone, email, industry, yearsInBusiness, monthlyRevenue, annualRevenue, arOutstanding, existingDebt, } = parsed.data;
-    const applicationId = (0, node_crypto_1.randomUUID)();
-    await db_1.db.query(`
+    const applicationId = randomUUID();
+    await db.query(`
       insert into applications
       (id, owner_user_id, name, metadata, product_type, pipeline_state, status, source, created_at, updated_at)
       values ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, now(), now())
     `, [
         applicationId,
-        config_1.config.client.submissionOwnerUserId,
+        config.client.submissionOwnerUserId,
         companyName,
         JSON.stringify({
             contactName: fullName,
@@ -54,27 +52,27 @@ router.post("/", async (req, res, next) => {
             existingDebt: existingDebt ?? null,
         }),
         "standard",
-        pipelineState_1.ApplicationStage.RECEIVED,
-        pipelineState_1.ApplicationStage.RECEIVED,
+        ApplicationStage.RECEIVED,
+        ApplicationStage.RECEIVED,
         "website_credit_readiness",
     ]);
-    const crmLead = await (0, leadUpsert_service_1.upsertCrmLead)((0, clean_1.stripUndefined)({
+    const crmLead = await upsertCrmLead(stripUndefined({
         companyName,
         fullName,
         phone,
         email,
         industry,
-        yearsInBusiness: (0, clean_1.toNullable)(yearsInBusiness),
-        monthlyRevenue: (0, clean_1.toNullable)(monthlyRevenue),
-        annualRevenue: (0, clean_1.toNullable)(annualRevenue),
-        arOutstanding: (0, clean_1.toNullable)(arOutstanding),
-        existingDebt: (0, clean_1.toNullable)(existingDebt),
+        yearsInBusiness: toNullable(yearsInBusiness),
+        monthlyRevenue: toNullable(monthlyRevenue),
+        annualRevenue: toNullable(annualRevenue),
+        arOutstanding: toNullable(arOutstanding),
+        existingDebt: toNullable(existingDebt),
         source: "website_credit_readiness",
         tags: ["readiness"],
         activityType: "credit_readiness_submission",
         activityPayload: { applicationId },
     }));
-    const readinessSession = await (0, readinessSession_service_1.createOrReuseReadinessSession)((0, clean_1.stripUndefined)({
+    const readinessSession = await createOrReuseReadinessSession(stripUndefined({
         companyName,
         fullName,
         phone,
@@ -86,12 +84,12 @@ router.post("/", async (req, res, next) => {
         arOutstanding,
         existingDebt,
     }));
-    const continuationToken = await (0, continuation_1.createContinuation)(applicationId);
-    await (0, retry_1.retry)(() => (0, sms_service_1.sendSms)({
+    const continuationToken = await createContinuation(applicationId);
+    await retry(() => sendSms({
         to: "+15878881837",
         message: `Credit Readiness: ${fullName} | ${phone} | ${industry ?? "N/A"} | Monthly ${monthlyRevenue ?? "N/A"} / Annual ${annualRevenue ?? "N/A"}`,
     }), 2).catch((error) => {
-        (0, logger_1.logError)("credit_readiness_sms_failed", {
+        logError("credit_readiness_sms_failed", {
             message: error instanceof Error ? error.message : String(error),
             email,
         });
@@ -104,4 +102,4 @@ router.post("/", async (req, res, next) => {
         crmLeadId: crmLead.id,
     });
 });
-exports.default = router;
+export default router;

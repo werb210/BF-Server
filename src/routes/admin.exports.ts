@@ -1,11 +1,11 @@
 import { Router, type Request } from "express";
-import { AppError } from "../middleware/errors";
-import { requireAuth, requireCapability } from "../middleware/auth";
-import { CAPABILITIES } from "../auth/capabilities";
-import { recordAuditEvent } from "../modules/audit/audit.service";
-import { logError } from "../observability/logger";
-import { safeHandler } from "../middleware/safeHandler";
-import { isKillSwitchEnabled } from "../modules/ops/ops.service";
+import { AppError } from "../middleware/errors.js";
+import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { CAPABILITIES } from "../auth/capabilities.js";
+import { recordAuditEvent } from "../modules/audit/audit.service.js";
+import { logError } from "../observability/logger.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { isKillSwitchEnabled } from "../modules/ops/ops.service.js";
 import {
   exportApplicationVolume,
   exportLenderPerformance,
@@ -13,7 +13,7 @@ import {
   recordExportAudit,
   type ExportFormat,
   type ExportFilters,
-} from "../modules/exports/export.service";
+} from "../modules/exports/export.service.js";
 
 const router = Router();
 

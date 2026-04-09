@@ -1,13 +1,13 @@
 import { Router, type Request } from "express";
-import { AppError } from "../../middleware/errors";
-import { recordAuditEvent } from "../audit/audit.service";
+import { AppError } from "../../middleware/errors.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
 import {
   enqueueOcrForApplication,
   enqueueOcrForDocument,
   fetchOcrJobStatus,
   fetchOcrResult,
   retryOcrJob,
-} from "./ocr.service";
+} from "./ocr.service.js";
 
 const router = Router();
 

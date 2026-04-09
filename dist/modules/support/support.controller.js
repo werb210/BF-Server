@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.SupportController = void 0;
-const uuid_1 = require("uuid");
+import { v4 as uuid } from "uuid";
 const supportSessions = [];
 const issueReports = [];
 const websiteEvents = [];
@@ -13,10 +10,10 @@ function pushBounded(arr, item) {
         arr.shift();
     }
 }
-exports.SupportController = {
+export const SupportController = {
     createSession(req, res) {
         const session = {
-            id: (0, uuid_1.v4)(),
+            id: uuid(),
             source: req.body.source ?? "website",
             createdAt: Date.now(),
             status: "open",
@@ -30,7 +27,7 @@ exports.SupportController = {
     createIssue(req, res) {
         const payload = req.body;
         const issue = {
-            id: (0, uuid_1.v4)(),
+            id: uuid(),
             description: payload.description,
             hasScreenshot: Boolean(payload.screenshot),
             createdAt: Date.now(),
@@ -43,7 +40,7 @@ exports.SupportController = {
     },
     createWebLead(req, res) {
         const lead = {
-            id: (0, uuid_1.v4)(),
+            id: uuid(),
             ...req.body,
             createdAt: Date.now(),
         };

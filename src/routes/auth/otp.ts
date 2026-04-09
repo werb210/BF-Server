@@ -1,9 +1,9 @@
 import express, { type Request, type Response } from "express";
-import { randomInt } from "crypto";
+import { randomInt } from "node:crypto";
 import jwt from "jsonwebtoken";
 
-import { getRedis } from "../../lib/redis";
-import { findAuthUserByPhone } from "../../modules/auth/auth.repo";
+import { getRedis } from "../../lib/redis.js";
+import { findAuthUserByPhone } from "../../modules/auth/auth.repo.js";
 
 const router = express.Router();
 

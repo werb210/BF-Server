@@ -1,8 +1,5 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.listDocumentMetrics = listDocumentMetrics;
-const db_1 = require("../../db");
-const reporting_utils_1 = require("./reporting.utils");
+import { pool } from "../../db.js";
+import { formatPeriod } from "./reporting.utils.js";
 function buildWhereClause(params) {
     const clauses = [];
     const values = [];
@@ -28,8 +25,8 @@ function periodExpression(groupBy) {
     }
     return "metric_date";
 }
-async function listDocumentMetrics(params) {
-    const runner = params.client ?? db_1.pool;
+export async function listDocumentMetrics(params) {
+    const runner = params.client ?? pool;
     const { clause, values } = buildWhereClause({
         column: "metric_date",
         from: params.from,
@@ -55,7 +52,7 @@ async function listDocumentMetrics(params) {
      order by period desc, document_type asc
      limit $${limitIndex} offset $${offsetIndex}`, [...values, params.limit, params.offset]);
     return res.rows.map((row) => ({
-        period: (0, reporting_utils_1.formatPeriod)(row.period),
+        period: formatPeriod(row.period),
         documentType: row.document_type,
         documentsUploaded: row.documents_uploaded,
         documentsReviewed: row.documents_reviewed,

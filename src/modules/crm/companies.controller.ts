@@ -1,8 +1,8 @@
 import { type Request, type Response } from "express";
-import { logError } from "../../observability/logger";
-import { respondOk } from "../../utils/respondOk";
-import { fetchCompanies, fetchCompanyById } from "./companies.service";
-import { toStringSafe } from "../../utils/toStringSafe";
+import { logError } from "../../observability/logger.js";
+import { respondOk } from "../../utils/respondOk.js";
+import { fetchCompanies, fetchCompanyById } from "./companies.service.js";
+import { toStringSafe } from "../../utils/toStringSafe.js";
 
 function logCrmError(event: string, error: unknown): void {
   logError(event, {

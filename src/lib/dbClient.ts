@@ -1,6 +1,6 @@
-import { canExecute, recordFailure } from './circuitBreaker';
-import { retry } from './retry';
-import { dbClient } from '../platform/dbClient';
+import { canExecute, recordFailure } from './circuitBreaker.js';
+import { retry } from './retry.js';
+import { dbClient } from '../platform/dbClient.js';
 
 export { dbClient };
 

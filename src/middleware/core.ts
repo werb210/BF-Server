@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
-import { requestId } from "./requestId";
-import { productionLogger, requireHttps, securityHeaders } from "./security";
+import { requestId } from "./requestId.js";
+import { productionLogger, requireHttps, securityHeaders } from "./security.js";
 
 export const coreMiddleware: RequestHandler[] = [
   requestId,

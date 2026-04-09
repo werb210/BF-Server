@@ -1,4 +1,4 @@
-import { ocrQueue } from "../../queue/ocrQueue"
+import { ocrQueue } from "../../queue/ocrQueue.js"
 
 export async function queueOCRJob(data:any){
 

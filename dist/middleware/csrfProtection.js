@@ -1,14 +1,11 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.csrfProtection = void 0;
-const config_1 = require("../config");
+import { config } from "../config/index.js";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 function normalizeOrigin(value) {
     return value.trim().replace(/\/$/, "").toLowerCase();
 }
 function fetchTrustedOrigins() {
-    const trustedOrigins = [config_1.config.client.url, config_1.config.portal.url, config_1.config.website.url];
-    if (config_1.config.env !== "production") {
+    const trustedOrigins = [config.client.url, config.portal.url, config.website.url];
+    if (config.env !== "production") {
         trustedOrigins.push("https://server.boreal.financial");
     }
     return new Set(trustedOrigins
@@ -20,7 +17,7 @@ function isCsrfExemptPath(path) {
         path.startsWith("/api/webhooks") ||
         path.startsWith("/api/voice"));
 }
-const csrfProtection = (req, res, next) => {
+export const csrfProtection = (req, res, next) => {
     if (SAFE_METHODS.has(req.method.toUpperCase())) {
         next();
         return;
@@ -61,4 +58,3 @@ const csrfProtection = (req, res, next) => {
     }
     next();
 };
-exports.csrfProtection = csrfProtection;

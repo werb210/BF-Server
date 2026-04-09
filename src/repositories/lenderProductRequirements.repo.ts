@@ -1,7 +1,7 @@
-import { randomUUID } from "crypto";
-import { pool, runQuery } from "../db";
+import { randomUUID } from "node:crypto";
+import { pool, runQuery } from "../db.js";
 import { type PoolClient } from "pg";
-import { type LenderProductRequirementRecord } from "../db/schema/lenderProductRequirements";
+import { type LenderProductRequirementRecord } from "../db/schema/lenderProductRequirements.js";
 
 export type RequirementSeedInput = {
   documentType: string;

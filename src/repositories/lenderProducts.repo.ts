@@ -1,13 +1,13 @@
-import { toStringSet } from "../utils/collectionSafe";
-import { randomUUID } from "crypto";
-import { pool, runQuery } from "../db";
+import { toStringSet } from "../utils/collectionSafe.js";
+import { randomUUID } from "node:crypto";
+import { pool, runQuery } from "../db.js";
 import { type PoolClient } from "pg";
 import {
   type LenderProductRecord,
   type RequiredDocuments,
-} from "../db/schema/lenderProducts";
-import { AppError } from "../middleware/errors";
-import { logError } from "../observability/logger";
+} from "../db/schema/lenderProducts.js";
+import { AppError } from "../middleware/errors.js";
+import { logError } from "../observability/logger.js";
 
 type Queryable = Pick<PoolClient, "query" | "runQuery">;
 

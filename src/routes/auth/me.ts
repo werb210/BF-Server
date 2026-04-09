@@ -1,9 +1,9 @@
 import { type Request, type Response } from "express";
-import { DEFAULT_AUTH_SILO } from "../../auth/silo";
-import { fetchRequestId } from "../../observability/requestContext";
-import { findAuthUserById } from "../../modules/auth/auth.repo";
-import { logError } from "../../observability/logger";
-import { validateAuthMe } from "../../validation/auth.validation";
+import { DEFAULT_AUTH_SILO } from "../../auth/silo.js";
+import { fetchRequestId } from "../../observability/requestContext.js";
+import { findAuthUserById } from "../../modules/auth/auth.repo.js";
+import { logError } from "../../observability/logger.js";
+import { validateAuthMe } from "../../validation/auth.validation.js";
 
 function fetchAuthRequestId(res: Response): string {
   return res.locals.requestId ?? fetchRequestId() ?? "unknown";

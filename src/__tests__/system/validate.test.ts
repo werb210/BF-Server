@@ -1,4 +1,4 @@
-import { optionalString, requireString } from "../../system/validate";
+import { optionalString, requireString } from "../../system/validate.js";
 
 describe("system/validate", () => {
   it("throws INVALID_* with status 400 for invalid required strings", () => {

@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.fetchContacts = fetchContacts;
-const contacts_repo_1 = require("./contacts.repo");
+import { listContacts } from "./contacts.repo.js";
 function normalizeContact(row) {
     const owner = row.owner_record_id !== null
         ? {
@@ -29,8 +26,8 @@ function normalizeContact(row) {
         owner,
     };
 }
-async function fetchContacts(params) {
-    const rows = await (0, contacts_repo_1.listContacts)({
+export async function fetchContacts(params) {
+    const rows = await listContacts({
         ...(params.companyId !== undefined ? { companyId: params.companyId } : {}),
     });
     if (rows.length === 0) {

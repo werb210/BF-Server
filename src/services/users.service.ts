@@ -1,10 +1,10 @@
 import { Request, Response } from "express";
-import { db } from "../db";
+import { db } from "../db.js";
 import { z } from "zod";
-import { AppError } from "../middleware/errors";
-import { normalizeRole } from "../auth/roles";
-import { createUserAccount } from "../modules/auth/auth.service";
-import { setUserStatus } from "../modules/users/users.service";
+import { AppError } from "../middleware/errors.js";
+import { normalizeRole } from "../auth/roles.js";
+import { createUserAccount } from "../modules/auth/auth.service.js";
+import { setUserStatus } from "../modules/users/users.service.js";
 
 /**
  * Schemas
@@ -134,7 +134,7 @@ export async function updateMe(req: Request, res: Response) {
       return;
     }
 
-    const fields = [];
+    const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
 
@@ -166,7 +166,7 @@ export async function updateMe(req: Request, res: Response) {
 export async function listUsers(req: Request, res: Response) {
   const { role, status } = req.query;
 
-  const filters = [];
+  const filters: string[] = [];
   const values: any[] = [];
   let idx = 1;
 
@@ -221,7 +221,7 @@ export async function adminUpdateUser(req: Request, res: Response) {
       return;
     }
 
-    const fields = [];
+    const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
 

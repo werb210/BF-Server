@@ -1,20 +1,20 @@
-import { AppError } from "../../middleware/errors";
-import { createHash } from "crypto";
-import { recordAuditEvent } from "../audit/audit.service";
-import { pool, runQuery } from "../../db";
+import { AppError } from "../../middleware/errors.js";
+import { createHash } from "node:crypto";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { pool, runQuery } from "../../db.js";
 import { type PoolClient } from "pg";
 import {
   findApplicationById,
   listLatestAcceptedDocumentVersions,
   updateApplicationStatus,
-} from "../applications/applications.repo";
-import { ApplicationStage, isPipelineState } from "../applications/pipelineState";
-import { transitionPipelineState } from "../applications/applications.service";
-import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService";
+} from "../applications/applications.repo.js";
+import { ApplicationStage, isPipelineState } from "../applications/pipelineState.js";
+import { transitionPipelineState } from "../applications/applications.service.js";
+import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService.js";
 import {
   fetchDocumentTypeAliases,
   normalizeRequiredDocumentKey,
-} from "../../db/schema/requiredDocuments";
+} from "../../db/schema/requiredDocuments.js";
 import {
   createSubmission,
   createSubmissionEvent,
@@ -25,18 +25,18 @@ import {
   findSubmissionRetryState,
   updateSubmissionStatus,
   upsertSubmissionRetryState,
-} from "./lender.repo";
-import { config } from "../../config";
-import { isKillSwitchEnabled } from "../ops/ops.service";
-import { logInfo, logWarn } from "../../observability/logger";
-import { recordTransactionRollback } from "../../observability/transactionTelemetry";
-import { isTestEnvironment } from "../../dbRuntime";
+} from "./lender.repo.js";
+import { config } from "../../config/index.js";
+import { isKillSwitchEnabled } from "../ops/ops.service.js";
+import { logInfo, logWarn } from "../../observability/logger.js";
+import { recordTransactionRollback } from "../../observability/transactionTelemetry.js";
+import { isTestEnvironment } from "../../dbRuntime.js";
 import {
   type SubmissionMethod,
   SubmissionRouter,
   normalizeSubmissionMethod,
   resolveSubmissionProfile,
-} from "../submissions/SubmissionRouter";
+} from "../submissions/SubmissionRouter.js";
 
 type Queryable = Pick<PoolClient, "query" | "runQuery">;
 

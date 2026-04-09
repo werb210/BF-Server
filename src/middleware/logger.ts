@@ -1,1 +1,1 @@
-export { requestLogger as default } from "./requestLogger";
+export { requestLogger as default } from "./requestLogger.js";

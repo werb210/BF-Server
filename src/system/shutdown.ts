@@ -1,5 +1,5 @@
 import type { Server } from "http";
-import { pool, runQuery } from "../db";
+import { pool, runQuery } from "../db.js";
 
 export function setupShutdown(server: Server) {
   const shutdown = async () => {

@@ -1,8 +1,8 @@
 import { type Request, type Response } from "express";
-import { AppError, forbiddenError } from "../../middleware/errors";
-import { type Role, isRole, ROLES } from "../../auth/roles";
-import { fetchProcessingStatus } from "./applications.service";
-import { toStringSafe } from "../../utils/toStringSafe";
+import { AppError, forbiddenError } from "../../middleware/errors.js";
+import { type Role, isRole, ROLES } from "../../auth/roles.js";
+import { fetchProcessingStatus } from "./applications.service.js";
+import { toStringSafe } from "../../utils/toStringSafe.js";
 
 const STAFF_ROLES = new Set<Role>([ROLES.ADMIN, ROLES.STAFF, ROLES.OPS]);
 

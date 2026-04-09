@@ -1,6 +1,6 @@
-import { pool, runQuery } from "./db";
-import { logger } from "./platform/logger";
-import { config } from "./config";
+import { pool, runQuery } from "./db.js";
+import { logger } from "./platform/logger.js";
+import { config } from "./config/index.js";
 
 export function isTestEnv(): boolean {
   return config.env === "test";

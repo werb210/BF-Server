@@ -1,9 +1,9 @@
-import { randomUUID } from "crypto";
-import { pool, runQuery } from "../../db";
-import { ApplicationStage } from "./pipelineState";
+import { randomUUID } from "node:crypto";
+import { pool, runQuery } from "../../db.js";
+import { ApplicationStage } from "./pipelineState.js";
 import { type PoolClient } from "pg";
-import { logError } from "../../observability/logger";
-import { AppError } from "../../middleware/errors";
+import { logError } from "../../observability/logger.js";
+import { AppError } from "../../middleware/errors.js";
 
 type Queryable = Pick<PoolClient, "query" | "runQuery">;
 

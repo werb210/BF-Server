@@ -1,15 +1,10 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const crypto_1 = __importDefault(require("crypto"));
-const express_1 = require("express");
-const config_1 = require("../config");
-const dbClient_1 = require("../lib/dbClient");
-const redis_1 = require("../lib/redis");
-const otpService_1 = require("../services/otpService");
-const systemCheckRouter = (0, express_1.Router)();
+import crypto from "node:crypto";
+import { Router } from "express";
+import { config } from "../config/index.js";
+import { pool } from "../lib/dbClient.js";
+import { getRedisOrNull } from "../lib/redis.js";
+import { fetchOtp, storeOtp } from "../services/otpService.js";
+const systemCheckRouter = Router();
 function toErrorMessage(error) {
     if (error instanceof Error && error.message) {
         return error.message;
@@ -25,14 +20,14 @@ systemCheckRouter.get("/system-check", async (_req, res) => {
         otp: { status: "fail", stored: null, expected: "654321" },
         redis: { status: "missing" },
         env: {
-            db: Boolean(config_1.config.db.host?.trim()),
-            dbSsl: String(config_1.config.db.ssl ?? "").trim().toLowerCase() === "true",
-            redis: Boolean(config_1.config.redis.url?.trim()),
-            jwt: Boolean(config_1.config.jwt.secret?.trim()),
+            db: Boolean(config.db.host?.trim()),
+            dbSsl: String(config.db.ssl ?? "").trim().toLowerCase() === "true",
+            redis: Boolean(config.redis.url?.trim()),
+            jwt: Boolean(config.jwt.secret?.trim()),
         },
     };
     try {
-        await dbClient_1.pool.query("SELECT 1");
+        await pool.query("SELECT 1");
         tests.db.status = "ok";
     }
     catch (error) {
@@ -40,19 +35,19 @@ systemCheckRouter.get("/system-check", async (_req, res) => {
     }
     let userId = null;
     try {
-        userId = crypto_1.default.randomUUID();
+        userId = crypto.randomUUID();
         const email = `system-check+${Date.now()}@example.com`;
-        await dbClient_1.pool.query(`
+        await pool.query(`
         INSERT INTO users (id, email, password_hash, role, active)
         VALUES ($1, $2, $3, $4, $5)
       `, [userId, email, "system-check", "admin", true]);
-        const read = await dbClient_1.pool.query(`
+        const read = await pool.query(`
         SELECT id
         FROM users
         WHERE id = $1
         LIMIT 1
       `, [userId]);
-        await dbClient_1.pool.query("DELETE FROM users WHERE id = $1", [userId]);
+        await pool.query("DELETE FROM users WHERE id = $1", [userId]);
         userId = null;
         tests.users.status = (read.rowCount ?? 0) > 0 ? "ok" : "fail";
         if (tests.users.status === "fail") {
@@ -63,7 +58,7 @@ systemCheckRouter.get("/system-check", async (_req, res) => {
         tests.users = { status: "fail", error: toErrorMessage(error) };
         if (userId) {
             try {
-                await dbClient_1.pool.query("DELETE FROM users WHERE id = $1", [userId]);
+                await pool.query("DELETE FROM users WHERE id = $1", [userId]);
             }
             catch {
                 // best-effort cleanup
@@ -71,14 +66,14 @@ systemCheckRouter.get("/system-check", async (_req, res) => {
         }
     }
     try {
-        const result = await dbClient_1.pool.query("SELECT count(*)::int AS count FROM lenders");
+        const result = await pool.query("SELECT count(*)::int AS count FROM lenders");
         tests.lenders = { status: "ok", count: result.rows[0]?.count ?? 0 };
     }
     catch (error) {
         tests.lenders = { status: "fail", error: toErrorMessage(error) };
     }
     try {
-        const result = await dbClient_1.pool.query("SELECT count(*)::int AS count FROM lender_products");
+        const result = await pool.query("SELECT count(*)::int AS count FROM lender_products");
         tests.products = { status: "ok", count: result.rows[0]?.count ?? 0 };
     }
     catch (error) {
@@ -87,8 +82,8 @@ systemCheckRouter.get("/system-check", async (_req, res) => {
     try {
         const phone = "+15555550123";
         const expected = tests.otp.expected;
-        await (0, otpService_1.storeOtp)(phone, expected);
-        const stored = await (0, otpService_1.fetchOtp)(phone);
+        await storeOtp(phone, expected);
+        const stored = await fetchOtp(phone);
         tests.otp.stored = stored;
         tests.otp.status = stored === expected ? "ok" : "fail";
     }
@@ -100,7 +95,7 @@ systemCheckRouter.get("/system-check", async (_req, res) => {
             error: toErrorMessage(error),
         };
     }
-    const redis = (0, redis_1.getRedisOrNull)();
+    const redis = getRedisOrNull();
     if (!redis) {
         tests.redis.status = "missing";
     }
@@ -133,4 +128,4 @@ systemCheckRouter.get("/system-check", async (_req, res) => {
         tests,
     });
 });
-exports.default = systemCheckRouter;
+export default systemCheckRouter;

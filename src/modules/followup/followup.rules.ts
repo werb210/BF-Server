@@ -1,4 +1,4 @@
-import { type FollowUpRule } from "./followup.types";
+import { type FollowUpRule } from "./followup.types.js";
 
 export const followUpRules: FollowUpRule[] = [
   {

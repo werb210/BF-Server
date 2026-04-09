@@ -1,7 +1,7 @@
 import { type Request, type Response } from "express";
-import { logError } from "../../observability/logger";
-import { respondOk } from "../../utils/respondOk";
-import { fetchCommunications, fetchMessageFeed } from "./communications.service";
+import { logError } from "../../observability/logger.js";
+import { respondOk } from "../../utils/respondOk.js";
+import { fetchCommunications, fetchMessageFeed } from "./communications.service.js";
 
 function logCommunicationsError(event: string, error: unknown): void {
   logError(event, {

@@ -1,8 +1,8 @@
 import type { Server } from "http";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { WebSocketServer, type RawData, type WebSocket } from "ws";
-import { pool, runQuery } from "../../db";
-import { logError, logInfo } from "../../observability/logger";
+import { pool, runQuery } from "../../db.js";
+import { logError, logInfo } from "../../observability/logger.js";
 
 type SessionSocket = WebSocket & { sessionId?: string; isAlive?: boolean; role?: "client" | "staff"; userId?: string };
 

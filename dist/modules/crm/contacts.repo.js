@@ -1,10 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.listContacts = listContacts;
-exports.createContact = createContact;
-const db_1 = require("../../db");
-async function listContacts(params) {
-    const runner = params.client ?? db_1.pool;
+import { pool } from "../../db.js";
+export async function listContacts(params) {
+    const runner = params.client ?? pool;
     const values = [];
     const conditions = [];
     if (params.companyId) {
@@ -35,8 +31,8 @@ async function listContacts(params) {
     `, values);
     return result.rows.length > 0 ? result.rows : [];
 }
-async function createContact(params) {
-    const runner = params.client ?? db_1.pool;
+export async function createContact(params) {
+    const runner = params.client ?? pool;
     const result = await runner.query(`
       insert into contacts
       (id, name, email, phone, status, company_id, owner_id, referrer_id, created_at, updated_at)

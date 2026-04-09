@@ -1,4 +1,4 @@
-import { db } from "../../db";
+import { db } from "../../db.js";
 
 let migrationPromise: Promise<void> | null = null;
 

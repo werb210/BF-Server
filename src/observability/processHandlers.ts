@@ -1,6 +1,6 @@
-import { logError } from "./logger";
-import { trackException } from "./appInsights";
-import { isDbConnectionFailure } from "../dbRuntime";
+import { logError } from "./logger.js";
+import { trackException } from "./appInsights.js";
+import { isDbConnectionFailure } from "../dbRuntime.js";
 
 let handlersInstalled = false;
 

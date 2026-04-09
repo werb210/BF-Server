@@ -1,9 +1,9 @@
 import OpenAI from "openai";
-import { db } from "../../db";
-import { retrieveRelevantContext } from "./retrievalService";
-import { config } from "../../config";
-import { withRetry } from "../../lib/retry";
-import { pushDeadLetter } from "../../lib/deadLetter";
+import { db } from "../../db.js";
+import { retrieveRelevantContext } from "./retrievalService.js";
+import { config } from "../../config/index.js";
+import { withRetry } from "../../lib/retry.js";
+import { pushDeadLetter } from "../../lib/deadLetter.js";
 
 const client = new OpenAI({
   apiKey: config.openai.apiKey || "test-openai-key",

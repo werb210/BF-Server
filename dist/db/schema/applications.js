@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.APPLICATIONS_PARTIAL_UNIQUE_INDEXES = void 0;
-exports.APPLICATIONS_PARTIAL_UNIQUE_INDEXES = [
+export const APPLICATIONS_PARTIAL_UNIQUE_INDEXES = [
     {
         name: "applications_submission_key_unique",
         columns: ["submission_key"],

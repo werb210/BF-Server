@@ -1,12 +1,6 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.logger = void 0;
-const pino_1 = __importDefault(require("pino"));
-const requestContext_1 = require("../observability/requestContext");
-const config_1 = require("../config");
+import pino from "pino";
+import { fetchRequestId } from "../observability/requestContext.js";
+import { config } from "../config/index.js";
 const SENSITIVE_FIELD_PATTERN = /(email|phone|ssn|password|token|secret|address)/i;
 function sanitizeValue(value) {
     if (Array.isArray(value)) {
@@ -25,17 +19,17 @@ function sanitizeObject(payload) {
         return [key, sanitizeValue(value)];
     }));
 }
-const base = (0, pino_1.default)({
-    level: config_1.config.logLevel ?? "info",
+const base = pino({
+    level: config.logLevel ?? "info",
 });
-exports.logger = {
+export const logger = {
     info: (msg, extra = {}) => {
-        base.info({ ...sanitizeObject(extra), requestId: (0, requestContext_1.fetchRequestId)() }, msg);
+        base.info({ ...sanitizeObject(extra), requestId: fetchRequestId() }, msg);
     },
     warn: (msg, extra = {}) => {
-        base.warn({ ...sanitizeObject(extra), requestId: (0, requestContext_1.fetchRequestId)() }, msg);
+        base.warn({ ...sanitizeObject(extra), requestId: fetchRequestId() }, msg);
     },
     error: (msg, extra = {}) => {
-        base.error({ ...sanitizeObject(extra), requestId: (0, requestContext_1.fetchRequestId)() }, msg);
+        base.error({ ...sanitizeObject(extra), requestId: fetchRequestId() }, msg);
     },
 };

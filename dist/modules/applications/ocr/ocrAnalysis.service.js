@@ -1,13 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.analyzeOcrFields = analyzeOcrFields;
-exports.analyzeOcrForApplication = analyzeOcrForApplication;
-exports.fetchOcrInsightsForApplication = fetchOcrInsightsForApplication;
-exports.isNumericOcrField = isNumericOcrField;
-exports.refreshOcrInsightsForApplication = refreshOcrInsightsForApplication;
-const ocrFieldRegistry_1 = require("../../ocr/ocrFieldRegistry");
-const ocr_repo_1 = require("../../ocr/ocr.repo");
-const applications_repo_1 = require("../applications.repo");
+import { fetchOcrFieldDefinitionByKey, fetchOcrFieldRegistry, } from "../../ocr/ocrFieldRegistry.js";
+import { listOcrFieldsForApplication } from "../../ocr/ocr.repo.js";
+import { updateApplicationOcrInsights } from "../applications.repo.js";
 const NUMERIC_FIELDS = new Set([
     "total_revenue",
     "net_income",
@@ -49,8 +42,8 @@ function isNumericField(field) {
 function toSortedUnique(values) {
     return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
 }
-function analyzeOcrFields(params) {
-    const registry = (0, ocrFieldRegistry_1.fetchOcrFieldRegistry)();
+export function analyzeOcrFields(params) {
+    const registry = fetchOcrFieldRegistry();
     const valuesByField = new Map();
     params.entries.forEach((entry) => {
         const normalized = normalizeTextValue(entry.value);
@@ -106,8 +99,8 @@ function analyzeOcrFields(params) {
         warnings: toSortedUnique(warnings),
     };
 }
-async function analyzeOcrForApplication(applicationId) {
-    const rows = await (0, ocr_repo_1.listOcrFieldsForApplication)(applicationId);
+export async function analyzeOcrForApplication(applicationId) {
+    const rows = await listOcrFieldsForApplication(applicationId);
     return analyzeOcrFields({
         entries: rows.map((row) => ({
             fieldKey: row.field_key,
@@ -121,8 +114,8 @@ function fetchFieldCategories(field) {
     }
     return field.applies_to.length > 0 ? field.applies_to : ["general"];
 }
-async function fetchOcrInsightsForApplication(applicationId) {
-    const rows = await (0, ocr_repo_1.listOcrFieldsForApplication)(applicationId);
+export async function fetchOcrInsightsForApplication(applicationId) {
+    const rows = await listOcrFieldsForApplication(applicationId);
     const summary = analyzeOcrFields({
         entries: rows.map((row) => ({ fieldKey: row.field_key, value: row.value })),
     });
@@ -164,7 +157,7 @@ async function fetchOcrInsightsForApplication(applicationId) {
         }
     });
     const groupedByFieldCategory = {};
-    const registry = (0, ocrFieldRegistry_1.fetchOcrFieldRegistry)();
+    const registry = fetchOcrFieldRegistry();
     const registryByKey = new Map(registry.map((field) => [field.field_key, field]));
     Object.entries(fields).forEach(([fieldKey, insight]) => {
         const field = registryByKey.get(fieldKey);
@@ -200,10 +193,10 @@ async function fetchOcrInsightsForApplication(applicationId) {
         groupedByFieldCategory,
     };
 }
-function isNumericOcrField(fieldKey) {
-    return isNumericField((0, ocrFieldRegistry_1.fetchOcrFieldDefinitionByKey)(fieldKey));
+export function isNumericOcrField(fieldKey) {
+    return isNumericField(fetchOcrFieldDefinitionByKey(fieldKey));
 }
-async function refreshOcrInsightsForApplication(applicationId) {
+export async function refreshOcrInsightsForApplication(applicationId) {
     const insights = await fetchOcrInsightsForApplication(applicationId);
     const normalizedValues = {};
     Object.entries(insights.fields).forEach(([key, field]) => {
@@ -212,7 +205,7 @@ async function refreshOcrInsightsForApplication(applicationId) {
             normalizedValues[key] = normalized;
         }
     });
-    await (0, applications_repo_1.updateApplicationOcrInsights)({
+    await updateApplicationOcrInsights({
         applicationId,
         missingFields: insights.missingFields,
         conflictingFields: insights.conflictingFields,

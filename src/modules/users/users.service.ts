@@ -1,14 +1,14 @@
-import { AppError } from "../../middleware/errors";
-import { recordAuditEvent } from "../audit/audit.service";
+import { AppError } from "../../middleware/errors.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
 import {
   findAuthUserById,
   incrementTokenVersion,
   revokeRefreshTokensForUser,
   setUserActive,
   updateUserRoleById,
-} from "../auth/auth.repo";
-import { type Role } from "../../auth/roles";
-import { pool, runQuery } from "../../db";
+} from "../auth/auth.repo.js";
+import { type Role } from "../../auth/roles.js";
+import { pool, runQuery } from "../../db.js";
 
 export async function setUserStatus(params: {
   userId: string;

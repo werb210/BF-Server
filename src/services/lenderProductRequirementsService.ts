@@ -1,12 +1,12 @@
-import { config } from "../config";
-import { AppError } from "../middleware/errors";
-import { logInfo, logWarn } from "../observability/logger";
-import { pool, runQuery } from "../db";
-import { randomUUID } from "crypto";
+import { config } from "../config/index.js";
+import { AppError } from "../middleware/errors.js";
+import { logInfo, logWarn } from "../observability/logger.js";
+import { pool, runQuery } from "../db.js";
+import { randomUUID } from "node:crypto";
 import {
   ALWAYS_REQUIRED_DOCUMENTS,
   normalizeRequiredDocumentKey,
-} from "../db/schema/requiredDocuments";
+} from "../db/schema/requiredDocuments.js";
 
 export type LenderProductRequirement = {
   id: string;

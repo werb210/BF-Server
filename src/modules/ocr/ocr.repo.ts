@@ -1,13 +1,13 @@
-import { randomUUID } from "crypto";
-import { pool, runQuery } from "../../db";
+import { randomUUID } from "node:crypto";
+import { pool, runQuery } from "../../db.js";
 import { type PoolClient } from "pg";
-import { config } from "../../config";
+import { config } from "../../config/index.js";
 import {
   type OcrDocumentResultRecord,
   type OcrJobRecord,
   type OcrJobStatus,
   type OcrResultRecord,
-} from "./ocr.types";
+} from "./ocr.types.js";
 
 export type Queryable = Pick<PoolClient, "query" | "runQuery">;
 

@@ -1,18 +1,11 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.LIST_LENDERS_SQL = void 0;
-exports.listLenders = listLenders;
-exports.fetchLenderById = fetchLenderById;
-exports.createLender = createLender;
-exports.updateLender = updateLender;
-const crypto_1 = require("crypto");
-const db_1 = require("../db");
-const errors_1 = require("../middleware/errors");
-const logger_1 = require("../observability/logger");
+import { randomUUID } from "node:crypto";
+import { runQuery } from "../db.js";
+import { AppError } from "../middleware/errors.js";
+import { logError } from "../observability/logger.js";
 const LENDERS_REPO = "src/repositories/lenders.repo.ts";
 const LENDERS_TABLE = "lenders";
 async function fetchLenderColumns() {
-    const result = await (0, db_1.runQuery)(`select column_name
+    const result = await runQuery(`select column_name
      from information_schema.columns
      where table_schema = 'public'
        and table_name = $1`, [LENDERS_TABLE]);
@@ -26,7 +19,7 @@ async function assertLenderColumnsExist(params) {
         const missingRequired = required.filter((column) => !existing.has(column));
         if (missing.length > 0) {
             for (const column of missing) {
-                (0, logger_1.logError)("schema_column_missing", {
+                logError("schema_column_missing", {
                     route: params.route,
                     repository: LENDERS_REPO,
                     column,
@@ -35,22 +28,22 @@ async function assertLenderColumnsExist(params) {
             }
         }
         if (missingRequired.length > 0) {
-            throw new errors_1.AppError("db_schema_error", `Missing required columns on ${LENDERS_TABLE}: ${missingRequired.join(", ")}`, 500);
+            throw new AppError("db_schema_error", `Missing required columns on ${LENDERS_TABLE}: ${missingRequired.join(", ")}`, 500);
         }
         return { existing, missing };
     }
     catch (err) {
-        if (err instanceof errors_1.AppError) {
+        if (err instanceof AppError) {
             throw err;
         }
-        (0, logger_1.logError)("schema_column_check_failed", {
+        logError("schema_column_check_failed", {
             route: params.route,
             repository: LENDERS_REPO,
             table: LENDERS_TABLE,
             stack: err instanceof Error ? err.stack : undefined,
         });
         const error = err instanceof Error ? err : new Error("Unknown schema error.");
-        const appError = new errors_1.AppError("db_error", error.message, 500);
+        const appError = new AppError("db_error", error.message, 500);
         if (error.stack) {
             appError.stack = error.stack;
         }
@@ -86,7 +79,7 @@ function buildSelectColumns(existing) {
     })
         .join(", ");
 }
-exports.LIST_LENDERS_SQL = `
+export const LIST_LENDERS_SQL = `
   SELECT
     id,
     name,
@@ -102,7 +95,7 @@ exports.LIST_LENDERS_SQL = `
   FROM lenders
   ORDER BY created_at DESC
 `;
-async function listLenders(db) {
+export async function listLenders(db) {
     const existing = await fetchLenderColumns();
     const selectColumns = buildSelectColumns(existing);
     const { rows } = await db.query(`
@@ -113,7 +106,7 @@ async function listLenders(db) {
   `);
     return rows;
 }
-async function fetchLenderById(id) {
+export async function fetchLenderById(id) {
     const check = await assertLenderColumnsExist({
         route: "/api/lenders/:id",
         columns: [
@@ -137,7 +130,7 @@ async function fetchLenderById(id) {
         required: ["id", "name", "country"],
     });
     const selectColumns = buildSelectColumns(check.existing);
-    const result = await (0, db_1.runQuery)(`
+    const result = await runQuery(`
     SELECT
       ${selectColumns}
     FROM lenders
@@ -147,7 +140,7 @@ async function fetchLenderById(id) {
     const rows = result.rows;
     return rows[0] ?? null;
 }
-async function createLender(db, input) {
+export async function createLender(db, input) {
     const { name, country, email, primary_contact_name, primary_contact_email, primary_contact_phone, submission_email, api_config, submission_config, website, } = input;
     const existingColumns = await fetchLenderColumns();
     const includeActive = existingColumns.has("active");
@@ -240,7 +233,7 @@ async function createLender(db, input) {
         const message = err.message ?? "";
         if (code === "42883" || message.includes("gen_random_uuid")) {
             const adjustedColumns = filteredColumns.map((entry) => entry.raw
-                ? { name: entry.name, value: (0, crypto_1.randomUUID)() }
+                ? { name: entry.name, value: randomUUID() }
                 : entry);
             const columnNames = adjustedColumns.map((entry) => entry.name);
             const { values, placeholders } = buildInsert(adjustedColumns);
@@ -258,7 +251,7 @@ async function createLender(db, input) {
         throw err;
     }
 }
-async function updateLender(db, params) {
+export async function updateLender(db, params) {
     const existingColumns = await fetchLenderColumns();
     const updates = [];
     const normalizedStatus = typeof params.status === "string"

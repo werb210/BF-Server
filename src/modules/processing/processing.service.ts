@@ -1,12 +1,12 @@
-import { pool, runQuery } from "../../db";
-import { AppError } from "../../middleware/errors";
-import { fetchDocumentTypeAliases } from "../../db/schema/requiredDocuments";
-import { advanceProcessingStage } from "../applications/processingStage.service";
+import { pool, runQuery } from "../../db.js";
+import { AppError } from "../../middleware/errors.js";
+import { fetchDocumentTypeAliases } from "../../db/schema/requiredDocuments.js";
+import { advanceProcessingStage } from "../applications/processingStage.service.js";
 import type { PoolClient } from "pg";
-import { randomUUID } from "crypto";
-import { fetchCircuitBreaker } from "../../utils/circuitBreaker";
-import { config } from "../../config";
-import { assertRetryAllowed } from "./retryPolicy";
+import { randomUUID } from "node:crypto";
+import { fetchCircuitBreaker } from "../../utils/circuitBreaker.js";
+import { config } from "../../config/index.js";
+import { assertRetryAllowed } from "./retryPolicy.js";
 
 const BANK_STATEMENT_CATEGORY = "bank_statements_6_months";
 const OCR_BREAKER = fetchCircuitBreaker("ocr_job_creation", {

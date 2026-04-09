@@ -1,6 +1,6 @@
 import { type NextFunction, type Request, type Response } from "express";
-import { log } from "./logger";
-import { incErr } from "./metrics";
+import { log } from "./logger.js";
+import { incErr } from "./metrics.js";
 
 export function access() {
   return (req: Request, res: Response, next: NextFunction): void => {

@@ -1,5 +1,5 @@
 import fs from "fs";
-import crypto from "crypto";
+import crypto from "node:crypto";
 
 export function sha256File(filePath: string): Promise<string> {
   const hash = crypto.createHash("sha256");

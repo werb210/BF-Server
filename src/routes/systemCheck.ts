@@ -1,10 +1,10 @@
-import crypto from "crypto";
+import crypto from "node:crypto";
 import { Router } from "express";
-import { config } from "../config";
+import { config } from "../config/index.js";
 
-import { pool } from "../lib/dbClient";
-import { getRedisOrNull } from "../lib/redis";
-import { fetchOtp, storeOtp } from "../services/otpService";
+import { pool } from "../lib/dbClient.js";
+import { getRedisOrNull } from "../lib/redis.js";
+import { fetchOtp, storeOtp } from "../services/otpService.js";
 
 type TestStatus = "ok" | "fail";
 type RedisStatus = TestStatus | "missing";

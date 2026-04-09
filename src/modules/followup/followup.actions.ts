@@ -1,14 +1,14 @@
-import { randomUUID } from "crypto";
-import { logError, logWarn } from "../../observability/logger";
-import { recordAuditEvent } from "../audit/audit.service";
+import { randomUUID } from "node:crypto";
+import { logError, logWarn } from "../../observability/logger.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
 import {
   type FollowUpAction,
   type FollowUpActionResult,
   type FollowUpActionHandlers,
   type FollowUpTimelineEntry,
   type FollowUpTask,
-} from "./followup.types";
-import { defaultFollowUpTaskStore } from "./followup.store";
+} from "./followup.types.js";
+import { defaultFollowUpTaskStore } from "./followup.store.js";
 
 export function createDefaultTimelineLogger(): (
   entry: FollowUpTimelineEntry

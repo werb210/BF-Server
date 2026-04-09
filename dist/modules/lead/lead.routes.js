@@ -1,29 +1,27 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const zod_1 = require("zod");
-const auth_1 = require("../../middleware/auth");
-const idempotency_1 = require("../../middleware/idempotency");
-const lead_service_1 = require("./lead.service");
-const clean_1 = require("../../utils/clean");
-const createLeadSchema = zod_1.z.object({
-    source: zod_1.z.string().trim().min(1),
-    companyName: zod_1.z.string().trim().optional(),
-    fullName: zod_1.z.string().trim().optional(),
-    email: zod_1.z.string().trim().optional(),
-    phone: zod_1.z.string().trim().optional(),
-    yearsInBusiness: zod_1.z.string().trim().optional(),
-    annualRevenue: zod_1.z.string().trim().optional(),
-    monthlyRevenue: zod_1.z.string().trim().optional(),
-    requestedAmount: zod_1.z.string().trim().optional(),
-    creditScoreRange: zod_1.z.string().trim().optional(),
-    productInterest: zod_1.z.string().trim().optional(),
-    industryInterest: zod_1.z.string().trim().optional(),
-    notes: zod_1.z.string().trim().optional(),
-    tags: zod_1.z.unknown().optional(),
+import { Router } from "express";
+import { z } from "zod";
+import { requireAuth } from "../../middleware/auth.js";
+import { idempotencyMiddleware } from "../../middleware/idempotency.js";
+import { createLead, getLeads } from "./lead.service.js";
+import { stripUndefined } from "../../utils/clean.js";
+const createLeadSchema = z.object({
+    source: z.string().trim().min(1),
+    companyName: z.string().trim().optional(),
+    fullName: z.string().trim().optional(),
+    email: z.string().trim().optional(),
+    phone: z.string().trim().optional(),
+    yearsInBusiness: z.string().trim().optional(),
+    annualRevenue: z.string().trim().optional(),
+    monthlyRevenue: z.string().trim().optional(),
+    requestedAmount: z.string().trim().optional(),
+    creditScoreRange: z.string().trim().optional(),
+    productInterest: z.string().trim().optional(),
+    industryInterest: z.string().trim().optional(),
+    notes: z.string().trim().optional(),
+    tags: z.unknown().optional(),
 });
-const router = (0, express_1.Router)();
-router.post("/", auth_1.requireAuth, idempotency_1.idempotencyMiddleware, async (req, res, next) => {
+const router = Router();
+router.post("/", requireAuth, idempotencyMiddleware, async (req, res, next) => {
     if (!req.body ||
         typeof req.body !== "object" ||
         !("source" in req.body) ||
@@ -47,7 +45,7 @@ router.post("/", auth_1.requireAuth, idempotency_1.idempotencyMiddleware, async 
     }
     const body = parseResult.data;
     try {
-        const lead = await (0, lead_service_1.createLead)((0, clean_1.stripUndefined)({
+        const lead = await createLead(stripUndefined({
             source: body.source,
             companyName: body.companyName,
             fullName: body.fullName,
@@ -69,13 +67,13 @@ router.post("/", auth_1.requireAuth, idempotency_1.idempotencyMiddleware, async 
         next(err);
     }
 });
-router.get("/", auth_1.requireAuth, async (_req, res, next) => {
+router.get("/", requireAuth, async (_req, res, next) => {
     try {
-        const leads = await (0, lead_service_1.getLeads)();
+        const leads = await getLeads();
         res["json"](leads);
     }
     catch (err) {
         next(err);
     }
 });
-exports.default = router;
+export default router;

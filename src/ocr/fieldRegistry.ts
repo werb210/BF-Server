@@ -1,4 +1,4 @@
-import { fetchOcrFieldRegistry, type OcrFieldDefinition } from "./ocrFieldRegistry";
+import { fetchOcrFieldRegistry, type OcrFieldDefinition } from "./ocrFieldRegistry.js";
 
 export type { OcrFieldDefinition };
 

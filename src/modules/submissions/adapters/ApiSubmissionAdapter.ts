@@ -1,4 +1,4 @@
-import { type SubmissionAdapter, type SubmissionPayload, type SubmissionResult } from "./SubmissionAdapter";
+import { type SubmissionAdapter, type SubmissionPayload, type SubmissionResult } from "./SubmissionAdapter.js";
 
 export class ApiSubmissionAdapter implements SubmissionAdapter {
   private lenderId: string;

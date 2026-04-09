@@ -1,5 +1,5 @@
-import crypto from "crypto";
-import { config } from "../config";
+import crypto from "node:crypto";
+import { config } from "../config/index.js";
 
 export function verifyTwilioSignature(
   signature: string,

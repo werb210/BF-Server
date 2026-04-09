@@ -1,7 +1,7 @@
-import { config } from "../../config";
-import { logWarn } from "../../observability/logger";
-import { withRetry } from "../../lib/retry";
-import { pushDeadLetter } from "../../lib/deadLetter";
+import { config } from "../../config/index.js";
+import { logWarn } from "../../observability/logger.js";
+import { withRetry } from "../../lib/retry.js";
+import { pushDeadLetter } from "../../lib/deadLetter.js";
 
 export type OcrExtractionResult = {
   text: string;

@@ -1,21 +1,19 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const errors_1 = require("../middleware/errors");
-const auth_1 = require("../middleware/auth");
-const capabilities_1 = require("../auth/capabilities");
-const audit_service_1 = require("../modules/audit/audit.service");
-const logger_1 = require("../observability/logger");
-const safeHandler_1 = require("../middleware/safeHandler");
-const ops_service_1 = require("../modules/ops/ops.service");
-const replay_service_1 = require("../modules/ops/replay.service");
-const toStringSafe_1 = require("../utils/toStringSafe");
-const router = (0, express_1.Router)();
-router.use(auth_1.requireAuth);
-router.use((0, auth_1.requireCapability)([capabilities_1.CAPABILITIES.OPS_MANAGE]));
+import { Router } from "express";
+import { AppError } from "../middleware/errors.js";
+import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { CAPABILITIES } from "../auth/capabilities.js";
+import { recordAuditEvent } from "../modules/audit/audit.service.js";
+import { logError } from "../observability/logger.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { OPS_KILL_SWITCH_KEYS, listKillSwitches, setKillSwitch, } from "../modules/ops/ops.service.js";
+import { createReplayJob, fetchReplayJobStatus, REPLAY_SCOPES, runReplayJob, } from "../modules/ops/replay.service.js";
+import { toStringSafe } from "../utils/toStringSafe.js";
+const router = Router();
+router.use(requireAuth);
+router.use(requireCapability([CAPABILITIES.OPS_MANAGE]));
 function assertKillSwitchKey(key) {
-    if (!ops_service_1.OPS_KILL_SWITCH_KEYS.includes(key)) {
-        throw new errors_1.AppError("invalid_kill_switch", "Unsupported kill switch key.", 400);
+    if (!OPS_KILL_SWITCH_KEYS.includes(key)) {
+        throw new AppError("invalid_kill_switch", "Unsupported kill switch key.", 400);
     }
 }
 function fetchAuditContext(req) {
@@ -24,9 +22,9 @@ function fetchAuditContext(req) {
         userAgent: req.get("user-agent") ?? null,
     };
 }
-router.get("/kill-switches", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
-    const switches = await (0, ops_service_1.listKillSwitches)();
-    await (0, audit_service_1.recordAuditEvent)({
+router.get("/kill-switches", safeHandler(async (req, res, next) => {
+    const switches = await listKillSwitches();
+    await recordAuditEvent({
         action: "ops_kill_switches_viewed",
         actorUserId: req.user?.userId ?? null,
         targetUserId: null,
@@ -37,11 +35,11 @@ router.get("/kill-switches", (0, safeHandler_1.safeHandler)(async (req, res, nex
     });
     res["json"]({ switches });
 }));
-router.post("/kill-switches/:key/enable", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
-    const key = (0, toStringSafe_1.toStringSafe)(req.params.key) ?? "";
+router.post("/kill-switches/:key/enable", safeHandler(async (req, res, next) => {
+    const key = toStringSafe(req.params.key) ?? "";
     assertKillSwitchKey(key);
-    await (0, ops_service_1.setKillSwitch)(key, true);
-    await (0, audit_service_1.recordAuditEvent)({
+    await setKillSwitch(key, true);
+    await recordAuditEvent({
         action: "ops_kill_switch_enabled",
         actorUserId: req.user?.userId ?? null,
         targetUserId: null,
@@ -52,11 +50,11 @@ router.post("/kill-switches/:key/enable", (0, safeHandler_1.safeHandler)(async (
     });
     res["json"]({ key, enabled: true });
 }));
-router.post("/kill-switches/:key/disable", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
-    const key = (0, toStringSafe_1.toStringSafe)(req.params.key) ?? "";
+router.post("/kill-switches/:key/disable", safeHandler(async (req, res, next) => {
+    const key = toStringSafe(req.params.key) ?? "";
     assertKillSwitchKey(key);
-    await (0, ops_service_1.setKillSwitch)(key, false);
-    await (0, audit_service_1.recordAuditEvent)({
+    await setKillSwitch(key, false);
+    await recordAuditEvent({
         action: "ops_kill_switch_disabled",
         actorUserId: req.user?.userId ?? null,
         targetUserId: null,
@@ -67,13 +65,13 @@ router.post("/kill-switches/:key/disable", (0, safeHandler_1.safeHandler)(async 
     });
     res["json"]({ key, enabled: false });
 }));
-router.post("/replay/:scope", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
-    const scope = (0, toStringSafe_1.toStringSafe)(req.params.scope) ?? "";
-    if (!replay_service_1.REPLAY_SCOPES.includes(scope)) {
-        throw new errors_1.AppError("invalid_scope", "Unsupported replay scope.", 400);
+router.post("/replay/:scope", safeHandler(async (req, res, next) => {
+    const scope = toStringSafe(req.params.scope) ?? "";
+    if (!REPLAY_SCOPES.includes(scope)) {
+        throw new AppError("invalid_scope", "Unsupported replay scope.", 400);
     }
-    const job = await (0, replay_service_1.createReplayJob)(scope);
-    await (0, audit_service_1.recordAuditEvent)({
+    const job = await createReplayJob(scope);
+    await recordAuditEvent({
         action: "ops_replay_started",
         actorUserId: req.user?.userId ?? null,
         targetUserId: null,
@@ -83,23 +81,23 @@ router.post("/replay/:scope", (0, safeHandler_1.safeHandler)(async (req, res, ne
         success: true,
     });
     setImmediate(() => {
-        (0, replay_service_1.runReplayJob)(job.id, job.scope).catch((error) => {
+        runReplayJob(job.id, job.scope).catch((error) => {
             const message = error instanceof Error ? error.message : "unknown error";
-            (0, logger_1.logError)("replay_failed", { code: "replay_failed", message });
+            logError("replay_failed", { code: "replay_failed", message });
         });
     });
     res.status(202).json({ job });
 }));
-router.get("/replay/:id/status", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
-    const jobId = (0, toStringSafe_1.toStringSafe)(req.params.id);
+router.get("/replay/:id/status", safeHandler(async (req, res, next) => {
+    const jobId = toStringSafe(req.params.id);
     if (!jobId) {
-        throw new errors_1.AppError("validation_error", "Replay job id is required.", 400);
+        throw new AppError("validation_error", "Replay job id is required.", 400);
     }
-    const job = await (0, replay_service_1.fetchReplayJobStatus)(jobId);
+    const job = await fetchReplayJobStatus(jobId);
     if (!job) {
-        throw new errors_1.AppError("not_found", "Replay job not found.", 404);
+        throw new AppError("not_found", "Replay job not found.", 404);
     }
-    await (0, audit_service_1.recordAuditEvent)({
+    await recordAuditEvent({
         action: "ops_replay_status_viewed",
         actorUserId: req.user?.userId ?? null,
         targetUserId: null,
@@ -110,4 +108,4 @@ router.get("/replay/:id/status", (0, safeHandler_1.safeHandler)(async (req, res,
     });
     res["json"]({ job });
 }));
-exports.default = router;
+export default router;

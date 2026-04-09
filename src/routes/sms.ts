@@ -1,5 +1,5 @@
 import express from "express";
-import { ok } from "../lib/respond";
+import { ok } from "../lib/respond.js";
 
 const router = express.Router();
 

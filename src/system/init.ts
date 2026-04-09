@@ -1,5 +1,5 @@
-import { pool } from "../db";
-import { deps } from "./deps";
+import { pool } from "../db.js";
+import { deps } from "./deps.js";
 
 export async function initDependencies(): Promise<void> {
   let success = false;

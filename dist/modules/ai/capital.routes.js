@@ -1,22 +1,17 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
-const db_1 = require("../../db");
-const audit_service_1 = require("../audit/audit.service");
-const chat_service_1 = require("./chat.service");
-const config_1 = require("../../config");
-const router = (0, express_1.Router)();
-const readinessLimiter = (0, express_rate_limit_1.default)({
+import { Router } from "express";
+import rateLimit from "express-rate-limit";
+import { runQuery } from "../../db.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { upsertLead } from "./chat.service.js";
+import { config } from "../../config/index.js";
+const router = Router();
+const readinessLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 20,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: "Too many readiness requests" },
-    skip: () => config_1.config.env === "test",
+    skip: () => config.env === "test",
 });
 function toAmount(raw) {
     const parsed = Number(String(raw).replace(/[^0-9.-]/g, ""));
@@ -35,21 +30,21 @@ function calculateScore(payload) {
         score += 15;
     else if (years >= 1)
         score += 8;
-    if (annual >= 1000000)
+    if (annual >= 1_000_000)
         score += 20;
-    else if (annual >= 500000)
+    else if (annual >= 500_000)
         score += 14;
-    else if (annual >= 250000)
+    else if (annual >= 250_000)
         score += 8;
-    if (monthly >= 100000)
+    if (monthly >= 100_000)
         score += 20;
-    else if (monthly >= 50000)
+    else if (monthly >= 50_000)
         score += 14;
-    else if (monthly >= 20000)
+    else if (monthly >= 20_000)
         score += 8;
-    if (ar >= 50000)
+    if (ar >= 50_000)
         score += 20;
-    else if (ar >= 15000)
+    else if (ar >= 15_000)
         score += 12;
     else if (ar > 0)
         score += 5;
@@ -77,17 +72,17 @@ router.post("/capital-readiness", readinessLimiter, async (req, res, next) => {
     const payload = req.body;
     const score = calculateScore(payload);
     const tier = scoreToTier(score);
-    const leadId = await (0, chat_service_1.upsertLead)({
+    const leadId = await upsertLead({
         fullName: payload.fullName,
         email: payload.email,
         phone: payload.phone,
         companyName: payload.companyName,
         tag: "capital_readiness",
     });
-    await (0, db_1.runQuery)(`insert into capital_readiness (id, lead_id, score, tier, payload)
+    await runQuery(`insert into capital_readiness (id, lead_id, score, tier, payload)
      values (gen_random_uuid(), $1, $2, $3, $4::jsonb)`, [leadId, score, tier, JSON.stringify(payload)]);
     if (leadId) {
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             actorUserId: null,
             targetUserId: null,
             targetType: "contact",
@@ -101,4 +96,4 @@ router.post("/capital-readiness", readinessLimiter, async (req, res, next) => {
     }
     res["json"]({ score, tier, recommendedProducts: recommendations(score) });
 });
-exports.default = router;
+export default router;

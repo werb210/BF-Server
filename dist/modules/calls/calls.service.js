@@ -1,16 +1,9 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.startCall = startCall;
-exports.updateCallStatus = updateCallStatus;
-exports.updateCallRecording = updateCallRecording;
-exports.endCall = endCall;
-exports.listCalls = listCalls;
-const errors_1 = require("../../middleware/errors");
-const audit_service_1 = require("../audit/audit.service");
-const calls_repo_1 = require("./calls.repo");
-async function startCall(params) {
+import { AppError } from "../../middleware/errors.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { createCallLog, findCallLogById, listCallLogs, updateCallLogStatus, } from "./calls.repo.js";
+export async function startCall(params) {
     const status = params.status ?? "initiated";
-    const record = await (0, calls_repo_1.createCallLog)({
+    const record = await createCallLog({
         phoneNumber: params.phoneNumber,
         fromNumber: params.fromNumber ?? null,
         toNumber: params.toNumber ?? null,
@@ -21,7 +14,7 @@ async function startCall(params) {
         crmContactId: params.crmContactId ?? null,
         applicationId: params.applicationId ?? null,
     });
-    await (0, audit_service_1.recordAuditEvent)({
+    await recordAuditEvent({
         action: "call_started",
         actorUserId: params.staffUserId,
         targetUserId: null,
@@ -43,10 +36,10 @@ async function startCall(params) {
     });
     return record;
 }
-async function updateCallStatus(params) {
-    const existing = await (0, calls_repo_1.findCallLogById)(params.id);
+export async function updateCallStatus(params) {
+    const existing = await findCallLogById(params.id);
     if (!existing) {
-        throw new errors_1.AppError("not_found", "Call not found.", 404);
+        throw new AppError("not_found", "Call not found.", 404);
     }
     const shouldUpdateStatus = existing.status !== params.status;
     const shouldUpdateDuration = params.durationSeconds !== undefined &&
@@ -75,7 +68,7 @@ async function updateCallStatus(params) {
         !shouldEnd) {
         return existing;
     }
-    const updated = await (0, calls_repo_1.updateCallLogStatus)({
+    const updated = await updateCallLogStatus({
         id: params.id,
         status: params.status,
         durationSeconds: params.durationSeconds !== undefined
@@ -94,7 +87,7 @@ async function updateCallStatus(params) {
             : existing.recording_duration_seconds,
     });
     if (!updated) {
-        throw new errors_1.AppError("not_found", "Call not found.", 404);
+        throw new AppError("not_found", "Call not found.", 404);
     }
     if (shouldUpdateStatus ||
         shouldUpdateDuration ||
@@ -104,7 +97,7 @@ async function updateCallStatus(params) {
         shouldUpdateErrorMessage ||
         shouldUpdateRecordingSid ||
         shouldUpdateRecordingDuration) {
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "call_status_updated",
             actorUserId: params.actorUserId ?? null,
             targetUserId: null,
@@ -132,10 +125,10 @@ async function updateCallStatus(params) {
     }
     return updated;
 }
-async function updateCallRecording(params) {
-    const existing = await (0, calls_repo_1.findCallLogById)(params.id);
+export async function updateCallRecording(params) {
+    const existing = await findCallLogById(params.id);
     if (!existing) {
-        throw new errors_1.AppError("not_found", "Call not found.", 404);
+        throw new AppError("not_found", "Call not found.", 404);
     }
     const updatePayload = {
         id: params.id,
@@ -149,7 +142,7 @@ async function updateCallRecording(params) {
         ...(params.userAgent ? { userAgent: params.userAgent } : {}),
     };
     const updated = await updateCallStatus(updatePayload);
-    await (0, audit_service_1.recordAuditEvent)({
+    await recordAuditEvent({
         action: "call_recording_updated",
         actorUserId: params.actorUserId ?? null,
         targetUserId: null,
@@ -167,10 +160,10 @@ async function updateCallRecording(params) {
     });
     return updated;
 }
-async function endCall(params) {
-    const existing = await (0, calls_repo_1.findCallLogById)(params.id);
+export async function endCall(params) {
+    const existing = await findCallLogById(params.id);
     if (!existing) {
-        throw new errors_1.AppError("not_found", "Call not found.", 404);
+        throw new AppError("not_found", "Call not found.", 404);
     }
     const shouldEnd = existing.status !== "ended";
     const endPayload = {
@@ -183,7 +176,7 @@ async function endCall(params) {
     };
     const updated = await updateCallStatus(endPayload);
     if (shouldEnd) {
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "call_ended",
             actorUserId: params.staffUserId,
             targetUserId: null,
@@ -206,8 +199,8 @@ async function endCall(params) {
     }
     return updated;
 }
-async function listCalls(params) {
-    return (0, calls_repo_1.listCallLogs)({
+export async function listCalls(params) {
+    return listCallLogs({
         contactId: params.contactId ?? null,
         applicationId: params.applicationId ?? null,
     });

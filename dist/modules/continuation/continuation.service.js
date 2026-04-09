@@ -1,10 +1,5 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.createContinuation = createContinuation;
-exports.fetchContinuation = fetchContinuation;
-exports.convertContinuation = convertContinuation;
-const node_crypto_1 = require("node:crypto");
-const db_1 = require("../../db");
+import { randomBytes } from "node:crypto";
+import { runQuery } from "../../db.js";
 function toNullableNumber(value) {
     if (value === undefined || value === null || value === "") {
         return null;
@@ -35,9 +30,9 @@ function toNullableBoolean(value) {
     }
     return null;
 }
-async function createContinuation(payload, crmLeadId) {
-    const token = (0, node_crypto_1.randomBytes)(24).toString("hex");
-    await (0, db_1.runQuery)(`
+export async function createContinuation(payload, crmLeadId) {
+    const token = randomBytes(24).toString("hex");
+    await runQuery(`
     INSERT INTO application_continuations (
       token,
       company_name,
@@ -69,12 +64,12 @@ async function createContinuation(payload, crmLeadId) {
     ]);
     return token;
 }
-async function fetchContinuation(token) {
-    const { rows } = await (0, db_1.runQuery)("SELECT * FROM application_continuations WHERE token = $1", [token]);
+export async function fetchContinuation(token) {
+    const { rows } = await runQuery("SELECT * FROM application_continuations WHERE token = $1", [token]);
     return rows[0] ?? null;
 }
-async function convertContinuation(token, applicationId) {
-    await (0, db_1.runQuery)(`
+export async function convertContinuation(token, applicationId) {
+    await runQuery(`
     UPDATE application_continuations
     SET converted_application_id = $1,
         converted_at = NOW()

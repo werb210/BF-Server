@@ -1,18 +1,18 @@
-import { AppError } from "../../middleware/errors";
-import { pool, runQuery } from "../../db";
-import { createApplication, createDocument, createDocumentVersion } from "../applications/applications.repo";
-import { ApplicationStage } from "../applications/pipelineState";
-import { recordAuditEvent } from "../audit/audit.service";
-import { config } from "../../config";
-import { createClientSubmission, findClientSubmissionByKey } from "./clientSubmission.repo";
-import { logInfo, logWarn } from "../../observability/logger";
-import { recordTransactionRollback } from "../../observability/transactionTelemetry";
-import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService";
-import { upsertStructuredApplicationData } from "../../services/v1StructuredPersistence";
+import { AppError } from "../../middleware/errors.js";
+import { pool, runQuery } from "../../db.js";
+import { createApplication, createDocument, createDocumentVersion } from "../applications/applications.repo.js";
+import { ApplicationStage } from "../applications/pipelineState.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { config } from "../../config/index.js";
+import { createClientSubmission, findClientSubmissionByKey } from "./clientSubmission.repo.js";
+import { logInfo, logWarn } from "../../observability/logger.js";
+import { recordTransactionRollback } from "../../observability/transactionTelemetry.js";
+import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService.js";
+import { upsertStructuredApplicationData } from "../../services/v1StructuredPersistence.js";
 import {
   normalizeRequiredDocumentKey,
   type RequiredDocumentKey,
-} from "../../db/schema/requiredDocuments";
+} from "../../db/schema/requiredDocuments.js";
 
 export type ClientSubmissionResponse = {
   applicationId: string;

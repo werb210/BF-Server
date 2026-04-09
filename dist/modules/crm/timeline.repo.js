@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.listCrmTimeline = listCrmTimeline;
-const db_1 = require("../../db");
+import { pool } from "../../db.js";
 function parseMetadata(value) {
     if (!value) {
         return null;
@@ -19,8 +16,8 @@ function parseMetadata(value) {
     }
     return { raw: value };
 }
-async function listCrmTimeline(params) {
-    const runner = params.client ?? db_1.pool;
+export async function listCrmTimeline(params) {
+    const runner = params.client ?? pool;
     const clauses = ["event_type = 'crm_timeline'"];
     const values = [];
     let idx = 1;

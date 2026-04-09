@@ -1,18 +1,9 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.requestContextMiddleware = requestContextMiddleware;
-exports.fetchRequestContext = fetchRequestContext;
-exports.fetchRequestId = fetchRequestId;
-exports.fetchRequestRoute = fetchRequestRoute;
-exports.fetchRequestIdempotencyKeyHash = fetchRequestIdempotencyKeyHash;
-exports.fetchRequestDbProcessIds = fetchRequestDbProcessIds;
-exports.runWithRequestContext = runWithRequestContext;
-const node_async_hooks_1 = require("node:async_hooks");
-const node_crypto_1 = require("node:crypto");
-const clean_1 = require("../utils/clean");
-const storage = new node_async_hooks_1.AsyncLocalStorage();
-function requestContextMiddleware(req, res, next) {
-    const requestId = String(req.headers["x-request-id"] ?? (0, node_crypto_1.randomUUID)());
+import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
+import { stripUndefined } from "../utils/clean.js";
+const storage = new AsyncLocalStorage();
+export function requestContextMiddleware(req, res, next) {
+    const requestId = String(req.headers["x-request-id"] ?? randomUUID());
     const store = {
         requestId,
         route: req.originalUrl,
@@ -23,24 +14,24 @@ function requestContextMiddleware(req, res, next) {
     res.setHeader("X-Request-Id", requestId);
     storage.run(store, next);
 }
-function fetchRequestContext() {
+export function fetchRequestContext() {
     return storage.getStore();
 }
-function fetchRequestId() {
+export function fetchRequestId() {
     return storage.getStore()?.requestId ?? "unknown";
 }
-function fetchRequestRoute() {
+export function fetchRequestRoute() {
     return storage.getStore()?.route ?? "";
 }
-function fetchRequestIdempotencyKeyHash() {
+export function fetchRequestIdempotencyKeyHash() {
     return storage.getStore()?.idempotencyKeyHash ?? "";
 }
-function fetchRequestDbProcessIds() {
+export function fetchRequestDbProcessIds() {
     return storage.getStore()?.dbProcessIds ?? [];
 }
-function runWithRequestContext(fn, context) {
-    const base = (0, clean_1.stripUndefined)({
-        requestId: context?.requestId ?? (0, node_crypto_1.randomUUID)(),
+export function runWithRequestContext(fn, context) {
+    const base = stripUndefined({
+        requestId: context?.requestId ?? randomUUID(),
         route: context?.route,
         idempotencyKeyHash: context?.idempotencyKeyHash,
         dbProcessIds: context?.dbProcessIds ?? [],

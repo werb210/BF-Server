@@ -1,6 +1,6 @@
 import { type NextFunction, type Request, type Response } from "express";
-import { CONFIG } from "./config";
-import { fail } from "./response";
+import { CONFIG } from "./config.js";
+import { fail } from "./response.js";
 
 type RateEntry = {
   count: number;

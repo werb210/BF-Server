@@ -1,8 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.withRetry = withRetry;
-exports.retry = retry;
-async function withRetry(fn, options = {}) {
+export async function withRetry(fn, options = {}) {
     const { retries = 3, baseDelayMs = 500, maxDelayMs = 5000 } = options;
     let lastError;
     for (let attempt = 0; attempt <= retries; attempt += 1) {
@@ -20,6 +16,6 @@ async function withRetry(fn, options = {}) {
     }
     throw lastError;
 }
-async function retry(fn, retries = 3) {
+export async function retry(fn, retries = 3) {
     return withRetry(fn, { retries });
 }

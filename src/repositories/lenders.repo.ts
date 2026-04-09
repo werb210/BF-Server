@@ -1,7 +1,7 @@
-import { randomUUID } from "crypto";
-import { pool, runQuery } from "../db";
-import { AppError } from "../middleware/errors";
-import { logError } from "../observability/logger";
+import { randomUUID } from "node:crypto";
+import { pool, runQuery } from "../db.js";
+import { AppError } from "../middleware/errors.js";
+import { logError } from "../observability/logger.js";
 
 export interface CreateLenderInput {
   name: string;

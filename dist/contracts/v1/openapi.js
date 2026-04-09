@@ -1,16 +1,11 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.loadOpenApiV1 = loadOpenApiV1;
-exports.openApiPathToExpress = openApiPathToExpress;
-exports.resolveSchemaRefs = resolveSchemaRefs;
-const fs_1 = require("fs");
-const path_1 = require("path");
+import { readFileSync } from "fs";
+import { resolve } from "path";
 function loadJson(path) {
-    return JSON.parse((0, fs_1.readFileSync)(path, "utf-8"));
+    return JSON.parse(readFileSync(path, "utf-8"));
 }
-function loadOpenApiV1() {
-    const root = (0, path_1.resolve)(process.cwd(), "contracts/v1");
-    const doc = loadJson((0, path_1.resolve)(root, "openapi.json"));
+export function loadOpenApiV1() {
+    const root = resolve(process.cwd(), "contracts/v1");
+    const doc = loadJson(resolve(root, "openapi.json"));
     const schemas = doc.components?.schemas ?? {};
     Object.entries(schemas).forEach(([key, value]) => {
         if (value &&
@@ -18,16 +13,16 @@ function loadOpenApiV1() {
             "$ref" in value) {
             const ref = String(value.$ref);
             if (ref.startsWith("./schemas/")) {
-                schemas[key] = loadJson((0, path_1.resolve)(root, ref.replace("./", "")));
+                schemas[key] = loadJson(resolve(root, ref.replace("./", "")));
             }
         }
     });
     return doc;
 }
-function openApiPathToExpress(path) {
+export function openApiPathToExpress(path) {
     return path.replace(/\{([^}]+)\}/g, ":$1");
 }
-function resolveSchemaRefs(schema, doc) {
+export function resolveSchemaRefs(schema, doc) {
     if (!schema || typeof schema !== "object") {
         return schema;
     }

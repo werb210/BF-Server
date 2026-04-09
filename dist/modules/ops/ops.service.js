@@ -1,12 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.OPS_KILL_SWITCH_KEYS = void 0;
-exports.listKillSwitches = listKillSwitches;
-exports.setKillSwitch = setKillSwitch;
-exports.isKillSwitchEnabled = isKillSwitchEnabled;
-const db_1 = require("../../db");
-const config_1 = require("../../config");
-exports.OPS_KILL_SWITCH_KEYS = [
+import { runQuery } from "../../db.js";
+import { config } from "../../config/index.js";
+export const OPS_KILL_SWITCH_KEYS = [
     "replay",
     "exports",
     "lender_transmission",
@@ -14,20 +8,20 @@ exports.OPS_KILL_SWITCH_KEYS = [
 ];
 function fetchEnvKillSwitch(key) {
     if (key === "replay") {
-        return config_1.config.flags.opsKillSwitchReplay;
+        return config.flags.opsKillSwitchReplay;
     }
     if (key === "exports") {
-        return config_1.config.flags.opsKillSwitchExports;
+        return config.flags.opsKillSwitchExports;
     }
     if (key === "ocr") {
-        return config_1.config.flags.opsKillSwitchOcr;
+        return config.flags.opsKillSwitchOcr;
     }
-    return config_1.config.flags.opsKillSwitchLenderTransmission;
+    return config.flags.opsKillSwitchLenderTransmission;
 }
-async function listKillSwitches() {
-    const result = await (0, db_1.runQuery)("select key, enabled from ops_kill_switches");
+export async function listKillSwitches() {
+    const result = await runQuery("select key, enabled from ops_kill_switches");
     const dbMap = new Map(result.rows.map((row) => [row.key, Boolean(row.enabled)]));
-    return exports.OPS_KILL_SWITCH_KEYS.map((key) => {
+    return OPS_KILL_SWITCH_KEYS.map((key) => {
         const envEnabled = fetchEnvKillSwitch(key);
         const dbEnabled = dbMap.get(key) ?? false;
         return {
@@ -38,16 +32,16 @@ async function listKillSwitches() {
         };
     });
 }
-async function setKillSwitch(key, enabled) {
-    await (0, db_1.runQuery)(`insert into ops_kill_switches (key, enabled, updated_at)
+export async function setKillSwitch(key, enabled) {
+    await runQuery(`insert into ops_kill_switches (key, enabled, updated_at)
      values ($1, $2, now())
      on conflict (key)
      do update set enabled = excluded.enabled, updated_at = excluded.updated_at`, [key, enabled]);
 }
-async function isKillSwitchEnabled(key) {
+export async function isKillSwitchEnabled(key) {
     if (fetchEnvKillSwitch(key)) {
         return true;
     }
-    const result = await (0, db_1.runQuery)("select enabled from ops_kill_switches where key = $1", [key]);
+    const result = await runQuery("select enabled from ops_kill_switches where key = $1", [key]);
     return result.rows[0]?.enabled ?? false;
 }

@@ -1,6 +1,6 @@
 import * as appInsights from "applicationinsights";
-import { config } from "../config";
-import { logInfo, logWarn } from "./logger";
+import { config } from "../config/index.js";
+import { logInfo, logWarn } from "./logger.js";
 
 type RequestTelemetry = {
   name: string;

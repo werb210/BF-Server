@@ -1,17 +1,14 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.submitReferral = submitReferral;
-const crypto_1 = require("crypto");
-const db_1 = require("../../db");
-const companies_repo_1 = require("../crm/companies.repo");
-const contacts_repo_1 = require("../crm/contacts.repo");
-async function submitReferral(payload) {
-    const client = await db_1.pool.connect();
+import { randomUUID } from "node:crypto";
+import { pool } from "../../db.js";
+import { createCompany } from "../crm/companies.repo.js";
+import { createContact } from "../crm/contacts.repo.js";
+export async function submitReferral(payload) {
+    const client = await pool.connect();
     try {
         await client.runQuery("begin");
-        const companyId = (0, crypto_1.randomUUID)();
-        const contactId = (0, crypto_1.randomUUID)();
-        await (0, companies_repo_1.createCompany)({
+        const companyId = randomUUID();
+        const contactId = randomUUID();
+        await createCompany({
             id: companyId,
             name: payload.businessName,
             website: payload.website,
@@ -22,7 +19,7 @@ async function submitReferral(payload) {
             referrerId: payload.referrerId,
             client,
         });
-        await (0, contacts_repo_1.createContact)({
+        await createContact({
             id: contactId,
             name: payload.contactName,
             email: payload.email,

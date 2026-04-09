@@ -1,17 +1,15 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const db_1 = require("../../db");
-const auth_1 = require("../../middleware/auth");
-const logger_1 = require("../../observability/logger");
-const router = (0, express_1.Router)();
-router.get("/", auth_1.requireAuth, async (req, res, next) => {
+import { Router } from "express";
+import { db } from "../../db.js";
+import { requireAuth } from "../../middleware/auth.js";
+import { logWarn } from "../../observability/logger.js";
+const router = Router();
+router.get("/", requireAuth, async (req, res, next) => {
     if (!req.user?.userId) {
         res.status(401).json({ ok: false, error: "invalid_token" });
         return;
     }
     try {
-        const { rows } = await db_1.db.query(`
+        const { rows } = await db.query(`
         select id, current_step, metadata
         from applications
         where owner_user_id = $1
@@ -32,7 +30,7 @@ router.get("/", auth_1.requireAuth, async (req, res, next) => {
         });
     }
     catch (error) {
-        (0, logger_1.logWarn)("application_continuation_lookup_failed", {
+        logWarn("application_continuation_lookup_failed", {
             message: error instanceof Error ? error.message : "unknown_error",
         });
         res.status(500).json({
@@ -42,4 +40,4 @@ router.get("/", auth_1.requireAuth, async (req, res, next) => {
         });
     }
 });
-exports.default = router;
+export default router;

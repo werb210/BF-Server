@@ -1,8 +1,8 @@
-import { randomUUID } from "crypto";
-import { config } from "../../config";
-import { isKillSwitchEnabled } from "../ops/ops.service";
-import { clearExpiredOcrLocks, lockOcrJobs } from "./ocr.repo";
-import { processOcrJob } from "./ocr.service";
+import { randomUUID } from "node:crypto";
+import { config } from "../../config/index.js";
+import { isKillSwitchEnabled } from "../ops/ops.service.js";
+import { clearExpiredOcrLocks, lockOcrJobs } from "./ocr.repo.js";
+import { processOcrJob } from "./ocr.service.js";
 
 export function startOcrWorker(): { stop: () => void } {
   if (!config.features.ocrEnabled) {

@@ -1,18 +1,11 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.createDefaultTimelineLogger = createDefaultTimelineLogger;
-exports.createDefaultTaskWriter = createDefaultTaskWriter;
-exports.createDefaultSmsSender = createDefaultSmsSender;
-exports.createFollowUpActionHandlers = createFollowUpActionHandlers;
-exports.executeFollowUpAction = executeFollowUpAction;
-const crypto_1 = require("crypto");
-const logger_1 = require("../../observability/logger");
-const audit_service_1 = require("../audit/audit.service");
-const followup_store_1 = require("./followup.store");
-function createDefaultTimelineLogger() {
+import { randomUUID } from "node:crypto";
+import { logError, logWarn } from "../../observability/logger.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { defaultFollowUpTaskStore } from "./followup.store.js";
+export function createDefaultTimelineLogger() {
     return async (entry) => {
         try {
-            await (0, audit_service_1.recordAuditEvent)({
+            await recordAuditEvent({
                 action: entry.actionTaken,
                 actorUserId: null,
                 targetUserId: null,
@@ -35,16 +28,16 @@ function createDefaultTimelineLogger() {
             });
         }
         catch (error) {
-            (0, logger_1.logError)("followup_timeline_log_failed", {
+            logError("followup_timeline_log_failed", {
                 error,
                 message: error instanceof Error ? error.message : String(error),
             });
         }
     };
 }
-function createDefaultTaskWriter() {
+export function createDefaultTaskWriter() {
     return async (task) => {
-        await followup_store_1.defaultFollowUpTaskStore.create({
+        await defaultFollowUpTaskStore.create({
             title: task.title,
             description: task.description ?? null,
             entityId: task.entityId,
@@ -52,23 +45,23 @@ function createDefaultTaskWriter() {
         });
     };
 }
-function createDefaultSmsSender() {
+export function createDefaultSmsSender() {
     return async (params) => {
-        (0, logger_1.logWarn)("followup_sms_disabled", {
+        logWarn("followup_sms_disabled", {
             to: params.to,
             message: params.body,
         });
         return null;
     };
 }
-function createFollowUpActionHandlers(overrides) {
+export function createFollowUpActionHandlers(overrides) {
     return {
         sendSms: overrides?.sendSms ?? createDefaultSmsSender(),
         createTask: overrides?.createTask ?? createDefaultTaskWriter(),
         logTimeline: overrides?.logTimeline ?? createDefaultTimelineLogger(),
     };
 }
-async function executeFollowUpAction(params) {
+export async function executeFollowUpAction(params) {
     const { action, handlers, entityId, entityType } = params;
     if (action.type === "SEND_SMS") {
         const recipient = params.eventMetadata?.[action.phoneField];
@@ -102,7 +95,7 @@ async function executeFollowUpAction(params) {
     if (action.type === "CREATE_TASK") {
         try {
             await handlers.createTask({
-                id: (0, crypto_1.randomUUID)(),
+                id: randomUUID(),
                 title: action.title,
                 description: action.description ?? null,
                 entityType,

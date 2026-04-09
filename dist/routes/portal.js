@@ -1,33 +1,31 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const crypto_1 = require("crypto");
-const express_1 = require("express");
-const startupState_1 = require("../startupState");
-const db_1 = require("../db");
-const applications_repo_1 = require("../modules/applications/applications.repo");
-const pipelineState_1 = require("../modules/applications/pipelineState");
-const safeHandler_1 = require("../middleware/safeHandler");
-const applications_controller_1 = require("../controllers/applications.controller");
-const rateLimit_1 = require("../middleware/rateLimit");
-const auth_1 = require("../middleware/auth");
-const roles_1 = require("../auth/roles");
-const errors_1 = require("../middleware/errors");
-const pipelineState_2 = require("../modules/applications/pipelineState");
-const applications_service_1 = require("../modules/applications/applications.service");
-const audit_service_1 = require("../modules/audit/audit.service");
-const processingStage_service_1 = require("../modules/applications/processingStage.service");
-const retry_service_1 = require("../modules/processing/retry.service");
-const applicationLifecycle_service_1 = require("../modules/applications/applicationLifecycle.service");
-const config_1 = require("../config");
-const lenders_repo_1 = require("../repositories/lenders.repo");
-const eventBus_1 = require("../events/eventBus");
-const readiness_service_1 = require("../modules/readiness/readiness.service");
-const toStringSafe_1 = require("../utils/toStringSafe");
-const router = (0, express_1.Router)();
-const portalLimiter = (0, rateLimit_1.portalRateLimit)();
+import { randomUUID } from "node:crypto";
+import { Router } from "express";
+import { fetchStatus as startupStatus, isReady } from "../startupState.js";
+import { pool, runQuery } from "../db.js";
+import { findActiveDocumentVersion, findApplicationById, listDocumentsByApplicationId, } from "../modules/applications/applications.repo.js";
+import { ApplicationStage } from "../modules/applications/pipelineState.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { listApplicationStages } from "../controllers/applications.controller.js";
+import { portalRateLimit } from "../middleware/rateLimit.js";
+import { requireAuth, requireAuthorization } from "../middleware/auth.js";
+import { ROLES } from "../auth/roles.js";
+import { AppError } from "../middleware/errors.js";
+import { isPipelineState } from "../modules/applications/pipelineState.js";
+import { transitionPipelineState } from "../modules/applications/applications.service.js";
+import { recordAuditEvent } from "../modules/audit/audit.service.js";
+import { advanceProcessingStage } from "../modules/applications/processingStage.service.js";
+import { retryProcessingJob, retryProcessingJobForApplication, } from "../modules/processing/retry.service.js";
+import { assertPipelineState, assertPipelineTransition, resolveNextPipelineStage, } from "../modules/applications/applicationLifecycle.service.js";
+import { config } from "../config/index.js";
+import { listLenders } from "../repositories/lenders.repo.js";
+import { eventBus } from "../events/eventBus.js";
+import { convertReadinessLeadToApplication, fetchReadinessLeadByApplicationId, listReadinessLeads, } from "../modules/readiness/readiness.service.js";
+import { toStringSafe } from "../utils/toStringSafe.js";
+const router = Router();
+const portalLimiter = portalRateLimit();
 function ensureReady(res) {
-    if (!(0, startupState_1.isReady)()) {
-        const status = (0, startupState_1.fetchStatus)();
+    if (!isReady()) {
+        const status = startupStatus();
         res.status(503).json({
             ok: false,
             code: "service_not_ready",
@@ -38,8 +36,8 @@ function ensureReady(res) {
     return true;
 }
 function ensureAuditHistoryEnabled() {
-    if (!config_1.config.flags.auditHistoryEnabled) {
-        throw new errors_1.AppError("not_found", "Audit history is disabled.", 404);
+    if (!config.flags.auditHistoryEnabled) {
+        throw new AppError("not_found", "Audit history is disabled.", 404);
     }
 }
 function parsePagination(query) {
@@ -49,12 +47,12 @@ function parsePagination(query) {
     const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 ? offsetRaw : 0;
     return { limit, offset };
 }
-router.get("/applications", portalLimiter, (0, safeHandler_1.safeHandler)(async (_req, res) => {
+router.get("/applications", portalLimiter, safeHandler(async (_req, res) => {
     if (!ensureReady(res)) {
         return;
     }
     try {
-        const result = await (0, db_1.runQuery)(`select id,
+        const result = await runQuery(`select id,
           coalesce(name, business_legal_name) as name,
           pipeline_state,
           created_at
@@ -65,7 +63,7 @@ router.get("/applications", portalLimiter, (0, safeHandler_1.safeHandler)(async 
             items: rows.map((row) => ({
                 id: row.id,
                 name: row.name,
-                pipelineState: row.pipeline_state ?? pipelineState_1.ApplicationStage.RECEIVED,
+                pipelineState: row.pipeline_state ?? ApplicationStage.RECEIVED,
                 createdAt: row.created_at,
             })),
         });
@@ -74,17 +72,17 @@ router.get("/applications", portalLimiter, (0, safeHandler_1.safeHandler)(async 
         res.status(200).json({ items: [] });
     }
 }));
-router.get("/applications/stages", portalLimiter, (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.get("/applications/stages", portalLimiter, safeHandler(async (req, res, next) => {
     if (!ensureReady(res)) {
         return;
     }
-    await (0, applications_controller_1.listApplicationStages)(req, res);
+    await listApplicationStages(req, res);
 }));
-router.get("/applications/:id", portalLimiter, (0, safeHandler_1.safeHandler)(async (req, res) => {
+router.get("/applications/:id", portalLimiter, safeHandler(async (req, res) => {
     if (!ensureReady(res)) {
         return;
     }
-    const applicationId = (0, toStringSafe_1.toStringSafe)(req.params.id);
+    const applicationId = toStringSafe(req.params.id);
     if (!applicationId) {
         res.status(400).json({
             code: "validation_error",
@@ -93,7 +91,7 @@ router.get("/applications/:id", portalLimiter, (0, safeHandler_1.safeHandler)(as
         });
         return;
     }
-    const record = await (0, applications_repo_1.findApplicationById)(applicationId);
+    const record = await findApplicationById(applicationId);
     if (!record) {
         res.status(404).json({
             code: "not_found",
@@ -102,9 +100,9 @@ router.get("/applications/:id", portalLimiter, (0, safeHandler_1.safeHandler)(as
         });
         return;
     }
-    const documents = await (0, applications_repo_1.listDocumentsByApplicationId)(record.id);
+    const documents = await listDocumentsByApplicationId(record.id);
     const documentsWithVersions = await Promise.all(documents.map(async (doc) => {
-        const version = await (0, applications_repo_1.findActiveDocumentVersion)({ documentId: doc.id });
+        const version = await findActiveDocumentVersion({ documentId: doc.id });
         const metadata = version && version.metadata && typeof version.metadata === "object"
             ? version.metadata
             : {};
@@ -137,52 +135,52 @@ router.get("/applications/:id", portalLimiter, (0, safeHandler_1.safeHandler)(as
         documents: documentsWithVersions,
     });
 }));
-router.get("/readiness-leads", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuthorization)({ roles: [roles_1.ROLES.ADMIN] }), (0, safeHandler_1.safeHandler)(async (_req, res) => {
-    const items = await (0, readiness_service_1.listReadinessLeads)();
+router.get("/readiness-leads", requireAuth, portalLimiter, requireAuthorization({ roles: [ROLES.ADMIN] }), safeHandler(async (_req, res) => {
+    const items = await listReadinessLeads();
     res.status(200).json({ items });
 }));
-router.post("/readiness-leads/:id/convert", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuthorization)({ roles: [roles_1.ROLES.ADMIN] }), (0, safeHandler_1.safeHandler)(async (req, res, next) => {
-    const leadId = typeof (0, toStringSafe_1.toStringSafe)(req.params.id) === "string" ? (0, toStringSafe_1.toStringSafe)(req.params.id).trim() : "";
+router.post("/readiness-leads/:id/convert", requireAuth, portalLimiter, requireAuthorization({ roles: [ROLES.ADMIN] }), safeHandler(async (req, res, next) => {
+    const leadId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     if (!leadId) {
-        throw new errors_1.AppError("validation_error", "Lead id is required.", 400);
+        throw new AppError("validation_error", "Lead id is required.", 400);
     }
     const actorUserId = req.user?.userId;
     if (!actorUserId) {
-        throw new errors_1.AppError("unauthorized", "Authentication required.", 401);
+        throw new AppError("unauthorized", "Authentication required.", 401);
     }
     try {
-        const { applicationId } = await (0, readiness_service_1.convertReadinessLeadToApplication)(leadId, actorUserId);
+        const { applicationId } = await convertReadinessLeadToApplication(leadId, actorUserId);
         res.status(200).json({ applicationId });
     }
     catch (error) {
         if (error instanceof Error && error.message === "not_found") {
-            throw new errors_1.AppError("not_found", "Readiness lead not found.", 404);
+            throw new AppError("not_found", "Readiness lead not found.", 404);
         }
         throw error;
     }
 }));
-router.get("/applications/:id/readiness", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuthorization)({ roles: [roles_1.ROLES.ADMIN] }), (0, safeHandler_1.safeHandler)(async (req, res, next) => {
-    const applicationId = typeof (0, toStringSafe_1.toStringSafe)(req.params.id) === "string" ? (0, toStringSafe_1.toStringSafe)(req.params.id).trim() : "";
+router.get("/applications/:id/readiness", requireAuth, portalLimiter, requireAuthorization({ roles: [ROLES.ADMIN] }), safeHandler(async (req, res, next) => {
+    const applicationId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     if (!applicationId) {
-        throw new errors_1.AppError("validation_error", "Application id is required.", 400);
+        throw new AppError("validation_error", "Application id is required.", 400);
     }
-    const readinessLead = await (0, readiness_service_1.fetchReadinessLeadByApplicationId)(applicationId);
+    const readinessLead = await fetchReadinessLeadByApplicationId(applicationId);
     if (!readinessLead) {
         res.status(404).json({ error: "not_found" });
         return;
     }
     res.status(200).json({ readinessLead });
 }));
-router.get("/applications/:id/history", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuthorization)({ roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] }), (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.get("/applications/:id/history", requireAuth, portalLimiter, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req, res, next) => {
     ensureAuditHistoryEnabled();
-    const applicationId = typeof (0, toStringSafe_1.toStringSafe)(req.params.id) === "string" ? (0, toStringSafe_1.toStringSafe)(req.params.id).trim() : "";
+    const applicationId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     if (!applicationId) {
-        throw new errors_1.AppError("validation_error", "Application id is required.", 400);
+        throw new AppError("validation_error", "Application id is required.", 400);
     }
-    const actorType = typeof (0, toStringSafe_1.toStringSafe)(req.query.actorType) === "string" ? (0, toStringSafe_1.toStringSafe)(req.query.actorType).trim() : "";
-    const fromStage = typeof (0, toStringSafe_1.toStringSafe)(req.query.fromStage) === "string" ? (0, toStringSafe_1.toStringSafe)(req.query.fromStage).trim() : "";
-    const toStage = typeof (0, toStringSafe_1.toStringSafe)(req.query.toStage) === "string" ? (0, toStringSafe_1.toStringSafe)(req.query.toStage).trim() : "";
-    const trigger = typeof (0, toStringSafe_1.toStringSafe)(req.query.trigger) === "string" ? (0, toStringSafe_1.toStringSafe)(req.query.trigger).trim() : "";
+    const actorType = typeof toStringSafe(req.query.actorType) === "string" ? toStringSafe(req.query.actorType).trim() : "";
+    const fromStage = typeof toStringSafe(req.query.fromStage) === "string" ? toStringSafe(req.query.fromStage).trim() : "";
+    const toStage = typeof toStringSafe(req.query.toStage) === "string" ? toStringSafe(req.query.toStage).trim() : "";
+    const trigger = typeof toStringSafe(req.query.trigger) === "string" ? toStringSafe(req.query.trigger).trim() : "";
     const { limit, offset } = parsePagination(req.query);
     const values = [applicationId];
     const filters = [];
@@ -204,7 +202,7 @@ router.get("/applications/:id/history", auth_1.requireAuth, portalLimiter, (0, a
     }
     values.push(limit, offset);
     const filterClause = filters.length > 0 ? `and ${filters.join(" and ")}` : "";
-    const result = await (0, db_1.runQuery)(`select application_id, from_stage, to_stage, trigger, actor_id, actor_role,
+    const result = await runQuery(`select application_id, from_stage, to_stage, trigger, actor_id, actor_role,
               actor_type, occurred_at, reason
        from application_pipeline_history
        where application_id = $1
@@ -213,15 +211,15 @@ router.get("/applications/:id/history", auth_1.requireAuth, portalLimiter, (0, a
        limit $${values.length - 1} offset $${values.length}`, values);
     res.status(200).json({ items: result.rows ?? [] });
 }));
-router.get("/jobs/:id/history", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuthorization)({ roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] }), (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.get("/jobs/:id/history", requireAuth, portalLimiter, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req, res, next) => {
     ensureAuditHistoryEnabled();
-    const jobId = typeof (0, toStringSafe_1.toStringSafe)(req.params.id) === "string" ? (0, toStringSafe_1.toStringSafe)(req.params.id).trim() : "";
+    const jobId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     if (!jobId) {
-        throw new errors_1.AppError("validation_error", "Job id is required.", 400);
+        throw new AppError("validation_error", "Job id is required.", 400);
     }
-    const jobType = typeof (0, toStringSafe_1.toStringSafe)(req.query.jobType) === "string" ? (0, toStringSafe_1.toStringSafe)(req.query.jobType).trim() : "";
-    const nextStatus = typeof (0, toStringSafe_1.toStringSafe)(req.query.nextStatus) === "string" ? (0, toStringSafe_1.toStringSafe)(req.query.nextStatus).trim() : "";
-    const actorType = typeof (0, toStringSafe_1.toStringSafe)(req.query.actorType) === "string" ? (0, toStringSafe_1.toStringSafe)(req.query.actorType).trim() : "";
+    const jobType = typeof toStringSafe(req.query.jobType) === "string" ? toStringSafe(req.query.jobType).trim() : "";
+    const nextStatus = typeof toStringSafe(req.query.nextStatus) === "string" ? toStringSafe(req.query.nextStatus).trim() : "";
+    const actorType = typeof toStringSafe(req.query.actorType) === "string" ? toStringSafe(req.query.actorType).trim() : "";
     const { limit, offset } = parsePagination(req.query);
     const values = [jobId];
     const filters = [];
@@ -239,7 +237,7 @@ router.get("/jobs/:id/history", auth_1.requireAuth, portalLimiter, (0, auth_1.re
     }
     values.push(limit, offset);
     const filterClause = filters.length > 0 ? `and ${filters.join(" and ")}` : "";
-    const result = await (0, db_1.runQuery)(`select job_id, job_type, application_id, document_id, previous_status, next_status,
+    const result = await runQuery(`select job_id, job_type, application_id, document_id, previous_status, next_status,
               reason, retry_count, last_retry_at, occurred_at, actor_type, actor_id
        from processing_job_history
        where job_id = $1
@@ -248,14 +246,14 @@ router.get("/jobs/:id/history", auth_1.requireAuth, portalLimiter, (0, auth_1.re
        limit $${values.length - 1} offset $${values.length}`, values);
     res.status(200).json({ items: result.rows ?? [] });
 }));
-router.get("/documents/:id/history", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuthorization)({ roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] }), (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.get("/documents/:id/history", requireAuth, portalLimiter, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req, res, next) => {
     ensureAuditHistoryEnabled();
-    const documentId = typeof (0, toStringSafe_1.toStringSafe)(req.params.id) === "string" ? (0, toStringSafe_1.toStringSafe)(req.params.id).trim() : "";
+    const documentId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     if (!documentId) {
-        throw new errors_1.AppError("validation_error", "Document id is required.", 400);
+        throw new AppError("validation_error", "Document id is required.", 400);
     }
-    const nextStatus = typeof (0, toStringSafe_1.toStringSafe)(req.query.nextStatus) === "string" ? (0, toStringSafe_1.toStringSafe)(req.query.nextStatus).trim() : "";
-    const actorType = typeof (0, toStringSafe_1.toStringSafe)(req.query.actorType) === "string" ? (0, toStringSafe_1.toStringSafe)(req.query.actorType).trim() : "";
+    const nextStatus = typeof toStringSafe(req.query.nextStatus) === "string" ? toStringSafe(req.query.nextStatus).trim() : "";
+    const actorType = typeof toStringSafe(req.query.actorType) === "string" ? toStringSafe(req.query.actorType).trim() : "";
     const { limit, offset } = parsePagination(req.query);
     const values = [documentId];
     const filters = [];
@@ -269,7 +267,7 @@ router.get("/documents/:id/history", auth_1.requireAuth, portalLimiter, (0, auth
     }
     values.push(limit, offset);
     const filterClause = filters.length > 0 ? `and ${filters.join(" and ")}` : "";
-    const result = await (0, db_1.runQuery)(`select application_id, document_id, document_type, actor_id, actor_role, actor_type,
+    const result = await runQuery(`select application_id, document_id, document_type, actor_id, actor_role, actor_type,
               previous_status, next_status, reason, occurred_at
        from document_status_history
        where document_id = $1
@@ -278,16 +276,16 @@ router.get("/documents/:id/history", auth_1.requireAuth, portalLimiter, (0, auth
        limit $${values.length - 1} offset $${values.length}`, values);
     res.status(200).json({ items: result.rows ?? [] });
 }));
-router.post("/jobs/:id/retry", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuthorization)({ roles: [roles_1.ROLES.ADMIN] }), (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.post("/jobs/:id/retry", requireAuth, portalLimiter, requireAuthorization({ roles: [ROLES.ADMIN] }), safeHandler(async (req, res, next) => {
     if (!req.user) {
-        throw new errors_1.AppError("missing_token", "Authorization token is required.", 401);
+        throw new AppError("missing_token", "Authorization token is required.", 401);
     }
-    const jobId = typeof (0, toStringSafe_1.toStringSafe)(req.params.id) === "string" ? (0, toStringSafe_1.toStringSafe)(req.params.id).trim() : "";
+    const jobId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     if (!jobId) {
-        throw new errors_1.AppError("validation_error", "Job id is required.", 400);
+        throw new AppError("validation_error", "Job id is required.", 400);
     }
     const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : null;
-    const job = await (0, retry_service_1.retryProcessingJob)({
+    const job = await retryProcessingJob({
         jobId,
         actorUserId: req.user.userId,
         actorRole: req.user.role,
@@ -298,16 +296,16 @@ router.post("/jobs/:id/retry", auth_1.requireAuth, portalLimiter, (0, auth_1.req
     });
     res.status(200).json({ job });
 }));
-router.post("/applications/:id/retry-job", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuthorization)({ roles: [roles_1.ROLES.ADMIN] }), (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.post("/applications/:id/retry-job", requireAuth, portalLimiter, requireAuthorization({ roles: [ROLES.ADMIN] }), safeHandler(async (req, res, next) => {
     if (!req.user) {
-        throw new errors_1.AppError("missing_token", "Authorization token is required.", 401);
+        throw new AppError("missing_token", "Authorization token is required.", 401);
     }
-    const applicationId = typeof (0, toStringSafe_1.toStringSafe)(req.params.id) === "string" ? (0, toStringSafe_1.toStringSafe)(req.params.id).trim() : "";
+    const applicationId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     if (!applicationId) {
-        throw new errors_1.AppError("validation_error", "Application id is required.", 400);
+        throw new AppError("validation_error", "Application id is required.", 400);
     }
     const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : null;
-    const job = await (0, retry_service_1.retryProcessingJobForApplication)({
+    const job = await retryProcessingJobForApplication({
         applicationId,
         actorUserId: req.user.userId,
         actorRole: req.user.role,
@@ -317,34 +315,34 @@ router.post("/applications/:id/retry-job", auth_1.requireAuth, portalLimiter, (0
     });
     res.status(200).json({ job });
 }));
-router.post("/applications/:id/promote", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuthorization)({ roles: [roles_1.ROLES.ADMIN] }), (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.post("/applications/:id/promote", requireAuth, portalLimiter, requireAuthorization({ roles: [ROLES.ADMIN] }), safeHandler(async (req, res, next) => {
     if (!req.user) {
-        throw new errors_1.AppError("missing_token", "Authorization token is required.", 401);
+        throw new AppError("missing_token", "Authorization token is required.", 401);
     }
-    const applicationId = typeof (0, toStringSafe_1.toStringSafe)(req.params.id) === "string" ? (0, toStringSafe_1.toStringSafe)(req.params.id).trim() : "";
+    const applicationId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     if (!applicationId) {
-        throw new errors_1.AppError("validation_error", "Application id is required.", 400);
+        throw new AppError("validation_error", "Application id is required.", 400);
     }
     const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
     if (!reason) {
-        throw new errors_1.AppError("validation_error", "Reason is required.", 400);
+        throw new AppError("validation_error", "Reason is required.", 400);
     }
     const nextStageRaw = typeof req.body?.nextStage === "string" ? req.body.nextStage.trim() : "";
-    if (nextStageRaw && !(0, pipelineState_2.isPipelineState)(nextStageRaw)) {
-        throw new errors_1.AppError("validation_error", "nextStage is invalid.", 400);
+    if (nextStageRaw && !isPipelineState(nextStageRaw)) {
+        throw new AppError("validation_error", "nextStage is invalid.", 400);
     }
-    const record = await (0, applications_repo_1.findApplicationById)(applicationId);
+    const record = await findApplicationById(applicationId);
     if (!record) {
-        throw new errors_1.AppError("not_found", "Application not found.", 404);
+        throw new AppError("not_found", "Application not found.", 404);
     }
-    const currentStage = (0, applicationLifecycle_service_1.assertPipelineState)(record.pipeline_state);
-    const nextStage = nextStageRaw && (0, pipelineState_2.isPipelineState)(nextStageRaw)
+    const currentStage = assertPipelineState(record.pipeline_state);
+    const nextStage = nextStageRaw && isPipelineState(nextStageRaw)
         ? nextStageRaw
-        : (0, applicationLifecycle_service_1.resolveNextPipelineStage)(currentStage);
+        : resolveNextPipelineStage(currentStage);
     if (!nextStage) {
-        throw new errors_1.AppError("invalid_transition", "No valid next stage.", 400);
+        throw new AppError("invalid_transition", "No valid next stage.", 400);
     }
-    const transition = (0, applicationLifecycle_service_1.assertPipelineTransition)({
+    const transition = assertPipelineTransition({
         currentStage,
         nextStage,
         status: null,
@@ -357,7 +355,7 @@ router.post("/applications/:id/promote", auth_1.requireAuth, portalLimiter, (0, 
         ...(req.ip ? { ip: req.ip } : {}),
         ...(req.get("user-agent") ? { userAgent: req.get("user-agent") } : {}),
     };
-    await (0, applications_service_1.transitionPipelineState)({
+    await transitionPipelineState({
         applicationId,
         nextState: nextStage,
         actorUserId: req.user.userId,
@@ -366,7 +364,7 @@ router.post("/applications/:id/promote", auth_1.requireAuth, portalLimiter, (0, 
         reason,
         ...promoteMeta,
     });
-    await (0, audit_service_1.recordAuditEvent)({
+    await recordAuditEvent({
         action: "application_promoted",
         actorUserId: req.user.userId,
         targetUserId: record.owner_user_id,
@@ -381,26 +379,26 @@ router.post("/applications/:id/promote", auth_1.requireAuth, portalLimiter, (0, 
             reason,
         },
     });
-    await (0, processingStage_service_1.advanceProcessingStage)({ applicationId });
+    await advanceProcessingStage({ applicationId });
     res.status(200).json({ ok: true, applicationId, nextStage });
 }));
-router.patch("/applications/:id/status", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuthorization)({ roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] }), (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.patch("/applications/:id/status", requireAuth, portalLimiter, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req, res, next) => {
     if (!req.user) {
-        throw new errors_1.AppError("missing_token", "Authorization token is required.", 401);
+        throw new AppError("missing_token", "Authorization token is required.", 401);
     }
-    const applicationId = typeof (0, toStringSafe_1.toStringSafe)(req.params.id) === "string" ? (0, toStringSafe_1.toStringSafe)(req.params.id).trim() : "";
+    const applicationId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     if (!applicationId) {
-        throw new errors_1.AppError("validation_error", "Application id is required.", 400);
+        throw new AppError("validation_error", "Application id is required.", 400);
     }
     const status = typeof req.body?.status === "string" ? req.body.status.trim() : "";
-    if (!status || !(0, pipelineState_2.isPipelineState)(status)) {
-        throw new errors_1.AppError("validation_error", "status is invalid.", 400);
+    if (!status || !isPipelineState(status)) {
+        throw new AppError("validation_error", "status is invalid.", 400);
     }
     const statusMeta = {
         ...(req.ip ? { ip: req.ip } : {}),
         ...(req.get("user-agent") ? { userAgent: req.get("user-agent") } : {}),
     };
-    await (0, applications_service_1.transitionPipelineState)({
+    await transitionPipelineState({
         applicationId,
         nextState: status,
         actorUserId: req.user.userId,
@@ -411,16 +409,16 @@ router.patch("/applications/:id/status", auth_1.requireAuth, portalLimiter, (0, 
     });
     res.status(200).json({ ok: true, applicationId, status });
 }));
-router.post("/applications/:id/retry", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuthorization)({ roles: [roles_1.ROLES.ADMIN] }), (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.post("/applications/:id/retry", requireAuth, portalLimiter, requireAuthorization({ roles: [ROLES.ADMIN] }), safeHandler(async (req, res, next) => {
     if (!req.user) {
-        throw new errors_1.AppError("missing_token", "Authorization token is required.", 401);
+        throw new AppError("missing_token", "Authorization token is required.", 401);
     }
-    const applicationId = typeof (0, toStringSafe_1.toStringSafe)(req.params.id) === "string" ? (0, toStringSafe_1.toStringSafe)(req.params.id).trim() : "";
+    const applicationId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     if (!applicationId) {
-        throw new errors_1.AppError("validation_error", "Application id is required.", 400);
+        throw new AppError("validation_error", "Application id is required.", 400);
     }
     const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : null;
-    const job = await (0, retry_service_1.retryProcessingJobForApplication)({
+    const job = await retryProcessingJobForApplication({
         applicationId,
         actorUserId: req.user.userId,
         actorRole: req.user.role,
@@ -430,29 +428,29 @@ router.post("/applications/:id/retry", auth_1.requireAuth, portalLimiter, (0, au
     });
     res.status(200).json({ job });
 }));
-router.get("/lenders", portalLimiter, (0, safeHandler_1.safeHandler)(async (_req, res) => {
-    const lenders = await (0, lenders_repo_1.listLenders)(db_1.pool);
+router.get("/lenders", portalLimiter, safeHandler(async (_req, res) => {
+    const lenders = await listLenders(pool);
     res.status(200).json({ items: lenders ?? [] });
 }));
-router.post("/lender-submissions", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuthorization)({ roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] }), (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.post("/lender-submissions", requireAuth, portalLimiter, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req, res, next) => {
     const applicationId = typeof req.body?.application_id === "string" ? req.body.application_id.trim() : "";
     const selectedLenders = Array.isArray(req.body?.selected_lenders) ? req.body.selected_lenders : [];
     if (!applicationId || selectedLenders.length === 0) {
-        throw new errors_1.AppError("validation_error", "application_id and selected_lenders are required.", 400);
+        throw new AppError("validation_error", "application_id and selected_lenders are required.", 400);
     }
     const submissions = [];
     for (const lenderId of selectedLenders) {
-        const result = await (0, db_1.runQuery)(`insert into lender_submissions (id, application_id, lender_id, status, idempotency_key, payload, submitted_at, created_at, updated_at)
+        const result = await runQuery(`insert into lender_submissions (id, application_id, lender_id, status, idempotency_key, payload, submitted_at, created_at, updated_at)
          values ($1, $2, $3, 'submitted', $4, $5, now(), now(), now())
          on conflict (application_id, lender_id) do update
          set status = excluded.status,
              payload = excluded.payload,
              submitted_at = now(),
              updated_at = now()
-         returning id, application_id, lender_id, status, submitted_at, created_at`, [(0, crypto_1.randomUUID)(), applicationId, String(lenderId), (0, crypto_1.randomUUID)(), JSON.stringify({ package: 'generated', documents: 'attached', credit_summary: 'attached' })]);
+         returning id, application_id, lender_id, status, submitted_at, created_at`, [randomUUID(), applicationId, String(lenderId), randomUUID(), JSON.stringify({ package: 'generated', documents: 'attached', credit_summary: 'attached' })]);
         if (result.rows[0]) {
             submissions.push(result.rows[0]);
-            eventBus_1.eventBus.emit("lender_submission_created", {
+            eventBus.emit("lender_submission_created", {
                 submissionId: result.rows[0].id,
                 applicationId,
                 lenderId: result.rows[0].lender_id,
@@ -461,8 +459,8 @@ router.post("/lender-submissions", auth_1.requireAuth, portalLimiter, (0, auth_1
     }
     res.status(201).json({ submissions });
 }));
-router.get("/offers", portalLimiter, (0, safeHandler_1.safeHandler)(async (req, res, next) => {
-    const applicationId = typeof (0, toStringSafe_1.toStringSafe)(req.query.applicationId) === "string" ? (0, toStringSafe_1.toStringSafe)(req.query.applicationId).trim() : "";
+router.get("/offers", portalLimiter, safeHandler(async (req, res, next) => {
+    const applicationId = typeof toStringSafe(req.query.applicationId) === "string" ? toStringSafe(req.query.applicationId).trim() : "";
     const query = applicationId
         ? {
             text: `select id, application_id, lender_name, amount::text as amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, created_at, updated_at
@@ -478,19 +476,19 @@ router.get("/offers", portalLimiter, (0, safeHandler_1.safeHandler)(async (req, 
                  limit 100`,
             values: [],
         };
-    const rows = await (0, db_1.runQuery)(query.text, query.values);
+    const rows = await runQuery(query.text, query.values);
     res.status(200).json({ items: rows.rows });
 }));
-router.post("/offers", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuthorization)({ roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] }), (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.post("/offers", requireAuth, portalLimiter, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req, res, next) => {
     const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
     const lenderName = typeof req.body?.lenderName === "string" ? req.body.lenderName.trim() : "";
     if (!applicationId || !lenderName) {
-        throw new errors_1.AppError("validation_error", "applicationId and lenderName are required.", 400);
+        throw new AppError("validation_error", "applicationId and lenderName are required.", 400);
     }
-    const result = await (0, db_1.runQuery)(`insert into offers (id, application_id, lender_name, amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at)
+    const result = await runQuery(`insert into offers (id, application_id, lender_name, amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, coalesce($11, 'created'), $12, now(), now())
        returning id, application_id, lender_name, amount::text as amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at`, [
-        (0, crypto_1.randomUUID)(),
+        randomUUID(),
         applicationId,
         lenderName,
         req.body?.amount ?? null,
@@ -504,27 +502,27 @@ router.post("/offers", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuth
         typeof req.body?.notes === "string" ? req.body.notes.trim() : null,
     ]);
     if (result.rows[0]) {
-        eventBus_1.eventBus.emit("offer_created", { offerId: result.rows[0].id, applicationId });
+        eventBus.emit("offer_created", { offerId: result.rows[0].id, applicationId });
     }
     res.status(201).json({ offer: result.rows[0] });
 }));
-router.patch("/offers/:id/status", auth_1.requireAuth, portalLimiter, (0, auth_1.requireAuthorization)({ roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] }), (0, safeHandler_1.safeHandler)(async (req, res, next) => {
-    const id = typeof (0, toStringSafe_1.toStringSafe)(req.params.id) === "string" ? (0, toStringSafe_1.toStringSafe)(req.params.id).trim() : "";
+router.patch("/offers/:id/status", requireAuth, portalLimiter, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req, res, next) => {
+    const id = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
     const status = typeof req.body?.status === "string" ? req.body.status.trim() : "";
     const allowed = new Set(["created", "sent", "accepted", "declined"]);
     if (!id || !allowed.has(status)) {
-        throw new errors_1.AppError("validation_error", "Valid status is required.", 400);
+        throw new AppError("validation_error", "Valid status is required.", 400);
     }
-    const updated = await (0, db_1.runQuery)(`update offers
+    const updated = await runQuery(`update offers
        set status = $2, updated_at = now()
        where id = $1
        returning id, application_id, lender_name, amount::text as amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at`, [id, status]);
     if (!updated.rows[0]) {
-        throw new errors_1.AppError("not_found", "Offer not found.", 404);
+        throw new AppError("not_found", "Offer not found.", 404);
     }
     if (updated.rows[0] && status === "accepted") {
-        eventBus_1.eventBus.emit("offer_accepted", { offerId: updated.rows[0].id, applicationId: updated.rows[0].application_id });
+        eventBus.emit("offer_accepted", { offerId: updated.rows[0].id, applicationId: updated.rows[0].application_id });
     }
     res.status(200).json({ offer: updated.rows[0] });
 }));
-exports.default = router;
+export default router;

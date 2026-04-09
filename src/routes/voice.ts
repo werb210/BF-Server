@@ -1,9 +1,9 @@
 import express from "express";
 import VoiceResponse from "twilio/lib/twiml/VoiceResponse";
-import { requireAuth } from "../middleware/requireAuth";
-import { validate } from "../middleware/validate";
-import { CallStatusSchema } from "../schemas";
-import { ok as respondOk } from "../lib/respond";
+import { requireAuth } from "../middleware/requireAuth.js";
+import { validate } from "../middleware/validate.js";
+import { CallStatusSchema } from "../schemas/index.js";
+import { ok as respondOk } from "../lib/respond.js";
 
 const router = express.Router();
 

@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
-import { ApiResponseSchema } from "../contracts";
-import { error, ok } from "../lib/response";
+import { ApiResponseSchema } from "../contracts/index.js";
+import { error, ok } from "../lib/response.js";
 
 type WrappedBody = {
   status?: string;

@@ -1,10 +1,5 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.eventBus = void 0;
-exports.emit = emit;
-exports.on = on;
 const listeners = {};
-exports.eventBus = {
+export const eventBus = {
     emit(event, payload) {
         if (!listeners[event])
             return;
@@ -17,9 +12,9 @@ exports.eventBus = {
         listeners[event].push(handler);
     },
 };
-function emit(event, payload) {
-    exports.eventBus.emit(event, payload);
+export function emit(event, payload) {
+    eventBus.emit(event, payload);
 }
-function on(event, handler) {
-    exports.eventBus.on(event, handler);
+export function on(event, handler) {
+    eventBus.on(event, handler);
 }

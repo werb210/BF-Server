@@ -1,6 +1,6 @@
-import { randomUUID } from "crypto";
-import { pool, runQuery } from "../db";
-import { AppError } from "../middleware/errors";
+import { randomUUID } from "node:crypto";
+import { pool, runQuery } from "../db.js";
+import { AppError } from "../middleware/errors.js";
 
 export type PwaSubscription = {
   id: string;

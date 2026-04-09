@@ -1,7 +1,7 @@
-import { config } from "../config";
-import { logger } from "../platform/logger";
-import { pushDeadLetter } from "../lib/deadLetter";
-import { withRetry } from "../lib/retry";
+import { config } from "../config/index.js";
+import { logger } from "../platform/logger.js";
+import { pushDeadLetter } from "../lib/deadLetter.js";
+import { withRetry } from "../lib/retry.js";
 
 export async function sendSlackAlert(message: string): Promise<void> {
   const webhookUrl = config.alerting.slackWebhookUrl;

@@ -1,9 +1,8 @@
-import type Redis from "ioredis";
-import { config } from "../config";
+import { config } from "../config/index.js";
 
-let redisInstance: Redis | null = null;
+let redisInstance: any = null;
 
-export function getRedis(): Redis | null {
+export function getRedis(): any {
   const redisUrl = config.redis.url;
   if (!redisUrl) {
     return null;
@@ -11,7 +10,7 @@ export function getRedis(): Redis | null {
 
   if (!redisInstance) {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const IORedis = require("ioredis") as new (...args: any[]) => Redis;
+    const IORedis = require("ioredis");
     redisInstance = new IORedis(redisUrl, {
       lazyConnect: true,
       maxRetriesPerRequest: 1,

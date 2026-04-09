@@ -1,14 +1,12 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.EmailAdapter = void 0;
-const config_1 = require("../../../config");
-class EmailAdapter {
+import { config } from "../../../config/index.js";
+export class EmailAdapter {
+    to;
     constructor(params) {
         this.to = params.to;
         void params.payload;
     }
     async submit(_applicationId) {
-        if (config_1.config.app.testMode === "true") {
+        if (config.app.testMode === "true") {
             console.log("[TEST_MODE] EMAIL skipped");
             return {
                 success: true,
@@ -36,4 +34,3 @@ class EmailAdapter {
         };
     }
 }
-exports.EmailAdapter = EmailAdapter;

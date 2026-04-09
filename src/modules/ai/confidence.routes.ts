@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { upsertCrmLead } from "../crm/leadUpsert.service";
-import { sendSMS } from "../../services/smsService";
-import { logWarn } from "../../observability/logger";
+import { upsertCrmLead } from "../crm/leadUpsert.service.js";
+import { sendSMS } from "../../services/smsService.js";
+import { logWarn } from "../../observability/logger.js";
 
 const router = Router();
 

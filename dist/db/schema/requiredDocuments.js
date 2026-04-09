@@ -1,10 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.ALWAYS_REQUIRED_DOCUMENTS = exports.REQUIRED_DOCUMENT_KEYS = void 0;
-exports.normalizeRequiredDocumentKey = normalizeRequiredDocumentKey;
-exports.isRequiredDocumentKey = isRequiredDocumentKey;
-exports.fetchDocumentTypeAliases = fetchDocumentTypeAliases;
-exports.REQUIRED_DOCUMENT_KEYS = [
+export const REQUIRED_DOCUMENT_KEYS = [
     "bank_statements_6_months",
     "government_id",
     "void_cheque",
@@ -21,7 +15,7 @@ exports.REQUIRED_DOCUMENT_KEYS = [
     "lease_agreement",
     "real_estate_schedule",
 ];
-exports.ALWAYS_REQUIRED_DOCUMENTS = [
+export const ALWAYS_REQUIRED_DOCUMENTS = [
     "bank_statements_6_months",
 ];
 const LEGACY_DOCUMENT_KEY_MAP = {
@@ -68,13 +62,13 @@ const DOCUMENT_TYPE_ALIASES = {
     lease_agreement: ["lease_agreement"],
     real_estate_schedule: ["real_estate_schedule"],
 };
-function normalizeRequiredDocumentKey(value) {
+export function normalizeRequiredDocumentKey(value) {
     const normalized = value.trim().toLowerCase();
     return LEGACY_DOCUMENT_KEY_MAP[normalized] ?? null;
 }
-function isRequiredDocumentKey(value) {
+export function isRequiredDocumentKey(value) {
     return Boolean(normalizeRequiredDocumentKey(value));
 }
-function fetchDocumentTypeAliases(value) {
+export function fetchDocumentTypeAliases(value) {
     return DOCUMENT_TYPE_ALIASES[value] ?? [value];
 }

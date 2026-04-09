@@ -1,11 +1,11 @@
-import { config } from "../../../config";
+import { config } from "../../../config/index.js";
 import { google } from "googleapis";
-import { logError, logInfo } from "../../../observability/logger";
+import { logError, logInfo } from "../../../observability/logger.js";
 import {
   type SubmissionAdapter,
   type SubmissionPayload,
   type SubmissionResult,
-} from "./SubmissionAdapter";
+} from "./SubmissionAdapter.js";
 
 export type GoogleSheetSubmissionConfig = {
   spreadsheetId: string;

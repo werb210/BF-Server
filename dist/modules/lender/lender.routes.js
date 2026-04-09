@@ -1,20 +1,18 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const zod_1 = require("zod");
-const auth_1 = require("../../middleware/auth");
-const idempotency_1 = require("../../middleware/idempotency");
-const packageBuilder_1 = require("../../services/lenders/packageBuilder");
-const lenderProducts_service_1 = require("../../services/lenderProducts/lenderProducts.service");
-const lenderQueue_1 = require("../../queue/lenderQueue");
-const logger_1 = require("../../server/utils/logger");
-const sendLenderPackageSchema = zod_1.z.object({
-    application: zod_1.z.object({}).passthrough(),
-    documents: zod_1.z.array(zod_1.z.unknown()),
-    creditSummary: zod_1.z.object({}).passthrough(),
+import { Router } from "express";
+import { z } from "zod";
+import { requireAuth } from "../../middleware/auth.js";
+import { idempotencyMiddleware } from "../../middleware/idempotency.js";
+import { buildLenderPackage } from "../../services/lenders/packageBuilder.js";
+import { lenderProductsService } from "../../services/lenderProducts/lenderProducts.service.js";
+import { enqueueLenderPackage, getLenderQueue } from "../../queue/lenderQueue.js";
+import { logger } from "../../server/utils/logger.js";
+const sendLenderPackageSchema = z.object({
+    application: z.object({}).passthrough(),
+    documents: z.array(z.unknown()),
+    creditSummary: z.object({}).passthrough(),
 });
-const router = (0, express_1.Router)();
-router.post("/send", auth_1.requireAuth, idempotency_1.idempotencyMiddleware, async (req, res, next) => {
+const router = Router();
+router.post("/send", requireAuth, idempotencyMiddleware, async (req, res, next) => {
     if (!req.body ||
         typeof req.body !== "object" ||
         !("application" in req.body) ||
@@ -40,16 +38,16 @@ router.post("/send", auth_1.requireAuth, idempotency_1.idempotencyMiddleware, as
             });
         }
         const body = parseResult.data;
-        const packageData = (0, packageBuilder_1.buildLenderPackage)(body);
-        const queue = (0, lenderQueue_1.getLenderQueue)();
+        const packageData = buildLenderPackage(body);
+        const queue = getLenderQueue();
         if (queue) {
             try {
-                const jobId = await (0, lenderQueue_1.enqueueLenderPackage)(body);
+                const jobId = await enqueueLenderPackage(body);
                 res.status(202).json({ status: "queued", jobId, packagePreview: packageData });
                 return;
             }
             catch (queueErr) {
-                logger_1.logger.warn("lender_package_queue_unavailable", {
+                logger.warn("lender_package_queue_unavailable", {
                     err: queueErr instanceof Error ? queueErr.message : String(queueErr),
                 });
             }
@@ -60,13 +58,13 @@ router.post("/send", auth_1.requireAuth, idempotency_1.idempotencyMiddleware, as
         next(err);
     }
 });
-router.get("/products", auth_1.requireAuth, async (_req, res, next) => {
+router.get("/products", requireAuth, async (_req, res, next) => {
     try {
-        const products = await lenderProducts_service_1.lenderProductsService.list();
+        const products = await lenderProductsService.list();
         res["json"](products);
     }
     catch (err) {
         next(err);
     }
 });
-exports.default = router;
+export default router;

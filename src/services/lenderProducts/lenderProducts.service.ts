@@ -1,8 +1,8 @@
-import { getPrisma } from "../../lib/db";
+import { getPrisma } from "../../lib/db.js";
 import {
   CreateLenderProductDTO,
   UpdateLenderProductDTO,
-} from "../../types/dto/lenderProduct.dto";
+} from "../../types/dto/lenderProduct.dto.js";
 
 export const lenderProductsService = {
   async list() {

@@ -1,17 +1,15 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const errors_1 = require("../middleware/errors");
-const auth_1 = require("../middleware/auth");
-const capabilities_1 = require("../auth/capabilities");
-const audit_service_1 = require("../modules/audit/audit.service");
-const logger_1 = require("../observability/logger");
-const safeHandler_1 = require("../middleware/safeHandler");
-const ops_service_1 = require("../modules/ops/ops.service");
-const export_service_1 = require("../modules/exports/export.service");
-const router = (0, express_1.Router)();
-router.use(auth_1.requireAuth);
-router.use((0, auth_1.requireCapability)([capabilities_1.CAPABILITIES.OPS_MANAGE]));
+import { Router } from "express";
+import { AppError } from "../middleware/errors.js";
+import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { CAPABILITIES } from "../auth/capabilities.js";
+import { recordAuditEvent } from "../modules/audit/audit.service.js";
+import { logError } from "../observability/logger.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { isKillSwitchEnabled } from "../modules/ops/ops.service.js";
+import { exportApplicationVolume, exportLenderPerformance, exportPipelineSummary, recordExportAudit, } from "../modules/exports/export.service.js";
+const router = Router();
+router.use(requireAuth);
+router.use(requireCapability([CAPABILITIES.OPS_MANAGE]));
 function parseFormat(value) {
     if (value === "csv") {
         return "csv";
@@ -23,11 +21,11 @@ function parseDate(value, label) {
         return null;
     }
     if (typeof value !== "string") {
-        throw new errors_1.AppError("invalid_range", `Invalid ${label} timestamp.`, 400);
+        throw new AppError("invalid_range", `Invalid ${label} timestamp.`, 400);
     }
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
-        throw new errors_1.AppError("invalid_range", `Invalid ${label} timestamp.`, 400);
+        throw new AppError("invalid_range", `Invalid ${label} timestamp.`, 400);
     }
     return parsed;
 }
@@ -35,7 +33,7 @@ function parseFilters(body) {
     const from = parseDate(body.from, "from");
     const to = parseDate(body.to, "to");
     if (from && to && from > to) {
-        throw new errors_1.AppError("invalid_range", "from must be before to.", 400);
+        throw new AppError("invalid_range", "from must be before to.", 400);
     }
     return {
         from,
@@ -46,12 +44,12 @@ function parseFilters(body) {
     };
 }
 async function assertExportsEnabled() {
-    if (await (0, ops_service_1.isKillSwitchEnabled)("exports")) {
-        throw new errors_1.AppError("ops_kill_switch", "Exports are currently disabled.", 423);
+    if (await isKillSwitchEnabled("exports")) {
+        throw new AppError("ops_kill_switch", "Exports are currently disabled.", 423);
     }
 }
 async function handleExport(params) {
-    await (0, export_service_1.recordExportAudit)({
+    await recordExportAudit({
         actorUserId: params.actorUserId,
         exportType: params.exportType,
         filters: params.filters,
@@ -68,7 +66,7 @@ function fetchAuditContext(req) {
         userAgent: req.get("user-agent") ?? null,
     };
 }
-router.post("/pipeline", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.post("/pipeline", safeHandler(async (req, res, next) => {
     try {
         await assertExportsEnabled();
         const format = parseFormat(req.body?.format);
@@ -80,12 +78,12 @@ router.post("/pipeline", (0, safeHandler_1.safeHandler)(async (req, res, next) =
                 reqBody: req.body ?? {},
                 actorUserId,
                 exportType: "pipeline_summary",
-                run: export_service_1.exportPipelineSummary,
+                run: exportPipelineSummary,
                 format,
                 filters,
                 write: (chunk) => res.write(chunk),
             });
-            await (0, audit_service_1.recordAuditEvent)({
+            await recordAuditEvent({
                 action: "export_pipeline_summary",
                 actorUserId,
                 targetUserId: null,
@@ -100,11 +98,11 @@ router.post("/pipeline", (0, safeHandler_1.safeHandler)(async (req, res, next) =
             reqBody: req.body ?? {},
             actorUserId,
             exportType: "pipeline_summary",
-            run: export_service_1.exportPipelineSummary,
+            run: exportPipelineSummary,
             format,
             filters,
         });
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "export_pipeline_summary",
             actorUserId,
             targetUserId: null,
@@ -116,7 +114,7 @@ router.post("/pipeline", (0, safeHandler_1.safeHandler)(async (req, res, next) =
         res["json"]({ data: rows });
     }
     catch (err) {
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "export_pipeline_summary",
             actorUserId: req.user?.userId ?? null,
             targetUserId: null,
@@ -126,11 +124,11 @@ router.post("/pipeline", (0, safeHandler_1.safeHandler)(async (req, res, next) =
             success: false,
         });
         const message = err instanceof Error ? err.message : "unknown error";
-        (0, logger_1.logError)("export_failed", { code: "export_failed", message });
+        logError("export_failed", { code: "export_failed", message });
         next(err);
     }
 }));
-router.post("/lenders", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.post("/lenders", safeHandler(async (req, res, next) => {
     try {
         await assertExportsEnabled();
         const format = parseFormat(req.body?.format);
@@ -142,12 +140,12 @@ router.post("/lenders", (0, safeHandler_1.safeHandler)(async (req, res, next) =>
                 reqBody: req.body ?? {},
                 actorUserId,
                 exportType: "lender_performance",
-                run: export_service_1.exportLenderPerformance,
+                run: exportLenderPerformance,
                 format,
                 filters,
                 write: (chunk) => res.write(chunk),
             });
-            await (0, audit_service_1.recordAuditEvent)({
+            await recordAuditEvent({
                 action: "export_lender_performance",
                 actorUserId,
                 targetUserId: null,
@@ -162,11 +160,11 @@ router.post("/lenders", (0, safeHandler_1.safeHandler)(async (req, res, next) =>
             reqBody: req.body ?? {},
             actorUserId,
             exportType: "lender_performance",
-            run: export_service_1.exportLenderPerformance,
+            run: exportLenderPerformance,
             format,
             filters,
         });
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "export_lender_performance",
             actorUserId,
             targetUserId: null,
@@ -178,7 +176,7 @@ router.post("/lenders", (0, safeHandler_1.safeHandler)(async (req, res, next) =>
         res["json"]({ data: rows });
     }
     catch (err) {
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "export_lender_performance",
             actorUserId: req.user?.userId ?? null,
             targetUserId: null,
@@ -188,11 +186,11 @@ router.post("/lenders", (0, safeHandler_1.safeHandler)(async (req, res, next) =>
             success: false,
         });
         const message = err instanceof Error ? err.message : "unknown error";
-        (0, logger_1.logError)("export_failed", { code: "export_failed", message });
+        logError("export_failed", { code: "export_failed", message });
         next(err);
     }
 }));
-router.post("/applications", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.post("/applications", safeHandler(async (req, res, next) => {
     try {
         await assertExportsEnabled();
         const format = parseFormat(req.body?.format);
@@ -204,12 +202,12 @@ router.post("/applications", (0, safeHandler_1.safeHandler)(async (req, res, nex
                 reqBody: req.body ?? {},
                 actorUserId,
                 exportType: "application_volume",
-                run: export_service_1.exportApplicationVolume,
+                run: exportApplicationVolume,
                 format,
                 filters,
                 write: (chunk) => res.write(chunk),
             });
-            await (0, audit_service_1.recordAuditEvent)({
+            await recordAuditEvent({
                 action: "export_application_volume",
                 actorUserId,
                 targetUserId: null,
@@ -224,11 +222,11 @@ router.post("/applications", (0, safeHandler_1.safeHandler)(async (req, res, nex
             reqBody: req.body ?? {},
             actorUserId,
             exportType: "application_volume",
-            run: export_service_1.exportApplicationVolume,
+            run: exportApplicationVolume,
             format,
             filters,
         });
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "export_application_volume",
             actorUserId,
             targetUserId: null,
@@ -240,7 +238,7 @@ router.post("/applications", (0, safeHandler_1.safeHandler)(async (req, res, nex
         res["json"]({ data: rows });
     }
     catch (err) {
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "export_application_volume",
             actorUserId: req.user?.userId ?? null,
             targetUserId: null,
@@ -250,8 +248,8 @@ router.post("/applications", (0, safeHandler_1.safeHandler)(async (req, res, nex
             success: false,
         });
         const message = err instanceof Error ? err.message : "unknown error";
-        (0, logger_1.logError)("export_failed", { code: "export_failed", message });
+        logError("export_failed", { code: "export_failed", message });
         next(err);
     }
 }));
-exports.default = router;
+export default router;

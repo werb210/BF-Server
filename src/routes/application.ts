@@ -1,12 +1,12 @@
 import { Router } from "express";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { db } from "../db";
-import { createApplication } from "../modules/applications/applications.repo";
-import { config } from "../config";
-import { fail, ok } from "../lib/apiResponse";
-import { validate } from "../middleware/validate";
-import { wrap } from "../lib/routeWrap";
+import { db } from "../db.js";
+import { createApplication } from "../modules/applications/applications.repo.js";
+import { config } from "../config/index.js";
+import { fail, ok } from "../lib/apiResponse.js";
+import { validate } from "../middleware/validate.js";
+import { wrap } from "../lib/routeWrap.js";
 
 const router = Router();
 

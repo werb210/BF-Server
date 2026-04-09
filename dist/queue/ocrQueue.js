@@ -1,11 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.ocrQueue = exports.OCR_QUEUE_NAME = void 0;
-const bullmq_1 = require("bullmq");
-const redis_1 = require("./redis");
-exports.OCR_QUEUE_NAME = "ocr-processing";
-exports.ocrQueue = new bullmq_1.Queue(exports.OCR_QUEUE_NAME, {
-    connection: redis_1.redisConnection,
+import { Queue } from "bullmq";
+import { redisConnection } from "./redis.js";
+export const OCR_QUEUE_NAME = "ocr-processing";
+export const ocrQueue = new Queue(OCR_QUEUE_NAME, {
+    connection: redisConnection,
     defaultJobOptions: {
         attempts: 3,
         backoff: {

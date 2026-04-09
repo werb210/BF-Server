@@ -1,9 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.SubmissionRouter = void 0;
-const googleSheets_adapter_1 = require("./googleSheets.adapter");
-const EmailAdapter_1 = require("./adapters/EmailAdapter");
-const ApiAdapter_1 = require("./adapters/ApiAdapter");
+import { GoogleSheetsAdapter, } from "./googleSheets.adapter.js";
+import { EmailAdapter } from "./adapters/EmailAdapter.js";
+import { ApiAdapter } from "./adapters/ApiAdapter.js";
 function asGoogleSheetsConfig(config) {
     if (!config || typeof config !== "object") {
         return null;
@@ -22,14 +19,15 @@ function asGoogleSheetsConfig(config) {
         mapping,
     };
 }
-class SubmissionRouter {
+export class SubmissionRouter {
+    adapter;
     constructor(params) {
         if (params.method === "google_sheet") {
             const sheetConfig = asGoogleSheetsConfig(params.submissionConfig);
             if (!sheetConfig) {
                 throw new Error("Google Sheets submission config is required.");
             }
-            this.adapter = new googleSheets_adapter_1.GoogleSheetsAdapter({
+            this.adapter = new GoogleSheetsAdapter({
                 payload: params.payload,
                 config: sheetConfig,
             });
@@ -40,11 +38,11 @@ class SubmissionRouter {
             if (!target) {
                 throw new Error("Submission email is required.");
             }
-            this.adapter = new EmailAdapter_1.EmailAdapter({ to: target, payload: params.payload });
+            this.adapter = new EmailAdapter({ to: target, payload: params.payload });
             return;
         }
         if (params.method === "api") {
-            this.adapter = new ApiAdapter_1.ApiAdapter({
+            this.adapter = new ApiAdapter({
                 lenderId: params.lenderId,
                 payload: params.payload,
                 attempt: params.attempt,
@@ -69,4 +67,3 @@ class SubmissionRouter {
         return this.adapter.submit(applicationId);
     }
 }
-exports.SubmissionRouter = SubmissionRouter;

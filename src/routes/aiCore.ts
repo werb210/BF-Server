@@ -5,7 +5,7 @@ import {
   createContinuation,
   escalate,
   tagStartupInterest,
-} from "../controllers/ai.controller";
+} from "../controllers/ai.controller.js";
 
 const router = Router();
 

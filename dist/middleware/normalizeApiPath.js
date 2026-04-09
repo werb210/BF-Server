@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.normalizeApiPath = normalizeApiPath;
-function normalizeApiPath(req, _res, next) {
+export function normalizeApiPath(req, _res, next) {
     if (req.url.startsWith("/api/api/")) {
         req.url = req.url.replace("/api/api/", "/api/");
     }

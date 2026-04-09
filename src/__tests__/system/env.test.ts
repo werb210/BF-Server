@@ -1,5 +1,5 @@
-import { validateEnv } from "../../system/env";
-import { applyEnv, captureOriginalEnv, restoreEnv } from "../../../test/utils/testEnv";
+import { validateEnv } from "../../system/env.js";
+import { applyEnv, captureOriginalEnv, restoreEnv } from "../../../test/utils/testEnv.js";
 
 describe("system/env", () => {
   let originalEnv = captureOriginalEnv();

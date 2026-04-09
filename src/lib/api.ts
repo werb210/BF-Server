@@ -1,5 +1,5 @@
-import { ApiResponseSchema } from "../contracts";
-import { API_BASE } from "../config/api";
+import { ApiResponseSchema } from "../contracts/index.js";
+import { API_BASE } from "../config/api.js";
 
 type ApiMethod = "get" | "post";
 

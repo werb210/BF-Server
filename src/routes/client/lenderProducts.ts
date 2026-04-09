@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { AppError } from "../../middleware/errors";
-import { safeHandler } from "../../middleware/safeHandler";
-import { listLenderProducts } from "../../repositories/lenderProducts.repo";
-import { listRequirementsForFilters, resolveLenderProductRequirements } from "../../services/lenderProductRequirementsService";
+import { AppError } from "../../middleware/errors.js";
+import { safeHandler } from "../../middleware/safeHandler.js";
+import { listLenderProducts } from "../../repositories/lenderProducts.repo.js";
+import { listRequirementsForFilters, resolveLenderProductRequirements } from "../../services/lenderProductRequirementsService.js";
 
 const router = Router();
 

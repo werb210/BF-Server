@@ -1,5 +1,5 @@
-import { pool, runQuery } from "../db";
-import { normalizeToPercent, scoreAmountFit, type PrequalInput } from "./scoringEngine";
+import { pool, runQuery } from "../db.js";
+import { normalizeToPercent, scoreAmountFit, type PrequalInput } from "./scoringEngine.js";
 
 type ProductRow = {
   id: string;

@@ -1,4 +1,4 @@
-import { deps } from "./deps";
+import { deps } from "./deps.js";
 
 export function trackRequest() {
   deps.metrics.requests++;

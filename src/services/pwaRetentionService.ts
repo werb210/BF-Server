@@ -1,4 +1,4 @@
-import { purgeOldPwaNotifications } from "../repositories/pwa.repo";
+import { purgeOldPwaNotifications } from "../repositories/pwa.repo.js";
 
 export async function runPwaNotificationRetention(retentionDays = 30): Promise<{ purged: number }> {
   const normalizedDays = Number.isFinite(retentionDays)

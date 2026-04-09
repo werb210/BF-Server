@@ -1,9 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.validateTwilioWebhook = exports.twilioWebhookValidation = void 0;
-const webhooks_1 = require("twilio/lib/webhooks/webhooks");
-const logger_1 = require("../observability/logger");
-const config_1 = require("../config");
+import { validateRequest } from "twilio/lib/webhooks/webhooks";
+import { logWarn } from "../observability/logger.js";
+import { config } from "../config/index.js";
 function resolvePublicWebhookUrl(req) {
     const forwardedProto = req.get("X-Forwarded-Proto");
     const forwardedHost = req.get("X-Forwarded-Host");
@@ -14,10 +11,10 @@ function resolvePublicWebhookUrl(req) {
     }
     return `${protocol}://${host}${req.originalUrl}`;
 }
-const twilioWebhookValidation = (req, res, next) => {
-    const authToken = config_1.config.twilio.authToken?.trim();
+export const twilioWebhookValidation = (req, res, next) => {
+    const authToken = config.twilio.authToken?.trim();
     if (!authToken) {
-        (0, logger_1.logWarn)("twilio_webhook_auth_token_missing", { path: req.originalUrl });
+        logWarn("twilio_webhook_auth_token_missing", { path: req.originalUrl });
         res.status(500).json({ code: "twilio_misconfigured", message: "Twilio auth token is missing." });
         return;
     }
@@ -26,12 +23,11 @@ const twilioWebhookValidation = (req, res, next) => {
         res.status(403).json({ code: "invalid_signature", message: "Missing Twilio signature." });
         return;
     }
-    const isValid = (0, webhooks_1.validateRequest)(authToken, signature, resolvePublicWebhookUrl(req), (req.body ?? {}));
+    const isValid = validateRequest(authToken, signature, resolvePublicWebhookUrl(req), (req.body ?? {}));
     if (!isValid) {
         res.status(403).json({ code: "invalid_signature", message: "Invalid Twilio signature." });
         return;
     }
     next();
 };
-exports.twilioWebhookValidation = twilioWebhookValidation;
-exports.validateTwilioWebhook = exports.twilioWebhookValidation;
+export const validateTwilioWebhook = twilioWebhookValidation;

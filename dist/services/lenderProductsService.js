@@ -1,14 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULT_LENDER_PRODUCT_NAME = void 0;
-exports.createLenderProductService = createLenderProductService;
-exports.listLenderProductsService = listLenderProductsService;
-exports.listLenderProductsByLenderIdService = listLenderProductsByLenderIdService;
-exports.fetchLenderProductByIdService = fetchLenderProductByIdService;
-exports.updateLenderProductService = updateLenderProductService;
-const errors_1 = require("../middleware/errors");
-const lenderProducts_repo_1 = require("../repositories/lenderProducts.repo");
-exports.DEFAULT_LENDER_PRODUCT_NAME = "Unnamed Product";
+import { AppError } from "../middleware/errors.js";
+import { createLenderProduct, fetchLenderProductById, listLenderProducts, listLenderProductsByLenderId, updateLenderProduct, } from "../repositories/lenderProducts.repo.js";
+export const DEFAULT_LENDER_PRODUCT_NAME = "Unnamed Product";
 const DEFAULT_SILO = "default";
 function normalizeCategory(value) {
     const normalized = value.trim().toUpperCase();
@@ -31,13 +23,13 @@ function normalizeCategory(value) {
 }
 function normalizeLenderProductName(value) {
     if (value === undefined || value === null) {
-        return exports.DEFAULT_LENDER_PRODUCT_NAME;
+        return DEFAULT_LENDER_PRODUCT_NAME;
     }
     if (typeof value !== "string") {
-        throw new errors_1.AppError("validation_error", "name must be a string.", 400);
+        throw new AppError("validation_error", "name must be a string.", 400);
     }
     const trimmed = value.trim();
-    return trimmed.length === 0 ? exports.DEFAULT_LENDER_PRODUCT_NAME : trimmed;
+    return trimmed.length === 0 ? DEFAULT_LENDER_PRODUCT_NAME : trimmed;
 }
 function resolveSilo(value) {
     if (typeof value === "string" && value.trim().length > 0) {
@@ -56,12 +48,12 @@ function filterBySilo(records, silo) {
         return resolveSilo(recordSilo) === silo;
     });
 }
-async function createLenderProductService(params) {
+export async function createLenderProductService(params) {
     const normalizedName = normalizeLenderProductName(params.name);
     const normalizedCategory = typeof params.category === "string" && params.category.trim().length > 0
         ? normalizeCategory(params.category)
         : "LOC";
-    const product = await (0, lenderProducts_repo_1.createLenderProduct)({
+    const product = await createLenderProduct({
         lenderId: params.lenderId,
         name: normalizedName,
         active: params.active,
@@ -76,20 +68,20 @@ async function createLenderProductService(params) {
     });
     return product;
 }
-async function listLenderProductsService(params) {
-    const products = await (0, lenderProducts_repo_1.listLenderProducts)();
+export async function listLenderProductsService(params) {
+    const products = await listLenderProducts();
     const resolvedSilo = resolveSilo(params?.silo);
     return filterBySilo(products, resolvedSilo);
 }
-async function listLenderProductsByLenderIdService(params) {
-    const products = await (0, lenderProducts_repo_1.listLenderProductsByLenderId)(params.lenderId);
+export async function listLenderProductsByLenderIdService(params) {
+    const products = await listLenderProductsByLenderId(params.lenderId);
     const resolvedSilo = resolveSilo(params.silo);
     return filterBySilo(products, resolvedSilo);
 }
-async function fetchLenderProductByIdService(params) {
-    return (0, lenderProducts_repo_1.fetchLenderProductById)(params.id);
+export async function fetchLenderProductByIdService(params) {
+    return fetchLenderProductById(params.id);
 }
-async function updateLenderProductService(params) {
+export async function updateLenderProductService(params) {
     const normalizedName = normalizeLenderProductName(params.name);
     const updatePayload = {
         id: params.id,
@@ -104,5 +96,5 @@ async function updateLenderProductService(params) {
         ...(params.termMin !== undefined ? { termMin: params.termMin } : {}),
         ...(params.termMax !== undefined ? { termMax: params.termMax } : {}),
     };
-    return (0, lenderProducts_repo_1.updateLenderProduct)(updatePayload);
+    return updateLenderProduct(updatePayload);
 }

@@ -1,6 +1,6 @@
-import { fetchRequestId, fetchRequestRoute, fetchRequestIdempotencyKeyHash } from "../observability/requestContext";
-import { logWarn } from "./logger";
-import { trackEvent } from "./appInsights";
+import { fetchRequestId, fetchRequestRoute, fetchRequestIdempotencyKeyHash } from "../observability/requestContext.js";
+import { logWarn } from "./logger.js";
+import { trackEvent } from "./appInsights.js";
 
 export function recordTransactionRollback(error?: unknown): void {
   const requestId = fetchRequestId() ?? "unknown";

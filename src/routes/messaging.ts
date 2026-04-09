@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { twilioClient, twilioEnabled, fromNumber, callerId } from "../lib/twilioClient";
-import { wrap } from "../lib/routeWrap";
+import { twilioClient, twilioEnabled, fromNumber, callerId } from "../lib/twilioClient.js";
+import { wrap } from "../lib/routeWrap.js";
 
 const router = Router();
 

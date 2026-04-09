@@ -1,10 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.listCommunications = listCommunications;
-exports.listMessages = listMessages;
-const db_1 = require("../../db");
-async function listCommunications(params) {
-    const runner = params.client ?? db_1.pool;
+import { pool } from "../../db.js";
+export async function listCommunications(params) {
+    const runner = params.client ?? pool;
     const values = [];
     const conditions = [];
     if (params.contactId) {
@@ -40,8 +36,8 @@ async function listCommunications(params) {
     }
     return result.rows;
 }
-async function listMessages(params) {
-    const runner = params.client ?? db_1.pool;
+export async function listMessages(params) {
+    const runner = params.client ?? pool;
     const values = [];
     const conditions = [];
     if (params.contactId) {

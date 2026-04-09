@@ -1,15 +1,13 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const db_1 = require("../../db");
-const router = (0, express_1.Router)();
+import { Router } from "express";
+import { runQuery } from "../../db.js";
+const router = Router();
 /**
  * GET /api/client/lenders
  * Public, read-only, ACTIVE lenders only
  */
 router.get("/", async (_req, res, next) => {
     try {
-        const { rows } = await (0, db_1.runQuery)(`
+        const { rows } = await runQuery(`
       SELECT id, name
       FROM lenders
       WHERE active = true
@@ -21,4 +19,4 @@ router.get("/", async (_req, res, next) => {
         next(err);
     }
 });
-exports.default = router;
+export default router;

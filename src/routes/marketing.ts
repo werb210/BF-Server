@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { requireAuth, requireCapability } from "../middleware/auth";
-import { CAPABILITIES } from "../auth/capabilities";
-import { safeHandler } from "../middleware/safeHandler";
-import { respondOk } from "../utils/respondOk";
+import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { CAPABILITIES } from "../auth/capabilities.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { respondOk } from "../utils/respondOk.js";
 
 const router = Router();
 

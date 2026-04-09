@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { db } from "../db";
+import { db } from "../db.js";
 
 export async function createContinuation(applicationId: string): Promise<string> {
   const token = crypto.randomUUID();

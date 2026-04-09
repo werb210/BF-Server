@@ -1,6 +1,6 @@
 import type { QueryResult, QueryResultRow } from "pg";
 
-import { deps } from "../system/deps";
+import { deps } from "../system/deps.js";
 
 export async function runQuery<T extends QueryResultRow = QueryResultRow>(
   text: string,

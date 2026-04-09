@@ -1,17 +1,14 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.submitCreditReadiness = submitCreditReadiness;
-const crm_service_1 = require("../crm/crm.service");
-const sms_service_1 = require("../notifications/sms.service");
-const continuation_service_1 = require("../continuation/continuation.service");
-const clean_1 = require("../../utils/clean");
-async function submitCreditReadiness(req, res) {
+import { createCrmLead } from "../crm/crm.service.js";
+import { sendSms } from "../notifications/sms.service.js";
+import { createContinuation } from "../continuation/continuation.service.js";
+import { stripUndefined } from "../../utils/clean.js";
+export async function submitCreditReadiness(req, res) {
     try {
         const { companyName, fullName, phone, email, industry, yearsInBusiness, monthlyRevenue, annualRevenue, requestedAmount, creditScoreRange, productInterest, industryInterest, arOutstanding, existingDebt, } = req.body;
         if (!companyName || !fullName || !phone || !email) {
             return res.status(400).json({ error: "Missing required fields" });
         }
-        const lead = await (0, crm_service_1.createCrmLead)((0, clean_1.stripUndefined)({
+        const lead = await createCrmLead(stripUndefined({
             companyName,
             fullName,
             phone,
@@ -29,8 +26,8 @@ async function submitCreditReadiness(req, res) {
             source: "website_credit_readiness",
             tags: ["credit_readiness"],
         }));
-        const token = await (0, continuation_service_1.createContinuation)(req.body, lead.id);
-        await (0, sms_service_1.sendSms)({
+        const token = await createContinuation(req.body, lead.id);
+        await sendSms({
             to: "+15878881837",
             message: `New continuation lead: ${companyName}`,
         });

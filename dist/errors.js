@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.Errors = void 0;
-exports.Errors = {
+export const Errors = {
     INVALID_JSON: "INVALID_JSON",
     INVALID_INPUT: "INVALID_INPUT",
     INVALID_PHONE: "INVALID_PHONE",

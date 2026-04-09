@@ -1,7 +1,5 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const router = (0, express_1.Router)();
+import { Router } from 'express';
+const router = Router();
 router.post('/ai', async (req, res, next) => {
     try {
         // placeholder logic
@@ -11,4 +9,4 @@ router.post('/ai', async (req, res, next) => {
         next(err);
     }
 });
-exports.default = router;
+export default router;

@@ -1,11 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.recordAuditEvent = recordAuditEvent;
-const db_1 = require("../../db");
-const requestContext_1 = require("../../observability/requestContext");
-async function recordAuditEvent(params) {
-    const runner = params.client ?? db_1.pool;
-    const requestId = params.requestId ?? (0, requestContext_1.fetchRequestId)() ?? null;
+import { pool } from "../../db.js";
+import { fetchRequestId } from "../../observability/requestContext.js";
+export async function recordAuditEvent(params) {
+    const runner = params.client ?? pool;
+    const requestId = params.requestId ?? fetchRequestId() ?? null;
     const eventType = params.eventType ?? params.action;
     const eventAction = params.eventAction ?? params.action;
     const metadata = params.metadata === undefined || params.metadata === null

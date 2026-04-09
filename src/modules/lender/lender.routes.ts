@@ -1,11 +1,11 @@
 import { type Request, Router } from "express";
 import { z } from "zod";
-import { requireAuth } from "../../middleware/auth";
-import { idempotencyMiddleware } from "../../middleware/idempotency";
-import { buildLenderPackage } from "../../services/lenders/packageBuilder";
-import { lenderProductsService } from "../../services/lenderProducts/lenderProducts.service";
-import { enqueueLenderPackage, getLenderQueue } from "../../queue/lenderQueue";
-import { logger } from "../../server/utils/logger";
+import { requireAuth } from "../../middleware/auth.js";
+import { idempotencyMiddleware } from "../../middleware/idempotency.js";
+import { buildLenderPackage } from "../../services/lenders/packageBuilder.js";
+import { lenderProductsService } from "../../services/lenderProducts/lenderProducts.service.js";
+import { enqueueLenderPackage, getLenderQueue } from "../../queue/lenderQueue.js";
+import { logger } from "../../server/utils/logger.js";
 
 const sendLenderPackageSchema = z.object({
   application: z.object({}).passthrough(),

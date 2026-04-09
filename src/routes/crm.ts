@@ -1,11 +1,11 @@
 import { Router } from "express";
-import { requireAuth, requireCapability } from "../middleware/auth";
-import { CAPABILITIES } from "../auth/capabilities";
-import { safeHandler } from "../middleware/safeHandler";
-import { respondOk } from "../utils/respondOk";
-import { handleListCrmTimeline } from "../modules/crm/timeline.controller";
-import { SupportController } from "../modules/support/support.controller";
-import { createLead } from "../modules/lead/lead.service";
+import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { CAPABILITIES } from "../auth/capabilities.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { respondOk } from "../utils/respondOk.js";
+import { handleListCrmTimeline } from "../modules/crm/timeline.controller.js";
+import { SupportController } from "../modules/support/support.controller.js";
+import { createLead } from "../modules/lead/lead.service.js";
 
 const router = Router();
 

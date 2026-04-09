@@ -1,27 +1,20 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.metrics = exports.incErr = exports.incReq = void 0;
-exports.trackRequest = trackRequest;
-exports.trackError = trackError;
-exports.getMetrics = getMetrics;
-exports.resetMetrics = resetMetrics;
-const deps_1 = require("./deps");
-function trackRequest() {
-    deps_1.deps.metrics.requests++;
+import { deps } from "./deps.js";
+export function trackRequest() {
+    deps.metrics.requests++;
 }
-function trackError() {
-    deps_1.deps.metrics.errors++;
+export function trackError() {
+    deps.metrics.errors++;
 }
-function getMetrics() {
+export function getMetrics() {
     return {
-        requests: deps_1.deps.metrics.requests,
-        errors: deps_1.deps.metrics.errors,
+        requests: deps.metrics.requests,
+        errors: deps.metrics.errors,
     };
 }
-function resetMetrics() {
-    deps_1.deps.metrics.requests = 0;
-    deps_1.deps.metrics.errors = 0;
+export function resetMetrics() {
+    deps.metrics.requests = 0;
+    deps.metrics.errors = 0;
 }
-exports.incReq = trackRequest;
-exports.incErr = trackError;
-exports.metrics = getMetrics;
+export const incReq = trackRequest;
+export const incErr = trackError;
+export const metrics = getMetrics;

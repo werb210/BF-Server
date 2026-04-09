@@ -1,5 +1,5 @@
 import { type Request, type Response } from "express";
-import { ApplicationStage } from "../modules/applications/pipelineState";
+import { ApplicationStage } from "../modules/applications/pipelineState.js";
 
 export async function listApplicationStages(
   _req: Request,

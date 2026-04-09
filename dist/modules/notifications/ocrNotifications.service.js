@@ -1,9 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.notifyOcrWarnings = notifyOcrWarnings;
-const crypto_1 = require("crypto");
-const notifications_repo_1 = require("./notifications.repo");
-async function notifyOcrWarnings(params) {
+import { randomUUID } from "node:crypto";
+import { createNotification } from "./notifications.repo.js";
+export async function notifyOcrWarnings(params) {
     if (params.missingFields.length === 0 && params.conflictingFields.length === 0) {
         return;
     }
@@ -14,8 +11,8 @@ async function notifyOcrWarnings(params) {
     if (params.conflictingFields.length > 0) {
         bodyParts.push(`Conflicting fields: ${params.conflictingFields.join(", ")}`);
     }
-    await (0, notifications_repo_1.createNotification)({
-        notificationId: (0, crypto_1.randomUUID)(),
+    await createNotification({
+        notificationId: randomUUID(),
         userId: null,
         applicationId: params.applicationId,
         type: "OCR_WARNING",

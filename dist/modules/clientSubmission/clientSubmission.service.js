@@ -1,46 +1,43 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.submitClientApplication = submitClientApplication;
-const errors_1 = require("../../middleware/errors");
-const db_1 = require("../../db");
-const applications_repo_1 = require("../applications/applications.repo");
-const pipelineState_1 = require("../applications/pipelineState");
-const audit_service_1 = require("../audit/audit.service");
-const config_1 = require("../../config");
-const clientSubmission_repo_1 = require("./clientSubmission.repo");
-const logger_1 = require("../../observability/logger");
-const transactionTelemetry_1 = require("../../observability/transactionTelemetry");
-const lenderProductRequirementsService_1 = require("../../services/lenderProductRequirementsService");
-const v1StructuredPersistence_1 = require("../../services/v1StructuredPersistence");
-const requiredDocuments_1 = require("../../db/schema/requiredDocuments");
+import { AppError } from "../../middleware/errors.js";
+import { pool } from "../../db.js";
+import { createApplication, createDocument, createDocumentVersion } from "../applications/applications.repo.js";
+import { ApplicationStage } from "../applications/pipelineState.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { config } from "../../config/index.js";
+import { createClientSubmission, findClientSubmissionByKey } from "./clientSubmission.repo.js";
+import { logInfo, logWarn } from "../../observability/logger.js";
+import { recordTransactionRollback } from "../../observability/transactionTelemetry.js";
+import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService.js";
+import { upsertStructuredApplicationData } from "../../services/v1StructuredPersistence.js";
+import { normalizeRequiredDocumentKey, } from "../../db/schema/requiredDocuments.js";
 function assertObject(value, label) {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
-        throw new errors_1.AppError("invalid_payload", `${label} is required.`, 400);
+        throw new AppError("invalid_payload", `${label} is required.`, 400);
     }
 }
 function assertExactKeys(record, keys, label) {
     const actual = Object.keys(record).sort();
     const expected = [...keys].sort();
     if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
-        throw new errors_1.AppError("invalid_payload", `${label} has invalid fields.`, 400);
+        throw new AppError("invalid_payload", `${label} has invalid fields.`, 400);
     }
 }
 function assertAllowedKeys(record, allowedKeys, label) {
     const allowed = new Set(allowedKeys);
     const invalid = Object.keys(record).filter((key) => !allowed.has(key));
     if (invalid.length > 0) {
-        throw new errors_1.AppError("invalid_payload", `${label} has invalid fields.`, 400);
+        throw new AppError("invalid_payload", `${label} has invalid fields.`, 400);
     }
 }
 function assertString(value, label) {
     if (typeof value !== "string" || value.trim().length === 0) {
-        throw new errors_1.AppError("invalid_payload", `${label} is required.`, 400);
+        throw new AppError("invalid_payload", `${label} is required.`, 400);
     }
     return value;
 }
 function assertDocuments(value) {
     if (!Array.isArray(value) || value.length === 0) {
-        throw new errors_1.AppError("invalid_payload", "documents are required.", 400);
+        throw new AppError("invalid_payload", "documents are required.", 400);
     }
     return value.map((entry, index) => {
         assertObject(entry, `documents[${index}]`);
@@ -54,7 +51,7 @@ function assertDocuments(value) {
         const mimeType = assertString(entry.metadata.mimeType, `documents[${index}].metadata.mimeType`);
         const sizeValue = entry.metadata.size;
         if (typeof sizeValue !== "number" || Number.isNaN(sizeValue) || sizeValue <= 0) {
-            throw new errors_1.AppError("invalid_payload", `documents[${index}].metadata.size is invalid.`, 400);
+            throw new AppError("invalid_payload", `documents[${index}].metadata.size is invalid.`, 400);
         }
         return {
             title,
@@ -85,7 +82,7 @@ function assertPayload(payload) {
     if (payload.selected_lender_product_id !== undefined &&
         payload.selectedLenderProductId !== undefined &&
         payload.selected_lender_product_id !== payload.selectedLenderProductId) {
-        throw new errors_1.AppError("invalid_payload", "selectedLenderProductId does not match selected_lender_product_id.", 400);
+        throw new AppError("invalid_payload", "selectedLenderProductId does not match selected_lender_product_id.", 400);
     }
     const selectedLenderProductId = rawSelected === undefined || rawSelected === null
         ? null
@@ -129,51 +126,51 @@ function assertPayload(payload) {
 }
 function enforceDocumentRules(requirements, documents) {
     const allowedTypes = new Set(requirements
-        .map((req) => (0, requiredDocuments_1.normalizeRequiredDocumentKey)(req.documentType))
+        .map((req) => normalizeRequiredDocumentKey(req.documentType))
         .filter((key) => Boolean(key)));
     const counts = new Map();
     documents.forEach((doc) => {
-        const normalized = (0, requiredDocuments_1.normalizeRequiredDocumentKey)(doc.documentType);
+        const normalized = normalizeRequiredDocumentKey(doc.documentType);
         if (!normalized || !allowedTypes.has(normalized)) {
-            throw new errors_1.AppError("invalid_document_type", "Document type is not allowed.", 400);
+            throw new AppError("invalid_document_type", "Document type is not allowed.", 400);
         }
         counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
     });
     for (const requirement of requirements) {
-        const normalized = (0, requiredDocuments_1.normalizeRequiredDocumentKey)(requirement.documentType);
+        const normalized = normalizeRequiredDocumentKey(requirement.documentType);
         const count = normalized ? counts.get(normalized) ?? 0 : 0;
         if (requirement.required && count === 0) {
-            throw new errors_1.AppError("missing_documents", "Required documents are missing.", 400);
+            throw new AppError("missing_documents", "Required documents are missing.", 400);
         }
     }
 }
 function enforceDocumentMetadata(documents) {
-    const allowed = config_1.config.documents.allowedMimeTypes;
-    const maxSize = config_1.config.documents.maxSizeBytes;
+    const allowed = config.documents.allowedMimeTypes;
+    const maxSize = config.documents.maxSizeBytes;
     for (const doc of documents) {
         if (!allowed.includes(doc.metadata.mimeType)) {
-            throw new errors_1.AppError("invalid_mime_type", "Unsupported document MIME type.", 400);
+            throw new AppError("invalid_mime_type", "Unsupported document MIME type.", 400);
         }
         if (doc.metadata.size > maxSize) {
-            throw new errors_1.AppError("document_too_large", "Document exceeds max size.", 400);
+            throw new AppError("document_too_large", "Document exceeds max size.", 400);
         }
     }
 }
-async function submitClientApplication(params) {
+export async function submitClientApplication(params) {
     const submission = assertPayload(params.payload);
-    const { requirements, lenderProductId } = await (0, lenderProductRequirementsService_1.resolveRequirementsForApplication)({
+    const { requirements, lenderProductId } = await resolveRequirementsForApplication({
         lenderProductId: submission.selectedLenderProductId ?? null,
         productType: submission.productType,
         country: submission.business.address.country,
     });
     enforceDocumentRules(requirements, submission.documents);
     enforceDocumentMetadata(submission.documents);
-    const client = await db_1.pool.connect();
+    const client = await pool.connect();
     try {
         await client.runQuery("begin");
-        const existing = await (0, clientSubmission_repo_1.findClientSubmissionByKey)(submission.submissionKey, client);
+        const existing = await findClientSubmissionByKey(submission.submissionKey, client);
         if (existing) {
-            await (0, audit_service_1.recordAuditEvent)({
+            await recordAuditEvent({
                 action: "client_submission_retried",
                 actorUserId: null,
                 targetUserId: null,
@@ -185,7 +182,7 @@ async function submitClientApplication(params) {
                 client,
             });
             await client.runQuery("commit");
-            (0, logger_1.logInfo)("client_submission_retried", {
+            logInfo("client_submission_retried", {
                 submissionKey: submission.submissionKey,
                 applicationId: existing.application_id,
             });
@@ -193,13 +190,13 @@ async function submitClientApplication(params) {
                 status: 200,
                 value: {
                     applicationId: existing.application_id,
-                    pipelineState: pipelineState_1.ApplicationStage.RECEIVED,
+                    pipelineState: ApplicationStage.RECEIVED,
                 },
                 idempotent: true,
             };
         }
-        const ownerUserId = config_1.config.client.submissionOwnerUserId;
-        const application = await (0, applications_repo_1.createApplication)({
+        const ownerUserId = config.client.submissionOwnerUserId;
+        const application = await createApplication({
             ownerUserId,
             name: submission.business.legalName,
             metadata: {
@@ -220,7 +217,7 @@ async function submitClientApplication(params) {
             triggeredBy: "system",
             client,
         });
-        await (0, v1StructuredPersistence_1.upsertStructuredApplicationData)({
+        await upsertStructuredApplicationData({
             applicationId: application.id,
             companyName: submission.business.legalName,
             entityType: submission.business.entityType,
@@ -235,21 +232,21 @@ async function submitClientApplication(params) {
             ],
         }, client);
         for (const doc of submission.documents) {
-            const document = await (0, applications_repo_1.createDocument)({
+            const document = await createDocument({
                 applicationId: application.id,
                 ownerUserId,
                 title: doc.title,
                 documentType: doc.documentType,
                 client,
             });
-            await (0, applications_repo_1.createDocumentVersion)({
+            await createDocumentVersion({
                 documentId: document.id,
                 version: 1,
                 metadata: doc.metadata,
                 content: doc.content,
                 client,
             });
-            await (0, audit_service_1.recordAuditEvent)({
+            await recordAuditEvent({
                 action: "document_uploaded",
                 actorUserId: null,
                 targetUserId: ownerUserId,
@@ -261,13 +258,13 @@ async function submitClientApplication(params) {
                 client,
             });
         }
-        await (0, clientSubmission_repo_1.createClientSubmission)({
+        await createClientSubmission({
             submissionKey: submission.submissionKey,
             applicationId: application.id,
             payload: submission,
             client,
         });
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "client_submission_created",
             actorUserId: null,
             targetUserId: ownerUserId,
@@ -279,7 +276,7 @@ async function submitClientApplication(params) {
             client,
         });
         await client.runQuery("commit");
-        (0, logger_1.logInfo)("client_submission_created", {
+        logInfo("client_submission_created", {
             submissionKey: submission.submissionKey,
             applicationId: application.id,
         });
@@ -290,9 +287,9 @@ async function submitClientApplication(params) {
         };
     }
     catch (err) {
-        (0, transactionTelemetry_1.recordTransactionRollback)(err);
+        recordTransactionRollback(err);
         await client.runQuery("rollback");
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "client_submission_failed",
             actorUserId: null,
             targetUserId: null,
@@ -300,7 +297,7 @@ async function submitClientApplication(params) {
             userAgent: params.userAgent ?? null,
             success: false,
         });
-        (0, logger_1.logWarn)("client_submission_failed", {
+        logWarn("client_submission_failed", {
             submissionKey: typeof params.payload === "object" && params.payload !== null
                 ? params.payload.submissionKey
                 : undefined,

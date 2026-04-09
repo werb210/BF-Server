@@ -1,13 +1,10 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.bootstrap = bootstrap;
-const db_1 = require("../infra/db");
-const redis_1 = require("../infra/redis");
-const config_1 = require("../config");
-async function bootstrap() {
-    await (0, db_1.getPrisma)();
-    const redis = (0, redis_1.getRedis)();
-    if (config_1.config.redis.url && config_1.config.env !== "test" && redis) {
+import { getPrisma } from "../infra/db.js";
+import { getRedis } from "../infra/redis.js";
+import { config } from "../config/index.js";
+export async function bootstrap() {
+    await getPrisma();
+    const redis = getRedis();
+    if (config.redis.url && config.env !== "test" && redis) {
         try {
             await redis.ping();
         }

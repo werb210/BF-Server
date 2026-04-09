@@ -1,4 +1,4 @@
-import { APPLICATION_TABS, MATCHING_RULES, DOCUMENT_RULES } from '../system.contract';
+import { APPLICATION_TABS, MATCHING_RULES, DOCUMENT_RULES } from '../system.contract.js';
 
 describe('SYSTEM CONTRACT ENFORCEMENT', () => {
 

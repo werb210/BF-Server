@@ -1,5 +1,5 @@
-import { AppError } from "../../middleware/errors";
-import { recordAuditEvent } from "../audit/audit.service";
+import { AppError } from "../../middleware/errors.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
 import {
   createApplication,
   createApplicationStageEvent,
@@ -21,41 +21,41 @@ import {
   upsertApplicationRequiredDocument,
   updateDocumentStatus,
   updateDocumentUploadDetails,
-} from "./applications.repo";
+} from "./applications.repo.js";
 import type {
   ApplicationRecord,
   ApplicationRequiredDocumentRecord,
-} from "./applications.repo";
-import { pool, runQuery } from "../../db";
-import { type Role, ROLES } from "../../auth/roles";
+} from "./applications.repo.js";
+import { pool, runQuery } from "../../db.js";
+import { type Role, ROLES } from "../../auth/roles.js";
 import { type PoolClient } from "pg";
 import {
   PIPELINE_STATES,
   ApplicationStage,
   isPipelineState,
   type PipelineState,
-} from "./pipelineState";
+} from "./pipelineState.js";
 import {
   assertPipelineState,
   assertPipelineTransition,
-} from "./applicationLifecycle.service";
-import { config } from "../../config";
-import { recordTransactionRollback } from "../../observability/transactionTelemetry";
-import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService";
-import { uploadDocumentBuffer } from "../../services/storage/blobStorage";
-import { validateFile } from "../../utils/fileValidation";
+} from "./applicationLifecycle.service.js";
+import { config } from "../../config/index.js";
+import { recordTransactionRollback } from "../../observability/transactionTelemetry.js";
+import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService.js";
+import { uploadDocumentBuffer } from "../../services/storage/blobStorage.js";
+import { validateFile } from "../../utils/fileValidation.js";
 import {
   normalizeRequiredDocumentKey,
-} from "../../db/schema/requiredDocuments";
-import { type ApplicationResponse, type ProcessingStatusResponse } from "./application.dto";
+} from "../../db/schema/requiredDocuments.js";
+import { type ApplicationResponse, type ProcessingStatusResponse } from "./application.dto.js";
 import {
   advanceProcessingStage,
   fetchProcessingStageFlags,
-} from "./processingStage.service";
+} from "./processingStage.service.js";
 import {
   createBankingAnalysisJob,
   createDocumentProcessingJob,
-} from "../processing/processing.service";
+} from "../processing/processing.service.js";
 
 const BANK_STATEMENT_CATEGORY = "bank_statements_6_months";
 

@@ -1,22 +1,19 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.installProcessHandlers = installProcessHandlers;
-const logger_1 = require("./logger");
-const appInsights_1 = require("./appInsights");
-const dbRuntime_1 = require("../dbRuntime");
+import { logError } from "./logger.js";
+import { trackException } from "./appInsights.js";
+import { isDbConnectionFailure } from "../dbRuntime.js";
 let handlersInstalled = false;
-function installProcessHandlers() {
+export function installProcessHandlers() {
     if (handlersInstalled) {
         return;
     }
     handlersInstalled = true;
     process.on("unhandledRejection", (reason) => {
         const error = reason instanceof Error ? reason : new Error(String(reason));
-        (0, logger_1.logError)("unhandled_rejection", { error: error.message });
-        const classification = (0, dbRuntime_1.isDbConnectionFailure)(error)
+        logError("unhandled_rejection", { error: error.message });
+        const classification = isDbConnectionFailure(error)
             ? "db_unavailable"
             : "unknown";
-        (0, appInsights_1.trackException)({
+        trackException({
             exception: error,
             properties: {
                 event: "unhandled_rejection",

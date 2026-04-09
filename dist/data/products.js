@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.products = void 0;
-exports.products = [
+export const products = [
     { slug: "line-of-credit", name: "Line of Credit" },
     { slug: "term-loan", name: "Term Loan" },
     { slug: "equipment-financing", name: "Equipment Financing" },

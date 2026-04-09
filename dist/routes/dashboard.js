@@ -1,7 +1,5 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const router = (0, express_1.Router)();
+import { Router } from "express";
+const router = Router();
 /*
 Temporary pipeline data so Portal UI can render cards.
 This will be replaced by database queries later.
@@ -73,4 +71,4 @@ router.get("/metrics", async (_req, res) => {
         offers: 0,
     });
 });
-exports.default = router;
+export default router;

@@ -1,5 +1,5 @@
-import { type SubmissionAdapter, type SubmissionPayload, type SubmissionResult } from "./SubmissionAdapter";
-import { config } from "../../../config";
+import { type SubmissionAdapter, type SubmissionPayload, type SubmissionResult } from "./SubmissionAdapter.js";
+import { config } from "../../../config/index.js";
 
 export class EmailSubmissionAdapter implements SubmissionAdapter {
   private to: string;

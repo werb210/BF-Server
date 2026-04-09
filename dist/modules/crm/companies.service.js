@@ -1,8 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.fetchCompanies = fetchCompanies;
-exports.fetchCompanyById = fetchCompanyById;
-const companies_repo_1 = require("./companies.repo");
+import { findCompanyById, listCompanies } from "./companies.repo.js";
 function normalizeCompany(row) {
     const owner = row.owner_record_id !== null
         ? {
@@ -23,15 +19,15 @@ function normalizeCompany(row) {
         owner,
     };
 }
-async function fetchCompanies() {
-    const rows = await (0, companies_repo_1.listCompanies)();
+export async function fetchCompanies() {
+    const rows = await listCompanies();
     if (rows.length === 0) {
         return [];
     }
     return rows.map((row) => normalizeCompany(row));
 }
-async function fetchCompanyById(companyId) {
-    const row = await (0, companies_repo_1.findCompanyById)({ companyId });
+export async function fetchCompanyById(companyId) {
+    const row = await findCompanyById({ companyId });
     if (!row) {
         return null;
     }

@@ -1,41 +1,41 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
-import { fetchStatus as startupStatus, isReady } from "../startupState";
-import { pool, runQuery } from "../db";
+import { fetchStatus as startupStatus, isReady } from "../startupState.js";
+import { pool, runQuery } from "../db.js";
 import {
   findActiveDocumentVersion,
   findApplicationById,
   listDocumentsByApplicationId,
-} from "../modules/applications/applications.repo";
-import { ApplicationStage } from "../modules/applications/pipelineState";
-import { safeHandler } from "../middleware/safeHandler";
-import { listApplicationStages } from "../controllers/applications.controller";
-import { portalRateLimit } from "../middleware/rateLimit";
-import { requireAuth, requireAuthorization } from "../middleware/auth";
-import { ROLES } from "../auth/roles";
-import { AppError } from "../middleware/errors";
-import { isPipelineState } from "../modules/applications/pipelineState";
-import { transitionPipelineState } from "../modules/applications/applications.service";
-import { recordAuditEvent } from "../modules/audit/audit.service";
-import { advanceProcessingStage } from "../modules/applications/processingStage.service";
+} from "../modules/applications/applications.repo.js";
+import { ApplicationStage } from "../modules/applications/pipelineState.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { listApplicationStages } from "../controllers/applications.controller.js";
+import { portalRateLimit } from "../middleware/rateLimit.js";
+import { requireAuth, requireAuthorization } from "../middleware/auth.js";
+import { ROLES } from "../auth/roles.js";
+import { AppError } from "../middleware/errors.js";
+import { isPipelineState } from "../modules/applications/pipelineState.js";
+import { transitionPipelineState } from "../modules/applications/applications.service.js";
+import { recordAuditEvent } from "../modules/audit/audit.service.js";
+import { advanceProcessingStage } from "../modules/applications/processingStage.service.js";
 import {
   retryProcessingJob,
   retryProcessingJobForApplication,
-} from "../modules/processing/retry.service";
+} from "../modules/processing/retry.service.js";
 import {
   assertPipelineState,
   assertPipelineTransition,
   resolveNextPipelineStage,
-} from "../modules/applications/applicationLifecycle.service";
-import { config } from "../config";
-import { listLenders } from "../repositories/lenders.repo";
-import { eventBus } from "../events/eventBus";
+} from "../modules/applications/applicationLifecycle.service.js";
+import { config } from "../config/index.js";
+import { listLenders } from "../repositories/lenders.repo.js";
+import { eventBus } from "../events/eventBus.js";
 import {
   convertReadinessLeadToApplication,
   fetchReadinessLeadByApplicationId,
   listReadinessLeads,
-} from "../modules/readiness/readiness.service";
-import { toStringSafe } from "../utils/toStringSafe";
+} from "../modules/readiness/readiness.service.js";
+import { toStringSafe } from "../utils/toStringSafe.js";
 
 const router = Router();
 const portalLimiter = portalRateLimit();
@@ -632,7 +632,7 @@ router.post(
       throw new AppError("validation_error", "application_id and selected_lenders are required.", 400);
     }
 
-    const submissions = [];
+    const submissions: any[] = [];
     for (const lenderId of selectedLenders) {
       const result = await runQuery(
         `insert into lender_submissions (id, application_id, lender_id, status, idempotency_key, payload, submitted_at, created_at, updated_at)

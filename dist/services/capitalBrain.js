@@ -1,22 +1,16 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.scorePreApplication = scorePreApplication;
-const openai_1 = __importDefault(require("openai"));
-const config_1 = require("../config");
+import OpenAI from "openai";
+import { config } from "../config/index.js";
 function fetchAzureClient() {
-    if (!config_1.config.azureOpenai.key || !config_1.config.azureOpenai.endpoint) {
+    if (!config.azureOpenai.key || !config.azureOpenai.endpoint) {
         throw new Error("Azure OpenAI credentials are not configured.");
     }
-    return new openai_1.default({
-        apiKey: config_1.config.azureOpenai.key,
-        baseURL: config_1.config.azureOpenai.endpoint,
+    return new OpenAI({
+        apiKey: config.azureOpenai.key,
+        baseURL: config.azureOpenai.endpoint,
     });
 }
-async function scorePreApplication(data) {
-    if (!config_1.config.azureOpenai.deployment) {
+export async function scorePreApplication(data) {
+    if (!config.azureOpenai.deployment) {
         throw new Error("AZURE_OPENAI_DEPLOYMENT is not configured.");
     }
     const prompt = `
@@ -27,7 +21,7 @@ ${JSON.stringify(data)}
 `;
     const openai = fetchAzureClient();
     const response = await openai.chat.completions.create({
-        model: config_1.config.azureOpenai.deployment,
+        model: config.azureOpenai.deployment,
         messages: [{ role: "user", content: prompt }],
     });
     return response.choices[0]?.message?.content ?? null;

@@ -1,7 +1,7 @@
-import { AppError } from "../../middleware/errors";
-import { findApplicationById } from "../applications/applications.repo";
-import { ApplicationStage, isPipelineState } from "../applications/pipelineState";
-import { transitionPipelineState } from "../applications/applications.service";
+import { AppError } from "../../middleware/errors.js";
+import { findApplicationById } from "../applications/applications.repo.js";
+import { ApplicationStage, isPipelineState } from "../applications/pipelineState.js";
+import { transitionPipelineState } from "../applications/applications.service.js";
 import { type PoolClient } from "pg";
 
 export async function ensureApplicationSubmissionState(params: {

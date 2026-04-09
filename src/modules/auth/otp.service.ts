@@ -1,1 +1,1 @@
-export { startOtp, verifyOtpCode } from "./auth.service";
+export { startOtp, verifyOtpCode } from "./auth.service.js";

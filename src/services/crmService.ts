@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { pushLeadToCRM } from "./crmWebhook";
+import { pushLeadToCRM } from "./crmWebhook.js";
 
 export type CRMLeadInput = {
   companyName: string;

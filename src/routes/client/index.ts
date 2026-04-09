@@ -1,15 +1,15 @@
 import { Router } from "express";
-import continuationRouter from "./continuation";
-import documentsRouter from "./documents";
-import applicationsRouter from "./applications";
-import lendersRouter from "./lenders";
-import lenderProductsRouter from "./lenderProducts";
-import clientSubmissionRoutes from "../../modules/clientSubmission/clientSubmission.routes";
-import sessionRouter from "./session";
+import continuationRouter from "./continuation.js";
+import documentsRouter from "./documents.js";
+import applicationsRouter from "./applications.js";
+import lendersRouter from "./lenders.js";
+import lenderProductsRouter from "./lenderProducts.js";
+import clientSubmissionRoutes from "../../modules/clientSubmission/clientSubmission.routes.js";
+import sessionRouter from "./session.js";
 import {
   clientDocumentsRateLimit,
   clientReadRateLimit,
-} from "../../middleware/rateLimit";
+} from "../../middleware/rateLimit.js";
 
 const router = Router();
 const clientReadLimiter = clientReadRateLimit() as any;

@@ -1,13 +1,8 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = __importDefault(require("express"));
-const respond_1 = require("../../lib/respond");
-const router = express_1.default.Router();
+import express from "express";
+import { ok } from "../../lib/respond.js";
+const router = express.Router();
 router.get("/token", (req, res) => {
     const token = "real-token";
-    return (0, respond_1.ok)(res, { token });
+    return ok(res, { token });
 });
-exports.default = router;
+export default router;

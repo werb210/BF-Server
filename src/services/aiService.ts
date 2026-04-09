@@ -1,5 +1,5 @@
-import { dbQuery } from "../db";
-import type { AiKnowledge } from "../models/aiKnowledge";
+import { dbQuery } from "../db.js";
+import type { AiKnowledge } from "../models/aiKnowledge.js";
 
 export async function fetchRelevantKnowledge(query: string): Promise<AiKnowledge[]> {
   const knowledge = await dbQuery<AiKnowledge>(

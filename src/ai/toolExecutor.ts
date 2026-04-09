@@ -1,4 +1,4 @@
-import { runQuery } from "../lib/db";
+import { runQuery } from "../lib/db.js";
 
 export async function executeTool(
   callId: string,

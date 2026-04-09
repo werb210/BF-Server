@@ -1,7 +1,5 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const router = (0, express_1.Router)();
+import { Router } from "express";
+const router = Router();
 router.get("/session", async (req, res, next) => {
     const sessionUser = req.session?.user;
     if (sessionUser) {
@@ -24,4 +22,4 @@ router.post("/api/client/session/refresh", async (req, res, next) => {
         session,
     });
 });
-exports.default = router;
+export default router;

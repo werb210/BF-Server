@@ -1,17 +1,10 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.PROCESSING_STAGES = void 0;
-exports.isProcessingStage = isProcessingStage;
-exports.normalizeProcessingStage = normalizeProcessingStage;
-exports.fetchProcessingStageFlags = fetchProcessingStageFlags;
-exports.advanceProcessingStage = advanceProcessingStage;
-const db_1 = require("../../db");
-const errors_1 = require("../../middleware/errors");
-const lenderProductRequirementsService_1 = require("../../services/lenderProductRequirementsService");
-const requiredDocuments_1 = require("../../db/schema/requiredDocuments");
-const applications_repo_1 = require("./applications.repo");
-const creditSummary_service_1 = require("../processing/creditSummary.service");
-exports.PROCESSING_STAGES = [
+import { pool } from "../../db.js";
+import { AppError } from "../../middleware/errors.js";
+import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService.js";
+import { normalizeRequiredDocumentKey } from "../../db/schema/requiredDocuments.js";
+import { listApplicationRequiredDocuments } from "./applications.repo.js";
+import { ensureCreditSummaryJob } from "../processing/creditSummary.service.js";
+export const PROCESSING_STAGES = [
     "pending",
     "ocr_processing",
     "ocr_complete",
@@ -102,21 +95,21 @@ function resolveApplicationCountry(metadata) {
         ? country.trim()
         : null;
 }
-function isProcessingStage(value) {
-    return exports.PROCESSING_STAGES.includes(value);
+export function isProcessingStage(value) {
+    return PROCESSING_STAGES.includes(value);
 }
-function normalizeProcessingStage(value) {
+export function normalizeProcessingStage(value) {
     if (value && isProcessingStage(value)) {
         return value;
     }
     return "pending";
 }
-function fetchProcessingStageFlags(stage) {
+export function fetchProcessingStageFlags(stage) {
     const normalized = normalizeProcessingStage(stage);
     return PROCESSING_STAGE_FLAGS[normalized];
 }
 async function fetchDocumentStatusSummary(params) {
-    const { requirements } = await (0, lenderProductRequirementsService_1.resolveRequirementsForApplication)({
+    const { requirements } = await resolveRequirementsForApplication({
         lenderProductId: params.lenderProductId,
         productType: params.productType,
         requestedAmount: params.requestedAmount,
@@ -127,12 +120,12 @@ async function fetchDocumentStatusSummary(params) {
         if (requirement.required === false) {
             continue;
         }
-        const normalized = (0, requiredDocuments_1.normalizeRequiredDocumentKey)(requirement.documentType);
+        const normalized = normalizeRequiredDocumentKey(requirement.documentType);
         if (normalized) {
             requiredDocuments.add(normalized);
         }
     }
-    const requiredEntries = await (0, applications_repo_1.listApplicationRequiredDocuments)({
+    const requiredEntries = await listApplicationRequiredDocuments({
         applicationId: params.applicationId,
         client: params.client,
     });
@@ -140,7 +133,7 @@ async function fetchDocumentStatusSummary(params) {
     let anyRejected = false;
     for (const key of requiredDocuments) {
         const entry = requiredEntries.find((item) => item.is_required &&
-            (0, requiredDocuments_1.normalizeRequiredDocumentKey)(item.document_category) === key);
+            normalizeRequiredDocumentKey(item.document_category) === key);
         if (!entry) {
             allAccepted = false;
             continue;
@@ -242,11 +235,11 @@ async function advanceProcessingStageInternal(params) {
      for update`, [params.applicationId]);
     const applicationRecord = application.rows[0];
     if (!applicationRecord) {
-        throw new errors_1.AppError("not_found", "Application not found.", 404);
+        throw new AppError("not_found", "Application not found.", 404);
     }
     if (applicationRecord.processing_stage &&
         !isProcessingStage(applicationRecord.processing_stage)) {
-        throw new errors_1.AppError("invalid_state", "Processing stage is invalid.", 400);
+        throw new AppError("invalid_state", "Processing stage is invalid.", 400);
     }
     const ocrJobs = await params.client.runQuery(`select count(*)::int as count
      from document_processing_jobs
@@ -274,7 +267,7 @@ async function advanceProcessingStageInternal(params) {
         anyDocumentsRejected: documentStatus.anyRejected,
     };
     let currentStage = normalizeProcessingStage(applicationRecord.processing_stage);
-    for (let i = 0; i < exports.PROCESSING_STAGES.length; i += 1) {
+    for (let i = 0; i < PROCESSING_STAGES.length; i += 1) {
         const nextStage = resolveNextStage(currentStage, stageData);
         if (nextStage === currentStage) {
             break;
@@ -288,18 +281,18 @@ async function advanceProcessingStageInternal(params) {
        where id = $1`, [params.applicationId, currentStage]);
     }
     if (currentStage === "credit_summary_processing") {
-        await (0, creditSummary_service_1.ensureCreditSummaryJob)({ applicationId: params.applicationId, client: params.client });
+        await ensureCreditSummaryJob({ applicationId: params.applicationId, client: params.client });
     }
     return currentStage;
 }
-async function advanceProcessingStage(params) {
+export async function advanceProcessingStage(params) {
     if (params.client) {
         return advanceProcessingStageInternal({
             applicationId: params.applicationId,
             client: params.client,
         });
     }
-    const client = await db_1.pool.connect();
+    const client = await pool.connect();
     try {
         await client.runQuery("begin");
         const stage = await advanceProcessingStageInternal({

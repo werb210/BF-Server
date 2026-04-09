@@ -1,5 +1,5 @@
 import { Queue } from "bullmq"
-import { redisConnection } from "./redis"
+import { redisConnection } from "./redis.js"
 
 export const OCR_QUEUE_NAME = "ocr-processing"
 

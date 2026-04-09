@@ -1,24 +1,19 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const config_1 = require("../../config");
-const express_1 = require("express");
-const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
-const chat_service_1 = require("./chat.service");
-const router = (0, express_1.Router)();
-const chatLimiter = (0, express_rate_limit_1.default)({
+import { config } from "../../config/index.js";
+import { Router } from "express";
+import rateLimit from "express-rate-limit";
+import { closeChatSession, fetchHumanSessions, fetchSessionMessages, processChatMessage, requestHumanTakeover, startChatSession, } from "./chat.service.js";
+const router = Router();
+const chatLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 30,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: "Too many chat requests" },
-    skip: () => config_1.config.env === "test",
+    skip: () => config.env === "test",
 });
 async function createSessionHandler(req, res) {
     const source = typeof req.body?.source === "string" ? req.body.source : "website";
-    const session = await (0, chat_service_1.startChatSession)({
+    const session = await startChatSession({
         source,
         channel: typeof req.body?.channel === "string" ? req.body.channel : "text",
         lead: req.body?.lead,
@@ -33,7 +28,7 @@ router.post("/chat/message", chatLimiter, async (req, res, next) => {
         res.status(400).json({ error: "sessionId and message are required" });
         return;
     }
-    const result = await (0, chat_service_1.processChatMessage)({ sessionId, message, source: source ?? "website" });
+    const result = await processChatMessage({ sessionId, message, source: source ?? "website" });
     res["json"]({ status: result.status, response: result.response });
 });
 async function transferChatHandler(req, res) {
@@ -43,7 +38,7 @@ async function transferChatHandler(req, res) {
         return;
     }
     try {
-        await (0, chat_service_1.requestHumanTakeover)(sessionId);
+        await requestHumanTakeover(sessionId);
     }
     catch (error) {
         if (error instanceof Error && error.message === "chat_session_not_found") {
@@ -62,7 +57,7 @@ router.post("/chat/close", chatLimiter, async (req, res, next) => {
         res.status(400).json({ error: "sessionId is required" });
         return;
     }
-    await (0, chat_service_1.closeChatSession)(sessionId);
+    await closeChatSession(sessionId);
     res["json"]({ status: "closed" });
 });
 router.get("/chat/sessions", async (req, res, next) => {
@@ -71,11 +66,11 @@ router.get("/chat/sessions", async (req, res, next) => {
         res.status(400).json({ error: "Only status=human is currently supported" });
         return;
     }
-    const sessions = await (0, chat_service_1.fetchHumanSessions)();
+    const sessions = await fetchHumanSessions();
     res["json"]({ sessions });
 });
 router.get("/chat/:sessionId/messages", async (req, res, next) => {
-    const messages = await (0, chat_service_1.fetchSessionMessages)(req.params.sessionId);
+    const messages = await fetchSessionMessages(req.params.sessionId);
     res["json"]({ messages });
 });
-exports.default = router;
+export default router;

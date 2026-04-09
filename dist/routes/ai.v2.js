@@ -1,42 +1,40 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const crypto_1 = require("crypto");
-const db_1 = require("../db");
-const ai_service_1 = require("../modules/ai/ai.service");
-const router = (0, express_1.Router)();
+import { Router } from "express";
+import { randomUUID } from "node:crypto";
+import { runQuery } from "../db.js";
+import { generateAIResponse } from "../modules/ai/ai.service.js";
+const router = Router();
 router.post("/ai/start", async (req, res, next) => {
-    const id = (0, crypto_1.randomUUID)();
-    await (0, db_1.runQuery)(`insert into chat_sessions (id, crm_contact_id, source, status)
+    const id = randomUUID();
+    await runQuery(`insert into chat_sessions (id, crm_contact_id, source, status)
      values ($1, $2, $3, 'ai')`, [id, req.body.crmContactId ?? null, req.body.source]);
     res["json"]({ sessionId: id });
 });
 router.post("/ai/message", async (req, res, next) => {
     const { sessionId, message } = req.body;
-    await (0, db_1.runQuery)(`insert into chat_messages (id, session_id, role, content)
-     values ($1, $2, 'user', $3)`, [(0, crypto_1.randomUUID)(), sessionId, message]);
-    const reply = await (0, ai_service_1.generateAIResponse)(sessionId, message);
+    await runQuery(`insert into chat_messages (id, session_id, role, content)
+     values ($1, $2, 'user', $3)`, [randomUUID(), sessionId, message]);
+    const reply = await generateAIResponse(sessionId, message);
     res["json"](JSON.parse(reply));
 });
 router.post("/ai/escalate", async (req, res, next) => {
     const { sessionId } = req.body;
-    await (0, db_1.runQuery)(`update chat_sessions set status = 'queued', updated_at = now()
+    await runQuery(`update chat_sessions set status = 'queued', updated_at = now()
      where id = $1`, [sessionId]);
-    await (0, db_1.runQuery)(`insert into chat_queue (id, session_id)
-     values ($1, $2)`, [(0, crypto_1.randomUUID)(), sessionId]);
+    await runQuery(`insert into chat_queue (id, session_id)
+     values ($1, $2)`, [randomUUID(), sessionId]);
     res["json"]({ status: "queued" });
 });
 router.post("/ai/close", async (req, res, next) => {
     const { sessionId } = req.body;
-    await (0, db_1.runQuery)(`update chat_sessions set status = 'closed', updated_at = now()
+    await runQuery(`update chat_sessions set status = 'closed', updated_at = now()
      where id = $1`, [sessionId]);
     res["json"]({ status: "closed" });
 });
 router.post("/ai/confidence-check", async (req, res, next) => {
     const { sessionId, score, reason } = req.body;
-    await (0, db_1.runQuery)(`insert into chat_messages (id, session_id, role, content, metadata)
+    await runQuery(`insert into chat_messages (id, session_id, role, content, metadata)
      values ($1, $2, 'system', $3, $4::jsonb)`, [
-        (0, crypto_1.randomUUID)(),
+        randomUUID(),
         sessionId,
         "confidence_check",
         JSON.stringify({ score, reason: reason ?? null }),
@@ -45,13 +43,13 @@ router.post("/ai/confidence-check", async (req, res, next) => {
 });
 router.post("/ai/startup-interest", async (req, res, next) => {
     const { sessionId, tags } = req.body;
-    await (0, db_1.runQuery)(`insert into chat_messages (id, session_id, role, content, metadata)
+    await runQuery(`insert into chat_messages (id, session_id, role, content, metadata)
      values ($1, $2, 'system', $3, $4::jsonb)`, [
-        (0, crypto_1.randomUUID)(),
+        randomUUID(),
         sessionId,
         "startup_interest",
         JSON.stringify({ tags }),
     ]);
     res["json"]({ ok: true, tags });
 });
-exports.default = router;
+export default router;

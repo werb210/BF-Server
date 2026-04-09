@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { dbQuery } from "../db";
-import { logInfo } from "../observability/logger";
+import { dbQuery } from "../db.js";
+import { logInfo } from "../observability/logger.js";
 
 type SupportThreadInput = {
   type: "chat_escalation" | "issue_report";

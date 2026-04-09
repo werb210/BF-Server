@@ -1,7 +1,7 @@
 import type { Request, RequestHandler } from "express";
 import { validateRequest } from "twilio/lib/webhooks/webhooks";
-import { logWarn } from "../observability/logger";
-import { config } from "../config";
+import { logWarn } from "../observability/logger.js";
+import { config } from "../config/index.js";
 
 function resolvePublicWebhookUrl(req: Request): string {
   const forwardedProto = req.get("X-Forwarded-Proto");

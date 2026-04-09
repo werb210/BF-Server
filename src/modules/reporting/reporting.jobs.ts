@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import {
   upsertApplicationVolumeWindow,
   upsertDailyMetricsWindow,
@@ -8,11 +8,11 @@ import {
   upsertPipelineDailySnapshot,
   upsertPipelineSnapshotAt,
   upsertStaffActivityWindow,
-} from "./reporting.repo";
-import { pool, runQuery } from "../../db";
-import { config } from "../../config";
-import { runWithRequestContext } from "../../middleware/requestContext";
-import { logError, logInfo } from "../../observability/logger";
+} from "./reporting.repo.js";
+import { pool, runQuery } from "../../db.js";
+import { config } from "../../config/index.js";
+import { runWithRequestContext } from "../../middleware/requestContext.js";
+import { logError, logInfo } from "../../observability/logger.js";
 import { type PoolClient } from "pg";
 
 function startOfDay(date: Date): Date {

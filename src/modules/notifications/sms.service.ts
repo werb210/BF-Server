@@ -1,7 +1,7 @@
-import { fetchTwilioClient } from "../../services/twilio";
-import { config } from "../../config";
-import { withRetry } from "../../lib/retry";
-import { pushDeadLetter } from "../../lib/deadLetter";
+import { fetchTwilioClient } from "../../services/twilio.js";
+import { config } from "../../config/index.js";
+import { withRetry } from "../../lib/retry.js";
+import { pushDeadLetter } from "../../lib/deadLetter.js";
 
 export async function sendSms({ to, message }: { to: string; message: string }) {
   if (config.app.testMode === "true") {

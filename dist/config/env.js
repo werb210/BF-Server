@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.validateEnv = validateEnv;
-function validateEnv() {
+export function validateEnv() {
     const required = [
         "DATABASE_URL",
         "JWT_SECRET",

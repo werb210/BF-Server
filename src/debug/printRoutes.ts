@@ -1,5 +1,5 @@
 import type { Application, Express } from "express";
-import { logInfo } from "../observability/logger";
+import { logInfo } from "../observability/logger.js";
 
 export type RouteEntry = { method: string; path: string };
 export type RouteInventory = { routerBase: string; routes: RouteEntry[] };

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
-import { dbQuery } from "../db";
-import { config } from "../config";
+import { dbQuery } from "../db.js";
+import { config } from "../config/index.js";
 
 type ContinuationJwt = {
   preAppId: string;

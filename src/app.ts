@@ -2,9 +2,9 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 
-import authRoutes from "./routes/auth";
-import callRoutes from "./routes/call";
-import healthRoutes from "./routes/health";
+import authRoutes from "./routes/auth.js";
+import callRoutes from "./routes/call.js";
+import healthRoutes from "./routes/health.js";
 
 export function createApp() {
   const app = express();

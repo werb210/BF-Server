@@ -1,4 +1,4 @@
-import { sendSMS } from "../../services/smsService";
+import { sendSMS } from "../../services/smsService.js";
 
 type SendMessagePayload = {
   to: string;

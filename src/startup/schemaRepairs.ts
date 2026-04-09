@@ -1,9 +1,9 @@
-import { config } from "../config";
+import { config } from "../config/index.js";
 
 
-import { pool, runQuery } from "../db";
-import { isTestEnvironment } from "../dbRuntime";
-import { logError, logInfo, logWarn } from "../observability/logger";
+import { pool, runQuery } from "../db.js";
+import { isTestEnvironment } from "../dbRuntime.js";
+import { logError, logInfo, logWarn } from "../observability/logger.js";
 
 type ColumnInfo = { column_name: string; is_nullable: string; data_type: string };
 

@@ -1,24 +1,20 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.retryProcessingJob = retryProcessingJob;
-exports.retryProcessingJobForApplication = retryProcessingJobForApplication;
-const db_1 = require("../../db");
-const errors_1 = require("../../middleware/errors");
-const audit_service_1 = require("../audit/audit.service");
-const circuitBreaker_1 = require("../../utils/circuitBreaker");
-const config_1 = require("../../config");
-const retryPolicy_1 = require("./retryPolicy");
-const OCR_BREAKER = (0, circuitBreaker_1.fetchCircuitBreaker)("ocr_job_creation", {
+import { pool, runQuery } from "../../db.js";
+import { AppError } from "../../middleware/errors.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { fetchCircuitBreaker } from "../../utils/circuitBreaker.js";
+import { config } from "../../config/index.js";
+import { assertRetryAllowed } from "./retryPolicy.js";
+const OCR_BREAKER = fetchCircuitBreaker("ocr_job_creation", {
     failureThreshold: 3,
-    cooldownMs: 60000,
+    cooldownMs: 60_000,
 });
-const BANKING_BREAKER = (0, circuitBreaker_1.fetchCircuitBreaker)("banking_job_creation", {
+const BANKING_BREAKER = fetchCircuitBreaker("banking_job_creation", {
     failureThreshold: 3,
-    cooldownMs: 60000,
+    cooldownMs: 60_000,
 });
-const CREDIT_BREAKER = (0, circuitBreaker_1.fetchCircuitBreaker)("credit_summary_generation", {
+const CREDIT_BREAKER = fetchCircuitBreaker("credit_summary_generation", {
     failureThreshold: 3,
-    cooldownMs: 60000,
+    cooldownMs: 60_000,
 });
 function fetchBreaker(jobType) {
     switch (jobType) {
@@ -30,11 +26,11 @@ function fetchBreaker(jobType) {
             return CREDIT_BREAKER;
     }
 }
-async function retryProcessingJob(params) {
-    if (!config_1.config.flags.retryPolicyEnabled && !params.force) {
-        throw new errors_1.AppError("retry_disabled", "Retry policy is disabled.", 403);
+export async function retryProcessingJob(params) {
+    if (!config.flags.retryPolicyEnabled && !params.force) {
+        throw new AppError("retry_disabled", "Retry policy is disabled.", 403);
     }
-    const client = await db_1.pool.connect();
+    const client = await pool.connect();
     try {
         await client.runQuery("begin");
         const ocrJob = await client.runQuery(`select id, application_id, document_id, status, retry_count, last_retry_at, max_retries
@@ -48,15 +44,15 @@ async function retryProcessingJob(params) {
             const maxRetries = row.max_retries ?? 3;
             const breaker = fetchBreaker("ocr");
             if (!params.force && !breaker.canRequest()) {
-                throw new errors_1.AppError("circuit_open", "OCR circuit breaker is open.", 503);
+                throw new AppError("circuit_open", "OCR circuit breaker is open.", 503);
             }
             const nextRetryInMs = params.force
                 ? 0
-                : (0, retryPolicy_1.assertRetryAllowed)({
+                : assertRetryAllowed({
                     retryCount,
                     maxRetries,
                     lastRetryAt: row.last_retry_at,
-                    baseDelayMs: 30000,
+                    baseDelayMs: 30_000,
                 });
             const updated = await client.runQuery(`update document_processing_jobs
          set status = 'pending',
@@ -69,9 +65,9 @@ async function retryProcessingJob(params) {
          returning id, application_id, document_id, status, retry_count, last_retry_at, max_retries`, [params.jobId]);
             const updatedRow = updated.rows[0];
             if (!updatedRow) {
-                throw new errors_1.AppError("processing_retry_failed", "Failed to update processing job.", 500);
+                throw new AppError("processing_retry_failed", "Failed to update processing job.", 500);
             }
-            await (0, audit_service_1.recordAuditEvent)({
+            await recordAuditEvent({
                 action: "processing_job_retried",
                 actorUserId: params.actorUserId,
                 targetUserId: null,
@@ -112,15 +108,15 @@ async function retryProcessingJob(params) {
             const maxRetries = row.max_retries ?? 2;
             const breaker = fetchBreaker("banking");
             if (!params.force && !breaker.canRequest()) {
-                throw new errors_1.AppError("circuit_open", "Banking circuit breaker is open.", 503);
+                throw new AppError("circuit_open", "Banking circuit breaker is open.", 503);
             }
             const nextRetryInMs = params.force
                 ? 0
-                : (0, retryPolicy_1.assertRetryAllowed)({
+                : assertRetryAllowed({
                     retryCount,
                     maxRetries,
                     lastRetryAt: row.last_retry_at,
-                    baseDelayMs: 30000,
+                    baseDelayMs: 30_000,
                 });
             const updated = await client.runQuery(`update banking_analysis_jobs
          set status = 'pending',
@@ -133,9 +129,9 @@ async function retryProcessingJob(params) {
          returning id, application_id, status, retry_count, last_retry_at, max_retries`, [params.jobId]);
             const updatedRow = updated.rows[0];
             if (!updatedRow) {
-                throw new errors_1.AppError("processing_retry_failed", "Failed to update processing job.", 500);
+                throw new AppError("processing_retry_failed", "Failed to update processing job.", 500);
             }
-            await (0, audit_service_1.recordAuditEvent)({
+            await recordAuditEvent({
                 action: "processing_job_retried",
                 actorUserId: params.actorUserId,
                 targetUserId: null,
@@ -176,15 +172,15 @@ async function retryProcessingJob(params) {
             const maxRetries = row.max_retries ?? 1;
             const breaker = fetchBreaker("credit_summary");
             if (!params.force && !breaker.canRequest()) {
-                throw new errors_1.AppError("circuit_open", "Credit summary circuit breaker is open.", 503);
+                throw new AppError("circuit_open", "Credit summary circuit breaker is open.", 503);
             }
             const nextRetryInMs = params.force
                 ? 0
-                : (0, retryPolicy_1.assertRetryAllowed)({
+                : assertRetryAllowed({
                     retryCount,
                     maxRetries,
                     lastRetryAt: row.last_retry_at,
-                    baseDelayMs: 30000,
+                    baseDelayMs: 30_000,
                 });
             const updated = await client.runQuery(`update credit_summary_jobs
          set status = 'pending',
@@ -197,9 +193,9 @@ async function retryProcessingJob(params) {
          returning id, application_id, status, retry_count, last_retry_at, max_retries`, [params.jobId]);
             const updatedRow = updated.rows[0];
             if (!updatedRow) {
-                throw new errors_1.AppError("processing_retry_failed", "Failed to update processing job.", 500);
+                throw new AppError("processing_retry_failed", "Failed to update processing job.", 500);
             }
-            await (0, audit_service_1.recordAuditEvent)({
+            await recordAuditEvent({
                 action: "processing_job_retried",
                 actorUserId: params.actorUserId,
                 targetUserId: null,
@@ -229,7 +225,7 @@ async function retryProcessingJob(params) {
                 nextRetryInMs,
             };
         }
-        throw new errors_1.AppError("not_found", "Processing job not found.", 404);
+        throw new AppError("not_found", "Processing job not found.", 404);
     }
     catch (err) {
         await client.runQuery("rollback");
@@ -239,8 +235,8 @@ async function retryProcessingJob(params) {
         client.release();
     }
 }
-async function retryProcessingJobForApplication(params) {
-    const job = await (0, db_1.runQuery)(`select id, job_type
+export async function retryProcessingJobForApplication(params) {
+    const job = await runQuery(`select id, job_type
      from (
        select id, 'ocr'::text as job_type, updated_at
        from document_processing_jobs
@@ -258,7 +254,7 @@ async function retryProcessingJobForApplication(params) {
      limit 1`, [params.applicationId]);
     const row = job.rows[0];
     if (!row) {
-        throw new errors_1.AppError("not_found", "No failed processing job found.", 404);
+        throw new AppError("not_found", "No failed processing job found.", 404);
     }
     return retryProcessingJob({
         jobId: row.id,

@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { AppError } from "../middleware/errors";
-import { safeHandler } from "../middleware/safeHandler";
+import { AppError } from "../middleware/errors.js";
+import { safeHandler } from "../middleware/safeHandler.js";
 
 const router = Router();
 

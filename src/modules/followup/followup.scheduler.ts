@@ -1,12 +1,12 @@
-import { config } from "../../config";
-import { logError } from "../../observability/logger";
-import { createFollowUpActionHandlers } from "./followup.actions";
-import { evaluateFollowUpRules } from "./followup.engine";
-import { followUpRules } from "./followup.rules";
+import { config } from "../../config/index.js";
+import { logError } from "../../observability/logger.js";
+import { createFollowUpActionHandlers } from "./followup.actions.js";
+import { evaluateFollowUpRules } from "./followup.engine.js";
+import { followUpRules } from "./followup.rules.js";
 import {
   defaultFollowUpEventStore,
   defaultFollowUpIdempotencyStore,
-} from "./followup.store";
+} from "./followup.store.js";
 
 export function startFollowUpJobs(): { stop: () => void } {
   if (!config.followUp.enabled) {

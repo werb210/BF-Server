@@ -1,14 +1,12 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const lead_service_1 = require("../modules/lead/lead.service");
-const calls_service_1 = require("../modules/calls/calls.service");
-const service_1 = require("../modules/messaging/service");
-const auth_1 = require("../middleware/auth");
-const router = (0, express_1.Router)();
-router.post("/lead", auth_1.requireAuth, async (req, res) => {
+import { Router } from "express";
+import { createLead } from "../modules/lead/lead.service.js";
+import { startCall, updateCallStatus } from "../modules/calls/calls.service.js";
+import { sendMessage } from "../modules/messaging/service.js";
+import { requireAuth } from "../middleware/auth.js";
+const router = Router();
+router.post("/lead", requireAuth, async (req, res) => {
     try {
-        const result = await (0, lead_service_1.createLead)(req.body);
+        const result = await createLead(req.body);
         res.json(result);
     }
     catch (err) {
@@ -16,9 +14,9 @@ router.post("/lead", auth_1.requireAuth, async (req, res) => {
         res.status(500).json({ status: "error", error: "create_lead_failed" });
     }
 });
-router.post("/call/start", auth_1.requireAuth, async (req, res) => {
+router.post("/call/start", requireAuth, async (req, res) => {
     try {
-        const result = await (0, calls_service_1.startCall)(req.body);
+        const result = await startCall(req.body);
         res.json(result);
     }
     catch (err) {
@@ -26,9 +24,9 @@ router.post("/call/start", auth_1.requireAuth, async (req, res) => {
         res.status(500).json({ status: "error", error: "call_start_failed" });
     }
 });
-router.post("/call/status", auth_1.requireAuth, async (req, res) => {
+router.post("/call/status", requireAuth, async (req, res) => {
     try {
-        const result = await (0, calls_service_1.updateCallStatus)(req.body);
+        const result = await updateCallStatus(req.body);
         res.json(result);
     }
     catch (err) {
@@ -36,9 +34,9 @@ router.post("/call/status", auth_1.requireAuth, async (req, res) => {
         res.status(500).json({ status: "error", error: "call_status_failed" });
     }
 });
-router.post("/message", auth_1.requireAuth, async (req, res) => {
+router.post("/message", requireAuth, async (req, res) => {
     try {
-        const result = await (0, service_1.sendMessage)(req.body);
+        const result = await sendMessage(req.body);
         res.json(result);
     }
     catch (err) {
@@ -46,4 +44,4 @@ router.post("/message", auth_1.requireAuth, async (req, res) => {
         res.status(500).json({ status: "error", error: "message_failed" });
     }
 });
-exports.default = router;
+export default router;

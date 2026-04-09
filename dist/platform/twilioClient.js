@@ -1,14 +1,11 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.getTwilioClient = getTwilioClient;
-const config_1 = require("../config");
+import { config } from "../config/index.js";
 let twilioClientInstance = null;
-function getTwilioClient() {
+export function getTwilioClient() {
     if (!twilioClientInstance) {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const TwilioSDK = require("twilio");
-        twilioClientInstance = new TwilioSDK(config_1.config.twilio.accountSid, config_1.config.twilio.authToken);
+        twilioClientInstance = new TwilioSDK(config.twilio.accountSid, config.twilio.authToken);
     }
     return twilioClientInstance;
 }
-exports.default = getTwilioClient;
+export default getTwilioClient;

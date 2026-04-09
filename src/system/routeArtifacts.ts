@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { listRouteInventory, type RouteEntry } from "../debug/printRoutes";
+import { listRouteInventory, type RouteEntry } from "../debug/printRoutes.js";
 
 export type NormalizedRouteEntry = {
   method: string;

@@ -1,20 +1,18 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const node_crypto_1 = require("node:crypto");
-const express_1 = require("express");
-const db_1 = require("../db");
-const smsService_1 = require("../services/smsService");
-const leadUpsert_service_1 = require("../modules/crm/leadUpsert.service");
-const clean_1 = require("../utils/clean");
-const router = (0, express_1.Router)();
+import { randomUUID } from "node:crypto";
+import { Router } from "express";
+import { db } from "../db.js";
+import { sendSMS } from "../services/smsService.js";
+import { upsertCrmLead } from "../modules/crm/leadUpsert.service.js";
+import { stripUndefined, toNullable } from "../utils/clean.js";
+const router = Router();
 router.post("/", async (req, res, next) => {
     const data = (req.body ?? {});
     if (!data.companyName || !data.fullName || !data.email || !data.phone || !data.industry) {
         res.status(400).json({ error: "Missing required fields" });
         return;
     }
-    const continuationId = (0, node_crypto_1.randomUUID)();
-    const { rows } = await db_1.db.query(`
+    const continuationId = randomUUID();
+    const { rows } = await db.query(`
       insert into continuation (
         id,
         company_name,
@@ -43,22 +41,22 @@ router.post("/", async (req, res, next) => {
         data.arOutstanding ?? null,
         data.existingDebt ?? null,
     ]);
-    await (0, leadUpsert_service_1.upsertCrmLead)((0, clean_1.stripUndefined)({
+    await upsertCrmLead(stripUndefined({
         companyName: data.companyName,
         fullName: data.fullName,
         email: data.email,
         phone: data.phone,
         industry: data.industry,
-        yearsInBusiness: (0, clean_1.toNullable)(data.yearsInBusiness),
-        monthlyRevenue: (0, clean_1.toNullable)(data.monthlyRevenue),
-        annualRevenue: (0, clean_1.toNullable)(data.annualRevenue),
-        arOutstanding: (0, clean_1.toNullable)(data.arOutstanding),
-        existingDebt: (0, clean_1.toNullable)(data.existingDebt),
+        yearsInBusiness: toNullable(data.yearsInBusiness),
+        monthlyRevenue: toNullable(data.monthlyRevenue),
+        annualRevenue: toNullable(data.annualRevenue),
+        arOutstanding: toNullable(data.arOutstanding),
+        existingDebt: toNullable(data.existingDebt),
         source: "capital_readiness",
         tags: ["readiness"],
         activityType: "capital_readiness_submission",
     }));
-    await (0, smsService_1.sendSMS)("+15878881837", `New Capital Readiness Lead: ${data.companyName} (${data.fullName})`);
+    await sendSMS("+15878881837", `New Capital Readiness Lead: ${data.companyName} (${data.fullName})`);
     res["json"](rows[0]);
 });
 router.get("/by-email", async (req, res, next) => {
@@ -67,7 +65,7 @@ router.get("/by-email", async (req, res, next) => {
         res.status(400).json({ error: "Missing email" });
         return;
     }
-    const { rows } = await db_1.db.query(`
+    const { rows } = await db.query(`
       select *
       from continuation
       where email = $1
@@ -82,7 +80,7 @@ router.get("/by-email", async (req, res, next) => {
 });
 router.get("/:id", async (req, res, next) => {
     const { id } = req.params;
-    const { rows } = await db_1.db.query(`select * from continuation where id = $1 limit 1`, [id]);
+    const { rows } = await db.query(`select * from continuation where id = $1 limit 1`, [id]);
     if (!rows[0]) {
         res.status(404).json({});
         return;
@@ -91,11 +89,11 @@ router.get("/:id", async (req, res, next) => {
 });
 router.patch("/:id/mark-used", async (req, res, next) => {
     const { id } = req.params;
-    await db_1.db.query(`
+    await db.query(`
       update continuation
       set used_in_application = true
       where id = $1
     `, [id]);
     res["json"]({ success: true });
 });
-exports.default = router;
+export default router;

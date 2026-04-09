@@ -1,4 +1,4 @@
-import { logError } from "../../observability/logger";
+import { logError } from "../../observability/logger.js";
 import {
   type FollowUpActionHandlers,
   type FollowUpActionResult,
@@ -8,8 +8,8 @@ import {
   type FollowUpIdempotencyStore,
   type FollowUpRule,
   type FollowUpRuleResult,
-} from "./followup.types";
-import { executeFollowUpAction } from "./followup.actions";
+} from "./followup.types.js";
+import { executeFollowUpAction } from "./followup.actions.js";
 
 function minutesBetween(now: Date, then: Date): number {
   return (now.getTime() - then.getTime()) / 60000;

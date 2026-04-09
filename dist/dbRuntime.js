@@ -1,15 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.isTestEnvironment = void 0;
-exports.isTestEnv = isTestEnv;
-exports.isDbConnectionFailure = isDbConnectionFailure;
-exports.fetchDbFailureCategory = fetchDbFailureCategory;
-exports.cancelDbWork = cancelDbWork;
-const db_1 = require("./db");
-const logger_1 = require("./platform/logger");
-const config_1 = require("./config");
-function isTestEnv() {
-    return config_1.config.env === "test";
+import { runQuery } from "./db.js";
+import { logger } from "./platform/logger.js";
+import { config } from "./config/index.js";
+export function isTestEnv() {
+    return config.env === "test";
 }
 const connectionFailureCodes = new Set([
     "57P01",
@@ -22,7 +15,7 @@ const connectionFailureCodes = new Set([
     "ECONNREFUSED",
     "ETIMEDOUT",
 ]);
-function isDbConnectionFailure(err) {
+export function isDbConnectionFailure(err) {
     if (!(err instanceof Error)) {
         return false;
     }
@@ -38,7 +31,7 @@ function isDbConnectionFailure(err) {
         message.includes("could not connect") ||
         message.includes("timeout"));
 }
-function fetchDbFailureCategory(err) {
+export function fetchDbFailureCategory(err) {
     if (!(err instanceof Error)) {
         return null;
     }
@@ -55,18 +48,18 @@ function fetchDbFailureCategory(err) {
     }
     return null;
 }
-async function cancelDbWork(processIds) {
+export async function cancelDbWork(processIds) {
     if (!processIds.length) {
         return;
     }
     try {
-        await (0, db_1.runQuery)("select pg_cancel_backend(pid) from unnest($1::int[]) as pid", [
+        await runQuery("select pg_cancel_backend(pid) from unnest($1::int[]) as pid", [
             processIds,
         ]);
     }
     catch (err) {
         const message = err instanceof Error ? err.message : "unknown_error";
-        logger_1.logger.error("db_cancel_error", { message });
+        logger.error("db_cancel_error", { message });
     }
 }
-exports.isTestEnvironment = isTestEnv;
+export const isTestEnvironment = isTestEnv;

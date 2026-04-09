@@ -1,10 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const errors_1 = require("../../middleware/errors");
-const audit_repo_1 = require("./audit.repo");
-const audit_service_1 = require("./audit.service");
-const router = (0, express_1.Router)();
+import { Router } from "express";
+import { AppError } from "../../middleware/errors.js";
+import { listAuditEvents } from "./audit.repo.js";
+import { recordAuditEvent } from "./audit.service.js";
+const router = Router();
 router.get("/events", async (req, res, next) => {
     try {
         const { actorUserId, targetUserId, action, from, to, limit, offset } = req.query ?? {};
@@ -13,12 +11,12 @@ router.get("/events", async (req, res, next) => {
         const fromDate = typeof from === "string" ? new Date(from) : null;
         const toDate = typeof to === "string" ? new Date(to) : null;
         if (fromDate && Number.isNaN(fromDate.getTime())) {
-            throw new errors_1.AppError("invalid_range", "Invalid from timestamp.", 400);
+            throw new AppError("invalid_range", "Invalid from timestamp.", 400);
         }
         if (toDate && Number.isNaN(toDate.getTime())) {
-            throw new errors_1.AppError("invalid_range", "Invalid to timestamp.", 400);
+            throw new AppError("invalid_range", "Invalid to timestamp.", 400);
         }
-        const events = await (0, audit_repo_1.listAuditEvents)({
+        const events = await listAuditEvents({
             actorUserId: typeof actorUserId === "string" ? actorUserId : null,
             targetUserId: typeof targetUserId === "string" ? targetUserId : null,
             action: typeof action === "string" ? action : null,
@@ -27,7 +25,7 @@ router.get("/events", async (req, res, next) => {
             limit: parsedLimit,
             offset: parsedOffset,
         });
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "audit_view",
             actorUserId: req.user?.userId ?? null,
             targetUserId: null,
@@ -41,4 +39,4 @@ router.get("/events", async (req, res, next) => {
         next(err);
     }
 });
-exports.default = router;
+export default router;

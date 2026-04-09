@@ -1,5 +1,5 @@
-import { type Capability } from "../auth/capabilities";
-import { type Role } from "../auth/roles";
+import { type Capability } from "../auth/capabilities.js";
+import { type Role } from "../auth/roles.js";
 
 export interface AuthenticatedUser {
   userId: string;

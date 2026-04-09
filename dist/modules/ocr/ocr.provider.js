@@ -1,10 +1,7 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.createOpenAiOcrProvider = createOpenAiOcrProvider;
-const config_1 = require("../../config");
-const logger_1 = require("../../observability/logger");
-const retry_1 = require("../../lib/retry");
-const deadLetter_1 = require("../../lib/deadLetter");
+import { config } from "../../config/index.js";
+import { logWarn } from "../../observability/logger.js";
+import { withRetry } from "../../lib/retry.js";
+import { pushDeadLetter } from "../../lib/deadLetter.js";
 function extractOutputText(payload) {
     if (typeof payload.output_text === "string") {
         return payload.output_text;
@@ -50,16 +47,16 @@ function parseStructuredJson(text) {
         return null;
     }
 }
-function createOpenAiOcrProvider() {
+export function createOpenAiOcrProvider() {
     return {
         async extract(params) {
-            const apiKey = config_1.config.openai.apiKey;
+            const apiKey = config.openai.apiKey;
             if (!apiKey) {
-                (0, logger_1.logWarn)("openai_api_key_missing", { code: "openai_api_key_missing" });
+                logWarn("openai_api_key_missing", { code: "openai_api_key_missing" });
                 throw new Error("missing_openai_api_key");
             }
-            const model = config_1.config.openai.ocrModel;
-            const timeoutMs = config_1.config.ocr.timeoutMs;
+            const model = config.openai.ocrModel;
+            const timeoutMs = config.ocr.timeoutMs;
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), timeoutMs);
             try {
@@ -95,7 +92,7 @@ function createOpenAiOcrProvider() {
                         },
                     ],
                 };
-                const payload = await (0, retry_1.withRetry)(async () => {
+                const payload = await withRetry(async () => {
                     const response = await fetch("https://api.openai.com/v1/responses", {
                         method: "POST",
                         headers: {
@@ -121,7 +118,7 @@ function createOpenAiOcrProvider() {
                 };
             }
             catch (error) {
-                await (0, deadLetter_1.pushDeadLetter)({
+                await pushDeadLetter({
                     type: "ocr_openai",
                     data: {
                         mimeType: params.mimeType,

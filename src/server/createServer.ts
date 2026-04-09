@@ -1,4 +1,4 @@
-import { createApp, resetOtpStateForTests } from "../app";
+import { createApp, resetOtpStateForTests } from "../app.js";
 
 /**
  * Canonical server factory — NO ARGS

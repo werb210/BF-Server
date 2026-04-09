@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.toStringSet = toStringSet;
-function toStringSet(val) {
+export function toStringSet(val) {
     if (Array.isArray(val))
         return new Set(val.map((item) => String(item)));
     if (val == null)

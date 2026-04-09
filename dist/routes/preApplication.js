@@ -1,15 +1,10 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const db_1 = require("../db");
-const config_1 = require("../config");
-const router = (0, express_1.Router)();
+import { Router } from "express";
+import jwt from "jsonwebtoken";
+import { dbQuery } from "../db.js";
+import { config } from "../config/index.js";
+const router = Router();
 function fetchJwtSecret() {
-    const secret = config_1.config.jwt.secret;
+    const secret = config.jwt.secret;
     if (!secret) {
         throw new Error("JWT_SECRET is not configured");
     }
@@ -21,7 +16,7 @@ function fetchJwtSecret() {
 router.post("/continue-application", async (req, res, next) => {
     try {
         const data = (req.body ?? {});
-        const inserted = await (0, db_1.dbQuery)(`insert into pre_applications (
+        const inserted = await dbQuery(`insert into pre_applications (
         company_name,
         full_name,
         email,
@@ -49,7 +44,7 @@ router.post("/continue-application", async (req, res, next) => {
         if (!record?.id) {
             return res.status(500).json({ error: "Failed to create pre-application" });
         }
-        const token = jsonwebtoken_1.default.sign({ preAppId: record.id }, fetchJwtSecret(), {
+        const token = jwt.sign({ preAppId: record.id }, fetchJwtSecret(), {
             expiresIn: "30m",
         });
         return res["json"]({ continuationToken: token });
@@ -68,8 +63,8 @@ router.get("/continue-application", async (req, res, next) => {
         if (!token) {
             return res.status(401).json({ error: "Missing token" });
         }
-        const decoded = jsonwebtoken_1.default.verify(token, fetchJwtSecret());
-        const result = await (0, db_1.dbQuery)(`select
+        const decoded = jwt.verify(token, fetchJwtSecret());
+        const result = await dbQuery(`select
           id,
           company_name as "companyName",
           full_name as "fullName",
@@ -105,7 +100,7 @@ router.post("/consume-pre-application", async (req, res, next) => {
         if (!id) {
             return res.status(400).json({ error: "Missing id" });
         }
-        await (0, db_1.dbQuery)(`update pre_applications
+        await dbQuery(`update pre_applications
        set consumed = true
        where id = $1`, [id]);
         return res["json"]({ success: true });
@@ -114,4 +109,4 @@ router.post("/consume-pre-application", async (req, res, next) => {
         return res.status(500).json({ error: "Failed to consume" });
     }
 });
-exports.default = router;
+export default router;

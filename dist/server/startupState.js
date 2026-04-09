@@ -1,30 +1,23 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.markReady = markReady;
-exports.markNotReady = markNotReady;
-exports.isReady = isReady;
-exports.fetchStatus = fetchStatus;
-exports.resetStartupState = resetStartupState;
 const state = {
     ready: false,
     reason: "starting",
     startedAt: Date.now(),
 };
-function markReady() {
+export function markReady() {
     state.ready = true;
     state.reason = null;
 }
-function markNotReady(reason) {
+export function markNotReady(reason) {
     state.ready = false;
     state.reason = reason;
 }
-function isReady() {
+export function isReady() {
     return state.ready;
 }
-function fetchStatus() {
+export function fetchStatus() {
     return { ...state };
 }
-function resetStartupState() {
+export function resetStartupState() {
     state.ready = false;
     state.reason = "starting";
     state.startedAt = Date.now();

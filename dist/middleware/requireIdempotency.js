@@ -1,6 +1,3 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.requireIdempotency = requireIdempotency;
 const store = new Map();
 const MAX_STORE_SIZE = 1000;
 const STORE_TTL_MS = 10 * 60 * 1000;
@@ -14,7 +11,7 @@ function setWithTTL(key, value, ttlMs = STORE_TTL_MS) {
         }
     }
 }
-function requireIdempotency(req, res, next) {
+export function requireIdempotency(req, res, next) {
     const key = req.headers["idempotency-key"];
     if (!key) {
         return res.status(400).json({ error: "Missing Idempotency-Key" });

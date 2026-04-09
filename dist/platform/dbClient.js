@@ -1,12 +1,9 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.dbClient = void 0;
-const pg_1 = require("pg");
-const config_1 = require("../config");
-exports.dbClient = new pg_1.Pool({
-    connectionString: config_1.config.db.url,
+import { Pool } from "pg";
+import { config } from "../config/index.js";
+export const dbClient = new Pool({
+    connectionString: config.db.url,
     max: 10,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000,
 });
-exports.default = exports.dbClient;
+export default dbClient;

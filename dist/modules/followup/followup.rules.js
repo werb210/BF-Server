@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.followUpRules = void 0;
-exports.followUpRules = [
+export const followUpRules = [
     {
         id: "IMPORTANT_EMAIL_NOT_OPENED_1H",
         triggerEvent: "EMAIL_SENT",

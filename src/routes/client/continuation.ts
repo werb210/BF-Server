@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { fetchContinuation as clientContinuation } from "../../modules/continuation/continuation.service";
+import { fetchContinuation as clientContinuation } from "../../modules/continuation/continuation.service.js";
 
 const router = Router();
 

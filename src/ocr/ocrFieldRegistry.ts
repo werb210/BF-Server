@@ -3,5 +3,5 @@ export {
   fetchOcrFieldDefinitionByKey,
   fetchOcrFieldDefinitionByLabel,
   fetchOcrFieldRegistry,
-} from "../modules/ocr/ocrFieldRegistry";
-export type { OcrFieldDefinition, OcrDocumentCategory } from "../modules/ocr/ocrFieldRegistry";
+} from "../modules/ocr/ocrFieldRegistry.js";
+export type { OcrFieldDefinition, OcrDocumentCategory } from "../modules/ocr/ocrFieldRegistry.js";

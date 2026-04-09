@@ -1,8 +1,8 @@
 import jwt, { type SignOptions, type JwtPayload } from "jsonwebtoken";
-import { config } from "../config";
-import { type Role, isRole } from "./roles";
-import { type Capability, isCapability } from "./capabilities";
-import { findAuthUserById, type AuthUser } from "../modules/auth/auth.repo";
+import { config } from "../config/index.js";
+import { type Role, isRole } from "./roles.js";
+import { type Capability, isCapability } from "./capabilities.js";
+import { findAuthUserById, type AuthUser } from "../modules/auth/auth.repo.js";
 
 export type AccessTokenPayload = {
   sub: string;

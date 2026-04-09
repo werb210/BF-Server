@@ -1,84 +1,81 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.ROUTES = exports.V1_REQUIRED_ROUTE_SURFACE = exports.PORTAL_ROUTE_REQUIREMENTS = exports.API_ROUTE_MOUNTS = void 0;
-exports.registerApiRouteMounts = registerApiRouteMounts;
-const express_1 = require("express");
-const roles_1 = require("../auth/roles");
-const admin_1 = __importDefault(require("./admin"));
-const applications_routes_1 = __importDefault(require("../modules/applications/applications.routes"));
-const banking_1 = __importDefault(require("./banking"));
-const calendar_1 = __importDefault(require("./calendar"));
-const calls_1 = __importDefault(require("./calls"));
-const client_1 = __importDefault(require("./client"));
-const communications_1 = __importDefault(require("./communications"));
-const crm_1 = __importDefault(require("./crm"));
-const credit_1 = __importDefault(require("./credit"));
-const creditSummary_1 = __importDefault(require("./creditSummary"));
-const dashboard_1 = __importDefault(require("./dashboard"));
-const documents_1 = __importDefault(require("./documents"));
-const _int_1 = __importDefault(require("./_int"));
-const processing_1 = __importDefault(require("./internal/processing"));
-const lenderSubmissions_1 = __importDefault(require("./lenderSubmissions"));
-const marketing_1 = __importDefault(require("./marketing"));
-const offers_1 = __importDefault(require("./offers"));
-const messages_1 = __importDefault(require("./messages"));
-const reporting_1 = __importDefault(require("./reporting"));
-const reports_1 = __importDefault(require("./reports"));
-const settings_1 = __importDefault(require("./settings"));
-const staff_1 = __importDefault(require("./staff"));
-const tasks_1 = __importDefault(require("./tasks"));
-const users_1 = __importDefault(require("./users"));
-const portal_1 = __importDefault(require("./portal"));
-const pwa_1 = __importDefault(require("./pwa"));
-const referrals_1 = __importDefault(require("./referrals"));
-const pipeline_1 = __importDefault(require("./pipeline"));
-const telephonyRoutes_1 = __importDefault(require("../telephony/routes/telephonyRoutes"));
-const webhooks_1 = __importDefault(require("./webhooks"));
-const website_1 = __importDefault(require("./website"));
-const _canonicalMount_1 = require("./_canonicalMount");
+import { Router } from "express";
+import { ROLES } from "../auth/roles.js";
+import adminRoutes from "./admin.js";
+import applicationsRoutes from "../modules/applications/applications.routes.js";
+import bankingRoutes from "./banking.js";
+import calendarRoutes from "./calendar.js";
+import callsRoutes from "./calls.js";
+import clientRoutes from "./client.js";
+import communicationsRoutes from "./communications.js";
+import crmRoutes from "./crm.js";
+import creditRoutes from "./credit.js";
+import creditSummaryRoutes from "./creditSummary.js";
+import dashboardRoutes from "./dashboard.js";
+import documentsRoutes from "./documents.js";
+import internalRoutes from "./_int.js";
+import internalProcessingRoutes from "./internal/processing.js";
+import lenderSubmissionsRoutes from "./lenderSubmissions.js";
+import marketingRoutes from "./marketing.js";
+import offersRoutes from "./offers.js";
+import messagesRoutes from "./messages.js";
+import reportingRoutes from "./reporting.js";
+import reportsRoutes from "./reports.js";
+import settingsRoutes from "./settings.js";
+import staffRoutes from "./staff.js";
+import tasksRoutes from "./tasks.js";
+import usersRoutes from "./users.js";
+import portalRoutes from "./portal.js";
+import pwaRoutes from "./pwa.js";
+import referralsRoutes from "./referrals.js";
+import pipelineRoutes from "./pipeline.js";
+import telephonyRoutes from "../telephony/routes/telephonyRoutes.js";
+import webhooksRoutes from "./webhooks.js";
+import websiteRoutes from "./website.js";
+import mayaRoutes from "./maya.js";
+import aiRoutes from "./ai.v2.js";
+import { mount, resetMountedRoutes } from "./_canonicalMount.js";
 const ALL_ROLES = [
-    roles_1.ROLES.ADMIN,
-    roles_1.ROLES.STAFF,
-    roles_1.ROLES.LENDER,
-    roles_1.ROLES.REFERRER,
+    ROLES.ADMIN,
+    ROLES.STAFF,
+    ROLES.LENDER,
+    ROLES.REFERRER,
 ];
-exports.API_ROUTE_MOUNTS = [
-    { path: "/_int", router: _int_1.default },
-    { path: "/internal/processing", router: processing_1.default },
-    { path: "/calendar", router: calendar_1.default },
-    { path: "/calls", router: calls_1.default },
-    { path: "/telephony", router: telephonyRoutes_1.default },
-    { path: "/banking", router: banking_1.default },
-    { path: "/client", router: client_1.default },
-    { path: "/communications", router: communications_1.default },
-    { path: "/credit", router: credit_1.default },
-    { path: "/crm", router: crm_1.default },
-    { path: "/dashboard", router: dashboard_1.default },
-    { path: "/credit-summary", router: creditSummary_1.default },
-    { path: "/documents", router: documents_1.default },
-    { path: "/lender-submissions", router: lenderSubmissions_1.default },
-    { path: "/admin", router: admin_1.default },
-    { path: "/marketing", router: marketing_1.default },
-    { path: "/offers", router: offers_1.default },
-    { path: "/messages", router: messages_1.default },
-    { path: "/reporting", router: reporting_1.default },
-    { path: "/reports", router: reports_1.default },
-    { path: "/settings", router: settings_1.default },
-    { path: "/staff", router: staff_1.default },
-    { path: "/tasks", router: tasks_1.default },
-    { path: "/users", router: users_1.default },
-    { path: "/portal", router: portal_1.default },
-    { path: "/pwa", router: pwa_1.default },
-    { path: "/referrals", router: referrals_1.default },
-    { path: "/pipeline", router: pipeline_1.default },
-    { path: "/webhooks", router: webhooks_1.default },
-    { path: "/website", router: website_1.default },
-    { path: "/applications", router: applications_routes_1.default },
+export const API_ROUTE_MOUNTS = [
+    { path: "/_int", router: internalRoutes },
+    { path: "/internal/processing", router: internalProcessingRoutes },
+    { path: "/calendar", router: calendarRoutes },
+    { path: "/calls", router: callsRoutes },
+    { path: "/telephony", router: telephonyRoutes },
+    { path: "/banking", router: bankingRoutes },
+    { path: "/client", router: clientRoutes },
+    { path: "/communications", router: communicationsRoutes },
+    { path: "/credit", router: creditRoutes },
+    { path: "/crm", router: crmRoutes },
+    { path: "/dashboard", router: dashboardRoutes },
+    { path: "/credit-summary", router: creditSummaryRoutes },
+    { path: "/documents", router: documentsRoutes },
+    { path: "/lender-submissions", router: lenderSubmissionsRoutes },
+    { path: "/admin", router: adminRoutes },
+    { path: "/marketing", router: marketingRoutes },
+    { path: "/offers", router: offersRoutes },
+    { path: "/messages", router: messagesRoutes },
+    { path: "/reporting", router: reportingRoutes },
+    { path: "/reports", router: reportsRoutes },
+    { path: "/settings", router: settingsRoutes },
+    { path: "/staff", router: staffRoutes },
+    { path: "/tasks", router: tasksRoutes },
+    { path: "/users", router: usersRoutes },
+    { path: "/portal", router: portalRoutes },
+    { path: "/pwa", router: pwaRoutes },
+    { path: "/referrals", router: referralsRoutes },
+    { path: "/pipeline", router: pipelineRoutes },
+    { path: "/webhooks", router: webhooksRoutes },
+    { path: "/website", router: websiteRoutes },
+    { path: "/maya", router: mayaRoutes },
+    { path: "/ai", router: aiRoutes },
+    { path: "/applications", router: applicationsRoutes },
 ];
-exports.PORTAL_ROUTE_REQUIREMENTS = [
+export const PORTAL_ROUTE_REQUIREMENTS = [
     { method: "GET", path: "/api/auth/me" },
     { method: "GET", path: "/api/dashboard" },
     { method: "GET", path: "/api/client/submissions" },
@@ -89,7 +86,7 @@ exports.PORTAL_ROUTE_REQUIREMENTS = [
     { method: "GET", path: "/api/lenders" },
     { method: "GET", path: "/api/settings" },
 ];
-exports.V1_REQUIRED_ROUTE_SURFACE = [
+export const V1_REQUIRED_ROUTE_SURFACE = [
     "/api/client",
     "/api/portal",
     "/api/documents",
@@ -101,56 +98,56 @@ exports.V1_REQUIRED_ROUTE_SURFACE = [
     "/api/calls",
     "/api/health",
 ];
-exports.ROUTES = [
+export const ROUTES = [
     { method: "POST", path: "/auth/otp/start", roles: ALL_ROLES },
     { method: "POST", path: "/auth/otp/verify", roles: ALL_ROLES },
     { method: "GET", path: "/api/auth/me", roles: ALL_ROLES },
     { method: "POST", path: "/api/auth/logout", roles: ALL_ROLES },
-    { method: "GET", path: "/telephony/token", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "POST", path: "/api/telephony/outbound-call", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "POST", path: "/api/telephony/presence", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "POST", path: "/api/telephony/call-status", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
+    { method: "GET", path: "/telephony/token", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "POST", path: "/api/telephony/outbound-call", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "POST", path: "/api/telephony/presence", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "POST", path: "/api/telephony/call-status", roles: [ROLES.ADMIN, ROLES.STAFF] },
     { method: "POST", path: "/api/webhooks/twilio/voice", roles: [] },
-    { method: "GET", path: "/api/dialer/token", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
+    { method: "GET", path: "/api/dialer/token", roles: [ROLES.ADMIN, ROLES.STAFF] },
     { method: "POST", path: "/api/twilio/voice", roles: [] },
     { method: "POST", path: "/api/twilio/voice/action", roles: [] },
     { method: "POST", path: "/api/twilio/recording", roles: [] },
     { method: "POST", path: "/api/twilio/status", roles: [] },
-    { method: "POST", path: "/api/calls/start", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "POST", path: "/api/calls/:id/status", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "POST", path: "/api/calls/:id/end", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "GET", path: "/api/calls", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "GET", path: "/api/client/submissions", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "GET", path: "/api/client/submissions/:id/ocr-insights", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "POST", path: "/api/client/submissions/:id/open", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "GET", path: "/api/pipeline", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "GET", path: "/api/pipeline/stages", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "GET", path: "/api/crm", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "GET", path: "/api/crm/contacts", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "GET", path: "/api/communications", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "GET", path: "/api/calendar", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "GET", path: "/api/calendar/events", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "GET", path: "/api/tasks", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "GET", path: "/api/marketing", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "GET", path: "/api/lenders", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "GET", path: "/api/settings", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "GET", path: "/api/staff/overview", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "GET", path: "/api/dashboard", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF] },
-    { method: "POST", path: "/api/referrals", roles: [roles_1.ROLES.ADMIN, roles_1.ROLES.STAFF, roles_1.ROLES.REFERRER] },
+    { method: "POST", path: "/api/calls/start", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "POST", path: "/api/calls/:id/status", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "POST", path: "/api/calls/:id/end", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "GET", path: "/api/calls", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "GET", path: "/api/client/submissions", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "GET", path: "/api/client/submissions/:id/ocr-insights", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "POST", path: "/api/client/submissions/:id/open", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "GET", path: "/api/pipeline", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "GET", path: "/api/pipeline/stages", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "GET", path: "/api/crm", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "GET", path: "/api/crm/contacts", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "GET", path: "/api/communications", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "GET", path: "/api/calendar", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "GET", path: "/api/calendar/events", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "GET", path: "/api/tasks", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "GET", path: "/api/marketing", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "GET", path: "/api/lenders", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "GET", path: "/api/settings", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "GET", path: "/api/staff/overview", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "GET", path: "/api/dashboard", roles: [ROLES.ADMIN, ROLES.STAFF] },
+    { method: "POST", path: "/api/referrals", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.REFERRER] },
     { method: "POST", path: "/api/website/credit-readiness", roles: [] },
     { method: "POST", path: "/api/website/contact", roles: [] },
     { method: "POST", path: "/api/public/application/start", roles: [] },
     { method: "POST", path: "/api/public/readiness", roles: [] },
     { method: "GET", path: "/api/client/continuation/:token", roles: [] },
-    { method: "GET", path: "/api/portal/readiness-leads", roles: [roles_1.ROLES.ADMIN] },
-    { method: "POST", path: "/api/portal/readiness-leads/:id/convert", roles: [roles_1.ROLES.ADMIN] },
-    { method: "GET", path: "/api/portal/applications/:id/readiness", roles: [roles_1.ROLES.ADMIN] },
+    { method: "GET", path: "/api/portal/readiness-leads", roles: [ROLES.ADMIN] },
+    { method: "POST", path: "/api/portal/readiness-leads/:id/convert", roles: [ROLES.ADMIN] },
+    { method: "GET", path: "/api/portal/applications/:id/readiness", roles: [ROLES.ADMIN] },
 ];
-function registerApiRouteMounts(app) {
-    (0, _canonicalMount_1.resetMountedRoutes)();
-    const apiRouter = (0, express_1.Router)();
-    exports.API_ROUTE_MOUNTS.forEach((entry) => {
-        (0, _canonicalMount_1.mount)(apiRouter, entry.path, entry.router);
+export function registerApiRouteMounts(app) {
+    resetMountedRoutes();
+    const apiRouter = Router();
+    API_ROUTE_MOUNTS.forEach((entry) => {
+        mount(apiRouter, entry.path, entry.router);
     });
     app.use("/api", apiRouter);
     app.use("/api/v1", apiRouter);

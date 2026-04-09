@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { v4 as uuid } from "uuid";
-import { CreateLeadDTO, Lead } from "../models/lead.model";
+import { CreateLeadDTO, Lead } from "../models/lead.model.js";
 
 const leads: Lead[] = [];
 const MAX_LEADS = 500;

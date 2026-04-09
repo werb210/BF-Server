@@ -1,6 +1,6 @@
-import { getPrisma } from "../infra/db";
-import { getRedis } from "../infra/redis";
-import { config } from "../config";
+import { getPrisma } from "../infra/db.js";
+import { getRedis } from "../infra/redis.js";
+import { config } from "../config/index.js";
 
 export async function bootstrap(): Promise<void> {
   await getPrisma();

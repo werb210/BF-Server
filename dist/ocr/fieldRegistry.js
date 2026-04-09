@@ -1,11 +1,7 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.fetchOcrFieldDefinitions = fetchOcrFieldDefinitions;
-exports.fetchOcrFieldsForDocumentType = fetchOcrFieldsForDocumentType;
-const ocrFieldRegistry_1 = require("./ocrFieldRegistry");
-function fetchOcrFieldDefinitions() {
-    return (0, ocrFieldRegistry_1.fetchOcrFieldRegistry)();
+import { fetchOcrFieldRegistry } from "./ocrFieldRegistry.js";
+export function fetchOcrFieldDefinitions() {
+    return fetchOcrFieldRegistry();
 }
-function fetchOcrFieldsForDocumentType() {
-    return (0, ocrFieldRegistry_1.fetchOcrFieldRegistry)();
+export function fetchOcrFieldsForDocumentType() {
+    return fetchOcrFieldRegistry();
 }

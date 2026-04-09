@@ -1,26 +1,19 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.submitApplication = submitApplication;
-exports.fetchSubmissionStatus = fetchSubmissionStatus;
-exports.fetchTransmissionStatus = fetchTransmissionStatus;
-exports.retrySubmission = retrySubmission;
-exports.cancelSubmissionRetry = cancelSubmissionRetry;
-const errors_1 = require("../../middleware/errors");
-const crypto_1 = require("crypto");
-const audit_service_1 = require("../audit/audit.service");
-const db_1 = require("../../db");
-const applications_repo_1 = require("../applications/applications.repo");
-const pipelineState_1 = require("../applications/pipelineState");
-const applications_service_1 = require("../applications/applications.service");
-const lenderProductRequirementsService_1 = require("../../services/lenderProductRequirementsService");
-const requiredDocuments_1 = require("../../db/schema/requiredDocuments");
-const lender_repo_1 = require("./lender.repo");
-const config_1 = require("../../config");
-const ops_service_1 = require("../ops/ops.service");
-const logger_1 = require("../../observability/logger");
-const transactionTelemetry_1 = require("../../observability/transactionTelemetry");
-const dbRuntime_1 = require("../../dbRuntime");
-const SubmissionRouter_1 = require("../submissions/SubmissionRouter");
+import { AppError } from "../../middleware/errors.js";
+import { createHash } from "node:crypto";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { pool } from "../../db.js";
+import { findApplicationById, listLatestAcceptedDocumentVersions, updateApplicationStatus, } from "../applications/applications.repo.js";
+import { ApplicationStage, isPipelineState } from "../applications/pipelineState.js";
+import { transitionPipelineState } from "../applications/applications.service.js";
+import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService.js";
+import { fetchDocumentTypeAliases, normalizeRequiredDocumentKey, } from "../../db/schema/requiredDocuments.js";
+import { createSubmission, createSubmissionEvent, findLatestSubmissionByApplicationId, findSubmissionByApplicationAndLender, findSubmissionById, findSubmissionByIdempotencyKey, findSubmissionRetryState, updateSubmissionStatus, upsertSubmissionRetryState, } from "./lender.repo.js";
+import { config } from "../../config/index.js";
+import { isKillSwitchEnabled } from "../ops/ops.service.js";
+import { logInfo, logWarn } from "../../observability/logger.js";
+import { recordTransactionRollback } from "../../observability/transactionTelemetry.js";
+import { isTestEnvironment } from "../../dbRuntime.js";
+import { SubmissionRouter, normalizeSubmissionMethod, resolveSubmissionProfile, } from "../submissions/SubmissionRouter.js";
 function buildRequestMetadata(params) {
     const metadata = {};
     if (params.ip) {
@@ -38,12 +31,12 @@ function buildAuditContext(params) {
     };
 }
 function createAdvisoryLockKey(value) {
-    const hash = (0, crypto_1.createHash)("sha256").update(value).digest();
+    const hash = createHash("sha256").update(value).digest();
     return [hash.readInt32BE(0), hash.readInt32BE(4)];
 }
 function hashPayload(payload) {
     const serialized = JSON.stringify(payload);
-    return (0, crypto_1.createHash)("sha256").update(serialized).digest("hex");
+    return createHash("sha256").update(serialized).digest("hex");
 }
 function resolveApplicationCountry(metadata) {
     if (!metadata || typeof metadata !== "object") {
@@ -68,14 +61,14 @@ async function assertLenderProduct(params) {
      where id = $1
      limit 1`, [params.lenderProductId]);
     if (res.rows.length === 0) {
-        throw new errors_1.AppError("invalid_product", "Lender product not found.", 400);
+        throw new AppError("invalid_product", "Lender product not found.", 400);
     }
     const row = res.rows[0];
     if (!row) {
-        throw new errors_1.AppError("invalid_product", "Lender product not found.", 400);
+        throw new AppError("invalid_product", "Lender product not found.", 400);
     }
     if (row.lender_id !== params.lenderId) {
-        throw new errors_1.AppError("invalid_product", "Lender product does not match lender.", 400);
+        throw new AppError("invalid_product", "Lender product does not match lender.", 400);
     }
 }
 function mapToLenderPayload(lenderId, packet) {
@@ -119,7 +112,7 @@ function buildAttachmentBundle(packet) {
 }
 async function sendToLender(params) {
     try {
-        const router = new SubmissionRouter_1.SubmissionRouter({
+        const router = new SubmissionRouter({
             profile: params.profile,
             payload: params.payload,
             attempt: params.attempt,
@@ -127,7 +120,7 @@ async function sendToLender(params) {
         return await router.submit();
     }
     catch (error) {
-        (0, logger_1.logWarn)("lender_submission_adapter_error", {
+        logWarn("lender_submission_adapter_error", {
             lenderId: params.profile.lenderId,
             lenderName: params.profile.lenderName,
             error,
@@ -150,23 +143,23 @@ async function resolveSubmissionMethod(params) {
      where id = $1
      limit 1`, [params.lenderId]);
     if (res.rows.length === 0) {
-        throw new errors_1.AppError("not_found", "Lender not found.", 404);
+        throw new AppError("not_found", "Lender not found.", 404);
     }
     const row = res.rows[0];
     if (!row) {
-        throw new errors_1.AppError("not_found", "Lender not found.", 404);
+        throw new AppError("not_found", "Lender not found.", 404);
     }
-    return (0, SubmissionRouter_1.normalizeSubmissionMethod)(row.submission_method) ?? "email";
+    return normalizeSubmissionMethod(row.submission_method) ?? "email";
 }
 async function buildSubmissionPacket(params) {
-    const application = await (0, applications_repo_1.findApplicationById)(params.applicationId, params.client);
+    const application = await findApplicationById(params.applicationId, params.client);
     if (!application) {
-        throw new errors_1.AppError("not_found", "Application not found.", 404);
+        throw new AppError("not_found", "Application not found.", 404);
     }
-    if (!(0, pipelineState_1.isPipelineState)(application.pipeline_state)) {
-        throw new errors_1.AppError("invalid_state", "Pipeline state is invalid.", 400);
+    if (!isPipelineState(application.pipeline_state)) {
+        throw new AppError("invalid_state", "Pipeline state is invalid.", 400);
     }
-    const { requirements } = await (0, lenderProductRequirementsService_1.resolveRequirementsForApplication)({
+    const { requirements } = await resolveRequirementsForApplication({
         lenderProductId: application.lender_product_id ?? null,
         productType: application.product_type,
         requestedAmount: application.requested_amount ?? null,
@@ -176,19 +169,19 @@ async function buildSubmissionPacket(params) {
         .filter((req) => req.required)
         .map((req) => req.documentType);
     const requiredAliases = requiredTypes.flatMap((type) => {
-        const normalized = (0, requiredDocuments_1.normalizeRequiredDocumentKey)(type);
-        return normalized ? (0, requiredDocuments_1.fetchDocumentTypeAliases)(normalized) : [type];
+        const normalized = normalizeRequiredDocumentKey(type);
+        return normalized ? fetchDocumentTypeAliases(normalized) : [type];
     });
-    const documents = await (0, applications_repo_1.listLatestAcceptedDocumentVersions)({
+    const documents = await listLatestAcceptedDocumentVersions({
         applicationId: application.id,
         documentTypes: requiredAliases,
         client: params.client,
     });
     const normalizedDocs = new Set(documents
-        .map((doc) => (0, requiredDocuments_1.normalizeRequiredDocumentKey)(doc.document_type) ?? doc.document_type)
+        .map((doc) => normalizeRequiredDocumentKey(doc.document_type) ?? doc.document_type)
         .filter((docType) => docType));
     const missingDocumentTypes = requiredTypes.filter((docType) => {
-        const normalized = (0, requiredDocuments_1.normalizeRequiredDocumentKey)(docType) ?? docType;
+        const normalized = normalizeRequiredDocumentKey(docType) ?? docType;
         return !normalizedDocs.has(normalized);
     });
     return {
@@ -218,13 +211,13 @@ async function buildSubmissionPacket(params) {
     };
 }
 function calculateNextAttempt(attemptCount) {
-    const baseDelay = config_1.config.lender.retry.baseDelayMs;
-    const maxDelay = config_1.config.lender.retry.maxDelayMs;
+    const baseDelay = config.lender.retry.baseDelayMs;
+    const maxDelay = config.lender.retry.maxDelayMs;
     const delay = Math.min(maxDelay, baseDelay * Math.pow(2, Math.max(0, attemptCount - 1)));
     return new Date(Date.now() + delay);
 }
 async function recordSubmissionFailure(params) {
-    await (0, lender_repo_1.updateSubmissionStatus)({
+    await updateSubmissionStatus({
         submissionId: params.submissionId,
         status: "failed",
         lenderResponse: params.response,
@@ -233,7 +226,7 @@ async function recordSubmissionFailure(params) {
         externalReference: params.response.externalReference ?? null,
         client: params.client,
     });
-    await (0, lender_repo_1.createSubmissionEvent)({
+    await createSubmissionEvent({
         applicationId: params.applicationId,
         lenderId: params.lenderId,
         method: params.method,
@@ -243,10 +236,10 @@ async function recordSubmissionFailure(params) {
         client: params.client,
     });
     if (params.retryable) {
-        const currentRetry = await (0, lender_repo_1.findSubmissionRetryState)(params.submissionId, params.client);
+        const currentRetry = await findSubmissionRetryState(params.submissionId, params.client);
         const nextAttemptCount = (currentRetry?.attempt_count ?? 0) + 1;
         const nextAttemptAt = calculateNextAttempt(nextAttemptCount);
-        await (0, lender_repo_1.upsertSubmissionRetryState)({
+        await upsertSubmissionRetryState({
             submissionId: params.submissionId,
             status: "pending",
             attemptCount: nextAttemptCount,
@@ -257,11 +250,11 @@ async function recordSubmissionFailure(params) {
         });
     }
     const nextState = params.retryable
-        ? pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED
-        : pipelineState_1.ApplicationStage.REJECTED;
-    const current = await (0, applications_repo_1.findApplicationById)(params.applicationId, params.client);
-    if (current && (0, pipelineState_1.isPipelineState)(current.pipeline_state) && current.pipeline_state !== nextState) {
-        await (0, applications_service_1.transitionPipelineState)({
+        ? ApplicationStage.DOCUMENTS_REQUIRED
+        : ApplicationStage.REJECTED;
+    const current = await findApplicationById(params.applicationId, params.client);
+    if (current && isPipelineState(current.pipeline_state) && current.pipeline_state !== nextState) {
+        await transitionPipelineState({
             applicationId: params.applicationId,
             nextState,
             actorUserId: params.actorUserId,
@@ -271,7 +264,7 @@ async function recordSubmissionFailure(params) {
             client: params.client,
         });
     }
-    await (0, audit_service_1.recordAuditEvent)({
+    await recordAuditEvent({
         action: "lender_submission_failed",
         actorUserId: params.actorUserId,
         targetUserId: params.ownerUserId,
@@ -283,28 +276,28 @@ async function recordSubmissionFailure(params) {
     });
 }
 async function transmitSubmission(params) {
-    const application = await (0, applications_repo_1.findApplicationById)(params.applicationId, params.client);
+    const application = await findApplicationById(params.applicationId, params.client);
     if (!application) {
-        throw new errors_1.AppError("not_found", "Application not found.", 404);
+        throw new AppError("not_found", "Application not found.", 404);
     }
-    if (!(0, pipelineState_1.isPipelineState)(application.pipeline_state)) {
-        throw new errors_1.AppError("invalid_state", "Pipeline state is invalid.", 400);
+    if (!isPipelineState(application.pipeline_state)) {
+        throw new AppError("invalid_state", "Pipeline state is invalid.", 400);
     }
     if (!application.lender_id) {
-        throw new errors_1.AppError("missing_lender", "Application lender is not set.", 400);
+        throw new AppError("missing_lender", "Application lender is not set.", 400);
     }
     if (application.lender_id !== params.lenderId) {
-        throw new errors_1.AppError("invalid_lender", "Application lender does not match request.", 400);
+        throw new AppError("invalid_lender", "Application lender does not match request.", 400);
     }
     if (!application.lender_product_id) {
-        throw new errors_1.AppError("missing_product", "Application lender product is not set.", 400);
+        throw new AppError("missing_product", "Application lender product is not set.", 400);
     }
     if (application.lender_product_id !== params.lenderProductId) {
-        throw new errors_1.AppError("invalid_product", "Application lender product does not match request.", 400);
+        throw new AppError("invalid_product", "Application lender product does not match request.", 400);
     }
-    if (application.pipeline_state !== pipelineState_1.ApplicationStage.IN_REVIEW &&
-        application.pipeline_state !== pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED) {
-        throw new errors_1.AppError("invalid_state", "Application must be in IN_REVIEW or DOCUMENTS_REQUIRED to submit to lenders.", 400);
+    if (application.pipeline_state !== ApplicationStage.IN_REVIEW &&
+        application.pipeline_state !== ApplicationStage.DOCUMENTS_REQUIRED) {
+        throw new AppError("invalid_state", "Application must be in IN_REVIEW or DOCUMENTS_REQUIRED to submit to lenders.", 400);
     }
     const submissionMethod = await resolveSubmissionMethod({
         lenderId: params.lenderId,
@@ -317,7 +310,7 @@ async function transmitSubmission(params) {
         client: params.client,
     });
     if (!params.skipRequiredDocuments && missingDocumentTypes.length > 0) {
-        const submission = await (0, lender_repo_1.createSubmission)({
+        const submission = await createSubmission({
             applicationId: params.applicationId,
             idempotencyKey: params.idempotencyKey,
             status: "pending",
@@ -332,7 +325,7 @@ async function transmitSubmission(params) {
             externalReference: null,
             client: params.client,
         });
-        await (0, lender_repo_1.createSubmissionEvent)({
+        await createSubmissionEvent({
             applicationId: params.applicationId,
             lenderId: params.lenderId,
             method: submissionMethod,
@@ -358,7 +351,7 @@ async function transmitSubmission(params) {
             ...buildRequestMetadata(params),
             client: params.client,
         });
-        (0, logger_1.logWarn)("lender_submission_failed", {
+        logWarn("lender_submission_failed", {
             submissionId: submission.id,
             applicationId: params.applicationId,
             lenderId: params.lenderId,
@@ -375,7 +368,7 @@ async function transmitSubmission(params) {
         payload = mapToLenderPayload(params.lenderId, packet);
     }
     catch (err) {
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "lender_submission_failed",
             actorUserId: params.actorUserId,
             targetUserId: application.owner_user_id,
@@ -394,7 +387,7 @@ async function transmitSubmission(params) {
         };
     }
     const payloadHash = hashPayload(payload);
-    const submission = await (0, lender_repo_1.createSubmission)({
+    const submission = await createSubmission({
         applicationId: params.applicationId,
         idempotencyKey: params.idempotencyKey,
         status: "pending",
@@ -409,12 +402,12 @@ async function transmitSubmission(params) {
         externalReference: null,
         client: params.client,
     });
-    (0, logger_1.logInfo)("lender_submission_created", {
+    logInfo("lender_submission_created", {
         submissionId: submission.id,
         applicationId: params.applicationId,
         lenderId: params.lenderId,
     });
-    await (0, lender_repo_1.createSubmissionEvent)({
+    await createSubmissionEvent({
         applicationId: params.applicationId,
         lenderId: params.lenderId,
         method: submissionMethod,
@@ -423,7 +416,7 @@ async function transmitSubmission(params) {
         timestamp: new Date(),
         client: params.client,
     });
-    const profile = await (0, SubmissionRouter_1.resolveSubmissionProfile)(params.lenderId, params.client);
+    const profile = await resolveSubmissionProfile(params.lenderId, params.client);
     const response = await sendToLender({
         profile,
         payload,
@@ -443,7 +436,7 @@ async function transmitSubmission(params) {
             ...buildRequestMetadata(params),
             client: params.client,
         });
-        (0, logger_1.logWarn)("lender_submission_failed", {
+        logWarn("lender_submission_failed", {
             submissionId: submission.id,
             applicationId: params.applicationId,
             lenderId: params.lenderId,
@@ -455,7 +448,7 @@ async function transmitSubmission(params) {
             idempotent: false,
         };
     }
-    await (0, lender_repo_1.updateSubmissionStatus)({
+    await updateSubmissionStatus({
         submissionId: submission.id,
         status: "submitted",
         lenderResponse: response.response,
@@ -464,12 +457,12 @@ async function transmitSubmission(params) {
         externalReference: response.response.externalReference ?? null,
         client: params.client,
     });
-    (0, logger_1.logInfo)("lender_submission_submitted", {
+    logInfo("lender_submission_submitted", {
         submissionId: submission.id,
         applicationId: params.applicationId,
         lenderId: params.lenderId,
     });
-    await (0, lender_repo_1.createSubmissionEvent)({
+    await createSubmissionEvent({
         applicationId: params.applicationId,
         lenderId: params.lenderId,
         method: submissionMethod,
@@ -478,10 +471,10 @@ async function transmitSubmission(params) {
         timestamp: new Date(),
         client: params.client,
     });
-    if (application.pipeline_state === pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED) {
-        await (0, applications_service_1.transitionPipelineState)({
+    if (application.pipeline_state === ApplicationStage.DOCUMENTS_REQUIRED) {
+        await transitionPipelineState({
             applicationId: params.applicationId,
-            nextState: pipelineState_1.ApplicationStage.IN_REVIEW,
+            nextState: ApplicationStage.IN_REVIEW,
             actorUserId: params.actorUserId,
             actorRole: null,
             trigger: "submission_review_started",
@@ -489,11 +482,11 @@ async function transmitSubmission(params) {
             client: params.client,
         });
     }
-    if (application.pipeline_state === pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED ||
-        application.pipeline_state === pipelineState_1.ApplicationStage.IN_REVIEW) {
-        await (0, applications_service_1.transitionPipelineState)({
+    if (application.pipeline_state === ApplicationStage.DOCUMENTS_REQUIRED ||
+        application.pipeline_state === ApplicationStage.IN_REVIEW) {
+        await transitionPipelineState({
             applicationId: params.applicationId,
-            nextState: pipelineState_1.ApplicationStage.STARTUP,
+            nextState: ApplicationStage.STARTUP,
             actorUserId: params.actorUserId,
             actorRole: null,
             trigger: "submission_prepared",
@@ -501,21 +494,21 @@ async function transmitSubmission(params) {
             client: params.client,
         });
     }
-    await (0, applications_service_1.transitionPipelineState)({
+    await transitionPipelineState({
         applicationId: params.applicationId,
-        nextState: pipelineState_1.ApplicationStage.OFF_TO_LENDER,
+        nextState: ApplicationStage.OFF_TO_LENDER,
         actorUserId: params.actorUserId,
         actorRole: null,
         trigger: "submission_sent",
         ...buildRequestMetadata(params),
         client: params.client,
     });
-    await (0, applications_repo_1.updateApplicationStatus)({
+    await updateApplicationStatus({
         applicationId: params.applicationId,
         status: "SUBMITTED_TO_LENDER",
         client: params.client,
     });
-    await (0, audit_service_1.recordAuditEvent)({
+    await recordAuditEvent({
         action: "lender_submission_created",
         actorUserId: params.actorUserId,
         targetUserId: application.owner_user_id,
@@ -532,9 +525,9 @@ async function transmitSubmission(params) {
     };
 }
 async function retryExistingSubmission(params) {
-    const application = await (0, applications_repo_1.findApplicationById)(params.applicationId, params.client);
+    const application = await findApplicationById(params.applicationId, params.client);
     if (!application) {
-        throw new errors_1.AppError("not_found", "Application not found.", 404);
+        throw new AppError("not_found", "Application not found.", 404);
     }
     const response = await sendToLender({
         profile: params.profile,
@@ -561,7 +554,7 @@ async function retryExistingSubmission(params) {
             idempotent: false,
         };
     }
-    await (0, lender_repo_1.updateSubmissionStatus)({
+    await updateSubmissionStatus({
         submissionId: params.submissionId,
         status: "submitted",
         lenderResponse: response.response,
@@ -570,7 +563,7 @@ async function retryExistingSubmission(params) {
         externalReference: response.response.externalReference ?? null,
         client: params.client,
     });
-    await (0, lender_repo_1.createSubmissionEvent)({
+    await createSubmissionEvent({
         applicationId: params.applicationId,
         lenderId: params.lenderId,
         method: params.submissionMethod,
@@ -579,10 +572,10 @@ async function retryExistingSubmission(params) {
         timestamp: new Date(),
         client: params.client,
     });
-    if (application.pipeline_state === pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED) {
-        await (0, applications_service_1.transitionPipelineState)({
+    if (application.pipeline_state === ApplicationStage.DOCUMENTS_REQUIRED) {
+        await transitionPipelineState({
             applicationId: params.applicationId,
-            nextState: pipelineState_1.ApplicationStage.IN_REVIEW,
+            nextState: ApplicationStage.IN_REVIEW,
             actorUserId: params.actorUserId,
             actorRole: null,
             trigger: "submission_review_started",
@@ -590,11 +583,11 @@ async function retryExistingSubmission(params) {
             client: params.client,
         });
     }
-    if (application.pipeline_state === pipelineState_1.ApplicationStage.DOCUMENTS_REQUIRED ||
-        application.pipeline_state === pipelineState_1.ApplicationStage.IN_REVIEW) {
-        await (0, applications_service_1.transitionPipelineState)({
+    if (application.pipeline_state === ApplicationStage.DOCUMENTS_REQUIRED ||
+        application.pipeline_state === ApplicationStage.IN_REVIEW) {
+        await transitionPipelineState({
             applicationId: params.applicationId,
-            nextState: pipelineState_1.ApplicationStage.STARTUP,
+            nextState: ApplicationStage.STARTUP,
             actorUserId: params.actorUserId,
             actorRole: null,
             trigger: "submission_prepared",
@@ -602,16 +595,16 @@ async function retryExistingSubmission(params) {
             client: params.client,
         });
     }
-    await (0, applications_service_1.transitionPipelineState)({
+    await transitionPipelineState({
         applicationId: params.applicationId,
-        nextState: pipelineState_1.ApplicationStage.OFF_TO_LENDER,
+        nextState: ApplicationStage.OFF_TO_LENDER,
         actorUserId: params.actorUserId,
         actorRole: null,
         trigger: "submission_sent",
         ...buildRequestMetadata(params),
         client: params.client,
     });
-    await (0, applications_repo_1.updateApplicationStatus)({
+    await updateApplicationStatus({
         applicationId: params.applicationId,
         status: "SUBMITTED_TO_LENDER",
         client: params.client,
@@ -622,24 +615,24 @@ async function retryExistingSubmission(params) {
         idempotent: false,
     };
 }
-async function submitApplication(params) {
-    if (await (0, ops_service_1.isKillSwitchEnabled)("lender_transmission")) {
-        throw new errors_1.AppError("ops_kill_switch", "Lender transmissions are currently disabled.", 423);
+export async function submitApplication(params) {
+    if (await isKillSwitchEnabled("lender_transmission")) {
+        throw new AppError("ops_kill_switch", "Lender transmissions are currently disabled.", 423);
     }
-    const client = await db_1.pool.connect();
+    const client = await pool.connect();
     try {
         await client.runQuery("begin");
         const lockKey = createAdvisoryLockKey(`transmission:${params.applicationId}:${params.lenderId}`);
-        if (!(0, dbRuntime_1.isTestEnvironment)()) {
+        if (!isTestEnvironment()) {
             await client.runQuery("select pg_advisory_xact_lock($1, $2)", lockKey);
         }
         await client.runQuery("select id from applications where id = $1 for update", [
             params.applicationId,
         ]);
         if (params.idempotencyKey) {
-            const existingSubmission = await (0, lender_repo_1.findSubmissionByIdempotencyKey)(params.idempotencyKey, client);
+            const existingSubmission = await findSubmissionByIdempotencyKey(params.idempotencyKey, client);
             if (existingSubmission) {
-                await (0, audit_service_1.recordAuditEvent)({
+                await recordAuditEvent({
                     action: "lender_submission_retried",
                     actorUserId: params.actorUserId,
                     targetUserId: null,
@@ -657,9 +650,9 @@ async function submitApplication(params) {
                 };
             }
         }
-        const existingSubmission = await (0, lender_repo_1.findSubmissionByApplicationAndLender)({ applicationId: params.applicationId, lenderId: params.lenderId }, client);
+        const existingSubmission = await findSubmissionByApplicationAndLender({ applicationId: params.applicationId, lenderId: params.lenderId }, client);
         if (existingSubmission) {
-            await (0, audit_service_1.recordAuditEvent)({
+            await recordAuditEvent({
                 action: "lender_submission_retried",
                 actorUserId: params.actorUserId,
                 targetUserId: null,
@@ -698,7 +691,7 @@ async function submitApplication(params) {
         return result;
     }
     catch (err) {
-        (0, transactionTelemetry_1.recordTransactionRollback)(err);
+        recordTransactionRollback(err);
         await client.runQuery("rollback");
         throw err;
     }
@@ -706,10 +699,10 @@ async function submitApplication(params) {
         client.release();
     }
 }
-async function fetchSubmissionStatus(id) {
-    const submission = await (0, lender_repo_1.findSubmissionById)(id);
+export async function fetchSubmissionStatus(id) {
+    const submission = await findSubmissionById(id);
     if (!submission) {
-        throw new errors_1.AppError("not_found", "Submission not found.", 404);
+        throw new AppError("not_found", "Submission not found.", 404);
     }
     return {
         id: submission.id,
@@ -718,12 +711,12 @@ async function fetchSubmissionStatus(id) {
         lenderResponse: submission.lender_response ?? null,
     };
 }
-async function fetchTransmissionStatus(applicationId) {
-    const submission = await (0, lender_repo_1.findLatestSubmissionByApplicationId)(applicationId);
+export async function fetchTransmissionStatus(applicationId) {
+    const submission = await findLatestSubmissionByApplicationId(applicationId);
     if (!submission) {
-        throw new errors_1.AppError("not_found", "Submission not found.", 404);
+        throw new AppError("not_found", "Submission not found.", 404);
     }
-    const retry = await (0, lender_repo_1.findSubmissionRetryState)(submission.id);
+    const retry = await findSubmissionRetryState(submission.id);
     return {
         applicationId,
         submissionId: submission.id,
@@ -740,31 +733,31 @@ async function fetchTransmissionStatus(applicationId) {
         },
     };
 }
-async function retrySubmission(params) {
-    if (await (0, ops_service_1.isKillSwitchEnabled)("lender_transmission")) {
-        throw new errors_1.AppError("ops_kill_switch", "Lender transmissions are currently disabled.", 423);
+export async function retrySubmission(params) {
+    if (await isKillSwitchEnabled("lender_transmission")) {
+        throw new AppError("ops_kill_switch", "Lender transmissions are currently disabled.", 423);
     }
-    const client = await db_1.pool.connect();
+    const client = await pool.connect();
     try {
         await client.runQuery("begin");
-        const submission = await (0, lender_repo_1.findSubmissionById)(params.submissionId, client);
+        const submission = await findSubmissionById(params.submissionId, client);
         if (!submission) {
-            throw new errors_1.AppError("not_found", "Submission not found.", 404);
+            throw new AppError("not_found", "Submission not found.", 404);
         }
         if (submission.status === "submitted") {
             await client.runQuery("commit");
             return { id: submission.id, status: submission.status, retryStatus: "already_submitted" };
         }
-        const retryState = await (0, lender_repo_1.findSubmissionRetryState)(submission.id, client);
+        const retryState = await findSubmissionRetryState(submission.id, client);
         const attemptCount = retryState?.attempt_count ?? 0;
-        const maxRetries = config_1.config.lender.retry.maxCount;
+        const maxRetries = config.lender.retry.maxCount;
         if (attemptCount >= maxRetries) {
-            throw new errors_1.AppError("retry_exhausted", "Retry limit reached.", 409);
+            throw new AppError("retry_exhausted", "Retry limit reached.", 409);
         }
         if (!submission.payload || typeof submission.payload !== "object") {
-            throw new errors_1.AppError("invalid_payload", "Submission payload is missing.", 409);
+            throw new AppError("invalid_payload", "Submission payload is missing.", 409);
         }
-        const submissionProfile = await (0, SubmissionRouter_1.resolveSubmissionProfile)(submission.lender_id, client);
+        const submissionProfile = await resolveSubmissionProfile(submission.lender_id, client);
         const result = await retryExistingSubmission({
             submissionId: submission.id,
             applicationId: submission.application_id,
@@ -779,7 +772,7 @@ async function retrySubmission(params) {
         });
         const status = result.value.status;
         const retryStatus = status === "submitted" ? "succeeded" : "pending";
-        await (0, lender_repo_1.upsertSubmissionRetryState)({
+        await upsertSubmissionRetryState({
             submissionId: submission.id,
             status: retryStatus,
             attemptCount: attemptCount + 1,
@@ -788,7 +781,7 @@ async function retrySubmission(params) {
             canceledAt: null,
             client,
         });
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "lender_submission_retried",
             actorUserId: params.actorUserId,
             targetUserId: null,
@@ -809,19 +802,19 @@ async function retrySubmission(params) {
         client.release();
     }
 }
-async function cancelSubmissionRetry(params) {
-    const client = await db_1.pool.connect();
+export async function cancelSubmissionRetry(params) {
+    const client = await pool.connect();
     try {
         await client.runQuery("begin");
-        const submission = await (0, lender_repo_1.findSubmissionById)(params.submissionId, client);
+        const submission = await findSubmissionById(params.submissionId, client);
         if (!submission) {
-            throw new errors_1.AppError("not_found", "Submission not found.", 404);
+            throw new AppError("not_found", "Submission not found.", 404);
         }
-        const retryState = await (0, lender_repo_1.findSubmissionRetryState)(submission.id, client);
+        const retryState = await findSubmissionRetryState(submission.id, client);
         if (!retryState) {
-            throw new errors_1.AppError("not_found", "Retry state not found.", 404);
+            throw new AppError("not_found", "Retry state not found.", 404);
         }
-        await (0, lender_repo_1.upsertSubmissionRetryState)({
+        await upsertSubmissionRetryState({
             submissionId: submission.id,
             status: "canceled",
             attemptCount: retryState.attempt_count,
@@ -830,7 +823,7 @@ async function cancelSubmissionRetry(params) {
             canceledAt: new Date(),
             client,
         });
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "lender_submission_retry_canceled",
             actorUserId: params.actorUserId,
             targetUserId: null,

@@ -1,9 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.storeOtp = storeOtp;
-exports.fetchOtp = fetchOtp;
-exports.deleteOtp = deleteOtp;
-const redis_1 = require("../lib/redis");
+import { getRedisOrNull } from "../lib/redis.js";
 const OTP_TTL_SECONDS = 5 * 60;
 const OTP_TTL_MS = OTP_TTL_SECONDS * 1000;
 const MAX_OTP_ITEMS = 1000;
@@ -14,9 +9,9 @@ function otpKey(phone) {
 function isExpired(expires) {
     return expires <= Date.now();
 }
-async function storeOtp(phone, code) {
+export async function storeOtp(phone, code) {
     const key = otpKey(phone);
-    const redis = (0, redis_1.getRedisOrNull)();
+    const redis = getRedisOrNull();
     if (redis) {
         await redis.set(key, code, "EX", OTP_TTL_SECONDS);
         return;
@@ -33,9 +28,9 @@ async function storeOtp(phone, code) {
         }
     }
 }
-async function fetchOtp(phone) {
+export async function fetchOtp(phone) {
     const key = otpKey(phone);
-    const redis = (0, redis_1.getRedisOrNull)();
+    const redis = getRedisOrNull();
     if (redis) {
         return redis.get(key);
     }
@@ -49,9 +44,9 @@ async function fetchOtp(phone) {
     }
     return entry.code;
 }
-async function deleteOtp(phone) {
+export async function deleteOtp(phone) {
     const key = otpKey(phone);
-    const redis = (0, redis_1.getRedisOrNull)();
+    const redis = getRedisOrNull();
     if (redis) {
         await redis.del(key);
         return;

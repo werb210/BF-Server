@@ -1,64 +1,35 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.findAuthUserByPhone = findAuthUserByPhone;
-exports.findAuthUserByEmail = findAuthUserByEmail;
-exports.findAuthUserById = findAuthUserById;
-exports.createUser = createUser;
-exports.updateUserPhoneNumber = updateUserPhoneNumber;
-exports.storeRefreshToken = storeRefreshToken;
-exports.findValidRefreshToken = findValidRefreshToken;
-exports.findRefreshTokenByHash = findRefreshTokenByHash;
-exports.findActiveRefreshTokenForUser = findActiveRefreshTokenForUser;
-exports.consumeRefreshToken = consumeRefreshToken;
-exports.revokeRefreshToken = revokeRefreshToken;
-exports.revokeRefreshTokensForUser = revokeRefreshTokensForUser;
-exports.incrementTokenVersion = incrementTokenVersion;
-exports.setPhoneVerified = setPhoneVerified;
-exports.findApprovedOtpVerification = findApprovedOtpVerification;
-exports.findApprovedOtpVerificationByPhone = findApprovedOtpVerificationByPhone;
-exports.findLatestOtpVerificationByPhone = findLatestOtpVerificationByPhone;
-exports.createOtpSession = createOtpSession;
-exports.findLatestOtpSessionByPhone = findLatestOtpSessionByPhone;
-exports.createOtpCode = createOtpCode;
-exports.findLatestOtpCodeByPhone = findLatestOtpCodeByPhone;
-exports.deleteOtpCodesByPhone = deleteOtpCodesByPhone;
-exports.createOtpVerification = createOtpVerification;
-exports.updateOtpVerificationStatus = updateOtpVerificationStatus;
-exports.expireOtpVerificationsForUser = expireOtpVerificationsForUser;
-exports.setUserActive = setUserActive;
-exports.updateUserRoleById = updateUserRoleById;
-const crypto_1 = require("crypto");
-const db_1 = require("../../db");
-const errors_1 = require("../../middleware/errors");
-const phone_1 = require("./phone");
-const logger_1 = require("../../server/utils/logger");
-const config_1 = require("../../config");
+import { randomUUID } from "node:crypto";
+import { pool } from "../../db.js";
+import { AppError } from "../../middleware/errors.js";
+import { normalizePhoneNumber } from "./phone.js";
+import { logger } from "../../server/utils/logger.js";
+import { config } from "../../config/index.js";
 async function runAuthQuery(runner, text, params) {
     try {
         return await runner.query(text, params);
     }
     catch (err) {
-        if (config_1.config.env !== "test") {
-            logger_1.logger.error("auth_query_error", { error: err?.message ?? "unknown_error" });
+        if (config.env !== "test") {
+            logger.error("auth_query_error", { error: err?.message ?? "unknown_error" });
         }
         throw err;
     }
 }
 function normalizePhoneInput(phoneNumber) {
-    return (0, phone_1.normalizePhoneNumber)(phoneNumber);
+    return normalizePhoneNumber(phoneNumber);
 }
 function normalizePhoneColumnSql(column) {
     const digits = `regexp_replace(${column}, '[^0-9]', '', 'g')`;
     return `case when length(${digits}) = 10 then '1' || ${digits} else ${digits} end`;
 }
-async function findAuthUserByPhone(phoneNumber, client, options) {
-    const runner = client ?? db_1.pool;
+export async function findAuthUserByPhone(phoneNumber, client, options) {
+    const runner = client ?? pool;
     const forUpdate = options?.forUpdate ? " for update" : "";
     const normalizedPhone = normalizePhoneInput(phoneNumber);
     if (!normalizedPhone) {
         return null;
     }
-    if (config_1.config.env === "test") {
+    if (config.env === "test") {
         const res = await runAuthQuery(runner, `select u.id,
               u.email,
               u.phone_number as "phoneNumber",
@@ -105,8 +76,8 @@ async function findAuthUserByPhone(phoneNumber, client, options) {
      ${orderSql}`, [normalizedDigits]);
     return secondaryRes.rows[0] ?? null;
 }
-async function findAuthUserByEmail(email, client, options) {
-    const runner = client ?? db_1.pool;
+export async function findAuthUserByEmail(email, client, options) {
+    const runner = client ?? pool;
     const normalizedEmail = email.trim().toLowerCase();
     if (!normalizedEmail) {
         return null;
@@ -129,8 +100,8 @@ async function findAuthUserByEmail(email, client, options) {
      where lower(u.email) = $1${forUpdate}`, [normalizedEmail]);
     return res.rows[0] ?? null;
 }
-async function findAuthUserById(id, client) {
-    const runner = client ?? db_1.pool;
+export async function findAuthUserById(id, client) {
+    const runner = client ?? pool;
     const res = await runAuthQuery(runner, `select u.id,
             u.email,
             u.phone_number as "phoneNumber",
@@ -149,8 +120,8 @@ async function findAuthUserById(id, client) {
      limit 1`, [id]);
     return res.rows[0] ?? null;
 }
-async function createUser(params) {
-    const runner = params.client ?? db_1.pool;
+export async function createUser(params) {
+    const runner = params.client ?? pool;
     const normalizedEmail = params.email ? params.email.trim().toLowerCase() : null;
     const resolvedEmail = normalizedEmail ?? null;
     const active = params.active ?? true;
@@ -169,7 +140,7 @@ async function createUser(params) {
               disabled,
               locked_until as "lockedUntil",
               token_version as "tokenVersion"`, [
-        (0, crypto_1.randomUUID)(),
+        randomUUID(),
         resolvedEmail,
         params.phoneNumber,
         params.role,
@@ -178,12 +149,12 @@ async function createUser(params) {
     ]);
     const created = res.rows[0];
     if (!created) {
-        throw new errors_1.AppError("data_error", "Failed to create user.", 500);
+        throw new AppError("data_error", "Failed to create user.", 500);
     }
     return created;
 }
-async function updateUserPhoneNumber(params) {
-    const runner = params.client ?? db_1.pool;
+export async function updateUserPhoneNumber(params) {
+    const runner = params.client ?? pool;
     const res = await runAuthQuery(runner, `update users
      set phone_number = $1,
          phone = $1
@@ -202,17 +173,17 @@ async function updateUserPhoneNumber(params) {
               token_version as "tokenVersion"`, [params.phoneNumber, params.userId]);
     return res.rows[0] ?? null;
 }
-async function storeRefreshToken(params) {
-    const runner = params.client ?? db_1.pool;
+export async function storeRefreshToken(params) {
+    const runner = params.client ?? pool;
     await runAuthQuery(runner, `update auth_refresh_tokens
      set revoked_at = now()
      where user_id = $1
        and revoked_at is null`, [params.userId]);
     await runAuthQuery(runner, `insert into auth_refresh_tokens (id, user_id, token, token_hash, expires_at, revoked_at, created_at)
-     values ($1, $2, $3, $4, $5, null, now())`, [(0, crypto_1.randomUUID)(), params.userId, params.token, params.tokenHash, params.expiresAt]);
+     values ($1, $2, $3, $4, $5, null, now())`, [randomUUID(), params.userId, params.token, params.tokenHash, params.expiresAt]);
 }
-async function findValidRefreshToken(tokenHash, client) {
-    const runner = client ?? db_1.pool;
+export async function findValidRefreshToken(tokenHash, client) {
+    const runner = client ?? pool;
     const res = await runAuthQuery(runner, `select id,
             user_id as "userId",
             token_hash as "tokenHash",
@@ -226,8 +197,8 @@ async function findValidRefreshToken(tokenHash, client) {
      limit 1`, [tokenHash]);
     return res.rows[0] ?? null;
 }
-async function findRefreshTokenByHash(tokenHash, client) {
-    const runner = client ?? db_1.pool;
+export async function findRefreshTokenByHash(tokenHash, client) {
+    const runner = client ?? pool;
     const res = await runAuthQuery(runner, `select id,
             user_id as "userId",
             token_hash as "tokenHash",
@@ -239,8 +210,8 @@ async function findRefreshTokenByHash(tokenHash, client) {
      limit 1`, [tokenHash]);
     return res.rows[0] ?? null;
 }
-async function findActiveRefreshTokenForUser(userId, client) {
-    const runner = client ?? db_1.pool;
+export async function findActiveRefreshTokenForUser(userId, client) {
+    const runner = client ?? pool;
     const res = await runAuthQuery(runner, `select token,
             expires_at as "expiresAt"
      from auth_refresh_tokens
@@ -251,8 +222,8 @@ async function findActiveRefreshTokenForUser(userId, client) {
      limit 1`, [userId]);
     return res.rows[0] ?? null;
 }
-async function consumeRefreshToken(tokenHash, client) {
-    const runner = client ?? db_1.pool;
+export async function consumeRefreshToken(tokenHash, client) {
+    const runner = client ?? pool;
     const res = await runAuthQuery(runner, `update auth_refresh_tokens
      set revoked_at = now()
      where token_hash = $1
@@ -266,30 +237,30 @@ async function consumeRefreshToken(tokenHash, client) {
               created_at as "createdAt"`, [tokenHash]);
     return res.rows[0] ?? null;
 }
-async function revokeRefreshToken(tokenHash, client) {
-    const runner = client ?? db_1.pool;
+export async function revokeRefreshToken(tokenHash, client) {
+    const runner = client ?? pool;
     await runAuthQuery(runner, `update auth_refresh_tokens
      set revoked_at = now()
      where token_hash = $1
        and revoked_at is null`, [tokenHash]);
 }
-async function revokeRefreshTokensForUser(userId, client) {
-    const runner = client ?? db_1.pool;
+export async function revokeRefreshTokensForUser(userId, client) {
+    const runner = client ?? pool;
     await runAuthQuery(runner, `update auth_refresh_tokens
      set revoked_at = now()
      where user_id = $1
        and revoked_at is null`, [userId]);
 }
-async function incrementTokenVersion(userId, client) {
-    const runner = client ?? db_1.pool;
+export async function incrementTokenVersion(userId, client) {
+    const runner = client ?? pool;
     await runAuthQuery(runner, `update users set token_version = token_version + 1 where id = $1`, [userId]);
 }
-async function setPhoneVerified(userId, verified, client) {
-    const runner = client ?? db_1.pool;
+export async function setPhoneVerified(userId, verified, client) {
+    const runner = client ?? pool;
     await runAuthQuery(runner, `update users set phone_verified = $1 where id = $2`, [verified, userId]);
 }
-async function findApprovedOtpVerification(params) {
-    const runner = params.client ?? db_1.pool;
+export async function findApprovedOtpVerification(params) {
+    const runner = params.client ?? pool;
     const res = await runAuthQuery(runner, `select id,
             user_id as "userId",
             phone,
@@ -305,8 +276,8 @@ async function findApprovedOtpVerification(params) {
      limit 1`, [params.userId, params.phone]);
     return res.rows[0] ?? null;
 }
-async function findApprovedOtpVerificationByPhone(params) {
-    const runner = params.client ?? db_1.pool;
+export async function findApprovedOtpVerificationByPhone(params) {
+    const runner = params.client ?? pool;
     const res = await runAuthQuery(runner, `select id,
             user_id as "userId",
             phone,
@@ -321,8 +292,8 @@ async function findApprovedOtpVerificationByPhone(params) {
      limit 1`, [params.phone]);
     return res.rows[0] ?? null;
 }
-async function findLatestOtpVerificationByPhone(params) {
-    const runner = params.client ?? db_1.pool;
+export async function findLatestOtpVerificationByPhone(params) {
+    const runner = params.client ?? pool;
     const res = await runAuthQuery(runner, `select id,
             user_id as "userId",
             phone,
@@ -336,23 +307,23 @@ async function findLatestOtpVerificationByPhone(params) {
      limit 1`, [params.phone]);
     return res.rows[0] ?? null;
 }
-async function createOtpSession(params) {
-    const runner = params.client ?? db_1.pool;
+export async function createOtpSession(params) {
+    const runner = params.client ?? pool;
     const res = await runAuthQuery(runner, `insert into otp_sessions (id, phone, code, created_at, expires_at)
      values ($1, $2, $3, now(), $4)
      returning id,
               phone,
               code,
               created_at as "createdAt",
-              expires_at as "expiresAt"`, [(0, crypto_1.randomUUID)(), params.phone, params.code, params.expiresAt]);
+              expires_at as "expiresAt"`, [randomUUID(), params.phone, params.code, params.expiresAt]);
     const row = res.rows[0];
     if (!row) {
-        throw new errors_1.AppError("data_error", "Failed to create OTP session.", 500);
+        throw new AppError("data_error", "Failed to create OTP session.", 500);
     }
     return row;
 }
-async function findLatestOtpSessionByPhone(params) {
-    const runner = params.client ?? db_1.pool;
+export async function findLatestOtpSessionByPhone(params) {
+    const runner = params.client ?? pool;
     const res = await runAuthQuery(runner, `select id,
             phone,
             code,
@@ -364,23 +335,23 @@ async function findLatestOtpSessionByPhone(params) {
      limit 1`, [params.phone]);
     return res.rows[0] ?? null;
 }
-async function createOtpCode(params) {
-    const runner = params.client ?? db_1.pool;
+export async function createOtpCode(params) {
+    const runner = params.client ?? pool;
     const res = await runAuthQuery(runner, `insert into otp_codes (id, phone, code, created_at, expires_at)
      values ($1, $2, $3, now(), now() + interval '5 minutes')
      returning id,
               phone,
               code,
               created_at as "createdAt",
-              expires_at as "expiresAt"`, [(0, crypto_1.randomUUID)(), params.phone, params.code]);
+              expires_at as "expiresAt"`, [randomUUID(), params.phone, params.code]);
     const row = res.rows[0];
     if (!row) {
-        throw new errors_1.AppError("data_error", "Failed to create OTP code.", 500);
+        throw new AppError("data_error", "Failed to create OTP code.", 500);
     }
     return row;
 }
-async function findLatestOtpCodeByPhone(params) {
-    const runner = params.client ?? db_1.pool;
+export async function findLatestOtpCodeByPhone(params) {
+    const runner = params.client ?? pool;
     const res = await runAuthQuery(runner, `select id,
             phone,
             code,
@@ -392,15 +363,15 @@ async function findLatestOtpCodeByPhone(params) {
      limit 1`, [params.phone]);
     return res.rows[0] ?? null;
 }
-async function deleteOtpCodesByPhone(params) {
-    const runner = params.client ?? db_1.pool;
+export async function deleteOtpCodesByPhone(params) {
+    const runner = params.client ?? pool;
     await runAuthQuery(runner, `delete from otp_codes where phone = $1`, [params.phone]);
 }
-async function createOtpVerification(params) {
-    const runner = params.client ?? db_1.pool;
+export async function createOtpVerification(params) {
+    const runner = params.client ?? pool;
     await runAuthQuery(runner, `insert into otp_verifications (id, user_id, phone, verification_sid, status, verified_at, created_at)
      values ($1, $2, $3, $4, $5, $6, now())`, [
-        (0, crypto_1.randomUUID)(),
+        randomUUID(),
         params.userId,
         params.phone,
         params.verificationSid ?? null,
@@ -408,8 +379,8 @@ async function createOtpVerification(params) {
         params.verifiedAt ?? null,
     ]);
 }
-async function updateOtpVerificationStatus(params) {
-    const runner = params.client ?? db_1.pool;
+export async function updateOtpVerificationStatus(params) {
+    const runner = params.client ?? pool;
     const res = await runAuthQuery(runner, `update otp_verifications
      set status = $1,
          verified_at = $2
@@ -423,15 +394,15 @@ async function updateOtpVerificationStatus(params) {
               created_at as "createdAt"`, [params.status, params.verifiedAt ?? null, params.id]);
     return res.rows[0] ?? null;
 }
-async function expireOtpVerificationsForUser(userId, client) {
-    const runner = client ?? db_1.pool;
+export async function expireOtpVerificationsForUser(userId, client) {
+    const runner = client ?? pool;
     await runAuthQuery(runner, `update otp_verifications
      set status = 'expired'
      where user_id = $1
        and status = 'approved'`, [userId]);
 }
-async function setUserActive(userId, active, client) {
-    const runner = client ?? db_1.pool;
+export async function setUserActive(userId, active, client) {
+    const runner = client ?? pool;
     await runAuthQuery(runner, `update users
      set active = $1,
          is_active = $1,
@@ -439,7 +410,7 @@ async function setUserActive(userId, active, client) {
          status = $3
      where id = $4`, [active, !active, active ? "ACTIVE" : "INACTIVE", userId]);
 }
-async function updateUserRoleById(userId, role, client) {
-    const runner = client ?? db_1.pool;
+export async function updateUserRoleById(userId, role, client) {
+    const runner = client ?? pool;
     await runAuthQuery(runner, `update users set role = $1 where id = $2`, [role, userId]);
 }

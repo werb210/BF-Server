@@ -1,14 +1,11 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyTwilioSetup = verifyTwilioSetup;
-const twilioClient_1 = require("../lib/twilioClient");
-async function verifyTwilioSetup() {
-    if (!twilioClient_1.twilioEnabled || !twilioClient_1.twilioClient) {
+import { twilioClient, twilioEnabled, verifyServiceSid } from "../lib/twilioClient.js";
+export async function verifyTwilioSetup() {
+    if (!twilioEnabled || !twilioClient) {
         console.log("Twilio Verify skipped (not configured)");
         return;
     }
     try {
-        await twilioClient_1.twilioClient.verify.v2.services(twilioClient_1.verifyServiceSid).fetch();
+        await twilioClient.verify.v2.services(verifyServiceSid).fetch();
         console.log("Twilio Verify OK");
     }
     catch (err) {

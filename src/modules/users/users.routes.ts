@@ -1,8 +1,8 @@
 import { Router, type Request } from "express";
-import { AppError } from "../../middleware/errors";
-import { createUserAccount } from "../auth/auth.service";
-import { changeUserRole, setUserStatus } from "./users.service";
-import { normalizeRole } from "../../auth/roles";
+import { AppError } from "../../middleware/errors.js";
+import { createUserAccount } from "../auth/auth.service.js";
+import { changeUserRole, setUserStatus } from "./users.service.js";
+import { normalizeRole } from "../../auth/roles.js";
 
 const router = Router();
 

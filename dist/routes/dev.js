@@ -1,7 +1,5 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const router = (0, express_1.Router)();
+import { Router } from "express";
+const router = Router();
 router.get("/health", (_req, res) => {
     res["json"]({
         status: "ok",
@@ -14,4 +12,4 @@ router.get("/dev/ping", (_req, res) => {
         message: "pong",
     });
 });
-exports.default = router;
+export default router;

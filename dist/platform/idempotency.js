@@ -1,9 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.idempotency = idempotency;
-const crypto_1 = require("crypto");
-const idempotencyStore_1 = require("../lib/idempotencyStore");
-const logger_1 = require("../observability/logger");
+import { createHash } from "node:crypto";
+import { fetchStoredResponse, storeResponse } from "../lib/idempotencyStore.js";
+import { logInfo, logWarn } from "../observability/logger.js";
 const ENFORCED_METHODS = new Set(["POST", "PATCH", "DELETE"]);
 const inFlightRequests = new Map();
 function stableStringify(value) {
@@ -21,7 +18,7 @@ function stableStringify(value) {
 }
 function requestHash(req) {
     const payload = `${req.method}:${req.path}:${stableStringify(req.body ?? {})}`;
-    return (0, crypto_1.createHash)("sha256").update(payload).digest("hex");
+    return createHash("sha256").update(payload).digest("hex");
 }
 function normalizePath(req) {
     const rawPath = (req.originalUrl ?? req.path).split("?")[0] ?? req.path;
@@ -35,7 +32,7 @@ function allowReplayOnHashMismatch(req) {
     const path = normalizePath(req);
     return path === "/api/client/submissions" || path === "/api/client/documents";
 }
-async function idempotency(req, res, next) {
+export async function idempotency(req, res, next) {
     if (!ENFORCED_METHODS.has(req.method.toUpperCase())) {
         next();
         return;
@@ -50,14 +47,14 @@ async function idempotency(req, res, next) {
     const existingInFlight = inFlightRequests.get(storeKey);
     if (existingInFlight) {
         await existingInFlight;
-        const replay = await (0, idempotencyStore_1.fetchStoredResponse)(storeKey);
+        const replay = await fetchStoredResponse(storeKey);
         if (replay) {
-            (0, logger_1.logInfo)("idempotent_request_replayed", { key, route: req.path });
+            logInfo("idempotent_request_replayed", { key, route: req.path });
             res.status(replay.statusCode).json(replay.body);
             return;
         }
     }
-    const cached = await (0, idempotencyStore_1.fetchStoredResponse)(storeKey);
+    const cached = await fetchStoredResponse(storeKey);
     if (cached) {
         if (cached.requestHash !== hash) {
             if (!allowReplayOnHashMismatch(req)) {
@@ -67,12 +64,12 @@ async function idempotency(req, res, next) {
                 });
                 return;
             }
-            (0, logger_1.logWarn)("idempotency_hash_mismatch_replayed", {
+            logWarn("idempotency_hash_mismatch_replayed", {
                 key,
                 route: req.path,
             });
         }
-        (0, logger_1.logInfo)("idempotent_request_replayed", { key, route: req.path });
+        logInfo("idempotent_request_replayed", { key, route: req.path });
         res.status(cached.statusCode).json(cached.body);
         return;
     }
@@ -84,19 +81,19 @@ async function idempotency(req, res, next) {
     const originalJson = res["json"].bind(res);
     res["json"] = ((body) => {
         if (res.statusCode < 500) {
-            void (0, idempotencyStore_1.storeResponse)(storeKey, {
+            void storeResponse(storeKey, {
                 statusCode: res.statusCode,
                 body,
                 requestHash: hash,
                 storedAt: Date.now(),
             }).catch((error) => {
-                (0, logger_1.logWarn)("idempotency_store_failed", {
+                logWarn("idempotency_store_failed", {
                     key,
                     route: req.path,
                     error: error instanceof Error ? error.message : "store_failed",
                 });
             });
-            (0, logger_1.logInfo)("idempotent_request_recorded", { key, route: req.path });
+            logInfo("idempotent_request_recorded", { key, route: req.path });
         }
         return originalJson(body);
     });

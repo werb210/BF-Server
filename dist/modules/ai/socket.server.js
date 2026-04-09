@@ -1,10 +1,7 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.initChatSocket = initChatSocket;
-const crypto_1 = require("crypto");
-const ws_1 = require("ws");
-const db_1 = require("../../db");
-const logger_1 = require("../../observability/logger");
+import { randomUUID } from "node:crypto";
+import { WebSocketServer } from "ws";
+import { runQuery } from "../../db.js";
+import { logError, logInfo } from "../../observability/logger.js";
 const sessionMap = new Map();
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const MAX_WS_SESSIONS = 1000;
@@ -57,7 +54,7 @@ function broadcast(sessionId, payload) {
 }
 async function ensureChatSessionExists(sessionId) {
     try {
-        await (0, db_1.runQuery)(`insert into chat_sessions (id, source, channel, status)
+        await runQuery(`insert into chat_sessions (id, source, channel, status)
        values ($1, 'website', 'text', 'ai')
        on conflict (id) do nothing`, [sessionId]);
         return;
@@ -66,7 +63,7 @@ async function ensureChatSessionExists(sessionId) {
         // continue to legacy fallback
     }
     try {
-        await (0, db_1.runQuery)(`insert into chat_sessions (id, user_type, status, source)
+        await runQuery(`insert into chat_sessions (id, user_type, status, source)
        values ($1, 'guest', 'active', 'website')
        on conflict (id) do nothing`, [sessionId]);
     }
@@ -75,17 +72,17 @@ async function ensureChatSessionExists(sessionId) {
     }
 }
 async function attachTranscriptToCrm(sessionId) {
-    const sessionResult = await (0, db_1.runQuery)("select lead_id from chat_sessions where id = $1 limit 1", [sessionId]);
+    const sessionResult = await runQuery("select lead_id from chat_sessions where id = $1 limit 1", [sessionId]);
     const leadId = sessionResult.rows[0]?.lead_id;
     if (!leadId)
         return;
-    const messages = await (0, db_1.runQuery)(`select role, message, content, created_at
+    const messages = await runQuery(`select role, message, content, created_at
      from chat_messages
      where session_id = $1
      order by created_at asc`, [sessionId]);
-    await (0, db_1.runQuery)(`insert into crm_lead_activities (id, lead_id, activity_type, payload)
+    await runQuery(`insert into crm_lead_activities (id, lead_id, activity_type, payload)
      values ($1, $2, $3, $4::jsonb)`, [
-        (0, crypto_1.randomUUID)(),
+        randomUUID(),
         leadId,
         "chat_transcript_closed",
         JSON.stringify({ sessionId, transcript: messages.rows }),
@@ -95,17 +92,17 @@ async function setSessionState(sessionId, state) {
     const presence = ensurePresence(sessionId);
     presence.state = state;
     presence.updatedAt = Date.now();
-    await (0, db_1.runQuery)(`update chat_sessions
+    await runQuery(`update chat_sessions
      set status = $2,
          staff_override = $3,
          updated_at = now()
      where id = $1`, [sessionId, state === "HUMAN_ACTIVE" ? "human" : "active", state === "HUMAN_ACTIVE"]).catch(async () => {
-        await (0, db_1.runQuery)(`update chat_sessions
+        await runQuery(`update chat_sessions
        set status = $2,
            updated_at = now()
        where id = $1`, [sessionId, state === "HUMAN_ACTIVE" ? "escalated" : "active"]).catch(() => undefined);
     });
-    (0, logger_1.logInfo)("chat_session_state_changed", { sessionId, state });
+    logInfo("chat_session_state_changed", { sessionId, state });
 }
 function detachSocket(socket) {
     if (!socket.sessionId) {
@@ -120,18 +117,18 @@ function detachSocket(socket) {
     if (presence.sockets.size === 0) {
         sessionMap.delete(socket.sessionId);
         void attachTranscriptToCrm(socket.sessionId).catch((error) => {
-            (0, logger_1.logError)("chat_transcript_attach_on_close_failed", {
+            logError("chat_transcript_attach_on_close_failed", {
                 message: error instanceof Error ? error.message : String(error),
                 sessionId: socket.sessionId,
             });
         });
     }
 }
-function initChatSocket(server) {
-    const wss = new ws_1.WebSocketServer({ server, path: "/ws/chat" });
+export function initChatSocket(server) {
+    const wss = new WebSocketServer({ server, path: "/ws/chat" });
     setInterval(() => {
         pruneSessionPresence();
-    }, 60000).unref();
+    }, 60_000).unref();
     wss.on("connection", (ws) => {
         ws.isAlive = true;
         ws.on("pong", () => {
@@ -170,7 +167,7 @@ function initChatSocket(server) {
                             state: "HUMAN_ACTIVE",
                         }));
                     }
-                    (0, logger_1.logInfo)("chat_ws_join", { sessionId: payload.sessionId, role: "client" });
+                    logInfo("chat_ws_join", { sessionId: payload.sessionId, role: "client" });
                     return;
                 }
                 if ((messageType === "staff_join" || messageType === "staff_joined") && payload.sessionId) {
@@ -196,7 +193,7 @@ function initChatSocket(server) {
                         sessionId: payload.sessionId,
                         state: "HUMAN_ACTIVE",
                     });
-                    (0, logger_1.logInfo)("chat_ws_join", { sessionId: payload.sessionId, role: "staff" });
+                    logInfo("chat_ws_join", { sessionId: payload.sessionId, role: "staff" });
                     return;
                 }
                 if ((messageType === "staff_leave" || messageType === "transfer") && payload.sessionId) {
@@ -210,8 +207,8 @@ function initChatSocket(server) {
                 }
                 if ((messageType === "staff_message" || messageType === "user_message" || messageType === "ai_message") && payload.sessionId && payload.content) {
                     const role = messageType === "staff_message" ? "staff" : messageType === "ai_message" ? "ai" : "user";
-                    await (0, db_1.runQuery)(`insert into chat_messages (id, session_id, role, content)
-             values ($1, $2, $3, $4)`, [(0, crypto_1.randomUUID)(), payload.sessionId, role, payload.content]);
+                    await runQuery(`insert into chat_messages (id, session_id, role, content)
+             values ($1, $2, $3, $4)`, [randomUUID(), payload.sessionId, role, payload.content]);
                     broadcast(payload.sessionId, {
                         type: messageType,
                         sessionId: payload.sessionId,
@@ -221,7 +218,7 @@ function initChatSocket(server) {
                     return;
                 }
                 if ((messageType === "close_chat" || messageType === "close_session") && payload.sessionId) {
-                    await (0, db_1.runQuery)(`update chat_sessions set status = 'closed', updated_at = now() where id = $1`, [payload.sessionId]);
+                    await runQuery(`update chat_sessions set status = 'closed', updated_at = now() where id = $1`, [payload.sessionId]);
                     await attachTranscriptToCrm(payload.sessionId);
                     broadcast(payload.sessionId, {
                         type: "close_session",
@@ -232,7 +229,7 @@ function initChatSocket(server) {
                 }
             }
             catch (error) {
-                (0, logger_1.logError)("chat_ws_message_failed", {
+                logError("chat_ws_message_failed", {
                     message: error instanceof Error ? error.message : String(error),
                     sessionId: ws.sessionId ?? null,
                 });
@@ -241,7 +238,7 @@ function initChatSocket(server) {
         });
         ws.on("close", () => {
             detachSocket(ws);
-            (0, logger_1.logInfo)("chat_ws_close", { sessionId: ws.sessionId ?? null, role: ws.role ?? null });
+            logInfo("chat_ws_close", { sessionId: ws.sessionId ?? null, role: ws.role ?? null });
         });
     });
     const idleCleanup = setInterval(() => {

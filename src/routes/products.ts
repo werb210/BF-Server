@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { db } from "../db";
-import { products as fallbackProducts } from "../data/products";
-import { generateEmbedding } from "../ai/embeddingService";
-import { logError } from "../observability/logger";
+import { db } from "../db.js";
+import { products as fallbackProducts } from "../data/products.js";
+import { generateEmbedding } from "../ai/embeddingService.js";
+import { logError } from "../observability/logger.js";
 
 const router = Router();
 

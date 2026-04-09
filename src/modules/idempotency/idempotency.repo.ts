@@ -1,5 +1,5 @@
-import { randomUUID } from "crypto";
-import { pool, runQuery } from "../../db";
+import { randomUUID } from "node:crypto";
+import { pool, runQuery } from "../../db.js";
 import { type PoolClient } from "pg";
 
 type Queryable = Pick<PoolClient, "query" | "runQuery">;

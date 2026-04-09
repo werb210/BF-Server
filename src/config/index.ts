@@ -1,5 +1,5 @@
-import { EnvSchema } from "./schema";
-import { API_BASE } from "./api";
+import { EnvSchema } from "./schema.js";
+import { API_BASE } from "./api.js";
 
 const safeEnv = EnvSchema.safeParse({
   NODE_ENV: process.env.NODE_ENV,

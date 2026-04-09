@@ -1,16 +1,12 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.resetRateLimitForTests = resetRateLimitForTests;
-exports.rateLimit = rateLimit;
-const config_1 = require("./config");
-const response_1 = require("./response");
+import { CONFIG } from "./config.js";
+import { fail } from "./response.js";
 const hits = new Map();
-function resetRateLimitForTests() {
+export function resetRateLimitForTests() {
     hits.clear();
 }
-function rateLimit() {
-    const limit = config_1.CONFIG.RATE_LIMIT;
-    const windowMs = config_1.CONFIG.RATE_WINDOW_MS;
+export function rateLimit() {
+    const limit = CONFIG.RATE_LIMIT;
+    const windowMs = CONFIG.RATE_WINDOW_MS;
     return (req, res, next) => {
         const raw = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
             req.socket?.remoteAddress ||
@@ -27,7 +23,7 @@ function rateLimit() {
         hits.set(key, entry);
         if (entry.count > limit) {
             res.setHeader("Retry-After", "1");
-            return res.status(429).json((0, response_1.fail)("RATE_LIMIT", req.rid));
+            return res.status(429).json(fail("RATE_LIMIT", req.rid));
         }
         return next();
     };

@@ -1,10 +1,10 @@
-import { pool, runQuery } from "../../db";
-import { AppError } from "../../middleware/errors";
-import { recordAuditEvent } from "../audit/audit.service";
-import { fetchCircuitBreaker } from "../../utils/circuitBreaker";
-import type { Role } from "../../auth/roles";
-import { config } from "../../config";
-import { assertRetryAllowed } from "./retryPolicy";
+import { pool, runQuery } from "../../db.js";
+import { AppError } from "../../middleware/errors.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { fetchCircuitBreaker } from "../../utils/circuitBreaker.js";
+import type { Role } from "../../auth/roles.js";
+import { config } from "../../config/index.js";
+import { assertRetryAllowed } from "./retryPolicy.js";
 
 type RetryJobResult = {
   jobId: string;

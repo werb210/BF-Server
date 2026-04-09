@@ -1,4 +1,4 @@
-import { twilioClient, twilioEnabled, verifyServiceSid } from "../lib/twilioClient";
+import { twilioClient, twilioEnabled, verifyServiceSid } from "../lib/twilioClient.js";
 
 export async function verifyTwilioSetup() {
   if (!twilioEnabled || !twilioClient) {

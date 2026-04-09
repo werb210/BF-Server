@@ -1,5 +1,5 @@
-import { pool, runQuery } from "../db";
-import { generateEmbedding } from "./embeddingService";
+import { pool, runQuery } from "../db.js";
+import { generateEmbedding } from "./embeddingService.js";
 
 type ChunkRow = {
   id: string;

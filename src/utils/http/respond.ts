@@ -1,5 +1,5 @@
 import type { Response } from "express";
-import type { ApiResponse } from "../../contracts";
+import type { ApiResponse } from "../../contracts/index.js";
 
 export function ok<T>(res: Response, data: T, status = 200): Response {
   const body: ApiResponse<T> = { status: "ok", data };

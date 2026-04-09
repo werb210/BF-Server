@@ -1,9 +1,9 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
-import { pool, runQuery } from "../db";
-import { AppError } from "../middleware/errors";
-import { safeHandler } from "../middleware/safeHandler";
-import { eventBus } from "../events/eventBus";
+import { pool, runQuery } from "../db.js";
+import { AppError } from "../middleware/errors.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { eventBus } from "../events/eventBus.js";
 
 const router = Router();
 

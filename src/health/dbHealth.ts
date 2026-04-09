@@ -1,4 +1,4 @@
-import { testDbConnection } from '../lib/dbClient';
+import { testDbConnection } from '../lib/dbClient.js';
 
 export async function dbHealth() {
   const ok = await testDbConnection();

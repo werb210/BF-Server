@@ -1,10 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const errors_1 = require("../../middleware/errors");
-const audit_service_1 = require("../audit/audit.service");
-const ocr_service_1 = require("./ocr.service");
-const router = (0, express_1.Router)();
+import { Router } from "express";
+import { AppError } from "../../middleware/errors.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { enqueueOcrForApplication, enqueueOcrForDocument, fetchOcrJobStatus, fetchOcrResult, retryOcrJob, } from "./ocr.service.js";
+const router = Router();
 function fetchAuditContext(req) {
     return {
         ip: req.ip ?? null,
@@ -13,8 +11,8 @@ function fetchAuditContext(req) {
 }
 router.post("/documents/:documentId/enqueue", async (req, res, next) => {
     try {
-        const job = await (0, ocr_service_1.enqueueOcrForDocument)(req.params.documentId);
-        await (0, audit_service_1.recordAuditEvent)({
+        const job = await enqueueOcrForDocument(req.params.documentId);
+        await recordAuditEvent({
             action: "ocr_job_enqueued",
             actorUserId: req.user?.userId ?? null,
             targetUserId: null,
@@ -26,7 +24,7 @@ router.post("/documents/:documentId/enqueue", async (req, res, next) => {
         res.status(202).json({ job });
     }
     catch (err) {
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "ocr_job_enqueued",
             actorUserId: req.user?.userId ?? null,
             targetUserId: null,
@@ -40,8 +38,8 @@ router.post("/documents/:documentId/enqueue", async (req, res, next) => {
 });
 router.post("/applications/:applicationId/enqueue", async (req, res, next) => {
     try {
-        const jobs = await (0, ocr_service_1.enqueueOcrForApplication)(req.params.applicationId);
-        await (0, audit_service_1.recordAuditEvent)({
+        const jobs = await enqueueOcrForApplication(req.params.applicationId);
+        await recordAuditEvent({
             action: "ocr_application_enqueued",
             actorUserId: req.user?.userId ?? null,
             targetUserId: null,
@@ -53,7 +51,7 @@ router.post("/applications/:applicationId/enqueue", async (req, res, next) => {
         res.status(202).json({ jobs });
     }
     catch (err) {
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "ocr_application_enqueued",
             actorUserId: req.user?.userId ?? null,
             targetUserId: null,
@@ -67,11 +65,11 @@ router.post("/applications/:applicationId/enqueue", async (req, res, next) => {
 });
 router.get("/documents/:documentId/status", async (req, res, next) => {
     try {
-        const job = await (0, ocr_service_1.fetchOcrJobStatus)(req.params.documentId);
+        const job = await fetchOcrJobStatus(req.params.documentId);
         if (!job) {
-            throw new errors_1.AppError("not_found", "OCR job not found.", 404);
+            throw new AppError("not_found", "OCR job not found.", 404);
         }
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "ocr_job_status_viewed",
             actorUserId: req.user?.userId ?? null,
             targetUserId: null,
@@ -83,7 +81,7 @@ router.get("/documents/:documentId/status", async (req, res, next) => {
         res["json"]({ job });
     }
     catch (err) {
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "ocr_job_status_viewed",
             actorUserId: req.user?.userId ?? null,
             targetUserId: null,
@@ -97,11 +95,11 @@ router.get("/documents/:documentId/status", async (req, res, next) => {
 });
 router.get("/documents/:documentId/result", async (req, res, next) => {
     try {
-        const result = await (0, ocr_service_1.fetchOcrResult)(req.params.documentId);
+        const result = await fetchOcrResult(req.params.documentId);
         if (!result) {
-            throw new errors_1.AppError("not_found", "OCR result not found.", 404);
+            throw new AppError("not_found", "OCR result not found.", 404);
         }
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "ocr_result_viewed",
             actorUserId: req.user?.userId ?? null,
             targetUserId: null,
@@ -113,7 +111,7 @@ router.get("/documents/:documentId/result", async (req, res, next) => {
         res["json"]({ result });
     }
     catch (err) {
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "ocr_result_viewed",
             actorUserId: req.user?.userId ?? null,
             targetUserId: null,
@@ -127,8 +125,8 @@ router.get("/documents/:documentId/result", async (req, res, next) => {
 });
 router.post("/documents/:documentId/retry", async (req, res, next) => {
     try {
-        const job = await (0, ocr_service_1.retryOcrJob)(req.params.documentId);
-        await (0, audit_service_1.recordAuditEvent)({
+        const job = await retryOcrJob(req.params.documentId);
+        await recordAuditEvent({
             action: "ocr_job_retried",
             actorUserId: req.user?.userId ?? null,
             targetUserId: null,
@@ -140,7 +138,7 @@ router.post("/documents/:documentId/retry", async (req, res, next) => {
         res.status(202).json({ job });
     }
     catch (err) {
-        await (0, audit_service_1.recordAuditEvent)({
+        await recordAuditEvent({
             action: "ocr_job_retried",
             actorUserId: req.user?.userId ?? null,
             targetUserId: null,
@@ -152,4 +150,4 @@ router.post("/documents/:documentId/retry", async (req, res, next) => {
         next(err);
     }
 });
-exports.default = router;
+export default router;

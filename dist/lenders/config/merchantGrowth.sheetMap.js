@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.sheetMap = void 0;
-exports.sheetMap = {
+export const sheetMap = {
     applicationIdHeader: "Application ID",
     columns: [
         {

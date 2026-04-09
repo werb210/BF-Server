@@ -1,10 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.cosineSimilarity = cosineSimilarity;
-exports.retrieveTopKnowledgeChunks = retrieveTopKnowledgeChunks;
-const db_1 = require("../db");
-const embeddingService_1 = require("./embeddingService");
-function cosineSimilarity(a, b) {
+import { runQuery } from "../db.js";
+import { generateEmbedding } from "./embeddingService.js";
+export function cosineSimilarity(a, b) {
     if (a.length === 0 || b.length === 0 || a.length !== b.length)
         return 0;
     let dot = 0;
@@ -38,9 +34,9 @@ function parseEmbedding(input) {
     }
     return [];
 }
-async function retrieveTopKnowledgeChunks(question, limit = 5) {
-    const queryVector = await (0, embeddingService_1.generateEmbedding)(question);
-    const { rows } = await (0, db_1.runQuery)(`select id, document_id, content, embedding
+export async function retrieveTopKnowledgeChunks(question, limit = 5) {
+    const queryVector = await generateEmbedding(question);
+    const { rows } = await runQuery(`select id, document_id, content, embedding
      from ai_knowledge_chunks
      order by created_at desc
      limit 500`);

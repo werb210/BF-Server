@@ -1,5 +1,5 @@
-import { createServer } from "./createServer";
-import { bootstrap } from "../startup/bootstrap";
+import { createServer } from "./createServer.js";
+import { bootstrap } from "../startup/bootstrap.js";
 
 export async function startServer() {
   const server = createServer();

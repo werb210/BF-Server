@@ -1,3 +1,3 @@
-import documentsRouter from "../documents";
+import documentsRouter from "../documents.js";
 
 export default documentsRouter;

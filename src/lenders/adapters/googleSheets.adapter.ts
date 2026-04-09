@@ -1,10 +1,10 @@
-import { config } from "../../config";
+import { config } from "../../config/index.js";
 import { google } from "googleapis";
 import {
   type GoogleSheetsPayload,
   type GoogleSheetsSheetMap,
-} from "../config/merchantGrowth.sheetMap";
-import { logError, logInfo } from "../../observability/logger";
+} from "../config/merchantGrowth.sheetMap.js";
+import { logError, logInfo } from "../../observability/logger.js";
 
 export type GoogleSheetsSubmissionResult = {
   success: boolean;

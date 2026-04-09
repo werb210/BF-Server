@@ -1,4 +1,4 @@
-import { pool, runQuery } from "../../db";
+import { pool, runQuery } from "../../db.js";
 
 export async function fetchLatestIncompleteApplication(userId: string) {
   const result = await runQuery(

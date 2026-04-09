@@ -1,13 +1,12 @@
 import { Router } from "express";
-import { config } from "../config";
-import packageJson from "../../package.json";
-import { listRouteInventory } from "../debug/printRoutes";
-import { readyHandler } from "./ready";
-import { requireAuth, requireAuthorization } from "../middleware/auth";
-import internalRoutes from "./internal";
-import { runtimeHandler } from "./_int/runtime";
-import pwaInternalRoutes from "./_int/pwa";
-import { ALL_ROLES } from "../auth/roles";
+import { config } from "../config/index.js";
+import { listRouteInventory } from "../debug/printRoutes.js";
+import { readyHandler } from "./ready.js";
+import { requireAuth, requireAuthorization } from "../middleware/auth.js";
+import internalRoutes from "./internal.js";
+import { runtimeHandler } from "./_int/runtime.js";
+import pwaInternalRoutes from "./_int/pwa.js";
+import { ALL_ROLES } from "../auth/roles.js";
 
 const router = Router();
 
@@ -21,8 +20,9 @@ router.get("/build", (_req: any, res: any) => {
 router.get("/version", (_req: any, res: any) => {
   const commitHash = config.commitSha;
   const buildTimestamp = config.buildTimestamp;
+  const packageVersion = process.env["npm_package_version"];
   res.status(200).json({
-    version: packageJson.version ?? buildTimestamp ?? "unknown",
+    version: packageVersion ?? buildTimestamp ?? "unknown",
     commitHash,
   });
 });

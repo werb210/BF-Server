@@ -1,9 +1,9 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { pool, runQuery } from "../../db";
-import { recordAuditEvent } from "../audit/audit.service";
-import { upsertLead } from "./chat.service";
-import { config } from "../../config";
+import { pool, runQuery } from "../../db.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { upsertLead } from "./chat.service.js";
+import { config } from "../../config/index.js";
 
 const router = Router();
 

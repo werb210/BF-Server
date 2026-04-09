@@ -1,9 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.safeApiFetch = exports.apiFetch = void 0;
-const contracts_1 = require("../contracts");
-const api_1 = require("../config/api");
-const buildUrl = (path) => `${api_1.API_BASE}${path}`;
+import { ApiResponseSchema } from "../contracts/index.js";
+import { API_BASE } from "../config/api.js";
+const buildUrl = (path) => `${API_BASE}${path}`;
 const logRequest = (method, path) => {
     console.log("[CLIENT → API]", {
         url: buildUrl(path),
@@ -21,7 +18,7 @@ const safeJson = async (response) => {
 };
 const parseApiResponse = async (res) => {
     const json = await safeJson(res);
-    const parsed = contracts_1.ApiResponseSchema.safeParse(json);
+    const parsed = ApiResponseSchema.safeParse(json);
     if (!parsed.success) {
         throw new Error("API contract violation");
     }
@@ -30,13 +27,12 @@ const parseApiResponse = async (res) => {
     }
     return parsed.data.data;
 };
-const apiFetch = (path, options) => {
+export const apiFetch = (path, options) => {
     logRequest(options?.method?.toLowerCase() ?? "get", path);
     return fetch(buildUrl(path), {
         ...options,
     });
 };
-exports.apiFetch = apiFetch;
 const api = {
     get: async (path, opts) => {
         logRequest("get", path);
@@ -58,11 +54,11 @@ const api = {
         return parseApiResponse(res);
     },
 };
-exports.default = api;
+export default api;
 /**
  * REQUIRED: restore named exports expected by client
  */
-const safeApiFetch = async (...args) => {
+export const safeApiFetch = async (...args) => {
     try {
         return await api.get(...args);
     }
@@ -71,4 +67,3 @@ const safeApiFetch = async (...args) => {
         return null;
     }
 };
-exports.safeApiFetch = safeApiFetch;

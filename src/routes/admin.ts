@@ -1,12 +1,12 @@
 import { Router } from "express";
-import { requireAuth, requireCapability } from "../middleware/auth";
-import { adminRateLimit } from "../middleware/rateLimit";
-import { CAPABILITIES } from "../auth/capabilities";
-import auditRoutes from "../modules/audit/audit.routes";
-import lenderAdminRoutes from "../modules/lender/lender.admin.routes";
-import ocrAdminRoutes from "../modules/ocr/ocr.admin.routes";
-import adminOpsRoutes from "./admin.ops";
-import adminExportsRoutes from "./admin.exports";
+import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { adminRateLimit } from "../middleware/rateLimit.js";
+import { CAPABILITIES } from "../auth/capabilities.js";
+import auditRoutes from "../modules/audit/audit.routes.js";
+import lenderAdminRoutes from "../modules/lender/lender.admin.routes.js";
+import ocrAdminRoutes from "../modules/ocr/ocr.admin.routes.js";
+import adminOpsRoutes from "./admin.ops.js";
+import adminExportsRoutes from "./admin.exports.js";
 
 const router = Router();
 

@@ -1,20 +1,18 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const auth_1 = require("../middleware/auth");
-const capabilities_1 = require("../auth/capabilities");
-const safeHandler_1 = require("../middleware/safeHandler");
-const respondOk_1 = require("../utils/respondOk");
-const router = (0, express_1.Router)();
-router.use(auth_1.requireAuth);
-router.use((0, auth_1.requireCapability)([capabilities_1.CAPABILITIES.COMMUNICATIONS_READ]));
-router.get("/", (0, safeHandler_1.safeHandler)((_req, res) => {
-    (0, respondOk_1.respondOk)(res, { status: "ok" });
+import { Router } from "express";
+import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { CAPABILITIES } from "../auth/capabilities.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { respondOk } from "../utils/respondOk.js";
+const router = Router();
+router.use(requireAuth);
+router.use(requireCapability([CAPABILITIES.COMMUNICATIONS_READ]));
+router.get("/", safeHandler((_req, res) => {
+    respondOk(res, { status: "ok" });
 }));
-router.get("/messages", (0, safeHandler_1.safeHandler)((req, res) => {
+router.get("/messages", safeHandler((req, res) => {
     const page = Number(req.query.page) || 1;
     const pageSize = Number(req.query.pageSize) || 25;
-    (0, respondOk_1.respondOk)(res, {
+    respondOk(res, {
         messages: [],
         total: 0,
     }, {
@@ -22,4 +20,4 @@ router.get("/messages", (0, safeHandler_1.safeHandler)((req, res) => {
         pageSize,
     });
 }));
-exports.default = router;
+export default router;

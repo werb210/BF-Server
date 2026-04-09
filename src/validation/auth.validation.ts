@@ -1,6 +1,6 @@
 import type { Request } from "express";
 import { z } from "zod";
-import { ROLES, type Role } from "../auth/roles";
+import { ROLES, type Role } from "../auth/roles.js";
 
 const roleValues = Object.values(ROLES) as [Role, ...Role[]];
 const roleSchema = z.enum(roleValues);

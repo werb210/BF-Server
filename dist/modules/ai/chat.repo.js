@@ -1,15 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.createSession = createSession;
-exports.fetchSessionById = fetchSessionById;
-exports.updateSessionStatus = updateSessionStatus;
-exports.addMessage = addMessage;
-exports.listMessagesBySession = listMessagesBySession;
-exports.fetchMessageCount = fetchMessageCount;
-exports.listSessionsByStatus = listSessionsByStatus;
-const collectionSafe_1 = require("../../utils/collectionSafe");
-const crypto_1 = require("crypto");
-const db_1 = require("../../db");
+import { toStringSet } from "../../utils/collectionSafe.js";
+import { randomUUID } from "node:crypto";
+import { runQuery } from "../../db.js";
 const TABLE_CACHE_TTL_MS = 10 * 60 * 1000;
 const tableColumnCache = new Map();
 function setTableColumnsCache(table, columns) {
@@ -23,18 +14,18 @@ async function fetchTableColumns(table) {
     if (cached) {
         tableColumnCache.delete(table);
     }
-    const { rows } = await (0, db_1.runQuery)(`select column_name
+    const { rows } = await runQuery(`select column_name
      from information_schema.columns
      where table_schema = 'public' and table_name = $1`, [table]);
-    const columns = (0, collectionSafe_1.toStringSet)(rows.map((row) => row.column_name));
+    const columns = toStringSet(rows.map((row) => row.column_name));
     setTableColumnsCache(table, columns);
     return columns;
 }
-async function createSession(params) {
+export async function createSession(params) {
     const columns = await fetchTableColumns("chat_sessions");
-    const id = (0, crypto_1.randomUUID)();
+    const id = randomUUID();
     if (columns.has("user_type") && !columns.has("channel")) {
-        const { rows } = await (0, db_1.runQuery)(`insert into chat_sessions (id, user_type, status, source)
+        const { rows } = await runQuery(`insert into chat_sessions (id, user_type, status, source)
        values ($1, 'guest', 'active', $2)
        returning id, source, status, null::uuid as lead_id`, [id, params.source]);
         const legacyCreated = rows[0];
@@ -49,10 +40,10 @@ async function createSession(params) {
             leadId: legacyCreated.lead_id,
         };
     }
-    const rows = await (0, db_1.runQuery)(`insert into chat_sessions (id, source, channel, status, lead_id)
+    const rows = await runQuery(`insert into chat_sessions (id, source, channel, status, lead_id)
      values ($1, $2, $3, 'ai', $4)
      returning id, source, channel, status, lead_id`, [id, params.source, params.channel ?? "text", params.leadId ?? null]).then((res) => res.rows).catch(async () => {
-        const legacy = await (0, db_1.runQuery)(`insert into chat_sessions (id, user_type, status, source)
+        const legacy = await runQuery(`insert into chat_sessions (id, user_type, status, source)
        values ($1, 'guest', 'active', $2)
        returning id, source, status`, [id, params.source]);
         return legacy.rows.map((row) => ({
@@ -75,8 +66,8 @@ async function createSession(params) {
         leadId: created.lead_id,
     };
 }
-async function fetchSessionById(sessionId) {
-    const { rows } = await (0, db_1.runQuery)(`select id, source, channel, status, lead_id
+export async function fetchSessionById(sessionId) {
+    const { rows } = await runQuery(`select id, source, channel, status, lead_id
      from chat_sessions where id = $1`, [sessionId]);
     const session = rows[0];
     if (!session) {
@@ -90,28 +81,28 @@ async function fetchSessionById(sessionId) {
         leadId: session.lead_id,
     };
 }
-async function updateSessionStatus(sessionId, status) {
-    let result = await (0, db_1.runQuery)(`update chat_sessions set status = $2, updated_at = now() where id = $1`, [sessionId, status]).catch(() => null);
+export async function updateSessionStatus(sessionId, status) {
+    let result = await runQuery(`update chat_sessions set status = $2, updated_at = now() where id = $1`, [sessionId, status]).catch(() => null);
     if (!result && status === "human") {
-        result = await (0, db_1.runQuery)(`update chat_sessions set status = 'escalated', updated_at = now() where id = $1`, [sessionId]);
+        result = await runQuery(`update chat_sessions set status = 'escalated', updated_at = now() where id = $1`, [sessionId]);
     }
     if (!result || (result.rowCount ?? 0) === 0) {
         throw new Error("chat_session_not_found");
     }
 }
-async function addMessage(params) {
+export async function addMessage(params) {
     const columns = await fetchTableColumns("chat_messages");
     const payload = params.metadata ? JSON.stringify(params.metadata) : null;
     if (columns.has("content")) {
-        await (0, db_1.runQuery)(`insert into chat_messages (id, session_id, role, message, content, metadata)
-       values ($1, $2, $3, $4, $4, $5::jsonb)`, [(0, crypto_1.randomUUID)(), params.sessionId, params.role, params.message, payload]);
+        await runQuery(`insert into chat_messages (id, session_id, role, message, content, metadata)
+       values ($1, $2, $3, $4, $4, $5::jsonb)`, [randomUUID(), params.sessionId, params.role, params.message, payload]);
         return;
     }
-    await (0, db_1.runQuery)(`insert into chat_messages (id, session_id, role, message, metadata)
-     values ($1, $2, $3, $4, $5::jsonb)`, [(0, crypto_1.randomUUID)(), params.sessionId, params.role, params.message, payload]);
+    await runQuery(`insert into chat_messages (id, session_id, role, message, metadata)
+     values ($1, $2, $3, $4, $5::jsonb)`, [randomUUID(), params.sessionId, params.role, params.message, payload]);
 }
-async function listMessagesBySession(sessionId) {
-    const { rows } = await (0, db_1.runQuery)(`select id, session_id, role, message, content, metadata, created_at
+export async function listMessagesBySession(sessionId) {
+    const { rows } = await runQuery(`select id, session_id, role, message, content, metadata, created_at
      from chat_messages
      where session_id = $1
      order by created_at asc`, [sessionId]);
@@ -124,13 +115,13 @@ async function listMessagesBySession(sessionId) {
         createdAt: row.created_at,
     }));
 }
-async function fetchMessageCount(sessionId) {
-    const { rows } = await (0, db_1.runQuery)(`select count(*)::text as count from chat_messages where session_id = $1`, [sessionId]);
+export async function fetchMessageCount(sessionId) {
+    const { rows } = await runQuery(`select count(*)::text as count from chat_messages where session_id = $1`, [sessionId]);
     return Number(rows[0]?.count ?? "0");
 }
-async function listSessionsByStatus(status) {
+export async function listSessionsByStatus(status) {
     const mappedStatus = status === "human" ? ["human", "escalated"] : [status];
-    const { rows } = await (0, db_1.runQuery)(`select id, source, channel, status, lead_id
+    const { rows } = await runQuery(`select id, source, channel, status, lead_id
      from chat_sessions
      where status = any($1)
      order by updated_at desc`, [mappedStatus]);

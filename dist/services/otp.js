@@ -1,20 +1,13 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendOtp = sendOtp;
-exports.checkOtp = checkOtp;
-const twilio_1 = __importDefault(require("twilio"));
+import Twilio from "twilio";
 const isTest = process.env.NODE_ENV === "test";
 let client = null;
 if (!isTest) {
     if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
         throw new Error("Twilio env missing in non-test mode");
     }
-    client = (0, twilio_1.default)(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    client = Twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 }
-async function sendOtp(phone) {
+export async function sendOtp(phone) {
     if (isTest) {
         return { sid: "test" };
     }
@@ -32,7 +25,7 @@ async function sendOtp(phone) {
         channel: "sms",
     });
 }
-async function checkOtp(phone, code) {
+export async function checkOtp(phone, code) {
     if (isTest) {
         return code === "123456";
     }

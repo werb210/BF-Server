@@ -1,5 +1,5 @@
-import { runQuery } from "../lib/db";
-import { captureOriginalEnv, restoreEnv, unsetEnv } from "../../test/utils/testEnv";
+import { runQuery } from "../lib/db.js";
+import { captureOriginalEnv, restoreEnv, unsetEnv } from "../../test/utils/testEnv.js";
 
 describe("test db integration", () => {
   let originalEnv = captureOriginalEnv();

@@ -1,10 +1,10 @@
 import { Router } from "express";
-import { dbQuery } from "../db";
-import { requireFields } from "../middleware/validate";
-import { LeadSchema } from "../validation";
-import { fail, ok } from "../lib/apiResponse";
-import { wrap } from "../lib/routeWrap";
-import { stripUndefined } from "../utils/clean";
+import { dbQuery } from "../db.js";
+import { requireFields } from "../middleware/validate.js";
+import { LeadSchema } from "../validation.js";
+import { fail, ok } from "../lib/apiResponse.js";
+import { wrap } from "../lib/routeWrap.js";
+import { stripUndefined } from "../utils/clean.js";
 
 const router = Router();
 

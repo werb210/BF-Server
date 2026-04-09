@@ -1,15 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.createCallLog = createCallLog;
-exports.findCallLogById = findCallLogById;
-exports.findCallLogByTwilioSid = findCallLogByTwilioSid;
-exports.listCallLogs = listCallLogs;
-exports.updateCallLogStatus = updateCallLogStatus;
-const crypto_1 = require("crypto");
-const db_1 = require("../../db");
-async function createCallLog(params) {
-    const runner = params.client ?? db_1.pool;
-    const id = (0, crypto_1.randomUUID)();
+import { randomUUID } from "node:crypto";
+import { pool } from "../../db.js";
+export async function createCallLog(params) {
+    const runner = params.client ?? pool;
+    const id = randomUUID();
     const hasTwilioSid = Boolean(params.twilioCallSid);
     const conflictClause = hasTwilioSid
         ? `on conflict (twilio_call_sid)
@@ -40,8 +33,8 @@ async function createCallLog(params) {
     }
     return record;
 }
-async function findCallLogById(id, client) {
-    const runner = client ?? db_1.pool;
+export async function findCallLogById(id, client) {
+    const runner = client ?? pool;
     const res = await runner.query(`select id, phone_number, from_number, to_number, twilio_call_sid, direction, status, duration_seconds,
             staff_user_id, crm_contact_id, application_id, error_code, error_message, recording_sid,
             recording_duration_seconds, created_at, started_at, ended_at
@@ -50,8 +43,8 @@ async function findCallLogById(id, client) {
      limit 1`, [id]);
     return res.rows[0] ?? null;
 }
-async function findCallLogByTwilioSid(twilioCallSid, client) {
-    const runner = client ?? db_1.pool;
+export async function findCallLogByTwilioSid(twilioCallSid, client) {
+    const runner = client ?? pool;
     const res = await runner.query(`select id, phone_number, from_number, to_number, twilio_call_sid, direction, status, duration_seconds,
             staff_user_id, crm_contact_id, application_id, error_code, error_message, recording_sid,
             recording_duration_seconds, created_at, started_at, ended_at
@@ -60,8 +53,8 @@ async function findCallLogByTwilioSid(twilioCallSid, client) {
      limit 1`, [twilioCallSid]);
     return res.rows[0] ?? null;
 }
-async function listCallLogs(params) {
-    const runner = params.client ?? db_1.pool;
+export async function listCallLogs(params) {
+    const runner = params.client ?? pool;
     const filters = [];
     const values = [];
     if (params.contactId) {
@@ -81,8 +74,8 @@ async function listCallLogs(params) {
      order by created_at desc`, values);
     return res.rows;
 }
-async function updateCallLogStatus(params) {
-    const runner = params.client ?? db_1.pool;
+export async function updateCallLogStatus(params) {
+    const runner = params.client ?? pool;
     const updates = [
         { name: "status", value: params.status },
     ];

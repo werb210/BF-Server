@@ -1,4 +1,4 @@
-import { enforceMatchingRules } from '../middleware/contractEnforcement';
+import { enforceMatchingRules } from '../middleware/contractEnforcement.js';
 
 export function matchLenders(application: any, products: any[]) {
   return products.filter(product => {

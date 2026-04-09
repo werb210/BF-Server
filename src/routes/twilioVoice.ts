@@ -1,7 +1,7 @@
 import express, { Router } from "express";
 import twilio from "twilio";
-import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation";
-import { ok } from "../lib/respond";
+import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
+import { ok } from "../lib/respond.js";
 
 const router = Router();
 

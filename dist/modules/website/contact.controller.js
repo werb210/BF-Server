@@ -1,18 +1,15 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.submitContactForm = submitContactForm;
-const crm_service_1 = require("../crm/crm.service");
-const sms_service_1 = require("../notifications/sms.service");
-const continuation_service_1 = require("../continuation/continuation.service");
-const logger_1 = require("../../observability/logger");
-const clean_1 = require("../../utils/clean");
-async function submitContactForm(req, res) {
+import { createCrmLead } from "../crm/crm.service.js";
+import { sendSms } from "../notifications/sms.service.js";
+import { createContinuation } from "../continuation/continuation.service.js";
+import { logError } from "../../observability/logger.js";
+import { stripUndefined } from "../../utils/clean.js";
+export async function submitContactForm(req, res) {
     try {
         const { companyName, fullName, phone, email, message, productInterest, industryInterest } = req.body;
         if (!companyName || !fullName || !phone || !email) {
             return res.status(400).json({ error: "Missing required fields" });
         }
-        const lead = await (0, crm_service_1.createCrmLead)((0, clean_1.stripUndefined)({
+        const lead = await createCrmLead(stripUndefined({
             companyName,
             fullName,
             phone,
@@ -23,8 +20,8 @@ async function submitContactForm(req, res) {
             source: "website_contact",
             tags: ["contact_form"],
         }));
-        const token = await (0, continuation_service_1.createContinuation)(req.body, lead.id);
-        await (0, sms_service_1.sendSms)({
+        const token = await createContinuation(req.body, lead.id);
+        await sendSms({
             to: "+15878881837",
             message: `New continuation lead: ${companyName}`,
         });
@@ -35,7 +32,7 @@ async function submitContactForm(req, res) {
         });
     }
     catch (err) {
-        (0, logger_1.logError)("website_contact_form_failed", { message: err instanceof Error ? err.message : String(err) });
+        logError("website_contact_form_failed", { message: err instanceof Error ? err.message : String(err) });
         return res.status(500).json({ error: "Server error" });
     }
 }

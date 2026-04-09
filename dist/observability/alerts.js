@@ -1,18 +1,15 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendSlackAlert = sendSlackAlert;
-const config_1 = require("../config");
-const logger_1 = require("../platform/logger");
-const deadLetter_1 = require("../lib/deadLetter");
-const retry_1 = require("../lib/retry");
-async function sendSlackAlert(message) {
-    const webhookUrl = config_1.config.alerting.slackWebhookUrl;
+import { config } from "../config/index.js";
+import { logger } from "../platform/logger.js";
+import { pushDeadLetter } from "../lib/deadLetter.js";
+import { withRetry } from "../lib/retry.js";
+export async function sendSlackAlert(message) {
+    const webhookUrl = config.alerting.slackWebhookUrl;
     if (!webhookUrl) {
-        logger_1.logger.warn("slack_alert_not_configured");
+        logger.warn("slack_alert_not_configured");
         return;
     }
     try {
-        await (0, retry_1.withRetry)(async () => {
+        await withRetry(async () => {
             const response = await fetch(webhookUrl, {
                 method: "POST",
                 headers: {
@@ -27,11 +24,11 @@ async function sendSlackAlert(message) {
         });
     }
     catch (error) {
-        await (0, deadLetter_1.pushDeadLetter)({
+        await pushDeadLetter({
             type: "slack_webhook",
             data: { message },
             error: String(error),
         });
-        logger_1.logger.error("slack_alert_delivery_failed", { error: String(error) });
+        logger.error("slack_alert_delivery_failed", { error: String(error) });
     }
 }

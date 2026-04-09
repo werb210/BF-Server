@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { dbQuery } from "../../db";
-import { upsertCrmLead } from "../crm/leadUpsert.service";
-import { stripUndefined, toNullable } from "../../utils/clean";
+import { dbQuery } from "../../db.js";
+import { upsertCrmLead } from "../crm/leadUpsert.service.js";
+import { stripUndefined, toNullable } from "../../utils/clean.js";
 
 type ReadinessSessionInput = {
   companyName: string;

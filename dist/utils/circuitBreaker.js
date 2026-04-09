@@ -1,19 +1,11 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.fetchCircuitBreaker = fetchCircuitBreaker;
-exports.resetCircuitBreakers = resetCircuitBreakers;
-exports.canProceed = canProceed;
-exports.recordFailure = recordFailure;
-exports.recordSuccess = recordSuccess;
-exports.circuitGuard = circuitGuard;
-exports.resetCircuit = resetCircuit;
 const breakers = new Map();
 class CircuitBreaker {
+    options;
+    failures = 0;
+    state = "CLOSED";
+    openedAt = null;
     constructor(options) {
         this.options = options;
-        this.failures = 0;
-        this.state = "CLOSED";
-        this.openedAt = null;
     }
     fetchSnapshot() {
         return {
@@ -51,7 +43,7 @@ class CircuitBreaker {
         }
     }
 }
-function fetchCircuitBreaker(name, options) {
+export function fetchCircuitBreaker(name, options) {
     const existing = breakers.get(name);
     if (existing) {
         return existing;
@@ -60,35 +52,35 @@ function fetchCircuitBreaker(name, options) {
     breakers.set(name, breaker);
     return breaker;
 }
-function resetCircuitBreakers() {
+export function resetCircuitBreakers() {
     breakers.clear();
 }
 let globalFailureCount = 0;
 let globalBlockedUntil = 0;
-function canProceed() {
+export function canProceed() {
     if (Date.now() < globalBlockedUntil)
         return false;
     return true;
 }
-function recordFailure() {
+export function recordFailure() {
     globalFailureCount += 1;
     if (globalFailureCount > 5) {
-        globalBlockedUntil = Date.now() + 60000;
+        globalBlockedUntil = Date.now() + 60_000;
     }
 }
-function recordSuccess() {
+export function recordSuccess() {
     globalFailureCount = 0;
     globalBlockedUntil = 0;
 }
-function circuitGuard() {
+export function circuitGuard() {
     const now = Date.now();
-    if (globalFailureCount > 5 && now - (globalBlockedUntil - 60000) < 30000 && now < globalBlockedUntil) {
+    if (globalFailureCount > 5 && now - (globalBlockedUntil - 60_000) < 30_000 && now < globalBlockedUntil) {
         throw new Error("AI temporarily disabled due to repeated failures.");
     }
     if (!canProceed()) {
         throw new Error("AI temporarily disabled due to repeated failures.");
     }
 }
-function resetCircuit() {
+export function resetCircuit() {
     recordSuccess();
 }

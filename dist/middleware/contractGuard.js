@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.requireFields = requireFields;
-function requireFields(fields) {
+export function requireFields(fields) {
     return (req, res, next) => {
         const missing = fields.filter((f) => {
             const v = (req.body ?? {})[f];

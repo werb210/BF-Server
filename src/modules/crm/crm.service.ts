@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { dbQuery } from "../../db";
+import { dbQuery } from "../../db.js";
 
 export interface CreateLeadInput {
   companyName: string;

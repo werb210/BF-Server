@@ -1,8 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.runQuery = runQuery;
-exports.getPrisma = getPrisma;
-const pg_1 = require("pg");
+import { Pool } from "pg";
 let pool = null;
 function validateQueryInputs(sql, params) {
     if (typeof sql !== "string" || !sql.trim()) {
@@ -24,9 +20,9 @@ function initPool() {
     if (!process.env.DATABASE_URL) {
         throw new Error("DB_POOL_NOT_INITIALIZED");
     }
-    pool = new pg_1.Pool({ connectionString: process.env.DATABASE_URL });
+    pool = new Pool({ connectionString: process.env.DATABASE_URL });
 }
-async function runQuery(sql, params = []) {
+export async function runQuery(sql, params = []) {
     validateQueryInputs(sql, params);
     initPool();
     if (!pool) {
@@ -49,6 +45,6 @@ async function runQuery(sql, params = []) {
         }
     }
 }
-async function getPrisma() {
+export async function getPrisma() {
     throw new Error("Prisma not implemented");
 }

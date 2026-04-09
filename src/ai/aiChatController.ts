@@ -1,14 +1,18 @@
 import type { Request, Response } from "express";
 import OpenAI from "openai";
-import { randomUUID } from "crypto";
-import { pool, runQuery } from "../db";
-import { safeHandler } from "../middleware/safeHandler";
-import { retrieveTopKnowledgeChunks } from "./retrievalService";
-import { matchLenders } from "./lenderMatchEngine";
-import { config } from "../config";
-import { emitAiEscalation } from "../realtime/events";
-import { circuitGuard, recordFailure, resetCircuit } from "../utils/circuitBreaker";
-import { retry } from "../utils/retry";
+import { randomUUID } from "node:crypto";
+import { pool, runQuery } from "../db.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { retrieveTopKnowledgeChunks } from "./retrievalService.js";
+import { matchLenders } from "./lenderMatchEngine.js";
+import { config } from "../config/index.js";
+import { emitAiEscalation } from "../realtime/events.js";
+import { circuitGuard, recordFailure, resetCircuit } from "../utils/circuitBreaker.js";
+import { retry } from "../utils/retry.js";
+
+// TEMP TYPE FIXES
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Any = any;
 
 function detectIntent(message: string): "faq" | "prequal" | "escalation" {
   const lower = message.toLowerCase();

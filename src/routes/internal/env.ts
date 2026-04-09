@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { config } from "../../config";
-import { API_BASE } from "../../config/api";
+import { config } from "../../config/index.js";
+import { API_BASE } from "../../config/api.js";
 
 const router = Router();
 

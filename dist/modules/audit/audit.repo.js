@@ -1,9 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.listAuditEvents = listAuditEvents;
-const db_1 = require("../../db");
-async function listAuditEvents(params) {
-    const runner = params.client ?? db_1.pool;
+import { pool } from "../../db.js";
+export async function listAuditEvents(params) {
+    const runner = params.client ?? pool;
     const clauses = [];
     const values = [];
     let idx = 1;

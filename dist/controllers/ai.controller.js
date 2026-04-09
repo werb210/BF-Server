@@ -1,13 +1,9 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.tagStartupInterest = exports.escalate = exports.createContinuation = exports.closeSession = exports.chat = exports.aiHandler = void 0;
-const aiHandler = async (_req, res) => {
+export const aiHandler = async (_req, res) => {
     res["json"]({ success: true, message: "AI alive" });
 };
-exports.aiHandler = aiHandler;
-exports.chat = exports.aiHandler;
-exports.closeSession = exports.aiHandler;
-exports.createContinuation = exports.aiHandler;
-exports.escalate = exports.aiHandler;
+export const chat = aiHandler;
+export const closeSession = aiHandler;
+export const createContinuation = aiHandler;
+export const escalate = aiHandler;
 // alias for older routes
-exports.tagStartupInterest = exports.aiHandler;
+export const tagStartupInterest = aiHandler;

@@ -1,12 +1,12 @@
-import { AppError } from "../middleware/errors";
+import { AppError } from "../middleware/errors.js";
 import {
   createLenderProduct,
   fetchLenderProductById,
   listLenderProducts,
   listLenderProductsByLenderId,
   updateLenderProduct,
-} from "../repositories/lenderProducts.repo";
-import { type RequiredDocuments } from "../db/schema/lenderProducts";
+} from "../repositories/lenderProducts.repo.js";
+import { type RequiredDocuments } from "../db/schema/lenderProducts.js";
 
 export const DEFAULT_LENDER_PRODUCT_NAME = "Unnamed Product";
 const DEFAULT_SILO = "default";

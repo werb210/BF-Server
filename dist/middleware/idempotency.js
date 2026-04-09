@@ -1,8 +1,5 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.idempotencyMiddleware = idempotencyMiddleware;
-const idempotencyStore_1 = require("../lib/idempotencyStore");
-const hash_1 = require("../utils/hash");
+import { fetchStoredResponse, storeResponse } from "../lib/idempotencyStore.js";
+import { hashRequest } from "../utils/hash.js";
 const IDEMPOTENCY_HEADER = "idempotency-key";
 const ENFORCED_METHODS = new Set(["POST", "PATCH", "DELETE"]);
 const IDEMPOTENCY_KEY_REGEX = /^[a-zA-Z0-9-_]{10,}$/;
@@ -19,7 +16,7 @@ function buildStorageKey(req, key) {
     const userId = req.user?.id || "anon";
     return `idemp:${userId}:${req.path}:${key}`;
 }
-async function idempotencyMiddleware(req, res, next) {
+export async function idempotencyMiddleware(req, res, next) {
     if (!ENFORCED_METHODS.has(req.method.toUpperCase())) {
         next();
         return;
@@ -34,8 +31,8 @@ async function idempotencyMiddleware(req, res, next) {
         return;
     }
     const storageKey = buildStorageKey(req, key);
-    const requestHash = (0, hash_1.hashRequest)(req.body);
-    const existing = await (0, idempotencyStore_1.fetchStoredResponse)(storageKey);
+    const requestHash = hashRequest(req.body);
+    const existing = await fetchStoredResponse(storageKey);
     if (existing) {
         if (existing.requestHash !== requestHash) {
             res.status(409).json({
@@ -50,7 +47,7 @@ async function idempotencyMiddleware(req, res, next) {
     const originalJson = res["json"].bind(res);
     res["json"] = ((body) => {
         if (res.statusCode < 500) {
-            void (0, idempotencyStore_1.storeResponse)(storageKey, {
+            void storeResponse(storageKey, {
                 requestHash,
                 body,
                 statusCode: res.statusCode,

@@ -1,7 +1,7 @@
-import { assertEnv } from "./config";
-import { dbQuery } from "./db";
-import { assertNoPendingMigrations, runMigrations } from "./migrations";
-import { logError, logInfo } from "./observability/logger";
+import { assertEnv } from "./config/index.js";
+import { dbQuery } from "./db.js";
+import { assertNoPendingMigrations, runMigrations } from "./migrations.js";
+import { logError, logInfo } from "./observability/logger.js";
 
 async function main(): Promise<void> {
   assertEnv();

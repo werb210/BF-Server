@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendSMS = sendSMS;
-function sendSMS(to, body) {
+export function sendSMS(to, body) {
     if (process.env.NODE_ENV === "test") {
         return Promise.resolve({ sid: "test" });
     }

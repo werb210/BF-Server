@@ -1,17 +1,17 @@
-import type { MulterRequest } from "../types/multer";
+import type { MulterRequest } from "../types/multer.js";
 import fs from "fs";
 import path from "path";
 import multer from "multer";
 import { Router, type RequestHandler } from "express";
-import { randomUUID } from "crypto";
-import { safeHandler } from "../middleware/safeHandler";
-import { pool, runQuery } from "../db";
-import { saveKnowledge as saveKnowledgeDb } from "../services/aiKnowledgeService";
-import { loadKnowledge, saveKnowledge } from "../modules/ai/knowledge.service";
-import { AIKnowledgeController, upload as knowledgeUpload } from "../modules/ai/knowledge.controller";
-import { chatHandler } from "../modules/ai/ai.controller";
-import { logger } from "../server/utils/logger";
-import { generateAIResponse } from "../services/ai/aiService";
+import { randomUUID } from "node:crypto";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { pool, runQuery } from "../db.js";
+import { saveKnowledge as saveKnowledgeDb } from "../services/aiKnowledgeService.js";
+import { loadKnowledge, saveKnowledge } from "../modules/ai/knowledge.service.js";
+import { AIKnowledgeController, upload as knowledgeUpload } from "../modules/ai/knowledge.controller.js";
+import { chatHandler } from "../modules/ai/ai.controller.js";
+import { logger } from "../server/utils/logger.js";
+import { generateAIResponse } from "../services/ai/aiService.js";
 
 const router = Router();
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;

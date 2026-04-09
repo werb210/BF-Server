@@ -1,13 +1,11 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const auth_1 = require("../middleware/auth");
-const capabilities_1 = require("../auth/capabilities");
-const safeHandler_1 = require("../middleware/safeHandler");
-const router = (0, express_1.Router)();
-router.use(auth_1.requireAuth);
-router.use((0, auth_1.requireCapability)([capabilities_1.CAPABILITIES.STAFF_OVERVIEW]));
-router.get("/overview", (0, safeHandler_1.safeHandler)((_req, res) => {
+import { Router } from "express";
+import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { CAPABILITIES } from "../auth/capabilities.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+const router = Router();
+router.use(requireAuth);
+router.use(requireCapability([CAPABILITIES.STAFF_OVERVIEW]));
+router.get("/overview", safeHandler((_req, res) => {
     res["json"]({ ok: true });
 }));
-exports.default = router;
+export default router;

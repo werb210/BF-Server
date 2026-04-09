@@ -1,30 +1,49 @@
 {
   "name": "bf-server",
   "version": "1.0.0",
-  "main": "dist/server.js",
   "type": "module",
+  "main": "dist/server.js",
   "scripts": {
     "dev": "tsx src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-
-    "test": "echo \"No tests defined\" && exit 0",
-
+    "test": "echo \"No tests\" && exit 0",
     "test:guard": "echo \"Guard passed\" && exit 0"
   },
   "engines": {
     "node": ">=20.10.0 <21.0.0"
   },
   "dependencies": {
-    "cors": "^2.8.5",
+    "@azure/storage-blob": "^12.31.0",
+    "bullmq": "^5.7.0",
     "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "execa": "^9.6.1",
     "express": "^4.18.2",
+    "express-rate-limit": "^8.3.2",
     "express-session": "^1.17.3",
-    "twilio": "^4.19.0"
+    "file-type": "^21.3.4",
+    "helmet": "^8.1.0",
+    "ioredis": "^5.10.1",
+    "multer": "^2.1.1",
+    "openai": "^4.56.0",
+    "pg": "^8.20.0",
+    "pino": "^10.3.1",
+    "prom-client": "^15.1.3",
+    "twilio": "^4.19.0",
+    "ws": "^8.20.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/express-session": "^1.17.7",
+    "@types/multer": "^2.1.0",
+    "@types/node": "^20.11.30",
+    "@types/supertest": "^7.2.0",
+    "supertest": "^7.2.2",
     "tsx": "^4.7.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^4.1.4"
   }
 }

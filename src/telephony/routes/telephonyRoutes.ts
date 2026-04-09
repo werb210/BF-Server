@@ -1,7 +1,7 @@
 import express, { type Request, type Response } from "express";
 import { v4 as uuid } from "uuid";
-import { auth } from "../../middleware/auth";
-import { generateVoiceToken } from "../services/tokenService";
+import { auth } from "../../middleware/auth.js";
+import { generateVoiceToken } from "../services/tokenService.js";
 
 const router = express.Router();
 

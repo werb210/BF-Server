@@ -1,9 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.LEGAL_TRANSITIONS = exports.PIPELINE_STATES = exports.ApplicationStage = void 0;
-exports.isPipelineState = isPipelineState;
-exports.canTransition = canTransition;
-var ApplicationStage;
+export var ApplicationStage;
 (function (ApplicationStage) {
     ApplicationStage["RECEIVED"] = "RECEIVED";
     ApplicationStage["IN_REVIEW"] = "IN_REVIEW";
@@ -13,8 +8,8 @@ var ApplicationStage;
     ApplicationStage["OFFER"] = "OFFER";
     ApplicationStage["ACCEPTED"] = "ACCEPTED";
     ApplicationStage["REJECTED"] = "REJECTED";
-})(ApplicationStage || (exports.ApplicationStage = ApplicationStage = {}));
-exports.PIPELINE_STATES = [
+})(ApplicationStage || (ApplicationStage = {}));
+export const PIPELINE_STATES = [
     ApplicationStage.RECEIVED,
     ApplicationStage.IN_REVIEW,
     ApplicationStage.DOCUMENTS_REQUIRED,
@@ -24,10 +19,10 @@ exports.PIPELINE_STATES = [
     ApplicationStage.ACCEPTED,
     ApplicationStage.REJECTED,
 ];
-function isPipelineState(value) {
-    return exports.PIPELINE_STATES.includes(value);
+export function isPipelineState(value) {
+    return PIPELINE_STATES.includes(value);
 }
-exports.LEGAL_TRANSITIONS = {
+export const LEGAL_TRANSITIONS = {
     [ApplicationStage.RECEIVED]: [
         ApplicationStage.IN_REVIEW,
         ApplicationStage.DOCUMENTS_REQUIRED,
@@ -55,6 +50,6 @@ exports.LEGAL_TRANSITIONS = {
     [ApplicationStage.ACCEPTED]: [],
     [ApplicationStage.REJECTED]: [],
 };
-function canTransition(current, next) {
-    return (exports.LEGAL_TRANSITIONS[current] ?? []).includes(next);
+export function canTransition(current, next) {
+    return (LEGAL_TRANSITIONS[current] ?? []).includes(next);
 }

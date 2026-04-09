@@ -1,4 +1,4 @@
-import { type ContactRepoRow, listContacts } from "./contacts.repo";
+import { type ContactRepoRow, listContacts } from "./contacts.repo.js";
 
 export type ContactOwner = {
   id: string;

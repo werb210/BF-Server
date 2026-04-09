@@ -1,5 +1,5 @@
-import { db } from "../../db";
-import { generateEmbedding } from "./embeddingService";
+import { db } from "../../db.js";
+import { generateEmbedding } from "./embeddingService.js";
 
 export type KnowledgeSourceType = "lender_product" | "product_sheet" | "admin_rule";
 

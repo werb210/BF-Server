@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
-import { createCRMLead } from "../services/crmService";
-import { sendSMS } from "../services/smsService";
-import { config } from "../config";
-import { stripUndefined } from "../utils/clean";
+import { createCRMLead } from "../services/crmService.js";
+import { sendSMS } from "../services/smsService.js";
+import { config } from "../config/index.js";
+import { stripUndefined } from "../utils/clean.js";
 
 const router = Router();
 

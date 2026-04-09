@@ -1,28 +1,21 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.REPLAY_SCOPES = void 0;
-exports.createReplayJob = createReplayJob;
-exports.fetchReplayJobStatus = fetchReplayJobStatus;
-exports.listActiveReplayJobs = listActiveReplayJobs;
-exports.runReplayJob = runReplayJob;
-const crypto_1 = require("crypto");
-const db_1 = require("../../db");
-const logger_1 = require("../../observability/logger");
-const ops_service_1 = require("./ops.service");
-exports.REPLAY_SCOPES = [
+import { randomUUID } from "node:crypto";
+import { runQuery } from "../../db.js";
+import { logError } from "../../observability/logger.js";
+import { isKillSwitchEnabled } from "./ops.service.js";
+export const REPLAY_SCOPES = [
     "audit_events",
     "lender_submissions",
     "reporting_daily_metrics",
 ];
 const BATCH_SIZE = 100;
 function assertScope(scope) {
-    if (!exports.REPLAY_SCOPES.includes(scope)) {
+    if (!REPLAY_SCOPES.includes(scope)) {
         throw new Error(`unsupported_replay_scope:${scope}`);
     }
 }
 async function fetchBatch(scope) {
     if (scope === "audit_events") {
-        const result = await (0, db_1.runQuery)(`select id
+        const result = await runQuery(`select id
        from audit_events
        where id not in (
          select source_id
@@ -33,7 +26,7 @@ async function fetchBatch(scope) {
         return result.rows.map((row) => row.id);
     }
     if (scope === "lender_submissions") {
-        const result = await (0, db_1.runQuery)(`select id
+        const result = await runQuery(`select id
        from lender_submissions
        where id not in (
          select source_id
@@ -43,7 +36,7 @@ async function fetchBatch(scope) {
        limit $1`, [BATCH_SIZE]);
         return result.rows.map((row) => row.id);
     }
-    const result = await (0, db_1.runQuery)(`select id
+    const result = await runQuery(`select id
      from reporting_daily_metrics
      where id not in (
        select source_id
@@ -65,22 +58,22 @@ async function insertReplayEvents(replayJobId, scope, sourceIds) {
         .join(", ");
     const insertParams = [];
     sourceIds.forEach((id) => {
-        insertParams.push((0, crypto_1.randomUUID)(), replayJobId, scope, id, new Date());
+        insertParams.push(randomUUID(), replayJobId, scope, id, new Date());
     });
-    await (0, db_1.runQuery)(`insert into ops_replay_events
+    await runQuery(`insert into ops_replay_events
      (id, replay_job_id, source_table, source_id, processed_at)
      values ${insertValues}
      on conflict (source_table, source_id) do nothing`, insertParams);
 }
-async function createReplayJob(scope) {
+export async function createReplayJob(scope) {
     assertScope(scope);
-    const id = (0, crypto_1.randomUUID)();
-    await (0, db_1.runQuery)(`insert into ops_replay_jobs (id, scope, started_at, completed_at, status)
+    const id = randomUUID();
+    await runQuery(`insert into ops_replay_jobs (id, scope, started_at, completed_at, status)
      values ($1, $2, null, null, 'queued')`, [id, scope]);
     return { id, scope, status: "queued" };
 }
-async function fetchReplayJobStatus(id) {
-    const result = await (0, db_1.runQuery)(`select id, scope, status, started_at, completed_at
+export async function fetchReplayJobStatus(id) {
+    const result = await runQuery(`select id, scope, status, started_at, completed_at
      from ops_replay_jobs
      where id = $1`, [id]);
     const row = result.rows[0];
@@ -95,8 +88,8 @@ async function fetchReplayJobStatus(id) {
         completedAt: row.completed_at ? row.completed_at.toISOString() : null,
     };
 }
-async function listActiveReplayJobs() {
-    const result = await (0, db_1.runQuery)(`select id, scope, status, started_at
+export async function listActiveReplayJobs() {
+    const result = await runQuery(`select id, scope, status, started_at
      from ops_replay_jobs
      where status in ('queued', 'running')
      order by started_at nulls first, id asc`);
@@ -107,21 +100,21 @@ async function listActiveReplayJobs() {
         startedAt: row.started_at ? row.started_at.toISOString() : null,
     }));
 }
-async function runReplayJob(id, scope) {
+export async function runReplayJob(id, scope) {
     const startedAt = new Date();
-    await (0, db_1.runQuery)(`update ops_replay_jobs
+    await runQuery(`update ops_replay_jobs
      set status = 'running', started_at = $2
      where id = $1`, [id, startedAt]);
     try {
-        if (await (0, ops_service_1.isKillSwitchEnabled)("replay")) {
-            await (0, db_1.runQuery)(`update ops_replay_jobs
+        if (await isKillSwitchEnabled("replay")) {
+            await runQuery(`update ops_replay_jobs
          set status = 'aborted', completed_at = now()
          where id = $1`, [id]);
             return;
         }
         while (true) {
-            if (await (0, ops_service_1.isKillSwitchEnabled)("replay")) {
-                await (0, db_1.runQuery)(`update ops_replay_jobs
+            if (await isKillSwitchEnabled("replay")) {
+                await runQuery(`update ops_replay_jobs
            set status = 'aborted', completed_at = now()
            where id = $1`, [id]);
                 return;
@@ -132,14 +125,14 @@ async function runReplayJob(id, scope) {
             }
             await insertReplayEvents(id, scope, batch);
         }
-        await (0, db_1.runQuery)(`update ops_replay_jobs
+        await runQuery(`update ops_replay_jobs
        set status = 'completed', completed_at = now()
        where id = $1`, [id]);
     }
     catch (error) {
         const message = error instanceof Error ? error.message : "unknown error";
-        (0, logger_1.logError)("replay_failed", { code: "replay_failed", message });
-        await (0, db_1.runQuery)(`update ops_replay_jobs
+        logError("replay_failed", { code: "replay_failed", message });
+        await runQuery(`update ops_replay_jobs
        set status = 'failed', completed_at = now()
        where id = $1`, [id]);
     }

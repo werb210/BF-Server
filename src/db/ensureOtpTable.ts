@@ -1,4 +1,4 @@
-import { pool, runQuery } from "../db";
+import { pool, runQuery } from "../db.js";
 
 type PgError = { code?: string; message?: string };
 

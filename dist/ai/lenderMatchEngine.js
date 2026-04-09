@@ -1,11 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.matchLenders = matchLenders;
-const db_1 = require("../db");
-const scoringEngine_1 = require("./scoringEngine");
-async function matchLenders(input) {
+import { runQuery } from "../db.js";
+import { normalizeToPercent, scoreAmountFit } from "./scoringEngine.js";
+export async function matchLenders(input) {
     const requestedAmount = input.requestedAmount ?? null;
-    const { rows } = await (0, db_1.runQuery)(`select lp.id,
+    const { rows } = await runQuery(`select lp.id,
             lp.lender_id,
             lp.name as product_name,
             lp.country,
@@ -28,7 +25,7 @@ async function matchLenders(input) {
     });
     return filtered
         .map((row) => {
-        const amountScore = (0, scoringEngine_1.scoreAmountFit)(requestedAmount, row.min_amount, row.max_amount);
+        const amountScore = scoreAmountFit(requestedAmount, row.min_amount, row.max_amount);
         const maturityScore = input.timeInBusiness && input.timeInBusiness >= 24 ? 0.9 : 0.65;
         const revenueScore = input.revenue && input.revenue >= 120000 ? 0.9 : 0.6;
         const aggregate = amountScore * 0.5 + maturityScore * 0.25 + revenueScore * 0.25;
@@ -37,7 +34,7 @@ async function matchLenders(input) {
         return {
             lenderId: row.lender_id,
             productName: row.product_name,
-            likelihoodPercent: (0, scoringEngine_1.normalizeToPercent)(aggregate),
+            likelihoodPercent: normalizeToPercent(aggregate),
             reasoning: `Amount fit checked against ${minText}-${maxText}; weighted by time in business and annual revenue signals.`,
         };
     })

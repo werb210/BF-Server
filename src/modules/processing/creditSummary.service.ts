@@ -1,10 +1,10 @@
-import { randomUUID } from "crypto";
-import { pool, runQuery } from "../../db";
-import { AppError } from "../../middleware/errors";
-import { fetchCircuitBreaker } from "../../utils/circuitBreaker";
+import { randomUUID } from "node:crypto";
+import { pool, runQuery } from "../../db.js";
+import { AppError } from "../../middleware/errors.js";
+import { fetchCircuitBreaker } from "../../utils/circuitBreaker.js";
 import type { PoolClient } from "pg";
-import { config } from "../../config";
-import { assertRetryAllowed } from "./retryPolicy";
+import { config } from "../../config/index.js";
+import { assertRetryAllowed } from "./retryPolicy.js";
 
 type Queryable = Pick<PoolClient, "query" | "runQuery">;
 

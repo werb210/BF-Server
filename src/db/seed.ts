@@ -1,7 +1,7 @@
-import { pool, runQuery } from "../db";
-import { ROLES } from "../auth/roles";
-import { runMigrations } from "../migrations";
-import { logInfo } from "../observability/logger";
+import { pool, runQuery } from "../db.js";
+import { ROLES } from "../auth/roles.js";
+import { runMigrations } from "../migrations.js";
+import { logInfo } from "../observability/logger.js";
 
 export const SEEDED_ADMIN_PHONE = "+15878881837";
 export const SEEDED_ADMIN_ID = "00000000-0000-0000-0000-000000000099";

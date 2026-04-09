@@ -1,10 +1,5 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.isConditionMet = isConditionMet;
-exports.isRuleMatch = isRuleMatch;
-exports.evaluateFollowUpRules = evaluateFollowUpRules;
-const logger_1 = require("../../observability/logger");
-const followup_actions_1 = require("./followup.actions");
+import { logError } from "../../observability/logger.js";
+import { executeFollowUpAction } from "./followup.actions.js";
 function minutesBetween(now, then) {
     return (now.getTime() - then.getTime()) / 60000;
 }
@@ -14,7 +9,7 @@ function fetchMetadataValue(metadata, key) {
     }
     return metadata[key];
 }
-function isConditionMet(condition, params) {
+export function isConditionMet(condition, params) {
     const { triggerEvent, now, store } = params;
     if (condition.type === "metadata_equals") {
         return fetchMetadataValue(triggerEvent.metadata, condition.key) === condition.value;
@@ -37,11 +32,11 @@ function isConditionMet(condition, params) {
     }
     return false;
 }
-function isRuleMatch(params) {
+export function isRuleMatch(params) {
     const { rule, triggerEvent, now, store } = params;
     return rule.conditions.every((condition) => isConditionMet(condition, { triggerEvent, now, store }));
 }
-async function evaluateFollowUpRules(params) {
+export async function evaluateFollowUpRules(params) {
     const now = params.now ?? new Date();
     const results = [];
     for (const rule of params.rules) {
@@ -57,7 +52,7 @@ async function evaluateFollowUpRules(params) {
                 }
                 const actionResults = [];
                 for (const action of rule.actions) {
-                    const actionResult = await (0, followup_actions_1.executeFollowUpAction)({
+                    const actionResult = await executeFollowUpAction({
                         action,
                         entityType: event.entityType,
                         entityId: event.entityId,
@@ -85,7 +80,7 @@ async function evaluateFollowUpRules(params) {
                 });
             }
             catch (error) {
-                (0, logger_1.logError)("followup_rule_execution_failed", {
+                logError("followup_rule_execution_failed", {
                     ruleId: rule.id,
                     eventId: event.id,
                     error,

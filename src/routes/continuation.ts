@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
-import { db } from "../db";
-import { sendSMS } from "../services/smsService";
-import { type ContinuationRecord } from "../db/schema/continuation";
-import { upsertCrmLead } from "../modules/crm/leadUpsert.service";
-import { stripUndefined, toNullable } from "../utils/clean";
+import { db } from "../db.js";
+import { sendSMS } from "../services/smsService.js";
+import { type ContinuationRecord } from "../db/schema/continuation.js";
+import { upsertCrmLead } from "../modules/crm/leadUpsert.service.js";
+import { stripUndefined, toNullable } from "../utils/clean.js";
 
 const router = Router();
 

@@ -1,19 +1,14 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULT_RETRY_POLICY = void 0;
-exports.computeRetryDelayMs = computeRetryDelayMs;
-exports.assertRetryAllowed = assertRetryAllowed;
-const errors_1 = require("../../middleware/errors");
-exports.DEFAULT_RETRY_POLICY = {
+import { AppError } from "../../middleware/errors.js";
+export const DEFAULT_RETRY_POLICY = {
     maxRetries: 1,
-    baseDelayMs: 30000,
+    baseDelayMs: 30_000,
 };
-function computeRetryDelayMs(retryCount, baseDelayMs) {
+export function computeRetryDelayMs(retryCount, baseDelayMs) {
     return baseDelayMs * 2 ** Math.max(0, retryCount);
 }
-function assertRetryAllowed(params) {
+export function assertRetryAllowed(params) {
     if (params.retryCount >= params.maxRetries) {
-        throw new errors_1.AppError("retry_exhausted", "Max retries reached.", 409);
+        throw new AppError("retry_exhausted", "Max retries reached.", 409);
     }
     const delay = computeRetryDelayMs(params.retryCount, params.baseDelayMs);
     if (!params.lastRetryAt) {
@@ -21,7 +16,7 @@ function assertRetryAllowed(params) {
     }
     const elapsed = Date.now() - params.lastRetryAt.getTime();
     if (elapsed < delay) {
-        throw new errors_1.AppError("retry_backoff", "Retry backoff window has not elapsed.", 429);
+        throw new AppError("retry_backoff", "Retry backoff window has not elapsed.", 429);
     }
     return delay;
 }

@@ -1,14 +1,14 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
-import { pool, runQuery } from "../../db";
-import { config } from "../../config";
-import { AppError } from "../../middleware/errors";
-import { safeHandler } from "../../middleware/safeHandler";
-import { ApplicationStage } from "../../modules/applications/pipelineState";
-import { findApplicationById } from "../../modules/applications/applications.repo";
-import { logAnalyticsEvent } from "../../services/analyticsService";
-import { eventBus } from "../../events/eventBus";
+import { pool, runQuery } from "../../db.js";
+import { config } from "../../config/index.js";
+import { AppError } from "../../middleware/errors.js";
+import { safeHandler } from "../../middleware/safeHandler.js";
+import { ApplicationStage } from "../../modules/applications/pipelineState.js";
+import { findApplicationById } from "../../modules/applications/applications.repo.js";
+import { logAnalyticsEvent } from "../../services/analyticsService.js";
+import { eventBus } from "../../events/eventBus.js";
 
 const router = Router();
 // V1 contract: POST /api/client/applications

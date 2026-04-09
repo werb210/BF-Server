@@ -1,6 +1,6 @@
-import { dbQuery } from "../../db";
-import { createCrmLead, listCrmLeads } from "../crm/crm.service";
-import { stripUndefined } from "../../utils/clean";
+import { dbQuery } from "../../db.js";
+import { createCrmLead, listCrmLeads } from "../crm/crm.service.js";
+import { stripUndefined } from "../../utils/clean.js";
 
 type LeadPayload = {
   source: string;

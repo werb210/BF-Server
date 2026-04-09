@@ -1,5 +1,5 @@
 import { type NextFunction, type Request, type Response } from "express";
-import { logInfo } from "../observability/logger";
+import { logInfo } from "../observability/logger.js";
 
 export function routeResolutionLogger(
   req: Request,

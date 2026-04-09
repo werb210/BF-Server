@@ -1,16 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
-import { db } from "../db";
-import { config } from "../config";
-import { ApplicationStage } from "../modules/applications/pipelineState";
-import { sendSms } from "../modules/notifications/sms.service";
-import { createContinuation } from "../models/continuation";
-import { createOrReuseReadinessSession } from "../modules/readiness/readinessSession.service";
-import { upsertCrmLead } from "../modules/crm/leadUpsert.service";
-import { retry } from "../utils/retry";
-import { logError } from "../observability/logger";
-import { stripUndefined, toNullable } from "../utils/clean";
+import { db } from "../db.js";
+import { config } from "../config/index.js";
+import { ApplicationStage } from "../modules/applications/pipelineState.js";
+import { sendSms } from "../modules/notifications/sms.service.js";
+import { createContinuation } from "../models/continuation.js";
+import { createOrReuseReadinessSession } from "../modules/readiness/readinessSession.service.js";
+import { upsertCrmLead } from "../modules/crm/leadUpsert.service.js";
+import { retry } from "../utils/retry.js";
+import { logError } from "../observability/logger.js";
+import { stripUndefined, toNullable } from "../utils/clean.js";
 
 const router = Router();
 

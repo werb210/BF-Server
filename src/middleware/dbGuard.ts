@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { isReady } from "../startupState";
+import { isReady } from "../startupState.js";
 
 export const dbGuard = (req: Request, res: Response, next: NextFunction) => {
   const bypassPrefixes = [

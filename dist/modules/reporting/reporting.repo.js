@@ -1,20 +1,7 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.upsertDailyMetrics = upsertDailyMetrics;
-exports.upsertDailyMetricsWindow = upsertDailyMetricsWindow;
-exports.upsertPipelineSnapshot = upsertPipelineSnapshot;
-exports.upsertPipelineSnapshotAt = upsertPipelineSnapshotAt;
-exports.upsertPipelineDailySnapshot = upsertPipelineDailySnapshot;
-exports.upsertLenderPerformance = upsertLenderPerformance;
-exports.upsertLenderPerformanceWindow = upsertLenderPerformanceWindow;
-exports.upsertApplicationVolumeWindow = upsertApplicationVolumeWindow;
-exports.upsertDocumentMetricsWindow = upsertDocumentMetricsWindow;
-exports.upsertStaffActivityWindow = upsertStaffActivityWindow;
-exports.upsertLenderFunnelWindow = upsertLenderFunnelWindow;
-const crypto_1 = require("crypto");
-const db_1 = require("../../db");
-async function upsertDailyMetrics(params) {
-    const runner = params.client ?? db_1.pool;
+import { randomUUID } from "node:crypto";
+import { pool } from "../../db.js";
+export async function upsertDailyMetrics(params) {
+    const runner = params.client ?? pool;
     const result = await runner.query(`insert into reporting_daily_metrics
      (id, metric_date, applications_created, applications_submitted, applications_approved, applications_declined,
       applications_funded, documents_uploaded, documents_approved, lender_submissions, created_at)
@@ -28,7 +15,7 @@ async function upsertDailyMetrics(params) {
          documents_uploaded = excluded.documents_uploaded,
          documents_approved = excluded.documents_approved,
          lender_submissions = excluded.lender_submissions`, [
-        (0, crypto_1.randomUUID)(),
+        randomUUID(),
         params.metricDate,
         params.applicationsCreated,
         params.applicationsSubmitted,
@@ -41,8 +28,8 @@ async function upsertDailyMetrics(params) {
     ]);
     return result.rowCount ?? 0;
 }
-async function upsertDailyMetricsWindow(params) {
-    const runner = params.client ?? db_1.pool;
+export async function upsertDailyMetricsWindow(params) {
+    const runner = params.client ?? pool;
     const result = await runner.query(`insert into reporting_daily_metrics
      (id, metric_date, applications_created, applications_submitted, applications_approved, applications_declined,
       applications_funded, documents_uploaded, documents_approved, lender_submissions, created_at)
@@ -72,17 +59,17 @@ async function upsertDailyMetricsWindow(params) {
          lender_submissions = excluded.lender_submissions`, [params.start, params.end, params.createdAt]);
     return result.rowCount ?? 0;
 }
-async function upsertPipelineSnapshot(params) {
-    const runner = params.client ?? db_1.pool;
+export async function upsertPipelineSnapshot(params) {
+    const runner = params.client ?? pool;
     const result = await runner.query(`insert into reporting_pipeline_snapshots
      (id, snapshot_at, pipeline_state, application_count)
      values ($1, $2, $3, $4)
      on conflict (snapshot_at, pipeline_state) do update
-     set application_count = excluded.application_count`, [(0, crypto_1.randomUUID)(), params.snapshotAt, params.pipelineState, params.applicationCount]);
+     set application_count = excluded.application_count`, [randomUUID(), params.snapshotAt, params.pipelineState, params.applicationCount]);
     return result.rowCount ?? 0;
 }
-async function upsertPipelineSnapshotAt(params) {
-    const runner = params.client ?? db_1.pool;
+export async function upsertPipelineSnapshotAt(params) {
+    const runner = params.client ?? pool;
     const result = await runner.query(`insert into reporting_pipeline_snapshots
      (id, snapshot_at, pipeline_state, application_count)
      select
@@ -96,8 +83,8 @@ async function upsertPipelineSnapshotAt(params) {
      set application_count = excluded.application_count`, [params.snapshotAt]);
     return result.rowCount ?? 0;
 }
-async function upsertPipelineDailySnapshot(params) {
-    const runner = params.client ?? db_1.pool;
+export async function upsertPipelineDailySnapshot(params) {
+    const runner = params.client ?? pool;
     const result = await runner.query(`insert into reporting_pipeline_daily_snapshots
      (id, snapshot_date, pipeline_state, application_count, created_at)
      select
@@ -112,8 +99,8 @@ async function upsertPipelineDailySnapshot(params) {
      set application_count = excluded.application_count`, [params.snapshotDate, params.createdAt]);
     return result.rowCount ?? 0;
 }
-async function upsertLenderPerformance(params) {
-    const runner = params.client ?? db_1.pool;
+export async function upsertLenderPerformance(params) {
+    const runner = params.client ?? pool;
     const result = await runner.query(`insert into reporting_lender_performance
      (id, lender_id, period_start, period_end, submissions, approvals, declines, funded, avg_decision_time_seconds, created_at)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
@@ -123,7 +110,7 @@ async function upsertLenderPerformance(params) {
          declines = excluded.declines,
          funded = excluded.funded,
          avg_decision_time_seconds = excluded.avg_decision_time_seconds`, [
-        (0, crypto_1.randomUUID)(),
+        randomUUID(),
         params.lenderId,
         params.periodStart,
         params.periodEnd,
@@ -135,8 +122,8 @@ async function upsertLenderPerformance(params) {
     ]);
     return result.rowCount ?? 0;
 }
-async function upsertLenderPerformanceWindow(params) {
-    const runner = params.client ?? db_1.pool;
+export async function upsertLenderPerformanceWindow(params) {
+    const runner = params.client ?? pool;
     const result = await runner.query(`insert into reporting_lender_performance
      (id, lender_id, period_start, period_end, submissions, approvals, declines, funded, avg_decision_time_seconds, created_at)
      select
@@ -173,8 +160,8 @@ async function upsertLenderPerformanceWindow(params) {
          avg_decision_time_seconds = excluded.avg_decision_time_seconds`, [params.periodStart, params.periodEnd, params.createdAt]);
     return result.rowCount ?? 0;
 }
-async function upsertApplicationVolumeWindow(params) {
-    const runner = params.client ?? db_1.pool;
+export async function upsertApplicationVolumeWindow(params) {
+    const runner = params.client ?? pool;
     const result = await runner.query(`insert into reporting_application_volume_daily
      (id, metric_date, product_type, applications_created, applications_submitted, applications_approved, applications_declined, applications_funded, created_at)
      select
@@ -199,8 +186,8 @@ async function upsertApplicationVolumeWindow(params) {
          applications_funded = excluded.applications_funded`, [params.start, params.end, params.createdAt]);
     return result.rowCount ?? 0;
 }
-async function upsertDocumentMetricsWindow(params) {
-    const runner = params.client ?? db_1.pool;
+export async function upsertDocumentMetricsWindow(params) {
+    const runner = params.client ?? pool;
     const result = await runner.query(`insert into reporting_document_metrics_daily
      (id, metric_date, document_type, documents_uploaded, documents_reviewed, documents_approved, created_at)
      select
@@ -245,8 +232,8 @@ async function upsertDocumentMetricsWindow(params) {
          documents_approved = excluded.documents_approved`, [params.start, params.end, params.createdAt]);
     return result.rowCount ?? 0;
 }
-async function upsertStaffActivityWindow(params) {
-    const runner = params.client ?? db_1.pool;
+export async function upsertStaffActivityWindow(params) {
+    const runner = params.client ?? pool;
     const result = await runner.query(`insert into reporting_staff_activity_daily
      (id, metric_date, staff_user_id, action, activity_count, created_at)
      select
@@ -266,8 +253,8 @@ async function upsertStaffActivityWindow(params) {
      set activity_count = excluded.activity_count`, [params.start, params.end, params.createdAt]);
     return result.rowCount ?? 0;
 }
-async function upsertLenderFunnelWindow(params) {
-    const runner = params.client ?? db_1.pool;
+export async function upsertLenderFunnelWindow(params) {
+    const runner = params.client ?? pool;
     const result = await runner.query(`insert into reporting_lender_funnel_daily
      (id, metric_date, lender_id, submissions, approvals, funded, created_at)
      select

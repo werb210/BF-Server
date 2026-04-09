@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { askAI } from "./openai.service";
-import { addMessage, createSession } from "./session.service";
+import { askAI } from "./openai.service.js";
+import { addMessage, createSession } from "./session.service.js";
 
 const SYSTEM_PROMPT = `
 You are Maya, an AI assistant for Boreal Financial.

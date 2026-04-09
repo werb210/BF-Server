@@ -1,51 +1,49 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const webhooks_1 = require("twilio/lib/webhooks/webhooks");
-const errors_1 = require("../middleware/errors");
-const safeHandler_1 = require("../middleware/safeHandler");
-const logger_1 = require("../observability/logger");
-const voice_service_1 = require("../modules/voice/voice.service");
-const config_1 = require("../config");
-const router = (0, express_1.Router)();
+import { Router } from "express";
+import { validateRequest } from "twilio/lib/webhooks/webhooks";
+import { AppError } from "../middleware/errors.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { logWarn } from "../observability/logger.js";
+import { handleVoiceStatusWebhook } from "../modules/voice/voice.service.js";
+import { config } from "../config/index.js";
+const router = Router();
 function fetchTwilioAuthToken() {
-    const authToken = config_1.config.twilio.authToken;
+    const authToken = config.twilio.authToken;
     if (!authToken || !authToken.trim()) {
-        throw new errors_1.AppError("twilio_misconfigured", "Twilio auth token is missing.", 500);
+        throw new AppError("twilio_misconfigured", "Twilio auth token is missing.", 500);
     }
     return authToken.trim();
 }
 function buildWebhookUrl(req) {
-    const baseUrl = config_1.config.app.baseUrl?.trim();
+    const baseUrl = config.app.baseUrl?.trim();
     if (baseUrl) {
         return `${baseUrl.replace(/\/$/, "")}/api/webhooks/twilio/voice`;
     }
     const proto = req.get("x-forwarded-proto") ?? req.protocol;
     const host = req.get("x-forwarded-host") ?? req.get("host");
     if (!host) {
-        throw new errors_1.AppError("invalid_request", "Missing request host.", 400);
+        throw new AppError("invalid_request", "Missing request host.", 400);
     }
     return `${proto}://${host}${req.originalUrl}`;
 }
-router.post("/twilio/voice", (0, safeHandler_1.safeHandler)(async (req, res, next) => {
+router.post("/twilio/voice", safeHandler(async (req, res, next) => {
     const signature = req.get("x-twilio-signature");
     if (!signature) {
-        (0, logger_1.logWarn)("voice_webhook_missing_signature", { path: req.originalUrl });
-        throw new errors_1.AppError("invalid_signature", "Missing Twilio signature.", 403);
+        logWarn("voice_webhook_missing_signature", { path: req.originalUrl });
+        throw new AppError("invalid_signature", "Missing Twilio signature.", 403);
     }
     const authToken = fetchTwilioAuthToken();
     const url = buildWebhookUrl(req);
-    const valid = (0, webhooks_1.validateRequest)(authToken, signature, url, req.body ?? {});
+    const valid = validateRequest(authToken, signature, url, req.body ?? {});
     if (!valid) {
-        (0, logger_1.logWarn)("voice_webhook_signature_invalid", { path: req.originalUrl });
-        throw new errors_1.AppError("invalid_signature", "Invalid Twilio signature.", 403);
+        logWarn("voice_webhook_signature_invalid", { path: req.originalUrl });
+        throw new AppError("invalid_signature", "Invalid Twilio signature.", 403);
     }
     const payload = req.body ?? {};
     const callSid = typeof payload.CallSid === "string" ? payload.CallSid : null;
     if (!callSid) {
-        throw new errors_1.AppError("validation_error", "Missing CallSid.", 400);
+        throw new AppError("validation_error", "Missing CallSid.", 400);
     }
-    await (0, voice_service_1.handleVoiceStatusWebhook)({
+    await handleVoiceStatusWebhook({
         callSid,
         callStatus: typeof payload.CallStatus === "string" ? payload.CallStatus : null,
         callDuration: payload.CallDuration ?? null,
@@ -58,4 +56,4 @@ router.post("/twilio/voice", (0, safeHandler_1.safeHandler)(async (req, res, nex
     });
     res.status(200).json({ ok: true });
 }));
-exports.default = router;
+export default router;

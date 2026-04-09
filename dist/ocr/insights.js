@@ -1,14 +1,10 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.buildOcrInsights = buildOcrInsights;
-exports.refreshOcrInsightsForApplication = refreshOcrInsightsForApplication;
-const crypto_1 = require("crypto");
-const fieldRegistry_1 = require("./fieldRegistry");
-const applications_repo_1 = require("../modules/applications/applications.repo");
-const ocr_repo_1 = require("../modules/ocr/ocr.repo");
-const audit_service_1 = require("../modules/audit/audit.service");
-const notifications_repo_1 = require("../modules/notifications/notifications.repo");
-const logger_1 = require("../observability/logger");
+import { randomUUID } from "node:crypto";
+import { fetchOcrFieldDefinitions, fetchOcrFieldsForDocumentType } from "./fieldRegistry.js";
+import { findApplicationOcrSnapshot, updateApplicationOcrInsights, } from "../modules/applications/applications.repo.js";
+import { listOcrResultsForApplication } from "../modules/ocr/ocr.repo.js";
+import { recordAuditEvent } from "../modules/audit/audit.service.js";
+import { createNotification } from "../modules/notifications/notifications.repo.js";
+import { logError } from "../observability/logger.js";
 function normalizeValue(value) {
     if (value === null || value === undefined) {
         return null;
@@ -97,11 +93,11 @@ function setsEqual(a, b) {
     const sortedB = [...b].sort();
     return sortedA.every((value, index) => value === sortedB[index]);
 }
-function buildOcrInsights(results) {
+export function buildOcrInsights(results) {
     const valuesByField = new Map();
-    const registry = (0, fieldRegistry_1.fetchOcrFieldDefinitions)();
+    const registry = fetchOcrFieldDefinitions();
     results.forEach((result) => {
-        const fieldsForDoc = (0, fieldRegistry_1.fetchOcrFieldsForDocumentType)();
+        const fieldsForDoc = fetchOcrFieldsForDocumentType();
         fieldsForDoc.forEach((field) => {
             const extracted = extractFieldValue(result.extractedJson, field.field_key);
             if (!extracted) {
@@ -135,18 +131,18 @@ function buildOcrInsights(results) {
         normalizedValues,
     };
 }
-async function refreshOcrInsightsForApplication(params) {
+export async function refreshOcrInsightsForApplication(params) {
     const { applicationId } = params;
     const [existing, results] = await Promise.all([
-        (0, applications_repo_1.findApplicationOcrSnapshot)(applicationId),
-        (0, ocr_repo_1.listOcrResultsForApplication)(applicationId),
+        findApplicationOcrSnapshot(applicationId),
+        listOcrResultsForApplication(applicationId),
     ]);
     const insights = buildOcrInsights(results.map((row) => ({
         documentId: row.document_id,
         documentType: row.document_type,
         extractedJson: row.extracted_json,
     })));
-    await (0, applications_repo_1.updateApplicationOcrInsights)({
+    await updateApplicationOcrInsights({
         applicationId,
         missingFields: insights.missingFields,
         conflictingFields: insights.conflictingFields,
@@ -162,7 +158,7 @@ async function refreshOcrInsightsForApplication(params) {
     const shouldEmitConflicts = hasConflicts && (conflictsChanged || !existing?.ocr_has_conflicts);
     if (shouldEmitMissing) {
         try {
-            await (0, audit_service_1.recordAuditEvent)({
+            await recordAuditEvent({
                 action: "OCR_MISSING_FIELDS",
                 actorUserId: params.actorUserId ?? null,
                 targetUserId: null,
@@ -178,15 +174,15 @@ async function refreshOcrInsightsForApplication(params) {
             });
         }
         catch (error) {
-            (0, logger_1.logError)("ocr_missing_fields_event_failed", {
+            logError("ocr_missing_fields_event_failed", {
                 code: "ocr_missing_fields_event_failed",
                 applicationId,
                 error: error instanceof Error ? error.message : String(error),
             });
         }
         try {
-            await (0, notifications_repo_1.createNotification)({
-                notificationId: (0, crypto_1.randomUUID)(),
+            await createNotification({
+                notificationId: randomUUID(),
                 userId: null,
                 applicationId,
                 type: "ocr_missing_fields",
@@ -198,7 +194,7 @@ async function refreshOcrInsightsForApplication(params) {
             });
         }
         catch (error) {
-            (0, logger_1.logError)("ocr_missing_fields_notification_failed", {
+            logError("ocr_missing_fields_notification_failed", {
                 code: "ocr_missing_fields_notification_failed",
                 applicationId,
                 error: error instanceof Error ? error.message : String(error),
@@ -207,7 +203,7 @@ async function refreshOcrInsightsForApplication(params) {
     }
     if (shouldEmitConflicts) {
         try {
-            await (0, audit_service_1.recordAuditEvent)({
+            await recordAuditEvent({
                 action: "OCR_CONFLICT_DETECTED",
                 actorUserId: params.actorUserId ?? null,
                 targetUserId: null,
@@ -223,15 +219,15 @@ async function refreshOcrInsightsForApplication(params) {
             });
         }
         catch (error) {
-            (0, logger_1.logError)("ocr_conflict_event_failed", {
+            logError("ocr_conflict_event_failed", {
                 code: "ocr_conflict_event_failed",
                 applicationId,
                 error: error instanceof Error ? error.message : String(error),
             });
         }
         try {
-            await (0, notifications_repo_1.createNotification)({
-                notificationId: (0, crypto_1.randomUUID)(),
+            await createNotification({
+                notificationId: randomUUID(),
                 userId: null,
                 applicationId,
                 type: "ocr_conflict_detected",
@@ -243,7 +239,7 @@ async function refreshOcrInsightsForApplication(params) {
             });
         }
         catch (error) {
-            (0, logger_1.logError)("ocr_conflict_notification_failed", {
+            logError("ocr_conflict_notification_failed", {
                 code: "ocr_conflict_notification_failed",
                 applicationId,
                 error: error instanceof Error ? error.message : String(error),

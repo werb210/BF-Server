@@ -1,11 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
-import { requireAuth, requireCapability } from "../middleware/auth";
-import { CAPABILITIES } from "../auth/capabilities";
-import { safeHandler } from "../middleware/safeHandler";
-import { respondOk } from "../utils/respondOk";
-import { submitReferral } from "../modules/referrals/referrals.service";
-import { AppError } from "../middleware/errors";
+import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { CAPABILITIES } from "../auth/capabilities.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { respondOk } from "../utils/respondOk.js";
+import { submitReferral } from "../modules/referrals/referrals.service.js";
+import { AppError } from "../middleware/errors.js";
 
 const router = Router();
 

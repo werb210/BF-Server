@@ -1,8 +1,8 @@
-import { pool } from "../db";
-import { withRetry } from "../lib/retry";
-import { sendSms } from "../modules/notifications/sms.service";
-import { pushLeadToCRM } from "../services/crmWebhook";
-import { sendSlackAlert } from "../observability/alerts";
+import { pool } from "../db.js";
+import { withRetry } from "../lib/retry.js";
+import { sendSms } from "../modules/notifications/sms.service.js";
+import { pushLeadToCRM } from "../services/crmWebhook.js";
+import { sendSlackAlert } from "../observability/alerts.js";
 
 async function processJob(job: { type: string; data: any }): Promise<void> {
   switch (job.type) {

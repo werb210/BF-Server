@@ -1,4 +1,4 @@
-import { config } from "../config";
+import { config } from "../config/index.js";
 
 let twilioClientInstance: any = null;
 

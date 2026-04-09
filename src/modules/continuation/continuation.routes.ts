@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { db } from "../../db";
-import { requireAuth } from "../../middleware/auth";
-import { logWarn } from "../../observability/logger";
+import { db } from "../../db.js";
+import { requireAuth } from "../../middleware/auth.js";
+import { logWarn } from "../../observability/logger.js";
 
 type ContinuationApplicationRow = {
   id: string;

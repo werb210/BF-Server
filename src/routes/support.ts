@@ -1,14 +1,14 @@
-import { toStringSet } from "../utils/collectionSafe";
+import { toStringSet } from "../utils/collectionSafe.js";
 import { Router } from "express";
-import { withRetry, withRetryAndTimeout } from "../utils/retry";
-import { createSupportThread } from "../services/supportService";
-import { dbQuery } from "../db";
-import { fetchTwilioClient } from "../services/twilio";
-import { pushLeadToCRM } from "../services/crmWebhook";
-import { SupportController } from "../modules/support/support.controller";
-import { logger } from "../server/utils/logger";
-import { config } from "../config";
-import { safeCall } from "../lib/circuitBreaker";
+import { withRetry, withRetryAndTimeout } from "../utils/retry.js";
+import { createSupportThread } from "../services/supportService.js";
+import { dbQuery } from "../db.js";
+import { fetchTwilioClient } from "../services/twilio.js";
+import { pushLeadToCRM } from "../services/crmWebhook.js";
+import { SupportController } from "../modules/support/support.controller.js";
+import { logger } from "../server/utils/logger.js";
+import { config } from "../config/index.js";
+import { safeCall } from "../lib/circuitBreaker.js";
 
 const router = Router();
 

@@ -1,15 +1,12 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.upsertStructuredApplicationData = upsertStructuredApplicationData;
-const crypto_1 = require("crypto");
-const db_1 = require("../db");
+import { randomUUID } from "node:crypto";
+import { pool } from "../db.js";
 function fetchClient(client) {
-    return client ?? db_1.pool;
+    return client ?? pool;
 }
-async function upsertStructuredApplicationData(input, client) {
+export async function upsertStructuredApplicationData(input, client) {
     const db = fetchClient(client);
     const existingBorrower = await db.query(`select id from borrowers where application_id = $1 limit 1`, [input.applicationId]);
-    const borrowerId = existingBorrower.rows[0]?.id ?? (0, crypto_1.randomUUID)();
+    const borrowerId = existingBorrower.rows[0]?.id ?? randomUUID();
     if (existingBorrower.rows[0]?.id) {
         await db.query(`update borrowers
          set company_name = $2,
@@ -51,12 +48,12 @@ async function upsertStructuredApplicationData(input, client) {
     }
     await db.query(`delete from financials where borrower_id = $1`, [borrowerId]);
     await db.query(`insert into financials (id, borrower_id, annual_revenue, time_in_business_months, created_at, updated_at)
-     values ($1, $2, $3, $4, now(), now())`, [(0, crypto_1.randomUUID)(), borrowerId, input.annualRevenue ?? null, input.timeInBusinessMonths ?? null]);
+     values ($1, $2, $3, $4, now(), now())`, [randomUUID(), borrowerId, input.annualRevenue ?? null, input.timeInBusinessMonths ?? null]);
     await db.query(`delete from collateral where borrower_id = $1`, [borrowerId]);
     await db.query(`insert into collateral
       (id, borrower_id, accounts_receivable_value, inventory_value, equipment_value, real_estate_value, created_at, updated_at)
      values ($1, $2, $3, $4, $5, $6, now(), now())`, [
-        (0, crypto_1.randomUUID)(),
+        randomUUID(),
         borrowerId,
         input.collateral?.accountsReceivableValue ?? null,
         input.collateral?.inventoryValue ?? null,
@@ -69,7 +66,7 @@ async function upsertStructuredApplicationData(input, client) {
             await db.query(`insert into owners
           (id, borrower_id, name, ownership_percentage, email, phone, created_at, updated_at)
          values ($1, $2, $3, $4, $5, $6, now(), now())`, [
-                (0, crypto_1.randomUUID)(),
+                randomUUID(),
                 borrowerId,
                 owner.name,
                 owner.ownershipPercentage ?? null,

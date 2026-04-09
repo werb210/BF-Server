@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import OpenAI from "openai";
 import { v4 as uuid } from "uuid";
-import { config } from "../../config";
+import { config } from "../../config/index.js";
 
 type KnowledgeEntry = {
   title: string;

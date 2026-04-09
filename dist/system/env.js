@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.validateEnv = validateEnv;
-function validateEnv() {
+export function validateEnv() {
     const NODE_ENV = process.env.NODE_ENV ?? "production";
     const PORT = Number(process.env.PORT || 8080);
     if (Number.isNaN(PORT)) {

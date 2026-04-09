@@ -2,9 +2,9 @@ import {
   fetchOcrFieldDefinitionByKey,
   fetchOcrFieldRegistry,
   type OcrFieldDefinition,
-} from "../../ocr/ocrFieldRegistry";
-import { listOcrFieldsForApplication } from "../../ocr/ocr.repo";
-import { updateApplicationOcrInsights } from "../applications.repo";
+} from "../../ocr/ocrFieldRegistry.js";
+import { listOcrFieldsForApplication } from "../../ocr/ocr.repo.js";
+import { updateApplicationOcrInsights } from "../applications.repo.js";
 
 export type OcrFieldSource = {
   documentId: string;

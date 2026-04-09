@@ -1,5 +1,5 @@
-import { Handler } from "../types/handler";
-import { lenderProductsService } from "../services/lenderProducts/lenderProducts.service";
+import { Handler } from "../types/handler.js";
+import { lenderProductsService } from "../services/lenderProducts/lenderProducts.service.js";
 
 export const listLenderProductsHandler: Handler = async (_req: any, res: any) => {
   const data = await lenderProductsService.list();

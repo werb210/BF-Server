@@ -1,6 +1,6 @@
 import pino from "pino";
-import { fetchRequestId } from "../observability/requestContext";
-import { config } from "../config";
+import { fetchRequestId } from "../observability/requestContext.js";
+import { config } from "../config/index.js";
 
 const SENSITIVE_FIELD_PATTERN = /(email|phone|ssn|password|token|secret|address)/i;
 

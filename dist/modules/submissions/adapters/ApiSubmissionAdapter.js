@@ -1,7 +1,7 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.ApiSubmissionAdapter = void 0;
-class ApiSubmissionAdapter {
+export class ApiSubmissionAdapter {
+    lenderId;
+    payload;
+    attempt;
     constructor(params) {
         this.lenderId = params.lenderId;
         this.payload = params.payload;
@@ -50,4 +50,3 @@ class ApiSubmissionAdapter {
         };
     }
 }
-exports.ApiSubmissionAdapter = ApiSubmissionAdapter;

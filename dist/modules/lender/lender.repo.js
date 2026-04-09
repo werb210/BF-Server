@@ -1,19 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.findSubmissionByIdempotencyKey = findSubmissionByIdempotencyKey;
-exports.createSubmission = createSubmission;
-exports.findSubmissionById = findSubmissionById;
-exports.findSubmissionByApplicationAndLender = findSubmissionByApplicationAndLender;
-exports.findLatestSubmissionByApplicationId = findLatestSubmissionByApplicationId;
-exports.updateSubmissionStatus = updateSubmissionStatus;
-exports.upsertSubmissionRetryState = upsertSubmissionRetryState;
-exports.findSubmissionRetryState = findSubmissionRetryState;
-exports.createSubmissionEvent = createSubmissionEvent;
-const config_1 = require("../../config");
-const crypto_1 = require("crypto");
-const db_1 = require("../../db");
-async function findSubmissionByIdempotencyKey(key, client) {
-    const runner = client ?? db_1.pool;
+import { config } from "../../config/index.js";
+import { randomUUID } from "node:crypto";
+import { pool } from "../../db.js";
+export async function findSubmissionByIdempotencyKey(key, client) {
+    const runner = client ?? pool;
     const res = await runner.query(`select id, application_id, status, idempotency_key, lender_id, submission_method, submitted_at, payload, payload_hash,
             lender_response, response_received_at, failure_reason, external_reference, created_at, updated_at
      from lender_submissions
@@ -21,15 +10,15 @@ async function findSubmissionByIdempotencyKey(key, client) {
      limit 1`, [key]);
     return res.rows[0] ?? null;
 }
-async function createSubmission(params) {
-    const runner = params.client ?? db_1.pool;
+export async function createSubmission(params) {
+    const runner = params.client ?? pool;
     const res = await runner.query(`insert into lender_submissions
      (id, application_id, status, idempotency_key, lender_id, submission_method, submitted_at, payload, payload_hash,
       lender_response, response_received_at, failure_reason, external_reference, created_at, updated_at)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), now())
      returning id, application_id, status, idempotency_key, lender_id, submission_method, submitted_at, payload, payload_hash,
                lender_response, response_received_at, failure_reason, external_reference, created_at, updated_at`, [
-        (0, crypto_1.randomUUID)(),
+        randomUUID(),
         params.applicationId,
         params.status,
         params.idempotencyKey,
@@ -49,8 +38,8 @@ async function createSubmission(params) {
     }
     return record;
 }
-async function findSubmissionById(id, client) {
-    const runner = client ?? db_1.pool;
+export async function findSubmissionById(id, client) {
+    const runner = client ?? pool;
     const res = await runner.query(`select id, application_id, status, idempotency_key, lender_id, submission_method, submitted_at, payload, payload_hash,
             lender_response, response_received_at, failure_reason, external_reference, created_at, updated_at
      from lender_submissions
@@ -58,8 +47,8 @@ async function findSubmissionById(id, client) {
      limit 1`, [id]);
     return res.rows[0] ?? null;
 }
-async function findSubmissionByApplicationAndLender(params, client) {
-    const runner = client ?? db_1.pool;
+export async function findSubmissionByApplicationAndLender(params, client) {
+    const runner = client ?? pool;
     const res = await runner.query(`select id, application_id, status, idempotency_key, lender_id, submission_method, submitted_at, payload, payload_hash,
             lender_response, response_received_at, failure_reason, external_reference, created_at, updated_at
      from lender_submissions
@@ -68,8 +57,8 @@ async function findSubmissionByApplicationAndLender(params, client) {
      limit 1`, [params.applicationId, params.lenderId]);
     return res.rows[0] ?? null;
 }
-async function findLatestSubmissionByApplicationId(applicationId, client) {
-    const runner = client ?? db_1.pool;
+export async function findLatestSubmissionByApplicationId(applicationId, client) {
+    const runner = client ?? pool;
     const res = await runner.query(`select id, application_id, status, idempotency_key, lender_id, submission_method, submitted_at, payload, payload_hash,
             lender_response, response_received_at, failure_reason, external_reference, created_at, updated_at
      from lender_submissions
@@ -78,8 +67,8 @@ async function findLatestSubmissionByApplicationId(applicationId, client) {
      limit 1`, [applicationId]);
     return res.rows[0] ?? null;
 }
-async function updateSubmissionStatus(params) {
-    const runner = params.client ?? db_1.pool;
+export async function updateSubmissionStatus(params) {
+    const runner = params.client ?? pool;
     await runner.query(`update lender_submissions
      set status = $1,
          lender_response = $2,
@@ -96,9 +85,9 @@ async function updateSubmissionStatus(params) {
         params.submissionId,
     ]);
 }
-async function upsertSubmissionRetryState(params) {
-    const runner = params.client ?? db_1.pool;
-    if (config_1.config.env === "test") {
+export async function upsertSubmissionRetryState(params) {
+    const runner = params.client ?? pool;
+    if (config.env === "test") {
         const existing = await runner.query(`select id, submission_id, status, attempt_count, next_attempt_at, last_error, created_at, updated_at, canceled_at
        from lender_submission_retries
        where submission_id = $1
@@ -124,7 +113,7 @@ async function upsertSubmissionRetryState(params) {
             await runner.query(`insert into lender_submission_retries
          (id, submission_id, status, attempt_count, next_attempt_at, last_error, created_at, updated_at, canceled_at)
          values ($1, $2, $3, $4, $5, $6, now(), now(), $7)`, [
-                (0, crypto_1.randomUUID)(),
+                randomUUID(),
                 params.submissionId,
                 params.status,
                 params.attemptCount,
@@ -155,7 +144,7 @@ async function upsertSubmissionRetryState(params) {
        canceled_at = excluded.canceled_at,
        updated_at = now()
      returning id, submission_id, status, attempt_count, next_attempt_at, last_error, created_at, updated_at, canceled_at`, [
-        (0, crypto_1.randomUUID)(),
+        randomUUID(),
         params.submissionId,
         params.status,
         params.attemptCount,
@@ -169,22 +158,22 @@ async function upsertSubmissionRetryState(params) {
     }
     return retryRecord;
 }
-async function findSubmissionRetryState(submissionId, client) {
-    const runner = client ?? db_1.pool;
+export async function findSubmissionRetryState(submissionId, client) {
+    const runner = client ?? pool;
     const res = await runner.query(`select id, submission_id, status, attempt_count, next_attempt_at, last_error, created_at, updated_at, canceled_at
      from lender_submission_retries
      where submission_id = $1
      limit 1`, [submissionId]);
     return res.rows[0] ?? null;
 }
-async function createSubmissionEvent(params) {
-    const runner = params.client ?? db_1.pool;
+export async function createSubmissionEvent(params) {
+    const runner = params.client ?? pool;
     try {
         const res = await runner.query(`insert into submission_events
        (id, application_id, lender_id, method, status, internal_error, created_at)
        values ($1, $2, $3, $4, $5, $6, $7)
        returning id, application_id, lender_id, method, status, internal_error, created_at`, [
-            (0, crypto_1.randomUUID)(),
+            randomUUID(),
             params.applicationId,
             params.lenderId,
             params.method,
@@ -200,9 +189,9 @@ async function createSubmissionEvent(params) {
     }
     catch (err) {
         const code = err.code;
-        if (config_1.config.env === "test" && code === "42P01") {
+        if (config.env === "test" && code === "42P01") {
             return {
-                id: (0, crypto_1.randomUUID)(),
+                id: randomUUID(),
                 application_id: params.applicationId,
                 lender_id: params.lenderId,
                 method: params.method,

@@ -1,26 +1,23 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendSms = sendSms;
-const twilio_1 = require("../../services/twilio");
-const config_1 = require("../../config");
-const retry_1 = require("../../lib/retry");
-const deadLetter_1 = require("../../lib/deadLetter");
-async function sendSms({ to, message }) {
-    if (config_1.config.app.testMode === "true") {
+import { fetchTwilioClient } from "../../services/twilio.js";
+import { config } from "../../config/index.js";
+import { withRetry } from "../../lib/retry.js";
+import { pushDeadLetter } from "../../lib/deadLetter.js";
+export async function sendSms({ to, message }) {
+    if (config.app.testMode === "true") {
         console.log("[TEST_MODE] SMS skipped");
         return { success: true };
     }
-    const client = (0, twilio_1.fetchTwilioClient)();
+    const client = fetchTwilioClient();
     const payload = {
         body: message,
-        from: config_1.config.twilio.from || config_1.config.twilio.number || config_1.config.twilio.phone,
+        from: config.twilio.from || config.twilio.number || config.twilio.phone,
         to,
     };
     try {
-        return await (0, retry_1.withRetry)(() => client.messages.create(payload));
+        return await withRetry(() => client.messages.create(payload));
     }
     catch (error) {
-        await (0, deadLetter_1.pushDeadLetter)({
+        await pushDeadLetter({
             type: "sms",
             data: payload,
             error: String(error),

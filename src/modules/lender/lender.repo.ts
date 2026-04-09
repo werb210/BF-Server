@@ -1,7 +1,7 @@
-import { config } from "../../config";
-import { randomUUID } from "crypto";
-import { pool, runQuery } from "../../db";
-import { isTestEnvironment } from "../../dbRuntime";
+import { config } from "../../config/index.js";
+import { randomUUID } from "node:crypto";
+import { pool, runQuery } from "../../db.js";
+import { isTestEnvironment } from "../../dbRuntime.js";
 import { type PoolClient } from "pg";
 
 type Queryable = Pick<PoolClient, "query" | "runQuery">;

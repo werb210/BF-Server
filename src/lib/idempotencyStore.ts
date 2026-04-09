@@ -1,6 +1,5 @@
-import Redis from "ioredis";
-import { logWarn } from "../observability/logger";
-import { config } from "../config";
+import { logWarn } from "../observability/logger.js";
+import { config } from "../config/index.js";
 
 const ONE_HOUR_IN_SECONDS = 60 * 60;
 const ONE_HOUR_IN_MILLISECONDS = ONE_HOUR_IN_SECONDS * 1000;
@@ -15,11 +14,11 @@ type StoredResponse = {
 
 const memoryStore = new Map<string, StoredResponse>();
 const MEMORY_STORE_MAX_ITEMS = 1_000;
-let redisClient: Redis | null = null;
+let redisClient: any = null;
 let redisReady = false;
 let redisAttempted = false;
 
-function fetchRedisClient(): Redis | null {
+function fetchRedisClient(): any {
   if (redisAttempted) {
     return redisReady ? redisClient : null;
   }
@@ -30,7 +29,9 @@ function fetchRedisClient(): Redis | null {
     return null;
   }
 
-  const client = new Redis(redisUrl, {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const IORedis = require("ioredis");
+  const client = new IORedis(redisUrl, {
     lazyConnect: true,
     maxRetriesPerRequest: 1,
     enableOfflineQueue: false,

@@ -1,11 +1,3 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.getRedisOrNull = getRedisOrNull;
-exports.getRedis = getRedis;
-exports.resetRedisMock = resetRedisMock;
-exports.setOtp = setOtp;
-exports.fetchOtp = fetchOtp;
-exports.deleteOtp = deleteOtp;
 let client = null;
 const memoryStore = new Map();
 const inMemoryStore = createInMemoryRedis();
@@ -22,7 +14,7 @@ function createInMemoryRedis() {
         },
     };
 }
-function getRedisOrNull() {
+export function getRedisOrNull() {
     if (process.env.NODE_ENV === "test") {
         return inMemoryStore;
     }
@@ -41,25 +33,25 @@ function getRedisOrNull() {
     }
     return client;
 }
-function getRedis() {
+export function getRedis() {
     const redis = getRedisOrNull();
     if (!redis) {
         throw new Error("REDIS_URL required outside test");
     }
     return redis;
 }
-function resetRedisMock() {
+export function resetRedisMock() {
     memoryStore.clear();
     if (process.env.NODE_ENV === "test") {
         client = null;
     }
 }
-async function setOtp(phone, code) {
+export async function setOtp(phone, code) {
     await getRedis().set(`otp:${phone}`, code, "EX", 300);
 }
-async function fetchOtp(phone) {
+export async function fetchOtp(phone) {
     return getRedis().get(`otp:${phone}`);
 }
-async function deleteOtp(phone) {
+export async function deleteOtp(phone) {
     await getRedis().del(`otp:${phone}`);
 }

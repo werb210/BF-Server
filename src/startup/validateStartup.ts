@@ -1,5 +1,5 @@
-import { config } from "../config";
-import { loadRequiredSecrets } from "../config/secrets";
+import { config } from "../config/index.js";
+import { loadRequiredSecrets } from "../config/secrets.js";
 
 export function validateStartup() {
   loadRequiredSecrets();

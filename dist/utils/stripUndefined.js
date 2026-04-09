@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.stripUndefined = stripUndefined;
-function stripUndefined(obj) {
+export function stripUndefined(obj) {
     const result = {};
     for (const key in obj) {
         if (obj[key] !== undefined) {

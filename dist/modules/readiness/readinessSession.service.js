@@ -1,11 +1,7 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.createOrReuseReadinessSession = createOrReuseReadinessSession;
-exports.fetchActiveReadinessSessionByToken = fetchActiveReadinessSessionByToken;
-const node_crypto_1 = require("node:crypto");
-const db_1 = require("../../db");
-const leadUpsert_service_1 = require("../crm/leadUpsert.service");
-const clean_1 = require("../../utils/clean");
+import { randomUUID } from "node:crypto";
+import { dbQuery } from "../../db.js";
+import { upsertCrmLead } from "../crm/leadUpsert.service.js";
+import { stripUndefined, toNullable } from "../../utils/clean.js";
 function normalizeEmail(email) {
     return email.trim().toLowerCase();
 }
@@ -33,13 +29,13 @@ function toBoolean(value) {
         return false;
     return null;
 }
-async function createOrReuseReadinessSession(payload) {
+export async function createOrReuseReadinessSession(payload) {
     const email = normalizeEmail(payload.email);
     const normalizedPhone = payload.phone.trim();
-    await (0, db_1.dbQuery)(`update readiness_sessions
+    await dbQuery(`update readiness_sessions
      set is_active = false, updated_at = now()
      where is_active = true and expires_at <= now()`);
-    const existing = await (0, db_1.dbQuery)(`select id, token, crm_lead_id
+    const existing = await dbQuery(`select id, token, crm_lead_id
      from readiness_sessions
      where (
         lower(email) = $1
@@ -49,24 +45,24 @@ async function createOrReuseReadinessSession(payload) {
      order by created_at desc
      limit 1`, [email, normalizedPhone]);
     const startupInterest = String(payload.industry ?? "").toLowerCase().includes("startup");
-    const crmLead = await (0, leadUpsert_service_1.upsertCrmLead)((0, clean_1.stripUndefined)({
+    const crmLead = await upsertCrmLead(stripUndefined({
         companyName: payload.companyName,
         fullName: payload.fullName,
         email,
         phone: payload.phone,
         industry: payload.industry,
-        yearsInBusiness: (0, clean_1.toNullable)(payload.yearsInBusiness),
-        monthlyRevenue: (0, clean_1.toNullable)(payload.monthlyRevenue),
-        annualRevenue: (0, clean_1.toNullable)(payload.annualRevenue),
-        arOutstanding: (0, clean_1.toNullable)(payload.arOutstanding),
-        existingDebt: (0, clean_1.toNullable)(payload.existingDebt),
+        yearsInBusiness: toNullable(payload.yearsInBusiness),
+        monthlyRevenue: toNullable(payload.monthlyRevenue),
+        annualRevenue: toNullable(payload.annualRevenue),
+        arOutstanding: toNullable(payload.arOutstanding),
+        existingDebt: toNullable(payload.existingDebt),
         source: "credit_readiness",
         tags: startupInterest ? ["readiness", "startup_interest"] : ["readiness"],
         activityType: "readiness_submission",
         activityPayload: { email },
     }));
     if (existing.rows[0]) {
-        await (0, db_1.dbQuery)(`update readiness_sessions
+        await dbQuery(`update readiness_sessions
        set crm_lead_id = $2,
            updated_at = now()
        where id = $1`, [existing.rows[0].id, crmLead.id]);
@@ -77,10 +73,10 @@ async function createOrReuseReadinessSession(payload) {
             crmLeadId: crmLead.id,
         };
     }
-    const id = (0, node_crypto_1.randomUUID)();
-    const token = (0, node_crypto_1.randomUUID)();
+    const id = randomUUID();
+    const token = randomUUID();
     const expiresAt = new Date(Date.now() + 1000 * 60 * 30);
-    await (0, db_1.dbQuery)(`insert into readiness_sessions (
+    await dbQuery(`insert into readiness_sessions (
       id, token, email, phone, company_name, full_name, industry,
       years_in_business, monthly_revenue, annual_revenue, ar_outstanding, existing_debt,
       crm_lead_id, expires_at
@@ -106,8 +102,8 @@ async function createOrReuseReadinessSession(payload) {
     ]);
     return { sessionId: id, token, reused: false, crmLeadId: crmLead.id };
 }
-async function fetchActiveReadinessSessionByToken(sessionId) {
-    const result = await (0, db_1.dbQuery)(`select id, token, crm_lead_id, email, phone, company_name, full_name, industry,
+export async function fetchActiveReadinessSessionByToken(sessionId) {
+    const result = await dbQuery(`select id, token, crm_lead_id, email, phone, company_name, full_name, industry,
             years_in_business, monthly_revenue, annual_revenue, ar_outstanding, existing_debt,
             expires_at
      from readiness_sessions

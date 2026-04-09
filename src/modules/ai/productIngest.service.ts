@@ -1,4 +1,4 @@
-import { embedAndStore } from "./knowledge.service";
+import { embedAndStore } from "./knowledge.service.js";
 
 type Queryable = {
   query: <T = unknown>(text: string, params?: unknown[]) => Promise<{ rows: T[] }>;

@@ -1,4 +1,4 @@
-import { getRedisOrNull } from "../lib/redis";
+import { getRedisOrNull } from "../lib/redis.js";
 
 const OTP_TTL_SECONDS = 5 * 60;
 const OTP_TTL_MS = OTP_TTL_SECONDS * 1000;

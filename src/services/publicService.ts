@@ -1,4 +1,4 @@
-import { dbQuery } from "../db";
+import { dbQuery } from "../db.js";
 
 export async function fetchActiveLenderCount(): Promise<number> {
   const result = await dbQuery<{ count: number }>(

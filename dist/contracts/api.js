@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.API_ROUTES = void 0;
-exports.API_ROUTES = {
+export const API_ROUTES = {
     health: "/api/health",
     auth: {
         otpStart: "/api/auth/otp/start",

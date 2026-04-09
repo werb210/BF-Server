@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { createSupportThread } from "../services/supportService";
-import { pushLeadToCRM } from "../services/crmWebhook";
-import { dbQuery } from "../db";
+import { createSupportThread } from "../services/supportService.js";
+import { pushLeadToCRM } from "../services/crmWebhook.js";
+import { dbQuery } from "../db.js";
 
 const router = Router();
 

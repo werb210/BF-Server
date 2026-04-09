@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { pool, runQuery } from "../../db";
-import { embedAndStore } from "./knowledge.service";
+import { pool, runQuery } from "../../db.js";
+import { embedAndStore } from "./knowledge.service.js";
 
 const router = Router();
 

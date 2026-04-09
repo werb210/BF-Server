@@ -1,8 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.fetchCommunications = fetchCommunications;
-exports.fetchMessageFeed = fetchMessageFeed;
-const communications_repo_1 = require("./communications.repo");
+import { listCommunications, listMessages, } from "./communications.repo.js";
 function buildParticipant(params) {
     if (!params.recordId) {
         return null;
@@ -44,8 +40,8 @@ function normalizeMessage(row) {
         body: row.body ?? null,
     };
 }
-async function fetchCommunications(params) {
-    const rows = await (0, communications_repo_1.listCommunications)({
+export async function fetchCommunications(params) {
+    const rows = await listCommunications({
         ...(params.contactId !== undefined ? { contactId: params.contactId } : {}),
     });
     if (rows.length === 0) {
@@ -53,8 +49,8 @@ async function fetchCommunications(params) {
     }
     return rows.map((row) => normalizeCommunication(row));
 }
-async function fetchMessageFeed(params) {
-    const rows = await (0, communications_repo_1.listMessages)({
+export async function fetchMessageFeed(params) {
+    const rows = await listMessages({
         ...(params.contactId !== undefined ? { contactId: params.contactId } : {}),
         page: params.page,
         pageSize: params.pageSize,

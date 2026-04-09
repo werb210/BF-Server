@@ -1,8 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.scoreAmountFit = scoreAmountFit;
-exports.normalizeToPercent = normalizeToPercent;
-function scoreAmountFit(requestedAmount, minAmount, maxAmount) {
+export function scoreAmountFit(requestedAmount, minAmount, maxAmount) {
     if (!requestedAmount || requestedAmount <= 0)
         return 0.4;
     if (minAmount && requestedAmount < minAmount)
@@ -16,7 +12,7 @@ function scoreAmountFit(requestedAmount, minAmount, maxAmount) {
     }
     return 0.8;
 }
-function normalizeToPercent(value) {
+export function normalizeToPercent(value) {
     const clamped = Math.max(0, Math.min(1, value));
     return Math.round(clamped * 100);
 }

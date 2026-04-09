@@ -1,6 +1,6 @@
 import { v4 as uuid } from "uuid";
-import { pool, runQuery } from "../../db";
-import { embedText } from "./rag.service";
+import { pool, runQuery } from "../../db.js";
+import { embedText } from "./rag.service.js";
 
 const DEFAULT_CHUNK_SIZE = 1200;
 

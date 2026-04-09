@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 export function generateRefreshToken(): string {
   return randomBytes(64).toString("hex");

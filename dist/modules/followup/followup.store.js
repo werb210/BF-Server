@@ -1,12 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.defaultFollowUpTaskStore = exports.defaultFollowUpIdempotencyStore = exports.defaultFollowUpEventStore = exports.InMemoryFollowUpTaskStore = exports.InMemoryFollowUpIdempotencyStore = exports.InMemoryFollowUpEventStore = void 0;
-exports.recordFollowUpEvent = recordFollowUpEvent;
-const crypto_1 = require("crypto");
-class InMemoryFollowUpEventStore {
-    constructor() {
-        this.events = [];
-    }
+import { randomUUID } from "node:crypto";
+export class InMemoryFollowUpEventStore {
+    events = [];
     addEvent(event) {
         this.events.push(event);
     }
@@ -28,11 +22,8 @@ class InMemoryFollowUpEventStore {
         });
     }
 }
-exports.InMemoryFollowUpEventStore = InMemoryFollowUpEventStore;
-class InMemoryFollowUpIdempotencyStore {
-    constructor() {
-        this.processed = new Set();
-    }
+export class InMemoryFollowUpIdempotencyStore {
+    processed = new Set();
     has(key) {
         return this.processed.has(key);
     }
@@ -40,28 +31,24 @@ class InMemoryFollowUpIdempotencyStore {
         this.processed.add(key);
     }
 }
-exports.InMemoryFollowUpIdempotencyStore = InMemoryFollowUpIdempotencyStore;
-class InMemoryFollowUpTaskStore {
-    constructor() {
-        this.tasks = [];
-    }
+export class InMemoryFollowUpTaskStore {
+    tasks = [];
     list() {
         return [...this.tasks];
     }
     async create(task) {
         const created = {
             ...task,
-            id: (0, crypto_1.randomUUID)(),
+            id: randomUUID(),
             createdAt: new Date(),
         };
         this.tasks.push(created);
         return created;
     }
 }
-exports.InMemoryFollowUpTaskStore = InMemoryFollowUpTaskStore;
-exports.defaultFollowUpEventStore = new InMemoryFollowUpEventStore();
-exports.defaultFollowUpIdempotencyStore = new InMemoryFollowUpIdempotencyStore();
-exports.defaultFollowUpTaskStore = new InMemoryFollowUpTaskStore();
-function recordFollowUpEvent(event) {
-    exports.defaultFollowUpEventStore.addEvent(event);
+export const defaultFollowUpEventStore = new InMemoryFollowUpEventStore();
+export const defaultFollowUpIdempotencyStore = new InMemoryFollowUpIdempotencyStore();
+export const defaultFollowUpTaskStore = new InMemoryFollowUpTaskStore();
+export function recordFollowUpEvent(event) {
+    defaultFollowUpEventStore.addEvent(event);
 }

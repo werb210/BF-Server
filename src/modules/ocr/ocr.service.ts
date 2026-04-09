@@ -1,12 +1,12 @@
-import { AppError } from "../../middleware/errors";
-import { recordAuditEvent } from "../audit/audit.service";
-import { config } from "../../config";
+import { AppError } from "../../middleware/errors.js";
+import { recordAuditEvent } from "../audit/audit.service.js";
+import { config } from "../../config/index.js";
 import {
   findApplicationById,
   findDocumentById,
   findActiveDocumentVersion,
   listDocumentsByApplicationId,
-} from "../applications/applications.repo";
+} from "../applications/applications.repo.js";
 import {
   createOcrJob,
   findOcrJobByDocumentId,
@@ -15,17 +15,17 @@ import {
   markOcrJobFailure,
   markOcrJobSuccess,
   resetOcrJob,
-} from "./ocr.repo";
-import { createOpenAiOcrProvider, type OcrProvider } from "./ocr.provider";
-import { createOcrStorage, OcrStorageValidationError, type OcrStorage } from "./ocr.storage";
-import { type OcrJobRecord } from "./ocr.types";
-import { logError, logInfo } from "../../observability/logger";
-import { fetchOcrFieldRegistry, type OcrFieldDefinition } from "./ocrFieldRegistry";
+} from "./ocr.repo.js";
+import { createOpenAiOcrProvider, type OcrProvider } from "./ocr.provider.js";
+import { createOcrStorage, OcrStorageValidationError, type OcrStorage } from "./ocr.storage.js";
+import { type OcrJobRecord } from "./ocr.types.js";
+import { logError, logInfo } from "../../observability/logger.js";
+import { fetchOcrFieldRegistry, type OcrFieldDefinition } from "./ocrFieldRegistry.js";
 import {
   isNumericOcrField,
   refreshOcrInsightsForApplication,
-} from "../applications/ocr/ocrAnalysis.service";
-import { notifyOcrWarnings } from "../notifications/ocrNotifications.service";
+} from "../applications/ocr/ocrAnalysis.service.js";
+import { notifyOcrWarnings } from "../notifications/ocrNotifications.service.js";
 
 const OCR_RETRY_BASE_MS = 1000;
 const OCR_RETRY_MAX_MS = 15 * 60 * 1000;

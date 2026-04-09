@@ -1,10 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const uuid_1 = require("uuid");
-const zod_1 = require("zod");
-const clean_1 = require("../utils/clean");
-const router = (0, express_1.Router)();
+import { Router } from "express";
+import { v4 as uuidv4 } from "uuid";
+import { z } from "zod";
+import { stripUndefined } from "../utils/clean.js";
+const router = Router();
 const issues = [];
 const MAX_ISSUES = 500;
 function pushBounded(arr, item) {
@@ -12,9 +10,9 @@ function pushBounded(arr, item) {
     if (arr.length > MAX_ISSUES)
         arr.shift();
 }
-const createIssueSchema = zod_1.z.object({
-    message: zod_1.z.string().min(1),
-    screenshot: zod_1.z.string().optional(),
+const createIssueSchema = z.object({
+    message: z.string().min(1),
+    screenshot: z.string().optional(),
 });
 router.post("/", async (req, res, next) => {
     const parsed = createIssueSchema.safeParse(req.body);
@@ -22,8 +20,8 @@ router.post("/", async (req, res, next) => {
         res.status(400).json({ error: "Invalid payload" });
         return;
     }
-    const issue = (0, clean_1.stripUndefined)({
-        id: (0, uuid_1.v4)(),
+    const issue = stripUndefined({
+        id: uuidv4(),
         message: parsed.data.message,
         screenshot: parsed.data.screenshot,
         createdAt: new Date(),
@@ -38,4 +36,4 @@ router.patch("/:id/resolve", (req, res) => {
         issue.resolved = true;
     res["json"]({ success: true });
 });
-exports.default = router;
+export default router;

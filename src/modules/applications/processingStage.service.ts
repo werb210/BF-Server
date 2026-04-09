@@ -1,10 +1,10 @@
-import { pool, runQuery } from "../../db";
-import { AppError } from "../../middleware/errors";
-import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService";
-import { normalizeRequiredDocumentKey } from "../../db/schema/requiredDocuments";
-import { listApplicationRequiredDocuments } from "./applications.repo";
+import { pool, runQuery } from "../../db.js";
+import { AppError } from "../../middleware/errors.js";
+import { resolveRequirementsForApplication } from "../../services/lenderProductRequirementsService.js";
+import { normalizeRequiredDocumentKey } from "../../db/schema/requiredDocuments.js";
+import { listApplicationRequiredDocuments } from "./applications.repo.js";
 import type { PoolClient } from "pg";
-import { ensureCreditSummaryJob } from "../processing/creditSummary.service";
+import { ensureCreditSummaryJob } from "../processing/creditSummary.service.js";
 
 export const PROCESSING_STAGES = [
   "pending",

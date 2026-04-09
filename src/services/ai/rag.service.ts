@@ -1,6 +1,6 @@
-import { pool, runQuery } from "../../db";
-import { openai } from "./openai.service";
-import { config } from "../../config";
+import { pool, runQuery } from "../../db.js";
+import { openai } from "./openai.service.js";
+import { config } from "../../config/index.js";
 
 function toVectorLiteral(values: number[]): string {
   return `[${values.join(",")}]`;

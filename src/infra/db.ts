@@ -1,1 +1,1 @@
-export { getPrisma } from "../lib/db";
+export { getPrisma } from "../lib/db.js";

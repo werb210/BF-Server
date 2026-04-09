@@ -1,8 +1,8 @@
 import { Router, type Request } from "express";
-import { fetchTransmissionStatus, retrySubmission, cancelSubmissionRetry } from "./lender.service";
-import { AppError } from "../../middleware/errors";
-import { requireAuth, requireCapability } from "../../middleware/auth";
-import { CAPABILITIES } from "../../auth/capabilities";
+import { fetchTransmissionStatus, retrySubmission, cancelSubmissionRetry } from "./lender.service.js";
+import { AppError } from "../../middleware/errors.js";
+import { requireAuth, requireCapability } from "../../middleware/auth.js";
+import { CAPABILITIES } from "../../auth/capabilities.js";
 
 const router = Router();
 

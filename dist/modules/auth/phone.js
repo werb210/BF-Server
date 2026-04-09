@@ -1,16 +1,11 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.normalizePhone = normalizePhone;
-exports.normalizeOtpPhone = normalizeOtpPhone;
-exports.normalizePhoneNumber = normalizePhoneNumber;
-function normalizePhone(phone) {
+export function normalizePhone(phone) {
     const digits = phone.replace(/\D/g, "");
     if (digits.length !== 11 || !digits.startsWith("1")) {
         throw new Error("Invalid phone number");
     }
     return `+${digits}`;
 }
-function normalizeOtpPhone(phone) {
+export function normalizeOtpPhone(phone) {
     if (typeof phone !== "string") {
         return null;
     }
@@ -25,7 +20,7 @@ function normalizeOtpPhone(phone) {
         return null;
     }
 }
-function normalizePhoneNumber(phone) {
+export function normalizePhoneNumber(phone) {
     if (typeof phone !== "string") {
         return null;
     }

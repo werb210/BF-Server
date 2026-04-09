@@ -1,8 +1,8 @@
 import { type NextFunction, type Request, type Response } from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import { config } from "../config";
-import { logger } from "../server/utils/logger";
+import { config } from "../config/index.js";
+import { logger } from "../server/utils/logger.js";
 
 function isLoopback(req: Request): boolean {
   const ip = req.ip || "";

@@ -1,13 +1,13 @@
-import { randomUUID } from "crypto";
-import { fetchOcrFieldDefinitions, fetchOcrFieldsForDocumentType } from "./fieldRegistry";
+import { randomUUID } from "node:crypto";
+import { fetchOcrFieldDefinitions, fetchOcrFieldsForDocumentType } from "./fieldRegistry.js";
 import {
   findApplicationOcrSnapshot,
   updateApplicationOcrInsights,
-} from "../modules/applications/applications.repo";
-import { listOcrResultsForApplication } from "../modules/ocr/ocr.repo";
-import { recordAuditEvent } from "../modules/audit/audit.service";
-import { createNotification } from "../modules/notifications/notifications.repo";
-import { logError } from "../observability/logger";
+} from "../modules/applications/applications.repo.js";
+import { listOcrResultsForApplication } from "../modules/ocr/ocr.repo.js";
+import { recordAuditEvent } from "../modules/audit/audit.service.js";
+import { createNotification } from "../modules/notifications/notifications.repo.js";
+import { logError } from "../observability/logger.js";
 
 export type OcrDocumentResult = {
   documentId: string;

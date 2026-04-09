@@ -1,27 +1,25 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const db_1 = require("../db");
-const auth_1 = require("../middleware/auth");
-const capabilities_1 = require("../auth/capabilities");
-const safeHandler_1 = require("../middleware/safeHandler");
-const applications_service_1 = require("../modules/applications/applications.service");
-const pipelineState_1 = require("../modules/applications/pipelineState");
-const router = (0, express_1.Router)();
-router.get("/", auth_1.requireAuth, (0, auth_1.requireCapability)([capabilities_1.CAPABILITIES.APPLICATION_READ]), (0, safeHandler_1.safeHandler)(async (_req, res) => {
-    const result = await (0, db_1.runQuery)(`select id, name, pipeline_state, updated_at
+import { Router } from "express";
+import { runQuery } from "../db.js";
+import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { CAPABILITIES } from "../auth/capabilities.js";
+import { safeHandler } from "../middleware/safeHandler.js";
+import { fetchPipelineStates } from "../modules/applications/applications.service.js";
+import { ApplicationStage } from "../modules/applications/pipelineState.js";
+const router = Router();
+router.get("/", requireAuth, requireCapability([CAPABILITIES.APPLICATION_READ]), safeHandler(async (_req, res) => {
+    const result = await runQuery(`select id, name, pipeline_state, updated_at
        from applications
        order by updated_at desc`);
     res.status(200).json({
         items: result.rows.map((row) => ({
             id: row.id,
             name: row.name,
-            stage: row.pipeline_state ?? pipelineState_1.ApplicationStage.RECEIVED,
+            stage: row.pipeline_state ?? ApplicationStage.RECEIVED,
             updatedAt: row.updated_at,
         })),
     });
 }));
-router.get("/stages", auth_1.requireAuth, (0, auth_1.requireCapability)([capabilities_1.CAPABILITIES.APPLICATION_READ]), (0, safeHandler_1.safeHandler)(async (_req, res) => {
-    res.status(200).json({ stages: (0, applications_service_1.fetchPipelineStates)() });
+router.get("/stages", requireAuth, requireCapability([CAPABILITIES.APPLICATION_READ]), safeHandler(async (_req, res) => {
+    res.status(200).json({ stages: fetchPipelineStates() });
 }));
-exports.default = router;
+export default router;

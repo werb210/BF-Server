@@ -1,8 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.normalizePhone = normalizePhone;
-exports.tryNormalizePhone = tryNormalizePhone;
-function normalizePhone(phone) {
+export function normalizePhone(phone) {
     if (typeof phone !== "string") {
         throw new Error("Invalid phone number format");
     }
@@ -15,7 +11,7 @@ function normalizePhone(phone) {
     }
     throw new Error("Invalid phone number format");
 }
-function tryNormalizePhone(phone) {
+export function tryNormalizePhone(phone) {
     if (typeof phone !== "string") {
         return null;
     }

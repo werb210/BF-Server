@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.rateLimitKeyFromRequest = rateLimitKeyFromRequest;
-function rateLimitKeyFromRequest(req) {
+export function rateLimitKeyFromRequest(req) {
     try {
         const forwarded = req.headers["x-forwarded-for"];
         if (typeof forwarded === "string") {

@@ -1,7 +1,2 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const documents_1 = __importDefault(require("../documents"));
-exports.default = documents_1.default;
+import documentsRouter from "../documents.js";
+export default documentsRouter;

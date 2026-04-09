@@ -1,8 +1,8 @@
 import { type NextFunction, type Request, type Response } from "express";
-import { isDbConnectionFailure } from "../dbRuntime";
-import { logError, logWarn } from "../observability/logger";
-import { trackException } from "../observability/appInsights";
-import { fetchStatus as errorStatusFor, isHttpishError } from "../helpers/errors";
+import { isDbConnectionFailure } from "../dbRuntime.js";
+import { logError, logWarn } from "../observability/logger.js";
+import { trackException } from "../observability/appInsights.js";
+import { fetchStatus as errorStatusFor, isHttpishError } from "../helpers/errors.js";
 
 export class AppError extends Error {
   status: number;

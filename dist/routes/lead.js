@@ -1,18 +1,16 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const schemas_1 = require("../schemas");
-const validate_1 = require("../middleware/validate");
-const respond_1 = require("../lib/respond");
-const db_1 = require("../db");
-const router = (0, express_1.Router)();
-router.post("/lead", (0, validate_1.validate)(schemas_1.LeadSchema), async (req, res, next) => {
+import { Router } from "express";
+import { LeadSchema } from "../schemas/index.js";
+import { validate } from "../middleware/validate.js";
+import { ok } from "../lib/respond.js";
+import { dbQuery } from "../db.js";
+const router = Router();
+router.post("/lead", validate(LeadSchema), async (req, res, next) => {
     try {
         const lead = req.validated;
-        const created = await (0, db_1.dbQuery)(`insert into crm_leads (email, phone, company_name, product_interest, source)
+        const created = await dbQuery(`insert into crm_leads (email, phone, company_name, product_interest, source)
        values ($1, $2, $3, $4, $5)
        returning id, email, phone, company_name, product_interest, source`, [lead.email, lead.phone, lead.businessName ?? lead.name, lead.productType ?? null, "crm_api"]);
-        return (0, respond_1.ok)(res, {
+        return ok(res, {
             id: created.rows[0]?.id,
             name: lead.name,
             email: created.rows[0]?.email ?? lead.email,
@@ -26,4 +24,4 @@ router.post("/lead", (0, validate_1.validate)(schemas_1.LeadSchema), async (req,
         return next(error);
     }
 });
-exports.default = router;
+export default router;

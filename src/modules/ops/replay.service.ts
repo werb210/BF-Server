@@ -1,7 +1,7 @@
-import { randomUUID } from "crypto";
-import { pool, runQuery } from "../../db";
-import { logError } from "../../observability/logger";
-import { isKillSwitchEnabled } from "./ops.service";
+import { randomUUID } from "node:crypto";
+import { pool, runQuery } from "../../db.js";
+import { logError } from "../../observability/logger.js";
+import { isKillSwitchEnabled } from "./ops.service.js";
 
 export const REPLAY_SCOPES = [
   "audit_events",

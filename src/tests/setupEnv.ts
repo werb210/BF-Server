@@ -1,6 +1,6 @@
 import "./mocks/externalMocks";
 import "./setup";
-import { applyTestEnvDefaults } from "../test/setupEnv";
+import { applyTestEnvDefaults } from "../test/setupEnv.js";
 import { afterAll } from "vitest";
 
 applyTestEnvDefaults();

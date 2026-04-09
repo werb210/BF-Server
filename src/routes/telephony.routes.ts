@@ -1,6 +1,6 @@
 import { Router, type Request } from "express";
 
-import { auth } from "../middleware/auth";
+import { auth } from "../middleware/auth.js";
 
 type AuthenticatedRequest = Request & {
   user?: {

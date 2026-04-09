@@ -1,8 +1,8 @@
 import { Worker } from "bullmq"
-import { redisConnection } from "../queue/redis"
-import { processOcrJob } from "../modules/ocr/ocr.service"
-import { findOcrJobByDocumentId } from "../modules/ocr/ocr.repo"
-import { logError, logInfo } from "../observability/logger"
+import { redisConnection } from "../queue/redis.js"
+import { processOcrJob } from "../modules/ocr/ocr.service.js"
+import { findOcrJobByDocumentId } from "../modules/ocr/ocr.repo.js"
+import { logError, logInfo } from "../observability/logger.js"
 
 const worker = new Worker(
   "ocr-processing",

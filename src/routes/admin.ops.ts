@@ -1,23 +1,23 @@
 import { Router, type Request } from "express";
-import { AppError } from "../middleware/errors";
-import { requireAuth, requireCapability } from "../middleware/auth";
-import { CAPABILITIES } from "../auth/capabilities";
-import { recordAuditEvent } from "../modules/audit/audit.service";
-import { logError } from "../observability/logger";
-import { safeHandler } from "../middleware/safeHandler";
+import { AppError } from "../middleware/errors.js";
+import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { CAPABILITIES } from "../auth/capabilities.js";
+import { recordAuditEvent } from "../modules/audit/audit.service.js";
+import { logError } from "../observability/logger.js";
+import { safeHandler } from "../middleware/safeHandler.js";
 import {
   OPS_KILL_SWITCH_KEYS,
   type OpsKillSwitchKey,
   listKillSwitches,
   setKillSwitch,
-} from "../modules/ops/ops.service";
+} from "../modules/ops/ops.service.js";
 import {
   createReplayJob,
   fetchReplayJobStatus,
   REPLAY_SCOPES,
   runReplayJob,
-} from "../modules/ops/replay.service";
-import { toStringSafe } from "../utils/toStringSafe";
+} from "../modules/ops/replay.service.js";
+import { toStringSafe } from "../utils/toStringSafe.js";
 
 const router = Router();
 

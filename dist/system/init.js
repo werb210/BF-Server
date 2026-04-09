@@ -1,13 +1,10 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.initDependencies = initDependencies;
-const db_1 = require("../db");
-const deps_1 = require("./deps");
-async function initDependencies() {
+import { pool } from "../db.js";
+import { deps } from "./deps.js";
+export async function initDependencies() {
     let success = false;
     for (let i = 0; i < 3; i++) {
         try {
-            await db_1.pool.query("SELECT 1");
+            await pool.query("SELECT 1");
             success = true;
             break;
         }
@@ -15,5 +12,5 @@ async function initDependencies() {
             await new Promise((resolve) => setTimeout(resolve, 100));
         }
     }
-    deps_1.deps.db.ready = success;
+    deps.db.ready = success;
 }

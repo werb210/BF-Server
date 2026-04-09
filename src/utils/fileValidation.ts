@@ -1,6 +1,6 @@
-import { fromBuffer as fileTypeFromBuffer } from "file-type";
-import { AppError } from "../middleware/errors";
-import { config } from "../config";
+import { fileTypeFromBuffer } from "file-type";
+import { AppError } from "../middleware/errors.js";
+import { config } from "../config/index.js";
 
 const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
 

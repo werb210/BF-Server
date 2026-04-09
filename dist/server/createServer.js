@@ -1,12 +1,9 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.createServer = createServer;
-const app_1 = require("../app");
+import { createApp, resetOtpStateForTests } from "../app.js";
 /**
  * Canonical server factory — NO ARGS
  */
-function createServer() {
-    (0, app_1.resetOtpStateForTests)();
-    return (0, app_1.createApp)();
+export function createServer() {
+    resetOtpStateForTests();
+    return createApp();
 }
-exports.default = createServer;
+export default createServer;

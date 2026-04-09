@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { fetchContinuation, updateContinuationStep } from "../models/continuation";
+import { fetchContinuation, updateContinuationStep } from "../models/continuation.js";
 
 const router = Router();
 

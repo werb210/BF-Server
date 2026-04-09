@@ -1,15 +1,5 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.authMiddleware = exports.requireAuth = void 0;
-exports.auth = auth;
-exports.createAuthMiddleware = createAuthMiddleware;
-exports.requireAuthorization = requireAuthorization;
-exports.requireCapability = requireCapability;
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-function auth(req, res, next) {
+import jwt from "jsonwebtoken";
+export function auth(req, res, next) {
     const token = req.headers.authorization?.replace("Bearer ", "");
     if (!token) {
         return res.status(401).json({
@@ -25,7 +15,7 @@ function auth(req, res, next) {
                 error: "Auth not configured",
             });
         }
-        const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        const decoded = jwt.verify(token, JWT_SECRET);
         req.user = decoded;
         next();
     }
@@ -36,12 +26,12 @@ function auth(req, res, next) {
         });
     }
 }
-exports.requireAuth = auth;
-function createAuthMiddleware() {
-    return exports.requireAuth;
+export const requireAuth = auth;
+export function createAuthMiddleware() {
+    return requireAuth;
 }
-exports.authMiddleware = exports.requireAuth;
-function requireAuthorization(options = {}) {
+export const authMiddleware = requireAuth;
+export function requireAuthorization(options = {}) {
     const requiredRoles = options.roles ?? [];
     const requiredCapabilities = options.capabilities ?? [];
     return (req, res, next) => {
@@ -62,7 +52,7 @@ function requireAuthorization(options = {}) {
         return next();
     };
 }
-function requireCapability(capability) {
+export function requireCapability(capability) {
     return requireAuthorization({
         capabilities: Array.isArray(capability) ? capability : [capability],
     });

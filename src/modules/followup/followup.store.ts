@@ -1,10 +1,10 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import {
   type FollowUpEvent,
   type FollowUpEventStore,
   type FollowUpIdempotencyStore,
   type FollowUpTask,
-} from "./followup.types";
+} from "./followup.types.js";
 
 export class InMemoryFollowUpEventStore implements FollowUpEventStore {
   private events: FollowUpEvent[] = [];

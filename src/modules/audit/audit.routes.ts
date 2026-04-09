@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { AppError } from "../../middleware/errors";
-import { listAuditEvents } from "./audit.repo";
-import { recordAuditEvent } from "./audit.service";
+import { AppError } from "../../middleware/errors.js";
+import { listAuditEvents } from "./audit.repo.js";
+import { recordAuditEvent } from "./audit.service.js";
 
 const router = Router();
 

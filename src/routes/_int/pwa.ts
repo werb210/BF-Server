@@ -1,12 +1,12 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { requireAuth, requireAuthorization } from "../../middleware/auth";
-import { safeHandler } from "../../middleware/safeHandler";
-import { config } from "../../config";
-import { sendNotification } from "../../services/pushService";
-import { pushSendRateLimit } from "../../middleware/rateLimit";
-import { replaySyncBatch } from "../../services/pwaSyncService";
-import { AppError } from "../../middleware/errors";
-import { ALL_ROLES } from "../../auth/roles";
+import { requireAuth, requireAuthorization } from "../../middleware/auth.js";
+import { safeHandler } from "../../middleware/safeHandler.js";
+import { config } from "../../config/index.js";
+import { sendNotification } from "../../services/pushService.js";
+import { pushSendRateLimit } from "../../middleware/rateLimit.js";
+import { replaySyncBatch } from "../../services/pwaSyncService.js";
+import { AppError } from "../../middleware/errors.js";
+import { ALL_ROLES } from "../../auth/roles.js";
 
 const router = Router();
 

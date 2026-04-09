@@ -1,7 +1,7 @@
 import OpenAI from "openai";
-import { createHash, randomUUID } from "crypto";
-import { config } from "../config";
-import { pool, runQuery } from "../db";
+import { createHash, randomUUID } from "node:crypto";
+import { config } from "../config/index.js";
+import { pool, runQuery } from "../db.js";
 
 const APPROX_CHUNK_SIZE = 800;
 

@@ -1,11 +1,7 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.listPipelineSnapshots = listPipelineSnapshots;
-exports.listCurrentPipelineState = listCurrentPipelineState;
-const db_1 = require("../../db");
-const reporting_utils_1 = require("./reporting.utils");
-const pipelineState_1 = require("../applications/pipelineState");
-const PIPELINE_ORDER_CASE_SQL = `case pipeline_state ${pipelineState_1.PIPELINE_STATES.map((state, index) => `when '${state}' then ${index + 1}`).join(" ")} else 999 end`;
+import { pool } from "../../db.js";
+import { formatPeriod } from "./reporting.utils.js";
+import { PIPELINE_STATES } from "../applications/pipelineState.js";
+const PIPELINE_ORDER_CASE_SQL = `case pipeline_state ${PIPELINE_STATES.map((state, index) => `when '${state}' then ${index + 1}`).join(" ")} else 999 end`;
 function buildWhereClause(params) {
     const clauses = [];
     const values = [];
@@ -31,8 +27,8 @@ function periodExpression(groupBy) {
     }
     return "snapshot_date";
 }
-async function listPipelineSnapshots(params) {
-    const runner = params.client ?? db_1.pool;
+export async function listPipelineSnapshots(params) {
+    const runner = params.client ?? pool;
     const { clause, values } = buildWhereClause({
         column: "snapshot_date",
         from: params.from,
@@ -57,13 +53,13 @@ async function listPipelineSnapshots(params) {
               ${PIPELINE_ORDER_CASE_SQL} asc
      limit $${limitIndex} offset $${offsetIndex}`, [...values, params.limit, params.offset]);
     return res.rows.map((row) => ({
-        period: (0, reporting_utils_1.formatPeriod)(row.period),
+        period: formatPeriod(row.period),
         pipelineState: row.pipeline_state,
         applicationCount: row.application_count,
     }));
 }
-async function listCurrentPipelineState(params) {
-    const runner = params?.client ?? db_1.pool;
+export async function listCurrentPipelineState(params) {
+    const runner = params?.client ?? pool;
     const res = await runner.query(`select pipeline_state, application_count
      from vw_pipeline_current_state`);
     const rows = Array.isArray(res.rows) ? res.rows : [];
@@ -73,11 +69,11 @@ async function listCurrentPipelineState(params) {
             countsByState.set(row.pipeline_state.toLowerCase(), row.application_count);
         }
     });
-    const normalizedDefaults = pipelineState_1.PIPELINE_STATES.map((state) => ({
+    const normalizedDefaults = PIPELINE_STATES.map((state) => ({
         pipelineState: state,
         applicationCount: countsByState.get(state.toLowerCase()) ?? 0,
     }));
-    const knownStates = new Set(pipelineState_1.PIPELINE_STATES.map((state) => state.toLowerCase()));
+    const knownStates = new Set(PIPELINE_STATES.map((state) => state.toLowerCase()));
     const extras = rows
         .filter((row) => row.pipeline_state && !knownStates.has(row.pipeline_state.toLowerCase()))
         .map((row) => ({

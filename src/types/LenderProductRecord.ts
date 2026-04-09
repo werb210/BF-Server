@@ -3,7 +3,7 @@ import {
   type LenderProductRateType,
   type LenderProductTermUnit,
   type RequiredDocuments,
-} from "../db/schema/lenderProducts";
+} from "../db/schema/lenderProducts.js";
 
 export type LenderProductRecord = {
   id: string;

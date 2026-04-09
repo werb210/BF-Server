@@ -1,10 +1,8 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const migrate_1 = require("./migrate");
+import { runMigrations } from "./migrate.js";
 (async () => {
     try {
         console.log("Starting migrations...");
-        await (0, migrate_1.runMigrations)();
+        await runMigrations();
         console.log("Migrations completed");
     }
     catch (err) {

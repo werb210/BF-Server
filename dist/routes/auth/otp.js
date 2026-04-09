@@ -1,13 +1,9 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = __importDefault(require("express"));
-const crypto_1 = require("crypto");
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const redis_1 = require("../../lib/redis");
-const router = express_1.default.Router();
+import express from "express";
+import { randomInt } from "node:crypto";
+import jwt from "jsonwebtoken";
+import { getRedis } from "../../lib/redis.js";
+import { findAuthUserByPhone } from "../../modules/auth/auth.repo.js";
+const router = express.Router();
 let twilioClient = null;
 function getTwilioClient() {
     if (!twilioClient) {
@@ -33,14 +29,14 @@ router.post("/start", async (req, res) => {
         }
         return res.status(500).json({ error: "missing_otp_env" });
     }
-    const code = (0, crypto_1.randomInt)(100000, 1000000).toString();
-    const redis = (0, redis_1.getRedis)();
+    const code = randomInt(100000, 1000000).toString();
+    const redis = getRedis();
     await redis.set(`otp:${phone}`, code, "EX", 300);
     if (process.env.NODE_ENV === "test") {
         return res.status(200).json({ status: "ok", data: { sent: true } });
     }
     await getTwilioClient().messages.create({
-        body: `Your code is ${code}`,
+        body: `Your Boreal Financial verification code is ${code}`,
         to: phone,
         from: process.env.TWILIO_PHONE,
     });
@@ -51,7 +47,7 @@ router.post("/verify", async (req, res) => {
     if (!isPhone(phone) || !isCode(code)) {
         return res.status(400).json({ error: "invalid_payload" });
     }
-    const redis = (0, redis_1.getRedis)();
+    const redis = getRedis();
     const stored = await redis.get(`otp:${phone}`);
     if (!stored || stored !== code) {
         return res.status(400).json({ error: "Invalid code" });
@@ -60,8 +56,44 @@ router.post("/verify", async (req, res) => {
     if (!JWT_SECRET) {
         return res.status(401).json({ error: "unauthorized" });
     }
-    const token = jsonwebtoken_1.default.sign({ phone }, JWT_SECRET, { expiresIn: "1d" });
+    let sub;
+    let role;
+    let tokenVersion;
+    let silo = null;
+    try {
+        const user = await findAuthUserByPhone(phone);
+        if (!user) {
+            return res.status(401).json({
+                error: "user_not_found",
+                message: "No staff account found for this phone number. Contact your administrator.",
+            });
+        }
+        if (!user.role) {
+            return res.status(403).json({
+                error: "no_role",
+                message: "Account exists but has no role assigned. Contact your administrator.",
+            });
+        }
+        if (user.disabled || !user.active) {
+            return res.status(403).json({ error: "account_disabled" });
+        }
+        sub = user.id;
+        role = user.role;
+        tokenVersion = user.tokenVersion ?? 0;
+        silo = user.silo ?? null;
+    }
+    catch (err) {
+        console.error("OTP verify DB lookup failed:", err);
+        return res.status(500).json({ error: "internal_error" });
+    }
+    const token = jwt.sign({
+        sub,
+        role,
+        phone,
+        tokenVersion,
+        ...(silo ? { silo } : {}),
+    }, JWT_SECRET, { expiresIn: "1d" });
     await redis.del(`otp:${phone}`);
     return res.status(200).json({ status: "ok", data: { token } });
 });
-exports.default = router;
+export default router;

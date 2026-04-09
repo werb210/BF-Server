@@ -1,18 +1,8 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.assertMigrationsTableExists = assertMigrationsTableExists;
-exports.runMigrations = runMigrations;
-exports.fetchPendingMigrations = fetchPendingMigrations;
-exports.assertNoPendingMigrations = assertNoPendingMigrations;
-exports.fetchSchemaVersion = fetchSchemaVersion;
-const fs_1 = __importDefault(require("fs"));
-const path_1 = __importDefault(require("path"));
-const db_1 = require("./db");
-const logger_1 = require("./observability/logger");
-const migrationsDir = path_1.default.join(process.cwd(), "migrations");
+import fs from "fs";
+import path from "path";
+import { pool, runQuery } from "./db.js";
+import { logInfo } from "./observability/logger.js";
+const migrationsDir = path.join(process.cwd(), "migrations");
 function parseMigrationPrefix(file) {
     const match = file.match(/^(\d+)(?:[_-]|\.)/);
     if (!match) {
@@ -41,7 +31,7 @@ function compareMigrationFiles(a, b) {
 function findMigrationForTableCreation(files, tableName) {
     const tablePattern = new RegExp(`create\\s+table(?:\\s+if\\s+not\\s+exists)?\\s+${tableName}\\b`, "i");
     for (const file of files) {
-        const sql = fs_1.default.readFileSync(path_1.default.join(migrationsDir, file), "utf8");
+        const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
         if (tablePattern.test(sql)) {
             return file;
         }
@@ -61,10 +51,10 @@ function assertDocumentVersionMigrationOrder(files) {
     }
 }
 function listMigrationFiles() {
-    if (!fs_1.default.existsSync(migrationsDir)) {
+    if (!fs.existsSync(migrationsDir)) {
         return [];
     }
-    const files = fs_1.default
+    const files = fs
         .readdirSync(migrationsDir)
         .filter((file) => file.endsWith(".sql"))
         .sort(compareMigrationFiles);
@@ -72,13 +62,13 @@ function listMigrationFiles() {
     return files;
 }
 async function ensureMigrationsTable() {
-    await (0, db_1.runQuery)(`create table if not exists schema_migrations (
+    await runQuery(`create table if not exists schema_migrations (
       id text,
       applied_at timestamp
     )`);
 }
-async function assertMigrationsTableExists() {
-    const res = await (0, db_1.runQuery)("select to_regclass('public.schema_migrations') as exists");
+export async function assertMigrationsTableExists() {
+    const res = await runQuery("select to_regclass('public.schema_migrations') as exists");
     if (!res.rows[0]?.exists) {
         throw new Error("migrations_table_missing");
     }
@@ -185,10 +175,10 @@ function hasExecutableSql(statement) {
     return stripSqlComments(statement).trim().length > 0;
 }
 async function fetchAppliedMigrations() {
-    const res = await (0, db_1.runQuery)("select id from schema_migrations");
+    const res = await runQuery("select id from schema_migrations");
     return new Set(res.rows.map((row) => row.id));
 }
-async function runMigrations(options) {
+export async function runMigrations(options) {
     await ensureMigrationsTable();
     const migrationFiles = listMigrationFiles();
     const applied = await fetchAppliedMigrations();
@@ -196,8 +186,8 @@ async function runMigrations(options) {
         if (applied.has(file)) {
             continue;
         }
-        const rawSql = fs_1.default.readFileSync(path_1.default.join(migrationsDir, file), "utf8");
-        const client = await db_1.pool.connect();
+        const rawSql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
+        const client = await pool.connect();
         try {
             await client.runQuery("begin");
             const statements = splitSql(rawSql).filter(hasExecutableSql);
@@ -305,7 +295,7 @@ async function runMigrations(options) {
                 }
             }
             await client.runQuery("insert into schema_migrations (id, applied_at) values ($1, now())", [file]);
-            (0, logger_1.logInfo)("migration_applied", { migration: file });
+            logInfo("migration_applied", { migration: file });
             await client.runQuery("commit");
         }
         catch (err) {
@@ -317,21 +307,21 @@ async function runMigrations(options) {
         }
     }
 }
-async function fetchPendingMigrations() {
+export async function fetchPendingMigrations() {
     await ensureMigrationsTable();
     const migrationFiles = listMigrationFiles();
     const applied = await fetchAppliedMigrations();
     return migrationFiles.filter((file) => !applied.has(file));
 }
-async function assertNoPendingMigrations() {
+export async function assertNoPendingMigrations() {
     const pending = await fetchPendingMigrations();
     if (pending.length > 0) {
         throw new Error(`pending_migrations:${pending.join(",")}`);
     }
 }
-async function fetchSchemaVersion() {
+export async function fetchSchemaVersion() {
     await ensureMigrationsTable();
-    const res = await (0, db_1.runQuery)(`select id
+    const res = await runQuery(`select id
      from schema_migrations
      order by applied_at desc, id desc
      limit 1`);
