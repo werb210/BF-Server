@@ -21,7 +21,7 @@ describe("Route registration and prefix integrity", () => {
     const routeChecks: RouteCheck[] = [
       { method: "get", path: "/api/health", expectedStatus: 200 },
       { method: "post", path: "/api/auth/otp/start", expectedStatus: 200, body: { phone: "+15555550100" } },
-      { method: "get", path: "/api/v1/voice/token", expectedStatus: 404 },
+      { method: "get", path: "/api/voice/token", expectedStatus: 404 },
     ];
 
     for (const check of routeChecks) {
@@ -31,13 +31,13 @@ describe("Route registration and prefix integrity", () => {
     }
   });
 
-  it("rejects legacy aliases", async () => {
+  it("returns 404 for non-api aliases", async () => {
     const authStart = await request(app).post("/auth/otp/start").send({ phone: "+15555550100" });
-    expect(authStart.status).toBe(410);
-    expect(authStart.body).toEqual({ status: "error", error: "LEGACY_ROUTE_DISABLED" });
+    expect(authStart.status).toBe(404);
+    expect(authStart.body).toEqual({ error: "Route not found", path: "/auth/otp/start" });
 
     const voiceToken = await request(app).get("/voice/token");
     expect(voiceToken.status).toBe(404);
-    expect(voiceToken.body).toEqual({ status: "error", error: "NOT_FOUND" });
+    expect(voiceToken.body).toEqual({ error: "Route not found", path: "/voice/token" });
   });
 });

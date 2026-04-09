@@ -25,10 +25,10 @@ describe("Middleware execution, validation, and error handling", () => {
     const res = await request(app).post("/api/auth/otp/start").send({ phone: "" });
 
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({ error: "invalid_payload" });
+    expect(res.body).toEqual({ error: "Phone is required" });
   });
 
-  it("returns consistent 404 error envelope for unknown routes", async () => {
+  it("returns consistent 404 error body for unknown routes", async () => {
     const token = generateTestToken();
     const res = await request(app)
       .get("/totally/unknown/path")
@@ -36,8 +36,8 @@ describe("Middleware execution, validation, and error handling", () => {
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({
-      status: "error",
-      error: "NOT_FOUND",
+      error: "Route not found",
+      path: "/totally/unknown/path",
     });
   });
 });

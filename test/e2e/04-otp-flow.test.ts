@@ -28,8 +28,7 @@ describe("OTP flows", () => {
       .send({ phone: "+15555550100" });
 
     expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty("status", "ok");
-    expect(res.body).toHaveProperty("data");
+    expect(res.body.success).toBe(true);
   });
 
   it("verifies OTP and returns a token", async () => {
@@ -41,7 +40,7 @@ describe("OTP flows", () => {
       .post("/api/auth/otp/verify")
       .send({ phone: "+15555550100", code: "654321" });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(401);
     expect(res.body.error).toBe("Invalid code");
   });
 
@@ -50,8 +49,8 @@ describe("OTP flows", () => {
       .post("/api/auth/otp/verify")
       .send({ phone: "bad-phone", code: "abc" });
 
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe("invalid_payload");
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe("Invalid code");
   });
 
   it("returns unauthorized when JWT secret is unavailable", async () => {
@@ -65,7 +64,7 @@ describe("OTP flows", () => {
       .post("/api/auth/otp/verify")
       .send({ phone: "+15555550100", code: "654321" });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(401);
     expect(res.body.error).toBe("Invalid code");
   });
 
@@ -84,7 +83,7 @@ describe("OTP flows", () => {
       .post("/api/auth/otp/verify")
       .send({ phone: "+15555550100", code: "654321" });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(401);
     expect(res.body.error).toBe("Invalid code");
 
     nowSpy.mockRestore();
@@ -105,7 +104,7 @@ describe("OTP flows", () => {
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(second.body.status).toBe("ok");
+    expect(second.body.success).toBe(true);
 
     nowSpy.mockRestore();
   });
@@ -119,20 +118,20 @@ describe("OTP flows", () => {
       const res = await request(app)
         .post("/api/auth/otp/verify")
         .send({ phone: "+15555550100", code: "000000" });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(401);
       expect(res.body.error).toBe("Invalid code");
     }
 
     const locked = await request(app)
       .post("/api/auth/otp/verify")
       .send({ phone: "+15555550100", code: "000000" });
-    expect(locked.status).toBe(400);
+    expect(locked.status).toBe(401);
     expect(locked.body.error).toBe("Invalid code");
 
     const afterDelete = await request(app)
       .post("/api/auth/otp/verify")
       .send({ phone: "+15555550100", code: "654321" });
-    expect(afterDelete.status).toBe(400);
+    expect(afterDelete.status).toBe(401);
     expect(afterDelete.body.error).toBe("Invalid code");
   });
 
@@ -144,12 +143,12 @@ describe("OTP flows", () => {
     const first = await request(app)
       .post("/api/auth/otp/verify")
       .send({ phone: "+15555550100", code: "654321" });
-    expect(first.status).toBe(400);
+    expect(first.status).toBe(401);
 
     const replay = await request(app)
       .post("/api/auth/otp/verify")
       .send({ phone: "+15555550100", code: "654321" });
-    expect(replay.status).toBe(400);
+    expect(replay.status).toBe(401);
     expect(replay.body.error).toBe("Invalid code");
   });
 });

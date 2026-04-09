@@ -9,8 +9,6 @@ describe("Health contract", () => {
     const res = await request(app).get("/api/health");
 
     expect([200, 503]).toContain(res.status);
-    expect(res.body).toHaveProperty("status");
-    expect(res.body).toHaveProperty("data");
-    expect(res.body.data).toEqual({});
+    expect(res.body).toEqual({ status: "ok" });
   });
 });

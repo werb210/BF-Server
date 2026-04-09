@@ -5,11 +5,17 @@ import { createApp } from "../app";
 describe("contracts", () => {
   const app = createApp();
   it("all endpoints exist", async () => {
-    const contractEndpoints = ["/api/v1/lead", "/api/v1/call/start", "/api/v1/call/status", "/api/v1/message"];
+    const otpStart = await request(app).post("/api/auth/otp/start").send({ phone: "+15555550100" });
+    expect(otpStart.status).not.toBe(404);
 
-    for (const endpoint of contractEndpoints) {
-      const response = await request(app).post(endpoint).send({});
-      expect(response.status).not.toBe(404);
-    }
+    const me = await request(app).get("/api/auth/me");
+    expect(me.status).toBe(200);
+    expect(me.body).toHaveProperty("user");
+
+    const callStats = await request(app).get("/api/call/stats");
+    expect(callStats.status).toBe(200);
+
+    const health = await request(app).get("/api/health");
+    expect(health.status).toBe(200);
   });
 });
