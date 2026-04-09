@@ -36,17 +36,16 @@ type TelemetryClient = {
   trackEvent?: (telemetry: EventTelemetry) => void;
 };
 
-type AppInsightsModule = {
-  setup: (connectionString: string) => {
-    setAutoCollectRequests: (enabled: boolean) => unknown;
-    setAutoCollectPerformance: (enabled: boolean) => unknown;
-    setAutoCollectExceptions: (enabled: boolean) => unknown;
-    start: () => unknown;
-  };
+type AppInsightsClient = {
+  setup: (connectionString: string) => AppInsightsClient;
+  setAutoCollectRequests: (enabled: boolean) => AppInsightsClient;
+  setAutoCollectPerformance: (enabled: boolean) => AppInsightsClient;
+  setAutoCollectExceptions: (enabled: boolean) => AppInsightsClient;
+  start: () => void;
   defaultClient?: TelemetryClient;
 };
 
-let appInsights: AppInsightsModule | null = null;
+let appInsights: AppInsightsClient | null = null;
 let telemetryClient: TelemetryClient | null = null;
 let initialized = false;
 
@@ -61,16 +60,16 @@ export function initAppInsights(): void {
     return;
   }
 
+  const mod = requireSafe<AppInsightsClient>("applicationinsights");
+
+  if (!mod) {
+    logWarn("appinsights_disabled", {
+      reason: "package_missing",
+    });
+    return;
+  }
+
   try {
-    const mod = requireSafe("applicationinsights") as AppInsightsModule | null;
-
-    if (!mod) {
-      logWarn("appinsights_disabled", {
-        reason: "package_missing",
-      });
-      return;
-    }
-
     appInsights = mod;
 
     appInsights
@@ -99,9 +98,9 @@ export function initializeAppInsights(): void {
   initAppInsights();
 }
 
-function requireSafe(pkg: string): unknown {
+function requireSafe<T>(pkg: string): T | null {
   try {
-    return eval("require")(pkg);
+    return eval("require")(pkg) as T;
   } catch {
     return null;
   }
