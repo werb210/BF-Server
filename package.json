@@ -4,12 +4,11 @@
   "type": "module",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "tsx src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit",
-    "test": "echo \"No tests\" && exit 0",
-    "test:guard": "echo \"Guard passed\" && exit 0"
+    "test": "node scripts/ci-test.js",
+    "test:guard": "echo \"guard passed\"",
+    "typecheck": "tsc --noEmit"
   },
   "engines": {
     "node": ">=20.10.0 <21.0.0"
