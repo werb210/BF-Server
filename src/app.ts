@@ -55,11 +55,7 @@ export function createApp() {
    * 404 HANDLER
    */
   app.use((req, res) => {
-    res.status(404).json({
-      status: "error",
-      message: "Route not found",
-      data: { path: req.originalUrl },
-    });
+    res.status(404).json({ error: "Route not found", path: req.originalUrl });
   });
 
   /**

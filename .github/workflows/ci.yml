@@ -18,11 +18,8 @@ jobs:
           node-version: 20
           cache: "npm"
 
-      # 🔴 CRITICAL FIX
-      - name: Clean install (fix native bindings)
-        run: |
-          rm -rf node_modules package-lock.json
-          npm install --include=optional
+      - name: Install deps
+        run: npm install --include=optional
 
       - name: Build
         run: npm run build

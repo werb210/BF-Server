@@ -16,14 +16,14 @@ router.post("/otp/start", (req, res) => {
   const { phone } = req.body;
 
   if (!phone) {
-    return res.status(400).json({ status: "error", message: "Phone is required" });
+    return res.status(400).json({ error: "Phone is required" });
   }
 
   const code = "123456"; // TEMP (replace with Twilio)
 
   otpStore.set(phone, code);
 
-  return res.json({ status: "ok", data: { sent: true } });
+  return res.json({ success: true });
 });
 
 /**
@@ -36,12 +36,12 @@ router.post("/otp/verify", (req, res) => {
   const stored = otpStore.get(phone);
 
   if (!stored || stored !== code) {
-    return res.status(401).json({ status: "error", message: "Invalid code" });
+    return res.status(401).json({ error: "Invalid code" });
   }
 
   const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) {
-    return res.status(500).json({ status: "error", message: "JWT secret is not configured" });
+    return res.status(500).json({ error: "JWT secret is not configured" });
   }
 
   otpStore.delete(phone);
@@ -49,13 +49,10 @@ router.post("/otp/verify", (req, res) => {
   const token = jwt.sign({ id: phone, phone }, jwtSecret, { expiresIn: "7d" });
 
   return res.json({
-    status: "ok",
-    data: {
-      token,
-      user: {
-        id: phone,
-        phone,
-      },
+    token,
+    user: {
+      id: phone,
+      phone,
     },
   });
 });
@@ -66,19 +63,19 @@ router.post("/otp/verify", (req, res) => {
 router.get("/me", (req, res) => {
   const auth = req.headers.authorization?.split(" ")[1];
   if (!auth) {
-    return res.status(401).json({ status: "error", message: "Unauthorized" });
+    return res.status(200).json({ user: null });
   }
 
   const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) {
-    return res.status(500).json({ status: "error", message: "JWT secret is not configured" });
+    return res.status(500).json({ error: "JWT secret is not configured" });
   }
 
   try {
     const user = jwt.verify(auth, jwtSecret);
-    return res.json({ status: "ok", data: { user } });
+    return res.json({ user });
   } catch {
-    return res.status(401).json({ status: "error", message: "Invalid token" });
+    return res.status(401).json({ error: "Invalid token" });
   }
 });
 

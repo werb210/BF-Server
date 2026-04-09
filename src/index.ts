@@ -1,6 +1,8 @@
 import express from "express";
+import authRoutes from "./routes/auth.js";
 
 const app = express();
+app.use(express.json());
 
 /**
  * Trust Azure proxy
@@ -17,6 +19,8 @@ app.get("/health", (_req, res) => {
 app.get("/api/_int/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
+
+app.use("/api/auth", authRoutes);
 
 /**
  * Root check
