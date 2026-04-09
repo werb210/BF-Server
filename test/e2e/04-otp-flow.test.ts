@@ -38,7 +38,21 @@ describe("OTP flows", () => {
 
     const res = await request(app)
       .post("/api/auth/otp/verify")
-      .send({ phone: "+15555550100", code: "654321" });
+      .send({ phone: "+15555550100", code: "123456" });
+
+    expect(res.status).toBe(200);
+    expect(typeof res.body.token).toBe("string");
+    expect(res.body.token.length).toBeGreaterThan(20);
+  });
+
+  it("rejects wrong OTP code", async () => {
+    await request(app)
+      .post("/api/auth/otp/start")
+      .send({ phone: "+15555550101" });
+
+    const res = await request(app)
+      .post("/api/auth/otp/verify")
+      .send({ phone: "+15555550101", code: "000000" });
 
     expect(res.status).toBe(401);
     expect(res.body.error).toBe("Invalid code");
