@@ -18,7 +18,7 @@ process.env.PORT = "4000";
 
 process.env.TWILIO_PHONE = "+10000000000";
 process.env.TWILIO_VOICE_APP_SID = "AP00000000000000000000000000000000";
-process.env.TEST_OTP_CODE = "654321";
+process.env.TEST_OTP_CODE = "123456";
 process.env.SKIP_DB_CONNECTION = "true";
 
 const originalLog = console.log;

@@ -107,7 +107,7 @@ router.post("/otp/verify", async (req, res) => {
       }
 
       // success path
-      const token = signJwt({ phone });
+      const token = signJwt({ id: phone, phone, role: "Staff" });
 
       // clear OTP (important for replay test)
       otpStore.delete(phone);
