@@ -11,6 +11,11 @@ export default defineConfig({
     globals: true,
     isolate: true,
     setupFiles: ["src/tests/setupEnv.ts"],
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "src/__tests__/db.real.integration.test.ts",
+    ],
     sequence: {
       shuffle: false,
     },
