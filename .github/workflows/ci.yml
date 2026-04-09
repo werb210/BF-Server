@@ -12,12 +12,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: "npm"
 
-      - run: npm ci
+      # 🔴 CRITICAL FIX
+      - name: Clean install (fix native bindings)
+        run: |
+          rm -rf node_modules package-lock.json
+          npm install --include=optional
 
-      - run: npm run build
+      - name: Build
+        run: npm run build
 
-      - run: npm test
+      - name: Test
+        run: npm test

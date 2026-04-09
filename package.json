@@ -8,7 +8,8 @@
     "start": "node dist/server.js",
     "test": "node scripts/ci-test.js",
     "test:guard": "echo \"guard passed\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "ci:test": "node scripts/ci-test.js"
   },
   "engines": {
     "node": ">=20.10.0 <21.0.0"
@@ -49,5 +50,8 @@
     "@types/cors": "^2.8.19",
     "@types/cookie-parser": "^1.4.10",
     "@types/ws": "^8.18.1"
+  },
+  "optionalDependencies": {
+    "rollup": "^4.0.0"
   }
 }
