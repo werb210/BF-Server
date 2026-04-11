@@ -1,11 +1,10 @@
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import authRoutes from "./routes/auth.js";
-import callRoutes from "./routes/call.js";
+import authRoutes from "./routes/auth/index.js";
 import healthRoutes from "./routes/health.js";
 import publicRoutes from "./routes/public.js";
-import applicationsRouter from "./routes/applications.js";
+import applicationsRouter from "./routes/applications.routes.js";
 import documentsRouter from "./routes/documents.js";
 import pipelineRouter from "./routes/pipeline.js";
 import usersRouter from "./routes/users.js";
@@ -43,7 +42,6 @@ export function createApp() {
     app.get("/api/_int/production-readiness", requireAuth, (_req, res) => { res.status(200).json({ status: "ok" }); });
 
     app.use("/api/auth", authRoutes);
-    app.use("/api/call", callRoutes);
     app.use("/api/health", healthRoutes);
     app.use("/api/public", publicRoutes);
     app.use("/api/applications", requireAuth, applicationsRouter);
@@ -56,18 +54,20 @@ export function createApp() {
     app.get("/api/crm/leads/count", requireAuth, (_req, res) => { res.json({ count: 0 }); });
     app.get("/api/support/live/count", requireAuth, (_req, res) => { res.json({ count: 0 }); });
 
-    app.post("/api/voice/device-token", requireAuth, (_req, res) => { res.json({ status: "ok", data: { registered: true } }); });
+    app.use("/api", voiceTokenRouter);
+
+    app.get("/api/telephony/token", requireAuth, (req, res) => {
+        const voiceRouter = voiceTokenRouter;
+        const mockReq = Object.assign(Object.create(req), { url: "/voice/token", path: "/voice/token" });
+        voiceRouter.handle(mockReq, res, () => {
+            res.status(404).json({ error: "Voice token unavailable" });
+        });
+    });
+
+    app.post("/api/sms/send", requireAuth, (_req, res) => { res.json({ status: "ok", data: { sent: true } }); });
     app.post("/api/voice/calls/answer", requireAuth, (_req, res) => { res.json({ status: "ok", data: { answered: true } }); });
     app.post("/api/voice/calls/end", requireAuth, (_req, res) => { res.json({ status: "ok", data: { ended: true } }); });
     app.get("/api/voice/calls/log", requireAuth, (_req, res) => { res.json({ status: "ok", data: { calls: [] } }); });
-    app.post("/api/voice/record/start", requireAuth, (_req, res) => { res.json({ status: "ok", data: { recording: true } }); });
-    app.post("/api/voice/record/stop", requireAuth, (_req, res) => { res.json({ status: "ok", data: { recording: false } }); });
-    app.post("/api/sms/send", requireAuth, (_req, res) => { res.json({ status: "ok", data: { sent: true } }); });
-
-    app.use("/api", voiceTokenRouter);
-
-    app.get("/api/telephony/token", requireAuth, (req, res) => { res.redirect(307, "/api/voice/token"); });
-    app.get("/api/dialer/token", requireAuth, (req, res) => { res.redirect(307, "/api/voice/token"); });
 
     app.post("/api/v1/crm/lead", async (req, res) => {
         try {
@@ -78,9 +78,6 @@ export function createApp() {
                 email: req.body?.email, phone: req.body?.phone,
                 requestedAmount: req.body?.requested_amount ?? req.body?.requestedAmount ?? req.body?.fundingAmount,
                 monthlyRevenue: req.body?.monthly_revenue ?? req.body?.monthlyRevenue,
-                annualRevenue: req.body?.annual_revenue ?? req.body?.annualRevenue,
-                productInterest: req.body?.product_interest ?? req.body?.productInterest ?? req.body?.product,
-                industryInterest: req.body?.industry_interest ?? req.body?.industryInterest ?? req.body?.industry,
                 notes: req.body?.notes ?? req.body?.message, tags: req.body?.tags,
             };
             const result = await createLead(payload);
@@ -98,3 +95,6 @@ export function createApp() {
 
     return app;
 }
+
+const app = createApp();
+export default app;

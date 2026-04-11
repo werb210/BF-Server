@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import otp from "./otp.js";
 import { authMeHandler } from "./me.js";
 import { auth } from "../../middleware/auth.js";
+import { fetchCapabilitiesForRole } from "../../auth/capabilities.js";
 const router = Router();
 router.use("/otp", otp);
 router.get("/me", auth, authMeHandler);
@@ -16,11 +17,13 @@ router.post("/refresh", auth, (req, res) => {
     if (!JWT_SECRET) {
         return res.status(500).json({ status: "error", error: "auth_not_configured" });
     }
+    const capabilities = (() => { try { return fetchCapabilitiesForRole(user.role); } catch { return []; } })();
     const token = jwt.sign({
         sub: user.sub ?? user.userId,
         role: user.role,
         phone: user.phone ?? null,
         tokenVersion: user.tokenVersion ?? 0,
+        capabilities,
         ...(user.silo ? { silo: user.silo } : {}),
     }, JWT_SECRET, { expiresIn: "1d" });
     return res.status(200).json({ status: "ok", data: { token } });
