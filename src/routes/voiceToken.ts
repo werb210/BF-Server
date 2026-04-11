@@ -1,9 +1,12 @@
 import { Router } from "express";
-import AccessToken from "twilio/lib/jwt/AccessToken";
-import { VoiceGrant } from "twilio/lib/jwt/AccessToken";
+import AccessToken from "twilio/lib/jwt/AccessToken.js";
 import { requireAuth } from "../middleware/auth.js";
 import { ROLES, type Role } from "../auth/roles.js";
 import { config } from "../config/index.js";
+
+const { VoiceGrant } = AccessToken as unknown as {
+  VoiceGrant: new (options: { outgoingApplicationSid: string; incomingAllow: boolean }) => unknown;
+};
 
 const router = Router();
 
@@ -86,7 +89,7 @@ function issueVoiceToken(req: any, res: any) {
     incomingAllow: true,
   });
 
-  token.addGrant(voiceGrant);
+  token.addGrant(voiceGrant as any);
 
   res["json"]({
     identity,

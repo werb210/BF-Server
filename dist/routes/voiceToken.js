@@ -1,9 +1,9 @@
 import { Router } from "express";
-import AccessToken from "twilio/lib/jwt/AccessToken";
-import { VoiceGrant } from "twilio/lib/jwt/AccessToken";
+import AccessToken from "twilio/lib/jwt/AccessToken.js";
 import { requireAuth } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 import { config } from "../config/index.js";
+const { VoiceGrant } = AccessToken;
 const router = Router();
 const STAFF_VOICE_ROLES = new Set([ROLES.ADMIN, ROLES.STAFF, ROLES.OPS]);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -42,14 +42,14 @@ function resolveVoiceIdentity(params) {
     }
     return isStaffRole ? "staff_portal" : null;
 }
-router.get("/voice/token", requireAuth, (req, res) => {
+function issueVoiceToken(req, res) {
     const user = req.user;
     if (!user) {
         res.status(401).json({ ok: false, error: "missing_token" });
         return;
     }
     const identity = resolveVoiceIdentity({
-        query: req.query,
+        query: { ...req.query, ...req.body },
         userId: user.userId,
         role: user.role,
     });
@@ -71,5 +71,7 @@ router.get("/voice/token", requireAuth, (req, res) => {
         identity,
         token: token.toJwt(),
     });
-});
+}
+router.get("/voice/token", requireAuth, issueVoiceToken);
+router.post("/voice/token", requireAuth, issueVoiceToken);
 export default router;
