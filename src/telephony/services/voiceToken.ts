@@ -1,4 +1,4 @@
-import AccessToken, { VoiceGrant } from "twilio/lib/jwt/AccessToken";
+import AccessToken, { VoiceGrant } from "twilio/lib/jwt/AccessToken.js";
 import { config } from "../../config/index.js";
 
 function requireTokenConfig(value: string | undefined, name: string): string {
