@@ -1,3 +1,4 @@
+import Redis from "ioredis";
 let client = null;
 const memoryStore = new Map();
 const inMemoryStore = createInMemoryRedis();
@@ -22,8 +23,6 @@ export function getRedisOrNull() {
         return null;
     }
     if (!client) {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const Redis = require("ioredis");
         client = new Redis(process.env.REDIS_URL, {
             lazyConnect: true,
             maxRetriesPerRequest: 1,

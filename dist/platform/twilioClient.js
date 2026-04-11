@@ -1,10 +1,9 @@
+import twilio from "twilio";
 import { config } from "../config/index.js";
 let twilioClientInstance = null;
 export function getTwilioClient() {
     if (!twilioClientInstance) {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const TwilioSDK = require("twilio");
-        twilioClientInstance = new TwilioSDK(config.twilio.accountSid, config.twilio.authToken);
+        twilioClientInstance = twilio(config.twilio.accountSid, config.twilio.authToken);
     }
     return twilioClientInstance;
 }

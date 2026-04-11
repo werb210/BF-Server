@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import twilio from "twilio";
-import AccessToken from "twilio/lib/jwt/AccessToken";
-import { VoiceGrant } from "twilio/lib/jwt/AccessToken";
+import AccessToken from "twilio/lib/jwt/AccessToken.js";
+import { VoiceGrant } from "twilio/lib/jwt/AccessToken.js";
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { CAPABILITIES } from "../auth/capabilities.js";
 import { ROLES } from "../auth/roles.js";

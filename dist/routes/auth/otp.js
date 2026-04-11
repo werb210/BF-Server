@@ -1,18 +1,10 @@
 import express from "express";
 import { randomInt } from "node:crypto";
 import jwt from "jsonwebtoken";
+import twilio from "twilio";
 import { getRedis } from "../../lib/redis.js";
 import { findAuthUserByPhone } from "../../modules/auth/auth.repo.js";
 const router = express.Router();
-let twilioClient = null;
-function getTwilioClient() {
-    if (!twilioClient) {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const twilio = require("twilio");
-        twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID ?? "", process.env.TWILIO_AUTH_TOKEN ?? "");
-    }
-    return twilioClient;
-}
 const isPhone = (value) => (typeof value === "string" && /^\+?[1-9]\d{7,14}$/.test(value.trim()));
 const isCode = (value) => (typeof value === "string" && /^\d{6}$/.test(value.trim()));
 router.post("/start", async (req, res) => {
@@ -35,12 +27,18 @@ router.post("/start", async (req, res) => {
     if (process.env.NODE_ENV === "test") {
         return res.status(200).json({ status: "ok", data: { sent: true } });
     }
-    await getTwilioClient().messages.create({
+    const client = twilio(process.env.TWILIO_ACCOUNT_SID ?? "", process.env.TWILIO_AUTH_TOKEN ?? "");
+    try {
+    await client.messages.create({
         body: `Your Boreal Financial verification code is ${code}`,
         to: phone,
         from: process.env.TWILIO_PHONE,
     });
-    return res.status(200).json({ status: "ok", data: { sent: true } });
+        return res.status(200).json({ status: "ok", data: { sent: true } });
+   } catch (err) {
+       console.error("Twilio SMS failed:", err);
+       return res.status(500).json({ error: "sms_failed" });
+   }
 });
 router.post("/verify", async (req, res) => {
     const { phone, code } = req.body;
