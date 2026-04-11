@@ -1,1 +1,4 @@
-export const API_BASE = "https://boreal-staff-server.azurewebsites.net";
+export const API_BASE =
+  process.env.PUBLIC_BASE_URL ||
+  process.env.SERVER_URL ||
+  "https://server.boreal.financial";

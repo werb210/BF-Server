@@ -18,25 +18,28 @@ import { respondOk } from "./utils/respondOk.js";
 
 export function createApp() {
   const app = express();
-  const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "")
+  const HARDCODED_ALLOWED_ORIGINS = [
+    "https://staff.boreal.financial",
+    "https://client.boreal.financial",
+    "https://boreal.financial",
+    "https://www.boreal.financial",
+  ];
+
+  const envOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
+
+  const allowedOrigins = [...new Set([...envOrigins, ...HARDCODED_ALLOWED_ORIGINS])];
 
   /**
    * CORE MIDDLEWARE
    */
   app.use(cors({
     origin: (origin, callback) => {
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(new Error("Not allowed by CORS"));
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(null, false);
     },
     credentials: true,
   }));
