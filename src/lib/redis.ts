@@ -1,3 +1,5 @@
+import Redis from "ioredis";
+
 type RedisLike = {
   get: (key: string) => Promise<string | null>;
   set: (key: string, value: string, mode?: string, ttl?: number) => Promise<string>;
@@ -33,8 +35,6 @@ export function getRedisOrNull(): RedisLike | null {
   }
 
   if (!client) {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const Redis = require("ioredis");
     client = new Redis(process.env.REDIS_URL, {
       lazyConnect: true,
       maxRetriesPerRequest: 1,
