@@ -1,4 +1,7 @@
-import twilio from "twilio";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+const twilio = require("twilio");
 
 const AccessToken = twilio.jwt.AccessToken;
 import { AppError } from "../../middleware/errors.js";
