@@ -1,3 +1,11 @@
+process.on("unhandledRejection", (err) => {
+  console.error("[UNHANDLED REJECTION]", err);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("[UNCAUGHT EXCEPTION]", err);
+});
+
 import "./system/errors.js";
 import { createApp } from "./app.js";
 import { initDb } from "./db/init.js";

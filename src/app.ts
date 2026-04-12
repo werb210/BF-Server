@@ -19,6 +19,7 @@ import { respondOk } from "./utils/respondOk.js";
 
 export function createApp() {
   const app = express();
+  app.set("trust proxy", 1);
   const HARDCODED_ALLOWED_ORIGINS = [
     "https://staff.boreal.financial",
     "https://client.boreal.financial",

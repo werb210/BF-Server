@@ -4,6 +4,10 @@ import type { QueryResult, QueryResultRow } from "pg";
 import { runQuery as runQueryFromDeps } from "./db/index.js";
 import { deps } from "./system/deps.js";
 
+if (!process.env.DATABASE_URL && process.env.NODE_ENV !== "test") {
+  throw new Error("DATABASE_URL missing");
+}
+
 const dbImpl = dbProd;
 
 export const {
