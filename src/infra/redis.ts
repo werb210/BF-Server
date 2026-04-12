@@ -1,4 +1,7 @@
 import { config } from "../config/index.js";
+import IORedis from "ioredis";
+
+const RedisCtor = IORedis as unknown as new (...args: any[]) => any;
 
 let redisInstance: any = null;
 
@@ -8,9 +11,7 @@ export function getRedis(): any {
   }
 
   if (!redisInstance) {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const IORedis = require("ioredis");
-    redisInstance = new IORedis(config.redis.url, {
+    redisInstance = new RedisCtor(config.redis.url, {
       lazyConnect: true,
       maxRetriesPerRequest: 1,
       connectTimeout: 5000,

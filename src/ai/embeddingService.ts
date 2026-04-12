@@ -1,9 +1,11 @@
 import OpenAI from "openai";
 import { createHash, randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import { config } from "../config/index.js";
 import { pool, runQuery } from "../db.js";
 
 const APPROX_CHUNK_SIZE = 800;
+const require = createRequire(import.meta.url);
 
 function hashToVector(text: string, length = 64): number[] {
   const digest = createHash("sha256").update(text).digest();

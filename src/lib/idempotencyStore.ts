@@ -1,5 +1,8 @@
 import { logWarn } from "../observability/logger.js";
 import { config } from "../config/index.js";
+import IORedis from "ioredis";
+
+const RedisCtor = IORedis as unknown as new (...args: any[]) => any;
 
 const ONE_HOUR_IN_SECONDS = 60 * 60;
 const ONE_HOUR_IN_MILLISECONDS = ONE_HOUR_IN_SECONDS * 1000;
@@ -29,9 +32,7 @@ function fetchRedisClient(): any {
     return null;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const IORedis = require("ioredis");
-  const client = new IORedis(redisUrl, {
+  const client = new RedisCtor(redisUrl, {
     lazyConnect: true,
     maxRetriesPerRequest: 1,
     enableOfflineQueue: false,
