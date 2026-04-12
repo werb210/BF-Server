@@ -1,9 +1,7 @@
 import { Router } from "express";
-import { createRequire } from "node:module";
+import twilio from "twilio";
 
-const _require = createRequire(import.meta.url);
-const twilioSdk = _require("twilio");
-const AccessToken = twilioSdk.jwt.AccessToken;
+const AccessToken = twilio.jwt.AccessToken;
 const VoiceGrant = AccessToken.VoiceGrant;
 import { requireAuth } from "../middleware/auth.js";
 import { ROLES, type Role } from "../auth/roles.js";

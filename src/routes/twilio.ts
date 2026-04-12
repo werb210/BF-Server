@@ -1,10 +1,8 @@
 import { Router, type RequestHandler } from "express";
 import { randomUUID } from "node:crypto";
-import { createRequire } from "node:module";
+import twilio from "twilio";
 
-const _require = createRequire(import.meta.url);
-const twilioSdk = _require("twilio");
-const AccessToken = twilioSdk.jwt.AccessToken;
+const AccessToken = twilio.jwt.AccessToken;
 const VoiceGrant = AccessToken.VoiceGrant;
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { CAPABILITIES } from "../auth/capabilities.js";
@@ -109,7 +107,7 @@ export function __resetTwilioRateLimitsForTest(): void {
   staffBuckets.clear();
 }
 
-const twilioRuntime = twilioSdk as unknown as {
+const twilioRuntime = twilio as unknown as {
   validateRequest: (authToken: string, signature: string, url: string, params: Record<string, unknown>) => boolean;
   twiml: { VoiceResponse: new () => { dial: (attrs: Record<string, unknown>) => { client: (identity: string) => void }; say: (text: string) => void; record: (attrs: Record<string, unknown>) => void; toString: () => string } };
 };

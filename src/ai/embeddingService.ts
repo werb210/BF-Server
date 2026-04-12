@@ -1,11 +1,9 @@
 import OpenAI from "openai";
 import { createHash, randomUUID } from "node:crypto";
-import { createRequire } from "node:module";
 import { config } from "../config/index.js";
 import { pool, runQuery } from "../db.js";
 
 const APPROX_CHUNK_SIZE = 800;
-const require = createRequire(import.meta.url);
 
 function hashToVector(text: string, length = 64): number[] {
   const digest = createHash("sha256").update(text).digest();
@@ -61,8 +59,8 @@ export async function embedTextByChunks(text: string, client?: OpenAI): Promise<
 
 export async function extractTextFromBuffer(fileBuffer: Buffer, mimeType: string): Promise<string> {
   if (mimeType === "application/pdf") {
-    const pdfParse = require("pdf-parse") as (input: Buffer) => Promise<{ text?: string }>;
-    const parsed = await pdfParse(fileBuffer);
+    const { default: pdfParse } = await import("pdf-parse");
+    const parsed = await (pdfParse as (input: Buffer) => Promise<{ text?: string }>)(fileBuffer);
     return parsed.text ?? "";
   }
   return fileBuffer.toString("utf8");

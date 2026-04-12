@@ -4,6 +4,6 @@ import("../dist/index.js")
     process.exit(0);
   })
   .catch((err) => {
-    console.error("Build verification failed:", err);
+    console.error(err);
     process.exit(1);
   });

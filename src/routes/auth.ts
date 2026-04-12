@@ -1,7 +1,7 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
-import { createRequire } from "node:module";
 import { signJwt } from "../auth/jwt.js";
+import twilio from "twilio";
 
 const TEST_OTP_CODE = "123456";
 
@@ -19,9 +19,6 @@ if (
   process.env.TWILIO_VERIFY_SID
 ) {
   try {
-    const require = createRequire(import.meta.url);
-    const twilio = require("twilio");
-
     twilioClient = twilio(
       process.env.TWILIO_ACCOUNT_SID,
       process.env.TWILIO_AUTH_TOKEN

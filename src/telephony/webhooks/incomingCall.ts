@@ -1,10 +1,8 @@
 import type { Request, Response } from "express";
-import { createRequire } from "node:module";
+import twilio from "twilio";
 import { ok } from "../../lib/respond.js";
 
-const _require = createRequire(import.meta.url);
-const twilioSdk = _require("twilio");
-const VoiceResponse = twilioSdk.twiml.VoiceResponse;
+const VoiceResponse = twilio.twiml.VoiceResponse;
 
 export function incomingCallHandler(_req: Request, res: Response): Response {
   const response = new VoiceResponse();

@@ -1,8 +1,7 @@
 import { Router } from "express";
-import { createRequire } from "node:module";
+import twilio from "twilio";
 
-const _require = createRequire(import.meta.url);
-const { validateRequest } = _require("twilio");
+const { validateRequest } = twilio;
 import { AppError } from "../middleware/errors.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { logWarn } from "../observability/logger.js";

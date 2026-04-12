@@ -1,8 +1,6 @@
-import { createRequire } from "node:module";
+import twilio from "twilio";
 
-const _require = createRequire(import.meta.url);
-const twilioSdk = _require("twilio");
-const AccessToken = twilioSdk.jwt.AccessToken;
+const AccessToken = twilio.jwt.AccessToken;
 import { AppError } from "../../middleware/errors.js";
 import { logError, logInfo, logWarn } from "../../observability/logger.js";
 import { normalizePhoneNumber } from "../auth/phone.js";
