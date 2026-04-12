@@ -1,7 +1,8 @@
 import { config } from "../config/index.js";
-import IORedis from "ioredis";
+import { safeImport } from "../utils/safeImport.js";
 
-const RedisCtor = IORedis as unknown as new (...args: any[]) => any;
+const redisModule = await safeImport<any>("ioredis");
+const RedisCtor = (redisModule?.default || redisModule) as (new (...args: any[]) => any) | null;
 
 let redisInstance: any = null;
 
@@ -12,6 +13,9 @@ export function getRedis(): any {
   }
 
   if (!redisInstance) {
+    if (!RedisCtor) {
+      return null;
+    }
     redisInstance = new RedisCtor(redisUrl, {
       lazyConnect: true,
       maxRetriesPerRequest: 1,

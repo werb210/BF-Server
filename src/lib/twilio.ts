@@ -1,6 +1,6 @@
-import twilio from "twilio";
+import { safeImport } from "../utils/safeImport.js";
 
-export function sendSMS(to: string, body: string) {
+export async function sendSMS(to: string, body: string) {
   if (process.env.NODE_ENV === "test") {
     return Promise.resolve({ sid: "test" });
   }
@@ -13,7 +13,12 @@ export function sendSMS(to: string, body: string) {
     throw new Error("TWILIO_PHONE required outside test");
   }
 
-  const client = twilio(
+  const twilioFactory: any = await safeImport("twilio");
+  if (!twilioFactory) {
+    throw new Error("Twilio SDK unavailable");
+  }
+
+  const client = twilioFactory(
     process.env.TWILIO_ACCOUNT_SID,
     process.env.TWILIO_AUTH_TOKEN,
   );

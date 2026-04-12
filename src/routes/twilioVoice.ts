@@ -1,7 +1,7 @@
 import express, { Router } from "express";
-import twilio from "twilio";
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
 import { ok } from "../lib/respond.js";
+import { safeImport } from "../utils/safeImport.js";
 
 const router = Router();
 
@@ -17,13 +17,16 @@ type TwilioRuntime = {
   };
 };
 
-const twilioRuntime = twilio as unknown as TwilioRuntime;
+const twilioRuntime = (await safeImport("twilio")) as TwilioRuntime | null;
 
 router.post(
   "/twilio/voice",
   express.urlencoded({ extended: false }),
   twilioWebhookValidation,
   (_req: any, res: any) => {
+  if (!twilioRuntime?.twiml?.VoiceResponse) {
+    return res.status(503).json({ error: "twilio_unavailable" });
+  }
   const VoiceResponse = twilioRuntime.twiml.VoiceResponse;
   const response = new VoiceResponse();
 

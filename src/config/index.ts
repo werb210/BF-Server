@@ -39,6 +39,7 @@ const csv = (value: string | undefined, defaultValue: string[]): string[] => {
 export const env = {
   PORT: parsed.PORT ? Number(parsed.PORT) : undefined,
 };
+export const isTest = process.env.NODE_ENV === "test";
 
 export const config = {
   env: parsed.NODE_ENV,

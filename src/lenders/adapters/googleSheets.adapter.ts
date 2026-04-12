@@ -1,10 +1,13 @@
 import { config } from "../../config/index.js";
-import { google } from "googleapis";
+import { safeImport } from "../../utils/safeImport.js";
 import {
   type GoogleSheetsPayload,
   type GoogleSheetsSheetMap,
 } from "../config/merchantGrowth.sheetMap.js";
 import { logError, logInfo } from "../../observability/logger.js";
+
+const googleModule: any = await safeImport("googleapis");
+const google = googleModule?.google ?? null;
 
 export type GoogleSheetsSubmissionResult = {
   success: boolean;
@@ -81,6 +84,18 @@ function resolveRetryableError(error: unknown): boolean {
 export async function submitGoogleSheetsApplication(
   params: GoogleSheetsSubmissionParams
 ): Promise<GoogleSheetsSubmissionResult> {
+  if (!google) {
+    return {
+      success: false,
+      response: {
+        status: "error",
+        detail: "Google APIs SDK unavailable.",
+        receivedAt: new Date().toISOString(),
+      },
+      failureReason: "google_sheets_unavailable",
+      retryable: false,
+    };
+  }
   const now = new Date().toISOString();
   const { clientId, clientSecret, redirectUri, refreshToken } = assertGoogleEnv();
   const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);

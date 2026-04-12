@@ -1,4 +1,4 @@
-import twilio from "twilio";
+import { safeImport } from "../utils/safeImport.js";
 
 const isTestEnv = process.env.NODE_ENV === "test";
 const isConfigured = Boolean(
@@ -36,10 +36,12 @@ function createMockClient() {
   };
 }
 
+const twilioFactory: any = await safeImport("twilio");
+
 export const twilioClient: any = isTestEnv
   ? createMockClient()
-  : isConfigured
-    ? twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!)
+  : isConfigured && twilioFactory
+    ? twilioFactory(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!)
     : null;
 
 export const twilioEnabled = isTestEnv || isConfigured;

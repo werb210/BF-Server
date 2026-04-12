@@ -1,10 +1,13 @@
 import { config } from "../../config/index.js";
-import { google } from "googleapis";
+import { safeImport } from "../../utils/safeImport.js";
 import { logError, logInfo } from "../../observability/logger.js";
 import {
   type SubmissionAdapter,
   type SubmissionResult,
 } from "./SubmissionAdapter.js";
+
+const googleModule: any = await safeImport("googleapis");
+const google = googleModule?.google ?? null;
 
 export type GoogleSheetsPayload = {
   application: {
@@ -162,6 +165,19 @@ export class GoogleSheetsAdapter implements SubmissionAdapter {
   }
 
   async submit(applicationId: string): Promise<SubmissionResult> {
+    if (!google) {
+      return {
+        success: false,
+        response: {
+          status: "error",
+          detail: "Google APIs SDK unavailable.",
+          receivedAt: new Date().toISOString(),
+          externalReference: null,
+        },
+        failureReason: "google_sheets_unavailable",
+        retryable: false,
+      };
+    }
     const now = new Date().toISOString();
     const credentials = assertServiceAccountEnv();
     const auth = new google.auth.GoogleAuth({

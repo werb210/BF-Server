@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import { safeImport } from "../utils/safeImport.js";
 
 type RedisClient = {
   get: (key: string) => Promise<string | null>;
@@ -17,7 +17,8 @@ type RedisConstructor = new (
   }
 ) => RedisClient;
 
-const RedisCtor = Redis as unknown as RedisConstructor;
+const redisModule = await safeImport<any>("ioredis");
+const RedisCtor = (redisModule?.default || redisModule) as RedisConstructor | null;
 
 let redis: RedisClient | null = null;
 
@@ -51,6 +52,10 @@ function getRedisClientOrNull(): RedisClient | null {
   }
 
   if (!redis) {
+    if (!RedisCtor) {
+      console.warn("redis_client_unavailable");
+      return null;
+    }
     redis = new RedisCtor(process.env.REDIS_URL, {
       lazyConnect: true,
       maxRetriesPerRequest: 1,

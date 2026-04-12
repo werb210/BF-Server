@@ -1,15 +1,19 @@
-import Twilio from "twilio";
+import { safeImport } from "../utils/safeImport.js";
 
 const isTest = process.env.NODE_ENV === "test";
 
-let client: ReturnType<typeof Twilio> | null = null;
+const twilioFactory: any = await safeImport("twilio");
+let client: any | null = null;
 
 if (!isTest) {
   if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
     throw new Error("Twilio env missing in non-test mode");
   }
 
-  client = Twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+  if (!twilioFactory) {
+    throw new Error("Twilio SDK unavailable in non-test mode");
+  }
+  client = twilioFactory(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 }
 
 export async function sendOtp(phone: string) {

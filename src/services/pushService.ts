@@ -1,14 +1,9 @@
 import { createHash } from "node:crypto";
-import { config } from "../config/index.js";
+import { config, isTest } from "../config/index.js";
+import { safeImport } from "../utils/safeImport.js";
 
 let webpush: any = null;
-
-try {
-  const mod = await import("web-push");
-  webpush = mod.default || mod;
-} catch (error) {
-  console.warn("webpush_not_installed", error);
-}
+webpush = await safeImport("web-push");
 
 import {
   createPwaNotificationAudit,
@@ -172,6 +167,10 @@ export function initializePushService(): PushStatus {
     return cachedStatus;
   }
   pushInitAttempted = true;
+  if (isTest) {
+    cachedStatus = { configured: false, enabled: false, error: "test_env" };
+    return cachedStatus;
+  }
 
   const enabled = isPushEnabled();
   if (!enabled) {
