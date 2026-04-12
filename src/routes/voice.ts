@@ -1,5 +1,5 @@
 import express from "express";
-import VoiceResponse from "twilio/lib/twiml/VoiceResponse";
+import VoiceResponse from "twilio/lib/twiml/VoiceResponse.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { validate } from "../middleware/validate.js";
 import { CallStatusSchema } from "../schemas/index.js";

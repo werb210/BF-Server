@@ -1,5 +1,5 @@
 import type { Request, RequestHandler } from "express";
-import { validateRequest } from "twilio/lib/webhooks/webhooks";
+import { validateRequest } from "twilio/lib/webhooks/webhooks.js";
 import { logWarn } from "../observability/logger.js";
 import { config } from "../config/index.js";
 

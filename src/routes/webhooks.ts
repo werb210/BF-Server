@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { validateRequest } from "twilio/lib/webhooks/webhooks";
+import { validateRequest } from "twilio/lib/webhooks/webhooks.js";
 import { AppError } from "../middleware/errors.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { logWarn } from "../observability/logger.js";
