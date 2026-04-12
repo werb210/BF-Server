@@ -1,8 +1,9 @@
 import { logWarn } from "../observability/logger.js";
 import { config } from "../config/index.js";
-import IORedis from "ioredis";
+import { safeImport } from "../utils/safeImport.js";
 
-const RedisCtor = IORedis as unknown as new (...args: any[]) => any;
+const redisModule = await safeImport<any>("ioredis");
+const RedisCtor = (redisModule?.default || redisModule) as (new (...args: any[]) => any) | null;
 
 const ONE_HOUR_IN_SECONDS = 60 * 60;
 const ONE_HOUR_IN_MILLISECONDS = ONE_HOUR_IN_SECONDS * 1000;
@@ -28,7 +29,7 @@ function fetchRedisClient(): any {
 
   redisAttempted = true;
   const redisUrl = config.redis.url;
-  if (!redisUrl) {
+  if (!redisUrl || !RedisCtor) {
     return null;
   }
 

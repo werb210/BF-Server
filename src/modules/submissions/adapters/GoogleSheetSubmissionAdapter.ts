@@ -1,5 +1,6 @@
 import { config } from "../../../config/index.js";
 import { logError, logInfo } from "../../../observability/logger.js";
+import { safeImport } from "../../../utils/safeImport.js";
 import {
   type SubmissionAdapter,
   type SubmissionPayload,
@@ -14,12 +15,10 @@ export type GoogleSheetSubmissionConfig = {
 
 let google: any = null;
 
-// Lazy load to prevent hard crash if dependency is unavailable.
-try {
-  const mod = await import("googleapis");
-  google = mod.google;
-} catch (err) {
-  logError("googleapis_not_installed", { error: err });
+const googleMod: any = await safeImport("googleapis");
+google = googleMod?.google ?? null;
+if (!google) {
+  logError("googleapis_not_installed");
 }
 
 function unavailableResult(reason: string): SubmissionResult {

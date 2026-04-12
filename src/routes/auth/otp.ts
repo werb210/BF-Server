@@ -1,7 +1,7 @@
 import express, { type Request, type Response } from "express";
 import { randomInt } from "node:crypto";
 import jwt from "jsonwebtoken";
-import twilio from "twilio";
+import { safeImport } from "../../utils/safeImport.js";
 
 import { getRedis } from "../../lib/redis.js";
 import { findAuthUserByPhone } from "../../modules/auth/auth.repo.js";
@@ -44,7 +44,12 @@ router.post("/start", async (req: Request, res: Response) => {
     return res.status(200).json({ status: "ok", data: { sent: true } });
   }
 
-  const client = twilio(process.env.TWILIO_ACCOUNT_SID ?? "", process.env.TWILIO_AUTH_TOKEN ?? "");
+  const twilioFactory: any = await safeImport("twilio");
+  if (!twilioFactory) {
+    return res.status(503).json({ error: "twilio_unavailable" });
+  }
+
+  const client = twilioFactory(process.env.TWILIO_ACCOUNT_SID ?? "", process.env.TWILIO_AUTH_TOKEN ?? "");
 
   try {
     await client.messages.create({

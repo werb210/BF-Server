@@ -1,6 +1,8 @@
 import process from "node:process"
-import Twilio from "twilio"
 import { config } from "../config/index.js";
+import { safeImport } from "../utils/safeImport.js";
+
+const twilioFactory: any = await safeImport("twilio");
 
 let client: any | null = null
 
@@ -18,7 +20,10 @@ function fetchClient() {
   }
 
   if (!client) {
-    client = Twilio(
+    if (!twilioFactory) {
+      throw new Error("Twilio SDK unavailable");
+    }
+    client = twilioFactory(
       config.twilio.accountSid!,
       config.twilio.authToken!
     )

@@ -1,7 +1,7 @@
 import { Router } from "express";
-import twilio from "twilio";
 import { config } from "../config/index.js";
 import { ok } from "../lib/respond.js";
+import { safeImport } from "../utils/safeImport.js";
 
 const router = Router();
 
@@ -20,9 +20,12 @@ type TwilioRuntime = {
   };
 };
 
-const twilioRuntime = twilio as unknown as TwilioRuntime;
+const twilioRuntime = (await safeImport("twilio")) as TwilioRuntime | null;
 
 router.post("/voice/incoming", (_req: any, res: any) => {
+  if (!twilioRuntime?.twiml?.VoiceResponse) {
+    return res.status(503).json({ error: "twilio_unavailable" });
+  }
   const VoiceResponse = twilioRuntime.twiml.VoiceResponse;
   const twiml = new VoiceResponse();
 
