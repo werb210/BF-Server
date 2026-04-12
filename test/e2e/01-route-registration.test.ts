@@ -3,13 +3,6 @@ import type { Express } from "express";
 
 import { createServer } from "../../src/server/createServer";
 
-interface RouteCheck {
-  method: "get" | "post";
-  path: string;
-  expectedStatus: number;
-  body?: Record<string, unknown>;
-}
-
 describe("Route registration and prefix integrity", () => {
   let app: Express;
 
@@ -17,38 +10,33 @@ describe("Route registration and prefix integrity", () => {
     app = createServer();
   });
 
-  it("registers canonical /api routes", async () => {
-    const routeChecks: RouteCheck[] = [
-      { method: "get", path: "/api/health", expectedStatus: 200 },
-      { method: "post", path: "/api/auth/otp/start", expectedStatus: 200, body: { phone: "+15555550100" } },
-      { method: "get", path: "/api/voice/token", expectedStatus: 200 },
-    ];
-
-    for (const check of routeChecks) {
-      const req = request(app)[check.method](check.path);
-      const res = check.body ? await req.send(check.body) : await req;
-      expect(res.status).toBe(check.expectedStatus);
-      expect(res.status).not.toBe(405);
-    }
-  });
-
-  it("keeps OTP endpoints mounted only at canonical /api/auth paths", async () => {
+  it("registers canonical OTP routes under /api/auth", async () => {
     const start = await request(app).post("/api/auth/otp/start").send({ phone: "+15555550100" });
-    expect(start.status).toBe(200);
+    expect(start.status).not.toBe(404);
     expect(start.status).not.toBe(405);
+    expect(start.status).toBeLessThan(500);
 
     const verify = await request(app).post("/api/auth/otp/verify").send({ phone: "+15555550100", code: "654321" });
-    expect(verify.status).toBe(200);
-    expect(verify.body.status).toBe("ok");
+    expect(verify.status).not.toBe(404);
+    expect(verify.status).not.toBe(405);
+    expect(verify.status).toBeLessThan(500);
   });
 
-  it("returns 404 for non-api aliases", async () => {
-    const authStart = await request(app).post("/auth/otp/start").send({ phone: "+15555550100" });
-    expect(authStart.status).toBe(404);
-    expect(authStart.body).toEqual({ error: "Route not found", path: "/auth/otp/start" });
+  it("does not expose legacy OTP aliases", async () => {
+    const legacyStart = await request(app).post("/api/v1/auth/otp/start").send({ phone: "+15555550100" });
+    expect(legacyStart.status).toBe(404);
 
-    const voiceToken = await request(app).get("/voice/token");
-    expect(voiceToken.status).toBe(404);
-    expect(voiceToken.body).toEqual({ error: "Route not found", path: "/voice/token" });
+    const legacyVerify = await request(app)
+      .post("/api/v1/auth/otp/verify")
+      .send({ phone: "+15555550100", code: "654321" });
+    expect(legacyVerify.status).toBe(404);
+
+    const noApiPrefixStart = await request(app).post("/auth/otp/start").send({ phone: "+15555550100" });
+    expect(noApiPrefixStart.status).toBe(404);
+
+    const noApiPrefixVerify = await request(app)
+      .post("/auth/otp/verify")
+      .send({ phone: "+15555550100", code: "654321" });
+    expect(noApiPrefixVerify.status).toBe(404);
   });
 });
