@@ -16,7 +16,7 @@ if (!safeEnv.success && !isTestMode) {
 
 const parsed = {
   ...(safeEnv.success ? safeEnv.data : process.env),
-  DATABASE_URL: process.env.DATABASE_URL ?? "",
+  DATABASE_URL: process.env.DATABASE_URL ?? (isTestMode ? "test" : ""),
   JWT_SECRET: process.env.JWT_SECRET ?? "",
 } as Record<string, string | undefined>;
 
@@ -237,6 +237,7 @@ export type Config = typeof config;
 export const ENV = process.env as Record<string, string | undefined>;
 
 export const validateServerEnv = (): void => {
+  if (isTestMode) return;
   if (!config.db.url) throw new Error("DATABASE_URL missing");
 };
 
