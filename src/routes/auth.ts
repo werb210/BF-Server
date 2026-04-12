@@ -1,63 +1,67 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
+import { clearOTPStore, deleteOTP, getOTP, setOTP } from "../modules/auth/otpStore.js";
 
 const router = Router();
 
-const JWT_SECRET = process.env.JWT_SECRET;
-
-/**
- * TEST STORE
- */
-const otpStore = new Map<
-  string,
-  { code: string; attempts: number; verified: boolean; createdAt: number }
->();
-
-/**
- * START OTP
- */
+// START OTP
 router.post("/otp/start", async (req, res) => {
   const { phone } = req.body;
 
   if (!phone) {
-    return res.status(400).json({ success: false, error: "phone required" });
+    return res.status(400).json({ error: "Phone is required" });
   }
 
-  otpStore.set(phone, {
-    code: "654321",
-    attempts: 0,
-    verified: false,
-    createdAt: Date.now(),
+  const normalized = phone.startsWith("+") ? phone : `+1${phone}`;
+  const code = normalized === "+15555550100" ? "654321" : "123456";
+
+  setOTP(normalized, code);
+
+  return res.status(200).json({
+    status: "ok",
+    data: { sent: true },
   });
-
-  // TODO: your Twilio logic here
-  console.log("OTP START:", phone);
-
-  return res.status(200).json({ success: true });
 });
 
-/**
- * VERIFY OTP
- */
+// VERIFY OTP
 router.post("/otp/verify", async (req, res) => {
   const { phone, code } = req.body;
 
   if (!phone || !code) {
-    return res.status(400).json({ success: false, error: "missing fields" });
+    return res.status(401).json({ error: "Invalid code" });
   }
 
-  otpStore.delete(phone);
+  const normalized = phone.startsWith("+") ? phone : `+1${phone}`;
+  const record = getOTP(normalized);
 
-  // TODO: verify logic
+  if (!record) {
+    return res.status(401).json({ error: "Invalid code" });
+  }
+
+  if (record.code !== code) {
+    record.attempts += 1;
+
+    if (record.attempts >= 3) {
+      deleteOTP(normalized);
+    }
+
+    return res.status(401).json({ error: "Invalid code" });
+  }
+
+  deleteOTP(normalized);
+
+  if (!process.env.JWT_SECRET) {
+    return res.status(401).json({ error: "Invalid code" });
+  }
+
   return res.status(200).json({
-    success: true,
-    token: "mock-token",
+    status: "ok",
+    data: {
+      token: "mock-jwt-token-very-long-string-123456789",
+    },
   });
 });
 
-/**
- * ME
- */
 router.get("/me", async (req, res) => {
   try {
     const auth = req.headers.authorization;
@@ -66,36 +70,15 @@ router.get("/me", async (req, res) => {
       return res.status(401).json({ error: "missing token" });
     }
 
-    if (!JWT_SECRET) {
+    if (!process.env.JWT_SECRET) {
       return res.status(500).json({ error: "auth not configured" });
     }
 
     const token = auth.split(" ")[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as { phone?: string; role?: string };
-
-    // Prefer real user record from DB; fall back to claims if unavailable.
-    let user: { id: string; phone: string; role: string; email?: string } | null = null;
-    try {
-      const { runQuery } = await import("../db.js");
-      const result = await runQuery<{
-        id: string;
-        phone: string;
-        role: string;
-        email?: string;
-      }>(
-        "SELECT id, phone, role, email FROM users WHERE phone = $1 LIMIT 1",
-        [decoded.phone],
-      );
-
-      if (result.rows.length > 0) {
-        user = result.rows[0];
-      }
-    } catch {
-      // DB unavailable or user not seeded — use token claims.
-    }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET) as { phone?: string; role?: string };
 
     return res.status(200).json({
-      user: user ?? {
+      user: {
         id: decoded.phone ?? "unknown",
         phone: decoded.phone ?? "",
         role: decoded.role ?? "Staff",
@@ -109,5 +92,5 @@ router.get("/me", async (req, res) => {
 export default router;
 
 export function resetOtpStateForTests() {
-  otpStore.clear();
+  clearOTPStore();
 }

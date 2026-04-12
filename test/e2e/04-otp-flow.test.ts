@@ -28,7 +28,8 @@ describe("OTP flows", () => {
       .send({ phone: "+15555550100" });
 
     expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
+    expect(res.body.status).toBe("ok");
+    expect(res.body.data).toEqual({ sent: true });
   });
 
   it("verifies OTP and returns a token", async () => {
@@ -131,7 +132,8 @@ describe("OTP flows", () => {
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(second.body.success).toBe(true);
+    expect(second.body.status).toBe("ok");
+    expect(second.body.data).toEqual({ sent: true });
 
     nowSpy.mockRestore();
   });
