@@ -1,6 +1,9 @@
 import { Router, type RequestHandler } from "express";
 import { randomUUID } from "node:crypto";
-import twilio from "twilio";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+const twilio = require("twilio");
 
 const AccessToken = twilio.jwt.AccessToken;
 const VoiceGrant = AccessToken.VoiceGrant;

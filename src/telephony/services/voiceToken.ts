@@ -1,5 +1,8 @@
-import twilio from "twilio";
+import { createRequire } from "module";
 import { config } from "../../config/index.js";
+
+const require = createRequire(import.meta.url);
+const twilio = require("twilio");
 
 const AccessToken = twilio.jwt.AccessToken;
 const VoiceGrant = AccessToken.VoiceGrant;
