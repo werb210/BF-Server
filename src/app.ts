@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import { Router } from "express";
 
 import authRoutes, { resetOtpStateForTests as resetAuthOtpStateForTests } from "./routes/auth.js";
 import callRoutes from "./routes/call.js";
@@ -64,42 +65,43 @@ export function createApp() {
   /**
    * API ROUTES (LOCKED PREFIX)
    */
-  app.use("/api/auth", authRoutes);
-  app.use("/api/call", callRoutes);
-  app.use("/api/health", healthRoutes);
-  app.use("/api/public", publicRoutes);
+  const apiRouter = Router();
 
-  app.use("/api/applications", requireAuth, applicationsRouter);
-  app.use("/api/client/applications", applicationsRouter);
-  app.use("/api/documents", requireAuth, documentsRouter);
-  app.use("/api/pipeline", requireAuth, pipelineRouter);
-  app.use("/api/users", requireAuth, usersRouter);
-  app.use("/api/crm", requireAuth, crmRouter);
-  app.post("/api/voice/device-token", requireAuth, (_req, res) => {
+  apiRouter.use("/auth", authRoutes);
+  apiRouter.use("/call", callRoutes);
+  apiRouter.use("/health", healthRoutes);
+  apiRouter.use("/public", publicRoutes);
+
+  apiRouter.use("/applications", requireAuth, applicationsRouter);
+  apiRouter.use("/client/applications", applicationsRouter);
+  apiRouter.use("/documents", requireAuth, documentsRouter);
+  apiRouter.use("/pipeline", requireAuth, pipelineRouter);
+  apiRouter.use("/users", requireAuth, usersRouter);
+  apiRouter.use("/crm", requireAuth, crmRouter);
+  apiRouter.post("/voice/device-token", requireAuth, (_req, res) => {
     res.json({ status: "ok", data: { registered: true } });
   });
-  app.post("/api/voice/calls/answer", requireAuth, (_req, res) => {
+  apiRouter.post("/voice/calls/answer", requireAuth, (_req, res) => {
     res.json({ status: "ok", data: { answered: true } });
   });
-  app.post("/api/voice/calls/end", requireAuth, (_req, res) => {
+  apiRouter.post("/voice/calls/end", requireAuth, (_req, res) => {
     res.json({ status: "ok", data: { ended: true } });
   });
-  app.get("/api/voice/calls/log", requireAuth, (_req, res) => {
+  apiRouter.get("/voice/calls/log", requireAuth, (_req, res) => {
     res.json({ status: "ok", data: { calls: [] } });
   });
-  app.post("/api/voice/record/start", requireAuth, (_req, res) => {
+  apiRouter.post("/voice/record/start", requireAuth, (_req, res) => {
     res.json({ status: "ok", data: { recording: true } });
   });
-  app.post("/api/voice/record/stop", requireAuth, (_req, res) => {
+  apiRouter.post("/voice/record/stop", requireAuth, (_req, res) => {
     res.json({ status: "ok", data: { recording: false } });
   });
-  app.post("/api/sms/send", requireAuth, (_req, res) => {
+  apiRouter.post("/sms/send", requireAuth, (_req, res) => {
     res.json({ status: "ok", data: { sent: true } });
   });
+  apiRouter.use(voiceToken);
 
-  app.use(voiceToken);
-
-  app.post("/api/v1/crm/lead", async (req: any, res: any) => {
+  apiRouter.post("/crm/lead", async (req: any, res: any) => {
     try {
       const payload = {
         source: req.body?.source ?? "website",
@@ -122,7 +124,8 @@ export function createApp() {
     }
   });
 
-  registerApiRouteMounts(app);
+  registerApiRouteMounts(apiRouter);
+  app.use("/api", apiRouter);
 
   const routes = listRoutes(app);
   routes.forEach((entry) => {

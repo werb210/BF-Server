@@ -5,7 +5,10 @@ import { clearOTPStore, deleteOTP, getOTP, setOTP } from "../modules/auth/otpSto
 const router = Router();
 
 // START OTP
-router.post("/otp/start", async (req, res) => {
+router.post("/otp/start", (req, _res, next) => {
+  console.log("OTP START HIT");
+  next();
+}, async (req, res) => {
   const { phone } = req.body;
 
   if (!phone) {

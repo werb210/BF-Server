@@ -165,12 +165,7 @@ export const ROUTES: ApiRoute[] = [
 
 export function registerApiRouteMounts(app: Router): void {
   resetMountedRoutes();
-  const apiRouter = Router();
-
   API_ROUTE_MOUNTS.forEach((entry) => {
-    mount(apiRouter, entry.path, entry.router);
+    mount(app, entry.path, entry.router);
   });
-
-  app.use("/api", apiRouter);
-  app.use("/api/v1", apiRouter);
 }
