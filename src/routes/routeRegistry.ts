@@ -22,6 +22,7 @@ import reportingRoutes from "./reporting.js";
 import reportsRoutes from "./reports.js";
 import settingsRoutes from "./settings.js";
 import staffRoutes from "./staff.js";
+import supportRoutes from "./support.js";
 import tasksRoutes from "./tasks.js";
 import usersRoutes from "./users.js";
 import portalRoutes from "./portal.js";
@@ -76,6 +77,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/reports", router: reportsRoutes },
   { path: "/settings", router: settingsRoutes },
   { path: "/staff", router: staffRoutes },
+  { path: "/support", router: supportRoutes },
   { path: "/tasks", router: tasksRoutes },
   { path: "/users", router: usersRoutes },
   { path: "/portal", router: portalRoutes },
