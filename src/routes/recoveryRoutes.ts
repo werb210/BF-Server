@@ -8,8 +8,6 @@ function ok(res: any, data: any = {}) {
 
 /* AUTH */
 
-router.post("/auth/otp/start", (_req: any, res: any) => ok(res));
-router.post("/auth/otp/verify", (_req: any, res: any) => res["json"]({ ok: true, token: "dev" }));
 router.get("/api/auth/me", (_req: any, res: any) => ok(res, { user: null }));
 router.post("/api/auth/logout", (_req: any, res: any) => ok(res));
 

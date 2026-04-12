@@ -6,7 +6,7 @@ const router = Router();
 
 // START OTP
 router.post("/otp/start", (req, _res, next) => {
-  console.log("OTP START HIT");
+  console.log("OTP HIT REAL ROUTE");
   next();
 }, async (req, res) => {
   const { phone } = req.body;

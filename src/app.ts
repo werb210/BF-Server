@@ -125,6 +125,8 @@ export function createApp() {
   });
 
   registerApiRouteMounts(apiRouter);
+
+  // 1. API ROUTES FIRST
   app.use("/api", apiRouter);
 
   const routes = listRoutes(app);
@@ -135,7 +137,8 @@ export function createApp() {
   /**
    * 404 HANDLER
    */
-  app.use((req, res) => {
+  // 2. ANY OTHER ROUTES AFTER
+  app.use("*", (req, res) => {
     res.status(404).json({ error: "Route not found", path: req.originalUrl });
   });
 
