@@ -11,6 +11,7 @@ jobs:
 
     env:
       SCM_DO_BUILD_DURING_DEPLOYMENT: false
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +36,8 @@ jobs:
         run: npm prune --omit=dev
 
       - name: Verify build
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           node scripts/verify-build.js
           node -e "require('./dist/routes'); require('./dist/routes/auth'); require('./dist/config/env');"
