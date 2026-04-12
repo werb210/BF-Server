@@ -7,10 +7,15 @@ import {
 } from "./adapters/SubmissionAdapter.js";
 import { EmailSubmissionAdapter } from "./adapters/EmailSubmissionAdapter.js";
 import { ApiSubmissionAdapter } from "./adapters/ApiSubmissionAdapter.js";
-import {
-  GoogleSheetSubmissionAdapter,
-  type GoogleSheetSubmissionConfig,
-} from "./adapters/GoogleSheetSubmissionAdapter.js";
+
+let GoogleSheetSubmissionAdapter: any;
+
+try {
+  const mod = await import("./adapters/GoogleSheetSubmissionAdapter.js");
+  GoogleSheetSubmissionAdapter = mod.GoogleSheetSubmissionAdapter;
+} catch (err) {
+  console.error("google_adapter_load_failed", err);
+}
 
 export type SubmissionMethod = "google_sheet" | "email" | "api";
 
@@ -22,7 +27,29 @@ export type SubmissionProfile = {
   submissionConfig: Record<string, unknown> | null;
 };
 
+type GoogleSheetSubmissionConfig = {
+  spreadsheetId: string;
+  sheetName?: string | null;
+  columnMapVersion: string;
+};
+
 type Queryable = Pick<PoolClient, "query" | "runQuery">;
+
+class DisabledGoogleSheetAdapter implements SubmissionAdapter {
+  async submit(_input: SubmissionPayload): Promise<SubmissionResult> {
+    return {
+      success: false,
+      response: {
+        status: "failed",
+        detail: "Google Sheets adapter unavailable.",
+        receivedAt: new Date().toISOString(),
+        externalReference: null,
+      },
+      failureReason: "Google Sheets adapter unavailable.",
+      retryable: false,
+    };
+  }
+}
 
 export function normalizeSubmissionMethod(value: unknown): SubmissionMethod | null {
   if (typeof value !== "string") {
@@ -120,10 +147,14 @@ export class SubmissionRouter {
     const { profile } = params;
     if (profile.submissionMethod === "google_sheet") {
       const sheetConfig = parseGoogleSheetConfig(profile.submissionConfig);
-      this.adapter = new GoogleSheetSubmissionAdapter({
-        payload: params.payload,
-        config: sheetConfig,
-      });
+      if (GoogleSheetSubmissionAdapter) {
+        this.adapter = new GoogleSheetSubmissionAdapter({
+          payload: params.payload,
+          config: sheetConfig,
+        });
+      } else {
+        this.adapter = new DisabledGoogleSheetAdapter();
+      }
       return;
     }
 
