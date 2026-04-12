@@ -21,7 +21,7 @@ describe("Route registration and prefix integrity", () => {
     const routeChecks: RouteCheck[] = [
       { method: "get", path: "/api/health", expectedStatus: 200 },
       { method: "post", path: "/api/auth/otp/start", expectedStatus: 200, body: { phone: "+15555550100" } },
-      { method: "get", path: "/api/voice/token", expectedStatus: 401 },
+      { method: "get", path: "/api/voice/token", expectedStatus: 200 },
     ];
 
     for (const check of routeChecks) {

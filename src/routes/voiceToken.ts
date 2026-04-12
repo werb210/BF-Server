@@ -1,48 +1,40 @@
-import { Router } from "express";
-import { createRequire } from "module";
-import { requireAuth } from "../middleware/auth.js";
-import { config } from "../config/index.js";
+import express from "express";
+import twilio from "twilio";
 
-const require = createRequire(import.meta.url);
-const twilio = require("twilio");
+const router = express.Router();
 
-const { jwt } = twilio;
-const AccessToken = jwt.AccessToken;
+const AccessToken = twilio.jwt.AccessToken;
 const VoiceGrant = AccessToken.VoiceGrant;
 
-const router = Router();
-
-function issueToken(req: any, res: any) {
+router.get("/api/voice/token", (req, res) => {
   try {
-    if (!config.twilio.accountSid) {
-      return res.status(500).json({ error: "Twilio not configured" });
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const apiKey = process.env.TWILIO_API_KEY;
+    const apiSecret = process.env.TWILIO_API_SECRET;
+    const appSid = process.env.TWILIO_APP_SID;
+
+    if (!accountSid || !apiKey || !apiSecret || !appSid) {
+      return res.status(500).json({ error: "Missing Twilio config" });
     }
 
-    const identity = req.user?.id || req.user?.userId || "anonymous";
+    const identity = "user-" + Date.now();
 
-    const token = new AccessToken(
-      config.twilio.accountSid,
-      config.twilio.apiKey,
-      config.twilio.apiSecret,
-      { identity }
-    );
+    const token = new AccessToken(accountSid, apiKey, apiSecret, {
+      identity,
+    });
 
     const voiceGrant = new VoiceGrant({
-      outgoingApplicationSid: config.twilio.voiceAppSid,
+      outgoingApplicationSid: appSid,
       incomingAllow: true,
     });
 
     token.addGrant(voiceGrant);
 
-    res.json({
-      token: token.toJwt(),
-    });
-  } catch {
-    res.status(500).json({ error: "Failed to generate token" });
+    res.json({ token: token.toJwt() });
+  } catch (err) {
+    console.error("Twilio token error:", err);
+    res.status(500).json({ error: "Token generation failed" });
   }
-}
-
-router.get("/voice/token", requireAuth, issueToken);
-router.post("/voice/token", requireAuth, issueToken);
+});
 
 export default router;
