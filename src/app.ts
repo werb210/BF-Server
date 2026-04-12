@@ -16,6 +16,7 @@ import { registerApiRouteMounts } from "./routes/routeRegistry.js";
 import { requireAuth } from "./middleware/auth.js";
 import { createLead } from "./modules/lead/lead.service.js";
 import { respondOk } from "./utils/respondOk.js";
+import { listRoutes } from "./debug/printRoutes.js";
 
 export function createApp() {
   const app = express();
@@ -123,12 +124,10 @@ export function createApp() {
 
   registerApiRouteMounts(app);
 
-  const expressApp = app as any;
-  expressApp._router?.stack
-    ?.filter((r: any) => r.route)
-    .forEach((r: any) => {
-      console.log(Object.keys(r.route.methods), r.route.path);
-    });
+  const routes = listRoutes(app);
+  routes.forEach((entry) => {
+    console.log([entry.method.toLowerCase()], entry.path);
+  });
 
   /**
    * 404 HANDLER
