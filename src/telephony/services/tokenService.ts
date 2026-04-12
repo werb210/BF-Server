@@ -1,10 +1,8 @@
 import { v4 as uuid } from "uuid";
 import { config } from "../../config/index.js";
-
 import twilio from "twilio";
-import AccessToken from "twilio/lib/jwt/AccessToken.js";
-
-const { VoiceGrant } = AccessToken;
+const AccessToken = (twilio as any).jwt.AccessToken;
+const VoiceGrant = AccessToken.VoiceGrant;
 
 function requireTokenConfig(value: string | undefined, name: string): string {
   if (!value) {
@@ -12,8 +10,6 @@ function requireTokenConfig(value: string | undefined, name: string): string {
   }
   return value;
 }
-
-void twilio;
 
 export function generateVoiceToken(identity: string): string {
   const resolvedIdentity = identity?.trim().length ? identity : uuid();

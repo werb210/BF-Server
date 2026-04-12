@@ -1,10 +1,11 @@
 import { Router } from "express";
-import { validateRequest } from "twilio/lib/webhooks/webhooks.js";
+import twilio from "twilio";
 import { AppError } from "../middleware/errors.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { logWarn } from "../observability/logger.js";
 import { handleVoiceStatusWebhook } from "../modules/voice/voice.service.js";
 import { config } from "../config/index.js";
+const { validateRequest } = twilio as any;
 
 const router = Router();
 

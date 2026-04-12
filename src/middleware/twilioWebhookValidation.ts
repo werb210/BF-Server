@@ -1,7 +1,8 @@
 import type { Request, RequestHandler } from "express";
-import { validateRequest } from "twilio/lib/webhooks/webhooks.js";
+import twilio from "twilio";
 import { logWarn } from "../observability/logger.js";
 import { config } from "../config/index.js";
+const { validateRequest } = twilio as any;
 
 function resolvePublicWebhookUrl(req: Request): string {
   const forwardedProto = req.get("X-Forwarded-Proto");
