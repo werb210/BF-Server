@@ -1,5 +1,7 @@
 import { Router } from "express";
-import AccessToken from "twilio/lib/jwt/AccessToken.js";
+import twilio from "twilio";
+
+const AccessToken = twilio.jwt.AccessToken;
 import { requireAuth } from "../middleware/auth.js";
 import { ROLES, type Role } from "../auth/roles.js";
 import { config } from "../config/index.js";

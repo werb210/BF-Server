@@ -1,4 +1,6 @@
-import AccessToken from "twilio/lib/jwt/AccessToken.js";
+import twilio from "twilio";
+
+const AccessToken = twilio.jwt.AccessToken;
 import { AppError } from "../../middleware/errors.js";
 import { logError, logInfo, logWarn } from "../../observability/logger.js";
 import { normalizePhoneNumber } from "../auth/phone.js";

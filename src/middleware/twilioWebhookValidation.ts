@@ -1,5 +1,7 @@
 import type { Request, RequestHandler } from "express";
-import { validateRequest } from "twilio/lib/webhooks/webhooks.js";
+import twilio from "twilio";
+
+const { validateRequest } = twilio;
 import { logWarn } from "../observability/logger.js";
 import { config } from "../config/index.js";
 
