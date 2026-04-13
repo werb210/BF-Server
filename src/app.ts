@@ -135,9 +135,17 @@ export function createApp() {
   });
 
   /**
+   * FRONTEND FALLBACK GUARD
+   * Keep API traffic out of SPA/static fallback handlers.
+   */
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api")) return next();
+    res.status(404).json({ error: "Route not found", path: req.originalUrl });
+  });
+
+  /**
    * 404 HANDLER
    */
-  // 2. ANY OTHER ROUTES AFTER
   app.use("*", (req, res) => {
     res.status(404).json({ error: "Route not found", path: req.originalUrl });
   });
