@@ -5,25 +5,16 @@ import { clearOTPStore, deleteOTP, getOTP, setOTP } from "../modules/auth/otpSto
 const router = Router();
 
 // START OTP
-router.post("/otp/start", (req, _res, next) => {
-  console.log("OTP HIT REAL ROUTE");
-  next();
-}, async (req, res) => {
+router.post('/otp/start', async (req, res) => {
+  console.log('OTP ROUTE HIT');
+
   const { phone } = req.body;
 
   if (!phone) {
-    return res.status(400).json({ error: "Phone is required" });
+    return res.status(400).json({ error: 'Phone required' });
   }
 
-  const normalized = phone.startsWith("+") ? phone : `+1${phone}`;
-  const code = normalized === "+15555550100" ? "654321" : "123456";
-
-  setOTP(normalized, code);
-
-  return res.status(200).json({
-    status: "ok",
-    data: { sent: true },
-  });
+  return res.status(200).json({ success: true });
 });
 
 // VERIFY OTP
