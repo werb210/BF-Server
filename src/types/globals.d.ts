@@ -1,5 +1,7 @@
 type OtpStoreRecord = {
   code: string;
+  createdAt: number;
+  attempts: number;
   verified: boolean;
 };
 

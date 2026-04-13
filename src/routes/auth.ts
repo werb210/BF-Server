@@ -8,10 +8,25 @@ const router = Router();
 
 const isValidPhone = (phone: unknown): phone is string => typeof phone === "string" && phone.trim().length > 0;
 
-const getTwilioClient = () => {
+type TwilioVerifyClient = {
+  verify: {
+    v2: {
+      services: (serviceSid: string) => {
+        verifications: {
+          create: (params: { to: string; channel: "sms" }) => Promise<{ status: string }>;
+        };
+        verificationChecks: {
+          create: (params: { to: string; code: string }) => Promise<{ status: string }>;
+        };
+      };
+    };
+  };
+};
+
+const getTwilioClient = (): TwilioVerifyClient => {
   const accountSid = process.env.TWILIO_ACCOUNT_SID ?? "";
   const authToken = process.env.TWILIO_AUTH_TOKEN ?? "";
-  return twilio(accountSid, authToken) as any;
+  return twilio(accountSid, authToken) as unknown as TwilioVerifyClient;
 };
 
 // START OTP
@@ -31,6 +46,7 @@ router.post("/otp/start", async (req, res) => {
         code: "654321",
         createdAt: Date.now(),
         attempts: 0,
+        verified: false,
       };
 
       return res.status(200).json({
@@ -43,9 +59,14 @@ router.post("/otp/start", async (req, res) => {
       throw new Error("Missing Twilio Verify SID");
     }
 
+    const serviceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
+    if (!serviceSid) {
+      throw new Error("Missing Twilio Verify SID");
+    }
+
     const client = getTwilioClient();
     const verification = await client.verify.v2
-      .services(process.env.TWILIO_VERIFY_SERVICE_SID)
+      .services(serviceSid)
       .verifications.create({
         to: phone,
         channel: "sms",
@@ -55,8 +76,9 @@ router.post("/otp/start", async (req, res) => {
       success: true,
       status: verification.status,
     });
-  } catch (err: any) {
-    console.error("❌ OTP ERROR:", err.message);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown OTP error";
+    console.error("❌ OTP ERROR:", message);
 
     return res.status(500).json({
       error: "OTP failed",
@@ -95,9 +117,14 @@ router.post("/otp/verify", async (req, res) => {
   }
 
   try {
+    const serviceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
+    if (!serviceSid) {
+      return res.status(500).json({ error: "OTP failed" });
+    }
+
     const client = getTwilioClient();
     const verificationCheck = await client.verify.v2
-      .services(process.env.TWILIO_VERIFY_SERVICE_SID)
+      .services(serviceSid)
       .verificationChecks.create({
         to: phone,
         code,
