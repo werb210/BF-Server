@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
 import { Router } from "express";
 
 import authRoutes, { resetOtpStateForTests as resetAuthOtpStateForTests } from "./routes/auth.js";
@@ -39,6 +40,10 @@ export function createApp() {
   /**
    * CORE MIDDLEWARE
    */
+  app.use(helmet({
+    contentSecurityPolicy: false,
+  }));
+
   app.use(cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);

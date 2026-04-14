@@ -1,3 +1,4 @@
+-- Renumbered from 017 to avoid collision with 017_auth_schema_repairs.sql
 create table if not exists document_ocr_fields (
   id text primary key,
   document_id text not null references documents(id) on delete cascade,

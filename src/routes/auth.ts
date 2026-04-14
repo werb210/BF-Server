@@ -2,7 +2,10 @@ import { Router } from "express";
 import jwt from "jsonwebtoken";
 import twilio from "twilio";
 
+import { signAccessToken } from "../auth/jwt.js";
+import { ROLES, normalizeRole } from "../auth/roles.js";
 import { isTest } from "../config/runtime.js";
+import { createUser, findAuthUserByPhone } from "../modules/auth/auth.repo.js";
 
 const router = Router();
 
@@ -43,7 +46,7 @@ router.post("/otp/start", async (req, res) => {
     if (isTest) {
       const store = (globalThis.__otpStore ??= {});
       store[phone] = {
-        code: "654321",
+        code: "000000",
         createdAt: Date.now(),
         attempts: 0,
         verified: false,
@@ -73,8 +76,8 @@ router.post("/otp/start", async (req, res) => {
       });
 
     return res.status(200).json({
-      success: true,
-      status: verification.status,
+      status: "ok",
+      data: { sent: true },
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown OTP error";
@@ -94,17 +97,26 @@ router.post("/otp/verify", async (req, res) => {
   const record = store[phone];
 
   if (isTest) {
-    if (!record || code !== "654321") {
+    if (!record || code !== "000000") {
       return res.status(401).json({ error: "Invalid code" });
     }
 
     record.verified = true;
 
+    const token = jwt.sign(
+      {
+        sub: `test-user:${phone}`,
+        role: ROLES.STAFF,
+        tokenVersion: 0,
+        phone,
+      },
+      process.env.JWT_SECRET || "test-secret",
+      { expiresIn: "1d" },
+    );
+
     return res.status(200).json({
       status: "ok",
-      data: {
-        token: "test-token",
-      },
+      data: { token },
     });
   }
 
@@ -138,14 +150,20 @@ router.post("/otp/verify", async (req, res) => {
       return res.status(500).json({ error: "auth not configured" });
     }
 
-    const token = jwt.sign(
-      {
-        phone,
-        role: "Staff",
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "1d" },
-    );
+    let user = await findAuthUserByPhone(phone);
+    if (!user) {
+      user = await createUser({
+        phoneNumber: phone,
+        role: ROLES.STAFF,
+      });
+    }
+
+    const token = signAccessToken({
+      sub: String(user.id),
+      role: normalizeRole(user.role ?? "") ?? ROLES.STAFF,
+      tokenVersion: user.tokenVersion ?? 0,
+      phone: user.phoneNumber ?? phone,
+    });
 
     return res.status(200).json({
       status: "ok",

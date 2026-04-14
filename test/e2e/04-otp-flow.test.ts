@@ -39,11 +39,11 @@ describe("OTP flows", () => {
 
     const res = await request(app)
       .post("/api/auth/otp/verify")
-      .send({ phone: "+15555550100", code: "654321" });
+      .send({ phone: "+15555550100", code: "000000" });
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("ok");
-    expect(res.body.data).toEqual({ token: "test-token" });
+    expect(typeof res.body.data?.token).toBe("string");
   });
 
   it("rejects wrong OTP code", async () => {
@@ -53,7 +53,7 @@ describe("OTP flows", () => {
 
     const res = await request(app)
       .post("/api/auth/otp/verify")
-      .send({ phone: "+15555550101", code: "000000" });
+      .send({ phone: "+15555550101", code: "654321" });
 
     expect(res.status).toBe(401);
     expect(res.body.error).toBe("Invalid code");
@@ -77,11 +77,11 @@ describe("OTP flows", () => {
 
     const res = await request(app)
       .post("/api/auth/otp/verify")
-      .send({ phone: "+15555550100", code: "654321" });
+      .send({ phone: "+15555550100", code: "000000" });
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("ok");
-    expect(res.body.data).toEqual({ token: "test-token" });
+    expect(typeof res.body.data?.token).toBe("string");
   });
 
   it("does not return 405 for canonical OTP routes", async () => {
@@ -146,23 +146,23 @@ describe("OTP flows", () => {
     for (let i = 0; i < 5; i += 1) {
       const res = await request(app)
         .post("/api/auth/otp/verify")
-        .send({ phone: "+15555550100", code: "000000" });
+        .send({ phone: "+15555550100", code: "654321" });
       expect(res.status).toBe(401);
       expect(res.body.error).toBe("Invalid code");
     }
 
     const locked = await request(app)
       .post("/api/auth/otp/verify")
-      .send({ phone: "+15555550100", code: "000000" });
+      .send({ phone: "+15555550100", code: "654321" });
     expect(locked.status).toBe(401);
     expect(locked.body.error).toBe("Invalid code");
 
     const afterInvalidAttempts = await request(app)
       .post("/api/auth/otp/verify")
-      .send({ phone: "+15555550100", code: "654321" });
+      .send({ phone: "+15555550100", code: "000000" });
     expect(afterInvalidAttempts.status).toBe(200);
     expect(afterInvalidAttempts.body.status).toBe("ok");
-    expect(afterInvalidAttempts.body.data).toEqual({ token: "test-token" });
+    expect(typeof afterInvalidAttempts.body.data?.token).toBe("string");
   });
 
   it("allows OTP replay after successful verification", async () => {
@@ -172,14 +172,14 @@ describe("OTP flows", () => {
 
     const first = await request(app)
       .post("/api/auth/otp/verify")
-      .send({ phone: "+15555550100", code: "654321" });
+      .send({ phone: "+15555550100", code: "000000" });
     expect(first.status).toBe(200);
 
     const replay = await request(app)
       .post("/api/auth/otp/verify")
-      .send({ phone: "+15555550100", code: "654321" });
+      .send({ phone: "+15555550100", code: "000000" });
     expect(replay.status).toBe(200);
     expect(replay.body.status).toBe("ok");
-    expect(replay.body.data).toEqual({ token: "test-token" });
+    expect(typeof replay.body.data?.token).toBe("string");
   });
 });
