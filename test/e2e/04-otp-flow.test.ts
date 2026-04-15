@@ -68,7 +68,7 @@ describe("OTP flows", () => {
     expect(res.body.error).toBe("Invalid code");
   });
 
-  it("returns token when JWT secret is unavailable", async () => {
+  it("returns auth error when JWT secret is unavailable", async () => {
     applyEnv({ JWT_SECRET: undefined });
 
     await request(app)
@@ -79,9 +79,8 @@ describe("OTP flows", () => {
       .post("/api/auth/otp/verify")
       .send({ phone: "+15555550100", code: "000000" });
 
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe("ok");
-    expect(typeof res.body.data?.token).toBe("string");
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("auth not configured");
   });
 
   it("does not return 405 for canonical OTP routes", async () => {
@@ -182,4 +181,12 @@ describe("OTP flows", () => {
     expect(replay.body.status).toBe("ok");
     expect(typeof replay.body.data?.token).toBe("string");
   });
+  it("rejects OTP verify when no account exists for that phone", async () => {
+    const res = await request(app)
+      .post("/api/auth/otp/verify")
+      .send({ phone: "+15555550199", code: "000000" });
+
+    expect([401, 403]).toContain(res.status);
+  });
+
 });

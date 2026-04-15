@@ -13,6 +13,12 @@ import { listRoutes } from "./debug/printRoutes.js";
 
 const PORT = Number(process.env.PORT) || 8080;
 
+if (process.env.NODE_ENV === "production") {
+  if (!process.env.TWILIO_VERIFY_SERVICE_SID?.trim()) {
+    throw new Error("[FATAL] TWILIO_VERIFY_SERVICE_SID must be set for production OTP");
+  }
+}
+
 export async function start(): Promise<void> {
   await initDb();
   const app = createApp();
