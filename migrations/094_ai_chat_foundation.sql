@@ -1,3 +1,6 @@
+-- Renamed from 2026_ai_chat_foundation.sql into sequential numbering.
+-- Original intent: foundational chat session/message schema for AI workflows.
+
 create extension if not exists vector;
 
 create table if not exists chat_sessions (

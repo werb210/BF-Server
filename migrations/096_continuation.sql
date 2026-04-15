@@ -1,3 +1,6 @@
+-- Renamed from 202602_continuation.sql into sequential numbering.
+-- Original intent: application continuation flow persistence and lookup index.
+
 CREATE TABLE IF NOT EXISTS application_continuations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   token VARCHAR(64) UNIQUE NOT NULL,

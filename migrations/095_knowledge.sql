@@ -1,3 +1,6 @@
+-- Renamed from 2026_knowledge.sql into sequential numbering.
+-- Original intent: establishes AI knowledge base storage and embeddings.
+
 create extension if not exists vector;
 
 create table if not exists ai_knowledge (

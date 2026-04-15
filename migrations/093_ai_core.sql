@@ -1,3 +1,6 @@
+-- Renamed from 2026_ai_core.sql into sequential numbering.
+-- Original intent: sets up AI session tables and vector extension.
+
 create extension if not exists vector;
 
 create table if not exists ai_sessions (

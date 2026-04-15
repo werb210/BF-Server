@@ -1,3 +1,7 @@
+-- Runtime repair applied after initial schema (001_init.sql).
+-- Renamed from 001_runtime_schema_fix.sql to resolve duplicate 001 prefix.
+-- Safe to run multiple times (all statements use IF EXISTS / IF NOT EXISTS).
+
 ALTER TABLE IF EXISTS applications
 ADD COLUMN IF NOT EXISTS owner_user_id UUID;
 
