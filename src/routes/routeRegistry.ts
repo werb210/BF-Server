@@ -37,7 +37,7 @@ import emailRoutes from "./email.js";
 import websiteRoutes from "./website.js";
 import mayaRoutes from "./maya.js";
 import aiRoutes from "./ai.v2.js";
-import { mount, resetMountedRoutes } from "./_canonicalMount.js";
+import { createMountTracker } from "./_canonicalMount.js";
 
 export type ApiRoute = {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -56,6 +56,11 @@ const ALL_ROLES: Role[] = [
   ROLES.LENDER,
   ROLES.REFERRER,
 ];
+
+
+const rootRoutes = Router();
+rootRoutes.use(readinessRoutes);
+rootRoutes.use(signnowRoutes);
 
 export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/_int", router: internalRoutes },
@@ -92,8 +97,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/maya", router: mayaRoutes },
   { path: "/ai", router: aiRoutes },
   { path: "/email", router: emailRoutes },
-  { path: "/", router: readinessRoutes },
-  { path: "/", router: signnowRoutes },
+  { path: "/", router: rootRoutes },
   { path: "/applications", router: applicationsRoutes },
 ];
 
@@ -171,7 +175,8 @@ export const ROUTES: ApiRoute[] = [
 ];
 
 export function registerApiRouteMounts(app: Router): void {
-  resetMountedRoutes();
+  const mount = createMountTracker();
+
   API_ROUTE_MOUNTS.forEach((entry) => {
     mount(app, entry.path, entry.router);
   });
