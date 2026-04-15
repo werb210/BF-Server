@@ -33,3 +33,22 @@
 - All new tables must have a migration in `migrations/` with the next sequential number.
 - After adding a migration, verify it runs on next deploy by checking the migration tracker table (`schema_migrations` or equivalent).
 - Never query a table in a service without confirming the migration for that table has been added to the migrations directory.
+
+### Startup table verification
+
+- `verifyRequiredTables()` in `src/index.ts` throws a fatal error if any listed table is missing. This will kill the server completely.
+- NEVER add a table to `verifyRequiredTables()` unless its migration has already been applied to the production database and confirmed.
+- Workflow for new tables:
+  1. Write migration SQL in `migrations/NNN_name.sql`
+  2. Deploy server — migration runner applies it on boot
+  3. Confirm table exists in prod (check Azure DB)
+  4. Only then add the table name to `verifyRequiredTables()`
+- If a table is new and migration may not have run, use the warn-only pattern shown in `src/index.ts` — never the throwing pattern.
+
+### No new token/telephony route files
+
+- The ONLY telephony router is `src/telephony/routes/telephonyRoutes.ts`.
+- `src/modules/telephony/token.route.ts` is DELETED. Do not recreate it.
+- `src/routes/telephony/token.ts` is DELETED. Do not recreate it.
+- `src/routes/telephony.routes.ts` is DELETED. Do not recreate it.
+- Never create a file that returns a hardcoded fake token string.

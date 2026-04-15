@@ -32,11 +32,29 @@ export async function start(): Promise<void> {
     "users",
     "applications",
     "documents",
-    "readiness_leads",
     "lender_products",
     "audit_events",
     "otp_verifications",
   ]);
+
+  const pendingTables = ["readiness_leads"];
+  for (const table of pendingTables) {
+    try {
+      const { runQuery } = await import("./db.js");
+      const result = await runQuery<{ exists: string | null }>(
+        "select to_regclass($1) as exists",
+        [`public.${table}`]
+      );
+
+      if (!result.rows[0]?.exists) {
+        console.warn(
+          `[STARTUP WARN] Table not yet migrated: ${table} — some features will be unavailable`
+        );
+      }
+    } catch {
+      console.warn(`[STARTUP WARN] Could not verify table: ${table}`);
+    }
+  }
 
   if (process.env.NODE_ENV !== "test") {
     try {
