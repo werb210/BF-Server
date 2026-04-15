@@ -1,9 +1,6 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
-import { CallStartSchema } from "../schemas/index.js";
-import { validate } from "../middleware/validate.js";
 import { ok } from "../lib/response.js";
-import { requireAuth as requireApiAuth } from "../middleware/requireAuth.js";
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { ROLES } from "../auth/roles.js";
@@ -11,7 +8,6 @@ import { AppError } from "../middleware/errors.js";
 import { endCall, listCalls, startCall, updateCallStatus } from "../modules/calls/calls.service.js";
 import { type CallStatus } from "../modules/calls/calls.repo.js";
 import { toStringSafe } from "../utils/toStringSafe.js";
-import { ok as respondOk } from "../lib/respond.js";
 
 const router = Router();
 
@@ -72,23 +68,6 @@ function buildRequestMetadata(req: Request): { ip?: string; userAgent?: string }
   return metadata;
 }
 
-
-router.post("/start", requireApiAuth, validate(CallStartSchema), async (req, res, next) => {
-  try {
-    const { to } = req.validated as { to: string };
-    const record = await startCall({
-      phoneNumber: to,
-      direction: "outbound",
-      status: "initiated",
-      staffUserId: (req.user?.userId as string | undefined) ?? null,
-      ...buildRequestMetadata(req),
-    });
-
-    return respondOk(res, { started: true, to, callId: record.id, status: record.status });
-  } catch (error) {
-    return next(error);
-  }
-});
 router.post(
   "/log",
   safeHandler(async (req: any, res: any, next: any) => {
