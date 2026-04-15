@@ -1212,7 +1212,7 @@ export async function changePipelineState(params: {
     });
   }
 
-  if (nextStage === ApplicationStage.ACCEPTED) {
+  if (nextStage === "Won") {
     const referralResult = await runQuery<{ id: string; referrer_id: string; deal_amount: number | null }>(
       `select r.id, r.referrer_id, a.requested_amount as deal_amount
        from referrals r
