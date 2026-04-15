@@ -9,6 +9,7 @@ process.on("uncaughtException", (err) => {
 import "./system/errors.js";
 import { createApp } from "./app.js";
 import { initDb } from "./db/init.js";
+import { verifyRequiredTables } from "./db/tableHealthCheck.js";
 import { listRoutes } from "./debug/printRoutes.js";
 
 const PORT = Number(process.env.PORT) || 8080;
@@ -27,6 +28,15 @@ if (process.env.NODE_ENV === "production") {
 
 export async function start(): Promise<void> {
   await initDb();
+  await verifyRequiredTables([
+    "users",
+    "applications",
+    "documents",
+    "readiness_leads",
+    "lender_products",
+    "audit_events",
+    "otp_verifications",
+  ]);
 
   if (process.env.NODE_ENV !== "test") {
     try {

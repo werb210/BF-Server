@@ -8,12 +8,6 @@ import authRoutes, { resetOtpStateForTests as resetAuthOtpStateForTests } from "
 import callRoutes from "./routes/call.js";
 import healthRoutes from "./routes/health.js";
 import publicRoutes from "./routes/public.js";
-import applicationsRouter from "./routes/applications.js";
-import documentsRouter from "./routes/documents.js";
-import pipelineRouter from "./routes/pipeline.js";
-import usersRouter from "./routes/users.js";
-import crmRouter from "./routes/crm.js";
-import voiceToken from "./routes/voiceToken.js";
 import { registerApiRouteMounts } from "./routes/routeRegistry.js";
 import { requireAuth } from "./middleware/auth.js";
 import { createLead } from "./modules/lead/lead.service.js";
@@ -77,12 +71,6 @@ export function createApp() {
   apiRouter.use("/health", healthRoutes);
   apiRouter.use("/public", publicRoutes);
 
-  apiRouter.use("/applications", requireAuth, applicationsRouter);
-  apiRouter.use("/client/applications", applicationsRouter);
-  apiRouter.use("/documents", requireAuth, documentsRouter);
-  apiRouter.use("/pipeline", requireAuth, pipelineRouter);
-  apiRouter.use("/users", requireAuth, usersRouter);
-  apiRouter.use("/crm", requireAuth, crmRouter);
   apiRouter.post("/voice/device-token", requireAuth, (_req, res) => {
     res.json({ status: "ok", data: { registered: true } });
   });
@@ -104,8 +92,6 @@ export function createApp() {
   apiRouter.post("/sms/send", requireAuth, (_req, res) => {
     res.json({ status: "ok", data: { sent: true } });
   });
-  apiRouter.use(voiceToken);
-
   apiRouter.post("/crm/lead", async (req: any, res: any) => {
     try {
       const payload = {
