@@ -1,6 +1,5 @@
 import { Router, type Request } from "express";
 import { AppError } from "../../middleware/errors.js";
-import { createUserAccount } from "../auth/auth.service.js";
 import { changeUserRole, setUserStatus } from "./users.service.js";
 import { normalizeRole } from "../../auth/roles.js";
 
@@ -17,38 +16,6 @@ function buildRequestMetadata(req: Request): { ip?: string; userAgent?: string }
   }
   return metadata;
 }
-
-router.post("/", async (req: any, res: any, next: any) => {
-  try {
-    const { email, phoneNumber, role, lenderId } = req.body;
-    const normalizedRole = typeof role === "string" ? normalizeRole(role) : null;
-    const normalizedEmail =
-      typeof email === "string" && email.trim().length > 0
-        ? email.trim()
-        : null;
-    if (!normalizedEmail || role === undefined || role === null) {
-      throw new AppError(
-        "missing_fields",
-        "email and role are required.",
-        400
-      );
-    }
-    if (!normalizedRole) {
-      throw new AppError("invalid_role", "Role is invalid.", 400);
-    }
-    const user = await createUserAccount({
-      email: normalizedEmail,
-      phoneNumber,
-      role: normalizedRole,
-      lenderId,
-      actorUserId: req.user?.userId ?? null,
-      ...buildRequestMetadata(req),
-    });
-    res.status(201).json({ user });
-  } catch (err) {
-    next(err);
-  }
-});
 
 router.post("/:id/role", async (req: any, res: any, next: any) => {
   try {
