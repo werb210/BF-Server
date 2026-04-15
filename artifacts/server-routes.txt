@@ -47,7 +47,6 @@
 /api/portal/applications
 /api/portal/applications/stages
 /api/portal/offers
-/api/portal/readiness-leads
 /api/public/readiness
 /api/readiness
 /api/readiness/continue

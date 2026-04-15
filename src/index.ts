@@ -35,7 +35,6 @@ export async function start(): Promise<void> {
     "lender_products",
     "audit_events",
     "otp_verifications",
-    "readiness_leads",
   ]);
 
   if (process.env.NODE_ENV !== "test") {

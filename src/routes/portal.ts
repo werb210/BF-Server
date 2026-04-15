@@ -30,11 +30,6 @@ import {
 import { config } from "../config/index.js";
 import { listLenders } from "../repositories/lenders.repo.js";
 import { eventBus } from "../events/eventBus.js";
-import {
-  convertReadinessLeadToApplication,
-  fetchReadinessLeadByApplicationId,
-  listReadinessLeads,
-} from "../modules/readiness/readiness.service.js";
 import { toStringSafe } from "../utils/toStringSafe.js";
 
 const router = Router();
@@ -184,61 +179,6 @@ router.get(
   })
 );
 
-router.get(
-  "/readiness-leads",
-  requireAuth,
-  portalLimiter,
-  requireAuthorization({ roles: [ROLES.ADMIN] }),
-  safeHandler(async (_req: any, res: any) => {
-    const items = await listReadinessLeads();
-    res.status(200).json({ items });
-  })
-);
-
-router.post(
-  "/readiness-leads/:id/convert",
-  requireAuth,
-  portalLimiter,
-  requireAuthorization({ roles: [ROLES.ADMIN] }),
-  safeHandler(async (req: any, res: any, next: any) => {
-    const leadId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
-    if (!leadId) {
-      throw new AppError("validation_error", "Lead id is required.", 400);
-    }
-    const actorUserId = req.user?.userId;
-    if (!actorUserId) {
-      throw new AppError("unauthorized", "Authentication required.", 401);
-    }
-    try {
-      const { applicationId } = await convertReadinessLeadToApplication(leadId, actorUserId);
-      res.status(200).json({ applicationId });
-    } catch (error) {
-      if (error instanceof Error && error.message === "not_found") {
-        throw new AppError("not_found", "Readiness lead not found.", 404);
-      }
-      throw error;
-    }
-  })
-);
-
-router.get(
-  "/applications/:id/readiness",
-  requireAuth,
-  portalLimiter,
-  requireAuthorization({ roles: [ROLES.ADMIN] }),
-  safeHandler(async (req: any, res: any, next: any) => {
-    const applicationId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
-    if (!applicationId) {
-      throw new AppError("validation_error", "Application id is required.", 400);
-    }
-    const readinessLead = await fetchReadinessLeadByApplicationId(applicationId);
-    if (!readinessLead) {
-      res.status(404).json({ error: "not_found" });
-      return;
-    }
-    res.status(200).json({ readinessLead });
-  })
-);
 
 router.get(
   "/applications/:id/history",

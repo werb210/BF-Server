@@ -157,9 +157,6 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/public/application/start", roles: [] },
   { method: "POST", path: "/api/public/readiness", roles: [] },
   { method: "GET", path: "/api/client/continuation/:token", roles: [] },
-  { method: "GET", path: "/api/portal/readiness-leads", roles: [ROLES.ADMIN] },
-  { method: "POST", path: "/api/portal/readiness-leads/:id/convert", roles: [ROLES.ADMIN] },
-  { method: "GET", path: "/api/portal/applications/:id/readiness", roles: [ROLES.ADMIN] },
 ];
 
 export function registerApiRouteMounts(app: Router): void {
