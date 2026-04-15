@@ -31,12 +31,6 @@ function buildRequestMetadata(req: Request): { ip?: string; userAgent?: string }
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.OPS_MANAGE]));
 
-router.get("/version", wrap(async () => {
-  const commitHash = config.commitSha;
-  const buildTimestamp = config.buildTimestamp;
-  return ok({ commitHash, buildTimestamp });
-}));
-
 router.post("/bootstrap-admin", wrap(async (req: any) => {
     logInfo("bootstrap_admin_attempt", {
       disabled: bootstrapAdminDisabled,

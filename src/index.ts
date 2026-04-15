@@ -35,26 +35,8 @@ export async function start(): Promise<void> {
     "lender_products",
     "audit_events",
     "otp_verifications",
+    "readiness_leads",
   ]);
-
-  const pendingTables = ["readiness_leads"];
-  for (const table of pendingTables) {
-    try {
-      const { runQuery } = await import("./db.js");
-      const result = await runQuery<{ exists: string | null }>(
-        "select to_regclass($1) as exists",
-        [`public.${table}`]
-      );
-
-      if (!result.rows[0]?.exists) {
-        console.warn(
-          `[STARTUP WARN] Table not yet migrated: ${table} — some features will be unavailable`
-        );
-      }
-    } catch {
-      console.warn(`[STARTUP WARN] Could not verify table: ${table}`);
-    }
-  }
 
   if (process.env.NODE_ENV !== "test") {
     try {
