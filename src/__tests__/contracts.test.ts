@@ -10,7 +10,7 @@ describe("contracts", () => {
 
     const me = await request(app).get("/api/auth/me");
     expect(me.status).toBe(401);
-    expect(me.body).toEqual({ error: "missing token" });
+    expect(me.body).toMatchObject({ error: "Unauthorized" });
 
     const callStats = await request(app).get("/api/call/stats");
     expect(callStats.status).toBe(200);

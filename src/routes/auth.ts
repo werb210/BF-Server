@@ -1,11 +1,12 @@
 import { Router } from "express";
-import jwt from "jsonwebtoken";
 import twilio from "twilio";
 
 import { signAccessToken } from "../auth/jwt.js";
 import { ROLES, normalizeRole } from "../auth/roles.js";
 import { isTest } from "../config/runtime.js";
-import { createUser, findAuthUserByPhone } from "../modules/auth/auth.repo.js";
+import { requireAuth } from "../middleware/requireAuth.js";
+import { authMeHandler } from "./auth/me.js";
+import { findAuthUserByPhone } from "../modules/auth/auth.repo.js";
 
 const router = Router();
 
@@ -103,21 +104,21 @@ router.post("/otp/verify", async (req, res) => {
 
     record.verified = true;
 
-    const token = jwt.sign(
-      {
+    try {
+      const token = signAccessToken({
         sub: `test-user:${phone}`,
         role: ROLES.STAFF,
         tokenVersion: 0,
         phone,
-      },
-      process.env.JWT_SECRET || "test-secret",
-      { expiresIn: "1d" },
-    );
+      });
 
-    return res.status(200).json({
-      status: "ok",
-      data: { token },
-    });
+      return res.status(200).json({
+        status: "ok",
+        data: { token },
+      });
+    } catch {
+      return res.status(500).json({ error: "auth not configured" });
+    }
   }
 
   if (!phone || !code) {
@@ -150,11 +151,27 @@ router.post("/otp/verify", async (req, res) => {
       return res.status(500).json({ error: "auth not configured" });
     }
 
-    let user = await findAuthUserByPhone(phone);
+    const user = await findAuthUserByPhone(phone);
     if (!user) {
-      user = await createUser({
-        phoneNumber: phone,
-        role: ROLES.STAFF,
+      return res.status(403).json({
+        status: "error",
+        error: "no_account",
+        message: "No staff account found for this phone number. Contact your administrator.",
+      });
+    }
+
+    if (!user.role) {
+      return res.status(403).json({
+        status: "error",
+        error: "no_role",
+        message: "Account has no role assigned. Contact your administrator.",
+      });
+    }
+
+    if (user.disabled || !user.active) {
+      return res.status(403).json({
+        status: "error",
+        error: "account_disabled",
       });
     }
 
@@ -174,32 +191,8 @@ router.post("/otp/verify", async (req, res) => {
   }
 });
 
-router.get("/me", async (req, res) => {
-  try {
-    const auth = req.headers.authorization;
+router.get("/me", requireAuth, authMeHandler);
 
-    if (!auth) {
-      return res.status(401).json({ error: "missing token" });
-    }
-
-    if (!process.env.JWT_SECRET) {
-      return res.status(500).json({ error: "auth not configured" });
-    }
-
-    const token = auth.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET) as { phone?: string; role?: string };
-
-    return res.status(200).json({
-      user: {
-        id: decoded.phone ?? "unknown",
-        phone: decoded.phone ?? "",
-        role: decoded.role ?? "Staff",
-      },
-    });
-  } catch {
-    return res.status(401).json({ error: "invalid token" });
-  }
-});
 
 export default router;
 

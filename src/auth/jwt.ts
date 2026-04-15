@@ -31,8 +31,8 @@ export class AccessTokenVerificationError extends Error {
 }
 
 function requireJwtSecret(): string {
-  const secret = config.auth.jwtSecret;
-  if (!secret || typeof secret !== "string") {
+  const secret = config.auth.jwtSecret || process.env.JWT_SECRET;
+  if (!secret || typeof secret !== "string" || secret.trim().length === 0) {
     throw new AccessTokenSigningError("JWT secret is missing or invalid");
   }
   return secret;
