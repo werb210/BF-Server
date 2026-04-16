@@ -1,7 +1,7 @@
 import { Router } from "express";
+import { pool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
-import { pool } from "../db.js";
 import { ApplicationStage } from "../modules/applications/pipelineState.js";
 
 const router = Router();
@@ -11,10 +11,7 @@ router.get("/", requireAuth, safeHandler(async (_req: any, res: any) => {
 }));
 
 router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const [active, wonMonth, leads, stageBreakdown] = await Promise.all([
+  const [active, won, stageRows] = await Promise.all([
     pool.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM applications
        WHERE pipeline_state NOT IN ($1, $2)`,
@@ -26,11 +23,6 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
          AND updated_at >= date_trunc('month', now())`,
       [ApplicationStage.ACCEPTED]
     ),
-    pool.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM crm_leads
-       WHERE created_at >= $1`,
-      [today]
-    ),
     pool.query<{ stage: string; count: string }>(
       `SELECT pipeline_state AS stage, COUNT(*)::text AS count
        FROM applications
@@ -41,7 +33,7 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
   ]);
 
   const pipelineByStage: Record<string, number> = {};
-  (stageBreakdown.rows ?? []).forEach((r: any) => {
+  (stageRows.rows ?? []).forEach((r: any) => {
     pipelineByStage[r.stage] = parseInt(r.count, 10);
   });
 
@@ -49,16 +41,12 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
     status: "ok",
     data: {
       activeApplications: parseInt(active.rows[0]?.count ?? "0", 10),
-      dealsWonThisMonth: parseInt(wonMonth.rows[0]?.count ?? "0", 10),
-      newLeadsToday: parseInt(leads.rows[0]?.count ?? "0", 10),
-      commissionEarned: 0, // TODO: wire from referrals table
+      dealsWonThisMonth: parseInt(won.rows[0]?.count ?? "0", 10),
+      commissionEarned: 0,
+      newLeadsToday: 0,
       pipelineByStage,
     },
   });
-}));
-
-router.get("/pipeline", safeHandler(async (_req: any, res: any) => {
-  res.json({ stages: [] });
 }));
 
 router.get("/actions", safeHandler(async (_req: any, res: any) => {
@@ -75,6 +63,10 @@ router.get("/lender-activity", requireAuth, safeHandler(async (_req: any, res: a
 
 router.get("/offers", requireAuth, safeHandler(async (_req: any, res: any) => {
   res.json({ status: "ok", data: [] });
+}));
+
+router.get("/pipeline", safeHandler(async (_req: any, res: any) => {
+  res.json({ stages: [] });
 }));
 
 export default router;

@@ -100,28 +100,32 @@ router.patch(
       throw new AppError("not_found", "Application not found.", 404);
     }
     const nextName = parsed.data.business_name ?? application.name;
-    const nextRequestedAmount =
-      parsed.data.requested_amount ?? application.requested_amount ?? null;
-    const nextMetadata = parsed.data.metadata ?? application.metadata ?? null;
-    const nextCurrentStep = parsed.data.current_step ?? null;
+    const nextRequestedAmount = parsed.data.requested_amount ?? application.requested_amount ?? null;
+    const existingMeta = application.metadata && typeof application.metadata === "object"
+      ? application.metadata as Record<string, unknown>
+      : {};
+    const incomingMeta = parsed.data.metadata ?? {};
+    const nextMetadata = { ...existingMeta, ...incomingMeta };
+
     await runQuery(
       `update applications
        set name = $2,
            requested_amount = $3,
            metadata = $4,
-           current_step = coalesce($5, current_step),
-           last_updated = now(),
            updated_at = now()
        where id = $1`,
-      [applicationId, nextName, nextRequestedAmount, nextMetadata, nextCurrentStep]
+      [applicationId, nextName, nextRequestedAmount, nextMetadata]
     );
     const updated = await findApplicationById(applicationId);
     res.status(200).json({
-      application: {
-        id: updated?.id ?? applicationId,
-        name: updated?.name ?? nextName,
-        pipelineState: updated?.pipeline_state ?? application.pipeline_state,
-        requestedAmount: updated?.requested_amount ?? nextRequestedAmount,
+      status: "ok",
+      data: {
+        application: {
+          id: updated?.id ?? applicationId,
+          name: updated?.name ?? nextName,
+          pipelineState: updated?.pipeline_state ?? application.pipeline_state,
+          requestedAmount: updated?.requested_amount ?? nextRequestedAmount,
+        },
       },
     });
   })
