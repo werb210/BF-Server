@@ -169,6 +169,8 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/public/readiness", roles: [] },
   { method: "POST", path: "/api/crm/readiness", roles: [] },
   { method: "GET", path: "/api/client/readiness-prefill", roles: [] },
+  { method: "GET", path: "/api/client/messages", roles: [] },
+  { method: "POST", path: "/api/client/messages", roles: [] },
   { method: "POST", path: "/api/webhooks/signnow", roles: [] },
   { method: "POST", path: "/api/email/send", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/client/continuation/:token", roles: [] },
