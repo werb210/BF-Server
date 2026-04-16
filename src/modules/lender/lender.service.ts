@@ -652,21 +652,6 @@ async function transmitSubmission(params: {
     });
   }
 
-  if (
-    application.pipeline_state === ApplicationStage.DOCUMENTS_REQUIRED ||
-    application.pipeline_state === ApplicationStage.IN_REVIEW
-  ) {
-    await transitionPipelineState({
-      applicationId: params.applicationId,
-      nextState: ApplicationStage.STARTUP,
-      actorUserId: params.actorUserId,
-      actorRole: null,
-      trigger: "submission_prepared",
-      ...buildRequestMetadata(params),
-      client: params.client,
-    });
-  }
-
   await transitionPipelineState({
     applicationId: params.applicationId,
     nextState: ApplicationStage.OFF_TO_LENDER,
@@ -774,21 +759,6 @@ async function retryExistingSubmission(params: {
       actorUserId: params.actorUserId,
       actorRole: null,
       trigger: "submission_review_started",
-      ...buildRequestMetadata(params),
-      client: params.client,
-    });
-  }
-
-  if (
-    application.pipeline_state === ApplicationStage.DOCUMENTS_REQUIRED ||
-    application.pipeline_state === ApplicationStage.IN_REVIEW
-  ) {
-    await transitionPipelineState({
-      applicationId: params.applicationId,
-      nextState: ApplicationStage.STARTUP,
-      actorUserId: params.actorUserId,
-      actorRole: null,
-      trigger: "submission_prepared",
       ...buildRequestMetadata(params),
       client: params.client,
     });

@@ -9,7 +9,7 @@ export async function listApplicationStages(
     ApplicationStage.RECEIVED,
     ApplicationStage.IN_REVIEW,
     ApplicationStage.DOCUMENTS_REQUIRED,
-    ApplicationStage.STARTUP,
+    ApplicationStage.ADDITIONAL_STEPS_REQUIRED,
     ApplicationStage.OFF_TO_LENDER,
     ApplicationStage.OFFER,
     ApplicationStage.ACCEPTED,

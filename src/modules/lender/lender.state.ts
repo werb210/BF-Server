@@ -32,16 +32,6 @@ export async function ensureApplicationSubmissionState(params: {
 
   await transitionPipelineState({
     applicationId: params.applicationId,
-    nextState: ApplicationStage.STARTUP,
-    actorUserId: params.actorUserId,
-    actorRole: null,
-    trigger: "submission_started",
-    ...requestMetadata,
-    client: params.client,
-  });
-
-  await transitionPipelineState({
-    applicationId: params.applicationId,
     nextState: ApplicationStage.OFF_TO_LENDER,
     actorUserId: params.actorUserId,
     actorRole: null,

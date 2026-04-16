@@ -1,12 +1,12 @@
 export const ApplicationStage = {
-  RECEIVED: "RECEIVED",
-  IN_REVIEW: "IN_REVIEW",
-  DOCUMENTS_REQUIRED: "DOCUMENTS_REQUIRED",
-  STARTUP: "STARTUP",
-  OFF_TO_LENDER: "OFF_TO_LENDER",
-  OFFER: "OFFER",
-  ACCEPTED: "ACCEPTED",
-  REJECTED: "REJECTED",
+  RECEIVED:                  "Received",
+  IN_REVIEW:                 "In Review",
+  DOCUMENTS_REQUIRED:        "Documents Required",
+  ADDITIONAL_STEPS_REQUIRED: "Additional Steps Required",
+  OFF_TO_LENDER:             "Off to Lender",
+  OFFER:                     "Offer",
+  ACCEPTED:                  "Accepted",
+  REJECTED:                  "Rejected",
 } as const;
 
 export type ApplicationStage = (typeof ApplicationStage)[keyof typeof ApplicationStage];
@@ -15,7 +15,7 @@ export const PIPELINE_STATES: ApplicationStage[] = [
   ApplicationStage.RECEIVED,
   ApplicationStage.IN_REVIEW,
   ApplicationStage.DOCUMENTS_REQUIRED,
-  ApplicationStage.STARTUP,
+  ApplicationStage.ADDITIONAL_STEPS_REQUIRED,
   ApplicationStage.OFF_TO_LENDER,
   ApplicationStage.OFFER,
   ApplicationStage.ACCEPTED,
@@ -35,10 +35,14 @@ export const LEGAL_TRANSITIONS: Record<PipelineState, readonly PipelineState[]> 
   ],
   [ApplicationStage.IN_REVIEW]: [
     ApplicationStage.DOCUMENTS_REQUIRED,
+    ApplicationStage.ADDITIONAL_STEPS_REQUIRED,
     ApplicationStage.OFF_TO_LENDER,
   ],
-  [ApplicationStage.DOCUMENTS_REQUIRED]: [ApplicationStage.OFF_TO_LENDER],
-  [ApplicationStage.STARTUP]: [
+  [ApplicationStage.DOCUMENTS_REQUIRED]: [
+    ApplicationStage.ADDITIONAL_STEPS_REQUIRED,
+    ApplicationStage.OFF_TO_LENDER,
+  ],
+  [ApplicationStage.ADDITIONAL_STEPS_REQUIRED]: [
     ApplicationStage.OFF_TO_LENDER,
     ApplicationStage.DOCUMENTS_REQUIRED,
   ],

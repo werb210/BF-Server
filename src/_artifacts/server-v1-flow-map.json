@@ -4,7 +4,7 @@
     "RECEIVED",
     "IN_REVIEW",
     "DOCUMENTS_REQUIRED",
-    "STARTUP",
+    "ADDITIONAL_STEPS_REQUIRED",
     "OFF_TO_LENDER",
     "OFFER",
     "ACCEPTED",
@@ -22,7 +22,7 @@
     "DOCUMENTS_REQUIRED": [
       "OFF_TO_LENDER"
     ],
-    "STARTUP": [
+    "ADDITIONAL_STEPS_REQUIRED": [
       "OFF_TO_LENDER",
       "DOCUMENTS_REQUIRED"
     ],
@@ -123,10 +123,10 @@
       ],
       "pipelineState": {
         "default": "RECEIVED",
-        "startup": "STARTUP"
+        "startup": "RECEIVED"
       },
       "blockingGuards": [
-        "productCategory=startup => pipeline_state STARTUP",
+        "productCategory=startup => startup_flag true",
         "pipeline_state must be valid enum",
         "requirements_missing can move RECEIVED -> DOCUMENTS_REQUIRED"
       ]

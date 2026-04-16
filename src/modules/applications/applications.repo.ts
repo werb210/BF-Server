@@ -106,10 +106,10 @@ export type ApplicationRequiredDocumentRecord = {
   created_at: Date;
 };
 
-function resolveInitialPipelineState(productCategory: string): ApplicationStage {
-  return productCategory.trim().toLowerCase() === "startup"
-    ? ApplicationStage.STARTUP
-    : ApplicationStage.RECEIVED;
+function resolveInitialPipelineState(_productCategory: string): ApplicationStage {
+  // All applications start at RECEIVED regardless of product category.
+  // Startup product type is tracked separately via the startup_flag column.
+  return ApplicationStage.RECEIVED;
 }
 
 export async function createApplication(params: {
@@ -129,7 +129,7 @@ export async function createApplication(params: {
   const runner = params.client ?? pool;
   const productCategory = params.productCategory ?? params.productType;
   const pipelineState = resolveInitialPipelineState(productCategory);
-  const startupFlag = pipelineState === ApplicationStage.STARTUP;
+  const startupFlag = productCategory.trim().toLowerCase() === "startup";
   let res;
   try {
     res = await runner.query<ApplicationRecord>(
