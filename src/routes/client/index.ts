@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import continuationRouter from "./continuation.js";
 import documentsRouter from "./documents.js";
@@ -12,6 +13,7 @@ import {
 } from "../../middleware/rateLimit.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { dbQuery } from "../../db.js";
+import { AppError } from "../../middleware/errors.js";
 
 const router = Router();
 const clientReadLimiter = clientReadRateLimit() as any;
@@ -75,6 +77,56 @@ router.get(
         score: row.score ?? null,
       },
     });
+  })
+);
+
+router.get(
+  "/messages",
+  safeHandler(async (req: any, res: any) => {
+    const applicationId = typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : null;
+    if (!applicationId) {
+      throw new AppError("validation_error", "applicationId is required.", 400);
+    }
+
+    const rows = await dbQuery(
+      `SELECT id, direction, body, staff_name, created_at
+       FROM communications_messages
+       WHERE application_id = $1
+       ORDER BY created_at ASC
+       LIMIT 200`,
+      [applicationId]
+    );
+
+    res.status(200).json({
+      status: "ok",
+      data: (rows.rows ?? []).map((r: any) => ({
+        id: r.id,
+        role: r.direction === "outbound" ? "staff" : "client",
+        content: r.body,
+        staffName: r.staff_name ?? null,
+        createdAt: r.created_at,
+      })),
+    });
+  })
+);
+
+router.post(
+  "/messages",
+  safeHandler(async (req: any, res: any) => {
+    const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : null;
+    const body = typeof req.body?.body === "string" ? req.body.body.trim() : null;
+    if (!applicationId || !body) {
+      throw new AppError("validation_error", "applicationId and body are required.", 400);
+    }
+
+    const id = randomUUID();
+    await dbQuery(
+      `INSERT INTO communications_messages (id, type, direction, status, application_id, body, created_at)
+       VALUES ($1, 'message', 'inbound', 'received', $2, $3, now())`,
+      [id, applicationId, body]
+    );
+
+    res.status(201).json({ status: "ok", data: { id } });
   })
 );
 

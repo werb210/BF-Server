@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { Router } from "express";
 import { runQuery } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { ApplicationStage } from "../modules/applications/pipelineState.js";
 
 const router = Router();
 
@@ -28,9 +29,9 @@ router.post("/", requireAuth, async (req, res) => {
   try {
     await runQuery(
       `INSERT INTO applications (id, owner_user_id, pipeline_state, created_at, updated_at)
-       VALUES ($1, $2, 'RECEIVED', now(), now())
+       VALUES ($1, $2, $3, now(), now())
        ON CONFLICT (id) DO NOTHING`,
-      [applicationId, ownerUserId],
+      [applicationId, ownerUserId, ApplicationStage.RECEIVED],
     );
   } catch (err) {
     console.error("applications insert failed — returning in-memory id", err);
