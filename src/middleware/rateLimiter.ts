@@ -7,6 +7,10 @@ export const publicLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: rateLimitKeyFromRequest,
+  validate: {
+    xForwardedForHeader: false,
+    trustProxy: false,
+  },
 });
 
 export const contactRateLimiter = rateLimit({
@@ -14,4 +18,8 @@ export const contactRateLimiter = rateLimit({
   max: 10,
   message: "Too many requests, try again later",
   keyGenerator: rateLimitKeyFromRequest,
+  validate: {
+    xForwardedForHeader: false,
+    trustProxy: false,
+  },
 });

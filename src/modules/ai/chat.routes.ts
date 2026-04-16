@@ -20,6 +20,10 @@ const chatLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many chat requests" },
   keyGenerator: rateLimitKeyFromRequest,
+  validate: {
+    xForwardedForHeader: false,
+    trustProxy: false,
+  },
   skip: () => config.env === "test",
 });
 

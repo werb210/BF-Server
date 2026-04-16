@@ -30,6 +30,10 @@ const perUserNotificationReadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: rateLimitKeyFromRequest,
+  validate: {
+    xForwardedForHeader: false,
+    trustProxy: false,
+  },
   skip: () => config.env === "test" || config.rateLimit.enabled === "false",
 });
 
@@ -39,6 +43,10 @@ const perUserNotificationAckLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: rateLimitKeyFromRequest,
+  validate: {
+    xForwardedForHeader: false,
+    trustProxy: false,
+  },
   skip: () => config.env === "test" || config.rateLimit.enabled === "false",
 });
 

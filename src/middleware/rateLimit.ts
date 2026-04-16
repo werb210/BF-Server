@@ -7,6 +7,10 @@ export const globalLimiter = rateLimit({
   standardHeaders: "draft-8",
   legacyHeaders: false,
   keyGenerator: rateLimitKeyFromRequest,
+  validate: {
+    xForwardedForHeader: false,
+    trustProxy: false,
+  },
 });
 
 // Backward-compatible aliases for existing imports.
@@ -35,4 +39,8 @@ export const otpLimiter = rateLimit({
   standardHeaders: "draft-8",
   legacyHeaders: false,
   keyGenerator: rateLimitKeyFromRequest,
+  validate: {
+    xForwardedForHeader: false,
+    trustProxy: false,
+  },
 });

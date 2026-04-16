@@ -40,6 +40,8 @@ export type ApplicationRecord = {
   banking_completed_at: Date | null;
   credit_summary_completed_at: Date | null;
   startup_flag: boolean | null;
+  status: string | null;
+  source: string | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -242,7 +244,10 @@ export async function findApplicationById(
 ): Promise<ApplicationRecord | null> {
   const runner = client ?? pool;
   const res = await runner.query<ApplicationRecord>(
-    `select id, owner_user_id, name, metadata, product_type, product_category, pipeline_state, current_stage, status, processing_stage, lender_id, lender_product_id, requested_amount, first_opened_at, ocr_completed_at, banking_completed_at, credit_summary_completed_at, startup_flag, created_at, updated_at
+    `select id, name, pipeline_state, status, requested_amount,
+            lender_id, lender_product_id, owner_user_id, source,
+            product_type, metadata,
+            created_at, updated_at
      from applications
      where id = $1
      limit 1`,

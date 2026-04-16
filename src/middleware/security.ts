@@ -88,6 +88,10 @@ export const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: rateLimitKeyFromRequest,
+  validate: {
+    xForwardedForHeader: false,
+    trustProxy: false,
+  },
 });
 
 export function productionLogger(req: Request, _res: Response, next: NextFunction): void {
