@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { requireAuth, requireCapability } from '../../middleware/auth.js';
 import { CAPABILITIES } from '../../auth/capabilities.js';
 import { pool } from '../../db.js';
+import { isPipelineState } from './pipelineState.js';
+import { transitionPipelineState } from './applications.service.js';
 import { AppError } from '../../middleware/errors.js';
 import { safeHandler } from '../../middleware/safeHandler.js';
 
@@ -86,6 +88,58 @@ router.get('/:id', safeHandler(async (req: any, res: any) => {
   );
 
   res.json({ status: 'ok', data: { application, documents: docs.rows } });
+}));
+
+router.patch('/:id', safeHandler(async (req: any, res: any) => {
+  const applicationId = typeof req.params.id === 'string' ? req.params.id.trim() : '';
+  if (!applicationId) {
+    throw new AppError('validation_error', 'Application id is required.', 400);
+  }
+
+  const stage = typeof req.body?.stage === 'string' ? req.body.stage.trim() : null;
+  if (stage) {
+    if (!isPipelineState(stage)) {
+      throw new AppError('validation_error', `Invalid stage: ${stage}`, 400);
+    }
+
+    await transitionPipelineState({
+      applicationId,
+      nextState: stage,
+      actorUserId: req.user?.userId ?? req.user?.id ?? 'system',
+      actorRole: req.user?.role ?? null,
+      trigger: 'portal_drag',
+    });
+
+    res.status(200).json({
+      status: 'ok',
+      data: { applicationId, stage },
+    });
+    return;
+  }
+
+  const allowedFields = ['name', 'requested_amount', 'metadata', 'current_step'];
+  const updates: Record<string, unknown> = {};
+  for (const field of allowedFields) {
+    if (req.body?.[field] !== undefined) {
+      updates[field] = req.body[field];
+    }
+  }
+
+  if (Object.keys(updates).length === 0) {
+    res.status(200).json({ status: 'ok', data: { applicationId } });
+    return;
+  }
+
+  const setClauses = Object.keys(updates)
+    .map((key, i) => `${key} = $${i + 2}`)
+    .join(', ');
+
+  await pool.query(
+    `UPDATE applications SET ${setClauses}, updated_at = now() WHERE id = $1`,
+    [applicationId, ...Object.values(updates)]
+  );
+
+  res.status(200).json({ status: 'ok', data: { applicationId } });
 }));
 
 export default router;
