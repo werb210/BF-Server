@@ -60,6 +60,31 @@ import { logCrmEvent } from "../crm/crmTimeline.service.js";
 
 const BANK_STATEMENT_CATEGORY = "bank_statements_6_months";
 
+async function triggerCommission(applicationId: string): Promise<void> {
+  const referralResult = await runQuery<{ id: string; referrer_id: string; deal_amount: number | null }>(
+    `select r.id, r.referrer_id, a.requested_amount as deal_amount
+     from referrals r
+     join applications a on a.id = r.application_id
+     where r.application_id = $1 and r.status != 'paid' limit 1`,
+    [applicationId]
+  );
+
+  const referral = referralResult.rows[0];
+  if (referral && referral.deal_amount) {
+    const commission = Number(referral.deal_amount) * 0.1;
+    await runQuery(
+      `update referrals set commission_amount = $1, status = 'earned', updated_at = now() where id = $2`,
+      [commission, referral.id]
+    );
+  }
+}
+
+function assertValidStage(stage: string): asserts stage is ApplicationStage {
+  if (!PIPELINE_STATES.includes(stage as ApplicationStage)) {
+    throw new Error(`Invalid application stage: ${stage}`);
+  }
+}
+
 const EMPTY_OCR_INSIGHTS: ApplicationResponse["ocrInsights"] = {
   fields: {},
   missingFields: [],
@@ -1212,23 +1237,18 @@ export async function changePipelineState(params: {
     });
   }
 
-  if (nextStage === "Won") {
-    const referralResult = await runQuery<{ id: string; referrer_id: string; deal_amount: number | null }>(
-      `select r.id, r.referrer_id, a.requested_amount as deal_amount
-       from referrals r
-       join applications a on a.id = r.application_id
-       where r.application_id = $1 and r.status != 'paid' limit 1`,
-      [params.applicationId]
-    );
+  const stage = nextStage;
 
-    const referral = referralResult.rows[0];
-    if (referral && referral.deal_amount) {
-      const commission = Number(referral.deal_amount) * 0.1;
-      await runQuery(
-        `update referrals set commission_amount = $1, status = 'earned', updated_at = now() where id = $2`,
-        [commission, referral.id]
-      );
-    }
+  if (!stage) {
+    return;
+  }
+
+  assertValidStage(stage);
+
+  // Commission should trigger when deal is actually completed.
+  // Based on system rules, this is ACCEPTED.
+  if (stage === ApplicationStage.ACCEPTED) {
+    await triggerCommission(params.applicationId);
   }
 }
 

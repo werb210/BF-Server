@@ -1,13 +1,15 @@
-export enum ApplicationStage {
-  RECEIVED = "RECEIVED",
-  IN_REVIEW = "IN_REVIEW",
-  DOCUMENTS_REQUIRED = "DOCUMENTS_REQUIRED",
-  STARTUP = "STARTUP",
-  OFF_TO_LENDER = "OFF_TO_LENDER",
-  OFFER = "OFFER",
-  ACCEPTED = "ACCEPTED",
-  REJECTED = "REJECTED",
-}
+export const ApplicationStage = {
+  RECEIVED: "RECEIVED",
+  IN_REVIEW: "IN_REVIEW",
+  DOCUMENTS_REQUIRED: "DOCUMENTS_REQUIRED",
+  STARTUP: "STARTUP",
+  OFF_TO_LENDER: "OFF_TO_LENDER",
+  OFFER: "OFFER",
+  ACCEPTED: "ACCEPTED",
+  REJECTED: "REJECTED",
+} as const;
+
+export type ApplicationStage = (typeof ApplicationStage)[keyof typeof ApplicationStage];
 
 export const PIPELINE_STATES: ApplicationStage[] = [
   ApplicationStage.RECEIVED,
