@@ -1,5 +1,6 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
+import { safeKeyGenerator } from "../middleware/rateLimit.js";
 import { submitContactForm } from "../modules/website/contact.controller.js";
 import { submitCreditReadiness } from "../modules/website/website.controller.js";
 import { config } from "../config/index.js";
@@ -16,6 +17,7 @@ const websiteLimiter = rateLimit({
     trustProxy: false,
   },
   skip: () => config.env === "test",
+  keyGenerator: safeKeyGenerator,
 });
 
 const websiteBodyLimitBytes = 64 * 1024;

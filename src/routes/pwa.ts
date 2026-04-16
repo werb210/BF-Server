@@ -18,6 +18,7 @@ import { replaySyncBatch } from "../services/pwaSyncService.js";
 import { pool, runQuery } from "../db.js";
 import { ALL_ROLES, ROLES } from "../auth/roles.js";
 import { toStringSafe } from "../utils/toStringSafe.js";
+import { safeKeyGenerator } from "../middleware/rateLimit.js";
 
 const router = Router();
 const DEFAULT_NOTIFICATION_LIMIT = 50;
@@ -33,6 +34,7 @@ const perUserNotificationReadLimiter = rateLimit({
     trustProxy: false,
   },
   skip: () => config.env === "test" || config.rateLimit.enabled === "false",
+  keyGenerator: safeKeyGenerator,
 });
 
 const perUserNotificationAckLimiter = rateLimit({
@@ -45,6 +47,7 @@ const perUserNotificationAckLimiter = rateLimit({
     trustProxy: false,
   },
   skip: () => config.env === "test" || config.rateLimit.enabled === "false",
+  keyGenerator: safeKeyGenerator,
 });
 
 const subscriptionSchema = z.object({

@@ -1,7 +1,6 @@
 import { type NextFunction, type Request, type Response } from "express";
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
-import { rateLimitKeyFromRequest } from "./clientIp.js";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { config } from "../config/index.js";
 import { logger } from "../server/utils/logger.js";
 
@@ -60,34 +59,46 @@ export const securityHeaders = helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://sdk.twilio.com", "https://media.twiliocdn.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://sdk.twilio.com"],
       connectSrc: [
         "'self'",
         "https://server.boreal.financial",
         "https://voice-js.twilio.com",
         "wss://voice-js.roaming.twilio.com",
+        "wss://chunderw-vpc-gll.twilio.com",
         "https://eventgw.twilio.com",
         "wss://eventgw.twilio.com",
         "https://media.twiliocdn.com",
-        "https://sdk.twilio.com",
-        "wss://chunderw-vpc-gll.twilio.com",
         "wss://*.twilio.com",
+        "https://sdk.twilio.com",
       ],
       imgSrc: ["'self'", "data:", "https:"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      fontSrc: ["'self'", "data:", "https:"],
+      fontSrc: ["'self'", "data:"],
       mediaSrc: ["'self'", "https://media.twiliocdn.com"],
-      frameSrc: ["'self'"],
     },
   },
 });
+
+function safeKeyGenerator(req: Request): string {
+  const forwarded = req.headers["x-forwarded-for"];
+  const rawIp = typeof forwarded === "string"
+    ? forwarded.split(",")[0].trim()
+    : (req.ip ?? "unknown");
+  const withoutV4Mapped = rawIp.replace(/^::ffff:/, "");
+  const cleanIp = /^\d+\.\d+\.\d+\.\d+:\d+$/.test(withoutV4Mapped)
+    ? withoutV4Mapped.split(":")[0]
+    : withoutV4Mapped;
+
+  return ipKeyGenerator(cleanIp || rawIp);
+}
 
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: rateLimitKeyFromRequest,
+  keyGenerator: safeKeyGenerator,
   validate: {
     xForwardedForHeader: false,
     trustProxy: false,
