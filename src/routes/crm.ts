@@ -84,7 +84,7 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, pageSize);
 
-  respondOk(res, { contacts: sorted, total: sorted.length }, { page, pageSize });
+  respondOk(res, sorted);
 }));
 
 router.get("/timeline", safeHandler(handleListCrmTimeline));
