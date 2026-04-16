@@ -11,6 +11,7 @@ import { createApp } from "./app.js";
 import { initDb } from "./db/init.js";
 import { verifyRequiredTables } from "./db/tableHealthCheck.js";
 import { listRoutes } from "./debug/printRoutes.js";
+import { markReady } from "./startupState.js";
 
 const PORT = Number(process.env.PORT) || 8080;
 
@@ -84,6 +85,7 @@ export async function start(): Promise<void> {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`SERVER STARTED ON ${PORT}`);
+    markReady();
   });
 }
 

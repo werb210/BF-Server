@@ -1,6 +1,7 @@
 import { Router } from "express";
 import twilio from "twilio";
 
+import { fetchCapabilitiesForRole } from "../auth/capabilities.js";
 import { signAccessToken } from "../auth/jwt.js";
 import { ROLES, normalizeRole } from "../auth/roles.js";
 import { isTest } from "../config/runtime.js";
@@ -159,11 +160,13 @@ router.post("/otp/verify", async (req, res) => {
       return res.status(403).json({ status: "error", error: "account_disabled" });
     }
 
+    const role = normalizeRole(user.role ?? "") ?? ROLES.STAFF;
     const token = signAccessToken({
       sub: String(user.id),
-      role: normalizeRole(user.role ?? "") ?? ROLES.STAFF,
+      role,
       tokenVersion: user.tokenVersion ?? 0,
       phone: user.phoneNumber ?? phone,
+      capabilities: fetchCapabilitiesForRole(role),
     });
 
     return res.status(200).json({ status: "ok", data: { token } });
