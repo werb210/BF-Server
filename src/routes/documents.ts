@@ -55,7 +55,7 @@ router.post("/upload", requireAuth, validate(documentUploadSchema), async (req: 
   return ok(res, { ...doc, hash });
 });
 
-router.patch("/:id/accept", requireAuth, (req: Request, res: Response) => {
+router.post("/:id/accept", requireAuth, (req: Request, res: Response) => {
   const doc = inMemoryDb[toStringSafe(req.params.id)];
   if (!doc) return fail(res, 404, "not_found");
 
@@ -63,7 +63,7 @@ router.patch("/:id/accept", requireAuth, (req: Request, res: Response) => {
   return ok(res, doc);
 });
 
-router.patch("/:id/reject", requireAuth, (req: Request, res: Response) => {
+router.post("/:id/reject", requireAuth, (req: Request, res: Response) => {
   const doc = inMemoryDb[toStringSafe(req.params.id)];
   if (!doc) return fail(res, 404, "not_found");
 

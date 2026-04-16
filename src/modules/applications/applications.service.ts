@@ -1245,8 +1245,8 @@ export async function changePipelineState(params: {
 
   assertValidStage(stage);
 
-  // Commission should trigger only when the deal is marked closed/won.
-  if ((stage as string) === "Won") {
+  // Commission should trigger only when the deal is marked accepted.
+  if (stage === ApplicationStage.ACCEPTED) {
     await triggerCommission(params.applicationId);
   }
 }
