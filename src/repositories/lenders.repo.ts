@@ -17,6 +17,11 @@ export interface CreateLenderInput {
   api_config?: Record<string, unknown> | null;
   submission_config?: Record<string, unknown> | null;
   website?: string | null;
+  street?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
+  phone?: string | null;
 }
 
 const LENDERS_REPO = "src/repositories/lenders.repo.ts";
@@ -98,6 +103,12 @@ function buildSelectColumns(existing: Set<string>): string {
     { name: "primary_contact_email", fallback: "null::text" },
     { name: "primary_contact_phone", fallback: "null::text" },
     { name: "website", fallback: "null::text" },
+    { name: "street", fallback: "null::text" },
+    { name: "city", fallback: "null::text" },
+    { name: "region", fallback: "null::text" },
+    { name: "postal_code", fallback: "null::text" },
+    { name: "phone", fallback: "null::text" },
+    { name: "primary_contact_phone", fallback: "null::text" },
     { name: "submission_email", fallback: "null::text" },
     { name: "api_config", fallback: "null::jsonb" },
     { name: "submission_config", fallback: "null::jsonb" },
@@ -215,6 +226,11 @@ export async function createLender(
     api_config,
     submission_config,
     website,
+    street,
+    city,
+    region,
+    postal_code,
+    phone,
   } = input;
   const existingColumns = await fetchLenderColumns();
   const includeActive = existingColumns.has("active");
@@ -237,6 +253,11 @@ export async function createLender(
     { name: "name", value: name },
     { name: "country", value: country },
     { name: "website", value: website ?? null },
+    { name: "street", value: street ?? null },
+    { name: "city", value: city ?? null },
+    { name: "region", value: region ?? null },
+    { name: "postal_code", value: postal_code ?? null },
+    { name: "phone", value: phone ?? null },
     { name: "status", value: statusValue },
   ];
 

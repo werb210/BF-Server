@@ -31,10 +31,11 @@ router.post(
     const email = profile.mail ?? profile.userPrincipalName ?? accountEmail ?? "";
 
     await dbQuery(
-      `update users
-          set o365_user_email   = $1,
-              o365_access_token = $2
-        where id = $3`,
+      `UPDATE users
+          SET o365_user_email = $1,
+              o365_access_token = $2,
+              o365_token_expires_at = now() + interval '1 hour'
+        WHERE id = $3`,
       [email, accessToken, req.user!.userId]
     );
 
