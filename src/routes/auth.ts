@@ -179,7 +179,6 @@ router.post("/otp/verify", async (req, res) => {
 router.get("/me", requireAuth, authMeHandler);
 router.use(microsoftRoutes);
 
-
 export default router;
 
 export function resetOtpStateForTests() {
