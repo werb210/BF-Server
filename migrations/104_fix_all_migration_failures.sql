@@ -1,14 +1,6 @@
--- ═══════════════════════════════════════════════════════════════════════════
--- FILE: migrations/104_fix_all_migration_failures.sql  (NEW FILE)
--- 103 failed entirely so none of its fixes landed. This replaces it cleanly.
--- Every statement is wrapped in DO $$ or uses IF NOT EXISTS — fully idempotent.
--- ═══════════════════════════════════════════════════════════════════════════
-
--- ── FIX 1: users.phone_number NOT NULL blocks seed user insert
 ALTER TABLE users
   ALTER COLUMN phone_number DROP NOT NULL;
 
--- ── FIX 2: lenders.status is a lender_status enum — cast required
 DO $$ BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
@@ -26,7 +18,6 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- ── FIX 3: call_logs — create without the broken uuid/text FK
 CREATE TABLE IF NOT EXISTS call_logs (
   id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   application_id  text,
@@ -49,7 +40,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS call_logs_twilio_call_sid_unique
 CREATE INDEX IF NOT EXISTS idx_call_logs_status         ON call_logs (status);
 CREATE INDEX IF NOT EXISTS idx_call_logs_application_id ON call_logs (application_id);
 
--- ── FIX 4: submission_events — create without the broken text/uuid FK
 CREATE TABLE IF NOT EXISTS submission_events (
   id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   lender_id   text,
@@ -58,7 +48,6 @@ CREATE TABLE IF NOT EXISTS submission_events (
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 
--- ── FIX 5: chat_sessions missing status column
 DO $$ BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.tables WHERE table_name = 'chat_sessions'
@@ -72,7 +61,6 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- ── FIX 6: users status — uppercase before adding constraint
 DO $$ BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
@@ -89,7 +77,6 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- ── FIX 7: drop broken FK constraints if partially applied
 DO $$ BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.table_constraints
@@ -107,7 +94,6 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- ── FIX 8: lender_products.lender_name NOT NULL blocks seed
 DO $$ BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
@@ -117,14 +103,12 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- ── FIX 9: seed lender — include ALL NOT NULL columns
-INSERT INTO lenders
-  (id, name, active, created_at, updated_at)
-VALUES
-  ('11111111-1111-1111-1111-111111111111', 'Boreal Direct', true, now(), now())
+-- Seed lender — includes ALL NOT NULL columns: id, name, country, active, created_at, updated_at
+INSERT INTO lenders (id, name, country, active, created_at, updated_at)
+VALUES ('11111111-1111-1111-1111-111111111111', 'Boreal Direct', 'CA', true, now(), now())
 ON CONFLICT (id) DO NOTHING;
 
--- ── FIX 10: seed lender products — include lender_name
+-- Seed lender products — includes lender_name
 INSERT INTO lender_products
   (id, lender_id, lender_name, name, category, active, country, min_amount, max_amount, created_at, updated_at)
 VALUES
@@ -133,16 +117,6 @@ VALUES
   ('33333333-3333-3333-3333-333333333303','11111111-1111-1111-1111-111111111111','Boreal Direct','Equipment Financing',    'EQUIPMENT',true,'CA',10000, 500000, now(),now()),
   ('33333333-3333-3333-3333-333333333304','11111111-1111-1111-1111-111111111111','Boreal Direct','Working Capital Loan',   'TERM',     true,'CA',10000, 250000, now(),now()),
   ('33333333-3333-3333-3333-333333333305','11111111-1111-1111-1111-111111111111','Boreal Direct','Invoice Factoring',      'FACTORING',true,'CA',25000, 2000000,now(),now()),
-  ('33333333-3333-3333-3333-333333333306','11111111-1111-1111-1111-111111111111','Boreal Direct','Merchant Cash Advance',  'MCA',     true,'CA',5000,  200000, now(),now()),
+  ('33333333-3333-3333-3333-333333333306','11111111-1111-1111-1111-111111111111','Boreal Direct','Merchant Cash Advance',  'MCA',      true,'CA',5000,  200000, now(),now()),
   ('33333333-3333-3333-3333-333333333307','11111111-1111-1111-1111-111111111111','Boreal Direct','PO Financing',           'PO',       true,'CA',25000, 1000000,now(),now())
 ON CONFLICT (id) DO NOTHING;
-
--- ═══════════════════════════════════════════════════════════════════════════
--- TESTS after deploy:
--- Boot log shows: migration_applied: 104_fix_all_migration_failures.sql
--- Boot log does NOT show: migration_skipped_or_failed: 104_
--- SELECT COUNT(*) FROM call_logs; → 0 (table exists)
--- SELECT COUNT(*) FROM lender_products; → 7
--- SELECT COUNT(*) FROM lenders; → 1
--- Portal → Lenders page shows "Boreal Direct" with 7 products
--- ═══════════════════════════════════════════════════════════════════════════
