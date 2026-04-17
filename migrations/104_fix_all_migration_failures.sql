@@ -110,13 +110,13 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Seed lender products — includes lender_name
 INSERT INTO lender_products
-  (id, lender_id, lender_name, name, category, active, country, min_amount, max_amount, created_at, updated_at)
+  (id, lender_id, lender_name, name, type, category, active, country, min_amount, max_amount, created_at, updated_at)
 VALUES
-  ('33333333-3333-3333-3333-333333333301','11111111-1111-1111-1111-111111111111','Boreal Direct','Business Line of Credit','LOC',      true,'CA',25000, 500000, now(),now()),
-  ('33333333-3333-3333-3333-333333333302','11111111-1111-1111-1111-111111111111','Boreal Direct','Term Loan',              'TERM',     true,'CA',50000, 1000000,now(),now()),
-  ('33333333-3333-3333-3333-333333333303','11111111-1111-1111-1111-111111111111','Boreal Direct','Equipment Financing',    'EQUIPMENT',true,'CA',10000, 500000, now(),now()),
-  ('33333333-3333-3333-3333-333333333304','11111111-1111-1111-1111-111111111111','Boreal Direct','Working Capital Loan',   'TERM',     true,'CA',10000, 250000, now(),now()),
-  ('33333333-3333-3333-3333-333333333305','11111111-1111-1111-1111-111111111111','Boreal Direct','Invoice Factoring',      'FACTORING',true,'CA',25000, 2000000,now(),now()),
-  ('33333333-3333-3333-3333-333333333306','11111111-1111-1111-1111-111111111111','Boreal Direct','Merchant Cash Advance',  'MCA',      true,'CA',5000,  200000, now(),now()),
-  ('33333333-3333-3333-3333-333333333307','11111111-1111-1111-1111-111111111111','Boreal Direct','PO Financing',           'PO',       true,'CA',25000, 1000000,now(),now())
+  ('33333333-3333-3333-3333-333333333301','11111111-1111-1111-1111-111111111111','Boreal Direct','Business Line of Credit','LOC',      'LOC',      true,'CA',25000, 500000, now(),now()),
+  ('33333333-3333-3333-3333-333333333302','11111111-1111-1111-1111-111111111111','Boreal Direct','Term Loan',              'TERM',     'TERM',     true,'CA',50000, 1000000,now(),now()),
+  ('33333333-3333-3333-3333-333333333303','11111111-1111-1111-1111-111111111111','Boreal Direct','Equipment Financing',    'EQUIPMENT','EQUIPMENT',true,'CA',10000, 500000, now(),now()),
+  ('33333333-3333-3333-3333-333333333304','11111111-1111-1111-1111-111111111111','Boreal Direct','Working Capital Loan',   'TERM',     'TERM',     true,'CA',10000, 250000, now(),now()),
+  ('33333333-3333-3333-3333-333333333305','11111111-1111-1111-1111-111111111111','Boreal Direct','Invoice Factoring',      'FACTORING','FACTORING',true,'CA',25000, 2000000,now(),now()),
+  ('33333333-3333-3333-3333-333333333306','11111111-1111-1111-1111-111111111111','Boreal Direct','Merchant Cash Advance',  'MCA',      'MCA',      true,'CA',5000,  200000, now(),now()),
+  ('33333333-3333-3333-3333-333333333307','11111111-1111-1111-1111-111111111111','Boreal Direct','PO Financing',           'PO',       'PO',       true,'CA',25000, 1000000,now(),now())
 ON CONFLICT (id) DO NOTHING;
