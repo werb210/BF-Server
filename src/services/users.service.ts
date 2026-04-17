@@ -13,11 +13,21 @@ const updateMeSchema = z.object({
   email: z.string().email().optional(),
   first_name: z.string().min(1).optional(),
   last_name: z.string().min(1).optional(),
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
+  phone: z.string().optional(),
+  profileImage: z.string().optional(),
 });
 
 const adminUpdateSchema = z.object({
   role: z.enum(["Admin", "Staff", "Lender", "Referrer"]).optional(),
   status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
+  first_name: z.string().min(1).optional(),
+  last_name: z.string().min(1).optional(),
+  phone: z.string().optional(),
+  silo: z.enum(["BF", "BI", "SLF"]).optional(),
 });
 
 const createUserSchema = z.object({
@@ -129,7 +139,15 @@ export async function updateMe(req: Request, res: Response) {
     const userId = req.user!.userId;
     const input = updateMeSchema.parse(req.body);
 
-    if (Object.keys(input).length === 0) {
+    const normalized: Record<string, any> = {};
+    if (input.first_name) normalized.first_name = input.first_name;
+    if (input.last_name) normalized.last_name = input.last_name;
+    if ((input as any).firstName) normalized.first_name = (input as any).firstName;
+    if ((input as any).lastName) normalized.last_name = (input as any).lastName;
+    if (input.email) normalized.email = input.email;
+    if ((input as any).phone) normalized.phone = (input as any).phone;
+
+    if (Object.keys(normalized).length === 0) {
       res["json"]({ ok: true });
       return;
     }
@@ -137,23 +155,15 @@ export async function updateMe(req: Request, res: Response) {
     const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
-
-    for (const [k, v] of Object.entries(input)) {
+    for (const [k, v] of Object.entries(normalized)) {
       fields.push(`${k} = $${idx++}`);
       values.push(v);
     }
-
     values.push(userId);
-
     await db.query(
-      `
-      UPDATE users
-      SET ${fields.join(", ")}, updated_at = now()
-      WHERE id = $${idx}
-      `,
+      `UPDATE users SET ${fields.join(", ")}, updated_at = now() WHERE id = $${idx}`,
       values
     );
-
     res["json"]({ ok: true });
   } catch (err) {
     handleUserError(res, err, requestId);
@@ -221,11 +231,20 @@ export async function adminUpdateUser(req: Request, res: Response) {
       return;
     }
 
+    const normalized: Record<string, any> = {};
+    if (input.role) normalized.role = input.role;
+    if (input.status) normalized.status = input.status;
+    if (input.silo) normalized.silo = input.silo;
+    if (input.phone) normalized.phone = input.phone;
+    if (input.first_name) normalized.first_name = input.first_name;
+    if (input.last_name) normalized.last_name = input.last_name;
+    if ((input as any).firstName) normalized.first_name = (input as any).firstName;
+    if ((input as any).lastName) normalized.last_name = (input as any).lastName;
+
     const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
-
-    for (const [k, v] of Object.entries(input)) {
+    for (const [k, v] of Object.entries(normalized)) {
       fields.push(`${k} = $${idx++}`);
       values.push(v);
     }
