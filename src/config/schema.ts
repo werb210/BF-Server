@@ -117,6 +117,7 @@ export const EnvSchema = z
     REPORTING_DAILY_INTERVAL_MS: numericString.optional(),
     REPORTING_HOURLY_INTERVAL_MS: numericString.optional(),
     VOICE_RESTRICTED_NUMBERS: z.string().optional(),
+    MAYA_URL: z.string().min(1).optional(),
     OPS_KILL_SWITCH_REPLAY: boolString.optional(),
     OPS_KILL_SWITCH_EXPORTS: boolString.optional(),
     OPS_KILL_SWITCH_OCR: boolString.optional(),
