@@ -63,6 +63,36 @@ function parsePagination(query: Request["query"]): { limit: number; offset: numb
   return { limit, offset };
 }
 
+// ── Pipeline helpers ──────────────────────────────────────────────────────────
+async function recordTransition(
+  appId: string,
+  fromStage: string,
+  toStage: string,
+  actorId: string | null,
+  reason: string
+): Promise<void> {
+  await runQuery(
+    `INSERT INTO application_stage_events
+       (application_id, from_stage, to_stage, trigger, triggered_by, reason, created_at)
+     VALUES ($1, $2, $3, 'auto', $4, $5, now())`,
+    [appId, fromStage, toStage, actorId ?? "system", reason]
+  ).catch(() => {});
+}
+
+async function allDocumentsAccepted(appId: string): Promise<boolean> {
+  const result = await runQuery<{ total: string; accepted: string }>(
+    `SELECT
+       count(*) AS total,
+       count(*) FILTER (WHERE status = 'accepted') AS accepted
+     FROM documents
+     WHERE application_id = $1 AND status != 'rejected'`,
+    [appId]
+  ).catch(() => null);
+  if (!result?.rows[0]) return false;
+  const { total, accepted } = result.rows[0];
+  return parseInt(total) > 0 && total === accepted;
+}
+
 // ── Document reject — auto-SMS ────────────────────────────────────────────
 async function sendDocumentRejectionSms(params: {
   documentId: string;
@@ -155,20 +185,34 @@ router.get(
 
 router.get(
   "/applications/:id",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
   portalLimiter,
-  safeHandler(async (req: Request, res: Response) => {
+  safeHandler(async (req: any, res: Response) => {
     if (!ensureReady(res)) {
       return;
     }
     const applicationId = toStringSafe(req.params.id);
-    if (!applicationId) {
-      res.status(400).json({
-        code: "validation_error",
-        message: "Application id is required.",
-        requestId: res.locals.requestId ?? "unknown",
-      });
-      return;
+    if (!applicationId) throw new AppError("validation_error", "Application id required.", 400);
+
+    const stageResult = await runQuery<{ pipeline_state: string }>(
+      `SELECT pipeline_state FROM applications WHERE id = $1 LIMIT 1`,
+      [applicationId]
+    );
+    if (stageResult.rows[0]?.pipeline_state === "Received") {
+      await runQuery(
+        `UPDATE applications SET pipeline_state = 'In Review', updated_at = now() WHERE id = $1`,
+        [applicationId]
+      ).catch(() => {});
+      await recordTransition(
+        applicationId,
+        "Received",
+        "In Review",
+        req.user?.userId ?? null,
+        "Staff opened application"
+      );
     }
+
     const record = await findApplicationById(applicationId);
     if (!record) {
       res.status(404).json({
@@ -548,7 +592,12 @@ router.patch(
       throw new AppError("validation_error", "Application id is required.", 400);
     }
     const status = typeof req.body?.status === "string" ? req.body.status.trim() : "";
-    if (!status || !isPipelineState(status)) {
+    const allowedManualStatuses = new Set<string>([
+      ApplicationStage.ADDITIONAL_STEPS_REQUIRED,
+      ApplicationStage.ACCEPTED,
+      ApplicationStage.REJECTED,
+    ]);
+    if (!status || !isPipelineState(status) || !allowedManualStatuses.has(status)) {
       throw new AppError("validation_error", "status is invalid.", 400);
     }
     const statusMeta = {
@@ -641,6 +690,43 @@ router.get(
 
 // ── Portal document reject with auto-SMS ──────────────────────────────────────
 router.post(
+  "/documents/:id/accept",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  portalLimiter,
+  safeHandler(async (req: any, res: any) => {
+    const docId = typeof req.params.id === "string" ? req.params.id.trim() : "";
+    if (!docId) throw new AppError("validation_error", "Document id required.", 400);
+
+    const updated = await runQuery<{ id: string; document_type: string; application_id: string; status: string }>(
+      `UPDATE documents SET status = 'accepted', updated_at = now()
+       WHERE id = $1 RETURNING id, document_type, application_id, status`,
+      [docId]
+    );
+    const doc = updated.rows[0];
+    if (!doc) throw new AppError("not_found", "Document not found.", 404);
+
+    const appId = doc.application_id;
+    if (appId && await allDocumentsAccepted(appId)) {
+      const appRes = await runQuery<{ pipeline_state: string }>(
+        `SELECT pipeline_state FROM applications WHERE id = $1`,
+        [appId]
+      );
+      const cur = appRes.rows[0]?.pipeline_state;
+      if (cur && ["In Review", "Documents Required", "Additional Steps Required"].includes(cur)) {
+        await runQuery(
+          `UPDATE applications SET pipeline_state = 'Off to Lender', updated_at = now() WHERE id = $1`,
+          [appId]
+        ).catch(() => {});
+        await recordTransition(appId, cur, "Off to Lender", req.user?.userId ?? null, "All documents accepted");
+      }
+    }
+    res.status(200).json({ ok: true, document: doc });
+  })
+);
+
+// ── Portal document reject with auto-SMS ──────────────────────────────────────
+router.post(
   "/documents/:id/reject",
   requireAuth,
   requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
@@ -669,27 +755,53 @@ router.post(
       rejectionReason: reason,
     });
 
+    if (doc.application_id) {
+      const appRes = await runQuery<{ pipeline_state: string }>(
+        `SELECT pipeline_state FROM applications WHERE id = $1`,
+        [doc.application_id]
+      );
+      const cur = appRes.rows[0]?.pipeline_state;
+      if (cur && ["In Review", "Off to Lender", "Received"].includes(cur)) {
+        await runQuery(
+          `UPDATE applications SET pipeline_state = 'Documents Required', updated_at = now() WHERE id = $1`,
+          [doc.application_id]
+        ).catch(() => {});
+        await recordTransition(
+          doc.application_id,
+          cur,
+          "Documents Required",
+          req.user?.userId ?? null,
+          `Document rejected: ${doc.document_type}`
+        );
+      }
+    }
+
     res.status(200).json({ ok: true, document: doc });
   })
 );
 
-// ── Portal document accept ────────────────────────────────────────────────────
 router.post(
-  "/documents/:id/accept",
+  "/applications/:id/term-sheet",
   requireAuth,
   requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
   portalLimiter,
   safeHandler(async (req: any, res: any) => {
-    const docId = typeof req.params.id === "string" ? req.params.id.trim() : "";
-    if (!docId) throw new AppError("validation_error", "Document id required.", 400);
-    const updated = await runQuery(
-      `UPDATE documents SET status = 'accepted', updated_at = now()
-       WHERE id = $1
-       RETURNING id, document_type, application_id, status`,
-      [docId]
+    const appId = typeof req.params.id === "string" ? req.params.id.trim() : "";
+    if (!appId) throw new AppError("validation_error", "Application id required.", 400);
+
+    const appRes = await runQuery<{ pipeline_state: string }>(
+      `SELECT pipeline_state FROM applications WHERE id = $1`,
+      [appId]
     );
-    if (!updated.rows[0]) throw new AppError("not_found", "Document not found.", 404);
-    res.status(200).json({ ok: true, document: updated.rows[0] });
+    const cur = appRes.rows[0]?.pipeline_state;
+    if (cur === "Off to Lender") {
+      await runQuery(
+        `UPDATE applications SET pipeline_state = 'Offer', updated_at = now() WHERE id = $1`,
+        [appId]
+      ).catch(() => {});
+      await recordTransition(appId, "Off to Lender", "Offer", req.user?.userId ?? null, "Term sheet uploaded");
+    }
+    res.status(200).json({ ok: true, stage: "Offer" });
   })
 );
 
