@@ -258,6 +258,8 @@ export async function createLender(
     { name: "region", value: region ?? null },
     { name: "postal_code", value: postal_code ?? null },
     { name: "phone", value: phone ?? null },
+    { name: "created_at", value: "now()", raw: true },
+    { name: "updated_at", value: "now()", raw: true },
     { name: "status", value: statusValue },
   ];
 
