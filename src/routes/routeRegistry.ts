@@ -70,7 +70,8 @@ const rootRoutes = Router();
 rootRoutes.use(readinessRoutes);
 rootRoutes.use(signnowRoutes);
 
-// Apply silo middleware globally to all /api routes
+// Register SMS inbound also at /api/sms/inbound for Twilio console config flexibility.
+// Apply silo middleware globally to all /api routes.
 export function applySiloMiddleware(app: import("express").Application): void {
   app.use("/api", siloMiddleware);
 }
@@ -106,6 +107,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/referrals", router: referralsRoutes },
   { path: "/pipeline", router: pipelineRoutes },
   { path: "/webhooks", router: webhooksRoutes },
+  { path: "/sms", router: webhooksRoutes },
   { path: "/website", router: websiteRoutes },
   { path: "/maya", router: mayaRoutes },
   { path: "/ai", router: aiRoutes },
@@ -148,8 +150,15 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET", path: "/api/telephony/token", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "POST", path: "/api/telephony/outbound-call", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/telephony/presence", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { method: "POST", path: "/api/telephony/presence", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { method: "POST", path: "/api/telephony/presence/heartbeat", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/telephony/call-status", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { method: "POST", path: "/api/webhooks/twilio/voice/twiml", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/voice/no-answer", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/voicemail", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/voice", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/sms", roles: [] },
+  { method: "POST", path: "/api/sms/inbound", roles: [] },
   { method: "POST", path: "/api/twilio/voice", roles: [] },
   { method: "POST", path: "/api/twilio/voice/action", roles: [] },
   { method: "POST", path: "/api/twilio/recording", roles: [] },

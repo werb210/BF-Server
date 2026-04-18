@@ -31,6 +31,7 @@ import { config } from "../config/index.js";
 import { listLenders } from "../repositories/lenders.repo.js";
 import { eventBus } from "../events/eventBus.js";
 import { toStringSafe } from "../utils/toStringSafe.js";
+import twilio from "twilio";
 
 const router = Router();
 const portalLimiter = portalRateLimit();
@@ -60,6 +61,49 @@ function parsePagination(query: Request["query"]): { limit: number; offset: numb
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
   const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 ? offsetRaw : 0;
   return { limit, offset };
+}
+
+// ── Document reject — auto-SMS ────────────────────────────────────────────
+async function sendDocumentRejectionSms(params: {
+  documentId: string;
+  documentType: string;
+  applicationId: string;
+  rejectionReason: string | null;
+}): Promise<void> {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const from = process.env.TWILIO_FROM_NUMBER ?? process.env.TWILIO_PHONE_NUMBER;
+  if (!accountSid || !authToken || !from) return;
+
+  // Find the contact phone via application → owner
+  const result = await pool.query<{ phone: string | null; phone_number: string | null }>(
+    `SELECT u.phone_number AS phone_number, c.phone AS phone
+     FROM applications a
+     LEFT JOIN users u ON u.id = a.owner_user_id
+     LEFT JOIN contacts c ON c.id = a.contact_id
+     WHERE a.id = $1 LIMIT 1`,
+    [params.applicationId]
+  ).catch(() => ({ rows: [] }));
+
+  const row = result.rows[0];
+  const to = row?.phone ?? row?.phone_number;
+  if (!to) return;
+
+  const reason = params.rejectionReason ? ` Reason: ${params.rejectionReason}.` : "";
+  const body =
+    `Your document "${params.documentType}" has been rejected.${reason} ` +
+    "Please log in to re-upload: https://client.boreal.financial";
+
+  const client: any = twilio(accountSid, authToken);
+  const msg = await client.messages.create({ body, from, to }).catch(() => null);
+  if (msg) {
+    await pool.query(
+      `INSERT INTO communications_messages
+         (id, type, direction, status, body, phone_number, from_number, to_number, twilio_sid, application_id, created_at)
+       VALUES (gen_random_uuid(), 'sms', 'outbound', $1, $2, $3, $4, $3, $5, $6, now())`,
+      [msg.status, body, to, from, msg.sid, params.applicationId]
+    ).catch(() => {});
+  }
 }
 
 router.get(
@@ -557,6 +601,60 @@ router.get(
   safeHandler(async (_req: any, res: any) => {
     const lenders = await listLenders(pool);
     res.status(200).json({ items: lenders ?? [] });
+  })
+);
+
+// ── Portal document reject with auto-SMS ──────────────────────────────────────
+router.post(
+  "/documents/:id/reject",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  portalLimiter,
+  safeHandler(async (req: any, res: any) => {
+    const docId = typeof req.params.id === "string" ? req.params.id.trim() : "";
+    if (!docId) throw new AppError("validation_error", "Document id required.", 400);
+    const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : null;
+
+    const updated = await runQuery<{
+      id: string; document_type: string; application_id: string; status: string;
+    }>(
+      `UPDATE documents SET status = 'rejected', rejection_reason = $2, updated_at = now()
+       WHERE id = $1
+       RETURNING id, document_type, application_id, status`,
+      [docId, reason]
+    );
+    const doc = updated.rows[0];
+    if (!doc) throw new AppError("not_found", "Document not found.", 404);
+
+    // Fire auto-SMS asynchronously — non-blocking
+    void sendDocumentRejectionSms({
+      documentId: docId,
+      documentType: doc.document_type ?? "document",
+      applicationId: doc.application_id,
+      rejectionReason: reason,
+    });
+
+    res.status(200).json({ ok: true, document: doc });
+  })
+);
+
+// ── Portal document accept ────────────────────────────────────────────────────
+router.post(
+  "/documents/:id/accept",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  portalLimiter,
+  safeHandler(async (req: any, res: any) => {
+    const docId = typeof req.params.id === "string" ? req.params.id.trim() : "";
+    if (!docId) throw new AppError("validation_error", "Document id required.", 400);
+    const updated = await runQuery(
+      `UPDATE documents SET status = 'accepted', updated_at = now()
+       WHERE id = $1
+       RETURNING id, document_type, application_id, status`,
+      [docId]
+    );
+    if (!updated.rows[0]) throw new AppError("not_found", "Document not found.", 404);
+    res.status(200).json({ ok: true, document: updated.rows[0] });
   })
 );
 
