@@ -106,39 +106,6 @@ async function sendDocumentRejectionSms(params: {
   }
 }
 
-// Helper: record a pipeline stage transition
-async function recordTransition(
-  appId: string,
-  fromStage: string,
-  toStage: string,
-  actorId: string | null,
-  reason: string
-): Promise<void> {
-  await runQuery(
-    `INSERT INTO application_stage_events
-       (application_id, from_stage, to_stage, trigger, triggered_by, reason, created_at)
-     VALUES ($1, $2, $3, 'auto', $4, $5, now())
-     ON CONFLICT DO NOTHING`,
-    [appId, fromStage, toStage, actorId ?? "system", reason]
-  ).catch(() => {});
-}
-
-// Helper: check if all non-rejected documents for an application are accepted
-async function allDocumentsAccepted(appId: string): Promise<boolean> {
-  const result = await runQuery<{ total: string; accepted: string }>(
-    `SELECT
-       count(*) AS total,
-       count(*) FILTER (WHERE status = 'accepted') AS accepted
-     FROM documents
-     WHERE application_id = $1
-       AND status != 'rejected'`,
-    [appId]
-  ).catch(() => null);
-  if (!result?.rows[0]) return false;
-  const { total, accepted } = result.rows[0];
-  return parseInt(total, 10) > 0 && total === accepted;
-}
-
 router.get(
   "/applications",
   portalLimiter,
@@ -188,8 +155,6 @@ router.get(
 
 router.get(
   "/applications/:id",
-  requireAuth,
-  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
   portalLimiter,
   safeHandler(async (req: Request, res: Response) => {
     if (!ensureReady(res)) {
@@ -204,25 +169,6 @@ router.get(
       });
       return;
     }
-    const appResult = await runQuery<{ id: string; pipeline_state: string }>(
-      `SELECT id, pipeline_state FROM applications WHERE id = $1 LIMIT 1`,
-      [applicationId]
-    );
-    const app = appResult.rows[0];
-    if (app && app.pipeline_state === "Received") {
-      await runQuery(
-        `UPDATE applications SET pipeline_state = 'In Review', updated_at = now() WHERE id = $1`,
-        [applicationId]
-      ).catch(() => {});
-      await recordTransition(
-        applicationId,
-        "Received",
-        "In Review",
-        (req as any).user?.userId ?? null,
-        "Staff opened application"
-      );
-    }
-
     const record = await findApplicationById(applicationId);
     if (!record) {
       res.status(404).json({
@@ -589,38 +535,6 @@ router.post(
 
 
 router.patch(
-  "/applications/:id/offer",
-  requireAuth,
-  portalLimiter,
-  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
-  safeHandler(async (req: any, res: any) => {
-    const applicationId = typeof toStringSafe(req.params.id) === "string" ? toStringSafe(req.params.id).trim() : "";
-    if (!applicationId) {
-      throw new AppError("validation_error", "Application id is required.", 400);
-    }
-    const appResult = await runQuery<{ pipeline_state: string }>(
-      `SELECT pipeline_state FROM applications WHERE id = $1`,
-      [applicationId]
-    );
-    const currentStage = appResult.rows[0]?.pipeline_state;
-    if (currentStage === "Off to Lender") {
-      await runQuery(
-        `UPDATE applications SET pipeline_state = 'Offer', updated_at = now() WHERE id = $1`,
-        [applicationId]
-      ).catch(() => {});
-      await recordTransition(
-        applicationId,
-        "Off to Lender",
-        "Offer",
-        req.user?.userId ?? null,
-        "Term sheet / offer uploaded"
-      );
-    }
-    res.status(200).json({ ok: true, applicationId, status: "Offer" });
-  })
-);
-
-router.patch(
   "/applications/:id/status",
   requireAuth,
   portalLimiter,
@@ -755,28 +669,6 @@ router.post(
       rejectionReason: reason,
     });
 
-    if (doc.application_id) {
-      const appResult = await runQuery<{ pipeline_state: string }>(
-        `SELECT pipeline_state FROM applications WHERE id = $1`,
-        [doc.application_id]
-      );
-      const currentStage = appResult.rows[0]?.pipeline_state;
-      const advanceFrom = ["In Review", "Off to Lender", "Received"];
-      if (currentStage && advanceFrom.includes(currentStage)) {
-        await runQuery(
-          `UPDATE applications SET pipeline_state = 'Documents Required', updated_at = now() WHERE id = $1`,
-          [doc.application_id]
-        ).catch(() => {});
-        await recordTransition(
-          doc.application_id,
-          currentStage,
-          "Documents Required",
-          req.user?.userId ?? null,
-          `Document rejected: ${doc.document_type}`
-        );
-      }
-    }
-
     res.status(200).json({ ok: true, document: doc });
   })
 );
@@ -790,46 +682,14 @@ router.post(
   safeHandler(async (req: any, res: any) => {
     const docId = typeof req.params.id === "string" ? req.params.id.trim() : "";
     if (!docId) throw new AppError("validation_error", "Document id required.", 400);
-    const updated = await runQuery<{
-      id: string;
-      document_type: string;
-      application_id: string;
-      status: string;
-    }>(
+    const updated = await runQuery(
       `UPDATE documents SET status = 'accepted', updated_at = now()
        WHERE id = $1
        RETURNING id, document_type, application_id, status`,
       [docId]
     );
-    const doc = updated.rows[0];
-    if (!doc) throw new AppError("not_found", "Document not found.", 404);
-
-    const appId = doc.application_id;
-    if (appId && await allDocumentsAccepted(appId)) {
-      const appResult = await runQuery<{ pipeline_state: string }>(
-        `SELECT pipeline_state FROM applications WHERE id = $1`,
-        [appId]
-      );
-      const currentStage = appResult.rows[0]?.pipeline_state;
-      const advanceFrom = ["In Review", "Documents Required", "Additional Steps Required"];
-      if (currentStage && advanceFrom.includes(currentStage)) {
-        await runQuery(
-          `UPDATE applications SET pipeline_state = 'Off to Lender', updated_at = now() WHERE id = $1`,
-          [appId]
-        ).catch(() => {});
-        await recordTransition(
-          appId,
-          currentStage,
-          "Off to Lender",
-          req.user?.userId ?? null,
-          "All documents accepted"
-        );
-        await advanceProcessingStage({ applicationId: appId }).catch(() => {});
-        eventBus.emit("signnow_sent", { applicationId: appId, source: "portal_documents_accept" });
-      }
-    }
-
-    res.status(200).json({ ok: true, document: doc });
+    if (!updated.rows[0]) throw new AppError("not_found", "Document not found.", 404);
+    res.status(200).json({ ok: true, document: updated.rows[0] });
   })
 );
 
