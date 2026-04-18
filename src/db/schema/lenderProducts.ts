@@ -18,6 +18,7 @@ export const LENDER_PRODUCT_CATEGORIES = [
   "PO",
   "EQUIPMENT",
   "MCA",
+  "MEDIA",
 ] as const;
 
 export const LENDER_PRODUCT_RATE_TYPES = ["FIXED", "VARIABLE"] as const;
