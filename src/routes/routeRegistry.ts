@@ -28,6 +28,7 @@ import usersRoutes from "./users.js";
 import portalRoutes from "./portal.js";
 import portalLendersRoutes from "./portalLenders.js";
 import portalLenderProductsRoutes from "./portalLenderProducts.js";
+import documentTypesRouter from "./documentTypes.js";
 import pwaRoutes from "./pwa.js";
 import referralsRoutes from "./referrals.js";
 import pipelineRoutes from "./pipeline.js";
@@ -65,6 +66,7 @@ const combinedPortalRoutes = Router();
 combinedPortalRoutes.use(portalRoutes);
 combinedPortalRoutes.use(portalLendersRoutes);
 combinedPortalRoutes.use(portalLenderProductsRoutes);
+combinedPortalRoutes.use(documentTypesRouter);
 
 const rootRoutes = Router();
 rootRoutes.use(readinessRoutes);
