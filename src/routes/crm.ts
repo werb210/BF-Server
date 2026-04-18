@@ -42,14 +42,36 @@ router.get("/customers", safeHandler((req: any, res: any) => {
 
 router.get("/contacts", safeHandler(async (req: any, res: any) => {
   const page = Number(req.query.page) || 1;
-  const pageSize = Math.min(Number(req.query.pageSize) || 25, 100);
+  const pageSize = Math.min(Number(req.query.pageSize) || 200, 500);
   const offset = (page - 1) * pageSize;
   const search = typeof req.query.search === "string" ? req.query.search.trim() : null;
+  // hasActiveApplications filter defaults to FALSE — don't filter by default
+  const hasActiveApps = req.query.hasActiveApplications === "true" ? true : false;
 
   const contacts: any[] = [];
   const VALID_SILOS = ["BF", "BI", "SLF"];
   const rawSilo = typeof req.query.silo === "string" ? req.query.silo.toUpperCase() : "BF";
   const siloValue = VALID_SILOS.includes(rawSilo) ? rawSilo : "BF";
+
+  const contactApplicationLinkColumns: string[] = [];
+  try {
+    const { rows: contactIdColumnRows } = await pool.query<{ column_name: string }>(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'applications'
+         AND column_name IN ('contact_id', 'crm_contact_id')`
+    );
+    contactApplicationLinkColumns.push(...contactIdColumnRows.map((row) => row.column_name));
+  } catch {
+    // applications table/metadata not available — skip application filter wiring
+  }
+
+  const activeApplicationPredicate = contactApplicationLinkColumns.length > 0
+    ? `EXISTS (SELECT 1
+              FROM applications a
+              WHERE ${contactApplicationLinkColumns.map((columnName) => `a.${columnName} = c.id`).join(" OR ")})`
+    : "FALSE";
 
   // Try contacts table (may not exist yet — safe catch)
   try {
@@ -57,7 +79,8 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
       `SELECT c.id, c.name, c.email, c.phone, c.status, c.silo, c.created_at, 'contact' AS source
        FROM contacts c
        WHERE c.silo = $1
-       ${search ? "AND (c.name ILIKE $4 OR c.email ILIKE $4 OR c.phone ILIKE $4)" : ""}
+       ${hasActiveApps ? `AND ${activeApplicationPredicate}` : ""}
+       ${search ? `AND (c.name ILIKE $4 OR c.email ILIKE $4 OR c.phone ILIKE $4)` : ""}
        ORDER BY c.created_at DESC
        LIMIT $2 OFFSET $3`,
       search ? [siloValue, pageSize, offset, `%${search}%`] : [siloValue, pageSize, offset]
