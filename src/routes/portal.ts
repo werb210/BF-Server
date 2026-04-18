@@ -595,6 +595,41 @@ router.post(
   })
 );
 
+// ── Issues ───────────────────────────────────────────────────────────────────
+router.get(
+  "/issues",
+  requireAuth,
+  safeHandler(async (_req: any, res: any) => {
+    const result = await runQuery(
+      `SELECT i.id, i.title, i.description, i.screenshot_url, i.status,
+              i.contact_id, i.application_id, i.submitted_by, i.created_at
+       FROM issues i
+       ORDER BY i.created_at DESC
+       LIMIT 100`,
+      []
+    );
+    res.json({ issues: result.rows ?? [] });
+  })
+);
+
+router.patch(
+  "/issues/:id/status",
+  requireAuth,
+  safeHandler(async (req: any, res: any) => {
+    const { id } = req.params;
+    const { status } = req.body ?? {};
+    if (!["open", "in_progress", "resolved"].includes(status)) {
+      throw new AppError("validation_error", "Invalid status.", 400);
+    }
+    const result = await runQuery(
+      `UPDATE issues SET status = $1, updated_at = now() WHERE id = $2 RETURNING *`,
+      [status, id]
+    );
+    if (!result.rows[0]) throw new AppError("not_found", "Issue not found.", 404);
+    res.json({ issue: result.rows[0] });
+  })
+);
+
 router.get(
   "/lenders",
   portalLimiter,
