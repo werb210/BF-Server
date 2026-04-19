@@ -24,7 +24,7 @@ router.get("/messages", safeHandler(async (req: any, res: any) => {
   try {
     const result = await pool.query(
       `SELECT id, body, contact_id, direction, from_number, to_number, silo, created_at
-       FROM messages
+       FROM communications_messages
        WHERE contact_id = $1
          AND silo = $2
        ORDER BY created_at ASC
@@ -46,11 +46,11 @@ router.get("/sms", safeHandler(async (req: any, res: any) => {
        c.phone AS contact_phone,
        m.body AS latest_message,
        m.created_at AS latest_message_at
-     FROM messages m
+     FROM communications_messages m
      LEFT JOIN contacts c ON c.id = m.contact_id
      INNER JOIN (
        SELECT contact_id, max(created_at) AS max_created_at
-       FROM messages
+       FROM communications_messages
        WHERE contact_id IS NOT NULL
          AND silo = $1
        GROUP BY contact_id

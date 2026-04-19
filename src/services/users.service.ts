@@ -132,7 +132,7 @@ export async function fetchMe(req: Request, res: Response) {
     return res.status(404).json({ ok: false, error: "user_not_found" });
   }
 
-  res["json"]({ status: "ok", data: normalizeUserRecord(user) });
+  res["json"](normalizeUserRecord(user));
 }
 
 /**
@@ -237,7 +237,7 @@ export async function listUsers(req: Request, res: Response) {
   );
 
   const users = Array.isArray(rows) ? rows.map(normalizeUserRecord) : [];
-  res["json"]({ status: "ok", data: users });
+  res["json"]({ users });
 }
 
 /**
@@ -315,7 +315,7 @@ export async function adminUpdateUser(req: Request, res: Response) {
       metadata: normalized,
     }).catch(() => undefined);
 
-    res["json"]({ ok: true, data: normalizeUserRecord(updated) });
+    res["json"](normalizeUserRecord(updated));
   } catch (err) {
     handleUserError(res, err, requestId);
   }
