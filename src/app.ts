@@ -29,6 +29,14 @@ export function createApp() {
     .filter(Boolean);
 
   const allowedOrigins = [...new Set([...envOrigins, ...HARDCODED_ALLOWED_ORIGINS])];
+  const corsOptions: cors.CorsOptions = {
+    origin: allowedOrigins,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Silo", "X-Request-Id"],
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
+  };
 
   /**
    * CORE MIDDLEWARE
@@ -58,23 +66,8 @@ export function createApp() {
     },
   }));
 
-  app.use(cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(null, false);
-    },
-    credentials: true,
-    optionsSuccessStatus: 204,
-  }));
-
-  app.use((req, res, next) => {
-    if (req.method === "OPTIONS") {
-      res.status(204).end();
-      return;
-    }
-    next();
-  });
+  app.use(cors(corsOptions));
+  app.options("*", cors(corsOptions));
 
   app.use(express.json({ limit: "10mb" }));
   app.use(cookieParser());
