@@ -8,6 +8,7 @@ import { logWarn } from "../observability/logger.js";
 import { handleVoiceStatusWebhook } from "../modules/voice/voice.service.js";
 import { config } from "../config/index.js";
 import { pool } from "../db.js";
+import { eventBus } from "../events/eventBus.js";
 
 const { validateRequest } = twilio;
 const router = Router();
@@ -163,18 +164,26 @@ async function persistInboundSms(req: any): Promise<void> {
   const sid = typeof MessageSid === "string" ? MessageSid : null;
 
   // Look up contact by phone number
-  const contact = await pool.query<{ id: string; user_id: string | null; owner_id: string | null }>(
-    `SELECT id, user_id, owner_id FROM contacts WHERE phone = $1 OR mobile_phone = $1 LIMIT 1`,
+  const contact = await pool.query<{ id: string; silo: string | null }>(
+    `SELECT id, silo FROM contacts WHERE phone = $1 LIMIT 1`,
     [fromNum]
   ).then((r) => r.rows[0] ?? null).catch(() => null);
 
   await pool.query(
-    `INSERT INTO communications_messages
-       (id, type, direction, status, body, phone_number, from_number, to_number, twilio_sid, contact_id, user_id, created_at)
-     VALUES (gen_random_uuid(), 'sms', 'inbound', 'received', $1, $2, $2, $3, $4, $5, $6, now())
-     ON CONFLICT (twilio_sid) DO NOTHING`,
-    [body, fromNum, toNum, sid, contact?.id ?? null, contact?.user_id ?? contact?.owner_id ?? null]
+    `INSERT INTO messages
+       (id, body, contact_id, direction, from_number, to_number, silo, created_at)
+     VALUES (gen_random_uuid(), $1, $2, 'inbound', $3, $4, $5, now())
+     `,
+    [body, contact?.id ?? null, fromNum, toNum, contact?.silo ?? "BF"]
   ).catch(() => {});
+
+  eventBus.emit("sms.inbound.received", {
+    contactId: contact?.id ?? null,
+    from: fromNum,
+    to: toNum,
+    body,
+    sid,
+  });
 }
 
 // ── Inbound SMS webhook ───────────────────────────────────────────────────────

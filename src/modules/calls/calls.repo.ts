@@ -139,12 +139,12 @@ export async function listCallLogs(params: {
   }
   const whereClause = filters.length > 0 ? `where ${filters.join(" and ")}` : "";
   const res = await runner.query<CallLogRecord>(
-    `select id, phone_number, from_number, to_number, twilio_call_sid, direction, status, duration_seconds,
-            staff_user_id, crm_contact_id, application_id, error_code, error_message, recording_sid,
-            recording_duration_seconds, created_at, started_at, ended_at
-     from call_logs
+    `select cl.id, cl.phone_number, cl.from_number, cl.to_number, cl.twilio_call_sid, cl.direction, cl.status, cl.duration_seconds,
+            cl.staff_user_id, cl.crm_contact_id, cl.application_id, cl.error_code, cl.error_message, cl.recording_sid,
+            cl.recording_duration_seconds, cl.created_at, cl.started_at, cl.ended_at
+     from call_logs cl
      ${whereClause}
-     order by created_at desc`,
+     order by cl.created_at desc`,
     values
   );
   return res.rows;

@@ -5,6 +5,7 @@ import { AppError } from "../middleware/errors.js";
 import { normalizeRole } from "../auth/roles.js";
 import { createUserAccount } from "../modules/auth/auth.service.js";
 import { setUserStatus } from "../modules/users/users.service.js";
+import { recordAuditEvent } from "../modules/audit/audit.service.js";
 
 /**
  * Schemas
@@ -251,11 +252,23 @@ export async function adminUpdateUser(req: Request, res: Response) {
 
     values.push(targetId);
 
-    const result = await db.query(
+    const result = await db.query<UserRecord>(
       `
       UPDATE users
       SET ${fields.join(", ")}, updated_at = now()
       WHERE id = $${idx}
+      RETURNING
+        id,
+        phone,
+        email,
+        COALESCE(first_name, split_part(email, '@', 1)) AS first_name,
+        COALESCE(last_name, '') AS last_name,
+        role,
+        status,
+        silo,
+        created_at,
+        updated_at,
+        last_login_at
       `,
       values
     );
@@ -264,7 +277,21 @@ export async function adminUpdateUser(req: Request, res: Response) {
       throw new AppError("not_found", "User not found.", 404);
     }
 
-    res["json"]({ ok: true });
+    const updated = result.rows[0] as UserRecord;
+
+    await recordAuditEvent({
+      actorUserId: req.user?.userId ?? null,
+      targetUserId: targetId,
+      targetType: "user",
+      targetId,
+      action: "user_admin_update",
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+      success: true,
+      metadata: normalized,
+    }).catch(() => undefined);
+
+    res["json"]({ ok: true, data: normalizeUserRecord(updated) });
   } catch (err) {
     handleUserError(res, err, requestId);
   }

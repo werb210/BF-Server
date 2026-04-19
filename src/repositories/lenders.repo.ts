@@ -17,6 +17,7 @@ export interface CreateLenderInput {
   api_config?: Record<string, unknown> | null;
   submission_config?: Record<string, unknown> | null;
   website?: string | null;
+  webpage?: string | null;
   street?: string | null;
   city?: string | null;
   region?: string | null;
@@ -103,6 +104,7 @@ function buildSelectColumns(existing: Set<string>): string {
     { name: "primary_contact_email", fallback: "null::text" },
     { name: "primary_contact_phone", fallback: "null::text" },
     { name: "website", fallback: "null::text" },
+    { name: "webpage", fallback: "null::text" },
     { name: "street", fallback: "null::text" },
     { name: "city", fallback: "null::text" },
     { name: "region", fallback: "null::text" },
@@ -136,6 +138,7 @@ export const LIST_LENDERS_SQL = `
     COALESCE(primary_contact_name, '') AS primary_contact_name,
     submission_email,
     website,
+    webpage,
     api_config,
     submission_config,
     active,
@@ -226,6 +229,7 @@ export async function createLender(
     api_config,
     submission_config,
     website,
+    webpage,
     street,
     city,
     region,
@@ -253,6 +257,7 @@ export async function createLender(
     { name: "name", value: name },
     { name: "country", value: country },
     { name: "website", value: website ?? null },
+    { name: "webpage", value: webpage ?? null },
     { name: "street", value: street ?? null },
     { name: "city", value: city ?? null },
     { name: "region", value: region ?? null },
@@ -379,6 +384,7 @@ export async function updateLender(
     api_config?: Record<string, unknown> | null;
     submission_config?: Record<string, unknown> | null;
     website?: string | null;
+    webpage?: string | null;
     active?: boolean;
   }
 ) {
@@ -447,6 +453,9 @@ export async function updateLender(
   }
   if (params.website !== undefined && existingColumns.has("website")) {
     updates.push({ name: "website", value: params.website });
+  }
+  if (params.webpage !== undefined && existingColumns.has("webpage")) {
+    updates.push({ name: "webpage", value: params.webpage });
   }
   if (resolvedActive !== undefined && existingColumns.has("active")) {
     updates.push({ name: "active", value: resolvedActive });

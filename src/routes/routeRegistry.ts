@@ -7,6 +7,7 @@ import calendarRoutes from "./calendar.js";
 import callsRoutes from "./calls.js";
 import clientRoutes from "./client.js";
 import communicationsRoutes from "./communications.js";
+import companiesRoutes from "./companies.js";
 import crmRoutes from "./crm.js";
 import creditRoutes from "./credit.js";
 import creditSummaryRoutes from "./creditSummary.js";
@@ -87,6 +88,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/banking", router: bankingRoutes },
   { path: "/client", router: clientRoutes },
   { path: "/communications", router: communicationsRoutes },
+  { path: "/companies", router: companiesRoutes },
   { path: "/credit", router: creditRoutes },
   { path: "/crm", router: crmRoutes },
   { path: "/dashboard", router: dashboardRoutes },

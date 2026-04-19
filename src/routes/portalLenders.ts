@@ -4,6 +4,9 @@
  * Mounted at /api/portal by routeRegistry.
  */
 import { Router } from "express";
+import fs from "fs";
+import path from "path";
+import multer from "multer";
 import { pool, runQuery } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
@@ -15,6 +18,16 @@ import {
 } from "../repositories/lenders.repo.js";
 
 const router = Router();
+const uploadDir = "/tmp/lender-documents";
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadDir),
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+  }),
+});
 
 // GET /api/portal/lenders/:id
 router.get(
@@ -83,10 +96,69 @@ router.patch(
       api_config: body.apiConfig ?? body.api_config,
       submission_config: body.submissionConfig ?? body.submission_config,
       website: body.website,
+      webpage: body.webpage,
       active: body.active,
     });
     if (!lender) throw new AppError("not_found", "Lender not found.", 404);
     res.status(200).json(lender);
+  })
+);
+
+router.post(
+  "/lender-documents/:lenderId/upload",
+  requireAuth,
+  upload.single("file"),
+  safeHandler(async (req: any, res: any) => {
+    const lenderId = req.params.lenderId;
+    const file = req.file;
+    if (!file) {
+      throw new AppError("validation_error", "file is required", 400);
+    }
+
+    const blobUrl = `file://${path.join(uploadDir, file.filename)}`;
+    const { rows } = await pool.query(
+      `INSERT INTO lender_documents (id, lender_id, filename, mime_type, blob_url, uploaded_by, created_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, now())
+       RETURNING *`,
+      [
+        lenderId,
+        file.originalname,
+        file.mimetype || "application/octet-stream",
+        blobUrl,
+        req.user?.userId ?? null,
+      ]
+    );
+
+    const mayaUrl = process.env.MAYA_URL;
+    if (mayaUrl) {
+      await fetch(`${mayaUrl}/api/knowledge/ingest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          lenderId,
+          filename: file.originalname,
+          blobUrl,
+          mimeType: file.mimetype || "application/octet-stream",
+        }),
+      }).catch(() => undefined);
+    }
+
+    res.status(201).json({ ok: true, data: rows[0] });
+  })
+);
+
+router.get(
+  "/lender-documents/:lenderId",
+  requireAuth,
+  safeHandler(async (req: any, res: any) => {
+    const { rows } = await pool.query(
+      `SELECT id, lender_id, filename, mime_type, blob_url, uploaded_by, created_at
+       FROM lender_documents
+       WHERE lender_id = $1
+       ORDER BY created_at DESC`,
+      [req.params.lenderId]
+    );
+    res.json({ ok: true, data: rows });
   })
 );
 

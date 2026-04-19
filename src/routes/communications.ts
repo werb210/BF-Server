@@ -15,51 +15,53 @@ router.get("/", safeHandler((_req: any, res: any) => {
 
 // GET /api/communications/messages — queries the actual DB
 router.get("/messages", safeHandler(async (req: any, res: any) => {
-  const { contactId, phone, applicationId, page = "1", pageSize = "100" } = req.query;
-  const limit = Math.min(Number(pageSize) || 100, 500);
-  const offset = (Math.max(Number(page) || 1, 1) - 1) * limit;
-
-  const conditions: string[] = [];
-  const values: unknown[] = [];
-
-  if (contactId && typeof contactId === "string") {
-    values.push(contactId);
-    conditions.push(`contact_id = $${values.length}`);
+  const contactId = typeof req.query.contact_id === "string" ? req.query.contact_id : null;
+  const silo = typeof req.query.silo === "string" ? req.query.silo : "BF";
+  if (!contactId) {
+    return res.status(400).json({ error: { code: "validation_error", message: "contact_id is required" } });
   }
-  if (phone && typeof phone === "string") {
-    values.push(phone);
-    conditions.push(`phone_number = $${values.length}`);
-  }
-  if (applicationId && typeof applicationId === "string") {
-    values.push(applicationId);
-    conditions.push(`application_id = $${values.length}`);
-  }
-
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-  values.push(limit, offset);
 
   try {
     const result = await pool.query(
-      `SELECT id, type, direction, status, body, phone_number, from_number, to_number,
-              twilio_sid, contact_id, application_id, staff_name, created_at
-       FROM communications_messages
-       ${where}
+      `SELECT id, body, contact_id, direction, from_number, to_number, silo, created_at
+       FROM messages
+       WHERE contact_id = $1
+         AND silo = $2
        ORDER BY created_at ASC
-       LIMIT $${values.length - 1} OFFSET $${values.length}`,
-      values
+      `,
+      [contactId, silo]
     );
-    const countResult = await pool.query(
-      `SELECT count(*)::int AS total FROM communications_messages ${where}`,
-      values.slice(0, -2)
-    );
-    res.json({
-      messages: result.rows,
-      total: countResult.rows[0]?.total ?? 0,
-    });
+    res.json({ messages: result.rows, total: result.rows.length });
   } catch {
-    // Table may not exist yet
     res.json({ messages: [], total: 0 });
   }
+}));
+
+router.get("/sms", safeHandler(async (req: any, res: any) => {
+  const silo = typeof req.query.silo === "string" ? req.query.silo : "BF";
+  const result = await pool.query(
+    `SELECT
+       m.contact_id,
+       c.name AS contact_name,
+       c.phone AS contact_phone,
+       m.body AS latest_message,
+       m.created_at AS latest_message_at
+     FROM messages m
+     LEFT JOIN contacts c ON c.id = m.contact_id
+     INNER JOIN (
+       SELECT contact_id, max(created_at) AS max_created_at
+       FROM messages
+       WHERE contact_id IS NOT NULL
+         AND silo = $1
+       GROUP BY contact_id
+     ) latest
+       ON latest.contact_id = m.contact_id
+      AND latest.max_created_at = m.created_at
+     WHERE m.silo = $1
+     ORDER BY m.created_at DESC`,
+    [silo]
+  ).catch(() => ({ rows: [] as any[] }));
+  res.json({ conversations: result.rows });
 }));
 
 // POST /api/communications/sms — send outbound + persist to DB

@@ -43,32 +43,26 @@ async function fetchAppliedMigrations(pool: Pool, tableName: string): Promise<Se
 export async function runMigrations(pool: Pool): Promise<void> {
   const migrationsDir = path.join(process.cwd(), "migrations");
 
-  if (!fs.existsSync(migrationsDir)) {
-    return;
-  }
-
-  const files = fs
-    .readdirSync(migrationsDir)
-    .filter((file) => file.endsWith(".sql"))
-    .sort();
-
-  const trackingTable = await resolveTrackingTable(pool);
-  const applied = await fetchAppliedMigrations(pool, trackingTable);
-
-  await pool.query("begin");
-
   try {
+    if (!fs.existsSync(migrationsDir)) {
+      return;
+    }
+
+    const files = fs
+      .readdirSync(migrationsDir)
+      .filter((file) => file.endsWith(".sql"))
+      .sort();
+
+    const trackingTable = await resolveTrackingTable(pool);
+    const applied = await fetchAppliedMigrations(pool, trackingTable);
+
     for (const file of files) {
       if (applied.has(file)) {
         continue;
       }
 
-      const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
-      const savepointName = `migration_${file.replace(/[^a-zA-Z0-9_]/g, "_")}`;
-
-      await pool.query(`savepoint ${savepointName}`);
-
       try {
+        const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
         await pool.query(sql);
         await pool.query(
           `insert into ${trackingTable} (id, applied_at) values ($1, now())`,
@@ -76,28 +70,25 @@ export async function runMigrations(pool: Pool): Promise<void> {
         );
         applied.add(file);
         console.log(`migration_applied: ${file}`);
-        await pool.query(`release savepoint ${savepointName}`);
       } catch (err) {
-        await pool.query(`rollback to savepoint ${savepointName}`);
-        await pool.query(`release savepoint ${savepointName}`);
-
         const code = getPgErrorCode(err);
         if (code && KNOWN_IDEMPOTENT_CODES.has(code)) {
           console.warn(`migration_already_present: ${file} (${code})`);
-          await pool.query(
-            `insert into ${trackingTable} (id, applied_at) values ($1, now())`,
-            [file]
-          );
-          applied.add(file);
+          try {
+            await pool.query(
+              `insert into ${trackingTable} (id, applied_at) values ($1, now())`,
+              [file]
+            );
+            applied.add(file);
+          } catch (markErr) {
+            console.error(`migration_mark_applied_failed: ${file}`, markErr);
+          }
         } else {
           console.error(`migration_failed: ${file}`, err);
         }
       }
     }
-
-    await pool.query("commit");
   } catch (err) {
-    await pool.query("rollback");
-    throw err;
+    console.error("migration_runner_failed", err);
   }
 }

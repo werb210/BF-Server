@@ -41,85 +41,80 @@ router.get("/customers", safeHandler((req: any, res: any) => {
 }));
 
 router.get("/contacts", safeHandler(async (req: any, res: any) => {
-  const page = Number(req.query.page) || 1;
+  const page = Math.max(Number(req.query.page) || 1, 1);
   const pageSize = Math.min(Number(req.query.pageSize) || 200, 500);
   const offset = (page - 1) * pageSize;
-  const search = typeof req.query.search === "string" ? req.query.search.trim() : null;
-  // hasActiveApplications filter defaults to FALSE — don't filter by default
-  const hasActiveApps = req.query.hasActiveApplications === "true" ? true : false;
-  const ownerId = typeof req.query.ownerId === "string" ? req.query.ownerId.trim() : null;
+  const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+  const ownerId = typeof req.query.owner_id === "string" ? req.query.owner_id.trim() : "";
+  const leadStatus = typeof req.query.lead_status === "string" ? req.query.lead_status.trim() : "";
+  const hasActiveApplications = req.query.has_active_applications === "true";
 
-  const contacts: any[] = [];
   const VALID_SILOS = ["BF", "BI", "SLF"];
   const rawSilo = typeof req.query.silo === "string" ? req.query.silo.toUpperCase() : "BF";
-  const siloValue = VALID_SILOS.includes(rawSilo) ? rawSilo : "BF";
+  const silo = VALID_SILOS.includes(rawSilo) ? rawSilo : "BF";
 
-  const contactApplicationLinkColumns: string[] = [];
-  try {
-    const { rows: contactIdColumnRows } = await pool.query<{ column_name: string }>(
-      `SELECT column_name
-       FROM information_schema.columns
-       WHERE table_schema = 'public'
-         AND table_name = 'applications'
-         AND column_name IN ('contact_id', 'crm_contact_id')`
-    );
-    contactApplicationLinkColumns.push(...contactIdColumnRows.map((row) => row.column_name));
-  } catch {
-    // applications table/metadata not available — skip application filter wiring
+  const values: unknown[] = [silo];
+  const where: string[] = ["c.silo = $1"];
+
+  if (ownerId) {
+    values.push(ownerId);
+    where.push(`c.owner_id = $${values.length}`);
+  }
+  if (leadStatus) {
+    values.push(leadStatus);
+    where.push(`coalesce(c.lead_status, 'New') = $${values.length}`);
+  }
+  if (search) {
+    values.push(`%${search}%`);
+    where.push(`(c.name ILIKE $${values.length} OR c.email ILIKE $${values.length} OR c.phone ILIKE $${values.length} OR coalesce(c.company_name,'') ILIKE $${values.length})`);
+  }
+  if (hasActiveApplications) {
+    where.push(`EXISTS (
+      SELECT 1
+      FROM applications a
+      WHERE a.contact_id = c.id
+        AND coalesce(a.archived, false) = false
+    )`);
   }
 
-  const activeApplicationPredicate = contactApplicationLinkColumns.length > 0
-    ? `EXISTS (SELECT 1
-              FROM applications a
-              WHERE ${contactApplicationLinkColumns.map((columnName) => `a.${columnName} = c.id`).join(" OR ")})`
-    : "FALSE";
+  values.push(pageSize, offset);
 
-  // Try contacts table (may not exist yet — safe catch)
-  try {
-    const { rows } = await pool.query(
-      `SELECT c.id, c.name, c.email, c.phone, c.status, c.silo, c.created_at, c.user_id, u.email AS owner_email, 'contact' AS source
-       FROM contacts c
-       LEFT JOIN users u ON u.id = c.user_id
-       WHERE c.silo = $1
-       ${ownerId ? `AND c.user_id = $4` : ""}
-       ${hasActiveApps ? `AND ${activeApplicationPredicate}` : ""}
-       ${search ? `AND (c.name ILIKE $${ownerId ? 5 : 4} OR c.email ILIKE $${ownerId ? 5 : 4} OR c.phone ILIKE $${ownerId ? 5 : 4} OR u.email ILIKE $${ownerId ? 5 : 4})` : ""}
-       ORDER BY c.created_at DESC
-       LIMIT $2 OFFSET $3`,
-      search
-        ? (ownerId ? [siloValue, pageSize, offset, ownerId, `%${search}%`] : [siloValue, pageSize, offset, `%${search}%`])
-        : (ownerId ? [siloValue, pageSize, offset, ownerId] : [siloValue, pageSize, offset])
-    );
-    contacts.push(...rows);
-  } catch {
-    // contacts table doesn't exist yet — skip
-  }
+  const sql = `SELECT
+      c.id,
+      c.name,
+      c.email,
+      c.phone,
+      c.company_name,
+      c.company_id,
+      coalesce(c.lead_status, 'New') AS lead_status,
+      coalesce(c.tags, '{}') AS tags,
+      c.owner_id,
+      trim(concat_ws(' ', u.first_name, u.last_name)) AS owner_name,
+      c.created_at,
+      c.silo
+    FROM contacts c
+    LEFT JOIN users u ON u.id = c.owner_id
+    WHERE ${where.join(" AND ")}
+    ORDER BY c.created_at DESC
+    LIMIT $${values.length - 1} OFFSET $${values.length}`;
 
-  // Also pull from crm_leads (always exists)
-  try {
-    const searchClause = search ? "WHERE full_name ILIKE $1 OR email ILIKE $1 OR phone ILIKE $1" : "";
-    const { rows } = await pool.query(
-      `SELECT id, full_name AS name, email, phone, null AS status, created_at, 'lead' AS source
-       FROM crm_leads
-       ${searchClause}
-       ORDER BY created_at DESC
-       LIMIT $${search ? 2 : 1} OFFSET $${search ? 3 : 2}`,
-      search ? [`%${search}%`, pageSize, offset] : [pageSize, offset]
-    );
-    contacts.push(...rows);
-  } catch {
-    // crm_leads table doesn't exist — skip
-  }
-
-  const sorted = contacts
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, pageSize);
-
-  respondOk(res, sorted);
+  const { rows } = await pool.query(sql, values);
+  respondOk(res, rows, { page, pageSize });
 }));
 
 router.post("/contacts", safeHandler(async (req: any, res: any) => {
-  const { name, email, phone, status } = req.body ?? {};
+  const {
+    name,
+    email,
+    phone,
+    status,
+    company_name,
+    job_title,
+    lead_status,
+    tags,
+    owner_id,
+    company_id,
+  } = req.body ?? {};
 
   if (!name || typeof name !== "string") {
     return res.status(400).json({ error: "name is required" });
@@ -130,35 +125,28 @@ router.post("/contacts", safeHandler(async (req: any, res: any) => {
     ? req.body.silo.toUpperCase()
     : "BF";
 
-  try {
-    const { rows } = await pool.query(
-      `INSERT INTO contacts (name, email, phone, status, silo, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, name, email, phone, status, created_at, user_id`,
-      [name, email ?? null, phone ?? null, status ?? "active", contactSilo, req.user?.id ?? null]
-    );
+  const { rows } = await pool.query(
+    `INSERT INTO contacts
+      (name, email, phone, status, silo, user_id, company_name, job_title, lead_status, tags, owner_id, company_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     RETURNING id, name, email, phone, status, company_name, job_title, lead_status, tags, owner_id, company_id, created_at, silo`,
+    [
+      name,
+      email ?? null,
+      phone ?? null,
+      status ?? "active",
+      contactSilo,
+      req.user?.userId ?? req.user?.id ?? null,
+      company_name ?? null,
+      job_title ?? null,
+      lead_status ?? "New",
+      Array.isArray(tags) ? tags : [],
+      owner_id ?? null,
+      company_id ?? null,
+    ]
+  );
 
-    return res.status(201).json({ ok: true, data: { ...rows[0], silo: contactSilo } });
-  } catch (error: any) {
-    if (error?.code !== "42703") {
-      throw error;
-    }
-
-    try {
-      const { rows } = await pool.query(
-        `INSERT INTO contacts (name, email, phone, status, user_id)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, name, email, phone, status, created_at, user_id`,
-        [name, email ?? null, phone ?? null, status ?? "active", req.user?.id ?? null]
-      );
-
-      return res.status(201).json({ ok: true, data: { ...rows[0], silo: contactSilo } });
-    } catch (fallbackError: any) {
-      throw Object.assign(new Error(`Failed to create contact without silo column: ${fallbackError?.message ?? "unknown error"}`), {
-        cause: fallbackError,
-      });
-    }
-  }
+  return res.status(201).json({ ok: true, data: rows[0] });
 }));
 
 router.get("/timeline", safeHandler(handleListCrmTimeline));

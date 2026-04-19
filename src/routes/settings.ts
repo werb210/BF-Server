@@ -18,11 +18,21 @@ router.get("/preferences", safeHandler((_req: any, res: any) => {
   respondOk(res, { preferences: {} });
 }));
 
-router.get("/me", safeHandler((req: any, res: any) => {
+router.get("/me", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.userId ?? null;
+  const tokenResult = userId
+    ? await pool.query<{ o365_access_token: string | null }>(
+        `SELECT o365_access_token FROM users WHERE id = $1 LIMIT 1`,
+        [userId]
+      ).catch(() => ({ rows: [] as Array<{ o365_access_token: string | null }> }))
+    : { rows: [] as Array<{ o365_access_token: string | null }> };
+  const o365Connected = Boolean(tokenResult.rows[0]?.o365_access_token);
+
   respondOk(res, {
-    userId: req.user?.userId ?? null,
+    userId,
     role: req.user?.role ?? null,
     phone: req.user?.phone ?? null,
+    o365_connected: o365Connected,
   });
 }));
 

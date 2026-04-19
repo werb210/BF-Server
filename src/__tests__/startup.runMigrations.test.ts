@@ -57,8 +57,8 @@ describe("startup runMigrations", () => {
     expect(elapsedMs).toBeLessThan(2000);
     expect(readFileSyncSpy).not.toHaveBeenCalled();
     expect(query).not.toHaveBeenCalledWith("create table t1(id int);");
-    expect(query).toHaveBeenCalledWith("begin");
-    expect(query).toHaveBeenCalledWith("commit");
+    expect(query).not.toHaveBeenCalledWith("begin");
+    expect(query).not.toHaveBeenCalledWith("commit");
   });
 
   it("logs known duplicate-object failures as warnings and never as errors", async () => {
@@ -97,6 +97,30 @@ describe("startup runMigrations", () => {
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining("insert into schema_migrations"),
       ["001_init.sql"]
+    );
+  });
+
+  it("never throws when a migration fails with a non-idempotent error", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("to_regclass('public.applied_migrations')")) {
+        return { rows: [{ exists: "applied_migrations" }] };
+      }
+      if (sql === "select id from applied_migrations") {
+        return { rows: [] };
+      }
+      if (sql === "create table t1(id int);") {
+        const err = new Error("syntax error");
+        (err as Error & { code?: string }).code = "42601";
+        throw err;
+      }
+      return { rows: [] };
+    });
+
+    const pool = { query } as unknown as Pool;
+    await expect(runMigrations(pool)).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledWith(
+      "migration_failed: 001_init.sql",
+      expect.any(Error)
     );
   });
 });
