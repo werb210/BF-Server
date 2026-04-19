@@ -4,6 +4,8 @@ import { CAPABILITIES } from "../auth/capabilities.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { respondOk } from "../utils/respondOk.js";
 import { pool } from "../db.js";
+import { AIKnowledgeController, upload as knowledgeUpload } from "../modules/ai/knowledge.controller.js";
+import type { MulterRequest } from "../types/multer.js";
 
 const router = Router();
 
@@ -20,21 +22,45 @@ router.get("/preferences", safeHandler((_req: any, res: any) => {
 
 router.get("/me", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.userId ?? null;
-  const tokenResult = userId
-    ? await pool.query<{ o365_access_token: string | null }>(
-        `SELECT o365_access_token FROM users WHERE id = $1 LIMIT 1`,
+  type SettingsMeRow = {
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+    phone: string | null;
+    role: string | null;
+    silo: string | null;
+    o365_access_token: string | null;
+  };
+  const userResult = userId
+    ? await pool.query<SettingsMeRow>(
+        `SELECT first_name, last_name, email, phone, role, silo, o365_access_token
+         FROM users
+         WHERE id = $1
+         LIMIT 1`,
         [userId]
-      ).catch(() => ({ rows: [] as Array<{ o365_access_token: string | null }> }))
-    : { rows: [] as Array<{ o365_access_token: string | null }> };
-  const o365Connected = Boolean(tokenResult.rows[0]?.o365_access_token);
+      ).catch(() => ({ rows: [] as SettingsMeRow[] }))
+    : { rows: [] as SettingsMeRow[] };
+  const user = userResult.rows[0];
+  const o365Connected = Boolean(user?.o365_access_token && user.o365_access_token.trim().length > 0);
 
   respondOk(res, {
-    userId,
-    role: req.user?.role ?? null,
-    phone: req.user?.phone ?? null,
+    first_name: user?.first_name ?? "",
+    last_name: user?.last_name ?? "",
+    email: user?.email ?? null,
+    phone: user?.phone ?? null,
+    role: user?.role ?? req.user?.role ?? null,
+    silo: user?.silo ?? req.user?.silo ?? null,
     o365_connected: o365Connected,
   });
 }));
+
+router.post(
+  "/ai-knowledge",
+  knowledgeUpload.single("file"),
+  safeHandler(async (req: any, res: any) => {
+    await AIKnowledgeController.upload(req as MulterRequest, res);
+  })
+);
 
 router.get("/branding", safeHandler(async (_req: any, res: any) => {
   try {

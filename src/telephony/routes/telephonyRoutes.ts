@@ -5,6 +5,8 @@ import { generateVoiceToken } from "../services/tokenService.js";
 import { pool } from "../../db.js";
 
 const router = express.Router();
+const HEARTBEAT_MIN_INTERVAL_MS = 25_000;
+const lastPresenceHeartbeatByUser = new Map<string, number>();
 
 function isTwilioEnabled(): boolean {
   return Boolean(
@@ -89,10 +91,18 @@ router.post("/presence", auth, async (req: any, res: Response) => {
   res.json({ ok: true, status });
 });
 
-// Heartbeat — call every 60 s from portal to keep presence alive
+// Heartbeat — client should call no more than once every 30 seconds to keep presence alive.
 router.post("/presence/heartbeat", auth, async (req: any, res: Response) => {
   const userId = req.user?.userId || req.user?.id;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
+
+  const now = Date.now();
+  const lastHeartbeatAt = lastPresenceHeartbeatByUser.get(userId) ?? 0;
+  if (now - lastHeartbeatAt < HEARTBEAT_MIN_INTERVAL_MS) {
+    return res.json({ ok: true, throttled: true });
+  }
+  lastPresenceHeartbeatByUser.set(userId, now);
+
   await pool.query(
     `UPDATE staff_presence SET last_heartbeat = now() WHERE user_id = $1`,
     [userId]

@@ -6,11 +6,11 @@ import internalRoutes from "./internal.js";
 import { runtimeHandler } from "./_int/runtime.js";
 import pwaInternalRoutes from "./_int/pwa.js";
 import twilio from "twilio";
-import { internalOnly } from "../middleware/internalOnly.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 
-router.get("/runtime", internalOnly, runtimeHandler);
+router.get("/runtime", requireAuth, runtimeHandler);
 router.get("/ready", readyHandler);
 router.get("/build", (_req: any, res: any) => {
   const buildTimestamp = config.buildTimestamp;

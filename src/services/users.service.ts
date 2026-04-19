@@ -47,6 +47,8 @@ type UserRecord = {
   role: string | null;
   status: string | null;
   silo: string | null;
+  profile_image_url: string | null;
+  o365_access_token: string | null;
   created_at: string | null;
   updated_at: string | null;
   last_login_at: string | null;
@@ -114,6 +116,8 @@ export async function fetchMe(req: Request, res: Response) {
       role,
       status,
       silo,
+      profile_image_url,
+      o365_access_token,
       created_at,
       updated_at,
       last_login_at
@@ -161,11 +165,27 @@ export async function updateMe(req: Request, res: Response) {
       values.push(v);
     }
     values.push(userId);
-    await db.query(
-      `UPDATE users SET ${fields.join(", ")}, updated_at = now() WHERE id = $${idx}`,
+    const updated = await db.query<UserRecord>(
+      `UPDATE users
+       SET ${fields.join(", ")}, updated_at = now()
+       WHERE id = $${idx}
+       RETURNING
+         id,
+         phone,
+         email,
+         COALESCE(first_name, split_part(email, '@', 1)) AS first_name,
+         COALESCE(last_name, '') AS last_name,
+         role,
+         status,
+         silo,
+         profile_image_url,
+         o365_access_token,
+         created_at,
+         updated_at,
+         last_login_at`,
       values
     );
-    res["json"]({ ok: true });
+    res["json"]({ ok: true, data: normalizeUserRecord(updated.rows[0] as UserRecord) });
   } catch (err) {
     handleUserError(res, err, requestId);
   }
@@ -204,6 +224,8 @@ export async function listUsers(req: Request, res: Response) {
       role,
       status,
       silo,
+      profile_image_url,
+      o365_access_token,
       created_at,
       updated_at,
       last_login_at
@@ -266,6 +288,8 @@ export async function adminUpdateUser(req: Request, res: Response) {
         role,
         status,
         silo,
+        profile_image_url,
+        o365_access_token,
         created_at,
         updated_at,
         last_login_at

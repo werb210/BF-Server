@@ -53,20 +53,52 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
   const rawSilo = typeof req.query.silo === "string" ? req.query.silo.toUpperCase() : "BF";
   const silo = VALID_SILOS.includes(rawSilo) ? rawSilo : "BF";
 
+  const contactsColumnCheck = await pool.query<{ column_name: string }>(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'contacts'
+       AND column_name = ANY($1::text[])`,
+    [["company_name", "company_id", "lead_status", "tags", "owner_id"]]
+  ).catch(() => ({ rows: [] as Array<{ column_name: string }> }));
+  const availableColumns = new Set(contactsColumnCheck.rows.map((row) => row.column_name));
+  const hasCompanyName = availableColumns.has("company_name");
+  const hasCompanyId = availableColumns.has("company_id");
+  const hasLeadStatus = availableColumns.has("lead_status");
+  const hasTags = availableColumns.has("tags");
+  const hasOwnerId = availableColumns.has("owner_id");
+
   const values: unknown[] = [silo];
   const where: string[] = ["c.silo = $1"];
 
   if (ownerId) {
-    values.push(ownerId);
-    where.push(`c.owner_id = $${values.length}`);
+    if (!hasOwnerId) {
+      where.push("1 = 0");
+    } else {
+      values.push(ownerId);
+      where.push(`c.owner_id = $${values.length}`);
+    }
   }
   if (leadStatus) {
-    values.push(leadStatus);
-    where.push(`coalesce(c.lead_status, 'New') = $${values.length}`);
+    if (!hasLeadStatus) {
+      values.push(leadStatus);
+      where.push(`$${values.length} = 'New'`);
+    } else {
+      values.push(leadStatus);
+      where.push(`coalesce(c.lead_status, 'New') = $${values.length}`);
+    }
   }
   if (search) {
     values.push(`%${search}%`);
-    where.push(`(c.name ILIKE $${values.length} OR c.email ILIKE $${values.length} OR c.phone ILIKE $${values.length} OR coalesce(c.company_name,'') ILIKE $${values.length})`);
+    const searchParts = [
+      `c.name ILIKE $${values.length}`,
+      `c.email ILIKE $${values.length}`,
+      `c.phone ILIKE $${values.length}`,
+    ];
+    if (hasCompanyName) {
+      searchParts.push(`coalesce(c.company_name, '') ILIKE $${values.length}`);
+    }
+    where.push(`(${searchParts.join(" OR ")})`);
   }
   if (hasActiveApplications) {
     where.push(`EXISTS (
@@ -84,16 +116,16 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
       c.name,
       c.email,
       c.phone,
-      c.company_name,
-      c.company_id,
-      coalesce(c.lead_status, 'New') AS lead_status,
-      coalesce(c.tags, '{}') AS tags,
-      c.owner_id,
-      trim(concat_ws(' ', u.first_name, u.last_name)) AS owner_name,
+      ${hasCompanyName ? "coalesce(c.company_name, '')" : "''::text"} AS company_name,
+      ${hasCompanyId ? "c.company_id" : "NULL::uuid"} AS company_id,
+      ${hasLeadStatus ? "coalesce(c.lead_status, 'New')" : "'New'::text"} AS lead_status,
+      ${hasTags ? "coalesce(c.tags, '{}')" : "'{}'::text[]"} AS tags,
+      ${hasOwnerId ? "c.owner_id" : "NULL::uuid"} AS owner_id,
+      coalesce(u.first_name || ' ' || u.last_name, '') AS owner_name,
       c.created_at,
       c.silo
     FROM contacts c
-    LEFT JOIN users u ON u.id = c.owner_id
+    LEFT JOIN users u ON ${hasOwnerId ? "c.owner_id = u.id" : "false"}
     WHERE ${where.join(" AND ")}
     ORDER BY c.created_at DESC
     LIMIT $${values.length - 1} OFFSET $${values.length}`;
