@@ -65,8 +65,16 @@ export function createApp() {
       return callback(null, false);
     },
     credentials: true,
-    optionsSuccessStatus: 200,
+    optionsSuccessStatus: 204,
   }));
+
+  app.use((req, res, next) => {
+    if (req.method === "OPTIONS") {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
 
   app.use(express.json({ limit: "10mb" }));
   app.use(cookieParser());

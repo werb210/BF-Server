@@ -83,7 +83,7 @@ describe("CRM + CORS + telephony regressions", () => {
       .set("Origin", "https://staff.boreal.financial")
       .set("Access-Control-Request-Method", "POST");
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(204);
     expect(res.headers["access-control-allow-origin"]).toBe("https://staff.boreal.financial");
     expect(res.headers["access-control-allow-credentials"]).toBe("true");
   });
