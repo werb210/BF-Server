@@ -163,17 +163,17 @@ async function persistInboundSms(req: any): Promise<void> {
   const sid = typeof MessageSid === "string" ? MessageSid : null;
 
   // Look up contact by phone number
-  const contact = await pool.query<{ id: string }>(
-    `SELECT id FROM contacts WHERE phone = $1 OR mobile_phone = $1 LIMIT 1`,
+  const contact = await pool.query<{ id: string; user_id: string | null; owner_id: string | null }>(
+    `SELECT id, user_id, owner_id FROM contacts WHERE phone = $1 OR mobile_phone = $1 LIMIT 1`,
     [fromNum]
   ).then((r) => r.rows[0] ?? null).catch(() => null);
 
   await pool.query(
     `INSERT INTO communications_messages
-       (id, type, direction, status, body, phone_number, from_number, to_number, twilio_sid, contact_id, created_at)
-     VALUES (gen_random_uuid(), 'sms', 'inbound', 'received', $1, $2, $2, $3, $4, $5, now())
+       (id, type, direction, status, body, phone_number, from_number, to_number, twilio_sid, contact_id, user_id, created_at)
+     VALUES (gen_random_uuid(), 'sms', 'inbound', 'received', $1, $2, $2, $3, $4, $5, $6, now())
      ON CONFLICT (twilio_sid) DO NOTHING`,
-    [body, fromNum, toNum, sid, contact?.id ?? null]
+    [body, fromNum, toNum, sid, contact?.id ?? null, contact?.user_id ?? contact?.owner_id ?? null]
   ).catch(() => {});
 }
 

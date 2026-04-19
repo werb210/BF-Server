@@ -47,6 +47,7 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
   const search = typeof req.query.search === "string" ? req.query.search.trim() : null;
   // hasActiveApplications filter defaults to FALSE — don't filter by default
   const hasActiveApps = req.query.hasActiveApplications === "true" ? true : false;
+  const ownerId = typeof req.query.ownerId === "string" ? req.query.ownerId.trim() : null;
 
   const contacts: any[] = [];
   const VALID_SILOS = ["BF", "BI", "SLF"];
@@ -76,14 +77,18 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
   // Try contacts table (may not exist yet — safe catch)
   try {
     const { rows } = await pool.query(
-      `SELECT c.id, c.name, c.email, c.phone, c.status, c.silo, c.created_at, 'contact' AS source
+      `SELECT c.id, c.name, c.email, c.phone, c.status, c.silo, c.created_at, c.user_id, u.email AS owner_email, 'contact' AS source
        FROM contacts c
+       LEFT JOIN users u ON u.id = c.user_id
        WHERE c.silo = $1
+       ${ownerId ? `AND c.user_id = $4` : ""}
        ${hasActiveApps ? `AND ${activeApplicationPredicate}` : ""}
-       ${search ? `AND (c.name ILIKE $4 OR c.email ILIKE $4 OR c.phone ILIKE $4)` : ""}
+       ${search ? `AND (c.name ILIKE $${ownerId ? 5 : 4} OR c.email ILIKE $${ownerId ? 5 : 4} OR c.phone ILIKE $${ownerId ? 5 : 4} OR u.email ILIKE $${ownerId ? 5 : 4})` : ""}
        ORDER BY c.created_at DESC
        LIMIT $2 OFFSET $3`,
-      search ? [siloValue, pageSize, offset, `%${search}%`] : [siloValue, pageSize, offset]
+      search
+        ? (ownerId ? [siloValue, pageSize, offset, ownerId, `%${search}%`] : [siloValue, pageSize, offset, `%${search}%`])
+        : (ownerId ? [siloValue, pageSize, offset, ownerId] : [siloValue, pageSize, offset])
     );
     contacts.push(...rows);
   } catch {
@@ -127,13 +132,13 @@ router.post("/contacts", safeHandler(async (req: any, res: any) => {
 
   try {
     const { rows } = await pool.query(
-      `INSERT INTO contacts (name, email, phone, status, silo)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, name, email, phone, status, created_at`,
-      [name, email ?? null, phone ?? null, status ?? "active", contactSilo]
+      `INSERT INTO contacts (name, email, phone, status, silo, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, name, email, phone, status, created_at, user_id`,
+      [name, email ?? null, phone ?? null, status ?? "active", contactSilo, req.user?.id ?? null]
     );
 
-    return respondOk(res, { ...rows[0], silo: contactSilo });
+    return res.status(201).json({ ok: true, data: { ...rows[0], silo: contactSilo } });
   } catch (error: any) {
     if (error?.code !== "42703") {
       throw error;
@@ -141,13 +146,13 @@ router.post("/contacts", safeHandler(async (req: any, res: any) => {
 
     try {
       const { rows } = await pool.query(
-        `INSERT INTO contacts (name, email, phone, status)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id, name, email, phone, status, created_at`,
-        [name, email ?? null, phone ?? null, status ?? "active"]
+        `INSERT INTO contacts (name, email, phone, status, user_id)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, name, email, phone, status, created_at, user_id`,
+        [name, email ?? null, phone ?? null, status ?? "active", req.user?.id ?? null]
       );
 
-      return respondOk(res, { ...rows[0], silo: contactSilo });
+      return res.status(201).json({ ok: true, data: { ...rows[0], silo: contactSilo } });
     } catch (fallbackError: any) {
       throw Object.assign(new Error(`Failed to create contact without silo column: ${fallbackError?.message ?? "unknown error"}`), {
         cause: fallbackError,
