@@ -15,6 +15,47 @@ router.post("/web-leads", SupportController.createWebLead);
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.CRM_READ]));
 
+router.get("/contacts/:id/companies", safeHandler(async (req: any, res: any) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT *
+       FROM companies
+       WHERE id IN (
+         SELECT company_id
+         FROM contacts
+         WHERE id = $1
+       )
+       OR name = (
+         SELECT company_name
+         FROM contacts
+         WHERE id = $1
+         LIMIT 1
+       )`,
+      [req.params.id]
+    );
+
+    return res.json(rows);
+  } catch {
+    return res.json([]);
+  }
+}));
+
+router.get("/contacts/:id/applications", safeHandler(async (req: any, res: any) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, stage
+       FROM applications
+       WHERE contact_id = $1
+         AND COALESCE(archived, false) = false`,
+      [req.params.id]
+    );
+
+    return res.json(rows);
+  } catch {
+    return res.json([]);
+  }
+}));
+
 router.get("/", safeHandler((_req: any, res: any) => {
   respondOk(res, {
     customers: [],
