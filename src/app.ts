@@ -16,26 +16,15 @@ export function createApp() {
   const app = express();
   // Trust Azure App Service reverse proxy
   app.set("trust proxy", 1);
-  const HARDCODED_ALLOWED_ORIGINS = [
-    "https://staff.boreal.financial",
-    "https://client.boreal.financial",
-    "https://boreal.financial",
-    "https://www.boreal.financial",
-  ];
-
-  const envOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-
-  const allowedOrigins = [...new Set([...envOrigins, ...HARDCODED_ALLOWED_ORIGINS])];
   const corsOptions: cors.CorsOptions = {
-    origin: allowedOrigins,
+    origin: [
+      "https://staff.boreal.financial",
+      "https://client.boreal.financial",
+      /^https:\/\/.*\.azurestaticapps\.net$/,
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Silo", "X-Request-Id"],
-    preflightContinue: false,
-    optionsSuccessStatus: 204,
   };
 
   /**
@@ -67,7 +56,7 @@ export function createApp() {
   }));
 
   app.use(cors(corsOptions));
-  app.options("*", cors(corsOptions));
+  app.options("*", cors());
 
   app.use(express.json({ limit: "10mb" }));
   app.use(cookieParser());

@@ -93,7 +93,7 @@ export async function start(): Promise<void> {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`SERVER STARTED ON ${PORT}`);
+    console.log(`Server listening on ${PORT}`);
     markReady();
   });
 }
