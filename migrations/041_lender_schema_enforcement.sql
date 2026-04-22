@@ -125,6 +125,13 @@ ALTER TABLE lenders
   ALTER COLUMN created_at SET NOT NULL,
   ALTER COLUMN updated_at SET NOT NULL;
 
+ALTER TABLE lenders
+  DROP CONSTRAINT IF EXISTS lenders_submission_method_check;
+
+ALTER TABLE lenders
+  ADD CONSTRAINT lenders_submission_method_check
+  CHECK (submission_method IN ('EMAIL', 'API'));
+
 DO $$
 BEGIN
   IF NOT EXISTS (
