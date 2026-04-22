@@ -1,3 +1,5 @@
+drop view if exists processing_job_history_view cascade;
+
 create table if not exists document_processing_jobs (
   id uuid primary key default gen_random_uuid(),
   application_id text not null,
@@ -165,3 +167,43 @@ begin
   end if;
 end
 $$;
+
+create or replace view processing_job_history_view as
+select
+  id::text as job_id,
+  'ocr'::text as job_type,
+  application_id,
+  document_id::text,
+  null::text as previous_status,
+  status as next_status,
+  error_message as failure_reason,
+  retry_count,
+  last_retry_at,
+  coalesce(updated_at, created_at) as occurred_at
+from document_processing_jobs
+union all
+select
+  id::text as job_id,
+  'banking'::text as job_type,
+  application_id,
+  null::text as document_id,
+  null::text as previous_status,
+  status as next_status,
+  error_message as failure_reason,
+  retry_count,
+  last_retry_at,
+  coalesce(updated_at, created_at) as occurred_at
+from banking_analysis_jobs
+union all
+select
+  id::text as job_id,
+  'credit_summary'::text as job_type,
+  application_id,
+  null::text as document_id,
+  null::text as previous_status,
+  status as next_status,
+  error_message as failure_reason,
+  retry_count,
+  last_retry_at,
+  coalesce(updated_at, created_at) as occurred_at
+from credit_summary_jobs;

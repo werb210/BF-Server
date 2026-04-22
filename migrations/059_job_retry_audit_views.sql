@@ -70,7 +70,7 @@ from document_status_history_view;
 
 create or replace view processing_job_history_view as
 select
-  id as job_id,
+  id::text as job_id,
   'ocr'::text as job_type,
   application_id,
   document_id,
@@ -85,7 +85,7 @@ select
 from document_processing_jobs
 union all
 select
-  id as job_id,
+  id::text as job_id,
   'banking'::text as job_type,
   application_id,
   null::text as document_id,
@@ -100,7 +100,7 @@ select
 from banking_analysis_jobs
 union all
 select
-  id as job_id,
+  id::text as job_id,
   'credit_summary'::text as job_type,
   application_id,
   null::text as document_id,
@@ -120,7 +120,7 @@ select
            case when cs.id is not null then 'credit_summary' else null end,
            ae.metadata->>'jobType') as job_type,
   coalesce(dp.application_id, ba.application_id, cs.application_id) as application_id,
-  dp.document_id,
+  dp.document_id::text,
   'failed'::text as previous_status,
   'pending'::text as next_status,
   ae.metadata->>'reason' as reason,

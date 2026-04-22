@@ -84,11 +84,13 @@ export async function runMigrations(pool: Pool): Promise<void> {
             console.error(`migration_mark_applied_failed: ${file}`, markErr);
           }
         } else {
-          console.error(`migration_failed: ${file}`, err);
+          console.error("FATAL MIGRATION FAILURE", { file, error: err });
+          process.exit(1);
         }
       }
     }
   } catch (err) {
-    console.error("migration_runner_failed", err);
+    console.error("FATAL MIGRATION FAILURE", err);
+    process.exit(1);
   }
 }
