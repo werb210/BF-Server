@@ -33,25 +33,39 @@ export function createApp() {
    */
   app.use(helmet({
     contentSecurityPolicy: {
+      useDefaults: true,
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "https://sdk.twilio.com"],
+        scriptSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "https://sdk.twilio.com",
+        ],
         connectSrc: [
           "'self'",
           "https://server.boreal.financial",
+
+          // Twilio REST / signaling
           "https://voice-js.twilio.com",
-          "wss://voice-js.roaming.twilio.com",
-          "wss://chunderw-vpc-gll.twilio.com",
+          "https://voice-js.roaming.twilio.com",
           "https://eventgw.twilio.com",
-          "wss://eventgw.twilio.com",
-          "https://media.twiliocdn.com",
-          "wss://*.twilio.com",
           "https://sdk.twilio.com",
+
+          // WebSocket signaling
+          "wss://voice-js.twilio.com",
+          "wss://voice-js.roaming.twilio.com",
+          "wss://eventgw.twilio.com",
         ],
-        imgSrc: ["'self'", "data:", "https:"],
+        mediaSrc: [
+          "'self'",
+          "blob:",
+          "https://media.twiliocdn.com",
+        ],
+
+        imgSrc: ["'self'", "data:"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         fontSrc: ["'self'", "data:"],
-        mediaSrc: ["'self'", "https://media.twiliocdn.com"],
+        frameSrc: ["'self'"],
       },
     },
   }));
