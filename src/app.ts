@@ -20,10 +20,11 @@ export function createApp() {
     origin: [
       "https://staff.boreal.financial",
       "https://client.boreal.financial",
-      /^https:\/\/.*\.azurestaticapps\.net$/,
+      "http://localhost:3000",
+      "http://localhost:5173",
     ],
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-silo", "x-request-id"],
     credentials: true,
   };
 

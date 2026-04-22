@@ -4,12 +4,10 @@
  */
 import type { Request, Response, NextFunction } from "express";
 
-const VALID_SILOS = new Set(["BF", "BI", "SLF"]);
-
 function normalizeSilo(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const upper = value.trim().toUpperCase();
-  return VALID_SILOS.has(upper) ? upper : null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized.toUpperCase() : null;
 }
 
 export function siloMiddleware(req: Request, res: Response, next: NextFunction): void {
