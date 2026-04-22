@@ -16,15 +16,27 @@ export function createApp() {
   const app = express();
   // Trust Azure App Service reverse proxy
   app.set("trust proxy", 1);
+  /**
+   * CORS configuration
+   *
+   * Allowed origins are determined by the CORS_ALLOWED_ORIGINS env var when
+   * present. The variable may contain a comma-separated list of origins.
+   * If unset, fallback to the default portal/local allowlist.
+   */
+  const defaultOrigins = [
+    "https://staff.boreal.financial",
+    "https://client.boreal.financial",
+    "http://localhost:3000",
+    "http://localhost:5173",
+  ];
+  const envOrigins = process.env.CORS_ALLOWED_ORIGINS;
+  const allowedOrigins = typeof envOrigins === "string" && envOrigins.length > 0
+    ? envOrigins.split(",").map((origin) => origin.trim()).filter(Boolean)
+    : defaultOrigins;
   const corsOptions: cors.CorsOptions = {
-    origin: [
-      "https://staff.boreal.financial",
-      "https://client.boreal.financial",
-      "http://localhost:3000",
-      "http://localhost:5173",
-    ],
+    origin: allowedOrigins,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-silo", "x-request-id"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-silo", "X-Request-Id"],
     credentials: true,
   };
 
@@ -71,7 +83,7 @@ export function createApp() {
   }));
 
   app.use(cors(corsOptions));
-  app.options("*", cors());
+  app.options("*", cors(corsOptions));
 
   app.use(express.json({ limit: "10mb" }));
   app.use(cookieParser());
