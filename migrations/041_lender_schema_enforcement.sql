@@ -102,6 +102,13 @@ UPDATE lenders
 SET submission_method = COALESCE(UPPER(submission_method::text), 'EMAIL');
 
 UPDATE lenders
+SET submission_method = 'EMAIL'
+WHERE submission_method IS NULL OR UPPER(submission_method::text) NOT IN ('EMAIL', 'API');
+
+ALTER TABLE lenders
+  DROP CONSTRAINT IF EXISTS lenders_submission_method_check;
+
+UPDATE lenders
 SET active = COALESCE(active, CASE WHEN status::text = 'INACTIVE' THEN FALSE ELSE TRUE END);
 
 UPDATE lenders
@@ -117,11 +124,9 @@ ALTER TABLE lenders
   ALTER COLUMN id TYPE uuid USING id::uuid,
   ALTER COLUMN country TYPE lender_country USING UPPER(country::text)::lender_country,
   ALTER COLUMN status TYPE lender_status USING UPPER(status::text)::lender_status,
-  ALTER COLUMN submission_method TYPE lender_submission_method USING UPPER(submission_method::text)::lender_submission_method,
   ALTER COLUMN active SET DEFAULT TRUE,
   ALTER COLUMN active SET NOT NULL,
   ALTER COLUMN status SET NOT NULL,
-  ALTER COLUMN submission_method SET NOT NULL,
   ALTER COLUMN created_at SET NOT NULL,
   ALTER COLUMN updated_at SET NOT NULL;
 
