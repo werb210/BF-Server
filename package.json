@@ -6,7 +6,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "postinstall": "npm run build"
+    "postinstall": "npm run build",
+    "test": "echo \"No tests yet\" && exit 0"
   },
   "engines": {
     "node": ">=20.10.0 <21.0.0"
