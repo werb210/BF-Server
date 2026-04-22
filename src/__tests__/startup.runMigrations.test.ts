@@ -12,6 +12,9 @@ describe("startup runMigrations", () => {
   const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
   const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
   const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+  const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+    throw new Error("process.exit called");
+  }) as never);
 
   beforeEach(() => {
     existsSyncSpy.mockReset();
@@ -20,10 +23,14 @@ describe("startup runMigrations", () => {
     warnSpy.mockReset();
     errorSpy.mockReset();
     logSpy.mockReset();
+    exitSpy.mockReset();
 
     warnSpy.mockImplementation(() => undefined);
     errorSpy.mockImplementation(() => undefined);
     logSpy.mockImplementation(() => undefined);
+    exitSpy.mockImplementation((() => {
+      throw new Error("process.exit called");
+    }) as never);
 
     existsSyncSpy.mockReturnValue(true);
     readdirSyncSpy.mockReturnValue(["001_init.sql", "002_add_index.sql"] as any);
@@ -100,7 +107,7 @@ describe("startup runMigrations", () => {
     );
   });
 
-  it("never throws when a migration fails with a non-idempotent error", async () => {
+  it("fails fast when a migration fails with a non-idempotent error", async () => {
     const query = vi.fn(async (sql: string) => {
       if (sql.includes("to_regclass('public.applied_migrations')")) {
         return { rows: [{ exists: "applied_migrations" }] };
@@ -117,10 +124,13 @@ describe("startup runMigrations", () => {
     });
 
     const pool = { query } as unknown as Pool;
-    await expect(runMigrations(pool)).resolves.toBeUndefined();
+    await expect(runMigrations(pool)).rejects.toThrow("process.exit called");
     expect(errorSpy).toHaveBeenCalledWith(
-      "migration_failed: 001_init.sql",
-      expect.any(Error)
+      "FATAL MIGRATION FAILURE",
+      expect.objectContaining({
+        file: "001_init.sql",
+      })
     );
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 });

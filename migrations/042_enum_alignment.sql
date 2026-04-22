@@ -25,6 +25,35 @@ UPDATE lenders
 SET submission_method = UPPER(submission_method::text)
 WHERE submission_method IS NOT NULL;
 
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'submission_method_enum') THEN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_enum e
+      JOIN pg_type t ON t.oid = e.enumtypid
+      WHERE t.typname = 'submission_method_enum'
+        AND e.enumlabel = 'PORTAL'
+    ) THEN
+      ALTER TYPE submission_method_enum ADD VALUE 'PORTAL';
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_enum e
+      JOIN pg_type t ON t.oid = e.enumtypid
+      WHERE t.typname = 'submission_method_enum'
+        AND e.enumlabel = 'MANUAL'
+    ) THEN
+      ALTER TYPE submission_method_enum ADD VALUE 'MANUAL';
+    END IF;
+  END IF;
+END $$;
+
+UPDATE lenders
+SET submission_method = 'EMAIL'
+WHERE submission_method IS NULL OR submission_method::text NOT IN ('EMAIL','API','PORTAL','MANUAL');
+
 UPDATE lenders
 SET status = UPPER(status::text)
 WHERE status IS NOT NULL;
@@ -65,3 +94,12 @@ ALTER TABLE lender_products
       )
     )
   );
+
+ALTER TABLE lenders DROP CONSTRAINT IF EXISTS lenders_submission_method_check;
+
+UPDATE lenders
+SET submission_method = 'EMAIL'
+WHERE submission_method IS NULL OR submission_method::text NOT IN ('EMAIL','API','PORTAL','MANUAL');
+
+ALTER TABLE lenders ADD CONSTRAINT lenders_submission_method_check
+CHECK (submission_method IN ('EMAIL','API','PORTAL','MANUAL'));
