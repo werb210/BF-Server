@@ -38,10 +38,12 @@ router.post(
     }
     const { business_name, requested_amount, lender_id, product_id, product_category, kyc_responses } = parsed.data;
     const applicationId = randomUUID();
+    const { getSilo } = await import("../../middleware/silo.js");
+    const silo = getSilo(res);
     await runQuery(
       `insert into applications
-       (id, owner_user_id, name, metadata, product_type, pipeline_state, status, lender_id, lender_product_id, requested_amount, source, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())`,
+       (id, owner_user_id, name, metadata, product_type, pipeline_state, status, lender_id, lender_product_id, requested_amount, source, silo, created_at, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), now())`,
       [
         applicationId,
         config.client.submissionOwnerUserId,
@@ -57,6 +59,7 @@ router.post(
         product_id,
         requested_amount,
         "client",
+        silo,
       ]
     );
 

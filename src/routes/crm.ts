@@ -91,7 +91,8 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
   const hasActiveApplications = req.query.has_active_applications === "true";
 
   const VALID_SILOS = ["BF", "BI", "SLF"];
-  const rawSilo = typeof req.query.silo === "string" ? req.query.silo.toUpperCase() : "BF";
+  const { getSilo } = await import("../middleware/silo.js");
+  const rawSilo = getSilo(res);
   const silo = VALID_SILOS.includes(rawSilo) ? rawSilo : "BF";
 
   const contactsColumnCheck = await pool.query<{ column_name: string }>(

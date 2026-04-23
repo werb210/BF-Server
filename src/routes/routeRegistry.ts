@@ -31,6 +31,7 @@ import portalLendersRoutes from "./portalLenders.js";
 import portalLenderProductsRoutes from "./portalLenderProducts.js";
 import documentTypesRouter from "./documentTypes.js";
 import pwaRoutes from "./pwa.js";
+import publicApplicationRoutes from "./publicApplication.js";
 import referralsRoutes from "./referrals.js";
 import pipelineRoutes from "./pipeline.js";
 import telephonyRoutes from "../telephony/routes/telephonyRoutes.js";
@@ -116,6 +117,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/maya", router: mayaRoutes },
   { path: "/ai", router: aiRoutes },
   { path: "/email", router: emailRoutes },
+  { path: "/public", router: publicApplicationRoutes },
   { path: "/", router: rootRoutes },
   { path: "/applications", router: applicationsRoutes },
 ];

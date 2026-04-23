@@ -16,7 +16,8 @@ router.get("/", safeHandler((_req: any, res: any) => {
 // GET /api/communications/messages — queries the actual DB
 router.get("/messages", safeHandler(async (req: any, res: any) => {
   const contactId = typeof req.query.contact_id === "string" ? req.query.contact_id : null;
-  const silo = typeof req.query.silo === "string" ? req.query.silo : "BF";
+  const { getSilo } = await import("../middleware/silo.js");
+  const silo = getSilo(res);
   if (!contactId) {
     return res.status(400).json({ error: { code: "validation_error", message: "contact_id is required" } });
   }
@@ -38,7 +39,8 @@ router.get("/messages", safeHandler(async (req: any, res: any) => {
 }));
 
 router.get("/sms", safeHandler(async (req: any, res: any) => {
-  const silo = typeof req.query.silo === "string" ? req.query.silo : "BF";
+  const { getSilo } = await import("../middleware/silo.js");
+  const silo = getSilo(res);
   const result = await pool.query(
     `SELECT
        m.contact_id,

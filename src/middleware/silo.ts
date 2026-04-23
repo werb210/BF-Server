@@ -1,7 +1,3 @@
-/**
- * Extracts the active silo from the request and attaches it to res.locals.
- * Priority: X-Silo header > ?silo= query param > body.silo > 'BF' (default)
- */
 import type { Request, Response, NextFunction } from "express";
 
 function normalizeSilo(value: unknown): string | null {
@@ -20,6 +16,11 @@ export function siloMiddleware(req: Request, res: Response, next: NextFunction):
   next();
 }
 
+/**
+ * Canonical silo accessor — every route handler that filters by silo MUST use this
+ * helper rather than reading req.query.silo directly. The portal and iOS dialer
+ * send silo as an X-Silo header; only siloMiddleware sees it.
+ */
 export function getSilo(res: Response): string {
   return typeof res.locals.silo === "string" ? res.locals.silo : "BF";
 }
