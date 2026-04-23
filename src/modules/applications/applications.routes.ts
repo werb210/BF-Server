@@ -18,7 +18,9 @@ router.get('/', safeHandler(async (req: any, res: any) => {
   const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 25));
   const offset = (page - 1) * pageSize;
   const stage = req.query.stage as string | undefined;
-  const silo = req.query.silo as string | undefined;
+  // Silo resolution: respects X-Silo header (portal + iOS), ?silo query, body.silo, then default BF.
+  const { getSilo } = await import("../../middleware/silo.js");
+  const silo = getSilo(res);
 
   const conditions: string[] = [];
   const params: unknown[] = [];

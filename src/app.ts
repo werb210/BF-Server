@@ -26,6 +26,8 @@ export function createApp() {
   const defaultOrigins = [
     "https://staff.boreal.financial",
     "https://client.boreal.financial",
+    "https://boreal.financial",
+    "https://www.boreal.financial",
     "http://localhost:3000",
     "http://localhost:5173",
   ];

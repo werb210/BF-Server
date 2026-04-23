@@ -8,7 +8,8 @@ const router = Router();
 router.use(requireAuth);
 
 router.get("/", safeHandler(async (req: any, res: any) => {
-  const rawSilo = typeof req.query.silo === "string" ? req.query.silo.toUpperCase() : "BF";
+  const { getSilo } = await import("../middleware/silo.js");
+  const rawSilo = getSilo(res);
   const silo = ["BF", "BI", "SLF"].includes(rawSilo) ? rawSilo : "BF";
 
   const { rows } = await pool.query(

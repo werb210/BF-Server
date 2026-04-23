@@ -103,19 +103,19 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Seed lender — includes ALL NOT NULL columns: id, name, country, active, created_at, updated_at
+-- Seed lender — only the columns that exist in the current schema
 INSERT INTO lenders (id, name, country, active, created_at, updated_at)
 VALUES ('11111111-1111-1111-1111-111111111111', 'Boreal Direct', 'CA', true, now(), now())
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO lender_products
-  (id, lender_id, lender_name, name, type, status, category, active, country, min_amount, max_amount, created_at, updated_at)
+  (id, lender_id, name, category, active, country, created_at, updated_at)
 VALUES
-  ('33333333-3333-3333-3333-333333333301','11111111-1111-1111-1111-111111111111','Boreal Direct','Business Line of Credit','LOC',      'active','LOC',      true,'CA',25000, 500000, now(),now()),
-  ('33333333-3333-3333-3333-333333333302','11111111-1111-1111-1111-111111111111','Boreal Direct','Term Loan',              'TERM',     'active','TERM',     true,'CA',50000, 1000000,now(),now()),
-  ('33333333-3333-3333-3333-333333333303','11111111-1111-1111-1111-111111111111','Boreal Direct','Equipment Financing',    'EQUIPMENT','active','EQUIPMENT',true,'CA',10000, 500000, now(),now()),
-  ('33333333-3333-3333-3333-333333333304','11111111-1111-1111-1111-111111111111','Boreal Direct','Working Capital Loan',   'TERM',     'active','TERM',     true,'CA',10000, 250000, now(),now()),
-  ('33333333-3333-3333-3333-333333333305','11111111-1111-1111-1111-111111111111','Boreal Direct','Invoice Factoring',      'FACTORING','active','FACTORING',true,'CA',25000, 2000000,now(),now()),
-  ('33333333-3333-3333-3333-333333333306','11111111-1111-1111-1111-111111111111','Boreal Direct','Merchant Cash Advance',  'MCA',      'active','MCA',      true,'CA',5000,  200000, now(),now()),
-  ('33333333-3333-3333-3333-333333333307','11111111-1111-1111-1111-111111111111','Boreal Direct','PO Financing',           'PO',       'active','PO',       true,'CA',25000, 1000000,now(),now())
+  ('33333333-3333-3333-3333-333333333301','11111111-1111-1111-1111-111111111111','Business Line of Credit','LOC',      true,'CA',now(),now()),
+  ('33333333-3333-3333-3333-333333333302','11111111-1111-1111-1111-111111111111','Term Loan',              'TERM',     true,'CA',now(),now()),
+  ('33333333-3333-3333-3333-333333333303','11111111-1111-1111-1111-111111111111','Equipment Financing',    'EQUIPMENT',true,'CA',now(),now()),
+  ('33333333-3333-3333-3333-333333333304','11111111-1111-1111-1111-111111111111','Working Capital Loan',   'TERM',     true,'CA',now(),now()),
+  ('33333333-3333-3333-3333-333333333305','11111111-1111-1111-1111-111111111111','Invoice Factoring',      'FACTORING',true,'CA',now(),now()),
+  ('33333333-3333-3333-3333-333333333306','11111111-1111-1111-1111-111111111111','Merchant Cash Advance',  'MCA',      true,'CA',now(),now()),
+  ('33333333-3333-3333-3333-333333333307','11111111-1111-1111-1111-111111111111','PO Financing',           'PO',       true,'CA',now(),now())
 ON CONFLICT (id) DO NOTHING;
