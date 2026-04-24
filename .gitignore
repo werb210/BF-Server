@@ -2,3 +2,6 @@
 .env
 deploy.zip
 /dist/
+
+# Generated baseline — review before committing
+migrations/000_baseline.sql.unreviewed
