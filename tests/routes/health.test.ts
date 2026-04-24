@@ -28,8 +28,9 @@ describe("GET /api/health", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("ok");
-    expect(res.body.maya).toBe("healthy");
+    expect(res.body.maya).toBeUndefined();
     expect(res.body.data).toMatchObject({
+      maya: "healthy",
       env: expect.any(String),
       valid: expect.any(Boolean),
       missingRequired: expect.any(Array),
@@ -45,7 +46,8 @@ describe("GET /api/health", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("ok");
-    expect(res.body.maya).toBe("degraded");
+    expect(res.body.maya).toBeUndefined();
+    expect(res.body.data?.maya).toBe("degraded");
     expect(res.body.data).toBeDefined();
   });
 
@@ -57,7 +59,8 @@ describe("GET /api/health", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("ok");
-    expect(res.body.maya).toBe("degraded");
+    expect(res.body.maya).toBeUndefined();
+    expect(res.body.data?.maya).toBe("degraded");
     expect(res.body.data).toBeDefined();
   });
 
@@ -69,7 +72,8 @@ describe("GET /api/health", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("ok");
-    expect(res.body.maya).toBe("degraded");
+    expect(res.body.maya).toBeUndefined();
+    expect(res.body.data?.maya).toBe("degraded");
     expect(res.body.data).toBeDefined();
   });
 
@@ -88,7 +92,8 @@ describe("GET /api/health", () => {
     expect(elapsed).toBeLessThan(2200);
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("ok");
-    expect(res.body.maya).toBe("degraded");
+    expect(res.body.maya).toBeUndefined();
+    expect(res.body.data?.maya).toBe("degraded");
     expect(res.body.data).toBeDefined();
   }, 7000);
 
@@ -101,7 +106,8 @@ describe("GET /api/health", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("ok");
-    expect(res.body.maya).toBe("degraded");
+    expect(res.body.maya).toBeUndefined();
+    expect(res.body.data?.maya).toBe("degraded");
     expect(res.body.data).toBeDefined();
     expect(fetchMock).not.toHaveBeenCalled();
   });

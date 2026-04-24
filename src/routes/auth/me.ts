@@ -86,21 +86,31 @@ export async function authMeHandler(
     }
 
     let silo = user.silo;
-    if (!user.siloFromToken) {
-      try {
-        const userRecord = await findAuthUserById(user.userId);
+    let firstName: string | null = null;
+    let lastName: string | null = null;
+    let email: string | null = null;
+
+    try {
+      const userRecord = await findAuthUserById(user.userId);
+      firstName = userRecord?.first_name ?? null;
+      lastName = userRecord?.last_name ?? null;
+      email = userRecord?.email ?? null;
+
+      if (!user.siloFromToken) {
         if (userRecord?.silo?.trim()) {
           silo = userRecord.silo.trim();
         } else {
           silo = DEFAULT_AUTH_SILO;
         }
-      } catch (err) {
-        logError("auth_me_silo_lookup_failed", {
-          route,
-          requestId,
-          userId: user.userId,
-          err,
-        });
+      }
+    } catch (err) {
+      logError("auth_me_user_lookup_failed", {
+        route,
+        requestId,
+        userId: user.userId,
+        err,
+      });
+      if (!user.siloFromToken) {
         silo = DEFAULT_AUTH_SILO;
       }
     }
@@ -118,6 +128,9 @@ export async function authMeHandler(
           role: user.role,
           silo,
           phone: user.phone,
+          first_name: firstName,
+          last_name: lastName,
+          email,
         },
       },
       userId: user.userId,
@@ -128,6 +141,9 @@ export async function authMeHandler(
         role: user.role,
         silo,
         phone: user.phone,
+        first_name: firstName,
+        last_name: lastName,
+        email,
       },
     };
 

@@ -54,6 +54,9 @@ const authMeUserSchema = z
     role: roleSchema,
     silo: z.string().nullable().optional(),
     phone: z.string().nullable().optional(),
+    first_name: z.string().nullable().optional(),
+    last_name: z.string().nullable().optional(),
+    email: z.string().nullable().optional(),
   })
   .strict();
 

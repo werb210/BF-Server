@@ -27,13 +27,11 @@ export async function handleListCrmTimeline(
 
   respondOk(
     res,
-    {
-      entries,
-      total: entries.length,
-    },
+    entries,
     {
       page,
       pageSize: limit,
+      total: entries.length,
     }
   );
 }

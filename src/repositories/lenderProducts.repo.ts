@@ -14,6 +14,13 @@ type Queryable = Pick<PoolClient, "query">;
 const LENDER_PRODUCTS_REPO = "src/repositories/lenderProducts.repo.ts";
 const LENDER_PRODUCTS_TABLE = "lender_products";
 
+export function normalizeRateType(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const upper = String(value).trim().toUpperCase();
+  if (upper === "FIXED" || upper === "VARIABLE") return upper;
+  return null;
+}
+
 async function assertLenderProductColumnsExist(params: {
   route: string;
   columns: string[];
@@ -145,7 +152,7 @@ export async function createLenderProduct(params: {
     { name: "active", value: params.active },
     { name: "required_documents", value: JSON.stringify(params.requiredDocuments) },
     { name: "country", value: params.country ?? null },
-    { name: "rate_type", value: params.rateType ?? null },
+    { name: "rate_type", value: normalizeRateType(params.rateType) },
     { name: "interest_min", value: params.interestMin ?? null },
     { name: "interest_max", value: params.interestMax ?? null },
     { name: "term_min", value: params.termMin ?? null },
@@ -368,7 +375,7 @@ export async function updateLenderProduct(params: {
     updates.push({ name: "country", value: params.country });
   }
   if (existing.has("rate_type") && params.rateType !== undefined) {
-    updates.push({ name: "rate_type", value: params.rateType });
+    updates.push({ name: "rate_type", value: normalizeRateType(params.rateType) });
   }
   if (existing.has("interest_min") && params.interestMin !== undefined) {
     updates.push({ name: "interest_min", value: params.interestMin });

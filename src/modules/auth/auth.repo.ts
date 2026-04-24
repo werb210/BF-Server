@@ -27,6 +27,8 @@ async function runAuthQuery<T extends QueryResultRow = QueryResultRow>(
 export interface AuthUser {
   id: string;
   email: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   phoneNumber: string;
   phoneVerified: boolean;
   role: Role | null;
@@ -140,6 +142,8 @@ export async function findAuthUserByEmail(
     runner,
     `select u.id,
             u.email,
+            u.first_name,
+            u.last_name,
             u.phone_number as "phoneNumber",
             u.phone_verified as "phoneVerified",
             u.role,
@@ -168,6 +172,8 @@ export async function findAuthUserById(
     runner,
     `select u.id,
             u.email,
+            u.first_name,
+            u.last_name,
             u.phone_number as "phoneNumber",
             u.phone_verified as "phoneVerified",
             u.role,

@@ -59,7 +59,10 @@ router.get("/health", async (_req, res) => {
     }
   }
 
-  res.status(200).json({ status: "ok", maya, data });
+  res.status(200).json({
+    status: "ok",
+    data: { ...data, maya },
+  });
 });
 
 export default router;
