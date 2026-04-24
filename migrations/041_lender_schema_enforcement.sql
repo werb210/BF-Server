@@ -1,3 +1,29 @@
+-- ============================================================================
+-- IDEMPOTENCY GUARD
+-- ============================================================================
+-- This migration does destructive, non-reversible schema changes (column type
+-- conversions, DROP COLUMN, etc.) that are NOT safe to re-run in a partially
+-- applied state. If the database already reflects 041's end state — i.e. the
+-- lender_product_category enum exists and lender_products.category is already
+-- typed as that enum — bail out via SQLSTATE 42P07 ("duplicate table").
+-- The migration runner (src/startup/runMigrations.ts) recognises 42P07 as an
+-- "already-present, safe to skip" code and marks the migration as applied.
+-- ============================================================================
+DO $IDEMP$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'lender_products'
+      AND column_name = 'category'
+      AND udt_name   = 'lender_product_category'
+  ) THEN
+    RAISE EXCEPTION 'migration 041 already applied; short-circuiting'
+      USING ERRCODE = 'duplicate_table';
+  END IF;
+END
+$IDEMP$;
+
 -- Ensure user_status enum contains only ACTIVE/INACTIVE
 DO $$
 DECLARE
