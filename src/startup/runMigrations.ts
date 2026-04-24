@@ -58,7 +58,7 @@ export async function runMigrations(pool: Pool): Promise<void> {
   }
 
   const files = fs.readdirSync(migrationsDir)
-    .filter((f) => f.endsWith(".sql") && !fs.statSync(path.join(migrationsDir, f)).isDirectory())
+    .filter((f) => f.endsWith(".sql"))
     .sort();
 
   const client = await pool.connect();
