@@ -41,6 +41,7 @@ import signnowRoutes from "./signnow.js";
 import emailRoutes from "./email.js";
 import websiteRoutes from "./website.js";
 import mayaRoutes from "./maya.js";
+import aiMayaAlias from "./aiMayaAlias.js";
 import aiRoutes from "./ai.v2.js";
 import { createMountTracker } from "./_canonicalMount.js";
 import { siloMiddleware } from "../middleware/silo.js";
@@ -115,6 +116,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/sms", router: webhooksRoutes },
   { path: "/website", router: websiteRoutes },
   { path: "/maya", router: mayaRoutes },
+  { path: "/ai/maya", router: aiMayaAlias },
   { path: "/ai", router: aiRoutes },
   { path: "/email", router: emailRoutes },
   { path: "/public", router: publicApplicationRoutes },
