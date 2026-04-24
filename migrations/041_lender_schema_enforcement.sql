@@ -121,8 +121,11 @@ ALTER TABLE lenders
 UPDATE lenders
 SET active = COALESCE(active, CASE WHEN status::text = 'INACTIVE' THEN FALSE ELSE TRUE END);
 
+-- status and country may already be enum types from an earlier migration (e.g. 038).
+-- Cast the text expression to the column's current type so this UPDATE works
+-- whether the column is text or already an enum.
 UPDATE lenders
-SET status = CASE WHEN active THEN 'ACTIVE' ELSE 'INACTIVE' END;
+SET status = (CASE WHEN active THEN 'ACTIVE'::lender_status ELSE 'INACTIVE'::lender_status END);
 
 UPDATE lenders
 SET created_at = COALESCE(created_at, now());
