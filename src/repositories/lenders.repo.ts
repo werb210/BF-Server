@@ -27,6 +27,43 @@ export interface CreateLenderInput {
 }
 
 const LENDERS_REPO = "src/repositories/lenders.repo.ts";
+
+
+export function normalizeSubmissionMethod(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const v = String(value).trim().toUpperCase();
+  const allowed = ["EMAIL", "API", "GOOGLE_SHEET", "GOOGLE_SHEETS", "MANUAL"];
+  if (allowed.includes(v)) return v;
+  return null;
+}
+
+function isSubmissionMethodConsistent(params: {
+  submissionMethod: string | null;
+  submissionEmail?: string | null;
+  apiConfig?: Record<string, unknown> | null;
+  submissionConfig?: Record<string, unknown> | null;
+}): boolean {
+  const { submissionMethod, submissionEmail, apiConfig, submissionConfig } = params;
+  if (!submissionMethod) return true;
+
+  if (submissionMethod === "EMAIL") {
+    return typeof submissionEmail === "string" && submissionEmail.trim().length > 0;
+  }
+
+  if (submissionMethod === "API") {
+    return Boolean(apiConfig ?? submissionConfig);
+  }
+
+  if (submissionMethod === "GOOGLE_SHEET" || submissionMethod === "GOOGLE_SHEETS") {
+    return Boolean(submissionConfig);
+  }
+
+  if (submissionMethod === "MANUAL") {
+    return true;
+  }
+
+  return false;
+}
 const LENDERS_TABLE = "lenders";
 
 type ColumnCheckResult = {
@@ -241,6 +278,15 @@ export async function createLender(
   } = input;
   const existingColumns = await fetchLenderColumns();
   const includeActive = existingColumns.has("active");
+  let normalizedSubmissionMethod = normalizeSubmissionMethod(input.submission_method);
+  if (!isSubmissionMethodConsistent({
+    submissionMethod: normalizedSubmissionMethod,
+    submissionEmail: submission_email ?? null,
+    apiConfig: api_config ?? null,
+    submissionConfig: submission_config ?? null,
+  })) {
+    normalizedSubmissionMethod = null;
+  }
   const normalizedStatus =
     typeof input.status === "string"
       ? input.status.trim().toUpperCase()
@@ -290,7 +336,7 @@ export async function createLender(
   });
   columns.push({
     name: "submission_method",
-    value: input.submission_method ?? null,
+    value: normalizedSubmissionMethod,
   });
   columns.push({
     name: "submission_email",
@@ -426,11 +472,25 @@ export async function updateLender(
   if (params.email !== undefined && existingColumns.has("email")) {
     updates.push({ name: "email", value: params.email });
   }
+  const normalizedUpdateSubmissionMethod =
+    params.submission_method !== undefined
+      ? normalizeSubmissionMethod(params.submission_method)
+      : undefined;
   if (
-    params.submission_method !== undefined &&
+    normalizedUpdateSubmissionMethod !== undefined &&
     existingColumns.has("submission_method")
   ) {
-    updates.push({ name: "submission_method", value: params.submission_method });
+    const consistent = isSubmissionMethodConsistent({
+      submissionMethod: normalizedUpdateSubmissionMethod,
+      submissionEmail:
+        params.submission_email !== undefined ? params.submission_email : undefined,
+      apiConfig: params.api_config,
+      submissionConfig: params.submission_config,
+    });
+    updates.push({
+      name: "submission_method",
+      value: consistent ? normalizedUpdateSubmissionMethod : null,
+    });
   }
   if (params.primary_contact_name !== undefined) {
     updates.push({ name: "primary_contact_name", value: params.primary_contact_name });

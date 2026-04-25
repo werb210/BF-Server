@@ -99,6 +99,38 @@ export async function runMigrations(pool: Pool): Promise<void> {
           throw err;
         }
       }
+
+      // Verify a small set of expected columns exist in the live schema.
+      // If they're missing despite their migration being marked applied,
+      // it means the schema_migrations row was inserted manually (e.g.
+      // during a hotfix) without the actual ALTER TABLE running. Log
+      // loudly so an operator notices and runs the recovery SQL.
+      const expected: Array<{ table: string; column: string; migration: string }> = [
+        { table: "lender_products", column: "amount_min", migration: "121_readd_amount_columns_and_repair.sql" },
+        { table: "lender_products", column: "amount_max", migration: "121_readd_amount_columns_and_repair.sql" },
+        { table: "users", column: "silos", migration: "130_users_silos_array.sql" },
+        { table: "lenders", column: "silo", migration: "131_lenders_silo_column.sql" },
+        { table: "lender_products", column: "silo", migration: "131_lenders_silo_column.sql" },
+        { table: "applications", column: "silo", migration: "132_recovery_columns.sql" },
+        { table: "contacts", column: "company_name", migration: "132_recovery_columns.sql" },
+      ];
+
+      for (const e of expected) {
+        const r = await client.query<{ exists: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1 FROM information_schema.columns
+              WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
+           ) AS exists`,
+          [e.table, e.column]
+        );
+        if (!r.rows[0]?.exists) {
+          console.error(
+            `[MIGRATIONS][SCHEMA-DRIFT] expected column ${e.table}.${e.column} ` +
+            `missing despite ${e.migration} marked applied. ` +
+            `Run the schema recovery SQL.`
+          );
+        }
+      }
     });
   } finally {
     client.release();
