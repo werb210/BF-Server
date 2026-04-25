@@ -244,6 +244,145 @@ router.post("/contacts", safeHandler(async (req: any, res: any) => {
   return res.status(201).json({ ok: true, data: rows[0] });
 }));
 
+
+router.get("/contacts/:id", safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id);
+  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    return res.status(400).json({ error: "invalid_id" });
+  }
+  const silo = String(req.query.silo ?? req.user?.silo ?? "BF").toUpperCase();
+  const { rows } = await pool.query(
+    `SELECT c.*,
+            co.name AS company_name,
+            (u.first_name || ' ' || u.last_name) AS owner_name
+     FROM contacts c
+     LEFT JOIN companies co ON co.id = c.company_id
+     LEFT JOIN users u ON u.id = c.owner_id
+     WHERE c.id = $1 AND c.silo = $2
+     LIMIT 1`,
+    [id, silo],
+  );
+  if (!rows.length) return res.status(404).json({ error: "not_found" });
+  res.json({ data: rows[0] });
+}));
+
+router.patch("/contacts/:id", safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id);
+  const ALLOWED = [
+    "first_name", "last_name", "name", "email", "phone", "job_title",
+    "lead_status", "lifecycle_stage", "owner_id", "company_id", "notes",
+  ];
+  const updates: string[] = [];
+  const params: unknown[] = [];
+  let i = 1;
+  for (const k of ALLOWED) {
+    if (k in (req.body ?? {})) {
+      updates.push(`${k} = $${i++}`);
+      params.push(req.body[k] === "" ? null : req.body[k]);
+    }
+  }
+  if (!updates.length) return res.json({ data: null });
+  params.push(id);
+  const { rows } = await pool.query(
+    `UPDATE contacts SET ${updates.join(", ")}, updated_at = NOW()
+     WHERE id = $${i} RETURNING *`,
+    params,
+  );
+  res.json({ data: rows[0] ?? null });
+}));
+
+router.get("/companies", safeHandler(async (req: any, res: any) => {
+  const silo = String(req.query.silo ?? req.user?.silo ?? "BF").toUpperCase();
+  const q = String(req.query.q ?? "").trim();
+  const sort = String(req.query.sort ?? "created_at:desc");
+  const [sortColRaw, sortDirRaw] = sort.split(":");
+  const sortColAllowed = ["name", "industry", "owner_name", "created_at"];
+  const sortCol = sortColAllowed.includes(sortColRaw) ? sortColRaw : "created_at";
+  const sortDir = sortDirRaw === "asc" ? "ASC" : "DESC";
+
+  const params: unknown[] = [silo];
+  let where = "co.silo = $1";
+  if (q) {
+    params.push(`%${q}%`);
+    where += ` AND (co.name ILIKE $${params.length} OR co.domain ILIKE $${params.length} OR co.industry ILIKE $${params.length})`;
+  }
+  const { rows } = await pool.query(
+    `SELECT co.*, (u.first_name || ' ' || u.last_name) AS owner_name
+     FROM companies co
+     LEFT JOIN users u ON u.id = co.owner_id
+     WHERE ${where}
+     ORDER BY ${sortCol === "owner_name" ? "owner_name" : "co." + sortCol} ${sortDir}
+     LIMIT 500`,
+    params,
+  );
+  res.json({ data: rows });
+}));
+
+router.get("/companies/:id", safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id);
+  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    return res.status(400).json({ error: "invalid_id" });
+  }
+  const silo = String(req.query.silo ?? req.user?.silo ?? "BF").toUpperCase();
+  const { rows } = await pool.query(
+    `SELECT co.*, (u.first_name || ' ' || u.last_name) AS owner_name
+     FROM companies co
+     LEFT JOIN users u ON u.id = co.owner_id
+     WHERE co.id = $1 AND co.silo = $2
+     LIMIT 1`,
+    [id, silo],
+  );
+  if (!rows.length) return res.status(404).json({ error: "not_found" });
+  res.json({ data: rows[0] });
+}));
+
+router.post("/companies", safeHandler(async (req: any, res: any) => {
+  const silo = String(req.user?.silo ?? "BF").toUpperCase();
+  const b = req.body ?? {};
+  const name = String(b.name ?? "").trim();
+  if (!name) return res.status(400).json({ error: "name required" });
+  const { rows } = await pool.query(
+    `INSERT INTO companies
+       (name, industry, domain, city, region, types_of_financing,
+        owner_id, silo)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     RETURNING *`,
+    [
+      name,
+      b.industry ?? null,
+      b.domain ?? null,
+      b.city ?? null,
+      b.region ?? null,
+      Array.isArray(b.types_of_financing) ? b.types_of_financing : [],
+      req.user?.id ?? req.user?.userId ?? null,
+      silo,
+    ],
+  );
+  res.status(201).json({ data: rows[0] });
+}));
+
+router.patch("/companies/:id", safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id);
+  const ALLOWED = ["name", "industry", "domain", "city", "region", "types_of_financing", "owner_id"];
+  const updates: string[] = [];
+  const params: unknown[] = [];
+  let i = 1;
+  for (const k of ALLOWED) {
+    if (k in (req.body ?? {})) {
+      updates.push(`${k} = $${i++}`);
+      params.push(req.body[k]);
+    }
+  }
+  if (!updates.length) return res.json({ data: null });
+  params.push(id);
+  const { rows } = await pool.query(
+    `UPDATE companies SET ${updates.join(", ")}, updated_at = NOW()
+     WHERE id = $${i} RETURNING *`,
+    params,
+  );
+  res.json({ data: rows[0] ?? null });
+}));
+
 router.use("/contacts/:id/notes", notesRoutes);
 router.use("/contacts/:id/tasks", tasksRoutes);
 router.use("/contacts/:id/emails", emailsRoutes);

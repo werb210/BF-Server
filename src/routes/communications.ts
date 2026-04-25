@@ -69,23 +69,30 @@ router.get("/sms", safeHandler(async (req: any, res: any) => {
 
 
 router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
-  const { getSilo } = await import("../middleware/silo.js");
-  const silo = getSilo(res);
-  const contactId = typeof req.query.contactId === "string" ? req.query.contactId.trim() : "";
-  const phone = typeof req.query.phone === "string" ? req.query.phone.trim() : "";
-  if (!contactId && !phone) {
-    return res.status(400).json({ error: { code: "validation_error", message: "contactId or phone is required" } });
-  }
+  const silo = String(req.user?.silo ?? "BF").toUpperCase();
+  const contactId = req.query.contactId ? String(req.query.contactId) : null;
+  const phone = req.query.phone ? String(req.query.phone) : null;
+  if (!contactId && !phone) return res.status(400).json({ error: "contactId or phone required" });
 
+  const params: unknown[] = [silo];
+  let where = "silo = $1";
+  if (contactId) {
+    params.push(contactId);
+    where += ` AND contact_id = $${params.length}`;
+  } else if (phone) {
+    params.push(phone);
+    where += ` AND contact_id IS NULL AND (from_number = $${params.length} OR to_number = $${params.length})`;
+  }
   const { rows } = await pool.query(
-    `SELECT * FROM communications_messages
-     WHERE silo = $1
-       AND ((contact_id = $2::uuid) OR (contact_id IS NULL AND
-            (from_number = $3 OR to_number = $3)))
-     ORDER BY created_at ASC LIMIT 500`,
-    [silo, contactId || null, phone || null],
-  ).catch(() => ({ rows: [] as any[] }));
-  res.json({ messages: rows, total: rows.length });
+    `SELECT id, contact_id, from_number, to_number, direction, body,
+            created_at, read_at
+     FROM communications_messages
+     WHERE ${where}
+     ORDER BY created_at ASC
+     LIMIT 500`,
+    params,
+  );
+  res.json({ data: rows });
 }));
 
 // POST /api/communications/sms — send outbound + persist to DB

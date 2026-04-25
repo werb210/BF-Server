@@ -27,6 +27,7 @@ import staffRoutes from "./staff.js";
 import supportRoutes from "./support.js";
 import tasksRoutes from "./tasks.js";
 import usersRoutes from "./users.js";
+import o365TokensRoutes from "./o365Tokens.js";
 import portalRoutes from "./portal.js";
 import portalLendersRoutes from "./portalLenders.js";
 import portalLenderProductsRoutes from "./portalLenderProducts.js";
@@ -117,6 +118,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/staff", router: staffRoutes },
   { path: "/support", router: supportRoutes },
   { path: "/tasks", router: tasksRoutes },
+  { path: "/users/me", router: o365TokensRoutes },
   { path: "/users", router: usersRoutes },
   { path: "/portal", router: combinedPortalRoutes },
   { path: "/pwa", router: pwaRoutes },

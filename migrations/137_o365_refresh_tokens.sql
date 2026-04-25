@@ -1,0 +1,4 @@
+ALTER TABLE users ADD COLUMN IF NOT EXISTS o365_refresh_token TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS o365_access_token_expires_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS o365_account_id TEXT;
+CREATE INDEX IF NOT EXISTS users_o365_account_idx ON users(o365_account_id);
