@@ -1,6 +1,4 @@
 import express from "express";
-import { ROLES } from "../auth/roles.js";
-import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 
 const router = express.Router();
@@ -12,10 +10,12 @@ export async function proxyMayaToAgent(
 ) {
   const mayaUrl = process.env.MAYA_URL || process.env.MAYA_SERVICE_URL;
   if (!mayaUrl) {
-    res.status(503).json({ error: "maya_unavailable", message: "Agent service not configured." });
+    res.status(503).json({
+      error: "maya_unavailable",
+      message: "Agent service not configured.",
+    });
     return;
   }
-
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 10000);
@@ -45,68 +45,6 @@ router.post(
   "/message",
   safeHandler(async (req: any, res: any) => {
     await proxyMayaToAgent("/api/maya/message", req.body, res);
-  })
-);
-
-const adminOnly = [requireAuth, requireAuthorization({ roles: [ROLES.ADMIN] })];
-
-router.get(
-  "/overview",
-  ...adminOnly,
-  safeHandler(async (_req, res) => {
-    res.json({
-      data: {
-        implemented: false,
-        totalConversations: 0,
-        escalations: 0,
-        avgResponseSeconds: 0,
-        modelVersion: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      },
-    });
-  })
-);
-
-router.get(
-  "/metrics",
-  ...adminOnly,
-  safeHandler(async (_req, res) => {
-    res.json({
-      data: {
-        implemented: false,
-        messages24h: 0,
-        escalations24h: 0,
-        p50LatencyMs: null,
-        p95LatencyMs: null,
-      },
-    });
-  })
-);
-
-router.post(
-  "/roi-simulate",
-  ...adminOnly,
-  safeHandler(async (req, res) => {
-    const budget = Number((req.body as { budget?: unknown })?.budget) || 0;
-    res.json({
-      data: {
-        implemented: false,
-        budget,
-        projectedDeals: 0,
-        projectedRevenue: 0,
-        note: "ROI simulation not yet wired to live data.",
-      },
-    });
-  })
-);
-
-router.post(
-  "/model-rollback",
-  ...adminOnly,
-  safeHandler(async (_req, res) => {
-    res.status(501).json({
-      error: "not_implemented",
-      message: "Model rollback is not yet implemented.",
-    });
   })
 );
 

@@ -42,6 +42,7 @@ import emailRoutes from "./email.js";
 import websiteRoutes from "./website.js";
 import mayaRoutes from "./maya.js";
 import aiMayaAlias from "./aiMayaAlias.js";
+import mayaAdminStubs from "./mayaAdminStubs.js";
 import aiRoutes from "./ai.v2.js";
 import { createMountTracker } from "./_canonicalMount.js";
 import { siloMiddleware } from "../middleware/silo.js";
@@ -74,6 +75,10 @@ combinedPortalRoutes.use(documentTypesRouter);
 const rootRoutes = Router();
 rootRoutes.use(readinessRoutes);
 rootRoutes.use(signnowRoutes);
+
+const combinedMayaRoutes = Router();
+combinedMayaRoutes.use(mayaRoutes);
+combinedMayaRoutes.use(mayaAdminStubs);
 
 // Register SMS inbound also at /api/sms/inbound for Twilio console config flexibility.
 // Apply silo middleware globally to all /api routes.
@@ -115,7 +120,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/webhooks", router: webhooksRoutes },
   { path: "/sms", router: webhooksRoutes },
   { path: "/website", router: websiteRoutes },
-  { path: "/maya", router: mayaRoutes },
+  { path: "/maya", router: combinedMayaRoutes },
   { path: "/ai/maya", router: aiMayaAlias },
   { path: "/ai", router: aiRoutes },
   { path: "/email", router: emailRoutes },
