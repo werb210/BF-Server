@@ -57,6 +57,7 @@ const authMeUserSchema = z
     first_name: z.string().nullable().optional(),
     last_name: z.string().nullable().optional(),
     email: z.string().nullable().optional(),
+    silos: z.array(z.string()).nullable().optional(),
   })
   .strict();
 

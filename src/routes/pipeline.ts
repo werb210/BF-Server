@@ -13,6 +13,8 @@ router.get(
   requireAuth,
   requireCapability([CAPABILITIES.APPLICATION_READ]),
   safeHandler(async (_req: any, res: any) => {
+    const { getSilo } = await import("../middleware/silo.js");
+    const silo = getSilo(res);
     const result = await runQuery<{
       id: string;
       name: string | null;
@@ -20,8 +22,10 @@ router.get(
       updated_at: Date;
     }>(
       `select id, name, pipeline_state, updated_at
-       from applications
-       order by updated_at desc`
+         from applications
+        where (silo = $1 OR silo IS NULL)
+        order by updated_at desc`,
+      [silo]
     );
     res.status(200).json({
       items: result.rows.map((row) => ({

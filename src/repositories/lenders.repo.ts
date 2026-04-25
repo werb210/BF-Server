@@ -23,6 +23,7 @@ export interface CreateLenderInput {
   region?: string | null;
   postal_code?: string | null;
   phone?: string | null;
+  silo?: string | null;
 }
 
 const LENDERS_REPO = "src/repositories/lenders.repo.ts";
@@ -114,6 +115,7 @@ function buildSelectColumns(existing: Set<string>): string {
     { name: "submission_email", fallback: "null::text" },
     { name: "api_config", fallback: "null::jsonb" },
     { name: "submission_config", fallback: "null::jsonb" },
+    { name: "silo", fallback: "null::text" },
     { name: "created_at", fallback: "now()" },
     { name: "updated_at", fallback: "now()" },
   ];
@@ -235,6 +237,7 @@ export async function createLender(
     region,
     postal_code,
     phone,
+    silo,
   } = input;
   const existingColumns = await fetchLenderColumns();
   const includeActive = existingColumns.has("active");
@@ -263,6 +266,7 @@ export async function createLender(
     { name: "region", value: region ?? null },
     { name: "postal_code", value: postal_code ?? null },
     { name: "phone", value: phone ?? null },
+    { name: "silo", value: silo ?? null },
     { name: "created_at", value: "now()", raw: true },
     { name: "updated_at", value: "now()", raw: true },
     { name: "status", value: statusValue },
@@ -386,6 +390,7 @@ export async function updateLender(
     website?: string | null;
     webpage?: string | null;
     active?: boolean;
+    silo?: string | null;
   }
 ) {
   const existingColumns = await fetchLenderColumns();
@@ -459,6 +464,9 @@ export async function updateLender(
   }
   if (resolvedActive !== undefined && existingColumns.has("active")) {
     updates.push({ name: "active", value: resolvedActive });
+  }
+  if (params.silo !== undefined && existingColumns.has("silo")) {
+    updates.push({ name: "silo", value: params.silo });
   }
 
   if (updates.length === 0) {

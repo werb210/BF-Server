@@ -14,6 +14,7 @@ import { portalRateLimit } from "../middleware/rateLimit.js";
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 import { AppError } from "../middleware/errors.js";
+import { getSilo } from "../middleware/silo.js";
 import { isPipelineState } from "../modules/applications/pipelineState.js";
 import { transitionPipelineState } from "../modules/applications/applications.service.js";
 import { recordAuditEvent } from "../modules/audit/audit.service.js";

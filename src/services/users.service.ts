@@ -30,6 +30,7 @@ const adminUpdateSchema = z.object({
   last_name: z.string().min(1).optional(),
   phone: z.string().optional(),
   silo: z.enum(["BF", "BI", "SLF"]).optional(),
+  silos: z.array(z.enum(["BF", "BI", "SLF"])).optional(),
 });
 
 const createUserSchema = z.object({
@@ -37,6 +38,8 @@ const createUserSchema = z.object({
   phone: z.string().min(1).optional(),
   role: z.string().min(1),
   lenderId: z.string().uuid().optional(),
+  silo: z.enum(["BF", "BI", "SLF"]).optional(),
+  silos: z.array(z.enum(["BF", "BI", "SLF"])).optional(),
 });
 
 type UserRecord = {
@@ -48,6 +51,7 @@ type UserRecord = {
   role: string | null;
   status: string | null;
   silo: string | null;
+  silos?: string[] | null;
   profile_image_url: string | null;
   o365_access_token: string | null;
   created_at: string | null;
@@ -120,6 +124,7 @@ export async function fetchMe(req: Request): Promise<User | null> {
         role,
         status,
         silo,
+        silos,
         profile_image_url,
         o365_access_token,
         created_at,
@@ -235,6 +240,7 @@ export async function listUsers(req: Request, res: Response) {
       role,
       status,
       silo,
+      silos,
       profile_image_url,
       o365_access_token,
       created_at,
@@ -269,6 +275,11 @@ export async function adminUpdateUser(req: Request, res: Response) {
     if (input.role) normalized.role = input.role;
     if (input.status) normalized.status = input.status;
     if (input.silo) normalized.silo = input.silo;
+    if (Array.isArray((input as any).silos)) {
+      normalized.silos = (input as any).silos.length > 0
+        ? (input as any).silos
+        : (input.silo ? [input.silo] : undefined);
+    }
     if (input.phone) normalized.phone = input.phone;
     if (input.first_name) normalized.first_name = input.first_name;
     if (input.last_name) normalized.last_name = input.last_name;
@@ -299,6 +310,7 @@ export async function adminUpdateUser(req: Request, res: Response) {
         role,
         status,
         silo,
+        silos,
         profile_image_url,
         o365_access_token,
         created_at,
@@ -344,6 +356,11 @@ export async function createUser(req: Request, res: Response) {
       throw new AppError("validation_error", "Role is invalid.", 400);
     }
 
+    const requestedSilo = parsed.silo ?? "BF";
+    const requestedSilos = Array.isArray(parsed.silos) && parsed.silos.length > 0
+      ? parsed.silos
+      : [requestedSilo];
+
     const userAgent = req.get("user-agent");
     const createPayload = {
       email: parsed.email ?? null,
@@ -355,6 +372,8 @@ export async function createUser(req: Request, res: Response) {
       ...(userAgent ? { userAgent } : {}),
     };
     const user = await createUserAccount(createPayload);
+
+    await db.query(`UPDATE users SET silo = $1, silos = $2 WHERE id = $3`, [requestedSilo, requestedSilos, (user as any).id]);
 
     res.status(201).json({
       ok: true,

@@ -7,6 +7,7 @@ import { pool, runQuery } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { AppError } from "../middleware/errors.js";
+import { getSilo } from "../middleware/silo.js";
 import {
   listLenderProducts,
   listLenderProductsByLenderId,
@@ -21,12 +22,14 @@ const router = Router();
 router.get(
   "/lender-products",
   safeHandler(async (req: any, res: any) => {
+    const silo = getSilo(res);
     const lenderId =
       typeof req.query.lenderId === "string" ? req.query.lenderId.trim() : "";
     const products = lenderId
       ? await listLenderProductsByLenderId(lenderId, pool)
       : await listLenderProducts(pool);
-    res.status(200).json({ items: products ?? [] });
+    const filtered = (products ?? []).filter((p: any) => !p.silo || p.silo === silo);
+    res.status(200).json({ items: filtered });
   })
 );
 
@@ -36,7 +39,9 @@ router.get(
   safeHandler(async (req: any, res: any) => {
     const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
     if (!id) throw new AppError("validation_error", "Product id is required.", 400);
+    const silo = getSilo(res);
     const product = await fetchLenderProductById(id, pool);
+    if (product && product.silo && product.silo !== silo) throw new AppError("not_found", "Lender product not found.", 404);
     if (!product) throw new AppError("not_found", "Lender product not found.", 404);
     res.status(200).json(product);
   })
@@ -48,6 +53,7 @@ router.post(
   requireAuth,
   safeHandler(async (req: any, res: any) => {
     const body = req.body ?? {};
+    const silo = getSilo(res);
     const lenderId =
       typeof body.lenderId === "string"
         ? body.lenderId
@@ -73,6 +79,9 @@ router.post(
       interestMax: body.interestMax ?? body.interest_max ?? null,
       termMin: body.termMin ?? body.term_min ?? null,
       termMax: body.termMax ?? body.term_max ?? null,
+      amountMin: body.amountMin ?? body.amount_min ?? null,
+      amountMax: body.amountMax ?? body.amount_max ?? null,
+      silo,
     });
     res.status(201).json(product);
   })
@@ -85,11 +94,14 @@ router.put(
   safeHandler(async (req: any, res: any) => {
     const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
     const body = req.body ?? {};
+    const silo = getSilo(res);
     if (!id) throw new AppError("validation_error", "Product id is required.", 400);
 
     const name = typeof body.name === "string" ? body.name : "";
     if (!name) throw new AppError("validation_error", "name is required.", 400);
 
+    const existing = await fetchLenderProductById(id, pool);
+    if (!existing || (existing.silo && existing.silo !== silo)) throw new AppError("not_found", "Lender product not found.", 404);
     const product = await updateLenderProduct({
       id,
       name,
@@ -102,6 +114,8 @@ router.put(
       interestMax: body.interestMax ?? body.interest_max,
       termMin: body.termMin ?? body.term_min,
       termMax: body.termMax ?? body.term_max,
+      amountMin: body.amountMin ?? body.amount_min,
+      amountMax: body.amountMax ?? body.amount_max,
       client: pool,
     });
     if (!product) throw new AppError("not_found", "Lender product not found.", 404);
@@ -116,7 +130,8 @@ router.delete(
   safeHandler(async (req: any, res: any) => {
     const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
     if (!id) throw new AppError("validation_error", "Product id is required.", 400);
-    await runQuery("DELETE FROM lender_products WHERE id = $1", [id]);
+    const silo = getSilo(res);
+    await runQuery("DELETE FROM lender_products WHERE id = $1 AND (silo = $2 OR silo IS NULL)", [id, silo]);
     res.status(204).end();
   })
 );

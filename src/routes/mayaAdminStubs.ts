@@ -1,19 +1,15 @@
 import { Router } from "express";
 import { safeHandler } from "../middleware/safeHandler.js";
-import { requireAuth, requireAuthorization } from "../middleware/auth.js";
-import { ROLES } from "../auth/roles.js";
+import { auth } from "../middleware/auth.js";
 
 const router = Router();
-const adminOnly = [
-  requireAuth,
-  requireAuthorization({ roles: [ROLES.ADMIN] }),
-];
 
 router.get(
   "/overview",
-  ...adminOnly,
+  auth,
   safeHandler(async (_req: any, res: any) => {
     res.json({
+      status: "ok",
       data: {
         implemented: false,
         totalConversations: 0,
@@ -27,9 +23,10 @@ router.get(
 
 router.get(
   "/metrics",
-  ...adminOnly,
+  auth,
   safeHandler(async (_req: any, res: any) => {
     res.json({
+      status: "ok",
       data: {
         implemented: false,
         messages24h: 0,
@@ -43,10 +40,11 @@ router.get(
 
 router.post(
   "/roi-simulate",
-  ...adminOnly,
+  auth,
   safeHandler(async (req: any, res: any) => {
     const budget = Number((req.body as { budget?: unknown })?.budget) || 0;
     res.json({
+      status: "ok",
       data: {
         implemented: false,
         budget,
@@ -60,7 +58,7 @@ router.post(
 
 router.post(
   "/model-rollback",
-  ...adminOnly,
+  auth,
   safeHandler(async (_req: any, res: any) => {
     res.status(501).json({
       error: "not_implemented",

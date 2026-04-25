@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction, type RequestHandler } from "express";
 import jwt from "jsonwebtoken";
+import { pool } from "../db.js";
 
 type AuthorizationOptions = {
   roles?: string[];
@@ -15,7 +16,7 @@ export interface AuthRequest extends Request {
   user?: Request["user"];
 }
 
-export function auth(req: Request, res: Response, next: NextFunction) {
+export async function auth(req: Request, res: Response, next: NextFunction) {
   const token = req.headers.authorization?.split(" ")[1];
 
   if (!token) {
@@ -30,8 +31,23 @@ export function auth(req: Request, res: Response, next: NextFunction) {
     }
 
     const decoded = jwt.verify(token, JWT_SECRET);
-    (req as any).user = decoded;
-    (req as any).user.userId = (decoded as any).id ?? (decoded as any).sub ?? null;
+    const userId = (decoded as any).id ?? (decoded as any).sub ?? null;
+
+    let dbUser: { id: string; email: string | null; role: string | null; silo: string | null; silos: string[] | null } | null = null;
+    if (typeof userId === "string" && userId) {
+      const result = await pool.query<{ id: string; email: string | null; role: string | null; silo: string | null; silos: string[] | null }>(
+        `SELECT id, email, role, silo, silos FROM users WHERE id = $1 LIMIT 1`,
+        [userId]
+      ).catch(() => ({ rows: [] as any[] }));
+      dbUser = result.rows[0] ?? null;
+    }
+
+    (req as any).user = {
+      ...(decoded as any),
+      ...(dbUser ?? {}),
+      userId,
+      silos: dbUser?.silos ?? (Array.isArray((decoded as any).silos) ? (decoded as any).silos : []),
+    };
 
     next();
   } catch {

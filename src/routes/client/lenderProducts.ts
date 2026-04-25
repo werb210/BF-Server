@@ -37,7 +37,7 @@ router.get(
       status:             p.active ? "active" : "inactive",
     }));
 
-    res.status(200).json(payload);
+    res.status(200).json({ status: "ok", data: payload });
   })
 );
 
@@ -47,7 +47,7 @@ router.get(
     const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
     if (!id) throw new AppError("validation_error", "Invalid request", 400);
     const requirements = await resolveLenderProductRequirements({ lenderProductId: id });
-    res.status(200).json(requirements);
+    res.status(200).json({ status: "ok", data: requirements });
   })
 );
 
@@ -60,7 +60,7 @@ router.get(
     const raw = typeof req.query.requestedAmount === "string" ? Number(req.query.requestedAmount) : null;
     const requestedAmount = Number.isFinite(raw as number) ? (raw as number) : null;
     const requirements = await listRequirementsForFilters({ category, country, requestedAmount });
-    res.status(200).json(requirements);
+    res.status(200).json({ status: "ok", data: requirements });
   })
 );
 

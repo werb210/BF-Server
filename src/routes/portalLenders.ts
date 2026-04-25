@@ -11,6 +11,7 @@ import { pool, runQuery } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { AppError } from "../middleware/errors.js";
+import { getSilo } from "../middleware/silo.js";
 import {
   fetchLenderById,
   createLender,
@@ -35,7 +36,9 @@ router.get(
   safeHandler(async (req: any, res: any) => {
     const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
     if (!id) throw new AppError("validation_error", "Lender id is required.", 400);
+    const silo = getSilo(res);
     const lender = await fetchLenderById(id);
+    if (lender && lender.silo && lender.silo !== silo) throw new AppError("not_found", "Lender not found.", 404);
     if (!lender) throw new AppError("not_found", "Lender not found.", 404);
     res.status(200).json(lender);
   })
@@ -47,6 +50,7 @@ router.post(
   requireAuth,
   safeHandler(async (req: any, res: any) => {
     const body = req.body ?? {};
+    const silo = getSilo(res);
     if (!body.name || !body.country)
       throw new AppError("validation_error", "name and country are required.", 400);
 
@@ -69,6 +73,7 @@ router.post(
       region: body.region ?? body.address?.stateProvince ?? null,
       postal_code: body.postalCode ?? body.postal_code ?? body.address?.postalCode ?? null,
       phone: body.phone ?? null,
+      silo,
     });
     res.status(201).json(lender);
   })
@@ -82,6 +87,9 @@ router.patch(
     const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
     if (!id) throw new AppError("validation_error", "Lender id is required.", 400);
     const body = req.body ?? {};
+    const silo = getSilo(res);
+    const existing = await fetchLenderById(id);
+    if (!existing || (existing.silo && existing.silo !== silo)) throw new AppError("not_found", "Lender not found.", 404);
     const lender = await updateLender(pool, {
       id,
       name: body.name,
@@ -98,6 +106,7 @@ router.patch(
       website: body.website,
       webpage: body.webpage,
       active: body.active,
+      silo: body.silo ?? existing.silo ?? silo,
     });
     if (!lender) throw new AppError("not_found", "Lender not found.", 404);
     res.status(200).json(lender);
@@ -154,9 +163,9 @@ router.get(
     const { rows } = await pool.query(
       `SELECT id, lender_id, filename, mime_type, blob_url, uploaded_by, created_at
        FROM lender_documents
-       WHERE lender_id = $1
+       WHERE lender_id = $1 AND (silo = $2 OR silo IS NULL)
        ORDER BY created_at DESC`,
-      [req.params.lenderId]
+      [req.params.lenderId, getSilo(res)]
     );
     res.json({ ok: true, data: rows });
   })
@@ -169,7 +178,8 @@ router.delete(
   safeHandler(async (req: any, res: any) => {
     const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
     if (!id) throw new AppError("validation_error", "Lender id is required.", 400);
-    await runQuery("DELETE FROM lenders WHERE id = $1", [id]);
+    const silo = getSilo(res);
+    await runQuery("DELETE FROM lenders WHERE id = $1 AND (silo = $2 OR silo IS NULL)", [id, silo]);
     res.status(204).end();
   })
 );

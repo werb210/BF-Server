@@ -6,6 +6,7 @@ import { isPipelineState } from './pipelineState.js';
 import { transitionPipelineState } from './applications.service.js';
 import { AppError } from '../../middleware/errors.js';
 import { safeHandler } from '../../middleware/safeHandler.js';
+import { getSilo } from '../../middleware/silo.js';
 
 const router = Router();
 
@@ -74,6 +75,10 @@ router.get('/:id', safeHandler(async (req: any, res: any) => {
 
   const application = result.rows[0];
   if (!application) throw new AppError('not_found', 'Application not found.', 404);
+  const silo = getSilo(res);
+  if (application.silo && silo && application.silo !== silo) {
+    throw new AppError('not_found', 'Application not found.', 404);
+  }
 
   const docs = await pool.query(
     `SELECT d.id, d.application_id, d.document_category, d.status,
@@ -96,6 +101,19 @@ router.patch('/:id', safeHandler(async (req: any, res: any) => {
   const applicationId = typeof req.params.id === 'string' ? req.params.id.trim() : '';
   if (!applicationId) {
     throw new AppError('validation_error', 'Application id is required.', 400);
+  }
+
+  const existing = await pool.query<{ id: string; silo: string | null }>(
+    `SELECT id, silo FROM applications WHERE id = $1 LIMIT 1`,
+    [applicationId]
+  );
+  const found = existing.rows[0];
+  if (!found) {
+    throw new AppError('not_found', 'Application not found.', 404);
+  }
+  const silo = getSilo(res);
+  if (found.silo && silo && found.silo !== silo) {
+    throw new AppError('not_found', 'Application not found.', 404);
   }
 
   const stage = typeof req.body?.stage === 'string' ? req.body.stage.trim() : null;
@@ -142,6 +160,130 @@ router.patch('/:id', safeHandler(async (req: any, res: any) => {
   );
 
   res.status(200).json({ status: 'ok', data: { applicationId } });
+}));
+
+
+// GET /api/applications/:id/details — flat shape for portal drawer
+router.get('/:id/details', safeHandler(async (req: any, res: any) => {
+  const { id } = req.params;
+  const result = await pool.query(
+    `SELECT a.id, a.name, a.product_type, a.pipeline_state, a.status,
+            a.requested_amount, a.metadata, a.processing_stage,
+            a.current_stage, a.silo, a.created_at, a.updated_at
+       FROM applications a WHERE a.id = $1`,
+    [id]
+  );
+  const app = result.rows[0];
+  if (!app) throw new AppError('not_found', 'Application not found.', 404);
+
+  const silo = getSilo(res);
+  if (app.silo && silo && app.silo !== silo) {
+    throw new AppError('not_found', 'Application not found.', 404);
+  }
+
+  const md = (app.metadata && typeof app.metadata === 'object')
+    ? app.metadata as Record<string, any>
+    : {};
+
+  const details = {
+    id: app.id,
+    applicant: app.name,
+    status: app.status,
+    stage: app.pipeline_state,
+    submittedAt: md?.submittedAt ?? app.created_at,
+    overview: {
+      name: app.name,
+      productType: app.product_type,
+      requestedAmount: app.requested_amount,
+      productCategory:
+        md?.application?.productCategory ??
+        md?.product_category ??
+        null,
+    },
+    kyc: md?.borrower ?? md?.kyc_responses ?? md?.kyc ?? null,
+    applicantDetails: md?.borrower ?? md?.applicant ?? null,
+    applicantInfo: md?.borrower ?? md?.applicant ?? null,
+    businessDetails: md?.company ?? md?.business ?? null,
+    business: md?.company ?? md?.business ?? null,
+    owners: Array.isArray(md?.owners)
+      ? md.owners
+      : (md?.applicant?.partner ? [md.applicant.partner] : []),
+    financialProfile: md?.financials ?? null,
+    fundingRequest: {
+      amount: app.requested_amount,
+      productCategory: md?.application?.productCategory ?? null,
+    },
+    productCategory: md?.application?.productCategory ?? null,
+    documents: Array.isArray(md?.documents) ? md.documents : null,
+    rawPayload: md,
+  };
+
+  res.json({ status: 'ok', data: details });
+}));
+
+// GET /api/applications/:id/audit — drawer audit timeline tab
+router.get('/:id/audit', safeHandler(async (req: any, res: any) => {
+  const { id } = req.params;
+  const appRow = await pool.query<{ silo: string | null }>(
+    `SELECT silo FROM applications WHERE id = $1`,
+    [id]
+  );
+  if (!appRow.rows[0]) throw new AppError('not_found', 'Application not found.', 404);
+  const silo = getSilo(res);
+  const appSilo = appRow.rows[0].silo;
+  if (appSilo && silo && appSilo !== silo) {
+    throw new AppError('not_found', 'Application not found.', 404);
+  }
+
+  const result = await pool.query(
+    `SELECT id, event_type AS type, created_at AS "createdAt",
+            actor, payload AS detail
+       FROM application_audit_events
+      WHERE application_id = $1
+      ORDER BY created_at DESC
+      LIMIT 200`,
+    [id]
+  ).catch(() => ({ rows: [] }));
+
+  res.json({ status: 'ok', data: result.rows });
+}));
+
+router.post('/:id/send', safeHandler(async (req: any, res: any) => {
+  const { id } = req.params;
+  const { lenders } = (req.body ?? {}) as { lenders?: string[] };
+  if (!Array.isArray(lenders) || lenders.length === 0) {
+    throw new AppError('validation_error', 'lenders array is required.', 400);
+  }
+
+  const appRow = await pool.query(
+    `SELECT id, silo FROM applications WHERE id = $1`,
+    [id]
+  );
+  if (!appRow.rows[0]) throw new AppError('not_found', 'Application not found.', 404);
+  const silo = getSilo(res);
+  if (appRow.rows[0].silo && silo && appRow.rows[0].silo !== silo) {
+    throw new AppError('not_found', 'Application not found.', 404);
+  }
+
+  const { sendApplicationToLenders } = await import(
+    '../../modules/lender/lender.service.js'
+  ).catch(() => ({ sendApplicationToLenders: null as any }));
+
+  if (typeof sendApplicationToLenders !== 'function') {
+    throw new AppError(
+      'not_implemented',
+      'Lender send service is not available.',
+      501
+    );
+  }
+
+  const result = await sendApplicationToLenders({
+    applicationId: id,
+    lenderIds: lenders,
+    actor: req.user?.userId ?? null,
+  });
+
+  res.json({ status: 'ok', data: result });
 }));
 
 export default router;

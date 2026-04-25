@@ -33,6 +33,7 @@ export interface AuthUser {
   phoneVerified: boolean;
   role: Role | null;
   silo: string | null;
+  silos?: string[] | null;
   lenderId: string | null;
   status: string | null;
   active: boolean;
@@ -71,6 +72,7 @@ export async function findAuthUserByPhone(
               u.phone_verified as "phoneVerified",
               u.role,
               u.silo,
+            u.silos,
               u.lender_id as "lenderId",
               coalesce(u.status, 'active') as status,
               u.active,
@@ -95,6 +97,7 @@ export async function findAuthUserByPhone(
             u.phone_verified as "phoneVerified",
             u.role,
             u.silo,
+            u.silos,
             u.lender_id as "lenderId",
             coalesce(u.status, 'active') as status,
             u.active,
@@ -148,6 +151,7 @@ export async function findAuthUserByEmail(
             u.phone_verified as "phoneVerified",
             u.role,
             u.silo,
+            u.silos,
             u.lender_id as "lenderId",
             coalesce(u.status, 'active') as status,
             u.active,
@@ -178,6 +182,7 @@ export async function findAuthUserById(
             u.phone_verified as "phoneVerified",
             u.role,
             u.silo,
+            u.silos,
             u.lender_id as "lenderId",
             coalesce(u.status, 'active') as status,
             u.active,
@@ -217,6 +222,7 @@ export async function createUser(params: {
               phone_verified as "phoneVerified",
               role,
               silo,
+              silos,
               lender_id as "lenderId",
               status,
               active,
@@ -259,6 +265,7 @@ export async function updateUserPhoneNumber(params: {
               phone_verified as "phoneVerified",
               role,
               silo,
+              silos,
               lender_id as "lenderId",
               active,
               is_active as "isActive",

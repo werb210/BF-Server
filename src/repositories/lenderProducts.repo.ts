@@ -92,6 +92,9 @@ function buildSelectColumns(existing: Set<string>): string {
     { name: "required_documents", fallback: "'[]'::jsonb" },
     { name: "created_at", fallback: "now()" },
     { name: "updated_at", fallback: "now()" },
+    { name: "amount_min", fallback: "null::bigint" },
+    { name: "amount_max", fallback: "null::bigint" },
+    { name: "silo", fallback: "null::text" },
   ];
 
   return columns
@@ -117,6 +120,9 @@ export async function createLenderProduct(params: {
   interestMax?: number | string | null;
   termMin?: number | null;
   termMax?: number | null;
+  amountMin?: number | null;
+  amountMax?: number | null;
+  silo?: string | null;
   client?: Queryable;
 }): Promise<LenderProductRecord> {
   const runner = params.client ?? pool;
@@ -133,6 +139,9 @@ export async function createLenderProduct(params: {
       "interest_max",
       "term_min",
       "term_max",
+      "amount_min",
+      "amount_max",
+      "silo",
       "term_unit",
       "category",
       "type",
@@ -157,7 +166,10 @@ export async function createLenderProduct(params: {
     { name: "interest_max", value: params.interestMax ?? null },
     { name: "term_min", value: params.termMin ?? null },
     { name: "term_max", value: params.termMax ?? null },
+    { name: "amount_min", value: params.amountMin ?? null },
+    { name: "amount_max", value: params.amountMax ?? null },
     { name: "term_unit", value: "MONTHS" },
+    { name: "silo", value: params.silo ?? null },
   ].filter((entry) => existing.has(entry.name));
 
   const columnNames = columns.map((entry) => entry.name);
@@ -191,6 +203,8 @@ export const LIST_LENDER_PRODUCTS_SQL = `select id,
         term_min,
         term_max,
         term_unit,
+        amount_min,
+        amount_max,
         required_documents,
         created_at,
         updated_at
@@ -265,6 +279,9 @@ export async function listLenderProductsByLenderId(
       "interest_max",
       "term_min",
       "term_max",
+      "amount_min",
+      "amount_max",
+      "silo",
       "term_unit",
       "required_documents",
       "created_at",
@@ -303,6 +320,9 @@ export async function fetchLenderProductById(
       "interest_max",
       "term_min",
       "term_max",
+      "amount_min",
+      "amount_max",
+      "silo",
       "term_unit",
       "required_documents",
       "created_at",
@@ -333,6 +353,9 @@ export async function updateLenderProduct(params: {
   interestMax?: number | string | null;
   termMin?: number | null;
   termMax?: number | null;
+  amountMin?: number | null;
+  amountMax?: number | null;
+  silo?: string | null;
   client?: Queryable;
 }): Promise<LenderProductRecord | null> {
   const runner = params.client ?? pool;
@@ -350,6 +373,9 @@ export async function updateLenderProduct(params: {
       "interest_max",
       "term_min",
       "term_max",
+      "amount_min",
+      "amount_max",
+      "silo",
       "term_unit",
       "required_documents",
       "created_at",

@@ -41,6 +41,9 @@ export type LenderProductRecord = {
   term_min: number | null;
   term_max: number | null;
   term_unit: LenderProductTermUnit;
+  amount_min?: number | null;
+  amount_max?: number | null;
+  silo?: string | null;
   active: boolean;
   required_documents: RequiredDocuments;
   created_at: Date;

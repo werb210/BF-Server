@@ -81,6 +81,28 @@ describe("Maya alias routes", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+
+  it("proxies escalate aliases and health", async () => {
+    process.env.MAYA_URL = "https://maya.example";
+    vi.mocked(global.fetch).mockResolvedValue({
+      status: 200,
+      json: async () => ({ ok: true }),
+    } as Response);
+
+    await request(createServer()).post("/api/ai/maya/escalate").send({ id: "1" });
+    await request(createServer()).post("/api/maya/escalate").send({ id: "2" });
+    await request(createServer()).get("/api/maya/health");
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://maya.example/maya/escalate",
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://maya.example/health",
+      expect.objectContaining({ method: "GET" })
+    );
+  });
+
   it("returns 503 agent_proxy_error when upstream fetch rejects", async () => {
     process.env.MAYA_URL = "https://maya.example";
     vi.mocked(global.fetch).mockRejectedValue(new Error("network down"));

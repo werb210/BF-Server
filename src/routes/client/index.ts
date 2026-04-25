@@ -73,7 +73,9 @@ router.get(
         phone: row.phone,
         yearsInBusiness: row.years_in_business,
         annualRevenue: row.annual_revenue,
-        profitable: row.existing_debt,
+        profitable: typeof row.profitable === "boolean" ? row.profitable : null,
+        existing_debt: typeof row.existing_debt === "boolean" ? row.existing_debt : null,
+        companyName: row.company_name ?? null,
         score: row.score ?? null,
       },
     });

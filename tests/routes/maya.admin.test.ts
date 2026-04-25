@@ -14,7 +14,7 @@ describe("Maya admin stubs", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns implemented false for admin overview", async () => {
+  it("GET /overview returns implemented false", async () => {
     const res = await request(createServer())
       .get("/api/maya/overview")
       .set("authorization", bearerToken("Admin"));
@@ -23,15 +23,16 @@ describe("Maya admin stubs", () => {
     expect(res.body.data?.implemented).toBe(false);
   });
 
-  it("forbids staff access to overview", async () => {
+  it("GET /metrics returns implemented false", async () => {
     const res = await request(createServer())
-      .get("/api/maya/overview")
-      .set("authorization", bearerToken("Staff"));
+      .get("/api/maya/metrics")
+      .set("authorization", bearerToken("Admin"));
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect(res.body.data?.implemented).toBe(false);
   });
 
-  it("echoes numeric budget for roi simulation", async () => {
+  it("POST /roi-simulate echoes budget", async () => {
     const res = await request(createServer())
       .post("/api/maya/roi-simulate")
       .set("authorization", bearerToken("Admin"))
@@ -41,7 +42,7 @@ describe("Maya admin stubs", () => {
     expect(res.body.data?.budget).toBe(1000);
   });
 
-  it("returns 501 for model rollback", async () => {
+  it("POST /model-rollback returns 501", async () => {
     const res = await request(createServer())
       .post("/api/maya/model-rollback")
       .set("authorization", bearerToken("Admin"));

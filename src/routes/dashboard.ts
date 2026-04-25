@@ -2,6 +2,7 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
+import { getSilo } from "../middleware/silo.js";
 import { ApplicationStage } from "../modules/applications/pipelineState.js";
 
 const router = Router();
@@ -11,24 +12,28 @@ router.get("/", requireAuth, safeHandler(async (_req: any, res: any) => {
 }));
 
 router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
+  const silo = getSilo(res);
   const [active, won, stageRows] = await Promise.all([
     pool.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM applications
-       WHERE pipeline_state NOT IN ($1, $2)`,
-      [ApplicationStage.ACCEPTED, ApplicationStage.REJECTED]
+       WHERE (silo = $3 OR silo IS NULL)
+         AND pipeline_state NOT IN ($1, $2)`,
+      [ApplicationStage.ACCEPTED, ApplicationStage.REJECTED, silo]
     ),
     pool.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM applications
-       WHERE pipeline_state = $1
+       WHERE (silo = $2 OR silo IS NULL)
+         AND pipeline_state = $1
          AND updated_at >= date_trunc('month', now())`,
-      [ApplicationStage.ACCEPTED]
+      [ApplicationStage.ACCEPTED, silo]
     ),
     pool.query<{ stage: string; count: string }>(
       `SELECT pipeline_state AS stage, COUNT(*)::text AS count
        FROM applications
-       WHERE pipeline_state NOT IN ($1, $2)
+       WHERE (silo = $3 OR silo IS NULL)
+         AND pipeline_state NOT IN ($1, $2)
        GROUP BY pipeline_state`,
-      [ApplicationStage.ACCEPTED, ApplicationStage.REJECTED]
+      [ApplicationStage.ACCEPTED, ApplicationStage.REJECTED, silo]
     ),
   ]);
 

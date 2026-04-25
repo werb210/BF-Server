@@ -898,6 +898,43 @@ export async function submitApplication(params: {
   }
 }
 
+
+export async function sendApplicationToLenders(params: {
+  applicationId: string;
+  lenderIds: string[];
+  actor: string | null;
+}) {
+  const results: Array<{ lenderId: string; ok: boolean; error?: string }> = [];
+  for (const lenderId of params.lenderIds) {
+    try {
+      const productRes = await runQuery<{ id: string }>(
+        `SELECT id FROM lender_products WHERE lender_id = $1 ORDER BY created_at ASC LIMIT 1`,
+        [lenderId]
+      );
+      const lenderProductId = productRes.rows[0]?.id;
+      if (!lenderProductId) {
+        throw new Error('No lender product configured for lender.');
+      }
+
+      await submitApplication({
+        applicationId: params.applicationId,
+        idempotencyKey: null,
+        lenderId,
+        lenderProductId,
+        actorUserId: params.actor ?? 'system',
+      });
+      results.push({ lenderId, ok: true });
+    } catch (err) {
+      results.push({
+        lenderId,
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return { sent: results };
+}
+
 export async function fetchSubmissionStatus(id: string): Promise<{
   id: string;
   status: string;

@@ -89,12 +89,14 @@ export async function authMeHandler(
     let firstName: string | null = null;
     let lastName: string | null = null;
     let email: string | null = null;
+    let silos: string[] = [];
 
     try {
       const userRecord = await findAuthUserById(user.userId);
       firstName = userRecord?.first_name ?? null;
       lastName = userRecord?.last_name ?? null;
       email = userRecord?.email ?? null;
+      silos = Array.isArray(userRecord?.silos) ? userRecord.silos : [];
 
       if (!user.siloFromToken) {
         if (userRecord?.silo?.trim()) {
@@ -131,6 +133,7 @@ export async function authMeHandler(
           first_name: firstName,
           last_name: lastName,
           email,
+          silos,
         },
       },
       userId: user.userId,
@@ -144,6 +147,7 @@ export async function authMeHandler(
         first_name: firstName,
         last_name: lastName,
         email,
+        silos,
       },
     };
 
