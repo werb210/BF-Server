@@ -92,6 +92,15 @@ export async function start(): Promise<void> {
     throw new Error(`Missing required auth routes: ${missing.join(", ")}`);
   }
 
+
+  if (!process.env.MAYA_URL && !process.env.MAYA_SERVICE_URL) {
+    console.warn(
+      "[STARTUP][MAYA] MAYA_URL not set — all /api/maya/* and " +
+      "/api/ai/maya/* routes will return 503. Set MAYA_URL on " +
+      "App Service to the agent service URL."
+    );
+  }
+
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET === "change-me-in-production") {
     throw new Error("JWT_SECRET must be set to a secure value in production");
   }

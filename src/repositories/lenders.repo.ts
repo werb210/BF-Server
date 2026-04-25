@@ -37,32 +37,62 @@ export function normalizeSubmissionMethod(value: string | null | undefined): str
   return null;
 }
 
-function isSubmissionMethodConsistent(params: {
-  submissionMethod: string | null;
-  submissionEmail?: string | null;
-  apiConfig?: Record<string, unknown> | null;
-  submissionConfig?: Record<string, unknown> | null;
-}): boolean {
-  const { submissionMethod, submissionEmail, apiConfig, submissionConfig } = params;
-  if (!submissionMethod) return true;
+export function reconcileSubmissionPayload(input: {
+  method: string | null;
+  email: string | null;
+  apiConfig: Record<string, unknown> | null;
+  submissionConfig: Record<string, unknown> | null;
+}) {
+  const method = normalizeSubmissionMethod(input.method);
+  const hasApiConfig = Boolean(input.apiConfig);
+  const hasSubmissionConfig = Boolean(input.submissionConfig);
 
-  if (submissionMethod === "EMAIL") {
-    return typeof submissionEmail === "string" && submissionEmail.trim().length > 0;
+  if (!method || method === "MANUAL") {
+    return {
+      method,
+      email: null,
+      apiConfig: null,
+      submissionConfig: null,
+    };
   }
 
-  if (submissionMethod === "API") {
-    return Boolean(apiConfig ?? submissionConfig);
+  if (method === "EMAIL") {
+    if (!input.email || input.email.trim().length === 0) {
+      return { method: null, email: null, apiConfig: null, submissionConfig: null };
+    }
+    return {
+      method: "EMAIL",
+      email: input.email,
+      apiConfig: null,
+      submissionConfig: null,
+    };
   }
 
-  if (submissionMethod === "GOOGLE_SHEET" || submissionMethod === "GOOGLE_SHEETS") {
-    return Boolean(submissionConfig);
+  if (method === "API") {
+    if (!hasApiConfig) {
+      return { method: null, email: null, apiConfig: null, submissionConfig: null };
+    }
+    return {
+      method: "API",
+      email: null,
+      apiConfig: input.apiConfig,
+      submissionConfig: null,
+    };
   }
 
-  if (submissionMethod === "MANUAL") {
-    return true;
+  if (method === "GOOGLE_SHEET" || method === "GOOGLE_SHEETS") {
+    if (!hasSubmissionConfig) {
+      return { method: null, email: null, apiConfig: null, submissionConfig: null };
+    }
+    return {
+      method,
+      email: null,
+      apiConfig: null,
+      submissionConfig: input.submissionConfig,
+    };
   }
 
-  return false;
+  return { method: null, email: null, apiConfig: null, submissionConfig: null };
 }
 const LENDERS_TABLE = "lenders";
 
@@ -278,15 +308,12 @@ export async function createLender(
   } = input;
   const existingColumns = await fetchLenderColumns();
   const includeActive = existingColumns.has("active");
-  let normalizedSubmissionMethod = normalizeSubmissionMethod(input.submission_method);
-  if (!isSubmissionMethodConsistent({
-    submissionMethod: normalizedSubmissionMethod,
-    submissionEmail: submission_email ?? null,
+  const reconciledSubmission = reconcileSubmissionPayload({
+    method: normalizeSubmissionMethod(input.submission_method),
+    email: submission_email ?? null,
     apiConfig: api_config ?? null,
     submissionConfig: submission_config ?? null,
-  })) {
-    normalizedSubmissionMethod = null;
-  }
+  });
   const normalizedStatus =
     typeof input.status === "string"
       ? input.status.trim().toUpperCase()
@@ -336,20 +363,20 @@ export async function createLender(
   });
   columns.push({
     name: "submission_method",
-    value: normalizedSubmissionMethod,
+    value: reconciledSubmission.method,
   });
   columns.push({
     name: "submission_email",
-    value: submission_email ?? null,
+    value: reconciledSubmission.email,
   });
   columns.push({
     name: "api_config",
-    value: api_config ?? null,
+    value: reconciledSubmission.apiConfig,
   });
   if (existingColumns.has("submission_config")) {
     columns.push({
       name: "submission_config",
-      value: submission_config ?? null,
+      value: reconciledSubmission.submissionConfig,
     });
   }
   if (includeActive) {
@@ -440,6 +467,14 @@ export async function updateLender(
   }
 ) {
   const existingColumns = await fetchLenderColumns();
+  const shouldReconcileSubmissionFields =
+    params.submission_method !== undefined ||
+    params.submission_email !== undefined ||
+    params.api_config !== undefined ||
+    params.submission_config !== undefined;
+  const existingLender = shouldReconcileSubmissionFields
+    ? await fetchLenderById(params.id)
+    : null;
   const updates: Array<{ name: string; value: unknown }> = [];
   const normalizedStatus =
     typeof params.status === "string"
@@ -476,22 +511,6 @@ export async function updateLender(
     params.submission_method !== undefined
       ? normalizeSubmissionMethod(params.submission_method)
       : undefined;
-  if (
-    normalizedUpdateSubmissionMethod !== undefined &&
-    existingColumns.has("submission_method")
-  ) {
-    const consistent = isSubmissionMethodConsistent({
-      submissionMethod: normalizedUpdateSubmissionMethod,
-      submissionEmail:
-        params.submission_email !== undefined ? params.submission_email : undefined,
-      apiConfig: params.api_config,
-      submissionConfig: params.submission_config,
-    });
-    updates.push({
-      name: "submission_method",
-      value: consistent ? normalizedUpdateSubmissionMethod : null,
-    });
-  }
   if (params.primary_contact_name !== undefined) {
     updates.push({ name: "primary_contact_name", value: params.primary_contact_name });
   }
@@ -501,20 +520,37 @@ export async function updateLender(
   if (params.primary_contact_phone !== undefined) {
     updates.push({ name: "primary_contact_phone", value: params.primary_contact_phone });
   }
-  if (
-    params.submission_email !== undefined &&
-    existingColumns.has("submission_email")
-  ) {
-    updates.push({ name: "submission_email", value: params.submission_email });
-  }
-  if (params.api_config !== undefined && existingColumns.has("api_config")) {
-    updates.push({ name: "api_config", value: params.api_config });
-  }
-  if (
-    params.submission_config !== undefined &&
-    existingColumns.has("submission_config")
-  ) {
-    updates.push({ name: "submission_config", value: params.submission_config });
+  if (shouldReconcileSubmissionFields) {
+    const reconciledSubmission = reconcileSubmissionPayload({
+      method:
+        normalizedUpdateSubmissionMethod
+        ?? normalizeSubmissionMethod(existingLender?.submission_method ?? null),
+      email:
+        params.submission_email !== undefined
+          ? params.submission_email
+          : existingLender?.submission_email ?? null,
+      apiConfig:
+        params.api_config !== undefined
+          ? params.api_config
+          : existingLender?.api_config ?? null,
+      submissionConfig:
+        params.submission_config !== undefined
+          ? params.submission_config
+          : existingLender?.submission_config ?? null,
+    });
+
+    if (existingColumns.has("submission_method")) {
+      updates.push({ name: "submission_method", value: reconciledSubmission.method });
+    }
+    if (existingColumns.has("submission_email")) {
+      updates.push({ name: "submission_email", value: reconciledSubmission.email });
+    }
+    if (existingColumns.has("api_config")) {
+      updates.push({ name: "api_config", value: reconciledSubmission.apiConfig });
+    }
+    if (existingColumns.has("submission_config")) {
+      updates.push({ name: "submission_config", value: reconciledSubmission.submissionConfig });
+    }
   }
   if (params.website !== undefined && existingColumns.has("website")) {
     updates.push({ name: "website", value: params.website });

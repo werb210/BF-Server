@@ -100,7 +100,11 @@ router.patch(
     }
     const application = await findApplicationById(applicationId);
     if (!application) {
-      throw new AppError("not_found", "Application not found.", 404);
+      throw new AppError(
+        "application_token_stale",
+        "Application not found. Please restart your application from the beginning.",
+        410
+      );
     }
     const nextName = parsed.data.business_name ?? application.name;
     const nextRequestedAmount = parsed.data.requested_amount ?? application.requested_amount ?? null;

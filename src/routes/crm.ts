@@ -156,6 +156,8 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
   const sql = `SELECT
       c.id,
       c.name,
+      c.first_name,
+      c.last_name,
       c.email,
       c.phone,
       ${hasCompanyName ? "coalesce(c.company_name, '')" : "''::text"} AS company_name,
@@ -179,6 +181,8 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
 router.post("/contacts", safeHandler(async (req: any, res: any) => {
   const {
     name,
+    first_name,
+    last_name,
     email,
     phone,
     status,
@@ -190,8 +194,12 @@ router.post("/contacts", safeHandler(async (req: any, res: any) => {
     company_id,
   } = req.body ?? {};
 
-  if (!name || typeof name !== "string") {
-    return res.status(400).json({ error: "name is required" });
+  const fname = (first_name ?? "").toString().trim();
+  const lname = (last_name ?? "").toString().trim();
+  const fullName = (name ?? "").toString().trim() || [fname, lname].filter(Boolean).join(" ").trim();
+
+  if (!fullName && !fname) {
+    return res.status(400).json({ error: "first_name or name is required" });
   }
 
   const VALID_SILOS = ["BF", "BI", "SLF"];
@@ -201,11 +209,16 @@ router.post("/contacts", safeHandler(async (req: any, res: any) => {
 
   const { rows } = await pool.query(
     `INSERT INTO contacts
-      (name, email, phone, status, silo, user_id, company_name, job_title, lead_status, tags, owner_id, company_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-     RETURNING id, name, email, phone, status, company_name, job_title, lead_status, tags, owner_id, company_id, created_at, silo`,
+      (name, first_name, last_name, email, phone, status, silo, user_id,
+       company_name, job_title, lead_status, tags, owner_id, company_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+     RETURNING id, name, first_name, last_name, email, phone, status,
+               company_name, job_title, lead_status, tags, owner_id,
+               company_id, created_at, silo`,
     [
-      name,
+      fullName,
+      fname || null,
+      lname || null,
       email ?? null,
       phone ?? null,
       status ?? "active",

@@ -15,7 +15,10 @@ router.get("/", safeHandler((_req: any, res: any) => {
 
 // GET /api/communications/messages — queries the actual DB
 router.get("/messages", safeHandler(async (req: any, res: any) => {
-  const contactId = typeof req.query.contact_id === "string" ? req.query.contact_id : null;
+  const contactId =
+    (typeof req.query.contact_id === "string" && req.query.contact_id) ||
+    (typeof req.query.contactId === "string" && req.query.contactId) ||
+    null;
   const { getSilo } = await import("../middleware/silo.js");
   const silo = getSilo(res);
   if (!contactId) {
