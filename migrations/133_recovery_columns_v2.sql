@@ -4,21 +4,26 @@
 -- submission_method column + its CHECK constraint.
 
 -- ── 1. Finish migration 116 (companies + contact link columns) ──
+-- Create a minimal companies table first, then add each expected column
+-- individually so partially-created production tables are repaired safely.
 CREATE TABLE IF NOT EXISTS companies (
-  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name                TEXT NOT NULL,
-  website             TEXT,
-  city                TEXT,
-  province            TEXT,
-  country             TEXT,
-  industry            TEXT,
-  annual_revenue      NUMERIC,
-  number_of_employees INTEGER,
-  silo                TEXT NOT NULL DEFAULT 'BF',
-  owner_id            UUID REFERENCES users(id) ON DELETE SET NULL,
-  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid()
 );
+
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS name                TEXT NOT NULL DEFAULT '';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS website             TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS city                TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS province            TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS country             TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS industry            TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS annual_revenue      NUMERIC;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS number_of_employees INTEGER;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS silo                TEXT NOT NULL DEFAULT 'BF';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS owner_id            UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+ALTER TABLE companies ALTER COLUMN name DROP DEFAULT;
 
 CREATE INDEX IF NOT EXISTS companies_silo_idx  ON companies(silo);
 CREATE INDEX IF NOT EXISTS companies_owner_idx ON companies(owner_id);
