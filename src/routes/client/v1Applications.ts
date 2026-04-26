@@ -19,6 +19,13 @@ const router = Router();
 
 type TokenApplicationRow = { id: string; silo: string | null; owner_user_id: string | null };
 
+// RFC 4122 v1-v5 UUID. The applications.id column is uuid, so any cast of a
+// non-uuid value (e.g. legacy "local-..." placeholders) throws 22P02 which the
+// safeHandler surfaces as a 500. Validate up front and return the same stale-
+// token 410 the route already throws on "not found" so the client self-heals.
+const APPLICATION_ID_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 async function loadApplicationByToken(token: string): Promise<TokenApplicationRow | null> {
   const direct = await pool.query<TokenApplicationRow>(
     `SELECT id, silo, owner_user_id
@@ -234,6 +241,14 @@ router.patch(
     const applicationId = typeof req.params.id === "string" ? req.params.id.trim() : "";
     if (!applicationId) {
       throw new AppError("validation_error", "Application id is required.", 400);
+    }
+    if (!APPLICATION_ID_UUID_RE.test(applicationId)) {
+      throw new AppError(
+        "application_token_stale",
+        "Application not found. Please restart your application from the beginning.",
+        410,
+        { applicationId }
+      );
     }
     const parsed = patchSchema.safeParse(req.body ?? {});
     if (!parsed.success) {

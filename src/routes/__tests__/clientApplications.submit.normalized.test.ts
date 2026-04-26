@@ -13,19 +13,20 @@ const { state, queryMock } = vi.hoisted(() => ({
   queryMock: vi.fn(),
 }));
 
-vi.mock("../../db.js", async () => {
-  const actual = await vi.importActual<typeof import("../../db.js")>("../../db");
-  return {
-    ...actual,
-    pool: {
-      query: queryMock,
-      connect: vi.fn(async () => ({ query: queryMock, release: vi.fn() })),
-    },
-  };
-});
+vi.mock("../../db.js", async () => ({
+  pool: {
+    query: queryMock,
+    connect: vi.fn(async () => ({ query: queryMock, release: vi.fn() })),
+  },
+  runQuery: queryMock,
+  dbQuery: queryMock,
+  query: queryMock,
+  safeQuery: queryMock,
+}));
 
 describe("POST /api/client/applications/:token/submit normalized", () => {
   beforeEach(() => {
+    vi.resetModules();
     state.company = null;
     state.contacts = [];
     state.applicationContacts = [];
