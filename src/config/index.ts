@@ -123,7 +123,17 @@ export const config = {
   },
   client: {
     url: parsed.CLIENT_URL,
-    submissionOwnerUserId: parsed.CLIENT_SUBMISSION_OWNER_USER_ID ?? null,
+    submissionOwnerUserId: (() => {
+      const fromEnv = parsed.CLIENT_SUBMISSION_OWNER_USER_ID;
+      if (fromEnv && fromEnv.trim().length > 0) return fromEnv;
+      // Canonical client-submission system user, created in migrations 107 & 110.
+      // Used so /api/public/application/start can always insert; setting the env var
+      // explicitly is still recommended.
+      const fallback = "00000000-0000-0000-0000-000000000001";
+      // eslint-disable-next-line no-console
+      console.warn("[config] CLIENT_SUBMISSION_OWNER_USER_ID not set — falling back to canonical system user", fallback);
+      return fallback;
+    })(),
   },
   portal: {
     url: parsed.PORTAL_URL,

@@ -47,7 +47,7 @@ router.post(
       if (!r) return fail(res, "readiness_session_not_found");
 
       const created = await createApplication({
-        ownerUserId: config.client.submissionOwnerUserId,
+        ownerUserId: (config.client.submissionOwnerUserId || "00000000-0000-0000-0000-000000000001"),
         name: r.company_name,
         metadata: {
           readinessSessionId: r.id,
@@ -79,7 +79,7 @@ router.post(
 
     // No readiness session — just mint a blank application the wizard can PATCH.
     const created = await createApplication({
-      ownerUserId: config.client.submissionOwnerUserId,
+      ownerUserId: (config.client.submissionOwnerUserId || "00000000-0000-0000-0000-000000000001"),
       name: "Draft application",
       metadata: {},
       productType: "standard",
