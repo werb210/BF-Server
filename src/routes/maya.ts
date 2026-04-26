@@ -56,6 +56,60 @@ router.post(
   })
 );
 
+/**
+ * POST /api/maya/escalations
+ * Persistence sink called by the Maya agent service (NOT a proxy).
+ * Records that Maya escalated a session to a human. Idempotent over a
+ * 60s window keyed on (session_id, reason) to absorb the agent's
+ * occasional double-fire without creating duplicate rows.
+ */
+router.post(
+  "/escalations",
+  safeHandler(async (req: any, res: any) => {
+    const { randomUUID } = await import("node:crypto");
+    const body = req.body ?? {};
+    const reason = typeof body.reason === "string" && body.reason.trim()
+      ? body.reason.trim().slice(0, 200)
+      : "user_requested_human";
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId.slice(0, 200) : null;
+    const applicationId = typeof body.applicationId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.applicationId)
+      ? body.applicationId
+      : null;
+    const surface = typeof body.surface === "string" ? body.surface.slice(0, 50) : null;
+    const silo = typeof body.silo === "string" ? body.silo.slice(0, 10) : null;
+    const payload = body && typeof body === "object" ? body : {};
+
+    const { pool } = await import("../db.js");
+
+    // Dedupe: if the same (session_id, reason) was logged in the last 60s, return that row.
+    if (sessionId) {
+      const dupe = await pool.query<{ id: string }>(
+        `SELECT id FROM maya_escalations
+         WHERE session_id = $1 AND reason = $2
+           AND created_at > now() - interval '60 seconds'
+         ORDER BY created_at DESC LIMIT 1`,
+        [sessionId, reason]
+      );
+      if (dupe.rows[0]?.id) {
+        return res.status(200).json({
+          status: "ok",
+          data: { id: dupe.rows[0].id, deduped: true },
+        });
+      }
+    }
+
+    const id = randomUUID();
+    await pool.query(
+      `INSERT INTO maya_escalations
+         (id, session_id, application_id, reason, surface, silo, payload)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+      [id, sessionId, applicationId, reason, surface, silo, JSON.stringify(payload)]
+    );
+
+    res.status(201).json({ status: "ok", data: { id, deduped: false } });
+  })
+);
+
 router.get(
   "/health",
   safeHandler(async (_req: any, res: any) => {
