@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { pool, runQuery } from "../../db.js";
-import { ApplicationStage } from "./pipelineState.js";
+import { ApplicationStage, statusFromPipeline } from "./pipelineState.js";
 import { type PoolClient } from "pg";
 import { logError } from "../../observability/logger.js";
 import { AppError } from "../../middleware/errors.js";
@@ -136,8 +136,8 @@ export async function createApplication(params: {
   try {
     res = await runner.query<ApplicationRecord>(
       `insert into applications
-       (id, owner_user_id, name, metadata, product_type, product_category, pipeline_state, current_stage, lender_id, lender_product_id, requested_amount, source, startup_flag, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, now(), now())
+       (id, owner_user_id, name, metadata, product_type, product_category, pipeline_state, current_stage, status, lender_id, lender_product_id, requested_amount, source, startup_flag, created_at, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, now(), now())
        returning id, owner_user_id, name, metadata, product_type, product_category, pipeline_state, current_stage, processing_stage, lender_id, lender_product_id, requested_amount, first_opened_at, ocr_completed_at, banking_completed_at, credit_summary_completed_at, startup_flag, created_at, updated_at`,
       [
         randomUUID(),
@@ -147,6 +147,7 @@ export async function createApplication(params: {
         params.productType,
         productCategory,
         pipelineState,
+        statusFromPipeline(pipelineState),
         params.lenderId ?? null,
         params.lenderProductId ?? null,
         params.requestedAmount ?? null,

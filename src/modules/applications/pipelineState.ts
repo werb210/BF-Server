@@ -67,3 +67,27 @@ export function canTransition(
 ): boolean {
   return (LEGAL_TRANSITIONS[current] ?? []).includes(next);
 }
+
+/**
+ * Map pipeline_state display value (title-case, e.g. "Received") to the
+ * applications.status column's allowed uppercase key ("RECEIVED").
+ *
+ * The applications_status_check constraint (migration 083) only allows:
+ *   RECEIVED, DOCUMENTS_REQUIRED, IN_REVIEW, STARTUP, OFF_TO_LENDER,
+ *   SUBMITTED_TO_LENDER, ACCEPTED, DECLINED
+ * so we never write the title-case form to that column.
+ */
+export const STATUS_FROM_PIPELINE: Record<string, string> = {
+  [ApplicationStage.RECEIVED]:                  "RECEIVED",
+  [ApplicationStage.IN_REVIEW]:                 "IN_REVIEW",
+  [ApplicationStage.DOCUMENTS_REQUIRED]:        "DOCUMENTS_REQUIRED",
+  [ApplicationStage.ADDITIONAL_STEPS_REQUIRED]: "DOCUMENTS_REQUIRED",
+  [ApplicationStage.OFF_TO_LENDER]:             "OFF_TO_LENDER",
+  [ApplicationStage.OFFER]:                     "OFF_TO_LENDER",
+  [ApplicationStage.ACCEPTED]:                  "ACCEPTED",
+  [ApplicationStage.REJECTED]:                  "DECLINED",
+};
+
+export function statusFromPipeline(pipeline: ApplicationStage | string): string {
+  return STATUS_FROM_PIPELINE[pipeline as string] ?? "RECEIVED";
+}

@@ -5,7 +5,7 @@ import { pool, runQuery } from "../../db.js";
 import { config } from "../../config/index.js";
 import { AppError } from "../../middleware/errors.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
-import { ApplicationStage } from "../../modules/applications/pipelineState.js";
+import { ApplicationStage, statusFromPipeline } from "../../modules/applications/pipelineState.js";
 import { findApplicationById } from "../../modules/applications/applications.repo.js";
 import { logAnalyticsEvent } from "../../services/analyticsService.js";
 import { eventBus } from "../../events/eventBus.js";
@@ -90,7 +90,7 @@ router.post(
         },
         "standard",
         ApplicationStage.RECEIVED,
-        ApplicationStage.RECEIVED,
+        statusFromPipeline(ApplicationStage.RECEIVED),
         lender_id,
         product_id,
         requested_amount,
