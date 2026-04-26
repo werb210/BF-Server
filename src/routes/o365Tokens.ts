@@ -1,6 +1,7 @@
 import express from "express";
 import { pool } from "../db.js";
 import { safeHandler } from "../middleware/safeHandler.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -55,9 +56,9 @@ router.post("/o365-tokens", safeHandler(async (req: any, res: any) => {
 }));
 
 // GET /api/users/me/o365-status
-router.get("/o365-status", safeHandler(async (req: any, res: any) => {
-  const userId = req.user?.id ?? req.user?.userId;
-  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+router.get("/o365-status", requireAuth, safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId ?? req.user?.sub;
+  if (!userId) return res.status(200).json({ connected: false, reason: "no_tokens" });
   const { rows } = await pool.query(
     `SELECT email, o365_account_id, o365_access_token, o365_refresh_token, o365_access_token_expires_at,
        (o365_access_token IS NOT NULL) AS has_access,

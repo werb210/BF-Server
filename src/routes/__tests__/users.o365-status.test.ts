@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }));
 
 vi.mock("../../db.js", async () => {
-  const actual = await vi.importActual<typeof import("../../db.js")>("../../db");
+  const actual = await vi.importActual<typeof import("../../db.js")>("../../db.js");
   return { ...actual, pool: { query: queryMock } };
 });
 
@@ -21,7 +21,12 @@ describe("GET /api/users/me/o365-status", () => {
   });
 
   function token() {
-    return jwt.sign({ id: "00000000-0000-0000-0000-000000000001", role: "admin" }, "test-secret");
+    return jwt.sign({
+      id: "00000000-0000-0000-0000-000000000001",
+      userId: "00000000-0000-0000-0000-000000000001",
+      sub: "00000000-0000-0000-0000-000000000001",
+      role: "admin",
+    }, "test-secret");
   }
 
   async function app() {
@@ -41,6 +46,7 @@ describe("GET /api/users/me/o365-status", () => {
     const res = await request(await app()).get("/api/users/me/o365-status").set("Authorization", `Bearer ${token()}`);
     expect(res.status).toBe(200);
     expect(res.body.connected).toBe(false);
+    expect(res.body.reason).toBe("no_tokens");
   });
 
   it("returns connected true after silent refresh", async () => {
@@ -61,6 +67,11 @@ describe("GET /api/users/me/o365-status", () => {
 
   it("returns 401 for bad JWT", async () => {
     const res = await request(await app()).get("/api/users/me/o365-status").set("Authorization", "Bearer invalid");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when JWT is missing", async () => {
+    const res = await request(await app()).get("/api/users/me/o365-status");
     expect(res.status).toBe(401);
   });
 });
