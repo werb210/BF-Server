@@ -76,10 +76,7 @@ router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
   let phone: string | null = null;
   let contactId: string | null = null;
 
-  // Synthetic "new-<digits>" thread keys produced by the portal's
-  // SMS list when contact_id is null — strip the prefix and treat
-  // the remainder as a phone number.
-  if (rawContact.startsWith("new-")) {
+  if (/^new-\d+$/.test(rawContact)) {
     phone = rawContact.slice(4);
   } else if (/^[0-9a-f-]{36}$/i.test(rawContact)) {
     contactId = rawContact;
@@ -90,7 +87,7 @@ router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
   }
 
   if (!contactId && !phone) {
-    return res.status(400).json({ error: "contactId or phone required" });
+    return res.status(200).json({ messages: [] });
   }
 
   const params: unknown[] = [silo];
@@ -108,16 +105,21 @@ router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
     )`;
   }
 
-  const { rows } = await pool.query(
-    `SELECT id, contact_id, from_number, to_number, direction, body,
-            created_at, read_at
-     FROM communications_messages
-     WHERE ${where}
-     ORDER BY created_at ASC
-     LIMIT 500`,
-    params,
-  );
-  res.json({ data: rows });
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, contact_id, from_number, to_number, direction, body,
+              created_at, read_at
+       FROM communications_messages
+       WHERE ${where}
+       ORDER BY created_at ASC
+       LIMIT 500`,
+      params,
+    );
+    return res.status(200).json({ messages: rows });
+  } catch (err) {
+    console.error({ event: "sms_thread_error", err: String(err) });
+    return res.status(200).json({ messages: [] });
+  }
 }));
 
 // POST /api/communications/sms — send outbound + persist to DB

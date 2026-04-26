@@ -7,7 +7,9 @@
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "postinstall": "npm run build",
-    "test": "vitest"
+    "test": "vitest",
+    "typecheck": "tsc --noEmit",
+    "test:ci": "vitest run"
   },
   "engines": {
     "node": ">=20.10.0 <21.0.0"

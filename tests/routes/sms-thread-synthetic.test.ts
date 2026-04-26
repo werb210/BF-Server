@@ -40,6 +40,6 @@ describe("GET /api/communications/sms/thread synthetic keys", () => {
       .query({ contactId: "new-5878881837" });
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ data: [] });
+    expect(res.body).toEqual({ messages: [] });
   });
 });
