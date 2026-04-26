@@ -181,8 +181,22 @@ router.delete(
     const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
     if (!id) throw new AppError("validation_error", "Lender id is required.", 400);
     const silo = getSilo(res);
-    await runQuery("DELETE FROM lenders WHERE id = $1 AND (silo = $2 OR silo IS NULL)", [id, silo]);
-    res.status(204).end();
+    const userId = req.user?.id ?? req.user?.userId ?? null;
+    try {
+      await runQuery("DELETE FROM lenders WHERE id = $1 AND (silo = $2 OR silo IS NULL)", [id, silo]);
+      console.info({ event: "lender_deleted", lenderId: id, userId });
+      res.status(204).end();
+    } catch (err: any) {
+      console.error({
+        event: "lender_delete_failed",
+        lenderId: id,
+        userId,
+        code: err?.code,
+        message: err?.message,
+        detail: err?.detail,
+      });
+      res.status(500).json({ error: { message: "delete_failed", code: err?.code ?? "unknown" } });
+    }
   })
 );
 

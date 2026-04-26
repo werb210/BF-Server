@@ -30,44 +30,21 @@ function buildWebhookUrl(req: any, suffix = ""): string {
 }
 
 // ── Inbound TwiML — serve XML to ring all available staff simultaneously ─────
-router.post("/twilio/voice/twiml", safeHandler(async (_req: any, res: any) => {
+router.post("/twilio/voice/twiml", safeHandler(async (req: any, res: any) => {
   res.setHeader("Content-Type", "text/xml");
+  const params = req.body ?? {};
+  const to = String(params.To ?? params.to ?? "").trim();
+  const outboundFlag = params.outbound === "1" || params.outbound === 1 || params.outbound === true;
+  const looksLikePhone = /^\+?\d{10,15}$/.test(to);
+  const callerId = process.env.TWILIO_CALLER_ID || process.env.TWILIO_NUMBER || "";
+
   const vr = new VoiceResponse();
-
-  try {
-    // Online staff = heartbeat within last 5 min and status = available
-    const staffRes = await pool.query<{ twilio_identity: string }>(
-      `SELECT twilio_identity FROM staff_presence
-       WHERE status = 'available'
-         AND last_heartbeat > now() - interval '5 minutes'
-         AND twilio_identity IS NOT NULL
-       ORDER BY last_heartbeat DESC
-       LIMIT 10`
-    );
-    const identities = staffRes.rows.map((r) => r.twilio_identity);
-
-    if (identities.length === 0) {
-      // No staff online — go straight to voicemail
-      vr.say({ voice: "Polly.Joanna" }, "No agents are available. Please leave a message after the tone.");
-      vr.record({
-        action: `${BASE_URL}/api/webhooks/twilio/voicemail`,
-        method: "POST",
-        maxLength: 120,
-        transcribe: false,
-        playBeep: true,
-      });
-    } else {
-      const dial = vr.dial({
-        timeout: 30,
-        action: `${BASE_URL}/api/webhooks/twilio/voice/no-answer`,
-        method: "POST",
-      });
-      for (const identity of identities) {
-        dial.client(identity);
-      }
-    }
-  } catch {
-    vr.say({ voice: "Polly.Joanna" }, "We are experiencing technical difficulties. Please try again.");
+  if ((looksLikePhone || outboundFlag) && to) {
+    const dial = vr.dial({ callerId, answerOnBridge: true, timeout: 25 });
+    dial.number(to);
+  } else {
+    vr.say({ voice: "Polly.Joanna" }, "Sorry, no agents are available right now. Please leave a message after the tone.");
+    vr.record({ maxLength: 120, playBeep: true, action: "/api/webhooks/twilio/voicemail" });
   }
 
   res.send(vr.toString());

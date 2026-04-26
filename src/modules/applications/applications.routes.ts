@@ -172,6 +172,30 @@ router.delete('/:id', requireAdmin, safeHandler(async (req: any, res: any) => {
   res.json({ ok: true });
 }));
 
+router.get("/:id/contacts", safeHandler(async (req: any, res: any) => {
+  const applicationId = String(req.params.id ?? "").trim();
+  if (!/^[0-9a-f-]{36}$/i.test(applicationId)) {
+    return res.status(400).json({ error: "invalid_id" });
+  }
+  const { rows } = await pool.query(
+    `SELECT ac.contact_id,
+            ac.role,
+            json_build_object(
+              'first_name', c.first_name,
+              'last_name', c.last_name,
+              'email', c.email,
+              'phone', c.phone,
+              'is_primary_applicant', c.is_primary_applicant
+            ) AS contact
+     FROM application_contacts ac
+     JOIN contacts c ON c.id = ac.contact_id
+     WHERE ac.application_id = $1
+     ORDER BY ac.created_at ASC`,
+    [applicationId]
+  );
+  res.json({ data: rows });
+}));
+
 
 // GET /api/applications/:id/details — flat shape for portal drawer
 router.get('/:id/details', safeHandler(async (req: any, res: any) => {

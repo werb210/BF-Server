@@ -1,4 +1,5 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { requireAuth, requireCapability } from "../middleware/auth.js";
 import { CAPABILITIES } from "../auth/capabilities.js";
 import { safeHandler } from "../middleware/safeHandler.js";
@@ -7,6 +8,8 @@ import { respondOk } from "../utils/respondOk.js";
 import { handleListCrmTimeline } from "../modules/crm/timeline.controller.js";
 import { SupportController } from "../modules/support/support.controller.js";
 import { pool } from "../db.js";
+import { getSilo } from "../middleware/silo.js";
+import { encryptSsnForInsert } from "../security/ssnCrypto.js";
 import notesRoutes from "./crm/notes.js";
 import tasksRoutes from "./crm/tasks.js";
 import emailsRoutes from "./crm/emails.js";
@@ -194,51 +197,78 @@ router.post("/contacts", safeHandler(async (req: any, res: any) => {
     last_name,
     email,
     phone,
-    status,
-    company_name,
-    job_title,
-    lead_status,
-    tags,
-    owner_id,
+    dob,
+    ssn,
+    address_street,
+    address_city,
+    address_state,
+    address_zip,
+    address_country,
+    ownership_percent,
+    role,
+    is_primary_applicant,
     company_id,
   } = req.body ?? {};
-
-  const fname = (first_name ?? "").toString().trim();
-  const lname = (last_name ?? "").toString().trim();
-  const fullName = (name ?? "").toString().trim() || [fname, lname].filter(Boolean).join(" ").trim();
-
-  if (!fullName && !fname) {
-    return res.status(400).json({ error: "first_name or name is required" });
+  let fname = String(first_name ?? "").trim();
+  let lname = String(last_name ?? "").trim();
+  const fullNameRaw = String(name ?? "").trim();
+  if ((!fname || !lname) && fullNameRaw) {
+    const parts = fullNameRaw.split(/\s+/).filter(Boolean);
+    if (!fname) fname = parts[0] ?? "";
+    if (!lname) lname = parts.slice(1).join(" ") || "Unknown";
+  }
+  if (!fname) return res.status(400).json({ error: { field: "first_name", message: "first_name is required" } });
+  if (!lname) return res.status(400).json({ error: { field: "last_name", message: "last_name is required" } });
+  if (dob && !/^\d{4}-\d{2}-\d{2}$/.test(String(dob))) {
+    return res.status(400).json({ error: { field: "dob", message: "dob must be yyyy-mm-dd" } });
+  }
+  const parsedOwnership = ownership_percent == null ? null : Number(ownership_percent);
+  if (parsedOwnership != null && (Number.isNaN(parsedOwnership) || parsedOwnership < 0 || parsedOwnership > 100)) {
+    return res.status(400).json({ error: { field: "ownership_percent", message: "ownership_percent must be between 0 and 100" } });
+  }
+  const validRoles = new Set(["applicant", "partner", "guarantor", "other", "unknown"]);
+  const normalizedRole = String(role ?? "unknown").toLowerCase();
+  if (!validRoles.has(normalizedRole)) {
+    return res.status(400).json({ error: { field: "role", message: "invalid role" } });
+  }
+  if (company_id != null && !/^[0-9a-f-]{36}$/i.test(String(company_id))) {
+    return res.status(400).json({ error: { field: "company_id", message: "company_id must be a UUID" } });
   }
 
-  const VALID_SILOS = ["BF", "BI", "SLF"];
-  const contactSilo = VALID_SILOS.includes((req.body?.silo ?? "").toUpperCase())
-    ? req.body.silo.toUpperCase()
-    : "BF";
-
+  const id = crypto.randomUUID();
+  const silo = getSilo(res);
+  const ownerId = req.user?.id ?? req.user?.userId ?? null;
+  const encryptedSsn = await encryptSsnForInsert(pool, ssn ? String(ssn) : null);
   const { rows } = await pool.query(
     `INSERT INTO contacts
-      (name, first_name, last_name, email, phone, status, silo, user_id,
-       company_name, job_title, lead_status, tags, owner_id, company_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-     RETURNING id, name, first_name, last_name, email, phone, status,
-               company_name, job_title, lead_status, tags, owner_id,
-               company_id, created_at, silo`,
+      (id, name, first_name, last_name, email, phone, dob, ssn_encrypted, address_street, address_city, address_state,
+       address_zip, address_country, ownership_percent, role, is_primary_applicant, company_id, silo, owner_id, user_id, status)
+     VALUES
+      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+     RETURNING id, name, first_name, last_name, email, phone, dob, address_street, address_city, address_state,
+       address_zip, address_country, ownership_percent, role, is_primary_applicant, company_id, silo, owner_id, user_id, status, created_at`,
     [
-      fullName,
-      fname || null,
-      lname || null,
+      id,
+      `${fname} ${lname}`.trim(),
+      fname,
+      lname,
       email ?? null,
       phone ?? null,
-      status ?? "active",
-      contactSilo,
-      req.user?.userId ?? req.user?.id ?? null,
-      company_name ?? null,
-      job_title ?? null,
-      lead_status ?? "New",
-      Array.isArray(tags) ? tags : [],
-      owner_id ?? null,
+      dob ?? null,
+      encryptedSsn,
+      address_street ?? null,
+      address_city ?? null,
+      address_state ?? null,
+      address_zip ?? null,
+      address_country ?? null,
+      parsedOwnership,
+      normalizedRole,
+      is_primary_applicant === true,
       company_id ?? null,
+      silo,
+      ownerId,
+      ownerId,
+      "active",
     ]
   );
 

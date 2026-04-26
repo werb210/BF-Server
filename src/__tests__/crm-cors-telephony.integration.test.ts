@@ -66,7 +66,7 @@ describe("CRM + CORS + telephony regressions", () => {
     const res = await request(app)
       .post("/api/crm/contacts")
       .set("Authorization", `Bearer ${token}`)
-      .send({ name: "Test Contact", email: "test@example.com", phone: "+15555550123" });
+      .send({ first_name: "Test", last_name: "Contact", email: "test@example.com", phone: "+15555550123" });
 
     expect(res.status).toBe(201);
     expect(res.body?.data?.id).toMatch(
