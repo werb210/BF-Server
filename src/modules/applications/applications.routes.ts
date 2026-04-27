@@ -227,8 +227,14 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
     throw new AppError('not_found', 'Application not found.', 404);
   }
 
+  // BF_DETAILS_FORMDATA_FALLBACK_v33 — Block 33: also read from
+  // metadata.formData (the wizard's full app blob persisted by /submit)
+  // so any field not promoted to a top-level metadata key still surfaces.
   const md = (app.metadata && typeof app.metadata === 'object')
     ? app.metadata as Record<string, any>
+    : {};
+  const fd = (md.formData && typeof md.formData === 'object')
+    ? md.formData as Record<string, any>
     : {};
 
   const details = {
@@ -244,22 +250,27 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
       productCategory:
         md?.application?.productCategory ??
         md?.product_category ??
+        fd?.productCategory ??
+        fd?.product_category ??
         null,
     },
-    kyc: md?.borrower ?? md?.kyc_responses ?? md?.kyc ?? null,
-    applicantDetails: md?.borrower ?? md?.applicant ?? null,
-    applicantInfo: md?.borrower ?? md?.applicant ?? null,
-    businessDetails: md?.company ?? md?.business ?? null,
-    business: md?.company ?? md?.business ?? null,
+    kyc: md?.borrower ?? md?.kyc_responses ?? md?.kyc ?? fd?.kyc ?? fd?.financialProfile ?? null,
+    applicantDetails: md?.borrower ?? md?.applicant ?? fd?.applicant ?? null,
+    applicantInfo: md?.borrower ?? md?.applicant ?? fd?.applicant ?? null,
+    businessDetails: md?.company ?? md?.business ?? fd?.business ?? null,
+    business: md?.company ?? md?.business ?? fd?.business ?? null,
     owners: Array.isArray(md?.owners)
       ? md.owners
-      : (md?.applicant?.partner ? [md.applicant.partner] : []),
-    financialProfile: md?.financials ?? null,
+      : (md?.partner ? [md.partner]
+         : md?.applicant?.partner ? [md.applicant.partner]
+         : fd?.applicant?.partner ? [fd.applicant.partner]
+         : []),
+    financialProfile: md?.financials ?? md?.kyc ?? fd?.kyc ?? fd?.financialProfile ?? null,
     fundingRequest: {
       amount: app.requested_amount,
-      productCategory: md?.application?.productCategory ?? null,
+      productCategory: md?.application?.productCategory ?? md?.product_category ?? fd?.productCategory ?? null,
     },
-    productCategory: md?.application?.productCategory ?? null,
+    productCategory: md?.application?.productCategory ?? md?.product_category ?? fd?.productCategory ?? null,
     documents: Array.isArray(md?.documents) ? md.documents : null,
     rawPayload: md,
   };

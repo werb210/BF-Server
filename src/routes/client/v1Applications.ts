@@ -15,6 +15,69 @@ import { linkContactToApplication } from "../../services/applicationContacts.js"
 import { logError, logInfo } from "../../observability/logger.js";
 
 const router = Router();
+
+// BF_WIZARD_TO_PORTAL_v33 — shared extraction helpers used by both PATCH and
+// /submit so the portal drawer reads the same shape regardless of which path
+// the wizard took.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function bfParseAmount(v: unknown): number | null {
+  if (v == null) return null;
+  if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+  const cleaned = String(v).replace(/[^\d.]/g, "");
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+function bfIsUuid(v: unknown): v is string {
+  return typeof v === "string" && UUID_RE.test(v);
+}
+function bfBuildWizardMetadata(input: Record<string, any> | null | undefined): Record<string, unknown> {
+  if (!input || typeof input !== "object") return {};
+  const out: Record<string, unknown> = {};
+  // Mirror keys into the names the portal /:id/details endpoint reads.
+  if (input.kyc !== undefined)              { out.kyc = input.kyc; out.financials = input.kyc; }
+  if (input.financialProfile !== undefined) { out.kyc = out.kyc ?? input.financialProfile; out.financials = out.financials ?? input.financialProfile; }
+  if (input.business !== undefined)         { out.business = input.business; out.company = input.business; }
+  if (input.applicant !== undefined)        { out.applicant = input.applicant; out.borrower = input.applicant; }
+  if (input.partner !== undefined)          { out.partner = input.partner; }
+  if (input.applicant && typeof input.applicant === "object" && (input.applicant as any).partner) {
+    out.partner = out.partner ?? (input.applicant as any).partner;
+  }
+  if (input.product_category !== undefined)     out.product_category = input.product_category;
+  if (input.productCategory !== undefined)      out.product_category = out.product_category ?? input.productCategory;
+  if (input.selected_product !== undefined)     out.selected_product = input.selected_product;
+  if (input.selectedProduct !== undefined)      out.selected_product = out.selected_product ?? input.selectedProduct;
+  if (input.selected_product_type !== undefined) out.selected_product_type = input.selected_product_type;
+  if (input.selectedProductType !== undefined)   out.selected_product_type = out.selected_product_type ?? input.selectedProductType;
+  if (input.readiness_lead_id !== undefined)    out.readiness_lead_id = input.readiness_lead_id;
+  if (input.session_token !== undefined)        out.session_token = input.session_token;
+  if (input.source !== undefined)               out.source = input.source;
+  return out;
+}
+function bfExtractAppColumns(input: Record<string, any> | null | undefined): {
+  requestedAmount: number | null;
+  lenderId: string | null;
+  lenderProductId: string | null;
+} {
+  if (!input || typeof input !== "object") return { requestedAmount: null, lenderId: null, lenderProductId: null };
+  const sp = (input.selected_product ?? input.selectedProduct ?? null) as Record<string, any> | null;
+  const requestedAmount =
+    bfParseAmount(input.requested_amount) ??
+    bfParseAmount(input.requestedAmount) ??
+    bfParseAmount(input.kyc?.fundingAmount) ??
+    bfParseAmount(input.financialProfile?.fundingAmount) ??
+    null;
+  const lenderId =
+    (bfIsUuid(input.lender_id) ? input.lender_id : null) ??
+    (bfIsUuid(sp?.lender_id) ? sp!.lender_id : null) ??
+    null;
+  const lenderProductId =
+    (bfIsUuid(input.lender_product_id) ? input.lender_product_id : null) ??
+    (bfIsUuid(input.selectedProductId) ? input.selectedProductId : null) ??
+    (bfIsUuid(sp?.id) ? sp!.id : null) ??
+    null;
+  return { requestedAmount, lenderId, lenderProductId };
+}
 // V1 contract: POST /api/client/applications
 
 type TokenApplicationRow = { id: string; silo: string | null; owner_user_id: string | null };
@@ -58,11 +121,33 @@ const createSchema = z.object({
   kyc_responses: z.record(z.string(), z.unknown()).optional(),
 });
 
+// BF_WIZARD_TO_PORTAL_v33 — Block 33: PATCH must accept the wizard's actual
+// payload shape (financialProfile/business/applicant/partner/kyc/...).
+// Every named field is merged into applications.metadata so the portal
+// drawer's /:id/details reader (which looks at metadata.kyc, metadata.business,
+// metadata.applicant, metadata.financials, metadata.product_category) sees the
+// real data. Without this expansion Zod silently strips everything → the
+// wizard "saves" but the server keeps NULL, and the portal drawer is empty.
+const wizardPatchObject = z.record(z.string(), z.unknown());
 const patchSchema = z.object({
   business_name: z.string().min(1).optional(),
   requested_amount: z.number().positive().optional(),
+  lender_id: z.string().uuid().optional(),
+  lender_product_id: z.string().uuid().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   current_step: z.number().int().positive().optional(),
+  // Wizard fields — passthrough into metadata.
+  financialProfile: wizardPatchObject.optional(),
+  business: wizardPatchObject.optional(),
+  applicant: wizardPatchObject.optional(),
+  partner: wizardPatchObject.optional(),
+  kyc: wizardPatchObject.optional(),
+  product_category: z.string().optional(),
+  selected_product: wizardPatchObject.optional(),
+  selected_product_type: z.string().optional(),
+  readiness_lead_id: z.string().optional(),
+  session_token: z.string().optional(),
+  source: z.string().optional(),
 });
 
 router.post(
@@ -140,10 +225,36 @@ router.post(
     const silo = application.silo || "BF";
     const ownerId = application.owner_user_id || null;
 
-    if (legacyApp) {
+    if (legacyApp && typeof legacyApp === "object") {
+      // BF_WIZARD_TO_PORTAL_v33 — Block 33: write to metadata (jsonb column
+      // that exists), NOT form_data (which does not exist in the schema).
+      // Mirror wizard fields into the metadata keys the portal /:id/details
+      // endpoint reads, and stash the full app blob under metadata.formData
+      // for completeness.
+      const wizardMeta = bfBuildWizardMetadata(legacyApp as any);
+      const wizardCols = bfExtractAppColumns(legacyApp as any);
+      const submittedAt = new Date().toISOString();
+      const metaPatch = {
+        ...wizardMeta,
+        formData: legacyApp,
+        submittedAt,
+      };
       await pool.query(
-        "UPDATE applications SET form_data = $1, status = COALESCE(status, 'submitted'), submitted_at = NOW() WHERE id = $2",
-        [JSON.stringify(legacyApp), application.id]
+        `UPDATE applications
+         SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb,
+             requested_amount = COALESCE($2, requested_amount),
+             lender_id = COALESCE($3, lender_id),
+             lender_product_id = COALESCE($4, lender_product_id),
+             submitted_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $5`,
+        [
+          JSON.stringify(metaPatch),
+          wizardCols.requestedAmount,
+          wizardCols.lenderId,
+          wizardCols.lenderProductId,
+          application.id,
+        ]
       );
     }
 
@@ -263,22 +374,31 @@ router.patch(
         { applicationId }
       );
     }
+    // BF_WIZARD_TO_PORTAL_v33 — merge wizard payload into metadata so the
+    // portal drawer reads it. Also pluck out columnar fields when present.
     const nextName = parsed.data.business_name ?? application.name;
-    const nextRequestedAmount = parsed.data.requested_amount ?? application.requested_amount ?? null;
+    const wizardMeta = bfBuildWizardMetadata(parsed.data as any);
+    const wizardCols = bfExtractAppColumns(parsed.data as any);
+    const nextRequestedAmount =
+      parsed.data.requested_amount ?? wizardCols.requestedAmount ?? application.requested_amount ?? null;
+    const nextLenderId = parsed.data.lender_id ?? wizardCols.lenderId ?? (application as any).lender_id ?? null;
+    const nextLenderProductId = parsed.data.lender_product_id ?? wizardCols.lenderProductId ?? (application as any).lender_product_id ?? null;
     const existingMeta = application.metadata && typeof application.metadata === "object"
       ? application.metadata as Record<string, unknown>
       : {};
     const incomingMeta = parsed.data.metadata ?? {};
-    const nextMetadata = { ...existingMeta, ...incomingMeta };
+    const nextMetadata = { ...existingMeta, ...incomingMeta, ...wizardMeta };
 
     await runQuery(
       `update applications
        set name = $2,
            requested_amount = $3,
            metadata = $4,
+           lender_id = COALESCE($5, lender_id),
+           lender_product_id = COALESCE($6, lender_product_id),
            updated_at = now()
        where id = $1`,
-      [applicationId, nextName, nextRequestedAmount, nextMetadata]
+      [applicationId, nextName, nextRequestedAmount, nextMetadata, nextLenderId, nextLenderProductId]
     );
     const updated = await findApplicationById(applicationId);
     res.status(200).json({
