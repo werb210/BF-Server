@@ -10,15 +10,20 @@ type Queryable = Pick<PoolClient, "query" | "runQuery">;
 const PIPELINE_ERROR_CODES = new Set(["22P02", "23514"]);
 const DRAFT_METADATA_KEY = "isDraft";
 
-function ensureDraftFlag(metadata: unknown, source: string | null | undefined): unknown {
-  const meta =
-    metadata && typeof metadata === "object" && !Array.isArray(metadata)
-      ? { ...(metadata as Record<string, unknown>) }
-      : {};
-  if (source === "client_direct" || source === "readiness_continuation") {
-    meta[DRAFT_METADATA_KEY] = true;
+// BF_ENSURE_DRAFT_V20 — Block 20: synchronous mutator that never throws.
+function ensureDraftFlag(params: any): void {
+  try {
+    if (!params || typeof params !== "object") return;
+    const source = String(params.source ?? "").toLowerCase();
+    if (source !== "client_direct" && source !== "readiness_continuation") return;
+    if (!params.metadata || typeof params.metadata !== "object" || Array.isArray(params.metadata)) {
+      params.metadata = {};
+    }
+    params.metadata[DRAFT_METADATA_KEY] = true;
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[ensureDraftFlag] swallowed error:", err);
   }
-  return meta;
 }
 
 function isPipelineConstraintError(err: unknown): boolean {
@@ -140,6 +145,7 @@ export async function createApplication(params: {
   source?: string | null;
   client?: Queryable;
 }): Promise<ApplicationRecord> {
+  ensureDraftFlag(params);
   const runner = params.client ?? pool;
   const productCategory = params.productCategory ?? params.productType;
   const pipelineState = resolveInitialPipelineState(productCategory);
@@ -155,7 +161,7 @@ export async function createApplication(params: {
         randomUUID(),
         params.ownerUserId,
         params.name,
-        ensureDraftFlag(params.metadata, params.source),
+        params.metadata,
         params.productType,
         productCategory,
         pipelineState,
