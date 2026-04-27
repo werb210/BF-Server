@@ -13,6 +13,7 @@ import { createContact, findOrCreateContactByEmailAndCompany } from "../../servi
 import { findOrCreateCompanyByNameAndSilo } from "../../services/companies.js";
 import { linkContactToApplication } from "../../services/applicationContacts.js";
 import { logError, logInfo } from "../../observability/logger.js";
+import { mirrorApplicationToCrm } from "../../services/applicationCrmMirror.js"; // BF_APP_TO_CRM_v38
 
 const router = Router();
 
@@ -293,6 +294,17 @@ router.post(
           application.id,
         ]
       );
+
+      // BF_APP_TO_CRM_v38 — Block 38-E — fire-and-forget CRM mirror.
+      try {
+        const md: any = (legacyApp && typeof legacyApp === "object") ? legacyApp : {};
+        void mirrorApplicationToCrm({
+          applicationId: application.id,
+          silo: (silo || "BF").toUpperCase(),
+          business: md?.business ?? md?.company ?? null,
+          applicant: md?.applicant ?? md?.borrower ?? null,
+        });
+      } catch { /* never block submit on mirror */ }
     }
 
     if (!normalized) {
