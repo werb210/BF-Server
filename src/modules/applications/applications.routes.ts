@@ -20,6 +20,7 @@ router.get('/', safeHandler(async (req: any, res: any) => {
   const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 25));
   const offset = (page - 1) * pageSize;
   const stage = req.query.stage as string | undefined;
+  const includeDrafts = String((req.query as any)?.include_drafts ?? "") === "1";
   // Silo resolution: respects X-Silo header (portal + iOS), ?silo query, body.silo, then default BF.
   const { getSilo } = await import("../../middleware/silo.js");
   const silo = getSilo(res);
@@ -30,6 +31,15 @@ router.get('/', safeHandler(async (req: any, res: any) => {
 
   if (stage) { conditions.push(`a.pipeline_state = $${idx++}`); params.push(stage); }
   if (silo)  { conditions.push(`a.silo = $${idx++}`);            params.push(silo); }
+  if (!includeDrafts) {
+    conditions.push(`NOT (
+      lower(coalesce(a.metadata->>'isDraft', 'false')) = 'true'
+      OR (
+        lower(trim(coalesce(a.name, ''))) in ('', 'draft', 'draft application')
+        AND lower(coalesce(a.pipeline_state, '')) in ('received', 'draft', 'new')
+      )
+    )`);
+  }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -51,23 +61,7 @@ router.get('/', safeHandler(async (req: any, res: any) => {
     ),
   ]);
 
-  // Block 18: hide draft placeholders from the staff pipeline unless explicitly requested.
-  const includeDrafts = String((req.query as any)?.include_drafts ?? "") === "1";
-  let applications = data.rows;
-  if (!includeDrafts && Array.isArray(applications)) {
-    applications = applications.filter((row: any) => {
-      const meta = row && typeof row.metadata === "object" ? row.metadata : {};
-      if (meta?.isDraft === true) return false;
-      // Belt-and-suspenders: rows minted before Block 18 don't have isDraft set.
-      // Treat them as drafts if pipeline_state is the initial RECEIVED/Draft AND no business name.
-      const pipeline = String(row?.pipeline_state ?? row?.current_stage ?? "");
-      const businessName = String(row?.name ?? row?.business?.legalName ?? "").trim();
-      const isInitialState = pipeline === "Received" || pipeline === "Draft" || pipeline === "RECEIVED";
-      const looksLikePlaceholder = !businessName || businessName === "Draft application";
-      if (isInitialState && looksLikePlaceholder) return false;
-      return true;
-    });
-  }
+  const applications = Array.isArray(data.rows) ? data.rows : [];
 
   res.json({
     status: 'ok',
