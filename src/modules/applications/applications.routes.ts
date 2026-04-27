@@ -51,10 +51,28 @@ router.get('/', safeHandler(async (req: any, res: any) => {
     ),
   ]);
 
+  // Block 18: hide draft placeholders from the staff pipeline unless explicitly requested.
+  const includeDrafts = String((req.query as any)?.include_drafts ?? "") === "1";
+  let applications = data.rows;
+  if (!includeDrafts && Array.isArray(applications)) {
+    applications = applications.filter((row: any) => {
+      const meta = row && typeof row.metadata === "object" ? row.metadata : {};
+      if (meta?.isDraft === true) return false;
+      // Belt-and-suspenders: rows minted before Block 18 don't have isDraft set.
+      // Treat them as drafts if pipeline_state is the initial RECEIVED/Draft AND no business name.
+      const pipeline = String(row?.pipeline_state ?? row?.current_stage ?? "");
+      const businessName = String(row?.name ?? row?.business?.legalName ?? "").trim();
+      const isInitialState = pipeline === "Received" || pipeline === "Draft" || pipeline === "RECEIVED";
+      const looksLikePlaceholder = !businessName || businessName === "Draft application";
+      if (isInitialState && looksLikePlaceholder) return false;
+      return true;
+    });
+  }
+
   res.json({
     status: 'ok',
     data: {
-      applications: data.rows,
+      applications,
       total: Number(count.rows[0]?.total ?? 0),
       page,
       pageSize,

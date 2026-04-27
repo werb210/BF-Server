@@ -8,6 +8,18 @@ import { AppError } from "../../middleware/errors.js";
 type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 const PIPELINE_ERROR_CODES = new Set(["22P02", "23514"]);
+const DRAFT_METADATA_KEY = "isDraft";
+
+function ensureDraftFlag(metadata: unknown, source: string | null | undefined): unknown {
+  const meta =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? { ...(metadata as Record<string, unknown>) }
+      : {};
+  if (source === "client_direct" || source === "readiness_continuation") {
+    meta[DRAFT_METADATA_KEY] = true;
+  }
+  return meta;
+}
 
 function isPipelineConstraintError(err: unknown): boolean {
   const code = (err as { code?: string }).code;
@@ -143,7 +155,7 @@ export async function createApplication(params: {
         randomUUID(),
         params.ownerUserId,
         params.name,
-        params.metadata,
+        ensureDraftFlag(params.metadata, params.source),
         params.productType,
         productCategory,
         pipelineState,
