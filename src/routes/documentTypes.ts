@@ -6,8 +6,12 @@ import { pool } from "../db.js";
 
 const router = Router();
 
+// BF_DOCTYPES_PATH_v34 — Block 34: routes need explicit /document-types path.
+// They were declared on "/" while the router is mounted at /api/portal, so
+// they collided with the bare /api/portal endpoint and the portal client's
+// fetch of /api/portal/document-types 404'd.
 // GET /api/portal/document-types — all active types (public to authenticated staff)
-router.get("/", safeHandler(async (_req: any, res: any) => {
+router.get("/document-types", safeHandler(async (_req: any, res: any) => {
   const { rows } = await pool.query(
     `SELECT id, key, label, category, sort_order, active
      FROM document_types
@@ -17,7 +21,7 @@ router.get("/", safeHandler(async (_req: any, res: any) => {
 }));
 
 // POST /api/portal/document-types — admin adds new type
-router.post("/", requireAuth, safeHandler(async (req: any, res: any) => {
+router.post("/document-types", requireAuth, safeHandler(async (req: any, res: any) => {
   const { key, label, category = "core", sort_order = 0 } = req.body ?? {};
   if (!key?.trim() || !label?.trim()) {
     throw new AppError("validation_error", "key and label are required.", 400);
@@ -33,7 +37,7 @@ router.post("/", requireAuth, safeHandler(async (req: any, res: any) => {
 }));
 
 // PATCH /api/portal/document-types/:id — toggle active or rename
-router.patch("/:id", requireAuth, safeHandler(async (req: any, res: any) => {
+router.patch("/document-types/:id", requireAuth, safeHandler(async (req: any, res: any) => {
   const { id } = req.params;
   const { label, active } = req.body ?? {};
   const updates: string[] = ["updated_at = now()"];

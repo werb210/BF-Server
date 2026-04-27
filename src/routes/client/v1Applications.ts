@@ -112,13 +112,31 @@ async function loadApplicationByToken(token: string): Promise<TokenApplicationRo
   return continuation.rows[0] ?? null;
 }
 
+// BF_CREATE_WIZARD_v34 — Block 34: createSchema must accept the wizard's
+// actual payload (same shape as patchSchema in 33-A). Step 4's POST fallback
+// previously 400'd every time because none of business_name / requested_amount
+// / lender_id / product_id are present at the time of submit. Strict types
+// kept on the few fields we still validate; the rest are passthrough into
+// applications.metadata via bfBuildWizardMetadata.
+const createWizardObject = z.record(z.string(), z.unknown());
 const createSchema = z.object({
-  business_name: z.string().min(1),
-  requested_amount: z.number().positive(),
-  lender_id: z.string().uuid(),
-  product_id: z.string().uuid(),
+  business_name: z.string().min(1).optional(),
+  requested_amount: z.number().positive().optional(),
+  lender_id: z.string().uuid().optional(),
+  product_id: z.string().uuid().optional(),
   product_category: z.string().min(1).optional(),
   kyc_responses: z.record(z.string(), z.unknown()).optional(),
+  // Wizard-shaped passthrough.
+  financialProfile: createWizardObject.optional(),
+  business: createWizardObject.optional(),
+  applicant: createWizardObject.optional(),
+  partner: createWizardObject.optional(),
+  kyc: createWizardObject.optional(),
+  selected_product: createWizardObject.optional(),
+  selected_product_type: z.string().optional(),
+  readiness_lead_id: z.string().optional(),
+  session_token: z.string().optional(),
+  source: z.string().optional(),
 });
 
 // BF_WIZARD_TO_PORTAL_v33 — Block 33: PATCH must accept the wizard's actual
@@ -153,14 +171,36 @@ const patchSchema = z.object({
 router.post(
   "/applications",
   safeHandler(async (req: any, res: any, next: any) => {
+    // BF_CREATE_WIZARD_v34 — Block 34: accept wizard payload. Derive missing
+    // columns from selected_product / business / kyc.fundingAmount instead
+    // of rejecting. Persist wizard fields into metadata so the portal drawer
+    // sees the same shape it does for PATCHed applications.
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {
       throw new AppError("validation_error", "Invalid application payload.", 400);
     }
-    const { business_name, requested_amount, lender_id, product_id, product_category, kyc_responses } = parsed.data;
+    const data = parsed.data;
+    const wizardMeta = bfBuildWizardMetadata(data as any);
+    const wizardCols = bfExtractAppColumns(data as any);
+    const businessAny = (data as any).business as Record<string, any> | undefined;
+    const business_name =
+      data.business_name
+      ?? (typeof businessAny?.companyName === "string" && businessAny.companyName.trim() ? businessAny.companyName.trim() : undefined)
+      ?? (typeof businessAny?.legalName === "string" && businessAny.legalName.trim() ? businessAny.legalName.trim() : undefined)
+      ?? (typeof businessAny?.businessName === "string" && businessAny.businessName.trim() ? businessAny.businessName.trim() : undefined)
+      ?? "Untitled Application";
+    const requested_amount = data.requested_amount ?? wizardCols.requestedAmount ?? null;
+    const lender_id = data.lender_id ?? wizardCols.lenderId ?? null;
+    const product_id = data.product_id ?? wizardCols.lenderProductId ?? null;
+    const product_category = data.product_category ?? (data as any).selected_product_type ?? null;
     const applicationId = randomUUID();
     const { getSilo } = await import("../../middleware/silo.js");
     const silo = getSilo(res);
+    const metadata = {
+      ...(data.kyc_responses ? { kyc_responses: data.kyc_responses } : {}),
+      ...(product_category ? { product_category } : {}),
+      ...wizardMeta,
+    };
     await runQuery(
       `insert into applications
        (id, owner_user_id, name, metadata, product_type, pipeline_state, status, lender_id, lender_product_id, requested_amount, source, silo, created_at, updated_at)
@@ -169,10 +209,7 @@ router.post(
         applicationId,
         config.client.submissionOwnerUserId,
         business_name,
-        {
-          ...(kyc_responses ? { kyc_responses } : {}),
-          ...(product_category ? { product_category } : {}),
-        },
+        metadata,
         "standard",
         ApplicationStage.RECEIVED,
         statusFromPipeline(ApplicationStage.RECEIVED),
