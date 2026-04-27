@@ -39,6 +39,11 @@ describe("POST /api/client/applications/:token/submit normalized", () => {
       if (sql.startsWith("BEGIN") || sql.startsWith("COMMIT") || sql.startsWith("ROLLBACK")) {
         return { rows: [] };
       }
+      // BF_WIZARD_TO_PORTAL_v33_TEST — Block 33 changed the submit handler
+      // to write to metadata (real column) instead of form_data (does not exist).
+      if (sql.includes("UPDATE applications") && sql.includes("metadata")) {
+        return { rows: [] };
+      }
       if (sql.includes("UPDATE applications SET form_data")) {
         return { rows: [] };
       }
