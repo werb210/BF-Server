@@ -94,6 +94,8 @@ function buildSelectColumns(existing: Set<string>): string {
     { name: "updated_at", fallback: "now()" },
     { name: "amount_min", fallback: "null::bigint" },
     { name: "amount_max", fallback: "null::bigint" },
+    { name: "signnow_template_id", fallback: "null::text" },  // BF_LP_REPO_FIELDS_v32
+    { name: "eligibility_notes", fallback: "null::text" },    // BF_LP_REPO_FIELDS_v32
     { name: "silo", fallback: "null::text" },
   ];
 
@@ -122,6 +124,9 @@ export async function createLenderProduct(params: {
   termMax?: number | null;
   amountMin?: number | null;
   amountMax?: number | null;
+  termUnit?: string | null;            // BF_LP_REPO_FIELDS_v32
+  signnowTemplateId?: string | null;   // BF_LP_REPO_FIELDS_v32
+  eligibilityNotes?: string | null;    // BF_LP_REPO_FIELDS_v32
   silo?: string | null;
   client?: Queryable;
 }): Promise<LenderProductRecord> {
@@ -147,6 +152,8 @@ export async function createLenderProduct(params: {
       "category",
       "type",
       "required_documents",
+      "signnow_template_id",  // BF_LP_REPO_FIELDS_v32
+      "eligibility_notes",    // BF_LP_REPO_FIELDS_v32
       "created_at",
       "updated_at",
     ],
@@ -170,7 +177,9 @@ export async function createLenderProduct(params: {
     { name: "term_max", value: params.termMax ?? null },
     { name: "amount_min", value: params.amountMin ?? null },
     { name: "amount_max", value: params.amountMax ?? null },
-    { name: "term_unit", value: "MONTHS" },
+    { name: "term_unit", value: (params.termUnit ?? "MONTHS").toString().toUpperCase() },
+    { name: "signnow_template_id", value: params.signnowTemplateId ?? null },  // BF_LP_REPO_FIELDS_v32
+    { name: "eligibility_notes", value: params.eligibilityNotes ?? null },     // BF_LP_REPO_FIELDS_v32
     { name: "silo", value: params.silo ?? null },
   ].filter((entry) => existing.has(entry.name));
 
@@ -327,6 +336,8 @@ export async function fetchLenderProductById(
       "silo",
       "term_unit",
       "required_documents",
+      "signnow_template_id",  // BF_LP_REPO_FIELDS_v32
+      "eligibility_notes",    // BF_LP_REPO_FIELDS_v32
       "created_at",
       "updated_at",
     ],
@@ -357,6 +368,9 @@ export async function updateLenderProduct(params: {
   termMax?: number | null;
   amountMin?: number | null;
   amountMax?: number | null;
+  termUnit?: string | null;            // BF_LP_REPO_FIELDS_v32
+  signnowTemplateId?: string | null;   // BF_LP_REPO_FIELDS_v32
+  eligibilityNotes?: string | null;    // BF_LP_REPO_FIELDS_v32
   silo?: string | null;
   client?: Queryable;
 }): Promise<LenderProductRecord | null> {
@@ -416,6 +430,22 @@ export async function updateLenderProduct(params: {
   }
   if (existing.has("term_max") && params.termMax !== undefined) {
     updates.push({ name: "term_max", value: params.termMax ?? null });
+  }
+  // BF_LP_REPO_FIELDS_v32 — also persist amount, term_unit, signnow, eligibility on UPDATE.
+  if (existing.has("amount_min") && params.amountMin !== undefined) {
+    updates.push({ name: "amount_min", value: params.amountMin ?? null });
+  }
+  if (existing.has("amount_max") && params.amountMax !== undefined) {
+    updates.push({ name: "amount_max", value: params.amountMax ?? null });
+  }
+  if (existing.has("term_unit") && params.termUnit !== undefined && params.termUnit !== null) {
+    updates.push({ name: "term_unit", value: String(params.termUnit).toUpperCase() });
+  }
+  if (existing.has("signnow_template_id") && params.signnowTemplateId !== undefined) {
+    updates.push({ name: "signnow_template_id", value: params.signnowTemplateId ?? null });
+  }
+  if (existing.has("eligibility_notes") && params.eligibilityNotes !== undefined) {
+    updates.push({ name: "eligibility_notes", value: params.eligibilityNotes ?? null });
   }
 
   const setClauses = updates.map(

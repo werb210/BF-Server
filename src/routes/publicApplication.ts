@@ -25,6 +25,7 @@ router.post(
   "/application/start",
   wrap(async (req, res) => {
     // BF_START_PHASE_GUARD_v20 — Block 20 timeout + lifecycle phase logging.
+    // BF_PUBAPP_RES_WRITE_v32 — Block 32: handler must write res.json(), not just return ok().
     const startedAt = Date.now();
     let phase = "received";
     const setPhase = (nextPhase: string) => {
@@ -48,7 +49,7 @@ router.post(
     try {
       setPhase("parse_input");
       const parsed = StartSchema.safeParse(req.body ?? {});
-      if (!parsed.success) return fail(res, "INVALID_INPUT");
+      if (!parsed.success) { res.status(400).json(fail(res, "INVALID_INPUT")); return; }
       const { sessionId, source } = parsed.data;
       const silo = getSilo(res);
 
@@ -60,7 +61,7 @@ router.post(
         );
         if (mapped.rows[0]?.application_id) {
           setPhase("mapped_reuse");
-          return ok({ applicationId: mapped.rows[0].application_id, reused: true });
+          res.status(200).json(ok({ applicationId: mapped.rows[0].application_id, reused: true })); return;
         }
 
         setPhase("load_readiness_session");
@@ -71,7 +72,7 @@ router.post(
           [sessionId]
         );
         const r = session.rows[0];
-        if (!r) return fail(res, "readiness_session_not_found");
+        if (!r) { res.status(400).json(fail(res, "readiness_session_not_found")); return; }
 
         setPhase("create_application");
         const created = await createApplication({
@@ -105,7 +106,7 @@ router.post(
           [r.id, created.id]
         );
         setPhase("done");
-        return ok({ applicationId: created.id, leadId: r.crm_lead_id, reused: false });
+        res.status(200).json(ok({ applicationId: created.id, leadId: r.crm_lead_id, reused: false })); return;
       }
 
       // No readiness session — just mint a blank application the wizard can PATCH.
@@ -120,7 +121,7 @@ router.post(
         silo,
       } as any);
       setPhase("done");
-      return ok({ applicationId: created.id, reused: false });
+      res.status(200).json(ok({ applicationId: created.id, reused: false })); return;
     } finally {
       clearTimeout(timer);
     }

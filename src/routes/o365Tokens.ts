@@ -32,16 +32,30 @@ async function refreshMicrosoftAccessToken(refresh: string): Promise<{ accessTok
 }
 
 // POST /api/users/me/o365-tokens
-// Body: { access_token, refresh_token?, expires_in?, account_id? }
-router.post("/o365-tokens", safeHandler(async (req: any, res: any) => {
-  const userId = req.user?.id ?? req.user?.userId;
+// BF_O365_TOKENS_AUTH_v32 — Block 32:
+//   * requireAuth so req.user is populated (was returning 401 every call)
+//   * accept both camelCase (MSAL-shaped: accessToken/refreshToken/expiresOn/account.homeAccountId)
+//     AND snake_case (legacy) request bodies
+router.post("/o365-tokens", requireAuth, safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId ?? req.user?.sub;
   if (!userId) return res.status(401).json({ error: "unauthenticated" });
-  const { access_token, refresh_token, expires_in, account_id } = req.body ?? {};
+  const body = req.body ?? {};
+  const access_token  = body.access_token  ?? body.accessToken  ?? null;
+  const refresh_token = body.refresh_token ?? body.refreshToken ?? null;
+  const expires_in    = typeof body.expires_in === "number" ? body.expires_in : null;
+  const expiresOnRaw  = body.expiresOn ?? body.expires_on ?? null;
+  const account_id =
+    body.account_id ?? body.accountId ??
+    body.account?.homeAccountId ?? body.account?.username ?? null;
   if (!access_token) return res.status(400).json({ error: "access_token required" });
 
-  const expiresAt = typeof expires_in === "number"
-    ? new Date(Date.now() + expires_in * 1000)
-    : null;
+  let expiresAt: Date | null = null;
+  if (typeof expires_in === "number") {
+    expiresAt = new Date(Date.now() + expires_in * 1000);
+  } else if (expiresOnRaw) {
+    const parsed = new Date(expiresOnRaw as any);
+    if (!Number.isNaN(parsed.getTime())) expiresAt = parsed;
+  }
 
   await pool.query(
     `UPDATE users SET
