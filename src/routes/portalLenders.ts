@@ -13,6 +13,7 @@ import { requireAdmin } from "../middleware/requireAdmin.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { AppError } from "../middleware/errors.js";
 import { getSilo } from "../middleware/silo.js";
+import { mirrorLenderToCrm } from "../services/lenderCrmMirror.js"; // BF_LENDER_TO_CRM_v38
 import {
   fetchLenderById,
   createLender,
@@ -76,6 +77,17 @@ router.post(
       phone: body.phone ?? null,
       silo,
     });
+      // BF_LENDER_TO_CRM_v38 — fire-and-forget CRM mirror
+      void mirrorLenderToCrm({
+        id: lender.id,
+        name: lender.name ?? null,
+        phone: (lender as any).phone ?? null,
+        silo: (lender as any).silo ?? null,
+        country: (lender as any).country ?? null,
+        contact_name: (lender as any).primary_contact_name ?? null,
+        contact_email: (lender as any).primary_contact_email ?? null,
+        contact_phone: (lender as any).primary_contact_phone ?? null,
+      });
     res.status(201).json(lender);
   })
 );
@@ -109,6 +121,17 @@ router.patch(
       active: body.active,
       silo: body.silo ?? existing.silo ?? silo,
     });
+      // BF_LENDER_TO_CRM_v38 — fire-and-forget CRM mirror on update
+      void mirrorLenderToCrm({
+        id: lender.id,
+        name: lender.name ?? null,
+        phone: (lender as any).phone ?? null,
+        silo: (lender as any).silo ?? null,
+        country: (lender as any).country ?? null,
+        contact_name: (lender as any).primary_contact_name ?? null,
+        contact_email: (lender as any).primary_contact_email ?? null,
+        contact_phone: (lender as any).primary_contact_phone ?? null,
+      });
     if (!lender) throw new AppError("not_found", "Lender not found.", 404);
     res.status(200).json(lender);
   })
