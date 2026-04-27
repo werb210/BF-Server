@@ -33,6 +33,7 @@ import { listLenders } from "../repositories/lenders.repo.js";
 import { eventBus } from "../events/eventBus.js";
 import { toStringSafe } from "../utils/toStringSafe.js";
 import twilio from "twilio";
+// BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const router = Router();
 const portalLimiter = portalRateLimit();
@@ -112,7 +113,7 @@ async function sendDocumentRejectionSms(params: {
      FROM applications a
      LEFT JOIN users u ON u.id = a.owner_user_id
      LEFT JOIN contacts c ON c.id = a.contact_id
-     WHERE a.id = $1 LIMIT 1`,
+     WHERE a.id::text = ($1)::text LIMIT 1`,
     [params.applicationId]
   ).catch(() => ({ rows: [] }));
 
@@ -197,12 +198,12 @@ router.get(
     if (!applicationId) throw new AppError("validation_error", "Application id required.", 400);
 
     const stageResult = await runQuery<{ pipeline_state: string }>(
-      `SELECT pipeline_state FROM applications WHERE id = $1 LIMIT 1`,
+      `SELECT pipeline_state FROM applications WHERE id::text = ($1)::text LIMIT 1`,
       [applicationId]
     );
     if (stageResult.rows[0]?.pipeline_state === "Received") {
       await runQuery(
-        `UPDATE applications SET pipeline_state = 'In Review', updated_at = now() WHERE id = $1`,
+        `UPDATE applications SET pipeline_state = 'In Review', updated_at = now() WHERE id::text = ($1)::text`,
         [applicationId]
       ).catch(() => {});
       await recordTransition(
@@ -710,13 +711,13 @@ router.post(
     const appId = doc.application_id;
     if (appId && await allDocumentsAccepted(appId)) {
       const appRes = await runQuery<{ pipeline_state: string }>(
-        `SELECT pipeline_state FROM applications WHERE id = $1`,
+        `SELECT pipeline_state FROM applications WHERE id::text = ($1)::text`,
         [appId]
       );
       const cur = appRes.rows[0]?.pipeline_state;
       if (cur && ["In Review", "Documents Required", "Additional Steps Required"].includes(cur)) {
         await runQuery(
-          `UPDATE applications SET pipeline_state = 'Off to Lender', updated_at = now() WHERE id = $1`,
+          `UPDATE applications SET pipeline_state = 'Off to Lender', updated_at = now() WHERE id::text = ($1)::text`,
           [appId]
         ).catch(() => {});
         await recordTransition(appId, cur, "Off to Lender", req.user?.userId ?? null, "All documents accepted");
@@ -758,13 +759,13 @@ router.post(
 
     if (doc.application_id) {
       const appRes = await runQuery<{ pipeline_state: string }>(
-        `SELECT pipeline_state FROM applications WHERE id = $1`,
+        `SELECT pipeline_state FROM applications WHERE id::text = ($1)::text`,
         [doc.application_id]
       );
       const cur = appRes.rows[0]?.pipeline_state;
       if (cur && ["In Review", "Off to Lender", "Received"].includes(cur)) {
         await runQuery(
-          `UPDATE applications SET pipeline_state = 'Documents Required', updated_at = now() WHERE id = $1`,
+          `UPDATE applications SET pipeline_state = 'Documents Required', updated_at = now() WHERE id::text = ($1)::text`,
           [doc.application_id]
         ).catch(() => {});
         await recordTransition(
@@ -791,13 +792,13 @@ router.post(
     if (!appId) throw new AppError("validation_error", "Application id required.", 400);
 
     const appRes = await runQuery<{ pipeline_state: string }>(
-      `SELECT pipeline_state FROM applications WHERE id = $1`,
+      `SELECT pipeline_state FROM applications WHERE id::text = ($1)::text`,
       [appId]
     );
     const cur = appRes.rows[0]?.pipeline_state;
     if (cur === "Off to Lender") {
       await runQuery(
-        `UPDATE applications SET pipeline_state = 'Offer', updated_at = now() WHERE id = $1`,
+        `UPDATE applications SET pipeline_state = 'Offer', updated_at = now() WHERE id::text = ($1)::text`,
         [appId]
       ).catch(() => {});
       await recordTransition(appId, "Off to Lender", "Offer", req.user?.userId ?? null, "Term sheet uploaded");

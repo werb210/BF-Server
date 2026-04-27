@@ -8,6 +8,7 @@ import { AppError } from '../../middleware/errors.js';
 import { safeHandler } from '../../middleware/safeHandler.js';
 import { getSilo } from '../../middleware/silo.js';
 import { requireAdmin } from '../../middleware/requireAdmin.js';
+// BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const router = Router();
 
@@ -82,7 +83,7 @@ router.get('/:id', safeHandler(async (req: any, res: any) => {
             a.owner_user_id, a.source, a.created_at, a.updated_at,
             a.metadata, a.processing_stage, a.current_stage,
             a.silo, a.ocr_completed_at, a.banking_completed_at
-     FROM applications a WHERE a.id = $1`,
+     FROM applications a WHERE a.id::text = ($1)::text`,
     [req.params.id]
   );
 
@@ -117,7 +118,7 @@ router.patch('/:id', safeHandler(async (req: any, res: any) => {
   }
 
   const existing = await pool.query<{ id: string; silo: string | null }>(
-    `SELECT id, silo FROM applications WHERE id = $1 LIMIT 1`,
+    `SELECT id, silo FROM applications WHERE id::text = ($1)::text LIMIT 1`,
     [applicationId]
   );
   const found = existing.rows[0];
@@ -168,7 +169,7 @@ router.patch('/:id', safeHandler(async (req: any, res: any) => {
     .join(', ');
 
   await pool.query(
-    `UPDATE applications SET ${setClauses}, updated_at = now() WHERE id = $1`,
+    `UPDATE applications SET ${setClauses}, updated_at = now() WHERE id::text = ($1)::text`,
     [applicationId, ...Object.values(updates)]
   );
 
@@ -179,7 +180,7 @@ router.patch('/:id', safeHandler(async (req: any, res: any) => {
 router.delete('/:id', requireAdmin, safeHandler(async (req: any, res: any) => {
   const id = String(req.params.id);
   if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: 'invalid_id' });
-  const { rowCount } = await pool.query(`DELETE FROM applications WHERE id = $1`, [id]);
+  const { rowCount } = await pool.query(`DELETE FROM applications WHERE id::text = ($1)::text`, [id]);
   if (!rowCount) return res.status(404).json({ error: 'not_found' });
   res.json({ ok: true });
 }));
@@ -216,7 +217,7 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
     `SELECT a.id, a.name, a.product_type, a.pipeline_state, a.status,
             a.requested_amount, a.metadata, a.processing_stage,
             a.current_stage, a.silo, a.created_at, a.updated_at
-       FROM applications a WHERE a.id = $1`,
+       FROM applications a WHERE a.id::text = ($1)::text`,
     [id]
   );
   const app = result.rows[0];
@@ -282,7 +283,7 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
 router.get('/:id/audit', safeHandler(async (req: any, res: any) => {
   const { id } = req.params;
   const appRow = await pool.query<{ silo: string | null }>(
-    `SELECT silo FROM applications WHERE id = $1`,
+    `SELECT silo FROM applications WHERE id::text = ($1)::text`,
     [id]
   );
   if (!appRow.rows[0]) throw new AppError('not_found', 'Application not found.', 404);
@@ -313,7 +314,7 @@ router.post('/:id/send', safeHandler(async (req: any, res: any) => {
   }
 
   const appRow = await pool.query(
-    `SELECT id, silo FROM applications WHERE id = $1`,
+    `SELECT id, silo FROM applications WHERE id::text = ($1)::text`,
     [id]
   );
   if (!appRow.rows[0]) throw new AppError('not_found', 'Application not found.', 404);

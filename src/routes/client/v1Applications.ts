@@ -14,6 +14,7 @@ import { findOrCreateCompanyByNameAndSilo } from "../../services/companies.js";
 import { linkContactToApplication } from "../../services/applicationContacts.js";
 import { logError, logInfo } from "../../observability/logger.js";
 import { mirrorApplicationToCrm } from "../../services/applicationCrmMirror.js"; // BF_APP_TO_CRM_v38
+// BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const router = Router();
 
@@ -94,7 +95,7 @@ async function loadApplicationByToken(token: string): Promise<TokenApplicationRo
   const direct = await pool.query<TokenApplicationRow>(
     `SELECT id, silo, owner_user_id
      FROM applications
-     WHERE id = $1
+     WHERE id::text = ($1)::text
      LIMIT 1`,
     [token]
   );
@@ -285,7 +286,7 @@ router.post(
              lender_product_id = COALESCE($4, lender_product_id),
              submitted_at = NOW(),
              updated_at = NOW()
-         WHERE id = $5`,
+         WHERE id::text = ($5)::text`,
         [
           JSON.stringify(metaPatch),
           wizardCols.requestedAmount,
@@ -357,7 +358,7 @@ router.post(
       }
 
       await tx.query(
-        "UPDATE applications SET company_id = $1 WHERE id = $2 AND (company_id IS NULL OR company_id = $1)",
+        "UPDATE applications SET company_id = $1 WHERE id::text = ($2)::text AND (company_id IS NULL OR company_id = $1)",
         [company.id, application.id]
       );
 
@@ -446,7 +447,7 @@ router.patch(
            lender_id = COALESCE($5, lender_id),
            lender_product_id = COALESCE($6, lender_product_id),
            updated_at = now()
-       where id = $1`,
+       where id::text = ($1)::text`,
       [applicationId, nextName, nextRequestedAmount, nextMetadata, nextLenderId, nextLenderProductId]
     );
     const updated = await findApplicationById(applicationId);

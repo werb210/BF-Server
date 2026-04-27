@@ -57,6 +57,7 @@ import {
   createDocumentProcessingJob,
 } from "../processing/processing.service.js";
 import { logCrmEvent } from "../crm/crmTimeline.service.js";
+// BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const BANK_STATEMENT_CATEGORY = "bank_statements_6_months";
 
@@ -73,7 +74,7 @@ async function triggerCommission(applicationId: string): Promise<void> {
   if (referral && referral.deal_amount) {
     const commission = Number(referral.deal_amount) * 0.1;
     await runQuery(
-      `update referrals set commission_amount = $1, status = 'earned', updated_at = now() where id = $2`,
+      `update referrals set commission_amount = $1, status = 'earned', updated_at = now() where id::text = ($2)::text`,
       [commission, referral.id]
     );
   }
@@ -140,7 +141,7 @@ type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 async function fetchApplicationCrmContactId(applicationId: string): Promise<string | null> {
   const result = await runQuery<{ crm_contact_id: string | null }>(
-    `select crm_contact_id from applications where id = $1 limit 1`,
+    `select crm_contact_id from applications where id::text = ($1)::text limit 1`,
     [applicationId]
   );
   return result.rows[0]?.crm_contact_id ?? null;
@@ -884,7 +885,7 @@ export async function markCreditSummaryCompleted(params: {
       `update applications
        set credit_summary_completed_at = now(),
            updated_at = now()
-       where id = $1`,
+       where id::text = ($1)::text`,
       [params.applicationId]
     );
     await advanceProcessingStage({
@@ -901,7 +902,7 @@ export async function markCreditSummaryCompleted(params: {
       `update applications
        set credit_summary_completed_at = now(),
            updated_at = now()
-       where id = $1`,
+       where id::text = ($1)::text`,
       [params.applicationId]
     );
     await advanceProcessingStage({
