@@ -1,9 +1,10 @@
-// BF_MINI_PORTAL_NOTES_v47 — adds PATCH, DELETE, and @mention extraction to CRM notes.
+// BF_MINI_PORTAL_NOTES_v47 + BF_NOTIFICATIONS_v50 — CRM notes (per-contact / per-company).
 import express from "express";
 import { pool } from "../../db.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { respondOk } from "../../utils/respondOk.js";
 import { parseAndResolveMentions } from "../../services/notes/mentions.js";
+import { notifyMentions } from "../../services/notifications/notifications.service.js";
 
 const router = express.Router({ mergeParams: true });
 
@@ -34,7 +35,20 @@ router.post("/", safeHandler(async (req: any, res: any) => {
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
     [body, req.user?.id ?? req.user?.userId ?? null, contactId, companyId, silo, mentions],
   );
-  res.status(201).json({ ok: true, data: rows[0] });
+  const note = rows[0];
+
+  // BF_NOTIFICATIONS_v50
+  const ctxUrl = contactId ? `/crm/contacts/${contactId}` : companyId ? `/crm/companies/${companyId}` : null;
+  await notifyMentions({
+    newMentions: mentions,
+    previousMentions: [],
+    refTable: "crm_notes",
+    refId: note.id,
+    body,
+    contextUrl: ctxUrl,
+  });
+
+  res.status(201).json({ ok: true, data: note });
 }));
 
 router.patch("/:noteId", safeHandler(async (req: any, res: any) => {
@@ -42,6 +56,16 @@ router.patch("/:noteId", safeHandler(async (req: any, res: any) => {
   const body = (req.body?.body ?? "").toString().trim();
   if (!id) return res.status(400).json({ error: "noteId required" });
   if (!body) return res.status(400).json({ error: "body required" });
+
+  // BF_NOTIFICATIONS_v50 — capture previous mentions for diff.
+  const prev = await pool.query<{ mentions: string[]; contact_id: string | null; company_id: string | null }>(
+    `SELECT mentions, contact_id, company_id FROM crm_notes WHERE id=$1 AND is_deleted=false LIMIT 1`,
+    [id]
+  );
+  const previousMentions = prev.rows[0]?.mentions ?? [];
+  const ctxContactId = prev.rows[0]?.contact_id ?? null;
+  const ctxCompanyId = prev.rows[0]?.company_id ?? null;
+
   const mentions = await parseAndResolveMentions(body);
   const { rows } = await pool.query(
     `UPDATE crm_notes SET body=$1, mentions=$2, updated_at=now()
@@ -49,6 +73,17 @@ router.patch("/:noteId", safeHandler(async (req: any, res: any) => {
     [body, mentions, id],
   );
   if (!rows[0]) return res.status(404).json({ error: "Note not found" });
+
+  const ctxUrl = ctxContactId ? `/crm/contacts/${ctxContactId}` : ctxCompanyId ? `/crm/companies/${ctxCompanyId}` : null;
+  await notifyMentions({
+    newMentions: mentions,
+    previousMentions,
+    refTable: "crm_notes",
+    refId: id,
+    body,
+    contextUrl: ctxUrl,
+  });
+
   res.status(200).json({ ok: true, data: rows[0] });
 }));
 
