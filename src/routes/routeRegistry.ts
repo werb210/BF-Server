@@ -21,6 +21,8 @@ import marketingRoutes from "./marketing.js";
 import offersRoutes from "./offers.js";
 // BF_MINI_PORTAL_NOTES_v47 — application-scoped notes
 import applicationNotesRoutes from "./applicationNotes.js";
+// BF_NOTIFICATIONS_v50
+import notificationsRoutes from "./notifications.js";
 import messagesRoutes from "./messages.js";
 import reportingRoutes from "./reporting.js";
 import reportsRoutes from "./reports.js";
@@ -110,6 +112,8 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/credit-summary", router: creditSummaryRoutes },
   // BF_MINI_PORTAL_NOTES_v47 — mounted at /api/applications/:id/notes
   { path: "/applications/:id/notes", router: applicationNotesRoutes },
+  // BF_NOTIFICATIONS_v50 — mounted at /api/notifications
+  { path: "/notifications", router: notificationsRoutes },
   { path: "/documents", router: documentsRoutes },
   { path: "/lender-submissions", router: lenderSubmissionsRoutes },
   { path: "/admin", router: adminRoutes },
