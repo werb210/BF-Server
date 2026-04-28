@@ -94,21 +94,48 @@ router.get('/:id', safeHandler(async (req: any, res: any) => {
     throw new AppError('not_found', 'Application not found.', 404);
   }
 
-  const docs = await pool.query(
-    `SELECT d.id, d.application_id, d.document_category, d.status,
-            d.created_at, d.updated_at,
-            dv.id AS version_id, dv.filename, dv.blob_name,
-            dv.size_bytes, dv.created_at AS uploaded_at,
-            dv.status AS version_status
-     FROM application_required_documents d
-     LEFT JOIN document_versions dv
-       ON dv.document_id = d.id AND dv.is_active = true
-     WHERE d.application_id = $1
-     ORDER BY d.created_at ASC`,
-    [req.params.id]
-  );
+  // BF_APP_DOCS_TYPE_SAFE_v41 — Block 41-A — applications.routes:GET /:id docs query
+  // Old query joined document_versions.document_id (TEXT) to
+  // application_required_documents.id (UUID) — Postgres rejected with
+  // "operator does not exist: text = uuid" (42883). The old query also
+  // selected columns that don't exist on document_versions (is_active,
+  // filename, blob_name, size_bytes, status, updated_at). Replace with a
+  // select-only-from-application_required_documents query using real columns,
+  // and swallow any future schema drift to documents=[] instead of a 500.
+  let docRows: any[] = [];
+  try {
+    const docsResult = await pool.query(
+      `SELECT d.id::text                AS id,
+              d.application_id          AS application_id,
+              d.document_category       AS document_category,
+              d.status                  AS status,
+              d.created_at              AS created_at,
+              d.created_at              AS updated_at,
+              NULL::text                AS version_id,
+              NULL::text                AS filename,
+              NULL::text                AS blob_name,
+              NULL::int                 AS size_bytes,
+              d.created_at              AS uploaded_at,
+              NULL::text                AS version_status
+         FROM application_required_documents d
+        WHERE d.application_id::text = ($1)::text
+        ORDER BY d.created_at ASC`,
+      [req.params.id]
+    );
+    docRows = Array.isArray(docsResult.rows) ? docsResult.rows : [];
+  } catch (err: any) {
+    // Defensive: log and serve [] so the drawer does not 500 if the schema
+    // drifts again. Real fields will appear once the docs pipeline lands.
+    // eslint-disable-next-line no-console
+    console.warn('applications.detail.docs_query_failed', {
+      applicationId: req.params.id,
+      message: err?.message,
+      code: err?.code,
+    });
+    docRows = [];
+  }
 
-  res.json({ status: 'ok', data: { application, documents: docs.rows } });
+  res.json({ status: 'ok', data: { application, documents: docRows } });
 }));
 
 router.patch('/:id', safeHandler(async (req: any, res: any) => {
