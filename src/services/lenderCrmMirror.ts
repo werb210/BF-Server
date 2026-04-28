@@ -1,3 +1,6 @@
+// BF_LENDER_MIRROR_FIX_v52 — ON CONFLICT now matches the partial unique
+// index uq_companies_lender_id_not_null (see migration
+// 20260429_companies_lender_id_unique_index.sql).
 // BF_LENDER_TO_CRM_v38 — Block 38-D
 // Dual-write helper: keep a companies row and (if present) a primary contact
 // row in sync with every lender create/update. Failures are logged but do
@@ -31,7 +34,7 @@ export async function mirrorLenderToCrm(lender: LenderForMirror): Promise<void> 
          gen_random_uuid(), $1, $2, 'active', COALESCE($3, 'CA'),
          COALESCE($4, 'BF'), ARRAY['LENDER']::text[], $5, now(), now()
        )
-       ON CONFLICT (lender_id) DO UPDATE SET
+       ON CONFLICT (lender_id) WHERE lender_id IS NOT NULL DO UPDATE SET
          name       = EXCLUDED.name,
          phone      = EXCLUDED.phone,
          country    = EXCLUDED.country,

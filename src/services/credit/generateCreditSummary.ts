@@ -312,11 +312,16 @@ export async function loadGenerationInputs(applicationId: string): Promise<Gener
     throw Object.assign(new Error("application_not_found"), { status: 404 });
   }
 
+  // BF_CREDIT_SCHEMA_FIX_v52 — `documents` has no `category` column.
+  // Real columns: signed_category (nullable, staff-assigned) and
+  // document_type (NOT NULL DEFAULT 'general'). Prefer the staff-assigned
+  // category, fall back to the upload-time type, then 'unknown'.
   const docRes = await runQuery<DocCountRow>(
-    `SELECT COALESCE(category, 'unknown') AS category, COUNT(*)::text AS cnt
+    `SELECT COALESCE(signed_category, document_type, 'unknown') AS category,
+            COUNT(*)::text AS cnt
        FROM documents
       WHERE application_id::text = ($1)::text
-      GROUP BY category`,
+      GROUP BY 1`,
     [applicationId]
   );
   const documentCounts: Record<string, number> = {};
