@@ -1,17 +1,18 @@
 // BF_LENDER_MIRROR_FIX_v52 — regression test for Bug 2.
-// Ensures the upsert's ON CONFLICT clause includes the partial-index
-// predicate so it matches uq_companies_lender_id_not_null exactly.
+// BF_LENDER_MIRROR_FIX_v52_TESTFIX_v2 — drop .js from vi.mock spec and reset
+// modules in beforeEach so the hoisted db.js mock binds.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const queryMock = vi.fn();
+const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }));
 
-vi.mock("../../db.js", async () => {
+vi.mock("../../db", async () => {
   const actual = await vi.importActual<typeof import("../../db.js")>("../../db");
   return { ...actual, pool: { query: queryMock } };
 });
 
 describe("BF_LENDER_MIRROR_FIX_v52 lenderCrmMirror ON CONFLICT predicate", () => {
   beforeEach(() => {
+    vi.resetModules();
     queryMock.mockReset();
     queryMock.mockResolvedValue({ rows: [{ id: "co-1" }] });
   });

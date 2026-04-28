@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction, type RequestHandler } from "express";
 import jwt from "jsonwebtoken";
 import { pool } from "../db.js";
+// BF_AGENT_AUTH_HYDRATE_v53
+import { fetchCapabilitiesForRole } from "../auth/capabilities.js";
+import { isRole } from "../auth/roles.js";
 
 type AuthorizationOptions = {
   roles?: string[];
@@ -42,10 +45,25 @@ export async function auth(req: Request, res: Response, next: NextFunction) {
       dbUser = result.rows[0] ?? null;
     }
 
+    // BF_AGENT_AUTH_HYDRATE_v53 — derive capabilities from role when the
+    // JWT didn't carry an explicit capabilities array. Mirrors what the
+    // login flow (auth.service.ts) bakes into freshly-minted user tokens.
+    // Service tokens (Maya, dialer) only include {id, role}; this lets them
+    // pass the requireCapability gate. Tokens that already carry an explicit
+    // capabilities array are honored exactly as-issued.
+    const decodedAny = decoded as Record<string, unknown>;
+    const explicitCaps = Array.isArray(decodedAny.capabilities)
+      ? (decodedAny.capabilities as string[])
+      : null;
+    const effectiveRole = (dbUser?.role ?? (decodedAny.role as string | undefined)) ?? null;
+    const hydratedCaps = explicitCaps
+      ?? (effectiveRole && isRole(effectiveRole) ? fetchCapabilitiesForRole(effectiveRole) : []);
+
     (req as any).user = {
       ...(decoded as any),
       ...(dbUser ?? {}),
       userId,
+      capabilities: hydratedCaps,
       silos: dbUser?.silos ?? (Array.isArray((decoded as any).silos) ? (decoded as any).silos : []),
     };
 

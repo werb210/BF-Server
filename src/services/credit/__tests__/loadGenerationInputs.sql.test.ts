@@ -1,16 +1,17 @@
 // BF_CREDIT_SCHEMA_FIX_v52 — regression test for Bug 1.
-// Ensures loadGenerationInputs queries `signed_category` / `document_type`
-// (the real schema) and never the non-existent `category` column.
+// BF_CREDIT_SCHEMA_FIX_v52_TESTFIX_v2 — drop .js from vi.mock spec and reset
+// modules in beforeEach so the hoisted runQuery mock binds.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const runQueryMock = vi.fn();
 
-vi.mock("../../../lib/db.js", () => ({
+vi.mock("../../../lib/db", () => ({
   runQuery: runQueryMock,
 }));
 
 describe("BF_CREDIT_SCHEMA_FIX_v52 loadGenerationInputs SQL shape", () => {
   beforeEach(() => {
+    vi.resetModules();
     runQueryMock.mockReset();
   });
 
@@ -35,9 +36,6 @@ describe("BF_CREDIT_SCHEMA_FIX_v52 loadGenerationInputs SQL shape", () => {
     expect(docCallSql).toContain("signed_category");
     expect(docCallSql).toContain("document_type");
     expect(docCallSql).toContain("COALESCE(signed_category, document_type, 'unknown')");
-    // Confirm we no longer reference the bare 'category' column anywhere
-    // (it doesn't exist in production). The alias in SELECT is fine; we
-    // assert there is no GROUP BY or WHERE on the bare column.
     expect(docCallSql).not.toMatch(/GROUP BY\s+category\b/i);
     expect(docCallSql).not.toMatch(/FROM documents[\s\S]*WHERE[\s\S]*\bcategory\b\s*=/i);
 
