@@ -208,7 +208,10 @@ router.delete(
     try {
       await runQuery("DELETE FROM lenders WHERE id = $1 AND (silo = $2 OR silo IS NULL)", [id, silo]);
       console.info({ event: "lender_deleted", lenderId: id, userId });
-      res.status(204).end();
+      // BF_PORTAL_REFRESH_AND_PARSE_v55_SERVER — return JSON body so the
+      // portal's apiFetch can call res.json() without "Unexpected end of
+      // JSON input". Status 200 + body matches the sibling PATCH handler.
+      res.status(200).json({ ok: true, deleted: true, id });
     } catch (err: any) {
       console.error({
         event: "lender_delete_failed",
