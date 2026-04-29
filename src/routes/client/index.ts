@@ -114,6 +114,9 @@ router.get(
 
 router.post(
   "/messages",
+  // BF_SERVER_v64_CLIENT_MSG_ENRICH — populate contact_id + silo from
+  // applications so messages from the mini-portal land in the staff
+  // portal Communications view (which filters by contact_id + silo).
   safeHandler(async (req: any, res: any) => {
     const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : null;
     const body = typeof req.body?.body === "string" ? req.body.body.trim() : null;
@@ -123,8 +126,14 @@ router.post(
 
     const id = randomUUID();
     await dbQuery(
-      `INSERT INTO communications_messages (id, type, direction, status, application_id, body, created_at)
-       VALUES ($1, 'message', 'inbound', 'received', $2, $3, now())`,
+      `INSERT INTO communications_messages
+         (id, type, direction, status, application_id, contact_id, silo, body, created_at)
+       VALUES (
+         $1, 'message', 'inbound', 'received', $2,
+         (SELECT contact_id FROM applications WHERE id = $2 LIMIT 1),
+         COALESCE((SELECT silo FROM applications WHERE id = $2 LIMIT 1), 'BF'),
+         $3, now()
+       )`,
       [id, applicationId, body]
     );
 

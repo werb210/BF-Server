@@ -49,23 +49,37 @@ async function persistAndEnqueue(opts: {
   return { id, hash: put.hash, sizeBytes: put.sizeBytes, blobName: put.blobName };
 }
 
+// BF_SERVER_v64_UPLOAD_GUARD — wrap upload handlers so storage failures
+// (e.g. Azure ContainerNotFound) return a structured 500 instead of
+// surfacing as [UNHANDLED REJECTION] with no response sent.
 router.post("/public-upload", upload.single("file"), async (req: Request, res: Response) => {
   const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
   const category      = typeof req.body?.category === "string"      ? req.body.category.trim()      : "";
   if (!applicationId || !category) return fail(res, 400, "MISSING_FIELDS");
   const file = (req as Request & { file?: Express.Multer.File }).file;
   if (!file) return fail(res, 400, "NO_FILE");
-  const r = await persistAndEnqueue({ applicationId, category, file });
-  return ok(res, { id: r.id, applicationId, filename: file.originalname, hash: r.hash, size: r.sizeBytes, status: "uploaded" });
+  try {
+    const r = await persistAndEnqueue({ applicationId, category, file });
+    return ok(res, { id: r.id, applicationId, filename: file.originalname, hash: r.hash, size: r.sizeBytes, status: "uploaded" });
+  } catch (err) {
+    console.error("[documents] public-upload failed", { applicationId, category, err: String(err) });
+    return fail(res, 500, "UPLOAD_FAILED");
+  }
 });
 
 router.post("/upload", requireAuth, upload.single("file"), async (req: Request, res: Response) => {
+  // BF_SERVER_v64_UPLOAD_GUARD
   const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : null;
   const category      = typeof req.body?.category === "string"      ? req.body.category.trim()      : null;
   const file = (req as Request & { file?: Express.Multer.File }).file;
   if (!applicationId || !category || !file) return fail(res, 400, "INVALID_DOCUMENT_UPLOAD_PAYLOAD");
-  const r = await persistAndEnqueue({ applicationId, category, file });
-  return ok(res, { id: r.id, applicationId, filename: file.originalname, hash: r.hash, size: r.sizeBytes, status: "uploaded" });
+  try {
+    const r = await persistAndEnqueue({ applicationId, category, file });
+    return ok(res, { id: r.id, applicationId, filename: file.originalname, hash: r.hash, size: r.sizeBytes, status: "uploaded" });
+  } catch (err) {
+    console.error("[documents] upload failed", { applicationId, category, err: String(err) });
+    return fail(res, 500, "UPLOAD_FAILED");
+  }
 });
 
 router.post("/:id/accept", requireAuth, async (req: Request, res: Response) => {
