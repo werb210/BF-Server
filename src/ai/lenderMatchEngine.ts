@@ -35,6 +35,11 @@ export type LenderMatch = {
   matchPercent: number;
   reasoning: string;
   submissionMethod: string | null;
+  // BF_LENDERS_TAB_FIX_v55_SERVER — surface funding range so the portal
+  // can render dedicated columns. Sourced from lender_product_requirements
+  // (already aggregated via min/max in the SQL query above).
+  amountMin: number | null;
+  amountMax: number | null;
 };
 
 function geographyAllows(productCountry: string | null, applicantCountry: PrequalInput["country"]): boolean {
@@ -91,6 +96,9 @@ export async function matchLenders(input: PrequalInput): Promise<LenderMatch[]> 
         matchPercent:     normalizeToPercent(aggregate),
         reasoning:        `Amount fit ${minText}-${maxText}; weighted by time-in-business and annual revenue signals.`,
         submissionMethod: row.submission_method,
+        // BF_LENDERS_TAB_FIX_v55_SERVER
+        amountMin:        minN,
+        amountMax:        maxN,
       };
     })
     .sort((a, b) => b.matchPercent - a.matchPercent);
