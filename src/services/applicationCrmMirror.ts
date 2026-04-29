@@ -109,7 +109,7 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
            VALUES (
              gen_random_uuid(), $1, NULLIF($2,''), NULLIF($3,''), NULLIF($4,''),
              'active', $5, 'New', ARRAY['applicant']::text[], 'lead',
-             'applicant_primary', now(), now()
+             'applicant', now(), now() -- BF_SERVER_v63_CRM_MIRROR_ROLE
            )
            RETURNING id`,
           [companyId, applicantName ?? "", applicantEmail ?? "", applicantPhone ?? "", silo]
