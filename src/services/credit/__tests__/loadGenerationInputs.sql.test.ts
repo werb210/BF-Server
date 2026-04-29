@@ -1,6 +1,3 @@
-// BF_CREDIT_SCHEMA_FIX_v52 — regression test for Bug 1.
-// BF_CREDIT_SCHEMA_FIX_v52_TESTFIX_v2 — drop .js from vi.mock spec and reset
-// modules in beforeEach so the hoisted runQuery mock binds.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const runQueryMock = vi.fn();

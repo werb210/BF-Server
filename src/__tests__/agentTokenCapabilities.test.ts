@@ -1,6 +1,3 @@
-// BF_AGENT_AUTH_HYDRATE_v53 — regression test. A service-style JWT minted
-// with role:Staff and no capabilities array must clear the application:read
-// capability gate after the auth middleware hydrates capabilities from role.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import jwt from "jsonwebtoken";

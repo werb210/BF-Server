@@ -1,6 +1,3 @@
-// BF_LENDER_MIRROR_FIX_v52 — regression test for Bug 2.
-// BF_LENDER_MIRROR_FIX_v52_TESTFIX_v2 — drop .js from vi.mock spec and reset
-// modules in beforeEach so the hoisted db.js mock binds.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }));

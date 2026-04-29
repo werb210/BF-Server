@@ -10,6 +10,7 @@ import healthRoutes from "./routes/health.js";
 import publicRoutes from "./routes/public.js";
 import { applySiloMiddleware, registerApiRouteMounts } from "./routes/routeRegistry.js";
 import { requireAuth } from "./middleware/auth.js";
+import { errorHandler } from "./middleware/errors.js";
 import { listRoutes } from "./debug/printRoutes.js";
 
 export function createApp() {
@@ -166,14 +167,13 @@ export function createApp() {
 
   /**
    * GLOBAL ERROR HANDLER
+   * BF_AGENT_AUTH_HYDRATE_v53 — wire the canonical errorHandler from
+   * middleware/errors.ts so AppError responses surface their actual status
+   * (404, 400, 409, etc.) instead of being mis-coerced to 500. The previous
+   * inline handler was a 500-everything fallback that broke wizard recovery
+   * and any client logic that branches on specific error codes.
    */
-  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    console.error("SERVER ERROR:", err);
-    res.status(500).json({
-      status: "error",
-      message: err?.message ?? "Internal Server Error",
-    });
-  });
+  app.use(errorHandler);
 
   return app;
 }
