@@ -60,6 +60,11 @@ export async function mirrorLenderToCrm(lender: LenderForMirror): Promise<void> 
     const contactPhone = (lender.contact_phone ?? "").trim();
     if (!contactName && !contactEmail && !contactPhone) return;
 
+    // BF_SERVER_v65_LENDER_MIRROR_ROLE — contacts_role_check allows
+    // ('applicant','partner','guarantor','other','unknown') only. 'lender_primary'
+    // violates it (visible as `[lenderCrmMirror] mirror failed: ... contacts_role_check`
+    // in prod log). Write role='other' and dedupe on lifecycle_stage='lender'
+    // (already set by the same INSERT; no constraint on lifecycle_stage).
     await pool.query(
       `INSERT INTO contacts (
          id, company_id, name, email, phone, status, silo, lead_status, tags,
@@ -68,22 +73,22 @@ export async function mirrorLenderToCrm(lender: LenderForMirror): Promise<void> 
        SELECT
          gen_random_uuid(), $1, $2, NULLIF($3,''), NULLIF($4,''),
          'active', $5, 'Lender', ARRAY['lender']::text[],
-         'lender', 'lender_primary', now(), now()
+         'lender', 'other', now(), now()
        WHERE NOT EXISTS (
          SELECT 1 FROM contacts ct
-         WHERE ct.company_id = $1 AND ct.role = 'lender_primary'
+         WHERE ct.company_id = $1 AND ct.lifecycle_stage = 'lender'
        )`,
       [companyId, contactName || "Lender Contact", contactEmail, contactPhone, silo]
     );
 
-    // If the primary contact already exists, refresh its fields.
+    // BF_SERVER_v65_LENDER_MIRROR_ROLE — match the new dedupe predicate.
     await pool.query(
       `UPDATE contacts SET
          name       = COALESCE(NULLIF($2,''), name),
          email      = COALESCE(NULLIF($3,''), email),
          phone      = COALESCE(NULLIF($4,''), phone),
          updated_at = now()
-       WHERE company_id = $1 AND role = 'lender_primary'`,
+       WHERE company_id = $1 AND lifecycle_stage = 'lender'`,
       [companyId, contactName, contactEmail, contactPhone]
     );
   } catch (err) {

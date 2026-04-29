@@ -82,12 +82,23 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
 
     let contactId: string | null = null;
     if (applicantPhone || applicantEmail) {
-      // Match contact by phone first, fall back to email — both within silo.
+      // BF_SERVER_v65_CRM_DEDUP_EMAIL — match by phone first; if that misses
+      // and we also have an email, retry with the email lookup before
+      // falling through to INSERT. The previous code chose ONE strategy
+      // (phone OR email, not both), so a returning applicant whose phone
+      // is stored in a different format (E.164 vs hyphenated, +1 prefix,
+      // etc.) showed up as a duplicate next to the existing email match.
       const matchSql = applicantPhone
         ? `SELECT id FROM contacts WHERE silo = $1 AND phone = $2 LIMIT 1`
         : `SELECT id FROM contacts WHERE silo = $1 AND lower(email) = lower($2) LIMIT 1`;
       const matchVal = applicantPhone ? applicantPhone : applicantEmail!;
-      const existing = await pool.query<{ id: string }>(matchSql, [silo, matchVal]);
+      let existing = await pool.query<{ id: string }>(matchSql, [silo, matchVal]);
+      if (!existing.rows[0] && applicantPhone && applicantEmail) {
+        existing = await pool.query<{ id: string }>(
+          `SELECT id FROM contacts WHERE silo = $1 AND lower(email) = lower($2) LIMIT 1`,
+          [silo, applicantEmail]
+        );
+      }
       if (existing.rows[0]) {
         contactId = existing.rows[0].id;
         await pool.query(

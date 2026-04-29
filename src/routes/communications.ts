@@ -13,7 +13,11 @@ router.get("/", safeHandler((_req: any, res: any) => {
   res.json({ status: "ok" });
 }));
 
-// GET /api/communications/messages — queries the actual DB
+// GET /api/communications/messages — queries the actual DB.
+// BF_SERVER_v65_COMMS_NO_400 — when contact_id is absent, return an empty
+// list with 200 instead of 400. Portal Communications page calls this
+// before any thread is selected; the previous 400 just spammed the
+// console without changing the rendered empty-state.
 router.get("/messages", safeHandler(async (req: any, res: any) => {
   const contactId =
     (typeof req.query.contact_id === "string" && req.query.contact_id) ||
@@ -22,7 +26,7 @@ router.get("/messages", safeHandler(async (req: any, res: any) => {
   const { getSilo } = await import("../middleware/silo.js");
   const silo = getSilo(res);
   if (!contactId) {
-    return res.status(400).json({ error: { code: "validation_error", message: "contact_id is required" } });
+    return res.status(200).json({ messages: [], total: 0 });
   }
 
   try {

@@ -145,23 +145,47 @@ async function sendDocumentRejectionSms(params: {
 router.get(
   "/applications",
   portalLimiter,
-  safeHandler(async (_req: any, res: any) => {
+  // BF_SERVER_v65_PIPELINE_DRAFTS — by default, return only submitted
+  // applications (submitted_at IS NOT NULL). The portal PipelinePage
+  // sends ?include_drafts=1 when its "Show drafts" checkbox is on; the
+  // previous query ignored the param, so submitted apps still appeared
+  // alongside abandoned wizard drafts.
+  safeHandler(async (req: any, res: any) => {
     if (!ensureReady(res)) {
       return;
     }
+    const includeDraftsRaw =
+      (typeof req?.query?.include_drafts === "string" && req.query.include_drafts) ||
+      (typeof req?.query?.includeDrafts === "string" && req.query.includeDrafts) ||
+      "";
+    const includeDrafts =
+      includeDraftsRaw === "1" ||
+      includeDraftsRaw.toLowerCase() === "true" ||
+      includeDraftsRaw.toLowerCase() === "yes";
     try {
       const result = await runQuery<{
         id: string;
         name: string;
         pipeline_state: string | null;
         created_at: Date;
+        submitted_at: Date | null;
       }>(
-        `select id,
-          coalesce(name, business_legal_name) as name,
-          pipeline_state,
-          created_at
-         from applications
-         order by created_at desc`
+        includeDrafts
+          ? `select id,
+              coalesce(name, business_legal_name) as name,
+              pipeline_state,
+              created_at,
+              submitted_at
+             from applications
+             order by created_at desc`
+          : `select id,
+              coalesce(name, business_legal_name) as name,
+              pipeline_state,
+              created_at,
+              submitted_at
+             from applications
+             where submitted_at is not null
+             order by submitted_at desc`
       );
       const rows = Array.isArray(result?.rows) ? result.rows : [];
       res.status(200).json({
@@ -170,6 +194,7 @@ router.get(
           name: row.name,
           pipelineState: row.pipeline_state ?? ApplicationStage.RECEIVED,
           createdAt: row.created_at,
+          submittedAt: row.submitted_at ?? null,
         })),
       });
     } catch (err) {
