@@ -1,41 +1,46 @@
-import { type SubmissionAdapter, type SubmissionResult } from "../SubmissionAdapter.js";
-import { config } from "../../../config/index.js";
+import type { SubmissionAdapter, SubmissionResult } from "../SubmissionAdapter.js";
+import { sendViaGraph, type GraphAttachment } from "../../../services/email/graphSendService.js";
+
+type EmailSendInput = {
+  lender: { id: string; name: string; submission_email: string | null; contact_email?: string | null };
+  subject: string;
+  bodyText: string;
+  bodyHtml?: string;
+  attachments?: GraphAttachment[];
+  cc?: string[];
+};
+
+export async function sendLenderEmail(input: EmailSendInput) {
+  const to = (input.lender.submission_email ?? "").trim();
+  if (!to) return { ok: false as const, provider: "graph" as const, error: `lender ${input.lender.id} has no submission_email configured` };
+  const result = await sendViaGraph({ to, cc: input.cc, subject: input.subject, bodyText: input.bodyText, bodyHtml: input.bodyHtml, attachments: input.attachments });
+  return result.ok
+    ? { ok: true as const, provider: "graph" as const, deliveredTo: to }
+    : { ok: false as const, provider: "graph" as const, error: result.error };
+}
 
 export class EmailAdapter implements SubmissionAdapter {
-  private to: string;
+  constructor(private readonly params: { to: string; payload: Record<string, unknown> }) {}
 
-  constructor(params: { to: string; payload: Record<string, unknown> }) {
-    this.to = params.to;
-    void params.payload;
-  }
-
-  async submit(_applicationId: string): Promise<SubmissionResult> {
-    if (config.app.testMode === "true") {
-      console.log("[TEST_MODE] EMAIL skipped");
+  async submit(): Promise<SubmissionResult> {
+    const subject = `Boreal submission package`;
+    const bodyText = `A new submission package is attached.`;
+    const send = await sendViaGraph({ to: this.params.to, subject, bodyText });
+    if (send.ok) {
       return {
         success: true,
-        response: {
-          status: "accepted",
-          detail: "TEST_MODE email skipped",
-          receivedAt: new Date().toISOString(),
-          externalReference: "email_test_mode_skip",
-        },
+        response: { status: "submitted", detail: `Sent via Graph to ${this.params.to}`, receivedAt: new Date().toISOString(), externalReference: send.messageId },
         failureReason: null,
         retryable: false,
       };
     }
-
-    const now = new Date().toISOString();
     return {
-      success: true,
-      response: {
-        status: "accepted",
-        detail: `Email accepted for delivery to ${this.to}.`,
-        receivedAt: now,
-        externalReference: "email_stub",
-      },
-      failureReason: null,
-      retryable: false,
+      success: false,
+      response: { status: "failed", detail: send.error, receivedAt: new Date().toISOString(), externalReference: null },
+      failureReason: send.error,
+      retryable: true,
     };
   }
 }
+
+export default { send: sendLenderEmail };

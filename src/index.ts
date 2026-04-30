@@ -13,6 +13,7 @@ import { verifyRequiredTables } from "./db/tableHealthCheck.js";
 import { listRoutes } from "./debug/printRoutes.js";
 import { pgcryptoAvailable } from "./security/ssnCrypto.js";
 import { markReady } from "./startupState.js";
+import { logGraphConfigStatus } from "./services/email/graphSendService.js"; // BF_SERVER_v72_BLOCK_1_5
 
 const PORT = Number(process.env.PORT) || 8080;
 
@@ -36,6 +37,7 @@ export async function start(): Promise<void> {
     const { runMigrations } = await import("./startup/runMigrations.js");
     try {
       await runMigrations(pool);
+      logGraphConfigStatus(); // BF_SERVER_v72_BLOCK_1_5
       console.log("[MIGRATIONS] All migrations applied.");
       try {
         const has = await pgcryptoAvailable(pool);
