@@ -37,6 +37,7 @@ import { getStorage } from "../lib/storage/index.js";
 import { sendSMS } from "../services/smsService.js";
 import { toStringSafe } from "../utils/toStringSafe.js";
 import twilio from "twilio";
+import { progressSubmission } from "../services/submission/orchestrator.js";
 // BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const router = Router();
@@ -751,6 +752,13 @@ router.post(
         ).catch(() => {});
         await recordTransition(appId, cur, "Off to Lender", req.user?.userId ?? null, "All documents accepted");
       }
+    }
+    try {
+      void progressSubmission({ pool, applicationId: appId }).catch((e) => {
+        console.warn("[doc-accept] progressSubmission failed", e);
+      });
+    } catch (e) {
+      console.warn("[doc-accept] orchestrator import failed", e);
     }
     res.status(200).json({ ok: true, document: doc });
   })
