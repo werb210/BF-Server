@@ -27,7 +27,7 @@ export async function dispatchToSelected(
   let signedApp: Buffer | null = null;
   let creditSummary: Buffer | null = null;
   let docs: { category: string; files: { filename: string; content: Buffer }[] }[] = [];
-  type FieldRow = { label: string; value: string | number | null };
+  type FieldRow = { label: string; value: string | number | boolean | null };
   let fields: FieldRow[] = [];
 
   try {

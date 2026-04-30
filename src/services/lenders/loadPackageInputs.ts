@@ -1,4 +1,6 @@
 // BF_SERVER_v76_BLOCK_1_9 — real package input loader.
+// BF_SERVER_v76_BLOCK_1_9_FIX — fields value widened to string|number|boolean|null
+// to match buildApplicationPackage.FlatFields and the FlatField producer below.
 import type { Pool } from "pg";
 import { Buffer } from "node:buffer";
 import { getStorage } from "../../lib/storage/index.js";
@@ -8,7 +10,7 @@ export type PackageInputs = {
   signedApplicationPdf: Buffer | null;
   creditSummaryPdf: Buffer | null;
   documents: PackageInputDocs[];
-  fields: Array<{ label: string; value: string | number | null }>;
+  fields: Array<{ label: string; value: string | number | boolean | null }>;
 };
 export type LoadCtx = { pool: Pool; applicationId: string };
 
@@ -46,7 +48,7 @@ function renderTextPdf(lines: string[]): Buffer {
   return Buffer.from(pdf, "latin1");
 }
 
-type FlatField = { label: string; value: string | number | null };
+type FlatField = { label: string; value: string | number | boolean | null };
 function flatten(prefix: string, v: unknown, out: FlatField[]): void {
   if (v === null || v === undefined) { if (prefix) out.push({ label: prefix, value: null }); return; }
   if (Array.isArray(v)) { if (v.length===0) { if(prefix) out.push({label:prefix,value:null}); return;} for (let i=0;i<v.length;i++) flatten(`${prefix}[${i+1}]`, v[i], out); return; }
