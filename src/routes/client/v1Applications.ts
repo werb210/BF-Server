@@ -282,6 +282,10 @@ router.post(
         formData: legacyApp,
         submittedAt,
       };
+      // BF_SERVER_v70_BLOCK_1_2 — advance pipeline_state on submit.
+      // With docs already uploaded -> 'Received'; without -> 'Documents Required'.
+      // Only updates pipeline_state if currently null/draft so we don't
+      // clobber a stage staff has manually advanced.
       await pool.query(
         `UPDATE applications
          SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb,
@@ -289,7 +293,18 @@ router.post(
              lender_id = COALESCE($3, lender_id),
              lender_product_id = COALESCE($4, lender_product_id),
              submitted_at = NOW(),
-             updated_at = NOW()
+             updated_at = NOW(),
+             pipeline_state = CASE
+               WHEN pipeline_state IS NULL OR pipeline_state IN ('draft','Draft','')
+                 THEN CASE
+                   WHEN EXISTS (
+                     SELECT 1 FROM documents
+                      WHERE application_id::text = applications.id::text
+                   ) THEN 'Received'
+                   ELSE 'Documents Required'
+                 END
+               ELSE pipeline_state
+             END
          WHERE id::text = ($5)::text`,
         [
           JSON.stringify(metaPatch),
