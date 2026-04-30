@@ -86,10 +86,20 @@ const rootRoutes = Router();
 rootRoutes.use(readinessRoutes);
 rootRoutes.use(signnowRoutes);
 
+const combinedRootRoutes = Router();
+combinedRootRoutes.use(rootRoutes);
+combinedRootRoutes.use(submissionOrchestrationRoutes);
+
 const combinedMayaRoutes = Router();
 combinedMayaRoutes.use(mayaRoutes);
 combinedMayaRoutes.use(mayaAdminStubs);
 
+// BF_SERVER_v77_BLOCK_1_11_OFFERS_COLLISION — single mount at /offers,
+// composed of the legacy offers router (list/create/status) plus the
+// pending-acceptance router (accept / confirm-acceptance / decline).
+const combinedOffersRoutes = Router();
+combinedOffersRoutes.use(offersRoutes);
+combinedOffersRoutes.use(offerAcceptanceRoutes);
 
 // Register SMS inbound also at /api/sms/inbound for Twilio console config flexibility.
 // Apply silo middleware globally to all /api routes.
@@ -120,8 +130,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/lender-submissions", router: lenderSubmissionsRoutes },
   { path: "/admin", router: adminRoutes },
   { path: "/marketing", router: marketingRoutes },
-  { path: "/offers", router: offersRoutes },
-  { path: "/offers", router: offerAcceptanceRoutes },
+  { path: "/offers", router: combinedOffersRoutes },
   { path: "/messages", router: messagesRoutes },
   { path: "/reporting", router: reportingRoutes },
   { path: "/reports", router: reportsRoutes },
@@ -144,9 +153,8 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/email", router: emailRoutes },
   { path: "/o365", router: o365Routes },
   { path: "/public", router: publicApplicationRoutes },
-  { path: "/", router: rootRoutes },
+  { path: "/", router: combinedRootRoutes },
   { path: "/applications", router: applicationsRoutes },
-  { path: "/", router: submissionOrchestrationRoutes },
 ];
 
 export const PORTAL_ROUTE_REQUIREMENTS: Pick<ApiRoute, "method" | "path">[] = [
