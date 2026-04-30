@@ -54,6 +54,39 @@ router.post(
     }),
 );
 
+// BF_SERVER_v66_LENDER_COUNT — GET /api/public/lender-count
+// Lightweight public endpoint used by the client wizard's Step 6 to
+// render "Submitted to our network of {N}+ lenders." Returns
+// { count: number } where N is the count of active lenders. Tolerant
+// of an environment where the `active` column might be missing.
+// Calls res.json() explicitly because wrap() in this codebase does
+// not inspect the handler's return value and ok() from apiResponse
+// only builds the envelope object without sending it.
+router.get(
+  "/lender-count",
+  wrap(async (_req, res) => {
+    let count = 0;
+    try {
+      const result = await dbQuery<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM lenders WHERE COALESCE(active, true) = true`,
+      );
+      count = Number(result.rows?.[0]?.count ?? 0) || 0;
+    } catch {
+      // Defensive: if the active column is missing or the query fails for any
+      // reason, fall back to a plain count so the wizard doesn't show a 404.
+      try {
+        const result = await dbQuery<{ count: string }>(
+          `SELECT COUNT(*)::text AS count FROM lenders`,
+        );
+        count = Number(result.rows?.[0]?.count ?? 0) || 0;
+      } catch {
+        count = 0;
+      }
+    }
+    return res.status(200).json(ok({ count }));
+  }),
+);
+
 router.all("/lead", wrap(async (_req, res) => fail(res, "METHOD_NOT_ALLOWED")));
 
 export default router;
