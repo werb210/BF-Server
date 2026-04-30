@@ -38,43 +38,96 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
     const applicantEmail = (app.email ?? "").trim() || null;
     const applicantPhone = (app.phone ?? "").trim() || null;
 
+    // BF_SERVER_v70_BLOCK_1_3 — company dedup keyed on email primary,
+    // phone secondary, name+silo last resort. Email is the canonical
+    // company identifier per locked spec; previous code matched on
+    // lowercased name only, which created duplicates whenever the
+    // applicant typed the same business with different spelling/casing.
     let companyId: string | null = null;
-    if (businessName) {
-      const existing = await pool.query<{ id: string }>(
-        `SELECT id FROM companies
-         WHERE silo = $1 AND lower(trim(name)) = lower(trim($2))
-         ORDER BY created_at DESC LIMIT 1`,
-        [silo, businessName]
-      );
+    const businessEmail = (biz.email ?? "").trim().toLowerCase() || null;
+    const businessPhone = (biz.phone ?? "").trim() || null;
+    if (businessName || businessEmail || businessPhone) {
+      // 1) email match (lowercased)
+      let existing: { rows: { id: string }[] } = { rows: [] };
+      if (businessEmail) {
+        existing = await pool.query<{ id: string }>(
+          `SELECT id FROM companies
+            WHERE silo = $1
+              AND email IS NOT NULL
+              AND lower(email) = $2
+            ORDER BY created_at DESC LIMIT 1`,
+          [silo, businessEmail]
+        );
+      }
+      // 2) phone match
+      if (existing.rows.length === 0 && businessPhone) {
+        existing = await pool.query<{ id: string }>(
+          `SELECT id FROM companies
+            WHERE silo = $1 AND phone = $2
+            ORDER BY created_at DESC LIMIT 1`,
+          [silo, businessPhone]
+        );
+      }
+      // 3) name + silo last resort (case-insensitive, trimmed)
+      if (existing.rows.length === 0 && businessName) {
+        existing = await pool.query<{ id: string }>(
+          `SELECT id FROM companies
+            WHERE silo = $1 AND lower(trim(name)) = lower(trim($2))
+            ORDER BY created_at DESC LIMIT 1`,
+          [silo, businessName]
+        );
+      }
+
       if (existing.rows[0]) {
         companyId = existing.rows[0].id;
         await pool.query(
           `UPDATE companies SET
-             phone      = COALESCE(NULLIF($2,''), phone),
-             website    = COALESCE(NULLIF($3,''), website),
-             industry   = COALESCE(NULLIF($4,''), industry),
-             city       = COALESCE(NULLIF($5,''), city),
-             province   = COALESCE(NULLIF($6,''), province),
-             country    = COALESCE(NULLIF($7,''), country),
+             name       = COALESCE(NULLIF($2,''), name),
+             email      = COALESCE(NULLIF($3,''), email),
+             phone      = COALESCE(NULLIF($4,''), phone),
+             website    = COALESCE(NULLIF($5,''), website),
+             industry   = COALESCE(NULLIF($6,''), industry),
+             city       = COALESCE(NULLIF($7,''), city),
+             province   = COALESCE(NULLIF($8,''), province),
+             country    = COALESCE(NULLIF($9,''), country),
              updated_at = now()
            WHERE id = $1`,
-          [companyId, biz.phone ?? "", biz.website ?? "", biz.industry ?? "",
-            biz.city ?? "", biz.province ?? "", biz.country ?? ""]
+          [
+            companyId,
+            businessName ?? "",
+            biz.email ?? "",
+            biz.phone ?? "",
+            biz.website ?? "",
+            biz.industry ?? "",
+            biz.city ?? "",
+            biz.province ?? "",
+            biz.country ?? "",
+          ]
         );
-      } else {
+      } else if (businessName) {
         const created = await pool.query<{ id: string }>(
           `INSERT INTO companies (
-             id, name, phone, website, industry, city, province, country,
+             id, name, email, phone, website, industry, city, province, country,
              status, silo, types_of_financing, created_at, updated_at
            )
            VALUES (
              gen_random_uuid(), $1, NULLIF($2,''), NULLIF($3,''), NULLIF($4,''),
-             NULLIF($5,''), NULLIF($6,''), NULLIF($7,''), 'prospect', $8,
+             NULLIF($5,''), NULLIF($6,''), NULLIF($7,''), NULLIF($8,''),
+             'prospect', $9,
              ARRAY['APPLICANT']::text[], now(), now()
            )
            RETURNING id`,
-          [businessName, biz.phone ?? "", biz.website ?? "", biz.industry ?? "",
-            biz.city ?? "", biz.province ?? "", biz.country ?? "", silo]
+          [
+            businessName,
+            biz.email ?? "",
+            biz.phone ?? "",
+            biz.website ?? "",
+            biz.industry ?? "",
+            biz.city ?? "",
+            biz.province ?? "",
+            biz.country ?? "",
+            silo,
+          ]
         );
         companyId = created.rows[0]?.id ?? null;
       }
