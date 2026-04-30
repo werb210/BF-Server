@@ -118,7 +118,15 @@ router.post(
           ? body.lender_id
           : "";
 
-    const name = typeof body.name === "string" ? body.name : "";
+    // BF_SERVER_v67_LENDER_PRODUCT_NAME_FALLBACK — accept body.productName
+    // as a fallback so the portal's existing payload shape (which sends
+    // productName, not name) is no longer rejected with 400.
+    const name =
+      typeof body.name === "string" && body.name
+        ? body.name
+        : typeof body.productName === "string" && body.productName
+          ? body.productName
+          : "";
     const category = typeof body.category === "string" ? body.category : "LOC";
 
     if (!lenderId) throw new AppError("validation_error", "lenderId is required.", 400);
@@ -160,7 +168,14 @@ router.put(
     const silo = getSilo(res);
     if (!id) throw new AppError("validation_error", "Product id is required.", 400);
 
-    const name = typeof body.name === "string" ? body.name : "";
+    // BF_SERVER_v67_LENDER_PRODUCT_NAME_FALLBACK — accept body.productName
+    // as a fallback for body.name. See POST handler comment above.
+    const name =
+      typeof body.name === "string" && body.name
+        ? body.name
+        : typeof body.productName === "string" && body.productName
+          ? body.productName
+          : "";
     if (!name) throw new AppError("validation_error", "name is required.", 400);
 
     const existing = await fetchLenderProductById(id, pool);
