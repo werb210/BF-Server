@@ -40,6 +40,10 @@ async function createLead(payload: LeadPayload): Promise<{ leadId?: string }> {
   return stripUndefined({ leadId: result.rows[0]?.id });
 }
 
+// BF_SERVER_v68_LEAD_RES_JSON — every branch must explicitly call
+// res.status(N).json(envelope). `wrap()` only catches errors; `ok`/`fail`
+// only build envelope objects. Without an explicit res.json the response
+// is never sent and the client hangs until timeout.
 router.post(
   "/lead",
   requireFields(["companyName", "email"]),
@@ -47,10 +51,10 @@ router.post(
       const result = await createLead(req.body);
 
       if (!result?.leadId) {
-        return fail(res, "INVALID_INPUT");
+        return res.status(400).json(fail(res, "INVALID_INPUT"));
       }
 
-      return ok({ leadId: result.leadId });
+      return res.status(200).json(ok({ leadId: result.leadId }));
     }),
 );
 
@@ -87,6 +91,6 @@ router.get(
   }),
 );
 
-router.all("/lead", wrap(async (_req, res) => fail(res, "METHOD_NOT_ALLOWED")));
+router.all("/lead", wrap(async (_req, res) => res.status(405).json(fail(res, "METHOD_NOT_ALLOWED"))));
 
 export default router;
