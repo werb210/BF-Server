@@ -8,6 +8,10 @@ import { isTest } from "../config/runtime.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { authMeHandler } from "./auth/me.js";
 import { findAuthUserByPhone } from "../modules/auth/auth.repo.js";
+// BF_SERVER_v68_OTP_HAS_SUBMISSION — server-authoritative submission lookup
+// during OTP verify so the client can route to /portal even when localStorage
+// is empty (logout, different browser, cleared cache).
+import { runQuery as dbQuery_v68 } from "../lib/db.js";
 import microsoftRoutes from "./authMicrosoft.js";
 
 const router = Router();
@@ -170,7 +174,37 @@ router.post("/otp/verify", async (req, res) => {
       capabilities: fetchCapabilitiesForRole(role),
     });
 
-    return res.status(200).json({ status: "ok", data: { token } });
+    // BF_SERVER_v68_OTP_HAS_SUBMISSION — best-effort phone -> submitted
+    // application lookup. Errors here MUST NOT block a successful verify;
+    // we degrade silently to hasSubmittedApplication=false on any failure.
+    let hasSubmittedApplication = false;
+    let submittedApplicationId: string | null = null;
+    try {
+      const r = await dbQuery_v68<{ id: string }>(
+        `SELECT a.id
+           FROM applications a
+           INNER JOIN application_contacts ac ON ac.application_id = a.id
+           INNER JOIN contacts c              ON c.id             = ac.contact_id
+          WHERE a.submitted_at IS NOT NULL
+            AND ac.role = 'applicant'
+            AND c.phone = $1
+          ORDER BY a.submitted_at DESC
+          LIMIT 1`,
+        [phone]
+      );
+      if (r.rows.length > 0 && r.rows[0]?.id) {
+        hasSubmittedApplication = true;
+        submittedApplicationId = r.rows[0].id;
+      }
+    } catch (err) {
+      // Don't fail OTP verify on a lookup hiccup. Log and continue.
+      console.warn("[v68 OTP] submission lookup failed", { err: String(err) });
+    }
+
+    return res.status(200).json({
+      status: "ok",
+      data: { token, hasSubmittedApplication, submittedApplicationId },
+    });
   } catch (_err) {
     return res.status(401).json({ error: "Invalid code" });
   }
