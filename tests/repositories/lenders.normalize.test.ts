@@ -6,7 +6,7 @@ describe("normalizeSubmissionMethod canonical allowlist", () => {
   it("maps and rejects deprecated values", () => {
     expect(normalizeSubmissionMethod("email")).toBe("EMAIL");
     expect(normalizeSubmissionMethod("GOOGLE_SHEETS")).toBe("GOOGLE_SHEET");
-    expect(normalizeSubmissionMethod("MANUAL")).toBeNull();
+    expect(normalizeSubmissionMethod("MANUAL")).toBe("MANUAL");
     expect(normalizeSubmissionMethod("PORTAL")).toBeNull();
     expect(normalizeSubmissionMethod("garbage")).toBeNull();
   });

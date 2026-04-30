@@ -33,7 +33,7 @@ export function normalizeSubmissionMethod(value: string | null | undefined): str
   if (!value) return null;
   let v = String(value).trim().toUpperCase();
   if (v === "GOOGLE_SHEETS") v = "GOOGLE_SHEET";
-  const allowed = ["EMAIL", "API", "GOOGLE_SHEET"];
+  const allowed = ["EMAIL", "API", "GOOGLE_SHEET", "MANUAL"];
   return allowed.includes(v) ? v : null;
 }
 
@@ -90,6 +90,10 @@ export function reconcileSubmissionPayload(input: {
       apiConfig: null,
       submissionConfig: input.submissionConfig,
     };
+  }
+
+  if (method === "MANUAL") {
+    return { method: "MANUAL", email: null, apiConfig: null, submissionConfig: null };
   }
 
   return { method: null, email: null, apiConfig: null, submissionConfig: null };

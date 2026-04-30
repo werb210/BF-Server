@@ -85,10 +85,8 @@ combinedPortalRoutes.use(documentTypesRouter);
 const rootRoutes = Router();
 rootRoutes.use(readinessRoutes);
 rootRoutes.use(signnowRoutes);
-
-const combinedRootRoutes = Router();
-combinedRootRoutes.use(rootRoutes);
-combinedRootRoutes.use(submissionOrchestrationRoutes);
+// BF_SERVER_v77_BLOCK_1_11_OFFERS_COLLISION — fold orchestration into root mount
+rootRoutes.use(submissionOrchestrationRoutes);
 
 const combinedMayaRoutes = Router();
 combinedMayaRoutes.use(mayaRoutes);
@@ -153,7 +151,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/email", router: emailRoutes },
   { path: "/o365", router: o365Routes },
   { path: "/public", router: publicApplicationRoutes },
-  { path: "/", router: combinedRootRoutes },
+  { path: "/", router: rootRoutes },
   { path: "/applications", router: applicationsRoutes },
 ];
 
