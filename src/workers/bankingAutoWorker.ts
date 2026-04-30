@@ -4,6 +4,7 @@
 import type { Pool } from "pg";
 import { eventBus } from "../events/eventBus.js";
 import { analyzeBankStatements } from "../services/bankingAnalysis.service.js";
+import { buildBankingFromOcr } from "../services/banking/bankingFromOcr.js";
 
 interface DocRow {
   id: string;
@@ -22,17 +23,20 @@ export function startBankingAutoWorker(pool: Pool): { stop: () => void } {
     running = true;
     try {
       const { rows } = await pool.query<DocRow>(
-        `SELECT d.id, d.application_id, NULL::text AS ocr_text
+        `SELECT d.id, d.application_id, r.extracted_json::text AS ocr_text
            FROM documents d
+           LEFT JOIN ocr_document_results r ON r.document_id = d.id
           WHERE d.ocr_status = 'completed'
             AND (d.banking_status IS NULL OR d.banking_status = 'pending')
           LIMIT 5`
       );
       for (const row of rows) {
         try {
+          const ocrResult = row.ocr_text ? JSON.parse(row.ocr_text) : {};
+          const normalized = buildBankingFromOcr(ocrResult as never);
           const result = analyzeBankStatements({
             applicationId: row.application_id,
-            transactions: [],
+            transactions: normalized.transactions,
           });
           await pool.query(
             `UPDATE documents SET banking_status='completed', updated_at=now() WHERE id=$1`,
