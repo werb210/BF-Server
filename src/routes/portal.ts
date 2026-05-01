@@ -145,6 +145,9 @@ async function sendDocumentRejectionSms(params: {
 
 router.get(
   "/applications",
+  // BF_SERVER_BLOCK_1_32_BACKLOG_CLEANUP
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
   portalLimiter,
   // BF_SERVER_v65_PIPELINE_DRAFTS — by default, return only submitted
   // applications (submitted_at IS NOT NULL). The portal PipelinePage
@@ -164,24 +167,31 @@ router.get(
       includeDraftsRaw.toLowerCase() === "true" ||
       includeDraftsRaw.toLowerCase() === "yes";
     try {
+      // BF_SERVER_BLOCK_1_32_BACKLOG_CLEANUP
       const result = await runQuery<{
         id: string;
         name: string;
+        business_legal_name: string | null;
         pipeline_state: string | null;
+        requested_amount: string | number | null;
         created_at: Date;
         submitted_at: Date | null;
       }>(
         includeDrafts
           ? `select id,
               coalesce(name, business_legal_name) as name,
+              business_legal_name,
               pipeline_state,
+              requested_amount,
               created_at,
               submitted_at
              from applications
              order by created_at desc`
           : `select id,
               coalesce(name, business_legal_name) as name,
+              business_legal_name,
               pipeline_state,
+              requested_amount,
               created_at,
               submitted_at
              from applications
@@ -189,13 +199,18 @@ router.get(
              order by submitted_at desc`
       );
       const rows = Array.isArray(result?.rows) ? result.rows : [];
+      // BF_SERVER_BLOCK_1_32_BACKLOG_CLEANUP — snake_case fields match portal Card type.
       res.status(200).json({
         items: rows.map((row) => ({
           id: row.id,
           name: row.name,
-          pipelineState: row.pipeline_state ?? ApplicationStage.RECEIVED,
-          createdAt: row.created_at,
-          submittedAt: row.submitted_at ?? null,
+          business_legal_name: row.business_legal_name ?? null,
+          pipeline_state: row.pipeline_state ?? ApplicationStage.RECEIVED,
+          requested_amount: row.requested_amount === null || row.requested_amount === undefined
+            ? null
+            : Number(row.requested_amount),
+          created_at: row.created_at,
+          submitted_at: row.submitted_at ?? null,
         })),
       });
     } catch (err) {
