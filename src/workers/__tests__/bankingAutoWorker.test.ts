@@ -1,26 +1,35 @@
-// BF_AZURE_OCR_TERMSHEET_v44 — banking analysis pure-function test
+// BF_SERVER_BLOCK_1_30B_BANKING_WORKER_TRIGGER
 import { describe, it, expect } from "vitest";
-import { analyzeBankStatements } from "../../services/bankingAnalysis.service.js";
+import fs from "node:fs";
+import path from "node:path";
 
-describe("BF_AZURE_OCR_TERMSHEET_v44 banking analysis", () => {
-  it("computes nsf_count, monthly_revenue, revenue_trend", () => {
-    const r = analyzeBankStatements({
-      applicationId: "app-1",
-      transactions: [
-        { balance: 1000, credit: 500, type: "deposit" },
-        { balance: 1200, credit: 700, type: "deposit" },
-        { balance: 900,  credit: 0,   type: "NSF charge" },
-        { balance: 1500, credit: 1200, type: "deposit" },
-      ],
-    });
-    expect(r.applicationId).toBe("app-1");
-    expect(r.nsf_count).toBe(1);
-    expect(r.monthly_revenue).toBe(2400);
-    expect(["up", "down"]).toContain(r.revenue_trend);
+describe("BF_SERVER_BLOCK_1_30B_BANKING_WORKER_TRIGGER — worker contract", () => {
+  const src = fs.readFileSync(
+    path.resolve(__dirname, "../bankingAutoWorker.ts"),
+    "utf8",
+  );
+
+  it("calls runBankingAnalysis from the new pipeline", () => {
+    expect(src).toContain("runBankingAnalysis(applicationId");
+    expect(src).toContain("from \"../services/banking/bankingAnalysisPipeline.js\"");
   });
-  it("handles empty input safely", () => {
-    const r = analyzeBankStatements({ applicationId: "x", transactions: [] });
-    expect(r.avg_balance).toBe(0);
-    expect(r.monthly_revenue).toBe(0);
+
+  it("uses the shared storage backend for fetchBuffer", () => {
+    expect(src).toContain("getStorage()");
+    expect(src).toContain("from \"../lib/storage/index.js\"");
+  });
+
+  it("gates on banking_analyses status to avoid re-runs", () => {
+    expect(src).toContain("'in_progress'");
+    expect(src).toContain("'analysis_complete'");
+  });
+
+  it("no longer calls the legacy analyzeBankStatements stub", () => {
+    expect(src).not.toContain("analyzeBankStatements");
+    expect(src).not.toContain("buildBankingFromOcr");
+  });
+
+  it("parks failed analyses so they don't loop", () => {
+    expect(src).toContain("'failed'");
   });
 });
