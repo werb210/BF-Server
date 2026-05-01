@@ -99,17 +99,4 @@ export async function fetchContinuation(token: string): Promise<Record<string, u
   return rows[0] ?? null;
 }
 
-export async function convertContinuation(
-  token: string,
-  applicationId: string
-): Promise<void> {
-  await runQuery(
-    `
-    UPDATE application_continuations
-    SET converted_application_id = $1,
-        converted_at = NOW()
-    WHERE token = $2
-    `,
-    [applicationId, token]
-  );
-}
+// BF_SERVER_BLOCK_1_32_BACKLOG_CLEANUP — convertContinuation removed (no callers).

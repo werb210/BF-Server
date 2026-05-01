@@ -286,12 +286,23 @@ router.post(
       // With docs already uploaded -> 'Received'; without -> 'Documents Required'.
       // Only updates pipeline_state if currently null/draft so we don't
       // clobber a stage staff has manually advanced.
+      // BF_SERVER_BLOCK_1_32_BACKLOG_CLEANUP — also promote applications.name from the
+      // wizard payload when the current name is empty / 'Draft application'.
+      const wizardBusinessName: string | null =
+        (legacyApp && typeof legacyApp === 'object'
+          ? ((legacyApp as any)?.business?.name ?? (legacyApp as any)?.company?.name ?? null)
+          : null) || null;
       await pool.query(
         `UPDATE applications
          SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb,
              requested_amount = COALESCE($2, requested_amount),
              lender_id = COALESCE($3, lender_id),
              lender_product_id = COALESCE($4, lender_product_id),
+             name = CASE
+               WHEN (name IS NULL OR name = '' OR name ILIKE 'draft%' OR name = 'Draft application')
+                 THEN COALESCE($6, name)
+               ELSE name
+             END,
              submitted_at = NOW(),
              updated_at = NOW(),
              pipeline_state = CASE
@@ -312,6 +323,7 @@ router.post(
           wizardCols.lenderId,
           wizardCols.lenderProductId,
           application.id,
+          wizardBusinessName,
         ]
       );
 
