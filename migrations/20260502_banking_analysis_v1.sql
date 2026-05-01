@@ -1,7 +1,12 @@
--- BF_SERVER_BLOCK_1_30_DOC_INTEL_AND_BANKING
+-- BF_SERVER_BLOCK_1_30C_BANKING_MIGRATION_TYPE_FIX
+-- Originally written by Block 1.30. The first attempt declared
+-- application_id as UUID, but applications.id is TEXT in this DB —
+-- PostgreSQL refused to create the FK. All ID columns referencing
+-- applications.id or documents.id are TEXT here. Local primary keys
+-- stay UUID with gen_random_uuid().
 
 CREATE TABLE IF NOT EXISTS banking_analyses (
-  application_id UUID PRIMARY KEY REFERENCES applications(id) ON DELETE CASCADE,
+  application_id TEXT PRIMARY KEY REFERENCES applications(id) ON DELETE CASCADE,
   accounts JSONB NOT NULL DEFAULT '[]'::jsonb,
   total_avg_monthly_deposits NUMERIC(14,2),
   average_daily_balance NUMERIC(14,2),
@@ -26,8 +31,8 @@ CREATE TABLE IF NOT EXISTS banking_analyses (
 
 CREATE TABLE IF NOT EXISTS banking_transactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  application_id UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
-  document_id UUID,
+  application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+  document_id TEXT,
   account_label TEXT,
   transaction_date DATE NOT NULL,
   description TEXT,
@@ -46,7 +51,7 @@ CREATE INDEX IF NOT EXISTS idx_banking_tx_date ON banking_transactions(applicati
 
 CREATE TABLE IF NOT EXISTS banking_monthly_summaries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  application_id UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+  application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
   month_start DATE NOT NULL,
   total_deposits NUMERIC(14,2) NOT NULL DEFAULT 0,
   total_withdrawals NUMERIC(14,2) NOT NULL DEFAULT 0,
