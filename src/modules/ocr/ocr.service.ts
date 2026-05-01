@@ -16,7 +16,8 @@ import {
   markOcrJobSuccess,
   resetOcrJob,
 } from "./ocr.repo.js";
-import { createOpenAiOcrProvider, type OcrProvider } from "./ocr.provider.js";
+import { createOpenAiOcrProvider, createAzureDocIntelOcrProvider, type OcrProvider } from "./ocr.provider.js";
+// BF_SERVER_BLOCK_1_30_DOC_INTEL_AND_BANKING
 import { createOcrStorage, OcrStorageValidationError, type OcrStorage } from "./ocr.storage.js";
 import { type OcrJobRecord } from "./ocr.types.js";
 import { logError, logInfo } from "../../observability/logger.js";
@@ -32,10 +33,10 @@ const OCR_RETRY_MAX_MS = 15 * 60 * 1000;
 const OCR_FUZZY_THRESHOLD = 0.85;
 
 function resolveProvider(): OcrProvider {
+  // BF_SERVER_BLOCK_1_30_DOC_INTEL_AND_BANKING
   const provider = config.ocr.provider;
-  if (provider === "openai") {
-    return createOpenAiOcrProvider();
-  }
+  if (provider === "azure-doc-intel") return createAzureDocIntelOcrProvider();
+  if (provider === "openai") return createOpenAiOcrProvider();
   throw new Error(`unsupported_ocr_provider:${provider}`);
 }
 

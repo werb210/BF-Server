@@ -288,6 +288,11 @@ router.get('/:id/banking-analysis', safeHandler(async (req: any, res: any) => {
     [applicationId]
   );
   const counts = docRes.rows[0] ?? { bank_total: '0', bank_completed: '0', any_completed: '0' };
+  // BF_SERVER_BLOCK_1_30_DOC_INTEL_AND_BANKING — pull rich analysis from banking_analyses + monthly summaries.
+  const richRes = await pool.query<any>(`SELECT total_avg_monthly_deposits, average_daily_balance, negative_balance_days, total_deposits, total_withdrawals, average_monthly_nsfs, days_with_insufficient_funds, months_profitable_numerator, months_profitable_denominator, current_month_net_cash_flow, unusual_transactions, top_vendors, period_start, period_end, months_detected, accounts, status AS analysis_status, completed_at FROM banking_analyses WHERE application_id::text = ($1)::text`, [applicationId]);
+  const monthlyRes = await pool.query<any>(`SELECT month_start::text AS month, total_deposits::text AS deposits, total_withdrawals::text AS withdrawals, net_cash_flow::text AS net, ending_balance::text AS ending_balance, nsf_count FROM banking_monthly_summaries WHERE application_id::text = ($1)::text ORDER BY month_start ASC`, [applicationId]);
+  const rich = richRes.rows[0] ?? null;
+  const monthly = monthlyRes.rows;
   const bankCount = Number(counts.bank_total) || 0;
   const completedBankCount = Number(counts.bank_completed) || 0;
 
@@ -304,21 +309,44 @@ router.get('/:id/banking-analysis', safeHandler(async (req: any, res: any) => {
     banking_completed_at: bankingCompletedAt,
     bankCount,
     documentsAnalyzed: completedBankCount,
-    monthsDetected: null,
-    monthGroups: [],
-    dateRange: null,
-    inflows: null,
-    outflows: null,
-    cashFlow: null,
-    balances: null,
-    riskFlags: null,
-    // Surface a concise human status for the V1 tab to render even when
-    // metrics are still null.
-    status: bankCount === 0
+    monthsDetected: rich?.months_detected ?? null,
+    monthGroups: monthly.map((m: any) => ({
+      month: m.month,
+      deposits: Number(m.deposits ?? 0),
+      withdrawals: Number(m.withdrawals ?? 0),
+      net: Number(m.net ?? 0),
+      endingBalance: m.ending_balance == null ? null : Number(m.ending_balance),
+      nsfCount: Number(m.nsf_count ?? 0),
+    })),
+    dateRange: rich ? { start: rich.period_start, end: rich.period_end } : null,
+    accounts: rich?.accounts ?? [],
+    inflows: rich ? {
+      totalDeposits: rich.total_deposits == null ? null : Number(rich.total_deposits),
+      averageMonthlyDeposits: rich.total_avg_monthly_deposits == null ? null : Number(rich.total_avg_monthly_deposits),
+    } : null,
+    outflows: rich ? {
+      totalWithdrawals: rich.total_withdrawals == null ? null : Number(rich.total_withdrawals),
+    } : null,
+    cashFlow: rich ? {
+      currentMonthNet: rich.current_month_net_cash_flow == null ? null : Number(rich.current_month_net_cash_flow),
+      monthsProfitableNumerator: rich.months_profitable_numerator,
+      monthsProfitableDenominator: rich.months_profitable_denominator,
+    } : null,
+    balances: rich ? {
+      averageDailyBalance: rich.average_daily_balance == null ? null : Number(rich.average_daily_balance),
+      negativeBalanceDays: rich.negative_balance_days,
+    } : null,
+    riskFlags: rich ? {
+      averageMonthlyNsfs: rich.average_monthly_nsfs == null ? null : Number(rich.average_monthly_nsfs),
+      daysWithInsufficientFunds: rich.days_with_insufficient_funds,
+      unusualTransactions: rich.unusual_transactions ?? [],
+    } : null,
+    topVendors: rich?.top_vendors ?? [],
+    status: rich?.analysis_status ?? (bankCount === 0
       ? 'no_bank_statements'
       : completedBankCount < bankCount
         ? 'analysis_in_progress'
-        : 'analysis_complete',
+        : 'analysis_complete'),
   });
 }));
 

@@ -57,7 +57,7 @@ function parseIsoDate(s: string | null | undefined): string | null {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function extractTransactionsFromTables(doc: RawOcrDocument): BankTransaction[] {
+export function extractTransactionsFromTables(doc: RawOcrDocument): BankTransaction[] {
   const out: BankTransaction[] = [];
   for (const page of doc.pages ?? []) {
     for (const t of page.tables ?? []) {

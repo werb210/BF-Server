@@ -38,7 +38,8 @@
     "web-push": "^3.6.7",
     "ws": "^8.20.0",
     "zod": "^3.23.8",
-    "archiver": "^7.0.1"
+    "archiver": "^7.0.1",
+    "@azure-rest/ai-document-intelligence": "^1.0.0"
   },
   "devDependencies": {
     "@rolldown/binding-linux-x64-gnu": "^1.0.0-rc.15",

@@ -151,3 +151,6 @@ export function createOpenAiOcrProvider(): OcrProvider {
     },
   };
 }
+
+// BF_SERVER_BLOCK_1_30_DOC_INTEL_AND_BANKING
+export { createAzureDocIntelOcrProvider } from "./azureDocIntelProvider.js";
