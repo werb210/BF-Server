@@ -1,12 +1,26 @@
 import type { Pool } from "pg";
 import { sendSMS } from "../smsService.js";
 
+// BF_SERVER_BLOCK_1_24_NOTIFICATIONS_TITLE — fallback title when caller didn't pass one.
+function humanizeType(type: string): string {
+  if (!type) return "Notification";
+  return (
+    type
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .trim() || "Notification"
+  );
+}
+
 export type NotifyAllStaffCtx = {
   pool: Pool;
   // Type tag for notification record (e.g. "website_contact" | "website_readiness").
   notificationType: string;
   // Plain-text body used for both SMS and in-app notification.
   body: string;
+  // BF_SERVER_BLOCK_1_24_NOTIFICATIONS_TITLE — short heading shown above body in the portal bell.
+  // Optional; if omitted, a humanized notificationType is used.
+  title?: string;
   // Optional row-level reference for the notification.
   refTable?: string;
   refId?: string;
@@ -55,11 +69,13 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx): Promise<{
       try {
         await ctx.pool.query(
           `INSERT INTO notifications
-             (id, user_id, type, ref_table, ref_id, body, context_url, is_read, created_at)
-           VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, false, now())`,
+             (id, user_id, type, title, ref_table, ref_id, body, context_url, is_read, created_at)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, false, now())`,
           [
             user.id,
             ctx.notificationType,
+            // BF_SERVER_BLOCK_1_24_NOTIFICATIONS_TITLE — supply title from caller or derive from type.
+            ctx.title ?? humanizeType(ctx.notificationType),
             ctx.refTable ?? null,
             ctx.refId ?? null,
             ctx.body,

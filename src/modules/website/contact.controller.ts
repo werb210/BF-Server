@@ -35,6 +35,8 @@ export async function submitContactForm(req: Request, res: Response) {
     await notifyAllStaff({
       pool,
       notificationType: "website_contact",
+      // BF_SERVER_BLOCK_1_24_NOTIFICATIONS_TITLE — explicit title for the portal bell.
+      title: "New website contact form submission",
       body,
       refTable: "crm_leads",
       refId: lead.id,

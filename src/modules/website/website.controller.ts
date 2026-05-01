@@ -116,6 +116,8 @@ export async function submitCreditReadiness(req: Request, res: Response) {
     await notifyAllStaff({
       pool,
       notificationType: "website_readiness",
+      // BF_SERVER_BLOCK_1_24_NOTIFICATIONS_TITLE — explicit title for the portal bell.
+      title: `New readiness lead — ${companyName}`,
       body,
       refTable: "crm_leads",
       refId: lead.id,
