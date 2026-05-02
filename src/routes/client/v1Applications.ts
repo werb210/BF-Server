@@ -329,6 +329,78 @@ router.post(
           wizardBusinessName,
         ]
       );
+      // BF_SERVER_BLOCK_v81_CLOSING_COSTS_COMPANION — companion app for closing
+      // costs. Triggered when the client checks "cover closing costs" on Step 2
+      // for a non-TERM/LOC primary product (e.g., Equipment Finance).
+      const wantsClosingCosts = Boolean(
+        (legacyApp as any)?.requires_closing_cost_funding ??
+        (legacyApp as any)?.requiresClosingCostFunding
+      );
+      const primaryCategory = String(
+        (legacyApp as any)?.productCategory ??
+        (legacyApp as any)?.product_category ??
+        ""
+      ).toUpperCase();
+      const NON_COMPANION_CATEGORIES = new Set(["TERM", "LOC", "TERM_LOAN", "LINE_OF_CREDIT"]);
+      if (wantsClosingCosts && primaryCategory && !NON_COMPANION_CATEGORIES.has(primaryCategory)) {
+        try {
+          const primaryAmount = Number(wizardCols.requestedAmount ?? 0);
+          const companionAmount = Math.round(primaryAmount * 0.2);
+          const termCheck = await pool.query<{ count: number }>(
+            `SELECT COUNT(*)::int AS count
+               FROM lender_products
+              WHERE category = 'TERM'
+                AND active = true
+                AND (silo IS NULL OR silo = $1)`,
+            [silo]
+          );
+          const companionCategory = (termCheck.rows[0]?.count ?? 0) > 0 ? "TERM" : "LOC";
+          const companionId = randomUUID();
+          await pool.query(
+            `INSERT INTO applications
+               (id, name, silo, owner_user_id, parent_application_id,
+                requested_amount, product_category, pipeline_state, status,
+                source, metadata, submitted_at, created_at, updated_at)
+             VALUES
+               ($1, $2, $3, $4, $5,
+                $6, $7, 'Received', 'received',
+                'closing_costs_companion',
+                jsonb_build_object('closing_cost_companion', true,
+                                   'parent_application_id', $5::text,
+                                   'companion_category', $7),
+                now(), now(), now())`,
+            [
+              companionId,
+              `Closing costs — ${wizardBusinessName ?? application.id.slice(0, 8)}`,
+              silo,
+              ownerId,
+              application.id,
+              companionAmount > 0 ? companionAmount : null,
+              companionCategory,
+            ]
+          );
+          logInfo("closing_costs_companion_created", {
+            parentApplicationId: application.id,
+            companionApplicationId: companionId,
+            category: companionCategory,
+            amount: companionAmount,
+          });
+        } catch (companionErr) {
+          logError("closing_costs_companion_failed", {
+            code: "closing_costs_companion_failed",
+            parentApplicationId: application.id,
+            error: companionErr instanceof Error ? companionErr.message : "unknown",
+          });
+        }
+      }
+      if (primaryCategory) {
+        try {
+          await pool.query(
+            `UPDATE applications SET product_category = $1 WHERE id = $2`,
+            [primaryCategory, application.id]
+          );
+        } catch {}
+      }
 
       // BF_APP_TO_CRM_v38 — Block 38-E — fire-and-forget CRM mirror.
       try {

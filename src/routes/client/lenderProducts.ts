@@ -1,69 +1,38 @@
+// BF_SERVER_BLOCK_v81_CLIENT_LENDER_PRODUCTS — accept ?category=<X> filter.
+// Without this, Step 5 of the wizard fetches every lender product the firm
+// has and tries to render document requirements for unrelated categories.
 import { Router } from "express";
-import { AppError } from "../../middleware/errors.js";
-import { safeHandler } from "../../middleware/safeHandler.js";
-import { listLenderProducts } from "../../repositories/lenderProducts.repo.js";
-import {
-  listRequirementsForFilters,
-  resolveLenderProductRequirements,
-} from "../../services/lenderProductRequirementsService.js";
+import { pool } from "../../db.js";
+import { ok, fail } from "../../middleware/response.js";
 
 const router = Router();
 
-/**
- * GET /api/client/lender-products
- * Public — used by BF-client wizard Step 2 to render product categories.
- * Returns the full shape the wizard expects; do NOT truncate fields here.
- */
-router.get(
-  "/lender-products",
-  safeHandler(async (_req: any, res: any) => {
-    const products = await listLenderProducts();
-    const active = products.filter((p: any) => p.active !== false);
-
-    const payload = active.map((p: any) => ({
-      id:                 p.id,
-      name:               p.name,
-      product_type:       p.category,          // client expects product_type
-      country:            p.country ?? "BOTH",
-      amount_min:         p.amount_min ?? null,
-      amount_max:         p.amount_max ?? null,
-      commission:         p.commission != null ? Number(p.commission) : null,
-      min_credit_score:   p.min_credit_score != null ? Number(p.min_credit_score) : null,
-      term:               p.term_min && p.term_max ? `${p.term_min}-${p.term_max}` : p.term_min ?? p.term_max ?? null,
-      rate:               p.rate_type === "VARIABLE"
-                            ? "P+"
-                            : (p.interest_min && p.interest_max ? `${p.interest_min}-${p.interest_max}` : p.interest_min ?? p.interest_max ?? null),
-      required_documents: Array.isArray(p.required_documents) ? p.required_documents : [],
-      lender_id:          p.lender_id,
-      lender_name:        p.lender_name ?? null,
-      status:             p.active ? "active" : "inactive",
-    }));
-
-    res.status(200).json({ status: "ok", data: payload });
-  })
-);
-
-router.get(
-  "/lender-products/:id/requirements",
-  safeHandler(async (req: any, res: any) => {
-    const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
-    if (!id) throw new AppError("validation_error", "Invalid request", 400);
-    const requirements = await resolveLenderProductRequirements({ lenderProductId: id });
-    res.status(200).json({ status: "ok", data: requirements });
-  })
-);
-
-router.get(
-  "/lender-products/requirements",
-  safeHandler(async (req: any, res: any) => {
-    const category = typeof req.query.category === "string" ? req.query.category.trim() : "";
-    if (!category) throw new AppError("validation_error", "Invalid request", 400);
-    const country = typeof req.query.country === "string" ? req.query.country : undefined;
-    const raw = typeof req.query.requestedAmount === "string" ? Number(req.query.requestedAmount) : null;
-    const requestedAmount = Number.isFinite(raw as number) ? (raw as number) : null;
-    const requirements = await listRequirementsForFilters({ category, country, requestedAmount });
-    res.status(200).json({ status: "ok", data: requirements });
-  })
-);
+router.get("/lender-products", async (req, res) => {
+  try {
+    const category = typeof req.query.category === "string"
+      ? req.query.category.trim().toUpperCase()
+      : "";
+    const params: unknown[] = [];
+    let where = "active = true";
+    if (category) {
+      params.push(category);
+      where += ` AND category = $${params.length}`;
+    }
+    const r = await pool.query(
+      `SELECT id, lender_id, name, category, country, rate_type,
+              interest_min, interest_max, term_min, term_max, term_unit,
+              amount_min, amount_max, required_documents
+       FROM lender_products
+       WHERE ${where}
+       ORDER BY category, name
+       LIMIT 500`,
+      params
+    );
+    return ok(res, r.rows);
+  } catch (err) {
+    console.error("[client/lender-products] failed", err);
+    return fail(res, 500, "FAILED");
+  }
+});
 
 export default router;
