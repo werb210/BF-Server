@@ -6,7 +6,10 @@ import { config } from "../../config/index.js";
 import { AppError } from "../../middleware/errors.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { ApplicationStage, statusFromPipeline } from "../../modules/applications/pipelineState.js";
-import { findApplicationById } from "../../modules/applications/applications.repo.js";
+import {
+  findApplicationById,
+  listDocumentsByApplicationId,
+} from "../../modules/applications/applications.repo.js";
 import { logAnalyticsEvent } from "../../services/analyticsService.js";
 import { eventBus } from "../../events/eventBus.js";
 import { createContact, findOrCreateContactByEmailAndCompany } from "../../services/contacts.js";
@@ -498,7 +501,7 @@ router.patch(
 
 router.get(
   "/application/:id/status",
-  safeHandler(async (req: any, res: any, next: any) => {
+  safeHandler(async (req: any, res: any) => {
     const applicationId = typeof req.params.id === "string" ? req.params.id.trim() : "";
     if (!applicationId) {
       throw new AppError("validation_error", "Application id is required.", 400);
@@ -507,12 +510,66 @@ router.get(
     if (!application) {
       throw new AppError("not_found", "Application not found.", 404);
     }
+
+    // Hydrate the wizard shape the BF-client resume.ts expects. The metadata
+    // jsonb column carries everything the wizard PATCHed in steps 1-4; the
+    // documents map is rebuilt from the documents table so an upload made
+    // from another tab/device shows up immediately on reload.
+    const meta: any = (application as any).metadata ?? {};
+    const formData: any = meta?.formData ?? {};
+
+    const docRows = await listDocumentsByApplicationId(applicationId).catch(() => []);
+    const documents: Record<string, any> = {};
+    for (const row of docRows) {
+      const key = row.document_type || (row as any).category;
+      if (!key) continue;
+      // Last-write-wins per docType; the wizard treats one row per type.
+      documents[key] = {
+        id: row.id,
+        name: row.filename ?? null,
+        status: row.status,
+        rejectionReason: (row as any).rejection_reason ?? null,
+        uploadedAt: row.created_at,
+      };
+    }
+
     res.status(200).json({
       status: {
         applicationId: application.id,
-        pipelineState: application.pipeline_state,
-        processingStage: application.processing_stage,
+        pipelineState: (application as any).pipeline_state ?? null,
+        processingStage: (application as any).processing_stage ?? null,
         updatedAt: application.updated_at,
+
+        // BF_SERVER_BLOCK_STATUS_HYDRATION_v80 — full wizard rehydration.
+        business: meta.business ?? formData.business ?? null,
+        applicant: meta.applicant ?? formData.applicant ?? null,
+        partner: meta.partner ?? formData.partner ?? null,
+        kyc: meta.kyc ?? formData.kyc ?? formData.financialProfile ?? null,
+        financialProfile: formData.financialProfile ?? meta.kyc ?? null,
+        productCategory:
+          meta.product_category ??
+          formData.productCategory ??
+          formData.product_category ??
+          null,
+        selectedProduct: meta.selected_product ?? formData.selectedProduct ?? null,
+        selectedProductId:
+          formData.selectedProductId ?? formData.selected_product_id ?? null,
+        selectedProductType:
+          meta.selected_product_type ??
+          formData.selectedProductType ??
+          formData.selected_product_type ??
+          null,
+        documentsDeferred:
+          formData.documentsDeferred ?? meta.documentsDeferred ?? false,
+        documents,
+        documentReviewComplete: formData.documentReviewComplete ?? null,
+        financialReviewComplete: formData.financialReviewComplete ?? null,
+        currentStep: formData.currentStep ?? null,
+        termsAccepted: formData.termsAccepted ?? false,
+        typedSignature: formData.typedSignature ?? null,
+        coApplicantSignature: formData.coApplicantSignature ?? null,
+        signatureDate: formData.signatureDate ?? null,
+        requires_closing_cost_funding: formData.requires_closing_cost_funding ?? false,
       },
     });
   })
