@@ -57,6 +57,21 @@ function bfBuildWizardMetadata(input: Record<string, any> | null | undefined): R
   if (input.readiness_lead_id !== undefined)    out.readiness_lead_id = input.readiness_lead_id;
   if (input.session_token !== undefined)        out.session_token = input.session_token;
   if (input.source !== undefined)               out.source = input.source;
+  // BF_SERVER_BLOCK_v82_DEFER_PERSIST — persist documentsDeferred and other
+  // simple flags from the wizard PATCH. Without this, "send docs later"
+  // disappears across sessions and the submit gate re-locks.
+  if (typeof input.documentsDeferred === "boolean")    out.documentsDeferred = input.documentsDeferred;
+  if (typeof input.documents_deferred === "boolean")   out.documentsDeferred = out.documentsDeferred ?? input.documents_deferred;
+  if (typeof input.requires_closing_cost_funding === "boolean")
+    out.requires_closing_cost_funding = input.requires_closing_cost_funding;
+  if (typeof input.requiresClosingCostFunding === "boolean")
+    out.requires_closing_cost_funding = out.requires_closing_cost_funding ?? input.requiresClosingCostFunding;
+  if (typeof input.currentStep === "number")           out.currentStep = input.currentStep;
+  if (typeof input.current_step === "number")          out.currentStep = out.currentStep ?? input.current_step;
+  if (typeof input.termsAccepted === "boolean")        out.termsAccepted = input.termsAccepted;
+  if (typeof input.typedSignature === "string")        out.typedSignature = input.typedSignature;
+  if (typeof input.coApplicantSignature === "string")  out.coApplicantSignature = input.coApplicantSignature;
+  if (typeof input.signatureDate === "string")         out.signatureDate = input.signatureDate;
   return out;
 }
 function bfExtractAppColumns(input: Record<string, any> | null | undefined): {
@@ -175,6 +190,16 @@ const patchSchema = z.object({
   readiness_lead_id: z.string().optional(),
   session_token: z.string().optional(),
   source: z.string().optional(),
+  documentsDeferred: z.boolean().optional(),
+  documents_deferred: z.boolean().optional(),
+  requires_closing_cost_funding: z.boolean().optional(),
+  requiresClosingCostFunding: z.boolean().optional(),
+  currentStep: z.number().int().min(1).max(6).optional(),
+  current_step: z.number().int().min(1).max(6).optional(),
+  termsAccepted: z.boolean().optional(),
+  typedSignature: z.string().optional(),
+  coApplicantSignature: z.string().optional(),
+  signatureDate: z.string().optional(),
 });
 
 router.post(
@@ -631,8 +656,12 @@ router.get(
           formData.selectedProductType ??
           formData.selected_product_type ??
           null,
+        // BF_SERVER_BLOCK_v82_DEFER_PERSIST — read from either path; PATCH
+        // writes to meta.documentsDeferred, submit writes to meta.formData.
         documentsDeferred:
-          formData.documentsDeferred ?? meta.documentsDeferred ?? false,
+          meta.documentsDeferred ??
+          formData.documentsDeferred ??
+          false,
         documents,
         documentReviewComplete: formData.documentReviewComplete ?? null,
         financialReviewComplete: formData.financialReviewComplete ?? null,
