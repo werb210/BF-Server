@@ -172,35 +172,51 @@ const createSchema = z.object({
 // wizard "saves" but the server keeps NULL, and the portal drawer is empty.
 const wizardPatchObject = z.record(z.string(), z.unknown());
 const patchSchema = z.object({
+  // Columnar fields persisted directly to applications.* columns.
   business_name: z.string().min(1).nullable().optional(),
   requested_amount: z.number().positive().nullable().optional(),
   lender_id: z.string().uuid().nullable().optional(),
   lender_product_id: z.string().uuid().nullable().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+
+  // Wizard step tracker — snake_case is the canonical legacy name; the
+  // camelCase `currentStep` is added in v82 because the BF-client wizard
+  // sends camelCase keys. bfBuildWizardMetadata accepts both and writes
+  // a single `currentStep` into metadata.
   current_step: z.number().int().positive().optional(),
-  // Wizard fields — passthrough into metadata.
+  currentStep:  z.number().int().min(1).max(6).optional(),
+
+  // Wizard nested objects — stored under metadata as-is.
   financialProfile: wizardPatchObject.optional(),
   business: wizardPatchObject.optional(),
   applicant: wizardPatchObject.optional(),
   partner: wizardPatchObject.optional(),
   kyc: wizardPatchObject.optional(),
+
+  // Product selection.
   product_category: z.string().optional(),
   selected_product: wizardPatchObject.optional(),
   selected_product_type: z.string().optional(),
+
+  // Lead / session attribution.
   readiness_lead_id: z.string().optional(),
   session_token: z.string().optional(),
   source: z.string().optional(),
-  documentsDeferred: z.boolean().optional(),
-  documents_deferred: z.boolean().optional(),
-  requires_closing_cost_funding: z.boolean().optional(),
-  requiresClosingCostFunding: z.boolean().optional(),
-  currentStep: z.number().int().min(1).max(6).optional(),
-  current_step: z.number().int().min(1).max(6).optional(),
-  termsAccepted: z.boolean().optional(),
-  typedSignature: z.string().optional(),
-  coApplicantSignature: z.string().optional(),
-  signatureDate: z.string().optional(),
+
+  // BF_SERVER_BLOCK_v82_DEFER_PERSIST — wizard state that the PATCH must
+  // persist so "send docs later" survives refresh and the submit gates
+  // re-enable on resume. Both naming conventions accepted; bfBuildWizardMetadata
+  // normalizes to canonical keys.
+  documentsDeferred:                z.boolean().optional(),
+  documents_deferred:               z.boolean().optional(),
+  requires_closing_cost_funding:    z.boolean().optional(),
+  requiresClosingCostFunding:       z.boolean().optional(),
+  termsAccepted:                    z.boolean().optional(),
+  typedSignature:                   z.string().optional(),
+  coApplicantSignature:             z.string().optional(),
+  signatureDate:                    z.string().optional(),
 });
+
 
 router.post(
   "/applications",
