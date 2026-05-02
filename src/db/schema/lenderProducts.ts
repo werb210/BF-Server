@@ -11,6 +11,9 @@ export type JsonArray = JsonValue[];
 export type RequiredDocuments = JsonObject[];
 export type Eligibility = JsonObject | null;
 
+// BF_SERVER_BLOCK_v81_CATEGORIES_COMPANION — full 10-category set.
+// Always-visible: LOC, TERM, EQUIPMENT, FACTORING, PO, MCA, MEDIA.
+// Conditional (UI hides until ≥1 active product exists): ABL, SBA, STARTUP.
 export const LENDER_PRODUCT_CATEGORIES = [
   "LOC",
   "TERM",
@@ -19,6 +22,9 @@ export const LENDER_PRODUCT_CATEGORIES = [
   "EQUIPMENT",
   "MCA",
   "MEDIA",
+  "ABL",
+  "SBA",
+  "STARTUP",
 ] as const;
 
 export const LENDER_PRODUCT_RATE_TYPES = ["FIXED", "VARIABLE"] as const;

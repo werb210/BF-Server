@@ -8,6 +8,7 @@ import {
   listDocumentsByApplicationId,
 } from "../modules/applications/applications.repo.js";
 import { ApplicationStage } from "../modules/applications/pipelineState.js";
+import { PIPELINE_STATES as PIPELINE_STAGES } from "../modules/applications/pipelineState.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { listApplicationStages } from "../controllers/applications.controller.js";
 import { portalRateLimit } from "../middleware/rateLimit.js";
@@ -149,72 +150,61 @@ router.get(
   requireAuth,
   requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
   portalLimiter,
-  // BF_SERVER_v65_PIPELINE_DRAFTS — by default, return only submitted
-  // applications (submitted_at IS NOT NULL). The portal PipelinePage
-  // sends ?include_drafts=1 when its "Show drafts" checkbox is on; the
-  // previous query ignored the param, so submitted apps still appeared
-  // alongside abandoned wizard drafts.
   safeHandler(async (req: any, res: any) => {
     if (!ensureReady(res)) {
       return;
     }
-    const includeDraftsRaw =
-      (typeof req?.query?.include_drafts === "string" && req.query.include_drafts) ||
-      (typeof req?.query?.includeDrafts === "string" && req.query.includeDrafts) ||
-      "";
-    const includeDrafts =
-      includeDraftsRaw === "1" ||
-      includeDraftsRaw.toLowerCase() === "true" ||
-      includeDraftsRaw.toLowerCase() === "yes";
     try {
-      // BF_SERVER_BLOCK_1_32_BACKLOG_CLEANUP
-      const result = await runQuery<{
-        id: string;
-        name: string;
-        business_legal_name: string | null;
-        pipeline_state: string | null;
-        requested_amount: string | number | null;
-        created_at: Date;
-        submitted_at: Date | null;
-      }>(
-        includeDrafts
-          ? `select id,
-              coalesce(name, business_legal_name) as name,
-              business_legal_name,
-              pipeline_state,
-              requested_amount,
-              created_at,
-              submitted_at
-             from applications
-             order by created_at desc`
-          : `select id,
-              coalesce(name, business_legal_name) as name,
-              business_legal_name,
-              pipeline_state,
-              requested_amount,
-              created_at,
-              submitted_at
-             from applications
-             where submitted_at is not null
-             order by submitted_at desc`
-      );
-      const rows = Array.isArray(result?.rows) ? result.rows : [];
-      // BF_SERVER_BLOCK_1_32_BACKLOG_CLEANUP — snake_case fields match portal Card type.
-      res.status(200).json({
-        items: rows.map((row) => ({
-          id: row.id,
-          name: row.name,
-          business_legal_name: row.business_legal_name ?? null,
-          pipeline_state: row.pipeline_state ?? ApplicationStage.RECEIVED,
-          requested_amount: row.requested_amount === null || row.requested_amount === undefined
-            ? null
-            : Number(row.requested_amount),
-          created_at: row.created_at,
-          submitted_at: row.submitted_at ?? null,
+      // BF_SERVER_BLOCK_v81_PIPELINE_HYDRATION — full card data, including drafts.
+      const showDrafts = String(req.query.showDrafts ?? req.query.show_drafts ?? "") === "true";
+      const businessUnit = String(req.query.business_unit ?? req.query.silo ?? "BF").toUpperCase();
+      const where: string[] = ["a.silo = $1"];
+      const values: unknown[] = [businessUnit];
+      if (!showDrafts) {
+        where.push(`COALESCE(a.pipeline_state, '') NOT IN ('draft','Draft','')`);
+      }
+      const sql = `
+        SELECT
+          a.id,
+          a.pipeline_state                                      AS stage,
+          a.requested_amount                                    AS requested_amount,
+          a.product_category                                    AS product_category,
+          a.parent_application_id                               AS parent_application_id,
+          COALESCE(a.pipeline_state IN ('draft','Draft',''),false) AS is_draft,
+          COALESCE(NULLIF(a.name, ''), c.name, 'Unnamed application') AS business_name,
+          ct.name                                               AS contact_name,
+          ct.email                                              AS contact_email,
+          u.first_name || ' ' || u.last_name                    AS owner_name,
+          a.updated_at                                          AS last_activity_at,
+          COALESCE(a.metadata->>'status_note', '')              AS status_note
+        FROM applications a
+        LEFT JOIN companies c ON c.id = a.company_id
+        LEFT JOIN contacts ct ON ct.id = a.primary_contact_id
+        LEFT JOIN users u    ON u.id = a.owner_user_id
+        WHERE ${where.join(" AND ")}
+        ORDER BY a.updated_at DESC
+        LIMIT 500
+      `;
+      const result = await runQuery(sql, values);
+      return res.json({
+        stages: PIPELINE_STAGES,
+        applications: result.rows.map((r: any) => ({
+          id: r.id,
+          stage: r.stage ?? "draft",
+          requestedAmount: r.requested_amount,
+          productCategory: r.product_category,
+          businessName: r.business_name,
+          contactName: r.contact_name,
+          contactEmail: r.contact_email,
+          ownerName: r.owner_name,
+          lastActivityAt: r.last_activity_at,
+          statusNote: r.status_note,
+          parentApplicationId: r.parent_application_id,
+          isDraft: r.is_draft,
         })),
       });
     } catch (err) {
-      res.status(200).json({ items: [] });
+      res.status(200).json({ stages: PIPELINE_STAGES, applications: [] });
     }
   })
 );

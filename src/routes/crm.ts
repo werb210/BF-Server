@@ -120,6 +120,18 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
   const hasLeadStatus = availableColumns.has("lead_status");
   const hasTags = availableColumns.has("tags");
   const hasOwnerId = availableColumns.has("owner_id");
+  // BF_SERVER_BLOCK_v81_CONTACTS_SORT — accept ?sort=col:dir from the portal.
+  // Whitelist columns; unknown sort falls back to created_at desc.
+  const SORT_COLS = new Set(["name", "company_name", "lead_status", "owner_name", "created_at"]);
+  const rawSort = typeof req.query.sort === "string" ? req.query.sort : "";
+  const [sortCol, sortDir] = rawSort.split(":");
+  const orderCol = SORT_COLS.has(sortCol) ? sortCol : "created_at";
+  const orderDir = sortDir && sortDir.toLowerCase() === "asc" ? "ASC" : "DESC";
+  // company_name and owner_name require their joined table aliases; map them.
+  const orderColExpr =
+    orderCol === "company_name" ? "co.name"
+    : orderCol === "owner_name" ? "u.first_name"
+    : `c.${orderCol}`;
 
   const values: unknown[] = [silo];
   const where: string[] = ["c.silo = $1"];
@@ -180,9 +192,10 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
       c.created_at,
       c.silo
     FROM contacts c
+    LEFT JOIN companies co ON ${hasCompanyId ? "c.company_id = co.id" : "false"}
     LEFT JOIN users u ON ${hasOwnerId ? "c.owner_id = u.id" : "false"}
     WHERE ${where.join(" AND ")}
-    ORDER BY c.created_at DESC
+    ORDER BY ${orderColExpr} ${orderDir} NULLS LAST, c.created_at DESC
     LIMIT $${values.length - 1} OFFSET $${values.length}`;
 
   const { rows } = await pool.query(sql, values);
