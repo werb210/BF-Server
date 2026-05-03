@@ -382,11 +382,10 @@ router.post(
         ""
       ).toUpperCase();
       // BF_SERVER_BLOCK_v84_COMPANION_ROUTING_BY_AMOUNT_v1
-      // Companion creation is now restricted to EQUIPMENT-parent
-      // applications only (matches the BF-client v89 rule that the
-      // closing-costs checkbox only appears on the EQUIPMENT card).
-      // Companion category is determined by AMOUNT, not by product
-      // availability: TERM if companionAmount ≤ $50,000 else LOC.
+      // Companion creation is restricted to EQUIPMENT-parent applications
+      // only (matches BF-client v91: the closing-costs checkbox only
+      // appears on the EQUIPMENT card). Companion category is determined
+      // by amount: TERM if companionAmount ≤ $50,000 else LOC.
       const EQUIPMENT_PARENT_ALIASES = new Set([
         "EQUIPMENT", "EQUIPMENT_FINANCE", "EQUIPMENT_FINANCING",
       ]);
