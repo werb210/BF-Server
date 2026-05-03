@@ -152,10 +152,18 @@ export async function createApplication(params: {
   const startupFlag = productCategory.trim().toLowerCase() === "startup";
   let res;
   try {
+    // BF_SERVER_BLOCK_v100_APPLICATIONS_SILO_DEFAULT_v1
+    // Include silo in the INSERT. Without this, every row created
+    // via createApplication() (e.g., POST /api/public/application/start)
+    // got silo=NULL and was invisible to the portal pipeline,
+    // which filters on silo='BF'.
+    const siloValue = (params as any).silo
+      ? String((params as any).silo).toUpperCase()
+      : "BF";
     res = await runner.query<ApplicationRecord>(
       `insert into applications
-       (id, owner_user_id, name, metadata, product_type, product_category, pipeline_state, current_stage, status, lender_id, lender_product_id, requested_amount, source, startup_flag, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, now(), now())
+       (id, owner_user_id, name, metadata, product_type, product_category, pipeline_state, current_stage, status, lender_id, lender_product_id, requested_amount, source, startup_flag, silo, created_at, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14, now(), now())
        returning id, owner_user_id, name, metadata, product_type, product_category, pipeline_state, current_stage, processing_stage, lender_id, lender_product_id, requested_amount, first_opened_at, ocr_completed_at, banking_completed_at, credit_summary_completed_at, startup_flag, created_at, updated_at`,
       [
         randomUUID(),
@@ -171,6 +179,7 @@ export async function createApplication(params: {
         params.requestedAmount ?? null,
         params.source ?? null,
         startupFlag,
+        siloValue,
       ]
     );
   } catch (err) {
