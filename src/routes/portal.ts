@@ -156,7 +156,20 @@ router.get(
     }
     try {
       // BF_SERVER_BLOCK_v81_PIPELINE_HYDRATION — full card data, including drafts.
-      const showDrafts = String(req.query.showDrafts ?? req.query.show_drafts ?? "") === "true";
+      // BF_SERVER_BLOCK_v101_INCLUDE_DRAFTS_PARAM_v1
+      // BF-portal PipelinePage sends ?include_drafts=1 (boolean-as-int).
+      // Accept that as well as the older ?showDrafts=true / ?show_drafts.
+      // Without this, the staff "Show drafts" toggle was silently a no-op
+      // and drafts never appeared regardless of state.
+      const truthy = (v: unknown) => {
+        const s = String(v ?? "").trim().toLowerCase();
+        return s === "1" || s === "true" || s === "yes";
+      };
+      const showDrafts =
+        truthy(req.query.showDrafts) ||
+        truthy(req.query.show_drafts) ||
+        truthy(req.query.include_drafts) ||
+        truthy(req.query.includeDrafts);
       const businessUnit = String(req.query.business_unit ?? req.query.silo ?? "BF").toUpperCase();
       const where: string[] = ["a.silo = $1"];
       const values: unknown[] = [businessUnit];

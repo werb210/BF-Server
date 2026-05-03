@@ -105,6 +105,52 @@ export async function submitCreditReadiness(req: Request, res: Response) {
       ],
     );
 
+    // BF_SERVER_BLOCK_v101_READINESS_DRAFT_APPLICATION_v1
+    // Per Todd: "Check my credit readiness" should leave a draft on
+    // the staff pipeline so leads are actionable, not just CRM rows.
+    // Insert a minimal applications row keyed to the same crm_lead.
+    // pipeline_state='draft' so the row only shows when the staff
+    // toggles "Show drafts" (per v81 pipeline hydration).
+    const fundingTypeStr =
+      typeof fundingType === "string" ? fundingType.trim().toUpperCase() : "";
+    const draftCategory =
+      fundingTypeStr.length > 0 ? fundingTypeStr : "TERM";
+    try {
+      await pool.query(
+        `INSERT INTO applications
+           (id, owner_user_id, name, metadata, product_type, product_category,
+            pipeline_state, current_stage, status, requested_amount, source,
+            startup_flag, silo, created_at, updated_at)
+         VALUES (
+           gen_random_uuid(),
+           NULL,
+           $1,
+           jsonb_build_object(
+             'source','website_credit_readiness',
+             'crm_lead_id', $2::text,
+             'readiness_email', $3,
+             'readiness_phone', $4
+           ),
+           $5, $5,
+           'draft', 'draft', 'draft',
+           $6, 'website_credit_readiness',
+           false, 'BF', now(), now()
+         )`,
+        [
+          String(companyName),
+          lead.id,
+          String(email).toLowerCase(),
+          String(phone),
+          draftCategory,
+          requestedAmountNumber,
+        ]
+      );
+    } catch (err) {
+      // Do NOT fail the readiness submit if the draft insert hiccups.
+      // The CRM lead + readiness_session are the primary persistence.
+      console.warn("[website_readiness] draft application insert failed", err);
+    }
+
     const token = await createContinuation(req.body as any, lead.id);
 
     // Notify all staff (Admin + Staff + Marketing in BF silo) — SMS + in-app.
