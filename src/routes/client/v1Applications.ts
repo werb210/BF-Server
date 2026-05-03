@@ -81,12 +81,38 @@ function bfExtractAppColumns(input: Record<string, any> | null | undefined): {
 } {
   if (!input || typeof input !== "object") return { requestedAmount: null, lenderId: null, lenderProductId: null };
   const sp = (input.selected_product ?? input.selectedProduct ?? null) as Record<string, any> | null;
-  const requestedAmount =
-    bfParseAmount(input.requested_amount) ??
-    bfParseAmount(input.requestedAmount) ??
-    bfParseAmount(input.kyc?.fundingAmount) ??
-    bfParseAmount(input.financialProfile?.fundingAmount) ??
-    null;
+  // BF_SERVER_BLOCK_v85_MULTI_LEG_SUBMIT_v1
+  // For Capital & Equipment users, the primary application's
+  // requested_amount is the CAPITAL amount, not fundingAmount.
+  const lookingFor = String(
+    input.looking_for ?? input.lookingFor ??
+    input.kyc?.lookingFor ?? input.financialProfile?.lookingFor ?? ""
+  ).toUpperCase();
+  const isCapitalAndEquipment = lookingFor === "BOTH" || lookingFor === "CAPITAL_AND_EQUIPMENT";
+  const isEquipmentOnly = lookingFor === "EQUIPMENT" || lookingFor === "EQUIPMENT_FINANCING";
+  const requestedAmount = isCapitalAndEquipment
+    ? (
+        bfParseAmount(input.capital_amount) ??
+        bfParseAmount(input.capitalAmount) ??
+        bfParseAmount(input.kyc?.capitalAmount) ??
+        bfParseAmount(input.kyc?.fundingAmount) ??
+        null
+      )
+    : isEquipmentOnly
+      ? (
+          bfParseAmount(input.equipment_amount) ??
+          bfParseAmount(input.equipmentAmount) ??
+          bfParseAmount(input.kyc?.equipmentAmount) ??
+          bfParseAmount(input.kyc?.fundingAmount) ??
+          null
+        )
+      : (
+          bfParseAmount(input.requested_amount) ??
+          bfParseAmount(input.requestedAmount) ??
+          bfParseAmount(input.kyc?.fundingAmount) ??
+          bfParseAmount(input.financialProfile?.fundingAmount) ??
+          null
+        );
   const lenderId =
     (bfIsUuid(input.lender_id) ? input.lender_id : null) ??
     (bfIsUuid(sp?.lender_id) ? sp!.lender_id : null) ??
@@ -370,6 +396,71 @@ router.post(
           wizardBusinessName,
         ]
       );
+      // BF_SERVER_BLOCK_v85_MULTI_LEG_SUBMIT_v1
+      // Capital & Equipment fan-out: when the user selected
+      // lookingFor === BOTH on Step 1, primary app holds the capital
+      // leg; we insert a second application for the equipment leg
+      // with shared metadata and a parent_application_id link.
+      try {
+        const lookingForForFanOut = String(
+          (legacyApp as any)?.looking_for ??
+          (legacyApp as any)?.lookingFor ??
+          (legacyApp as any)?.kyc?.lookingFor ??
+          ""
+        ).toUpperCase();
+        const isCapitalAndEquipment =
+          lookingForForFanOut === "BOTH" ||
+          lookingForForFanOut === "CAPITAL_AND_EQUIPMENT";
+        if (isCapitalAndEquipment) {
+          const equipmentAmount =
+            bfParseAmount((legacyApp as any)?.equipment_amount) ??
+            bfParseAmount((legacyApp as any)?.equipmentAmount) ??
+            bfParseAmount((legacyApp as any)?.kyc?.equipmentAmount) ??
+            null;
+          if (equipmentAmount && equipmentAmount > 0) {
+            const equipmentId = randomUUID();
+            await pool.query(
+              `INSERT INTO applications
+                 (id, name, silo, owner_user_id, parent_application_id,
+                  requested_amount, product_category, pipeline_state, status,
+                  source, metadata, submitted_at, created_at, updated_at)
+               VALUES
+                 ($1, $2, $3, $4, $5,
+                  $6, 'EQUIPMENT', 'Received', 'received',
+                  'capital_and_equipment_leg',
+                  jsonb_build_object('capital_and_equipment_leg', true,
+                                     'parent_application_id', $5::text,
+                                     'leg_category', 'EQUIPMENT') || $7::jsonb,
+                  now(), now(), now())`,
+              [
+                equipmentId,
+                `Equipment leg — ${wizardBusinessName ?? application.id.slice(0, 8)}`,
+                silo,
+                ownerId,
+                application.id,
+                equipmentAmount,
+                JSON.stringify(metaPatch),
+              ]
+            );
+            logInfo("capital_and_equipment_leg_created", {
+              parentApplicationId: application.id,
+              equipmentApplicationId: equipmentId,
+              equipmentAmount,
+            });
+          } else {
+            logError("capital_and_equipment_leg_missing_amount", {
+              code: "capital_and_equipment_leg_missing_amount",
+              parentApplicationId: application.id,
+            });
+          }
+        }
+      } catch (fanOutErr) {
+        logError("capital_and_equipment_leg_failed", {
+          code: "capital_and_equipment_leg_failed",
+          parentApplicationId: application.id,
+          error: fanOutErr instanceof Error ? fanOutErr.message : "unknown",
+        });
+      }
       // BF_SERVER_BLOCK_v81_CLOSING_COSTS_COMPANION — companion app for closing
       // costs.
       const wantsClosingCosts = Boolean(
@@ -381,11 +472,10 @@ router.post(
         (legacyApp as any)?.product_category ??
         ""
       ).toUpperCase();
-      // BF_SERVER_BLOCK_v84_COMPANION_ROUTING_BY_AMOUNT_v1
-      // Companion creation is restricted to EQUIPMENT-parent applications
-      // only (matches BF-client v91: the closing-costs checkbox only
-      // appears on the EQUIPMENT card). Companion category is determined
-      // by amount: TERM if companionAmount ≤ $50,000 else LOC.
+      // BF_SERVER_BLOCK_v85_MULTI_LEG_SUBMIT_v1
+      // Companion only fires for pure-Equipment parents (Capital&Equipment
+      // users have no companion — their capital leg serves the same role).
+      // Companion category is amount-based: TERM ≤ $50k, else LOC.
       const EQUIPMENT_PARENT_ALIASES = new Set([
         "EQUIPMENT", "EQUIPMENT_FINANCE", "EQUIPMENT_FINANCING",
       ]);
