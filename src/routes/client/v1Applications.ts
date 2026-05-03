@@ -371,8 +371,7 @@ router.post(
         ]
       );
       // BF_SERVER_BLOCK_v81_CLOSING_COSTS_COMPANION — companion app for closing
-      // costs. Triggered when the client checks "cover closing costs" on Step 2
-      // for a non-TERM/LOC primary product (e.g., Equipment Finance).
+      // costs.
       const wantsClosingCosts = Boolean(
         (legacyApp as any)?.requires_closing_cost_funding ??
         (legacyApp as any)?.requiresClosingCostFunding
@@ -382,20 +381,20 @@ router.post(
         (legacyApp as any)?.product_category ??
         ""
       ).toUpperCase();
-      const NON_COMPANION_CATEGORIES = new Set(["TERM", "LOC", "TERM_LOAN", "LINE_OF_CREDIT"]);
-      if (wantsClosingCosts && primaryCategory && !NON_COMPANION_CATEGORIES.has(primaryCategory)) {
+      // BF_SERVER_BLOCK_v84_COMPANION_ROUTING_BY_AMOUNT_v1
+      // Companion creation is now restricted to EQUIPMENT-parent
+      // applications only (matches the BF-client v89 rule that the
+      // closing-costs checkbox only appears on the EQUIPMENT card).
+      // Companion category is determined by AMOUNT, not by product
+      // availability: TERM if companionAmount ≤ $50,000 else LOC.
+      const EQUIPMENT_PARENT_ALIASES = new Set([
+        "EQUIPMENT", "EQUIPMENT_FINANCE", "EQUIPMENT_FINANCING",
+      ]);
+      if (wantsClosingCosts && EQUIPMENT_PARENT_ALIASES.has(primaryCategory)) {
         try {
           const primaryAmount = Number(wizardCols.requestedAmount ?? 0);
           const companionAmount = Math.round(primaryAmount * 0.2);
-          const termCheck = await pool.query<{ count: number }>(
-            `SELECT COUNT(*)::int AS count
-               FROM lender_products
-              WHERE category = 'TERM'
-                AND active = true
-                AND (silo IS NULL OR silo = $1)`,
-            [silo]
-          );
-          const companionCategory = (termCheck.rows[0]?.count ?? 0) > 0 ? "TERM" : "LOC";
+          const companionCategory = companionAmount <= 50_000 ? "TERM" : "LOC";
           const companionId = randomUUID();
           await pool.query(
             `INSERT INTO applications
