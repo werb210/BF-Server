@@ -84,13 +84,26 @@ router.get("/lender-products/required-docs", async (req, res) => {
     where.push(`(category IS NULL OR lower(category) = $${params.length})`);
   }
   if (funding_amount !== null) {
-    if (cols.has("min_amount")) {
+    // BF_SERVER_BLOCK_v118_REQUIRED_DOCS_AMOUNT_COLUMN_FIX_v1
+    // Production schema uses amount_min / amount_max (per migration 121,
+    // 121_readd_amount_columns_and_repair.sql). Older builds and tests
+    // sometimes used min_amount / max_amount. Probe for both spellings
+    // and emit a filter for whichever exists. The previous code only
+    // checked the legacy spelling, so cols.has() returned false in prod
+    // and the amount filter was silently skipped on every request.
+    const minCol =
+      cols.has("amount_min") ? "amount_min" :
+      cols.has("min_amount") ? "min_amount" : null;
+    const maxCol =
+      cols.has("amount_max") ? "amount_max" :
+      cols.has("max_amount") ? "max_amount" : null;
+    if (minCol) {
       params.push(funding_amount);
-      where.push(`(min_amount IS NULL OR min_amount <= $${params.length})`);
+      where.push(`(${minCol} IS NULL OR ${minCol} <= $${params.length})`);
     }
-    if (cols.has("max_amount")) {
+    if (maxCol) {
       params.push(funding_amount);
-      where.push(`(max_amount IS NULL OR max_amount >= $${params.length})`);
+      where.push(`(${maxCol} IS NULL OR ${maxCol} >= $${params.length})`);
     }
   }
   if (industry && cols.has("industries")) {
