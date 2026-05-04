@@ -70,7 +70,13 @@ async function persistAndEnqueue(opts: {
         put.blobName,
         put.url,
         put.sizeBytes,
-        opts.uploadedBy ?? null,
+        // BF_SERVER_BLOCK_v116_UPLOADED_BY_DEFAULT_v1 — uploaded_by is
+        // NOT NULL with DEFAULT 'client' (migration 054). Public-upload
+        // is unauthenticated so opts.uploadedBy is undefined; passing
+        // the literal 'client' matches the column default and avoids
+        // a not-null constraint violation that previously broke every
+        // public upload with a 500.
+        opts.uploadedBy ?? 'client',
       ]
     );
 
