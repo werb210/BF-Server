@@ -53,10 +53,10 @@ async function persistAndEnqueue(opts: {
     try {
       await tx.query(
         `INSERT INTO documents
-           (id, application_id, filename, hash, category, document_type,
+           (id, application_id, filename, hash, category,
             storage_path, blob_name, blob_url, size_bytes,
             status, ocr_status, uploaded_by, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$5,$6,$7,$8,$9,'uploaded','pending',$10,now(),now())`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'uploaded','pending',$10,now(),now())`,
         [
           documentId,
           opts.applicationId,
@@ -73,7 +73,7 @@ async function persistAndEnqueue(opts: {
     } catch {
       // Schema fallback: minimal columns only.
       await tx.query(
-        `INSERT INTO documents (id, application_id, filename, hash, document_type, status, created_at, updated_at)
+        `INSERT INTO documents (id, application_id, filename, hash, category, status, created_at, updated_at)
          VALUES ($1,$2,$3,$4,$5,'uploaded',now(),now())`,
         [documentId, opts.applicationId, opts.file.originalname, put.hash, opts.category]
       );
