@@ -124,13 +124,27 @@ router.get("/lender-products/required-docs", async (req, res) => {
       for (const item of arr) {
         if (typeof item === "string" && item.trim()) {
           entries.push({ document_type: item.trim(), required: true });
-        } else if (item && typeof item === "object" && typeof item.document_type === "string") {
-          entries.push({
-            document_type: item.document_type,
-            required: item.required !== false,
-            min_amount: item.min_amount ?? null,
-            max_amount: item.max_amount ?? null,
-          });
+        } else if (item && typeof item === "object") {
+          // BF_SERVER_BLOCK_v117_REQUIRED_DOCS_FIELD_NAME_FIX_v1
+          // The Edit Product modal in BF-portal saves required_documents
+          // entries with the field name `category`. Older code paths used
+          // `document_type`. Accept either as the source — emit canonical
+          // `document_type` in the response so the BF-client fetcher
+          // (BF_CLIENT_BLOCK_v107) can read it unchanged.
+          const docType =
+            typeof item.document_type === "string" && item.document_type.trim()
+              ? item.document_type.trim()
+              : typeof item.category === "string" && item.category.trim()
+              ? item.category.trim()
+              : null;
+          if (docType) {
+            entries.push({
+              document_type: docType,
+              required: item.required !== false,
+              min_amount: item.min_amount ?? null,
+              max_amount: item.max_amount ?? null,
+            });
+          }
         }
       }
     } else if (arr && typeof arr === "object") {
