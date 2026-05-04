@@ -81,9 +81,12 @@ const ALL_ROLES: Role[] = [
 const combinedPortalRoutes = Router();
 combinedPortalRoutes.use(portalRoutes);
 combinedPortalRoutes.use(portalLendersRoutes);
-combinedPortalRoutes.use(portalLenderProductsRoutes);
-// BF_SERVER_BLOCK_v109_REQUIRED_DOCS_ROUTE_v1
+// BF_SERVER_BLOCK_v110_REQUIRED_DOCS_ROUTE_ORDER_v1 — required-docs route
+// MUST mount BEFORE portalLenderProductsRoutes. The latter has
+// GET /lender-products/:id which captures `required-docs` as the :id
+// value and 404s before our handler is reached.
 combinedPortalRoutes.use(lenderProductsRequiredDocsRoutes);
+combinedPortalRoutes.use(portalLenderProductsRoutes);
 combinedPortalRoutes.use(documentTypesRouter);
 
 const rootRoutes = Router();
