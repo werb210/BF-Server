@@ -7,12 +7,16 @@ export async function readReadinessSnapshot(ctx: OrchestratorContext): Promise<R
   const docCheck = await pool.query<{ blocked: boolean }>(`SELECT EXISTS (SELECT 1 FROM document_requirements dr WHERE dr.application_id::text = $1 AND dr.required = true AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.application_id::text = dr.application_id::text AND d.category = dr.category AND d.status = 'accepted')) AS blocked`, [id]).catch(() => ({ rows: [{ blocked: false }] }));
   const taskCheck = await pool.query<{ open_count: string }>(`SELECT COUNT(*)::text AS open_count FROM application_tasks WHERE application_id::text = $1 AND completed_at IS NULL`, [id]).catch(() => ({ rows: [{ open_count: "0" }] }));
   const sel = await pool.query<{ finalized_at: string | null }>(`SELECT MAX(finalized_at) AS finalized_at FROM application_lender_selections WHERE application_id::text = $1`, [id]).catch(() => ({ rows: [{ finalized_at: null as string | null }] }));
-  const app = await pool.query<{ credit_summary_submitted_at: string | null; signed_at: string | null; }>(`SELECT credit_summary_submitted_at, signed_at FROM applications WHERE id::text = $1`, [id]).catch(() => ({ rows: [] as Array<{ credit_summary_submitted_at: string | null; signed_at: string | null }> }));
+  // BF_SERVER_BLOCK_v142_ORCHESTRATOR_COLUMN_NAMES_v1 — previously read
+  // credit_summary_submitted_at and signed_at, neither of which exist.
+  // Real columns: credit_summary_completed_at (stamped by creditSummary.repo)
+  // and signnow_app_signed_at (stamped by the SignNow webhook after v141).
+  const app = await pool.query<{ credit_summary_completed_at: string | null; signnow_app_signed_at: string | null; }>(`SELECT credit_summary_completed_at, signnow_app_signed_at FROM applications WHERE id::text = $1`, [id]).catch(() => ({ rows: [] as Array<{ credit_summary_completed_at: string | null; signnow_app_signed_at: string | null }> }));
   const docsBlocked = Boolean(docCheck.rows[0]?.blocked ?? false);
   const openTasks = Number(taskCheck.rows[0]?.open_count ?? "0");
   const finalizedAt = sel.rows[0]?.finalized_at ?? null;
   const appRow = app.rows[0];
-  return { allDocsAccepted: !docsBlocked, allTasksComplete: openTasks === 0, lenderSelectionsFinalized: finalizedAt !== null, creditSummarySubmitted: Boolean(appRow?.credit_summary_submitted_at), applicationSigned: Boolean(appRow?.signed_at) };
+  return { allDocsAccepted: !docsBlocked, allTasksComplete: openTasks === 0, lenderSelectionsFinalized: finalizedAt !== null, creditSummarySubmitted: Boolean(appRow?.credit_summary_completed_at), applicationSigned: Boolean(appRow?.signnow_app_signed_at) };
 }
 export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): Promise<{ fired: boolean; reason?: string }> {
   const snap = await readReadinessSnapshot(ctx);
