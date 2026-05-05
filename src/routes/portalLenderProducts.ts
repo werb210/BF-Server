@@ -210,8 +210,10 @@ function decorateProductResponse(product: any): any {
 
 
 // GET /api/portal/lender-products[?lenderId=...]
+// BF_SERVER_BLOCK_v133_PORTAL_LENDER_AUTH_v1 — AUDIT-8
 router.get(
   "/lender-products",
+  requireAuth,
   safeHandler(async (req: any, res: any) => {
     const silo = getSilo(res);
     const lenderId =
@@ -225,8 +227,10 @@ router.get(
 );
 
 // GET /api/portal/lender-products/:id
+// BF_SERVER_BLOCK_v133_PORTAL_LENDER_AUTH_v1 — AUDIT-8
 router.get(
   "/lender-products/:id",
+  requireAuth,
   safeHandler(async (req: any, res: any) => {
     const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
     if (!id) throw new AppError("validation_error", "Product id is required.", 400);

@@ -791,8 +791,10 @@ router.patch(
   })
 );
 
+// BF_SERVER_BLOCK_v133_PORTAL_LENDER_AUTH_v1 — AUDIT-8
 router.get(
   "/lenders",
+  requireAuth,
   portalLimiter,
   safeHandler(async (_req: any, res: any) => {
     const silo = getSilo(res);

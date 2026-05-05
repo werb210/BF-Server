@@ -1,0 +1,2 @@
+# BF_SERVER_BLOCK_v133_DELETE_DEAD_COMMS_MODULE_v1
+# AUDIT-DELETE-1: src/modules/communications/{repo,service,controller}.ts removed.
