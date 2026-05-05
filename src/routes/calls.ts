@@ -81,6 +81,11 @@ function buildRequestMetadata(req: Request): { ip?: string; userAgent?: string }
 
 router.post(
   "/log",
+  // BF_SERVER_BLOCK_v143_CALLS_LOG_AUTH_v1 — every other /api/calls/*
+  // route gates on requireAuth + ADMIN/STAFF. /log was missing both,
+  // letting anyone POST fake completed call records.
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
   safeHandler(async (req: any, res: any, next: any) => {
     const parsed = z
       .object({
