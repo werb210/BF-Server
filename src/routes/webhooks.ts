@@ -183,8 +183,8 @@ router.post("/inbound", safeHandler(async (req: any, res: any) => {
 }));
 
 // SignNow webhook (preserved)
-router.post("/signnow", safeHandler(async (req: any, res: any) => {
-  res.status(200).json({ ok: true, received: req.body });
-}));
-
+// BF_SERVER_BLOCK_v141_SIGNNOW_WEBHOOK_REPAIR_v1 — removed the no-op
+// /signnow echo. The real handler is in routes/signnow.ts and is
+// mounted via rootRoutes; this echo was first-match-wins shadowing
+// it because /webhooks mounts before rootRoutes in routeRegistry.
 export default router;
