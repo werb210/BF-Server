@@ -47,8 +47,27 @@ router.get(
 
     let row: Record<string, any> | undefined;
     if (token) {
+      // BF_SERVER_BLOCK_v134_READINESS_FLOW_FIX_v1 — (C)
+      // The website redirect is /apply?continue=<24-byte hex>, not a uuid.
+      // The legacy lookup "where id = $1" 500s with 22P02 every time
+      // because readiness_sessions.id is uuid. Accept either shape:
+      //   - readiness_sessions.id (uuid) — legacy callers
+      //   - application_continuations.token (hex) — current website flow
+      // Cast id::text on the LHS so a non-uuid $1 just doesn't match
+      // instead of throwing. The continuation join finds the same lead
+      // via crm_lead_id.
       const result = await dbQuery(
-        `select * from readiness_sessions where id = $1 and is_active = true limit 1`,
+        `select rs.* from readiness_sessions rs
+          where rs.is_active = true
+            and (
+              rs.id::text = $1
+              or rs.crm_lead_id = (
+                select crm_lead_id from application_continuations
+                 where token = $1 limit 1
+              )
+            )
+          order by rs.created_at desc
+          limit 1`,
         [token]
       );
       row = result.rows[0];

@@ -7,6 +7,15 @@ import { notifyAllStaff } from "../../services/notifications/notifyAllStaff.js";
 // BF_SERVER_BLOCK_v129a_READINESS_PHONE_NORMALIZE_v1
 import { normalizePhoneNumber } from "../auth/phone.js";
 
+// BF_SERVER_BLOCK_v134_READINESS_FLOW_FIX_v1
+// Three fixes vs. v133 to make the website -> wizard -> staff pipeline
+// handoff actually work end-to-end. See script header for full
+// discussion. Code-level summary:
+//   - (A) ::text casts on $3,$4 inside the draft INSERT's jsonb_build_object
+//   - (A) RETURNING id captures the draft application uuid
+//   - (B) UPDATE application_continuations SET converted_application_id
+//         links the continuation row to the draft so submit-by-token works
+
 // BF_SERVER_v?_BLOCK_1_14_V1_READINESS_AND_STAFF_NOTIFY
 export async function submitCreditReadiness(req: Request, res: Response) {
   try {
@@ -36,13 +45,6 @@ export async function submitCreditReadiness(req: Request, res: Response) {
     }
 
     // BF_SERVER_BLOCK_v129a_READINESS_PHONE_NORMALIZE_v1
-    // Normalize phone to E.164 once, here. The wizard's OTP verify also
-    // normalizes to E.164 — without this, readiness rows are stored
-    // with raw display format like "(403) 555-1234" and the prefill
-    // query never matches the OTP-normalized "+14035551234". Falls
-    // back to the raw string only if normalization fails (very short
-    // input, malformed); the prefill route's digit-equivalence query
-    // (also v129a) covers that case too.
     const normalizedPhone =
       normalizePhoneNumber(String(phone)) ?? String(phone);
 
@@ -60,8 +62,6 @@ export async function submitCreditReadiness(req: Request, res: Response) {
       }),
     );
 
-    // UPSERT readiness_sessions keyed by (lower(email)) for the partial-uniq index,
-    // also surfacing phone for the /api/client/readiness-prefill?phone= path.
     const requestedAmountNumber =
       requestedAmount === undefined || requestedAmount === null || requestedAmount === ""
         ? null
@@ -118,18 +118,13 @@ export async function submitCreditReadiness(req: Request, res: Response) {
       ],
     );
 
-    // BF_SERVER_BLOCK_v101_READINESS_DRAFT_APPLICATION_v1
-    // Per Todd: "Check my credit readiness" should leave a draft on
-    // the staff pipeline so leads are actionable, not just CRM rows.
-    // Insert a minimal applications row keyed to the same crm_lead.
-    // pipeline_state='draft' so the row only shows when the staff
-    // toggles "Show drafts" (per v81 pipeline hydration).
     const fundingTypeStr =
       typeof fundingType === "string" ? fundingType.trim().toUpperCase() : "";
     const draftCategory =
       fundingTypeStr.length > 0 ? fundingTypeStr : "TERM";
+    let draftApplicationId: string | null = null;
     try {
-      await pool.query(
+      const draftRes = await pool.query<{ id: string }>(
         `INSERT INTO applications
            (id, owner_user_id, name, metadata, product_type, product_category,
             pipeline_state, current_stage, status, requested_amount, source,
@@ -141,14 +136,15 @@ export async function submitCreditReadiness(req: Request, res: Response) {
            jsonb_build_object(
              'source','website_credit_readiness',
              'crm_lead_id', $2::text,
-             'readiness_email', $3,
-             'readiness_phone', $4
+             'readiness_email', $3::text,
+             'readiness_phone', $4::text
            ),
            $5, $5,
            'draft', 'draft', 'draft',
            $6, 'website_credit_readiness',
            false, 'BF', now(), now()
-         )`,
+         )
+         RETURNING id`,
         [
           String(companyName),
           lead.id,
@@ -158,15 +154,29 @@ export async function submitCreditReadiness(req: Request, res: Response) {
           requestedAmountNumber,
         ]
       );
+      draftApplicationId = draftRes.rows[0]?.id ?? null;
     } catch (err) {
-      // Do NOT fail the readiness submit if the draft insert hiccups.
-      // The CRM lead + readiness_session are the primary persistence.
       console.warn("[website_readiness] draft application insert failed", err);
     }
 
     const token = await createContinuation(req.body as any, lead.id);
 
-    // Notify all staff (Admin + Staff + Marketing in BF silo) — SMS + in-app.
+    if (draftApplicationId) {
+      await pool
+        .query(
+          `UPDATE application_continuations
+              SET converted_application_id = $1
+            WHERE token = $2 AND converted_application_id IS NULL`,
+          [draftApplicationId, token]
+        )
+        .catch((err) => {
+          console.warn(
+            "[website_readiness] continuation->application link failed",
+            err
+          );
+        });
+    }
+
     const amountText = requestedAmountNumber
       ? ` ($${requestedAmountNumber.toLocaleString("en-US", { maximumFractionDigits: 0 })})`
       : "";
@@ -175,7 +185,6 @@ export async function submitCreditReadiness(req: Request, res: Response) {
     await notifyAllStaff({
       pool,
       notificationType: "website_readiness",
-      // BF_SERVER_BLOCK_1_24_NOTIFICATIONS_TITLE — explicit title for the portal bell.
       title: `New readiness lead — ${companyName}`,
       body,
       refTable: "crm_leads",
@@ -189,8 +198,6 @@ export async function submitCreditReadiness(req: Request, res: Response) {
     return res.json({
       success: true,
       leadId: lead.id,
-      // Phone-based prefill is the primary mechanism. The token is kept for
-      // back-compat with any consumer that prefers token-based hydration.
       redirect: `https://client.boreal.financial/apply?continue=${token}`,
     });
   } catch (err) {
