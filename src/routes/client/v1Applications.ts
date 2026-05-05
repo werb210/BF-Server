@@ -390,9 +390,18 @@ router.post(
       // clobber a stage staff has manually advanced.
       // BF_SERVER_BLOCK_1_32_BACKLOG_CLEANUP — also promote applications.name from the
       // wizard payload when the current name is empty / 'Draft application'.
+      // BF_SERVER_BLOCK_v140_WIZARD_BUSINESS_NAME_v1 — wizard's Step 3 writes
+      // business.companyName / businessName / legalName, NOT business.name.
+      // Reading only `name` left applications.name as 'Draft application' on
+      // every submitted app, so pipeline cards rendered "Unnamed application"
+      // and the staff drawer's overview tab showed nothing.
       const wizardBusinessName: string | null =
         (legacyApp && typeof legacyApp === 'object'
-          ? ((legacyApp as any)?.business?.name ?? (legacyApp as any)?.company?.name ?? null)
+          ? ((legacyApp as any)?.business?.companyName ??
+             (legacyApp as any)?.business?.businessName ??
+             (legacyApp as any)?.business?.legalName ??
+             (legacyApp as any)?.business?.name ??
+             (legacyApp as any)?.company?.name ?? null)
           : null) || null;
       await pool.query(
         `UPDATE applications
