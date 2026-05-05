@@ -288,7 +288,7 @@ async function advanceProcessingStageInternal(params: {
   applicationId: string;
   client: Queryable;
 }): Promise<ProcessingStage> {
-  const application = await params.client.runQuery<{
+  const application = await params.client.query<{
     id: string;
     processing_stage: string | null;
     ocr_completed_at: Date | null;
@@ -324,14 +324,14 @@ async function advanceProcessingStageInternal(params: {
     );
   }
 
-  const ocrJobs = await params.client.runQuery<{ count: number }>(
+  const ocrJobs = await params.client.query<{ count: number }>(
     `select count(*)::int as count
      from document_processing_jobs
      where application_id = $1
        and status = 'pending'`,
     [params.applicationId]
   );
-  const bankingJobs = await params.client.runQuery<{ count: number }>(
+  const bankingJobs = await params.client.query<{ count: number }>(
     `select count(*)::int as count
      from banking_analysis_jobs
      where application_id = $1
@@ -373,7 +373,7 @@ async function advanceProcessingStageInternal(params: {
   }
 
   if (currentStage !== applicationRecord.processing_stage) {
-    await params.client.runQuery(
+    await params.client.query(
       `update applications
        set processing_stage = $2,
            updated_at = now()
@@ -402,15 +402,15 @@ export async function advanceProcessingStage(params: {
 
   const client = await pool.connect();
   try {
-    await client.runQuery("begin");
+    await client.query("begin");
     const stage = await advanceProcessingStageInternal({
       applicationId: params.applicationId,
       client,
     });
-    await client.runQuery("commit");
+    await client.query("commit");
     return stage;
   } catch (err) {
-    await client.runQuery("rollback");
+    await client.query("rollback");
     throw err;
   } finally {
     client.release();

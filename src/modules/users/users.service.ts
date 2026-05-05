@@ -1,3 +1,4 @@
+// BF_SERVER_BLOCK_v124a_CLIENT_RUNQUERY_FIX_v1 — fixed 151 client.runQuery() → client.query() sites
 import { AppError } from "../../middleware/errors.js";
 import { recordAuditEvent } from "../audit/audit.service.js";
 import {
@@ -31,7 +32,7 @@ export async function setUserStatus(params: {
   }
   const client = await pool.connect();
   try {
-    await client.runQuery("begin");
+    await client.query("begin");
     await setUserActive(params.userId, params.active, client);
     if (!params.active) {
       await incrementTokenVersion(params.userId, client);
@@ -55,9 +56,9 @@ export async function setUserStatus(params: {
       success: true,
       client,
     });
-    await client.runQuery("commit");
+    await client.query("commit");
   } catch (err) {
-    await client.runQuery("rollback");
+    await client.query("rollback");
     await recordAuditEvent({
       action: params.active ? "user_enabled" : "user_disabled",
       actorUserId: params.actorId,
@@ -93,7 +94,7 @@ export async function changeUserRole(params: {
   }
   const client = await pool.connect();
   try {
-    await client.runQuery("begin");
+    await client.query("begin");
     await updateUserRoleById(params.userId, params.role, client);
     await incrementTokenVersion(params.userId, client);
     await revokeRefreshTokensForUser(params.userId, client);
@@ -115,9 +116,9 @@ export async function changeUserRole(params: {
       success: true,
       client,
     });
-    await client.runQuery("commit");
+    await client.query("commit");
   } catch (err) {
-    await client.runQuery("rollback");
+    await client.query("rollback");
     await recordAuditEvent({
       action: "user_role_changed",
       actorUserId: params.actorId,

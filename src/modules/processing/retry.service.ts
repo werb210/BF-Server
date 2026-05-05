@@ -56,8 +56,8 @@ export async function retryProcessingJob(params: {
   }
   const client = await pool.connect();
   try {
-    await client.runQuery("begin");
-    const ocrJob = await client.runQuery<{
+    await client.query("begin");
+    const ocrJob = await client.query<{
       id: string;
       application_id: string | null;
       document_id: string | null;
@@ -90,7 +90,7 @@ export async function retryProcessingJob(params: {
             lastRetryAt: row.last_retry_at,
             baseDelayMs: 30_000,
           });
-      const updated = await client.runQuery<{
+      const updated = await client.query<{
         id: string;
         application_id: string | null;
         document_id: string | null;
@@ -131,7 +131,7 @@ export async function retryProcessingJob(params: {
         },
         client,
       });
-      await client.runQuery("commit");
+      await client.query("commit");
       return {
         jobId: updatedRow.id,
         jobType: "ocr",
@@ -145,7 +145,7 @@ export async function retryProcessingJob(params: {
       };
     }
 
-    const bankingJob = await client.runQuery<{
+    const bankingJob = await client.query<{
       id: string;
       application_id: string | null;
       status: string;
@@ -176,7 +176,7 @@ export async function retryProcessingJob(params: {
             lastRetryAt: row.last_retry_at,
             baseDelayMs: 30_000,
           });
-      const updated = await client.runQuery<{
+      const updated = await client.query<{
         id: string;
         application_id: string | null;
         status: string;
@@ -216,7 +216,7 @@ export async function retryProcessingJob(params: {
         },
         client,
       });
-      await client.runQuery("commit");
+      await client.query("commit");
       return {
         jobId: updatedRow.id,
         jobType: "banking",
@@ -230,7 +230,7 @@ export async function retryProcessingJob(params: {
       };
     }
 
-    const creditJob = await client.runQuery<{
+    const creditJob = await client.query<{
       id: string;
       application_id: string | null;
       status: string;
@@ -261,7 +261,7 @@ export async function retryProcessingJob(params: {
             lastRetryAt: row.last_retry_at,
             baseDelayMs: 30_000,
           });
-      const updated = await client.runQuery<{
+      const updated = await client.query<{
         id: string;
         application_id: string | null;
         status: string;
@@ -301,7 +301,7 @@ export async function retryProcessingJob(params: {
         },
         client,
       });
-      await client.runQuery("commit");
+      await client.query("commit");
       return {
         jobId: updatedRow.id,
         jobType: "credit_summary",
@@ -317,7 +317,7 @@ export async function retryProcessingJob(params: {
 
     throw new AppError("not_found", "Processing job not found.", 404);
   } catch (err) {
-    await client.runQuery("rollback");
+    await client.query("rollback");
     throw err;
   } finally {
     client.release();

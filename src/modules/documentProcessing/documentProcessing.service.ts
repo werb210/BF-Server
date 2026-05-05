@@ -103,7 +103,7 @@ export async function markOcrCompleted(
 ): Promise<DocumentProcessingJobRecord> {
   const client = await pool.connect();
   try {
-    await client.runQuery("begin");
+    await client.query("begin");
     const job = await updateDocumentProcessingJob({
       documentId,
       jobType: "ocr",
@@ -115,7 +115,7 @@ export async function markOcrCompleted(
     if (!job) {
       throw new AppError("not_found", "OCR job not found.", 404);
     }
-    const appRes = await client.runQuery(
+    const appRes = await client.query(
       `update applications
        set ocr_completed_at = now(),
            updated_at = now()
@@ -131,10 +131,10 @@ export async function markOcrCompleted(
       throw new AppError("not_found", "Application not found.", 404);
     }
     await advanceProcessingStage({ applicationId, client });
-    await client.runQuery("commit");
+    await client.query("commit");
     return job;
   } catch (err) {
-    await client.runQuery("rollback");
+    await client.query("rollback");
     throw err;
   } finally {
     client.release();
@@ -147,7 +147,7 @@ export async function markOcrFailed(params: {
 }): Promise<DocumentProcessingJobRecord> {
   const client = await pool.connect();
   try {
-    await client.runQuery("begin");
+    await client.query("begin");
     const job = await updateDocumentProcessingJob({
       documentId: params.documentId,
       jobType: "ocr",
@@ -159,10 +159,10 @@ export async function markOcrFailed(params: {
     if (!job) {
       throw new AppError("not_found", "OCR job not found.", 404);
     }
-    await client.runQuery("commit");
+    await client.query("commit");
     return job;
   } catch (err) {
-    await client.runQuery("rollback");
+    await client.query("rollback");
     throw err;
   } finally {
     client.release();
@@ -175,7 +175,7 @@ export async function markBankingCompleted(params: {
 }): Promise<BankingAnalysisJobRecord> {
   const client = await pool.connect();
   try {
-    await client.runQuery("begin");
+    await client.query("begin");
     const job = await updateBankingAnalysisJob({
       applicationId: params.applicationId,
       status: "completed",
@@ -187,7 +187,7 @@ export async function markBankingCompleted(params: {
     if (!job) {
       throw new AppError("not_found", "Banking analysis job not found.", 404);
     }
-    await client.runQuery(
+    await client.query(
       `update applications
        set banking_completed_at = now(),
            updated_at = now()
@@ -195,10 +195,10 @@ export async function markBankingCompleted(params: {
       [params.applicationId]
     );
     await advanceProcessingStage({ applicationId: params.applicationId, client });
-    await client.runQuery("commit");
+    await client.query("commit");
     return job;
   } catch (err) {
-    await client.runQuery("rollback");
+    await client.query("rollback");
     throw err;
   } finally {
     client.release();
@@ -211,7 +211,7 @@ export async function markBankingFailed(params: {
 }): Promise<BankingAnalysisJobRecord> {
   const client = await pool.connect();
   try {
-    await client.runQuery("begin");
+    await client.query("begin");
     const job = await updateBankingAnalysisJob({
       applicationId: params.applicationId,
       status: "failed",
@@ -223,10 +223,10 @@ export async function markBankingFailed(params: {
     if (!job) {
       throw new AppError("not_found", "Banking analysis job not found.", 404);
     }
-    await client.runQuery("commit");
+    await client.query("commit");
     return job;
   } catch (err) {
-    await client.runQuery("rollback");
+    await client.query("rollback");
     throw err;
   } finally {
     client.release();

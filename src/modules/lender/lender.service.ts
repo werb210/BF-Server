@@ -140,7 +140,7 @@ async function assertLenderProduct(params: {
   lenderProductId: string;
   client: Queryable;
 }): Promise<void> {
-  const res = await params.client.runQuery<{ lender_id: string }>(
+  const res = await params.client.query<{ lender_id: string }>(
     `select lender_id
      from lender_products
      where id = $1
@@ -244,7 +244,7 @@ async function resolveSubmissionMethod(params: {
   lenderId: string;
   client: Queryable;
 }): Promise<SubmissionMethod> {
-  const res = await params.client.runQuery<{ submission_method: string | null }>(
+  const res = await params.client.query<{ submission_method: string | null }>(
     `select submission_method
      from lenders
      where id = $1
@@ -806,16 +806,16 @@ export async function submitApplication(params: {
   }
   const client = await pool.connect();
   try {
-    await client.runQuery("begin");
+    await client.query("begin");
 
     const lockKey = createAdvisoryLockKey(
       `transmission:${params.applicationId}:${params.lenderId}`
     );
     if (!isTestEnvironment()) {
-      await client.runQuery("select pg_advisory_xact_lock($1, $2)", lockKey);
+      await client.query("select pg_advisory_xact_lock($1, $2)", lockKey);
     }
 
-    await client.runQuery("select id from applications where id = $1 for update", [
+    await client.query("select id from applications where id = $1 for update", [
       params.applicationId,
     ]);
 
@@ -835,7 +835,7 @@ export async function submitApplication(params: {
           success: true,
           client,
         });
-        await client.runQuery("commit");
+        await client.query("commit");
         return {
           statusCode: 200,
           value: { id: existingSubmission.id, status: existingSubmission.status },
@@ -859,7 +859,7 @@ export async function submitApplication(params: {
         success: true,
         client,
       });
-      await client.runQuery("commit");
+      await client.query("commit");
       return {
         statusCode: 200,
         value: { id: existingSubmission.id, status: existingSubmission.status },
@@ -887,11 +887,11 @@ export async function submitApplication(params: {
       client,
     });
 
-    await client.runQuery("commit");
+    await client.query("commit");
     return result;
   } catch (err) {
     recordTransactionRollback(err);
-    await client.runQuery("rollback");
+    await client.query("rollback");
     throw err;
   } finally {
     client.release();
@@ -1005,13 +1005,13 @@ export async function retrySubmission(params: {
   }
   const client = await pool.connect();
   try {
-    await client.runQuery("begin");
+    await client.query("begin");
     const submission = await findSubmissionById(params.submissionId, client);
     if (!submission) {
       throw new AppError("not_found", "Submission not found.", 404);
     }
     if (submission.status === "submitted") {
-      await client.runQuery("commit");
+      await client.query("commit");
       return { id: submission.id, status: submission.status, retryStatus: "already_submitted" };
     }
 
@@ -1065,10 +1065,10 @@ export async function retrySubmission(params: {
       client,
     });
 
-    await client.runQuery("commit");
+    await client.query("commit");
     return { id: submission.id, status: result.value.status, retryStatus };
   } catch (err) {
-    await client.runQuery("rollback");
+    await client.query("rollback");
     throw err;
   } finally {
     client.release();
@@ -1083,7 +1083,7 @@ export async function cancelSubmissionRetry(params: {
 }): Promise<{ id: string; status: string }> {
   const client = await pool.connect();
   try {
-    await client.runQuery("begin");
+    await client.query("begin");
     const submission = await findSubmissionById(params.submissionId, client);
     if (!submission) {
       throw new AppError("not_found", "Submission not found.", 404);
@@ -1114,10 +1114,10 @@ export async function cancelSubmissionRetry(params: {
       client,
     });
 
-    await client.runQuery("commit");
+    await client.query("commit");
     return { id: submission.id, status: "canceled" };
   } catch (err) {
-    await client.runQuery("rollback");
+    await client.query("rollback");
     throw err;
   } finally {
     client.release();

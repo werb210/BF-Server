@@ -200,7 +200,7 @@ router.post(
     const response = new twilioRuntime.twiml.VoiceResponse();
     const client = await pool.connect();
     try {
-      const assignedRes = await client.runQuery<{ staff_user_id: string | null; client_id: string | null }>(
+      const assignedRes = await client.query<{ staff_user_id: string | null; client_id: string | null }>(
         `select cl.staff_user_id, cl.crm_contact_id as client_id
          from call_logs cl
          where cl.phone_number = $1 and cl.staff_user_id is not null
@@ -216,7 +216,7 @@ router.post(
         dial.client(assignedStaff);
       }
 
-      const fallbackStaff = await client.runQuery<{ id: string }>(
+      const fallbackStaff = await client.query<{ id: string }>(
         `select id
          from users
          where role in ('admin','staff')

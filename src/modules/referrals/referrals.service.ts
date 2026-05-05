@@ -22,7 +22,7 @@ export async function submitReferral(
 ): Promise<ReferralResult> {
   const client = await pool.connect();
   try {
-    await client.runQuery("begin");
+    await client.query("begin");
     const companyId = randomUUID();
     const contactId = randomUUID();
 
@@ -50,10 +50,10 @@ export async function submitReferral(
       client,
     });
 
-    await client.runQuery("commit");
+    await client.query("commit");
     return { companyId, contactId };
   } catch (error) {
-    await client.runQuery("rollback");
+    await client.query("rollback");
     throw error;
   } finally {
     client.release();

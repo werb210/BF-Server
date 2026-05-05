@@ -250,7 +250,7 @@ export async function runMigrations(options?: {
     const rawSql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
     const client = await pool.connect();
     try {
-      await client.runQuery("begin");
+      await client.query("begin");
       const statements = splitSql(rawSql).filter(hasExecutableSql);
       for (const statement of statements) {
         if (!hasExecutableSql(statement)) {
@@ -300,7 +300,7 @@ export async function runMigrations(options?: {
           );
         }
         try {
-          await client.runQuery(executableStatement);
+          await client.query(executableStatement);
         } catch (err) {
           if (options?.ignoreMissingRelations) {
             const message = err instanceof Error ? err.message : String(err);
@@ -392,14 +392,14 @@ export async function runMigrations(options?: {
           throw err;
         }
       }
-      await client.runQuery(
+      await client.query(
         "insert into schema_migrations (id, applied_at) values ($1, now())",
         [file]
       );
       logInfo("migration_applied", { migration: file });
-      await client.runQuery("commit");
+      await client.query("commit");
     } catch (err) {
-      await client.runQuery("rollback");
+      await client.query("rollback");
       throw err;
     } finally {
       client.release();
