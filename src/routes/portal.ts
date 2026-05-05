@@ -380,6 +380,57 @@ router.get(
 );
 
 
+// BF_SERVER_BLOCK_v135_PORTAL_DELETE_AND_READINESS_FALLBACK_v1 — (A)
+// BF-portal's PipelinePage trash button calls
+//   DELETE /api/portal/applications/:id
+// but no route was ever mounted at that path — only DELETE
+// /api/applications/:id (in modules/applications/applications.routes.ts).
+// The portal call 404s and the user sees "Delete failed". Mirror the
+// admin-only delete here under the portal namespace so the existing
+// portal admin auth chain handles it. Hard-cast id::text so a non-uuid
+// param 400s without poisoning the connection with a 22P02.
+router.delete(
+  "/applications/:id",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN] }),
+  portalLimiter,
+  safeHandler(async (req: any, res: Response) => {
+    if (!ensureReady(res)) {
+      return;
+    }
+    const applicationId = toStringSafe(req.params.id);
+    if (!applicationId || !/^[0-9a-f-]{36}$/i.test(applicationId)) {
+      throw new AppError("validation_error", "Application id required.", 400);
+    }
+    const silo = getSilo(res);
+    // Silo-scoped delete: a BF admin should not be able to delete a BI
+    // or SLF row by guessing the uuid. Mirror the silo guard the GET
+    // /:id handler implicitly applies via findApplicationById -> details.
+    const owner = await runQuery<{ silo: string | null }>(
+      `SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+      [applicationId]
+    );
+    if (!owner.rows[0]) {
+      res.status(404).json({ code: "not_found", message: "Application not found." });
+      return;
+    }
+    if (owner.rows[0].silo && silo && owner.rows[0].silo !== silo) {
+      res.status(404).json({ code: "not_found", message: "Application not found." });
+      return;
+    }
+    const { rowCount } = await runQuery(
+      `DELETE FROM applications WHERE id::text = ($1)::text`,
+      [applicationId]
+    );
+    if (!rowCount) {
+      res.status(404).json({ code: "not_found", message: "Application not found." });
+      return;
+    }
+    res.status(200).json({ ok: true });
+  })
+);
+
+
 router.get(
   "/applications/:id/history",
   requireAuth,

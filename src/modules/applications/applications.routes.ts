@@ -378,6 +378,23 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
     ? md.formData as Record<string, any>
     : {};
 
+  // BF_SERVER_BLOCK_v135_PORTAL_DELETE_AND_READINESS_FALLBACK_v1 — (B)
+  // Readiness drafts (website /credit-readiness submissions, before the
+  // user has filled the wizard) carry their data under metadata.readiness
+  // — a single object set by publicApplication.ts's phone-claim path
+  // (v129a) holding {fullName, email, phone, industry, businessLocation,
+  // fundingType, requestedAmount, purposeOfFunds, salesHistoryYears,
+  // annualRevenueRange, avgMonthlyRevenueRange, accountsReceivableRange,
+  // fixedAssetsValueRange}. Use it as a last-resort fallback so the
+  // staff drawer's Application tab surfaces these fields before the
+  // wizard submit-time PATCH writes the canonical kyc / business /
+  // applicant slots. Existing sources still win — readiness is purely
+  // additive at the tail of each fallback chain.
+  const readinessSrc =
+    (md?.readiness && typeof md.readiness === 'object')
+      ? md.readiness as Record<string, any>
+      : null;
+
   const details = {
     id: app.id,
     applicant: app.name,
@@ -395,18 +412,18 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
         fd?.product_category ??
         null,
     },
-    kyc: md?.borrower ?? md?.kyc_responses ?? md?.kyc ?? fd?.kyc ?? fd?.financialProfile ?? null,
-    applicantDetails: md?.borrower ?? md?.applicant ?? fd?.applicant ?? null,
-    applicantInfo: md?.borrower ?? md?.applicant ?? fd?.applicant ?? null,
-    businessDetails: md?.company ?? md?.business ?? fd?.business ?? null,
-    business: md?.company ?? md?.business ?? fd?.business ?? null,
+    kyc: md?.borrower ?? md?.kyc_responses ?? md?.kyc ?? fd?.kyc ?? fd?.financialProfile ?? readinessSrc ?? null,
+    applicantDetails: md?.borrower ?? md?.applicant ?? fd?.applicant ?? readinessSrc ?? null,
+    applicantInfo: md?.borrower ?? md?.applicant ?? fd?.applicant ?? readinessSrc ?? null,
+    businessDetails: md?.company ?? md?.business ?? fd?.business ?? readinessSrc ?? null,
+    business: md?.company ?? md?.business ?? fd?.business ?? readinessSrc ?? null,
     owners: Array.isArray(md?.owners)
       ? md.owners
       : (md?.partner ? [md.partner]
          : md?.applicant?.partner ? [md.applicant.partner]
          : fd?.applicant?.partner ? [fd.applicant.partner]
          : []),
-    financialProfile: md?.financials ?? md?.kyc ?? fd?.kyc ?? fd?.financialProfile ?? null,
+    financialProfile: md?.financials ?? md?.kyc ?? fd?.kyc ?? fd?.financialProfile ?? readinessSrc ?? null,
     fundingRequest: {
       amount: app.requested_amount,
       productCategory: md?.application?.productCategory ?? md?.product_category ?? fd?.productCategory ?? null,
