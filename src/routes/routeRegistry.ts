@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { ROLES, type Role } from "../auth/roles.js";
 import adminRoutes from "./admin.js";
+import slfRoutes from "./slf.js"; // BF_SERVER_BLOCK_v153_SLF_BACKEND_MINIMAL_v1
 import applicationsRoutes from "../modules/applications/applications.routes.js";
 import bankingRoutes from "./banking.js";
 import calendarRoutes from "./calendar.js";
@@ -163,6 +164,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/o365", router: o365Routes },
   { path: "/public", router: publicApplicationRoutes },
   { path: "/", router: rootRoutes },
+  { path: "/slf", router: slfRoutes },
   { path: "/applications", router: applicationsRoutes },
 ];
 
