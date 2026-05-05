@@ -200,6 +200,14 @@ router.get(
         values.push(parentIdRaw);
         where.push(`a.parent_application_id::text = $${values.length}::text`);
       }
+      // BF_SERVER_BLOCK_v131_PIPELINE_SQL_REPAIR_v1
+      // Replace the bogus `a.primary_contact_id` JOIN — that column was
+      // never added by any migration. The whole query was throwing
+      // "column does not exist", the catch below was swallowing it,
+      // and the pipeline rendered empty for 86 production rows.
+      // Use application_contacts (role='applicant') the way auth.ts
+      // already does. LEFT JOIN ... LATERAL LIMIT 1 keeps it 1:1 even
+      // if a future bug ever inserts duplicate applicant rows.
       const sql = `
         SELECT
           a.id,
@@ -216,7 +224,14 @@ router.get(
           COALESCE(a.metadata->>'status_note', '')              AS status_note
         FROM applications a
         LEFT JOIN companies c ON c.id = a.company_id
-        LEFT JOIN contacts ct ON ct.id = a.primary_contact_id
+        LEFT JOIN LATERAL (
+          SELECT contact_id
+            FROM application_contacts
+           WHERE application_id = a.id AND role = 'applicant'
+           ORDER BY created_at ASC
+           LIMIT 1
+        ) ac ON true
+        LEFT JOIN contacts ct ON ct.id = ac.contact_id
         LEFT JOIN users u    ON u.id = a.owner_user_id
         WHERE ${where.join(" AND ")}
         ORDER BY a.updated_at DESC
@@ -256,7 +271,15 @@ router.get(
         items: cards,
       });
     } catch (err) {
-      res.status(200).json({ stages: PIPELINE_STAGES, applications: [] });
+      // BF_SERVER_BLOCK_v131_PIPELINE_SQL_REPAIR_v1 — surface the
+      // underlying error so the next schema drift is loud, not silent.
+      // Still return 200 with empty list so the UI doesn't break for
+      // users; staff can read the cause from the structured log.
+      const message = err instanceof Error ? err.message : String(err);
+      const code = (err as any)?.code ?? null;
+      // eslint-disable-next-line no-console
+      console.error("[portal.applications.query_failed]", { code, message });
+      res.status(200).json({ stages: PIPELINE_STAGES, applications: [], items: [], _error: { code, message } });
     }
   })
 );
