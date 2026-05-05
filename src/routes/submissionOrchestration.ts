@@ -1,10 +1,11 @@
+// BF_SERVER_BLOCK_v122d_STRIP_DOUBLE_API_v1 — stripped leading /api (router mounted under /api in app.ts)
 import { Router } from "express";
 import { pool } from "../db.js";
 import { progressSubmission } from "../services/submission/orchestrator.js";
 import { dispatchToSelected, type DispatchLender } from "../services/lenders/dispatchToSelected.js";
 
 const router = Router();
-router.post("/api/applications/:id/lenders/send", async (req, res) => {
+router.post("/applications/:id/lenders/send", async (req, res) => {
   const id = String(req.params.id ?? "").trim();
   const lenderIds: string[] = Array.isArray((req.body ?? {}).lenderIds) ? (req.body.lenderIds as unknown[]).map((x) => String(x)) : [];
   if (!id) return res.status(400).json({ error: "missing_application_id" });
@@ -26,7 +27,7 @@ router.post("/api/applications/:id/lenders/send", async (req, res) => {
   return res.json({ ok: true, finalized: lenderIds, sent, orchestrator: result });
 });
 
-router.post("/api/applications/:id/submit-trigger-check", async (req, res) => {
+router.post("/applications/:id/submit-trigger-check", async (req, res) => {
   const id = String(req.params.id ?? "").trim();
   if (!id) return res.status(400).json({ error: "missing_application_id" });
   const result = await progressSubmission({ pool, applicationId: id });
