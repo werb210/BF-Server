@@ -17,6 +17,114 @@ import {
   updateLenderProduct,
 } from "../repositories/lenderProducts.repo.js";
 
+// BF_SERVER_BLOCK_v130_REQUIRED_DOCS_FORM_GUARD_v1
+// Authoritative whitelist of doc category labels the portal's lender-product
+// React form (BF-portal/src/pages/lenders/LendersPage.tsx) can produce. Any
+// payload containing a category outside this list, or with extra keys
+// beyond {category, required, description}, is rejected at the API boundary.
+// This stops legacy seeds, manual SQL, and bypass scripts from reintroducing
+// the snake_case duplicates / orphan slugs that v131 (data cleanup) just fixed.
+//
+// To add a new doc type: edit BOTH this list AND the React form's
+// coreTypes/conditionalTypes/alwaysRequiredDoc arrays. Keeping the
+// portal form and server in sync is enforced by this guard — there is no
+// way to save an unrecognized doc through any code path that hits the API.
+const PORTAL_FORM_DOC_LABELS: ReadonlySet<string> = new Set([
+  // alwaysRequiredDoc + equipmentFinanceAlwaysRequiredDoc
+  "6 months business banking statements",
+  "Purchase Order or Invoice of Equipment to finance",
+  // coreTypes (15)
+  "3 years accountant prepared financials",
+  "3 years business tax returns",
+  "PnL – Interim financials",
+  "Balance Sheet – Interim financials",
+  "A/R",
+  "A/P",
+  "2 pieces of Government Issued ID",
+  "VOID cheque or PAD",
+  "Personal net worth statement",
+  "2 years personal tax returns (T1 generals)",
+  "Corporate structure / org chart",
+  "Business plan / projections",
+  "Lease agreement (if applicable)",
+  "Accounts receivable aging report",
+  "Accounts payable aging report",
+  // conditionalTypes (Media, 5)
+  "Budget",
+  "Finance plan",
+  "Tax credit status",
+  "Production schedule",
+  "Minimum guarantees / presales",
+]);
+
+const PORTAL_FORM_DOC_ALLOWED_KEYS: ReadonlySet<string> = new Set([
+  "category",
+  "required",
+  "description",
+  "min_amount",
+  "max_amount",
+  "document_type",
+]);
+
+function validateAndNormalizeRequiredDocuments(input: unknown): {
+  normalized: Array<{ category: string; required: boolean; description: string | null }>;
+  errors: string[];
+} {
+  const errors: string[] = [];
+  if (input === null || input === undefined) return { normalized: [], errors };
+  if (!Array.isArray(input)) {
+    errors.push("required_documents must be an array");
+    return { normalized: [], errors };
+  }
+  const normalized: Array<{ category: string; required: boolean; description: string | null }> = [];
+  const seenLabels = new Set<string>();
+  for (let i = 0; i < input.length; i++) {
+    const item = input[i];
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      errors.push(`required_documents[${i}] must be an object`);
+      continue;
+    }
+    const obj = item as Record<string, unknown>;
+    for (const k of Object.keys(obj)) {
+      if (!PORTAL_FORM_DOC_ALLOWED_KEYS.has(k)) {
+        errors.push(`required_documents[${i}] has unrecognized key "${k}"`);
+      }
+    }
+    const rawLabel =
+      typeof obj.category === "string" && obj.category.trim()
+        ? obj.category.trim()
+        : typeof obj.document_type === "string" && obj.document_type.trim()
+          ? obj.document_type.trim()
+          : "";
+    if (!rawLabel) {
+      errors.push(`required_documents[${i}] missing category`);
+      continue;
+    }
+    if (!PORTAL_FORM_DOC_LABELS.has(rawLabel)) {
+      errors.push(
+        `required_documents[${i}] category "${rawLabel}" is not in the canonical portal-form list. ` +
+        `Update BF-portal/LendersPage.tsx coreTypes/conditionalTypes AND BF-Server portalLenderProducts.ts ` +
+        `PORTAL_FORM_DOC_LABELS in lockstep, then redeploy both.`
+      );
+      continue;
+    }
+    if (seenLabels.has(rawLabel)) {
+      errors.push(`required_documents[${i}] duplicates earlier entry "${rawLabel}"`);
+      continue;
+    }
+    seenLabels.add(rawLabel);
+    normalized.push({
+      category: rawLabel,
+      required: obj.required === false ? false : true,
+      description:
+        typeof obj.description === "string" && obj.description.trim()
+          ? obj.description.trim()
+          : null,
+    });
+  }
+  return { normalized, errors };
+}
+
 const router = Router();
 
 // BF_LP_FIELDS_v32 — Block 32: accept both client camelCase and server camelCase
@@ -165,7 +273,15 @@ router.post(
       name,
       active: body.active ?? true,
       category,
-      requiredDocuments: body.requiredDocuments ?? body.required_documents ?? [],
+      requiredDocuments: (() => {
+        // BF_SERVER_BLOCK_v130_REQUIRED_DOCS_FORM_GUARD_v1
+        const raw = body.requiredDocuments ?? body.required_documents ?? [];
+        const { normalized, errors } = validateAndNormalizeRequiredDocuments(raw);
+        if (errors.length > 0) {
+          throw new AppError("validation_error", `required_documents invalid: ${errors.join("; ")}`, 400);
+        }
+        return normalized;
+      })(),
       country: body.country ?? null,
       rateType: (pickFirst(body.rateType, body.rate_type) as string | null | undefined) ?? null,
       interestMin: asNum(pickFirst(body.interestRateMin, body.interestMin, body.interest_min, body.minRate, body.min_rate)),
@@ -214,7 +330,15 @@ router.put(
       product = await updateLenderProduct({
         id,
         name,
-        requiredDocuments: body.requiredDocuments ?? body.required_documents ?? [],
+        requiredDocuments: (() => {
+        // BF_SERVER_BLOCK_v130_REQUIRED_DOCS_FORM_GUARD_v1
+        const raw = body.requiredDocuments ?? body.required_documents ?? [];
+        const { normalized, errors } = validateAndNormalizeRequiredDocuments(raw);
+        if (errors.length > 0) {
+          throw new AppError("validation_error", `required_documents invalid: ${errors.join("; ")}`, 400);
+        }
+        return normalized;
+      })(),
         active: body.active,
         category: normalizeProductCategory(body.category),
         country: body.country,
