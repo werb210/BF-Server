@@ -183,7 +183,8 @@ router.post(
                                       )
                                     ),
                       updated_at = now()
-                WHERE id = $1::uuid`,
+                // BF_SERVER_BLOCK_v137_READINESS_HANDOFF_REPAIR_v1 — applications.id is TEXT (006 + 20260427_app_id_uuid_to_text_repair).
+                WHERE id::text = ($1)::text`,
               [
                 draft.id,
                 session.id,
