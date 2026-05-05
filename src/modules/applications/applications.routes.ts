@@ -591,8 +591,11 @@ router.post('/:id/send', safeHandler(async (req: any, res: any) => {
 router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
   const appId = String(req.params.id ?? '').trim();
   if (!appId) throw new AppError('validation_error', 'Application id required.', 400);
-  const appRes = await pool.query<{ id: string; silo: string | null; requested_amount: any; metadata: any; }>(
-    `SELECT id, silo, requested_amount, metadata FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+  // BF_SERVER_BLOCK_v126a_CAPITAL_EQUIPMENT_FIXES_v1 — also fetch
+  // parent_application_id and source so we can union parent's documents
+  // when this is a C&E equipment leg (uploads land on parent only).
+  const appRes = await pool.query<{ id: string; silo: string | null; requested_amount: any; metadata: any; parent_application_id: string | null; source: string | null; }>(
+    `SELECT id, silo, requested_amount, metadata, parent_application_id, source FROM applications WHERE id::text = ($1)::text LIMIT 1`,
     [appId],
   );
   const app = appRes.rows[0];
@@ -674,6 +677,33 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
   } catch (err: any) {
     // eslint-disable-next-line no-console
     console.warn('documents.files_query_failed', { applicationId: appId, message: err?.message });
+  }
+  // BF_SERVER_BLOCK_v126a_CAPITAL_EQUIPMENT_FIXES_v1 — for C&E equipment
+  // legs, also include parent's documents. The wizard uploads all docs
+  // to the parent (capital) application; the equipment leg is created
+  // by submit-time fan-out and has no docs of its own. Without this
+  // union the equipment-leg drawer Documents tab shows zero files even
+  // though the parent has them. Closing-costs companions are NOT unioned
+  // here because they are categorically separate (different doc set).
+  const isCapitalAndEquipmentLeg =
+    app.parent_application_id &&
+    (app.source === 'capital_and_equipment_leg' ||
+     (meta as any)?.capital_and_equipment_leg === true ||
+     (meta as any)?.leg_category === 'EQUIPMENT');
+  if (isCapitalAndEquipmentLeg && app.parent_application_id) {
+    try {
+      const r = await pool.query<FileRow>(
+        `SELECT d.id::text AS id, COALESCE(d.filename, d.title) AS filename, d.size_bytes AS size_bytes, d.created_at AS created_at, d.status AS status, COALESCE(d.category, d.document_type) AS category FROM documents d WHERE d.application_id::text = ($1)::text ORDER BY d.created_at ASC`,
+        [app.parent_application_id],
+      );
+      const seenIds = new Set(fileRows.map((f) => f.id));
+      for (const row of r.rows) {
+        if (!seenIds.has(row.id)) fileRows.push(row);
+      }
+    } catch (err: any) {
+      // eslint-disable-next-line no-console
+      console.warn('documents.parent_files_query_failed', { applicationId: appId, parentId: app.parent_application_id, message: err?.message });
+    }
   }
   const filesByCategory = new Map<string, FileRow[]>();
   const orphanFiles: FileRow[] = [];

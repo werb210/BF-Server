@@ -450,35 +450,58 @@ router.post(
             bfParseAmount((legacyApp as any)?.kyc?.equipmentAmount) ??
             null;
           if (equipmentAmount && equipmentAmount > 0) {
-            const equipmentId = randomUUID();
-            await pool.query(
-              `INSERT INTO applications
-                 (id, name, silo, owner_user_id, parent_application_id,
-                  requested_amount, product_category, pipeline_state, status,
-                  source, metadata, submitted_at, created_at, updated_at)
-               VALUES
-                 ($1, $2, $3, $4, $5,
-                  $6, 'EQUIPMENT', 'Received', 'received',
-                  'capital_and_equipment_leg',
-                  jsonb_build_object('capital_and_equipment_leg', true,
-                                     'parent_application_id', $5::text,
-                                     'leg_category', 'EQUIPMENT') || $7::jsonb,
-                  now(), now(), now())`,
-              [
-                equipmentId,
-                `Equipment leg — ${wizardBusinessName ?? application.id.slice(0, 8)}`,
-                silo,
-                ownerId,
-                application.id,
-                equipmentAmount,
-                JSON.stringify(metaPatch),
-              ]
+            // BF_SERVER_BLOCK_v126a_CAPITAL_EQUIPMENT_FIXES_v1 — idempotency.
+            // Re-submit (network retry, tab reload + resubmit) previously
+            // created duplicate equipment legs because no existence check
+            // ran before INSERT. Mirrors v125a closing-costs idempotency.
+            const existingLeg = await pool.query<{ id: string }>(
+              `SELECT id FROM applications
+                WHERE parent_application_id::text = ($1)::text
+                  AND (
+                    source = 'capital_and_equipment_leg'
+                    OR metadata->>'capital_and_equipment_leg' = 'true'
+                    OR metadata->>'leg_category' = 'EQUIPMENT'
+                  )
+                LIMIT 1`,
+              [application.id]
             );
-            logInfo("capital_and_equipment_leg_created", {
-              parentApplicationId: application.id,
-              equipmentApplicationId: equipmentId,
-              equipmentAmount,
-            });
+            if (existingLeg.rows.length > 0) {
+              logInfo("capital_and_equipment_leg_already_exists", {
+                parentApplicationId: application.id,
+                existingLegId: existingLeg.rows[0].id,
+                source: "submit_skipped_duplicate",
+              });
+            } else {
+              const equipmentId = randomUUID();
+              await pool.query(
+                `INSERT INTO applications
+                   (id, name, silo, owner_user_id, parent_application_id,
+                    requested_amount, product_category, pipeline_state, status,
+                    source, metadata, submitted_at, created_at, updated_at)
+                 VALUES
+                   ($1, $2, $3, $4, $5,
+                    $6, 'EQUIPMENT', 'Received', 'received',
+                    'capital_and_equipment_leg',
+                    jsonb_build_object('capital_and_equipment_leg', true,
+                                       'parent_application_id', $5::text,
+                                       'leg_category', 'EQUIPMENT') || $7::jsonb,
+                    now(), now(), now())`,
+                [
+                  equipmentId,
+                  `Equipment leg — ${wizardBusinessName ?? application.id.slice(0, 8)}`,
+                  silo,
+                  ownerId,
+                  application.id,
+                  equipmentAmount,
+                  JSON.stringify(metaPatch),
+                ]
+              );
+              logInfo("capital_and_equipment_leg_created", {
+                parentApplicationId: application.id,
+                equipmentApplicationId: equipmentId,
+                equipmentAmount,
+              });
+            }
           } else {
             logError("capital_and_equipment_leg_missing_amount", {
               code: "capital_and_equipment_leg_missing_amount",
