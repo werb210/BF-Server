@@ -89,32 +89,41 @@ router.post("/verify", async (req: Request, res: Response) => {
   let tokenVersion: number;
   let silo: string | null = null;
 
+  // BF_SERVER_BLOCK_v145_OTP_CLIENT_FALLTHROUGH_v1 — when the phone has
+  // no users row, fall through to a client-JWT mint instead of erroring.
+  // The wizard's Step 1 OTP gate failed for every new applicant before
+  // this. role:"client" is lowercase and not in ROLE_SET, so every staff
+  // requireAuthorization / requireCapability check rejects it.
+  let isClient = false;
   try {
     const user = await findAuthUserByPhone(phone);
     if (!user) {
-      return res.status(401).json({
-        error: "user_not_found",
-        message: "No staff account found for this phone number. Contact your administrator.",
-      });
-    }
-    if (!user.role) {
+      isClient = true;
+      sub = `client:${phone}`;
+      role = "client";
+      tokenVersion = 0;
+      silo = null;
+      console.log("[otp_verify] client_fallthrough", { phone });
+    } else if (!user.role) {
       return res.status(403).json({
         error: "no_role",
         message: "Account exists but has no role assigned. Contact your administrator.",
       });
-    }
-    if (user.disabled || !user.active) {
+    } else if (user.disabled || !user.active) {
       return res.status(403).json({ error: "account_disabled" });
+    } else {
+      sub = user.id;
+      role = user.role;
+      tokenVersion = user.tokenVersion ?? 0;
+      silo = user.silo ?? null;
     }
-    sub = user.id;
-    role = user.role;
-    tokenVersion = user.tokenVersion ?? 0;
-    silo = user.silo ?? null;
   } catch (err) {
     console.error("OTP verify DB lookup failed:", err);
     return res.status(500).json({ error: "internal_error" });
   }
 
+  // BF_SERVER_BLOCK_v145_OTP_CLIENT_FALLTHROUGH_v1 — clients get a
+  // 30-day token (wizard often spans days); staff stay on 1-day rotation.
   const token = jwt.sign(
     {
       sub,
@@ -122,9 +131,10 @@ router.post("/verify", async (req: Request, res: Response) => {
       phone,
       tokenVersion,
       ...(silo ? { silo } : {}),
+      ...(isClient ? { isClient: true } : {}),
     },
     JWT_SECRET,
-    { expiresIn: "1d" },
+    { expiresIn: isClient ? "30d" : "1d" },
   );
 
   await redis.del(`otp:${phone}`);
