@@ -54,7 +54,8 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
   });
 }));
 
-router.get("/actions", safeHandler(async (_req: any, res: any) => {
+// BF_SERVER_BLOCK_v138_E2E_FIX_BATCH_v1 — gate /actions (AUDIT-10 regression repair)
+router.get("/actions", requireAuth, safeHandler(async (_req: any, res: any) => {
   res.json({ count: 0 });
 }));
 
@@ -70,7 +71,8 @@ router.get("/offers", requireAuth, safeHandler(async (_req: any, res: any) => {
   res.json({ status: "ok", data: [] });
 }));
 
-router.get("/pipeline", safeHandler(async (_req: any, res: any) => {
+// BF_SERVER_BLOCK_v138_E2E_FIX_BATCH_v1 — gate /pipeline (AUDIT-10 regression repair)
+router.get("/pipeline", requireAuth, safeHandler(async (_req: any, res: any) => {
   res.json({ stages: [] });
 }));
 

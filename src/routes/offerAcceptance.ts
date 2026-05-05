@@ -1,31 +1,48 @@
 // BF_SERVER_v75_BLOCK_1_8 — Option-B Pending Acceptance routes.
 import { Router } from "express";
 import { pool } from "../db.js";
+import { requireAuth, requireAuthorization } from "../middleware/auth.js";
+import { ROLES } from "../auth/roles.js";
 
 const router = Router();
 
 // Client (or staff acting as client): stage an offer for acceptance.
+// BF_SERVER_BLOCK_v138_E2E_FIX_BATCH_v1 — AUDIT-17 wire-in.
 router.post("/:id/accept", async (req, res) => {
   const id = String(req.params.id ?? "").trim();
   if (!id) return res.status(400).json({ error: "missing_offer_id" });
 
-  const r = await pool.query<{ id: string; status: string }>(
+  const r = await pool.query<{ id: string; status: string; application_id: string | null }>(
     `UPDATE offers
         SET status = 'pending_acceptance',
             pending_at = NOW()
       WHERE id::text = $1
         AND status NOT IN ('accepted','declined','expired')
-      RETURNING id, status`,
+      RETURNING id, status, application_id::text AS application_id`,
     [id]
   );
   const row = r.rows[0];
   if (!row) return res.status(409).json({ error: "offer_not_acceptable" });
 
+  if (row.application_id) {
+    await pool.query(
+      `UPDATE applications
+          SET pending_acceptance_offer_id = $1::uuid,
+              pending_acceptance_at = NOW(),
+              updated_at = NOW()
+        WHERE id::text = $2`,
+      [row.id, row.application_id]
+    ).catch((err) => {
+      console.warn("[offer.accept] applications wire-in failed", err);
+    });
+  }
+
   return res.json({ ok: true, offer: row });
 });
 
 // Staff confirms acceptance — flips to accepted + fires lender SignNow.
-router.post("/:id/confirm-acceptance", async (req, res) => {
+// BF_SERVER_BLOCK_v138_E2E_FIX_BATCH_v1 — AUDIT-13 regression repair.
+router.post("/:id/confirm-acceptance", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), async (req, res) => {
   const id = String(req.params.id ?? "").trim();
   if (!id) return res.status(400).json({ error: "missing_offer_id" });
 

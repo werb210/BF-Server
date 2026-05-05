@@ -3,9 +3,12 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { progressSubmission } from "../services/submission/orchestrator.js";
 import { dispatchToSelected, type DispatchLender } from "../services/lenders/dispatchToSelected.js";
+// BF_SERVER_BLOCK_v138_E2E_FIX_BATCH_v1 — AUDIT-12 regression repair.
+import { requireAuth, requireAuthorization } from "../middleware/auth.js";
+import { ROLES } from "../auth/roles.js";
 
 const router = Router();
-router.post("/applications/:id/lenders/send", async (req, res) => {
+router.post("/applications/:id/lenders/send", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), async (req, res) => {
   const id = String(req.params.id ?? "").trim();
   const lenderIds: string[] = Array.isArray((req.body ?? {}).lenderIds) ? (req.body.lenderIds as unknown[]).map((x) => String(x)) : [];
   if (!id) return res.status(400).json({ error: "missing_application_id" });
@@ -27,7 +30,7 @@ router.post("/applications/:id/lenders/send", async (req, res) => {
   return res.json({ ok: true, finalized: lenderIds, sent, orchestrator: result });
 });
 
-router.post("/applications/:id/submit-trigger-check", async (req, res) => {
+router.post("/applications/:id/submit-trigger-check", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), async (req, res) => {
   const id = String(req.params.id ?? "").trim();
   if (!id) return res.status(400).json({ error: "missing_application_id" });
   const result = await progressSubmission({ pool, applicationId: id });

@@ -55,11 +55,12 @@ async function persistAndEnqueue(opts: {
     await tx.query("BEGIN");
 
     await tx.query(
+      // BF_SERVER_BLOCK_v138_E2E_FIX_BATCH_v1
       `INSERT INTO documents
          (id, application_id, filename, hash, category,
           storage_path, blob_name, blob_url, size_bytes,
-          status, ocr_status, uploaded_by, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'uploaded','pending',$10,now(),now())`,
+          status, ocr_status, uploaded_by, document_type, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'uploaded','pending',$10,$5,now(),now())`,
       [
         documentId,
         opts.applicationId,

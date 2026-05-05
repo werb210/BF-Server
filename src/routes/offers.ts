@@ -4,11 +4,17 @@ import { pool, runQuery } from "../db.js";
 import { AppError } from "../middleware/errors.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { eventBus } from "../events/eventBus.js";
+// BF_SERVER_BLOCK_v138_E2E_FIX_BATCH_v1 — AUDIT-11 regression repair: stop
+// public reads/writes on /api/offers, /api/offers/:id/status.
+import { requireAuth, requireAuthorization } from "../middleware/auth.js";
+import { ROLES } from "../auth/roles.js";
 
 const router = Router();
 
 router.get(
   "/",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
   safeHandler(async (req: any, res: any, next: any) => {
     const applicationId = typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : "";
     const query = applicationId
@@ -29,6 +35,8 @@ router.get(
 
 router.post(
   "/",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
   safeHandler(async (req: any, res: any, next: any) => {
     const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
     const lender = typeof req.body?.lender === "string" ? req.body.lender.trim() : "";
@@ -66,6 +74,8 @@ router.post(
 
 router.patch(
   "/:id/status",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
   safeHandler(async (req: any, res: any, next: any) => {
     const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
     const status = typeof req.body?.status === "string" ? req.body.status.trim() : "";
