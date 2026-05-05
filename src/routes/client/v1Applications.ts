@@ -466,6 +466,37 @@ router.post(
               [application.id]
             );
             if (existingLeg.rows.length > 0) {
+              // BF_SERVER_BLOCK_v127a_COMPANION_METADATA_BACKFILL_v1
+              // C&E equipment legs created at Step 2 (theoretical; today
+              // they only come from submit-time fan-out) would have thin
+              // metadata. Same back-fill pattern as the closing-costs
+              // case. The submitted_at marker ensures we only back-fill
+              // once. No-op on first submit since the leg was just
+              // INSERTed with full metaPatch already.
+              try {
+                const existingId = existingLeg.rows[0].id;
+                await pool.query(
+                  `UPDATE applications
+                      SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb,
+                          updated_at = now()
+                    WHERE id::text = ($2)::text
+                      AND COALESCE(metadata->>'_v127a_backfilled', '') <> 'true'`,
+                  [
+                    JSON.stringify({ ...metaPatch, _v127a_backfilled: "true" }),
+                    existingId,
+                  ]
+                );
+                logInfo("capital_and_equipment_leg_metadata_backfilled", {
+                  parentApplicationId: application.id,
+                  legApplicationId: existingId,
+                });
+              } catch (backfillErr) {
+                logError("capital_and_equipment_leg_backfill_failed", {
+                  code: "capital_and_equipment_leg_backfill_failed",
+                  parentApplicationId: application.id,
+                  error: backfillErr instanceof Error ? backfillErr.message : "unknown",
+                });
+              }
               logInfo("capital_and_equipment_leg_already_exists", {
                 parentApplicationId: application.id,
                 existingLegId: existingLeg.rows[0].id,
@@ -551,6 +582,38 @@ router.post(
             [application.id]
           );
           if (existingCompanion.rows.length > 0) {
+            // BF_SERVER_BLOCK_v127a_COMPANION_METADATA_BACKFILL_v1
+            // The Step 2 closing-costs companion was created with only
+            // KYC data (Steps 3+4 weren't filled yet at that point).
+            // Submit-time skip preserves uniqueness but leaves the
+            // companion's metadata thin. Merge parent's wizard payload
+            // (formData, business, applicant, etc.) into the existing
+            // companion so its drawer Application tab renders properly.
+            // The submitted_at marker ensures we only back-fill once.
+            try {
+              const existingId = existingCompanion.rows[0].id;
+              await pool.query(
+                `UPDATE applications
+                    SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb,
+                        updated_at = now()
+                  WHERE id::text = ($2)::text
+                    AND COALESCE(metadata->>'_v127a_backfilled', '') <> 'true'`,
+                [
+                  JSON.stringify({ ...metaPatch, _v127a_backfilled: "true" }),
+                  existingId,
+                ]
+              );
+              logInfo("closing_costs_companion_metadata_backfilled", {
+                parentApplicationId: application.id,
+                companionApplicationId: existingId,
+              });
+            } catch (backfillErr) {
+              logError("closing_costs_companion_backfill_failed", {
+                code: "closing_costs_companion_backfill_failed",
+                parentApplicationId: application.id,
+                error: backfillErr instanceof Error ? backfillErr.message : "unknown",
+              });
+            }
             logInfo("closing_costs_companion_already_exists", {
               parentApplicationId: application.id,
               existingCompanionId: existingCompanion.rows[0].id,
