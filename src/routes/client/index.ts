@@ -53,8 +53,19 @@ router.get(
       );
       row = result.rows[0];
     } else {
+      // BF_SERVER_BLOCK_v129a_READINESS_PHONE_NORMALIZE_v1
+      // Digit-equivalence lookup. Legacy readiness_sessions rows may have
+      // raw display format ("(403) 555-1234"); newer rows have E.164
+      // ("+14035551234"). Strip both sides to digits. Compare last-10-
+      // digit slice so 10-digit and 11-digit (1XXXXXXXXXX) variants both
+      // match. Length guard prevents partial-input false positives.
       const result = await dbQuery(
-        `select * from readiness_sessions where phone = $1 and is_active = true order by created_at desc limit 1`,
+        `select * from readiness_sessions
+          where right(regexp_replace(coalesce(phone, ''), '\D', '', 'g'), 10)
+                = right(regexp_replace($1, '\D', '', 'g'), 10)
+            and length(regexp_replace(coalesce(phone, ''), '\D', '', 'g')) >= 10
+            and is_active = true
+          order by created_at desc limit 1`,
         [phone]
       );
       row = result.rows[0];

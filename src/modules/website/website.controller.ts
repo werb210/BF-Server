@@ -4,6 +4,8 @@ import { createContinuation } from "../continuation/continuation.service.js";
 import { stripUndefined } from "../../utils/clean.js";
 import { pool } from "../../db.js";
 import { notifyAllStaff } from "../../services/notifications/notifyAllStaff.js";
+// BF_SERVER_BLOCK_v129a_READINESS_PHONE_NORMALIZE_v1
+import { normalizePhoneNumber } from "../auth/phone.js";
 
 // BF_SERVER_v?_BLOCK_1_14_V1_READINESS_AND_STAFF_NOTIFY
 export async function submitCreditReadiness(req: Request, res: Response) {
@@ -33,11 +35,22 @@ export async function submitCreditReadiness(req: Request, res: Response) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
+    // BF_SERVER_BLOCK_v129a_READINESS_PHONE_NORMALIZE_v1
+    // Normalize phone to E.164 once, here. The wizard's OTP verify also
+    // normalizes to E.164 — without this, readiness rows are stored
+    // with raw display format like "(403) 555-1234" and the prefill
+    // query never matches the OTP-normalized "+14035551234". Falls
+    // back to the raw string only if normalization fails (very short
+    // input, malformed); the prefill route's digit-equivalence query
+    // (also v129a) covers that case too.
+    const normalizedPhone =
+      normalizePhoneNumber(String(phone)) ?? String(phone);
+
     const lead = await createCrmLead(
       stripUndefined({
         companyName: String(companyName),
         fullName: String(fullName),
-        phone: String(phone),
+        phone: normalizedPhone,
         email: String(email),
         industry: industry ? String(industry) : undefined,
         productInterest: fundingType ? String(fundingType) : undefined,
@@ -88,7 +101,7 @@ export async function submitCreditReadiness(req: Request, res: Response) {
          updated_at = now()`,
       [
         String(email).toLowerCase(),
-        String(phone),
+        normalizedPhone,
         String(companyName),
         String(fullName),
         industry ?? null,
@@ -140,7 +153,7 @@ export async function submitCreditReadiness(req: Request, res: Response) {
           String(companyName),
           lead.id,
           String(email).toLowerCase(),
-          String(phone),
+          normalizedPhone,
           draftCategory,
           requestedAmountNumber,
         ]
@@ -157,7 +170,7 @@ export async function submitCreditReadiness(req: Request, res: Response) {
     const amountText = requestedAmountNumber
       ? ` ($${requestedAmountNumber.toLocaleString("en-US", { maximumFractionDigits: 0 })})`
       : "";
-    const body = `Boreal: New readiness lead — ${companyName}${amountText}. ${fullName} (${phone}). Open the staff portal.`;
+    const body = `Boreal: New readiness lead — ${companyName}${amountText}. ${fullName} (${normalizedPhone}). Open the staff portal.`;
 
     await notifyAllStaff({
       pool,
