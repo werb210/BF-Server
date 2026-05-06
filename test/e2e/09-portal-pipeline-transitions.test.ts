@@ -1,3 +1,4 @@
+// BF_SERVER_BLOCK_v161_TEST_SUITE_REFRESH_v1
 import request from "supertest";
 import type { Express } from "express";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -44,7 +45,7 @@ describe("Portal pipeline auto transitions", () => {
           rowCount: 1,
         };
       }
-      if (sql.includes("SELECT pipeline_state FROM applications WHERE id = $1")) {
+      if (sql.includes("SELECT pipeline_state FROM applications") && (sql.includes("id::text") || sql.includes("id = $1"))) {
         return { rows: [{ pipeline_state: "In Review" }], rowCount: 1 };
       }
       if (sql.includes("UPDATE applications SET pipeline_state = 'Documents Required'")) {
@@ -82,7 +83,7 @@ describe("Portal pipeline auto transitions", () => {
       if (sql.includes("count(*) AS total")) {
         return { rows: [{ total: "2", accepted: "2" }], rowCount: 1 };
       }
-      if (sql.includes("SELECT pipeline_state FROM applications WHERE id = $1")) {
+      if (sql.includes("SELECT pipeline_state FROM applications") && (sql.includes("id::text") || sql.includes("id = $1"))) {
         return { rows: [{ pipeline_state: "In Review" }], rowCount: 1 };
       }
       if (sql.includes("UPDATE applications SET pipeline_state = 'Off to Lender'")) {
@@ -107,7 +108,7 @@ describe("Portal pipeline auto transitions", () => {
 
   it("POST /api/portal/applications/:id/term-sheet advances Off to Lender to Offer", async () => {
     queryMock.mockImplementation(async (sql: string) => {
-      if (sql.includes("SELECT pipeline_state FROM applications WHERE id = $1")) {
+      if (sql.includes("SELECT pipeline_state FROM applications") && (sql.includes("id::text") || sql.includes("id = $1"))) {
         return { rows: [{ pipeline_state: "Off to Lender" }], rowCount: 1 };
       }
       if (sql.includes("UPDATE applications SET pipeline_state = 'Offer'")) {
@@ -121,10 +122,12 @@ describe("Portal pipeline auto transitions", () => {
 
     const res = await request(app)
       .post("/api/portal/applications/app-4/term-sheet")
-      .set("Authorization", authHeader);
+      .set("Authorization", authHeader)
+      .field("lender_name", "Acme Lender")
+      .attach("file", Buffer.from("fake-pdf"), "term-sheet.pdf");
 
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true, stage: "Offer" });
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ ok: true, stage: "Offer" });
     expect(queryMock).toHaveBeenCalledWith(
       expect.stringContaining("UPDATE applications SET pipeline_state = 'Offer'"),
       ["app-4"],
