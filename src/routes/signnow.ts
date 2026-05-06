@@ -10,8 +10,18 @@ import { logCrmEvent } from "../modules/crm/crmTimeline.service.js";
 // is absent we DENY rather than fall open — this used to be a no-op
 // echo so any attacker could trigger SSN/SIN purge by faking a payload.
 function verifySignNowSignature(req: Request): boolean {
+  // BF_SERVER_BLOCK_v188_SIGNNOW_SECRET_OPTIONAL_v1
   const secret = process.env.SIGNNOW_WEBHOOK_SECRET;
-  if (!secret) return false;
+  const verifyEnabled = typeof secret === "string" && secret.trim().length > 0;
+
+  if (!verifyEnabled) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[signnow] SIGNNOW_WEBHOOK_SECRET is unset — accepting webhook without HMAC verify (paid SignNow feature not enabled)"
+    );
+    return true;
+  }
+
   const sig = req.header("x-signnow-signature");
   if (!sig || typeof sig !== "string") return false;
   const raw = (req as any).rawBody;
