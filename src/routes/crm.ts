@@ -8,7 +8,7 @@ import { respondOk } from "../utils/respondOk.js";
 import { handleListCrmTimeline } from "../modules/crm/timeline.controller.js";
 import { SupportController } from "../modules/support/support.controller.js";
 import { pool } from "../db.js";
-import { getSilo } from "../middleware/silo.js";
+import { getSilo, resolveSiloFromRequest } from "../middleware/silo.js";
 import { createContact } from "../services/contacts.js";
 import notesRoutes from "./crm/notes.js";
 import tasksRoutes from "./crm/tasks.js";
@@ -106,10 +106,9 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
   const leadStatus = typeof req.query.lead_status === "string" ? req.query.lead_status.trim() : "";
   const hasActiveApplications = req.query.has_active_applications === "true";
 
-  const VALID_SILOS = ["BF", "BI", "SLF"];
-  const { getSilo } = await import("../middleware/silo.js");
-  const rawSilo = getSilo(res);
-  const silo = VALID_SILOS.includes(rawSilo) ? rawSilo : "BF";
+  // BF_SERVER_BLOCK_v123_READINESS_SQL_AND_SILO_AUTH_RESOLUTION_v1 — re-resolve silo
+  // from req.user (siloMiddleware ran before requireAuth and stamped BF default).
+  const silo = resolveSiloFromRequest(req);
 
   const contactsColumnCheck = await pool.query<{ column_name: string }>(
     `SELECT column_name
@@ -252,7 +251,7 @@ router.post("/contacts", requireCrmWrite, safeHandler(async (req: any, res: any)
     return res.status(400).json({ error: { field: "company_id", message: "company_id must be a UUID" } });
   }
 
-  const silo = getSilo(res);
+  const silo = resolveSiloFromRequest(req);
   const ownerId = req.user?.id ?? req.user?.userId ?? null;
   const row = await createContact(pool, {
     first_name: fname,
@@ -283,7 +282,7 @@ router.get("/contacts/:id", safeHandler(async (req: any, res: any) => {
   if (!/^[0-9a-f-]{36}$/i.test(id)) {
     return res.status(400).json({ error: "invalid_id" });
   }
-  const silo = String(req.query.silo ?? getSilo(res) ?? req.user?.silo ?? "BF").toUpperCase();
+  const silo = resolveSiloFromRequest(req);
   const { rows } = await pool.query(
     `SELECT c.*,
             co.name AS company_name,
@@ -325,7 +324,7 @@ router.patch("/contacts/:id", requireCrmWrite, safeHandler(async (req: any, res:
 }));
 
 router.get("/companies", safeHandler(async (req: any, res: any) => {
-  const silo = String(req.query.silo ?? getSilo(res) ?? req.user?.silo ?? "BF").toUpperCase();
+  const silo = resolveSiloFromRequest(req);
   const q = String(req.query.q ?? "").trim();
   const sort = String(req.query.sort ?? "created_at:desc");
   const [sortColRaw, sortDirRaw] = sort.split(":");
@@ -356,7 +355,7 @@ router.get("/companies/:id", safeHandler(async (req: any, res: any) => {
   if (!/^[0-9a-f-]{36}$/i.test(id)) {
     return res.status(400).json({ error: "invalid_id" });
   }
-  const silo = String(req.query.silo ?? getSilo(res) ?? req.user?.silo ?? "BF").toUpperCase();
+  const silo = resolveSiloFromRequest(req);
   const { rows } = await pool.query(
     `SELECT co.*, (u.first_name || ' ' || u.last_name) AS owner_name
      FROM companies co

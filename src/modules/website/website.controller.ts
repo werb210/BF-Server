@@ -122,6 +122,7 @@ export async function submitCreditReadiness(req: Request, res: Response) {
     // Per Todd: "Check my credit readiness" should leave a draft on
     // the staff pipeline so leads are actionable, not just CRM rows.
     // Insert a minimal applications row keyed to the same crm_lead.
+    // BF_SERVER_BLOCK_v123_READINESS_SQL_AND_SILO_AUTH_RESOLUTION_v1
     // pipeline_state='draft' so the row only shows when the staff
     // toggles "Show drafts" (per v81 pipeline hydration).
     const fundingTypeStr =
@@ -141,12 +142,12 @@ export async function submitCreditReadiness(req: Request, res: Response) {
            jsonb_build_object(
              'source','website_credit_readiness',
              'crm_lead_id', $2::text,
-             'readiness_email', $3,
-             'readiness_phone', $4
+             'readiness_email', $3::text,
+             'readiness_phone', $4::text
            ),
            $5, $5,
            'draft', 'draft', 'draft',
-           $6, 'website_credit_readiness',
+           $6::numeric, 'website_credit_readiness',
            false, 'BF', now(), now()
          )`,
         [

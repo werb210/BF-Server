@@ -29,7 +29,11 @@ export async function submitContactForm(req: Request, res: Response) {
       tags: ["contact_form"],
     }));
 
-    const token = await createContinuation(req.body, lead.id);
+    // BF_SERVER_BLOCK_v123_READINESS_SQL_AND_SILO_AUTH_RESOLUTION_v1
+    // Q5: contact form Continue → main page; no apply hand-off. Keep the
+    // continuation row write for parity with other lead funnels but drop
+    // the token from the response so the client doesn't redirect.
+    await createContinuation(req.body, lead.id);
 
     const body = `Boreal: New contact form — ${companyName ?? "Unknown company"}. ${fullName} (${phone}). ${email}. Open the staff portal.`;
     await notifyAllStaff({
@@ -49,7 +53,6 @@ export async function submitContactForm(req: Request, res: Response) {
     return res["json"]({
       success: true,
       leadId: lead.id,
-      redirect: `https://client.boreal.financial/apply?continue=${token}`,
     });
   } catch (err) {
     logError("website_contact_form_failed", { message: err instanceof Error ? err.message : String(err) });
