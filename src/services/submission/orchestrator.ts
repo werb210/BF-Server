@@ -21,9 +21,21 @@ export async function readReadinessSnapshot(ctx: OrchestratorContext): Promise<R
 export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): Promise<{ fired: boolean; reason?: string }> {
   const snap = await readReadinessSnapshot(ctx);
   if (!snap.allDocsAccepted || !snap.allTasksComplete || !snap.lenderSelectionsFinalized) return { fired: false, reason: "preconditions_not_met" };
-  const guard = await ctx.pool.query<{ started_at: string | null }>(`SELECT submission_chain_started_at AS started_at FROM applications WHERE id::text = $1`, [ctx.applicationId]).catch(() => ({ rows: [{ started_at: null as string | null }] }));
-  if (guard.rows[0]?.started_at) return { fired: false, reason: "already_started" };
-  await ctx.pool.query(`UPDATE applications SET submission_chain_started_at = NOW() WHERE id::text = $1`, [ctx.applicationId]);
+  // BF_SERVER_BLOCK_v179_ORCHESTRATOR_CAS_v1
+  // Race-safe start: claim the chain via UPDATE...WHERE IS NULL
+  // RETURNING id. If RETURNING is empty, another caller beat us;
+  // bail without firing SignNow / admin notification a second time.
+  const claim = await ctx.pool
+    .query<{ id: string }>(
+      `UPDATE applications
+          SET submission_chain_started_at = NOW()
+        WHERE id::text = $1
+          AND submission_chain_started_at IS NULL
+        RETURNING id`,
+      [ctx.applicationId]
+    )
+    .catch(() => ({ rows: [] as Array<{ id: string }> }));
+  if (!claim.rows.length) return { fired: false, reason: "already_started" };
   try { const pth = "../notifications/notifyAdminsForCreditSummary.js"; const mod = await import(pth).catch(() => null as any); if (mod && typeof (mod as any).notifyAdminsForCreditSummary === "function") await (mod as any).notifyAdminsForCreditSummary(ctx); else console.log(`[orchestrator] would notify admins for app=${ctx.applicationId}`);} catch (e) { console.warn("[orchestrator] notify admins failed", e); }
   try { const pth = "../signnow/sendApplicationForSignature.js"; const mod = await import(pth).catch(() => null as any); if (mod && typeof (mod as any).sendApplicationForSignature === "function") await (mod as any).sendApplicationForSignature(ctx); else console.log(`[orchestrator] would fire SignNow for app=${ctx.applicationId}`);} catch (e) { console.warn("[orchestrator] signnow fire failed", e); }
   return { fired: true };
