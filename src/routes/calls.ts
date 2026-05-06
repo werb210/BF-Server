@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ok } from "../lib/response.js";
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
+import { getSilo } from "../middleware/silo.js";
 import { ROLES } from "../auth/roles.js";
 import { AppError } from "../middleware/errors.js";
 import { dbQuery } from "../db.js";
@@ -138,6 +139,7 @@ router.post(
       ...(parsed.data.status ? { status: parsed.data.status as CallStatus } : {}),
       ...(parsed.data.crmContactId ? { crmContactId: parsed.data.crmContactId } : {}),
       ...(parsed.data.applicationId ? { applicationId: parsed.data.applicationId } : {}),
+      silo: getSilo(res),
       ...buildRequestMetadata(req),
     };
     const record = await startCall(startPayload);
@@ -252,7 +254,7 @@ router.get(
       throw new AppError("validation_error", "Invalid applicationId.", 400);
     }
 
-    const calls = await listCalls({ contactId, applicationId });
+    const calls = await listCalls({ contactId, applicationId, silo: getSilo(res) });
     res.status(200).json(ok({ calls }, req.rid));
   })
 );

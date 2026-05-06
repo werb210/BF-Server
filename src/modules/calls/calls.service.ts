@@ -19,6 +19,7 @@ export async function startCall(params: {
   twilioCallSid?: string | null;
   crmContactId?: string | null;
   applicationId?: string | null;
+  silo?: string;
   ip?: string;
   userAgent?: string;
 }): Promise<CallLogRecord> {
@@ -33,6 +34,7 @@ export async function startCall(params: {
     twilioCallSid: params.twilioCallSid ?? null,
     crmContactId: params.crmContactId ?? null,
     applicationId: params.applicationId ?? null,
+    silo: params.silo,
   });
 
   await recordAuditEvent({
@@ -284,9 +286,11 @@ export async function endCall(params: {
 export async function listCalls(params: {
   contactId?: string | null;
   applicationId?: string | null;
+  silo?: string | null;
 }): Promise<CallLogRecord[]> {
   return listCallLogs({
     contactId: params.contactId ?? null,
     applicationId: params.applicationId ?? null,
+    silo: params.silo,
   });
 }

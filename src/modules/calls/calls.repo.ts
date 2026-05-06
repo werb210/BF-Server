@@ -30,6 +30,7 @@ export type CallLogRecord = {
   staff_user_id: string | null;
   crm_contact_id: string | null;
   application_id: string | null;
+  silo: string;
   error_code: string | null;
   error_message: string | null;
   recording_sid: string | null;
@@ -49,6 +50,7 @@ export async function createCallLog(params: {
   twilioCallSid?: string | null;
   crmContactId?: string | null;
   applicationId?: string | null;
+  silo?: string;
   client?: Queryable;
 }): Promise<CallLogRecord> {
   const runner = params.client ?? pool;
@@ -61,11 +63,11 @@ export async function createCallLog(params: {
   const res = await runner.query<CallLogRecord>(
     `insert into call_logs
      (id, phone_number, from_number, to_number, twilio_call_sid, direction, status, staff_user_id, crm_contact_id,
-      application_id, created_at, started_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())
+      application_id, silo, created_at, started_at)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
      ${conflictClause}
      returning id, phone_number, from_number, to_number, twilio_call_sid, direction, status, duration_seconds,
-               staff_user_id, crm_contact_id, application_id, error_code, error_message, recording_sid,
+               staff_user_id, crm_contact_id, application_id, silo, error_code, error_message, recording_sid,
                recording_duration_seconds, created_at, started_at, ended_at`,
     [
       id,
@@ -78,6 +80,7 @@ export async function createCallLog(params: {
       params.staffUserId,
       params.crmContactId ?? null,
       params.applicationId ?? null,
+      String(params.silo ?? "BF").toUpperCase(),
     ]
   );
   const record = res.rows[0];
@@ -94,7 +97,7 @@ export async function findCallLogById(
   const runner = client ?? pool;
   const res = await runner.query<CallLogRecord>(
     `select id, phone_number, from_number, to_number, twilio_call_sid, direction, status, duration_seconds,
-            staff_user_id, crm_contact_id, application_id, error_code, error_message, recording_sid,
+            staff_user_id, crm_contact_id, application_id, silo, error_code, error_message, recording_sid,
             recording_duration_seconds, created_at, started_at, ended_at
      from call_logs
      where id = $1
@@ -111,7 +114,7 @@ export async function findCallLogByTwilioSid(
   const runner = client ?? pool;
   const res = await runner.query<CallLogRecord>(
     `select id, phone_number, from_number, to_number, twilio_call_sid, direction, status, duration_seconds,
-            staff_user_id, crm_contact_id, application_id, error_code, error_message, recording_sid,
+            staff_user_id, crm_contact_id, application_id, silo, error_code, error_message, recording_sid,
             recording_duration_seconds, created_at, started_at, ended_at
      from call_logs
      where twilio_call_sid = $1
@@ -124,6 +127,7 @@ export async function findCallLogByTwilioSid(
 export async function listCallLogs(params: {
   contactId?: string | null;
   applicationId?: string | null;
+  silo?: string | null;
   client?: Queryable;
 }): Promise<CallLogRecord[]> {
   const runner = params.client ?? pool;
@@ -137,10 +141,14 @@ export async function listCallLogs(params: {
     values.push(params.applicationId);
     filters.push(`application_id = $${values.length}`);
   }
+  if (params.silo) {
+    values.push(String(params.silo).toUpperCase());
+    filters.push(`silo = $${values.length}`);
+  }
   const whereClause = filters.length > 0 ? `where ${filters.join(" and ")}` : "";
   const res = await runner.query<CallLogRecord>(
     `select cl.id, cl.phone_number, cl.from_number, cl.to_number, cl.twilio_call_sid, cl.direction, cl.status, cl.duration_seconds,
-            cl.staff_user_id, cl.crm_contact_id, cl.application_id, cl.error_code, cl.error_message, cl.recording_sid,
+            cl.staff_user_id, cl.crm_contact_id, cl.application_id, cl.silo, cl.error_code, cl.error_message, cl.recording_sid,
             cl.recording_duration_seconds, cl.created_at, cl.started_at, cl.ended_at
      from call_logs cl
      ${whereClause}
@@ -206,7 +214,7 @@ export async function updateCallLogStatus(params: {
      set ${setClauses.join(", ")}
      where id = $${values.length}
      returning id, phone_number, from_number, to_number, twilio_call_sid, direction, status, duration_seconds,
-               staff_user_id, crm_contact_id, application_id, error_code, error_message, recording_sid,
+               staff_user_id, crm_contact_id, application_id, silo, error_code, error_message, recording_sid,
                recording_duration_seconds, created_at, started_at, ended_at`,
     values
   );
