@@ -3,16 +3,15 @@ import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { AppError } from "../middleware/errors.js";
 import { pool } from "../db.js";
-import { getSilo } from "../middleware/silo.js";
+import { getSilo, resolveSiloFromRequest } from "../middleware/silo.js";
 import { createCompany } from "../services/companies.js";
 
 const router = Router();
 router.use(requireAuth);
 
 router.get("/", safeHandler(async (req: any, res: any) => {
-  const { getSilo } = await import("../middleware/silo.js");
-  const rawSilo = getSilo(res);
-  const silo = ["BF", "BI", "SLF"].includes(rawSilo) ? rawSilo : "BF";
+  // BF_SERVER_BLOCK_v123_READINESS_SQL_AND_SILO_AUTH_RESOLUTION_v1
+  const silo = resolveSiloFromRequest(req);
 
   const { rows } = await pool.query(
     `SELECT c.*, count(ct.id)::int AS contact_count
@@ -43,7 +42,7 @@ router.post("/", safeHandler(async (req: any, res: any) => {
   if (annualRevenue !== undefined && annualRevenue !== null && Number.isNaN(Number(annualRevenue))) {
     return res.status(400).json({ error: { field: "estimated_annual_revenue", message: "estimated_annual_revenue must be numeric" } });
   }
-  const silo = getSilo(res);
+  const silo = resolveSiloFromRequest(req);
   const ownerId = req.user?.id ?? req.user?.userId ?? null;
   try {
     const row = await createCompany(pool, {

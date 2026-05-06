@@ -83,3 +83,24 @@ export function getSilo(res: Response): Silo {
   const value = res.locals?.silo;
   return isValidSilo(value) ? value : "BF";
 }
+// BF_SERVER_BLOCK_v123_READINESS_SQL_AND_SILO_AUTH_RESOLUTION_v1
+// app-level siloMiddleware runs BEFORE router-level requireAuth, so on
+// authed routes res.locals.silo is always the "no user → BF" default.
+// Call this from inside any handler that needs the actual silo for an
+// admin who passed ?silo=bi or X-Silo:BI.
+export function resolveSiloFromRequest(req: import("express").Request): Silo {
+  const requested = readHeaderOrQuery(req);
+  const user = (req as { user?: { role?: string; silo?: string; silos?: string[] } }).user;
+  if (!user) return isValidSilo(requested) ? requested : "BF";
+  const role = String(user.role || "").toLowerCase();
+  const primary: Silo = isValidSilo(user.silo) ? (user.silo as Silo) : "BF";
+  const allowlist: Silo[] = Array.isArray(user.silos)
+    ? user.silos.map((s) => String(s).toUpperCase()).filter(isValidSilo)
+    : [];
+  if (role === "admin") return isValidSilo(requested) ? requested : primary;
+  if (allowlist.length > 1) {
+    return isValidSilo(requested) && allowlist.includes(requested) ? requested : primary;
+  }
+  return primary;
+}
+
