@@ -215,7 +215,10 @@ export const config = {
   ocr: {
     enabled: toBool(parsed.OCR_ENABLED, true),
     provider: parsed.OCR_PROVIDER ?? "openai",
-    timeoutMs: toNumber(parsed.OCR_TIMEOUT_MS, 30_000),
+    // BF_SERVER_BLOCK_v194_OCR_TIMEOUT_BUMP_v1 — 30s was too tight for OpenAI
+    // Responses API on PDFs (typical 20-60s, occasionally >60s for dense docs).
+    // 120s default; override via OCR_TIMEOUT_MS env var on App Service if needed.
+    timeoutMs: toNumber(parsed.OCR_TIMEOUT_MS, 120_000),
     maxAttempts: toNumber(parsed.OCR_MAX_ATTEMPTS, 3),
     pollIntervalMs: toNumber(parsed.OCR_POLL_INTERVAL_MS, 5_000),
     workerConcurrency: toNumber(parsed.OCR_WORKER_CONCURRENCY, 2),
