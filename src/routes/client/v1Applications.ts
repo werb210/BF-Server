@@ -683,6 +683,56 @@ router.post(
             error: companionErr instanceof Error ? companionErr.message : "unknown",
           });
         }
+      } else if (!wantsClosingCosts && EQUIPMENT_PARENT_ALIASES.has(primaryCategory)) {
+        // BF_SERVER_BLOCK_v197_CLOSING_COSTS_COMPANION_CLEANUP_v1
+        // User toggled closing-costs OFF after a Step-2 modal-flow companion
+        // was created (BLOCK_v125a path). Without this, the orphaned companion
+        // sits in the pipeline at pipeline_state='Received'. We mirror the
+        // same idempotent detection query used above and soft-delete by
+        // setting pipeline_state='Archived' rather than DELETE, so any audit
+        // links remain valid. Staff with "Show drafts" off will not see the
+        // archived companion. Wrapped in try/catch so cleanup failure never
+        // blocks the parent submit.
+        try {
+          const orphan = await pool.query<{ id: string }>(
+            `SELECT id FROM applications
+              WHERE parent_application_id::text = ($1)::text
+                AND (
+                  source = 'closing_costs_companion'
+                  OR metadata->>'closing_cost_companion' = 'true'
+                  OR metadata->>'kind' = 'closing_costs'
+                )
+                AND pipeline_state IS DISTINCT FROM 'Archived'
+              LIMIT 1`,
+            [application.id]
+          );
+          if (orphan.rows.length > 0) {
+            const orphanId = orphan.rows[0].id;
+            await pool.query(
+              `UPDATE applications
+                  SET pipeline_state = 'Archived',
+                      metadata = COALESCE(metadata, '{}'::jsonb)
+                                 || jsonb_build_object(
+                                      'archived_reason', 'closing_costs_toggled_off',
+                                      'archived_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+                                    ),
+                      updated_at = now()
+                WHERE id::text = ($1)::text`,
+              [orphanId]
+            );
+            logInfo("closing_costs_companion_archived", {
+              parentApplicationId: application.id,
+              companionApplicationId: orphanId,
+              reason: "user_toggled_off",
+            });
+          }
+        } catch (cleanupErr) {
+          logError("closing_costs_companion_cleanup_failed", {
+            code: "closing_costs_companion_cleanup_failed",
+            parentApplicationId: application.id,
+            error: cleanupErr instanceof Error ? cleanupErr.message : "unknown",
+          });
+        }
       }
       if (primaryCategory) {
         try {
