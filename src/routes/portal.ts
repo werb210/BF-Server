@@ -360,6 +360,11 @@ router.get(
           storageKey: metadata.storageKey ?? null,
           version: version?.version ?? null,
           createdAt: doc.created_at,
+          // BF_SERVER_BLOCK_v199_DOC_STATUS_ON_PORTAL_DETAIL_v1
+          // The portal DocumentsTab needs these for status pills + accept/reject UX.
+          status: doc.status ?? null,
+          rejectionReason: doc.rejection_reason ?? null,
+          ocrStatus: doc.ocr_status ?? null,
         };
       })
     );
