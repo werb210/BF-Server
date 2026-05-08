@@ -1,4 +1,5 @@
 // BF_LENDER_MATCH_GEO_FIX_v42 — Block 42-A — country added to PrequalInput
+// BF_SERVER_BLOCK_v206_LENDER_CATEGORY_FILTER_AND_PREVIEW_FALLBACK_v1 — productCategory added so matchLenders can filter by category.
 export type PrequalInput = {
   revenue?: number | null;
   industry?: string | null;
@@ -6,6 +7,7 @@ export type PrequalInput = {
   province?: string | null;
   country?: "CA" | "US" | null;
   requestedAmount?: number | null;
+  productCategory?: string | null;
 };
 
 export function scoreAmountFit(

@@ -9,7 +9,8 @@ export type LenderMatchEnvelope = {
   matches: any[];
 };
 
-function extractMatchInputs(app: { metadata: any; requested_amount: any }) {
+// BF_SERVER_BLOCK_v206_LENDER_CATEGORY_FILTER_AND_PREVIEW_FALLBACK_v1 — pull product_category for filtering.
+function extractMatchInputs(app: { metadata: any; requested_amount: any; product_category?: string | null }) {
   const meta = (app.metadata && typeof app.metadata === "object") ? (app.metadata as Record<string, any>) : {};
   const requestedAmount = (() => {
     const raw = app.requested_amount ?? meta.requestedAmount ?? meta.amount ?? meta.fundingAmount ?? null;
@@ -38,7 +39,16 @@ function extractMatchInputs(app: { metadata: any; requested_amount: any }) {
     const n = typeof raw === "number" ? raw : Number(raw);
     return Number.isFinite(n) ? n : null;
   })();
-  return { requestedAmount, country, province, industry, revenue, timeInBusiness };
+  const productCategory = (() => {
+    const raw = app.product_category
+      ?? meta.product_category
+      ?? meta.productCategory
+      ?? meta.selectedProductType
+      ?? null;
+    if (raw === null || raw === undefined || raw === "") return null;
+    return String(raw).trim();
+  })();
+  return { requestedAmount, country, province, industry, revenue, timeInBusiness, productCategory };
 }
 
 async function enrichWithSubmissions(applicationId: string, matches: LenderMatch[]) {
@@ -83,7 +93,7 @@ export async function getOutstandingRequiredDocs(applicationId: string): Promise
 
 export async function computeAndCacheLenderMatches(applicationId: string): Promise<any[]> {
   const appRes = await pool.query(
-    `SELECT id, metadata, requested_amount FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+    `SELECT id, metadata, requested_amount, product_category FROM applications WHERE id::text = ($1)::text LIMIT 1`,
     [applicationId]
   );
   const app = appRes.rows[0];

@@ -70,10 +70,24 @@ export async function matchLenders(input: PrequalInput): Promise<LenderMatch[]> 
    order by lp.updated_at desc`
   );
 
+  // BF_SERVER_BLOCK_v206_LENDER_CATEGORY_FILTER_AND_PREVIEW_FALLBACK_v1
+  // Normalize the application's product category for case-insensitive comparison.
+  // If no category is on the application, do not filter by category (preserves
+  // prior behaviour for legacy apps with no product_category set).
+  const wantedCategory = (input.productCategory ?? null) === null
+    ? null
+    : String(input.productCategory).trim().toUpperCase().replace(/[\s-]+/g, "_");
+
   const filtered = rows.filter((row) => {
     if (!geographyAllows(row.country, input.country ?? null)) return false;
     if (requestedAmount && row.min_amount && requestedAmount < Number(row.min_amount)) return false;
     if (requestedAmount && row.max_amount && requestedAmount > Number(row.max_amount)) return false;
+    if (wantedCategory) {
+      const rowCategory = row.product_category
+        ? String(row.product_category).trim().toUpperCase().replace(/[\s-]+/g, "_")
+        : null;
+      if (rowCategory !== wantedCategory) return false;
+    }
     return true;
   });
 

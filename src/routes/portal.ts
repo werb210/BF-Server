@@ -1025,14 +1025,20 @@ router.get(
     const docId = String(req.params.id ?? "").trim();
     if (!docId) throw new AppError("validation_error", "Document id required.", 400);
 
+    // BF_SERVER_BLOCK_v206_LENDER_CATEGORY_FILTER_AND_PREVIEW_FALLBACK_v1
+    // Public-upload writes blob_name + storage_path but leaves storage_key NULL,
+    // so the original handler always 404'd on freshly-uploaded docs. Read all
+    // three columns and fall back through them in order.
     const docResult = await runQuery<{
       id: string;
       application_id: string;
       filename: string | null;
       storage_key: string | null;
+      blob_name: string | null;
+      storage_path: string | null;
       title: string | null;
     }>(
-      `SELECT id, application_id, filename, storage_key, title
+      `SELECT id, application_id, filename, storage_key, blob_name, storage_path, title
          FROM documents
         WHERE id::text = ($1)::text
         LIMIT 1`,
@@ -1060,7 +1066,7 @@ router.get(
         ? (version.metadata as { storageKey?: string; mimeType?: string; fileName?: string })
         : {};
 
-    const storageKey = vmeta.storageKey ?? doc.storage_key;
+    const storageKey = vmeta.storageKey ?? doc.storage_key ?? doc.blob_name ?? doc.storage_path;
     if (!storageKey) {
       throw new AppError("not_found", "Document file not available.", 404);
     }
