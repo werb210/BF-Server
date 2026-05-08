@@ -1010,6 +1010,96 @@ router.get(
   })
 );
 
+// BF_SERVER_BLOCK_v203_DOC_PREVIEW_ENDPOINT_v1
+// Streams the document binary inline so staff can preview PDFs/images in the
+// browser. The portal calls this via apiBlob (authenticated fetch), then opens
+// the response as a Blob URL. We don't generate Azure SAS URLs because the
+// fetch flow keeps the bearer-auth path and avoids leaking storage URLs to
+// browser history.
+router.get(
+  "/documents/:id/file",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  portalLimiter,
+  safeHandler(async (req: any, res: any) => {
+    const docId = String(req.params.id ?? "").trim();
+    if (!docId) throw new AppError("validation_error", "Document id required.", 400);
+
+    const docResult = await runQuery<{
+      id: string;
+      application_id: string;
+      filename: string | null;
+      storage_key: string | null;
+      title: string | null;
+    }>(
+      `SELECT id, application_id, filename, storage_key, title
+         FROM documents
+        WHERE id::text = ($1)::text
+        LIMIT 1`,
+      [docId]
+    );
+    const doc = docResult.rows[0];
+    if (!doc) throw new AppError("not_found", "Document not found.", 404);
+
+    // Silo check via parent application.
+    const appResult = await runQuery<{ silo: string | null }>(
+      `SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+      [doc.application_id]
+    );
+    const silo = getSilo(res);
+    const appSilo = appResult.rows[0]?.silo ?? null;
+    if (appSilo && silo && appSilo !== silo) {
+      throw new AppError("not_found", "Document not found.", 404);
+    }
+
+    // Prefer the active version's metadata (storageKey + mimeType + fileName)
+    // since that's what the portal's /applications/:id endpoint surfaces.
+    const version = await findActiveDocumentVersion({ documentId: doc.id });
+    const vmeta =
+      version && version.metadata && typeof version.metadata === "object"
+        ? (version.metadata as { storageKey?: string; mimeType?: string; fileName?: string })
+        : {};
+
+    const storageKey = vmeta.storageKey ?? doc.storage_key;
+    if (!storageKey) {
+      throw new AppError("not_found", "Document file not available.", 404);
+    }
+
+    const storage = getStorage();
+    const fileResult = await storage.get(storageKey);
+    if (!fileResult) {
+      throw new AppError("not_found", "Document file not available.", 404);
+    }
+
+    const fname = vmeta.fileName ?? doc.filename ?? doc.title ?? `document-${docId}`;
+    const safeFname = String(fname).replace(/[\r\n"\\]/g, "");
+    const mime = vmeta.mimeType ?? fileResult.contentType ?? inferMimeFromFilename(safeFname);
+
+    res.setHeader("Content-Type", mime);
+    res.setHeader("Content-Disposition", `inline; filename="${safeFname}"`);
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.send(fileResult.buffer);
+  })
+);
+
+function inferMimeFromFilename(name: string): string {
+  const ext = (name.match(/\.([a-z0-9]+)$/i)?.[1] ?? "").toLowerCase();
+  switch (ext) {
+    case "pdf":  return "application/pdf";
+    case "png":  return "image/png";
+    case "jpg":  case "jpeg": return "image/jpeg";
+    case "gif":  return "image/gif";
+    case "webp": return "image/webp";
+    case "svg":  return "image/svg+xml";
+    case "txt":  return "text/plain; charset=utf-8";
+    case "csv":  return "text/csv; charset=utf-8";
+    case "json": return "application/json";
+    case "html": case "htm": return "text/html; charset=utf-8";
+    default:     return "application/octet-stream";
+  }
+}
+
 // ── Portal document reject with auto-SMS ──────────────────────────────────────
 router.post(
   "/documents/:id/accept",
