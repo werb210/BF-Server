@@ -1546,4 +1546,138 @@ router.post(
   })
 );
 
+
+// BF_SERVER_BLOCK_v207_OCR_DIAGNOSTIC_ENDPOINT_v1
+// Returns the OCR + banking pipeline state for an application so staff can
+// see why Banking/Financials tabs aren't showing data. Admin/staff only.
+router.get(
+  "/applications/:id/ocr-diagnostic",
+  requireAuth,
+  portalLimiter,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  safeHandler(async (req: any, res: any) => {
+    const applicationId = toStringSafe(req.params.id).trim();
+    if (!applicationId) {
+      throw new AppError("validation_error", "Application id is required.", 400);
+    }
+
+    const appRow = await runQuery<{
+      id: string;
+      pipeline_state: string | null;
+      banking_completed_at: Date | null;
+      silo: string | null;
+    }>(
+      `SELECT id, pipeline_state, banking_completed_at, silo
+         FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+      [applicationId]
+    );
+    const app = appRow.rows[0];
+    if (!app) throw new AppError("not_found", "Application not found.", 404);
+
+    // Documents and their OCR status as recorded in the documents table itself.
+    const docsRow = await runQuery<{
+      total: string;
+      categories: any;
+      ocr_breakdown: any;
+    }>(
+      `SELECT
+         COUNT(*)::text AS total,
+         jsonb_object_agg(COALESCE(document_type, signed_category, 'unknown'), per_cat) AS categories,
+         jsonb_object_agg(COALESCE(ocr_status, 'null'), per_status) AS ocr_breakdown
+       FROM (
+         SELECT document_type, signed_category, ocr_status,
+                COUNT(*) OVER (PARTITION BY COALESCE(document_type, signed_category)) AS per_cat,
+                COUNT(*) OVER (PARTITION BY COALESCE(ocr_status, 'null')) AS per_status
+           FROM documents
+          WHERE application_id::text = ($1)::text
+       ) sub`,
+      [applicationId]
+    ).catch(() => ({ rows: [{ total: "0", categories: null, ocr_breakdown: null }] } as any));
+
+    // OCR jobs for this application.
+    const jobsRow = await runQuery<{
+      total: string;
+      by_status: any;
+      last_errors: any;
+    }>(
+      `SELECT
+         COUNT(*)::text AS total,
+         jsonb_object_agg(status, cnt) AS by_status,
+         jsonb_agg(jsonb_build_object(
+           'documentId', document_id, 'status', status,
+           'attemptCount', attempt_count, 'lastError', last_error
+         )) FILTER (WHERE status = 'failed') AS last_errors
+       FROM (
+         SELECT document_id, status, attempt_count, last_error,
+                COUNT(*) OVER (PARTITION BY status) AS cnt
+           FROM ocr_jobs
+          WHERE application_id::text = ($1)::text
+       ) sub`,
+      [applicationId]
+    ).catch(() => ({ rows: [{ total: "0", by_status: null, last_errors: null }] } as any));
+
+    // Banking analysis state.
+    const bankingRow = await runQuery<{
+      exists: boolean;
+      status: string | null;
+      analysis_completed_at: Date | null;
+      last_error: string | null;
+    }>(
+      `SELECT TRUE AS exists, status, analysis_completed_at, last_error
+         FROM banking_analyses WHERE application_id::text = ($1)::text LIMIT 1`,
+      [applicationId]
+    ).catch(() => ({ rows: [] } as any));
+    const banking = bankingRow.rows[0] ?? { exists: false, status: null, analysis_completed_at: null, last_error: null };
+
+    // Build a one-line diagnosis from the data above.
+    const totalDocs = Number(docsRow.rows[0]?.total ?? "0");
+    const totalJobs = Number(jobsRow.rows[0]?.total ?? "0");
+    const byStatus = (jobsRow.rows[0]?.by_status ?? {}) as Record<string, number>;
+    const failedCount = Number(byStatus.failed ?? 0);
+    const queuedCount = Number(byStatus.queued ?? 0);
+    const processingCount = Number(byStatus.processing ?? 0);
+    const completedCount = Number(byStatus.completed ?? byStatus.success ?? 0);
+
+    let diagnosis: string;
+    if (totalDocs === 0) {
+      diagnosis = "No documents uploaded for this application yet.";
+    } else if (totalJobs === 0) {
+      diagnosis = `${totalDocs} documents uploaded but no OCR jobs were enqueued. Check enqueueOcrForDocument call site.`;
+    } else if (failedCount === totalJobs) {
+      const firstErr = (jobsRow.rows[0]?.last_errors ?? [])[0]?.lastError ?? "(no error recorded)";
+      diagnosis = `All ${totalJobs} OCR jobs FAILED. First error: ${firstErr}. Most likely OPENAI_API_KEY invalid or OCR provider rejecting requests.`;
+    } else if (queuedCount > 0 && completedCount === 0) {
+      diagnosis = `${queuedCount} OCR jobs queued and never processed. Worker not picking them up — check application pipeline_state (must be past 'draft') and OCR_ENABLED flag.`;
+    } else if (processingCount > 0 && totalJobs > processingCount) {
+      diagnosis = `${processingCount} OCR jobs stuck in 'processing'. Worker may have crashed mid-job. Locks expire after the lock timeout, then jobs retry.`;
+    } else if (completedCount === totalJobs && !banking.exists) {
+      diagnosis = `All OCR done but no banking_analyses row exists. bankingAutoWorker likely not running, or no docs match the bank-statement filter.`;
+    } else if (banking.exists && banking.status === "failed") {
+      diagnosis = `Banking analysis FAILED: ${banking.last_error ?? "(no error recorded)"}`;
+    } else if (banking.exists && banking.analysis_completed_at) {
+      diagnosis = "Pipeline healthy. Banking analysis complete. If tab still shows blank, frontend rendering issue.";
+    } else {
+      diagnosis = `Mixed state: ${completedCount}/${totalJobs} OCR jobs complete, ${failedCount} failed, ${queuedCount} queued. Banking exists=${banking.exists}.`;
+    }
+
+    res.status(200).json({
+      applicationId: app.id,
+      pipelineState: app.pipeline_state,
+      bankingCompletedAt: app.banking_completed_at,
+      documents: {
+        total: totalDocs,
+        byCategory: docsRow.rows[0]?.categories ?? {},
+        ocrStatusBreakdown: docsRow.rows[0]?.ocr_breakdown ?? {},
+      },
+      ocrJobs: {
+        total: totalJobs,
+        byStatus,
+        failedJobs: jobsRow.rows[0]?.last_errors ?? [],
+      },
+      bankingAnalysis: banking,
+      diagnosis,
+    });
+  })
+);
+
 export default router;
