@@ -1,2 +1,7 @@
+# BI_SERVER_BLOCK_v65_DEPLOY_SPEED_AND_CLEANUP_v1
+# Tells Azure App Service to run Oryx build on the server with cached
+# node_modules layers. Without this, the deploy uploads node_modules
+# from GitHub Actions (200-400 MB) instead of letting Azure install
+# from cached package-lock.json (10x faster).
 [config]
 SCM_DO_BUILD_DURING_DEPLOYMENT=true
