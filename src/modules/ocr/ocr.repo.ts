@@ -160,6 +160,16 @@ export async function markOcrJobSuccess(params: {
        where id = $1`,
       [params.jobId]
     );
+    // BF_SERVER_BLOCK_v212_DOCUMENTS_OCR_STATUS_SYNC_v1
+    // Mirror completion onto documents.ocr_status. Without this the banking
+    // auto-worker's gate (d.ocr_status = 'completed') is never satisfied,
+    // so Banking + Financials tabs stay empty even though OCR succeeded.
+    await runner.query(
+      `update documents
+          set ocr_status = 'completed', updated_at = now()
+        where id::text = ($1)::text`,
+      [params.documentId]
+    );
     await runner.query("commit");
   } catch (error) {
     await runner.query("rollback");
@@ -201,7 +211,22 @@ export async function markOcrJobFailure(params: {
       params.lastError,
     ]
   );
-  return res.rows[0] ?? null;
+  // BF_SERVER_BLOCK_v212_DOCUMENTS_OCR_STATUS_SYNC_v1
+  // Mirror failure to documents.ocr_status only when the job is permanently
+  // failed (status === 'failed'). Transient retries leave the doc in its
+  // current state so retries can still flip it to 'completed'.
+  const updated = res.rows[0] ?? null;
+  if (updated && params.status === "failed") {
+    await runner.query(
+      `update documents
+          set ocr_status = 'failed', updated_at = now()
+        where id::text = ($1)::text`,
+      [updated.document_id]
+    ).catch((err) => {
+      console.error("[ocr.repo] documents.ocr_status sync FAILED:", (err && err.message) || err);
+    });
+  }
+  return updated;
 }
 
 export async function resetOcrJob(params: {
