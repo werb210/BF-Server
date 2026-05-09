@@ -1680,4 +1680,137 @@ router.get(
   })
 );
 
+// BF_SERVER_BLOCK_v208_EMAIL_DIAGNOSTIC_ENDPOINT_v1
+// Non-destructive diagnostic for the Microsoft Graph email send pipeline.
+// Reports whether (a) all four MS_GRAPH_* env vars are set, (b) Graph token
+// acquisition works, (c) the send-as mailbox resolves and is visible to the
+// app registration. Does NOT send any email. Admin/staff only.
+router.get(
+  "/email-diagnostic",
+  requireAuth,
+  portalLimiter,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  safeHandler(async (_req: any, res: any) => {
+    const envCheck: Record<string, "set" | "missing"> = {
+      MS_GRAPH_TENANT_ID:    process.env.MS_GRAPH_TENANT_ID    && process.env.MS_GRAPH_TENANT_ID.trim()    ? "set" : "missing",
+      MS_GRAPH_CLIENT_ID:    process.env.MS_GRAPH_CLIENT_ID    && process.env.MS_GRAPH_CLIENT_ID.trim()    ? "set" : "missing",
+      MS_GRAPH_CLIENT_SECRET:process.env.MS_GRAPH_CLIENT_SECRET&& process.env.MS_GRAPH_CLIENT_SECRET.trim()? "set" : "missing",
+      MS_GRAPH_SEND_AS:      process.env.MS_GRAPH_SEND_AS      && process.env.MS_GRAPH_SEND_AS.trim()      ? "set" : "missing",
+    };
+    const missing = Object.entries(envCheck).filter(([, v]) => v === "missing").map(([k]) => k);
+
+    const sendAs = (process.env.MS_GRAPH_SEND_AS ?? "").trim();
+    const tenant = (process.env.MS_GRAPH_TENANT_ID ?? "").trim();
+    const clientId = (process.env.MS_GRAPH_CLIENT_ID ?? "").trim();
+    const clientSecret = (process.env.MS_GRAPH_CLIENT_SECRET ?? "").trim();
+
+    let tokenStep:
+      | { ok: true; expiresInSec: number }
+      | { ok: false; status?: number; error: string }
+      | { ok: null; reason: string } = { ok: null, reason: "skipped (env vars missing)" };
+    let mailboxStep:
+      | { ok: true; userPrincipalName: string; displayName: string | null; mailEnabled: boolean | null }
+      | { ok: false; status?: number; error: string }
+      | { ok: null; reason: string } = { ok: null, reason: "skipped (no token)" };
+
+    let token: string | null = null;
+
+    if (missing.length === 0) {
+      // Step 1: try to acquire a token via OAuth client credentials.
+      try {
+        const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`;
+        const body = new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: "client_credentials",
+          scope: "https://graph.microsoft.com/.default",
+        });
+        const resp = await fetch(tokenUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body,
+        });
+        if (resp.status === 200) {
+          const json = (await resp.json()) as { access_token?: string; expires_in?: number };
+          token = String(json.access_token ?? "");
+          if (token) {
+            tokenStep = { ok: true, expiresInSec: Number(json.expires_in ?? 0) };
+          } else {
+            tokenStep = { ok: false, status: 200, error: "Graph returned no access_token" };
+          }
+        } else {
+          const txt = (await resp.text().catch(() => "")).slice(0, 400);
+          tokenStep = { ok: false, status: resp.status, error: `Token endpoint returned ${resp.status}: ${txt}` };
+        }
+      } catch (err: any) {
+        tokenStep = { ok: false, error: `Token request threw: ${err?.message ?? String(err)}` };
+      }
+
+      // Step 2: if we have a token, try to look up the send-as mailbox.
+      if (token) {
+        try {
+          const userUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sendAs)}?$select=userPrincipalName,displayName,mail,mailNickname`;
+          const resp = await fetch(userUrl, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (resp.status === 200) {
+            const json = (await resp.json()) as any;
+            mailboxStep = {
+              ok: true,
+              userPrincipalName: String(json.userPrincipalName ?? sendAs),
+              displayName: json.displayName ?? null,
+              mailEnabled: json.mail ? true : null,
+            };
+          } else {
+            const txt = (await resp.text().catch(() => "")).slice(0, 400);
+            mailboxStep = { ok: false, status: resp.status, error: `Users endpoint returned ${resp.status}: ${txt}` };
+          }
+        } catch (err: any) {
+          mailboxStep = { ok: false, error: `Mailbox lookup threw: ${err?.message ?? String(err)}` };
+        }
+      }
+    }
+
+    // Build a one-line human diagnosis.
+    let diagnosis: string;
+    if (missing.length > 0) {
+      diagnosis = `Missing env vars: ${missing.join(", ")}. Configure these in Azure App Service → Environment variables.`;
+    } else if (tokenStep && (tokenStep as any).ok === false) {
+      const ts = tokenStep as { ok: false; status?: number; error: string };
+      if (ts.status === 401 || /AADSTS7000215/i.test(ts.error)) {
+        diagnosis = "Token acquisition FAILED: client secret is wrong or expired. Generate a new client secret in the App registration and update MS_GRAPH_CLIENT_SECRET.";
+      } else if (/AADSTS90002/i.test(ts.error) || /tenant.*not.*found/i.test(ts.error)) {
+        diagnosis = "Token acquisition FAILED: tenant ID is wrong (Azure AD does not recognize this tenant). Verify MS_GRAPH_TENANT_ID.";
+      } else if (/AADSTS700016/i.test(ts.error) || /application.*not.*found/i.test(ts.error)) {
+        diagnosis = "Token acquisition FAILED: client ID is wrong, or the App registration does not exist in this tenant. Verify MS_GRAPH_CLIENT_ID.";
+      } else {
+        diagnosis = `Token acquisition FAILED: ${ts.error}`;
+      }
+    } else if (mailboxStep && (mailboxStep as any).ok === false) {
+      const ms = mailboxStep as { ok: false; status?: number; error: string };
+      if (ms.status === 403 || /Authorization_RequestDenied/i.test(ms.error) || /Insufficient privileges/i.test(ms.error)) {
+        diagnosis = "Token works BUT the App registration is missing required Graph permissions. In Azure AD → App registrations → API permissions, grant Application permissions: User.Read.All (to look up the sender) and Mail.Send. Then click 'Grant admin consent'.";
+      } else if (ms.status === 404) {
+        diagnosis = `Token works BUT the mailbox '${sendAs}' does not exist in this tenant. Either the address is wrong, or no mailbox has been created for it. Create the user/mailbox in Microsoft 365 admin center.`;
+      } else {
+        diagnosis = `Token works but mailbox lookup failed: ${ms.error}`;
+      }
+    } else if (tokenStep && (tokenStep as any).ok === true && mailboxStep && (mailboxStep as any).ok === true) {
+      diagnosis = `All checks PASSED. Graph email pipeline is configured correctly. Sender '${sendAs}' is reachable. If lender packages are not arriving, the issue is downstream (Stage A/B preconditions, dispatchToSelected execution, or recipient deliverability).`;
+    } else {
+      diagnosis = "Inconclusive — see token and mailbox steps for details.";
+    }
+
+    res.status(200).json({
+      sendAs,
+      env: envCheck,
+      missingEnv: missing,
+      token: tokenStep,
+      mailbox: mailboxStep,
+      diagnosis,
+    });
+  })
+);
+
 export default router;
