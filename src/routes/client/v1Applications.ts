@@ -17,6 +17,9 @@ import { findOrCreateCompanyByNameAndSilo } from "../../services/companies.js";
 import { linkContactToApplication } from "../../services/applicationContacts.js";
 import { logError, logInfo } from "../../observability/logger.js";
 import { mirrorApplicationToCrm } from "../../services/applicationCrmMirror.js"; // BF_APP_TO_CRM_v38
+// BF_SERVER_BLOCK_v213_BF_TO_BI_HANDOFF_v1
+import { postBiHandoff } from "../../services/biHandoff.js";
+import { randomUUID as biRandomUUID } from "node:crypto";
 // BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const router = Router();
@@ -753,6 +756,79 @@ router.post(
           applicant: md?.applicant ?? md?.borrower ?? null,
         });
       } catch { /* never block submit on mirror */ }
+
+      // BF_SERVER_BLOCK_v213_BF_TO_BI_HANDOFF_v1
+      // If the applicant opted into PGI on Step 6, hand off to
+      // BI-Server. Synchronous (not fire-and-forget) so the response
+      // includes the completion URL and the mini-portal messenger
+      // can show the link immediately. Bounded to 8s by biHandoff.
+      // Failure here is non-fatal — BF submit still succeeds and
+      // staff can re-trigger the handoff from the portal later.
+      try {
+        const pgiOptIn = String((legacyApp as any)?.pgi_opt_in ?? "").toLowerCase();
+        if (pgiOptIn === "yes") {
+          const r = await postBiHandoff({
+            bfApplicationId: application.id,
+            legacyApp,
+          });
+          if (r.ok) {
+            await pool.query(
+              `UPDATE applications
+                  SET bi_application_id = $1,
+                      bi_public_id = $2,
+                      bi_completion_url = $3,
+                      updated_at = NOW()
+                WHERE id::text = ($4)::text`,
+              [r.biApplicationId, r.biPublicId, r.completionUrl, application.id],
+            );
+            // Insert a system message so the BF-client mini-portal
+            // messenger surfaces a clickable link to the BI OTP
+            // login. direction='outbound' makes it render on the
+            // "from staff" side of MessageThread.
+            try {
+              await pool.query(
+                `INSERT INTO communications_messages
+                   (id, type, direction, status, application_id, contact_id, silo, body, staff_name, created_at)
+                 VALUES (
+                   $1, 'message', 'outbound', 'sent', $2,
+                   (SELECT contact_id FROM applications WHERE id = $2 LIMIT 1),
+                   COALESCE((SELECT silo FROM applications WHERE id = $2 LIMIT 1), 'BF'),
+                   $3, 'Boreal Insurance', NOW()
+                 )`,
+                [
+                  biRandomUUID(),
+                  application.id,
+                  `Your PGI application is ready. Tap to complete it: ${r.completionUrl}
+
+Log in with your phone number to add the remaining underwriting details.`,
+                ],
+              );
+            } catch (msgErr) {
+              logError("bi_handoff_messenger_insert_failed", {
+                code: "bi_handoff_messenger_insert_failed",
+                applicationId: application.id,
+                error: msgErr instanceof Error ? msgErr.message : "unknown",
+              });
+            }
+            logInfo("bi_handoff_recorded", {
+              applicationId: application.id,
+              biPublicId: r.biPublicId,
+            });
+          } else {
+            logError("bi_handoff_failed_nonfatal", {
+              code: "bi_handoff_failed_nonfatal",
+              applicationId: application.id,
+              error: r.error,
+            });
+          }
+        }
+      } catch (handoffErr) {
+        logError("bi_handoff_unexpected", {
+          code: "bi_handoff_unexpected",
+          applicationId: application.id,
+          error: handoffErr instanceof Error ? handoffErr.message : "unknown",
+        });
+      }
     }
 
     if (!normalized) {
