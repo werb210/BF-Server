@@ -1,5 +1,8 @@
 import express from "express";
 import { safeHandler } from "../middleware/safeHandler.js";
+// BF_SERVER_BLOCK_v317_MAYA_ESCALATIONS_AUTH_v1
+import { requireAuth, requireAuthorization } from "../middleware/auth.js";
+import { ROLES } from "../auth/roles.js";
 
 const router = express.Router();
 
@@ -65,6 +68,20 @@ router.post(
  */
 router.post(
   "/escalations",
+  // BF_SERVER_BLOCK_v317_MAYA_ESCALATIONS_AUTH_v1
+  // Pre-fix this had no auth — the doc-comment said "called by the Maya
+  // agent service (NOT a proxy)" but there was nothing actually enforcing
+  // that. Anyone on the internet could POST escalations with arbitrary
+  // session_id / application_id / reason / surface / silo / payload and
+  // fill maya_escalations rows. The 60s (session_id, reason) dedup window
+  // doesn't help an attacker who rotates session_id per request. The agent
+  // already mints a service JWT with role='Staff' via getServiceToken()
+  // (see agent-main/src/api/maya.ts) and includes it on every BF-Server
+  // call, so this gate doesn't break the agent. Staff JWTs can also reach
+  // it; tighter "service-only" role would require an auth-layer refactor
+  // out of scope here.
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
   safeHandler(async (req: any, res: any) => {
     const { randomUUID } = await import("node:crypto");
     const body = req.body ?? {};
