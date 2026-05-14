@@ -2,35 +2,40 @@ import { Router } from "express";
 import twilio from "twilio";
 import VoiceResponse from "twilio/lib/twiml/VoiceResponse.js";
 import MessagingResponse from "twilio/lib/twiml/MessagingResponse.js";
-import { AppError } from "../middleware/errors.js";
 import { safeHandler } from "../middleware/safeHandler.js";
-import { logWarn } from "../observability/logger.js";
 import { handleVoiceStatusWebhook } from "../modules/voice/voice.service.js";
-import { config } from "../config/index.js";
 import { pool } from "../db.js";
 import { eventBus } from "../events/eventBus.js";
+// BF_SERVER_BLOCK_v305_TWILIO_WEBHOOK_SIGNATURES_v1 — reuse the canonical
+// signature validation middleware (with full diag logging, see
+// src/middleware/twilioWebhookValidation.ts) on every Twilio webhook
+// instead of an inline ad-hoc check.
+import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
 
-const { validateRequest } = twilio;
+void twilio;
 const router = Router();
 
 const BASE_URL = process.env.PUBLIC_BASE_URL ?? "https://server.boreal.financial";
 
-function twilioAuthToken(): string {
-  const t = config.twilio.authToken;
-  if (!t?.trim()) throw new AppError("twilio_misconfigured", "Twilio auth token missing.", 500);
-  return t.trim();
-}
-
-function buildWebhookUrl(req: any, suffix = ""): string {
-  const base = config.app.baseUrl?.trim();
-  if (base) return `${base.replace(/\/$/, "")}/api/webhooks/twilio/voice${suffix}`;
-  const proto = req.get("x-forwarded-proto") ?? req.protocol;
-  const host = req.get("x-forwarded-host") ?? req.get("host");
-  return `${proto}://${host}${req.originalUrl}`;
-}
+// BF_SERVER_BLOCK_v305_TWILIO_WEBHOOK_SIGNATURES_v1
+// Five of six Twilio webhooks previously accepted unauthenticated POSTs:
+//   /twilio/voice/twiml      — built TwiML that bridged a call to a body-
+//                              supplied `to` number (toll-fraud vector).
+//   /twilio/voice/no-answer  — built TwiML response (lower-impact spam).
+//   /twilio/voicemail        — INSERTed attacker-supplied RecordingUrl,
+//                              CallSid, duration, From number into
+//                              voicemails (data injection / DB junk).
+//   /twilio/sms              — INSERTed attacker-supplied SMS body and
+//                              From into messages (spoofed-from injection).
+//   /inbound (sms alias)     — same as /twilio/sms.
+// Only POST /twilio/voice (status webhook) verified x-twilio-signature.
+// This block adds the canonical twilioWebhookValidation middleware to
+// every webhook handler in this router so all six fail-closed on a
+// missing/invalid signature. Twilio's validateRequest already does a
+// timing-safe compare internally, so no separate HMAC is needed.
 
 // ── Inbound TwiML — serve XML to ring all available staff simultaneously ─────
-router.post("/twilio/voice/twiml", safeHandler(async (req: any, res: any) => {
+router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (req: any, res: any) => {
   res.setHeader("Content-Type", "text/xml");
   const params = req.body ?? {};
   const to = String(params.To ?? params.to ?? "").trim();
@@ -51,7 +56,8 @@ router.post("/twilio/voice/twiml", safeHandler(async (req: any, res: any) => {
 }));
 
 // ── No-answer fallback — goes to voicemail ────────────────────────────────────
-router.post("/twilio/voice/no-answer", safeHandler(async (_req: any, res: any) => {
+router.post("/twilio/voice/no-answer", twilioWebhookValidation, safeHandler(async (req: any, res: any) => {
+  void req;
   res.setHeader("Content-Type", "text/xml");
   const vr = new VoiceResponse();
   vr.say({ voice: "Polly.Joanna" }, "Sorry, no agents are available right now. Please leave your name, number, and a brief message and we will call you back.");
@@ -66,7 +72,7 @@ router.post("/twilio/voice/no-answer", safeHandler(async (_req: any, res: any) =
 }));
 
 // ── Voicemail recording ───────────────────────────────────────────────────────
-router.post("/twilio/voicemail", safeHandler(async (req: any, res: any) => {
+router.post("/twilio/voicemail", twilioWebhookValidation, safeHandler(async (req: any, res: any) => {
   res.setHeader("Content-Type", "text/xml");
   const vr = new VoiceResponse();
 
@@ -103,17 +109,8 @@ router.post("/twilio/voicemail", safeHandler(async (req: any, res: any) => {
 // ── Voice status webhook ─────────────────────────────────────────────────────
 router.post(
   "/twilio/voice",
+  twilioWebhookValidation,
   safeHandler(async (req: any, res: any) => {
-    const signature = req.get("x-twilio-signature");
-    if (!signature) {
-      logWarn("voice_webhook_missing_signature", { path: req.originalUrl });
-      throw new AppError("invalid_signature", "Missing Twilio signature.", 403);
-    }
-    const valid = validateRequest(twilioAuthToken(), signature, buildWebhookUrl(req), req.body ?? {});
-    if (!valid) {
-      logWarn("voice_webhook_signature_invalid", { path: req.originalUrl });
-      throw new AppError("invalid_signature", "Invalid Twilio signature.", 403);
-    }
     const payload = req.body ?? {};
     const callSid = typeof payload.CallSid === "string" ? payload.CallSid : null;
     if (callSid) {
@@ -164,7 +161,7 @@ async function persistInboundSms(req: any): Promise<void> {
 }
 
 // ── Inbound SMS webhook ───────────────────────────────────────────────────────
-router.post("/twilio/sms", safeHandler(async (req: any, res: any) => {
+router.post("/twilio/sms", twilioWebhookValidation, safeHandler(async (req: any, res: any) => {
   res.setHeader("Content-Type", "text/xml");
   const mr = new MessagingResponse();
 
@@ -175,7 +172,7 @@ router.post("/twilio/sms", safeHandler(async (req: any, res: any) => {
 }));
 
 // Alias inbound SMS route for easier Twilio console config.
-router.post("/inbound", safeHandler(async (req: any, res: any) => {
+router.post("/inbound", twilioWebhookValidation, safeHandler(async (req: any, res: any) => {
   res.setHeader("Content-Type", "text/xml");
   const mr = new MessagingResponse();
   await persistInboundSms(req);
