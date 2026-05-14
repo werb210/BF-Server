@@ -1450,25 +1450,47 @@ router.post(
 
 router.get(
   "/offers",
+  // BF_SERVER_BLOCK_v318_PORTAL_OFFERS_GET_AUTH_v1
+  // Pre-fix this endpoint had only portalLimiter — NO requireAuth, NO role
+  // check, NO silo filter. Anyone on the internet could:
+  //   - GET /api/portal/offers           → top 100 offers across all silos
+  //                                        (lender_name, amount, rate_factor,
+  //                                        term, status, document_url)
+  //   - GET /api/portal/offers?applicationId=<uuid>
+  //                                      → every active offer on that app
+  // Lender offer pricing is highly sensitive (negotiated terms per-applicant).
+  // Companion POST /offers below was properly auth+role gated — this GET was
+  // a mount oversight, not an intentional public surface. No production UI
+  // calls this path (verified across BF-portal, BF-client, BF-Website), so
+  // adding the standard staff gate does not break any legitimate flow.
+  // Silo filter mirrors v314 offers.ts pattern.
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
   portalLimiter,
   safeHandler(async (req: any, res: any, next: any) => {
     const applicationId = typeof toStringSafe(req.query.applicationId) === "string" ? toStringSafe(req.query.applicationId).trim() : "";
+    const callerSilo = getSilo(res) ?? null;
     // BF_MINI_PORTAL_NOTES_v47 — only return active (non-archived) offers.
     const query = applicationId
       ? {
-          text: `select id, application_id, lender_name, amount::text as amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, created_at, updated_at
-                 from offers
-                 where application_id = $1 and coalesce(is_archived, false) = false
-                 order by updated_at desc`,
-          values: [applicationId],
+          text: `select o.id, o.application_id, o.lender_name, o.amount::text as amount, o.rate_factor, o.term, o.payment_frequency, o.expiry_date, o.document_url, o.recommended, o.status, o.created_at, o.updated_at
+                 from offers o
+                 join applications a on a.id::text = o.application_id::text
+                 where o.application_id = $1
+                   and coalesce(o.is_archived, false) = false
+                   and ($2::text is null or a.silo is null or a.silo = $2::text)
+                 order by o.updated_at desc`,
+          values: [applicationId, callerSilo],
         }
       : {
-          text: `select id, application_id, lender_name, amount::text as amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, created_at, updated_at
-                 from offers
-                 where coalesce(is_archived, false) = false
-                 order by updated_at desc
+          text: `select o.id, o.application_id, o.lender_name, o.amount::text as amount, o.rate_factor, o.term, o.payment_frequency, o.expiry_date, o.document_url, o.recommended, o.status, o.created_at, o.updated_at
+                 from offers o
+                 join applications a on a.id::text = o.application_id::text
+                 where coalesce(o.is_archived, false) = false
+                   and ($1::text is null or a.silo is null or a.silo = $1::text)
+                 order by o.updated_at desc
                  limit 100`,
-          values: [],
+          values: [callerSilo],
         };
     const rows = await runQuery(query.text, query.values);
     res.status(200).json({ items: rows.rows });
