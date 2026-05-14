@@ -312,10 +312,23 @@ router.get(
     const applicationId = toStringSafe(req.params.id);
     if (!applicationId) throw new AppError("validation_error", "Application id required.", 400);
 
-    const stageResult = await runQuery<{ pipeline_state: string }>(
-      `SELECT pipeline_state FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+    const stageResult = await runQuery<{ pipeline_state: string; silo: string | null }>(
+      `SELECT pipeline_state, silo FROM applications WHERE id::text = ($1)::text LIMIT 1`,
       [applicationId]
     );
+    // BF_SERVER_BLOCK_v309_PORTAL_SILO_ENFORCEMENT_v1
+    // The detail endpoint previously returned full applicant metadata for
+    // any application by id, regardless of the caller's silo context. The
+    // /applications list endpoint (line 152) already filters by silo, but
+    // a staff member could still hit /applications/<other-silo-uuid>
+    // directly and receive the record. 404 (not 403) to avoid leaking
+    // existence in another silo. Pattern mirrors the canonical guard in
+    // src/modules/applications/applications.routes.ts.
+    const callerSilo = getSilo(res);
+    const recordSilo = stageResult.rows[0]?.silo ?? null;
+    if (recordSilo && callerSilo && recordSilo !== callerSilo) {
+      throw new AppError("not_found", "Application not found.", 404);
+    }
     if (stageResult.rows[0]?.pipeline_state === "Received") {
       await runQuery(
         `UPDATE applications SET pipeline_state = 'In Review', updated_at = now() WHERE id::text = ($1)::text`,
@@ -919,6 +932,25 @@ router.patch(
     if (!status || !isPipelineState(status) || !allowedManualStatuses.has(status)) {
       throw new AppError("validation_error", "status is invalid.", 400);
     }
+    // BF_SERVER_BLOCK_v309_PORTAL_SILO_ENFORCEMENT_v1
+    // Without this guard, staff in any silo could PATCH the pipeline state
+    // of an application in any other silo by knowing its UUID. transitionPipelineState
+    // doesn't itself enforce silo. Check before transitioning. 404 on mismatch
+    // to avoid leaking that the application exists in another silo.
+    {
+      const callerSilo = getSilo(res);
+      const ownerRow = await runQuery<{ silo: string | null }>(
+        `SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+        [applicationId]
+      );
+      if (!ownerRow.rows[0]) {
+        throw new AppError("not_found", "Application not found.", 404);
+      }
+      const recordSilo = ownerRow.rows[0].silo;
+      if (recordSilo && callerSilo && recordSilo !== callerSilo) {
+        throw new AppError("not_found", "Application not found.", 404);
+      }
+    }
     const statusMeta = {
       ...(req.ip ? { ip: req.ip } : {}),
       ...(req.get("user-agent") ? { userAgent: req.get("user-agent") as string } : {}),
@@ -1123,8 +1155,29 @@ router.post(
     );
     const doc = updated.rows[0];
     if (!doc) throw new AppError("not_found", "Document not found.", 404);
-
+    // BF_SERVER_BLOCK_v309_PORTAL_SILO_ENFORCEMENT_v1
+    // Pre-fix, any staff could accept a document on any application by id,
+    // which (a) transitioned the application pipeline_state cross-silo, and
+    // (b) fired computeAndCacheLenderMatches against a cross-silo app.
+    // The UPDATE has already run by this point — rolling it back via a
+    // second UPDATE keeps the data store consistent. 404 to avoid leaking
+    // that the document exists in another silo.
     const appId = doc.application_id;
+    if (appId) {
+      const callerSilo = getSilo(res);
+      const ownerRow = await runQuery<{ silo: string | null }>(
+        `SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+        [appId]
+      );
+      const recordSilo = ownerRow.rows[0]?.silo ?? null;
+      if (recordSilo && callerSilo && recordSilo !== callerSilo) {
+        await runQuery(
+          `UPDATE documents SET status = 'pending_review', updated_at = now() WHERE id = $1`,
+          [docId]
+        ).catch(() => {});
+        throw new AppError("not_found", "Document not found.", 404);
+      }
+    }
     if (appId && await allDocumentsAccepted(appId)) {
       const appRes = await runQuery<{ pipeline_state: string }>(
         `SELECT pipeline_state FROM applications WHERE id::text = ($1)::text`,
@@ -1184,7 +1237,26 @@ router.post(
     );
     const doc = updated.rows[0];
     if (!doc) throw new AppError("not_found", "Document not found.", 404);
-
+    // BF_SERVER_BLOCK_v309_PORTAL_SILO_ENFORCEMENT_v1
+    // Pre-fix, any staff could reject a cross-silo document, which (a)
+    // transitioned the cross-silo application pipeline_state, and (b)
+    // fired an auto-SMS to the cross-silo applicant. Mirror the accept
+    // handler's rollback: UPDATE has already run, undo it before 404.
+    if (doc.application_id) {
+      const callerSilo = getSilo(res);
+      const ownerRow = await runQuery<{ silo: string | null }>(
+        `SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+        [doc.application_id]
+      );
+      const recordSilo = ownerRow.rows[0]?.silo ?? null;
+      if (recordSilo && callerSilo && recordSilo !== callerSilo) {
+        await runQuery(
+          `UPDATE documents SET status = 'pending_review', rejection_reason = NULL, updated_at = now() WHERE id = $1`,
+          [docId]
+        ).catch(() => {});
+        throw new AppError("not_found", "Document not found.", 404);
+      }
+    }
     // BF_SERVER_BLOCK_v198_LENDER_MATCH_GATE_AND_CACHE_v1
     if (doc.application_id) {
       void markLenderMatchesStale(doc.application_id).catch((err) => {
@@ -1573,6 +1645,17 @@ router.get(
     );
     const app = appRow.rows[0];
     if (!app) throw new AppError("not_found", "Application not found.", 404);
+    // BF_SERVER_BLOCK_v309_PORTAL_SILO_ENFORCEMENT_v1
+    // The handler already SELECTed silo but never compared it. Without this
+    // guard, any staff could read the full OCR + banking pipeline state of
+    // any application by id, including failed-job error strings (which can
+    // contain provider keys / file paths) and OCR field-extraction breakdowns.
+    {
+      const callerSilo = getSilo(res);
+      if (app.silo && callerSilo && app.silo !== callerSilo) {
+        throw new AppError("not_found", "Application not found.", 404);
+      }
+    }
 
     // Documents and their OCR status as recorded in the documents table itself.
     const docsRow = await runQuery<{
@@ -1834,6 +1917,26 @@ router.post(
       throw new AppError("validation_error", "Application id is required.", 400);
     }
     console.log("[reocr] called", { applicationId, userId: req.user?.id ?? null });
+    // BF_SERVER_BLOCK_v309_PORTAL_SILO_ENFORCEMENT_v1
+    // reocr resets every document's OCR job to 'queued' which triggers the
+    // worker to re-run extraction. Without this guard, cross-silo staff
+    // could re-run OCR (with attendant compute cost and pipeline noise) on
+    // any application by id. 404 to avoid leaking that the application
+    // exists in another silo.
+    {
+      const callerSilo = getSilo(res);
+      const appRow = await runQuery<{ silo: string | null }>(
+        `SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+        [applicationId]
+      );
+      if (!appRow.rows[0]) {
+        throw new AppError("not_found", "Application not found.", 404);
+      }
+      const recordSilo = appRow.rows[0].silo;
+      if (recordSilo && callerSilo && recordSilo !== callerSilo) {
+        throw new AppError("not_found", "Application not found.", 404);
+      }
+    }
 
     const docsRes = await runQuery<{ id: string }>(
       `SELECT id FROM documents WHERE application_id::text = ($1)::text`,
