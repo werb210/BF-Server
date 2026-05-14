@@ -497,6 +497,77 @@ router.get('/:id/audit', safeHandler(async (req: any, res: any) => {
   res.json({ status: 'ok', data: result.rows });
 }));
 
+// BF_SERVER_BLOCK_v321_APPLICATION_OFFERS_LIST_v1
+// Pre-fix this endpoint did not exist. BF-portal LendersTab.tsx:119 calls
+//   GET /api/applications/:id/offers?status=pending_acceptance
+// to populate the "Pending Acceptance" UI section above the lender match
+// table. With no handler mounted, every call 404'd, the portal's
+// .catch(() => []) silently swallowed it, and staff never saw any offers
+// awaiting their "Confirm acceptance" click. Combined with the v313 schema
+// bug on the confirm-acceptance endpoint, the entire applicant-clicks-Accept
+// → staff-confirms flow was broken end-to-end.
+// Shape: portal expects { id, lenderName } per row (or an array directly).
+// Returns an array so the existing destructure `Array.isArray(offers) ?
+// offers : offers?.items ?? []` resolves cleanly. is_archived filter
+// matches the other /offers endpoints' convention. Silo guard via JOIN
+// through applications (offers.silo doesn't exist).
+router.get('/:id/offers', safeHandler(async (req: any, res: any) => {
+  const appId = String(req.params.id ?? '').trim();
+  if (!appId) throw new AppError('validation_error', 'Application id required.', 400);
+
+  const appRow = await pool.query<{ silo: string | null }>(
+    `SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+    [appId]
+  );
+  if (!appRow.rows[0]) throw new AppError('not_found', 'Application not found.', 404);
+  const callerSilo = getSilo(res);
+  const appSilo = appRow.rows[0].silo;
+  if (appSilo && callerSilo && appSilo !== callerSilo) {
+    throw new AppError('not_found', 'Application not found.', 404);
+  }
+
+  const statusFilter = typeof req.query?.status === 'string' ? req.query.status.trim() : '';
+  // Whitelist statuses to avoid surprise filter values; matches the relaxed
+  // CHECK constraint from migrations/2026_05_14_offers_lifecycle_schema_v307.sql.
+  const ALLOWED_STATUSES = new Set([
+    'pending', 'pending_acceptance', 'accepted', 'declined', 'rejected',
+    'changes_requested', 'expired', 'created', 'sent',
+  ]);
+  const params: unknown[] = [appId];
+  let where = `application_id::text = ($1)::text AND coalesce(is_archived, false) = false`;
+  if (statusFilter && ALLOWED_STATUSES.has(statusFilter)) {
+    params.push(statusFilter);
+    where += ` AND status = $${params.length}`;
+  }
+
+  const result = await pool.query(
+    `SELECT id::text AS id,
+            lender_name AS "lenderName",
+            amount::text AS amount,
+            rate_factor AS "rateFactor",
+            term,
+            payment_frequency AS "paymentFrequency",
+            expiry_date AS "expiryDate",
+            status,
+            recommended,
+            created_at AS "createdAt",
+            updated_at AS "updatedAt"
+       FROM offers
+      WHERE ${where}
+      ORDER BY updated_at DESC
+      LIMIT 100`,
+    params
+  ).catch((err: any) => {
+    // eslint-disable-next-line no-console
+    console.warn('applications.offers.query_failed', {
+      applicationId: appId, message: err?.message, code: err?.code,
+    });
+    return { rows: [] as any[] };
+  });
+
+  res.status(200).json(result.rows);
+}));
+
 // BF_APP_LENDERS_ENDPOINT_v42 — Block 42-A
 // Real lender-matches endpoint. Replaces the placeholder consumed by the staff
 // LendersTab. Reads application metadata, runs the match engine, and joins
