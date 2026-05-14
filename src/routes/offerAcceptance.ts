@@ -46,10 +46,27 @@ router.post("/:id/confirm-acceptance", requireAuth, requireAuthorization({ roles
   const id = String(req.params.id ?? "").trim();
   if (!id) return res.status(400).json({ error: "missing_offer_id" });
 
+  // BF_SERVER_BLOCK_v313_OFFER_CONFIRM_SCHEMA_AND_SILO_v1
+  // Pre-fix the RETURNING clause referenced offers.lender_id::text which
+  // does not exist on the offers table (see migrations/077_v1_backend_hardening.sql
+  // L52 — the original DDL has lender_submission_id and lender_name, NOT
+  // lender_id). Every staff click of "Confirm acceptance" in LendersTab.tsx
+  // returned 500 because pg threw 42703 undefined_column on the RETURNING.
+  // BF-portal LendersTab.tsx:181 discards the response body, so removing
+  // the column from RETURNING is the minimal fix.
+  //
+  // Also add silo enforcement: confirm-acceptance fires a SignNow envelope
+  // on the lender's term sheet (side effect with cost). Without a guard,
+  // staff in any silo could confirm an offer on an application in any
+  // other silo by knowing the offer UUID. Silo lives on applications, not
+  // offers, so JOIN through application_id. Use the same getSilo pattern
+  // as portal.ts v309 and 404 on mismatch.
+  const { getSilo } = await import("../middleware/silo.js");
+  const callerSilo = getSilo(res);
+
   const r = await pool.query<{
     id: string;
     application_id: string;
-    lender_id: string | null;
     status: string;
   }>(
     `UPDATE offers
@@ -57,8 +74,13 @@ router.post("/:id/confirm-acceptance", requireAuth, requireAuthorization({ roles
             accepted_at = NOW()
       WHERE id::text = $1
         AND status = 'pending_acceptance'
-      RETURNING id, application_id::text AS application_id, lender_id::text AS lender_id, status`,
-    [id]
+        AND EXISTS (
+          SELECT 1 FROM applications a
+           WHERE a.id::text = offers.application_id::text
+             AND ($2::text IS NULL OR a.silo IS NULL OR a.silo = $2::text)
+        )
+      RETURNING id, application_id::text AS application_id, status`,
+    [id, callerSilo ?? null]
   );
   const row = r.rows[0];
   if (!row) return res.status(409).json({ error: "offer_not_pending" });
