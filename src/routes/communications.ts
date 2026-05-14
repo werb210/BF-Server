@@ -143,6 +143,15 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
   const message = await client.messages.create({ body: String(body), from, to: String(to) });
 
   // Persist outbound message to DB
+  // BF_SERVER_BLOCK_v312_COMMS_SMS_PERSIST_LOG_v1
+  // Pre-fix this used .catch(() => {}) — the Twilio send had already
+  // succeeded (the user received the SMS) but the local persistence INSERT
+  // would silently swallow on column drift / DB hiccup. On the next refresh
+  // of the Communications thread, the outbound message would be absent
+  // from the staff view (since /sms/thread reads from communications_messages),
+  // making it look like the send didn't happen. Log the error so the next
+  // schema drift is visible; still return success because the user-facing
+  // SMS has already gone out and there is no way to unsend it.
   const staffName = (req as any).user?.name ?? (req as any).user?.email ?? null;
   await pool.query(
     `INSERT INTO communications_messages
@@ -160,7 +169,16 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
       staffName,
       ((req as any).user?.silo ?? "BF").toString().toUpperCase(),
     ]
-  ).catch(() => {});
+  ).catch((err: any) => {
+    // eslint-disable-next-line no-console
+    console.warn("communications.sms.persist_failed", {
+      twilioSid: message.sid,
+      contactId: contactId ?? null,
+      applicationId: applicationId ?? null,
+      message: err?.message,
+      code: err?.code,
+    });
+  });
 
   res.json({ id: message.sid, status: message.status, contactId: contactId ?? null });
 }));
