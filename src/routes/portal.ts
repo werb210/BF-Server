@@ -1328,6 +1328,32 @@ router.post(
     const expiryDate = typeof req.body?.expiry_date === "string" && req.body.expiry_date.trim() ? req.body.expiry_date.trim() : null;
     const notes = typeof req.body?.notes === "string" ? req.body.notes.trim() : null;
 
+    // BF_SERVER_BLOCK_v319_TERM_SHEET_SILO_v1
+    // Pre-fix, term-sheet upload had no silo check. Staff in any silo could:
+    //   (a) archive all existing offers on a cross-silo application
+    //       (the UPDATE...SET is_archived = TRUE just below this guard),
+    //   (b) INSERT a new offer record cross-silo,
+    //   (c) upload a file to blob storage (cost),
+    //   (d) trigger the auto-SMS to the cross-silo applicant via the
+    //       v308 phone-lookup pipeline below.
+    // Add the guard BEFORE any of those side effects. 404 to avoid
+    // leaking that the application exists in another silo. Pattern
+    // mirrors v309 portal handlers.
+    {
+      const callerSilo = getSilo(res);
+      const ownerRow = await runQuery<{ silo: string | null }>(
+        `SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+        [appId]
+      );
+      if (!ownerRow.rows[0]) {
+        throw new AppError("not_found", "Application not found.", 404);
+      }
+      const recordSilo = ownerRow.rows[0].silo;
+      if (recordSilo && callerSilo && recordSilo !== callerSilo) {
+        throw new AppError("not_found", "Application not found.", 404);
+      }
+    }
+
     const store = getStorage();
     const put = await store.put({
       buffer: file.buffer,
