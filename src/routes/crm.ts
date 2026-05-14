@@ -57,17 +57,37 @@ router.get("/contacts/:id/companies", safeHandler(async (req: any, res: any) => 
 }));
 
 router.get("/contacts/:id/applications", safeHandler(async (req: any, res: any) => {
+  // BF_SERVER_BLOCK_v302_CRM_CONTACT_APPLICATIONS_SCHEMA_FIX_v1
+  // The CRM contact-drawer "Applications" sub-section consumes this
+  // endpoint and renders { id, stage, contactId } per ContactDetailsDrawer
+  // -> fetchApplications. The old query referenced two columns that do not
+  // exist on the applications table: `stage` (the real columns are
+  // pipeline_state / current_stage / status) and `archived` (only
+  // offers.is_archived exists — applications has no archived flag at all).
+  // Postgres rejected the query with "column does not exist" and the
+  // catch-all swallowed it, so the sub-section silently rendered as empty
+  // for every contact regardless of how many applications they had.
+  // Use the canonical columns and surface the catch failures via warn so
+  // the next schema drift is visible.
   try {
     const { rows } = await pool.query(
-      `SELECT id, stage
-       FROM applications
-       WHERE contact_id = $1
-         AND COALESCE(archived, false) = false`,
+      `SELECT id::text                                          AS id,
+              coalesce(pipeline_state, current_stage, status, '') AS stage,
+              contact_id::text                                    AS "contactId"
+         FROM applications
+        WHERE contact_id::text = $1
+        ORDER BY created_at DESC`,
       [req.params.id]
     );
 
     return res.json(rows);
-  } catch {
+  } catch (err: any) {
+    // eslint-disable-next-line no-console
+    console.warn('crm.contact_applications.query_failed', {
+      contactId: req.params.id,
+      message: err?.message,
+      code: err?.code,
+    });
     return res.json([]);
   }
 }));
