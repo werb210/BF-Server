@@ -129,10 +129,27 @@ router.post("/outbound-call", auth, async (req: any, res: Response) => {
   if (!to) return res.status(400).json({ error: "to is required" });
   if (!isTwilioEnabled()) return res.status(503).json({ error: "Telephony not configured" });
 
-  const from = process.env.TWILIO_FROM_NUMBER ??
-               process.env.TWILIO_PHONE_NUMBER ??
-               process.env.TWILIO_CALLER_ID;
-  if (!from) return res.status(503).json({ error: "TWILIO_FROM_NUMBER not set" });
+  // BF_SERVER_BLOCK_v326_OUTBOUND_CALL_FROM_ENV_FALLBACK_v1
+  // Same env-var-name mismatch as v325 (which fixed it in
+  // /api/communications/sms). Pre-fix this read:
+  //   TWILIO_FROM_NUMBER ?? TWILIO_PHONE_NUMBER ?? TWILIO_CALLER_ID
+  // None of TWILIO_FROM_NUMBER or TWILIO_CALLER_ID are recognized in
+  // src/config/schema.ts -- only TWILIO_PHONE, TWILIO_FROM, TWILIO_NUMBER,
+  // TWILIO_PHONE_NUMBER are validated. So if the operator set their
+  // outbound caller ID under TWILIO_FROM / TWILIO_PHONE / TWILIO_NUMBER
+  // (the most common Twilio naming conventions), this endpoint 503'd
+  // "TWILIO_FROM_NUMBER not set" and staff "Call client" buttons in
+  // the pipeline / CRM / drawer all failed silently because the UI's
+  // catch swallows the 503.
+  // Match v325's fallback chain exactly so the same env var works for
+  // both outbound voice and outbound SMS.
+  const from = process.env.TWILIO_FROM_NUMBER
+    ?? process.env.TWILIO_PHONE_NUMBER
+    ?? process.env.TWILIO_FROM
+    ?? process.env.TWILIO_PHONE
+    ?? process.env.TWILIO_NUMBER
+    ?? process.env.TWILIO_CALLER_ID;
+  if (!from) return res.status(503).json({ error: "Twilio FROM number not set (set TWILIO_PHONE_NUMBER or TWILIO_FROM or TWILIO_PHONE)" });
 
   try {
     const { default: twilio } = await import("twilio");
