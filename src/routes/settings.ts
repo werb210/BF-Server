@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { requireAuth, requireAuthorization, requireCapability } from "../middleware/auth.js";
 import { CAPABILITIES } from "../auth/capabilities.js";
+import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { respondOk } from "../utils/respondOk.js";
 import { pool } from "../db.js";
@@ -9,8 +10,18 @@ import type { MulterRequest } from "../types/multer.js";
 
 const router = Router();
 
+// BF_SERVER_BLOCK_v332_SETTINGS_AND_AUDIT_HARDENING_v1 -- Edit 1
+// Pre-fix the only privilege gate on this router was router.use(requireCapability
+// ([CAPABILITIES.SETTINGS_READ])) which applies to ALL routes including writes,
+// so ANY role with settings:read could mutate AI knowledge and branding. The
+// earlier v315 admin gate was applied to ai.ts which is dead code (verified
+// not mounted anywhere -- the live AI knowledge endpoints are these settings
+// routes, not /api/ai/knowledge/*). This block adds requireAuthorization with
+// ROLES.ADMIN on each write handler below. Reads remain SETTINGS_READ-gated.
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.SETTINGS_READ]));
+
+const requireAdminWrite = requireAuthorization({ roles: [ROLES.ADMIN] });
 
 router.get("/", safeHandler((_req: any, res: any) => {
   respondOk(res, { status: "ok" });
@@ -56,6 +67,7 @@ router.get("/me", safeHandler(async (req: any, res: any) => {
 
 router.post(
   "/ai-knowledge",
+  requireAdminWrite,
   knowledgeUpload.single("file"),
   safeHandler(async (req: any, res: any) => {
     try {
@@ -92,7 +104,7 @@ router.get("/ai-knowledge", safeHandler(async (_req: any, res: any) => {
   respondOk(res, { documents: rows });
 }));
 
-router.post("/ai-knowledge/text", safeHandler(async (req: any, res: any) => {
+router.post("/ai-knowledge/text", requireAdminWrite, safeHandler(async (req: any, res: any) => {
   const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
   const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
   if (!content) {
@@ -121,7 +133,7 @@ router.post("/ai-knowledge/text", safeHandler(async (req: any, res: any) => {
   }
 }));
 
-router.delete("/ai-knowledge/:id", safeHandler(async (req: any, res: any) => {
+router.delete("/ai-knowledge/:id", requireAdminWrite, safeHandler(async (req: any, res: any) => {
   const id = String(req.params.id ?? "").trim();
   if (!id) {
     return res.status(400).json({ error: { code: "validation_error", message: "id required" } });
@@ -140,12 +152,17 @@ router.get("/branding", safeHandler(async (_req: any, res: any) => {
       branding[row.key.replace("branding.", "")] = row.value;
     }
     respondOk(res, { branding });
-  } catch {
+  } catch (err) {
+    // BF_SERVER_BLOCK_v332_SETTINGS_AND_AUDIT_HARDENING_v1 -- log instead of
+    // silently swallowing. The empty-branding fallback is intentional (table
+    // may not exist on a fresh DB), but errors should reach the logs so we
+    // notice schema drift or pool exhaustion.
+    console.warn("[settings.branding GET] query failed", { err: String(err) });
     respondOk(res, { branding: {} });
   }
 }));
 
-router.post("/branding", safeHandler(async (req: any, res: any) => {
+router.post("/branding", requireAdminWrite, safeHandler(async (req: any, res: any) => {
   const { logoUrl, logoSize } = req.body ?? {};
   try {
     if (logoUrl !== undefined) {
@@ -162,8 +179,11 @@ router.post("/branding", safeHandler(async (req: any, res: any) => {
         [String(logoSize)]
       );
     }
-  } catch {
-    // settings table may not exist — ignore
+  } catch (err) {
+    // BF_SERVER_BLOCK_v332_SETTINGS_AND_AUDIT_HARDENING_v1 -- log; the row
+    // wasn't written and the user is going to see stale branding on next
+    // load. They need to know the write failed.
+    console.warn("[settings.branding POST] write failed", { err: String(err) });
   }
   respondOk(res, { ok: true });
 }));

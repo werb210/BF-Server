@@ -88,9 +88,16 @@ router.post(
   requireAuth,
   requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
   safeHandler(async (req: any, res: any, next: any) => {
+    // BF_SERVER_BLOCK_v332_SETTINGS_AND_AUDIT_HARDENING_v1 -- Edit 7
+    // Pre-fix staff_id was a body-supplied UUID. Any authenticated
+    // ADMIN/STAFF user could log a call against any other staff member's
+    // identity by passing their UUID, poisoning call attribution and the
+    // CRM timeline. Source staff_id from the verified JWT (req.user.userId)
+    // instead. The body field stays in the schema for backward compat
+    // (iOS dialer still sends it) but we ignore its value.
     const parsed = z
       .object({
-        staff_id: z.string().uuid(),
+        staff_id: z.string().uuid().optional(),
         client_id: z.string().uuid(),
         phone_number: z.string().min(1),
         call_duration: z.number().int().nonnegative().default(0),
@@ -100,11 +107,15 @@ router.post(
     if (!parsed.success) {
       throw new AppError("validation_error", "Invalid call log payload.", 400);
     }
+    const callerStaffId = typeof req.user?.userId === "string" ? req.user.userId : null;
+    if (!callerStaffId) {
+      throw new AppError("missing_token", "Authorization token is required.", 401);
+    }
 
     const record = await startCall({
       phoneNumber: parsed.data.phone_number.trim(),
       direction: parsed.data.direction,
-      staffUserId: parsed.data.staff_id,
+      staffUserId: callerStaffId,
       status: "completed",
       crmContactId: parsed.data.client_id,
       ...buildRequestMetadata(req),
@@ -114,7 +125,7 @@ router.post(
       id: record.id,
       status: "completed",
       durationSeconds: parsed.data.call_duration,
-      actorUserId: parsed.data.staff_id,
+      actorUserId: callerStaffId,
       ...buildRequestMetadata(req),
     });
 
