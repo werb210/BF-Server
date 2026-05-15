@@ -9,7 +9,7 @@ import type { Pool } from "pg";
 // Delegated permissions) MUST list the same scope set or the refreshed
 // token gets silently downgraded.
 const REFRESH_SCOPE =
-  "User.Read Mail.ReadWrite Mail.Send Mail.Send.Shared Calendars.ReadWrite Tasks.ReadWrite offline_access";
+  "User.Read Mail.ReadWrite Mail.Read.Shared Mail.Send Mail.Send.Shared Calendars.ReadWrite Tasks.ReadWrite offline_access";
 
 // Refresh window: refresh the access token proactively when fewer than
 // EXPIRY_SKEW_MS milliseconds remain on it. Microsoft access tokens
