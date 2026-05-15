@@ -1,11 +1,44 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { AppError } from "../middleware/errors.js";
 import { safeHandler } from "../middleware/safeHandler.js";
+import { requireAuth, requireAuthorization } from "../middleware/auth.js";
+import { ROLES } from "../auth/roles.js";
+import { safeKeyGenerator } from "../middleware/rateLimit.js";
+import { config } from "../config/index.js";
 
 const router = Router();
 
+// BF_SERVER_BLOCK_v335_AUTH_HARDENING_AND_DEAD_CODE_v1 -- Edit 1
+// Pre-fix POST /api/banking/analysis was COMPLETELY UNAUTHENTICATED. Any
+// internet caller could hit it with an arbitrary transactions[] payload
+// and get back computed analysis values keyed by an arbitrary
+// applicationId. Two real consumers: BF-portal's BankingTab and
+// BankingAnalysisTab (staff drawer/tab UIs at applications/drawer/tab-
+// banking and applications/tabs/BankingAnalysisTab). Both call from
+// staff sessions which already have a Bearer JWT. Adding requireAuth +
+// requireAuthorization for ADMIN/STAFF matches every other staff-side
+// analysis endpoint. Also adding a 30 req/min/IP limiter -- the handler
+// iterates transactions[] arrays which can be sent oversized to burn
+// CPU, even from authenticated callers.
+const bankingAnalysisLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: {
+    xForwardedForHeader: false,
+    trustProxy: false,
+  },
+  skip: () => config.env === "test",
+  keyGenerator: safeKeyGenerator,
+});
+
 router.post(
   "/analysis",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  bankingAnalysisLimiter,
   safeHandler(async (req: any, res: any, next: any) => {
     const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
     if (!applicationId) {
