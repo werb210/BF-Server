@@ -49,6 +49,18 @@ router.post("/otp/start", async (req, res) => {
     }
 
     if (isTest) {
+      // BF_SERVER_BLOCK_v335_AUTH_HARDENING_AND_DEAD_CODE_v1 -- Edit 2
+      // Belt-and-suspenders: isTest is set when NODE_ENV === "test". If an
+      // operator accidentally sets NODE_ENV=test in production, the OTP
+      // bypass below ("000000" universal valid code, no Twilio call) would
+      // become a complete authentication bypass. Explicitly refuse if
+      // NODE_ENV is "production" -- this should never fire (NODE_ENV can't
+      // be both "test" and "production"), but if it ever does we want a
+      // 500 instead of a silent auth bypass.
+      if (process.env.NODE_ENV === "production") {
+        console.error("[auth.otpStart] FATAL: isTest=true with NODE_ENV=production -- refusing");
+        return res.status(500).json({ error: "auth_misconfigured" });
+      }
       const store = (globalThis.__otpStore ??= {});
       store[phone] = {
         code: "000000",
@@ -100,6 +112,15 @@ router.post("/otp/verify", async (req, res) => {
 
   // Test mode — use in-memory store
   if (isTest) {
+    // BF_SERVER_BLOCK_v335_AUTH_HARDENING_AND_DEAD_CODE_v1 -- Edit 3
+    // Belt-and-suspenders: see Edit 2 rationale. This branch issues a real
+    // STAFF JWT off a hardcoded code without any verification. If NODE_ENV
+    // ever gets set to "test" in production by accident, this becomes
+    // total auth bypass. Refuse rather than fail silently.
+    if (process.env.NODE_ENV === "production") {
+      console.error("[auth.otpVerify] FATAL: isTest=true with NODE_ENV=production -- refusing");
+      return res.status(500).json({ error: "auth_misconfigured" });
+    }
     const store = globalThis.__otpStore ?? {};
     const record = store[phone];
     if (!record || code !== "000000") {

@@ -17,7 +17,14 @@ import dashboardRoutes from "./dashboard.js";
 import documentsRoutes from "./documents.js";
 import internalRoutes from "./_int.js";
 import internalProcessingRoutes from "./internal/processing.js";
-import lenderSubmissionsRoutes from "./lenderSubmissions.js";
+// BF_SERVER_BLOCK_v335_AUTH_HARDENING_AND_DEAD_CODE_v1 -- Edit 4
+// Removed dead stub import from "./lender-submissions stub" entry.
+// The mount handler was a stub returning {ok:true} for all GETs/POSTs with
+// no validation, no auth, no real submission. BF-portal's only client
+// (portal client file) was itself unused (no importers). The
+// real lender-submission endpoints are at /api/portal/lender-submissions
+// (in portal.ts), which v331 silo-hardened. Removing this dead mount
+// closes a stub that silently swallowed any caller that ever hit it.
 import marketingRoutes from "./marketing.js";
 import offersRoutes from "./offers.js";
 import offerAcceptanceRoutes from "./offerAcceptance.js";
@@ -141,7 +148,9 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   // BF_NOTIFICATIONS_v50 — mounted at /api/notifications
   { path: "/notifications", router: notificationsRoutes },
   { path: "/documents", router: documentsRoutes },
-  { path: "/lender-submissions", router: lenderSubmissionsRoutes },
+  // BF_SERVER_BLOCK_v335_AUTH_HARDENING_AND_DEAD_CODE_v1 -- Edit 5
+  // Mount removed: dead "/lender-submissions" stub route entry.
+  // See Edit 4 above.
   { path: "/admin", router: adminRoutes },
   { path: "/marketing", router: marketingRoutes },
   { path: "/offers", router: combinedOffersRoutes },
