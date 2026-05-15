@@ -135,7 +135,31 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
   }
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM_NUMBER ?? process.env.TWILIO_PHONE_NUMBER;
+  // BF_SERVER_BLOCK_v325_COMMS_SMS_FROM_ENV_FALLBACK_v1
+  // Pre-fix this read `TWILIO_FROM_NUMBER ?? TWILIO_PHONE_NUMBER` only.
+  // TWILIO_FROM_NUMBER is NOT a recognized env var anywhere in
+  // src/config/schema.ts (the schema validates TWILIO_PHONE, TWILIO_FROM,
+  // TWILIO_NUMBER, TWILIO_PHONE_NUMBER), and the sibling SMS sender at
+  // src/modules/notifications/sms.service.ts:15 uses
+  //   config.twilio.from || config.twilio.number || config.twilio.phone
+  // -- a totally different fallback chain. The two endpoints don't agree
+  // on which env var supplies the FROM number.
+  // Result: if the operator set their Twilio number under TWILIO_FROM,
+  // TWILIO_PHONE, or TWILIO_NUMBER (the names commonly used in Twilio
+  // docs and the only ones the config schema actually validates), this
+  // endpoint 503'd with "SMS not configured". Outbound staff SMS via the
+  // Communications page broke even though OTP SMS (which uses different
+  // code) worked fine -- a confusing partial-failure mode.
+  // Fix: accept all four naming conventions. Order: TWILIO_FROM_NUMBER
+  // (legacy custom) -> TWILIO_PHONE_NUMBER -> TWILIO_FROM -> TWILIO_PHONE
+  // -> TWILIO_NUMBER. Matches sms.service.ts's intent (cover both prefixed
+  // and unprefixed) while preserving any legacy deployments that may
+  // have used the original two names.
+  const from = process.env.TWILIO_FROM_NUMBER
+    ?? process.env.TWILIO_PHONE_NUMBER
+    ?? process.env.TWILIO_FROM
+    ?? process.env.TWILIO_PHONE
+    ?? process.env.TWILIO_NUMBER;
   if (!accountSid || !authToken || !from) {
     return res.status(503).json({ error: { message: "SMS not configured", code: "service_unavailable" } });
   }
