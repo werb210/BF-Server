@@ -457,6 +457,64 @@ router.delete("/companies/:id", requireAdmin, safeHandler(async (req: any, res: 
   res.json({ ok: true });
 }));
 
+// BF_SERVER_BLOCK_v326_TIMELINE_CALLS_v1
+// Portal dialer POSTs every completed call to
+// /api/crm/timeline/calls with the shape
+// { contactId, number, durationSeconds, outcome, failureReason }.
+// Pre-fix that endpoint returned 404 because the only POST route
+// for calls is mounted under /contacts/:id/calls (handled by
+// callsActivityRoutes from ./crm/calls.js). The dialer code does
+// not know the contact id at the path-segment level -- it knows
+// the contactId only in the body. So the POST flow needs a
+// body-keyed endpoint, not a path-keyed one.
+//
+// This route persists to the SAME crm_call_log table that the
+// /contacts/:id/calls handler writes to, so the timeline UNION in
+// ./crm/timeline.ts continues to surface these rows. Direction
+// defaults to 'outbound' (the only thing the portal dialer fires
+// today; inbound logging will route through the Twilio webhook
+// handler, not this endpoint). Notes column packs outcome +
+// failureReason as a tagged string for now -- a later block adds
+// dedicated outcome/failure columns once the dialer's call state
+// machine is consolidated (v200 dialer consolidation).
+router.post("/timeline/calls", requireCrmWrite, safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId ?? null;
+  const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+  const b = req.body ?? {};
+  const contactId: string | null = b.contactId ?? b.contact_id ?? null;
+  const toNumber: string | null = b.number ?? b.to ?? b.to_number ?? null;
+  const durationSec: number | null =
+    typeof b.durationSeconds === "number" ? b.durationSeconds
+      : typeof b.duration_sec === "number" ? b.duration_sec
+        : null;
+  if (!contactId && !toNumber) {
+    return res.status(400).json({ error: { message: "contactId or number required", code: "validation_error" } });
+  }
+  const outcomePart = b.outcome ? `outcome:${b.outcome}` : null;
+  const failurePart = b.failureReason ? `failure:${b.failureReason}` : null;
+  const notes = [outcomePart, failurePart].filter(Boolean).join(" ") || null;
+  const { rows } = await pool.query(
+    `INSERT INTO crm_call_log
+       (direction, from_number, to_number, twilio_call_sid, duration_sec,
+        recording_url, notes, owner_id, contact_id, company_id, silo)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+    [
+      String(b.direction ?? "outbound"),
+      b.fromNumber ?? b.from_number ?? null,
+      toNumber,
+      b.callSid ?? b.twilio_call_sid ?? null,
+      durationSec,
+      b.recordingUrl ?? b.recording_url ?? null,
+      notes,
+      userId,
+      contactId,
+      b.companyId ?? b.company_id ?? null,
+      silo,
+    ],
+  );
+  res.status(201).json({ ok: true, data: rows[0] });
+}));
+
 router.use("/contacts/:id/notes", notesRoutes);
 router.use("/contacts/:id/tasks", tasksRoutes);
 router.use("/contacts/:id/emails", emailsRoutes);
