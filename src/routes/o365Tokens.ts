@@ -123,7 +123,22 @@ router.get("/o365-status", requireAuth, safeHandler(async (req: any, res: any) =
 }));
 
 // POST /api/users/me/o365-refresh — exchanges stored refresh_token for fresh access_token
-router.post("/o365-refresh", safeHandler(async (req: any, res: any) => {
+// BF_SERVER_BLOCK_v322_O365_REFRESH_REQUIRE_AUTH_v1
+// Pre-fix this route lacked requireAuth, yet the handler immediately reads
+// req.user?.id at the top to identify whose refresh_token to use. Without
+// requireAuth, req.user is never populated, so the handler 401'd every
+// single call. The companion /o365-tokens route (line ~39) has requireAuth
+// — this was a copy/missing oversight. routeRegistry mounts this router at
+// /api/users/me with no route-level middleware (_canonicalMount just does
+// router.use(path, handler)), so the missing middleware on this individual
+// route is not compensated elsewhere.
+// User impact: every staff member who connected Microsoft 365 lost
+// connectivity ~1 hour after initial connect, because the periodic
+// /o365-refresh call (ProfileSettings.tsx:324) silently 401'd, the
+// .catch(() => {}) swallowed it, and the stored access token expired
+// without ever being renewed. Adding requireAuth restores the refresh
+// loop without changing the handler body.
+router.post("/o365-refresh", requireAuth, safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId;
   if (!userId) return res.status(401).json({ error: "unauthenticated" });
   const { rows } = await pool.query(
