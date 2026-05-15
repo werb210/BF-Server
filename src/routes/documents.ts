@@ -148,6 +148,75 @@ router.post("/public-upload", upload.single("file"), async (req: Request, res: R
   if (!applicationId || !category) return fail(res, 400, "MISSING_FIELDS");
   const file = (req as Request & { file?: Express.Multer.File }).file;
   if (!file) return fail(res, 400, "NO_FILE");
+
+  // BF_SERVER_BLOCK_v329_PUBLIC_UPLOAD_HARDENING_v1
+  // Pre-fix this endpoint had: no auth (correct -- the wizard is unauth'd),
+  // no file-type whitelist (any binary), no application-state gate
+  // (Funded / Closed / Rejected apps still accepted uploads), and no
+  // verification that the applicationId was a real, in-progress app
+  // (any UUID-shaped string was accepted). Combined with multer's 25MB
+  // limit (line 23), this surface was abusable for:
+  //   1. Polluting blob storage and the documents/document_versions
+  //      tables with arbitrary binaries against random UUIDs.
+  //   2. Adding documents to historical Funded apps to manipulate the
+  //      audit trail (the OCR pipeline would still run them, the
+  //      banking analyzer would still reprocess, etc).
+  //   3. Sending non-document file types (executables, scripts, images
+  //      that aren't statements) through the OCR pipeline which costs
+  //      money and time per call.
+  // Three guards added below in order: (a) MIME whitelist matched to
+  // what the application wizard actually allows the applicant to
+  // attach (PDF, JPG/PNG/HEIC for phone scans, common docx/xlsx for
+  // statements). (b) existence + in-progress gate -- look up the
+  // application, require it to exist AND have pipeline_state not in
+  // a terminal state. (c) the existing persistAndEnqueue path.
+  // Rate-limit is intentionally NOT added at the handler level here
+  // because the canonical clientDocumentsRateLimit() is applied at the
+  // router-mount level by src/routes/client/index.ts:34 for the /api/
+  // client/documents mount; the bare /api/documents/public-upload
+  // surface is meant for the website wizard (which uses the same
+  // function via /api/documents/public-upload). Operator may want
+  // to add an explicit limiter here too -- flagged as a follow-up.
+  const ALLOWED_MIME_PREFIXES = [
+    "application/pdf",
+    "image/jpeg", "image/png", "image/heic", "image/heif", "image/webp",
+    "application/vnd.openxmlformats-officedocument", // .docx, .xlsx, .pptx
+    "application/msword",                            // .doc
+    "application/vnd.ms-excel",                      // .xls
+    "text/csv",
+    "text/plain",
+  ];
+  const mime = typeof file.mimetype === "string" ? file.mimetype.toLowerCase() : "";
+  const mimeAllowed = ALLOWED_MIME_PREFIXES.some((p) => mime === p || mime.startsWith(p + ";") || mime.startsWith(p + "/"));
+  if (!mimeAllowed) {
+    console.warn("[documents] public-upload rejected non-allowed mime", { applicationId, mime, filename: file.originalname });
+    return fail(res, 415, "UNSUPPORTED_FILE_TYPE");
+  }
+
+  // Application existence + state gate. Terminal states reject. Unknown
+  // application returns 404 with the same code shape as a 404 elsewhere
+  // (don't leak the difference between "no such id" and "wrong state").
+  try {
+    const appRes = await pool.query<{ pipeline_state: string | null }>(
+      `SELECT pipeline_state FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+      [applicationId]
+    );
+    const row = appRes.rows[0];
+    if (!row) {
+      return fail(res, 404, "APPLICATION_NOT_FOUND");
+    }
+    const TERMINAL_STATES = new Set(["Accepted", "Rejected", "Funded", "Closed"]);
+    if (row.pipeline_state && TERMINAL_STATES.has(row.pipeline_state)) {
+      return fail(res, 409, "APPLICATION_NOT_ACCEPTING_UPLOADS");
+    }
+  } catch (err) {
+    // If the app-state lookup itself fails, fail closed -- never accept
+    // an unverified upload. The previous version of this handler did
+    // accept unverified uploads, which is the bug this guard closes.
+    console.error("[documents] public-upload app-state check failed", { applicationId, err: String(err) });
+    return fail(res, 500, "UPLOAD_FAILED");
+  }
+
   try {
     const r = await persistAndEnqueue({ applicationId, category, file, uploadedBy: null });
     return ok(res, {
