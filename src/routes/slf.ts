@@ -87,6 +87,19 @@ router.get(
   safeHandler(async (req: any, res: any) => {
     const id = String(req.params.id ?? "").trim();
     if (!id) throw new AppError("validation_error", "Application id required.", 400);
+    // BF_SERVER_BLOCK_v332_SETTINGS_AND_AUDIT_HARDENING_v1 -- Edit 9
+    // Pre-fix this endpoint selected application_notes by application_id
+    // with NO silo verification, so an SLF-silo staff member could read
+    // notes from any BF-silo or BI-silo application by guessing the UUID.
+    // Sibling /applications/:id and /pipeline endpoints in this file
+    // correctly gate with WHERE silo = 'SLF'; this notes endpoint plus the
+    // POST counterpart and the documents GET below were missed. Preflight
+    // confirms the parent application is SLF-silo before any read/write.
+    const app = await pool.query(
+      `SELECT id FROM applications WHERE id::text = ($1)::text AND silo = 'SLF' LIMIT 1`,
+      [id],
+    );
+    if (!app.rows[0]) throw new AppError("not_found", "Application not found.", 404);
     const { rows } = await pool
       .query(
         `SELECT id, body AS text, created_at FROM application_notes
@@ -107,6 +120,14 @@ router.post(
     const text = String(req.body?.text ?? "").trim();
     if (!id) throw new AppError("validation_error", "Application id required.", 400);
     if (!text) throw new AppError("validation_error", "Note text required.", 400);
+    // BF_SERVER_BLOCK_v332_SETTINGS_AND_AUDIT_HARDENING_v1 -- Edit 10
+    // See Edit 9 rationale. Pre-fix an SLF-silo staff could write notes to
+    // any BF/BI application, polluting the audit timeline.
+    const app = await pool.query(
+      `SELECT id FROM applications WHERE id::text = ($1)::text AND silo = 'SLF' LIMIT 1`,
+      [id],
+    );
+    if (!app.rows[0]) throw new AppError("not_found", "Application not found.", 404);
     await pool
       .query(
         `INSERT INTO application_notes (id, application_id, body, created_at, updated_at)
@@ -124,6 +145,15 @@ router.get(
   safeHandler(async (req: any, res: any) => {
     const id = String(req.params.id ?? "").trim();
     if (!id) throw new AppError("validation_error", "Application id required.", 400);
+    // BF_SERVER_BLOCK_v332_SETTINGS_AND_AUDIT_HARDENING_v1 -- Edit 11
+    // See Edit 9 rationale. Document listings are the most sensitive read
+    // on an application -- preflight on silo before exposing filenames /
+    // document types.
+    const app = await pool.query(
+      `SELECT id FROM applications WHERE id::text = ($1)::text AND silo = 'SLF' LIMIT 1`,
+      [id],
+    );
+    if (!app.rows[0]) throw new AppError("not_found", "Application not found.", 404);
     const { rows } = await pool
       .query(
         `SELECT id, filename, document_type, status, created_at
