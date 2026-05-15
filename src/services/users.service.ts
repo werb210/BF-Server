@@ -134,6 +134,22 @@ export async function fetchMe(req: Request): Promise<User | null> {
         silos,
         profile_image_url,
         o365_access_token,
+        -- BF_SERVER_BLOCK_v323_USERS_ME_O365_FIELDS_v1
+        -- BF-portal ProfileSettings.tsx reads me.o365_connected (Boolean
+        -- of "do we have a token in the DB") and me.o365_email. Pre-fix
+        -- this SELECT only returned o365_access_token. The portal never
+        -- got the derived o365_connected field, so Boolean(undefined)
+        -- coerced to false, and the UI showed "Connect" even when the
+        -- staff member was fully connected. Every page navigation back
+        -- to /settings re-loaded /api/users/me, saw undefined, and
+        -- rendered the disconnected state. The sibling endpoint
+        -- /api/settings/me (settings.ts:44) DOES derive this correctly;
+        -- /api/users/me did not. Mirror that derivation here. The
+        -- Microsoft email column in the DB is o365_user_email (per
+        -- migrations 027 / 028 / 102 / 110) -- alias it to o365_email
+        -- for the portal, which reads the unprefixed form.
+        o365_user_email AS o365_email,
+        (o365_access_token IS NOT NULL AND length(trim(o365_access_token)) > 0) AS o365_connected,
         created_at,
         updated_at,
         last_login_at
