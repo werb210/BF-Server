@@ -7,6 +7,7 @@ import lenderAdminRoutes from "../modules/lender/lender.admin.routes.js";
 import ocrAdminRoutes from "../modules/ocr/ocr.admin.routes.js";
 import adminOpsRoutes from "./admin.ops.js";
 import adminExportsRoutes from "./admin.exports.js";
+import adminDashboardRoutes from "./admin.dashboard.js";
 
 const router = Router();
 
@@ -17,6 +18,7 @@ router.use("/audit", auditRoutes);
 router.use("/ops", adminOpsRoutes);
 router.use("/exports", adminExportsRoutes);
 router.use("/ocr", ocrAdminRoutes);
+router.use("/", adminDashboardRoutes);
 router.use("/", lenderAdminRoutes);
 
 export default router;

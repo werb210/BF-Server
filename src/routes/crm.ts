@@ -26,6 +26,51 @@ router.post("/web-leads", SupportController.createWebLead);
 
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.CRM_READ]));
+
+// BF_SERVER_BLOCK_BI_ROUND7_OPS_DASHBOARD_v1
+router.get("/leads", safeHandler(async (_req: any, res: any) => {
+  const result = await pool.query(`
+    SELECT
+      id,
+      company_name,
+      full_name,
+      phone,
+      email,
+      industry,
+      years_in_business,
+      monthly_revenue,
+      annual_revenue,
+      ar_outstanding,
+      source,
+      tags,
+      created_at
+    FROM crm_leads
+    ORDER BY created_at DESC
+    LIMIT 500
+  `).catch((err: any) => {
+    console.warn("crm.leads.query_failed", {
+      message: err?.message, code: err?.code,
+    });
+    return { rows: [] as any[] };
+  });
+  const leads = result.rows.map((r: any) => ({
+    id: r.id,
+    companyName: r.company_name ?? undefined,
+    fullName: r.full_name ?? undefined,
+    email: r.email ?? "",
+    phone: r.phone ?? undefined,
+    industry: r.industry ?? undefined,
+    yearsInBusiness: r.years_in_business ?? undefined,
+    monthlyRevenue: r.monthly_revenue ?? undefined,
+    annualRevenue: r.annual_revenue ?? undefined,
+    arBalance: r.ar_outstanding ?? undefined,
+    source: r.source ?? "website",
+    status: "new",
+    tags: Array.isArray(r.tags) ? r.tags : [],
+    createdAt: r.created_at,
+  }));
+  return res.status(200).json(leads);
+}));
 // BF_SERVER_BLOCK_v152_CRM_WRITE_CAPABILITY_v1 — CRM_WRITE required
 // for any mutating handler. The router-level CRM_READ stays for GET.
 const requireCrmWrite = requireCapability([CAPABILITIES.CRM_WRITE]);
