@@ -58,6 +58,11 @@ const BASE_URL = process.env.PUBLIC_BASE_URL ?? "https://server.boreal.financial
 // timing-safe compare internally, so no separate HMAC is needed.
 
 // ── Inbound TwiML — serve XML to ring all available staff simultaneously ─────
+// BF_SERVER_BLOCK_BI_ROUND5_7BIS_v1 -- Voice SDK outbound calls now
+// create a call_logs row on the way through this webhook so the
+// downstream status callback finds it to update. Pre-fix, SDK calls
+// were never logged; only REST-path outbound calls (/api/telephony/
+// outbound-call) made it into call_logs.
 router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (req: any, res: any) => {
   res.setHeader("Content-Type", "text/xml");
   const params = req.body ?? {};
@@ -65,6 +70,52 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
   const outboundFlag = params.outbound === "1" || params.outbound === 1 || params.outbound === true;
   const looksLikePhone = /^\+?\d{10,15}$/.test(to);
   const callerId = process.env.TWILIO_CALLER_ID || process.env.TWILIO_NUMBER || "";
+
+  // BF_SERVER_BLOCK_BI_ROUND5_7BIS_v1 -- create the call_logs row on
+  // the way through, but only for SDK-initiated outbound calls. The
+  // "client:" prefix on params.From is Twilio's convention for an
+  // SDK-originated call; the suffix is the JWT user.userId we baked
+  // into the access token at /api/telephony/token, which lets us
+  // reuse it as staff_user_id without an extra lookup. Everything is
+  // wrapped to fail-open: a DB hiccup must not break the call.
+  const rawFrom = String(params.From ?? params.from ?? "").trim();
+  const isSdkOutbound = rawFrom.startsWith("client:") && looksLikePhone && to;
+  if (isSdkOutbound) {
+    const callSid = String(params.CallSid ?? params.callSid ?? "").trim() || null;
+    const identity = rawFrom.slice("client:".length).trim() || null;
+    const siloParam = String(params.silo ?? params.Silo ?? "").trim().toUpperCase() || "BF";
+    const applicationIdParam = (() => {
+      const v = String(params.applicationId ?? params.applicationid ?? "").trim();
+      return v.length > 0 ? v : null;
+    })();
+    try {
+      const { startCall } = await import("../modules/calls/calls.service.js");
+      await startCall({
+        phoneNumber: to,
+        fromNumber: callerId || null,
+        toNumber: to,
+        direction: "outbound",
+        status: "initiated",
+        staffUserId: identity,
+        twilioCallSid: callSid,
+        applicationId: applicationIdParam,
+        silo: siloParam,
+      });
+    } catch (err: any) {
+      // Non-fatal; the call still proceeds. The downstream status
+      // webhook will surface voice_webhook_call_not_found if the
+      // row really did fail to land, which is the existing observable.
+      // eslint-disable-next-line no-console
+      console.warn("voice_twiml_call_log_create_failed", {
+        callSid,
+        identity,
+        silo: siloParam,
+        applicationId: applicationIdParam,
+        message: err?.message,
+        code: err?.code,
+      });
+    }
+  }
 
   const vr = new VoiceResponse();
   if ((looksLikePhone || outboundFlag) && to) {
