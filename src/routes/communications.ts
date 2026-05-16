@@ -231,6 +231,120 @@ router.get("/threads", safeHandler(async (req: any, res: any) => {
   return res.status(200).json(conversations);
 }));
 
+// BF_SERVER_BLOCK_BI_ROUND6_THREADS_DETAIL_v1
+// GET /api/communications/threads/:id
+// Returns a single chat session payload with the full messages
+// array. Staff panel calls this when activeSessionId changes
+// so the message area populates with history. The list endpoint
+// (Block 20) deliberately returns messages: [] for performance
+// and defers message loading to this endpoint.
+//
+// Silo gate: contact_silo on the joined contact must match the
+// caller's resolved silo, unless the caller is an admin. Returns
+// 404 (not 403) when no row exists so we don't leak which session
+// ids are valid in other silos.
+router.get("/threads/:id", safeHandler(async (req: any, res: any) => {
+  const { resolveSiloFromRequest } = await import("../middleware/silo.js");
+  const silo = resolveSiloFromRequest(req);
+  const sessionId = String(req.params.id ?? "").trim();
+  if (!sessionId) return res.status(400).json({ error: "missing_session_id" });
+
+  const isAdmin = String(req.user?.role ?? "").toLowerCase() === "admin";
+
+  // Load the session + joined contact info. LEFT JOIN keeps
+  // anonymous sessions (no crm_contact_id) addressable -- those
+  // have contact_silo=null and pass the silo gate for every silo
+  // until they're contact-bound.
+  const sessionResult = await pool.query(`
+    SELECT
+      s.id,
+      s.id AS session_id,
+      s.source,
+      s.status,
+      s.assigned_to,
+      s.crm_contact_id,
+      s.created_at,
+      s.updated_at,
+      c.silo AS contact_silo,
+      c.full_name AS contact_name,
+      c.email AS contact_email,
+      c.phone AS contact_phone
+    FROM chat_sessions s
+    LEFT JOIN contacts c ON c.id = s.crm_contact_id
+    WHERE s.id = $1
+    LIMIT 1
+  `, [sessionId]).catch((err: any) => {
+    // eslint-disable-next-line no-console
+    console.warn("communications.threads.detail.session_query_failed", {
+      sessionId, message: err?.message, code: err?.code,
+    });
+    return { rows: [] as any[] };
+  });
+
+  const session = sessionResult.rows[0];
+  if (!session) return res.status(404).json({ error: "session_not_found" });
+
+  // Silo gate. Anonymous sessions (contact_silo null) pass.
+  if (!isAdmin && session.contact_silo && session.contact_silo !== silo) {
+    return res.status(404).json({ error: "session_not_found" });
+  }
+
+  // Load messages. 500-row cap protects against unbounded message
+  // history rendering in the portal; if a real session ever exceeds
+  // this we add pagination cursors in a follow-up.
+  const messagesResult = await pool.query(`
+    SELECT id, session_id, role, content, created_at
+    FROM chat_messages
+    WHERE session_id = $1
+    ORDER BY created_at ASC
+    LIMIT 500
+  `, [sessionId]).catch((err: any) => {
+    // eslint-disable-next-line no-console
+    console.warn("communications.threads.detail.messages_query_failed", {
+      sessionId, message: err?.message, code: err?.code,
+    });
+    return { rows: [] as any[] };
+  });
+
+  const messages = messagesResult.rows.map((m: any) => {
+    const roleStr = String(m.role ?? "").toLowerCase();
+    const direction =
+      roleStr === "user" ? "in" :
+      (roleStr === "staff" || roleStr === "ai") ? "out" :
+      "system";
+    return {
+      id: m.id,
+      conversationId: sessionId,
+      type: "chat",
+      direction,
+      message: m.content ?? "",
+      createdAt: m.created_at,
+    };
+  });
+
+  const status =
+    session.status === "live" ? "human" :
+    session.status === "closed" ? "closed" :
+    "ai";
+  const type = status === "human" ? "human" : "chat";
+
+  return res.status(200).json({
+    id: session.id,
+    sessionId: session.session_id,
+    type,
+    status,
+    silo: session.contact_silo ?? silo,
+    contactId: session.crm_contact_id ?? undefined,
+    contactName: session.contact_name ?? undefined,
+    contactEmail: session.contact_email ?? undefined,
+    contactPhone: session.contact_phone ?? undefined,
+    assignedTo: session.assigned_to ?? undefined,
+    message: messages.length ? messages[messages.length - 1].message : undefined,
+    messages,
+    updatedAt: session.updated_at ?? session.created_at,
+  });
+}));
+
 // BF_SERVER_BLOCK_BI_ROUND5_D_TIMELINE_v1
 // GET /api/communications/timeline?phone=<E.164>&limit=<n>
 // Returns calls + SMS events for a phone number scoped to the
