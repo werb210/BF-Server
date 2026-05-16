@@ -3,6 +3,8 @@ import { pool } from "../../db.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { respondOk } from "../../utils/respondOk.js";
 import { getGraphForUser } from "../../modules/o365/graphClient.js";
+// BF_SERVER_BLOCK_BI_ROUND5_CRM_SILO_RESOLVE_v1
+import { resolveSiloFromRequest } from "../../middleware/silo.js";
 
 const router = express.Router({ mergeParams: true });
 

@@ -5,6 +5,8 @@ import { safeHandler } from "../../middleware/safeHandler.js";
 import { respondOk } from "../../utils/respondOk.js";
 import { parseAndResolveMentions } from "../../services/notes/mentions.js";
 import { notifyMentions } from "../../services/notifications/notifications.service.js";
+// BF_SERVER_BLOCK_BI_ROUND5_CRM_SILO_RESOLVE_v1
+import { resolveSiloFromRequest } from "../../middleware/silo.js";
 
 const router = express.Router({ mergeParams: true });
 
