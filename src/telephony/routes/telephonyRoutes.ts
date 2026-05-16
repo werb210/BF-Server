@@ -161,14 +161,20 @@ router.post("/outbound-call", auth, async (req: any, res: Response) => {
       statusCallback: `${process.env.PUBLIC_BASE_URL ?? "https://server.boreal.financial"}/api/webhooks/twilio/voice`,
       statusCallbackMethod: "POST",
     });
-    // Log the call
+    // Log the call.
+    // BF_SERVER_BLOCK_BI_ROUND5_B_v1 -- include silo so BI silo
+    // outbound calls log as silo='BI' instead of falling through
+    // to the column default 'BF'. Source: resolveSiloFromRequest
+    // (X-Silo header / ?silo / allowlist / user primary).
     const staffId = req.user?.userId;
+    const { resolveSiloFromRequest } = await import("../../middleware/silo.js");
+    const silo = resolveSiloFromRequest(req);
     await pool.query(
       `INSERT INTO call_logs (id, phone_number, from_number, to_number, twilio_call_sid,
-         direction, status, staff_user_id, crm_contact_id, application_id, created_at, started_at)
-       VALUES (gen_random_uuid(), $1, $2, $1, $3, 'outbound', 'initiated', $4, $5, $6, now(), now())
+         direction, status, staff_user_id, crm_contact_id, application_id, silo, created_at, started_at)
+       VALUES (gen_random_uuid(), $1, $2, $1, $3, 'outbound', 'initiated', $4, $5, $6, $7, now(), now())
        ON CONFLICT DO NOTHING`,
-      [to, from, call.sid, staffId ?? null, contactId ?? null, applicationId ?? null]
+      [to, from, call.sid, staffId ?? null, contactId ?? null, applicationId ?? null, silo]
     ).catch(() => {});
     res.json({ success: true, callSid: call.sid });
   } catch (err: any) {

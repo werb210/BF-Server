@@ -177,6 +177,14 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
   // schema drift is visible; still return success because the user-facing
   // SMS has already gone out and there is no way to unsend it.
   const staffName = (req as any).user?.name ?? (req as any).user?.email ?? null;
+  // BF_SERVER_BLOCK_BI_ROUND5_B_v1 -- silo source moved from
+  // req.user.silo (JWT-pinned primary silo) to
+  // resolveSiloFromRequest(req) (X-Silo header / ?silo / allowlist).
+  // Fixes the case where a multi-silo or admin user switching to
+  // the BI silo in the topbar got their SMS persisted as silo='BF'
+  // because the JWT primary silo never changes.
+  const { resolveSiloFromRequest } = await import("../middleware/silo.js");
+  const silo = resolveSiloFromRequest(req);
   await pool.query(
     `INSERT INTO communications_messages
        (id, type, direction, status, body, phone_number, from_number, to_number,
@@ -191,7 +199,7 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
       contactId ?? null,
       applicationId ?? null,
       staffName,
-      ((req as any).user?.silo ?? "BF").toString().toUpperCase(),
+      silo,
     ]
   ).catch((err: any) => {
     // eslint-disable-next-line no-console

@@ -24,7 +24,13 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
     const fromLower = String(from).toLowerCase();
     if (fromLower !== userEmail) {
       const role = (req.user?.role ?? "").toString();
-      const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+      // BF_SERVER_BLOCK_BI_ROUND5_B_v1 -- silo source moved to
+      // resolveSiloFromRequest so a BF-primary admin / multi-silo
+      // staff temporarily in the BI silo can still send-as the
+      // BI-scoped shared mailboxes seeded under silo='BI' in
+      // shared_mailbox_settings (info@/submissions@ for BI).
+      const { resolveSiloFromRequest } = await import("../middleware/silo.js");
+      const silo = resolveSiloFromRequest(req);
       const { rows } = await pool.query(
         `SELECT 1 FROM shared_mailbox_settings
          WHERE LOWER(address)=LOWER($1) AND silo = $2 AND $3 = ANY(allowed_roles) LIMIT 1`,
