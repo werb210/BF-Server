@@ -8,7 +8,7 @@ const router = express.Router({ mergeParams: true });
 
 router.get("/", safeHandler(async (req: any, res: any) => {
   const { contactId, companyId } = resolveScope(req);
-  const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+  const silo = resolveSiloFromRequest(req);
   const where: string[] = ["silo = $1"]; const params: unknown[] = [silo];
   if (contactId) { params.push(contactId); where.push(`contact_id = $${params.length}`); }
   if (companyId) { params.push(companyId); where.push(`company_id = $${params.length}`); }
@@ -40,7 +40,7 @@ router.post("/", safeHandler(async (req: any, res: any) => {
   let endpoint = "/me/sendMail";
   if (fromLower !== userEmail) {
     const role = (req.user?.role ?? "").toString();
-    const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+    const silo = resolveSiloFromRequest(req);
     const { rows } = await pool.query(
       `SELECT 1 FROM shared_mailbox_settings
        WHERE LOWER(address) = $1 AND silo = $2 AND $3 = ANY(allowed_roles) LIMIT 1`,
@@ -70,7 +70,7 @@ router.post("/", safeHandler(async (req: any, res: any) => {
     return res.status(502).json({ error: "graph_send_failed", detail: text.slice(0, 500) });
   }
 
-  const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+  const silo = resolveSiloFromRequest(req);
   const { rows } = await pool.query(
     `INSERT INTO crm_email_log
        (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,

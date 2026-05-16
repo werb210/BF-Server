@@ -7,7 +7,7 @@ const router = express.Router();
 
 router.get("/", safeHandler(async (req: any, res: any) => {
   const role = (req.user?.role ?? "").toString();
-  const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+  const silo = resolveSiloFromRequest(req);
   const { rows: shared } = await pool.query(
     `SELECT address, display_name FROM shared_mailbox_settings
      WHERE silo = $1 AND $2 = ANY(allowed_roles)

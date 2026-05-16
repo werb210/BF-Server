@@ -8,7 +8,7 @@ const router = express.Router({ mergeParams: true });
 
 router.get("/", safeHandler(async (req: any, res: any) => {
   const { contactId, companyId } = resolveScope(req);
-  const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+  const silo = resolveSiloFromRequest(req);
   const where: string[] = ["silo = $1"]; const params: unknown[] = [silo];
   if (contactId) { params.push(contactId); where.push(`contact_id = $${params.length}`); }
   if (companyId) { params.push(companyId); where.push(`company_id = $${params.length}`); }
@@ -55,7 +55,7 @@ router.post("/", safeHandler(async (req: any, res: any) => {
     }
   }
 
-  const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+  const silo = resolveSiloFromRequest(req);
   const { rows } = await pool.query(
     `INSERT INTO crm_meetings
       (title,attendee_description,internal_note,start_at,end_at,location,

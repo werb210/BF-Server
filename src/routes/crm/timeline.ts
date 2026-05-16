@@ -9,7 +9,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   const isContact = req.baseUrl?.includes("/contacts/");
   const id = req.params.id;
   const col = isContact ? "contact_id" : "company_id";
-  const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+  const silo = resolveSiloFromRequest(req);
   const sql = `
     SELECT 'note' AS kind, id::text, created_at AS ts,
            NULL::text AS title, body AS body, NULL::text AS extra

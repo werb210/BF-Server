@@ -7,7 +7,7 @@ const router = express.Router({ mergeParams: true });
 
 router.get("/", safeHandler(async (req: any, res: any) => {
   const { contactId, companyId } = resolveScope(req);
-  const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+  const silo = resolveSiloFromRequest(req);
   const where: string[] = ["silo = $1"]; const params: unknown[] = [silo];
   if (contactId) { params.push(contactId); where.push(`contact_id = $${params.length}`); }
   if (companyId) { params.push(companyId); where.push(`company_id = $${params.length}`); }
@@ -22,7 +22,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
 router.post("/", safeHandler(async (req: any, res: any) => {
   const { contactId, companyId } = resolveScope(req);
   const userId = req.user?.id ?? req.user?.userId ?? null;
-  const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+  const silo = resolveSiloFromRequest(req);
   const b = req.body ?? {};
   const { rows } = await pool.query(
     `INSERT INTO crm_call_log

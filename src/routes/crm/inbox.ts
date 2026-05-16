@@ -16,7 +16,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   let path = "/me/mailFolders/Inbox/messages?$top=50&$select=id,subject,from,receivedDateTime,bodyPreview,isRead";
   if (mailbox) {
     const role = (req.user?.role ?? "").toString();
-    const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+    const silo = resolveSiloFromRequest(req);
     const { rows } = await pool.query(
       `SELECT 1 FROM shared_mailbox_settings
        WHERE LOWER(address)=LOWER($1) AND silo = $2 AND $3 = ANY(allowed_roles)

@@ -10,7 +10,7 @@ const router = express.Router({ mergeParams: true });
 
 router.get("/", safeHandler(async (req: any, res: any) => {
   const { contactId, companyId } = resolveScope(req);
-  const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+  const silo = resolveSiloFromRequest(req);
   const where: string[] = ["n.silo = $1", "n.is_deleted = false"];
   const params: unknown[] = [silo];
   if (contactId) { params.push(contactId); where.push(`n.contact_id = $${params.length}`); }
@@ -28,7 +28,7 @@ router.post("/", safeHandler(async (req: any, res: any) => {
   const { contactId, companyId } = resolveScope(req);
   const body = (req.body?.body ?? "").toString().trim();
   if (!body) return res.status(400).json({ error: "body required" });
-  const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+  const silo = resolveSiloFromRequest(req);
   const mentions = await parseAndResolveMentions(body);
   const { rows } = await pool.query(
     `INSERT INTO crm_notes (body, owner_id, contact_id, company_id, silo, mentions)

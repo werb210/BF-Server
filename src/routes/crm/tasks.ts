@@ -8,7 +8,7 @@ const router = express.Router({ mergeParams: true });
 
 router.get("/", safeHandler(async (req: any, res: any) => {
   const { contactId, companyId } = resolveScope(req);
-  const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+  const silo = resolveSiloFromRequest(req);
   const where: string[] = ["t.silo = $1"]; const params: unknown[] = [silo];
   if (contactId) { params.push(contactId); where.push(`t.contact_id = $${params.length}`); }
   if (companyId) { params.push(companyId); where.push(`t.company_id = $${params.length}`); }
@@ -24,7 +24,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
 router.post("/", safeHandler(async (req: any, res: any) => {
   const { contactId, companyId } = resolveScope(req);
   const userId = req.user?.id ?? req.user?.userId ?? null;
-  const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+  const silo = resolveSiloFromRequest(req);
   const body = req.body ?? {};
   const title = (body.title ?? "").toString().trim();
   if (!title) return res.status(400).json({ error: "title required" });
@@ -87,7 +87,7 @@ router.patch("/:taskId", safeHandler(async (req: any, res: any) => {
   }
   if (!updates.length) return respondOk(res, null);
   params.push(req.params.taskId);
-  params.push((req.user?.silo ?? "BF").toString().toUpperCase());
+  params.push(resolveSiloFromRequest(req));
   const { rows } = await pool.query(
     `UPDATE crm_tasks SET ${updates.join(", ")}, updated_at = NOW()
      WHERE id = $${i} AND silo = $${i + 1} RETURNING *`,

@@ -479,7 +479,7 @@ router.delete("/companies/:id", requireAdmin, safeHandler(async (req: any, res: 
 // machine is consolidated (v200 dialer consolidation).
 router.post("/timeline/calls", requireCrmWrite, safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId ?? null;
-  const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+  const silo = resolveSiloFromRequest(req);
   const b = req.body ?? {};
   const contactId: string | null = b.contactId ?? b.contact_id ?? null;
   const toNumber: string | null = b.number ?? b.to ?? b.to_number ?? null;
