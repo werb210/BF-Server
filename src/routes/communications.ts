@@ -127,6 +127,139 @@ router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
   }
 }));
 
+// BF_SERVER_BLOCK_BI_ROUND5_D_TIMELINE_v1
+// GET /api/communications/timeline?phone=<E.164>&limit=<n>
+// Returns calls + SMS events for a phone number scoped to the
+// caller's silo (X-Silo header / ?silo / allowlist enforced by
+// resolveSiloFromRequest). Built to back the BI silo contact
+// detail timeline (Block 11) but useful anywhere BF-portal wants
+// a unified feed without two round-trips.
+//
+// Phone matching tolerates raw vs compact-digits variants -- the
+// same trick GET /sms already uses, so a contact stored as
+// "+15878881837" and a call log with phone_number "15878881837"
+// still match.
+//
+// Response shape:
+//   {
+//     events: Array<{
+//       id: string,
+//       kind: "call" | "sms",
+//       direction: "inbound" | "outbound" | null,
+//       status: string | null,
+//       body: string | null,             // SMS body (null for call)
+//       duration_seconds: number | null, // call only
+//       from_number: string | null,
+//       to_number: string | null,
+//       silo: string,
+//       application_id: string | null,
+//       twilio_sid: string | null,
+//       staff_name: string | null,       // SMS persisted with name
+//       staff_user_id: string | null,    // call persisted with id
+//       created_at: string,              // ISO
+//     }>,
+//     total: number,
+//     silo: string
+//   }
+router.get("/timeline", safeHandler(async (req: any, res: any) => {
+  const phone = String(req.query.phone ?? "").trim();
+  if (!phone) {
+    return res.status(400).json({ error: { message: "phone is required (E.164)", code: "validation_error" } });
+  }
+  const compact = phone.replace(/[^\d]/g, "");
+  const e164 = phone.startsWith("+") ? phone : (compact ? `+${compact}` : phone);
+  const phoneVariants = Array.from(new Set([phone, e164, compact].filter(Boolean)));
+
+  const { resolveSiloFromRequest } = await import("../middleware/silo.js");
+  const silo = resolveSiloFromRequest(req);
+
+  const limit = Math.min(Number(req.query.limit ?? 200) || 200, 500);
+
+  // call_logs: outbound to_number == phone, inbound from_number == phone,
+  // or the older callers that stored everything in phone_number.
+  const callsRes = await pool.query(
+    `SELECT id, twilio_call_sid AS twilio_sid, direction, status,
+            duration_seconds, from_number, to_number, staff_user_id,
+            application_id, silo, created_at
+       FROM call_logs
+      WHERE silo = $1
+        AND (phone_number = ANY($2::text[])
+          OR from_number  = ANY($2::text[])
+          OR to_number    = ANY($2::text[]))
+      ORDER BY created_at DESC
+      LIMIT $3`,
+    [silo, phoneVariants, limit],
+  ).catch((err: any) => {
+    // eslint-disable-next-line no-console
+    console.warn("communications.timeline.calls_query_failed", {
+      silo, phone, message: err?.message, code: err?.code,
+    });
+    return { rows: [] as any[] };
+  });
+
+  const smsRes = await pool.query(
+    `SELECT id, twilio_sid, direction, status, body, from_number,
+            to_number, staff_name, application_id, silo, created_at
+       FROM communications_messages
+      WHERE silo = $1
+        AND (phone_number = ANY($2::text[])
+          OR from_number  = ANY($2::text[])
+          OR to_number    = ANY($2::text[]))
+      ORDER BY created_at DESC
+      LIMIT $3`,
+    [silo, phoneVariants, limit],
+  ).catch((err: any) => {
+    // eslint-disable-next-line no-console
+    console.warn("communications.timeline.sms_query_failed", {
+      silo, phone, message: err?.message, code: err?.code,
+    });
+    return { rows: [] as any[] };
+  });
+
+  const events = [
+    ...callsRes.rows.map((r: any) => ({
+      id: r.id,
+      kind: "call" as const,
+      direction: r.direction ?? null,
+      status: r.status ?? null,
+      body: null,
+      duration_seconds: r.duration_seconds ?? null,
+      from_number: r.from_number ?? null,
+      to_number: r.to_number ?? null,
+      silo: r.silo ?? silo,
+      application_id: r.application_id ?? null,
+      twilio_sid: r.twilio_sid ?? null,
+      staff_name: null,
+      staff_user_id: r.staff_user_id ?? null,
+      created_at: r.created_at,
+    })),
+    ...smsRes.rows.map((r: any) => ({
+      id: r.id,
+      kind: "sms" as const,
+      direction: r.direction ?? null,
+      status: r.status ?? null,
+      body: r.body ?? null,
+      duration_seconds: null,
+      from_number: r.from_number ?? null,
+      to_number: r.to_number ?? null,
+      silo: r.silo ?? silo,
+      application_id: r.application_id ?? null,
+      twilio_sid: r.twilio_sid ?? null,
+      staff_name: r.staff_name ?? null,
+      staff_user_id: null,
+      created_at: r.created_at,
+    })),
+  ]
+    .sort((a, b) => {
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return tb - ta;
+    })
+    .slice(0, limit);
+
+  return res.status(200).json({ events, total: events.length, silo });
+}));
+
 // POST /api/communications/sms — send outbound + persist to DB
 router.post("/sms", safeHandler(async (req: any, res: any) => {
   const { contactId, to, body, applicationId } = req.body ?? {};
