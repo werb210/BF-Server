@@ -47,10 +47,14 @@ export async function incomingCallHandler(_req: Request, res: Response): Promise
     }
   } else if (FALLBACK_PHONE) {
     const dial = response.dial({ timeout: 25, answerOnBridge: true });
-    dial.number(FALLBACK_PHONE);
+    // BF_SERVER_BLOCK_43_HOTFIX_v1 -- the repo's twilio shim
+    // (src/types/twilio-shims.d.ts) only declares Dial.client(); the
+    // real TwiML SDK supports .number() at runtime. Cast for now.
+    (dial as any).number(FALLBACK_PHONE);
   } else {
+    // BF_SERVER_BLOCK_43_HOTFIX_v1 -- shim's say() takes 1 arg.
+    // Drop the voice-attributes object; Twilio default voice is fine.
     response.say(
-      { voice: "Polly.Joanna" },
       "Thanks for calling Boreal. Our team is currently unavailable. Please leave a message after the tone.",
     );
     response.record({
