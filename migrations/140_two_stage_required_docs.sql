@@ -25,13 +25,16 @@ ALTER TABLE IF EXISTS lender_product_requirements
 CREATE INDEX IF NOT EXISTS idx_lender_product_requirements_stage
   ON lender_product_requirements (stage);
 
--- 3. Application form responses table. One row per (application,
---    doc_type). data jsonb stores whatever the form captures;
---    submitted_at is null until the applicant clicks Submit on the
---    form. Autosave UPSERTs without setting submitted_at.
+-- BF_SERVER_BLOCK_40_HOTFIX_v1
+-- application_id is TEXT, not UUID. applications.id was migrated
+-- from UUID to TEXT in migrations 107 + 110. No FK because no
+-- other table in this codebase keeps one against applications.id
+-- (communications_messages.application_id is the precedent --
+-- migration 107 explicitly drops its FK and column type).
+-- Server-layer route handlers enforce the relationship.
 CREATE TABLE IF NOT EXISTS application_form_responses (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  application_id  UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+  application_id  TEXT NOT NULL,
   doc_type        TEXT NOT NULL,
   data            JSONB NOT NULL DEFAULT '{}'::jsonb,
   submitted_at    TIMESTAMPTZ,
