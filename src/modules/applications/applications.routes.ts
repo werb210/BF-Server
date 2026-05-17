@@ -256,7 +256,7 @@ router.get("/:id/contacts", safeHandler(async (req: any, res: any) => {
 // Admin-only force-retry. Resets next_attempt_at and attempt_count so the
 // banking auto-worker picks the row up on the next tick. Worker handles
 // the actual run; this just opens the gate.
-router.post('/:id/banking-analysis/retry', requireAuth, requireAuthorization({ roles: [ROLES.ADMIN] }), safeHandler(async (req: any, res: any) => {
+router.post('/:id/banking-analysis/retry', requireAuth, requireAdmin, safeHandler(async (req: any, res: any) => {
   const applicationId = String(req.params.id || '').trim();
   if (!applicationId) return res.status(400).json({ error: 'application_id_required' });
   const r = await pool.query(
