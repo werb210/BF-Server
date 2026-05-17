@@ -44,6 +44,8 @@ import o365TokensRoutes from "./o365Tokens.js";
 import portalRoutes from "./portal.js";
 import portalLendersRoutes from "./portalLenders.js";
 import portalLenderProductsRoutes from "./portalLenderProducts.js";
+// BF_SERVER_BLOCK_TWO_STAGE_v1
+import applicationFormResponses from "./applicationFormResponses.js";
 // BF_SERVER_BLOCK_v109_REQUIRED_DOCS_ROUTE_v1
 import lenderProductsRequiredDocsRoutes from "./lenderProductsRequiredDocs.js";
 // BF_SERVER_BLOCK_v128_REQUIRED_DOCS_PREVIEW_v1
@@ -101,6 +103,8 @@ combinedPortalRoutes.use(lenderProductsRequiredDocsRoutes);
 // BF_SERVER_BLOCK_v128_REQUIRED_DOCS_PREVIEW_v1
 combinedPortalRoutes.use(lenderProductsRequiredDocsPreviewRoutes);
 combinedPortalRoutes.use(portalLenderProductsRoutes);
+// BF_SERVER_BLOCK_TWO_STAGE_v1
+combinedPortalRoutes.use(applicationFormResponses);
 combinedPortalRoutes.use(documentTypesRouter);
 
 const rootRoutes = Router();

@@ -29,11 +29,15 @@ import {
 // coreTypes/conditionalTypes/alwaysRequiredDoc arrays. Keeping the
 // portal form and server in sync is enforced by this guard — there is no
 // way to save an unrecognized doc through any code path that hits the API.
+// BF_SERVER_BLOCK_TWO_STAGE_v1 -- dropped the two duplicate aging-
+// report labels (A/R and A/P already cover the same docs). Added
+// "Debt stack" -- new doc-type that maps to a digital form rather
+// than an upload.
 const PORTAL_FORM_DOC_LABELS: ReadonlySet<string> = new Set([
   // alwaysRequiredDoc + equipmentFinanceAlwaysRequiredDoc
   "6 months business banking statements",
   "Purchase Order or Invoice of Equipment to finance",
-  // coreTypes (15)
+  // coreTypes (14 -- was 15, dropped 2 aging duplicates, added 1)
   "3 years accountant prepared financials",
   "3 years business tax returns",
   "PnL – Interim financials",
@@ -47,8 +51,7 @@ const PORTAL_FORM_DOC_LABELS: ReadonlySet<string> = new Set([
   "Corporate structure / org chart",
   "Business plan / projections",
   "Lease agreement (if applicable)",
-  "Accounts receivable aging report",
-  "Accounts payable aging report",
+  "Debt stack",
   // conditionalTypes (Media, 5)
   "Budget",
   "Finance plan",
@@ -57,6 +60,8 @@ const PORTAL_FORM_DOC_LABELS: ReadonlySet<string> = new Set([
   "Minimum guarantees / presales",
 ]);
 
+// BF_SERVER_BLOCK_TWO_STAGE_v1 -- "stage" added (1 or 2). Default
+// stage=1 if omitted (upload at submit).
 const PORTAL_FORM_DOC_ALLOWED_KEYS: ReadonlySet<string> = new Set([
   "category",
   "required",
@@ -64,10 +69,11 @@ const PORTAL_FORM_DOC_ALLOWED_KEYS: ReadonlySet<string> = new Set([
   "min_amount",
   "max_amount",
   "document_type",
+  "stage",
 ]);
 
 function validateAndNormalizeRequiredDocuments(input: unknown): {
-  normalized: Array<{ category: string; required: boolean; description: string | null }>;
+  normalized: Array<{ category: string; required: boolean; description: string | null; stage: 1 | 2 }>;
   errors: string[];
 } {
   const errors: string[] = [];
@@ -76,7 +82,8 @@ function validateAndNormalizeRequiredDocuments(input: unknown): {
     errors.push("required_documents must be an array");
     return { normalized: [], errors };
   }
-  const normalized: Array<{ category: string; required: boolean; description: string | null }> = [];
+  // BF_SERVER_BLOCK_TWO_STAGE_v1 -- carry stage through normalization.
+  const normalized: Array<{ category: string; required: boolean; description: string | null; stage: 1 | 2 }> = [];
   const seenLabels = new Set<string>();
   for (let i = 0; i < input.length; i++) {
     const item = input[i];
@@ -113,14 +120,14 @@ function validateAndNormalizeRequiredDocuments(input: unknown): {
       continue;
     }
     seenLabels.add(rawLabel);
-    normalized.push({
-      category: rawLabel,
-      required: obj.required === false ? false : true,
-      description:
-        typeof obj.description === "string" && obj.description.trim()
-          ? obj.description.trim()
-          : null,
-    });
+    const description =
+      typeof obj.description === "string" && obj.description.trim()
+        ? obj.description.trim()
+        : null;
+    // BF_SERVER_BLOCK_TWO_STAGE_v1 -- coerce stage to 1 | 2. Default 1.
+    const rawStage = obj.stage;
+    const stage: 1 | 2 = rawStage === 2 || rawStage === "2" ? 2 : 1;
+    normalized.push({ category: rawLabel, required: obj.required === false ? false : true, description, stage });
   }
   return { normalized, errors };
 }
