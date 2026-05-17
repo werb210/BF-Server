@@ -252,6 +252,36 @@ router.get("/:id/contacts", safeHandler(async (req: any, res: any) => {
 // available in V1 from applications.banking_completed_at + documents counts.
 // Shape matches BF-portal's typed BankingAnalysis interface (src/api/banking.ts).
 // Rich transaction-derived metrics return null in V1 (await OCR txn parsing).
+// BF_SERVER_BLOCK_67_BANKING_DIAGNOSTICS_AND_RETRY_v1
+// Admin-only force-retry. Resets next_attempt_at and attempt_count so the
+// banking auto-worker picks the row up on the next tick. Worker handles
+// the actual run; this just opens the gate.
+router.post('/:id/banking-analysis/retry', requireAuth, requireAuthorization({ roles: [ROLES.ADMIN] }), safeHandler(async (req: any, res: any) => {
+  const applicationId = String(req.params.id || '').trim();
+  if (!applicationId) return res.status(400).json({ error: 'application_id_required' });
+  const r = await pool.query(
+    `UPDATE banking_analyses
+        SET status = 'pending',
+            attempt_count = 0,
+            next_attempt_at = NOW(),
+            last_error = NULL,
+            updated_at = NOW()
+      WHERE application_id::text = ($1)::text
+      RETURNING application_id`,
+    [applicationId],
+  );
+  if (r.rowCount === 0) {
+    // No prior banking_analyses row — insert one in 'pending' so the worker creates it on next tick.
+    await pool.query(
+      `INSERT INTO banking_analyses (application_id, status, attempt_count, max_attempts, next_attempt_at, updated_at)
+       VALUES ($1, 'pending', 0, 3, NOW(), NOW())
+       ON CONFLICT (application_id) DO NOTHING`,
+      [applicationId],
+    );
+  }
+  return res.status(202).json({ applicationId, queued: true });
+}));
+
 router.get('/:id/banking-analysis', safeHandler(async (req: any, res: any) => {
   const applicationId = String(req.params.id ?? '').trim();
   if (!applicationId) {
@@ -298,7 +328,7 @@ router.get('/:id/banking-analysis', safeHandler(async (req: any, res: any) => {
   );
   const counts = docRes.rows[0] ?? { bank_total: '0', bank_completed: '0', any_completed: '0' };
   // BF_SERVER_BLOCK_1_30_DOC_INTEL_AND_BANKING — pull rich analysis from banking_analyses + monthly summaries.
-  const richRes = await pool.query<any>(`SELECT total_avg_monthly_deposits, average_daily_balance, negative_balance_days, total_deposits, total_withdrawals, average_monthly_nsfs, days_with_insufficient_funds, months_profitable_numerator, months_profitable_denominator, current_month_net_cash_flow, unusual_transactions, top_vendors, period_start, period_end, months_detected, accounts, status AS analysis_status, completed_at FROM banking_analyses WHERE application_id::text = ($1)::text`, [applicationId]);
+  const richRes = await pool.query<any>(`SELECT total_avg_monthly_deposits, average_daily_balance, negative_balance_days, total_deposits, total_withdrawals, average_monthly_nsfs, days_with_insufficient_funds, months_profitable_numerator, months_profitable_denominator, current_month_net_cash_flow, unusual_transactions, top_vendors, period_start, period_end, months_detected, accounts, status AS analysis_status, completed_at, last_error, attempt_count, max_attempts, next_attempt_at FROM banking_analyses WHERE application_id::text = ($1)::text`, [applicationId]);
   const monthlyRes = await pool.query<any>(`SELECT month_start::text AS month, total_deposits::text AS deposits, total_withdrawals::text AS withdrawals, net_cash_flow::text AS net, ending_balance::text AS ending_balance, nsf_count FROM banking_monthly_summaries WHERE application_id::text = ($1)::text ORDER BY month_start ASC`, [applicationId]);
   const rich = richRes.rows[0] ?? null;
   const monthly = monthlyRes.rows;
@@ -351,6 +381,11 @@ router.get('/:id/banking-analysis', safeHandler(async (req: any, res: any) => {
       unusualTransactions: rich.unusual_transactions ?? [],
     } : null,
     topVendors: rich?.top_vendors ?? [],
+    // BF_SERVER_BLOCK_67_BANKING_DIAGNOSTICS_AND_RETRY_v1
+    lastError: rich?.last_error ?? null,
+    attemptCount: rich?.attempt_count ?? 0,
+    maxAttempts: rich?.max_attempts ?? 3,
+    nextAttemptAt: rich?.next_attempt_at ?? null,
     status: rich?.analysis_status ?? (bankCount === 0
       ? 'no_bank_statements'
       : completedBankCount < bankCount
