@@ -20,6 +20,7 @@ type CalendarTaskRow = {
   due_at: string | null;
   priority: "low" | "normal" | "high";
   status: "open" | "done";
+  assignee_user_id: string | null;
   o365_task_id: string | null;
   created_at: string;
   updated_at: string;
@@ -84,6 +85,8 @@ function toTaskResponse(row: CalendarTaskRow) {
     dueAt: row.due_at,
     priority: row.priority,
     status: row.status,
+    assigneeUserId: row.assignee_user_id,
+    assignee_user_id: row.assignee_user_id,
     o365TaskId: row.o365_task_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -186,29 +189,29 @@ router.get("/tasks", safeHandler(async (req: any, res: any) => {
   const dueBefore = typeof req.query.dueBefore === "string" ? req.query.dueBefore : null;
   const dueAfter = typeof req.query.dueAfter === "string" ? req.query.dueAfter : null;
 
-  const clauses = ["user_id = $1", "silo = $2"];
+  const clauses = ["t.user_id = $1", "t.silo = $2"];
   const params: unknown[] = [userId, silo];
 
   if (status === "open" || status === "done") {
     params.push(status);
-    clauses.push(`status = $${params.length}`);
+    clauses.push(`t.status = $${params.length}`);
   }
   if (dueBefore) {
     params.push(dueBefore);
-    clauses.push(`due_at <= $${params.length}::timestamptz`);
+    clauses.push(`t.due_at <= $${params.length}::timestamptz`);
   }
   if (dueAfter) {
     params.push(dueAfter);
-    clauses.push(`due_at >= $${params.length}::timestamptz`);
+    clauses.push(`t.due_at >= $${params.length}::timestamptz`);
   }
 
   const { rows } = await pool.query<CalendarTaskRow>(
-    `SELECT t.id, t.title, t.notes, t.due_at, t.priority, t.status, t.o365_task_id, t.created_at, t.updated_at, t.completed_at,
-      u.name as assignee_name, u.email as assignee_email
+    `SELECT t.id, t.title, t.notes, t.due_at, t.priority, t.status, t.assignee_user_id, t.o365_task_id, t.created_at, t.updated_at, t.completed_at,
+      COALESCE(NULLIF(trim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email) as assignee_name, u.email as assignee_email
        FROM calendar_tasks t
-      LEFT JOIN users u ON u.id = t.user_id
+      LEFT JOIN users u ON u.id = t.assignee_user_id
       WHERE ${clauses.join(" AND ")}
-      ORDER BY COALESCE(due_at, '9999-12-31'::timestamptz) ASC, created_at DESC`,
+      ORDER BY COALESCE(t.due_at, '9999-12-31'::timestamptz) ASC, t.created_at DESC`,
     params,
   );
 
@@ -227,14 +230,15 @@ router.post("/tasks", safeHandler(async (req: any, res: any) => {
 
   const priority = normalizePriority(body.priority);
   const status = normalizeStatus(body.status);
-  const dueAt = body.dueAt ?? null;
+  const dueAt = typeof body.dueAt === "string" ? (body.dueAt.trim().length > 0 ? body.dueAt : null) : (body.dueAt ?? null);
   const notes = body.notes ?? null;
+  const assigneeUserId = typeof body.assignee_user_id === "string" && body.assignee_user_id.trim().length > 0 ? body.assignee_user_id : null;
 
   const { rows } = await pool.query<CalendarTaskRow>(
-    `INSERT INTO calendar_tasks (user_id, silo, title, notes, due_at, priority, status, completed_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     RETURNING id, title, notes, due_at, priority, status, o365_task_id, created_at, updated_at, completed_at`,
-    [userId, silo, title, notes, dueAt, priority, status, status === "done" ? new Date().toISOString() : null],
+    `INSERT INTO calendar_tasks (user_id, silo, title, notes, due_at, priority, status, completed_at, assignee_user_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING id, title, notes, due_at, priority, status, assignee_user_id, o365_task_id, created_at, updated_at, completed_at`,
+    [userId, silo, title, notes, dueAt, priority, status, status === "done" ? new Date().toISOString() : null, assigneeUserId],
   );
   const row = rows[0];
 
@@ -256,7 +260,7 @@ router.post("/tasks", safeHandler(async (req: any, res: any) => {
             `UPDATE calendar_tasks
                 SET o365_task_id = $1, updated_at = NOW()
               WHERE id = $2 AND user_id = $3 AND silo = $4
-            RETURNING id, title, notes, due_at, priority, status, o365_task_id, created_at, updated_at, completed_at`,
+            RETURNING id, title, notes, due_at, priority, status, assignee_user_id, o365_task_id, created_at, updated_at, completed_at`,
             [graphId, row.id, userId, silo],
           );
           return res.status(201).json(toTaskResponse(updated.rows[0] ?? row));
@@ -277,7 +281,7 @@ router.patch("/tasks/:id", safeHandler(async (req: any, res: any) => {
   const silo = getSilo(res);
 
   const current = await pool.query<CalendarTaskRow>(
-    `SELECT id, title, notes, due_at, priority, status, o365_task_id, created_at, updated_at, completed_at
+    `SELECT id, title, notes, due_at, priority, status, assignee_user_id, o365_task_id, created_at, updated_at, completed_at
        FROM calendar_tasks
       WHERE id = $1 AND user_id = $2 AND silo = $3
       LIMIT 1`,
@@ -302,8 +306,14 @@ router.patch("/tasks/:id", safeHandler(async (req: any, res: any) => {
     updates.push(`notes = $${params.length}`);
   }
   if (typeof body.dueAt !== "undefined") {
-    params.push(body.dueAt ?? null);
+    const dueAt = typeof body.dueAt === "string" ? (body.dueAt.trim().length > 0 ? body.dueAt : null) : (body.dueAt ?? null);
+    params.push(dueAt);
     updates.push(`due_at = $${params.length}`);
+  }
+  if (typeof body.assignee_user_id !== "undefined") {
+    const assigneeUserId = typeof body.assignee_user_id === "string" && body.assignee_user_id.trim().length > 0 ? body.assignee_user_id : null;
+    params.push(assigneeUserId);
+    updates.push(`assignee_user_id = $${params.length}`);
   }
   if (typeof body.priority !== "undefined") {
     params.push(normalizePriority(body.priority));
@@ -326,7 +336,7 @@ router.patch("/tasks/:id", safeHandler(async (req: any, res: any) => {
   const { rows } = await pool.query<CalendarTaskRow>(
     `UPDATE calendar_tasks SET ${updates.join(", ")}
       WHERE id = $${params.length - 2} AND user_id = $${params.length - 1} AND silo = $${params.length}
-      RETURNING id, title, notes, due_at, priority, status, o365_task_id, created_at, updated_at, completed_at`,
+      RETURNING id, title, notes, due_at, priority, status, assignee_user_id, o365_task_id, created_at, updated_at, completed_at`,
     params,
   );
 

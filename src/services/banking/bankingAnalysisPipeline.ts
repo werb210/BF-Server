@@ -29,13 +29,14 @@ interface BankStatementDoc {
   fileName: string | null;
 }
 interface BankingDocumentStatus {
-  documentId: string;
+  document_id: string;
   filename: string | null;
-  modelUsed: string;
-  detectedType: string | null;
-  transactionCount: number;
+  model_used: "prebuilt-layout" | "prebuilt-bankStatement.us";
+  detected_type: string | null;
+  transaction_count: number;
+  fallback_used: boolean;
   pages: number;
-  error: string | null;
+  error?: string;
 }
 
 async function fetchDocumentBuffer(_storageKey: string): Promise<Buffer> {
@@ -56,9 +57,7 @@ export async function runBankingAnalysis(
   );
   if (!appRes.rows[0]) throw new Error(`application_not_found:${applicationId}`);
   const country = detectCountry(appRes.rows[0].metadata);
-  const modelChain = country === "US"
-    ? ["prebuilt-bankStatement.us", "prebuilt-bankStatement.global", "prebuilt-layout"] as const
-    : ["prebuilt-layout", "prebuilt-bankStatement.global", "prebuilt-bankStatement.us"] as const;
+  const modelChain = ["prebuilt-layout", "prebuilt-bankStatement.us"] as const;
 
   const docsRes = await pool.query<{ id: string; storage_key: string | null; file_name: string | null; }>(
     `SELECT d.id,
@@ -89,14 +88,22 @@ export async function runBankingAnalysis(
     let buffer: Buffer;
     try { buffer = await deps.fetchBuffer(doc.storageKey); } catch (err) { logError("banking_pipeline_buffer_fetch_failed", { applicationId, documentId: doc.documentId, error: err instanceof Error ? err.message : String(err) }); continue; }
     let finalResult: any = null;
-    let finalModel: string = modelChain[0];
+    let finalModel: (typeof modelChain)[number] = "prebuilt-layout";
     let detectedType: string | null = null;
     let transactions: BankTransaction[] = [];
     let docError: string | null = null;
+    let fallbackUsed = false;
 
     for (const model of modelChain) {
       let result: any;
-      try { result = await analyzeWithDocIntel(buffer, model); } catch (err) { logError("banking_pipeline_di_failed", { applicationId, documentId: doc.documentId, model, error: err instanceof Error ? err.message : String(err) }); docError = `OCR model ${model} failed: ${err instanceof Error ? err.message : String(err)}`; continue; }
+      try {
+        result = await analyzeWithDocIntel(buffer, model);
+      } catch (err) {
+        logError("banking_pipeline_di_failed", { applicationId, documentId: doc.documentId, model, error: err instanceof Error ? err.message : String(err) });
+        docError = `OCR model ${model} failed: ${err instanceof Error ? err.message : String(err)}`;
+        continue;
+      }
+
       const extracted = extractTransactionsFromTables({
         pages: (result?.pages ?? []).map((p: any) => ({
           page_number: p.pageNumber,
@@ -104,33 +111,44 @@ export async function runBankingAnalysis(
         })),
       });
       const normalizedType = String(result?.documents?.[0]?.docType ?? result?.documents?.[0]?.documentType ?? "").toUpperCase() || null;
+
       finalResult = result;
       finalModel = model;
       detectedType = normalizedType;
       transactions = extracted;
       docError = null;
-      if (normalizedType !== "OTHER" || extracted.length > 0) break;
-      docError = "Recognized as OTHER not bank-statement; no transactions extracted";
+
+      const shouldFallbackToBankStatement = model === "prebuilt-layout" && (normalizedType === "OTHER" || extracted.length === 0);
+      if (shouldFallbackToBankStatement) {
+        fallbackUsed = true;
+        continue;
+      }
+      break;
     }
 
     if (!finalResult) {
-      documentStatuses.push({ documentId: doc.documentId, filename: doc.fileName, modelUsed: finalModel, detectedType, transactionCount: 0, pages: 0, error: docError ?? "OCR parsing failed for all models" });
+      documentStatuses.push({ document_id: doc.documentId, filename: doc.fileName, model_used: finalModel, detected_type: detectedType, transaction_count: 0, fallback_used: fallbackUsed, pages: 0, error: docError ?? "OCR parsing failed for all models" });
       continue;
     }
-    if (detectedType === "OTHER" && transactions.length === 0) {
-      docError = "Recognized as OTHER not bank-statement; no transactions extracted";
+    if (fallbackUsed && transactions.length === 0) {
+      docError = "Could not extract transactions. Verify this is a true bank statement (not a summary letter, screenshot, or photo).";
     }
-    documentStatuses.push({ documentId: doc.documentId, filename: doc.fileName, modelUsed: finalModel, detectedType, transactionCount: transactions.length, pages: Number(finalResult?.pages?.length ?? 0), error: docError });
+    documentStatuses.push({ document_id: doc.documentId, filename: doc.fileName, model_used: finalModel, detected_type: detectedType, transaction_count: transactions.length, fallback_used: fallbackUsed, pages: Number(finalResult?.pages?.length ?? 0), ...(docError ? { error: docError } : {}) });
     for (const tx of transactions) if (tx.date && Number.isFinite(tx.amount)) allTransactions.push({ ...tx, document_id: doc.documentId });
   }
 
   if (allTransactions.length > 0) await insertTransactions(applicationId, allTransactions);
   const aggregates = await aggregateMonthlySummaries(applicationId);
   const llmFlags = openai ? await flagWithOpenAI(applicationId, allTransactions.slice(0, 200)) : { unusualTransactions: [], topVendors: [] };
-  await persistAnalysis(applicationId, aggregates, llmFlags, allTransactions.length, country, modelChain[0], documentStatuses);
+  await persistAnalysis(applicationId, aggregates, llmFlags, allTransactions.length, country, documentStatuses.find((status) => status.transaction_count > 0)?.model_used ?? modelChain[0], documentStatuses);
   await pool.query(`UPDATE banking_analyses SET status = 'analysis_complete', completed_at = now(), updated_at = now() WHERE application_id::text = ($1)::text`, [applicationId]);
   await pool.query(`UPDATE applications SET banking_completed_at = now(), updated_at = now() WHERE id::text = ($1)::text`, [applicationId]);
   logInfo("banking_pipeline_complete", { applicationId, transactions: allTransactions.length, months: aggregates.months });
+  return {
+    application_id: applicationId,
+    transaction_count: allTransactions.length,
+    documents: documentStatuses,
+  };
 }
 
 function rowifyTableCells(table: any): Array<Array<{ text: string }>> { if (!table || !Array.isArray(table.cells)) return []; const rows: Array<Array<{ text: string }>> = []; for (const cell of table.cells) { const r = cell.rowIndex ?? 0; const c = cell.columnIndex ?? 0; rows[r] = rows[r] ?? []; rows[r][c] = { text: String(cell.content ?? "") }; } return rows.map((r) => r ?? []); }
