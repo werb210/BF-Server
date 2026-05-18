@@ -332,8 +332,15 @@ router.get('/:id/banking-analysis', safeHandler(async (req: any, res: any) => {
   const monthlyRes = await pool.query<any>(`SELECT month_start::text AS month, total_deposits::text AS deposits, total_withdrawals::text AS withdrawals, net_cash_flow::text AS net, ending_balance::text AS ending_balance, nsf_count FROM banking_monthly_summaries WHERE application_id::text = ($1)::text ORDER BY month_start ASC`, [applicationId]);
   const rich = richRes.rows[0] ?? null;
   const monthly = monthlyRes.rows;
+  const documentStatuses = Array.isArray(rich?.accounts)
+    ? (rich.accounts.find((entry: any) => entry && Array.isArray(entry.documentStatuses))?.documentStatuses ?? [])
+    : [];
   const bankCount = Number(counts.bank_total) || 0;
   const completedBankCount = Number(counts.bank_completed) || 0;
+  const allDocsUnparsed =
+    Array.isArray(documentStatuses) &&
+    documentStatuses.length > 0 &&
+    documentStatuses.every((doc: any) => String(doc?.detectedType ?? "").toUpperCase() === "OTHER" || !!doc?.error);
 
   // Response shape mirrors BF-portal's BankingAnalysis interface. Optional
   // fields are populated when truthful, otherwise omitted/null. The portal
@@ -348,6 +355,10 @@ router.get('/:id/banking-analysis', safeHandler(async (req: any, res: any) => {
     banking_completed_at: bankingCompletedAt,
     bankCount,
     documentsAnalyzed: completedBankCount,
+    documents: documentStatuses,
+    ocrParseWarning: allDocsUnparsed
+      ? "OCR could not parse these documents as bank statements. Verify the uploaded files are bank-statement PDFs and not photos, screenshots, or summary letters."
+      : null,
     monthsDetected: rich?.months_detected ?? null,
     monthGroups: monthly.map((m: any) => ({
       month: m.month,

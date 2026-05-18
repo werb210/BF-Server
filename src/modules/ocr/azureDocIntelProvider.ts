@@ -22,7 +22,8 @@ function getClient() {
 export type DocIntelModel =
   | "prebuilt-read"
   | "prebuilt-layout"
-  | "prebuilt-bankStatement.us";
+  | "prebuilt-bankStatement.us"
+  | "prebuilt-bankStatement.global";
 
 export async function analyzeWithDocIntel(
   buffer: Buffer,

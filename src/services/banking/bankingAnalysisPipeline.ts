@@ -28,6 +28,15 @@ interface BankStatementDoc {
   storageKey: string | null;
   fileName: string | null;
 }
+interface BankingDocumentStatus {
+  documentId: string;
+  filename: string | null;
+  modelUsed: string;
+  detectedType: string | null;
+  transactionCount: number;
+  pages: number;
+  error: string | null;
+}
 
 async function fetchDocumentBuffer(_storageKey: string): Promise<Buffer> {
   throw new Error("fetchDocumentBuffer not bound — inject in tests");
@@ -47,7 +56,9 @@ export async function runBankingAnalysis(
   );
   if (!appRes.rows[0]) throw new Error(`application_not_found:${applicationId}`);
   const country = detectCountry(appRes.rows[0].metadata);
-  const model = country === "US" ? "prebuilt-bankStatement.us" : "prebuilt-layout";
+  const modelChain = country === "US"
+    ? ["prebuilt-bankStatement.us", "prebuilt-bankStatement.global", "prebuilt-layout"] as const
+    : ["prebuilt-layout", "prebuilt-bankStatement.global", "prebuilt-bankStatement.us"] as const;
 
   const docsRes = await pool.query<{ id: string; storage_key: string | null; file_name: string | null; }>(
     `SELECT d.id,
@@ -70,28 +81,53 @@ export async function runBankingAnalysis(
   await pool.query(`DELETE FROM banking_monthly_summaries WHERE application_id::text = ($1)::text`, [applicationId]);
 
   const allTransactions: Array<BankTransaction & { document_id: string }> = [];
+  const documentStatuses: BankingDocumentStatus[] = [];
   const docs: BankStatementDoc[] = docsRes.rows.map((r: { id: string; storage_key: string | null; file_name: string | null }) => ({ documentId: r.id, storageKey: r.storage_key, fileName: r.file_name }));
 
   for (const doc of docs) {
     if (!doc.storageKey) continue;
     let buffer: Buffer;
     try { buffer = await deps.fetchBuffer(doc.storageKey); } catch (err) { logError("banking_pipeline_buffer_fetch_failed", { applicationId, documentId: doc.documentId, error: err instanceof Error ? err.message : String(err) }); continue; }
-    let result: any;
-    try { result = await analyzeWithDocIntel(buffer, model); } catch (err) { logError("banking_pipeline_di_failed", { applicationId, documentId: doc.documentId, model, error: err instanceof Error ? err.message : String(err) }); continue; }
+    let finalResult: any = null;
+    let finalModel: string = modelChain[0];
+    let detectedType: string | null = null;
+    let transactions: BankTransaction[] = [];
+    let docError: string | null = null;
 
-    const transactions = extractTransactionsFromTables({
-      pages: (result?.pages ?? []).map((p: any) => ({
-        page_number: p.pageNumber,
-        tables: (result?.tables ?? []).filter((t: any) => (t.boundingRegions ?? []).some((b: any) => b.pageNumber === p.pageNumber)).map((t: any) => ({ rows: rowifyTableCells(t) })),
-      })),
-    });
+    for (const model of modelChain) {
+      let result: any;
+      try { result = await analyzeWithDocIntel(buffer, model); } catch (err) { logError("banking_pipeline_di_failed", { applicationId, documentId: doc.documentId, model, error: err instanceof Error ? err.message : String(err) }); docError = `OCR model ${model} failed: ${err instanceof Error ? err.message : String(err)}`; continue; }
+      const extracted = extractTransactionsFromTables({
+        pages: (result?.pages ?? []).map((p: any) => ({
+          page_number: p.pageNumber,
+          tables: (result?.tables ?? []).filter((t: any) => (t.boundingRegions ?? []).some((b: any) => b.pageNumber === p.pageNumber)).map((t: any) => ({ rows: rowifyTableCells(t) })),
+        })),
+      });
+      const normalizedType = String(result?.documents?.[0]?.docType ?? result?.documents?.[0]?.documentType ?? "").toUpperCase() || null;
+      finalResult = result;
+      finalModel = model;
+      detectedType = normalizedType;
+      transactions = extracted;
+      docError = null;
+      if (normalizedType !== "OTHER" || extracted.length > 0) break;
+      docError = "Recognized as OTHER not bank-statement; no transactions extracted";
+    }
+
+    if (!finalResult) {
+      documentStatuses.push({ documentId: doc.documentId, filename: doc.fileName, modelUsed: finalModel, detectedType, transactionCount: 0, pages: 0, error: docError ?? "OCR parsing failed for all models" });
+      continue;
+    }
+    if (detectedType === "OTHER" && transactions.length === 0) {
+      docError = "Recognized as OTHER not bank-statement; no transactions extracted";
+    }
+    documentStatuses.push({ documentId: doc.documentId, filename: doc.fileName, modelUsed: finalModel, detectedType, transactionCount: transactions.length, pages: Number(finalResult?.pages?.length ?? 0), error: docError });
     for (const tx of transactions) if (tx.date && Number.isFinite(tx.amount)) allTransactions.push({ ...tx, document_id: doc.documentId });
   }
 
   if (allTransactions.length > 0) await insertTransactions(applicationId, allTransactions);
   const aggregates = await aggregateMonthlySummaries(applicationId);
   const llmFlags = openai ? await flagWithOpenAI(applicationId, allTransactions.slice(0, 200)) : { unusualTransactions: [], topVendors: [] };
-  await persistAnalysis(applicationId, aggregates, llmFlags, allTransactions.length, country, model);
+  await persistAnalysis(applicationId, aggregates, llmFlags, allTransactions.length, country, modelChain[0], documentStatuses);
   await pool.query(`UPDATE banking_analyses SET status = 'analysis_complete', completed_at = now(), updated_at = now() WHERE application_id::text = ($1)::text`, [applicationId]);
   await pool.query(`UPDATE applications SET banking_completed_at = now(), updated_at = now() WHERE id::text = ($1)::text`, [applicationId]);
   logInfo("banking_pipeline_complete", { applicationId, transactions: allTransactions.length, months: aggregates.months });
@@ -101,4 +137,4 @@ function rowifyTableCells(table: any): Array<Array<{ text: string }>> { if (!tab
 async function insertTransactions(applicationId: string, transactions: Array<BankTransaction & { document_id: string }>) { const rows: string[] = []; const params: any[] = []; let i = 0; for (const tx of transactions) { rows.push(`($${++i}, $${++i}, $${++i}::date, $${++i}, $${++i}::numeric, $${++i}::numeric, $${++i})`); params.push(applicationId, tx.document_id, tx.date, tx.description ?? null, tx.amount ?? 0, tx.balance ?? null, (tx.description ?? "").toLowerCase().includes("nsf") || (tx.description ?? "").toLowerCase().includes("returned") || (tx.description ?? "").toLowerCase().includes("insufficient")); } await pool.query(`INSERT INTO banking_transactions (application_id, document_id, transaction_date, description, amount, balance_after, is_nsf) VALUES ` + rows.join(","), params); }
 async function aggregateMonthlySummaries(applicationId: string) { await pool.query(`WITH month_buckets AS (SELECT date_trunc('month', transaction_date)::date AS month_start, COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS total_deposits, COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS total_withdrawals, COALESCE(SUM(amount), 0) AS net_cash_flow, COUNT(*) FILTER (WHERE is_nsf) AS nsf_count FROM banking_transactions WHERE application_id::text = ($1)::text GROUP BY date_trunc('month', transaction_date)), endings AS (SELECT DISTINCT ON (date_trunc('month', transaction_date)::date) date_trunc('month', transaction_date)::date AS month_start, balance_after AS ending_balance FROM banking_transactions WHERE application_id::text = ($1)::text AND balance_after IS NOT NULL ORDER BY date_trunc('month', transaction_date)::date, transaction_date DESC, created_at DESC) INSERT INTO banking_monthly_summaries (application_id, month_start, total_deposits, total_withdrawals, net_cash_flow, ending_balance, nsf_count) SELECT $1::uuid, m.month_start, m.total_deposits, m.total_withdrawals, m.net_cash_flow, e.ending_balance, m.nsf_count FROM month_buckets m LEFT JOIN endings e ON e.month_start = m.month_start ON CONFLICT (application_id, month_start) DO UPDATE SET total_deposits = EXCLUDED.total_deposits, total_withdrawals = EXCLUDED.total_withdrawals, net_cash_flow = EXCLUDED.net_cash_flow, ending_balance = EXCLUDED.ending_balance, nsf_count = EXCLUDED.nsf_count`, [applicationId]); const sumRes = await pool.query<any>(`SELECT COUNT(*)::text AS months, COALESCE(SUM(total_deposits), 0)::text AS total_deposits, COALESCE(SUM(total_withdrawals), 0)::text AS total_withdrawals, (SELECT AVG(balance_after)::text FROM banking_transactions WHERE application_id::text = ($1)::text AND balance_after IS NOT NULL) AS avg_balance, MIN(month_start)::text AS period_start, MAX(month_start)::text AS period_end, COALESCE(SUM(nsf_count), 0)::text AS nsf_total, COALESCE(SUM(CASE WHEN net_cash_flow > 0 THEN 1 ELSE 0 END), 0)::text AS months_profitable FROM banking_monthly_summaries WHERE application_id::text = ($1)::text`, [applicationId]); const r=sumRes.rows[0]; const months=Number(r?.months??0); return {months,totalDeposits:Number(r?.total_deposits??0),totalWithdrawals:Number(r?.total_withdrawals??0),averageDailyBalance:r?.avg_balance?Number(r.avg_balance):null,avgMonthlyDeposits:months>0?Number(r?.total_deposits??0)/months:0,periodStart:r?.period_start??null,periodEnd:r?.period_end??null,nsfTotal:Number(r?.nsf_total??0),monthsProfitable:Number(r?.months_profitable??0),averageMonthlyNsfs:months>0?Number(r?.nsf_total??0)/months:0}; }
 async function flagWithOpenAI(_applicationId: string, transactions: Array<BankTransaction & { document_id: string }>) { if (!openai || transactions.length===0) return { unusualTransactions: [], topVendors: [] }; return { unusualTransactions: [], topVendors: [] }; }
-async function persistAnalysis(applicationId: string, agg: Awaited<ReturnType<typeof aggregateMonthlySummaries>>, llm: { unusualTransactions: any[]; topVendors: any[] }, txCount: number, country: Country, model: string) { await pool.query(`INSERT INTO banking_analyses (application_id, accounts, total_avg_monthly_deposits, average_daily_balance,total_deposits, total_withdrawals, average_monthly_nsfs,months_profitable_numerator, months_profitable_denominator,unusual_transactions, top_vendors, period_start, period_end,months_detected, status, updated_at) VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb,$12::date, $13::date, $14, 'analysis_complete', now()) ON CONFLICT (application_id) DO UPDATE SET accounts = EXCLUDED.accounts,total_avg_monthly_deposits = EXCLUDED.total_avg_monthly_deposits,average_daily_balance = EXCLUDED.average_daily_balance,total_deposits = EXCLUDED.total_deposits,total_withdrawals = EXCLUDED.total_withdrawals,average_monthly_nsfs = EXCLUDED.average_monthly_nsfs,months_profitable_numerator = EXCLUDED.months_profitable_numerator,months_profitable_denominator = EXCLUDED.months_profitable_denominator,unusual_transactions = EXCLUDED.unusual_transactions,top_vendors = EXCLUDED.top_vendors,period_start = EXCLUDED.period_start,period_end = EXCLUDED.period_end,months_detected = EXCLUDED.months_detected,status = 'analysis_complete',updated_at = now()`, [applicationId, JSON.stringify([{ note: `${txCount} transactions parsed via ${model} (${country})` }]), agg.avgMonthlyDeposits || null, agg.averageDailyBalance, agg.totalDeposits, agg.totalWithdrawals, agg.averageMonthlyNsfs, agg.monthsProfitable, agg.months, JSON.stringify(llm.unusualTransactions), JSON.stringify(llm.topVendors), agg.periodStart, agg.periodEnd, agg.months]); }
+async function persistAnalysis(applicationId: string, agg: Awaited<ReturnType<typeof aggregateMonthlySummaries>>, llm: { unusualTransactions: any[]; topVendors: any[] }, txCount: number, country: Country, model: string, documentStatuses: BankingDocumentStatus[]) { await pool.query(`INSERT INTO banking_analyses (application_id, accounts, total_avg_monthly_deposits, average_daily_balance,total_deposits, total_withdrawals, average_monthly_nsfs,months_profitable_numerator, months_profitable_denominator,unusual_transactions, top_vendors, period_start, period_end,months_detected, status, updated_at) VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb,$12::date, $13::date, $14, 'analysis_complete', now()) ON CONFLICT (application_id) DO UPDATE SET accounts = EXCLUDED.accounts,total_avg_monthly_deposits = EXCLUDED.total_avg_monthly_deposits,average_daily_balance = EXCLUDED.average_daily_balance,total_deposits = EXCLUDED.total_deposits,total_withdrawals = EXCLUDED.total_withdrawals,average_monthly_nsfs = EXCLUDED.average_monthly_nsfs,months_profitable_numerator = EXCLUDED.months_profitable_numerator,months_profitable_denominator = EXCLUDED.months_profitable_denominator,unusual_transactions = EXCLUDED.unusual_transactions,top_vendors = EXCLUDED.top_vendors,period_start = EXCLUDED.period_start,period_end = EXCLUDED.period_end,months_detected = EXCLUDED.months_detected,status = 'analysis_complete',updated_at = now()`, [applicationId, JSON.stringify([{ note: `${txCount} transactions parsed via ${model} (${country})` }, { documentStatuses }]), agg.avgMonthlyDeposits || null, agg.averageDailyBalance, agg.totalDeposits, agg.totalWithdrawals, agg.averageMonthlyNsfs, agg.monthsProfitable, agg.months, JSON.stringify(llm.unusualTransactions), JSON.stringify(llm.topVendors), agg.periodStart, agg.periodEnd, agg.months]); }
