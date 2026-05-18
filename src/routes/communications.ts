@@ -18,6 +18,11 @@ router.get("/", safeHandler((_req: any, res: any) => {
 // list with 200 instead of 400. Portal Communications page calls this
 // before any thread is selected; the previous 400 just spammed the
 // console without changing the rendered empty-state.
+// BF_SERVER_BLOCK_83_SMS_MESSAGES_TYPE_FILTER_v1 - Messages tab is the
+// in-portal channel (system handoffs like the PGI ready-to-complete
+// link; future internal notes/email/etc). Exclude 'sms' so Twilio
+// rows stay in their own tab. type column is text, NULL legacy rows
+// fall through into Messages (default behaviour).
 router.get("/messages", safeHandler(async (req: any, res: any) => {
   const contactId =
     (typeof req.query.contact_id === "string" && req.query.contact_id) ||
@@ -31,10 +36,11 @@ router.get("/messages", safeHandler(async (req: any, res: any) => {
 
   try {
     const result = await pool.query(
-      `SELECT id, body, contact_id, direction, from_number, to_number, silo, created_at
+      `SELECT id, body, contact_id, direction, type, from_number, to_number, silo, cta_label, cta_action, created_at
        FROM communications_messages
        WHERE contact_id = $1
          AND silo = $2
+         AND (type IS NULL OR type <> 'sms')
        ORDER BY created_at ASC
       `,
       [contactId, silo]
@@ -45,6 +51,10 @@ router.get("/messages", safeHandler(async (req: any, res: any) => {
   }
 }));
 
+// BF_SERVER_BLOCK_83_SMS_MESSAGES_TYPE_FILTER_v1 - SMS tab list must
+// only show Twilio SMS threads. Inner LATERAL preview query also
+// scoped to type='sms' so the snippet shown in the list matches what
+// the thread view will load.
 router.get("/sms", safeHandler(async (req: any, res: any) => {
   const { getSilo } = await import("../middleware/silo.js");
   const silo = getSilo(res);
@@ -58,11 +68,13 @@ router.get("/sms", safeHandler(async (req: any, res: any) => {
       (SELECT body FROM communications_messages
          WHERE COALESCE(contact_id::text, from_number) =
                COALESCE(c.id::text, m.from_number)
+           AND type = 'sms'
          ORDER BY created_at DESC LIMIT 1) AS last_body,
       SUM(CASE WHEN m.read_at IS NULL AND m.direction='inbound' THEN 1 ELSE 0 END) AS unread_count
     FROM communications_messages m
     LEFT JOIN contacts c ON c.id = m.contact_id
     WHERE m.silo = $1
+      AND m.type = 'sms'
     GROUP BY thread_key, c.id, display_name, phone
     ORDER BY last_at DESC
     LIMIT 200`,
@@ -72,6 +84,7 @@ router.get("/sms", safeHandler(async (req: any, res: any) => {
 }));
 
 
+// BF_SERVER_BLOCK_83_SMS_MESSAGES_TYPE_FILTER_v1 - thread loader scoped to type='sms'.
 router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
   const { getSilo } = await import("../middleware/silo.js");
   const silo = String(getSilo(res) ?? req.user?.silo ?? "BF").toUpperCase();
@@ -116,6 +129,7 @@ router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
               created_at, read_at
        FROM communications_messages
        WHERE ${where}
+         AND type = 'sms'
        ORDER BY created_at ASC
        LIMIT 500`,
       params,
