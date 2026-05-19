@@ -1,3 +1,4 @@
+-- Block 112 (revived for live migration dir)
 DO $$
 BEGIN
   IF to_regclass('public.calendar_tasks') IS NOT NULL THEN

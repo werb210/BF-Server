@@ -1,3 +1,4 @@
+-- Block 109 (revived for live migration dir)
 CREATE TABLE IF NOT EXISTS call_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID,

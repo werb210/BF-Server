@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { requireAuth, requireAuthorization, requireCapability } from "../middleware/auth.js";
 import { CAPABILITIES } from "../auth/capabilities.js";
+import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { pool } from "../db.js";
 import twilio from "twilio";
@@ -34,6 +35,54 @@ router.get("/call-events", safeHandler(async (req: any, res: any) => {
   const { rows } = await pool.query(`SELECT id, user_id, contact_id, application_id, silo, event_type, direction, from_number, to_number, twilio_call_sid, duration_seconds, error_code, payload, occurred_at FROM call_events WHERE ${clauses.join(" AND ")} ORDER BY occurred_at DESC LIMIT 500`, params);
   return res.status(200).json({ events: rows });
 }));
+
+
+// BF_SERVER_BLOCK_v115_MAYA_HANDOFF_v1
+// Called by the agent's escalate.to_human tool. Persists the
+// handoff into maya_escalations + communications_messages (so
+// staff see it in the Messages tab with the maya_handoff filter
+// landed in Block 114) and fans Twilio SMS to either currently-
+// available staff or the after-hours fallback list from env.
+router.post(
+  "/maya-handoff",
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  safeHandler(async (req: any, res: any) => {
+    const { randomUUID } = await import("node:crypto");
+    const body = req.body ?? {};
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId.slice(0, 200) : null;
+    const surface = typeof body.surface === "string" ? body.surface.slice(0, 50) : "unknown";
+    const silo = typeof body.silo === "string" ? body.silo.slice(0, 10) : "BF";
+    const summary = typeof body.summary === "string" ? body.summary.slice(0, 1000) : null;
+    const recipientsRaw = body.recipients === "available" || body.recipients === "fallback"
+      ? body.recipients
+      : null;
+    if (!recipientsRaw) {
+      return res.status(400).json({ error: "recipients_required", allowed: ["available", "fallback"] });
+    }
+
+    const { sendStaffNotification } = await import("../services/notifications/staffSms.js");
+
+    const id = randomUUID();
+    await pool.query(
+      `INSERT INTO maya_escalations
+         (id, session_id, application_id, reason, surface, silo, payload)
+       VALUES ($1, $2, NULL, $3, $4, $5, $6::jsonb)`,
+      [id, sessionId, `handoff_${recipientsRaw}`, surface, silo, JSON.stringify({ summary, recipients: recipientsRaw })],
+    );
+
+    await pool.query(
+      `INSERT INTO communications_messages
+         (id, type, direction, status, silo, body, created_at)
+       VALUES ($1, 'maya_handoff', 'inbound', 'received', $2, $3, NOW())`,
+      [randomUUID(), silo, summary ?? "Maya handoff: visitor requested human."],
+    );
+
+    const smsBody = `Maya handoff (${surface}): ${summary ?? "visitor requested human"}. Session ${sessionId ?? "n/a"}.`;
+    const fanout = await sendStaffNotification({ recipients: recipientsRaw, body: smsBody });
+
+    return res.status(200).json({ status: "ok", id, fanout });
+  }),
+);
 
 router.get("/", safeHandler((_req: any, res: any) => {
   res.json({ status: "ok" });
