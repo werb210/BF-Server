@@ -1,0 +1,79 @@
+name: guardrails
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  guardrails:
+    name: Repo guardrails
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No SQL in src/db/migrations (dead directory)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The live migration runner reads from top-level migrations/
+          # only (see src/startup/runMigrations.ts). Anything in
+          # src/db/migrations is dead code. Block 115a deleted the
+          # two stragglers that lived there; this gate keeps the
+          # directory empty of .sql files forever.
+          if [ -d src/db/migrations ]; then
+            offenders=$(find src/db/migrations -type f -name '*.sql' -print)
+            if [ -n "$offenders" ]; then
+              echo "::error::SQL migrations must live in top-level migrations/, not src/db/migrations/."
+              echo "Offending files:"
+              echo "$offenders"
+              echo ""
+              echo "Move them to migrations/ with an IF NOT EXISTS guard so they run on startup."
+              exit 1
+            fi
+          fi
+
+      - name: No orphaned WebSocketServer
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Block 115a removed src/modules/ai/socket.server.ts because
+          # it exported initChatSocket(server) but nothing called it,
+          # so the entire WS path was dead in production. Going
+          # forward, any new WebSocketServer must be wired into
+          # src/index.ts. This grep enforces that contract.
+          ws_files=$(grep -rl --include='*.ts' --include='*.js' 'new WebSocketServer' src/ 2>/dev/null || true)
+          if [ -z "$ws_files" ]; then
+            echo "No WebSocketServer instances. OK."
+            exit 0
+          fi
+
+          echo "Found WebSocketServer in:"
+          echo "$ws_files"
+          echo ""
+
+          # For every file that instantiates a WebSocketServer, the
+          # exported init function (matching /export function init\w+/)
+          # must be called somewhere in src/index.ts. Pattern is
+          # intentionally narrow — if you instantiate a WSS, you
+          # must also export an initXxx that bootstraps it.
+          missing=0
+          while IFS= read -r f; do
+            init_fn=$(grep -oE 'export function init[A-Za-z0-9_]+' "$f" | head -1 | awk '{print $3}')
+            if [ -z "$init_fn" ]; then
+              echo "::error::$f instantiates WebSocketServer but does not export an init<Name>(server) function."
+              missing=1
+              continue
+            fi
+            if ! grep -q "$init_fn" src/index.ts 2>/dev/null; then
+              echo "::error::$f exports $init_fn but src/index.ts never calls it. This is the exact dead-WS pattern Block 115a removed."
+              missing=1
+            else
+              echo "OK: $init_fn is wired in src/index.ts"
+            fi
+          done <<< "$ws_files"
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
