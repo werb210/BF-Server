@@ -137,10 +137,51 @@ export async function runBankingAnalysis(
     for (const tx of transactions) if (tx.date && Number.isFinite(tx.amount)) allTransactions.push({ ...tx, document_id: doc.documentId });
   }
 
+  // BF_SERVER_BLOCK_v307_BANKING_ZERO_TX_GUARD_v1 — when zero transactions
+  // were extracted from every analyzed document, persist a 'failed' row
+  // with an explicit last_error instead of silently writing
+  // 'analysis_complete' with empty metrics. Surface the failure in the
+  // portal so staff can see WHY the analysis didn't produce useful data
+  // (statement is a summary letter / screenshot / photo, parser couldn't
+  // identify tables, etc.).
   if (allTransactions.length > 0) await insertTransactions(applicationId, allTransactions);
   const aggregates = await aggregateMonthlySummaries(applicationId);
   const llmFlags = openai ? await flagWithOpenAI(applicationId, allTransactions.slice(0, 200)) : { unusualTransactions: [], topVendors: [] };
   await persistAnalysis(applicationId, aggregates, llmFlags, allTransactions.length, country, documentStatuses.find((status) => status.transaction_count > 0)?.model_used ?? modelChain[0], documentStatuses);
+
+  if (allTransactions.length === 0) {
+    // No usable transactions extracted from any document. Mark failed
+    // with a friendly message; do NOT touch applications.banking_completed_at
+    // (analysis isn't truly complete).
+    const docCount = documentStatuses.length;
+    const errorSummary = documentStatuses
+      .map((d) => d.error)
+      .filter((e): e is string => typeof e === "string" && e.length > 0)
+      .slice(0, 3)
+      .join(" | ");
+    const lastError = errorSummary ||
+      `Banking analysis extracted zero transactions from ${docCount} document(s). ` +
+      `Verify the uploads are true bank statements (not summary letters, screenshots, or photos).`;
+    await pool.query(
+      `UPDATE banking_analyses
+          SET status = 'failed',
+              last_error = $2,
+              updated_at = now()
+        WHERE application_id::text = ($1)::text`,
+      [applicationId, lastError]
+    );
+    logInfo("banking_pipeline_failed_zero_tx", {
+      applicationId,
+      documents: docCount,
+      last_error: lastError,
+    });
+    return {
+      application_id: applicationId,
+      transaction_count: 0,
+      documents: documentStatuses,
+    };
+  }
+
   await pool.query(`UPDATE banking_analyses SET status = 'analysis_complete', completed_at = now(), updated_at = now() WHERE application_id::text = ($1)::text`, [applicationId]);
   await pool.query(`UPDATE applications SET banking_completed_at = now(), updated_at = now() WHERE id::text = ($1)::text`, [applicationId]);
   logInfo("banking_pipeline_complete", { applicationId, transactions: allTransactions.length, months: aggregates.months });
