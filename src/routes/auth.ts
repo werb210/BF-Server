@@ -1,5 +1,6 @@
 import { Router } from "express";
 import twilio from "twilio";
+import jwt from "jsonwebtoken";
 
 import { fetchCapabilitiesForRole } from "../auth/capabilities.js";
 import { signAccessToken } from "../auth/jwt.js";
@@ -165,35 +166,44 @@ router.post("/otp/verify", async (req, res) => {
       return res.status(500).json({ error: "auth not configured" });
     }
 
+    // BF_SERVER_BLOCK_v146_OTP_CLIENT_FALLTHROUGH_PORTED_v1 — port the v145
+    // fallthrough from the dead src/routes/auth/otp.ts into the actually-
+    // mounted handler. Twilio has approved the code. If the phone is an
+    // active staff user, mint a STAFF JWT (unchanged behavior). Otherwise
+    // (no row, no role, disabled, or inactive) mint a CLIENT JWT so
+    // applicants can pass through the BF-Client OTP gate. Client tokens
+    // carry role:"client", which is lowercase and not in ROLE_SET, so
+    // every staff requireAuthorization / requireCapability check rejects
+    // them on staff routes.
     const user = await findAuthUserByPhone(phone);
-    if (!user) {
-      return res.status(403).json({
-        status: "error",
-        error: "no_account",
-        message: "No staff account found for this phone number. Contact your administrator.",
+    const isActiveStaff = Boolean(
+      user && user.role && !user.disabled && user.active
+    );
+
+    let token: string;
+    if (isActiveStaff && user) {
+      const role = normalizeRole(user.role ?? "") ?? ROLES.STAFF;
+      token = signAccessToken({
+        sub: String(user.id),
+        role,
+        tokenVersion: user.tokenVersion ?? 0,
+        phone: user.phoneNumber ?? phone,
+        capabilities: fetchCapabilitiesForRole(role),
       });
+    } else {
+      console.log("[otp_verify] client_fallthrough", { phone });
+      token = jwt.sign(
+        {
+          sub: `client:${phone}`,
+          role: "client",
+          phone,
+          tokenVersion: 0,
+          isClient: true,
+        },
+        process.env.JWT_SECRET as string,
+        { expiresIn: "30d" }
+      );
     }
-
-    if (!user.role) {
-      return res.status(403).json({
-        status: "error",
-        error: "no_role",
-        message: "Account has no role assigned. Contact your administrator.",
-      });
-    }
-
-    if (user.disabled || !user.active) {
-      return res.status(403).json({ status: "error", error: "account_disabled" });
-    }
-
-    const role = normalizeRole(user.role ?? "") ?? ROLES.STAFF;
-    const token = signAccessToken({
-      sub: String(user.id),
-      role,
-      tokenVersion: user.tokenVersion ?? 0,
-      phone: user.phoneNumber ?? phone,
-      capabilities: fetchCapabilitiesForRole(role),
-    });
 
     // BF_SERVER_v68_OTP_HAS_SUBMISSION — best-effort phone -> submitted
     // application lookup. Errors here MUST NOT block a successful verify;
