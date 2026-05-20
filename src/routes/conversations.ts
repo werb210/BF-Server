@@ -1,41 +1,13 @@
-// BF_SERVER_BLOCK_v220_LAUNCH_FIXES_v1 + HOTFIX_DEPS_v1
+// BF_SERVER_BLOCK_v220_LAUNCH_FIXES_v1 + HOTFIX_NODENEXT_v1
 // Conversations API for SMS + messenger.
-// Outbound-SMS Twilio send happens via the Twilio Node SDK directly so we
-// don't depend on a wrapper service whose export shape might drift.
+// Outbound SMS goes through the existing sendSms helper, which already
+// handles Twilio client init, retries, and the dead-letter queue.
 import { Router } from "express";
-import { pool } from "../db";
-import { requireAuth } from "../middleware/auth";
-import twilio from "twilio";
+import { pool } from "../db.js";
+import { requireAuth } from "../middleware/auth.js";
+import { sendSms } from "../modules/notifications/sms.service.js";
 
 const router = Router();
-
-function twilioClient() {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  if (!sid || !token) return null;
-  return twilio(sid, token);
-}
-
-async function sendOutboundSms(to: string, body: string): Promise<void> {
-  const client = twilioClient();
-  if (!client) {
-    console.warn("[conversations] outbound SMS skipped: Twilio creds missing");
-    return;
-  }
-  const from = process.env.TWILIO_DEFAULT_OUTBOUND_CALLER_ID
-            || process.env.TWILIO_SMS_FROM
-            || process.env.TWILIO_PHONE_NUMBER;
-  if (!from) {
-    console.warn("[conversations] outbound SMS skipped: no FROM number configured");
-    return;
-  }
-  try {
-    await client.messages.create({ to, from, body });
-  } catch (err: unknown) {
-    const m = err instanceof Error ? err.message : String(err);
-    console.error("[conversations] Twilio send failed", m);
-  }
-}
 
 router.get("/conversations", requireAuth, async (req, res) => {
   const channel = String(req.query.channel ?? "").trim();
@@ -58,7 +30,7 @@ router.get("/conversations", requireAuth, async (req, res) => {
 
 router.get("/conversations/:id/messages", requireAuth, async (req, res) => {
   const since = req.query.since ? new Date(String(req.query.since)) : null;
-  const params: (string)[] = [req.params.id];
+  const params: string[] = [req.params.id];
   let sinceClause = "";
   if (since && !isNaN(since.getTime())) {
     sinceClause = `AND created_at > $2`;
@@ -101,9 +73,12 @@ router.post("/conversations/:id/messages", requireAuth, async (req, res) => {
     [req.params.id, body.slice(0, 200)]
   );
 
-  // For SMS conversations, fire outbound via Twilio.
+  // For SMS conversations, fire outbound via the existing helper.
   if (channel === "sms" && conv.rows[0].contact_phone) {
-    void sendOutboundSms(conv.rows[0].contact_phone, body);
+    void sendSms({ to: conv.rows[0].contact_phone, message: body }).catch((err: unknown) => {
+      const m = err instanceof Error ? err.message : String(err);
+      console.error("[conversations] sendSms failed", m);
+    });
   }
 
   res.status(201).json({
