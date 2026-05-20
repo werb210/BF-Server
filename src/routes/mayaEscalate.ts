@@ -45,6 +45,32 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
         [convId, message]
       );
 
+      // BF_SERVER_BLOCK_v222_MAYA_ESCALATE_STAFF_NOTIFY_v1
+      // Fan out SMS to available staff so a human sees the request on their
+      // phone within seconds, not just a DB row in the Inbox tab. Fire-and-
+      // forget: the API still returns 201 immediately. Recipients=available
+      // ranges over staff_presence WHERE status='available'; if zero, the
+      // helper falls back to MAYA_FALLBACK_SMS_NUMBERS env CSV (off-hours).
+      void (async () => {
+        try {
+          const { sendStaffNotification } = await import("../services/notifications/staffSms.js");
+          const summary = message.length > 140 ? `${message.slice(0, 137)}…` : message;
+          const contactBit = phone
+            ? ` (${phone})`
+            : email
+              ? ` (${email})`
+              : "";
+          const recipients = await hasAvailableStaff() ? "available" : "fallback";
+          await sendStaffNotification({
+            recipients,
+            body: `Maya talk-to-human${contactBit}: ${summary}`,
+          });
+        } catch (err: unknown) {
+          const m = err instanceof Error ? err.message : String(err);
+          console.warn("[maya escalate] staff notify (talk_to_human) failed", m);
+        }
+      })();
+
       return res.status(201).json({ ok: true, conversation_id: convId });
     }
 
@@ -76,6 +102,25 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
       ]
     );
 
+    // BF_SERVER_BLOCK_v222_MAYA_ESCALATE_STAFF_NOTIFY_v1
+    void (async () => {
+      try {
+        const { sendStaffNotification } = await import("../services/notifications/staffSms.js");
+        const summary = description.length > 140 ? `${description.slice(0, 137)}…` : description;
+        const pageBit = typeof b.page_url === "string" && b.page_url
+          ? ` on ${b.page_url}`
+          : "";
+        const recipients = await hasAvailableStaff() ? "available" : "fallback";
+        await sendStaffNotification({
+          recipients,
+          body: `Maya issue report${pageBit}: ${summary}`,
+        });
+      } catch (err: unknown) {
+        const m = err instanceof Error ? err.message : String(err);
+        console.warn("[maya escalate] staff notify (report_issue) failed", m);
+      }
+    })();
+
     return res.status(201).json({ ok: true, issue_id: issue.rows[0].id });
   } catch (err: unknown) {
     const message: string = err instanceof Error ? err.message : String(err);
@@ -83,5 +128,24 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
     return res.status(500).json({ error: "internal" });
   }
 });
+
+// BF_SERVER_BLOCK_v222_MAYA_ESCALATE_STAFF_NOTIFY_v1
+// Quick check used to decide between "available" (live staff) and
+// "fallback" (env CSV) recipient modes. sendStaffNotification itself
+// doesn't auto-fall-back — it sends to zero recipients silently if
+// nobody's available — so we make the routing decision here.
+async function hasAvailableStaff(): Promise<boolean> {
+  try {
+    const { rowCount } = await pool.query(
+      `SELECT 1 FROM staff_presence
+        WHERE status = 'available'
+          AND last_heartbeat > now() - interval '5 minutes'
+        LIMIT 1`,
+    );
+    return (rowCount ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
 
 export default router;
