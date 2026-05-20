@@ -1,13 +1,12 @@
 import { Router } from "express";
 import { pool } from "../db.js";
-import twilio from "twilio";
 const router = Router();
 router.post("/webhooks/twilio/sms-inbound", async (req: any, res) => {
   const from = String(req.body?.From ?? "");
   const to = String(req.body?.To ?? "");
   const body = String(req.body?.Body ?? "").trim();
   const messageSid = String(req.body?.MessageSid ?? "");
-  void to; void twilio;
+  void to;
   if (!from || !body) return res.type("text/xml").send("<Response/>");
   try {
     const conv = await pool.query<{id:string}>(`SELECT id FROM communications_conversations WHERE contact_phone = $1 AND channel = 'sms' ORDER BY created_at DESC LIMIT 1`, [from]);

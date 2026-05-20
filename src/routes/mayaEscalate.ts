@@ -1,17 +1,12 @@
-// BF_SERVER_BLOCK_v220_LAUNCH_FIXES_v1 + HOTFIX_DEPS_v1
+// BF_SERVER_BLOCK_v220_LAUNCH_FIXES_v1 + HOTFIX_NODENEXT_v1
 // Maya escalate endpoint. Two kinds:
 //   - kind=talk_to_human  → creates a messenger conversation; visible in
 //                            BF-portal Messages tab.
-//   - kind=report_issue   → writes a row in `issues` (with screenshot data
-//                            URL if provided) so it shows in BF-portal
-//                            Communications → Issues tab.
-//
-// No external service deps. Screenshot bytes are stored as a base64 data
-// URL in issues.screenshot_url — the portal img tag renders data URLs
-// natively. Azure blob upload can be retro-fitted later by swapping the
-// data URL for a blob URL.
+//   - kind=report_issue   → writes a row in `issues`. Screenshot bytes are
+//                            stored as a base64 data URL in screenshot_url —
+//                            the portal img tag renders data URLs natively.
 import { Router, Request, Response } from "express";
-import { pool } from "../db";
+import { pool } from "../db.js";
 
 const router = Router();
 
@@ -57,14 +52,9 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
     const description = String(b.description ?? "").trim();
     if (!description) return res.status(400).json({ error: "missing_description" });
 
-    // Data URLs render fine in <img src=...>. If the payload is big the
-    // request will be rejected upstream by Express' body limit — that's
-    // a reasonable cap. Future: swap to blob URL once the blob helper
-    // is in place.
     let screenshotUrl: string | null = null;
     const dataUrl: unknown = b.screenshot_data_url;
     if (typeof dataUrl === "string" && dataUrl.startsWith("data:image/")) {
-      // Cap at ~2.5MB of base64 to protect the row size
       if (dataUrl.length <= 2_500_000) {
         screenshotUrl = dataUrl;
       }
