@@ -68,6 +68,10 @@ import websiteRoutes from "./website.js";
 import mayaRoutes from "./maya.js";
 import aiMayaAlias from "./aiMayaAlias.js";
 import mayaAdminStubs from "./mayaAdminStubs.js";
+import mayaEscalateRoutes from "./mayaEscalate.js";
+import issuesRoutes from "./issues.js";
+import conversationsRoutes from "./conversations.js";
+import smsInboundWebhookRoutes from "./smsInboundWebhook.js";
 // BF_SERVER_BLOCK_v214_MAYA_STAFF_PIPELINE_QUERY_v1
 import mayaStaffRouter from "./mayaStaff.js";
 import aiRoutes from "./ai.v2.js";
@@ -115,6 +119,10 @@ rootRoutes.use(readinessRoutes);
 rootRoutes.use(signnowRoutes);
 // BF_SERVER_v77_BLOCK_1_11_OFFERS_COLLISION — fold orchestration into root mount
 rootRoutes.use(submissionOrchestrationRoutes);
+rootRoutes.use(mayaEscalateRoutes);
+rootRoutes.use(issuesRoutes);
+rootRoutes.use(conversationsRoutes);
+rootRoutes.use(smsInboundWebhookRoutes);
 
 const combinedMayaRoutes = Router();
 combinedMayaRoutes.use(mayaRoutes);
