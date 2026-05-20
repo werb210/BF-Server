@@ -98,8 +98,21 @@ router.post("/otp/start", async (req, res) => {
       data: { sent: true },
     });
   } catch (err: unknown) {
+    // BF_SERVER_BLOCK_v224_OTP_ERROR_MAPPING_v1
+    // Twilio Verify rate-limits per phone number (default: 5 sends per 10 min).
+    // Map that case to 429 + Retry-After instead of generic 500 so the client
+    // can show "Too many attempts, wait 10 minutes" instead of a server-down
+    // error spinner.
     const message = err instanceof Error ? err.message : "Unknown OTP error";
     console.error("❌ OTP ERROR:", message);
+
+    if (/max send attempts|too many|rate.?limit/i.test(message)) {
+      res.setHeader("Retry-After", "600");
+      return res.status(429).json({
+        error: "otp_rate_limited",
+        detail: "Too many OTP requests for this phone. Please wait 10 minutes and try again.",
+      });
+    }
 
     return res.status(500).json({
       error: "OTP failed",
