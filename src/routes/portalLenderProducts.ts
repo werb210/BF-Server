@@ -399,31 +399,12 @@ router.put(
 );
 
 // DELETE /api/portal/lender-products/:id
-router.delete(
-  "/lender-products/:id",
-  requireAuth,
-  requireAdmin,
-  safeHandler(async (req: any, res: any) => {
-    const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
-    if (!id) throw new AppError("validation_error", "Product id is required.", 400);
-    const silo = getSilo(res);
-    const userId = req.user?.id ?? req.user?.userId ?? null;
-    try {
-      await runQuery("DELETE FROM lender_products WHERE id = $1 AND silo = $2" /* BF_SERVER_BLOCK_v156_SILO_LEAK_FIX_v1 */, [id, silo]);
-      console.info({ event: "lender_product_deleted", lenderProductId: id, userId });
-      res.status(204).end();
-    } catch (err: any) {
-      console.error({
-        event: "lender_product_delete_failed",
-        lenderProductId: id,
-        userId,
-        code: err?.code,
-        message: err?.message,
-        detail: err?.detail,
-      });
-      res.status(500).json({ error: { message: "delete_failed", code: err?.code ?? "unknown" } });
-    }
-  })
-);
+router.delete("/lender-products/:id", requireAuth, async (req: any, res) => {
+  const role = String(req.user?.role ?? "").toLowerCase();
+  if (role !== "admin" && role !== "staff") return res.status(403).json({ error: "forbidden" });
+  const r = await pool.query(`DELETE FROM lender_products WHERE id = $1 RETURNING id`, [req.params.id]);
+  if (r.rowCount === 0) return res.status(404).json({ error: "not_found" });
+  return res.json({ ok: true, deleted: r.rows[0].id });
+});
 
 export default router;

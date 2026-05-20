@@ -112,31 +112,7 @@ export function createApp() {
   apiRouter.use("/health", healthRoutes);
   apiRouter.use("/public", publicRoutes);
 
-  // TODO: Wire real Twilio voice implementation via telephonyRoutes
-  // These return 501 so callers (iOS dialer, portal) get an honest error
-  // instead of silently believing the action succeeded.
-  apiRouter.post("/voice/device-token", requireAuth, (_req, res) => {
-    res.status(501).json({ status: "error", error: "not_implemented", message: "Voice device token endpoint not yet wired" });
-  });
-  apiRouter.post("/voice/calls/answer", requireAuth, (_req, res) => {
-    res.status(501).json({ status: "error", error: "not_implemented", message: "Voice answer endpoint not yet wired" });
-  });
-  apiRouter.post("/voice/calls/end", requireAuth, (_req, res) => {
-    res.status(501).json({ status: "error", error: "not_implemented", message: "Voice end endpoint not yet wired" });
-  });
-  apiRouter.get("/voice/calls/log", requireAuth, (_req, res) => {
-    res.status(501).json({ status: "error", error: "not_implemented", message: "Voice call log endpoint not yet wired" });
-  });
-  apiRouter.post("/voice/record/start", requireAuth, (_req, res) => {
-    res.status(501).json({ status: "error", error: "not_implemented", message: "Voice record start endpoint not yet wired" });
-  });
-  apiRouter.post("/voice/record/stop", requireAuth, (_req, res) => {
-    res.status(501).json({ status: "error", error: "not_implemented", message: "Voice record stop endpoint not yet wired" });
-  });
-  apiRouter.post("/sms/send", requireAuth, (_req, res) => {
-    res.status(501).json({ status: "error", error: "not_implemented", message: "SMS send endpoint not yet wired" });
-  });
-  registerApiRouteMounts(apiRouter);
+    registerApiRouteMounts(apiRouter);
 
   // Apply request silo extraction for all API routes
   applySiloMiddleware(app);

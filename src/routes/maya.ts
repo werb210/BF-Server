@@ -52,13 +52,6 @@ router.post(
   })
 );
 
-router.post(
-  "/escalate",
-  safeHandler(async (req: any, res: any) => {
-    await proxyMayaToAgent("/maya/escalate", "POST", req.body, res);
-  })
-);
-
 /**
  * POST /api/maya/escalations
  * Persistence sink called by the Maya agent service (NOT a proxy).
