@@ -225,6 +225,8 @@ export interface DialIntoConferenceArgs {
   phoneNumber?: string | null;
   phone?: string | null;
   to?: string | null;
+  toNumber?: string | null;
+  fromNumber?: string | null;
   identity?: string | null;
   role?: "moderator" | "participant" | string;
   endOnExit?: boolean;
@@ -246,7 +248,7 @@ async function __resolveFriendly(a: DialIntoConferenceArgs): Promise<string> {
 
 export async function dialPstnIntoConference(args: DialIntoConferenceArgs): Promise<{ callSid: string }> {
   const friendly = await __resolveFriendly(args);
-  const phone = String(args.phoneNumber ?? args.phone ?? args.to ?? "");
+  const phone = String(args.phoneNumber ?? args.phone ?? args.to ?? args.toNumber ?? "");
   if (!friendly || !phone) throw new Error("dialPstnIntoConference: missing args");
   const role = (args.role as string) ?? "participant";
   const endOnExit = !!args.endOnExit;
