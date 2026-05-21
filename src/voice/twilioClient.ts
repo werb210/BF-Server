@@ -24,3 +24,7 @@ export function getBaseUrl(): string {
 }
 
 export default getTwilioClient;
+// v599b alias for Codex-generated callers
+export function getTwilio() { return getTwilioClient(); }
+// v599b alias for Codex-generated callers
+export function getPublicBaseUrl(): string { return getBaseUrl(); }

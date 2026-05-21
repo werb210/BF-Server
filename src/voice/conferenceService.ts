@@ -39,18 +39,21 @@ export interface ParticipantRow {
 }
 
 export async function createConference(args: {
-  friendlyName: string;
+  friendlyName?: string;
   silo?: string;
   createdByUserId?: string;
   applicationId?: string;
   contactId?: string;
   direction?: string;
 }): Promise<ConferenceRow> {
+  const __friendly = args.friendlyName && args.friendlyName.length > 0
+    ? args.friendlyName
+    : `bf-${Date.now()}-${(args.createdByUserId ?? "anon").slice(0, 8)}`;
   const { rows } = await pool.query<ConferenceRow>(
     `INSERT INTO conferences (friendly_name, silo, created_by_user_id, application_id, contact_id, direction)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [args.friendlyName, args.silo ?? "BF", args.createdByUserId ?? null,
+    [__friendly, args.silo ?? "BF", args.createdByUserId ?? null,
      args.applicationId ?? null, args.contactId ?? null, args.direction ?? "outbound"]
   );
   return rows[0];
@@ -84,6 +87,8 @@ export async function addParticipant(args: {
   kind: ParticipantKind;
   role?: ParticipantRole;
   status?: string;
+  displayName?: string | null;
+  [k: string]: any;
 }): Promise<ParticipantRow> {
   const { rows } = await pool.query<ParticipantRow>(
     `INSERT INTO conference_participants (conference_id, identity, phone_number, kind, role, status)
@@ -125,24 +130,24 @@ export async function findParticipantByCallSid(callSid: string): Promise<Partici
   return rows[0] ?? null;
 }
 
-// v599 compat shim begin -----------------------------------------------------
-// Names + helpers expected by Codex-generated route files. Pure additive.
-import { createRequire as __req_v599 } from "module";
+// v599b compat shim begin --------------------------------------------------
+// Surface that matches Codex-generated route files. Pure additive / wider.
+import { createRequire as __req_v599b } from "module";
 import { publishToUser as __pub, publishToUsers as __pubMany, publishBroadcast as __pubAll } from "./sseBus.js";
 
-const __require_v599 = __req_v599(import.meta.url);
-const __twilio_v599 = __require_v599("twilio");
+const __require_v599b = __req_v599b(import.meta.url);
+const __twilio_v599b = __require_v599b("twilio");
 
-function __getTwilio_v599() {
+function __getTw() {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const tok = process.env.TWILIO_AUTH_TOKEN;
   if (!sid || !tok) throw new Error("twilio_not_configured");
-  return __twilio_v599(sid, tok);
+  return __twilio_v599b(sid, tok);
 }
-function __baseUrl_v599(): string {
+function __baseUrl(): string {
   return process.env.PUBLIC_BASE_URL || "https://server.boreal.financial";
 }
-function __callerId_v599(): string {
+function __callerId(): string {
   return process.env.TWILIO_CALLER_ID
     || process.env.TWILIO_DEFAULT_OUTBOUND_CALLER_ID
     || process.env.TWILIO_FROM_NUMBER
@@ -150,11 +155,10 @@ function __callerId_v599(): string {
     || "";
 }
 
-// Name aliases
+// ── Name aliases ──────────────────────────────────────────────────────────
 export const getConferenceByFriendly = getConferenceByFriendlyName;
 export const getConferenceById = getConference;
 export const getParticipantBySid = findParticipantByCallSid;
-export const addParticipantRow = addParticipant;
 export const setParticipantCallSid = attachCallSidToParticipant;
 
 export async function getParticipantById(participantId: string): Promise<ParticipantRow | null> {
@@ -165,7 +169,16 @@ export async function getParticipantById(participantId: string): Promise<Partici
   return rows[0] ?? null;
 }
 
-export async function notifyConferenceState(conferenceId: string): Promise<void> {
+// addParticipantRow returns the *id string* (Codex assigns the result to string).
+// Keep addParticipant available for callers that want the full row.
+export async function addParticipantRow(args: any): Promise<string> {
+  const row = await addParticipant(args);
+  return row.id;
+}
+
+// ── State notifications (variadic to tolerate Codex's extra args) ─────────
+export async function notifyConferenceState(conferenceId: string, ..._extras: any[]): Promise<void> {
+  void _extras;
   const c = await getConference(conferenceId);
   if (!c) return;
   const parts = await listParticipants(conferenceId);
@@ -174,35 +187,75 @@ export async function notifyConferenceState(conferenceId: string): Promise<void>
   if (staffIds.length > 0) __pubMany(staffIds, "conference.update", { conference: c, participants: parts });
 }
 
+function __coerceConfId(v: any): string {
+  if (!v) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "object") return String(v.conference_id ?? v.id ?? "");
+  return String(v);
+}
+
+export async function broadcastIncomingRing(conferenceIdOrRow: any, fromLabel?: string, ..._rest: any[]): Promise<void> {
+  void _rest;
+  const conferenceId = __coerceConfId(conferenceIdOrRow);
+  if (!conferenceId) return;
+  const parts = await listParticipants(conferenceId);
+  const staffIds = parts.filter(p => p.kind === "staff" && p.identity).map(p => p.identity as string);
+  const payload = { conferenceId, from: fromLabel ?? "unknown" };
+  if (staffIds.length === 0) __pubAll("incoming.call", payload);
+  else __pubMany(staffIds, "incoming.call", payload);
+}
+
+export async function broadcastIncomingAnswered(conferenceIdOrRow: any, ..._rest: any[]): Promise<void> {
+  void _rest;
+  const conferenceId = __coerceConfId(conferenceIdOrRow);
+  if (!conferenceId) return;
+  const parts = await listParticipants(conferenceId);
+  const staffIds = parts.filter(p => p.kind === "staff" && p.identity).map(p => p.identity as string);
+  __pubMany(staffIds, "incoming.answered", { conferenceId });
+}
+
+// ── Dial helpers ──────────────────────────────────────────────────────────
 export interface DialIntoConferenceArgs {
   conferenceFriendlyName?: string;
+  conferenceFriendly?: string;
   friendlyName?: string;
   conference?: string;
   conf?: string;
-  phoneNumber?: string;
-  phone?: string;
-  to?: string;
-  identity?: string;
-  role?: "moderator" | "participant";
+  conferenceId?: string;
+  phoneNumber?: string | null;
+  phone?: string | null;
+  to?: string | null;
+  identity?: string | null;
+  role?: "moderator" | "participant" | string;
   endOnExit?: boolean;
+  [k: string]: any;
 }
 
-function __resolveFriendly(a: DialIntoConferenceArgs): string {
-  return String(a.conferenceFriendlyName ?? a.friendlyName ?? a.conference ?? a.conf ?? "");
+async function __resolveFriendly(a: DialIntoConferenceArgs): Promise<string> {
+  if (a.conferenceFriendlyName) return String(a.conferenceFriendlyName);
+  if (a.conferenceFriendly)     return String(a.conferenceFriendly);
+  if (a.friendlyName)           return String(a.friendlyName);
+  if (a.conference)             return String(a.conference);
+  if (a.conf)                   return String(a.conf);
+  if (a.conferenceId) {
+    const c = await getConference(String(a.conferenceId));
+    if (c?.friendly_name) return c.friendly_name;
+  }
+  return "";
 }
 
 export async function dialPstnIntoConference(args: DialIntoConferenceArgs): Promise<{ callSid: string }> {
-  const friendly = __resolveFriendly(args);
+  const friendly = await __resolveFriendly(args);
   const phone = String(args.phoneNumber ?? args.phone ?? args.to ?? "");
   if (!friendly || !phone) throw new Error("dialPstnIntoConference: missing args");
-  const role = args.role ?? "participant";
+  const role = (args.role as string) ?? "participant";
   const endOnExit = !!args.endOnExit;
-  const tw = __getTwilio_v599();
+  const tw = __getTw();
   const call = await tw.calls.create({
-    to: phone, from: __callerId_v599(),
-    url: `${__baseUrl_v599()}/api/webhooks/twilio/voice/conf-join?conf=${encodeURIComponent(friendly)}&role=${role}&endOnExit=${endOnExit}`,
+    to: phone, from: __callerId(),
+    url: `${__baseUrl()}/api/webhooks/twilio/voice/conf-join?conf=${encodeURIComponent(friendly)}&role=${role}&endOnExit=${endOnExit}`,
     method: "POST",
-    statusCallback: `${__baseUrl_v599()}/api/webhooks/twilio/voice/call-status`,
+    statusCallback: `${__baseUrl()}/api/webhooks/twilio/voice/call-status`,
     statusCallbackEvent: ["initiated","ringing","answered","completed"],
     statusCallbackMethod: "POST",
   });
@@ -210,17 +263,17 @@ export async function dialPstnIntoConference(args: DialIntoConferenceArgs): Prom
 }
 
 export async function dialClientIntoConference(args: DialIntoConferenceArgs): Promise<{ callSid: string }> {
-  const friendly = __resolveFriendly(args);
+  const friendly = await __resolveFriendly(args);
   const identity = String(args.identity ?? "");
   if (!friendly || !identity) throw new Error("dialClientIntoConference: missing args");
-  const role = args.role ?? "moderator";
+  const role = (args.role as string) ?? "moderator";
   const endOnExit = args.endOnExit ?? (role === "moderator");
-  const tw = __getTwilio_v599();
+  const tw = __getTw();
   const call = await tw.calls.create({
-    to: `client:${identity}`, from: __callerId_v599(),
-    url: `${__baseUrl_v599()}/api/webhooks/twilio/voice/conf-join?conf=${encodeURIComponent(friendly)}&role=${role}&endOnExit=${endOnExit}`,
+    to: `client:${identity}`, from: __callerId(),
+    url: `${__baseUrl()}/api/webhooks/twilio/voice/conf-join?conf=${encodeURIComponent(friendly)}&role=${role}&endOnExit=${endOnExit}`,
     method: "POST",
-    statusCallback: `${__baseUrl_v599()}/api/webhooks/twilio/voice/call-status`,
+    statusCallback: `${__baseUrl()}/api/webhooks/twilio/voice/call-status`,
     statusCallbackEvent: ["initiated","ringing","answered","completed"],
     statusCallbackMethod: "POST",
     timeout: 25,
@@ -233,25 +286,8 @@ export async function cancelPendingParticipantCall(participantId: string): Promi
   if (!p?.twilio_call_sid) return;
   if (["completed","canceled","left"].includes(p.status)) return;
   try {
-    const tw = __getTwilio_v599();
+    const tw = __getTw();
     await tw.calls(p.twilio_call_sid).update({ status: "canceled" });
   } catch { /* best-effort */ }
 }
-
-export async function broadcastIncomingRing(conferenceId: string, fromLabel: string): Promise<void> {
-  const parts = await listParticipants(conferenceId);
-  const staffIds = parts.filter(p => p.kind === "staff" && p.identity).map(p => p.identity as string);
-  if (staffIds.length === 0) {
-    __pubAll("incoming.call", { conferenceId, from: fromLabel });
-    return;
-  }
-  __pubMany(staffIds, "incoming.call", { conferenceId, from: fromLabel });
-}
-
-export async function broadcastIncomingAnswered(conferenceId: string): Promise<void> {
-  const parts = await listParticipants(conferenceId);
-  const staffIds = parts.filter(p => p.kind === "staff" && p.identity).map(p => p.identity as string);
-  __pubMany(staffIds, "incoming.answered", { conferenceId });
-}
-// v599 compat shim end -------------------------------------------------------
-
+// v599b compat shim end ----------------------------------------------------
