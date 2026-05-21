@@ -52,6 +52,9 @@ function bestEffortNaics(industry: unknown): { code: string | null; confidence: 
 export type BiHandoffInput = {
   bfApplicationId: string;
   legacyApp: any; // the wizard payload sent on /submit
+  // v330: when set, overrides the derived loan_amount in the BI payload.
+  // Used so each funding app's PGI policy carries the right dollar value.
+  loanAmountOverride?: number | null;
 };
 
 export type BiHandoffResult =
@@ -84,12 +87,16 @@ export function buildBiPayload(input: BiHandoffInput): Record<string, unknown> {
   const applicant = a.applicant ?? a.borrower ?? {};
   const kyc = a.kyc ?? a.kyc_answers ?? {};
   const naics = bestEffortNaics(kyc.industry);
-  const loanAmount =
+  const derivedLoanAmount =
     num(kyc.fundingAmount) ??
     num(kyc.capitalAmount) ??
     num(a.capital_amount) ??
     num(kyc.requestedAmount) ??
     null;
+  // v330: caller can override the derived amount for per-leg PGI policies.
+  const loanAmount = (input.loanAmountOverride != null && Number.isFinite(input.loanAmountOverride))
+    ? input.loanAmountOverride
+    : derivedLoanAmount;
   return {
     bf_application_id: input.bfApplicationId,
     guarantor_name: s(applicant.fullName) ?? ([s(applicant.firstName), s(applicant.lastName)].filter(Boolean).join(" ") || null),
@@ -118,7 +125,7 @@ export async function postBiHandoff(input: BiHandoffInput): Promise<BiHandoffRes
   if (!secret) {
     return { ok: false, error: "no_jwt_secret" };
   }
-  const payload = buildBiPayload(input);
+  const payload = buildBiPayload(input); // v330: input may carry loanAmountOverride
   const url = `${BI_SERVER_URL.replace(/\/+$/, "")}/api/v1/bi/applications/from-bf`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
