@@ -17,15 +17,19 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   const mailbox = (req.query.mailbox ?? "").toString().trim();
   let path = "/me/mailFolders/Inbox/messages?$top=50&$select=id,subject,from,receivedDateTime,bodyPreview,isRead";
   if (mailbox) {
-    const role = (req.user?.role ?? "").toString();
-    const silo = resolveSiloFromRequest(req);
-    const { rows } = await pool.query(
-      `SELECT 1 FROM shared_mailbox_settings
-       WHERE LOWER(address)=LOWER($1) AND silo = $2 AND $3 = ANY(allowed_roles)
-       LIMIT 1`,
-      [mailbox, silo, role],
-    );
-    if (!rows.length) return res.status(403).json({ error: "mailbox_not_allowed" });
+    const role = (req.user?.role ?? "").toString().toLowerCase();
+    // v607: Admin role can access any shared mailbox without the
+    // shared_mailbox_settings allow-list lookup. Non-admins still gated.
+    if (role !== "admin") {
+      const silo = resolveSiloFromRequest(req);
+      const { rows } = await pool.query(
+        `SELECT 1 FROM shared_mailbox_settings
+         WHERE LOWER(address)=LOWER($1) AND silo = $2 AND LOWER($3) = ANY(SELECT LOWER(r) FROM unnest(allowed_roles) r)
+         LIMIT 1`,
+        [mailbox, silo, role],
+      );
+      if (!rows.length) return res.status(403).json({ error: "mailbox_not_allowed" });
+    }
     path = `/users/${encodeURIComponent(mailbox)}/mailFolders/Inbox/messages?$top=50&$select=id,subject,from,receivedDateTime,bodyPreview,isRead`;
   }
   const r = await graph.fetch(path);

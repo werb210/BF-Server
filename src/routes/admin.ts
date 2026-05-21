@@ -36,7 +36,7 @@ router.get("/users", requireCapability([CAPABILITIES.USER_MANAGE]), async (_req:
          FROM users
         WHERE COALESCE(is_active, true) = true
           AND deleted_at IS NULL
-        ORDER BY COALESCE(NULLIF(TRIM(first_name), ''), email, id) ASC
+        ORDER BY COALESCE(NULLIF(TRIM(first_name), ''), email, id::text) ASC
         LIMIT 500`
     );
     const users = r.rows.map((u) => ({
