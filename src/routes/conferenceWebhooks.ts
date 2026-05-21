@@ -10,6 +10,8 @@ import {
   notifyConferenceState,
 } from "../voice/conferenceService.js";
 import { getPublicBaseUrl } from "../voice/twilioClient.js";
+import recordingWebhooksRoutes from "./recordingWebhooks.js";
+import transcriptionWebhooksRoutes from "./transcriptionWebhooks.js";
 
 import VoiceResponse from "twilio/lib/twiml/VoiceResponse.js";
 
@@ -143,5 +145,9 @@ router.post("/call/status", twilioWebhookValidation, async (req: any, res) => {
   await notifyConferenceState(part.conference_id, "conference.update", { callSid, callStatus: status });
   return res.status(200).send("");
 });
+
+// v502b -- siblings live on the same /webhooks/twilio mount
+router.use("/", recordingWebhooksRoutes);
+router.use("/", transcriptionWebhooksRoutes);
 
 export default router;
