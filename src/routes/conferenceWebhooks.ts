@@ -28,6 +28,16 @@ router.post("/conference/join", twilioWebhookValidation, async (req: any, res) =
     return res.send(vr.toString());
   }
 
+  // Real-time per-leg transcription (this leg's audio only).
+  const xcr = (vr as any).start();
+  xcr.transcription({
+    name: `xcr_${conf}_${pid || "x"}`,
+    statusCallbackUrl: `${base}/api/webhooks/twilio/transcription/event?conf=${encodeURIComponent(conf)}&pid=${encodeURIComponent(pid)}`,
+    track: "inbound_track",
+    languageCode: "en-US",
+    partialResults: true,
+  });
+
   const dial = vr.dial({ answerOnBridge: true });
   dial.conference({
     statusCallback: `${base}/api/webhooks/twilio/conference/status?conf=${encodeURIComponent(conf)}`,
@@ -37,6 +47,14 @@ router.post("/conference/join", twilioWebhookValidation, async (req: any, res) =
     endConferenceOnExit: false,
     waitUrl: "",
     participantLabel: pid || undefined,
+    // Dual-channel recording on the first joiner; subsequent participants
+    // ignore "record" attribute. Twilio mixes the rest into the same file.
+    record: "record-from-start",
+    recordingChannels: "dual",
+    recordingStatusCallback: `${base}/api/webhooks/twilio/recording/status?conf=${encodeURIComponent(conf)}`,
+    recordingStatusCallbackEvent: "in-progress completed absent",
+    recordingStatusCallbackMethod: "POST",
+    trim: "trim-silence",
   } as any, conf);
 
   return res.send(vr.toString());
