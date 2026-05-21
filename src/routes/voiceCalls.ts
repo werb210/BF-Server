@@ -12,6 +12,7 @@ import {
   dialClientIntoConference,
 } from "../voice/conferenceService.js";
 import { getCallerId } from "../voice/twilioClient.js";
+import voiceMidCallRoutes from "./voiceMidCall.js";
 
 const router = Router();
 
@@ -130,5 +131,8 @@ router.get("/conferences/:id", auth, async (req, res) => {
   );
   return res.json({ ok: true, conference: conf, participants: parts.rows });
 });
+
+// v504b -- mid-call endpoints live on the same /voice mount
+router.use("/", voiceMidCallRoutes);
 
 export default router;
