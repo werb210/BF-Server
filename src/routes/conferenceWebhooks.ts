@@ -81,13 +81,36 @@ router.post("/conference/status", twilioWebhookValidation, async (req: any, res)
     case "conference-end":
       await pool.query(`UPDATE conferences SET status = 'ended', ended_at = now(), updated_at = now() WHERE id = $1`, [conf.id]);
       break;
-    case "participant-join":
+    case "participant-join": {
       if (label) {
         await pool.query(`UPDATE conference_participants SET status = 'joined', joined_at = COALESCE(joined_at, now()), twilio_call_sid = COALESCE(twilio_call_sid, $2) WHERE id = $1`, [label, callSid || null]);
       } else if (callSid) {
         await pool.query(`UPDATE conference_participants SET status = 'joined', joined_at = COALESCE(joined_at, now()) WHERE twilio_call_sid = $1`, [callSid]);
       }
+      // v503: ring-all winner cancels outstanding staff legs.
+      if (conf.direction === "inbound" || conf.direction === "client_miniportal") {
+        const joinedStaff = await pool.query(
+          `SELECT COUNT(*)::int AS c FROM conference_participants WHERE conference_id = $1 AND kind = 'staff' AND status = 'joined'`,
+          [conf.id],
+        );
+        if ((joinedStaff.rows[0]?.c ?? 0) === 1) {
+          const losers = await pool.query(
+            `SELECT id, identity FROM conference_participants
+              WHERE conference_id = $1 AND kind = 'staff' AND status IN ('invited','ringing')`,
+            [conf.id],
+          );
+          const { cancelPendingParticipantCall, broadcastIncomingAnswered } = await import("../voice/conferenceService.js");
+          for (const lo of losers.rows) {
+            await cancelPendingParticipantCall(lo.id);
+          }
+          const loserIdentities: string[] = losers.rows.map((r: any) => String(r.identity));
+          if (loserIdentities.length) {
+            await broadcastIncomingAnswered(loserIdentities, conf.friendly_name, label || callSid || "");
+          }
+        }
+      }
       break;
+    }
     case "participant-leave":
       if (label) await pool.query(`UPDATE conference_participants SET status = 'left', left_at = now() WHERE id = $1`, [label]);
       else if (callSid) await pool.query(`UPDATE conference_participants SET status = 'left', left_at = now() WHERE twilio_call_sid = $1`, [callSid]);
