@@ -440,6 +440,14 @@ router.post(
           wizardBusinessName,
         ]
       );
+      // BF_SERVER_BLOCK_v330_MULTI_APP_PGI_HANDOFF_v1
+      // Hoist the leg/companion IDs + amounts so the PGI block at the
+      // end of submit can dispatch one BI handoff per funding row.
+      let v330_equipmentLegId: string | null = null;
+      let v330_equipmentLegAmount: number | null = null;
+      let v330_companionLegId: string | null = null;
+      let v330_companionLegAmount: number | null = null;
+
       // BF_SERVER_BLOCK_v85_MULTI_LEG_SUBMIT_v1
       // Capital & Equipment fan-out: when the user selected
       // lookingFor === BOTH on Step 1, primary app holds the capital
@@ -539,6 +547,8 @@ router.post(
                   JSON.stringify(metaPatch),
                 ]
               );
+              v330_equipmentLegId = equipmentId;
+              v330_equipmentLegAmount = equipmentAmount;
               logInfo("capital_and_equipment_leg_created", {
                 parentApplicationId: application.id,
                 equipmentApplicationId: equipmentId,
@@ -672,6 +682,8 @@ router.post(
                 JSON.stringify(companionMeta),
               ]
             );
+            v330_companionLegId = companionId;
+            v330_companionLegAmount = companionAmount;
             logInfo("closing_costs_companion_created", {
               parentApplicationId: application.id,
               companionApplicationId: companionId,
@@ -767,59 +779,94 @@ router.post(
       try {
         const pgiOptIn = String((legacyApp as any)?.pgi_opt_in ?? "").toLowerCase();
         if (pgiOptIn === "yes") {
-          const r = await postBiHandoff({
-            bfApplicationId: application.id,
-            legacyApp,
-          });
-          if (r.ok) {
-            await pool.query(
-              `UPDATE applications
-                  SET bi_application_id = $1,
-                      bi_public_id = $2,
-                      bi_completion_url = $3,
-                      updated_at = NOW()
-                WHERE id::text = ($4)::text`,
-              [r.biApplicationId, r.biPublicId, r.completionUrl, application.id],
-            );
-            // Insert a system message so the BF-client mini-portal
-            // messenger surfaces a clickable link to the BI OTP
-            // login. direction='outbound' makes it render on the
-            // "from staff" side of MessageThread.
-            try {
-              await pool.query(
-                `INSERT INTO communications_messages
-                   (id, type, direction, status, application_id, contact_id, silo, body, staff_name, created_at)
-                 VALUES (
-                   $1, 'message', 'outbound', 'sent', $2,
-                   (SELECT contact_id FROM applications WHERE id = $2 LIMIT 1),
-                   COALESCE((SELECT silo FROM applications WHERE id = $2 LIMIT 1), 'BF'),
-                   $3, 'Boreal Insurance', NOW()
-                 )`,
-                [
-                  biRandomUUID(),
-                  application.id,
-                  `Your PGI application is ready. Tap to complete it: ${r.completionUrl}
+          // BF_SERVER_BLOCK_v330_MULTI_APP_PGI_HANDOFF_v1
+          // One PGI policy per funding/equipment application:
+          //   - primary (always)
+          //   - equipment leg (when scenario 4 fired)
+          //   - closing-costs companion (when scenario 3 fired)
+          const v330_handoffTargets: Array<{
+            bfApplicationId: string;
+            loanAmountOverride: number | null;
+            role: "primary" | "equipment_leg" | "closing_costs_companion";
+          }> = [
+            { bfApplicationId: application.id, loanAmountOverride: null, role: "primary" },
+          ];
+          if (v330_equipmentLegId != null) {
+            v330_handoffTargets.push({
+              bfApplicationId: v330_equipmentLegId,
+              loanAmountOverride: v330_equipmentLegAmount,
+              role: "equipment_leg",
+            });
+          }
+          if (v330_companionLegId != null) {
+            v330_handoffTargets.push({
+              bfApplicationId: v330_companionLegId,
+              loanAmountOverride: v330_companionLegAmount,
+              role: "closing_costs_companion",
+            });
+          }
 
-Log in with your phone number to add the remaining underwriting details.`,
-                ],
+          for (const v330_t of v330_handoffTargets) {
+            const r = await postBiHandoff({
+              bfApplicationId: v330_t.bfApplicationId,
+              legacyApp,
+              loanAmountOverride: v330_t.loanAmountOverride,
+            });
+            if (r.ok) {
+              await pool.query(
+                `UPDATE applications
+                    SET bi_application_id = $1,
+                        bi_public_id = $2,
+                        bi_completion_url = $3,
+                        updated_at = NOW()
+                  WHERE id::text = ($4)::text`,
+                [r.biApplicationId, r.biPublicId, r.completionUrl, v330_t.bfApplicationId],
               );
-            } catch (msgErr) {
-              logError("bi_handoff_messenger_insert_failed", {
-                code: "bi_handoff_messenger_insert_failed",
-                applicationId: application.id,
-                error: msgErr instanceof Error ? msgErr.message : "unknown",
+              // v330: one messenger message per funding app's PGI policy.
+              // The body names the role so the applicant can tell which
+              // policy goes with which funding leg.
+              const v330_roleLabel = v330_t.role === "primary"
+                ? "main funding"
+                : v330_t.role === "equipment_leg"
+                  ? "equipment"
+                  : "closing costs";
+              try {
+                await pool.query(
+                  `INSERT INTO communications_messages
+                     (id, type, direction, status, application_id, contact_id, silo, body, staff_name, created_at)
+                   VALUES (
+                     $1, 'message', 'outbound', 'sent', $2,
+                     (SELECT contact_id FROM applications WHERE id = $2 LIMIT 1),
+                     COALESCE((SELECT silo FROM applications WHERE id = $2 LIMIT 1), 'BF'),
+                     $3, 'Boreal Insurance', NOW()
+                   )`,
+                  [
+                    biRandomUUID(),
+                    v330_t.bfApplicationId,
+                    `Your PGI application for the ${v330_roleLabel} portion is ready. Tap to complete it: ${r.completionUrl}\n\nLog in with your phone number to add the remaining underwriting details.`,
+                  ],
+                );
+              } catch (msgErr) {
+                logError("bi_handoff_messenger_insert_failed", {
+                  code: "bi_handoff_messenger_insert_failed",
+                  applicationId: v330_t.bfApplicationId,
+                  role: v330_t.role,
+                  error: msgErr instanceof Error ? msgErr.message : "unknown",
+                });
+              }
+              logInfo("bi_handoff_recorded", {
+                applicationId: v330_t.bfApplicationId,
+                role: v330_t.role,
+                biPublicId: r.biPublicId,
+              });
+            } else {
+              logError("bi_handoff_failed_nonfatal", {
+                code: "bi_handoff_failed_nonfatal",
+                applicationId: v330_t.bfApplicationId,
+                role: v330_t.role,
+                error: r.error,
               });
             }
-            logInfo("bi_handoff_recorded", {
-              applicationId: application.id,
-              biPublicId: r.biPublicId,
-            });
-          } else {
-            logError("bi_handoff_failed_nonfatal", {
-              code: "bi_handoff_failed_nonfatal",
-              applicationId: application.id,
-              error: r.error,
-            });
           }
         }
       } catch (handoffErr) {
