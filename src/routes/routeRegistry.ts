@@ -62,6 +62,7 @@ import telephonyRoutes from "../telephony/routes/telephonyRoutes.js";
 import realtimeRoutes from "../voice/realtimeRoutes.js";
 import webhooksRoutes from "./webhooks.js";
 import voiceCallsRoutes from "./voiceCalls.js";
+import voiceMidCallRoutes from "./voiceMidCall.js";
 import conferenceWebhooksRoutes from "./conferenceWebhooks.js";
 import recordingWebhooksRoutes from "./recordingWebhooks.js";
 import transcriptionWebhooksRoutes from "./transcriptionWebhooks.js";
@@ -193,6 +194,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/pipeline", router: pipelineRoutes },
   { path: "/webhooks", router: webhooksRoutes },
   { path: "/voice", router: voiceCallsRoutes },
+  { path: "/voice", router: voiceMidCallRoutes },
   { path: "/webhooks/twilio", router: conferenceWebhooksRoutes },
   { path: "/webhooks/twilio", router: recordingWebhooksRoutes },
   { path: "/webhooks/twilio", router: transcriptionWebhooksRoutes },
