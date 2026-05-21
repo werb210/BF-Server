@@ -41,9 +41,9 @@ export interface ParticipantRow {
 export async function createConference(args: {
   friendlyName?: string;
   silo?: string;
-  createdByUserId?: string;
-  applicationId?: string;
-  contactId?: string;
+  createdByUserId?: string | null;
+  applicationId?: string | null;
+  contactId?: string | null;
   direction?: string;
 }): Promise<ConferenceRow> {
   const __friendly = args.friendlyName && args.friendlyName.length > 0
