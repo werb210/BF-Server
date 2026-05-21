@@ -59,6 +59,7 @@ import publicApplicationRoutes from "./publicApplication.js";
 import referralsRoutes from "./referrals.js";
 import pipelineRoutes from "./pipeline.js";
 import telephonyRoutes from "../telephony/routes/telephonyRoutes.js";
+import realtimeRoutes from "../voice/realtimeRoutes.js";
 import webhooksRoutes from "./webhooks.js";
 import readinessRoutes from "./readiness.js";
 import signnowRoutes from "./signnow.js";
@@ -149,6 +150,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/calendar", router: calendarRoutes },
   { path: "/calls", router: callsRoutes },
   { path: "/telephony", router: telephonyRoutes },
+  { path: "/realtime", router: realtimeRoutes },
   { path: "/banking", router: bankingRoutes },
   { path: "/client", router: clientRoutes },
   { path: "/client/issues", router: clientIssuesRoutes },
@@ -236,6 +238,8 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/telephony/presence", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "POST", path: "/api/telephony/presence/heartbeat", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/telephony/call-status", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { method: "GET",  path: "/api/realtime/stream", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { method: "GET",  path: "/api/realtime/diag",   roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "POST", path: "/api/webhooks/twilio/voice/twiml", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/voice/no-answer", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/voicemail", roles: [] },
