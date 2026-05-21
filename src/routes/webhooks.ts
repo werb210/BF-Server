@@ -58,6 +58,13 @@ const BASE_URL = process.env.PUBLIC_BASE_URL ?? "https://server.boreal.financial
 // timing-safe compare internally, so no separate HMAC is needed.
 
 // ── Inbound TwiML — serve XML to ring all available staff simultaneously ─────
+// BF_SERVER_BLOCK_v503_INBOUND_RING_ALL_v1
+// Inbound (PSTN + mini-portal) now joins a freshly-created conference,
+// then ring-alls available staff into the same conference. First answer
+// wins; outstanding legs are auto-canceled on the conference's
+// participant-join event in conferenceWebhooks. Voicemail fallback
+// preserved for the no-staff case.
+
 // BF_SERVER_BLOCK_BI_ROUND5_7BIS_v1 -- Voice SDK outbound calls now
 // create a call_logs row on the way through this webhook so the
 // downstream status callback finds it to update. Pre-fix, SDK calls
@@ -68,6 +75,140 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
   const params = req.body ?? {};
   const to = String(params.To ?? params.to ?? "").trim();
   const from = String(params.From ?? params.from ?? "").trim();
+  const callSid = String(params.CallSid ?? params.callSid ?? "").trim();
+
+  // ── v503: SDK-initiated outbound from staff browser (params.conferenceFriendly)
+  // joins existing conference instead of doing legacy Dial-Number.
+  const sdkConfFriendly = String(params.conferenceFriendly ?? "").trim();
+  if (sdkConfFriendly) {
+    const { default: VoiceResponse } = await import("twilio/lib/twiml/VoiceResponse.js");
+    const { pool } = await import("../db.js");
+    const { getConferenceByFriendly, addParticipantRow, setParticipantCallSid } = await import("../voice/conferenceService.js");
+    const { getPublicBaseUrl } = await import("../voice/twilioClient.js");
+    const conf = await getConferenceByFriendly(sdkConfFriendly);
+    if (conf) {
+      const identity = from.startsWith("client:") ? from.slice("client:".length) : "";
+      // Find existing caller participant row (created by /api/voice/calls) or create one.
+      const r = await pool.query(
+        `SELECT id FROM conference_participants
+          WHERE conference_id = $1 AND identity = $2 AND status IN ('invited','ringing')
+          ORDER BY created_at DESC LIMIT 1`,
+        [conf.id, identity],
+      );
+      let pid: string;
+      if (r.rows[0]?.id) {
+        pid = r.rows[0].id;
+        if (callSid) await setParticipantCallSid(pid, callSid);
+      } else {
+        pid = await addParticipantRow({
+          conferenceId: conf.id, kind: "staff", identity,
+          role: "moderator", displayName: identity,
+        });
+        if (callSid) await setParticipantCallSid(pid, callSid);
+      }
+      const base = getPublicBaseUrl();
+      const vrs = new VoiceResponse();
+      vrs.redirect({ method: "POST" }, `${base}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(sdkConfFriendly)}&pid=${encodeURIComponent(pid)}`);
+      return res.send(vrs.toString());
+    }
+    // fall through if conference not found — legacy behavior.
+  }
+
+  // ── v503: mini-portal inbound (client:client-*) -> conference + ring-all
+  if (from.startsWith("client:client-")) {
+    const { default: VoiceResponse } = await import("twilio/lib/twiml/VoiceResponse.js");
+    const { pool } = await import("../db.js");
+    const { createConference, addParticipantRow, setParticipantCallSid, dialClientIntoConference, broadcastIncomingRing } = await import("../voice/conferenceService.js");
+    const { getPublicBaseUrl } = await import("../voice/twilioClient.js");
+    const available = await pool.query<{ user_id: string; twilio_identity: string }>(
+      `SELECT user_id, twilio_identity FROM staff_presence
+        WHERE status = 'available'
+          AND last_heartbeat > now() - interval '5 minutes'
+          AND twilio_identity IS NOT NULL`,
+    ).catch(() => ({ rows: [] as any[] }));
+    const vrc = new VoiceResponse();
+    if (available.rows.length === 0) {
+      vrc.say({ voice: "Polly.Joanna" }, "No agents are available right now. Please leave a message after the tone.");
+      vrc.record({ maxLength: 120, playBeep: true, action: "/api/webhooks/twilio/voicemail" });
+      return res.send(vrc.toString());
+    }
+    const conf = await createConference({
+      silo: "BF", direction: "client_miniportal", createdByUserId: null,
+      friendlyName: `mp_${callSid.slice(-12)}_${Date.now()}`,
+    });
+    const callerPid = await addParticipantRow({
+      conferenceId: conf.id, kind: "client_miniportal",
+      identity: from.slice("client:".length), displayName: "Client mini-portal",
+    });
+    if (callSid) await setParticipantCallSid(callerPid, callSid);
+    // Ring all staff in parallel.
+    const staffIds: string[] = [];
+    await Promise.all(available.rows.map(async (row) => {
+      const pid = await addParticipantRow({
+        conferenceId: conf.id, kind: "staff",
+        identity: row.twilio_identity, displayName: row.twilio_identity,
+      });
+      staffIds.push(String(row.user_id));
+      try {
+        await dialClientIntoConference({
+          conferenceFriendly: conf.friendly_name,
+          identity: row.twilio_identity, participantId: pid,
+        });
+      } catch (e: any) { console.warn("ring_all_dial_failed", { identity: row.twilio_identity, message: e?.message }); }
+    }));
+    void broadcastIncomingRing(staffIds, conf.friendly_name, "Client mini-portal");
+    const base = getPublicBaseUrl();
+    vrc.redirect({ method: "POST" }, `${base}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(conf.friendly_name)}&pid=${encodeURIComponent(callerPid)}`);
+    return res.send(vrc.toString());
+  }
+
+  // ── v503: PSTN inbound -> conference + ring-all staff
+  const looksLikePhoneFrom = /^\+?\d{8,15}$/.test(from);
+  if (looksLikePhoneFrom && !from.startsWith("client:")) {
+    const { default: VoiceResponse } = await import("twilio/lib/twiml/VoiceResponse.js");
+    const { pool } = await import("../db.js");
+    const { createConference, addParticipantRow, setParticipantCallSid, dialClientIntoConference, broadcastIncomingRing } = await import("../voice/conferenceService.js");
+    const { getPublicBaseUrl } = await import("../voice/twilioClient.js");
+    const available = await pool.query<{ user_id: string; twilio_identity: string }>(
+      `SELECT user_id, twilio_identity FROM staff_presence
+        WHERE status = 'available'
+          AND last_heartbeat > now() - interval '5 minutes'
+          AND twilio_identity IS NOT NULL`,
+    ).catch(() => ({ rows: [] as any[] }));
+    const vrp = new VoiceResponse();
+    if (available.rows.length === 0) {
+      vrp.say({ voice: "Polly.Joanna" }, "Thanks for calling. No agents are available right now. Please leave a message after the tone.");
+      vrp.record({ maxLength: 120, playBeep: true, action: "/api/webhooks/twilio/voicemail" });
+      return res.send(vrp.toString());
+    }
+    const conf = await createConference({
+      silo: "BF", direction: "inbound", createdByUserId: null,
+      friendlyName: `in_${callSid.slice(-12)}_${Date.now()}`,
+    });
+    const callerPid = await addParticipantRow({
+      conferenceId: conf.id, kind: "pstn",
+      phoneNumber: from, displayName: from,
+    });
+    if (callSid) await setParticipantCallSid(callerPid, callSid);
+    const staffIds: string[] = [];
+    await Promise.all(available.rows.map(async (row) => {
+      const pid = await addParticipantRow({
+        conferenceId: conf.id, kind: "staff",
+        identity: row.twilio_identity, displayName: row.twilio_identity,
+      });
+      staffIds.push(String(row.user_id));
+      try {
+        await dialClientIntoConference({
+          conferenceFriendly: conf.friendly_name,
+          identity: row.twilio_identity, participantId: pid,
+        });
+      } catch (e: any) { console.warn("ring_all_dial_failed", { identity: row.twilio_identity, message: e?.message }); }
+    }));
+    void broadcastIncomingRing(staffIds, conf.friendly_name, from);
+    const base = getPublicBaseUrl();
+    vrp.redirect({ method: "POST" }, `${base}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(conf.friendly_name)}&pid=${encodeURIComponent(callerPid)}`);
+    return res.send(vrp.toString());
+  }
 
   // BF_SERVER_BLOCK_53_v1 -- client mini-portal -> staff ring-all.
   // When the calling identity starts with "client:client-", the
