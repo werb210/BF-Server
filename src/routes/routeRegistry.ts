@@ -194,7 +194,6 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/pipeline", router: pipelineRoutes },
   { path: "/webhooks", router: webhooksRoutes },
   { path: "/voice", router: voiceCallsRoutes },
-  { path: "/voice", router: voiceMidCallRoutes },
   { path: "/webhooks/twilio", router: conferenceWebhooksRoutes },
   { path: "/webhooks/twilio", router: recordingWebhooksRoutes },
   { path: "/webhooks/twilio", router: transcriptionWebhooksRoutes },
