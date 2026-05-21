@@ -63,6 +63,8 @@ import realtimeRoutes from "../voice/realtimeRoutes.js";
 import webhooksRoutes from "./webhooks.js";
 import voiceCallsRoutes from "./voiceCalls.js";
 import conferenceWebhooksRoutes from "./conferenceWebhooks.js";
+import recordingWebhooksRoutes from "./recordingWebhooks.js";
+import transcriptionWebhooksRoutes from "./transcriptionWebhooks.js";
 import readinessRoutes from "./readiness.js";
 import signnowRoutes from "./signnow.js";
 import submissionOrchestrationRoutes from "./submissionOrchestration.js"; // BF_SERVER_v74_BLOCK_1_7
@@ -192,6 +194,8 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/webhooks", router: webhooksRoutes },
   { path: "/voice", router: voiceCallsRoutes },
   { path: "/webhooks/twilio", router: conferenceWebhooksRoutes },
+  { path: "/webhooks/twilio", router: recordingWebhooksRoutes },
+  { path: "/webhooks/twilio", router: transcriptionWebhooksRoutes },
   { path: "/sms", router: webhooksRoutes },
   { path: "/website", router: websiteRoutes },
   { path: "/maya", router: combinedMayaRoutes },
@@ -248,6 +252,8 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/webhooks/twilio/conference/join", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/conference/status", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/call/status", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/recording/status", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/transcription/event", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/voice/no-answer", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/voicemail", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/voice", roles: [] },
