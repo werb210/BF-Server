@@ -62,6 +62,26 @@ const PORTAL_FORM_DOC_LABELS: ReadonlySet<string> = new Set([
 
 // BF_SERVER_BLOCK_TWO_STAGE_v1 -- "stage" added (1 or 2). Default
 // stage=1 if omitted (upload at submit).
+// v628: build a snake_case alias set so the client can send either form.
+// The portal generates keys via: label.toLowerCase().replace(/[^a-z0-9]+/g, "_")
+// Server mirrors that derivation so both formats match.
+function _v628NormalizeKey(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+const PORTAL_FORM_DOC_LABEL_ALIASES: ReadonlyMap<string, string> = new Map(
+  Array.from(PORTAL_FORM_DOC_LABELS).flatMap((label) => [
+    [label, label],
+    [_v628NormalizeKey(label), label],
+  ]),
+);
+function resolveDocCategory_v628(raw: string): string | null {
+  if (!raw) return null;
+  const trimmed = String(raw).trim();
+  if (PORTAL_FORM_DOC_LABELS.has(trimmed)) return trimmed;
+  const normalized = _v628NormalizeKey(trimmed);
+  return PORTAL_FORM_DOC_LABEL_ALIASES.get(normalized) ?? null;
+}
+
 const PORTAL_FORM_DOC_ALLOWED_KEYS: ReadonlySet<string> = new Set([
   "category",
   "required",
@@ -107,7 +127,8 @@ function validateAndNormalizeRequiredDocuments(input: unknown): {
       errors.push(`required_documents[${i}] missing category`);
       continue;
     }
-    if (!PORTAL_FORM_DOC_LABELS.has(rawLabel)) {
+    const _resolvedCategory_v628 = resolveDocCategory_v628(rawLabel);
+    if (!_resolvedCategory_v628) {
       errors.push(
         `required_documents[${i}] category "${rawLabel}" is not in the canonical portal-form list. ` +
         `Update BF-portal/LendersPage.tsx coreTypes/conditionalTypes AND BF-Server portalLenderProducts.ts ` +
@@ -115,11 +136,11 @@ function validateAndNormalizeRequiredDocuments(input: unknown): {
       );
       continue;
     }
-    if (seenLabels.has(rawLabel)) {
-      errors.push(`required_documents[${i}] duplicates earlier entry "${rawLabel}"`);
+    if (seenLabels.has(_resolvedCategory_v628)) {
+      errors.push(`required_documents[${i}] duplicates earlier entry "${_resolvedCategory_v628}"`);
       continue;
     }
-    seenLabels.add(rawLabel);
+    seenLabels.add(_resolvedCategory_v628);
     const description =
       typeof obj.description === "string" && obj.description.trim()
         ? obj.description.trim()
@@ -127,7 +148,7 @@ function validateAndNormalizeRequiredDocuments(input: unknown): {
     // BF_SERVER_BLOCK_TWO_STAGE_v1 -- coerce stage to 1 | 2. Default 1.
     const rawStage = obj.stage;
     const stage: 1 | 2 = rawStage === 2 || rawStage === "2" ? 2 : 1;
-    normalized.push({ category: rawLabel, required: obj.required === false ? false : true, description, stage });
+    normalized.push({ category: _resolvedCategory_v628, required: obj.required === false ? false : true, description, stage });
   }
   return { normalized, errors };
 }
