@@ -195,6 +195,10 @@ function decorateProductResponse(product: any): any {
   const eligibility_notes = product.eligibility_notes ?? null;
   return {
     ...product,
+    // v626: surface lender_name so the Lender Products list can render
+    // which lender a row belongs to without an extra fetch.
+    lender_name: product.lender_name ?? null,
+    lenderName: product.lender_name ?? null,
     productName: product.productName ?? product.name ?? null,
     minAmount: amount_min !== null ? Number(amount_min) : 0,
     maxAmount: amount_max !== null ? Number(amount_max) : 0,

@@ -262,10 +262,16 @@ export async function listLenderProducts(
       allowMissing: true,
     });
     const selectColumns = buildSelectColumns(existing);
-    const res = await runner.query<LenderProductRecord>(
-      `select ${selectColumns}
-       from lender_products
-       order by created_at desc`
+    // v626: include lender_name via LEFT JOIN so the portal product list
+    // can show which lender each product belongs to. Aliased columns
+    // pass through buildSelectColumns untouched; the joined name lands
+    // as a separate field consumed by decorateProductResponse.
+    const res = await runner.query<LenderProductRecord & { lender_name?: string | null }>(
+      `select ${selectColumns.split(",").map((c) => `lp.${c.trim()}`).join(", ")},
+              l.name AS lender_name
+       from lender_products lp
+       left join lenders l on l.id = lp.lender_id
+       order by lp.created_at desc`
     );
     return res.rows;
   } catch (err) {
@@ -316,11 +322,13 @@ export async function listLenderProductsByLenderId(
     allowMissing: true,
   });
   const selectColumns = buildSelectColumns(existing);
-  const res = await runner.query<LenderProductRecord>(
-    `select ${selectColumns}
-     from lender_products
-     where lender_id = $1
-     order by created_at desc`,
+  const res = await runner.query<LenderProductRecord & { lender_name?: string | null }>(
+    `select ${selectColumns.split(",").map((c) => `lp.${c.trim()}`).join(", ")},
+            l.name AS lender_name
+     from lender_products lp
+     left join lenders l on l.id = lp.lender_id
+     where lp.lender_id = $1
+     order by lp.created_at desc`,
     [lenderId]
   );
   return res.rows;
