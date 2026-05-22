@@ -71,6 +71,8 @@ export const EnvSchema = z
     PWA_PUSH_ENABLED: boolString.optional(),
     RATE_LIMIT_ENABLED: boolString.optional(),
     TWILIO_FROM: z.string().min(1).optional(),
+    TWILIO_FROM_NUMBER: z.string().min(1).optional(),
+    TWILIO_CALLER_ID: z.string().min(1).optional(),
     TWILIO_NUMBER: z.string().min(1).optional(),
     TWILIO_PHONE_NUMBER: z.string().min(1).optional(),
     TWILIO_VERIFY_SERVICE_SID: z.string().min(1).optional(),

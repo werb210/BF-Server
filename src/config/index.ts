@@ -94,14 +94,20 @@ export const config = {
   twilio: {
     sid: parsed.TWILIO_ACCOUNT_SID ?? "",
     token: parsed.TWILIO_AUTH_TOKEN ?? "",
-    phone: parsed.TWILIO_PHONE,
+    // v630: TWILIO_FROM_NUMBER fallback. Azure deploys use TWILIO_FROM_NUMBER
+    // (+ TWILIO_CALLER_ID) but the original schema only read TWILIO_NUMBER /
+    // TWILIO_PHONE. Without this fallback, SMS sends are silent no-ops and
+    // inbound-call TwiML gets an undefined callerId.
+    phone: parsed.TWILIO_PHONE ?? parsed.TWILIO_FROM_NUMBER ?? parsed.TWILIO_CALLER_ID,
     accountSid: parsed.TWILIO_ACCOUNT_SID ?? "",
     apiKey: parsed.TWILIO_API_KEY,
     apiSecret: parsed.TWILIO_API_SECRET,
     authToken: parsed.TWILIO_AUTH_TOKEN ?? "",
-    from: parsed.TWILIO_FROM,
-    number: parsed.TWILIO_NUMBER,
-    phoneNumber: parsed.TWILIO_PHONE_NUMBER,
+    from: parsed.TWILIO_FROM ?? parsed.TWILIO_FROM_NUMBER ?? parsed.TWILIO_CALLER_ID,
+    number: parsed.TWILIO_NUMBER ?? parsed.TWILIO_FROM_NUMBER ?? parsed.TWILIO_CALLER_ID,
+    phoneNumber: parsed.TWILIO_PHONE_NUMBER ?? parsed.TWILIO_FROM_NUMBER ?? parsed.TWILIO_CALLER_ID,
+    fromNumber: parsed.TWILIO_FROM_NUMBER ?? parsed.TWILIO_CALLER_ID,
+    callerId: parsed.TWILIO_CALLER_ID ?? parsed.TWILIO_FROM_NUMBER,
     verifyServiceSid: parsed.TWILIO_VERIFY_SERVICE_SID,
     voiceAppSid: parsed.TWILIO_VOICE_APP_SID,
   },
