@@ -250,12 +250,10 @@ export async function dialPstnIntoConference(args: DialIntoConferenceArgs): Prom
   const friendly = await __resolveFriendly(args);
   const phone = String(args.phoneNumber ?? args.phone ?? args.to ?? args.toNumber ?? "");
   if (!friendly || !phone) throw new Error("dialPstnIntoConference: missing args");
-  const role = (args.role as string) ?? "participant";
-  const endOnExit = !!args.endOnExit;
   const tw = __getTw();
   const call = await tw.calls.create({
     to: phone, from: __callerId(),
-    url: `${__baseUrl()}/api/webhooks/twilio/voice/conf-join?conf=${encodeURIComponent(friendly)}&role=${role}&endOnExit=${endOnExit}`,
+    url: `${__baseUrl()}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(friendly)}&pid=${encodeURIComponent(String(args.participantId ?? ""))}`,
     method: "POST",
     statusCallback: `${__baseUrl()}/api/webhooks/twilio/voice/call-status`,
     statusCallbackEvent: ["initiated","ringing","answered","completed"],
@@ -268,12 +266,10 @@ export async function dialClientIntoConference(args: DialIntoConferenceArgs): Pr
   const friendly = await __resolveFriendly(args);
   const identity = String(args.identity ?? "");
   if (!friendly || !identity) throw new Error("dialClientIntoConference: missing args");
-  const role = (args.role as string) ?? "moderator";
-  const endOnExit = args.endOnExit ?? (role === "moderator");
   const tw = __getTw();
   const call = await tw.calls.create({
     to: `client:${identity}`, from: __callerId(),
-    url: `${__baseUrl()}/api/webhooks/twilio/voice/conf-join?conf=${encodeURIComponent(friendly)}&role=${role}&endOnExit=${endOnExit}`,
+    url: `${__baseUrl()}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(friendly)}&pid=${encodeURIComponent(String(args.participantId ?? ""))}`,
     method: "POST",
     statusCallback: `${__baseUrl()}/api/webhooks/twilio/voice/call-status`,
     statusCallbackEvent: ["initiated","ringing","answered","completed"],
