@@ -13,7 +13,22 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   const graph = await getGraphForUser(pool, userId);
   if (!graph) return res.status(412).json({ error: "o365_not_connected" });
 
-  const { from, to = [], cc = [], bcc = [], subject = "", body_html = "" } = req.body ?? {};
+  // v634: accept BOTH shapes — flat {to[], cc[], bcc[], subject, body_html}
+  // AND Microsoft Graph {message:{subject, body:{contentType,content}, toRecipients:[{emailAddress:{address}}]}}
+  let raw = req.body ?? {};
+  if (raw?.message && Array.isArray(raw.message?.toRecipients)) {
+    const m = raw.message;
+    const pick = (xs: any[]) => (xs ?? []).map((x: any) => x?.emailAddress?.address).filter(Boolean);
+    raw = {
+      from: m.from?.emailAddress?.address ?? raw.from,
+      to: pick(m.toRecipients),
+      cc: pick(m.ccRecipients),
+      bcc: pick(m.bccRecipients),
+      subject: m.subject ?? "",
+      body_html: m.body?.contentType === "HTML" ? (m.body?.content ?? "") : (m.body?.content ?? ""),
+    };
+  }
+  const { from, to = [], cc = [], bcc = [], subject = "", body_html = "" } = raw;
   if (!Array.isArray(to) || !to.length) return res.status(400).json({ error: "to required" });
 
   let endpoint = "/me/sendMail";
