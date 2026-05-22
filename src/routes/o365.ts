@@ -31,6 +31,19 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   const { from, to = [], cc = [], bcc = [], subject = "", body_html = "" } = raw;
   if (!Array.isArray(to) || !to.length) return res.status(400).json({ error: "to required" });
 
+  // v635_signature: append user's saved HTML signature to body_html if present.
+  let bodyWithSig = body_html ?? "";
+  try {
+    const sigRes = await pool.query<{ email_signature_html: string | null }>(
+      `SELECT email_signature_html FROM user_settings WHERE user_id = $1 LIMIT 1`,
+      [userId]
+    );
+    const sig = sigRes.rows[0]?.email_signature_html;
+    if (sig && typeof sig === "string" && sig.trim()) {
+      bodyWithSig = `${bodyWithSig}<br/><br/>${sig}`;
+    }
+  } catch { /* user_settings may be missing on first deploy — non-fatal */ }
+
   let endpoint = "/me/sendMail";
   if (from) {
     const me = await graph.fetch("/me?$select=mail,userPrincipalName");
@@ -61,7 +74,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
     body: JSON.stringify({
       message: {
         subject,
-        body: { contentType: "HTML", content: body_html },
+        body: { contentType: "HTML", content: bodyWithSig },
         toRecipients: to.map((a: string) => ({ emailAddress: { address: a } })),
         ccRecipients: cc.map((a: string) => ({ emailAddress: { address: a } })),
         bccRecipients: bcc.map((a: string) => ({ emailAddress: { address: a } })),
@@ -116,6 +129,30 @@ router.get("/inbox", safeHandler(async (req: any, res: any) => {
   if (!r.ok) return res.status(502).json({ error: "graph_inbox_failed" });
   const data = await r.json();
   res.json({ ok: true, data: data.value ?? [] });
+}));
+
+
+// v635_signature_route: GET/PUT for the saved HTML signature.
+router.get("/me/signature", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const r = await pool.query<{ email_signature_html: string | null }>(
+    `SELECT email_signature_html FROM user_settings WHERE user_id = $1 LIMIT 1`, [userId]
+  ).catch(() => ({ rows: [] as any[] }));
+  res.json({ signatureHtml: r.rows[0]?.email_signature_html ?? "" });
+}));
+router.put("/me/signature", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const html = String(req.body?.signatureHtml ?? "").slice(0, 20000); // cap at 20KB
+  await pool.query(
+    `INSERT INTO user_settings (user_id, email_signature_html, updated_at)
+     VALUES ($1, $2, now())
+     ON CONFLICT (user_id) DO UPDATE
+       SET email_signature_html = EXCLUDED.email_signature_html, updated_at = now()`,
+    [userId, html]
+  );
+  res.json({ ok: true });
 }));
 
 export default router;

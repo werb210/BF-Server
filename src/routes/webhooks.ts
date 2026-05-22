@@ -421,6 +421,16 @@ async function persistInboundSms(req: any): Promise<void> {
     [fromNum]
   ).then((r) => r.rows[0] ?? null).catch(() => null);
 
+  // v635_sms_match_log: log the contact lookup outcome so silent
+  // persists are visible in Azure log stream.
+  console.log(JSON.stringify({
+    event: "sms_inbound_contact_match",
+    from: fromNum,
+    matched_contact_id: contact?.id ?? null,
+    silo: contact?.silo ?? "BF",
+    sid,
+  }));
+
   // ON CONFLICT on comm_messages_twilio_sid_idx (unique partial index from
   // migration 109) makes Twilio retries idempotent without a duplicate row.
   await pool.query(
