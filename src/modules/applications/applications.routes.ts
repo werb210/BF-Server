@@ -891,11 +891,36 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
       categoryMap.set(key, { key, label: existing?.label ?? key, required: Boolean(existing?.required || required) });
     }
   }
-  type FileRow = { id: string; filename: string | null; size_bytes: number | null; created_at: Date; status: string | null; category: string | null; };
+  type FileRow = { id: string; filename: string | null; size_bytes: number | null; created_at: Date; status: string | null; category: string | null; ocr_status: string | null; ocr_text: string | null; ocr_text_truncated: boolean | null; ocr_tables_count: number | null; ocr_extracted_at: Date | null; };
   let fileRows: FileRow[] = [];
   try {
+    // v625: include OCR-extracted text per file. LEFT JOIN LATERAL pulls
+    // the most recent ocr_results row per document; LIMIT 1 keeps it cheap.
+    // Truncate ocr_text at 8000 chars so the response payload doesn't
+    // balloon — full text still available via /api/ocr/admin/documents/:id/result.
     const r = await pool.query<FileRow>(
-      `SELECT d.id::text AS id, COALESCE(d.filename, d.title) AS filename, d.size_bytes AS size_bytes, d.created_at AS created_at, d.status AS status, COALESCE(d.category, d.document_type) AS category FROM documents d WHERE d.application_id::text = ($1)::text ORDER BY d.created_at ASC`,
+      `SELECT
+          d.id::text AS id,
+          COALESCE(d.filename, d.title) AS filename,
+          d.size_bytes AS size_bytes,
+          d.created_at AS created_at,
+          d.status AS status,
+          COALESCE(d.category, d.document_type) AS category,
+          d.ocr_status AS ocr_status,
+          LEFT(ocr.ocr_text, 8000) AS ocr_text,
+          ocr.ocr_text IS NOT NULL AND length(ocr.ocr_text) > 8000 AS ocr_text_truncated,
+          jsonb_array_length(COALESCE(ocr.ocr_tables, '[]'::jsonb)) AS ocr_tables_count,
+          ocr.processed_at AS ocr_extracted_at
+       FROM documents d
+       LEFT JOIN LATERAL (
+         SELECT ocr_text, ocr_tables, processed_at
+           FROM ocr_results
+          WHERE document_id = d.id
+          ORDER BY processed_at DESC NULLS LAST
+          LIMIT 1
+       ) ocr ON TRUE
+       WHERE d.application_id::text = ($1)::text
+       ORDER BY d.created_at ASC`,
       [appId],
     );
     fileRows = r.rows;
@@ -918,7 +943,28 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
   if (isCapitalAndEquipmentLeg && app.parent_application_id) {
     try {
       const r = await pool.query<FileRow>(
-        `SELECT d.id::text AS id, COALESCE(d.filename, d.title) AS filename, d.size_bytes AS size_bytes, d.created_at AS created_at, d.status AS status, COALESCE(d.category, d.document_type) AS category FROM documents d WHERE d.application_id::text = ($1)::text ORDER BY d.created_at ASC`,
+        `SELECT
+            d.id::text AS id,
+            COALESCE(d.filename, d.title) AS filename,
+            d.size_bytes AS size_bytes,
+            d.created_at AS created_at,
+            d.status AS status,
+            COALESCE(d.category, d.document_type) AS category,
+            d.ocr_status AS ocr_status,
+            LEFT(ocr.ocr_text, 8000) AS ocr_text,
+            ocr.ocr_text IS NOT NULL AND length(ocr.ocr_text) > 8000 AS ocr_text_truncated,
+            jsonb_array_length(COALESCE(ocr.ocr_tables, '[]'::jsonb)) AS ocr_tables_count,
+            ocr.processed_at AS ocr_extracted_at
+         FROM documents d
+         LEFT JOIN LATERAL (
+           SELECT ocr_text, ocr_tables, processed_at
+             FROM ocr_results
+            WHERE document_id = d.id
+            ORDER BY processed_at DESC NULLS LAST
+            LIMIT 1
+         ) ocr ON TRUE
+         WHERE d.application_id::text = ($1)::text
+         ORDER BY d.created_at ASC`,
         [app.parent_application_id],
       );
       const seenIds = new Set(fileRows.map((f) => f.id));
@@ -939,7 +985,7 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
     filesByCategory.get(k)!.push(f);
   }
   const seen = new Set(categoryMap.keys());
-  const categories: Array<{ key: string; label: string; required: boolean; files: Array<{ id: string; filename: string; size: number | null; uploadedAt: string | null; status: string; url: string | null; }>; }> = [];
+  const categories: Array<{ key: string; label: string; required: boolean; files: Array<{ id: string; filename: string; size: number | null; uploadedAt: string | null; status: string; url: string | null; ocr_status: string | null; ocr_text: string | null; ocr_text_truncated: boolean; ocr_tables_count: number; ocr_extracted_at: string | null; }>; }> = [];
   const fileToTab = (f: FileRow) => ({
     id: f.id,
     filename: f.filename ?? '',
@@ -953,6 +999,11 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
       return 'pending_review';
     })(),
     url: null,
+    ocr_status: f.ocr_status ?? null,
+    ocr_text: f.ocr_text ?? null,
+    ocr_text_truncated: Boolean(f.ocr_text_truncated),
+    ocr_tables_count: Number(f.ocr_tables_count ?? 0),
+    ocr_extracted_at: f.ocr_extracted_at ? new Date(f.ocr_extracted_at as any).toISOString() : null,
   });
   for (const cat of categoryMap.values()) {
     const files = (filesByCategory.get(cat.key) ?? []).map(fileToTab);
