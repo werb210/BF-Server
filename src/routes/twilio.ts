@@ -216,13 +216,21 @@ router.post(
         dial.client(assignedStaff);
       }
 
+      // v610: silo-scope the fallback ring. Inbound silo resolved from
+      // X-Silo / ?silo / Twilio call's parked silo; defaults to BF.
+      const callSilo = (req.get("X-Silo") || (req.query.silo as string) || "BF").toUpperCase();
       const fallbackStaff = await client.query<{ id: string }>(
         `select id
          from users
          where role in ('admin','staff')
            and active = true
            and coalesce(disabled, false) = false
-           and coalesce(is_active, true) = true`
+           and coalesce(is_active, true) = true
+           and (
+             silo = $1
+             OR $1 = ANY(coalesce(silos, ARRAY[]::text[]))
+           )`,
+        [callSilo],
       );
 
       for (const row of fallbackStaff.rows) {
