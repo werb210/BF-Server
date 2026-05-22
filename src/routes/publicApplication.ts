@@ -183,7 +183,7 @@ router.post(
                                       )
                                     ),
                       updated_at = now()
-                // BF_SERVER_BLOCK_v137_READINESS_HANDOFF_REPAIR_v1 — applications.id is TEXT (006 + 20260427_app_id_uuid_to_text_repair).
+                -- v627: applications.id is TEXT (was JS-style // comment, Postgres choked on the em-dash).
                 WHERE id::text = ($1)::text`,
               [
                 draft.id,
