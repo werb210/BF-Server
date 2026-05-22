@@ -85,9 +85,20 @@ export async function dispatchToSelected(
     await ctx.pool.query(
       `INSERT INTO application_packages
          (id, application_id, lender_id, status, delivered_to, error, bytes, created_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, NOW())`,
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, NOW())
+       ON CONFLICT (application_id, lender_id) DO NOTHING
+       RETURNING id`,
       [ctx.applicationId, l.lender_id, ok ? "sent" : "failed", deliveredTo, error, pkg.zipBuffer.length]
-    ).catch((e) => { console.error("[dispatch] failed to record application_packages row", e); });
+    )
+      .then((rs) => {
+        if (!rs.rowCount) {
+          console.warn("[dispatch] application_packages duplicate suppressed", {
+            applicationId: ctx.applicationId,
+            lenderId: l.lender_id,
+          });
+        }
+      })
+      .catch((e) => { console.error("[dispatch] failed to record application_packages row", e); });
 
     if (ok) sent.push(l.lender_id);
   }
