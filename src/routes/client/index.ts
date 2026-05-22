@@ -108,6 +108,7 @@ router.get(
   })
 );
 
+// BF_SERVER_BLOCK_v636_MESSAGES_TAB_FIXES_v1
 router.get(
   "/messages",
   safeHandler(async (req: any, res: any) => {
@@ -116,8 +117,19 @@ router.get(
       throw new AppError("validation_error", "applicationId is required.", 400);
     }
 
+    // v636: presence bump. Mini-portal polls this every 20s while the tab is
+    // visible. POST /communications/messages/send reads last_portal_seen_at to
+    // decide whether to fire the offline-fallback SMS.
+    await dbQuery(
+      `UPDATE applications SET last_portal_seen_at = now() WHERE id = $1`,
+      [applicationId]
+    ).catch(() => undefined);
+
+    // v636: include `direction` + `cta_label` + `cta_action` so MiniPortalPage
+    // maps inbound→self / outbound→other correctly and MessageThread renders
+    // the inline CTA bubble (screenshot 2 — "Complete Personal Net Worth").
     const rows = await dbQuery(
-      `SELECT id, direction, body, staff_name, created_at
+      `SELECT id, direction, body, staff_name, cta_label, cta_action, created_at
        FROM communications_messages
        WHERE application_id = $1
        ORDER BY created_at ASC
@@ -129,10 +141,12 @@ router.get(
       status: "ok",
       data: (rows.rows ?? []).map((r: any) => ({
         id: r.id,
-        role: r.direction === "outbound" ? "staff" : "client",
-        content: r.body,
-        staffName: r.staff_name ?? null,
-        createdAt: r.created_at,
+        direction: r.direction,
+        body: r.body,
+        staff_name: r.staff_name ?? null,
+        cta_label: r.cta_label ?? null,
+        cta_action: r.cta_action ?? null,
+        created_at: r.created_at,
       })),
     });
   })
