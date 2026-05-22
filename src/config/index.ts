@@ -62,7 +62,7 @@ export const config = {
     otpHashSalt: parsed.OTP_HASH_SALT,
     testOtpCode: parsed.TEST_OTP_CODE,
     refreshSecret: parsed.JWT_REFRESH_SECRET,
-    accessExpiresIn: parsed.JWT_ACCESS_EXPIRES_IN ?? "1h",
+    accessExpiresIn: parsed.JWT_ACCESS_EXPIRES_IN ?? "7d", // v618: staff default per locked spec
     refreshExpiresMs: toNumber(parsed.JWT_REFRESH_EXPIRES_MS, 7 * 24 * 60 * 60 * 1000),
     jwtClockSkewSeconds: toNumber(parsed.JWT_CLOCK_SKEW_SECONDS, 0),
   },
