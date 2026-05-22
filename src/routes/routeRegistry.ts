@@ -65,6 +65,7 @@ import voiceCallsRoutes from "./voiceCalls.js";
 import voiceMidCallRoutes from "./voiceMidCall.js";
 import conferenceWebhooksRoutes from "./conferenceWebhooks.js";
 import readinessRoutes from "./readiness.js";
+import ocrAdminRoutes from "../modules/ocr/ocr.admin.routes.js"; // BF_SERVER_BLOCK_v617_MOUNT_OCR_ADMIN_v1
 import signnowRoutes from "./signnow.js";
 import submissionOrchestrationRoutes from "./submissionOrchestration.js"; // BF_SERVER_v74_BLOCK_1_7
 import emailRoutes from "./email.js";
@@ -82,6 +83,7 @@ import aiRoutes from "./ai.v2.js";
 import o365Routes from "./o365.js";
 import { createMountTracker } from "./_canonicalMount.js";
 import { siloMiddleware } from "../middleware/silo.js";
+import { requireAuth } from "../middleware/auth.js";
 
 export type ApiRoute = {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -200,6 +202,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/ai", router: aiRoutes },
   { path: "/email", router: emailRoutes },
   { path: "/o365", router: o365Routes },
+  { path: "/ocr/admin", router: ocrAdminRoutes },
   { path: "/public", router: publicApplicationRoutes },
   { path: "/", router: rootRoutes },
   { path: "/slf", router: slfRoutes },
@@ -336,7 +339,10 @@ export const ROUTES: ApiRoute[] = [
 export function registerApiRouteMounts(app: Router): void {
   const mount = createMountTracker();
 
+  mount(app, "/ocr/admin", Router().use(requireAuth, ocrAdminRoutes));
+
   API_ROUTE_MOUNTS.forEach((entry) => {
+    if (entry.path === "/ocr/admin") return;
     mount(app, entry.path, entry.router);
   });
 }
