@@ -10,6 +10,7 @@ export type AccessTokenPayload = {
   tokenVersion: number;
   phone?: string | null;
   silo?: string;
+  silos?: string[]; // v620: accessible silos for multi-silo users
   capabilities?: Capability[];
 };
 

@@ -196,12 +196,18 @@ router.post("/otp/verify", async (req, res) => {
     let token: string;
     if (isActiveStaff && user) {
       const role = normalizeRole(user.role ?? "") ?? ROLES.STAFF;
+      // v620: include silos[] + silo from user row so BF-portal can
+      // render the silo selector without an extra round-trip.
+      const userSilos = Array.isArray((user as any).silos) ? ((user as any).silos as string[]) : [];
+      const userSilo = (user as any).silo as string | undefined;
       token = signAccessToken({
         sub: String(user.id),
         role,
         tokenVersion: user.tokenVersion ?? 0,
         phone: user.phoneNumber ?? phone,
         capabilities: fetchCapabilitiesForRole(role),
+        ...(userSilo ? { silo: userSilo } : {}),
+        ...(userSilos.length ? { silos: userSilos } : {}),
       });
     } else {
       console.log("[otp_verify] client_fallthrough", { phone });
