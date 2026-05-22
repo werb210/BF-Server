@@ -811,10 +811,25 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
     const n = typeof raw === 'number' ? raw : Number(String(raw).replace(/[^0-9.\-]/g, ''));
     return Number.isFinite(n) ? n : null;
   })();
+  // v624: applicant's Step 2 product category. Used to filter lender_products
+  // so Step 5 only unions docs from products in the chosen category.
+  // Reads from metadata.product_category (canonical) OR
+  // metadata.selected_product.* (legacy wizard path). Normalized lowercase.
+  const category = (() => {
+    const raw = String(
+      meta.product_category
+      ?? meta.selected_product_type
+      ?? meta.selected_product?.capitalCategory
+      ?? (meta.selected_product?.wantsEquipment ? 'EQUIPMENT' : null)
+      ?? meta.selected_product?.category
+      ?? ''
+    ).trim().toLowerCase();
+    return raw || null;
+  })();
   const colsRes = await pool.query<{ column_name: string }>(
     `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'lender_products'`
   ).catch(() => ({ rows: [] as Array<{ column_name: string }> }));
-  const cols = new Set(colsRes.rows.map((r) => r.column_name));
+  const cols = new Set(colsRes.rows.map((r: { column_name: string }) => r.column_name));
   let productRows: Array<{ required_documents: any; category: string | null }> = [];
   if (cols.has('required_documents')) {
     const where: string[] = [];
@@ -834,6 +849,13 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
     if (amount !== null && maxCol) {
       params.push(amount);
       where.push(`(${maxCol} IS NULL OR ${maxCol} >= $${params.length})`);
+    }
+    // v624: restrict to lender_products in the applicant's chosen category.
+    // Comparison is case-insensitive trim on both sides. NULL category on
+    // a product row is treated as a wildcard (legacy un-categorized rows).
+    if (category && cols.has('category')) {
+      params.push(category);
+      where.push(`(category IS NULL OR LOWER(TRIM(category)) = $${params.length})`);
     }
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
     try {
@@ -855,6 +877,15 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
       if (!rawKey || typeof rawKey !== 'string') continue;
       const key = rawKey.trim();
       if (!key) continue;
+      // v624: Step 5 shows stage-1 docs only. Items missing a stage field
+      // default to stage 1 (back-compat with rows created before the
+      // two-stage upgrade).
+      const stage = ((): 1 | 2 => {
+        const raw = (item as any)?.stage;
+        if (raw === 2 || raw === '2') return 2;
+        return 1;
+      })();
+      if (stage !== 1) continue;
       const required = Boolean(item?.required);
       const existing = categoryMap.get(key);
       categoryMap.set(key, { key, label: existing?.label ?? key, required: Boolean(existing?.required || required) });
