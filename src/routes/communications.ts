@@ -62,19 +62,47 @@ router.post(
 
     const { sendStaffNotification } = await import("../services/notifications/staffSms.js");
 
+    // BF_SERVER_BLOCK_v636_MESSAGES_TAB_FIXES_v1: resolve contact + application
+    // so handoff rows surface in /messages-list (which groups by contact_id /
+    // application_id). Without this they fell into the NULL bucket and the
+    // portal MessagesTab dropped them via `.filter((c) => c.id)`.
+    const phoneRaw = typeof body.phone === "string" ? body.phone : null;
+    const phoneDigits = phoneRaw ? phoneRaw.replace(/\D/g, "").slice(-10) : null;
+    const contactIdHint = typeof body.contactId === "string" ? body.contactId : null;
+    const applicationIdHint = typeof body.applicationId === "string" ? body.applicationId : null;
+
+    let resolvedContactId: string | null = contactIdHint;
+    if (!resolvedContactId && phoneDigits && phoneDigits.length >= 10) {
+      const ph = await pool.query<{ id: string }>(
+        `SELECT id FROM contacts
+          WHERE right(regexp_replace(coalesce(phone,''), '\D', '', 'g'), 10) = $1
+          ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT 1`,
+        [phoneDigits],
+      ).catch(() => ({ rows: [] as { id: string }[] }));
+      resolvedContactId = ph.rows[0]?.id ?? null;
+    }
+    if (!resolvedContactId && applicationIdHint) {
+      const ar = await pool.query<{ contact_id: string | null }>(
+        `SELECT contact_id FROM applications WHERE id::text = $1 LIMIT 1`,
+        [applicationIdHint],
+      ).catch(() => ({ rows: [] as { contact_id: string | null }[] }));
+      resolvedContactId = ar.rows[0]?.contact_id ?? null;
+    }
+
     const id = randomUUID();
     await pool.query(
       `INSERT INTO maya_escalations
          (id, session_id, application_id, reason, surface, silo, payload)
-       VALUES ($1, $2, NULL, $3, $4, $5, $6::jsonb)`,
-      [id, sessionId, `handoff_${recipientsRaw}`, surface, silo, JSON.stringify({ summary, recipients: recipientsRaw })],
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+      [id, sessionId, applicationIdHint, `handoff_${recipientsRaw}`, surface, silo,
+       JSON.stringify({ summary, recipients: recipientsRaw, contact_id: resolvedContactId, phone: phoneDigits })],
     );
 
     await pool.query(
       `INSERT INTO communications_messages
-         (id, type, direction, status, silo, body, created_at)
-       VALUES ($1, 'maya_handoff', 'inbound', 'received', $2, $3, NOW())`,
-      [randomUUID(), silo, summary ?? "Maya handoff: visitor requested human."],
+         (id, type, direction, status, silo, body, contact_id, application_id, created_at)
+       VALUES ($1, 'maya_handoff', 'inbound', 'received', $2, $3, $4, $5, NOW())`,
+      [randomUUID(), silo, summary ?? "Maya handoff: visitor requested human.", resolvedContactId, applicationIdHint],
     );
 
     const smsBody = `Maya handoff (${surface}): ${summary ?? "visitor requested human"}. Session ${sessionId ?? "n/a"}.`;
@@ -164,11 +192,22 @@ router.get("/sms", safeHandler(async (req: any, res: any) => {
 // needs a list endpoint analogous to /sms but scoped to non-SMS rows.
 // Threads are grouped by contact_id when present, otherwise application_id
 // so application-linked handoff messages (without a contact yet) still show.
+// BF_SERVER_BLOCK_v636_MESSAGES_TAB_FIXES_v1
 router.get("/messages-list", safeHandler(async (req: any, res: any) => {
   const { getSilo } = await import("../middleware/silo.js");
   const silo = getSilo(res);
-  const result = await pool.query(
-    `SELECT
+  const mode = String(req.query.mode ?? "").toLowerCase();
+  const typesParam = String(req.query.types ?? "").trim();
+  const types = typesParam ? typesParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
+
+  // v636: honor ?types=. Empty = original (any non-SMS).
+  const typeClause = types.length
+    ? `AND m.type = ANY($2::text[])`
+    : `AND (m.type IS NULL OR m.type <> 'sms')`;
+  const typeParams: any[] = types.length ? [silo, types] : [silo];
+
+  const threadsSql = `
+    SELECT
       COALESCE(m.contact_id::text, m.application_id::text) AS thread_key,
       m.contact_id AS contact_id,
       COALESCE(c.name, c.email, c.phone, m.to_number, m.from_number, m.application_id::text) AS display_name,
@@ -178,7 +217,6 @@ router.get("/messages-list", safeHandler(async (req: any, res: any) => {
       (
         SELECT body FROM communications_messages m2
         WHERE m2.silo = $1
-          AND (m2.type IS NULL OR m2.type <> 'sms')
           AND COALESCE(m2.contact_id::text, m2.application_id::text) =
               COALESCE(m.contact_id::text, m.application_id::text)
         ORDER BY m2.created_at DESC
@@ -188,11 +226,43 @@ router.get("/messages-list", safeHandler(async (req: any, res: any) => {
     FROM communications_messages m
     LEFT JOIN contacts c ON c.id = m.contact_id
     WHERE m.silo = $1
-      AND (m.type IS NULL OR m.type <> 'sms')
+      ${typeClause}
     GROUP BY thread_key, m.contact_id, display_name, phone, email
-    ORDER BY last_at DESC
-    LIMIT 200`,
-    [silo],
+  `;
+
+  if (mode === "all") {
+    // v636: include every silo contact, even with no prior message rows.
+    const result = await pool.query(
+      `WITH threads AS (${threadsSql})
+       SELECT
+         COALESCE(t.thread_key, ct.id::text) AS thread_key,
+         COALESCE(t.contact_id, ct.id)       AS contact_id,
+         COALESCE(t.display_name, ct.name, ct.email, ct.phone, 'Unknown') AS display_name,
+         COALESCE(t.phone, ct.phone)         AS phone,
+         COALESCE(t.email, ct.email)         AS email,
+         t.last_at,
+         t.last_body,
+         COALESCE(t.unread_count, 0)         AS unread_count
+       FROM contacts ct
+       LEFT JOIN threads t ON t.contact_id = ct.id
+       WHERE COALESCE(ct.status, 'active') <> 'archived'
+         AND (ct.silo IS NULL OR ct.silo = $1)
+       UNION ALL
+       SELECT t.thread_key, t.contact_id, t.display_name, t.phone, t.email,
+              t.last_at, t.last_body, COALESCE(t.unread_count, 0)
+         FROM threads t
+        WHERE t.contact_id IS NULL
+       ORDER BY last_at DESC NULLS LAST, display_name ASC
+       LIMIT 1000`,
+      typeParams,
+    ).catch(() => ({ rows: [] as any[] }));
+    return res.json({ conversations: result.rows });
+  }
+
+  // Default: only rows with messages (original v220 behaviour, now type-filterable).
+  const result = await pool.query(
+    `${threadsSql} ORDER BY last_at DESC LIMIT 200`,
+    typeParams,
   ).catch(() => ({ rows: [] as any[] }));
   res.json({ conversations: result.rows });
 }));
@@ -823,6 +893,45 @@ router.post(
        )`,
       [id, applicationId, silo, body, staffName, ctaLabel, ctaAction],
     );
+
+    // BF_SERVER_BLOCK_v636_MESSAGES_TAB_FIXES_v1: offline-fallback SMS.
+    // Mini-portal bumps applications.last_portal_seen_at on every poll (~20s).
+    // No bump in 60s → treat as offline → SMS the contact with a deep-link.
+    // SMS-only client comms — no email.
+    try {
+      const presence = await pool.query<{
+        last_seen: string | null;
+        phone: string | null;
+        seconds_since: number | null;
+      }>(
+        `SELECT a.last_portal_seen_at AS last_seen,
+                c.phone AS phone,
+                EXTRACT(EPOCH FROM (now() - a.last_portal_seen_at))::int AS seconds_since
+           FROM applications a
+           LEFT JOIN contacts c ON c.id = a.contact_id
+          WHERE a.id::text = $1
+          LIMIT 1`,
+        [applicationId],
+      );
+      const row = presence.rows[0];
+      const stale = !row || row.last_seen == null ||
+                    (typeof row.seconds_since === "number" && row.seconds_since > 60);
+      if (stale && row?.phone) {
+        const { sendSms } = await import("../modules/notifications/sms.service.js");
+        const clientBase = String(process.env.CLIENT_URL ?? "https://client.boreal.financial").replace(/\/$/, "");
+        const link = `${clientBase}/portal/${encodeURIComponent(applicationId)}`;
+        const preview = body.length > 120 ? body.slice(0, 117) + "…" : body;
+        const smsBody = `Boreal: ${preview}
+${link}`;
+        void sendSms({ to: row.phone, message: smsBody }).catch((err: unknown) => {
+          const m = err instanceof Error ? err.message : String(err);
+          console.error("[messages/send] offline-fallback sendSms failed", m);
+        });
+      }
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      console.error("[messages/send] presence check failed", m);
+    }
 
     res.status(201).json({
       id,
