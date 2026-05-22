@@ -30,45 +30,43 @@ router.post(
 
     const { to, subject, body, fromInbox, crmContactId, applicationId } = parsed.data;
 
-    const staffResult = await dbQuery<{ o365_user_email: string | null; o365_access_token: string | null }>(
-      `select o365_user_email, o365_access_token from users where id = $1 limit 1`,
-      [req.user!.userId]
-    );
-
-    const staff = staffResult.rows[0];
-    if (!staff?.o365_access_token) {
-      throw new AppError("not_configured", "O365 not configured for this user.", 422);
+    // v631: route through getGraphForUser so expired access tokens are
+    // transparently refreshed via stored refresh token (delegated flow).
+    const { pool } = await import("../db.js");
+    const { getGraphForUser } = await import("../modules/o365/graphClient.js");
+    const graph = await getGraphForUser(pool, req.user!.userId);
+    if (!graph) {
+      throw new AppError("not_configured", "Connect Microsoft 365 in Settings → My Profile to send email.", 422);
     }
 
-    const senderEmail = fromInbox === "shared"
-      ? process.env.O365_SHARED_INBOX_EMAIL
-      : staff.o365_user_email;
-
+    const meResp = await graph.fetch("/me?$select=mail,userPrincipalName");
+    const meJson = await meResp.json() as { mail?: string; userPrincipalName?: string };
+    const personalEmail = (meJson.mail ?? meJson.userPrincipalName ?? "").trim();
+    const sharedEmail = process.env.O365_SHARED_INBOX_EMAIL ?? "";
+    const senderEmail = fromInbox === "shared" ? sharedEmail : personalEmail;
     if (!senderEmail) {
       throw new AppError("not_configured", "Sender inbox is not configured.", 422);
     }
 
-    const graphUrl = fromInbox === "shared"
-      ? `https://graph.microsoft.com/v1.0/users/${senderEmail}/sendMail`
-      : "https://graph.microsoft.com/v1.0/me/sendMail";
+    const endpoint = fromInbox === "shared"
+      ? `/users/${encodeURIComponent(senderEmail)}/sendMail`
+      : "/me/sendMail";
 
-    const response = await fetch(graphUrl, {
+    const response = await graph.fetch(endpoint, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${staff.o365_access_token}`,
-        "Content-Type": "application/json",
-      },
       body: JSON.stringify({
         message: {
           subject,
           body: { contentType: "HTML", content: body },
           toRecipients: [{ emailAddress: { address: to } }],
         },
+        saveToSentItems: true,
       }),
     });
 
     if (!response.ok) {
-      throw new AppError("email_send_failed", "Failed to send email via O365.", 502);
+      const detail = await response.text().catch(() => "");
+      throw new AppError("email_send_failed", `Graph send failed (${response.status}): ${detail.slice(0, 300)}`, 502);
     }
 
     if (crmContactId) {
