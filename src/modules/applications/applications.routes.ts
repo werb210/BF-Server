@@ -218,15 +218,35 @@ router.patch('/:id', safeHandler(async (req: any, res: any) => {
 router.delete('/:id', requireAdmin, safeHandler(async (req: any, res: any) => {
   const id = String(req.params.id);
   if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: 'invalid_id' });
+  const { getSilo } = await import("../../middleware/silo.js");
+  const callerSilo = getSilo(res) ?? null;
+  const own = await pool.query<{ silo: string | null }>(
+    `SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+    [id],
+  );
+  if (!own.rows.length) return res.status(404).json({ error: 'not_found' });
+  if (own.rows[0].silo && callerSilo && own.rows[0].silo !== callerSilo) {
+    return res.status(403).json({ error: 'wrong_silo' });
+  }
   const { rowCount } = await pool.query(`DELETE FROM applications WHERE id::text = ($1)::text`, [id]);
   if (!rowCount) return res.status(404).json({ error: 'not_found' });
   res.json({ ok: true });
 }));
 
-router.get("/:id/contacts", safeHandler(async (req: any, res: any) => {
+router.get("/:id/contacts", requireAuth, safeHandler(async (req: any, res: any) => {
   const applicationId = String(req.params.id ?? "").trim();
   if (!/^[0-9a-f-]{36}$/i.test(applicationId)) {
     return res.status(400).json({ error: "invalid_id" });
+  }
+  const { getSilo } = await import("../../middleware/silo.js");
+  const callerSilo = getSilo(res) ?? null;
+  const ownership = await pool.query<{ silo: string | null }>(
+    `SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+    [applicationId],
+  );
+  if (!ownership.rows.length) return res.status(404).json({ error: "not_found" });
+  if (ownership.rows[0].silo && callerSilo && ownership.rows[0].silo !== callerSilo) {
+    return res.status(403).json({ error: "wrong_silo" });
   }
   const { rows } = await pool.query(
     `SELECT ac.contact_id,

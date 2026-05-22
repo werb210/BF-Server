@@ -3,6 +3,7 @@ import { Router } from "express";
 import { pool, runQuery } from "../db.js";
 import { AppError } from "../middleware/errors.js";
 import { safeHandler } from "../middleware/safeHandler.js";
+import { requireAuth } from "../middleware/requireAuth.js";
 import { eventBus } from "../events/eventBus.js";
 import { optionalString, requireString } from "../system/validate.js";
 
@@ -11,6 +12,7 @@ const router = Router();
 // GET /api/messages?contactId=X&applicationId=Y
 router.get(
   "/",
+  requireAuth,
   safeHandler(async (req: any, res: any) => {
     const contactId = typeof req.query.contactId === "string" ? req.query.contactId.trim() : null;
     const applicationId = typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : null;
