@@ -347,7 +347,12 @@ router.post("/twilio/voicemail", twilioWebhookValidation, safeHandler(async (req
     // Look up contact by phone
     const contact = fromNum
       ? await pool.query<{ id: string }>(
-          `SELECT id FROM contacts WHERE phone = $1 OR mobile_phone = $1 LIMIT 1`,
+          `SELECT id FROM contacts
+            WHERE right(regexp_replace(coalesce(phone, ''),        '[^0-9]', '', 'g'), 10)
+                = right(regexp_replace($1::text,                   '[^0-9]', '', 'g'), 10)
+               OR right(regexp_replace(coalesce(mobile_phone, ''), '[^0-9]', '', 'g'), 10)
+                = right(regexp_replace($1::text,                   '[^0-9]', '', 'g'), 10)
+            LIMIT 1 -- v633: digit-stripped match (E.164 vs formatted)`,
           [fromNum]
         ).then((r) => r.rows[0] ?? null).catch(() => null)
       : null;
@@ -407,7 +412,12 @@ async function persistInboundSms(req: any): Promise<void> {
 
   // Look up contact by phone OR mobile_phone (matches voicemail handler).
   const contact = await pool.query<{ id: string; silo: string | null }>(
-    `SELECT id, silo FROM contacts WHERE phone = $1 OR mobile_phone = $1 LIMIT 1`,
+    `SELECT id, silo FROM contacts
+            WHERE right(regexp_replace(coalesce(phone, ''),        '[^0-9]', '', 'g'), 10)
+                = right(regexp_replace($1::text,                   '[^0-9]', '', 'g'), 10)
+               OR right(regexp_replace(coalesce(mobile_phone, ''), '[^0-9]', '', 'g'), 10)
+                = right(regexp_replace($1::text,                   '[^0-9]', '', 'g'), 10)
+            LIMIT 1 -- v633`,
     [fromNum]
   ).then((r) => r.rows[0] ?? null).catch(() => null);
 
