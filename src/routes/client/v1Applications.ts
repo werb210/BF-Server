@@ -4,6 +4,7 @@ import { z } from "zod";
 import { pool, runQuery } from "../../db.js";
 import { config } from "../../config/index.js";
 import { AppError } from "../../middleware/errors.js";
+import { requireAuth } from "../../middleware/requireAuth.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { ApplicationStage, statusFromPipeline } from "../../modules/applications/pipelineState.js";
 import {
@@ -1113,6 +1114,31 @@ router.get(
       },
     });
   })
+);
+
+// v615: phone-keyed lookup so post-OTP can route to the mini-portal.
+router.get(
+  "/applications/by-phone",
+  requireAuth,
+  safeHandler(async (req: any, res: any) => {
+    const phone = String(req.user?.phone ?? "").trim();
+    if (!phone) return res.status(401).json({ found: false, error: "no_phone_claim" });
+
+    const r = await pool.query(
+      `SELECT a.id, a.pipeline_state, a.submitted_at, a.business_name, a.updated_at
+         FROM applications a
+         JOIN crm_contacts c ON c.application_id = a.id
+        WHERE c.phone = $1
+          AND a.pipeline_state NOT IN ('draft','Draft','')
+          AND a.pipeline_state IS NOT NULL
+        ORDER BY a.updated_at DESC
+        LIMIT 1`,
+      [phone],
+    );
+
+    if (!r.rows.length) return res.json({ found: false });
+    return res.json({ found: true, application: r.rows[0] });
+  }),
 );
 
 export default router;
