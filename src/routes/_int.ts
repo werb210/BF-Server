@@ -12,9 +12,23 @@ const router = Router();
 
 router.get("/runtime", requireAuth, runtimeHandler);
 router.get("/ready", readyHandler);
-router.get("/build", (_req: any, res: any) => {
-  const buildTimestamp = config.buildTimestamp;
-  res.status(200).json({ buildTimestamp });
+router.get("/build", async (_req: any, res: any) => {
+  // v611: read build-info written at build time, fall back to env.
+  let info: Record<string, unknown> = { buildTimestamp: config.buildTimestamp };
+  try {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const path = (await import("node:path")).default;
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const candidate = path.resolve(here, "../_build-info.json");
+    info = {
+      ...JSON.parse(readFileSync(candidate, "utf8")),
+      buildTimestamp: config.buildTimestamp,
+    };
+  } catch {
+    // fall through with env-only timestamp
+  }
+  res.status(200).json(info);
 });
 
 router.get("/version", (_req: any, res: any) => {
