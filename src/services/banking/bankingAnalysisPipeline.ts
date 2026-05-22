@@ -170,6 +170,28 @@ export async function runBankingAnalysis(
         WHERE application_id::text = ($1)::text`,
       [applicationId, lastError]
     );
+    // v629: cap consecutive zero-tx failures. After 5 attempts with 0 docs,
+    // mark application as banking_auto_skip=true so the worker stops retrying.
+    // Cleared automatically on the next document upload (see documents route).
+    try {
+      await pool.query(
+        `UPDATE applications
+            SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+                  'banking_auto_zero_attempts', COALESCE((metadata->>'banking_auto_zero_attempts')::int, 0) + 1,
+                  'banking_auto_last_attempt', NOW()::text,
+                  'banking_auto_skip',
+                    CASE WHEN COALESCE((metadata->>'banking_auto_zero_attempts')::int, 0) + 1 >= 5
+                         THEN true ELSE COALESCE((metadata->>'banking_auto_skip')::boolean, false) END
+                )
+          WHERE id::text = ($1)::text`,
+        [applicationId],
+      );
+    } catch (e) {
+      logInfo("banking_pipeline_skip_marker_failed", {
+        applicationId,
+        err: e instanceof Error ? e.message : String(e),
+      });
+    }
     logInfo("banking_pipeline_failed_zero_tx", {
       applicationId,
       documents: docCount,

@@ -107,6 +107,20 @@ async function persistAndEnqueue(opts: {
     tx.release();
   }
 
+  // v629: clear banking_auto_skip when a new doc lands; pipeline can retry.
+  try {
+    await pool.query(
+      `UPDATE applications
+          SET metadata = COALESCE(metadata, '{}'::jsonb)
+                       || jsonb_build_object('banking_auto_skip', false, 'banking_auto_zero_attempts', 0)
+        WHERE id::text = ($1)::text
+          AND COALESCE((metadata->>'banking_auto_skip')::boolean, false) = true`,
+      [opts.applicationId],
+    );
+  } catch {
+    // non-fatal
+  }
+
   // BF_SERVER_BLOCK_v215_BF_TO_BI_DOC_MIRROR_v1
   // If this BF application has a linked BI PGI application (v213),
   // mirror the uploaded doc to BI. Fire-and-forget so the client
