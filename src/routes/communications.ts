@@ -224,8 +224,29 @@ router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
   const params: unknown[] = [silo];
   let where = "silo = $1";
   if (contactId) {
+    // v635_orphan_sms: match contact_id directly OR (contact_id IS NULL AND
+    // from_number/to_number digit-suffix matches the contact's phone).
+    // Covers inbound SMS persisted before Z9 normalize when contact lookup
+    // missed due to phone format mismatch.
     params.push(contactId);
-    where += ` AND contact_id = $${params.length}`;
+    const cIdx = params.length;
+    where += ` AND (
+      contact_id = $${cIdx}
+      OR (contact_id IS NULL AND EXISTS (
+        SELECT 1 FROM contacts c
+         WHERE c.id = $${cIdx}
+           AND (
+             right(regexp_replace(coalesce(c.phone, ''),        '[^0-9]', '', 'g'), 10)
+               = right(regexp_replace(coalesce(communications_messages.from_number, ''), '[^0-9]', '', 'g'), 10)
+             OR right(regexp_replace(coalesce(c.mobile_phone, ''), '[^0-9]', '', 'g'), 10)
+               = right(regexp_replace(coalesce(communications_messages.from_number, ''), '[^0-9]', '', 'g'), 10)
+             OR right(regexp_replace(coalesce(c.phone, ''),        '[^0-9]', '', 'g'), 10)
+               = right(regexp_replace(coalesce(communications_messages.to_number,   ''), '[^0-9]', '', 'g'), 10)
+             OR right(regexp_replace(coalesce(c.mobile_phone, ''), '[^0-9]', '', 'g'), 10)
+               = right(regexp_replace(coalesce(communications_messages.to_number,   ''), '[^0-9]', '', 'g'), 10)
+           )
+      ))
+    )`;
   } else if (phone) {
     const compact = phone.replace(/[^\d]/g, "");
     const e164 = phone.startsWith("+") ? phone : `+${compact}`;

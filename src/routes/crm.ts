@@ -166,7 +166,10 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
   const page = Math.max(Number(req.query.page) || 1, 1);
   const pageSize = Math.min(Number(req.query.pageSize) || 200, 500);
   const offset = (page - 1) * pageSize;
-  const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+  // v635: accept both `search` (server original) and `q` (frontend ContactsPage). Companies route uses `q`; this aligns Contacts.
+  const search = (typeof req.query.search === "string" && req.query.search.trim())
+    || (typeof req.query.q === "string" && req.query.q.trim())
+    || "";
   const ownerId = typeof req.query.owner_id === "string" ? req.query.owner_id.trim() : "";
   const leadStatus = typeof req.query.lead_status === "string" ? req.query.lead_status.trim() : "";
   const hasActiveApplications = req.query.has_active_applications === "true";

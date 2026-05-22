@@ -15,9 +15,11 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
   const silo = getSilo(res);
   const [active, won, stageRows] = await Promise.all([
     pool.query<{ count: string }>(
+      // v635: exclude drafts from "Active Applications" count so the dashboard
+      // matches the Pipeline kanban (which defaults to Show drafts = off).
       `SELECT COUNT(*)::text AS count FROM applications
-       WHERE silo = $3 -- BF_SERVER_BLOCK_v156_SILO_LEAK_FIX_v1
-         AND pipeline_state NOT IN ($1, $2)`,
+       WHERE silo = $3
+         AND pipeline_state NOT IN ($1, $2, 'draft')`,
       [ApplicationStage.ACCEPTED, ApplicationStage.REJECTED, silo]
     ),
     pool.query<{ count: string }>(
@@ -28,10 +30,11 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
       [ApplicationStage.ACCEPTED, silo]
     ),
     pool.query<{ stage: string; count: string }>(
+      // v635: also exclude drafts from the stage breakdown so card labels match.
       `SELECT pipeline_state AS stage, COUNT(*)::text AS count
        FROM applications
-       WHERE silo = $3 -- BF_SERVER_BLOCK_v156_SILO_LEAK_FIX_v1
-         AND pipeline_state NOT IN ($1, $2)
+       WHERE silo = $3
+         AND pipeline_state NOT IN ($1, $2, 'draft')
        GROUP BY pipeline_state`,
       [ApplicationStage.ACCEPTED, ApplicationStage.REJECTED, silo]
     ),
