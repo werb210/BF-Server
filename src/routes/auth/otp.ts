@@ -123,7 +123,7 @@ router.post("/verify", async (req: Request, res: Response) => {
   }
 
   // BF_SERVER_BLOCK_v145_OTP_CLIENT_FALLTHROUGH_v1 — clients get a
-  // 30-day token (wizard often spans days); staff stay on 1-day rotation.
+  // 30-day token (wizard often spans days); staff stay on 7-day rotation.
   const token = jwt.sign(
     {
       sub,
@@ -134,7 +134,7 @@ router.post("/verify", async (req: Request, res: Response) => {
       ...(isClient ? { isClient: true } : {}),
     },
     JWT_SECRET,
-    { expiresIn: isClient ? "30d" : "1d" },
+    { expiresIn: isClient ? "30d" : "7d" }, // v618: align staff TTL with locked spec
   );
 
   await redis.del(`otp:${phone}`);
