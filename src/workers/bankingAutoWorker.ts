@@ -32,7 +32,9 @@ export function startBankingAutoWorker(pool: Pool): { stop: () => void } {
       const { rows } = await pool.query<{ application_id: string }>(
         `SELECT DISTINCT d.application_id::text AS application_id
            FROM documents d
+          JOIN applications app ON app.id = d.application_id
           WHERE LOWER(COALESCE(d.signed_category, d.document_type, '')) LIKE '%bank%'
+            AND COALESCE((app.metadata->>'banking_auto_skip')::boolean, false) IS NOT TRUE
             AND d.ocr_status = 'completed'
             AND NOT EXISTS (
               SELECT 1 FROM banking_analyses ba
