@@ -233,6 +233,53 @@ router.delete('/:id', requireAdmin, safeHandler(async (req: any, res: any) => {
   res.json({ ok: true });
 }));
 
+// v621: lender packages listing (E2E harness + portal "send to lender" view).
+router.get("/:id/lender-packages", requireAuth, safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id ?? "").trim();
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: "invalid_id" });
+  const { getSilo } = await import("../../middleware/silo.js");
+  const callerSilo = getSilo(res) ?? null;
+  const own = await pool.query<{ silo: string | null }>(
+    `SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+    [id],
+  );
+  if (!own.rows.length) return res.status(404).json({ error: "not_found" });
+  if (own.rows[0].silo && callerSilo && own.rows[0].silo !== callerSilo) {
+    return res.status(403).json({ error: "wrong_silo" });
+  }
+  const r = await pool.query(
+    `SELECT
+        ap.id,
+        ap.application_id,
+        ap.lender_id,
+        ap.status,
+        ap.delivered_to,
+        ap.error,
+        ap.bytes,
+        ap.created_at,
+        l.name AS lender_name,
+        COALESCE(
+          (SELECT json_agg(json_build_object(
+              'id', d.id,
+              'category', d.document_type,
+              'filename', d.filename,
+              'size', d.size,
+              'ocr_status', d.ocr_status
+            ) ORDER BY d.created_at)
+             FROM documents d
+            WHERE d.application_id = ap.application_id
+              AND d.deleted_at IS NULL),
+          '[]'::json
+        ) AS included_documents
+       FROM application_packages ap
+       LEFT JOIN lenders l ON l.id = ap.lender_id
+      WHERE ap.application_id::text = ($1)::text
+      ORDER BY ap.created_at DESC`,
+    [id],
+  );
+  res.json({ packages: r.rows ?? [] });
+}));
+
 router.get("/:id/contacts", requireAuth, safeHandler(async (req: any, res: any) => {
   const applicationId = String(req.params.id ?? "").trim();
   if (!/^[0-9a-f-]{36}$/i.test(applicationId)) {
