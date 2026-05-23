@@ -142,8 +142,17 @@ router.get(
     }
 
     // Application gate (existence + banking_completed_at).
-    const appRow = await bankingPool.query<{ banking_completed_at: Date | null }>(
-      `SELECT banking_completed_at FROM applications WHERE id::text = $1::text LIMIT 1`,
+    // BF_SERVER_BLOCK_v638_MULTIFIX_v1 — surface banking_auto_skip so the UI
+    // can render a clear "Skipped — no bank statements found" banner instead of
+    // "Analysis complete" with all zeros (which confused everyone).
+    const appRow = await bankingPool.query<{
+      banking_completed_at: Date | null;
+      banking_auto_skip: boolean | null;
+    }>(
+      `SELECT banking_completed_at,
+              COALESCE((metadata->>'banking_auto_skip')::boolean, false) AS banking_auto_skip
+         FROM applications
+        WHERE id::text = $1::text LIMIT 1`,
       [applicationId],
     );
     if (appRow.rowCount === 0) {
@@ -184,12 +193,16 @@ router.get(
     const bankingCompletedAt = appRow.rows[0]?.banking_completed_at
       ? appRow.rows[0].banking_completed_at.toISOString()
       : null;
+    const bankingAutoSkip = Boolean(appRow.rows[0]?.banking_auto_skip);
 
     // No pipeline output yet — return a "waiting" shape. Portal renders
     // "Waiting for statements" / "Processing…" based on banking_completed_at
     // + bankStatementCount.
     if (r.rowCount === 0) {
       return res.status(200).json({
+        // BF_SERVER_BLOCK_v638_MULTIFIX_v1
+        banking_auto_skip: bankingAutoSkip,
+        bankingAutoSkip: bankingAutoSkip,
         banking_completed_at: bankingCompletedAt,
         bankingCompletedAt,
         monthsDetected: null,
@@ -287,6 +300,9 @@ router.get(
     const irregularDepositsFlag = unusualTxCount > 5 ? true : unusualTxCount > 0 ? false : null;
 
     return res.status(200).json({
+      // BF_SERVER_BLOCK_v638_MULTIFIX_v1
+      banking_auto_skip: bankingAutoSkip,
+      bankingAutoSkip: bankingAutoSkip,
       banking_completed_at: bankingCompletedAt,
       bankingCompletedAt,
       monthsDetected,

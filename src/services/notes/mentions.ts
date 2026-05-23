@@ -10,12 +10,15 @@ export function extractMentionTokens(body: string): string[] {
   return [...out];
 }
 
+// BF_SERVER_BLOCK_v638_MULTIFIX_v1 — also match plain @first_name. Without this
+// @andrew (Todd\'s test mention) matched nobody and notifications never fired.
 export async function resolveMentionUserIds(tokens: string[]): Promise<string[]> {
   if (!tokens.length) return [];
   const r = await runQuery<{ id: string }>(
     `SELECT id FROM users
       WHERE LOWER(COALESCE(username, email, first_name || '.' || last_name)) = ANY($1::text[])
-         OR LOWER(SPLIT_PART(email, '@', 1)) = ANY($1::text[])`,
+         OR LOWER(SPLIT_PART(email, '@', 1)) = ANY($1::text[])
+         OR LOWER(COALESCE(first_name, '')) = ANY($1::text[])`,
     [tokens]
   ).catch(() => ({ rows: [] as { id: string }[] }));
   return r.rows.map((row) => row.id);
