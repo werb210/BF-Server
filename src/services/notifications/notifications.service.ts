@@ -43,6 +43,29 @@ export async function notifyMentions(p: NotifyMentionsParams): Promise<{ inserte
       // swallow — notifications are advisory
     }
   }
+
+  // BF_SERVER_BLOCK_v638_MULTIFIX_v1 — fire Twilio SMS to mentioned users so a
+  // stale notification-bell isn\'t the only signal. Best-effort, never throws.
+  try {
+    const { rows: phones } = await runQuery<{ phone: string | null; first_name: string | null }>(
+      `SELECT phone, first_name FROM users WHERE id = ANY($1::uuid[]) AND phone IS NOT NULL AND phone <> ''`,
+      [targets],
+    );
+    if (phones.length > 0) {
+      const { sendSms } = await import("../../modules/notifications/sms.service.js");
+      const preview = snippet.length > 120 ? snippet.slice(0, 117) + "…" : snippet;
+      const linkBase = String(process.env.PORTAL_URL ?? "https://staff.boreal.financial").replace(/\/$/, "");
+      const url = p.contextUrl ? `${linkBase}${p.contextUrl}` : linkBase;
+      for (const u of phones) {
+        const greet = u.first_name ? `Hi ${u.first_name}, ` : "";
+        void sendSms({
+          to: u.phone!,
+          message: `${greet}you were mentioned in a Boreal note: "${preview}"\n${url}`,
+        }).catch(() => undefined);
+      }
+    }
+  } catch { /* swallow */ }
+
   return { inserted };
 }
 

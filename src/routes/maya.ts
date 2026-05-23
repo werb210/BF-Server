@@ -6,11 +6,16 @@ import { ROLES } from "../auth/roles.js";
 
 const router = express.Router();
 
+// BF_SERVER_BLOCK_v638_MULTIFIX_v1 — accept the original req so we can forward
+// X-Maya-Audience (staff|client|visitor) + X-Silo to the agent. Without these
+// the agent defaulted to "visitor" and the staff Maya widget kept asking for
+// name + phone, ignoring that it was talking to a logged-in staff member.
 export async function proxyMayaToAgent(
   agentPath: string,
   method: "POST" | "GET",
   body: unknown,
-  res: express.Response
+  res: express.Response,
+  req?: express.Request
 ) {
   const mayaUrl = process.env.MAYA_URL || process.env.MAYA_SERVICE_URL;
   if (!mayaUrl) {
@@ -23,9 +28,15 @@ export async function proxyMayaToAgent(
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 10000);
+    // BF_SERVER_BLOCK_v638_MULTIFIX_v1 — forward audience + silo from caller.
+    const fwdHeaders: Record<string, string> = method === "POST" ? { "Content-Type": "application/json" } : {};
+    const audience = req?.header("x-maya-audience");
+    if (audience) fwdHeaders["X-Maya-Audience"] = String(audience);
+    const silo = req?.header("x-silo");
+    if (silo) fwdHeaders["X-Silo"] = String(silo);
     const upstream = await fetch(`${mayaUrl}${agentPath}`, {
       method,
-      headers: method === "POST" ? { "Content-Type": "application/json" } : {},
+      headers: fwdHeaders,
       body: method === "POST" ? JSON.stringify(body ?? {}) : undefined,
       signal: ctrl.signal,
     });
@@ -41,14 +52,14 @@ export async function proxyMayaToAgent(
 router.post(
   "/chat",
   safeHandler(async (req: any, res: any) => {
-    await proxyMayaToAgent("/api/maya/chat", "POST", req.body, res);
+    await proxyMayaToAgent("/api/maya/chat", "POST", req.body, res, req);
   })
 );
 
 router.post(
   "/message",
   safeHandler(async (req: any, res: any) => {
-    await proxyMayaToAgent("/api/maya/message", "POST", req.body, res);
+    await proxyMayaToAgent("/api/maya/message", "POST", req.body, res, req);
   })
 );
 
