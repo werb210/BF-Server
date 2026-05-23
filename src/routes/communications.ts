@@ -193,9 +193,13 @@ router.get("/sms", safeHandler(async (req: any, res: any) => {
 // Threads are grouped by contact_id when present, otherwise application_id
 // so application-linked handoff messages (without a contact yet) still show.
 // BF_SERVER_BLOCK_v636_MESSAGES_TAB_FIXES_v1
+// BF_SERVER_BLOCK_v637_MOBILE_PHONE_AND_BACKFILL_v1 — siloMiddleware runs BEFORE
+// requireAuth so getSilo(res) always returned "BF" on authed routes (see comment
+// at the bottom of silo.ts). Use resolveSiloFromRequest(req) which reads X-Silo
+// + req.user together — otherwise BI-silo staff see BF threads.
 router.get("/messages-list", safeHandler(async (req: any, res: any) => {
-  const { getSilo } = await import("../middleware/silo.js");
-  const silo = getSilo(res);
+  const { resolveSiloFromRequest } = await import("../middleware/silo.js");
+  const silo = resolveSiloFromRequest(req);
   const mode = String(req.query.mode ?? "").toLowerCase();
   const typesParam = String(req.query.types ?? "").trim();
   const types = typesParam ? typesParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
@@ -303,16 +307,16 @@ router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
     where += ` AND (
       contact_id = $${cIdx}
       OR (contact_id IS NULL AND EXISTS (
+        -- BF_SERVER_BLOCK_v637_MOBILE_PHONE_AND_BACKFILL_v1: contacts.mobile_phone
+        -- column does not exist (see migrations/099_create_contacts_table.sql).
+        -- This query threw on every authed SMS thread fetch — "sms_thread_error"
+        -- in BF-Server logs every 5s. Only c.phone is real.
         SELECT 1 FROM contacts c
          WHERE c.id = $${cIdx}
            AND (
-             right(regexp_replace(coalesce(c.phone, ''),        '[^0-9]', '', 'g'), 10)
+             right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10)
                = right(regexp_replace(coalesce(communications_messages.from_number, ''), '[^0-9]', '', 'g'), 10)
-             OR right(regexp_replace(coalesce(c.mobile_phone, ''), '[^0-9]', '', 'g'), 10)
-               = right(regexp_replace(coalesce(communications_messages.from_number, ''), '[^0-9]', '', 'g'), 10)
-             OR right(regexp_replace(coalesce(c.phone, ''),        '[^0-9]', '', 'g'), 10)
-               = right(regexp_replace(coalesce(communications_messages.to_number,   ''), '[^0-9]', '', 'g'), 10)
-             OR right(regexp_replace(coalesce(c.mobile_phone, ''), '[^0-9]', '', 'g'), 10)
+             OR right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10)
                = right(regexp_replace(coalesce(communications_messages.to_number,   ''), '[^0-9]', '', 'g'), 10)
            )
       ))
