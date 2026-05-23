@@ -164,6 +164,23 @@ router.post(
       throw new AppError("validation_error", "applicationId and body are required.", 400);
     }
 
+    // BF_SERVER_BLOCK_v637_MOBILE_PHONE_AND_BACKFILL_v1 — before insert, backfill
+    // applications.contact_id by phone digits-suffix if NULL. Without this the
+    // mini-portal message lands with contact_id=NULL, and the staff Messages
+    // tab silently drops it (it filters on contact_id presence). Result: the
+    // client's send looked "dead" because staff never saw it.
+    await dbQuery(
+      `UPDATE applications a
+          SET contact_id = c.id
+         FROM contacts c
+        WHERE a.id = $1
+          AND a.contact_id IS NULL
+          AND a.applicant_phone IS NOT NULL
+          AND right(regexp_replace(coalesce(a.applicant_phone,''), '[^0-9]', '', 'g'), 10)
+            = right(regexp_replace(coalesce(c.phone,''),            '[^0-9]', '', 'g'), 10)`,
+      [applicationId]
+    ).catch(() => undefined);
+
     const id = randomUUID();
     await dbQuery(
       `INSERT INTO communications_messages
@@ -176,6 +193,15 @@ router.post(
        )`,
       [id, applicationId, body]
     );
+
+    // v637: notify staff so client-to-staff messages aren't silent. Best-effort.
+    try {
+      const { sendStaffNotification } = await import("../../services/notifications/staffSms.js");
+      void sendStaffNotification({
+        recipients: "available",
+        body: `Mini-portal message (app ${applicationId.slice(0,8)}): ${body.length > 140 ? body.slice(0,137) + "…" : body}`,
+      }).catch(() => undefined);
+    } catch { /* helper missing in some envs */ }
 
     res.status(201).json({ status: "ok", data: { id } });
   })

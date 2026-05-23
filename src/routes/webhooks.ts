@@ -347,12 +347,11 @@ router.post("/twilio/voicemail", twilioWebhookValidation, safeHandler(async (req
     // Look up contact by phone
     const contact = fromNum
       ? await pool.query<{ id: string }>(
+          // BF_SERVER_BLOCK_v637_MOBILE_PHONE_AND_BACKFILL_v1 — contacts.mobile_phone does not exist.
           `SELECT id FROM contacts
-            WHERE right(regexp_replace(coalesce(phone, ''),        '[^0-9]', '', 'g'), 10)
-                = right(regexp_replace($1::text,                   '[^0-9]', '', 'g'), 10)
-               OR right(regexp_replace(coalesce(mobile_phone, ''), '[^0-9]', '', 'g'), 10)
-                = right(regexp_replace($1::text,                   '[^0-9]', '', 'g'), 10)
-            LIMIT 1 -- v633: digit-stripped match (E.164 vs formatted)`,
+            WHERE right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10)
+                = right(regexp_replace($1::text,            '[^0-9]', '', 'g'), 10)
+            LIMIT 1`,
           [fromNum]
         ).then((r) => r.rows[0] ?? null).catch(() => null)
       : null;
@@ -410,14 +409,12 @@ async function persistInboundSms(req: any): Promise<void> {
   const body = String(Body);
   const sid = typeof MessageSid === "string" ? MessageSid : null;
 
-  // Look up contact by phone OR mobile_phone (matches voicemail handler).
+  // BF_SERVER_BLOCK_v637_MOBILE_PHONE_AND_BACKFILL_v1 — contacts.mobile_phone does not exist.
   const contact = await pool.query<{ id: string; silo: string | null }>(
     `SELECT id, silo FROM contacts
-            WHERE right(regexp_replace(coalesce(phone, ''),        '[^0-9]', '', 'g'), 10)
-                = right(regexp_replace($1::text,                   '[^0-9]', '', 'g'), 10)
-               OR right(regexp_replace(coalesce(mobile_phone, ''), '[^0-9]', '', 'g'), 10)
-                = right(regexp_replace($1::text,                   '[^0-9]', '', 'g'), 10)
-            LIMIT 1 -- v633`,
+            WHERE right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10)
+                = right(regexp_replace($1::text,            '[^0-9]', '', 'g'), 10)
+            LIMIT 1`,
     [fromNum]
   ).then((r) => r.rows[0] ?? null).catch(() => null);
 
