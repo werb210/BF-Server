@@ -29,10 +29,15 @@ export const LENDER_PRODUCT_CATEGORIES = [
 
 export const LENDER_PRODUCT_RATE_TYPES = ["FIXED", "VARIABLE"] as const;
 
+// BF_SERVER_BLOCK_v640_RATE_KIND_v1 — distinguishes the three rate semantics
+// currently crammed into interest_min/max. Orthogonal to LENDER_PRODUCT_RATE_TYPES.
+export const LENDER_PRODUCT_RATE_KINDS = ["apr", "monthly", "factor"] as const;
+
 export const LENDER_PRODUCT_TERM_UNITS = ["MONTHS"] as const;
 
 export type LenderProductCategory = (typeof LENDER_PRODUCT_CATEGORIES)[number];
 export type LenderProductRateType = (typeof LENDER_PRODUCT_RATE_TYPES)[number];
+export type LenderProductRateKind = (typeof LENDER_PRODUCT_RATE_KINDS)[number];
 export type LenderProductTermUnit = (typeof LENDER_PRODUCT_TERM_UNITS)[number];
 
 export type LenderProductRecord = {
@@ -42,6 +47,9 @@ export type LenderProductRecord = {
   category: LenderProductCategory;
   country: string;
   rate_type: LenderProductRateType | null;
+  // BF_SERVER_BLOCK_v640_RATE_KIND_v1
+  rate_kind: LenderProductRateKind | null;
+  rate_period_days: number | null;
   interest_min: string | null;
   interest_max: string | null;
   term_min: number | null;
