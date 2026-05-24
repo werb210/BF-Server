@@ -894,10 +894,13 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
   type FileRow = { id: string; filename: string | null; size_bytes: number | null; created_at: Date; status: string | null; category: string | null; ocr_status: string | null; ocr_text: string | null; ocr_text_truncated: boolean | null; ocr_tables_count: number | null; ocr_extracted_at: Date | null; };
   let fileRows: FileRow[] = [];
   try {
-    // v625: include OCR-extracted text per file. LEFT JOIN LATERAL pulls
-    // the most recent ocr_results row per document; LIMIT 1 keeps it cheap.
-    // Truncate ocr_text at 8000 chars so the response payload doesn't
-    // balloon — full text still available via /api/ocr/admin/documents/:id/result.
+    // BF_SERVER_BLOCK_v643_OCR_QUERY_FIX_v1 — drop the broken OCR join.
+    // Migration 018 renamed the old ocr_results (which had extracted_text)
+    // to ocr_document_results and replaced the name with a per-FIELD table
+    // (field_key/value/confidence). The join referenced columns that exist
+    // on neither shape. Banking / Financials tabs were 500-ing. Returning
+    // null for ocr_* fields is acceptable; Todd confirmed OCR is no longer
+    // required for these documents.
     const r = await pool.query<FileRow>(
       `SELECT
           d.id::text AS id,
@@ -907,18 +910,11 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
           d.status AS status,
           COALESCE(d.category, d.document_type) AS category,
           d.ocr_status AS ocr_status,
-          LEFT(ocr.ocr_text, 8000) AS ocr_text,
-          ocr.ocr_text IS NOT NULL AND length(ocr.ocr_text) > 8000 AS ocr_text_truncated,
-          jsonb_array_length(COALESCE(ocr.ocr_tables, '[]'::jsonb)) AS ocr_tables_count,
-          ocr.processed_at AS ocr_extracted_at
+          NULL::text  AS ocr_text,
+          FALSE       AS ocr_text_truncated,
+          0           AS ocr_tables_count,
+          NULL::timestamp AS ocr_extracted_at
        FROM documents d
-       LEFT JOIN LATERAL (
-         SELECT ocr_text, ocr_tables, processed_at
-           FROM ocr_results
-          WHERE document_id = d.id
-          ORDER BY processed_at DESC NULLS LAST
-          LIMIT 1
-       ) ocr ON TRUE
        WHERE d.application_id::text = ($1)::text
        ORDER BY d.created_at ASC`,
       [appId],
@@ -951,18 +947,11 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
             d.status AS status,
             COALESCE(d.category, d.document_type) AS category,
             d.ocr_status AS ocr_status,
-            LEFT(ocr.ocr_text, 8000) AS ocr_text,
-            ocr.ocr_text IS NOT NULL AND length(ocr.ocr_text) > 8000 AS ocr_text_truncated,
-            jsonb_array_length(COALESCE(ocr.ocr_tables, '[]'::jsonb)) AS ocr_tables_count,
-            ocr.processed_at AS ocr_extracted_at
+            NULL::text  AS ocr_text,
+            FALSE       AS ocr_text_truncated,
+            0           AS ocr_tables_count,
+            NULL::timestamp AS ocr_extracted_at
          FROM documents d
-         LEFT JOIN LATERAL (
-           SELECT ocr_text, ocr_tables, processed_at
-             FROM ocr_results
-            WHERE document_id = d.id
-            ORDER BY processed_at DESC NULLS LAST
-            LIMIT 1
-         ) ocr ON TRUE
          WHERE d.application_id::text = ($1)::text
          ORDER BY d.created_at ASC`,
         [app.parent_application_id],
