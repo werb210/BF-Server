@@ -81,6 +81,7 @@ import smsInboundWebhookRoutes from "./smsInboundWebhook.js";
 import mayaStaffRouter from "./mayaStaff.js";
 import aiRoutes from "./ai.v2.js";
 import o365Routes from "./o365.js";
+import diagnosticsRoutes from "./diagnostics.js";
 import { createMountTracker } from "./_canonicalMount.js";
 import { siloMiddleware } from "../middleware/silo.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -203,6 +204,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/email", router: emailRoutes },
   { path: "/o365", router: o365Routes },
   { path: "/ocr/admin", router: ocrAdminRoutes },
+  { path: "/_diag", router: diagnosticsRoutes },
   { path: "/public", router: publicApplicationRoutes },
   { path: "/", router: rootRoutes },
   { path: "/slf", router: slfRoutes },

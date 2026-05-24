@@ -12,6 +12,9 @@ import { toStringSafe } from "../utils/toStringSafe.js";
 import { pool } from "../db.js";
 import { getStorage } from "../lib/storage/index.js";
 import { enqueueOcrForDocument } from "../modules/ocr/ocr.service.js";
+import { requireAuthorization } from "../middleware/auth.js";
+import { ROLES } from "../auth/roles.js";
+import { safeHandler } from "../middleware/safeHandler.js";
 // BF_SERVER_BLOCK_v215_BF_TO_BI_DOC_MIRROR_v1
 import { mirrorDocToBiAsync } from "../services/biDocMirror.js";
 
@@ -282,5 +285,49 @@ router.post("/:id/reject", requireAuth, async (req: Request, res: Response) => {
   await pool.query(`UPDATE documents SET status='rejected', updated_at=now() WHERE id=$1`, [id]).catch(() => {});
   return ok(res, { id, status: "rejected" });
 });
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+router.delete(
+  "/:applicationId/documents/:documentId",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  safeHandler(async (req: Request, res: Response) => {
+    const applicationId = String(req.params.applicationId ?? "").trim();
+    const documentId = String(req.params.documentId ?? "").trim();
+    if (!UUID_RE.test(applicationId) || !UUID_RE.test(documentId)) {
+      return fail(res, 400, "INVALID_ID");
+    }
+
+    const exists = await pool.query<{ ok: number }>(
+      `SELECT 1 AS ok FROM documents WHERE id = $1 AND application_id::text = $2 LIMIT 1`,
+      [documentId, applicationId]
+    );
+    if (!exists.rows[0]) return fail(res, 404, "DOCUMENT_NOT_FOUND");
+
+    await pool.query(`DELETE FROM documents WHERE id = $1`, [documentId]);
+    // TODO: Intentionally hard-delete only DB row in this iteration; blob/S3 delete follows in separate change.
+
+    const hasEvents = await pool.query<{ present: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1
+           FROM information_schema.tables
+          WHERE table_schema = 'public'
+            AND table_name = 'document_events'
+       ) AS present`
+    ).catch(() => ({ rows: [{ present: false }] }));
+
+    if (hasEvents.rows[0]?.present) {
+      const actor = String((req as any)?.user?.email ?? "unknown");
+      await pool.query(
+        `INSERT INTO document_events (id, document_id, application_id, event, actor, created_at)
+         VALUES (gen_random_uuid(), $1, $2::uuid, 'deleted', $3, now())`,
+        [documentId, applicationId, actor]
+      ).catch(() => {});
+    }
+
+    return res.status(200).json({ ok: true, id: documentId, applicationId });
+  })
+);
 
 export default router;
