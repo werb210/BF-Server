@@ -338,6 +338,12 @@ router.post(
       amountMax: asNum(pickFirst(body.maxAmount, body.amountMax, body.amount_max, body.max_amount)),
       signnowTemplateId: asString(pickFirst(body.signnowTemplateId, body.signnow_template_id)),
       eligibilityNotes: asString(pickFirst(body.eligibilityRules, body.eligibilityNotes, body.eligibility_notes, body.notes)),
+      // BF_SERVER_BLOCK_v647_LENDER_PRODUCTS_SEED_v1 — rate kind plumbing
+      rateKind: asString(pickFirst(body.rateKind, body.rate_kind)),
+      rateMinNum: asNum(pickFirst(body.rateMinNum, body.rate_min_num, body.rateMin, body.rate_min)),
+      rateMaxNum: asNum(pickFirst(body.rateMaxNum, body.rate_max_num, body.rateMax, body.rate_max)),
+      categoryLabel: asString(pickFirst(body.categoryLabel, body.category_label)),
+      documentsRequired: asString(pickFirst(body.documentsRequired, body.documents_required)),
       silo,
     });
     res.status(201).json(decorateProductResponse(product));
@@ -397,6 +403,12 @@ router.put(
         amountMax: asNum(pickFirst(body.maxAmount, body.amountMax, body.amount_max, body.max_amount)),
         signnowTemplateId: asString(pickFirst(body.signnowTemplateId, body.signnow_template_id)),
         eligibilityNotes: asString(pickFirst(body.eligibilityRules, body.eligibilityNotes, body.eligibility_notes, body.notes)),
+        // BF_SERVER_BLOCK_v647_LENDER_PRODUCTS_SEED_v1 — rate kind plumbing
+        rateKind: asString(pickFirst(body.rateKind, body.rate_kind)),
+        rateMinNum: asNum(pickFirst(body.rateMinNum, body.rate_min_num, body.rateMin, body.rate_min)),
+        rateMaxNum: asNum(pickFirst(body.rateMaxNum, body.rate_max_num, body.rateMax, body.rate_max)),
+        categoryLabel: asString(pickFirst(body.categoryLabel, body.category_label)),
+        documentsRequired: asString(pickFirst(body.documentsRequired, body.documents_required)),
         client: pool,
       });
     } catch (err: any) {
