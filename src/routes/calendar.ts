@@ -41,11 +41,25 @@ async function getO365Token(userId: string): Promise<string | null> {
   return row.o365_access_token;
 }
 
+// BF_SERVER_BLOCK_v649_SHOWSTOPPER_PATCHES_v1 — preserve the upstream
+// Graph status so the route can return 4xx as 4xx (not blanket 500).
+class GraphError extends Error {
+  status: number;
+  bodyText: string;
+  path: string;
+  constructor(status: number, bodyText: string, path: string) {
+    super(`Graph API error: ${status} ${path}`);
+    this.status = status;
+    this.bodyText = bodyText;
+    this.path = path;
+  }
+}
+
 async function graphGet(token: string, path: string): Promise<unknown> {
   const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
   });
-  if (!res.ok) throw new Error(`Graph API error: ${res.status} ${path}`);
+  if (!res.ok) throw new GraphError(res.status, await res.text().catch(() => ""), path);
   return res.json();
 }
 
@@ -55,7 +69,7 @@ async function graphPost(token: string, path: string, body: unknown): Promise<un
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Graph API error: ${res.status} ${path}`);
+  if (!res.ok) throw new GraphError(res.status, await res.text().catch(() => ""), path);
   return res.json();
 }
 
@@ -65,7 +79,7 @@ async function graphPatch(token: string, path: string, body: unknown): Promise<u
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Graph API error: ${res.status} ${path}`);
+  if (!res.ok) throw new GraphError(res.status, await res.text().catch(() => ""), path);
   return res.json();
 }
 
@@ -74,7 +88,71 @@ async function graphDelete(token: string, path: string): Promise<void> {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`Graph API error: ${res.status} ${path}`);
+  if (!res.ok) throw new GraphError(res.status, await res.text().catch(() => ""), path);
+}
+
+// BF_SERVER_BLOCK_v649_SHOWSTOPPER_PATCHES_v1 — flatten a Microsoft Graph
+// calendar event into the {id,title,start,end,location,...} shape the
+// BF-portal calendar grid expects. Graph events nest start/end into
+// {dateTime,timeZone}; the portal expected plain strings, which is why
+// newly-created events vanished from the grid even when the POST succeeded.
+function normalizeGraphEvent(ev: any): {
+  id?: string;
+  title?: string;
+  start?: string;
+  end?: string;
+  location?: string;
+  attendees?: string[];
+  notes?: string;
+  teamsLink?: string | null;
+  webLink?: string | null;
+} {
+  const startDt =
+    typeof ev?.start === "string"
+      ? ev.start
+      : ev?.start?.dateTime ?? undefined;
+  const endDt =
+    typeof ev?.end === "string"
+      ? ev.end
+      : ev?.end?.dateTime ?? undefined;
+  const attendeesRaw = Array.isArray(ev?.attendees) ? ev.attendees : [];
+  const attendees: string[] = attendeesRaw
+    .map((a: any) => a?.emailAddress?.address ?? a?.email ?? "")
+    .filter((s: string) => !!s);
+  return {
+    id: ev?.id,
+    title: ev?.subject ?? ev?.title ?? "Untitled",
+    start: startDt,
+    end: endDt,
+    location:
+      typeof ev?.location === "string"
+        ? ev.location
+        : ev?.location?.displayName ?? "",
+    attendees,
+    notes:
+      typeof ev?.body === "string"
+        ? ev.body
+        : ev?.body?.content ?? ev?.bodyPreview ?? "",
+    teamsLink: ev?.onlineMeeting?.joinUrl ?? null,
+    webLink: ev?.webLink ?? null,
+  };
+}
+
+// BF_SERVER_BLOCK_v649_SHOWSTOPPER_PATCHES_v1 — surface Graph 4xx as 4xx
+// (e.g. 400 for invalid end<start). Anything else stays a 500 — the
+// previous behavior of swallowing every Graph failure as a server error
+// hid useful validation feedback from the staff portal.
+function relayGraphFailure(res: any, err: unknown): boolean {
+  if (err instanceof GraphError && err.status >= 400 && err.status < 500) {
+    res.status(err.status).json({
+      status: "error",
+      code: "graph_client_error",
+      message: err.message,
+      details: err.bodyText?.slice(0, 1000) ?? "",
+    });
+    return true;
+  }
+  return false;
 }
 
 function toTaskResponse(row: CalendarTaskRow) {
@@ -125,6 +203,8 @@ router.get("/", safeHandler(async (req: any, res: any) => {
 }));
 
 // GET /api/calendar/events
+// BF_SERVER_BLOCK_v649_SHOWSTOPPER_PATCHES_v1 — flatten Graph event shape
+// so the portal calendar grid actually renders.
 router.get("/events", safeHandler(async (req: any, res: any) => {
   const token = await getO365Token(req.user?.userId).catch(() => null);
   if (!token) return res.status(200).json({ status: "ok", data: [] });
@@ -132,13 +212,17 @@ router.get("/events", safeHandler(async (req: any, res: any) => {
     const now = new Date().toISOString();
     const end = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
     const data = await graphGet(token, `/me/calendarView?startDateTime=${now}&endDateTime=${end}&$top=50&$orderby=start/dateTime`);
-    res.status(200).json({ status: "ok", data: (data as any).value ?? [] });
+    const raw: any[] = Array.isArray((data as any)?.value) ? (data as any).value : [];
+    res.status(200).json({ status: "ok", data: raw.map(normalizeGraphEvent) });
   } catch {
     res.status(200).json({ status: "ok", data: [] });
   }
 }));
 
 // POST /api/calendar/events
+// BF_SERVER_BLOCK_v649_SHOWSTOPPER_PATCHES_v1 — propagate Graph 4xx and
+// return the event in the same flat shape as GET so the portal cache
+// invalidation refetch lands on the right structure.
 router.post("/events", safeHandler(async (req: any, res: any) => {
   const token = await getO365Token(req.user?.userId).catch(() => null);
   if (!token) {
@@ -146,14 +230,19 @@ router.post("/events", safeHandler(async (req: any, res: any) => {
     return res.status(201).json({ status: "ok", data: { id, ...req.body } });
   }
   const body = req.body ?? {};
-  const event = await graphPost(token, "/me/events", {
-    subject: body.title ?? body.subject ?? "Untitled Event",
-    start: { dateTime: body.start ?? body.startDateTime ?? new Date().toISOString(), timeZone: "UTC" },
-    end: { dateTime: body.end ?? body.endDateTime ?? new Date(Date.now() + 3600000).toISOString(), timeZone: "UTC" },
-    ...(body.description ? { body: { contentType: "text", content: body.description } } : {}),
-    ...(body.attendees ? { attendees: body.attendees } : {}),
-  });
-  res.status(201).json({ status: "ok", data: event });
+  try {
+    const event = await graphPost(token, "/me/events", {
+      subject: body.title ?? body.subject ?? "Untitled Event",
+      start: { dateTime: body.start ?? body.startDateTime ?? new Date().toISOString(), timeZone: "UTC" },
+      end: { dateTime: body.end ?? body.endDateTime ?? new Date(Date.now() + 3600000).toISOString(), timeZone: "UTC" },
+      ...(body.description ? { body: { contentType: "text", content: body.description } } : {}),
+      ...(body.attendees ? { attendees: body.attendees } : {}),
+    });
+    res.status(201).json({ status: "ok", data: normalizeGraphEvent(event) });
+  } catch (err) {
+    if (relayGraphFailure(res, err)) return;
+    throw err;
+  }
 }));
 
 // PATCH /api/calendar/events/:id
