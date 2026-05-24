@@ -10,7 +10,7 @@ export type LenderMatchEnvelope = {
 };
 
 // BF_SERVER_BLOCK_v206_LENDER_CATEGORY_FILTER_AND_PREVIEW_FALLBACK_v1 — pull product_category for filtering.
-function extractMatchInputs(app: { metadata: any; requested_amount: any; product_category?: string | null }) {
+function extractMatchInputs(app: { metadata: any; requested_amount: any; product_category?: string | null }, applicationId?: string) {
   const meta = (app.metadata && typeof app.metadata === "object") ? (app.metadata as Record<string, any>) : {};
   const requestedAmount = (() => {
     const raw = app.requested_amount ?? meta.requestedAmount ?? meta.amount ?? meta.fundingAmount ?? null;
@@ -57,6 +57,16 @@ function extractMatchInputs(app: { metadata: any; requested_amount: any; product
     if (raw === null || raw === undefined || raw === "") return null;
     return String(raw).trim();
   })();
+  if (requestedAmount == null || productCategory == null) {
+    console.info({
+      event: "lender_match_input_incomplete",
+      applicationId: applicationId ?? null,
+      hasAmount: requestedAmount != null,
+      hasCategory: productCategory != null,
+      country,
+      metadataKeys: Object.keys(meta).slice(0, 20),
+    });
+  }
   return { requestedAmount, country, province, industry, revenue, timeInBusiness, productCategory };
 }
 
@@ -110,7 +120,7 @@ export async function computeAndCacheLenderMatches(applicationId: string): Promi
 
   let matches: LenderMatch[] = [];
   try {
-    matches = await matchLenders(extractMatchInputs(app));
+    matches = await matchLenders(extractMatchInputs(app, applicationId));
   } catch (err: any) {
     console.warn("lender_match_compute_failed", { applicationId, message: err?.message });
     matches = [];
