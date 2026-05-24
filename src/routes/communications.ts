@@ -162,27 +162,43 @@ router.get("/sms", safeHandler(async (req: any, res: any) => {
   const { getSilo } = await import("../middleware/silo.js");
   const silo = getSilo(res);
   const result = await pool.query(
-    `SELECT
-      COALESCE(c.id::text, m.from_number) AS thread_key,
-      c.id    AS contact_id,
-      COALESCE(c.name, m.from_number, m.to_number) AS display_name,
-      COALESCE(c.phone, m.from_number, m.to_number) AS phone,
-      MAX(m.created_at) AS last_at,
-      (SELECT body FROM communications_messages
-         WHERE COALESCE(contact_id::text, from_number) =
-               COALESCE(c.id::text, m.from_number)
-           AND type = 'sms'
-         ORDER BY created_at DESC LIMIT 1) AS last_body,
-      SUM(CASE WHEN m.read_at IS NULL AND m.direction='inbound' THEN 1 ELSE 0 END) AS unread_count
-    FROM communications_messages m
-    LEFT JOIN contacts c ON c.id = m.contact_id
-    WHERE m.silo = $1
-      AND m.type = 'sms'
-    GROUP BY thread_key, c.id, display_name, phone
-    ORDER BY last_at DESC
-    LIMIT 200`,
+    `WITH base AS (
+       SELECT
+         COALESCE(m.contact_id::text, m.from_number) AS thread_key,
+         m.contact_id,
+         COALESCE(c.name, m.from_number, m.to_number) AS display_name,
+         COALESCE(c.phone, m.from_number, m.to_number) AS phone,
+         m.created_at,
+         m.body,
+         m.read_at,
+         m.direction
+       FROM communications_messages m
+       LEFT JOIN contacts c ON c.id = m.contact_id
+       WHERE m.silo = $1
+         AND m.type = 'sms'
+     ),
+     ranked AS (
+       SELECT
+         *,
+         ROW_NUMBER() OVER (PARTITION BY thread_key ORDER BY created_at DESC) AS rn,
+         SUM(CASE WHEN read_at IS NULL AND direction = 'inbound' THEN 1 ELSE 0 END)
+           OVER (PARTITION BY thread_key) AS unread_count
+       FROM base
+     )
+     SELECT
+       thread_key,
+       contact_id,
+       display_name,
+       phone,
+       created_at AS last_at,
+       body AS last_body,
+       unread_count
+     FROM ranked
+     WHERE rn = 1
+     ORDER BY last_at DESC
+     LIMIT 200`,
     [silo]
-  ).catch(() => ({ rows: [] as any[] }));
+  );
   res.json({ conversations: result.rows });
 }));
 
@@ -211,27 +227,41 @@ router.get("/messages-list", safeHandler(async (req: any, res: any) => {
   const typeParams: any[] = types.length ? [silo, types] : [silo];
 
   const threadsSql = `
+    WITH base AS (
+      SELECT
+        COALESCE(m.contact_id::text, m.application_id::text) AS thread_key,
+        m.contact_id AS contact_id,
+        COALESCE(c.name, c.email, c.phone, m.to_number, m.from_number, m.application_id::text) AS display_name,
+        COALESCE(c.phone, m.from_number, m.to_number) AS phone,
+        c.email AS email,
+        m.created_at,
+        m.body,
+        m.read_at,
+        m.direction
+      FROM communications_messages m
+      LEFT JOIN contacts c ON c.id = m.contact_id
+      WHERE m.silo = $1
+        ${typeClause}
+    ),
+    ranked AS (
+      SELECT
+        *,
+        ROW_NUMBER() OVER (PARTITION BY thread_key ORDER BY created_at DESC) AS rn,
+        SUM(CASE WHEN read_at IS NULL AND direction = 'inbound' THEN 1 ELSE 0 END)
+          OVER (PARTITION BY thread_key) AS unread_count
+      FROM base
+    )
     SELECT
-      COALESCE(m.contact_id::text, m.application_id::text) AS thread_key,
-      m.contact_id AS contact_id,
-      COALESCE(c.name, c.email, c.phone, m.to_number, m.from_number, m.application_id::text) AS display_name,
-      COALESCE(c.phone, m.from_number, m.to_number) AS phone,
-      COALESCE(c.email, NULL) AS email,
-      MAX(m.created_at) AS last_at,
-      (
-        SELECT body FROM communications_messages m2
-        WHERE m2.silo = $1
-          AND COALESCE(m2.contact_id::text, m2.application_id::text) =
-              COALESCE(m.contact_id::text, m.application_id::text)
-        ORDER BY m2.created_at DESC
-        LIMIT 1
-      ) AS last_body,
-      SUM(CASE WHEN m.read_at IS NULL AND m.direction = 'inbound' THEN 1 ELSE 0 END) AS unread_count
-    FROM communications_messages m
-    LEFT JOIN contacts c ON c.id = m.contact_id
-    WHERE m.silo = $1
-      ${typeClause}
-    GROUP BY thread_key, m.contact_id, display_name, phone, email
+      thread_key,
+      contact_id,
+      display_name,
+      phone,
+      email,
+      created_at AS last_at,
+      body AS last_body,
+      unread_count
+    FROM ranked
+    WHERE rn = 1
   `;
 
   if (mode === "all") {
@@ -259,7 +289,7 @@ router.get("/messages-list", safeHandler(async (req: any, res: any) => {
        ORDER BY last_at DESC NULLS LAST, display_name ASC
        LIMIT 1000`,
       typeParams,
-    ).catch(() => ({ rows: [] as any[] }));
+    );
     return res.json({ conversations: result.rows });
   }
 
@@ -267,7 +297,7 @@ router.get("/messages-list", safeHandler(async (req: any, res: any) => {
   const result = await pool.query(
     `${threadsSql} ORDER BY last_at DESC LIMIT 200`,
     typeParams,
-  ).catch(() => ({ rows: [] as any[] }));
+  );
   res.json({ conversations: result.rows });
 }));
 
@@ -775,6 +805,24 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
   // because the JWT primary silo never changes.
   const { resolveSiloFromRequest } = await import("../middleware/silo.js");
   const silo = resolveSiloFromRequest(req);
+  const normalizedToDigits = String(to).replace(/\D/g, "");
+  const normalizedTo = normalizedToDigits.length === 10 ? `+1${normalizedToDigits}` : String(to);
+  let resolvedContactId: string | null = contactId ?? null;
+  if (!resolvedContactId) {
+    const canonicalContact = await pool.query<{ id: string }>(
+      `SELECT id
+         FROM contacts
+        WHERE right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10) =
+              right(regexp_replace($1::text,           '[^0-9]', '', 'g'), 10)
+        ORDER BY created_at ASC NULLS LAST, id ASC
+        LIMIT 1`,
+      [normalizedTo]
+    ).then((r) => r.rows[0] ?? null).catch(() => null);
+    resolvedContactId = canonicalContact?.id ?? null;
+    if (!resolvedContactId) {
+      console.warn("sms_outbound_no_contact_id", { to: normalizedTo });
+    }
+  }
   await pool.query(
     `INSERT INTO communications_messages
        (id, type, direction, status, body, phone_number, from_number, to_number,
@@ -786,7 +834,7 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
       String(to),
       from,
       message.sid,
-      contactId ?? null,
+      resolvedContactId,
       applicationId ?? null,
       staffName,
       silo,
@@ -795,14 +843,14 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
     // eslint-disable-next-line no-console
     console.warn("communications.sms.persist_failed", {
       twilioSid: message.sid,
-      contactId: contactId ?? null,
+      contactId: resolvedContactId,
       applicationId: applicationId ?? null,
       message: err?.message,
       code: err?.code,
     });
   });
 
-  res.json({ id: message.sid, status: message.status, contactId: contactId ?? null });
+  res.json({ id: message.sid, status: message.status, contactId: resolvedContactId });
 }));
 
 // BF_SERVER_BLOCK_43_v1 -- application-scoped message endpoints.

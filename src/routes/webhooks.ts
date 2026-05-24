@@ -414,9 +414,26 @@ async function persistInboundSms(req: any): Promise<void> {
     `SELECT id, silo FROM contacts
             WHERE right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10)
                 = right(regexp_replace($1::text,            '[^0-9]', '', 'g'), 10)
+            ORDER BY created_at ASC NULLS LAST, id ASC
             LIMIT 1`,
     [fromNum]
   ).then((r) => r.rows[0] ?? null).catch(() => null);
+
+  let resolvedSilo = contact?.silo ?? null;
+  if (!resolvedSilo && toNum) {
+    const toSilo = await pool.query<{ silo: string | null }>(
+      `SELECT silo
+         FROM communications_messages
+        WHERE right(regexp_replace(coalesce(to_number, ''), '[^0-9]', '', 'g'), 10)
+            = right(regexp_replace($1::text,                '[^0-9]', '', 'g'), 10)
+          AND silo IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [toNum]
+    ).then((r) => r.rows[0]?.silo ?? null).catch(() => null);
+    resolvedSilo = toSilo;
+  }
+  resolvedSilo = resolvedSilo ?? "BF";
 
   // v635_sms_match_log: log the contact lookup outcome so silent
   // persists are visible in Azure log stream.
@@ -424,7 +441,7 @@ async function persistInboundSms(req: any): Promise<void> {
     event: "sms_inbound_contact_match",
     from: fromNum,
     matched_contact_id: contact?.id ?? null,
-    silo: contact?.silo ?? "BF",
+    silo: resolvedSilo,
     sid,
   }));
 
@@ -435,7 +452,7 @@ async function persistInboundSms(req: any): Promise<void> {
        (id, type, direction, status, contact_id, body, from_number, to_number, phone_number, twilio_sid, silo, created_at)
      VALUES (gen_random_uuid(), 'sms', 'inbound', 'received', $1, $2, $3, $4, $3, $5, $6, now())
      ON CONFLICT (twilio_sid) WHERE twilio_sid IS NOT NULL DO NOTHING`,
-    [contact?.id ?? null, body, fromNum, toNum, sid, contact?.silo ?? "BF"]
+    [contact?.id ?? null, body, fromNum, toNum, sid, resolvedSilo]
   ).catch((err) => {
     // Surface the failure in logs instead of swallowing it silently.
     console.error({ event: "sms_inbound_persist_failed", err: String(err) });
@@ -448,6 +465,12 @@ async function persistInboundSms(req: any): Promise<void> {
     body,
     sid,
   });
+  console.log(JSON.stringify({
+    event: "sms_inbound_persisted",
+    contact_id: contact?.id ?? null,
+    silo: resolvedSilo,
+    sid,
+  }));
 }
 
 // ── Inbound SMS webhook ───────────────────────────────────────────────────────
