@@ -1,6 +1,4 @@
 -- BF_SERVER_BLOCK_v649_SHOWSTOPPER_PATCHES_v1 — migration v648
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 UPDATE lenders
    SET silo = 'BF', updated_at = NOW()
  WHERE silo IS NULL
@@ -40,5 +38,3 @@ UPDATE lender_products
      )
    );
 
-ALTER TABLE communications_messages
-  ALTER COLUMN id SET DEFAULT gen_random_uuid();
