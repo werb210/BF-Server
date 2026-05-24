@@ -137,7 +137,13 @@ function validateAndNormalizeRequiredDocuments(input: unknown): {
       continue;
     }
     if (seenLabels.has(_resolvedCategory_v628)) {
-      errors.push(`required_documents[${i}] duplicates earlier entry "${_resolvedCategory_v628}"`);
+      // BF_SERVER_BLOCK_v642_DEDUPE_REQUIRED_DOCS_v1 — dedupe silently
+      // rather than reject the save. Saw repeated PUT failures on
+      // /api/portal/lender-products/:id from the portal sending the
+      // Stage-1-locked "6 months business banking statements" twice (once
+      // because it's auto-included as Always-Required, once because the
+      // user-selected checkbox set also includes it). Server now treats
+      // dupes as a no-op rather than a 400, so legitimate edits go through.
       continue;
     }
     seenLabels.add(_resolvedCategory_v628);
