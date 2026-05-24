@@ -160,8 +160,19 @@ router.post(
   safeHandler(async (req: any, res: any) => {
     const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : null;
     const body = typeof req.body?.body === "string" ? req.body.body.trim() : null;
-    if (!applicationId || !body) {
-      throw new AppError("validation_error", "applicationId and body are required.", 400);
+    // BF_SERVER_BLOCK_v646_COMPLETE_COMMS_v1 — accept attachments from the
+    // mini-portal (each ≤3MB, up to 5 per message).
+    const rawAttach = Array.isArray(req.body?.attachments) ? req.body.attachments : [];
+    const attachments = rawAttach
+      .filter((a: any) => a && typeof a.name === "string" && typeof a.dataUrl === "string")
+      .slice(0, 5)
+      .map((a: any) => ({
+        name: String(a.name).slice(0, 200),
+        contentType: typeof a.contentType === "string" ? a.contentType.slice(0, 80) : "application/octet-stream",
+        dataUrl: String(a.dataUrl).slice(0, 4_500_000),
+      }));
+    if (!applicationId || (!body && attachments.length === 0)) {
+      throw new AppError("validation_error", "applicationId and body or attachments are required.", 400);
     }
 
     // BF_SERVER_BLOCK_v637_MOBILE_PHONE_AND_BACKFILL_v1 — before insert, backfill
@@ -184,14 +195,16 @@ router.post(
     const id = randomUUID();
     await dbQuery(
       `INSERT INTO communications_messages
-         (id, type, direction, status, application_id, contact_id, silo, body, created_at)
+         (id, type, direction, status, application_id, contact_id, silo, body, attachments, created_at)
        VALUES (
          $1, 'message', 'inbound', 'received', $2,
          (SELECT contact_id FROM applications WHERE id = $2 LIMIT 1),
          COALESCE((SELECT silo FROM applications WHERE id = $2 LIMIT 1), 'BF'),
-         $3, now()
+         $3,
+         CASE WHEN $4::text = '[]' THEN NULL ELSE $4::jsonb END,
+         now()
        )`,
-      [id, applicationId, body]
+      [id, applicationId, body ?? "", JSON.stringify(attachments)]
     );
 
     // v637: notify staff so client-to-staff messages aren't silent. Best-effort.
@@ -204,6 +217,66 @@ router.post(
     } catch { /* helper missing in some envs */ }
 
     res.status(201).json({ status: "ok", data: { id } });
+  })
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// BF_SERVER_BLOCK_v646_COMPLETE_COMMS_v1 — mini-portal typing + mark-read
+// ─────────────────────────────────────────────────────────────────────────
+
+router.post(
+  "/messages/typing",
+  safeHandler(async (req: any, res: any) => {
+    const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
+    if (!applicationId) throw new AppError("validation_error", "applicationId required.", 400);
+    await dbQuery(
+      `INSERT INTO messages_typing (contact_id, side, actor_label, updated_at)
+       SELECT a.contact_id, 'client', NULL, NOW()
+         FROM applications a
+        WHERE a.id::text = $1
+          AND a.contact_id IS NOT NULL
+       ON CONFLICT (contact_id, side)
+       DO UPDATE SET updated_at = NOW()`,
+      [applicationId]
+    ).catch(() => undefined);
+    res.json({ ok: true });
+  })
+);
+
+router.get(
+  "/messages/typing",
+  safeHandler(async (req: any, res: any) => {
+    const applicationId = typeof req.query?.applicationId === "string" ? String(req.query.applicationId).trim() : "";
+    if (!applicationId) throw new AppError("validation_error", "applicationId required.", 400);
+    const r = await dbQuery<{ actor_label: string | null }>(
+      `SELECT mt.actor_label
+         FROM messages_typing mt
+         JOIN applications a ON a.contact_id = mt.contact_id
+        WHERE a.id::text = $1
+          AND mt.side = 'staff'
+          AND mt.updated_at > NOW() - INTERVAL '5 seconds'
+        LIMIT 1`,
+      [applicationId]
+    ).catch(() => ({ rows: [] as any[] }));
+    res.json({ typing: r.rows.length > 0, label: r.rows[0]?.actor_label ?? null });
+  })
+);
+
+router.post(
+  "/messages/mark-read",
+  safeHandler(async (req: any, res: any) => {
+    const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
+    if (!applicationId) throw new AppError("validation_error", "applicationId required.", 400);
+    const r = await dbQuery(
+      `UPDATE communications_messages
+          SET read_at = NOW()
+        WHERE type = 'message'
+          AND direction = 'outbound'
+          AND read_at IS NULL
+          AND application_id::text = $1`,
+      [applicationId]
+    ).catch(() => ({ rowCount: 0 }));
+    res.json({ ok: true, updated: (r as any).rowCount ?? 0 });
   })
 );
 
