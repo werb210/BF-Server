@@ -161,8 +161,9 @@ router.get("/messages", safeHandler(async (req: any, res: any) => {
 router.get("/sms", safeHandler(async (req: any, res: any) => {
   const { getSilo } = await import("../middleware/silo.js");
   const silo = getSilo(res);
-  const result = await pool.query(
-    `WITH base AS (
+  const mode = String(req.query.mode ?? "").toLowerCase();
+  const threadsSql = `
+    WITH base AS (
        SELECT
          COALESCE(m.contact_id::text, m.from_number) AS thread_key,
          m.contact_id,
@@ -195,9 +196,46 @@ router.get("/sms", safeHandler(async (req: any, res: any) => {
        unread_count
      FROM ranked
      WHERE rn = 1
+  `;
+
+  if (mode === "all") {
+    const result = await pool.query(
+      `WITH threads AS (${threadsSql})
+       SELECT
+         COALESCE(t.thread_key, ct.id::text) AS thread_key,
+         COALESCE(t.contact_id, ct.id)       AS contact_id,
+         COALESCE(t.display_name, ct.name, ct.email, ct.phone, 'Unknown') AS display_name,
+         COALESCE(t.phone, ct.phone)         AS phone,
+         t.last_at,
+         t.last_body,
+         COALESCE(t.unread_count, 0)         AS unread_count
+       FROM contacts ct
+       LEFT JOIN threads t ON t.contact_id = ct.id
+       WHERE COALESCE(ct.status, 'active') <> 'archived'
+         AND (ct.silo IS NULL OR ct.silo = $1)
+       UNION ALL
+       SELECT
+         t.thread_key,
+         t.contact_id,
+         t.display_name,
+         t.phone,
+         t.last_at,
+         t.last_body,
+         COALESCE(t.unread_count, 0)
+       FROM threads t
+       WHERE t.contact_id IS NULL
+       ORDER BY last_at DESC NULLS LAST, display_name ASC
+       LIMIT 1000`,
+      [silo],
+    );
+    return res.json({ conversations: result.rows });
+  }
+
+  const result = await pool.query(
+    `${threadsSql}
      ORDER BY last_at DESC
      LIMIT 200`,
-    [silo]
+    [silo],
   );
   res.json({ conversations: result.rows });
 }));
@@ -895,12 +933,12 @@ router.get(
         WHERE type = 'message'
           AND (
             ($1 <> '' AND contact_id = NULLIF($1, '')::uuid)
-            OR ($2 <> '' AND application_id = NULLIF($2, '')::uuid)
+            OR ($2 <> '' AND application_id = NULLIF($2, ''))
           )
         ORDER BY created_at ASC
         LIMIT 1000`,
       [contactId, applicationId],
-    ).catch(() => ({ rows: [] as any[] }));
+    );
     res.json(
       (result.rows as any[]).map((r: any) => ({
         id: r.id,
@@ -950,7 +988,7 @@ router.get(
         ORDER BY created_at ASC
         LIMIT 500`,
       [applicationId],
-    ).catch(() => ({ rows: [] as any[] }));
+    );
 
     // BF-portal MessagesTab consumes MessageRecord[] directly (top-level
     // array), not { items: [...] }. Match that shape.
