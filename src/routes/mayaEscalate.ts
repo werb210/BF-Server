@@ -78,11 +78,21 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
     const description = String(b.description ?? "").trim();
     if (!description) return res.status(400).json({ error: "missing_description" });
 
+    // BF_SERVER_BLOCK_v645_INBOX_AND_SCREENSHOT_v1 — accept three field-name
+    // aliases so all current callers work without a wire-protocol break:
+    //   - bfw FloatingChat (v149+) sends `screenshot`
+    //   - bf-client MayaWidget (v320+) sends `screenshot`
+    //   - the agent /maya/issue forwards `screenshot_data_url`
+    // We also tolerate bare base64 (no data: prefix) by adding one.
     let screenshotUrl: string | null = null;
-    const dataUrl: unknown = b.screenshot_data_url;
-    if (typeof dataUrl === "string" && dataUrl.startsWith("data:image/")) {
-      if (dataUrl.length <= 2_500_000) {
-        screenshotUrl = dataUrl;
+    const candidate: unknown =
+      b.screenshot_data_url ?? b.screenshot ?? b.screenshot_base64 ?? b.screenshotBase64;
+    if (typeof candidate === "string" && candidate.length > 0) {
+      const normalized = candidate.startsWith("data:image/")
+        ? candidate
+        : `data:image/png;base64,${candidate}`;
+      if (normalized.length <= 2_500_000) {
+        screenshotUrl = normalized;
       }
     }
 
