@@ -98,6 +98,12 @@ function buildSelectColumns(existing: Set<string>): string {
     { name: "amount_max", fallback: "null::bigint" },
     { name: "signnow_template_id", fallback: "null::text" },  // BF_LP_REPO_FIELDS_v32
     { name: "eligibility_notes", fallback: "null::text" },    // BF_LP_REPO_FIELDS_v32
+    // BF_SERVER_BLOCK_v647_LENDER_PRODUCTS_SEED_v1
+    { name: "rate_kind", fallback: "null::text" },
+    { name: "rate_min_num", fallback: "null::numeric" },
+    { name: "rate_max_num", fallback: "null::numeric" },
+    { name: "category_label", fallback: "null::text" },
+    { name: "documents_required", fallback: "null::text" },
     { name: "silo", fallback: "null::text" },
   ];
 
@@ -132,6 +138,12 @@ export async function createLenderProduct(params: {
   termUnit?: string | null;            // BF_LP_REPO_FIELDS_v32
   signnowTemplateId?: string | null;   // BF_LP_REPO_FIELDS_v32
   eligibilityNotes?: string | null;    // BF_LP_REPO_FIELDS_v32
+  // BF_SERVER_BLOCK_v647_LENDER_PRODUCTS_SEED_v1 — rate kind plumbing
+  rateKind?: string | null;
+  rateMinNum?: number | null;
+  rateMaxNum?: number | null;
+  categoryLabel?: string | null;
+  documentsRequired?: string | null;
   silo?: string | null;
   client?: Queryable;
 }): Promise<LenderProductRecord> {
@@ -161,6 +173,12 @@ export async function createLenderProduct(params: {
       "required_documents",
       "signnow_template_id",  // BF_LP_REPO_FIELDS_v32
       "eligibility_notes",    // BF_LP_REPO_FIELDS_v32
+      // BF_SERVER_BLOCK_v647_LENDER_PRODUCTS_SEED_v1
+      "rate_kind",
+      "rate_min_num",
+      "rate_max_num",
+      "category_label",
+      "documents_required",
       "created_at",
       "updated_at",
     ],
@@ -190,6 +208,12 @@ export async function createLenderProduct(params: {
     { name: "min_credit_score", value: params.minCreditScore ?? null },
     { name: "signnow_template_id", value: params.signnowTemplateId ?? null },  // BF_LP_REPO_FIELDS_v32
     { name: "eligibility_notes", value: params.eligibilityNotes ?? null },     // BF_LP_REPO_FIELDS_v32
+    // BF_SERVER_BLOCK_v647_LENDER_PRODUCTS_SEED_v1
+    { name: "rate_kind", value: params.rateKind ?? null },
+    { name: "rate_min_num", value: params.rateMinNum ?? null },
+    { name: "rate_max_num", value: params.rateMaxNum ?? null },
+    { name: "category_label", value: params.categoryLabel ?? null },
+    { name: "documents_required", value: params.documentsRequired ?? null },
     { name: "silo", value: params.silo ?? null },
   ].filter((entry) => existing.has(entry.name));
 
@@ -396,6 +420,12 @@ export async function updateLenderProduct(params: {
   termUnit?: string | null;            // BF_LP_REPO_FIELDS_v32
   signnowTemplateId?: string | null;   // BF_LP_REPO_FIELDS_v32
   eligibilityNotes?: string | null;    // BF_LP_REPO_FIELDS_v32
+  // BF_SERVER_BLOCK_v647_LENDER_PRODUCTS_SEED_v1
+  rateKind?: string | null;
+  rateMinNum?: number | null;
+  rateMaxNum?: number | null;
+  categoryLabel?: string | null;
+  documentsRequired?: string | null;
   silo?: string | null;
   client?: Queryable;
 }): Promise<LenderProductRecord | null> {
@@ -419,6 +449,12 @@ export async function updateLenderProduct(params: {
       "silo",
       "term_unit",
       "required_documents",
+      // BF_SERVER_BLOCK_v647_LENDER_PRODUCTS_SEED_v1
+      "rate_kind",
+      "rate_min_num",
+      "rate_max_num",
+      "category_label",
+      "documents_required",
       "created_at",
       "updated_at",
     ],
@@ -478,6 +514,22 @@ export async function updateLenderProduct(params: {
   }
   if (existing.has("eligibility_notes") && params.eligibilityNotes !== undefined) {
     updates.push({ name: "eligibility_notes", value: params.eligibilityNotes ?? null });
+  }
+  // BF_SERVER_BLOCK_v647_LENDER_PRODUCTS_SEED_v1
+  if (existing.has("rate_kind") && params.rateKind !== undefined) {
+    updates.push({ name: "rate_kind", value: params.rateKind ?? null });
+  }
+  if (existing.has("rate_min_num") && params.rateMinNum !== undefined) {
+    updates.push({ name: "rate_min_num", value: params.rateMinNum ?? null });
+  }
+  if (existing.has("rate_max_num") && params.rateMaxNum !== undefined) {
+    updates.push({ name: "rate_max_num", value: params.rateMaxNum ?? null });
+  }
+  if (existing.has("category_label") && params.categoryLabel !== undefined) {
+    updates.push({ name: "category_label", value: params.categoryLabel ?? null });
+  }
+  if (existing.has("documents_required") && params.documentsRequired !== undefined) {
+    updates.push({ name: "documents_required", value: params.documentsRequired ?? null });
   }
 
   const setClauses = updates.map(
