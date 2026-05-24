@@ -16,6 +16,45 @@ import { readLenderMatchEnvelope, computeAndCacheLenderMatches, readCachedMatche
 
 const router = Router();
 
+
+router.get('/:publicId/required-documents', safeHandler(async (req: any, res: any) => {
+  const publicId = String(req.params.publicId ?? '').trim();
+  const appRes = await pool.query<{ id: string; product_type: string; requested_amount: number | null; metadata: unknown | null; lender_product_id: string | null }>(
+    `SELECT id, product_type, requested_amount, metadata, lender_product_id
+       FROM applications
+      WHERE bi_public_id = $1
+      LIMIT 1`,
+    [publicId],
+  );
+  const app = appRes.rows[0];
+  if (!app) return res.status(404).json({ error: 'not_found' });
+
+  const { resolveRequirementsForApplication } = await import('../../services/lenderProductRequirementsService.js');
+  const { normalizeRequiredDocumentKey } = await import('../../db/schema/requiredDocuments.js');
+  const resolved = await resolveRequirementsForApplication({
+    lenderProductId: app.lender_product_id,
+    productType: app.product_type,
+    requestedAmount: app.requested_amount,
+    country: null,
+  });
+  const required = (resolved.requirements ?? []).filter((r: any) => r.required !== false);
+  const keys = [...new Set(required.map((r: any) => normalizeRequiredDocumentKey(r.documentType)).filter(Boolean))] as string[];
+  const docRes = await pool.query(`SELECT document_type AS doc_type, status, rejection_reason, created_at FROM documents WHERE application_id::text = ($1)::text ORDER BY created_at DESC`, [app.id]);
+  const byType = new Map<string, any>();
+  for (const row of docRes.rows as any[]) {
+    const k = normalizeRequiredDocumentKey(row.doc_type);
+    if (k && !byType.has(k)) byType.set(k, row);
+  }
+  const items = keys.map((k) => {
+    const row = byType.get(k);
+    const status = !row ? 'pending' : (row.status === 'accepted' || row.status === 'rejected' ? row.status : 'uploaded');
+    return { doc_type: k, label: k, status, rejection_reason: row?.rejection_reason ?? undefined, last_uploaded_at: row?.created_at ?? undefined };
+  });
+  const rank:any = { rejected: 0, pending: 1, uploaded: 2, accepted: 3 };
+  items.sort((a:any,b:any)=>rank[a.status]-rank[b.status]);
+  res.json({ required: items, totalRequired: items.length, totalAccepted: items.filter((i:any)=>i.status==='accepted').length, totalRejected: items.filter((i:any)=>i.status==='rejected').length });
+}));
+
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.APPLICATION_READ]));
 

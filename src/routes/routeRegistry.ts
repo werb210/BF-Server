@@ -14,6 +14,7 @@ import clientIssuesRoutes from "./clientIssues.js";
 import communicationsRoutes from "./communications.js";
 import companiesRoutes from "./companies.js";
 import crmRoutes from "./crm.js";
+import crmBulkRoutes from "./crmBulk.js";
 import creditRoutes from "./credit.js";
 import creditSummaryRoutes from "./creditSummary.js";
 import dashboardRoutes from "./dashboard.js";
@@ -164,6 +165,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/companies", router: companiesRoutes },
   { path: "/credit", router: creditRoutes },
   { path: "/crm", router: crmRoutes },
+  { path: "/crm", router: crmBulkRoutes },
   { path: "/dashboard", router: dashboardRoutes },
   { path: "/credit-summary", router: creditSummaryRoutes },
   // BF_MINI_PORTAL_NOTES_v47 — mounted at /api/applications/:id/notes

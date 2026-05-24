@@ -17,6 +17,7 @@ import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 // BF_SERVER_BLOCK_v215_BF_TO_BI_DOC_MIRROR_v1
 import { mirrorDocToBiAsync } from "../services/biDocMirror.js";
+import { setProcessingStage } from "../modules/applications/processingStage.service.js";
 
 const router = express.Router();
 
@@ -277,12 +278,29 @@ router.post("/upload", requireAuth, upload.single("file"), async (req: Request, 
 router.post("/:id/accept", requireAuth, async (req: Request, res: Response) => {
   const id = toStringSafe(req.params.id);
   await pool.query(`UPDATE documents SET status='accepted', updated_at=now() WHERE id=$1`, [id]).catch(() => {});
+  const docRes = await pool.query<{ application_id: string | null }>(`SELECT application_id FROM documents WHERE id=$1 LIMIT 1`, [id]).catch(() => ({ rows: [] as any[] }));
+  const applicationId = docRes.rows[0]?.application_id ?? null;
+  if (applicationId) {
+    const appRes = await pool.query<{ processing_stage: string | null; previous_processing_stage: string | null }>(`SELECT processing_stage, previous_processing_stage FROM applications WHERE id::text = ($1)::text LIMIT 1`, [applicationId]).catch(() => ({ rows: [] as any[] }));
+    const app = appRes.rows[0];
+    if (app?.processing_stage === "documents_incomplete") {
+      const unresolved = await pool.query<{ count: number }>(`SELECT count(*)::int AS count FROM documents WHERE application_id::text = ($1)::text AND status='rejected'`, [applicationId]).catch(() => ({ rows: [{ count: 0 }] as any[] }));
+      if ((unresolved.rows[0]?.count ?? 0) === 0 && app.previous_processing_stage) {
+        await setProcessingStage({ applicationId, toStage: app.previous_processing_stage as any, reason: "all_documents_resolved", actorUserId: (req as any)?.user?.id ?? null }).catch(() => {});
+      }
+    }
+  }
   return ok(res, { id, status: "accepted" });
 });
 
 router.post("/:id/reject", requireAuth, async (req: Request, res: Response) => {
   const id = toStringSafe(req.params.id);
   await pool.query(`UPDATE documents SET status='rejected', updated_at=now() WHERE id=$1`, [id]).catch(() => {});
+  const docRes = await pool.query<{ application_id: string | null }>(`SELECT application_id FROM documents WHERE id=$1 LIMIT 1`, [id]).catch(() => ({ rows: [] as any[] }));
+  const applicationId = docRes.rows[0]?.application_id ?? null;
+  if (applicationId) {
+    await setProcessingStage({ applicationId, toStage: "documents_incomplete", reason: `document_rejected:${id}`, actorUserId: (req as any)?.user?.id ?? null }).catch(() => {});
+  }
   return ok(res, { id, status: "rejected" });
 });
 
