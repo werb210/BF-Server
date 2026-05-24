@@ -811,6 +811,64 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
 // a specific application's thread (alongside the SMS that
 // sendDocumentRejectionSms already fires).
 
+// BF_SERVER_BLOCK_v644_PORTAL_MESSAGES_CONTACT_v1 — contact-keyed thread
+// fetch. Returns all type='message' rows across every application the
+// contact has (one rolling conversation per contact, per Todd's #2).
+// Either ?contactId=... or ?applicationId=... is accepted; contactId wins
+// if both are sent.
+router.get(
+  "/messages/thread",
+  safeHandler(async (req: any, res: any) => {
+    const contactId = typeof req.query?.contactId === "string"
+      ? String(req.query.contactId).trim()
+      : "";
+    const applicationId = typeof req.query?.applicationId === "string"
+      ? String(req.query.applicationId).trim()
+      : "";
+    if (!contactId && !applicationId) {
+      return res.status(400).json({
+        error: { code: "validation_error", message: "contactId or applicationId required" },
+      });
+    }
+    const result = await pool.query<{
+      id: string;
+      body: string | null;
+      direction: string | null;
+      staff_name: string | null;
+      read_at: string | null;
+      cta_label: string | null;
+      cta_action: string | null;
+      created_at: string;
+    }>(
+      `SELECT id, body, direction, staff_name, read_at,
+              cta_label, cta_action, created_at
+         FROM communications_messages
+        WHERE type = 'message'
+          AND (
+            ($1 <> '' AND contact_id = NULLIF($1, '')::uuid)
+            OR ($2 <> '' AND application_id = NULLIF($2, '')::uuid)
+          )
+        ORDER BY created_at ASC
+        LIMIT 1000`,
+      [contactId, applicationId],
+    ).catch(() => ({ rows: [] as any[] }));
+    res.json(
+      (result.rows as any[]).map((r: any) => ({
+        id: r.id,
+        body: r.body ?? "",
+        senderType: r.direction === "inbound" ? "client" : "staff",
+        senderName: r.staff_name ?? null,
+        source: r.direction === "inbound" ? "client" : "staff",
+        createdAt: r.created_at,
+        readAt: r.read_at,
+        status: r.read_at ? "read" : "delivered",
+        ctaLabel: r.cta_label,
+        ctaAction: r.cta_action,
+      })),
+    );
+  }),
+);
+
 // GET /api/communications/messages/thread/:applicationId
 router.get(
   "/messages/thread/:applicationId",
@@ -868,18 +926,33 @@ router.get(
 // chat bubble. Does NOT auto-send SMS -- staff use /communications/sms
 // when they want a phone-channel side effect.
 router.post(
+  // BF_SERVER_BLOCK_v644_PORTAL_MESSAGES_CONTACT_v1 — accept contactId so
+  // the staff Messages tab can address a contact directly without needing
+  // an applicationId. Threads are contact-keyed. Offline-fallback SMS
+  // uses contact.phone directly when no application is in play.
   "/messages/send",
   safeHandler(async (req: any, res: any) => {
     const applicationId = typeof req.body?.applicationId === "string"
       ? req.body.applicationId.trim()
       : "";
+    const contactId = typeof req.body?.contactId === "string"
+      ? req.body.contactId.trim()
+      : "";
     const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
     const ctaLabel  = typeof req.body?.ctaLabel  === "string" ? req.body.ctaLabel.trim().slice(0, 80)  : null;
     const ctaAction = typeof req.body?.ctaAction === "string" ? req.body.ctaAction.trim().slice(0, 120) : null;
-    if (!applicationId || !body) {
+    if ((!applicationId && !contactId) || !body) {
       return res.status(400).json({
-        error: { code: "validation_error", message: "applicationId and body required" },
+        error: { code: "validation_error", message: "contactId or applicationId, plus body, required" },
       });
+    }
+    let resolvedContactId: string | null = contactId || null;
+    if (!resolvedContactId && applicationId) {
+      const cr = await pool.query<{ contact_id: string | null }>(
+        `SELECT contact_id FROM applications WHERE id::text = $1 LIMIT 1`,
+        [applicationId],
+      );
+      resolvedContactId = cr.rows[0]?.contact_id ?? null;
     }
     const staffName = (req as any).user?.name ?? (req as any).user?.email ?? null;
     const { getSilo } = await import("../middleware/silo.js");
@@ -891,11 +964,12 @@ router.post(
          (id, type, direction, status, application_id, contact_id, silo,
           body, staff_name, cta_label, cta_action, created_at)
        VALUES (
-         $1, 'message', 'outbound', 'sent', $2,
-         (SELECT contact_id FROM applications WHERE id::text = $2 LIMIT 1),
-         $3, $4, $5, $6, $7, now()
+         $1, 'message', 'outbound', 'sent',
+         NULLIF($2, '')::uuid,
+         NULLIF($3, '')::uuid,
+         $4, $5, $6, $7, $8, now()
        )`,
-      [id, applicationId, silo, body, staffName, ctaLabel, ctaAction],
+      [id, applicationId, resolvedContactId ?? "", silo, body, staffName, ctaLabel, ctaAction],
     );
 
     // BF_SERVER_BLOCK_v636_MESSAGES_TAB_FIXES_v1: offline-fallback SMS.
@@ -908,14 +982,14 @@ router.post(
         phone: string | null;
         seconds_since: number | null;
       }>(
-        `SELECT a.last_portal_seen_at AS last_seen,
-                c.phone AS phone,
-                EXTRACT(EPOCH FROM (now() - a.last_portal_seen_at))::int AS seconds_since
-           FROM applications a
-           LEFT JOIN contacts c ON c.id = a.contact_id
-          WHERE a.id::text = $1
-          LIMIT 1`,
-        [applicationId],
+        `SELECT MAX(a.last_portal_seen_at) AS last_seen,
+                MAX(c.phone)               AS phone,
+                EXTRACT(EPOCH FROM (now() - MAX(a.last_portal_seen_at)))::int AS seconds_since
+           FROM contacts c
+           LEFT JOIN applications a ON a.contact_id = c.id
+          WHERE c.id = NULLIF($1, '')::uuid
+             OR a.id::text = $2`,
+        [resolvedContactId ?? "", applicationId],
       );
       const row = presence.rows[0];
       const stale = !row || row.last_seen == null ||
@@ -923,7 +997,9 @@ router.post(
       if (stale && row?.phone) {
         const { sendSms } = await import("../modules/notifications/sms.service.js");
         const clientBase = String(process.env.CLIENT_URL ?? "https://client.boreal.financial").replace(/\/$/, "");
-        const link = `${clientBase}/portal/${encodeURIComponent(applicationId)}`;
+        const link = applicationId
+          ? `${clientBase}/portal/${encodeURIComponent(applicationId)}`
+          : `${clientBase}/portal`;
         const preview = body.length > 120 ? body.slice(0, 117) + "…" : body;
         const smsBody = `Boreal: ${preview}
 ${link}`;
