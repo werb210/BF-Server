@@ -416,3 +416,54 @@ export async function advanceProcessingStage(params: {
     client.release();
   }
 }
+
+
+export async function setProcessingStage(params: {
+  applicationId: string;
+  toStage: ProcessingStage;
+  reason?: string | null;
+  actorUserId?: string | null;
+  client?: Queryable;
+}): Promise<void> {
+  const run = async (client: Queryable) => {
+    const currentRes = await client.query<{ processing_stage: string | null; previous_processing_stage: string | null }>(
+      `select processing_stage, previous_processing_stage from applications where id = $1 for update`,
+      [params.applicationId],
+    );
+    const current = currentRes.rows[0];
+    if (!current) throw new AppError("not_found", "Application not found.", 404);
+    const fromStage = current.processing_stage;
+
+    if (params.toStage === "documents_incomplete" && fromStage !== "documents_incomplete" && !current.previous_processing_stage) {
+      await client.query(`update applications set previous_processing_stage = $2 where id = $1`, [params.applicationId, fromStage]);
+    }
+
+    await client.query(
+      `update applications set processing_stage = $2, updated_at = now() where id = $1`,
+      [params.applicationId, params.toStage],
+    );
+
+    if (params.toStage !== "documents_incomplete" && current.previous_processing_stage) {
+      await client.query(`update applications set previous_processing_stage = null where id = $1`, [params.applicationId]);
+    }
+
+    await client.query(
+      `insert into application_stage_history (application_id, from_stage, to_stage, reason, actor_user_id)
+       values ($1, $2, $3, $4, $5::uuid)`,
+      [params.applicationId, fromStage, params.toStage, params.reason ?? null, params.actorUserId ?? null],
+    );
+  };
+
+  if (params.client) return run(params.client);
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await run(client as any);
+    await client.query("commit");
+  } catch (e) {
+    await client.query("rollback");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
