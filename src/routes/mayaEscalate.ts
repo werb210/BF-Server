@@ -38,10 +38,16 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
       );
       const convId: string = conv.rows[0].id;
 
+      // BF_SERVER_BLOCK_v649_SHOWSTOPPER_PATCHES_v1 — communications_messages.id
+      // is a UUID PK with NO column default (created in migration 079). Every
+      // INSERT must supply it explicitly. This was the production 500 that
+      // bf-client's "Talk to a Human" surfaced as "Couldn't reach the team
+      // — please email hello@boreal.financial." Migration v648 also adds a
+      // gen_random_uuid() default so any other INSERT that forgets is covered.
       await pool.query(
         `INSERT INTO communications_messages
-           (conversation_id, channel, direction, body, created_at)
-         VALUES ($1, 'messenger', 'inbound', $2, NOW())`,
+           (id, conversation_id, channel, direction, body, created_at)
+         VALUES (gen_random_uuid(), $1, 'messenger', 'inbound', $2, NOW())`,
         [convId, message]
       );
 

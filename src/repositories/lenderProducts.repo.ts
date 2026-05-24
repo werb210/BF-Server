@@ -75,7 +75,15 @@ async function assertLenderProductColumnsExist(params: {
   }
 }
 
-function buildSelectColumns(existing: Set<string>): string {
+function buildSelectColumns(existing: Set<string>, alias?: string): string {
+  // BF_SERVER_BLOCK_v649_SHOWSTOPPER_PATCHES_v1 — `alias` is the SQL table
+  // alias to prefix existing column names with (e.g. "lp"). Fallback
+  // expressions are emitted verbatim — they MUST NOT receive the prefix
+  // because PG would parse `lp.null::text` as `lp."null"::text` and error
+  // "column lp.null does not exist". This was the production lender-products
+  // 500 ("column lp.null does not exist") introduced by the v626 left-join
+  // wrapper that blindly mapped each split element through `lp.${c.trim()}`.
+  const prefix = alias && alias.trim() ? `${alias.trim()}.` : "";
   const columns: Array<{ name: string; fallback?: string }> = [
     { name: "id" },
     { name: "lender_id" },
@@ -110,9 +118,12 @@ function buildSelectColumns(existing: Set<string>): string {
   return columns
     .map((column) => {
       if (existing.has(column.name)) {
-        return column.name;
+        return `${prefix}${column.name}`;
       }
       const fallback = column.fallback ?? "null";
+      // Fallback expression is a complete SQL fragment ("null::text as foo")
+      // — never prefixed; prefixing would produce "lp.null::text as foo"
+      // which PG rejects.
       return `${fallback} as ${column.name}`;
     })
     .join(", ");
@@ -285,13 +296,12 @@ export async function listLenderProducts(
       client: runner,
       allowMissing: true,
     });
-    const selectColumns = buildSelectColumns(existing);
-    // v626: include lender_name via LEFT JOIN so the portal product list
-    // can show which lender each product belongs to. Aliased columns
-    // pass through buildSelectColumns untouched; the joined name lands
-    // as a separate field consumed by decorateProductResponse.
+    // BF_SERVER_BLOCK_v649_SHOWSTOPPER_PATCHES_v1 — pass "lp" alias to
+    // buildSelectColumns so existing columns are prefixed correctly while
+    // fallback expressions remain untouched.
+    const selectColumns = buildSelectColumns(existing, "lp");
     const res = await runner.query<LenderProductRecord & { lender_name?: string | null }>(
-      `select ${selectColumns.split(",").map((c) => `lp.${c.trim()}`).join(", ")},
+      `select ${selectColumns},
               l.name AS lender_name
        from lender_products lp
        left join lenders l on l.id = lp.lender_id
@@ -345,9 +355,10 @@ export async function listLenderProductsByLenderId(
     client: runner,
     allowMissing: true,
   });
-  const selectColumns = buildSelectColumns(existing);
+  // BF_SERVER_BLOCK_v649_SHOWSTOPPER_PATCHES_v1 — same alias-aware build.
+  const selectColumns = buildSelectColumns(existing, "lp");
   const res = await runner.query<LenderProductRecord & { lender_name?: string | null }>(
-    `select ${selectColumns.split(",").map((c) => `lp.${c.trim()}`).join(", ")},
+    `select ${selectColumns},
             l.name AS lender_name
      from lender_products lp
      left join lenders l on l.id = lp.lender_id
