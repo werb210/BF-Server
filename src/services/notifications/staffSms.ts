@@ -20,11 +20,15 @@ function fallbackNumbers(): string[] {
 }
 
 async function getAvailableStaffPhones(): Promise<string[]> {
+  // BF_SERVER_BLOCK_v646_COMPLETE_COMMS_v1 — also require a recent
+  // heartbeat (≤2 min), since status='available' can be stale if a tab
+  // crashed without firing the offline beacon.
   const { rows } = await pool.query<{ phone: string }>(
     `SELECT u.phone
        FROM staff_presence sp
        JOIN users u ON u.id = sp.user_id
       WHERE sp.status = 'available'
+        AND sp.last_heartbeat > NOW() - INTERVAL '2 minutes'
         AND u.phone IS NOT NULL
         AND u.phone <> ''`,
   );
@@ -66,10 +70,24 @@ export async function sendStaffNotification(args: {
   recipients: Recipients;
   body: string;
 }): Promise<StaffSmsResult> {
-  const targets =
-    args.recipients === "available"
-      ? await getAvailableStaffPhones()
-      : fallbackNumbers();
+  // BF_SERVER_BLOCK_v646_COMPLETE_COMMS_v1 — when recipients='available'
+  // returns empty (nobody actually online with a recent heartbeat), fall
+  // back to the env-driven fallback list so client messages never go
+  // unnoticed. Resolves Todd's spec #5 (staff-SMS when offline).
+  let targets: string[];
+  let effectiveRecipients: Recipients = args.recipients;
+  if (args.recipients === "available") {
+    targets = await getAvailableStaffPhones();
+    if (targets.length === 0) {
+      const fb = fallbackNumbers();
+      if (fb.length > 0) {
+        targets = fb;
+        effectiveRecipients = "fallback";
+      }
+    }
+  } else {
+    targets = fallbackNumbers();
+  }
 
   const delivered: string[] = [];
   const failed: Array<{ to: string; error: string }> = [];
@@ -84,7 +102,8 @@ export async function sendStaffNotification(args: {
   }
 
   logInfo("maya_handoff_sms_fanout", {
-    recipients: args.recipients,
+    recipients: effectiveRecipients,
+    requestedRecipients: args.recipients,
     attempted: targets.length,
     delivered: delivered.length,
     failed: failed.length,
@@ -95,7 +114,7 @@ export async function sendStaffNotification(args: {
   }
 
   return {
-    recipients: args.recipients,
+    recipients: effectiveRecipients,
     attempted: targets,
     delivered,
     failed,

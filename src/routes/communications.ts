@@ -838,10 +838,11 @@ router.get(
       read_at: string | null;
       cta_label: string | null;
       cta_action: string | null;
+      attachments: any;
       created_at: string;
     }>(
       `SELECT id, body, direction, staff_name, read_at,
-              cta_label, cta_action, created_at
+              cta_label, cta_action, attachments, created_at
          FROM communications_messages
         WHERE type = 'message'
           AND (
@@ -864,6 +865,8 @@ router.get(
         status: r.read_at ? "read" : "delivered",
         ctaLabel: r.cta_label,
         ctaAction: r.cta_action,
+        // BF_SERVER_BLOCK_v646_COMPLETE_COMMS_v1
+        attachments: Array.isArray(r.attachments) ? r.attachments : null,
       })),
     );
   }),
@@ -941,9 +944,21 @@ router.post(
     const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
     const ctaLabel  = typeof req.body?.ctaLabel  === "string" ? req.body.ctaLabel.trim().slice(0, 80)  : null;
     const ctaAction = typeof req.body?.ctaAction === "string" ? req.body.ctaAction.trim().slice(0, 120) : null;
-    if ((!applicationId && !contactId) || !body) {
+    // BF_SERVER_BLOCK_v646_COMPLETE_COMMS_v1 — attachments passed through
+    // as a JSONB array of {name,contentType,dataUrl} (each capped at
+    // ~3MB by the client). MessageThread renders them inline.
+    const rawAttach = Array.isArray(req.body?.attachments) ? req.body.attachments : [];
+    const attachments = rawAttach
+      .filter((a: any) => a && typeof a.name === "string" && typeof a.dataUrl === "string")
+      .slice(0, 5)
+      .map((a: any) => ({
+        name: String(a.name).slice(0, 200),
+        contentType: typeof a.contentType === "string" ? a.contentType.slice(0, 80) : "application/octet-stream",
+        dataUrl: String(a.dataUrl).slice(0, 4_500_000),
+      }));
+    if ((!applicationId && !contactId) || (!body && attachments.length === 0)) {
       return res.status(400).json({
-        error: { code: "validation_error", message: "contactId or applicationId, plus body, required" },
+        error: { code: "validation_error", message: "contactId or applicationId, plus body or attachments, required" },
       });
     }
     let resolvedContactId: string | null = contactId || null;
@@ -962,14 +977,16 @@ router.post(
     await pool.query(
       `INSERT INTO communications_messages
          (id, type, direction, status, application_id, contact_id, silo,
-          body, staff_name, cta_label, cta_action, created_at)
+          body, staff_name, cta_label, cta_action, attachments, created_at)
        VALUES (
          $1, 'message', 'outbound', 'sent',
          NULLIF($2, '')::uuid,
          NULLIF($3, '')::uuid,
-         $4, $5, $6, $7, $8, now()
+         $4, $5, $6, $7, $8,
+         CASE WHEN $9::text = '[]' THEN NULL ELSE $9::jsonb END,
+         now()
        )`,
-      [id, applicationId, resolvedContactId ?? "", silo, body, staffName, ctaLabel, ctaAction],
+      [id, applicationId, resolvedContactId ?? "", silo, body, staffName, ctaLabel, ctaAction, JSON.stringify(attachments)],
     );
 
     // BF_SERVER_BLOCK_v636_MESSAGES_TAB_FIXES_v1: offline-fallback SMS.
@@ -1025,6 +1042,126 @@ ${link}`;
       ctaLabel,
       ctaAction,
     });
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// BF_SERVER_BLOCK_v646_COMPLETE_COMMS_v1 — read receipts, typing indicators,
+// SSE message stream. All endpoints are contact-keyed to match v644.
+// ─────────────────────────────────────────────────────────────────────────
+
+router.post(
+  "/messages/mark-read",
+  safeHandler(async (req: any, res: any) => {
+    const contactId = typeof req.body?.contactId === "string" ? req.body.contactId.trim() : "";
+    const throughTs = typeof req.body?.throughTs === "string" ? req.body.throughTs : null;
+    if (!contactId) {
+      return res.status(400).json({ error: { code: "validation_error", message: "contactId required" } });
+    }
+    const cutoff = throughTs && !Number.isNaN(Date.parse(throughTs)) ? throughTs : new Date().toISOString();
+    const r = await pool.query(
+      `UPDATE communications_messages
+          SET read_at = NOW()
+        WHERE type = 'message'
+          AND direction = 'inbound'
+          AND read_at IS NULL
+          AND contact_id = NULLIF($1, '')::uuid
+          AND created_at <= $2::timestamptz`,
+      [contactId, cutoff],
+    );
+    res.json({ ok: true, updated: r.rowCount ?? 0 });
+  }),
+);
+
+router.post(
+  "/messages/typing",
+  safeHandler(async (req: any, res: any) => {
+    const contactId = typeof req.body?.contactId === "string" ? req.body.contactId.trim() : "";
+    const side = req.body?.side === "client" ? "client" : "staff";
+    const label = typeof req.body?.label === "string" ? req.body.label.slice(0, 80) : null;
+    if (!contactId) {
+      return res.status(400).json({ error: { code: "validation_error", message: "contactId required" } });
+    }
+    await pool.query(
+      `INSERT INTO messages_typing (contact_id, side, actor_label, updated_at)
+       VALUES (NULLIF($1, '')::uuid, $2, $3, NOW())
+       ON CONFLICT (contact_id, side)
+       DO UPDATE SET actor_label = EXCLUDED.actor_label, updated_at = NOW()`,
+      [contactId, side, label],
+    );
+    res.json({ ok: true });
+  }),
+);
+
+router.get(
+  "/messages/typing",
+  safeHandler(async (req: any, res: any) => {
+    const contactId = typeof req.query?.contactId === "string" ? String(req.query.contactId).trim() : "";
+    const side = req.query?.side === "client" ? "client" : "staff";
+    if (!contactId) {
+      return res.status(400).json({ error: { code: "validation_error", message: "contactId required" } });
+    }
+    const r = await pool.query<{ actor_label: string | null; updated_at: string }>(
+      `SELECT actor_label, updated_at
+         FROM messages_typing
+        WHERE contact_id = NULLIF($1, '')::uuid
+          AND side = $2
+          AND updated_at > NOW() - INTERVAL '5 seconds'`,
+      [contactId, side],
+    );
+    res.json({ typing: r.rows.length > 0, label: r.rows[0]?.actor_label ?? null });
+  }),
+);
+
+router.get(
+  "/messages/stream",
+  safeHandler(async (req: any, res: any) => {
+    const contactId = typeof req.query?.contactId === "string" ? String(req.query.contactId).trim() : "";
+    if (!contactId) {
+      return res.status(400).end();
+    }
+    const jwt = await import("jsonwebtoken");
+    const token = String(req.query.token ?? "");
+    try { jwt.verify(token, String(process.env.JWT_SECRET ?? "")); }
+    catch { return res.status(401).end(); }
+
+    res.set({
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    res.flushHeaders?.();
+
+    let lastSeenAt = new Date();
+    const tick = async () => {
+      try {
+        const r = await pool.query<any>(
+          `SELECT id, body, direction, staff_name, read_at, cta_label, cta_action,
+                  attachments, created_at
+             FROM communications_messages
+            WHERE type = 'message'
+              AND contact_id = NULLIF($1, '')::uuid
+              AND created_at > $2
+            ORDER BY created_at ASC`,
+          [contactId, lastSeenAt.toISOString()],
+        );
+        for (const row of r.rows) {
+          res.write(`event: message\ndata: ${JSON.stringify(row)}\n\n`);
+          lastSeenAt = new Date(row.created_at);
+        }
+        const t = await pool.query<{ side: string; actor_label: string | null }>(
+          `SELECT side, actor_label FROM messages_typing
+            WHERE contact_id = NULLIF($1, '')::uuid
+              AND updated_at > NOW() - INTERVAL '5 seconds'`,
+          [contactId],
+        );
+        res.write(`event: typing\ndata: ${JSON.stringify(t.rows)}\n\n`);
+      } catch { /* swallow */ }
+    };
+    const interval = setInterval(tick, 3000);
+    void tick();
+    req.on("close", () => clearInterval(interval));
   }),
 );
 
