@@ -28,7 +28,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
       body_html: m.body?.contentType === "HTML" ? (m.body?.content ?? "") : (m.body?.content ?? ""),
     };
   }
-  const { from, to = [], cc = [], bcc = [], subject = "", body_html = "" } = raw;
+  const { from, to = [], cc = [], bcc = [], subject = "", body_html = "", attachments = [] } = raw;
   if (!Array.isArray(to) || !to.length) return res.status(400).json({ error: "to required" });
 
   // v635_signature: append user's saved HTML signature to body_html if present.
@@ -69,6 +69,21 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
     }
   }
 
+  // BF_SERVER_BLOCK_v645_INBOX_AND_SCREENSHOT_v1 — attachments passthrough.
+  // Client sends [{ name, contentType, contentBytes }] where contentBytes is
+  // raw base64 (no data: prefix). Graph wants @odata.type=fileAttachment.
+  // Limited to ~3MB per attachment via Graph's inline-send limit; larger
+  // files would need uploadSession (out of scope V1).
+  const graphAttachments = (Array.isArray(attachments) ? attachments : [])
+    .filter((a: any) => a && typeof a.name === "string" && typeof a.contentBytes === "string")
+    .slice(0, 10)
+    .map((a: any) => ({
+      "@odata.type": "#microsoft.graph.fileAttachment",
+      name: a.name,
+      contentType: a.contentType || "application/octet-stream",
+      contentBytes: a.contentBytes,
+    }));
+
   const send = await graph.fetch(endpoint, {
     method: "POST",
     body: JSON.stringify({
@@ -78,6 +93,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
         toRecipients: to.map((a: string) => ({ emailAddress: { address: a } })),
         ccRecipients: cc.map((a: string) => ({ emailAddress: { address: a } })),
         bccRecipients: bcc.map((a: string) => ({ emailAddress: { address: a } })),
+        ...(graphAttachments.length ? { attachments: graphAttachments } : {}),
         ...(from ? { from: { emailAddress: { address: from } } } : {}),
       },
       saveToSentItems: true,
