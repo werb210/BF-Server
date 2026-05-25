@@ -15,11 +15,11 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   if (!graph) return res.status(412).json({ error: "o365_not_connected" });
 
   const mailbox = (req.query.mailbox ?? "").toString().trim();
-  let path = "/me/mailFolders/Inbox/messages?$top=50&$select=id,subject,from,receivedDateTime,bodyPreview,isRead";
+  const folderRaw = (req.query.folder ?? "inbox").toString().toLowerCase().trim();
+  const folder = ["inbox", "sent", "all"].includes(folderRaw) ? folderRaw : "inbox";
+
   if (mailbox) {
     const role = (req.user?.role ?? "").toString().toLowerCase();
-    // v607: Admin role can access any shared mailbox without the
-    // shared_mailbox_settings allow-list lookup. Non-admins still gated.
     if (role !== "admin") {
       const silo = resolveSiloFromRequest(req);
       const { rows } = await pool.query(
@@ -30,12 +30,37 @@ router.get("/", safeHandler(async (req: any, res: any) => {
       );
       if (!rows.length) return res.status(403).json({ error: "mailbox_not_allowed" });
     }
-    path = `/users/${encodeURIComponent(mailbox)}/mailFolders/Inbox/messages?$top=50&$select=id,subject,from,receivedDateTime,bodyPreview,isRead`;
   }
-  const r = await graph.fetch(path);
-  if (!r.ok) return res.status(r.status).json({ error: "graph_inbox_failed" });
-  const data = await r.json();
-  respondOk(res, data.value ?? []);
+
+  const base = mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
+  const select = "$select=id,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview,isRead";
+
+  async function fetchFolder(folderId: "Inbox" | "SentItems"): Promise<any[]> {
+    const r = await graph.fetch(`${base}/mailFolders/${folderId}/messages?$top=50&${select}`);
+    if (!r.ok) return [];
+    const data = await r.json();
+    return Array.isArray(data?.value) ? data.value : [];
+  }
+
+  let messages: any[] = [];
+  if (folder === "inbox") {
+    messages = await fetchFolder("Inbox");
+  } else if (folder === "sent") {
+    messages = await fetchFolder("SentItems");
+    messages = messages.map((m) => ({ ...m, _folder: "sent" }));
+  } else {
+    const [inbox, sent] = await Promise.all([fetchFolder("Inbox"), fetchFolder("SentItems")]);
+    messages = [
+      ...inbox.map((m) => ({ ...m, _folder: "inbox" })),
+      ...sent.map((m) => ({ ...m, _folder: "sent" })),
+    ].sort((a, b) => {
+      const ta = new Date(a.receivedDateTime ?? a.sentDateTime ?? 0).getTime();
+      const tb = new Date(b.receivedDateTime ?? b.sentDateTime ?? 0).getTime();
+      return tb - ta;
+    });
+  }
+
+  respondOk(res, messages);
 }));
 
 router.get("/:messageId", safeHandler(async (req: any, res: any) => {
