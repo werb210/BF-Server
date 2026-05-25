@@ -210,29 +210,6 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
     return res.send(vrp.toString());
   }
 
-  // BF_SERVER_BLOCK_53_v1 -- client mini-portal -> staff ring-all.
-  // When the calling identity starts with "client:client-", the
-  // mini-portal is dialing staff via WebRTC. Ring every staff
-  // identity currently marked available (last heartbeat <5min).
-  if (from.startsWith("client:client-")) {
-    const { pool } = await import("../db.js");
-    const available = await pool.query<{ twilio_identity: string }>(
-      `SELECT twilio_identity FROM staff_presence
-       WHERE status = 'available'
-         AND last_heartbeat > now() - interval '5 minutes'
-         AND twilio_identity IS NOT NULL`
-    ).catch(() => ({ rows: [] as any[] }));
-    const vrc = new VoiceResponse();
-    if (available.rows.length === 0) {
-      vrc.say({ voice: "Polly.Joanna" }, "No agents are available right now. Please leave a message after the tone.");
-      vrc.record({ maxLength: 120, playBeep: true, action: "/api/webhooks/twilio/voicemail" });
-    } else {
-      const dial = vrc.dial({ timeout: 25, answerOnBridge: true });
-      for (const row of available.rows) dial.client(row.twilio_identity);
-    }
-    res.send(vrc.toString());
-    return;
-  }
   const outboundFlag = params.outbound === "1" || params.outbound === 1 || params.outbound === true;
   const looksLikePhone = /^\+?\d{10,15}$/.test(to);
   // BF_SERVER_BLOCK_50_v1 -- match the fallback chain used by the
