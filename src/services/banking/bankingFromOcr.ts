@@ -39,7 +39,7 @@ function parseAmount(s: string | null | undefined): number | null {
   return negParen ? -Math.abs(n) : n;
 }
 
-function parseIsoDate(s: string | null | undefined): string | null {
+function parseIsoDate(s: string | null | undefined, statementYear: number | null = null): string | null {
   if (!s) return null;
   const m = s.match(DATE_RE);
   if (!m) return null;
@@ -47,7 +47,8 @@ function parseIsoDate(s: string | null | undefined): string | null {
   const dd = (m[2] ?? "").padStart(2, "0");
   let yyyy = m[3] ?? "";
   if (!yyyy) {
-    yyyy = String(new Date().getUTCFullYear());
+    // Year missing in source — use the statement period year if provided
+    yyyy = statementYear !== null ? String(statementYear) : String(new Date().getUTCFullYear());
   } else if (yyyy.length === 2) {
     const yy = Number(yyyy);
     yyyy = yy >= 70 ? `19${yyyy}` : `20${yyyy}`;
@@ -57,29 +58,162 @@ function parseIsoDate(s: string | null | undefined): string | null {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-export function extractTransactionsFromTables(doc: RawOcrDocument): BankTransaction[] {
+// Extract transactions from Azure DocIntel prebuilt-bankStatement.us structured fields.
+// Schema (varies slightly by API version):
+//   result.documents[].fields.Accounts.valueArray[].valueObject.Transactions.valueArray[]
+//                                                  .valueObject.{Date, Description, DepositAmount, WithdrawalAmount, Amount, Balance}
+// We also handle the legacy shape where Transactions live at the document level:
+//   result.documents[].fields.Transactions.valueArray[]
+export function extractTransactionsFromBankStatementModel(result: any): BankTransaction[] {
   const out: BankTransaction[] = [];
+  const docs = Array.isArray(result?.documents) ? result.documents : [];
+  for (const document of docs) {
+    const fields = document?.fields ?? {};
+
+    // Pattern A: Accounts[] containing Transactions[]
+    const accounts = fields.Accounts?.valueArray ?? fields.Accounts?.values ?? [];
+    for (const acc of accounts) {
+      const accObj = acc?.valueObject ?? acc?.properties ?? acc ?? {};
+      const txArr = accObj?.Transactions?.valueArray ?? accObj?.Transactions?.values ?? [];
+      for (const t of txArr) pushTx(out, t);
+    }
+
+    // Pattern B: Transactions[] at the document level
+    const docTx = fields.Transactions?.valueArray ?? fields.Transactions?.values ?? [];
+    for (const t of docTx) pushTx(out, t);
+  }
+  return out;
+}
+
+function pushTx(out: BankTransaction[], rawTx: any): void {
+  const obj = rawTx?.valueObject ?? rawTx?.properties ?? rawTx ?? {};
+  // Date can be valueDate (ISO string), valueString, or content fallback
+  const dateRaw =
+    obj?.Date?.valueDate ??
+    obj?.Date?.valueString ??
+    obj?.Date?.content ??
+    obj?.PostedDate?.valueDate ??
+    obj?.PostedDate?.valueString ??
+    null;
+  let date: string | null = null;
+  if (typeof dateRaw === "string") {
+    // valueDate is already YYYY-MM-DD; valueString/content may be MM/DD/YYYY
+    if (/^\d{4}-\d{2}-\d{2}/.test(dateRaw)) {
+      date = dateRaw.slice(0, 10);
+    } else {
+      date = parseIsoDate(dateRaw);
+    }
+  }
+  const description: string | null =
+    obj?.Description?.valueString ??
+    obj?.Description?.content ??
+    obj?.Memo?.valueString ??
+    obj?.Payee?.valueString ??
+    null;
+  // Pattern: separate DepositAmount + WithdrawalAmount → signed amount
+  const deposit = numberOrNull(obj?.DepositAmount);
+  const withdrawal = numberOrNull(obj?.WithdrawalAmount);
+  let amount: number | undefined;
+  if (deposit !== null && deposit !== 0) amount = deposit;
+  else if (withdrawal !== null && withdrawal !== 0) amount = -Math.abs(withdrawal);
+  else {
+    // Pattern: single Amount field (signed)
+    const single = numberOrNull(obj?.Amount);
+    if (single !== null) amount = single;
+  }
+  const balance = numberOrNull(obj?.Balance) ?? numberOrNull(obj?.RunningBalance);
+  if (!date && !description && amount === undefined) return;
+  const tx: BankTransaction = { date, description };
+  if (amount !== undefined) tx.amount = amount;
+  if (balance !== null) tx.balance = balance;
+  out.push(tx);
+}
+
+function numberOrNull(field: any): number | null {
+  if (field === null || field === undefined) return null;
+  if (typeof field === "number") return Number.isFinite(field) ? field : null;
+  const v =
+    field?.valueNumber ??
+    field?.valueCurrency?.amount ??
+    field?.value ??
+    null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string") {
+    const parsed = parseAmount(v);
+    return parsed;
+  }
+  // Fallback: parse from content string
+  const content = field?.content;
+  if (typeof content === "string") return parseAmount(content);
+  return null;
+}
+
+function headerIndices(header: string[]): {
+  detected: boolean;
+  dateIdx: number;
+  descIdx: number;
+  amtIdx: number;
+  debitIdx: number;
+  creditIdx: number;
+  balIdx: number;
+} {
+  const dateIdx = header.findIndex((h) =>
+    /\b(date|posted|posting|trans|transaction|effective|activity)\b/.test(h)
+  );
+  const descIdx = header.findIndex((h) =>
+    /\b(desc|detail|details|description|memo|payee|narrative|activity|type)\b/.test(h)
+  );
+  const debitIdx = header.findIndex((h) => /\b(debit|withdrawal|withdrawn|paid out)\b/.test(h));
+  const creditIdx = header.findIndex((h) => /\b(credit|deposit|paid in)\b/.test(h));
+  const amtIdx = header.findIndex((h) => /\b(amount|amt)\b/.test(h));
+  const balIdx = header.findIndex((h) => /\b(balance|running balance)\b/.test(h));
+  const detected = dateIdx >= 0 || descIdx >= 0 || amtIdx >= 0 || debitIdx >= 0 || creditIdx >= 0;
+  return { detected, dateIdx, descIdx, amtIdx, debitIdx, creditIdx, balIdx };
+}
+
+// Fallback extractor for layout-model output. Carries header across pages,
+// handles split debit/credit columns, broader header synonyms,
+// and accepts an optional statementYear hint.
+export function extractTransactionsFromTables(
+  doc: RawOcrDocument,
+  opts?: { statementYear?: number | null },
+): BankTransaction[] {
+  const out: BankTransaction[] = [];
+  let carryHeader: ReturnType<typeof headerIndices> | null = null;
   for (const page of doc.pages ?? []) {
     for (const t of page.tables ?? []) {
       const rows = t.rows ?? [];
-      if (rows.length < 2) continue;
-      const header = (rows[0] ?? []).map((c) => (c?.text ?? "").trim().toLowerCase());
-      const dateIdx = header.findIndex((h) => h === "date" || h === "posted" || h === "trans date");
-      const descIdx = header.findIndex((h) => h.includes("desc") || h === "details" || h === "transaction");
-      const amtIdx = header.findIndex((h) => h === "amount" || h === "debit" || h === "credit" || h.includes("amt"));
-      const balIdx = header.findIndex((h) => h.includes("balance"));
-      if (dateIdx < 0 && descIdx < 0 && amtIdx < 0) continue;
-      for (let i = 1; i < rows.length; i++) {
+      if (rows.length === 0) continue;
+      const firstRow = (rows[0] ?? []).map((c) => (c?.text ?? "").trim().toLowerCase());
+      const tryHeader = headerIndices(firstRow);
+      const header = tryHeader.detected ? tryHeader : carryHeader;
+      const startRow = tryHeader.detected ? 1 : 0;
+      if (!header) continue;
+      if (tryHeader.detected) carryHeader = tryHeader;
+      for (let i = startRow; i < rows.length; i++) {
         const r = rows[i] ?? [];
         const cell = (idx: number) => (idx >= 0 ? (r[idx]?.text ?? null) : null);
-        const amt = parseAmount(cell(amtIdx));
-        const bal = parseAmount(cell(balIdx));
+        const dateCell = cell(header.dateIdx);
+        const descCell = cell(header.descIdx);
+        // Combine debit + credit into signed amount if both columns exist
+        let amount: number | undefined;
+        if (header.debitIdx >= 0 && header.creditIdx >= 0) {
+          const debit = parseAmount(cell(header.debitIdx));
+          const credit = parseAmount(cell(header.creditIdx));
+          if (credit !== null && credit !== 0) amount = credit;
+          else if (debit !== null && debit !== 0) amount = -Math.abs(debit);
+        } else {
+          const a = parseAmount(cell(header.amtIdx));
+          if (a !== null) amount = a;
+        }
+        const balance = parseAmount(cell(header.balIdx));
+        const date = parseIsoDate(dateCell, opts?.statementYear ?? null);
         const tx: BankTransaction = {
-          date: parseIsoDate(cell(dateIdx)),
-          description: (cell(descIdx) ?? "").trim() || null,
+          date,
+          description: (descCell ?? "").trim() || null,
         };
-        if (amt !== null) tx.amount = amt;
-        if (bal !== null) tx.balance = bal;
+        if (amount !== undefined) tx.amount = amount;
+        if (balance !== null) tx.balance = balance;
         if (tx.date || tx.description || tx.amount !== undefined) out.push(tx);
       }
     }
