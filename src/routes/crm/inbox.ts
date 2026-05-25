@@ -2,7 +2,7 @@ import express from "express";
 import { pool } from "../../db.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { respondOk } from "../../utils/respondOk.js";
-import { getGraphForUser } from "../../modules/o365/graphClient.js";
+import { getGraphForUser, type GraphClient } from "../../modules/o365/graphClient.js";
 // BF_SERVER_BLOCK_BI_ROUND5_CRM_SILO_RESOLVE_v1
 import { resolveSiloFromRequest } from "../../middleware/silo.js";
 
@@ -35,8 +35,8 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   const base = mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
   const select = "$select=id,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview,isRead";
 
-  async function fetchFolder(folderId: "Inbox" | "SentItems"): Promise<any[]> {
-    const r = await graph.fetch(`${base}/mailFolders/${folderId}/messages?$top=50&${select}`);
+  async function fetchFolder(client: GraphClient, folderId: "Inbox" | "SentItems"): Promise<any[]> {
+    const r = await client.fetch(`${base}/mailFolders/${folderId}/messages?$top=50&${select}`);
     if (!r.ok) return [];
     const data = await r.json();
     return Array.isArray(data?.value) ? data.value : [];
@@ -44,12 +44,15 @@ router.get("/", safeHandler(async (req: any, res: any) => {
 
   let messages: any[] = [];
   if (folder === "inbox") {
-    messages = await fetchFolder("Inbox");
+    messages = await fetchFolder(graph, "Inbox");
   } else if (folder === "sent") {
-    messages = await fetchFolder("SentItems");
+    messages = await fetchFolder(graph, "SentItems");
     messages = messages.map((m) => ({ ...m, _folder: "sent" }));
   } else {
-    const [inbox, sent] = await Promise.all([fetchFolder("Inbox"), fetchFolder("SentItems")]);
+    const [inbox, sent] = await Promise.all([
+      fetchFolder(graph, "Inbox"),
+      fetchFolder(graph, "SentItems"),
+    ]);
     messages = [
       ...inbox.map((m) => ({ ...m, _folder: "inbox" })),
       ...sent.map((m) => ({ ...m, _folder: "sent" })),
