@@ -64,6 +64,9 @@ export function createApp() {
         connectSrc: [
           "'self'",
           "https://server.boreal.financial",
+          "https://staff.boreal.financial",
+          "https://client.boreal.financial",
+          "https://boreal.financial",
 
           // Twilio REST / signaling
           "https://voice-js.twilio.com",
