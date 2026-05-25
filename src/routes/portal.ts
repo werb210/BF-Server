@@ -1251,6 +1251,38 @@ router.post(
         throw new AppError("not_found", "Document not found.", 404);
       }
     }
+    // Restore prior stage when last rejected doc is resolved.
+    if (appId) {
+      const appRes2 = await runQuery<{ pipeline_state: string; previous_processing_stage: string | null }>(
+        `SELECT pipeline_state, previous_processing_stage FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+        [appId]
+      );
+      const row = appRes2.rows[0];
+      if (row && row.pipeline_state === "Documents Required" && row.previous_processing_stage) {
+        const rejectedRes = await runQuery<{ n: string }>(
+          `SELECT COUNT(*)::text AS n FROM documents WHERE application_id::text = ($1)::text AND status = 'rejected'`,
+          [appId]
+        );
+        const stillRejected = Number(rejectedRes.rows[0]?.n ?? 0);
+        if (stillRejected === 0) {
+          const prior = row.previous_processing_stage;
+          await runQuery(
+            `UPDATE applications
+                SET pipeline_state = $2,
+                    previous_processing_stage = NULL,
+                    updated_at = now()
+              WHERE id::text = ($1)::text`,
+            [appId, prior]
+          ).catch(() => {});
+          await runQuery(
+            `INSERT INTO application_stage_history (id, application_id, from_stage, to_stage, reason, actor_user_id, created_at)
+             VALUES (gen_random_uuid(), $1, 'Documents Required', $2, $3, $4, now())`,
+            [appId, prior, "All rejected documents resolved", req.user?.userId ?? null]
+          ).catch(() => {});
+          await recordTransition(appId, "Documents Required", prior, req.user?.userId ?? null, "All rejected documents resolved");
+        }
+      }
+    }
     if (appId && await allDocumentsAccepted(appId)) {
       const appRes = await runQuery<{ pipeline_state: string }>(
         `SELECT pipeline_state FROM applications WHERE id::text = ($1)::text`,
@@ -1382,10 +1414,19 @@ router.post(
         [doc.application_id]
       );
       const cur = appRes.rows[0]?.pipeline_state;
-      if (cur && ["In Review", "Off to Lender", "Received"].includes(cur)) {
+      if (cur && ["In Review", "Off to Lender", "Received", "Additional Steps Required"].includes(cur)) {
         await runQuery(
-          `UPDATE applications SET pipeline_state = 'Documents Required', updated_at = now() WHERE id::text = ($1)::text`,
-          [doc.application_id]
+          `UPDATE applications
+              SET previous_processing_stage = COALESCE(previous_processing_stage, $2),
+                  pipeline_state = 'Documents Required',
+                  updated_at = now()
+            WHERE id::text = ($1)::text`,
+          [doc.application_id, cur]
+        ).catch(() => {});
+        await runQuery(
+          `INSERT INTO application_stage_history (id, application_id, from_stage, to_stage, reason, actor_user_id, created_at)
+           VALUES (gen_random_uuid(), $1, $2, 'Documents Required', $3, $4, now())`,
+          [doc.application_id, cur, `Document rejected: ${doc.document_type}`, req.user?.userId ?? null]
         ).catch(() => {});
         await recordTransition(
           doc.application_id,
