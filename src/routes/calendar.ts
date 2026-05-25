@@ -2,12 +2,12 @@
  * Calendar routes — proxies to Microsoft Graph using the user's stored O365 token.
  * Falls back to empty arrays when the user has not connected O365.
  */
-import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { getSilo } from "../middleware/silo.js";
 import { pool } from "../db.js";
+import { getGraphForUser } from "../modules/o365/graphClient.js";
 
 const router = Router();
 
@@ -27,20 +27,6 @@ type CalendarTaskRow = {
   completed_at: string | null;
 };
 
-async function getO365Token(userId: string): Promise<string | null> {
-  const res = await pool.query<{ o365_access_token: string | null; o365_token_expires_at: Date | null }>(
-    "SELECT o365_access_token, o365_token_expires_at FROM users WHERE id = $1 LIMIT 1",
-    [userId]
-  );
-  const row = res.rows[0];
-  if (!row?.o365_access_token) return null;
-  if (row.o365_token_expires_at) {
-    const expiresAt = new Date(row.o365_token_expires_at).getTime();
-    if (Date.now() > expiresAt - 5 * 60 * 1000) return null;
-  }
-  return row.o365_access_token;
-}
-
 // BF_SERVER_BLOCK_v649_SHOWSTOPPER_PATCHES_v1 — preserve the upstream
 // Graph status so the route can return 4xx as 4xx (not blanket 500).
 class GraphError extends Error {
@@ -53,42 +39,6 @@ class GraphError extends Error {
     this.bodyText = bodyText;
     this.path = path;
   }
-}
-
-async function graphGet(token: string, path: string): Promise<unknown> {
-  const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-  });
-  if (!res.ok) throw new GraphError(res.status, await res.text().catch(() => ""), path);
-  return res.json();
-}
-
-async function graphPost(token: string, path: string, body: unknown): Promise<unknown> {
-  const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new GraphError(res.status, await res.text().catch(() => ""), path);
-  return res.json();
-}
-
-async function graphPatch(token: string, path: string, body: unknown): Promise<unknown> {
-  const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
-    method: "PATCH",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new GraphError(res.status, await res.text().catch(() => ""), path);
-  return res.json();
-}
-
-async function graphDelete(token: string, path: string): Promise<void> {
-  const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new GraphError(res.status, await res.text().catch(() => ""), path);
 }
 
 // BF_SERVER_BLOCK_v649_SHOWSTOPPER_PATCHES_v1 — flatten a Microsoft Graph
@@ -180,8 +130,11 @@ function normalizeStatus(value: unknown): "open" | "done" {
   return value === "done" ? "done" : "open";
 }
 
-async function getDefaultTodoListId(token: string): Promise<string | null> {
-  const lists = await graphGet(token, "/me/todo/lists?$top=20");
+async function getDefaultTodoListId(graph: { fetch: (path: string, init?: RequestInit) => Promise<Response> }): Promise<string | null> {
+  const path = "/me/todo/lists?$top=20";
+  const resp = await graph.fetch(path);
+  if (!resp.ok) throw new GraphError(resp.status, await resp.text().catch(() => ""), path);
+  const lists = await resp.json();
   const allLists = (lists as any).value ?? [];
   const defaultList = allLists.find((l: any) => l.wellknownListName === "defaultList") ?? allLists[0];
   return defaultList?.id ?? null;
@@ -189,12 +142,15 @@ async function getDefaultTodoListId(token: string): Promise<string | null> {
 
 // GET /api/calendar — summary
 router.get("/", safeHandler(async (req: any, res: any) => {
-  const token = await getO365Token(req.user?.userId).catch(() => null);
-  if (!token) return res.status(200).json({ status: "ok", data: { items: [], connected: false } });
+  const graph = await getGraphForUser(pool, req.user?.userId).catch(() => null);
+  if (!graph) return res.status(200).json({ status: "ok", data: { items: [], connected: false } });
   try {
     const now = new Date().toISOString();
     const end = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
-    const data = await graphGet(token, `/me/calendarView?startDateTime=${now}&endDateTime=${end}&$top=20&$orderby=start/dateTime`);
+    const path = `/me/calendarView?startDateTime=${now}&endDateTime=${end}&$top=20&$orderby=start/dateTime`;
+    const resp = await graph.fetch(path);
+    if (!resp.ok) throw new GraphError(resp.status, await resp.text().catch(() => ""), path);
+    const data = await resp.json();
     const items = (data as any).value ?? [];
     res.status(200).json({ status: "ok", data: { items, connected: true } });
   } catch {
@@ -206,12 +162,15 @@ router.get("/", safeHandler(async (req: any, res: any) => {
 // BF_SERVER_BLOCK_v649_SHOWSTOPPER_PATCHES_v1 — flatten Graph event shape
 // so the portal calendar grid actually renders.
 router.get("/events", safeHandler(async (req: any, res: any) => {
-  const token = await getO365Token(req.user?.userId).catch(() => null);
-  if (!token) return res.status(200).json({ status: "ok", data: [] });
+  const graph = await getGraphForUser(pool, req.user?.userId).catch(() => null);
+  if (!graph) return res.status(200).json({ status: "ok", data: [] });
   try {
     const now = new Date().toISOString();
     const end = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
-    const data = await graphGet(token, `/me/calendarView?startDateTime=${now}&endDateTime=${end}&$top=50&$orderby=start/dateTime`);
+    const path = `/me/calendarView?startDateTime=${now}&endDateTime=${end}&$top=50&$orderby=start/dateTime`;
+    const resp = await graph.fetch(path);
+    if (!resp.ok) throw new GraphError(resp.status, await resp.text().catch(() => ""), path);
+    const data = await resp.json();
     const raw: any[] = Array.isArray((data as any)?.value) ? (data as any).value : [];
     res.status(200).json({ status: "ok", data: raw.map(normalizeGraphEvent) });
   } catch {
@@ -224,20 +183,23 @@ router.get("/events", safeHandler(async (req: any, res: any) => {
 // return the event in the same flat shape as GET so the portal cache
 // invalidation refetch lands on the right structure.
 router.post("/events", safeHandler(async (req: any, res: any) => {
-  const token = await getO365Token(req.user?.userId).catch(() => null);
-  if (!token) {
-    const id = randomUUID();
-    return res.status(201).json({ status: "ok", data: { id, ...req.body } });
-  }
+  const graph = await getGraphForUser(pool, req.user?.userId).catch(() => null);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
   const body = req.body ?? {};
   try {
-    const event = await graphPost(token, "/me/events", {
+    const path = "/me/events";
+    const resp = await graph.fetch(path, {
+      method: "POST",
+      body: JSON.stringify({
       subject: body.title ?? body.subject ?? "Untitled Event",
       start: { dateTime: body.start ?? body.startDateTime ?? new Date().toISOString(), timeZone: "UTC" },
       end: { dateTime: body.end ?? body.endDateTime ?? new Date(Date.now() + 3600000).toISOString(), timeZone: "UTC" },
       ...(body.description ? { body: { contentType: "text", content: body.description } } : {}),
       ...(body.attendees ? { attendees: body.attendees } : {}),
+      }),
     });
+    if (!resp.ok) throw new GraphError(resp.status, await resp.text().catch(() => ""), path);
+    const event = await resp.json();
     res.status(201).json({ status: "ok", data: normalizeGraphEvent(event) });
   } catch (err) {
     if (relayGraphFailure(res, err)) return;
@@ -247,25 +209,30 @@ router.post("/events", safeHandler(async (req: any, res: any) => {
 
 // PATCH /api/calendar/events/:id
 router.patch("/events/:id", safeHandler(async (req: any, res: any) => {
-  const token = await getO365Token(req.user?.userId).catch(() => null);
+  const graph = await getGraphForUser(pool, req.user?.userId).catch(() => null);
   const { id } = req.params as { id: string };
-  if (!token) return res.status(200).json({ status: "ok", data: { id, ...req.body } });
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
   const body = req.body ?? {};
   const patch: Record<string, unknown> = {};
   if (body.title ?? body.subject) patch.subject = body.title ?? body.subject;
   if (body.start ?? body.startDateTime) patch.start = { dateTime: body.start ?? body.startDateTime, timeZone: "UTC" };
   if (body.end ?? body.endDateTime) patch.end = { dateTime: body.end ?? body.endDateTime, timeZone: "UTC" };
   if (body.description) patch.body = { contentType: "text", content: body.description };
-  const event = await graphPatch(token, `/me/events/${id}`, patch);
+  const path = `/me/events/${id}`;
+  const resp = await graph.fetch(path, { method: "PATCH", body: JSON.stringify(patch) });
+  if (!resp.ok) throw new GraphError(resp.status, await resp.text().catch(() => ""), path);
+  const event = await resp.json();
   res.status(200).json({ status: "ok", data: event });
 }));
 
 // DELETE /api/calendar/events/:id
 router.delete("/events/:id", safeHandler(async (req: any, res: any) => {
-  const token = await getO365Token(req.user?.userId).catch(() => null);
+  const graph = await getGraphForUser(pool, req.user?.userId).catch(() => null);
   const { id } = req.params as { id: string };
-  if (!token) return res.status(200).json({ status: "ok", data: null });
-  await graphDelete(token, `/me/events/${id}`);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const path = `/me/events/${id}`;
+  const resp = await graph.fetch(path, { method: "DELETE" });
+  if (!resp.ok) throw new GraphError(resp.status, await resp.text().catch(() => ""), path);
   res.status(200).json({ status: "ok", data: null });
 }));
 
@@ -331,18 +298,24 @@ router.post("/tasks", safeHandler(async (req: any, res: any) => {
   );
   const row = rows[0];
 
-  const token = await getO365Token(userId).catch(() => null);
-  if (token) {
+  const graph = await getGraphForUser(pool, userId).catch(() => null);
+  if (graph) {
     try {
-      const listId = await getDefaultTodoListId(token);
+      const listId = await getDefaultTodoListId(graph);
       if (listId) {
-        const graphTask = await graphPost(token, `/me/todo/lists/${listId}/tasks`, {
+        const path = `/me/todo/lists/${listId}/tasks`;
+        const resp = await graph.fetch(path, {
+          method: "POST",
+          body: JSON.stringify({
           title,
           body: notes ? { content: String(notes), contentType: "text" } : undefined,
           dueDateTime: dueAt ? { dateTime: new Date(dueAt).toISOString(), timeZone: "UTC" } : undefined,
           importance: priority,
           status: status === "done" ? "completed" : "notStarted",
+          }),
         });
+        if (!resp.ok) throw new GraphError(resp.status, await resp.text().catch(() => ""), path);
+        const graphTask = await resp.json();
         const graphId = (graphTask as any)?.id;
         if (graphId) {
           const updated = await pool.query<CalendarTaskRow>(
@@ -431,18 +404,23 @@ router.patch("/tasks/:id", safeHandler(async (req: any, res: any) => {
 
   const updated = rows[0];
 
-  const token = await getO365Token(userId).catch(() => null);
-  if (token && updated?.o365_task_id) {
+  const graph = await getGraphForUser(pool, userId).catch(() => null);
+  if (graph && updated?.o365_task_id) {
     try {
-      const listId = await getDefaultTodoListId(token);
+      const listId = await getDefaultTodoListId(graph);
       if (listId) {
-        await graphPatch(token, `/me/todo/lists/${listId}/tasks/${updated.o365_task_id}`, {
+        const path = `/me/todo/lists/${listId}/tasks/${updated.o365_task_id}`;
+        const resp = await graph.fetch(path, {
+          method: "PATCH",
+          body: JSON.stringify({
           title: updated.title,
           body: updated.notes ? { content: updated.notes, contentType: "text" } : undefined,
           dueDateTime: updated.due_at ? { dateTime: new Date(updated.due_at).toISOString(), timeZone: "UTC" } : null,
           importance: updated.priority,
           status: updated.status === "done" ? "completed" : "notStarted",
+          }),
         });
+        if (!resp.ok) throw new GraphError(resp.status, await resp.text().catch(() => ""), path);
       }
     } catch (err) {
       console.error({ event: "calendar_task_graph_patch_error", err: String(err) });
@@ -466,12 +444,14 @@ router.delete("/tasks/:id", safeHandler(async (req: any, res: any) => {
   );
 
   const o365TaskId = rows[0]?.o365_task_id ?? null;
-  const token = await getO365Token(userId).catch(() => null);
-  if (token && o365TaskId) {
+  const graph = await getGraphForUser(pool, userId).catch(() => null);
+  if (graph && o365TaskId) {
     try {
-      const listId = await getDefaultTodoListId(token);
+      const listId = await getDefaultTodoListId(graph);
       if (listId) {
-        await graphDelete(token, `/me/todo/lists/${listId}/tasks/${o365TaskId}`);
+        const path = `/me/todo/lists/${listId}/tasks/${o365TaskId}`;
+        const resp = await graph.fetch(path, { method: "DELETE" });
+        if (!resp.ok) throw new GraphError(resp.status, await resp.text().catch(() => ""), path);
       }
     } catch (err) {
       console.error({ event: "calendar_task_graph_delete_error", err: String(err) });
