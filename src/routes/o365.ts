@@ -104,50 +104,6 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   res.json({ ok: true });
 }));
 
-router.post("/todo/tasks", safeHandler(async (req: any, res: any) => {
-  const userId = req.user?.id ?? req.user?.userId;
-  const graph = userId ? await getGraphForUser(pool, userId) : null;
-  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
-
-  const listResp = await graph.fetch("/me/todo/lists");
-  const lists = await listResp.json();
-  const list = (lists.value ?? []).find((l: any) => l.wellknownListName === "defaultList") ?? lists.value?.[0];
-  if (!list?.id) return res.status(502).json({ error: "default_list_not_found" });
-
-  const create = await graph.fetch(`/me/todo/lists/${list.id}/tasks`, {
-    method: "POST",
-    body: JSON.stringify(req.body ?? {}),
-  });
-  if (!create.ok) return res.status(502).json({ error: "graph_todo_failed" });
-  res.json({ ok: true, data: await create.json() });
-}));
-
-router.post("/calendar/events", safeHandler(async (req: any, res: any) => {
-  const userId = req.user?.id ?? req.user?.userId;
-  const graph = userId ? await getGraphForUser(pool, userId) : null;
-  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
-
-  const create = await graph.fetch("/me/events", {
-    method: "POST",
-    body: JSON.stringify(req.body ?? {}),
-  });
-  if (!create.ok) return res.status(502).json({ error: "graph_calendar_failed" });
-  res.json({ ok: true, data: await create.json() });
-}));
-
-router.get("/inbox", safeHandler(async (req: any, res: any) => {
-  const userId = req.user?.id ?? req.user?.userId;
-  const graph = userId ? await getGraphForUser(pool, userId) : null;
-  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
-
-  const top = Number(req.query.top ?? 50) || 50;
-  const r = await graph.fetch(`/me/mailFolders/Inbox/messages?$top=${Math.min(top, 100)}&$select=id,subject,from,receivedDateTime,bodyPreview,isRead`);
-  if (!r.ok) return res.status(502).json({ error: "graph_inbox_failed" });
-  const data = await r.json();
-  res.json({ ok: true, data: data.value ?? [] });
-}));
-
-
 // v635_signature_route: GET/PUT for the saved HTML signature.
 router.get("/me/signature", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId;
