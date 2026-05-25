@@ -220,12 +220,30 @@ router.get(
           a.requested_amount                                    AS requested_amount,
           a.product_category                                    AS product_category,
           a.parent_application_id                               AS parent_application_id,
+          a.owner_user_id                                       AS owner_user_id,
           COALESCE(a.pipeline_state IN ('draft','Draft',''),false) AS is_draft,
           COALESCE(NULLIF(a.name, ''), c.name, 'Unnamed application') AS business_name,
           ct.name                                               AS contact_name,
           ct.email                                              AS contact_email,
           u.first_name || ' ' || u.last_name                    AS owner_name,
+          u.first_name                                          AS owner_first_name,
+          u.last_name                                           AS owner_last_name,
           a.updated_at                                          AS last_activity_at,
+          (
+            SELECT MAX(occurred_at)
+              FROM application_stage_history h
+             WHERE h.application_id = a.id AND h.to_stage = a.pipeline_state
+          )                                                     AS stage_entered_at,
+          (
+            SELECT json_build_object(
+              'accepted', COUNT(*) FILTER (WHERE status = 'accepted'),
+              'rejected', COUNT(*) FILTER (WHERE status = 'rejected'),
+              'pending',  COUNT(*) FILTER (WHERE status IN ('pending','pending_review')),
+              'total',    COUNT(*)
+            )
+              FROM documents d
+             WHERE d.application_id = a.id
+          )                                                     AS doc_progress,
           COALESCE(a.metadata->>'status_note', '')              AS status_note
         FROM applications a
         LEFT JOIN companies c ON c.id = a.company_id
@@ -269,6 +287,13 @@ router.get(
         statusNote: r.status_note,
         parentApplicationId: r.parent_application_id,
         isDraft: r.is_draft,
+        owner_user_id: r.owner_user_id ?? null,
+        owner_first_name: r.owner_first_name ?? null,
+        owner_last_name: r.owner_last_name ?? null,
+        stage_entered_at: r.stage_entered_at ?? null,
+        doc_progress: r.doc_progress ?? { accepted: 0, rejected: 0, pending: 0, total: 0 },
+        contact_name: r.contact_name ?? null,
+        contact_email: r.contact_email ?? null,
       }));
       return res.json({
         stages: PIPELINE_STAGES,
@@ -1720,6 +1745,28 @@ router.post(
     );
     if (result.rows[0]) {
       eventBus.emit("offer_created", { offerId: result.rows[0].id, applicationId });
+    }
+    try {
+      const ownerRes = await pool.query<{ owner_user_id: string | null }>(
+        `SELECT owner_user_id FROM applications WHERE id::text = $1`,
+        [applicationId]
+      );
+      const ownerUserId = ownerRes.rows[0]?.owner_user_id ?? null;
+      if (ownerUserId) {
+        const { createNotification } = await import("../modules/notifications/notifications.repo.js");
+        const { randomUUID: notificationUuid } = await import("node:crypto");
+        await createNotification({
+          notificationId: notificationUuid(),
+          userId: ownerUserId,
+          applicationId,
+          type: "lender_offer",
+          title: "Lender returned an offer",
+          body: `${lenderName ?? "A lender"} sent an offer on your application.`,
+          metadata: { offerId: result.rows[0]?.id ?? null, lenderId: lenderName ?? null },
+        }).catch((err) => console.warn("[offers] notify owner failed", err));
+      }
+    } catch (notifyErr) {
+      console.warn("[offers] notify owner outer failed", notifyErr);
     }
     res.status(201).json({ offer: result.rows[0] });
   })

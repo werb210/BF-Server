@@ -5,6 +5,18 @@ import { sendLenderEmail } from "../../modules/lenderSubmissions/adapters/EmailA
 import { buildApplicationPackage } from "./buildApplicationPackage.js";
 import { loadPackageInputs } from "./loadPackageInputs.js"; // BF_SERVER_v76_BLOCK_1_9
 
+// No shared decrypt helper exists yet in this codebase for lender API keys;
+// treat api_key_encrypted as plaintext fallback until encryption utility is added.
+const decryptSecret = async (value: string): Promise<string> => value;
+
+let googleAdapter: any = null;
+try {
+  const mod = await import("../../modules/submissions/adapters/GoogleSheetSubmissionAdapter.js");
+  googleAdapter = mod.GoogleSheetSubmissionAdapter;
+} catch (err) {
+  console.warn("[dispatch] google adapter unavailable", err);
+}
+
 export type DispatchLender = {
   lender_id: string;
   name: string;
@@ -71,13 +83,108 @@ export async function dispatchToSelected(
       if (r.ok) deliveredTo = r.deliveredTo;
       else error = r.error;
     } else if (method === "api") {
-      console.log(`[dispatch] would POST package to ${l.api_endpoint} for ${l.name}`);
-      ok = Boolean(l.api_endpoint);
-      if (!ok) error = "missing_api_endpoint";
+      const endpoint = (l.api_endpoint ?? "").trim();
+      if (!endpoint) {
+        error = "missing_api_endpoint";
+      } else {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "User-Agent": "BorealFinancial/1.0",
+        };
+        if (l.api_key_encrypted) {
+          try {
+            const apiKey = await decryptSecret(l.api_key_encrypted).catch(() => l.api_key_encrypted);
+            headers["Authorization"] = `Bearer ${apiKey}`;
+          } catch {
+            // fall through; lender will get an unauthorized response which we'll record
+          }
+        }
+        const body = {
+          applicationId: ctx.applicationId,
+          lenderId: l.lender_id,
+          submittedAt: new Date().toISOString(),
+          fields: fields.reduce<Record<string, unknown>>((acc, f) => { acc[f.label] = f.value; return acc; }, {}),
+          attachments: [
+            ...(signedApp ? [{ filename: `application-${ctx.applicationId}.pdf`, contentType: "application/pdf", contentBase64: signedApp.toString("base64") }] : []),
+            ...(creditSummary ? [{ filename: `credit-summary-${ctx.applicationId}.pdf`, contentType: "application/pdf", contentBase64: creditSummary.toString("base64") }] : []),
+            ...docs.flatMap((g) => g.files.map((f) => ({ filename: f.filename, contentType: "application/octet-stream", category: g.category, contentBase64: f.content.toString("base64") }))),
+          ],
+        };
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30_000);
+        let resp: Response | null = null;
+        try {
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+              resp = await fetch(endpoint, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(body),
+                signal: controller.signal,
+              });
+              if (resp.status < 500) break;
+            } catch (fetchErr) {
+              if (attempt === 2) throw fetchErr;
+              await new Promise((r) => setTimeout(r, 1500));
+            }
+          }
+          if (resp && resp.ok) {
+            ok = true;
+            deliveredTo = endpoint;
+            try {
+              const respJson = await resp.json().catch(() => null);
+              console.log(`[dispatch] api success ${l.name} ref=${respJson?.id ?? respJson?.reference ?? "—"}`);
+            } catch { }
+          } else {
+            ok = false;
+            const txt = resp ? await resp.text().catch(() => "") : "no response";
+            error = `api_${resp?.status ?? "network"}: ${txt.slice(0, 200)}`;
+          }
+        } catch (apiErr) {
+          ok = false;
+          error = `api_request_failed: ${apiErr instanceof Error ? apiErr.message : String(apiErr)}`;
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
     } else if (method === "google_sheet") {
-      console.log(`[dispatch] would append to sheet ${l.google_sheet_id} for ${l.name}`);
-      ok = Boolean(l.google_sheet_id);
-      if (!ok) error = "missing_google_sheet_id";
+      if (!l.google_sheet_id) {
+        error = "missing_google_sheet_id";
+      } else if (!googleAdapter) {
+        error = "google_adapter_unavailable";
+      } else {
+        try {
+          const adapter = new googleAdapter({
+            payload: {
+              application: {
+                id: ctx.applicationId,
+                ownerUserId: null,
+                name: `Application ${ctx.applicationId}`,
+                metadata: {},
+                productType: "",
+                lenderId: l.lender_id,
+                lenderProductId: null,
+                requestedAmount: null,
+              },
+              documents: [],
+              submittedAt: new Date().toISOString(),
+            },
+            config: { spreadsheetId: l.google_sheet_id, sheetName: null, columnMapVersion: "v1" },
+          });
+          const result = await adapter.submit({} as any);
+          if (result.success) {
+            ok = true;
+            deliveredTo = l.google_sheet_id;
+          } else {
+            ok = false;
+            error = result.failureReason ?? "google_sheet_failed";
+          }
+        } catch (sheetErr) {
+          ok = false;
+          error = `google_sheet_error: ${sheetErr instanceof Error ? sheetErr.message : String(sheetErr)}`;
+        }
+      }
     } else {
       error = `unknown_submission_method:${method}`;
     }
