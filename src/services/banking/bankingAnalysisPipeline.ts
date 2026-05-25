@@ -2,7 +2,11 @@
 import { pool } from "../../db.js";
 import { logInfo, logError } from "../../observability/logger.js";
 import { analyzeWithDocIntel } from "../../modules/ocr/azureDocIntelProvider.js";
-import { extractTransactionsFromTables, type BankTransaction } from "./bankingFromOcr.js";
+import {
+  extractTransactionsFromTables,
+  extractTransactionsFromBankStatementModel,
+  type BankTransaction,
+} from "./bankingFromOcr.js";
 import OpenAI from "openai";
 
 const openai = process.env.OPENAI_API_KEY
@@ -99,17 +103,51 @@ export async function runBankingAnalysis(
       try {
         result = await analyzeWithDocIntel(buffer, model);
       } catch (err) {
-        logError("banking_pipeline_di_failed", { applicationId, documentId: doc.documentId, model, error: err instanceof Error ? err.message : String(err) });
-        docError = `OCR model ${model} failed: ${err instanceof Error ? err.message : String(err)}`;
+        const errMsg = err instanceof Error ? err.message : String(err);
+        // Distinguish env-var misconfiguration from a true OCR failure
+        const isEnvMissing = /AZURE_DOC_INTEL_(ENDPOINT|KEY)\s+not set/.test(errMsg) || /not configured/i.test(errMsg);
+        logError("banking_pipeline_di_failed", { applicationId, documentId: doc.documentId, model, error: errMsg, envMissing: isEnvMissing });
+        docError = isEnvMissing
+          ? "Azure Document Intelligence not configured. Set AZURE_DOC_INTEL_ENDPOINT and AZURE_DOC_INTEL_KEY on the BF-Server App Service."
+          : `OCR model ${model} failed: ${errMsg}`;
         continue;
       }
 
-      const extracted = extractTransactionsFromTables({
-        pages: (result?.pages ?? []).map((p: any) => ({
-          page_number: p.pageNumber,
-          tables: (result?.tables ?? []).filter((t: any) => (t.boundingRegions ?? []).some((b: any) => b.pageNumber === p.pageNumber)).map((t: any) => ({ rows: rowifyTableCells(t) })),
-        })),
-      });
+      // Determine statement year from prebuilt-bankStatement.us structured fields, if present
+      let statementYear: number | null = null;
+      try {
+        const startStr =
+          result?.documents?.[0]?.fields?.StatementStartDate?.valueDate ??
+          result?.documents?.[0]?.fields?.StatementStartDate?.valueString ??
+          null;
+        if (typeof startStr === "string" && /^\d{4}/.test(startStr)) {
+          statementYear = Number(startStr.slice(0, 4));
+        }
+      } catch { /* ignore */ }
+
+      let extracted: BankTransaction[] = [];
+
+      // Strategy A: structured extractor (only meaningful for bank-statement model)
+      if (model === "prebuilt-bankStatement.us") {
+        extracted = extractTransactionsFromBankStatementModel(result);
+      }
+
+      // Strategy B: table extractor — runs for layout model OR as a safety net for bank-statement
+      if (extracted.length === 0) {
+        extracted = extractTransactionsFromTables(
+          {
+            pages: (result?.pages ?? []).map((p: any) => ({
+              page_number: p.pageNumber,
+              tables: ((result?.tables ?? []).filter((tbl: any) =>
+                (tbl?.boundingRegions ?? []).some((br: any) => br?.pageNumber === p.pageNumber),
+              )).map((tbl: any) => ({ rows: rowifyTableCells(tbl) })),
+              lines: p.lines,
+            })),
+          },
+          { statementYear },
+        );
+      }
+
       const normalizedType = String(result?.documents?.[0]?.docType ?? result?.documents?.[0]?.documentType ?? "").toUpperCase() || null;
 
       finalResult = result;
