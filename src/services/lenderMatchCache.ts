@@ -7,10 +7,12 @@ export type LenderMatchEnvelope = {
   outstanding: string[];
   computed_at: string | null;
   matches: any[];
+  inputs: any;
+  missing_inputs: string[];
 };
 
 // BF_SERVER_BLOCK_v206_LENDER_CATEGORY_FILTER_AND_PREVIEW_FALLBACK_v1 — pull product_category for filtering.
-function extractMatchInputs(app: { metadata: any; requested_amount: any; product_category?: string | null }, applicationId?: string) {
+export function extractMatchInputs(app: { metadata: any; requested_amount: any; product_category?: string | null }, applicationId?: string) {
   const meta = (app.metadata && typeof app.metadata === "object") ? (app.metadata as Record<string, any>) : {};
   const requestedAmount = (() => {
     const raw = app.requested_amount ?? meta.requestedAmount ?? meta.amount ?? meta.fundingAmount ?? null;
@@ -110,17 +112,38 @@ export async function getOutstandingRequiredDocs(applicationId: string): Promise
   return (res?.rows ?? []).map((r) => r.document_category).filter(Boolean);
 }
 
-export async function computeAndCacheLenderMatches(applicationId: string): Promise<any[]> {
+export async function computeAndCacheLenderMatches(applicationId: string): Promise<{ matches: any[]; inputs: any; missing_inputs: string[] }> {
   const appRes = await pool.query(
     `SELECT id, metadata, requested_amount, product_category FROM applications WHERE id::text = ($1)::text LIMIT 1`,
     [applicationId]
   );
   const app = appRes.rows[0];
-  if (!app) return [];
+  if (!app) return { matches: [], inputs: null, missing_inputs: ["application_not_found"] };
+
+  const inputs = extractMatchInputs(app, applicationId);
+
+  const missing_inputs: string[] = [];
+  if (inputs.requestedAmount === null || inputs.requestedAmount === undefined) missing_inputs.push("requested_amount");
+  if (inputs.productCategory === null || inputs.productCategory === undefined) missing_inputs.push("product_category");
+
+  if (missing_inputs.length > 0) {
+    await pool.query(
+      `UPDATE applications
+          SET lender_matches = '[]'::jsonb,
+              lender_matches_computed_at = now(),
+              lender_matches_stale = false,
+              lender_matches_inputs = $1::jsonb,
+              lender_matches_missing_inputs = $2::jsonb,
+              updated_at = now()
+        WHERE id::text = ($3)::text`,
+      [JSON.stringify(inputs), JSON.stringify(missing_inputs), applicationId]
+    ).catch((err) => console.warn("lender_match_strict_write_failed", { applicationId, message: err?.message }));
+    return { matches: [], inputs, missing_inputs };
+  }
 
   let matches: LenderMatch[] = [];
   try {
-    matches = await matchLenders(extractMatchInputs(app, applicationId));
+    matches = await matchLenders(inputs);
   } catch (err: any) {
     console.warn("lender_match_compute_failed", { applicationId, message: err?.message });
     matches = [];
@@ -131,13 +154,13 @@ export async function computeAndCacheLenderMatches(applicationId: string): Promi
         SET lender_matches = $1::jsonb,
             lender_matches_computed_at = now(),
             lender_matches_stale = false,
+            lender_matches_inputs = $2::jsonb,
+            lender_matches_missing_inputs = '[]'::jsonb,
             updated_at = now()
-      WHERE id::text = ($2)::text`,
-    [JSON.stringify(enriched), applicationId]
-  ).catch((err) => {
-    console.warn("lender_match_cache_write_failed", { applicationId, message: err?.message });
-  });
-  return enriched;
+      WHERE id::text = ($3)::text`,
+    [JSON.stringify(enriched), JSON.stringify(inputs), applicationId]
+  ).catch((err) => console.warn("lender_match_cache_write_failed", { applicationId, message: err?.message }));
+  return { matches: enriched, inputs, missing_inputs: [] };
 }
 
 export async function markLenderMatchesStale(applicationId: string): Promise<void> {
@@ -156,8 +179,10 @@ export async function readLenderMatchEnvelope(applicationId: string): Promise<Le
     lender_matches: any;
     lender_matches_computed_at: string | null;
     lender_matches_stale: boolean | null;
+    lender_matches_inputs: any;
+    lender_matches_missing_inputs: any;
   }>(
-    `SELECT lender_matches, lender_matches_computed_at, lender_matches_stale
+    `SELECT lender_matches, lender_matches_computed_at, lender_matches_stale, lender_matches_inputs, lender_matches_missing_inputs
        FROM applications
       WHERE id::text = ($1)::text
       LIMIT 1`,
@@ -165,19 +190,21 @@ export async function readLenderMatchEnvelope(applicationId: string): Promise<Le
   );
   const row = res.rows[0];
   if (!row) {
-    return { status: "locked", outstanding: [], computed_at: null, matches: [] };
+    return { status: "locked", outstanding: [], computed_at: null, matches: [], inputs: null, missing_inputs: [] };
   }
   const outstanding = await getOutstandingRequiredDocs(applicationId);
+  const inputs = row.lender_matches_inputs ?? null;
+  const missingInputs = Array.isArray(row.lender_matches_missing_inputs) ? row.lender_matches_missing_inputs : [];
   if (outstanding.length > 0) {
-    return { status: "locked", outstanding, computed_at: null, matches: [] };
+    return { status: "locked", outstanding, computed_at: null, matches: [], inputs, missing_inputs: missingInputs };
   }
   const cached: any[] = Array.isArray(row.lender_matches) ? row.lender_matches : [];
   const computedAt = row.lender_matches_computed_at;
   const stale = row.lender_matches_stale === true;
   if (stale || !computedAt || cached.length === 0) {
-    return { status: "stale", outstanding: [], computed_at: computedAt, matches: cached };
+    return { status: "stale", outstanding: [], computed_at: computedAt, matches: cached, inputs, missing_inputs: missingInputs };
   }
-  return { status: "ready", outstanding: [], computed_at: computedAt, matches: cached };
+  return { status: "ready", outstanding: [], computed_at: computedAt, matches: cached, inputs, missing_inputs: missingInputs };
 }
 
 export async function readCachedMatchesArray(applicationId: string): Promise<any[]> {

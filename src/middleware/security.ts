@@ -63,6 +63,9 @@ export const securityHeaders = helmet({
       connectSrc: [
         "'self'",
         "https://server.boreal.financial",
+        "https://staff.boreal.financial",
+        "https://client.boreal.financial",
+        "https://boreal.financial",
         "https://login.microsoftonline.com",
         "https://graph.microsoft.com",
         "https://login.microsoft.com",
