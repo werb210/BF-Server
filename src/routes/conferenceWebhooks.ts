@@ -21,6 +21,8 @@ router.post("/conference/join", twilioWebhookValidation, async (req: any, res) =
   res.setHeader("Content-Type", "text/xml");
   const conf = String(req.query.conf ?? req.body?.conf ?? "").trim();
   const pid  = String(req.query.pid ?? req.body?.pid ?? "").trim();
+  const callSid = String(req.body?.CallSid ?? "").trim();
+  const from = String(req.body?.From ?? "").trim();
   const base = getPublicBaseUrl();
   const vr = new VoiceResponse();
 
@@ -30,26 +32,48 @@ router.post("/conference/join", twilioWebhookValidation, async (req: any, res) =
     return res.send(vr.toString());
   }
 
+  // BF_SERVER_BLOCK_v654_DIALER_FIX_v1 — multiple compounding issues
+  // produced the "chirp every second" symptom and the dialer never
+  // working end-to-end. See the block intent for the full list. Summary:
+  //   1. beep defaulted to TRUE — periodic chirp on any participant flap.
+  //   2. participantLabel is NOT a valid <Conference> TwiML attribute.
+  //   3. record="record-from-start" was unconditional — fails the entire
+  //      <Conference> verb if the account lacks recording capability.
+  //   4. waitUrl="" is documented behavior-undefined.
+  //   5. endConferenceOnExit=false stranded the other party on hangup.
+  const enableRecording = process.env.ENABLE_CALL_RECORDING === "true";
   const dial = vr.dial({ answerOnBridge: true });
-  dial.conference({
+  const confAttrs: Record<string, unknown> = {
     statusCallback: `${base}/api/webhooks/twilio/conference/status?conf=${encodeURIComponent(conf)}`,
     statusCallbackEvent: "start end join leave mute hold",
     statusCallbackMethod: "POST",
     startConferenceOnEnter: true,
-    endConferenceOnExit: false,
-    waitUrl: "",
-    participantLabel: pid || undefined,
-    // Dual-channel recording on the first joiner; subsequent participants
-    // ignore "record" attribute. Twilio mixes the rest into the same file.
-    record: "record-from-start",
-    recordingChannels: "dual",
-    recordingStatusCallback: `${base}/api/webhooks/twilio/recording/status?conf=${encodeURIComponent(conf)}`,
-    recordingStatusCallbackEvent: "in-progress completed absent",
-    recordingStatusCallbackMethod: "POST",
+    // 2-party PSTN call: either party hangup ends the conference.
+    endConferenceOnExit: true,
+    // No periodic chirp on participant flap.
+    beep: false,
     trim: "trim-silence",
-  } as any, conf);
+  };
+  if (enableRecording) {
+    confAttrs.record = "record-from-start";
+    confAttrs.recordingChannels = "dual";
+    confAttrs.recordingStatusCallback = `${base}/api/webhooks/twilio/recording/status?conf=${encodeURIComponent(conf)}`;
+    confAttrs.recordingStatusCallbackEvent = "in-progress completed absent";
+    confAttrs.recordingStatusCallbackMethod = "POST";
+  }
+  dial.conference(confAttrs as any, conf);
 
-  return res.send(vr.toString());
+  const twiml = vr.toString();
+  console.log(JSON.stringify({
+    event: "conference_join_twiml",
+    conf,
+    pid: pid || null,
+    callSid: callSid || null,
+    from: from || null,
+    recordingEnabled: enableRecording,
+    twiml_bytes: twiml.length,
+  }));
+  return res.send(twiml);
 });
 
 router.post("/conference/status", twilioWebhookValidation, async (req: any, res) => {
