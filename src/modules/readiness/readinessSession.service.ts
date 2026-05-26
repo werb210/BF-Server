@@ -17,10 +17,10 @@ type ReadinessSessionInput = {
   avgMonthlyRevenueRange?: string;
   accountsReceivableRange?: string;
   fixedAssetsValueRange?: string;
-  yearsInBusiness?: number | string;
-  monthlyRevenue?: number | string;
-  annualRevenue?: number | string;
-  arOutstanding?: number | string;
+  yearsInBusiness?: number | string | null;
+  monthlyRevenue?: number | string | null;
+  annualRevenue?: number | string | null;
+  arOutstanding?: number | string | null;
   existingDebt?: boolean | string;
 };
 
@@ -28,13 +28,13 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-function toInteger(value: number | string | undefined): number | null {
+function toInteger(value: number | string | null | undefined): number | null {
   if (value === undefined || value === null || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? Math.trunc(n) : null;
 }
 
-function toNumeric(value: number | string | undefined): number | null {
+function toNumeric(value: number | string | null | undefined): number | null {
   if (value === undefined || value === null || value === "") return null;
   const n = Number(typeof value === "string" ? value.replace(/,/g, "") : value);
   return Number.isFinite(n) ? n : null;
