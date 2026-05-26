@@ -36,8 +36,13 @@ router.get("/needed", async (req: Request, res: Response) => {
     // Required for matched lender product, fallback to defaults.
     let required: { document_type: string; label: string }[] = [];
     try {
-      const appRow = await pool.query<{ lender_product_id: string | null }>(
-        `SELECT lender_product_id FROM applications WHERE id = $1 LIMIT 1`,
+      const appRow = await pool.query<{
+        lender_product_id: string | null;
+        product_category: string | null;
+        requested_amount: string | number | null;
+        metadata: Record<string, unknown> | null;
+      }>(
+        `SELECT lender_product_id, product_category, requested_amount, metadata FROM applications WHERE id = $1 LIMIT 1`,
         [applicationId]
       );
       const productId = appRow.rows[0]?.lender_product_id ?? null;
@@ -47,6 +52,30 @@ router.get("/needed", async (req: Request, res: Response) => {
           [productId]
         ).catch(() => ({ rows: [] as any[] }));
         required = reqRes.rows.map((r) => ({ document_type: r.document_type, label: r.label || r.document_type }));
+      } else if (appRow.rows[0]) {
+        const row = appRow.rows[0];
+        const category = String(row.product_category ?? "").toLowerCase();
+        const amount = Number(row.requested_amount ?? 0) || null;
+        const country = (() => {
+          try {
+            const md = row.metadata as any;
+            return String(md?.kyc?.country ?? md?.business?.country ?? md?.businessLocation ?? "").toLowerCase();
+          } catch { return ""; }
+        })();
+        if (category && amount) {
+          const unionRes = await pool.query<{ document_type: string; label: string | null }>(
+            `SELECT DISTINCT d.document_type, d.label
+               FROM lender_products p
+               JOIN lender_products_required_docs d ON d.lender_product_id = p.id
+              WHERE LOWER(p.category) = $1
+                AND (p.amount_min IS NULL OR p.amount_min <= $2)
+                AND (p.amount_max IS NULL OR p.amount_max >= $2)
+                AND ($3 = '' OR LOWER(COALESCE(p.country, '')) = $3 OR LOWER(COALESCE(p.country, '')) = '')
+                AND COALESCE(p.active, true) = true`,
+            [category, amount, country]
+          ).catch(() => ({ rows: [] as any[] }));
+          required = unionRes.rows.map((r) => ({ document_type: r.document_type, label: r.label || r.document_type }));
+        }
       }
     } catch {
       /* fall through to defaults */

@@ -76,6 +76,24 @@ function bfBuildWizardMetadata(input: Record<string, any> | null | undefined): R
   if (typeof input.typedSignature === "string")        out.typedSignature = input.typedSignature;
   if (typeof input.coApplicantSignature === "string")  out.coApplicantSignature = input.coApplicantSignature;
   if (typeof input.signatureDate === "string")         out.signatureDate = input.signatureDate;
+  if (input.pgi_opt_in !== undefined)        out.pgi_opt_in = input.pgi_opt_in;
+  if (input.pgiOptIn !== undefined)          out.pgi_opt_in = out.pgi_opt_in ?? input.pgiOptIn;
+  if (input.termsAccepted !== undefined ||
+      input.typedSignature !== undefined ||
+      input.signatureDate !== undefined ||
+      input.coApplicantSignature !== undefined) {
+    out.signature = {
+      termsAccepted: input.termsAccepted ?? null,
+      typedSignature: input.typedSignature ?? null,
+      coApplicantSignature: input.coApplicantSignature ?? null,
+      signatureDate: input.signatureDate ?? null,
+    };
+  }
+  if (typeof input.requires_closing_cost_funding === "boolean") {
+    out.requires_closing_cost_funding = input.requires_closing_cost_funding;
+  } else if (typeof input.requiresClosingCostFunding === "boolean") {
+    out.requires_closing_cost_funding = input.requiresClosingCostFunding;
+  }
   return out;
 }
 function bfExtractAppColumns(input: Record<string, any> | null | undefined): {
@@ -441,6 +459,49 @@ router.post(
           wizardBusinessName,
         ]
       );
+      try {
+        const v650_deferred = Boolean(
+          (legacyApp as any)?.documentsDeferred ?? (legacyApp as any)?.documents_deferred
+        );
+        if (v650_deferred) {
+          const v650_contactRes = await pool.query<{ phone: string | null }>(
+            `SELECT c.phone FROM applications a
+          LEFT JOIN contacts c ON c.id = a.contact_id
+              WHERE a.id = $1 LIMIT 1`,
+            [application.id]
+          );
+          const v650_phone = (() => {
+            const p = v650_contactRes.rows[0]?.phone;
+            if (p) return p;
+            try {
+              const md = (application as any).metadata ?? {};
+              const fd = md.formData ?? {};
+              return fd?.applicant?.phone ?? md?.applicant?.phone ?? md?.borrower?.phone ?? null;
+            } catch { return null; }
+          })();
+          if (v650_phone) {
+            const clientBase = process.env.CLIENT_BASE_URL ?? "https://client.boreal.financial";
+            const portalUrl = `${clientBase.replace(/\/+$/, "")}/application/${application.id}`;
+            const { sendSms } = await import("../../modules/notifications/sms.service.js");
+            await sendSms({
+              to: String(v650_phone),
+              message: `Boreal Financial: your application was received. To finish, upload your remaining documents here: ${portalUrl}`,
+            }).catch((err) => {
+              logError("missing_docs_sms_failed_nonfatal", {
+                code: "missing_docs_sms_failed_nonfatal",
+                applicationId: application.id,
+                error: err instanceof Error ? err.message : "unknown",
+              });
+            });
+          }
+        }
+      } catch (v650_smsErr) {
+        logError("missing_docs_sms_unexpected", {
+          code: "missing_docs_sms_unexpected",
+          applicationId: application.id,
+          error: v650_smsErr instanceof Error ? v650_smsErr.message : "unknown",
+        });
+      }
       // BF_SERVER_BLOCK_v330_MULTI_APP_PGI_HANDOFF_v1
       // Hoist the leg/companion IDs + amounts so the PGI block at the
       // end of submit can dispatch one BI handoff per funding row.
@@ -529,14 +590,14 @@ router.post(
                 `INSERT INTO applications
                    (id, name, silo, owner_user_id, parent_application_id,
                     requested_amount, product_category, pipeline_state, status,
-                    source, metadata, submitted_at, created_at, updated_at)
+                    lender_id, lender_product_id, source, metadata, submitted_at, created_at, updated_at)
                  VALUES
                    ($1, $2, $3, $4, $5,
                     $6, 'EQUIPMENT', 'Received', 'received',
-                    'capital_and_equipment_leg',
+                    $7, $8, 'capital_and_equipment_leg',
                     jsonb_build_object('capital_and_equipment_leg', true,
                                        'parent_application_id', $5::text,
-                                       'leg_category', 'EQUIPMENT') || $7::jsonb,
+                                       'leg_category', 'EQUIPMENT') || $9::jsonb,
                     now(), now(), now())`,
                 [
                   equipmentId,
@@ -545,6 +606,8 @@ router.post(
                   ownerId,
                   application.id,
                   equipmentAmount,
+                  null,
+                  null,
                   JSON.stringify(metaPatch),
                 ]
               );
@@ -665,12 +728,12 @@ router.post(
               `INSERT INTO applications
                  (id, name, silo, owner_user_id, parent_application_id,
                   requested_amount, product_category, pipeline_state, status,
-                  source, metadata, submitted_at, created_at, updated_at)
+                  lender_id, lender_product_id, source, metadata, submitted_at, created_at, updated_at)
                VALUES
                  ($1, $2, $3, $4, $5,
                   $6, $7, 'Received', 'received',
-                  'closing_costs_companion',
-                  $8::jsonb,
+                  $8, $9, 'closing_costs_companion',
+                  $10::jsonb,
                   now(), now(), now())`,
               [
                 companionId,
@@ -680,6 +743,8 @@ router.post(
                 application.id,
                 companionAmount > 0 ? companionAmount : null,
                 companionCategory,
+                null,
+                null,
                 JSON.stringify(companionMeta),
               ]
             );
@@ -832,27 +897,76 @@ router.post(
                   ? "equipment"
                   : "closing costs";
               try {
-                await pool.query(
-                  `INSERT INTO communications_messages
-                     (id, type, direction, status, application_id, contact_id, silo, body, staff_name, created_at)
-                   VALUES (
-                     $1, 'message', 'outbound', 'sent', $2,
-                     (SELECT contact_id FROM applications WHERE id = $2 LIMIT 1),
-                     COALESCE((SELECT silo FROM applications WHERE id = $2 LIMIT 1), 'BF'),
-                     $3, 'Boreal Insurance', NOW()
-                   )`,
-                  [
-                    biRandomUUID(),
-                    v330_t.bfApplicationId,
-                    `Your PGI application for the ${v330_roleLabel} portion is ready. Tap to complete it: ${r.completionUrl}\n\nLog in with your phone number to add the remaining underwriting details.`,
-                  ],
+                const v650_existingMsg = await pool.query<{ id: string }>(
+                  `SELECT id FROM communications_messages
+                    WHERE application_id = $1
+                      AND staff_name = 'Boreal Insurance'
+                      AND body LIKE $2
+                    LIMIT 1`,
+                  [v330_t.bfApplicationId, `%${r.completionUrl}%`]
                 );
+                if (v650_existingMsg.rows.length === 0) {
+                  await pool.query(
+                    `INSERT INTO communications_messages
+                       (id, type, direction, status, application_id, contact_id, silo, body, staff_name, created_at)
+                     VALUES (
+                       $1, 'message', 'outbound', 'sent', $2,
+                       (SELECT contact_id FROM applications WHERE id = $2 LIMIT 1),
+                       COALESCE((SELECT silo FROM applications WHERE id = $2 LIMIT 1), 'BF'),
+                       $3, 'Boreal Insurance', NOW()
+                     )`,
+                    [
+                      biRandomUUID(),
+                      v330_t.bfApplicationId,
+                      `Your PGI application for the ${v330_roleLabel} portion is ready. Tap to complete it: ${r.completionUrl}\n\nLog in with your phone number to add the remaining underwriting details.`,
+                    ],
+                  );
+                }
               } catch (msgErr) {
                 logError("bi_handoff_messenger_insert_failed", {
                   code: "bi_handoff_messenger_insert_failed",
                   applicationId: v330_t.bfApplicationId,
                   role: v330_t.role,
                   error: msgErr instanceof Error ? msgErr.message : "unknown",
+                });
+              }
+              try {
+                const v650_contactRes = await pool.query<{ phone: string | null }>(
+                  `SELECT c.phone
+                     FROM applications a
+                LEFT JOIN contacts c ON c.id = a.contact_id
+                    WHERE a.id = $1
+                    LIMIT 1`,
+                  [v330_t.bfApplicationId]
+                );
+                const phoneFromContact = v650_contactRes.rows[0]?.phone ?? null;
+                const phoneFromMeta = (() => {
+                  try {
+                    const md = (application as any).metadata ?? {};
+                    const fd = md.formData ?? {};
+                    return fd?.applicant?.phone ?? md?.applicant?.phone ?? md?.borrower?.phone ?? null;
+                  } catch { return null; }
+                })();
+                const v650_to = String(phoneFromContact ?? phoneFromMeta ?? "").trim();
+                if (v650_to) {
+                  const { sendSms } = await import("../../modules/notifications/sms.service.js");
+                  await sendSms({
+                    to: v650_to,
+                    message: `Boreal Insurance: your PGI application for the ${v330_roleLabel} portion is ready. Complete it here: ${r.completionUrl}`,
+                  }).catch((smsErr) => {
+                    logError("bi_handoff_sms_failed_nonfatal", {
+                      code: "bi_handoff_sms_failed_nonfatal",
+                      applicationId: v330_t.bfApplicationId,
+                      role: v330_t.role,
+                      error: smsErr instanceof Error ? smsErr.message : "unknown",
+                    });
+                  });
+                }
+              } catch (smsOuterErr) {
+                logError("bi_handoff_sms_unexpected", {
+                  code: "bi_handoff_sms_unexpected",
+                  applicationId: v330_t.bfApplicationId,
+                  error: smsOuterErr instanceof Error ? smsOuterErr.message : "unknown",
                 });
               }
               logInfo("bi_handoff_recorded", {
