@@ -106,6 +106,27 @@ export function createApp() {
     res.status(200).json({ status: "ok" });
   });
 
+  // BF_SERVER_BLOCK_v653_ROOT_HANDLER_v1 — Azure App Service Linux's
+  // default Health Check probe path is "/" when the operator enables
+  // Health check in App Service > Configuration > General Settings but
+  // leaves the path field on default. Without this handler GET / falls
+  // through Express's catch-all and returns 404, every Azure probe
+  // fails, the instance is marked Degraded, and after the consecutive-
+  // failure threshold Azure silently recycles the container without
+  // an exit signal — which matches the observed 2-9 minute restart
+  // cadence in /home/LogFiles (same instance ID restarting). Same fix
+  // and reasoning as BI_SERVER_BLOCK_v376_AZURE_HEALTH_AND_BOOT_v1.
+  app.get("/", (_req, res) => {
+    res.status(200).json({
+      status: "ok",
+      service: "bf-server",
+      build: process.env.BUILD_TAG || "unknown",
+      sha: (process.env.COMMIT_SHA || "unknown").slice(0, 8),
+      uptime_s: Math.round(process.uptime()),
+      ts: new Date().toISOString(),
+    });
+  });
+
   app.get("/api/_int/health", (_req, res) => {
     res.status(200).json({ status: "ok" });
   });
