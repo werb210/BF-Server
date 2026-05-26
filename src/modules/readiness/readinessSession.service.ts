@@ -9,6 +9,14 @@ type ReadinessSessionInput = {
   phone: string;
   email: string;
   industry?: string;
+  businessLocation?: string;
+  requestedAmount?: number | string;
+  purposeOfFunds?: string;
+  salesHistoryYears?: string;
+  annualRevenueRange?: string;
+  avgMonthlyRevenueRange?: string;
+  accountsReceivableRange?: string;
+  fixedAssetsValueRange?: string;
   yearsInBusiness?: number | string;
   monthlyRevenue?: number | string;
   annualRevenue?: number | string;
@@ -101,17 +109,23 @@ export async function createOrReuseReadinessSession(payload: ReadinessSessionInp
 
   const id = randomUUID();
   const token = randomUUID();
-  const expiresAt = new Date(Date.now() + 1000 * 60 * 30);
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7);
 
   await dbQuery(
     `insert into readiness_sessions (
       id, token, email, phone, company_name, full_name, industry,
       years_in_business, monthly_revenue, annual_revenue, ar_outstanding, existing_debt,
+      business_location, funding_type, requested_amount, purpose_of_funds,
+      sales_history_years, annual_revenue_range, avg_monthly_revenue_range,
+      accounts_receivable_range, fixed_assets_value_range,
       crm_lead_id, expires_at
     ) values (
       $1, $2, $3, $4, $5, $6, $7,
       $8, $9, $10, $11, $12,
-      $13, $14
+      $13, $14, $15, $16,
+      $17, $18, $19,
+      $20, $21,
+      $22, $23
     )`,
     [
       id,
@@ -126,6 +140,16 @@ export async function createOrReuseReadinessSession(payload: ReadinessSessionInp
       toNumeric(payload.annualRevenue),
       toNumeric(payload.arOutstanding),
       toBoolean(payload.existingDebt),
+      // BF_SERVER_BLOCK_v650_TEST2_FIX_PACK_v1 — wires migration 091 columns.
+      payload.businessLocation ?? null,
+      null,
+      toNumeric(payload.requestedAmount),
+      payload.purposeOfFunds ?? null,
+      payload.salesHistoryYears ?? null,
+      payload.annualRevenueRange ?? null,
+      payload.avgMonthlyRevenueRange ?? null,
+      payload.accountsReceivableRange ?? null,
+      payload.fixedAssetsValueRange ?? null,
       crmLead.id,
       expiresAt,
     ]

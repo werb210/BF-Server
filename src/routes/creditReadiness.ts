@@ -14,12 +14,27 @@ import { stripUndefined, toNullable } from "../utils/clean.js";
 
 const router = Router();
 
+// BF_SERVER_BLOCK_v650_TEST2_FIX_PACK_v1 — accept all 13 fields the
+// website's CreditReadiness page sends. The previous schema's key names
+// did not match the website payload; most financial fields silently
+// dropped because zod just ignored the unknown keys.
 const payloadSchema = z.object({
   companyName: z.string().min(1),
   fullName: z.string().min(1),
   phone: z.string().min(1),
   email: z.string().email(),
   industry: z.string().optional(),
+  // New fields (migration 091 added the columns; code never wired them):
+  businessLocation: z.string().optional(),
+  requestedAmount: z.union([z.string(), z.number()]).optional(),
+  purposeOfFunds: z.string().optional(),
+  // Range/string fields from website (form sends range strings like ">$1M"):
+  salesHistoryYears: z.string().optional(),
+  annualRevenueRange: z.string().optional(),
+  avgMonthlyRevenueRange: z.string().optional(),
+  accountsReceivableRange: z.string().optional(),
+  fixedAssetsValueRange: z.string().optional(),
+  // Legacy keys still accepted for backward compat (if any caller uses them):
   yearsInBusiness: z.union([z.string(), z.number()]).optional(),
   monthlyRevenue: z.union([z.string(), z.number()]).optional(),
   annualRevenue: z.union([z.string(), z.number()]).optional(),
@@ -37,15 +52,36 @@ router.post("/", async (req: any, res: any, next: any) => {
   const {
     companyName,
     fullName,
-    phone,
+    phone: rawPhone,
     email,
     industry,
-    yearsInBusiness,
-    monthlyRevenue,
-    annualRevenue,
-    arOutstanding,
+    businessLocation,
+    requestedAmount,
+    purposeOfFunds,
+    salesHistoryYears,
+    annualRevenueRange,
+    avgMonthlyRevenueRange,
+    accountsReceivableRange,
+    fixedAssetsValueRange,
+    yearsInBusiness: legacyYears,
+    monthlyRevenue: legacyMonthly,
+    annualRevenue: legacyAnnual,
+    arOutstanding: legacyAr,
     existingDebt,
   } = parsed.data;
+  function toE164Server(input: string): string {
+    const digits = String(input ?? "").replace(/\D/g, "");
+    if (!digits) return String(input ?? "");
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+    if (String(input ?? "").startsWith("+")) return String(input);
+    return `+${digits}`;
+  }
+  const phone = toE164Server(rawPhone);
+  const yearsInBusiness = legacyYears ?? salesHistoryYears ?? null;
+  const monthlyRevenue = legacyMonthly ?? avgMonthlyRevenueRange ?? null;
+  const annualRevenue = legacyAnnual ?? annualRevenueRange ?? null;
+  const arOutstanding = legacyAr ?? accountsReceivableRange ?? null;
 
   const applicationId = randomUUID();
   await db.query(
@@ -59,10 +95,19 @@ router.post("/", async (req: any, res: any, next: any) => {
       config.client.submissionOwnerUserId,
       companyName,
       JSON.stringify({
+        // BF_SERVER_BLOCK_v650_TEST2_FIX_PACK_v1 — full readiness payload.
         contactName: fullName,
         phone,
         email,
         industry: industry ?? null,
+        businessLocation: businessLocation ?? null,
+        requestedAmount: requestedAmount ?? null,
+        purposeOfFunds: purposeOfFunds ?? null,
+        salesHistoryYears: salesHistoryYears ?? yearsInBusiness ?? null,
+        annualRevenueRange: annualRevenueRange ?? annualRevenue ?? null,
+        avgMonthlyRevenueRange: avgMonthlyRevenueRange ?? monthlyRevenue ?? null,
+        accountsReceivableRange: accountsReceivableRange ?? arOutstanding ?? null,
+        fixedAssetsValueRange: fixedAssetsValueRange ?? null,
         yearsInBusiness: yearsInBusiness ?? null,
         monthlyRevenue: monthlyRevenue ?? null,
         annualRevenue: annualRevenue ?? null,
@@ -99,6 +144,14 @@ router.post("/", async (req: any, res: any, next: any) => {
     phone,
     email,
     industry,
+    businessLocation,
+    requestedAmount,
+    purposeOfFunds,
+    salesHistoryYears,
+    annualRevenueRange,
+    avgMonthlyRevenueRange,
+    accountsReceivableRange,
+    fixedAssetsValueRange,
     yearsInBusiness,
     monthlyRevenue,
     annualRevenue,
