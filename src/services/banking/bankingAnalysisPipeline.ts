@@ -15,6 +15,17 @@ const openai = process.env.OPENAI_API_KEY
 
 type Country = "US" | "CA" | "OTHER";
 
+// BF_SERVER_BLOCK_v101_BANKING_CLASSIFIER_MSG_v1
+const NON_BANK_STATEMENT_MESSAGE = "Document classified as financial statement, not bank statement. Try uploading actual bank statements (monthly account activity exports).";
+
+function hasStatementNoTransactionShape(result: any): boolean {
+  const lines: string[] = (result?.pages ?? []).flatMap((p: any) => (p?.lines ?? []).map((l: any) => String(l?.content ?? "")));
+  const hasStatementWord = lines.some((line) => /statement/i.test(line));
+  const hasTxnHeaders = lines.some((line) => /date\s+description|description\s+amount|debit|credit|balance/i.test(line));
+  const hasTables = Array.isArray(result?.tables) && result.tables.length > 0;
+  return hasStatementWord && (!hasTxnHeaders || !hasTables);
+}
+
 function detectCountry(metadata: any): Country {
   const c = String(
     metadata?.country ??
@@ -156,6 +167,12 @@ export async function runBankingAnalysis(
       transactions = extracted;
       docError = null;
 
+      const shouldShortCircuitNonBank = model === "prebuilt-layout" && normalizedType === "OTHER" && extracted.length === 0 && hasStatementNoTransactionShape(result);
+      if (shouldShortCircuitNonBank) {
+        docError = NON_BANK_STATEMENT_MESSAGE;
+        break;
+      }
+
       const shouldFallbackToBankStatement = model === "prebuilt-layout" && (normalizedType === "OTHER" || extracted.length === 0);
       if (shouldFallbackToBankStatement) {
         fallbackUsed = true;
@@ -169,7 +186,7 @@ export async function runBankingAnalysis(
       continue;
     }
     if (fallbackUsed && transactions.length === 0) {
-      docError = "Could not extract transactions. Verify this is a true bank statement (not a summary letter, screenshot, or photo).";
+      docError = NON_BANK_STATEMENT_MESSAGE;
     }
     documentStatuses.push({ document_id: doc.documentId, filename: doc.fileName, model_used: finalModel, detected_type: detectedType, transaction_count: transactions.length, fallback_used: fallbackUsed, pages: Number(finalResult?.pages?.length ?? 0), ...(docError ? { error: docError } : {}) });
     for (const tx of transactions) if (tx.date && Number.isFinite(tx.amount)) allTransactions.push({ ...tx, document_id: doc.documentId });

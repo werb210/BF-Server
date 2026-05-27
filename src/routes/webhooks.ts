@@ -340,14 +340,16 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
     return;
   }
   if ((looksLikePhone || outboundFlag) && to) {
-    const dial = vr.dial({ callerId, answerOnBridge: true, timeout: 25 });
+    const dial = vr.dial({ callerId, answerOnBridge: true, timeout: 30 });
     dial.number(to);
   } else {
     vr.say({ voice: "Polly.Joanna" }, "Sorry, no agents are available right now. Please leave a message after the tone.");
     vr.record({ maxLength: 120, playBeep: true, action: "/api/webhooks/twilio/voicemail" });
   }
 
-  res.send(vr.toString());
+  const twiml = vr.toString();
+  console.log(JSON.stringify({ event: "voice_twiml_generated", to, from, callerId: callerId || null, twiml })); // BF_SERVER_BLOCK_v103_VOICE_TWIML_LOGGING_v1
+  res.type("text/xml").send(twiml);
 }));
 
 // ── No-answer fallback — goes to voicemail ────────────────────────────────────
