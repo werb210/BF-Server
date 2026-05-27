@@ -229,8 +229,17 @@ router.get(
           u.first_name                                          AS owner_first_name,
           u.last_name                                           AS owner_last_name,
           a.updated_at                                          AS last_activity_at,
+          -- BF_SERVER_BLOCK_v655_PIPELINE_AND_DIALER_v1
+          -- application_stage_history (created by v651 migration
+          -- 2026_05_24_v651_application_stage_history.sql) has columns
+          -- id, application_id, from_stage, to_stage, reason,
+          -- actor_user_id, created_at. There is no occurred_at.
+          -- The previous query threw 42703 column-does-not-exist on
+          -- every call, the outer catch returned an empty
+          -- applications array with _error in the body, and the
+          -- Pipeline view rendered 0 even though Dashboard counted 8.
           (
-            SELECT MAX(occurred_at)
+            SELECT MAX(created_at)
               FROM application_stage_history h
              WHERE h.application_id = a.id AND h.to_stage = a.pipeline_state
           )                                                     AS stage_entered_at,

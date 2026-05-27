@@ -80,12 +80,38 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
   // ── v503: SDK-initiated outbound from staff browser (params.conferenceFriendly)
   // joins existing conference instead of doing legacy Dial-Number.
   const sdkConfFriendly = String(params.conferenceFriendly ?? "").trim();
+
+  // BF_SERVER_BLOCK_v655_PIPELINE_AND_DIALER_v1
+  // Single entry log so we can correlate every Twilio TwiML POST with
+  // a call SID. Without this, when a dial fails at the DTLS layer the
+  // BF-Server log shows nothing and we have to guess which branch ran.
+  console.log(JSON.stringify({
+    event: "voice_twiml_request",
+    callSid: callSid || null,
+    from: from || null,
+    to: to || null,
+    conferenceFriendly: sdkConfFriendly || null,
+  }));
+
   if (sdkConfFriendly) {
     const { default: VoiceResponse } = await import("twilio/lib/twiml/VoiceResponse.js");
     const { pool } = await import("../db.js");
     const { getConferenceByFriendly, addParticipantRow, setParticipantCallSid } = await import("../voice/conferenceService.js");
     const { getPublicBaseUrl } = await import("../voice/twilioClient.js");
-    const conf = await getConferenceByFriendly(sdkConfFriendly);
+
+    // BF_SERVER_BLOCK_v655_PIPELINE_AND_DIALER_v1
+    // Retry the conference lookup once with a 250ms back-off. The conf
+    // row was just INSERTed by /api/voice/calls; Twilio's TwiML POST
+    // arrives ~100-200ms later, occasionally before pool/replica
+    // visibility. Pre-v655 a single miss fell through to the legacy
+    // stranger-call branch, which returns voicemail TwiML and trips
+    // "Disconnecting… DTLS closed" on the browser.
+    let conf = await getConferenceByFriendly(sdkConfFriendly);
+    if (!conf) {
+      await new Promise((r) => setTimeout(r, 250));
+      conf = await getConferenceByFriendly(sdkConfFriendly);
+    }
+
     if (conf) {
       const identity = from.startsWith("client:") ? from.slice("client:".length) : "";
       // Find existing caller participant row (created by /api/voice/calls) or create one.
@@ -108,10 +134,37 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
       }
       const base = getPublicBaseUrl();
       const vrs = new VoiceResponse();
+      console.log(JSON.stringify({
+        event: "voice_twiml_redirect_to_conference_join",
+        callSid: callSid || null,
+        conferenceFriendly: sdkConfFriendly,
+        conferenceId: conf.id,
+        participantId: pid,
+      }));
       vrs.redirect({ method: "POST" }, `${base}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(sdkConfFriendly)}&pid=${encodeURIComponent(pid)}`);
       return res.send(vrs.toString());
     }
-    // fall through if conference not found — legacy behavior.
+
+    // BF_SERVER_BLOCK_v655_PIPELINE_AND_DIALER_v1
+    // conferenceFriendly was provided but the conference was not found
+    // even after the retry. Do NOT fall through to the legacy
+    // stranger-call branch — that branch returns voicemail TwiML
+    // (Say + Record) which presents to the browser as
+    // "Disconnecting… DTLS closed" with no accept event. Instead,
+    // return a loud Say + Hangup so the operator hears a concrete
+    // error and we get a single grep-able log line.
+    console.log(JSON.stringify({
+      event: "voice_twiml_conference_not_found_after_retry",
+      callSid: callSid || null,
+      conferenceFriendly: sdkConfFriendly,
+    }));
+    const vrErr = new VoiceResponse();
+    vrErr.say(
+      { voice: "Polly.Joanna" },
+      "We could not reach the conference for this call. Please hang up and try again.",
+    );
+    vrErr.hangup();
+    return res.send(vrErr.toString());
   }
 
   // ── v503: mini-portal inbound (client:client-*) -> conference + ring-all
