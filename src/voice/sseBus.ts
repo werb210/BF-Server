@@ -19,10 +19,13 @@ export function subscribe(userId: string, res: Response): () => void {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
   res.write(`: connected ${new Date().toISOString()}\n\n`);
+  // BF_SERVER_BLOCK_v104_SSE_HEARTBEAT_v1
+  // Azure App Service drops idle HTTP after ~4 minutes. Send a keep-alive
+  // SSE comment every 30s; EventSource clients ignore comment frames.
   const ka = setInterval(() => {
     if (sub.closed) return;
-    try { res.write(`: ka ${Date.now()}\n\n`); } catch { /* noop */ }
-  }, 25_000);
+    try { res.write(": keep-alive\n\n"); } catch { /* socket closed */ }
+  }, 30_000);
   const teardown = () => {
     if (sub.closed) return;
     sub.closed = true;

@@ -523,14 +523,18 @@ router.get(
         ocrStatus: (d as { ocr_status?: string | null }).ocr_status ?? null,
         uploadedAt: d.created_at,
       })),
-      fields: financialFields.map((f) => ({
-        documentId: f.document_id,
-        sourceDocumentType: f.source_document_type ?? null,
-        fieldKey: f.field_key,
-        displayLabel: OCR_FIELD_LABEL_MAP.get(f.field_key) ?? f.field_key,
-        value: f.value,
-        confidence: f.confidence,
-      })),
+      fields: financialFields.map((f) => {
+        const sanitized = sanitizeField(f.field_key, f.value ?? null);
+        return {
+          documentId: f.document_id,
+          sourceDocumentType: f.source_document_type ?? null,
+          fieldKey: f.field_key,
+          displayLabel: OCR_FIELD_LABEL_MAP.get(f.field_key) ?? f.field_key,
+          value: sanitized.value,
+          ocr_status: sanitized.status,
+          confidence: f.confidence,
+        };
+      }),
     });
   })
 );

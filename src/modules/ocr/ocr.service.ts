@@ -42,6 +42,26 @@ function resolveProvider(): OcrProvider {
   throw new Error(`unsupported_ocr_provider:${provider}`);
 }
 
+
+// BF_SERVER_BLOCK_v102_OCR_RETRY_v1
+async function callDocIntelWithRetry<T>(callFn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+  let lastErr: Error | null = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await callFn();
+    } catch (err) {
+      lastErr = err as Error;
+      const isTimeout = /ETIMEDOUT|ECONNRESET|ESOCKETTIMEDOUT/i.test(String((err as Error).message));
+      if (!isTimeout || attempt === maxAttempts) {
+        throw err;
+      }
+      const wait = 1000 * Math.pow(2, attempt - 1);
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+  throw lastErr ?? new Error("DocIntel exhausted retries");
+}
+
 function parseMetadata(metadata: unknown): { mimeType: string; fileName?: string } {
   if (!metadata || typeof metadata !== "object") {
     throw new Error("missing_document_metadata");
@@ -377,7 +397,7 @@ export async function processOcrJob(
       mimeType,
       ...(fileName ? { fileName } : {}),
     };
-    const result = await provider.extract(extractPayload);
+    const result = await callDocIntelWithRetry(() => provider.extract(extractPayload));
     await markOcrJobSuccess({
       jobId: job.id,
       documentId: job.document_id,
