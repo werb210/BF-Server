@@ -76,6 +76,22 @@ function parsePagination(query: Request["query"]): { limit: number; offset: numb
   return { limit, offset };
 }
 
+const NUMERIC_FIELDS = new Set(["annual_revenue", "monthly_revenue", "gross_margin_pct", "net_income", "ebitda"]);
+
+function sanitizeField(fieldKey: string, rawValue: string | null): { value: string | number | null; status: "ok" | "empty" | "invalid_number" } {
+  const value = typeof rawValue === "string" ? rawValue.trim() : "";
+  if (!value) return { value: null, status: "empty" };
+
+  if (NUMERIC_FIELDS.has(fieldKey)) {
+    const n = Number(value.replace(/,/g, ""));
+    if (!Number.isFinite(n)) return { value: null, status: "invalid_number" };
+    return { value: n, status: "ok" };
+  }
+
+  return { value, status: "ok" };
+}
+
+
 // ── Pipeline helpers ──────────────────────────────────────────────────────────
 async function recordTransition(
   appId: string,
