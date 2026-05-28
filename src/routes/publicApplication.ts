@@ -173,7 +173,7 @@ router.post(
                                         'industry', $7::text,
                                         'businessLocation', $8::text,
                                         'fundingType', $9::text,
-                                        'requestedAmount', $10,
+                                        'requestedAmount', NULLIF($10::text, '')::numeric, /* BF_SERVER_BLOCK_v660 — cast requestedAmount so NULL/blank fundingAmount cannot leave PG parameter $10 untyped */
                                         'purposeOfFunds', $11::text,
                                         'salesHistoryYears', $12::text,
                                         'annualRevenueRange', $13::text,
