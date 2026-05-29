@@ -3,6 +3,7 @@ import { createCrmLead } from "../crm/crm.service.js";
 import { createContinuation } from "../continuation/continuation.service.js";
 import { stripUndefined } from "../../utils/clean.js";
 import { pool } from "../../db.js";
+import { createContact } from "../../services/contacts.js";
 import { notifyAllStaff } from "../../services/notifications/notifyAllStaff.js";
 // BF_SERVER_BLOCK_v129a_READINESS_PHONE_NORMALIZE_v1
 import { normalizePhoneNumber } from "../auth/phone.js";
@@ -117,6 +118,22 @@ export async function submitCreditReadiness(req: Request, res: Response) {
         lead.id,
       ],
     );
+
+    // BF_SERVER_BLOCK_v680_WEBSITE_LEADS_INTO_CRM_CONTACTS
+    // Surface credit-readiness captures in the CRM Contacts table as BF contacts.
+    const readinessFullName = String(fullName);
+    const [readinessFirstName, ...readinessLastNameParts] = readinessFullName.trim().split(/\s+/);
+    try {
+      await createContact(pool, {
+        first_name: readinessFirstName || readinessFullName,
+        last_name: readinessLastNameParts.join(" "),
+        email: String(email),
+        phone: normalizedPhone,
+        silo: "BF",
+      });
+    } catch (e) {
+      console.warn("[readiness] createContact failed", e);
+    }
 
     // BF_SERVER_BLOCK_v101_READINESS_DRAFT_APPLICATION_v1
     // Per Todd: "Check my credit readiness" should leave a draft on
