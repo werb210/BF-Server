@@ -95,6 +95,12 @@ export function createApp() {
 
   app.use(cors(corsOptions));
   app.options("*", cors(corsOptions));
+  // BF_SERVER_BLOCK_v661 — bulletproof OTP preflight. The browser OPTIONS
+  // preflight for /api/auth/* must always resolve fast with the CORS
+  // headers cors() already set, before any downstream middleware. Without
+  // this, a racing credentialed preflight from the login page can wedge
+  // pending and the login UI sticks on "Sending...".
+  app.options(/^\/api\/auth\//, cors(corsOptions), (_req, res) => { res.sendStatus(204); });
 
   app.use(express.json({ limit: "10mb" }));
   app.use(cookieParser());
