@@ -200,7 +200,6 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/website", router: websiteRoutes },
   { path: "/maya", router: combinedMayaRoutes },
   { path: "/ai/maya", router: aiMayaAlias },
-  { path: "/maya", router: aiMayaAlias },
   { path: "/ai", router: aiRoutes },
   { path: "/email", router: emailRoutes },
   { path: "/o365", router: o365Routes },
