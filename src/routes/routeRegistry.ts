@@ -70,7 +70,7 @@ import signnowRoutes from "./signnow.js";
 import submissionOrchestrationRoutes from "./submissionOrchestration.js"; // BF_SERVER_v74_BLOCK_1_7
 import emailRoutes from "./email.js";
 import websiteRoutes from "./website.js";
-import mayaRoutes from "./maya.js";
+import mayaRoutes, { proxyMayaToAgent } from "./maya.js";
 import aiMayaAlias from "./aiMayaAlias.js";
 import mayaAdminStubs from "./mayaAdminStubs.js";
 import mayaEscalateRoutes from "./mayaEscalate.js";
@@ -132,6 +132,19 @@ rootRoutes.use(conversationsRoutes);
 rootRoutes.use(smsInboundWebhookRoutes);
 
 const combinedMayaRoutes = Router();
+// BF_SERVER_BLOCK_v672 — website widget posts to /api/maya/website-chat
+combinedMayaRoutes.post("/website-chat", async (req: any, res: any) => {
+  const body = req.body ?? {};
+  const messageText = String(body.message ?? "").trim();
+  if (!messageText) return res.status(400).json({ error: "missing_message" });
+  await proxyMayaToAgent(
+    "/api/maya/message",
+    "POST",
+    { message: messageText, sessionId: body.sessionId ?? null, audience: "visitor" },
+    res,
+    req
+  );
+});
 combinedMayaRoutes.use(mayaRoutes);
 combinedMayaRoutes.use(mayaAdminStubs);
 // BF_SERVER_BLOCK_v214_MAYA_STAFF_PIPELINE_QUERY_v1
