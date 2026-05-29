@@ -132,15 +132,16 @@ rootRoutes.use(conversationsRoutes);
 rootRoutes.use(smsInboundWebhookRoutes);
 
 const combinedMayaRoutes = Router();
-// BF_SERVER_BLOCK_v672 — website widget posts to /api/maya/website-chat
-combinedMayaRoutes.post("/website-chat", async (req: any, res: any) => {
-  const body = req.body ?? {};
-  const messageText = String(body.message ?? "").trim();
-  if (!messageText) return res.status(400).json({ error: "missing_message" });
+// BF_SERVER_BLOCK_v674 — website widget posts /api/maya/website-chat
+combinedMayaRoutes.post("/website-chat", async (req, res) => {
   await proxyMayaToAgent(
     "/api/maya/message",
     "POST",
-    { message: messageText, sessionId: body.sessionId ?? null, audience: "visitor" },
+    {
+      message: String((req.body?.message ?? "")).trim(),
+      sessionId: req.body?.sessionId ?? null,
+      audience: "visitor",
+    },
     res,
     req
   );
