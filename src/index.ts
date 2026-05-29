@@ -130,15 +130,31 @@ export async function start(): Promise<void> {
     const { pool } = await import("./db.js");
     const { startOcrWorker } = await import("./modules/ocr/ocr.worker.js");
     const { startBankingAutoWorker } = await import("./workers/bankingAutoWorker.js");
-    try { startOcrWorker(); console.log("[startup] OCR worker started"); }
+    const workerStops: Array<() => void> = [];
+    try { const w = startOcrWorker(); workerStops.push(w.stop); console.log("[startup] OCR worker started"); }
     catch (err) { console.error("[startup] OCR worker failed to start:", err); }
-    try { startBankingAutoWorker(pool); console.log("[startup] banking auto-worker started"); }
+    try { const w = startBankingAutoWorker(pool); workerStops.push(w.stop); console.log("[startup] banking auto-worker started"); }
     catch (err) { console.error("[startup] banking auto-worker failed to start:", err); }
 
     // BF_SERVER_BLOCK_v146_LENDER_PACKAGE_WORKER_v1
     const { startLenderPackageWorker } = await import("./workers/lenderPackageWorker.js");
-    try { startLenderPackageWorker(pool); console.log("[startup] lender-package worker started"); }
+    try { const w = startLenderPackageWorker(pool); workerStops.push(w.stop); console.log("[startup] lender-package worker started"); }
     catch (err) { console.error("[startup] lender-package worker failed to start:", err); }
+
+    // BF_SERVER_BLOCK_v665 — graceful shutdown. On container recycle the workers'
+    // poll loops must stop BEFORE the pool tears down, otherwise each tick queries
+    // a dying pool and logs "Connection terminated due to connection timeout".
+    let shuttingDown = false;
+    const gracefulShutdown = async (signal: string) => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      console.log(`[shutdown] ${signal} received — stopping workers, draining pool`);
+      for (const stop of workerStops) { try { stop(); } catch { /* ignore */ } }
+      try { await pool.end(); } catch (err) { console.error("[shutdown] pool.end failed:", err); }
+      process.exit(0);
+    };
+    process.on("SIGTERM", () => { void gracefulShutdown("SIGTERM"); });
+    process.on("SIGINT", () => { void gracefulShutdown("SIGINT"); });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
