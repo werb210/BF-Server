@@ -31,18 +31,12 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   const { from, to = [], cc = [], bcc = [], subject = "", body_html = "", attachments = [] } = raw;
   if (!Array.isArray(to) || !to.length) return res.status(400).json({ error: "to required" });
 
-  // v635_signature: append user's saved HTML signature to body_html if present.
+  // v635_signature + v663 fix: only stamp the individual's personal signature
+  // on a personal send. Never apply it to a shared/team mailbox send
+  // (submissions@, info@). Signature is applied below, after the from-address
+  // is resolved.
   let bodyWithSig = body_html ?? "";
-  try {
-    const sigRes = await pool.query<{ email_signature_html: string | null }>(
-      `SELECT email_signature_html FROM user_settings WHERE user_id = $1 LIMIT 1`,
-      [userId]
-    );
-    const sig = sigRes.rows[0]?.email_signature_html;
-    if (sig && typeof sig === "string" && sig.trim()) {
-      bodyWithSig = `${bodyWithSig}<br/><br/>${sig}`;
-    }
-  } catch { /* user_settings may be missing on first deploy — non-fatal */ }
+  let sendingAsSelf = true;
 
   let endpoint = "/me/sendMail";
   if (from) {
@@ -66,7 +60,21 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
       );
       if (!rows.length) return res.status(403).json({ error: "from_not_allowed" });
       endpoint = `/users/${encodeURIComponent(from)}/sendMail`;
+      sendingAsSelf = false;
     }
+  }
+
+  if (sendingAsSelf) {
+    try {
+      const sigRes = await pool.query<{ email_signature_html: string | null }>(
+        `SELECT email_signature_html FROM user_settings WHERE user_id = $1 LIMIT 1`,
+        [userId]
+      );
+      const sig = sigRes.rows[0]?.email_signature_html;
+      if (sig && typeof sig === "string" && sig.trim()) {
+        bodyWithSig = `${bodyWithSig}<br/><br/>${sig}`;
+      }
+    } catch { /* user_settings may be missing — non-fatal */ }
   }
 
   // BF_SERVER_BLOCK_v645_INBOX_AND_SCREENSHOT_v1 — attachments passthrough.
