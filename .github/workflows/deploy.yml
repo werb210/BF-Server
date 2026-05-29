@@ -62,4 +62,5 @@ jobs:
         uses: azure/webapps-deploy@v3
         with:
           app-name: boreal-staff-server
+          slot-name: staging
           package: release.zip
