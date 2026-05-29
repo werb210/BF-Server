@@ -3,30 +3,51 @@ import path from "path";
 import type { Pool, PoolClient } from "pg";
 
 // Postgres error codes we treat as "already-there, safe to skip":
-//   42P07 - duplicate table
-//   42710 - duplicate object (type/extension/etc)
-//   42701 - duplicate column
-//   42P16 - invalid table definition (e.g. "already IDENTITY")
-//   42P06 - duplicate schema
-//   42P05 - duplicate prepared statement
-//   42P03 - duplicate cursor
-//   42704 - undefined object when using IF EXISTS variant that older PG rejects
+//   42P07 duplicate table · 42710 duplicate object · 42701 duplicate column
+//   42P16 invalid table def · 42P06 duplicate schema · 42P05 dup prepared stmt
+//   42P03 duplicate cursor · 42704 undefined object (older PG IF EXISTS)
 const IDEMPOTENT_CODES = new Set(["42P07", "42710", "42701", "42P16", "42P06", "42P05", "42P03", "42704"]);
 
-// A single, stable lock key derived at random-once, hardcoded here so every
-// process across every Azure instance uses the same lock.
 const MIGRATION_ADVISORY_LOCK_KEY = 8732914055n;
 
-async function withAdvisoryLock<T>(client: PoolClient, fn: () => Promise<T>): Promise<T> {
-  await client.query("SELECT pg_advisory_lock($1)", [String(MIGRATION_ADVISORY_LOCK_KEY)]);
-  try {
-    return await fn();
-  } finally {
-    try {
-      await client.query("SELECT pg_advisory_unlock($1)", [String(MIGRATION_ADVISORY_LOCK_KEY)]);
-    } catch (err) {
-      console.warn("migration_advisory_unlock_failed", err);
+// BF_SERVER_BLOCK_v681_MIGRATION_LOCK_NONBLOCKING_v1
+// Was BLOCKING pg_advisory_lock(): two instances booting at once (staging slot
+// + production, which happens on every deploy/swap) collided — one took the
+// lock, the other blocked FOREVER inside pg_advisory_lock and never reached
+// app.listen(). Azure killed the blocked instance, it restarted, collided
+// again, and both slots crash-looped with nobody able to log in.
+// Now: NON-BLOCKING pg_try_advisory_lock() with a short bounded retry. If
+// another instance is already applying the (additive-only) migrations, this
+// one gives up after the budget and BOOTS ANYWAY without running them —
+// serving traffic beats hanging. A genuinely broken migration still throws and
+// stays fatal upstream; only the lock-contention hang is removed.
+const LOCK_RETRY_ATTEMPTS = 20;
+const LOCK_RETRY_DELAY_MS = 500; // up to ~10s before booting anyway
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function tryAcquireMigrationLock(client: PoolClient): Promise<boolean> {
+  for (let attempt = 1; attempt <= LOCK_RETRY_ATTEMPTS; attempt++) {
+    const res = await client.query<{ locked: boolean }>(
+      "SELECT pg_try_advisory_lock($1) AS locked",
+      [String(MIGRATION_ADVISORY_LOCK_KEY)]
+    );
+    if (res.rows[0]?.locked === true) return true;
+    if (attempt < LOCK_RETRY_ATTEMPTS) {
+      console.log(`[MIGRATIONS] lock held by another instance; retry ${attempt}/${LOCK_RETRY_ATTEMPTS} in ${LOCK_RETRY_DELAY_MS}ms`);
+      await sleep(LOCK_RETRY_DELAY_MS);
     }
+  }
+  return false;
+}
+
+async function releaseMigrationLock(client: PoolClient): Promise<void> {
+  try {
+    await client.query("SELECT pg_advisory_unlock($1)", [String(MIGRATION_ADVISORY_LOCK_KEY)]);
+  } catch (err) {
+    console.warn("migration_advisory_unlock_failed", err);
   }
 }
 
@@ -63,7 +84,12 @@ export async function runMigrations(pool: Pool): Promise<void> {
 
   const client = await pool.connect();
   try {
-    await withAdvisoryLock(client, async () => {
+    const acquired = await tryAcquireMigrationLock(client);
+    if (!acquired) {
+      console.warn("[MIGRATIONS] another instance holds the migration lock; skipping migrations and booting to serve traffic.");
+      return;
+    }
+    try {
       await ensureTrackingTable(client);
       const applied = await fetchApplied(client);
 
@@ -100,11 +126,6 @@ export async function runMigrations(pool: Pool): Promise<void> {
         }
       }
 
-      // Verify a small set of expected columns exist in the live schema.
-      // If they're missing despite their migration being marked applied,
-      // it means the schema_migrations row was inserted manually (e.g.
-      // during a hotfix) without the actual ALTER TABLE running. Log
-      // loudly so an operator notices and runs the recovery SQL.
       const expected: Array<{ table: string; column: string; migration: string }> = [
         { table: "lender_products", column: "amount_min", migration: "121_readd_amount_columns_and_repair.sql" },
         { table: "lender_products", column: "amount_max", migration: "121_readd_amount_columns_and_repair.sql" },
@@ -126,12 +147,13 @@ export async function runMigrations(pool: Pool): Promise<void> {
         if (!r.rows[0]?.exists) {
           console.error(
             `[MIGRATIONS][SCHEMA-DRIFT] expected column ${e.table}.${e.column} ` +
-            `missing despite ${e.migration} marked applied. ` +
-            `Run the schema recovery SQL.`
+            `missing despite ${e.migration} marked applied. Run the schema recovery SQL.`
           );
         }
       }
-    });
+    } finally {
+      await releaseMigrationLock(client);
+    }
   } finally {
     client.release();
   }
