@@ -4,6 +4,7 @@ import { createContinuation } from "../continuation/continuation.service.js";
 import { logError } from "../../observability/logger.js";
 import { stripUndefined } from "../../utils/clean.js";
 import { pool } from "../../db.js";
+import { createContact } from "../../services/contacts.js";
 import { notifyAllStaff } from "../../services/notifications/notifyAllStaff.js";
 
 export async function submitContactForm(req: Request, res: Response) {
@@ -28,6 +29,21 @@ export async function submitContactForm(req: Request, res: Response) {
       source: "website_contact",
       tags: ["contact_form"],
     }));
+
+    // BF_SERVER_BLOCK_v680_WEBSITE_LEADS_INTO_CRM_CONTACTS
+    // Also surface website contact form submissions in the CRM Contacts table.
+    const [firstName, ...lastNameParts] = fullName.trim().split(/\s+/);
+    try {
+      await createContact(pool, {
+        first_name: firstName || fullName,
+        last_name: lastNameParts.join(" "),
+        email,
+        phone,
+        silo: "BF",
+      });
+    } catch (e) {
+      console.warn("[website_contact] createContact failed", e);
+    }
 
     // BF_SERVER_BLOCK_v123_READINESS_SQL_AND_SILO_AUTH_RESOLUTION_v1
     // Q5: contact form Continue → main page; no apply hand-off. Keep the
