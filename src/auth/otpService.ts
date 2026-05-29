@@ -1,11 +1,18 @@
 import { deleteOtp, fetchOtp, storeOtp as persistOtp } from "../services/otpService.js";
 import { config } from "../config/index.js";
 
-function normalizePhone(phone: string): string {
+export function normalizePhone(phone: string): string {
   let p = phone.replace(/\D/g, "");
-  if (p.length === 10) p = "1" + p;
-  if (!p.startsWith("1")) throw new Error("Invalid phone");
-  return `+${p}`;
+  // Collapse any number of leading country-code "1"s. Browser autofill can
+  // prepend an extra "1", yielding e.g. "118254511768" -> "+118254511768",
+  // which is unroutable and never matches the stored OTP. Strip leading 1s
+  // until a 10-digit NANP national number remains (NANP area codes never
+  // start with 1, so a valid 10-digit number is never over-stripped).
+  while (p.length > 10 && p.startsWith("1")) {
+    p = p.slice(1);
+  }
+  if (p.length !== 10) throw new Error("Invalid phone");
+  return `+1${p}`;
 }
 
 function generateOtp(): string {
