@@ -419,11 +419,10 @@ router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
 
 // BF_SERVER_BLOCK_BI_ROUND6_THREADS_LIST_v1
 // GET /api/communications/threads
-// Returns the list of active (non-closed) chat sessions scoped to
-// the caller's silo (via Block 13's resolveSiloFromRequest fix --
-// after that block, res.locals.silo carries the correct silo on
-// every authed route). Used by the staff Communications page to
-// populate the session list.
+// Returns the live communications conversations scoped to the caller's
+// silo (via Block 13's resolveSiloFromRequest fix -- after that block,
+// res.locals.silo carries the correct silo on every authed route). Used
+// by the staff Communications page to populate the thread list.
 //
 // Response shape matches the portal's CommunicationConversation
 // type declared in BF-portal src/api/communications.ts:
@@ -453,31 +452,35 @@ router.get("/threads", safeHandler(async (req: any, res: any) => {
     ? requestedBu
     : silo;
 
+  // BF_SERVER_BLOCK_v685_THREADS_ON_COMMUNICATIONS_v1
+  // The live conversation store is communications_conversations /
+  // communications_messages (chat_sessions/chat_messages are dead).
+  // Read the real store so messenger handoffs + SMS surface in the
+  // portal Messages tab. has_outbound flags threads a human replied to.
   const sql = `
     SELECT
-      s.id,
-      s.id AS session_id,
-      s.source,
-      s.status,
-      s.assigned_to,
-      s.crm_contact_id,
-      s.created_at,
-      s.updated_at,
-      c.silo AS contact_silo,
-      c.full_name AS contact_name,
-      c.email AS contact_email,
-      c.phone AS contact_phone,
-      (
-        SELECT content FROM chat_messages m
-        WHERE m.session_id = s.id
-        ORDER BY m.created_at DESC
-        LIMIT 1
-      ) AS last_message
-    FROM chat_sessions s
-    LEFT JOIN contacts c ON c.id = s.crm_contact_id
-    WHERE s.status <> 'closed'
-      AND (c.silo IS NULL OR c.silo = $1)
-    ORDER BY s.updated_at DESC NULLS LAST, s.created_at DESC
+      cc.id,
+      cc.id AS session_id,
+      cc.channel,
+      cc.contact_id AS crm_contact_id,
+      cc.contact_name,
+      COALESCE(ct.phone, cc.contact_phone) AS contact_phone,
+      cc.last_message_preview AS last_message,
+      cc.unread,
+      cc.silo AS contact_silo,
+      cc.last_message_at,
+      cc.created_at,
+      cc.updated_at,
+      EXISTS (
+        SELECT 1 FROM communications_messages m
+        WHERE m.conversation_id = cc.id AND m.direction = 'outbound'
+      ) AS has_outbound,
+      ct.name AS contact_full_name,
+      ct.email AS contact_email
+    FROM communications_conversations cc
+    LEFT JOIN contacts ct ON ct.id = cc.contact_id
+    WHERE cc.silo = $1
+    ORDER BY cc.last_message_at DESC NULLS LAST, cc.created_at DESC
     LIMIT 200
   `;
 
@@ -491,30 +494,26 @@ router.get("/threads", safeHandler(async (req: any, res: any) => {
     return { rows: [] as any[] };
   });
 
-  // Map server rows into the portal's CommunicationConversation shape.
-  // type is "human" when a staff member is in (status=live), else
-  // "chat" for the AI-only sessions; "closed" sessions are excluded
-  // by the WHERE clause but still get a defensive branch.
   const conversations = result.rows.map((row: any) => {
-    const status =
-      row.status === "live" ? "human" :
-      row.status === "closed" ? "closed" :
-      "ai";
-    const type = status === "human" ? "human" : "chat";
+    const channel = String(row.channel ?? "").toLowerCase();
+    // sms keeps its own tab/type; everything else (messenger, chat,
+    // contact_form) maps to a chat/human thread so it shows in the
+    // portal's Active list (filter accepts human|chat|credit_readiness).
+    const type = channel === "sms" ? "sms" : (row.has_outbound ? "human" : "chat");
     return {
       id: row.id,
       sessionId: row.session_id,
       type,
-      status,
+      status: "human" as const,
       silo: row.contact_silo ?? effectiveSilo,
       contactId: row.crm_contact_id ?? undefined,
-      contactName: row.contact_name ?? undefined,
+      contactName: row.contact_full_name ?? row.contact_name ?? undefined,
       contactEmail: row.contact_email ?? undefined,
       contactPhone: row.contact_phone ?? undefined,
-      assignedTo: row.assigned_to ?? undefined,
+      unread: typeof row.unread === "number" ? row.unread : undefined,
       message: row.last_message ?? undefined,
       messages: [] as unknown[],
-      updatedAt: row.updated_at ?? row.created_at,
+      updatedAt: row.last_message_at ?? row.updated_at ?? row.created_at,
     };
   });
 
@@ -523,16 +522,16 @@ router.get("/threads", safeHandler(async (req: any, res: any) => {
 
 // BF_SERVER_BLOCK_BI_ROUND6_THREADS_DETAIL_v1
 // GET /api/communications/threads/:id
-// Returns a single chat session payload with the full messages
-// array. Staff panel calls this when activeSessionId changes
+// Returns a single communications conversation payload with the full
+// messages array. Staff panel calls this when activeSessionId changes
 // so the message area populates with history. The list endpoint
 // (Block 20) deliberately returns messages: [] for performance
 // and defers message loading to this endpoint.
 //
-// Silo gate: contact_silo on the joined contact must match the
-// caller's resolved silo, unless the caller is an admin. Returns
-// 404 (not 403) when no row exists so we don't leak which session
-// ids are valid in other silos.
+// Silo gate: contact_silo on the conversation must match the caller's
+// resolved silo, unless the caller is an admin. Returns 404 (not 403)
+// when no row exists so we don't leak which thread ids are valid in
+// other silos.
 router.get("/threads/:id", safeHandler(async (req: any, res: any) => {
   const { resolveSiloFromRequest } = await import("../middleware/silo.js");
   const silo = resolveSiloFromRequest(req);
@@ -541,27 +540,26 @@ router.get("/threads/:id", safeHandler(async (req: any, res: any) => {
 
   const isAdmin = String(req.user?.role ?? "").toLowerCase() === "admin";
 
-  // Load the session + joined contact info. LEFT JOIN keeps
-  // anonymous sessions (no crm_contact_id) addressable -- those
-  // have contact_silo=null and pass the silo gate for every silo
-  // until they're contact-bound.
+  // BF_SERVER_BLOCK_v685_THREADS_ON_COMMUNICATIONS_v1 — detail reads
+  // the live communications_conversations store (dead chat_sessions
+  // retired). contact_silo is the conversation's own silo column.
   const sessionResult = await pool.query(`
     SELECT
-      s.id,
-      s.id AS session_id,
-      s.source,
-      s.status,
-      s.assigned_to,
-      s.crm_contact_id,
-      s.created_at,
-      s.updated_at,
-      c.silo AS contact_silo,
-      c.full_name AS contact_name,
-      c.email AS contact_email,
-      c.phone AS contact_phone
-    FROM chat_sessions s
-    LEFT JOIN contacts c ON c.id = s.crm_contact_id
-    WHERE s.id = $1
+      cc.id,
+      cc.id AS session_id,
+      cc.channel,
+      cc.contact_id AS crm_contact_id,
+      cc.contact_name,
+      COALESCE(ct.phone, cc.contact_phone) AS contact_phone,
+      cc.silo AS contact_silo,
+      cc.created_at,
+      cc.updated_at,
+      cc.last_message_at,
+      ct.name AS contact_full_name,
+      ct.email AS contact_email
+    FROM communications_conversations cc
+    LEFT JOIN contacts ct ON ct.id = cc.contact_id
+    WHERE cc.id = $1
     LIMIT 1
   `, [sessionId]).catch((err: any) => {
     // eslint-disable-next-line no-console
@@ -583,9 +581,9 @@ router.get("/threads/:id", safeHandler(async (req: any, res: any) => {
   // history rendering in the portal; if a real session ever exceeds
   // this we add pagination cursors in a follow-up.
   const messagesResult = await pool.query(`
-    SELECT id, session_id, role, content, created_at
-    FROM chat_messages
-    WHERE session_id = $1
+    SELECT id, conversation_id, channel, direction, body, created_at
+    FROM communications_messages
+    WHERE conversation_id = $1
     ORDER BY created_at ASC
     LIMIT 500
   `, [sessionId]).catch((err: any) => {
@@ -597,26 +595,23 @@ router.get("/threads/:id", safeHandler(async (req: any, res: any) => {
   });
 
   const messages = messagesResult.rows.map((m: any) => {
-    const roleStr = String(m.role ?? "").toLowerCase();
-    const direction =
-      roleStr === "user" ? "in" :
-      (roleStr === "staff" || roleStr === "ai") ? "out" :
-      "system";
+    const dir = String(m.direction ?? "").toLowerCase();
+    const direction = dir === "inbound" ? "in" : dir === "outbound" ? "out" : "system";
+    const ch = String(m.channel ?? session.channel ?? "").toLowerCase();
     return {
       id: m.id,
       conversationId: sessionId,
-      type: "chat",
+      type: ch === "sms" ? "sms" : "chat",
       direction,
-      message: m.content ?? "",
+      message: m.body ?? "",
       createdAt: m.created_at,
     };
   });
 
-  const status =
-    session.status === "live" ? "human" :
-    session.status === "closed" ? "closed" :
-    "ai";
-  const type = status === "human" ? "human" : "chat";
+  const channel = String(session.channel ?? "").toLowerCase();
+  const hasOutbound = messages.some((m: any) => m.direction === "out");
+  const type = channel === "sms" ? "sms" : (hasOutbound ? "human" : "chat");
+  const status = "human";
 
   return res.status(200).json({
     id: session.id,
@@ -625,15 +620,62 @@ router.get("/threads/:id", safeHandler(async (req: any, res: any) => {
     status,
     silo: session.contact_silo ?? silo,
     contactId: session.crm_contact_id ?? undefined,
-    contactName: session.contact_name ?? undefined,
+    contactName: session.contact_full_name ?? session.contact_name ?? undefined,
     contactEmail: session.contact_email ?? undefined,
     contactPhone: session.contact_phone ?? undefined,
-    assignedTo: session.assigned_to ?? undefined,
     message: messages.length ? messages[messages.length - 1].message : undefined,
     messages,
-    updatedAt: session.updated_at ?? session.created_at,
+    updatedAt: session.last_message_at ?? session.updated_at ?? session.created_at,
   });
 }));
+
+// BF_SERVER_BLOCK_v685_THREADS_REPLY_v1
+// POST /api/communications/threads/:id/messages — staff reply.
+// The portal (sendCommunication) posts here; previously no such
+// route existed, so Send 404'd. Writes an outbound row into
+// communications_messages and bumps the conversation preview, then
+// returns the CommunicationMessage shape the portal expects.
+router.post(
+  "/threads/:id/messages",
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  safeHandler(async (req: any, res: any) => {
+    const conversationId = String(req.params.id ?? "").trim();
+    if (!conversationId) return res.status(400).json({ error: "missing_conversation_id" });
+    const body = String(req.body?.body ?? req.body?.message ?? "").trim();
+    if (!body) return res.status(400).json({ error: "missing_body" });
+
+    const convo = await pool.query(
+      `SELECT id, channel, silo FROM communications_conversations WHERE id = $1 LIMIT 1`,
+      [conversationId],
+    );
+    if (!convo.rows[0]) return res.status(404).json({ error: "conversation_not_found" });
+    const channel = String(req.body?.channel ?? convo.rows[0].channel ?? "messenger").toLowerCase();
+
+    const inserted = await pool.query(
+      `INSERT INTO communications_messages (id, conversation_id, channel, direction, body, silo, created_at)
+       VALUES (gen_random_uuid(), $1, $2, 'outbound', $3, $4, NOW())
+       RETURNING id, conversation_id, channel, direction, body, created_at`,
+      [conversationId, channel, body, convo.rows[0].silo],
+    );
+
+    await pool.query(
+      `UPDATE communications_conversations
+         SET last_message_preview = $2, last_message_at = NOW(), updated_at = NOW()
+       WHERE id = $1`,
+      [conversationId, body.slice(0, 280)],
+    ).catch(() => undefined);
+
+    const row = inserted.rows[0];
+    return res.status(201).json({
+      id: row.id,
+      conversationId: row.conversation_id,
+      type: channel === "sms" ? "sms" : "chat",
+      direction: "out",
+      message: row.body ?? "",
+      createdAt: row.created_at,
+    });
+  }),
+);
 
 // BF_SERVER_BLOCK_BI_ROUND5_D_TIMELINE_v1
 // GET /api/communications/timeline?phone=<E.164>&limit=<n>
