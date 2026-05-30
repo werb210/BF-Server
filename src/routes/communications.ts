@@ -1101,21 +1101,47 @@ router.post(
     const { getSilo } = await import("../middleware/silo.js");
     const silo = String(getSilo(res) ?? (req as any).user?.silo ?? "BF").toUpperCase();
 
+    // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 — if this contact has a messenger
+    // thread (Talk-to-a-Human / Report-an-Issue), stamp its conversation_id on
+    // the outbound reply so the visitor widget's poll
+    // (/api/public/conversation/:id/messages, direction='outbound') receives it.
+    let replyConversationId: string | null = null;
+    if (resolvedContactId) {
+      const cc = await pool.query<{ id: string }>(
+        `SELECT id FROM communications_conversations
+          WHERE contact_id = $1 AND silo = $2 AND channel = 'messenger'
+          ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
+        [resolvedContactId, silo],
+      );
+      replyConversationId = cc.rows[0]?.id ?? null;
+    }
+
     const id = (await import("node:crypto")).randomUUID();
     await pool.query(
       `INSERT INTO communications_messages
-         (id, type, direction, status, application_id, contact_id, silo,
+         (id, type, direction, status, application_id, contact_id, conversation_id, silo,
           body, staff_name, cta_label, cta_action, attachments, created_at)
        VALUES (
          $1, 'message', 'outbound', 'sent',
          NULLIF($2, '')::uuid,
          NULLIF($3, '')::uuid,
+         $10::uuid,
          $4, $5, $6, $7, $8,
          CASE WHEN $9::text = '[]' THEN NULL ELSE $9::jsonb END,
          now()
        )`,
-      [id, applicationId, resolvedContactId ?? "", silo, body, staffName, ctaLabel, ctaAction, JSON.stringify(attachments)],
+      [id, applicationId, resolvedContactId ?? "", silo, body, staffName, ctaLabel, ctaAction, JSON.stringify(attachments), replyConversationId],
     );
+    // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 — bump the messenger thread preview
+    // so it reorders in the staff list and the visitor sees fresh activity.
+    if (replyConversationId) {
+      await pool.query(
+        `UPDATE communications_conversations
+            SET last_message_preview = $2, last_message_at = NOW(), updated_at = NOW()
+          WHERE id = $1`,
+        [replyConversationId, String(body || "").slice(0, 280)],
+      ).catch(() => undefined);
+    }
 
     // BF_SERVER_BLOCK_v636_MESSAGES_TAB_FIXES_v1: offline-fallback SMS.
     // Mini-portal bumps applications.last_portal_seen_at on every poll (~20s).
