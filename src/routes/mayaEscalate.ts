@@ -27,11 +27,22 @@ async function resolveContactId(opts: {
 }): Promise<string | null> {
   const phone = (opts.phone ?? "").trim() || null;
   const email = (opts.email ?? "").trim() || null;
+  // BF_SERVER_BLOCK_v687_CONTACT_MATCH_NORMALIZE_v1 — match on the last 10
+  // digits of the phone so "5878881837", "+15878881837" and "(587) 888-1837"
+  // all resolve to the SAME existing contact instead of spawning duplicates.
+  // This was the v686 identity-fragmentation bug (one person => 3 contacts).
+  const phoneDigits = phone ? phone.replace(/[^0-9]/g, "") : "";
+  const phoneLast10 = phoneDigits.length >= 10 ? phoneDigits.slice(-10) : phoneDigits;
   try {
-    if (phone) {
+    if (phoneLast10) {
       const r = await pool.query<{ id: string }>(
-        `SELECT id FROM contacts WHERE phone = $1 AND silo = $2 ORDER BY created_at ASC LIMIT 1`,
-        [phone, opts.silo],
+        `SELECT id FROM contacts
+          WHERE silo = $2
+            AND phone IS NOT NULL
+            AND length(regexp_replace(phone, '[^0-9]', '', 'g')) >= 10
+            AND right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = $1
+          ORDER BY created_at ASC LIMIT 1`,
+        [phoneLast10, opts.silo],
       );
       if (r.rows[0]) return r.rows[0].id;
     }
