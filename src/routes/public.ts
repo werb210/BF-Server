@@ -93,4 +93,58 @@ router.get(
 
 router.all("/lead", wrap(async (_req, res) => res.status(405).json(fail(res, "METHOD_NOT_ALLOWED"))));
 
+// BF_SERVER_BLOCK_v684_VISITOR_THREAD_v1
+// Public (UUID-as-token) read/post for the visitor side of the messenger.
+// After "Talk to a Human" the widget holds the conversation_id (unguessable
+// UUID). These let the anonymous visitor receive staff replies and post
+// follow-ups into the SAME communications_conversations thread the staff
+// inbox (v683) reads/writes — two-way without exposing other conversations.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+router.get(
+  "/conversation/:id/messages",
+  wrap(async (req, res) => {
+    const id = String(req.params.id ?? "");
+    if (!UUID_RE.test(id)) return res.status(400).json(fail(res, "INVALID_INPUT"));
+    const result = await dbQuery<{ id: string; direction: string; body: string; created_at: string }>(
+      `SELECT id, direction, body, created_at
+         FROM communications_messages
+        WHERE conversation_id = $1
+        ORDER BY created_at ASC
+        LIMIT 500`,
+      [id],
+    );
+    return res.status(200).json(ok({ messages: result.rows }));
+  }),
+);
+
+router.post(
+  "/conversation/:id/message",
+  wrap(async (req, res) => {
+    const id = String(req.params.id ?? "");
+    if (!UUID_RE.test(id)) return res.status(400).json(fail(res, "INVALID_INPUT"));
+    const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
+    if (!body) return res.status(400).json(fail(res, "INVALID_INPUT"));
+    const conv = await dbQuery<{ id: string }>(
+      `SELECT id FROM communications_conversations WHERE id = $1`,
+      [id],
+    );
+    if (!conv.rows?.[0]) return res.status(404).json(fail(res, "NOT_FOUND"));
+    const inserted = await dbQuery<{ id: string; direction: string; body: string; created_at: string }>(
+      `INSERT INTO communications_messages
+         (id, conversation_id, channel, direction, body, created_at)
+       VALUES (gen_random_uuid(), $1, 'messenger', 'inbound', $2, NOW())
+       RETURNING id, direction, body, created_at`,
+      [id, body],
+    );
+    await dbQuery(
+      `UPDATE communications_conversations
+          SET last_message_preview = $2, last_message_at = NOW(), unread = unread + 1, updated_at = NOW()
+        WHERE id = $1`,
+      [id, body.slice(0, 200)],
+    );
+    return res.status(201).json(ok({ message: inserted.rows[0] }));
+  }),
+);
+
 export default router;
