@@ -1213,11 +1213,15 @@ router.post(
       return res.status(400).json({ error: { code: "validation_error", message: "contactId required" } });
     }
     const cutoff = throughTs && !Number.isNaN(Date.parse(throughTs)) ? throughTs : new Date().toISOString();
+    // BF_SERVER_BLOCK_v689_MARK_READ_ALL_TYPES_v1 — clear read_at for EVERY
+    // inbound row for this contact, not just type='message'. SMS rows carry
+    // type='sms', so the old filter left them permanently unread — the unread
+    // count queries count all inbound regardless of type, so the nav badge and
+    // per-thread tags stayed stuck (the "16"/"1" that never cleared on open).
     const r = await pool.query(
       `UPDATE communications_messages
           SET read_at = NOW()
-        WHERE type = 'message'
-          AND direction = 'inbound'
+        WHERE direction = 'inbound'
           AND read_at IS NULL
           AND contact_id = NULLIF($1, '')::uuid
           AND created_at <= $2::timestamptz`,
