@@ -125,17 +125,23 @@ router.post(
     if (!UUID_RE.test(id)) return res.status(400).json(fail(res, "INVALID_INPUT"));
     const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
     if (!body) return res.status(400).json(fail(res, "INVALID_INPUT"));
-    const conv = await dbQuery<{ id: string }>(
-      `SELECT id FROM communications_conversations WHERE id = $1`,
+    const conv = await dbQuery<{ id: string; contact_id: string | null; silo: string | null; contact_phone: string | null }>(
+      `SELECT id, contact_id, silo, contact_phone FROM communications_conversations WHERE id = $1`,
       [id],
     );
     if (!conv.rows?.[0]) return res.status(404).json(fail(res, "NOT_FOUND"));
+    const convContactId = conv.rows[0].contact_id;
+    const convSilo = conv.rows[0].silo ?? "BF";
+    const convPhone = conv.rows[0].contact_phone;
+    // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 — carry contact_id + silo +
+    // type='message' so visitor follow-ups also surface in the staff Messages
+    // tab and the CRM timeline, not just the conversation_id poll.
     const inserted = await dbQuery<{ id: string; direction: string; body: string; created_at: string }>(
       `INSERT INTO communications_messages
-         (id, conversation_id, channel, direction, body, created_at)
-       VALUES (gen_random_uuid(), $1, 'messenger', 'inbound', $2, NOW())
+         (id, conversation_id, contact_id, channel, type, direction, body, silo, from_number, created_at)
+       VALUES (gen_random_uuid(), $1, $2, 'messenger', 'message', 'inbound', $3, $4, $5, NOW())
        RETURNING id, direction, body, created_at`,
-      [id, body],
+      [id, convContactId, body, convSilo, convPhone],
     );
     await dbQuery(
       `UPDATE communications_conversations

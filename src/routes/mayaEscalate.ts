@@ -7,8 +7,61 @@
 //                            the portal img tag renders data URLs natively.
 import { Router, Request, Response } from "express";
 import { pool } from "../db.js";
+import { createContact } from "../services/contacts.js";
 
 const router = Router();
+
+// BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1
+// Every Talk-to-a-Human / Report-an-Issue interaction must attach to a CRM
+// contact and land in the CRM timeline (compliance). Match an existing BF
+// contact by phone or email; otherwise create a minimal one (anonymous
+// visitors included). The contact_id is then stamped on the conversation and
+// every message so the staff Messages tab (keyed by contact_id+silo) shows the
+// thread and the CRM timeline (which UNIONs communications_messages WHERE
+// contact_id AND silo) logs it automatically.
+async function resolveContactId(opts: {
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  silo: string;
+}): Promise<string | null> {
+  const phone = (opts.phone ?? "").trim() || null;
+  const email = (opts.email ?? "").trim() || null;
+  try {
+    if (phone) {
+      const r = await pool.query<{ id: string }>(
+        `SELECT id FROM contacts WHERE phone = $1 AND silo = $2 ORDER BY created_at ASC LIMIT 1`,
+        [phone, opts.silo],
+      );
+      if (r.rows[0]) return r.rows[0].id;
+    }
+    if (email) {
+      const r = await pool.query<{ id: string }>(
+        `SELECT id FROM contacts WHERE lower(email) = lower($1) AND silo = $2 ORDER BY created_at ASC LIMIT 1`,
+        [email, opts.silo],
+      );
+      if (r.rows[0]) return r.rows[0].id;
+    }
+    const rawName = (opts.name ?? "").trim();
+    const parts = rawName ? rawName.split(/\s+/) : [];
+    const first_name = parts[0] || phone || email || "Website";
+    const last_name = parts.slice(1).join(" ") || (rawName ? "" : "Visitor");
+    const created = await createContact(pool, {
+      first_name,
+      last_name,
+      email,
+      phone,
+      role: "other",
+      is_primary_applicant: false,
+      silo: opts.silo,
+    });
+    return created.id;
+  } catch (err: unknown) {
+    const m = err instanceof Error ? err.message : String(err);
+    console.warn("[maya escalate] resolveContactId failed", m);
+    return null;
+  }
+}
 
 router.post("/maya/escalate", async (req: Request, res: Response) => {
   const b = req.body ?? {};
@@ -27,28 +80,30 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
 
       const phone = (typeof contact.phone === "string" ? contact.phone.trim() : "") || null;
       const email = (typeof contact.email === "string" ? contact.email.trim() : "") || null;
-      const contactName: string = phone || email || "Anonymous visitor";
+      const nameIn = typeof contact.name === "string" ? contact.name.trim() : null;
+      const contactName: string = nameIn || phone || email || "Anonymous visitor";
+
+      // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 — attach to a CRM contact first.
+      const contactId = await resolveContactId({ name: nameIn, email, phone, silo: "BF" });
 
       const conv = await pool.query<{ id: string }>(
         `INSERT INTO communications_conversations
-           (contact_name, contact_phone, channel, last_message_preview, last_message_at, unread, silo)
-         VALUES ($1, $2, 'messenger', $3, NOW(), 1, 'BF')
+           (contact_id, contact_name, contact_phone, channel, last_message_preview, last_message_at, unread, silo)
+         VALUES ($1, $2, $3, 'messenger', $4, NOW(), 1, 'BF')
          RETURNING id`,
-        [contactName, phone, message.slice(0, 200)]
+        [contactId, contactName, phone, message.slice(0, 200)]
       );
       const convId: string = conv.rows[0].id;
 
-      // BF_SERVER_BLOCK_v649_SHOWSTOPPER_PATCHES_v1 — communications_messages.id
-      // is a UUID PK with NO column default (created in migration 079). Every
-      // INSERT must supply it explicitly. This was the production 500 that
-      // bf-client's "Talk to a Human" surfaced as "Couldn't reach the team
-      // — please email hello@boreal.financial." Migration v648 also adds a
-      // gen_random_uuid() default so any other INSERT that forgets is covered.
+      // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 — stamp contact_id + silo +
+      // type='message' + conversation_id so the row shows in the staff Messages
+      // tab (type='message', contact_id) AND the CRM timeline (contact_id+silo),
+      // while staying on the conversation_id the visitor widget polls.
       await pool.query(
         `INSERT INTO communications_messages
-           (id, conversation_id, channel, direction, body, created_at)
-         VALUES (gen_random_uuid(), $1, 'messenger', 'inbound', $2, NOW())`,
-        [convId, message]
+           (id, conversation_id, contact_id, channel, type, direction, body, silo, from_number, created_at)
+         VALUES (gen_random_uuid(), $1, $2, 'messenger', 'message', 'inbound', $3, 'BF', $4, NOW())`,
+        [convId, contactId, message, phone]
       );
 
       // BF_SERVER_BLOCK_v222_MAYA_ESCALATE_STAFF_NOTIFY_v1
@@ -84,6 +139,32 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
     const description = String(b.description ?? "").trim();
     if (!description) return res.status(400).json({ error: "missing_description" });
 
+    // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 — issues must also attach to a CRM
+    // contact and be logged to the timeline. Resolve/create the contact, open a
+    // messenger conversation + inbound message (so it shows in the Messages tab
+    // and CRM timeline and staff can reply — /messages/send SMS-falls-back to
+    // the reporter when they're offline), then link the issue row to both.
+    const issuePhone = (typeof contact.phone === "string" ? contact.phone.trim() : "") || null;
+    const issueEmail = (typeof contact.email === "string" ? contact.email.trim() : "") || null;
+    const issueName = typeof contact.name === "string" ? contact.name.trim() : null;
+    const issueContactId = await resolveContactId({ name: issueName, email: issueEmail, phone: issuePhone, silo: "BF" });
+    const issueConvName = issueName || issuePhone || issueEmail || "Issue report";
+    const issuePreview = `[Issue] ${description}`.slice(0, 200);
+    const issueConv = await pool.query<{ id: string }>(
+      `INSERT INTO communications_conversations
+         (contact_id, contact_name, contact_phone, channel, last_message_preview, last_message_at, unread, silo)
+       VALUES ($1, $2, $3, 'messenger', $4, NOW(), 1, 'BF')
+       RETURNING id`,
+      [issueContactId, issueConvName, issuePhone, issuePreview]
+    );
+    const issueConvId = issueConv.rows[0].id;
+    await pool.query(
+      `INSERT INTO communications_messages
+         (id, conversation_id, contact_id, channel, type, direction, body, silo, from_number, created_at)
+       VALUES (gen_random_uuid(), $1, $2, 'messenger', 'message', 'inbound', $3, 'BF', $4, NOW())`,
+      [issueConvId, issueContactId, `[Issue] ${description}`, issuePhone]
+    );
+
     // BF_SERVER_BLOCK_v645_INBOX_AND_SCREENSHOT_v1 — accept three field-name
     // aliases so all current callers work without a wire-protocol break:
     //   - bfw FloatingChat (v149+) sends `screenshot`
@@ -104,15 +185,16 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
 
     const issue = await pool.query<{ id: string }>(
       `INSERT INTO issues
-         (source, kind, description, conversation_id, contact_email, contact_phone,
+         (source, kind, description, conversation_id, contact_id, contact_email, contact_phone,
           page_url, screenshot_url, silo)
-       VALUES ('maya_escalate', 'report_issue', $1, $2, $3, $4, $5, $6, 'BF')
+       VALUES ('maya_escalate', 'report_issue', $1, $2, $3, $4, $5, $6, $7, 'BF')
        RETURNING id`,
       [
         description,
-        conversationId,
-        (typeof contact.email === "string" ? contact.email : null) || null,
-        (typeof contact.phone === "string" ? contact.phone : null) || null,
+        issueConvId,
+        issueContactId,
+        issueEmail,
+        issuePhone,
         (typeof b.page_url === "string" ? b.page_url : null) || null,
         screenshotUrl,
       ]
