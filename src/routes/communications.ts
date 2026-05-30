@@ -1251,4 +1251,78 @@ router.get(
   }),
 );
 
+
+// BF_SERVER_BLOCK_v683_UNIFIED_INBOX_v1
+// Contact-list inbox + two-way thread on the CANONICAL store
+// (communications_conversations / communications_messages) — the tables that
+// actually hold conversation data. chat_sessions/chat_messages are empty/dead.
+// Surfaces EVERY channel incl. the "messenger" handoffs from website/client
+// "Talk to a Human", newest conversation first, and lets staff reply.
+
+router.get("/inbox", safeHandler(async (req: any, res: any) => {
+  const { getSilo } = await import("../middleware/silo.js");
+  const silo = getSilo(res);
+  const result = await pool.query(
+    `SELECT
+       cc.id, cc.channel, cc.contact_id,
+       COALESCE(c.name, cc.contact_name, cc.contact_phone, 'Unknown') AS display_name,
+       COALESCE(c.phone, cc.contact_phone) AS phone,
+       cc.last_message_preview, cc.last_message_at, cc.unread
+     FROM communications_conversations cc
+     LEFT JOIN contacts c ON c.id = cc.contact_id
+     WHERE cc.silo = $1
+     ORDER BY cc.last_message_at DESC NULLS LAST
+     LIMIT 1000`,
+    [silo],
+  );
+  res.json({ conversations: result.rows });
+}));
+
+router.get("/inbox/:id/messages", safeHandler(async (req: any, res: any) => {
+  const conversationId = String(req.params.id ?? "");
+  if (!conversationId) return res.status(400).json({ error: "conversation_id_required" });
+  const result = await pool.query(
+    `SELECT id, conversation_id, channel, direction, body, created_at
+       FROM communications_messages
+      WHERE conversation_id = $1
+      ORDER BY created_at ASC
+      LIMIT 2000`,
+    [conversationId],
+  );
+  res.json({ messages: result.rows });
+}));
+
+router.post(
+  "/inbox/:id/reply",
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  safeHandler(async (req: any, res: any) => {
+    const { getSilo } = await import("../middleware/silo.js");
+    const silo = getSilo(res);
+    const conversationId = String(req.params.id ?? "");
+    const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
+    if (!conversationId) return res.status(400).json({ error: "conversation_id_required" });
+    if (!body) return res.status(400).json({ error: "body_required" });
+    const conv = await pool.query(
+      `SELECT id, channel FROM communications_conversations WHERE id = $1 AND silo = $2`,
+      [conversationId, silo],
+    );
+    if (conv.rowCount === 0) return res.status(404).json({ error: "conversation_not_found" });
+    const channel = conv.rows[0].channel ?? "messenger";
+    const inserted = await pool.query(
+      `INSERT INTO communications_messages
+         (id, conversation_id, channel, direction, body, created_at)
+       VALUES (gen_random_uuid(), $1, $2, 'outbound', $3, NOW())
+       RETURNING id, conversation_id, channel, direction, body, created_at`,
+      [conversationId, channel, body],
+    );
+    await pool.query(
+      `UPDATE communications_conversations
+          SET last_message_preview = $2, last_message_at = NOW(), unread = 0, updated_at = NOW()
+        WHERE id = $1`,
+      [conversationId, body.slice(0, 200)],
+    );
+    res.status(201).json({ ok: true, message: inserted.rows[0] });
+  }),
+);
+
 export default router;
