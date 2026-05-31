@@ -7,7 +7,7 @@ import pg, {
   type QueryResultRow,
 } from "pg";
 import { logError, logInfo, logWarn } from "./observability/logger.js";
-import { markNotReady } from "./startupState.js";
+import { markNotReady, markReady, isReady } from "./startupState.js";
 
 const { Pool } = pg;
 
@@ -129,3 +129,30 @@ pool.on("error", (err: any) => {
   markNotReady("db_unavailable");
   logWarn("db_connection_error", { message: err.message });
 });
+
+// v701: self-heal DB readiness. dbGuard returns 503 for all requests when
+// !isReady(). A transient DB blip (Azure failover/maintenance) calls
+// markNotReady() via pool.on("error"), but markReady() was previously only
+// called once at startup — so the process stayed wedged in 503 until a manual
+// restart even after Postgres recovered. This probe reconciles readiness with
+// actual DB reachability every 10s, so the server recovers on its own.
+let dbRecoveryTimer: ReturnType<typeof setInterval> | null = null;
+function startDbReadinessProbe(): void {
+  if (dbRecoveryTimer) return;
+  dbRecoveryTimer = setInterval(() => {
+    void pool
+      .query("SELECT 1")
+      .then(() => {
+        if (!isReady()) {
+          markReady();
+          logInfo("db_recovered_marked_ready");
+        }
+      })
+      .catch((err: any) => {
+        markNotReady("db_unavailable");
+        logWarn("db_readiness_probe_failed", { message: err?.message });
+      });
+  }, 10000);
+  if (typeof (dbRecoveryTimer as any)?.unref === "function") (dbRecoveryTimer as any).unref();
+}
+startDbReadinessProbe();
