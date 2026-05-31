@@ -148,14 +148,34 @@ async function getDefaultTodoListId(graph: GraphClient): Promise<string | null> 
   return defaultList?.id ?? null;
 }
 
+// BF_SERVER_BLOCK_v685_CALENDAR_WINDOW_v1 — the calendar grid asks for a
+// specific visible range; honor ?start=&end= when present, otherwise default
+// to a window that STARTS IN THE PAST so events earlier today (created before
+// the current instant) still return. The previous startDateTime=now silently
+// dropped any event whose start was before "now" — which is exactly why a
+// freshly-created event vanished from the grid the moment it was saved.
+function calendarWindow(req: any): { start: string; end: string } {
+  const DAY = 24 * 3600 * 1000;
+  const parse = (v: unknown): Date | null => {
+    if (typeof v !== "string" || !v.trim()) return null;
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+  let start = parse(req?.query?.start) ?? new Date(Date.now() - 7 * DAY);
+  let end = parse(req?.query?.end) ?? new Date(Date.now() + 60 * DAY);
+  if (end.getTime() <= start.getTime()) end = new Date(start.getTime() + DAY);
+  const MAX_SPAN = 400 * DAY; // bound Graph load
+  if (end.getTime() - start.getTime() > MAX_SPAN) end = new Date(start.getTime() + MAX_SPAN);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
 // GET /api/calendar — summary
 router.get("/", safeHandler(async (req: any, res: any) => {
   const graph = await getGraphForUser(pool, req.user?.userId).catch(() => null);
   if (!graph) return res.status(200).json({ status: "ok", data: { items: [], connected: false } });
   try {
-    const now = new Date().toISOString();
-    const end = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
-    const data = await graphCall(graph, `/me/calendarView?startDateTime=${now}&endDateTime=${end}&$top=20&$orderby=start/dateTime`);
+    const { start, end } = calendarWindow(req); // BF_SERVER_BLOCK_v685_CALENDAR_WINDOW_v1
+    const data = await graphCall(graph, `/me/calendarView?startDateTime=${start}&endDateTime=${end}&$top=200&$orderby=start/dateTime`);
     const items = (data as any).value ?? [];
     res.status(200).json({ status: "ok", data: { items, connected: true } });
   } catch {
@@ -170,9 +190,8 @@ router.get("/events", safeHandler(async (req: any, res: any) => {
   const graph = await getGraphForUser(pool, req.user?.userId).catch(() => null);
   if (!graph) return res.status(200).json({ status: "ok", data: [] });
   try {
-    const now = new Date().toISOString();
-    const end = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
-    const data = await graphCall(graph, `/me/calendarView?startDateTime=${now}&endDateTime=${end}&$top=50&$orderby=start/dateTime`);
+    const { start, end } = calendarWindow(req); // BF_SERVER_BLOCK_v685_CALENDAR_WINDOW_v1
+    const data = await graphCall(graph, `/me/calendarView?startDateTime=${start}&endDateTime=${end}&$top=200&$orderby=start/dateTime`);
     const raw: any[] = Array.isArray((data as any)?.value) ? (data as any).value : [];
     res.status(200).json({ status: "ok", data: raw.map(normalizeGraphEvent) });
   } catch {
