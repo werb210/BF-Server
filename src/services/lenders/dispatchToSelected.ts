@@ -2,6 +2,7 @@
 // and record the result in application_packages.
 import type { Pool } from "pg";
 import { sendLenderEmail } from "../../modules/lenderSubmissions/adapters/EmailAdapter.js";
+import { resolveOwnerSignatureHtml } from "../email/resolveSignature.js"; // v693
 import { buildApplicationPackage } from "./buildApplicationPackage.js";
 import { loadPackageInputs } from "./loadPackageInputs.js"; // BF_SERVER_v76_BLOCK_1_9
 
@@ -73,11 +74,13 @@ export async function dispatchToSelected(
     let deliveredTo: string | null = null;
 
     if (method === "email") {
+      const __ownerSigHtml = await resolveOwnerSignatureHtml(ctx.pool, ctx.applicationId); // v693
       const r = await sendLenderEmail({
         lender: { id: l.lender_id, name: l.name, submission_email: l.submission_email },
         subject: `Application package — ${l.name}`,
         bodyText: `Application ${ctx.applicationId} package attached.`,
         attachments: [{ filename: `application-${ctx.applicationId}.zip`, contentType: "application/zip", content: pkg.zipBuffer }],
+        signatureHtml: __ownerSigHtml,
       });
       ok = r.ok;
       if (r.ok) deliveredTo = r.deliveredTo;

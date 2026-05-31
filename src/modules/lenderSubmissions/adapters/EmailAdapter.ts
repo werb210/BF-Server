@@ -12,12 +12,13 @@ type EmailSendInput = {
   bodyHtml?: string;
   attachments?: GraphAttachment[];
   cc?: string[];
+  signatureHtml?: string;
 };
 
 export async function sendLenderEmail(input: EmailSendInput) {
   const to = (input.lender.submission_email ?? "").trim();
   if (!to) return { ok: false as const, provider: "graph" as const, error: `lender ${input.lender.id} has no submission_email configured` };
-  const result = await sendViaGraph({ to, cc: input.cc, subject: input.subject, bodyText: input.bodyText, bodyHtml: input.bodyHtml, attachments: input.attachments });
+  const result = await sendViaGraph({ to, cc: input.cc, subject: input.subject, bodyText: input.bodyText, bodyHtml: input.bodyHtml, attachments: input.attachments, signatureHtml: input.signatureHtml });
   return result.ok
     ? { ok: true as const, provider: "graph" as const, deliveredTo: to }
     : { ok: false as const, provider: "graph" as const, error: result.error };
