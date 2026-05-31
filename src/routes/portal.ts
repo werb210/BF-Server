@@ -593,54 +593,69 @@ router.delete(
       res.status(404).json({ code: "not_found", message: "Application not found." });
       return;
     }
-    // BF_SERVER_BLOCK_v189_DELETE_DRAFT_CASCADE_v1
-    // Production schema has FKs from many tables to applications.id without
-    // ON DELETE CASCADE (only the 087 job_tables migration declares CASCADE).
-    // Plain DELETE FROM applications fails with 23503 foreign_key_violation
-    // and PipelinePage shows "Delete failed. Please try again." Wrap the
-    // delete in a transaction that first removes rows from every table that
-    // carries application_id. Each child delete is wrapped in its own
-    // savepoint so a missing table (undefined_table 42P01) is non-fatal —
-    // we just skip it and continue. This keeps the route forward-compatible
-    // with environments where some of these tables don't exist yet.
-    const childTables = [
-      "application_contacts",
-      "application_lender_selections",
-      "application_packages",
-      "application_tasks",
-      "application_notes",
-      "documents",
-      "document_requirements",
-      "credit_summaries",
-      "banking_analyses",
-      "banking_monthly_summaries",
-      "banking_transactions",
-      "communications_messages",
-      "crm_notes",
-      "readiness_application_mappings",
-    ];
+    // BF_SERVER_BLOCK_v691_DELETE_FK_DISCOVERY_v1
+    // The hand-maintained childTables list (v189) kept missing tables that
+    // carry an FK to applications without ON DELETE CASCADE (call_logs,
+    // crm_timeline_events, issues, notifications, parent_application_id, ...),
+    // so the final DELETE still hit a 23503 foreign_key_violation and the
+    // pipeline card refused to delete (409). Read every referencing FK straight
+    // from the catalog and clear the child rows first. A multi-pass loop deletes
+    // leaf children before their parents (so a grandchild FK without cascade
+    // doesn't block), each delete in its own savepoint so a missing table
+    // (42P01) is skipped. Catalog-sourced identifiers => no injection risk.
+    const fkRows = await pool.query<{ child_table: string; child_column: string }>(
+      `SELECT con.conrelid::regclass::text AS child_table,
+              att.attname                  AS child_column
+         FROM pg_constraint con
+         JOIN pg_attribute att
+           ON att.attrelid = con.conrelid
+          AND att.attnum = ANY(con.conkey)
+        WHERE con.contype = 'f'
+          AND con.confrelid = 'applications'::regclass`
+    );
     const client = await pool.connect();
     let rowCount = 0;
     try {
       await client.query("BEGIN");
-      for (const tbl of childTables) {
-        try {
-          await client.query("SAVEPOINT s");
-          await client.query(
-            `DELETE FROM ${tbl} WHERE application_id::text = ($1)::text`,
-            [applicationId]
-          );
-          await client.query("RELEASE SAVEPOINT s");
-        } catch (e: any) {
-          // 42P01 = undefined_table; skip silently. Anything else, let the
-          // transaction abort and the catch below 500.
-          if (e?.code === "42P01") {
+      // Null any self-referential parent pointer so child apps don't block.
+      try {
+        await client.query("SAVEPOINT sp");
+        await client.query(
+          `UPDATE applications SET parent_application_id = NULL WHERE parent_application_id::text = ($1)::text`,
+          [applicationId]
+        );
+        await client.query("RELEASE SAVEPOINT sp");
+      } catch (e: any) {
+        await client.query("ROLLBACK TO SAVEPOINT sp");
+        await client.query("RELEASE SAVEPOINT sp");
+        if (e?.code !== "42P01" && e?.code !== "42703") throw e;
+      }
+      let pending = fkRows.rows.filter((r) => r.child_table !== "applications");
+      for (let pass = 0; pass < 5 && pending.length > 0; pass++) {
+        const stillBlocked: { child_table: string; child_column: string }[] = [];
+        for (const { child_table, child_column } of pending) {
+          try {
+            await client.query("SAVEPOINT s");
+            await client.query(
+              `DELETE FROM ${child_table} WHERE ${child_column}::text = ($1)::text`,
+              [applicationId]
+            );
+            await client.query("RELEASE SAVEPOINT s");
+          } catch (e: any) {
             await client.query("ROLLBACK TO SAVEPOINT s");
             await client.query("RELEASE SAVEPOINT s");
-          } else {
-            throw e;
+            if (e?.code === "42P01") {
+              // missing table — drop from the queue
+            } else if (e?.code === "23503") {
+              // a grandchild still references this row — retry next pass
+              stillBlocked.push({ child_table, child_column });
+            } else {
+              throw e;
+            }
           }
         }
+        if (stillBlocked.length === pending.length) break; // no progress
+        pending = stillBlocked;
       }
       const r = await client.query(
         `DELETE FROM applications WHERE id::text = ($1)::text`,
