@@ -58,8 +58,8 @@ export async function matchLenders(input: PrequalInput): Promise<LenderMatch[]> 
             lp.category::text           as product_category,
             lp.country                  as country,
             lp.active                   as active,
-            min(lpr.min_amount)         as min_amount,
-            max(lpr.max_amount)         as max_amount,
+            coalesce(lp.min_amount, lp.amount_min)  as min_amount,
+            coalesce(lp.max_amount, lp.amount_max)  as max_amount,
             l.submission_method         as submission_method
        from lender_products lp
        join lenders          l   on l.id = lp.lender_id
