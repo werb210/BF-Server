@@ -76,7 +76,7 @@ export async function runBankingAnalysis(
 
   const docsRes = await pool.query<{ id: string; storage_key: string | null; file_name: string | null; }>(
     `SELECT d.id,
-            (SELECT (dv.metadata->>'storageKey') FROM document_versions dv
+            (SELECT COALESCE(dv.blob_name, dv.metadata->>'storageKey') /* BF_SERVER_BLOCK_v687_BANKING_STORAGE_KEY_v1 */ FROM document_versions dv
               WHERE dv.document_id = d.id ORDER BY dv.version DESC LIMIT 1) AS storage_key,
             (SELECT (dv.metadata->>'fileName') FROM document_versions dv
               WHERE dv.document_id = d.id ORDER BY dv.version DESC LIMIT 1) AS file_name
