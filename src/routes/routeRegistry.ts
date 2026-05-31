@@ -39,6 +39,8 @@ import messagesRoutes from "./messages.js";
 import reportingRoutes from "./reporting.js";
 import reportsRoutes from "./reports.js";
 import settingsRoutes from "./settings.js";
+import collateralRoutes from "./collateral.js"; // v693
+import templatesRoutes from "./templates.js"; // v693
 import staffRoutes from "./staff.js";
 import supportRoutes from "./support.js";
 import tasksRoutes from "./tasks.js";
@@ -223,6 +225,8 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/", router: rootRoutes },
   { path: "/slf", router: slfRoutes },
   { path: "/applications", router: applicationsRoutes },
+  { path: "/collateral", router: collateralRoutes }, // v693
+  { path: "/templates", router: templatesRoutes }, // v693
 ];
 
 export const PORTAL_ROUTE_REQUIREMENTS: Pick<ApiRoute, "method" | "path">[] = [

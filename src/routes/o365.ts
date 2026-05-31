@@ -3,6 +3,8 @@ import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { pool } from "../db.js";
 import { getGraphForUser } from "../modules/o365/graphClient.js";
+import { getStorage } from "../lib/storage/index.js"; // v693
+import { resolveSiloFromRequest } from "../middleware/silo.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -28,7 +30,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
       body_html: m.body?.contentType === "HTML" ? (m.body?.content ?? "") : (m.body?.content ?? ""),
     };
   }
-  const { from, to = [], cc = [], bcc = [], subject = "", body_html = "", attachments = [] } = raw;
+  const { from, to = [], cc = [], bcc = [], subject = "", body_html = "", attachments = [], collateralIds = [] } = raw;
   if (!Array.isArray(to) || !to.length) return res.status(400).json({ error: "to required" });
 
   // v635_signature + v663 fix: only stamp the individual's personal signature
@@ -51,7 +53,6 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
       // staff temporarily in the BI silo can still send-as the
       // BI-scoped shared mailboxes seeded under silo='BI' in
       // shared_mailbox_settings (info@/submissions@ for BI).
-      const { resolveSiloFromRequest } = await import("../middleware/silo.js");
       const silo = resolveSiloFromRequest(req);
       const { rows } = await pool.query(
         `SELECT 1 FROM shared_mailbox_settings
@@ -92,6 +93,25 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
       contentBytes: a.contentBytes,
     }));
 
+  // v693: attach collateral-library PDFs by id (server-fetched from blob storage).
+  const collateralAttachments: any[] = [];
+  if (Array.isArray(collateralIds) && collateralIds.length) {
+    try {
+      const silo = resolveSiloFromRequest(req);
+      const store = getStorage();
+      const cr = await pool.query(
+        `SELECT id, name, content_type, blob_name FROM collateral_assets WHERE id = ANY($1::uuid[]) AND silo = $2`,
+        [collateralIds.map(String).slice(0, 10), silo]
+      );
+      for (const row of cr.rows) {
+        const obj = await store.get(row.blob_name);
+        if (!obj) continue;
+        collateralAttachments.push({ "@odata.type": "#microsoft.graph.fileAttachment", name: row.name, contentType: row.content_type || "application/pdf", contentBytes: obj.buffer.toString("base64") });
+      }
+    } catch { /* collateral fetch is best-effort — never block the send */ }
+  }
+  const allAttachments = [...graphAttachments, ...collateralAttachments];
+
   const send = await graph.fetch(endpoint, {
     method: "POST",
     body: JSON.stringify({
@@ -101,7 +121,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
         toRecipients: to.map((a: string) => ({ emailAddress: { address: a } })),
         ccRecipients: cc.map((a: string) => ({ emailAddress: { address: a } })),
         bccRecipients: bcc.map((a: string) => ({ emailAddress: { address: a } })),
-        ...(graphAttachments.length ? { attachments: graphAttachments } : {}),
+        ...(allAttachments.length ? { attachments: allAttachments } : {}),
         ...(from ? { from: { emailAddress: { address: from } } } : {}),
       },
       saveToSentItems: true,
@@ -133,6 +153,27 @@ router.put("/me/signature", safeHandler(async (req: any, res: any) => {
     [userId, html]
   );
   res.json({ ok: true });
+}));
+
+// v693: per-user booking/meeting link (used by template meeting button).
+router.get("/me/booking-url", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const r = await pool.query<{ booking_url: string | null }>(
+    `SELECT booking_url FROM user_settings WHERE user_id = $1 LIMIT 1`, [userId]
+  ).catch(() => ({ rows: [] as any[] }));
+  res.json({ bookingUrl: r.rows[0]?.booking_url ?? "" });
+}));
+router.put("/me/booking-url", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const url = String(req.body?.bookingUrl ?? "").slice(0, 1000);
+  await pool.query(
+    `INSERT INTO user_settings (user_id, booking_url, updated_at) VALUES ($1, $2, now())
+     ON CONFLICT (user_id) DO UPDATE SET booking_url = EXCLUDED.booking_url, updated_at = now()`,
+    [userId, url]
+  );
+  res.json({ ok: true, bookingUrl: url });
 }));
 
 export default router;
