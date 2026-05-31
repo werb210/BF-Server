@@ -218,4 +218,26 @@ router.get("/banking-diagnostic", requireAdmin, async (_req: any, res: any, next
   }
 });
 
+// BF_SERVER_BLOCK_v687_BANKING_STORAGE_KEY_v1 — one-shot requeue: re-run every
+// banking analysis that produced no transactions (all were empty due to the
+// storage-key bug) and clear auto-skip so the worker reprocesses them on the
+// fixed code. Apps with no banking_analyses row are picked up automatically.
+router.post("/banking-requeue", requireAdmin, async (_req: any, res: any, next: any) => {
+  try {
+    const requeued = (await pool.query(
+      `UPDATE banking_analyses ba
+          SET status='pending', attempt_count=0, next_attempt_at=NOW(), last_error=NULL, updated_at=NOW()
+        WHERE NOT EXISTS (SELECT 1 FROM banking_transactions t WHERE t.application_id = ba.application_id)
+        RETURNING application_id`)).rowCount ?? 0;
+    const skipsCleared = (await pool.query(
+      `UPDATE applications
+          SET metadata = COALESCE(metadata,'{}'::jsonb) - 'banking_auto_skip'
+        WHERE COALESCE((metadata->>'banking_auto_skip')::boolean,false) IS TRUE
+        RETURNING id`)).rowCount ?? 0;
+    res.status(200).json({ ok: true, requeued, skipsCleared });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
