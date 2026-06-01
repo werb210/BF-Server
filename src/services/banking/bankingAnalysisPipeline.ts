@@ -114,6 +114,7 @@ interface BankingDocumentStatus {
   model_used: "prebuilt-layout" | "prebuilt-bankStatement.us";
   detected_type: string | null;
   transaction_count: number;
+  usable_count: number; // BF_SERVER_BLOCK_v691 — count that survives the date+amount filter
   fallback_used: boolean;
   pages: number;
   error?: string;
@@ -247,12 +248,17 @@ export async function runBankingAnalysis(
     }
 
     if (!finalResult) {
-      documentStatuses.push({ document_id: doc.documentId, filename: doc.fileName, model_used: finalModel, detected_type: detectedType, transaction_count: 0, fallback_used: fallbackUsed, pages: 0, error: docError ?? "OCR parsing failed for all models" });
+      documentStatuses.push({ document_id: doc.documentId, filename: doc.fileName, model_used: finalModel, detected_type: detectedType, transaction_count: 0, usable_count: 0, fallback_used: fallbackUsed, pages: 0, error: docError ?? "OCR parsing failed for all models" });
       continue;
     }
     // BF_SERVER_BLOCK_v690_BANKING_LLM_FALLBACK_v1 — Doc-Intel parsers found no
-    // transactions; try the LLM over the OCR text before giving up on this doc.
-    if (transactions.length === 0 && openai) {
+    // usable transactions; try the LLM over the OCR text before giving up.
+    // BF_SERVER_BLOCK_v691_BANKING_USABLE_FALLBACK_v1 — trigger on transactions that
+    // SURVIVE the date+amount filter, not the raw count. The layout extractor returns
+    // rows that get counted but whose date does not parse, so they were dropped at
+    // aggregation and the fallback never fired.
+    const usableCount = transactions.filter((tx) => tx.date && Number.isFinite(tx.amount)).length;
+    if (usableCount === 0 && openai) {
       const ocrText = ocrTextFromResult(finalResult);
       if (ocrText.trim().length > 0) {
         const llmTx = await extractTransactionsWithLLM(ocrText).catch((e) => {
@@ -269,7 +275,8 @@ export async function runBankingAnalysis(
     if (fallbackUsed && transactions.length === 0) {
       docError = NON_BANK_STATEMENT_MESSAGE;
     }
-    documentStatuses.push({ document_id: doc.documentId, filename: doc.fileName, model_used: finalModel, detected_type: detectedType, transaction_count: transactions.length, fallback_used: fallbackUsed, pages: Number(finalResult?.pages?.length ?? 0), ...(docError ? { error: docError } : {}) });
+    const finalUsable = transactions.filter((tx) => tx.date && Number.isFinite(tx.amount)).length; // BF_SERVER_BLOCK_v691_BANKING_USABLE_FALLBACK_v1
+    documentStatuses.push({ document_id: doc.documentId, filename: doc.fileName, model_used: finalModel, detected_type: detectedType, transaction_count: transactions.length, usable_count: finalUsable, fallback_used: fallbackUsed, pages: Number(finalResult?.pages?.length ?? 0), ...(docError ? { error: docError } : {}) });
     for (const tx of transactions) if (tx.date && Number.isFinite(tx.amount)) allTransactions.push({ ...tx, document_id: doc.documentId });
   }
 
