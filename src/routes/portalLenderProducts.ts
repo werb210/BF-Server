@@ -377,6 +377,13 @@ router.put(
     try {
       product = await updateLenderProduct({
         id,
+        // BF_SERVER_BLOCK_v692_LENDER_PRODUCT_REASSIGN_v1 — honor lender reassignment.
+        lenderId:
+          typeof body.lenderId === "string" && body.lenderId.trim()
+            ? body.lenderId.trim()
+            : typeof body.lender_id === "string" && body.lender_id.trim()
+              ? body.lender_id.trim()
+              : undefined,
         name,
         requiredDocuments: (() => {
         // BF_SERVER_BLOCK_v130_REQUIRED_DOCS_FORM_GUARD_v1
