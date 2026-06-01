@@ -6,6 +6,16 @@ import { getGraphForUser } from "../modules/o365/graphClient.js";
 import { getStorage } from "../lib/storage/index.js"; // v693
 import { resolveSiloFromRequest } from "../middleware/silo.js";
 
+// BF_SERVER_BLOCK_v705_INBOX_MERGE_TOKENS_v1 — shared merge-token renderer.
+// Replaces {{token}} occurrences with values from ctx; unrecognized tokens -> ""
+// so a literal {{first_name}} can never reach a recipient.
+function renderMergeTokens(template: string, ctx: Record<string, string>): string {
+  return String(template ?? "").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_m: string, key: string) => {
+    const v = ctx[key];
+    return v != null ? String(v) : "";
+  });
+}
+
 const router = Router();
 router.use(requireAuth);
 
@@ -33,11 +43,38 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   const { from, to = [], cc = [], bcc = [], subject = "", body_html = "", attachments = [], collateralIds = [] } = raw;
   if (!Array.isArray(to) || !to.length) return res.status(400).json({ error: "to required" });
 
+  // BF_SERVER_BLOCK_v705_INBOX_MERGE_TOKENS_v1 — substitute {{first_name}} (and
+  // other tokens) BEFORE sending, so message_templates authored with merge
+  // fields never reach the client raw. Recipient name is resolved from the
+  // contacts table by the primary recipient email (silo-scoped). first_name
+  // falls back to "there" so we never emit a bare leading comma.
+  const mergeCtx: Record<string, string> = { first_name: "there", last_name: "", full_name: "", name: "", email: String(to[0] ?? "") };
+  try {
+    const mergeSilo = resolveSiloFromRequest(req);
+    const cr = await pool.query<{ first_name: string | null; last_name: string | null; name: string | null; email: string | null }>(
+      `SELECT first_name, last_name, name, email FROM contacts
+        WHERE lower(email) = lower($1) AND silo = $2
+        ORDER BY updated_at DESC LIMIT 1`,
+      [String(to[0] ?? ""), mergeSilo]
+    );
+    const crow = cr.rows[0];
+    if (crow) {
+      const fn = (crow.first_name ?? "").trim() || (crow.name ?? "").trim().split(/\s+/)[0] || "";
+      if (fn) mergeCtx.first_name = fn;
+      mergeCtx.last_name = (crow.last_name ?? "").trim();
+      mergeCtx.name = (crow.name ?? "").trim();
+      mergeCtx.full_name = (crow.name ?? "").trim() || `${fn} ${(crow.last_name ?? "").trim()}`.trim();
+      if (crow.email) mergeCtx.email = crow.email;
+    }
+  } catch { /* contact lookup is best-effort — fall back to "there" */ }
+  const mergedSubject = renderMergeTokens(subject, mergeCtx);
+  const mergedBody = renderMergeTokens(body_html ?? "", mergeCtx);
+
   // v635_signature + v663 fix: only stamp the individual's personal signature
   // on a personal send. Never apply it to a shared/team mailbox send
   // (submissions@, info@). Signature is applied below, after the from-address
   // is resolved.
-  let bodyWithSig = body_html ?? "";
+  let bodyWithSig = mergedBody;
   let sendingAsSelf = true;
 
   let endpoint = "/me/sendMail";
@@ -116,7 +153,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
     method: "POST",
     body: JSON.stringify({
       message: {
-        subject,
+        subject: mergedSubject,
         body: { contentType: "HTML", content: bodyWithSig },
         toRecipients: to.map((a: string) => ({ emailAddress: { address: a } })),
         ccRecipients: cc.map((a: string) => ({ emailAddress: { address: a } })),
