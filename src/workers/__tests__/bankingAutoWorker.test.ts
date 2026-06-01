@@ -14,9 +14,9 @@ describe("BF_SERVER_BLOCK_1_30B_BANKING_WORKER_TRIGGER — worker contract", () 
     expect(src).toContain("from \"../services/banking/bankingAnalysisPipeline.js\"");
   });
 
-  it("uses the shared storage backend for fetchBuffer", () => {
-    expect(src).toContain("getStorage()");
-    expect(src).toContain("from \"../lib/storage/index.js\"");
+  it("resolves fetchBuffer via the OCR storage resolver (BF_SERVER_BLOCK_v688_BANKING_STORAGE_REF_v1)", () => {
+    expect(src).toContain("createOcrStorage().fetchBuffer");
+    expect(src).toContain("from \"../modules/ocr/ocr.storage.js\"");
   });
 
   it("gates on banking_analyses status to avoid re-runs", () => {

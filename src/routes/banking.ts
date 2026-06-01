@@ -4,7 +4,7 @@ import { AppError } from "../middleware/errors.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 // BF_SERVER_BLOCK_55_GATE_AND_BANKING_TRIGGER_v1 — manual banking-analysis trigger.
 import { runBankingAnalysis } from "../services/banking/bankingAnalysisPipeline.js";
-import { getStorage } from "../lib/storage/index.js";
+import { createOcrStorage } from "../modules/ocr/ocr.storage.js"; // BF_SERVER_BLOCK_v688_BANKING_STORAGE_REF_v1
 import { pool as bankingPool } from "../db.js";
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
@@ -39,10 +39,8 @@ router.post(
     const n = Number(ocrCount.rows[0]?.n ?? "0");
     if (n === 0) return res.status(409).json({ error: "no_ocr_complete_documents" });
 
-    async function fetchBuffer(storageKey: string): Promise<Buffer> {
-      const got = await getStorage().get(storageKey);
-      if (!got) throw new Error(`storage_object_missing:${storageKey}`);
-      return got.buffer;
+    async function fetchBuffer(storageRef: string): Promise<Buffer> {
+      return createOcrStorage().fetchBuffer({ content: storageRef }); // BF_SERVER_BLOCK_v688_BANKING_STORAGE_REF_v1
     }
 
     try {

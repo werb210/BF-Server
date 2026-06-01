@@ -5,16 +5,16 @@
 import type { Pool } from "pg";
 import { eventBus } from "../events/eventBus.js";
 import { runBankingAnalysis } from "../services/banking/bankingAnalysisPipeline.js";
-import { getStorage } from "../lib/storage/index.js";
+import { createOcrStorage } from "../modules/ocr/ocr.storage.js"; // BF_SERVER_BLOCK_v688_BANKING_STORAGE_REF_v1
 
 const POLL_MS = Number(process.env.BANKING_AUTO_POLL_MS || 15000);
 const BATCH = Math.max(1, Number(process.env.BANKING_AUTO_BATCH || 3));
 
-async function fetchBuffer(storageKey: string): Promise<Buffer> {
-  const storage = getStorage();
-  const got = await storage.get(storageKey);
-  if (!got) throw new Error(`storage_object_missing:${storageKey}`);
-  return got.buffer;
+async function fetchBuffer(storageRef: string): Promise<Buffer> {
+  // BF_SERVER_BLOCK_v688_BANKING_STORAGE_REF_v1 — resolve via the same path OCR
+  // uses (content URL / azure:// / data: / base64). document_versions.blob_name
+  // is null for many docs; only `content` is reliable.
+  return createOcrStorage().fetchBuffer({ content: storageRef });
 }
 
 export function startBankingAutoWorker(pool: Pool): { stop: () => void } {
