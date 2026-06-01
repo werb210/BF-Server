@@ -172,6 +172,13 @@ router.get("/banking-diagnostic", requireAdmin, async (_req: any, res: any, next
       endpointSet: Boolean(process.env.AZURE_DOC_INTEL_ENDPOINT),
       keySet: Boolean(process.env.AZURE_DOC_INTEL_KEY),
     };
+    // BF_SERVER_BLOCK_v690_BANKING_LLM_FALLBACK_v1 — does THIS service have an
+    // OpenAI key? The banking text-fallback needs it; Maya's key lives on a
+    // different service, so BF-Server may not have one.
+    const openai = {
+      keySet: Boolean(process.env.OPENAI_API_KEY),
+      model: process.env.BANKING_LLM_MODEL || "gpt-5.4-mini",
+    };
     const bankDocsByOcrStatus = (await pool.query(
       `SELECT COALESCE(ocr_status,'(null)') AS ocr_status, COUNT(*)::int AS bank_docs
          FROM documents
@@ -207,6 +214,7 @@ router.get("/banking-diagnostic", requireAdmin, async (_req: any, res: any, next
     res.status(200).json({
       ok: true,
       azureDocIntel,
+      openai,
       bankDocsByOcrStatus,
       analysisStatusSpread,
       topLastErrors,
