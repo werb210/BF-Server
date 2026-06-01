@@ -413,6 +413,7 @@ export async function fetchLenderProductById(
 
 export async function updateLenderProduct(params: {
   id: string;
+  lenderId?: string | null;
   name: string;
   requiredDocuments: RequiredDocuments;
   active?: boolean;
@@ -479,6 +480,11 @@ export async function updateLenderProduct(params: {
       cast: "::jsonb",
     },
   ];
+  // BF_SERVER_BLOCK_v692_LENDER_PRODUCT_REASSIGN_v1 — allow moving a product to a
+  // different lender. The PUT route previously dropped lenderId so reassignment no-opped.
+  if (existing.has("lender_id") && typeof params.lenderId === "string" && params.lenderId.trim()) {
+    updates.push({ name: "lender_id", value: params.lenderId.trim(), cast: "::uuid" });
+  }
   if (existing.has("active") && params.active !== undefined) {
     updates.push({ name: "active", value: params.active });
   }
