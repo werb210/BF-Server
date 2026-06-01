@@ -13,6 +13,69 @@ const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
 
+// BF_SERVER_BLOCK_v690_BANKING_LLM_FALLBACK_v1 — when Doc-Intel's table /
+// bankStatement extractors return nothing (common on real statements that are
+// not laid out as clean ruled tables), extract transactions from the OCR TEXT
+// with the LLM. Layout OCR already produced the text; only the table-structure
+// parsing failed, so this recovers transactions without depending on layout.
+function ocrTextFromResult(result: any): string {
+  if (typeof result?.content === "string" && result.content.trim()) return result.content;
+  const lines: string[] = (result?.pages ?? []).flatMap((p: any) =>
+    (p?.lines ?? []).map((l: any) => String(l?.content ?? "")),
+  );
+  return lines.join("\n");
+}
+
+export function parseLlmTransactions(raw: string): BankTransaction[] {
+  let parsed: any;
+  try { parsed = JSON.parse(raw); } catch { return []; }
+  const arr = Array.isArray(parsed?.transactions) ? parsed.transactions : [];
+  const out: BankTransaction[] = [];
+  for (const t of arr) {
+    const dateRaw = typeof t?.date === "string" ? t.date : "";
+    const date = /^\d{4}-\d{2}-\d{2}/.test(dateRaw) ? dateRaw.slice(0, 10) : null;
+    const description = typeof t?.description === "string" ? t.description : null;
+    let amount: number | undefined;
+    if (typeof t?.amount === "number" && Number.isFinite(t.amount)) amount = t.amount;
+    else if (typeof t?.amount === "string") {
+      const n = Number(t.amount.replace(/[,$\s]/g, ""));
+      if (Number.isFinite(n)) amount = n;
+    }
+    let balance: number | null = null;
+    if (typeof t?.balance === "number" && Number.isFinite(t.balance)) balance = t.balance;
+    else if (typeof t?.balance === "string") {
+      const n = Number(t.balance.replace(/[,$\s]/g, ""));
+      if (Number.isFinite(n)) balance = n;
+    }
+    if (!date || amount === undefined) continue; // pipeline requires date + finite amount
+    const tx: BankTransaction = { date, description };
+    tx.amount = amount;
+    if (balance !== null) tx.balance = balance;
+    out.push(tx);
+  }
+  return out;
+}
+
+async function extractTransactionsWithLLM(text: string): Promise<BankTransaction[]> {
+  if (!openai) return [];
+  const MAX = 60000;
+  const body = text.length > MAX ? text.slice(0, MAX) : text;
+  const prompt = [
+    "Extract every dated transaction from this business bank statement text.",
+    'Return ONLY JSON: {"transactions":[{"date":"YYYY-MM-DD","description":"...","amount":<signed number; deposits/credits positive, withdrawals/debits negative>,"balance":<number or null>}]}.',
+    'Rules: amount is a plain number (no currency symbols or thousands separators). Exclude non-transaction rows such as opening/closing balance summaries, totals, and column headers. If there are no transactions, return {"transactions":[]}.',
+    "Statement text:",
+    body,
+  ].join("\n");
+  const resp = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [{ role: "user", content: prompt }],
+  });
+  return parseLlmTransactions(resp.choices?.[0]?.message?.content ?? "");
+}
+
 type Country = "US" | "CA" | "OTHER";
 
 // BF_SERVER_BLOCK_v101_BANKING_CLASSIFIER_MSG_v1
@@ -184,6 +247,22 @@ export async function runBankingAnalysis(
     if (!finalResult) {
       documentStatuses.push({ document_id: doc.documentId, filename: doc.fileName, model_used: finalModel, detected_type: detectedType, transaction_count: 0, fallback_used: fallbackUsed, pages: 0, error: docError ?? "OCR parsing failed for all models" });
       continue;
+    }
+    // BF_SERVER_BLOCK_v690_BANKING_LLM_FALLBACK_v1 — Doc-Intel parsers found no
+    // transactions; try the LLM over the OCR text before giving up on this doc.
+    if (transactions.length === 0 && openai) {
+      const ocrText = ocrTextFromResult(finalResult);
+      if (ocrText.trim().length > 0) {
+        const llmTx = await extractTransactionsWithLLM(ocrText).catch((e) => {
+          logError("banking_llm_fallback_failed", { applicationId, documentId: doc.documentId, error: e instanceof Error ? e.message : String(e) });
+          return [] as BankTransaction[];
+        });
+        if (llmTx.length > 0) {
+          transactions = llmTx;
+          docError = null;
+          logInfo("banking_llm_fallback_used", { applicationId, documentId: doc.documentId, count: llmTx.length });
+        }
+      }
     }
     if (fallbackUsed && transactions.length === 0) {
       docError = NON_BANK_STATEMENT_MESSAGE;
