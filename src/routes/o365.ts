@@ -76,6 +76,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   // is resolved.
   let bodyWithSig = mergedBody;
   let sendingAsSelf = true;
+  let sharedSig: string | null = null; // BF_SERVER_BLOCK_v731 — per-mailbox team signature
 
   let endpoint = "/me/sendMail";
   if (from) {
@@ -91,12 +92,14 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
       // BI-scoped shared mailboxes seeded under silo='BI' in
       // shared_mailbox_settings (info@/submissions@ for BI).
       const silo = resolveSiloFromRequest(req);
-      const { rows } = await pool.query(
-        `SELECT 1 FROM shared_mailbox_settings
+      const { rows } = await pool.query<{ signature_html: string | null }>(
+        `SELECT signature_html FROM shared_mailbox_settings
          WHERE LOWER(address)=LOWER($1) AND silo = $2 AND $3 = ANY(allowed_roles) LIMIT 1`,
         [fromLower, silo, role],
       );
       if (!rows.length) return res.status(403).json({ error: "from_not_allowed" });
+      // BF_SERVER_BLOCK_v731 — each team mailbox carries its OWN signature.
+      sharedSig = rows[0]?.signature_html ?? null;
       endpoint = `/users/${encodeURIComponent(from)}/sendMail`;
       sendingAsSelf = false;
     }
@@ -113,6 +116,12 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
         bodyWithSig = `${bodyWithSig}<br/><br/>${sig}`;
       }
     } catch { /* user_settings may be missing — non-fatal */ }
+  }
+
+  // BF_SERVER_BLOCK_v731 — shared/team mailbox (info@/accounting@/submissions@)
+  // sends use the mailbox's OWN signature, not the sending user's.
+  if (!sendingAsSelf && sharedSig && sharedSig.trim()) {
+    bodyWithSig = `${bodyWithSig}<br/><br/>${sharedSig}`;
   }
 
   // BF_SERVER_BLOCK_v645_INBOX_AND_SCREENSHOT_v1 — attachments passthrough.
@@ -211,6 +220,35 @@ router.put("/me/booking-url", safeHandler(async (req: any, res: any) => {
     [userId, url]
   );
   res.json({ ok: true, bookingUrl: url });
+}));
+
+// BF_SERVER_BLOCK_v731 — manage per-team-mailbox signatures (Admin only).
+router.get("/shared-mailbox-signatures", safeHandler(async (req: any, res: any) => {
+  const role = String(req.user?.role ?? "").toLowerCase();
+  if (role !== "admin") return res.status(403).json({ error: "admin_only" });
+  const silo = resolveSiloFromRequest(req);
+  const { rows } = await pool.query(
+    `SELECT address, display_name, signature_html
+       FROM shared_mailbox_settings WHERE silo = $1 ORDER BY address ASC`,
+    [silo],
+  );
+  res.json({ items: rows });
+}));
+
+router.put("/shared-mailbox-signatures", safeHandler(async (req: any, res: any) => {
+  const role = String(req.user?.role ?? "").toLowerCase();
+  if (role !== "admin") return res.status(403).json({ error: "admin_only" });
+  const silo = resolveSiloFromRequest(req);
+  const address = String(req.body?.address ?? "").trim();
+  const signatureHtml = String(req.body?.signatureHtml ?? "").slice(0, 20000);
+  if (!address) return res.status(400).json({ error: "address_required" });
+  const r = await pool.query(
+    `UPDATE shared_mailbox_settings SET signature_html = $3
+      WHERE LOWER(address) = LOWER($1) AND silo = $2`,
+    [address, silo, signatureHtml],
+  );
+  if (!r.rowCount) return res.status(404).json({ error: "mailbox_not_found" });
+  res.json({ ok: true });
 }));
 
 export default router;
