@@ -43,6 +43,17 @@ router.get("/", safeHandler(async (req: any, res: any) => {
                title, attendee_description AS body, location AS extra
           FROM crm_meetings WHERE ${col} = $1 AND silo = $2
         UNION ALL
+        -- BF_SERVER_BLOCK_v733 — dialer calls live in call_events (contact
+        -- resolved by phone at call time). Surface them as 'call' so calls
+        -- placed anywhere (dialer or CRM) appear on the timeline.
+        SELECT 'call' AS kind, id::text, occurred_at AS ts,
+               direction AS title,
+               ('Call ' || coalesce(event_type, '')) AS body,
+               coalesce(to_number, from_number) AS extra
+          FROM call_events
+         WHERE contact_id = $1 AND (silo = $2 OR silo IS NULL)
+           AND event_type IN ('call.ended','call.missed','call.failed','call.declined')
+        UNION ALL
         -- BF_SERVER_BLOCK_47_v1 -- SMS / chat messages from
         -- communications_messages. Title = "SMS in" / "SMS out".
         -- staff_name surfaces who sent outbound (NULL on inbound).
