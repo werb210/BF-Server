@@ -176,23 +176,30 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
 
   if (!send.ok) return res.status(502).json({ error: "graph_send_failed", detail: (await send.text()).slice(0, 500) });
 
-  // BF_SERVER_BLOCK_v733 — when sent from a CRM contact/company composer,
-  // log the email to crm_email_log so it appears on the contact timeline.
-  // (The Inbox composer passes no log ids, so this is a no-op there.)
+  // BF_SERVER_BLOCK_v733 — channel-level email logging. Resolve the CRM
+  // contact(s) by recipient email and write crm_email_log, so a sent email
+  // lands on the contact timeline regardless of where it was composed
+  // (Inbox or a CRM card). No UI hint required.
   try {
-    const logContactId = (req.body?.log_contact_id ?? null) || null;
-    const logCompanyId = (req.body?.log_company_id ?? null) || null;
-    if (logContactId || logCompanyId) {
-      await pool.query(
-        `INSERT INTO crm_email_log
-           (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,
-            owner_id,contact_id,company_id,silo)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-        [from || null, to, cc, bcc, mergedSubject, bodyWithSig,
-         userId, logContactId, logCompanyId, resolveSiloFromRequest(req)],
+    const _recips = Array.from(new Set([...(Array.isArray(to) ? to : []), ...(Array.isArray(cc) ? cc : [])]
+      .map((a: any) => String(a || "").trim().toLowerCase()).filter(Boolean)));
+    if (_recips.length) {
+      const _silo = resolveSiloFromRequest(req);
+      const _m = await pool.query(
+        `SELECT id FROM contacts WHERE silo = $1 AND lower(email) = ANY($2::text[])`,
+        [_silo, _recips],
       );
+      for (const _row of _m.rows) {
+        await pool.query(
+          `INSERT INTO crm_email_log
+             (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,
+              owner_id,contact_id,company_id,silo)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9)`,
+          [from || null, to, cc, bcc, mergedSubject, bodyWithSig, userId, _row.id, _silo],
+        );
+      }
     }
-  } catch (e) { /* never block a successful send on logging */ }
+  } catch (_e) { /* never block a successful send on logging */ }
 
   res.json({ ok: true });
 }));
