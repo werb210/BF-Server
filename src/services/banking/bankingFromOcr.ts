@@ -39,23 +39,50 @@ function parseAmount(s: string | null | undefined): number | null {
   return negParen ? -Math.abs(n) : n;
 }
 
-function parseIsoDate(s: string | null | undefined, statementYear: number | null = null): string | null {
+// BF_SERVER_BLOCK_v721 — month-name dates ("Nov 16", "Nov16", "November 16")
+// are used by Canadian (ATB/RBC/TD/BMO/etc.) statements. The numeric DATE_RE
+// never matched them, so every transaction date came back null and was dropped
+// -> empty banking analysis (and, downstream, almost no lender matches). Parse
+// month-name dates too, inferring the year from the statement period (with
+// Dec->Jan rollover when the statement month is known).
+const MONTH_NAMES_v721: Record<string, number> = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+const MONTH_NAME_DATE_RE = /\b([A-Za-z]{3,9})\.?\s*([0-3]?\d)\b/;
+
+function parseIsoDate(s: string | null | undefined, statementYear: number | null = null, statementMonth: number | null = null): string | null {
   if (!s) return null;
   const m = s.match(DATE_RE);
-  if (!m) return null;
-  const mm = (m[1] ?? "").padStart(2, "0");
-  const dd = (m[2] ?? "").padStart(2, "0");
-  let yyyy = m[3] ?? "";
-  if (!yyyy) {
-    // Year missing in source — use the statement period year if provided
-    yyyy = statementYear !== null ? String(statementYear) : String(new Date().getUTCFullYear());
-  } else if (yyyy.length === 2) {
-    const yy = Number(yyyy);
-    yyyy = yy >= 70 ? `19${yyyy}` : `20${yyyy}`;
+  if (m) {
+    const mm = (m[1] ?? "").padStart(2, "0");
+    const dd = (m[2] ?? "").padStart(2, "0");
+    let yyyy = m[3] ?? "";
+    if (!yyyy) {
+      // Year missing in source — use the statement period year if provided
+      yyyy = statementYear !== null ? String(statementYear) : String(new Date().getUTCFullYear());
+    } else if (yyyy.length === 2) {
+      const yy = Number(yyyy);
+      yyyy = yy >= 70 ? `19${yyyy}` : `20${yyyy}`;
+    }
+    const dt = new Date(`${yyyy}-${mm}-${dd}T00:00:00Z`);
+    if (Number.isNaN(dt.getTime())) return null;
+    return `${yyyy}-${mm}-${dd}`;
   }
-  const dt = new Date(`${yyyy}-${mm}-${dd}T00:00:00Z`);
-  if (Number.isNaN(dt.getTime())) return null;
-  return `${yyyy}-${mm}-${dd}`;
+  // Month-name date (Canadian statements): "Nov 16", "Nov16", "November 16".
+  const mn = s.match(MONTH_NAME_DATE_RE);
+  if (mn) {
+    const mon = MONTH_NAMES_v721[(mn[1] ?? "").slice(0, 3).toLowerCase()];
+    if (mon) {
+      const dd = (mn[2] ?? "").padStart(2, "0");
+      let year = statementYear !== null ? statementYear : new Date().getUTCFullYear();
+      // A transaction month later than the statement month belongs to the prior
+      // year (e.g. December activity printed on a January/February statement).
+      if (statementMonth !== null && mon > statementMonth) year -= 1;
+      const mm = String(mon).padStart(2, "0");
+      const dt = new Date(`${year}-${mm}-${dd}T00:00:00Z`);
+      if (Number.isNaN(dt.getTime())) return null;
+      return `${year}-${mm}-${dd}`;
+    }
+  }
+  return null;
 }
 
 // Extract transactions from Azure DocIntel prebuilt-bankStatement.us structured fields.
@@ -176,7 +203,7 @@ function headerIndices(header: string[]): {
 // and accepts an optional statementYear hint.
 export function extractTransactionsFromTables(
   doc: RawOcrDocument,
-  opts?: { statementYear?: number | null },
+  opts?: { statementYear?: number | null; statementMonth?: number | null },
 ): BankTransaction[] {
   const out: BankTransaction[] = [];
   let carryHeader: ReturnType<typeof headerIndices> | null = null;
@@ -207,7 +234,7 @@ export function extractTransactionsFromTables(
           if (a !== null) amount = a;
         }
         const balance = parseAmount(cell(header.balIdx));
-        const date = parseIsoDate(dateCell, opts?.statementYear ?? null);
+        const date = parseIsoDate(dateCell, opts?.statementYear ?? null, opts?.statementMonth ?? null);
         const tx: BankTransaction = {
           date,
           description: (descCell ?? "").trim() || null,

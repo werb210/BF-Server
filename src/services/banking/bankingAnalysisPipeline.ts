@@ -202,6 +202,24 @@ export async function runBankingAnalysis(
         }
       } catch { /* ignore */ }
 
+      // BF_SERVER_BLOCK_v721 — the layout model has no StatementStartDate field,
+      // so infer the statement year+month from the statement-date text. Canadian
+      // statements print transaction dates with no year ("Nov 16"); without this
+      // the year defaulted to the current year and Dec/Jan rollovers were wrong.
+      let statementMonth: number | null = null;
+      try {
+        const headText = ocrTextFromResult(result).slice(0, 4000);
+        const sd =
+          headText.match(/statement\s*date\s*([A-Za-z]+)\s*(\d{1,2}),?\s*(20\d{2})/i) ||
+          headText.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s*(20\d{2})/i);
+        if (sd) {
+          const MN_v721: Record<string, number> = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+          statementMonth = MN_v721[(sd[1] ?? "").slice(0, 3).toLowerCase()] ?? null;
+          const yr = sd[sd.length - 1];
+          if (statementYear === null && yr && /^20\d{2}$/.test(yr)) statementYear = Number(yr);
+        }
+      } catch { /* ignore */ }
+
       let extracted: BankTransaction[] = [];
 
       // Strategy A: structured extractor (only meaningful for bank-statement model)
@@ -221,7 +239,7 @@ export async function runBankingAnalysis(
               lines: p.lines,
             })),
           },
-          { statementYear },
+          { statementYear, statementMonth },
         );
       }
 

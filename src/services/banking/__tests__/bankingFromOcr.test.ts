@@ -110,4 +110,37 @@ describe("extractTransactionsFromTables — improvements", () => {
     const out = extractTransactionsFromTables(doc, { statementYear: 2024 });
     expect(out[0].date).toBe("2024-01-15");
   });
+
+  it("parses Canadian month-name transaction dates with statement year", () => {
+    const doc = {
+      pages: [{
+        tables: [{
+          rows: [
+            [{ text: "Date" }, { text: "Description" }, { text: "Amount" }],
+            [{ text: "Nov 16" }, { text: "Deposit" }, { text: "100.00" }],
+            [{ text: "November 17" }, { text: "Purchase" }, { text: "-20.00" }],
+            [{ text: "Nov18" }, { text: "Fee" }, { text: "-5.00" }],
+          ],
+        }],
+      }],
+    };
+    const out = extractTransactionsFromTables(doc, { statementYear: 2024, statementMonth: 11 });
+    expect(out.map((tx) => tx.date)).toEqual(["2024-11-16", "2024-11-17", "2024-11-18"]);
+  });
+
+  it("rolls month-name dates into the prior year when transaction month follows statement month", () => {
+    const doc = {
+      pages: [{
+        tables: [{
+          rows: [
+            [{ text: "Date" }, { text: "Description" }, { text: "Amount" }],
+            [{ text: "Dec 31" }, { text: "Year-end purchase" }, { text: "-50.00" }],
+            [{ text: "Jan 02" }, { text: "New-year deposit" }, { text: "75.00" }],
+          ],
+        }],
+      }],
+    };
+    const out = extractTransactionsFromTables(doc, { statementYear: 2025, statementMonth: 1 });
+    expect(out.map((tx) => tx.date)).toEqual(["2024-12-31", "2025-01-02"]);
+  });
 });
