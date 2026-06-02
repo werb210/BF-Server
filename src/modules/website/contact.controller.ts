@@ -4,7 +4,8 @@ import { createContinuation } from "../continuation/continuation.service.js";
 import { logError } from "../../observability/logger.js";
 import { stripUndefined } from "../../utils/clean.js";
 import { pool } from "../../db.js";
-import { createContact } from "../../services/contacts.js";
+import { findOrCreateContactByEmailAndCompany } from "../../services/contacts.js";
+import { findOrCreateCompanyByNameAndSilo } from "../../services/companies.js";
 import { notifyAllStaff } from "../../services/notifications/notifyAllStaff.js";
 
 export async function submitContactForm(req: Request, res: Response) {
@@ -30,19 +31,29 @@ export async function submitContactForm(req: Request, res: Response) {
       tags: ["contact_form"],
     }));
 
-    // BF_SERVER_BLOCK_v680_WEBSITE_LEADS_INTO_CRM_CONTACTS
-    // Also surface website contact form submissions in the CRM Contacts table.
+    // BF_SERVER_BLOCK_v736_WEBSITE_CONTACT_AND_COMPANY_INTO_CRM
+    // Create/link the COMPANY (previously never created) and upsert the
+    // CONTACT linked to it, so website submissions land in CRM Contacts AND
+    // Companies. Idempotent on re-submit (find-or-create by name / email),
+    // which also fixes the old silent duplicate-email failure.
     const [firstName, ...lastNameParts] = fullName.trim().split(/\s+/);
     try {
-      await createContact(pool, {
+      const { row: company } = await findOrCreateCompanyByNameAndSilo(pool, companyName, "BF", {
+        name: companyName,
+        phone: phone ?? null,
+        email: email ?? null,
+        silo: "BF",
+      });
+      await findOrCreateContactByEmailAndCompany(pool, email ?? "", company.id, "BF", {
         first_name: firstName || fullName,
         last_name: lastNameParts.join(" "),
         email,
         phone,
+        company_id: company.id,
         silo: "BF",
       });
     } catch (e) {
-      console.warn("[website_contact] createContact failed", e);
+      console.warn("[website_contact] CRM contact/company upsert failed", e);
     }
 
     // BF_SERVER_BLOCK_v123_READINESS_SQL_AND_SILO_AUTH_RESOLUTION_v1
