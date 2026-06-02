@@ -18,7 +18,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   const { rows } = await pool.query(
     `SELECT id, channel, name, subject, body_html, body_text, shared, owner_user_id, created_at, updated_at
        FROM message_templates
-      WHERE silo = $1
+      WHERE silo IN ('BF', $1)
         AND (shared = true OR owner_user_id = $2)
         AND ($3::text IS NULL OR channel = $3)
       ORDER BY name ASC`,

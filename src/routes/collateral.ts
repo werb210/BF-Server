@@ -19,7 +19,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   const { rows } = await pool.query(
     `SELECT id, name, audience, doc_type, content_type, size_bytes, created_at
        FROM collateral_assets
-      WHERE silo = $1
+      WHERE silo IN ('BF', $1)
         AND ($2::text IS NULL OR audience = $2)
         AND ($3::text IS NULL OR doc_type = $3)
       ORDER BY created_at DESC`,
@@ -54,7 +54,7 @@ router.post("/", requireAuthorization({ roles: [ROLES.ADMIN] }), upload.single("
 router.get("/:id/file", safeHandler(async (req: any, res: any) => {
   const silo = getSilo(res);
   const { rows } = await pool.query(
-    `SELECT name, content_type, blob_name FROM collateral_assets WHERE id = $1 AND silo = $2 LIMIT 1`,
+    `SELECT name, content_type, blob_name FROM collateral_assets WHERE id = $1 AND silo IN ('BF', $2) LIMIT 1`,
     [req.params.id, silo]
   );
   const row = rows[0];
