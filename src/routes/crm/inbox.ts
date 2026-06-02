@@ -75,6 +75,13 @@ router.get("/:messageId", safeHandler(async (req: any, res: any) => {
   const base = mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
   const r = await graph.fetch(`${base}/messages/${req.params.messageId}`);
   if (!r.ok) return res.status(r.status).json({ error: "graph_message_failed" });
+  // BF_SERVER_BLOCK_v720 — opening an email marks it read in Graph so the
+  // Communications "Inbox" unread badge clears (fire-and-forget; idempotent).
+  void graph.fetch(`${base}/messages/${encodeURIComponent(req.params.messageId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ isRead: true }),
+  }).catch(() => undefined);
   respondOk(res, await r.json());
 }));
 
