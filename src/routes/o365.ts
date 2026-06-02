@@ -175,6 +175,25 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   });
 
   if (!send.ok) return res.status(502).json({ error: "graph_send_failed", detail: (await send.text()).slice(0, 500) });
+
+  // BF_SERVER_BLOCK_v733 — when sent from a CRM contact/company composer,
+  // log the email to crm_email_log so it appears on the contact timeline.
+  // (The Inbox composer passes no log ids, so this is a no-op there.)
+  try {
+    const logContactId = (req.body?.log_contact_id ?? null) || null;
+    const logCompanyId = (req.body?.log_company_id ?? null) || null;
+    if (logContactId || logCompanyId) {
+      await pool.query(
+        `INSERT INTO crm_email_log
+           (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,
+            owner_id,contact_id,company_id,silo)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [from || null, to, cc, bcc, mergedSubject, bodyWithSig,
+         userId, logContactId, logCompanyId, resolveSiloFromRequest(req)],
+      );
+    }
+  } catch (e) { /* never block a successful send on logging */ }
+
   res.json({ ok: true });
 }));
 
