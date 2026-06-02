@@ -218,6 +218,47 @@ router.post("/events", safeHandler(async (req: any, res: any) => {
       ...(body.attendees ? { attendees: body.attendees } : {}),
       }),
     });
+    // BF_SERVER_BLOCK_v734 — channel-level meeting logging. A calendar event
+    // created here is logged to crm_meetings for every attendee that resolves
+    // to a CRM contact (by email, within the request's silo), so meetings
+    // booked from the Calendar page appear on the contact timeline in BOTH
+    // BF and BI. Best-effort; never blocks the event response.
+    try {
+      let _silo: string = "BF";
+      try { _silo = getSilo(res); } catch { _silo = "BF"; }
+      const _emails = Array.from(new Set((Array.isArray(body.attendees) ? body.attendees : [])
+        .map((a: any) => (a?.emailAddress?.address ?? a?.email ?? (typeof a === "string" ? a : "")))
+        .map((e: any) => String(e || "").trim().toLowerCase()).filter(Boolean)));
+      if (_emails.length) {
+        const _m = await pool.query(
+          `SELECT id FROM contacts WHERE silo = $1 AND lower(email) = ANY($2::text[])`,
+          [_silo, _emails],
+        );
+        for (const _row of _m.rows) {
+          await pool.query(
+            `INSERT INTO crm_meetings
+               (title,attendee_description,internal_note,start_at,end_at,location,
+                attendees_json,reminder_minutes,owner_id,contact_id,company_id,graph_id,silo)
+             VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13)`,
+            [
+              body.title ?? body.subject ?? "Untitled Event",
+              _emails.join(", "),
+              null,
+              body.start ?? body.startDateTime ?? null,
+              body.end ?? body.endDateTime ?? null,
+              body.location ?? null,
+              JSON.stringify(body.attendees ?? []),
+              60,
+              req.user?.userId ?? null,
+              _row.id,
+              null,
+              (event as any)?.id ?? null,
+              _silo,
+            ],
+          );
+        }
+      }
+    } catch (_e) { /* never block the event response on logging */ }
     res.status(201).json({ status: "ok", data: normalizeGraphEvent(event) });
   } catch (err) {
     if (relayGraphFailure(res, err)) return;
