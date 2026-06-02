@@ -8,6 +8,7 @@ import express from "express";
 import { pool } from "../../db.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { respondOk } from "../../utils/respondOk.js";
+import { resolveSiloFromRequest } from "../../middleware/silo.js"; // BF_SERVER_BLOCK_v735
 
 const router = express.Router({ mergeParams: true });
 
@@ -15,7 +16,11 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   const isContact = req.baseUrl?.includes("/contacts/");
   const id = req.params.id;
   const col = isContact ? "contact_id" : "company_id";
-  const silo = (req.user?.silo ?? "BF").toString().toUpperCase();
+  // BF_SERVER_BLOCK_v735 — read the SELECTED silo (X-Silo), not the user's
+  // primary. Every write stamps the selected silo, so a BI contact's timeline
+  // was empty for a BF-primary admin. This aligns the read so BOTH BF and BI
+  // contacts surface their own activity. (Per-tab lists already do this.)
+  const silo = resolveSiloFromRequest(req);
 
   // Notes / tasks / calls / emails / meetings come from CRM tables;
   // SMS and inbound/outbound messages come from communications_messages
