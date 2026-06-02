@@ -14,6 +14,12 @@ export const REQUIRED_DOCUMENT_KEYS = [
   "financial_statements",
   "lease_agreement",
   "real_estate_schedule",
+  // BF_SERVER_BLOCK_v303_COLLATERAL_DOCTYPES_v1 — Accord LOC doc types
+  "flinks_banking",
+  "cra_view_only_authorization",
+  "real_estate_collateral_disclosure",
+  "org_chart_beneficial_ownership",
+  "equipment_list",
 ] as const;
 
 export type RequiredDocumentKey = (typeof REQUIRED_DOCUMENT_KEYS)[number];
@@ -44,6 +50,16 @@ const LEGACY_DOCUMENT_KEY_MAP: Record<string, RequiredDocumentKey> = {
   financial_statements: "financial_statements",
   lease_agreement: "lease_agreement",
   real_estate_schedule: "real_estate_schedule",
+  // BF_SERVER_BLOCK_v303_COLLATERAL_DOCTYPES_v1 — Accord LOC doc types (self-map)
+  flinks_banking: "flinks_banking",
+  cra_view_only_authorization: "cra_view_only_authorization",
+  real_estate_collateral_disclosure: "real_estate_collateral_disclosure",
+  org_chart_beneficial_ownership: "org_chart_beneficial_ownership",
+  equipment_list: "equipment_list",
+  // Bridge the BF-portal creator's existing doc-type strings to canonical keys
+  // so Accord requirements configured with these normalize instead of dropping.
+  net_worth_statement: "personal_net_worth",
+  accountant_prepared_financials: "financial_statements",
 };
 
 const DOCUMENT_TYPE_ALIASES: Record<RequiredDocumentKey, string[]> = {
@@ -66,6 +82,12 @@ const DOCUMENT_TYPE_ALIASES: Record<RequiredDocumentKey, string[]> = {
   financial_statements: ["balance_sheet", "financial_statements"],
   lease_agreement: ["lease_agreement"],
   real_estate_schedule: ["real_estate_schedule"],
+  // BF_SERVER_BLOCK_v303_COLLATERAL_DOCTYPES_v1 — Accord LOC doc types
+  flinks_banking: ["flinks_banking"],
+  cra_view_only_authorization: ["cra_view_only_authorization"],
+  real_estate_collateral_disclosure: ["real_estate_collateral_disclosure"],
+  org_chart_beneficial_ownership: ["org_chart_beneficial_ownership"],
+  equipment_list: ["equipment_list"],
 };
 
 export function normalizeRequiredDocumentKey(
