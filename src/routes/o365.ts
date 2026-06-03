@@ -202,11 +202,11 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
             `INSERT INTO crm_email_log
                (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,owner_id,contact_id,company_id,silo)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9)`,
-            [from || null, to, cc, bcc, mergedSubject, bodyWithSig, userId, _row.id, _scheduleSilo],
+            [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, _row.id, _scheduleSilo],
           );
         }
       }
-    } catch { /* never block scheduling on logging */ }
+    } catch (_e) { console.error("[crm_email_log] scheduled-send logging failed:", _e); }
     return res.json({ ok: true, scheduled: true, sendAt: when.toISOString() });
   }
 
@@ -236,11 +236,11 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
              (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,
               owner_id,contact_id,company_id,silo)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9)`,
-          [from || null, to, cc, bcc, mergedSubject, bodyWithSig, userId, _row.id, _silo],
+          [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, _row.id, _silo],
         );
       }
     }
-  } catch (_e) { /* never block a successful send on logging */ }
+  } catch (_e) { console.error("[crm_email_log] immediate-send logging failed:", _e); }
 
   res.json({ ok: true });
 }));
