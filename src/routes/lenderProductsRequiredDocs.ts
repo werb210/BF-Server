@@ -128,7 +128,7 @@ router.get("/lender-products/required-docs", async (req, res) => {
 
   // Union by document_type. OR the `required` flag across products. Take
   // tightest min/max amount window.
-  type Entry = { id: string; document_type: string; required: boolean; min_amount: number | null; max_amount: number | null };
+  type Entry = { id: string; document_type: string; required: boolean; min_amount: number | null; max_amount: number | null; stage: number };
   const map = new Map<string, Entry>();
   for (const row of rows) {
     const arr = row.required_documents;
@@ -156,6 +156,7 @@ router.get("/lender-products/required-docs", async (req, res) => {
               required: item.required !== false,
               min_amount: item.min_amount ?? null,
               max_amount: item.max_amount ?? null,
+              stage: item.stage === 2 || item.stage === "2" ? 2 : 1,
             });
           }
         }
@@ -174,9 +175,11 @@ router.get("/lender-products/required-docs", async (req, res) => {
           required: Boolean(e.required ?? true),
           min_amount: e.min_amount ?? null,
           max_amount: e.max_amount ?? null,
+          stage: ((e as { stage?: number }).stage as number) ?? 1,
         });
       } else {
         prev.required = prev.required || Boolean(e.required ?? true);
+        prev.stage = Math.min(prev.stage, ((e as { stage?: number }).stage as number) ?? 1);
       }
     }
   }
