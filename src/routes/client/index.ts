@@ -34,6 +34,38 @@ router.use("/", clientSubmissionRoutes);
 router.use("/", sessionRouter);
 router.use("/documents", clientDocumentsRateLimit(), documentsRouter);
 
+// BF_SERVER_BLOCK_v696_CLIENT_STAGE_v1 — client-accessible application stage.
+// The staff /api/applications/:id surface requires APPLICATION_READ, so the
+// client mini-portal cannot read its own pipeline stage there (the call 401s
+// and the stage tracker silently defaults to "Received"). Expose a read-only
+// stage lookup keyed by application id — the same capability model the
+// mini-portal URL already relies on.
+router.get(
+  "/application-stage",
+  safeHandler(async (req: any, res: any) => {
+    const applicationId =
+      typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : null;
+    if (!applicationId) {
+      res.status(400).json({ error: "applicationId_required" });
+      return;
+    }
+    const result = await dbQuery(
+      `select pipeline_state, status from applications where id::text = ($1)::text limit 1`,
+      [applicationId]
+    );
+    const row = result.rows[0];
+    if (!row) {
+      res.status(200).json({ found: false });
+      return;
+    }
+    res.status(200).json({
+      found: true,
+      pipeline_state: row.pipeline_state ?? null,
+      status: row.status ?? null,
+    });
+  })
+);
+
 router.get(
   "/readiness-prefill",
   safeHandler(async (req: any, res: any) => {
