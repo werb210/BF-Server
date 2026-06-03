@@ -459,6 +459,70 @@ router.post(
           wizardBusinessName,
         ]
       );
+      // BF_SERVER_BLOCK_v711_STAGE2_PROMPTS — after submit, prompt the applicant
+      // to complete the product's Stage-2 CMP forms. Insert one CTA message per
+      // form (mini-portal renders cta_action="form:<id>" as a tap-to-open button)
+      // and send one SMS. Idempotent: skips if form prompts already exist.
+      try {
+        const FORM_BY_KEYWORD: Array<[RegExp, string, string]> = [
+          [/net worth/i, "networth", "Personal Net Worth"],
+          [/flinks|banking connection/i, "flinks", "Banking Connection (Flinks)"],
+          [/\bcra\b/i, "cra", "CRA Authorization"],
+          [/debt/i, "debt", "Debt Stack"],
+          [/real estate/i, "realestate", "Real Estate Collateral"],
+          [/equipment/i, "equipment", "Equipment Collateral"],
+        ];
+        const v711_already = await pool.query(
+          `SELECT 1 FROM communications_messages WHERE application_id = $1 AND cta_action LIKE 'form:%' LIMIT 1`,
+          [application.id],
+        );
+        if (!v711_already.rows.length) {
+          const v711_reqs = await pool.query<{ document_type: string }>(
+            `SELECT r.document_type
+               FROM lender_product_requirements r
+               JOIN applications a ON a.lender_product_id = r.lender_product_id
+              WHERE a.id::text = ($1)::text AND r.stage = 2 AND r.required = true`,
+            [application.id],
+          );
+          const v711_forms: Array<{ id: string; name: string }> = [];
+          for (const row of v711_reqs.rows) {
+            const hit = FORM_BY_KEYWORD.find(([re]) => re.test(row.document_type ?? ""));
+            if (hit && !v711_forms.some((f) => f.id === hit[1])) v711_forms.push({ id: hit[1], name: hit[2] });
+          }
+          if (v711_forms.length) {
+            for (const f of v711_forms) {
+              await pool.query(
+                `INSERT INTO communications_messages
+                   (id, type, direction, status, application_id, contact_id, silo, body, staff_name, cta_label, cta_action, created_at)
+                 VALUES (gen_random_uuid(), 'message', 'outbound', 'sent', $1,
+                   (SELECT contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1),
+                   COALESCE((SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1), 'BF'),
+                   $2, NULL, $3, $4, now())`,
+                [application.id, `Please complete the ${f.name} form to continue your application.`, `Complete ${f.name}`, `form:${f.id}`],
+              );
+            }
+            const v711_ph = await pool.query<{ phone: string | null }>(
+              `SELECT c.phone FROM applications a LEFT JOIN contacts c ON c.id = a.contact_id WHERE a.id::text = ($1)::text LIMIT 1`,
+              [application.id],
+            );
+            const v711_phone = v711_ph.rows[0]?.phone ?? (() => {
+              try { const md = (application as any).metadata ?? {}; const fd = md.formData ?? {}; return fd?.applicant?.phone ?? md?.applicant?.phone ?? null; } catch { return null; }
+            })();
+            if (v711_phone) {
+              const v711_base = (process.env.CLIENT_BASE_URL ?? "https://client.boreal.financial").replace(/\/+$/, "");
+              const v711_url = `${v711_base}/application/${application.id}`;
+              const { sendSms } = await import("../../modules/notifications/sms.service.js");
+              await sendSms({
+                to: String(v711_phone),
+                message: `Boreal Financial: your application was received. A few quick forms remain — log in to complete them: ${v711_url}`,
+              }).catch(() => {});
+            }
+          }
+        }
+      } catch (v711_err) {
+        logError("stage2_prompts_failed_nonfatal", { code: "stage2_prompts_failed_nonfatal", applicationId: application.id, error: v711_err instanceof Error ? v711_err.message : "unknown" });
+      }
+
       try {
         const v650_deferred = Boolean(
           (legacyApp as any)?.documentsDeferred ?? (legacyApp as any)?.documents_deferred
