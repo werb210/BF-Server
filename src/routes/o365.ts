@@ -179,15 +179,34 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   if (scheduleAt) {
     if (!sendingAsSelf) return res.status(400).json({ error: "schedule_self_only", detail: "Scheduled send is only available from your own mailbox." });
     const when = new Date(scheduleAt);
-    if (isNaN(when.getTime()) || when.getTime() < Date.now() + 30_000) return res.status(400).json({ error: "schedule_time_invalid" });
+    if (isNaN(when.getTime()) || when.getTime() <= Date.now()) return res.status(400).json({ error: "schedule_time_invalid" });
     const dr = await graph.fetch(`/me/messages`, { method: "POST", body: JSON.stringify(message) });
     if (!dr.ok) return res.status(502).json({ error: "schedule_draft_failed", detail: (await dr.text()).slice(0, 500) });
     const dj = await dr.json();
+    const _scheduleSilo = resolveSiloFromRequest(req);
     await pool.query(
       `INSERT INTO scheduled_emails (user_id, draft_id, silo, subject, to_preview, send_at, status)
        VALUES ($1,$2,$3,$4,$5,$6,'pending')`,
-      [userId, dj.id, resolveSiloFromRequest(req), mergedSubject, to.join(", "), when],
+      [userId, dj.id, _scheduleSilo, mergedSubject, to.join(", "), when],
     );
+    try {
+      const _recips = Array.from(new Set([...(Array.isArray(to) ? to : []), ...(Array.isArray(cc) ? cc : [])]
+        .map((a: any) => String(a || "").trim().toLowerCase()).filter(Boolean)));
+      if (_recips.length) {
+        const _m = await pool.query(
+          `SELECT id FROM contacts WHERE silo = $1 AND lower(email) = ANY($2::text[])`,
+          [_scheduleSilo, _recips],
+        );
+        for (const _row of _m.rows) {
+          await pool.query(
+            `INSERT INTO crm_email_log
+               (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,owner_id,contact_id,company_id,silo)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9)`,
+            [from || null, to, cc, bcc, mergedSubject, bodyWithSig, userId, _row.id, _scheduleSilo],
+          );
+        }
+      }
+    } catch { /* never block scheduling on logging */ }
     return res.json({ ok: true, scheduled: true, sendAt: when.toISOString() });
   }
 
