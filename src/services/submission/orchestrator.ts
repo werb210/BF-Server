@@ -1,7 +1,7 @@
 // BF_SERVER_v74_BLOCK_1_7 — submission lifecycle orchestrator.
 import type { Pool } from "pg";
 export type OrchestratorContext = { pool: Pool; applicationId: string; };
-export type ReadinessSnapshot = { allDocsAccepted: boolean; allTasksComplete: boolean; lenderSelectionsFinalized: boolean; creditSummarySubmitted: boolean; applicationSigned: boolean; };
+export type ReadinessSnapshot = { allDocsAccepted: boolean; allTasksComplete: boolean; lenderSelectionsFinalized: boolean; creditSummarySubmitted: boolean; applicationSigned: boolean; collateralRequired: boolean; collateralComplete: boolean; };
 export async function readReadinessSnapshot(ctx: OrchestratorContext): Promise<ReadinessSnapshot> {
   const id = ctx.applicationId; const pool = ctx.pool;
   const docCheck = await pool.query<{ blocked: boolean }>(`SELECT EXISTS (SELECT 1 FROM document_requirements dr WHERE dr.application_id::text = $1 AND dr.required = true AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.application_id::text = dr.application_id::text AND d.category = dr.category AND d.status = 'accepted')) AS blocked`, [id]).catch(() => ({ rows: [{ blocked: false }] }));
@@ -16,11 +16,39 @@ export async function readReadinessSnapshot(ctx: OrchestratorContext): Promise<R
   const openTasks = Number(taskCheck.rows[0]?.open_count ?? "0");
   const finalizedAt = sel.rows[0]?.finalized_at ?? null;
   const appRow = app.rows[0];
-  return { allDocsAccepted: !docsBlocked, allTasksComplete: openTasks === 0, lenderSelectionsFinalized: finalizedAt !== null, creditSummarySubmitted: Boolean(appRow?.credit_summary_completed_at), applicationSigned: Boolean(appRow?.signnow_app_signed_at) };
+  // BF_SERVER_BLOCK_v697_COLLATERAL_GATE_v1 — Accord requires the Collateral &
+  // Facility section. collateralRequired = an Accord lender is in the finalized
+  // selection; collateralComplete = the collateral_facility form has at least one
+  // included class with a value.
+  const collateralReqRes = await pool.query<{ accord: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM application_lender_selections s
+       JOIN lenders l ON l.id::text = s.lender_id::text
+       WHERE s.application_id::text = $1 AND l.name ILIKE '%accord%'
+     ) AS accord`,
+    [id]
+  ).catch(() => ({ rows: [{ accord: false }] }));
+  const collateralDoneRes = await pool.query<{ complete: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM application_form_responses
+       WHERE application_id::text = $1 AND doc_type = 'collateral_facility'
+         AND EXISTS (
+           SELECT 1 FROM jsonb_each(COALESCE(data->'classes','{}'::jsonb)) AS cls(key, val)
+           WHERE COALESCE((val->>'included')::boolean, false) = true
+             AND COALESCE(val->>'value','') <> ''
+         )
+     ) AS complete`,
+    [id]
+  ).catch(() => ({ rows: [{ complete: false }] }));
+  return { allDocsAccepted: !docsBlocked, allTasksComplete: openTasks === 0, lenderSelectionsFinalized: finalizedAt !== null, creditSummarySubmitted: Boolean(appRow?.credit_summary_completed_at), applicationSigned: Boolean(appRow?.signnow_app_signed_at), collateralRequired: Boolean(collateralReqRes.rows[0]?.accord ?? false), collateralComplete: Boolean(collateralDoneRes.rows[0]?.complete ?? false) };
 }
 export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): Promise<{ fired: boolean; reason?: string }> {
   const snap = await readReadinessSnapshot(ctx);
   if (!snap.allDocsAccepted || !snap.allTasksComplete || !snap.lenderSelectionsFinalized) return { fired: false, reason: "preconditions_not_met" };
+  // BF_SERVER_BLOCK_v697_COLLATERAL_GATE_v1 — Accord requires the Collateral &
+  // Facility section filled before SignNow fires (otherwise the envelope/package
+  // would go out with empty collateral fields).
+  if (snap.collateralRequired && !snap.collateralComplete) return { fired: false, reason: "collateral_incomplete" };
   // BF_SERVER_BLOCK_v179_ORCHESTRATOR_CAS_v1
   // Race-safe start: claim the chain via UPDATE...WHERE IS NULL
   // RETURNING id. If RETURNING is empty, another caller beat us;
