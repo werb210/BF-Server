@@ -52,6 +52,12 @@ const PORTAL_FORM_DOC_LABELS: ReadonlySet<string> = new Set([
   "Business plan / projections",
   "Lease agreement (if applicable)",
   "Debt stack",
+  // BF_SERVER_BLOCK_v710 — portal coreTypes form docs (lockstep with
+  // BF-portal LendersPage.tsx). These are Stage-2 CMP forms.
+  "Banking connection (Flinks view-only)",
+  "CRA view-only access",
+  "Real estate collateral",
+  "Equipment collateral",
   // conditionalTypes (Media, 5)
   "Budget",
   "Finance plan",
