@@ -210,6 +210,89 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   res.json({ ok: true });
 }));
 
+// BF_SERVER_BLOCK_v703_O365_DRAFTS — real Outlook drafts via Graph /me/messages.
+// Create/update, list, fetch one, delete. Merge tokens + signature are NOT
+// applied here on purpose: a draft holds the raw work-in-progress, and tokens
+// resolve when it is finally sent through /mail/send.
+function buildDraftMessage(raw: any) {
+  const norm = (xs: any) => (Array.isArray(xs) ? xs : []).map((a: string) => ({ emailAddress: { address: String(a) } }));
+  const importance = ["low", "normal", "high"].includes(String(raw?.importance)) ? String(raw.importance) : "normal";
+  const msg: any = {
+    subject: String(raw?.subject ?? ""),
+    body: { contentType: "HTML", content: String(raw?.body_html ?? "") },
+    toRecipients: norm(raw?.to),
+    ccRecipients: norm(raw?.cc),
+    bccRecipients: norm(raw?.bcc),
+    importance,
+  };
+  if (raw?.isReadReceiptRequested === true) msg.isReadReceiptRequested = true;
+  if (raw?.isDeliveryReceiptRequested === true) msg.isDeliveryReceiptRequested = true;
+  return msg;
+}
+
+router.post("/mail/draft", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const draftId = req.body?.draftId ? String(req.body.draftId) : null;
+  const msg = buildDraftMessage(req.body ?? {});
+  const r = draftId
+    ? await graph.fetch(`/me/messages/${encodeURIComponent(draftId)}`, { method: "PATCH", body: JSON.stringify(msg) })
+    : await graph.fetch(`/me/messages`, { method: "POST", body: JSON.stringify(msg) });
+  if (!r.ok) return res.status(502).json({ error: "graph_draft_failed", detail: (await r.text()).slice(0, 500) });
+  const j = await r.json();
+  res.json({ id: j.id ?? draftId });
+}));
+
+router.get("/mail/drafts", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const r = await graph.fetch(`/me/mailFolders/drafts/messages?$top=25&$select=id,subject,bodyPreview,toRecipients,lastModifiedDateTime&$orderby=lastModifiedDateTime desc`);
+  if (!r.ok) return res.status(502).json({ error: "graph_drafts_failed", detail: (await r.text()).slice(0, 500) });
+  const j = await r.json();
+  const items = (j.value ?? []).map((m: any) => ({
+    id: m.id,
+    subject: m.subject ?? "(no subject)",
+    preview: m.bodyPreview ?? "",
+    to: (m.toRecipients ?? []).map((x: any) => x?.emailAddress?.address).filter(Boolean),
+    lastModified: m.lastModifiedDateTime ?? null,
+  }));
+  res.json({ items });
+}));
+
+router.get("/mail/draft/:id", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const r = await graph.fetch(`/me/messages/${encodeURIComponent(req.params.id)}?$select=id,subject,body,toRecipients,ccRecipients,bccRecipients,importance`);
+  if (!r.ok) return res.status(502).json({ error: "graph_draft_failed", detail: (await r.text()).slice(0, 500) });
+  const m = await r.json();
+  const addrs = (xs: any) => (xs ?? []).map((x: any) => x?.emailAddress?.address).filter(Boolean);
+  res.json({
+    id: m.id,
+    subject: m.subject ?? "",
+    body_html: m.body?.content ?? "",
+    to: addrs(m.toRecipients),
+    cc: addrs(m.ccRecipients),
+    bcc: addrs(m.bccRecipients),
+    importance: m.importance ?? "normal",
+  });
+}));
+
+router.delete("/mail/draft/:id", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const r = await graph.fetch(`/me/messages/${encodeURIComponent(req.params.id)}`, { method: "DELETE" });
+  if (!r.ok && r.status !== 404) return res.status(502).json({ error: "graph_draft_delete_failed", detail: (await r.text()).slice(0, 500) });
+  res.json({ ok: true });
+}));
+
 // v635_signature_route: GET/PUT for the saved HTML signature.
 router.get("/me/signature", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId;
