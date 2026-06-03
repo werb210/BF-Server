@@ -41,6 +41,9 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
     };
   }
   const { from, to = [], cc = [], bcc = [], subject = "", body_html = "", attachments = [], collateralIds = [] } = raw;
+  const isReadReceiptRequested = raw?.isReadReceiptRequested === true;
+  const isDeliveryReceiptRequested = raw?.isDeliveryReceiptRequested === true;
+  const importance = ["low", "normal", "high"].includes(String(raw?.importance)) ? String(raw.importance) : "normal";
   if (!Array.isArray(to) || !to.length) return res.status(400).json({ error: "to required" });
 
   // BF_SERVER_BLOCK_v705_INBOX_MERGE_TOKENS_v1 — substitute {{first_name}} (and
@@ -164,6 +167,9 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
       message: {
         subject: mergedSubject,
         body: { contentType: "HTML", content: bodyWithSig },
+        importance,
+        ...(isReadReceiptRequested ? { isReadReceiptRequested: true } : {}),
+        ...(isDeliveryReceiptRequested ? { isDeliveryReceiptRequested: true } : {}),
         toRecipients: to.map((a: string) => ({ emailAddress: { address: a } })),
         ccRecipients: cc.map((a: string) => ({ emailAddress: { address: a } })),
         bccRecipients: bcc.map((a: string) => ({ emailAddress: { address: a } })),
