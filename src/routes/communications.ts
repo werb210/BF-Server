@@ -596,7 +596,7 @@ router.get("/threads/:id", safeHandler(async (req: any, res: any) => {
   // history rendering in the portal; if a real session ever exceeds
   // this we add pagination cursors in a follow-up.
   const messagesResult = await pool.query(`
-    SELECT id, conversation_id, channel, direction, body, created_at
+    SELECT id, conversation_id, channel, direction, body, type, media_url, media_duration_seconds, created_at
     FROM communications_messages
     WHERE conversation_id = $1
     ORDER BY created_at ASC
@@ -616,9 +616,11 @@ router.get("/threads/:id", safeHandler(async (req: any, res: any) => {
     return {
       id: m.id,
       conversationId: sessionId,
-      type: ch === "sms" ? "sms" : "chat",
+      type: m.type === "voicemail" ? "voicemail" : ch === "sms" ? "sms" : "chat",
       direction,
       message: m.body ?? "",
+      mediaUrl: m.media_url ?? undefined,
+      mediaDurationSeconds: m.media_duration_seconds ?? undefined,
       createdAt: m.created_at,
     };
   });

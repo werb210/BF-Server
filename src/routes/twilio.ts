@@ -16,7 +16,8 @@ import { wrap } from "../lib/routeWrap.js";
 import { pool, runQuery } from "../db.js";
 import { updateCallStatus } from "../modules/calls/calls.service.js";
 import { findCallLogByTwilioSid } from "../modules/calls/calls.repo.js";
-import { createVoicemail } from "../modules/voice/voicemail.repo.js";
+// BF_SERVER_BLOCK_v720_VOICEMAIL_FULL_v1
+import { enrichAndDistributeVoicemail } from "../modules/voice/voicemailEnrich.service.js";
 import { logInfo, logWarn } from "../observability/logger.js";
 import { config } from "../config/index.js";
 import { stripUndefined, toNullable } from "../utils/clean.js";
@@ -292,12 +293,19 @@ router.post(
       throw new AppError("validation_error", "Missing recording payload.", 400);
     }
 
-    await createVoicemail({
-      clientId,
+    const durationSeconds = Number(req.body?.RecordingDuration ?? 0) || null;
+    await enrichAndDistributeVoicemail({
       callSid,
       recordingSid,
       recordingUrl,
-    });
+      durationSeconds,
+      clientId,
+    }).catch((e: any) =>
+      logInfo("dialer.voicemail_enrich_failed", {
+        call_sid: callSid,
+        error: String(e?.message ?? e),
+      }),
+    );
 
     const callLog = await findCallLogByTwilioSid(callSid);
     logInfo("dialer.voicemail_recorded", {
