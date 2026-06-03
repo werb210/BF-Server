@@ -162,7 +162,7 @@ router.get(
     // maps inbound→self / outbound→other correctly and MessageThread renders
     // the inline CTA bubble (screenshot 2 — "Complete Personal Net Worth").
     const rows = await dbQuery(
-      `SELECT id, direction, body, staff_name, cta_label, cta_action, created_at
+      `SELECT id, direction, body, staff_name, cta_label, cta_action, attachments, created_at
        FROM communications_messages
        WHERE application_id = $1
        ORDER BY created_at ASC
@@ -179,6 +179,7 @@ router.get(
         staff_name: r.staff_name ?? null,
         cta_label: r.cta_label ?? null,
         cta_action: r.cta_action ?? null,
+        attachments: Array.isArray(r.attachments) ? r.attachments : null,
         created_at: r.created_at,
       })),
     });
