@@ -187,4 +187,53 @@ router.post("/outbound-call", auth, async (req: any, res: Response) => {
   }
 });
 
+// BF_SERVER_BLOCK_v695_QUICK_CALL_v1 — staff quick-call slots for the dialer.
+// GET returns callable staff (with their twilio identity + presence) plus the
+// caller's saved 3 picks; PUT saves the caller's picks (staff user ids).
+router.get("/quick-call", auth, async (req: any, res: Response) => {
+  const userId = req.user?.userId || req.user?.id;
+  if (!userId) return res.status(401).json({ error: "unauthorized" });
+  const staff = await pool.query(
+    `SELECT u.id AS user_id,
+            NULLIF(trim(coalesce(u.first_name,'') || ' ' || coalesce(u.last_name,'')), '') AS name,
+            u.email,
+            u.profile_image_url,
+            sp.twilio_identity AS identity,
+            (sp.status = 'available' AND sp.last_heartbeat > now() - interval '5 minutes') AS online
+       FROM users u
+       LEFT JOIN staff_presence sp ON sp.user_id = u.id
+      WHERE u.role IN ('admin','staff')
+        AND coalesce(u.active, true) = true
+        AND coalesce(u.disabled, false) = false
+        AND coalesce(u.is_active, true) = true
+        AND u.id <> $1
+      ORDER BY name NULLS LAST, u.email`,
+    [userId],
+  );
+  const me = await pool.query(
+    `SELECT coalesce(quick_call_slots, '[]'::jsonb) AS slots FROM users WHERE id = $1`,
+    [userId],
+  );
+  res.json({
+    staff: staff.rows.map((r: any) => ({
+      userId: r.user_id,
+      name: r.name || r.email,
+      identity: r.identity ?? null,
+      avatarUrl: r.profile_image_url ?? null,
+      online: !!r.online,
+    })),
+    slots: Array.isArray(me.rows[0]?.slots) ? me.rows[0].slots : [],
+  });
+});
+
+router.put("/quick-call", auth, async (req: any, res: Response) => {
+  const userId = req.user?.userId || req.user?.id;
+  if (!userId) return res.status(401).json({ error: "unauthorized" });
+  const slots = Array.isArray(req.body?.slots)
+    ? req.body.slots.filter((x: unknown) => typeof x === "string").slice(0, 3)
+    : [];
+  await pool.query(`UPDATE users SET quick_call_slots = $2::jsonb WHERE id = $1`, [userId, JSON.stringify(slots)]);
+  res.json({ ok: true, slots });
+});
+
 export default router;
