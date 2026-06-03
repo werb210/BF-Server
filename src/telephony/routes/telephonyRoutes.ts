@@ -202,7 +202,7 @@ router.get("/quick-call", auth, async (req: any, res: Response) => {
             (sp.status = 'available' AND sp.last_heartbeat > now() - interval '5 minutes') AS online
        FROM users u
        LEFT JOIN staff_presence sp ON sp.user_id = u.id
-      WHERE u.role IN ('admin','staff')
+      WHERE upper(u.role) IN ('ADMIN','STAFF')
         AND coalesce(u.active, true) = true
         AND coalesce(u.disabled, false) = false
         AND coalesce(u.is_active, true) = true
