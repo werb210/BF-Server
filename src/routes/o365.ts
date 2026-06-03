@@ -44,6 +44,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   const isReadReceiptRequested = raw?.isReadReceiptRequested === true;
   const isDeliveryReceiptRequested = raw?.isDeliveryReceiptRequested === true;
   const importance = ["low", "normal", "high"].includes(String(raw?.importance)) ? String(raw.importance) : "normal";
+  const scheduleAt = raw?.scheduleAt ? String(raw.scheduleAt) : null;
   if (!Array.isArray(to) || !to.length) return res.status(400).json({ error: "to required" });
 
   // BF_SERVER_BLOCK_v705_INBOX_MERGE_TOKENS_v1 — substitute {{first_name}} (and
@@ -161,23 +162,38 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   }
   const allAttachments = [...graphAttachments, ...collateralAttachments];
 
+  const message: any = {
+    subject: mergedSubject,
+    body: { contentType: "HTML", content: bodyWithSig },
+    importance,
+    ...(isReadReceiptRequested ? { isReadReceiptRequested: true } : {}),
+    ...(isDeliveryReceiptRequested ? { isDeliveryReceiptRequested: true } : {}),
+    toRecipients: to.map((a: string) => ({ emailAddress: { address: a } })),
+    ccRecipients: cc.map((a: string) => ({ emailAddress: { address: a } })),
+    bccRecipients: bcc.map((a: string) => ({ emailAddress: { address: a } })),
+    ...(allAttachments.length ? { attachments: allAttachments } : {}),
+    ...(from ? { from: { emailAddress: { address: from } } } : {}),
+  };
+
+  // BF_SERVER_BLOCK_v705_SCHEDULED_SEND — park the fully-built message as a draft.
+  if (scheduleAt) {
+    if (!sendingAsSelf) return res.status(400).json({ error: "schedule_self_only", detail: "Scheduled send is only available from your own mailbox." });
+    const when = new Date(scheduleAt);
+    if (isNaN(when.getTime()) || when.getTime() < Date.now() + 30_000) return res.status(400).json({ error: "schedule_time_invalid" });
+    const dr = await graph.fetch(`/me/messages`, { method: "POST", body: JSON.stringify(message) });
+    if (!dr.ok) return res.status(502).json({ error: "schedule_draft_failed", detail: (await dr.text()).slice(0, 500) });
+    const dj = await dr.json();
+    await pool.query(
+      `INSERT INTO scheduled_emails (user_id, draft_id, silo, subject, to_preview, send_at, status)
+       VALUES ($1,$2,$3,$4,$5,$6,'pending')`,
+      [userId, dj.id, resolveSiloFromRequest(req), mergedSubject, to.join(", "), when],
+    );
+    return res.json({ ok: true, scheduled: true, sendAt: when.toISOString() });
+  }
+
   const send = await graph.fetch(endpoint, {
     method: "POST",
-    body: JSON.stringify({
-      message: {
-        subject: mergedSubject,
-        body: { contentType: "HTML", content: bodyWithSig },
-        importance,
-        ...(isReadReceiptRequested ? { isReadReceiptRequested: true } : {}),
-        ...(isDeliveryReceiptRequested ? { isDeliveryReceiptRequested: true } : {}),
-        toRecipients: to.map((a: string) => ({ emailAddress: { address: a } })),
-        ccRecipients: cc.map((a: string) => ({ emailAddress: { address: a } })),
-        bccRecipients: bcc.map((a: string) => ({ emailAddress: { address: a } })),
-        ...(allAttachments.length ? { attachments: allAttachments } : {}),
-        ...(from ? { from: { emailAddress: { address: from } } } : {}),
-      },
-      saveToSentItems: true,
-    }),
+    body: JSON.stringify({ message, saveToSentItems: true }),
   });
 
   if (!send.ok) return res.status(502).json({ error: "graph_send_failed", detail: (await send.text()).slice(0, 500) });
@@ -290,6 +306,27 @@ router.delete("/mail/draft/:id", safeHandler(async (req: any, res: any) => {
   if (!graph) return res.status(412).json({ error: "o365_not_connected" });
   const r = await graph.fetch(`/me/messages/${encodeURIComponent(req.params.id)}`, { method: "DELETE" });
   if (!r.ok && r.status !== 404) return res.status(502).json({ error: "graph_draft_delete_failed", detail: (await r.text()).slice(0, 500) });
+  res.json({ ok: true });
+}));
+
+// BF_SERVER_BLOCK_v705_SCHEDULED_SEND — list + cancel a user's pending scheduled sends.
+router.get("/mail/scheduled", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const { rows } = await pool.query(
+    `SELECT id, subject, to_preview, send_at, status FROM scheduled_emails WHERE user_id = $1 AND status = 'pending' ORDER BY send_at ASC`,
+    [userId],
+  );
+  res.json({ items: rows });
+}));
+
+router.delete("/mail/scheduled/:id", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const cur = await pool.query(`SELECT draft_id FROM scheduled_emails WHERE id = $1 AND user_id = $2 AND status = 'pending' LIMIT 1`, [req.params.id, userId]);
+  if (!cur.rows.length) return res.status(404).json({ error: "not_found" });
+  await pool.query(`UPDATE scheduled_emails SET status = 'canceled' WHERE id = $1 AND user_id = $2`, [req.params.id, userId]);
+  try { const graph = await getGraphForUser(pool, userId); if (graph) await graph.fetch(`/me/messages/${encodeURIComponent(cur.rows[0].draft_id)}`, { method: "DELETE" }); } catch { /* non-fatal */ }
   res.json({ ok: true });
 }));
 
