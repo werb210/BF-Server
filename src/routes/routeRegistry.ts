@@ -342,6 +342,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/public/application/start", roles: [] },
   { method: "POST", path: "/api/public/readiness", roles: [] },
   { method: "POST", path: "/api/crm/readiness", roles: [] },
+  { method: "GET", path: "/api/client/application-stage", roles: [] },
   { method: "GET", path: "/api/client/readiness-prefill", roles: [] },
   { method: "GET", path: "/api/client/messages", roles: [] },
   { method: "POST", path: "/api/client/messages", roles: [] },
