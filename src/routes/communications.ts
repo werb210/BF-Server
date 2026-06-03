@@ -18,9 +18,24 @@ router.post("/call-events", safeHandler(async (req: any, res: any) => {
   const eventType = typeof body.event_type === "string" ? body.event_type : "";
   const toNumber = typeof body.to_number === "string" ? body.to_number : "";
   if (!eventType || !toNumber) return res.status(400).json({ error: "event_type and to_number are required" });
+  // BF_SERVER_BLOCK_v708 — when the client doesn't thread contact_id, resolve it
+  // by matching the call's numbers (last 10 digits) to a contact in this silo.
+  let contactId: string | null = body.contact_id ?? null;
+  if (!contactId) {
+    const cand = [toNumber, body.from_number]
+      .map((n: any) => String(n || "").replace(/\D/g, "").slice(-10))
+      .filter((d: string) => d.length === 10);
+    if (cand.length) {
+      const cm = await pool.query<{ id: string }>(
+        `SELECT id FROM contacts WHERE silo = $1 AND right(regexp_replace(coalesce(phone,''), '[^0-9]', '', 'g'), 10) = ANY($2::text[]) LIMIT 1`,
+        [silo, cand],
+      );
+      contactId = cm.rows[0]?.id ?? null;
+    }
+  }
   const { rows } = await pool.query(`INSERT INTO call_events (user_id, contact_id, application_id, silo, event_type, direction, from_number, to_number, twilio_call_sid, duration_seconds, error_code, payload)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb) RETURNING id, occurred_at`,
-    [userId, body.contact_id ?? null, body.application_id ?? null, silo, eventType, body.direction ?? null, body.from_number ?? null, toNumber, body.twilio_call_sid ?? null, body.duration_seconds ?? null, body.error_code ?? null, JSON.stringify(body.payload ?? {})]);
+    [userId, contactId, body.application_id ?? null, silo, eventType, body.direction ?? null, body.from_number ?? null, toNumber, body.twilio_call_sid ?? null, body.duration_seconds ?? null, body.error_code ?? null, JSON.stringify(body.payload ?? {})]);
   return res.status(201).json(rows[0]);
 }));
 
