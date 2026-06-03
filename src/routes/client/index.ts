@@ -50,7 +50,7 @@ router.get(
       return;
     }
     const result = await dbQuery(
-      `select pipeline_state, status from applications where id::text = ($1)::text limit 1`,
+      `select pipeline_state, status, metadata from applications where id::text = ($1)::text limit 1`,
       [applicationId]
     );
     const row = result.rows[0];
@@ -62,6 +62,7 @@ router.get(
       found: true,
       pipeline_state: row.pipeline_state ?? null,
       status: row.status ?? null,
+      metadata: row.metadata ?? null,
     });
   })
 );
