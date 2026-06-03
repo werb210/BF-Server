@@ -464,41 +464,62 @@ router.post(
       // form (mini-portal renders cta_action="form:<id>" as a tap-to-open button)
       // and send one SMS. Idempotent: skips if form prompts already exist.
       try {
+        // BF_SERVER_BLOCK_v721_STAGE2_BUTTONS — greeting + one button per REQUIRED
+        // Stage-2 item, sourced from the wizard's computed set; cta_action is the
+        // mini-portal chip id so the form opens as a modal.
         const FORM_BY_KEYWORD: Array<[RegExp, string, string]> = [
           [/net worth/i, "networth", "Personal Net Worth"],
-          [/flinks|banking connection/i, "flinks", "Banking Connection (Flinks)"],
+          [/flinks|banking connection|connect bank/i, "flinks", "Connect Bank (View-Only)"],
           [/\bcra\b/i, "cra", "CRA Authorization"],
           [/debt/i, "debt", "Debt Stack"],
           [/real estate/i, "realestate", "Real Estate Collateral"],
           [/equipment/i, "equipment", "Equipment Collateral"],
+          [/government issued id|gov.*id|photo id|pieces of/i, "upload", "Upload Government ID"],
         ];
         const v711_already = await pool.query(
-          `SELECT 1 FROM communications_messages WHERE application_id = $1 AND cta_action LIKE 'form:%' LIMIT 1`,
+          `SELECT 1 FROM communications_messages WHERE application_id = $1 AND (cta_action LIKE 'form:%' OR cta_action IN ('networth','flinks','cra','debt','realestate','equipment','upload')) LIMIT 1`,
           [application.id],
         );
         if (!v711_already.rows.length) {
-          const v711_reqs = await pool.query<{ document_type: string }>(
-            `SELECT r.document_type
-               FROM lender_product_requirements r
-               JOIN applications a ON a.lender_product_id = r.lender_product_id
-              WHERE a.id::text = ($1)::text AND r.stage = 2 AND r.required = true`,
-            [application.id],
-          );
+          const v711_agg: Array<{ document_type?: string; required?: boolean; stage?: number }> =
+            (() => {
+              try {
+                const pr = (legacyApp as any)?.productRequirements;
+                const arr = pr?.aggregated ?? (pr ? pr[(legacyApp as any)?.selectedProductId] : null);
+                return Array.isArray(arr) ? arr : [];
+              } catch { return []; }
+            })();
           const v711_forms: Array<{ id: string; name: string }> = [];
-          for (const row of v711_reqs.rows) {
-            const hit = FORM_BY_KEYWORD.find(([re]) => re.test(row.document_type ?? ""));
+          for (const row of v711_agg) {
+            if (row?.required === false) continue;
+            if (Number(row?.stage ?? 1) !== 2) continue;
+            const hit = FORM_BY_KEYWORD.find(([re]) => re.test(String(row?.document_type ?? "")));
             if (hit && !v711_forms.some((f) => f.id === hit[1])) v711_forms.push({ id: hit[1], name: hit[2] });
           }
           if (v711_forms.length) {
+            const v711_contactSilo = `(SELECT contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1)`;
+            const v711_names = v711_forms.map((f) => f.name);
+            const v711_list = v711_names.length === 1
+              ? v711_names[0]
+              : `${v711_names.slice(0, -1).join(", ")} and ${v711_names[v711_names.length - 1]}`;
+            await pool.query(
+              `INSERT INTO communications_messages
+                 (id, type, direction, status, application_id, contact_id, silo, body, staff_name, created_at)
+               VALUES (gen_random_uuid(), 'message', 'outbound', 'sent', $1,
+                 ${v711_contactSilo},
+                 COALESCE((SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1), 'BF'),
+                 $2, 'Boreal Financial', now())`,
+              [application.id, `Hello, and thank you for your application. You still have a few quick steps to finish — please complete ${v711_list} using the buttons below.`],
+            );
             for (const f of v711_forms) {
               await pool.query(
                 `INSERT INTO communications_messages
                    (id, type, direction, status, application_id, contact_id, silo, body, staff_name, cta_label, cta_action, created_at)
                  VALUES (gen_random_uuid(), 'message', 'outbound', 'sent', $1,
-                   (SELECT contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1),
+                   ${v711_contactSilo},
                    COALESCE((SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1), 'BF'),
                    $2, NULL, $3, $4, now())`,
-                [application.id, `Please complete the ${f.name} form to continue your application.`, `Complete ${f.name}`, `form:${f.id}`],
+                [application.id, `Complete the ${f.name} step to continue your application.`, f.name, f.id],
               );
             }
             const v711_ph = await pool.query<{ phone: string | null }>(
@@ -972,17 +993,19 @@ router.post(
                 if (v650_existingMsg.rows.length === 0) {
                   await pool.query(
                     `INSERT INTO communications_messages
-                       (id, type, direction, status, application_id, contact_id, silo, body, staff_name, created_at)
+                       (id, type, direction, status, application_id, contact_id, silo, body, staff_name, cta_label, cta_action, created_at)
                      VALUES (
                        $1, 'message', 'outbound', 'sent', $2,
                        (SELECT contact_id FROM applications WHERE id = $2 LIMIT 1),
                        COALESCE((SELECT silo FROM applications WHERE id = $2 LIMIT 1), 'BF'),
-                       $3, 'Boreal Insurance', NOW()
+                       $3, 'Boreal Insurance', $4, $5, NOW()
                      )`,
                     [
                       biRandomUUID(),
                       v330_t.bfApplicationId,
-                      `Your PGI application for the ${v330_roleLabel} portion is ready. Tap to complete it: ${r.completionUrl}\n\nLog in with your phone number to add the remaining underwriting details.`,
+                      `Your PGI application for the ${v330_roleLabel} portion is ready. Log in with your phone number to add the remaining underwriting details.`,
+                      "Complete PGI Application",
+                      r.completionUrl,
                     ],
                   );
                 }
