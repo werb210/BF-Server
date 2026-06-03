@@ -141,6 +141,10 @@ export async function start(): Promise<void> {
     try { const w = startLenderPackageWorker(pool); workerStops.push(w.stop); console.log("[startup] lender-package worker started"); }
     catch (err) { console.error("[startup] lender-package worker failed to start:", err); }
 
+    const { startScheduledEmailWorker } = await import("./workers/scheduledEmailWorker.js");
+    try { const w = startScheduledEmailWorker(pool); workerStops.push(w.stop); console.log("[startup] scheduled-email worker started"); }
+    catch (err) { console.error("[startup] scheduled-email worker failed to start:", err); }
+
     // BF_SERVER_BLOCK_v665 — graceful shutdown. On container recycle the workers'
     // poll loops must stop BEFORE the pool tears down, otherwise each tick queries
     // a dying pool and logs "Connection terminated due to connection timeout".
