@@ -47,16 +47,19 @@ router.post(
       return;
     }
 
-    const { document_id, status, signer_email } = req.body ?? {};
+    const { document_id, document_group_id, status, signer_email } = req.body ?? {};
 
-    if (status !== "document_signed") {
+    // BF_SERVER_BLOCK_v712 — accept document-group completion as well as single-doc.
+    const signedStatuses = new Set(["document_signed","document_group_invite_signed","document_group_invite_complete","document_group_signed"]);
+    if (!signedStatuses.has(String(status))) {
       res.status(200).json({ received: true });
       return;
     }
+    const matchId = document_group_id ?? document_id;
 
     const appResult = await dbQuery<{ id: string; crm_contact_id: string | null }>(
       `select id, crm_contact_id from applications where signnow_document_id = $1 limit 1`,
-      [document_id]
+      [matchId]
     );
 
     const app = appResult.rows[0];

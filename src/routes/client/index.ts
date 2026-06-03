@@ -67,6 +67,20 @@ router.get(
   })
 );
 
+// BF_SERVER_BLOCK_v712_EMBEDDED_GROUP_SIGNING_v1 — client-accessible embedded
+// signing session for the CMP iframe (our application + each finalized lender form).
+router.get(
+  "/signing-session",
+  safeHandler(async (req: any, res: any) => {
+    const applicationId =
+      typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : null;
+    if (!applicationId) { res.status(400).json({ error: "applicationId_required" }); return; }
+    const mod = await import("../../signnow/embeddedSigningSession.js");
+    const result = await mod.getOrCreateEmbeddedSigningSession(applicationId);
+    res.status(200).json(result);
+  })
+);
+
 router.get(
   "/readiness-prefill",
   safeHandler(async (req: any, res: any) => {

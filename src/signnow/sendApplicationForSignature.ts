@@ -17,7 +17,7 @@ function isStubMode(): boolean { const v = (process.env.SIGNNOW_STUB_MODE ?? "")
 function stubDelayMs(): number { const n = Number(process.env.SIGNNOW_STUB_DELAY_MS); return Number.isFinite(n) && n >= 0 ? n : 2000; }
 function fromEmail(): string { return process.env.SIGNNOW_FROM_EMAIL || "no-reply@boreal.financial"; }
 
-async function loadApplicationForPdf(applicationId: string): Promise<ApplicationPdfInputs> {
+export async function loadApplicationForPdf(applicationId: string): Promise<ApplicationPdfInputs> {
   const res = await dbQuery<{ id: string; name: string | null; requested_amount: string | null; product_category: string | null; metadata: any; created_at: Date | null; }>(`SELECT id, name, requested_amount, product_category, metadata, created_at FROM applications WHERE id::text = ($1)::text LIMIT 1`, [applicationId]);
   const row = res.rows[0];
   const md = row?.metadata && typeof row.metadata === "object" ? (row.metadata as Record<string, any>) : {};

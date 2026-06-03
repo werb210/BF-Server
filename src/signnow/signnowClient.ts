@@ -18,3 +18,33 @@ export async function sendInvite(p: SendInviteParams): Promise<{ inviteId?: stri
   const payload: Record<string, unknown> = { to: [{ email: p.signerEmail, role_id: "", role: "Signer 1", order: 1, ...(p.signerName ? { name: p.signerName } : {}) }], from: p.fromEmail, subject: p.subject ?? "Please sign your loan application", message: p.message ?? "Please review and sign your Boreal Financial loan application." };
   const body = (await signnowFetch(`/document/${encodeURIComponent(p.documentId)}/invite`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })) as { id?: string }; return { inviteId: body?.id };
 }
+
+// BF_SERVER_BLOCK_v712_EMBEDDED_GROUP_SIGNING_v1
+// template-copy and document-group are stable SignNow endpoints. The v2
+// embedded-invite + link endpoints are isolated here so a payload correction
+// after the first live signing is a one-line change, not a rebuild.
+export async function createDocumentFromTemplate(templateId: string, documentName: string): Promise<{ documentId: string }> {
+  const body = (await signnowFetch(`/template/${encodeURIComponent(templateId)}/copy`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ document_name: documentName }) })) as { id?: string };
+  if (!body || typeof body.id !== "string") throw new SignNowError("SignNow template copy returned no document id", undefined, body);
+  return { documentId: body.id };
+}
+export async function createDocumentGroup(documentIds: string[], groupName: string): Promise<{ groupId: string }> {
+  const body = (await signnowFetch(`/documentgroup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ document_ids: documentIds, group_name: groupName }) })) as { id?: string };
+  if (!body || typeof body.id !== "string") throw new SignNowError("SignNow document group returned no id", undefined, body);
+  return { groupId: body.id };
+}
+export type EmbeddedSigner = { email: string; name?: string; roleName: string };
+export async function createEmbeddedGroupInvite(groupId: string, signer: EmbeddedSigner): Promise<{ inviteId: string }> {
+  const payload = { invite: { invite_steps: [{ order: 1, invite_actions: [{ email: signer.email, role_name: signer.roleName, action: "sign", ...(signer.name ? { full_name: signer.name } : {}) }] }] } };
+  const body = (await signnowFetch(`/v2/document-groups/${encodeURIComponent(groupId)}/embedded-invites`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })) as { data?: { id?: string }; id?: string };
+  const inviteId = body?.data?.id ?? body?.id;
+  if (typeof inviteId !== "string") throw new SignNowError("SignNow embedded group invite returned no id", undefined, body);
+  return { inviteId };
+}
+export async function createEmbeddedGroupLink(groupId: string, inviteId: string, email: string): Promise<{ url: string; expiresAt: string | null }> {
+  const payload = { email, auth_method: "none", link_expiration: 45 };
+  const body = (await signnowFetch(`/v2/document-groups/${encodeURIComponent(groupId)}/embedded-invites/${encodeURIComponent(inviteId)}/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })) as { data?: { link?: string }; link?: string };
+  const url = body?.data?.link ?? body?.link;
+  if (typeof url !== "string") throw new SignNowError("SignNow embedded link returned no url", undefined, body);
+  return { url, expiresAt: null };
+}
