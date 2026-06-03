@@ -45,6 +45,7 @@ router.post("/lenders/send", requireAuth, requireAuthorization({ roles: [ROLES.A
     const blockers: string[] = [];
     if (!snap.allDocsAccepted) blockers.push("required_documents_not_accepted");
     if (!snap.allTasksComplete) blockers.push("open_tasks_remaining");
+    if (snap.collateralRequired && !snap.collateralComplete) blockers.push("collateral_not_complete");
     if (!snap.creditSummarySubmitted) blockers.push("credit_summary_not_submitted");
     if (!snap.applicationSigned) blockers.push("application_not_signed");
     // already_sent / dispatch_in_progress / already_started are valid no-ops, not failures.
