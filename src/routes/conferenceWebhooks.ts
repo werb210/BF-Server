@@ -127,10 +127,42 @@ router.post("/conference/status", twilioWebhookValidation, async (req: any, res)
       }
       break;
     }
-    case "participant-leave":
-      if (label) await pool.query(`UPDATE conference_participants SET status = 'left', left_at = now() WHERE id = $1`, [label]);
-      else if (callSid) await pool.query(`UPDATE conference_participants SET status = 'left', left_at = now() WHERE twilio_call_sid = $1`, [callSid]);
+    case "participant-leave": {
+      let leftKind: string | null = null;
+      if (label) {
+        const r = await pool.query<{ kind: string | null }>(`UPDATE conference_participants SET status = 'left', left_at = now() WHERE id = $1 RETURNING kind`, [label]);
+        leftKind = r.rows[0]?.kind ?? null;
+      } else if (callSid) {
+        const r = await pool.query<{ kind: string | null }>(`UPDATE conference_participants SET status = 'left', left_at = now() WHERE twilio_call_sid = $1 RETURNING kind`, [callSid]);
+        leftKind = r.rows[0]?.kind ?? null;
+      }
+      // BF_SERVER_BLOCK_v699_CALLER_HANGUP_CANCELS_RING_v1
+      // If the caller (client mini-portal / inbound PSTN) hangs up before any
+      // staff answers, the ring-all staff legs were left ringing forever — the
+      // sibling-cancel only ran on participant-join. Cancel the outstanding staff
+      // legs and end the conference so the portal stops ringing.
+      if ((conf.direction === "client_miniportal" || conf.direction === "inbound") && leftKind && leftKind !== "staff") {
+        const joinedStaff = await pool.query<{ c: number }>(
+          `SELECT COUNT(*)::int AS c FROM conference_participants WHERE conference_id = $1 AND kind = 'staff' AND status = 'joined'`,
+          [conf.id],
+        );
+        if ((joinedStaff.rows[0]?.c ?? 0) === 0) {
+          const pending = await pool.query<{ id: string; identity: string }>(
+            `SELECT id, identity FROM conference_participants
+              WHERE conference_id = $1 AND kind = 'staff' AND status IN ('invited','ringing')`,
+            [conf.id],
+          );
+          const { cancelPendingParticipantCall, broadcastIncomingAnswered } = await import("../voice/conferenceService.js");
+          for (const lo of pending.rows) {
+            try { await cancelPendingParticipantCall(lo.id); } catch { /* leg may already be gone */ }
+          }
+          const ids: string[] = pending.rows.map((r) => String(r.identity));
+          if (ids.length) await broadcastIncomingAnswered(ids, conf.friendly_name, "");
+          await pool.query(`UPDATE conferences SET status = 'ended', ended_at = now(), updated_at = now() WHERE id = $1`, [conf.id]);
+        }
+      }
       break;
+    }
     case "participant-mute":
       if (label) await pool.query(`UPDATE conference_participants SET muted = $2 WHERE id = $1`, [label, String(req.body?.Muted) === "true"]);
       break;
