@@ -474,6 +474,7 @@ router.post(
           [/debt/i, "debt", "Debt Stack"],
           [/real estate/i, "realestate", "Real Estate Collateral"],
           [/equipment/i, "equipment", "Equipment Collateral"],
+          [/professional advisor|\badvisor/i, "advisors", "Professional Advisors"], // BF_SERVER_BLOCK_v711_ADVISORS_MESSENGER_v1
           [/government issued id|gov.*id|photo id|pieces of/i, "upload", "Upload Government ID"],
         ];
         const v711_already = await pool.query(
@@ -492,7 +493,10 @@ router.post(
           const v711_forms: Array<{ id: string; name: string }> = [];
           for (const row of v711_agg) {
             if (row?.required === false) continue;
-            if (Number(row?.stage ?? 1) !== 2) continue;
+            // BF_SERVER_BLOCK_v711_ADVISORS_MESSENGER_v1 — advisors is inherently a
+            // Stage-2 CMP form; seed its messenger step even if the product left it stage 1.
+            const v711_isAdvisor = /professional advisor|\badvisor/i.test(String(row?.document_type ?? ""));
+            if (!v711_isAdvisor && Number(row?.stage ?? 1) !== 2) continue;
             const hit = FORM_BY_KEYWORD.find(([re]) => re.test(String(row?.document_type ?? "")));
             if (hit && !v711_forms.some((f) => f.id === hit[1])) v711_forms.push({ id: hit[1], name: hit[2] });
           }
