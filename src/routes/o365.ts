@@ -41,6 +41,9 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
     };
   }
   const { from, to = [], cc = [], bcc = [], subject = "", body_html = "", attachments = [], collateralIds = [] } = raw;
+  // BF_SERVER_BLOCK_v737_EMAIL_TIMELINE — explicit timeline target from the composer.
+  const logContactId = raw?.log_contact_id ? String(raw.log_contact_id) : null;
+  const logCompanyId = raw?.log_company_id ? String(raw.log_company_id) : null;
   const isReadReceiptRequested = raw?.isReadReceiptRequested === true;
   const isDeliveryReceiptRequested = raw?.isDeliveryReceiptRequested === true;
   const importance = ["low", "normal", "high"].includes(String(raw?.importance)) ? String(raw.importance) : "normal";
@@ -190,20 +193,29 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
       [userId, dj.id, _scheduleSilo, mergedSubject, to.join(", "), when],
     );
     try {
-      const _recips = Array.from(new Set([...(Array.isArray(to) ? to : []), ...(Array.isArray(cc) ? cc : [])]
-        .map((a: any) => String(a || "").trim().toLowerCase()).filter(Boolean)));
-      if (_recips.length) {
-        const _m = await pool.query(
-          `SELECT id FROM contacts WHERE silo = $1 AND lower(email) = ANY($2::text[])`,
-          [_scheduleSilo, _recips],
+      if (logContactId || logCompanyId) {
+        await pool.query(
+          `INSERT INTO crm_email_log
+             (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,owner_id,contact_id,company_id,silo)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, logContactId, logCompanyId, _scheduleSilo],
         );
-        for (const _row of _m.rows) {
-          await pool.query(
-            `INSERT INTO crm_email_log
-               (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,owner_id,contact_id,company_id,silo)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9)`,
-            [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, _row.id, _scheduleSilo],
+      } else {
+        const _recips = Array.from(new Set([...(Array.isArray(to) ? to : []), ...(Array.isArray(cc) ? cc : [])]
+          .map((a: any) => String(a || "").trim().toLowerCase()).filter(Boolean)));
+        if (_recips.length) {
+          const _m = await pool.query(
+            `SELECT id FROM contacts WHERE silo = $1 AND lower(email) = ANY($2::text[])`,
+            [_scheduleSilo, _recips],
           );
+          for (const _row of _m.rows) {
+            await pool.query(
+              `INSERT INTO crm_email_log
+                 (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,owner_id,contact_id,company_id,silo)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9)`,
+              [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, _row.id, _scheduleSilo],
+            );
+          }
         }
       }
     } catch (_e) { console.error("[crm_email_log] scheduled-send logging failed:", _e); }
@@ -222,22 +234,32 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   // lands on the contact timeline regardless of where it was composed
   // (Inbox or a CRM card). No UI hint required.
   try {
-    const _recips = Array.from(new Set([...(Array.isArray(to) ? to : []), ...(Array.isArray(cc) ? cc : [])]
-      .map((a: any) => String(a || "").trim().toLowerCase()).filter(Boolean)));
-    if (_recips.length) {
-      const _silo = resolveSiloFromRequest(req);
-      const _m = await pool.query(
-        `SELECT id FROM contacts WHERE silo = $1 AND lower(email) = ANY($2::text[])`,
-        [_silo, _recips],
+    const _silo = resolveSiloFromRequest(req);
+    if (logContactId || logCompanyId) {
+      await pool.query(
+        `INSERT INTO crm_email_log
+           (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,
+            owner_id,contact_id,company_id,silo)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, logContactId, logCompanyId, _silo],
       );
-      for (const _row of _m.rows) {
-        await pool.query(
-          `INSERT INTO crm_email_log
-             (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,
-              owner_id,contact_id,company_id,silo)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9)`,
-          [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, _row.id, _silo],
+    } else {
+      const _recips = Array.from(new Set([...(Array.isArray(to) ? to : []), ...(Array.isArray(cc) ? cc : [])]
+        .map((a: any) => String(a || "").trim().toLowerCase()).filter(Boolean)));
+      if (_recips.length) {
+        const _m = await pool.query(
+          `SELECT id FROM contacts WHERE silo = $1 AND lower(email) = ANY($2::text[])`,
+          [_silo, _recips],
         );
+        for (const _row of _m.rows) {
+          await pool.query(
+            `INSERT INTO crm_email_log
+               (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,
+                owner_id,contact_id,company_id,silo)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9)`,
+            [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, _row.id, _silo],
+          );
+        }
       }
     }
   } catch (_e) { console.error("[crm_email_log] immediate-send logging failed:", _e); }
