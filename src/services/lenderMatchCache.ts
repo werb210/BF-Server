@@ -20,8 +20,27 @@ export function extractMatchInputs(app: { metadata: any; requested_amount: any; 
     const n = typeof raw === "number" ? raw : Number(String(raw).replace(/[^0-9.\-]/g, ""));
     return Number.isFinite(n) ? n : null;
   })();
+  // BF_SERVER_BLOCK_v724_MATCH_COUNTRY_SOURCES_v1 — the wizard derives country from
+  // kyc.businessLocation and stores it as address_country on the company/applicant.
+  // The old extraction only read top-level country/businessCountry/businessLocation,
+  // so Canadian apps resolved to null and the geography gate went permissive, letting
+  // US lender products match a CA application. Read the keys the wizard actually writes.
   const country = (() => {
-    const raw = String(meta.country ?? meta.businessCountry ?? meta.businessLocation ?? "").trim().toUpperCase();
+    const raw = String(
+      meta.country
+      ?? meta.businessCountry
+      ?? meta.businessLocation
+      ?? meta.address_country
+      ?? meta.kyc?.businessLocation
+      ?? meta.kyc?.country
+      ?? meta.kyc?.address_country
+      ?? meta.business?.address_country
+      ?? meta.business?.country
+      ?? meta.company?.address_country
+      ?? meta.company?.country
+      ?? meta.applicant?.address_country
+      ?? ""
+    ).trim().toUpperCase();
     if (raw === "CA" || raw === "CANADA") return "CA" as const;
     if (raw === "US" || raw === "USA" || raw === "UNITED STATES") return "US" as const;
     return null;
