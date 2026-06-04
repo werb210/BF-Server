@@ -91,6 +91,26 @@ export async function findOrCreateContactByEmailAndCompany(
   fullInput: CreateContactInput
 ): Promise<{ row: ContactRow; created: boolean }> {
   const trimmedEmail = email.trim();
+  // BF_SERVER_BLOCK_v725_CONTACT_DEDUP_EMAIL_OR_PHONE_v1 — dedup on the applicant's
+  // stable identifiers (email OR phone) within the silo, independent of company.
+  // Each submission creates a fresh company, so the old email+company match never
+  // hit and every test produced a duplicate CRM contact. Match email/phone instead.
+  const normPhone = String(fullInput.phone ?? "").replace(/\D/g, "");
+  if (trimmedEmail || normPhone.length >= 7) {
+    const { rows: idMatch } = await client.query<ContactRow>(
+      `SELECT id, name, first_name, last_name, email, phone, dob, address_street, address_city, address_state,
+         address_zip, address_country, ownership_percent, role, is_primary_applicant, company_id, silo, owner_id, user_id, status
+       FROM contacts
+       WHERE silo = $1
+         AND ( ($2 <> '' AND lower(email) = lower($2))
+            OR ($3 <> '' AND regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') = $3) )
+       LIMIT 1`,
+      [silo, trimmedEmail, normPhone]
+    );
+    if (idMatch[0]) {
+      return { row: idMatch[0], created: false };
+    }
+  }
   if (!trimmedEmail) {
     const row = await createContact(client, fullInput);
     return { row, created: true };

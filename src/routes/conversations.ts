@@ -12,16 +12,32 @@ const router = Router();
 router.get("/conversations", requireAuth, async (req, res) => {
   const channel = String(req.query.channel ?? "").trim();
   const silo: string = (res.locals?.silo as string | undefined) ?? "BF";
-  const filters: string[] = ["silo = $1"];
+  const filters: string[] = ["cc.silo = $1"]; // BF_SERVER_BLOCK_v725_CONV_NAME_RESOLVE_v1
   const values: (string | number)[] = [silo];
   let i = 2;
-  if (channel) { filters.push(`channel = $${i++}`); values.push(channel); }
+  if (channel) { filters.push(`cc.channel = $${i++}`); values.push(channel); }
+  // BF_SERVER_BLOCK_v725_CONV_NAME_RESOLVE_v1 — application threads are seeded with
+  // the conversation id set to the application id and contact_name left null, so the
+  // list showed the raw UUID. Resolve the display name from the linked contact
+  // (via the conversation's contact_id, or the application's contact_id when the
+  // conversation id is an application id). Non-destructive for SMS threads, whose
+  // contact_name is already set and which match no application row.
   const r = await pool.query(
-    `SELECT id, contact_id, contact_name, contact_phone, channel,
-            last_message_preview, last_message_at, unread
-       FROM communications_conversations
+    `SELECT cc.id,
+            cc.contact_id,
+            COALESCE(
+              NULLIF(cc.contact_name, ''),
+              c.name,
+              NULLIF(TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')), ''),
+              cc.contact_phone
+            ) AS contact_name,
+            cc.contact_phone, cc.channel,
+            cc.last_message_preview, cc.last_message_at, cc.unread
+       FROM communications_conversations cc
+       LEFT JOIN applications a ON a.id = cc.id
+       LEFT JOIN contacts c ON c.id = COALESCE(cc.contact_id, a.contact_id)
       WHERE ${filters.join(" AND ")}
-      ORDER BY last_message_at DESC NULLS LAST, created_at DESC
+      ORDER BY cc.last_message_at DESC NULLS LAST, cc.created_at DESC
       LIMIT 500`,
     values
   );
