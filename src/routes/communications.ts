@@ -7,6 +7,44 @@ import { pool } from "../db.js";
 import twilio from "twilio";
 
 const router = Router();
+
+// BF_SERVER_BLOCK_v736_MERGE_TOKENS_SMS_MSG — substitute {{first_name}} (and other
+// tokens) on SMS / messenger sends, the same way email (o365 v705) already does.
+function renderMergeTokensComm(t: string, ctx: Record<string, string>): string {
+  return String(t ?? "").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_m: string, k: string) => {
+    const v = ctx[k];
+    return v != null ? String(v) : "";
+  });
+}
+async function mergeCtxForContact(opts: { contactId?: string | null; phone?: string | null }): Promise<Record<string, string>> {
+  const ctx: Record<string, string> = { first_name: "there", last_name: "", full_name: "", name: "" };
+  try {
+    let row: { first_name: string | null; last_name: string | null; name: string | null } | undefined;
+    if (opts.contactId) {
+      const r = await pool.query<{ first_name: string | null; last_name: string | null; name: string | null }>(
+        `SELECT first_name, last_name, name FROM contacts WHERE id::text = $1 LIMIT 1`, [opts.contactId]);
+      row = r.rows[0];
+    }
+    if (!row && opts.phone) {
+      const last10 = String(opts.phone).replace(/[^0-9]/g, "").slice(-10);
+      if (last10) {
+        const r = await pool.query<{ first_name: string | null; last_name: string | null; name: string | null }>(
+          `SELECT first_name, last_name, name FROM contacts
+            WHERE right(regexp_replace(coalesce(phone,''), '[^0-9]', '', 'g'), 10) = $1
+            ORDER BY updated_at DESC LIMIT 1`, [last10]);
+        row = r.rows[0];
+      }
+    }
+    if (row) {
+      const fn = (row.first_name ?? "").trim() || (row.name ?? "").trim().split(/\s+/)[0] || "";
+      if (fn) ctx.first_name = fn;
+      ctx.last_name = (row.last_name ?? "").trim();
+      ctx.name = (row.name ?? "").trim();
+      ctx.full_name = (row.name ?? "").trim() || `${fn} ${ctx.last_name}`.trim();
+    }
+  } catch { /* best-effort */ }
+  return ctx;
+}
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.COMMUNICATIONS_READ]));
 
@@ -881,7 +919,9 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
     return res.status(503).json({ error: { message: "SMS not configured", code: "service_unavailable" } });
   }
   const client: any = twilio(accountSid, authToken);
-  const message = await client.messages.create({ body: String(body), from, to: String(to) });
+  const __smsCtx = await mergeCtxForContact({ contactId, phone: to });
+  const mergedBody = renderMergeTokensComm(String(body), __smsCtx);
+  const message = await client.messages.create({ body: String(mergedBody), from, to: String(to) });
 
   // Persist outbound message to DB
   // BF_SERVER_BLOCK_v312_COMMS_SMS_PERSIST_LOG_v1
@@ -927,7 +967,7 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
      VALUES (gen_random_uuid(), 'sms', 'outbound', $1, $2, $3, $4, $3, $5, $6, $7, $8, $9, now())`,
     [
       message.status,
-      String(body),
+      String(mergedBody),
       String(to),
       from,
       message.sid,
@@ -1114,6 +1154,7 @@ router.post(
       );
       resolvedContactId = cr.rows[0]?.contact_id ?? null;
     }
+    const __msgMerged = renderMergeTokensComm(body, await mergeCtxForContact({ contactId: resolvedContactId ?? contactId }));
     const staffName = (req as any).user?.name ?? (req as any).user?.email ?? null;
     const { getSilo } = await import("../middleware/silo.js");
     const silo = String(getSilo(res) ?? (req as any).user?.silo ?? "BF").toUpperCase();
@@ -1147,7 +1188,7 @@ router.post(
          CASE WHEN $9::text = '[]' THEN NULL ELSE $9::jsonb END,
          now()
        )`,
-      [id, applicationId, resolvedContactId ?? "", silo, body, staffName, ctaLabel, ctaAction, JSON.stringify(attachments), replyConversationId],
+      [id, applicationId, resolvedContactId ?? "", silo, __msgMerged, staffName, ctaLabel, ctaAction, JSON.stringify(attachments), replyConversationId],
     );
     // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 — bump the messenger thread preview
     // so it reorders in the staff list and the visitor sees fresh activity.
@@ -1156,7 +1197,7 @@ router.post(
         `UPDATE communications_conversations
             SET last_message_preview = $2, last_message_at = NOW(), updated_at = NOW()
           WHERE id = $1`,
-        [replyConversationId, String(body || "").slice(0, 280)],
+        [replyConversationId, String(__msgMerged || "").slice(0, 280)],
       ).catch(() => undefined);
     }
 
