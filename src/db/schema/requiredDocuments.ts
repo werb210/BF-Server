@@ -20,6 +20,8 @@ export const REQUIRED_DOCUMENT_KEYS = [
   "real_estate_collateral_disclosure",
   "org_chart_beneficial_ownership",
   "equipment_list",
+  // BF_SERVER_BLOCK_v700_ADVISORS_DOCTYPE_v1 — Accord Professional Advisors form
+  "professional_advisors",
 ] as const;
 
 export type RequiredDocumentKey = (typeof REQUIRED_DOCUMENT_KEYS)[number];
@@ -56,6 +58,8 @@ const LEGACY_DOCUMENT_KEY_MAP: Record<string, RequiredDocumentKey> = {
   real_estate_collateral_disclosure: "real_estate_collateral_disclosure",
   org_chart_beneficial_ownership: "org_chart_beneficial_ownership",
   equipment_list: "equipment_list",
+  // BF_SERVER_BLOCK_v700_ADVISORS_DOCTYPE_v1
+  professional_advisors: "professional_advisors",
   // Bridge the BF-portal creator's existing doc-type strings to canonical keys
   // so Accord requirements configured with these normalize instead of dropping.
   net_worth_statement: "personal_net_worth",
@@ -88,6 +92,8 @@ const DOCUMENT_TYPE_ALIASES: Record<RequiredDocumentKey, string[]> = {
   real_estate_collateral_disclosure: ["real_estate_collateral_disclosure"],
   org_chart_beneficial_ownership: ["org_chart_beneficial_ownership"],
   equipment_list: ["equipment_list"],
+  // BF_SERVER_BLOCK_v700_ADVISORS_DOCTYPE_v1
+  professional_advisors: ["professional_advisors"],
 };
 
 export function normalizeRequiredDocumentKey(
