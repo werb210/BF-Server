@@ -58,6 +58,8 @@ const PORTAL_FORM_DOC_LABELS: ReadonlySet<string> = new Set([
   "CRA view-only access",
   "Real estate collateral",
   "Equipment collateral",
+  // BF_SERVER_BLOCK_v707_ADVISORS_LABEL_v1 — lockstep with BF-portal LendersPage coreTypes
+  "Professional advisors (CPA / lawyer / insurance)",
   // conditionalTypes (Media, 5)
   "Budget",
   "Finance plan",
