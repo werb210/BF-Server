@@ -93,6 +93,30 @@ router.get(
 
 router.all("/lead", wrap(async (_req, res) => res.status(405).json(fail(res, "METHOD_NOT_ALLOWED"))));
 
+// BF_SERVER_BLOCK_v738_PUBLIC_COLLATERAL — public download link for shareable
+// collateral so SMS/messenger recipients can open it. Collateral is marketing
+// material and keyed by an unguessable UUID, so no auth is required here.
+router.get(
+  "/collateral/:id/file",
+  wrap(async (req, res) => {
+    const id = String(req.params.id || "");
+    const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!UUID.test(id)) return res.status(404).json(fail(res, "NOT_FOUND"));
+    const { rows } = await dbQuery<{ name: string; content_type: string | null; blob_name: string }>(
+      `SELECT name, content_type, blob_name FROM collateral_assets WHERE id = $1 LIMIT 1`,
+      [id],
+    );
+    const row = rows[0];
+    if (!row) return res.status(404).json(fail(res, "NOT_FOUND"));
+    const { getStorage } = await import("../lib/storage/index.js");
+    const obj = await getStorage().get(row.blob_name);
+    if (!obj) return res.status(404).json(fail(res, "NOT_FOUND"));
+    res.setHeader("Content-Type", row.content_type || obj.contentType || "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${String(row.name).replace(/"/g, "")}"`);
+    return res.send(obj.buffer);
+  }),
+);
+
 // BF_SERVER_BLOCK_v684_VISITOR_THREAD_v1
 // Public (UUID-as-token) read/post for the visitor side of the messenger.
 // After "Talk to a Human" the widget holds the conversation_id (unguessable
