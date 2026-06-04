@@ -1358,12 +1358,15 @@ router.post(
         [appId]
       );
       const cur = appRes.rows[0]?.pipeline_state;
-      if (cur && ["In Review", "Documents Required", "Additional Steps Required"].includes(cur)) {
+      // BF_SERVER_BLOCK_v722_OFF_TO_LENDER_FIX — accepting all docs does NOT send
+      // to a lender; it only means docs are done. Move to In Review so staff can
+      // pick lender(s) and send. "Off to Lender" is set only on real dispatch.
+      if (cur && ["Documents Required", "Additional Steps Required"].includes(cur)) {
         await runQuery(
-          `UPDATE applications SET pipeline_state = 'Off to Lender', updated_at = now() WHERE id::text = ($1)::text`,
+          `UPDATE applications SET pipeline_state = 'In Review', updated_at = now() WHERE id::text = ($1)::text`,
           [appId]
         ).catch(() => {});
-        await recordTransition(appId, cur, "Off to Lender", req.user?.userId ?? null, "All documents accepted");
+        await recordTransition(appId, cur, "In Review", req.user?.userId ?? null, "All documents accepted");
       }
     }
     try {
