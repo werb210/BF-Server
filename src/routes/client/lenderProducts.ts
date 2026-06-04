@@ -23,7 +23,14 @@ router.get("/lender-products", async (req, res) => {
               interest_min, interest_max, term_min, term_max, term_unit,
               amount_min, amount_max, required_documents,
               CASE WHEN active THEN 'active' ELSE 'inactive' END AS status,
-              active
+              active,
+              -- BF_SERVER_BLOCK_v705_ACCORD_FLAG_v1 — same Accord rule the
+              -- submission orchestrator uses (lenders.name ILIKE '%accord%').
+              EXISTS (
+                SELECT 1 FROM lenders l
+                WHERE l.id = lender_products.lender_id
+                  AND l.name ILIKE '%accord%'
+              ) AS is_accord
        FROM lender_products
        WHERE ${where}
        ORDER BY category, name
