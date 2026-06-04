@@ -119,6 +119,14 @@ export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promis
     ).catch(() => {});
     if (dispatchErr) return { fired: false, reason: "dispatch_failed" };
   }
+  // BF_SERVER_BLOCK_v722_OFF_TO_LENDER_FIX — package actually dispatched to the
+  // selected lender(s): now advance to "Off to Lender".
+  await ctx.pool.query(
+    `UPDATE applications SET pipeline_state = 'Off to Lender', updated_at = now()
+      WHERE id::text = $1
+        AND pipeline_state NOT IN ('Off to Lender','Offer','Accepted','Rejected','Declined','Funded','Closed')`,
+    [ctx.applicationId]
+  ).catch(() => {});
   return { fired: true, sentTo };
 }
 export async function progressSubmission(ctx: OrchestratorContext): Promise<{ stageA: { fired: boolean; reason?: string }; stageB: { fired: boolean; reason?: string; sentTo?: string[] } }> { const stageA = await maybeStartCreditSummaryAndSign(ctx); const stageB = await maybeBuildAndSendPackage(ctx); return { stageA, stageB }; }

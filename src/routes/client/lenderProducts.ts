@@ -30,7 +30,28 @@ router.get("/lender-products", async (req, res) => {
        LIMIT 500`,
       params
     );
-    return ok(res, r.rows);
+    // BF_SERVER_BLOCK_v722_LENDER_COUNTRY_FILTER — gate by applicant country.
+    // Previously this route had NO country filter, so a Canadian applicant was
+    // served every active product (US lenders included). Normalize both sides so
+    // "Canada"/"CA" and "United States"/"US"/"USA" compare; null or "BOTH"/"ALL"
+    // products are treated as available everywhere.
+    const norm = (c: unknown): string | null => {
+      if (c === null || c === undefined) return null;
+      const u = String(c).trim().toUpperCase();
+      if (!u) return null;
+      if (u === "BOTH" || u === "ALL") return "BOTH";
+      if (u.startsWith("US") || u.includes("UNITED STATES")) return "US";
+      if (u.startsWith("CA") || u.includes("CANADA")) return "CA";
+      return u;
+    };
+    const wantCountry = norm(req.query.country);
+    const filteredRows = wantCountry && wantCountry !== "BOTH"
+      ? r.rows.filter((row: any) => {
+          const pc = norm(row.country);
+          return pc === null || pc === "BOTH" || pc === wantCountry;
+        })
+      : r.rows;
+    return ok(res, filteredRows);
   } catch (err) {
     console.error("[client/lender-products] failed", err);
     return fail(res, 500, "FAILED");
