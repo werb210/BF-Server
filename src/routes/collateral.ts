@@ -7,6 +7,7 @@ import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { getSilo } from "../middleware/silo.js";
 import { getStorage } from "../lib/storage/index.js";
+import { config } from "../config/index.js"; // BF_SERVER_BLOCK_v738_PUBLIC_COLLATERAL
 
 const router = Router();
 router.use(requireAuth);
@@ -25,7 +26,10 @@ router.get("/", safeHandler(async (req: any, res: any) => {
       ORDER BY created_at DESC`,
     [silo, audience, docType]
   );
-  res.json({ items: rows });
+  // BF_SERVER_BLOCK_v738_PUBLIC_COLLATERAL — attach a public download link so the
+  // SMS/messenger composer inserts a real link, not the name.
+  const __base = String(config.app?.baseUrl || "https://server.boreal.financial").replace(/\/$/, "");
+  res.json({ items: rows.map((r: any) => ({ ...r, url: `${__base}/api/public/collateral/${r.id}/file` })) });
 }));
 
 router.post("/", requireAuthorization({ roles: [ROLES.ADMIN] }), upload.single("file"), safeHandler(async (req: any, res: any) => {
