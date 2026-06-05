@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
+import jwt from "jsonwebtoken";
 import continuationRouter from "./continuation.js";
 import documentsRouter from "./documents.js";
 import applicationsRouter from "./applications.js";
@@ -24,6 +25,54 @@ router.use((req: any, res: any, next: any) => {
     return;
   }
   next();
+});
+
+// BF_SERVER_BLOCK_v728_SOFT_APP_OWNERSHIP_v1 — defense-in-depth for the capability
+// (app-id) client endpoints. App IDs are unguessable UUIDs, so this only closes the
+// "logged-in client pivots to an app that isn't theirs" vector: when a request carries
+// a valid OTP session token AND targets a specific applicationId, verify the app
+// belongs to that phone. No token / no app id / unverifiable token -> allowed (this
+// preserves SMS deep-links and the capability model). Never breaks a request on error.
+router.use(async (req: any, res: any, next: any) => {
+  try {
+    const aid =
+      (typeof req.query?.applicationId === "string" && req.query.applicationId.trim()) ||
+      (typeof req.body?.applicationId === "string" && req.body.applicationId.trim()) ||
+      "";
+    if (!aid) return next();
+    const auth = req.headers?.authorization;
+    if (!auth || typeof auth !== "string" || !auth.startsWith("Bearer ")) return next();
+    const secret = process.env.JWT_SECRET;
+    if (!secret) return next();
+    let phone10 = "";
+    try {
+      const decoded = jwt.verify(auth.slice(7), secret) as Record<string, unknown>;
+      phone10 = String(typeof decoded.phone === "string" ? decoded.phone : "")
+        .replace(/[^0-9]/g, "")
+        .slice(-10);
+    } catch {
+      return next(); // invalid/expired token -> treat as capability access, don't block
+    }
+    if (!phone10) return next();
+    const r = await dbQuery(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (
+                WHERE right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10) = $2
+              )::int AS mine
+         FROM crm_contacts
+        WHERE application_id::text = ($1)::text`,
+      [aid, phone10],
+    );
+    const total = Number(r.rows?.[0]?.total ?? 0);
+    const mine = Number(r.rows?.[0]?.mine ?? 0);
+    if (total > 0 && mine === 0) {
+      res.status(403).json({ error: "forbidden" });
+      return;
+    }
+    return next();
+  } catch {
+    return next();
+  }
 });
 
 router.use("/", continuationRouter);
