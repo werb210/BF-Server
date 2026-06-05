@@ -102,7 +102,7 @@ export function buildBiPayload(input: BiHandoffInput): Record<string, unknown> {
     guarantor_name: s(applicant.fullName) ?? ([s(applicant.firstName), s(applicant.lastName)].filter(Boolean).join(" ") || null),
     guarantor_email: s(applicant.email),
     guarantor_phone: s(applicant.phone),
-    guarantor_dob: s(applicant.dob),
+    guarantor_dob: s(applicant.dob) ?? s(applicant.dateOfBirth) ?? s(applicant.date_of_birth) ?? s(applicant.birthdate), // BF_SERVER_BLOCK_v331_PGI_DOB_FALLBACKS_v1
     guarantor_address: concatAddress(applicant),
     business_name: s(business.businessName) ?? s(business.legalName) ?? s(business.companyName) ?? s(business.name),
     business_address: concatAddress(business),
@@ -113,7 +113,7 @@ export function buildBiPayload(input: BiHandoffInput): Record<string, unknown> {
     formation_date: s(business.startDate) ?? s(business.formationDate),
     loan_amount: loanAmount,
     pgi_limit: loanAmount != null ? Math.round(loanAmount * 0.8) : null,
-    lender_name: s(a.selected_product?.lender_name) ?? s(a.selectedProduct?.lender_id),
+    lender_name: s(a.selected_product?.lender_name) ?? s(a.selectedProduct?.lender_name) ?? null, // BF_SERVER_BLOCK_v331_PGI_NO_LENDER_UUID_v1 — never send the lender_id UUID; blank if no real name
     loan_purpose: s(kyc.purposeOfFunds) ?? s(kyc.lookingFor),
     annual_revenue: num(kyc.annualRevenue) ?? num(kyc.revenueLast12Months),
     collateral_value: num(kyc.availableCollateral) ?? num(kyc.fixedAssets),
