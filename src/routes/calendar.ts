@@ -300,6 +300,7 @@ router.delete("/events/:id", safeHandler(async (req: any, res: any) => {
   }
 }));
 
+// BF_SERVER_BLOCK_v332_UNIFY_TASKS_v1 — tasks unified onto crm_tasks (one table)
 // GET /api/calendar/tasks
 router.get("/tasks", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId;
@@ -309,7 +310,7 @@ router.get("/tasks", safeHandler(async (req: any, res: any) => {
   const dueBefore = typeof req.query.dueBefore === "string" ? req.query.dueBefore : null;
   const dueAfter = typeof req.query.dueAfter === "string" ? req.query.dueAfter : null;
 
-  const clauses = ["t.user_id = $1", "t.silo = $2"];
+  const clauses = ["(t.assigned_to = $1 OR t.owner_id = $1)", "t.silo = $2"];
   const params: unknown[] = [userId, silo];
 
   if (status === "open" || status === "done") {
@@ -326,10 +327,10 @@ router.get("/tasks", safeHandler(async (req: any, res: any) => {
   }
 
   const { rows } = await pool.query<CalendarTaskRow>(
-    `SELECT t.id, t.title, t.notes, t.due_at, t.priority, t.status, t.assignee_user_id, t.o365_task_id, t.created_at, t.updated_at, t.completed_at,
+    `SELECT t.id, t.title, t.notes, t.due_at, t.priority, t.status, t.assigned_to AS assignee_user_id, t.graph_id AS o365_task_id, t.created_at, t.updated_at, t.completed_at,
       COALESCE(NULLIF(trim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email) as assignee_name, u.email as assignee_email
-       FROM calendar_tasks t
-      LEFT JOIN users u ON u.id = t.assignee_user_id
+       FROM crm_tasks t
+      LEFT JOIN users u ON u.id = t.assigned_to
       WHERE ${clauses.join(" AND ")}
       ORDER BY COALESCE(t.due_at, '9999-12-31'::timestamptz) ASC, t.created_at DESC`,
     params,
@@ -355,9 +356,9 @@ router.post("/tasks", safeHandler(async (req: any, res: any) => {
   const assigneeUserId = typeof body.assignee_user_id === "string" && body.assignee_user_id.trim().length > 0 ? body.assignee_user_id : null;
 
   const { rows } = await pool.query<CalendarTaskRow>(
-    `INSERT INTO calendar_tasks (user_id, silo, title, notes, due_at, priority, status, completed_at, assignee_user_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     RETURNING id, title, notes, due_at, priority, status, assignee_user_id, o365_task_id, created_at, updated_at, completed_at`,
+    `INSERT INTO crm_tasks (owner_id, silo, title, notes, due_at, priority, status, completed_at, assigned_to, task_type)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'todo')
+     RETURNING id, title, notes, due_at, priority, status, assigned_to AS assignee_user_id, graph_id AS o365_task_id, created_at, updated_at, completed_at`,
     [userId, silo, title, notes, dueAt, priority, status, status === "done" ? new Date().toISOString() : null, assigneeUserId],
   );
   const row = rows[0];
@@ -380,10 +381,10 @@ router.post("/tasks", safeHandler(async (req: any, res: any) => {
         const graphId = (graphTask as any)?.id;
         if (graphId) {
           const updated = await pool.query<CalendarTaskRow>(
-            `UPDATE calendar_tasks
-                SET o365_task_id = $1, updated_at = NOW()
-              WHERE id = $2 AND user_id = $3 AND silo = $4
-            RETURNING id, title, notes, due_at, priority, status, assignee_user_id, o365_task_id, created_at, updated_at, completed_at`,
+            `UPDATE crm_tasks
+                SET graph_id = $1, updated_at = NOW()
+              WHERE id = $2 AND owner_id = $3 AND silo = $4
+            RETURNING id, title, notes, due_at, priority, status, assigned_to AS assignee_user_id, graph_id AS o365_task_id, created_at, updated_at, completed_at`,
             [graphId, row.id, userId, silo],
           );
           return res.status(201).json(toTaskResponse(updated.rows[0] ?? row));
@@ -404,9 +405,9 @@ router.patch("/tasks/:id", safeHandler(async (req: any, res: any) => {
   const silo = getSilo(res);
 
   const current = await pool.query<CalendarTaskRow>(
-    `SELECT id, title, notes, due_at, priority, status, assignee_user_id, o365_task_id, created_at, updated_at, completed_at
-       FROM calendar_tasks
-      WHERE id = $1 AND user_id = $2 AND silo = $3
+    `SELECT id, title, notes, due_at, priority, status, assigned_to AS assignee_user_id, graph_id AS o365_task_id, created_at, updated_at, completed_at
+       FROM crm_tasks
+      WHERE id = $1 AND owner_id = $2 AND silo = $3
       LIMIT 1`,
     [req.params.id, userId, silo],
   );
@@ -436,7 +437,7 @@ router.patch("/tasks/:id", safeHandler(async (req: any, res: any) => {
   if (typeof body.assignee_user_id !== "undefined") {
     const assigneeUserId = typeof body.assignee_user_id === "string" && body.assignee_user_id.trim().length > 0 ? body.assignee_user_id : null;
     params.push(assigneeUserId);
-    updates.push(`assignee_user_id = $${params.length}`);
+    updates.push(`assigned_to = $${params.length}`);
   }
   if (typeof body.priority !== "undefined") {
     params.push(normalizePriority(body.priority));
@@ -457,9 +458,9 @@ router.patch("/tasks/:id", safeHandler(async (req: any, res: any) => {
   updates.push("updated_at = NOW()");
   params.push(req.params.id, userId, silo);
   const { rows } = await pool.query<CalendarTaskRow>(
-    `UPDATE calendar_tasks SET ${updates.join(", ")}
-      WHERE id = $${params.length - 2} AND user_id = $${params.length - 1} AND silo = $${params.length}
-      RETURNING id, title, notes, due_at, priority, status, assignee_user_id, o365_task_id, created_at, updated_at, completed_at`,
+    `UPDATE crm_tasks SET ${updates.join(", ")}
+      WHERE id = $${params.length - 2} AND owner_id = $${params.length - 1} AND silo = $${params.length}
+      RETURNING id, title, notes, due_at, priority, status, assigned_to AS assignee_user_id, graph_id AS o365_task_id, created_at, updated_at, completed_at`,
     params,
   );
 
@@ -496,9 +497,9 @@ router.delete("/tasks/:id", safeHandler(async (req: any, res: any) => {
   const silo = getSilo(res);
 
   const { rows } = await pool.query<{ o365_task_id: string | null }>(
-    `DELETE FROM calendar_tasks
-      WHERE id = $1 AND user_id = $2 AND silo = $3
-      RETURNING o365_task_id`,
+    `DELETE FROM crm_tasks
+      WHERE id = $1 AND owner_id = $2 AND silo = $3
+      RETURNING graph_id AS o365_task_id`,
     [req.params.id, userId, silo],
   );
 
