@@ -4,8 +4,8 @@
 //   stillNeeded = required categories with no upload yet
 // "Required" primarily comes from the application's own document_requirements (the
 // same source the orchestrator and staff Documents/Lenders surfaces use). If that
-// submit-time table is empty, this falls back to the product's upload-type
-// required_documents so the client can still upload required docs.
+// submit-time table is empty, this falls back to the wizard's stored product
+// requirements first, then the matched product's upload-type required_documents.
 import { Router, type Request, type Response } from "express";
 import { pool } from "../db.js";
 
@@ -15,8 +15,61 @@ function humanize(category: string): string {
   return category.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
+const CMP_FORM =
+  /net worth|flinks|banking connection|connect bank|\bcra\b|debt|real estate|equipment|professional advisor|\badvisor/i;
+
+type NeededDoc = { document_type: string; label: string };
+type UploadedDocRow = { category: string | null; status: string | null };
+
+function docTypeFromRequirement(raw: any): string {
+  return typeof raw === "string"
+    ? raw.trim()
+    : typeof raw?.document_type === "string" && raw.document_type.trim()
+    ? raw.document_type.trim()
+    : typeof raw?.category === "string" && raw.category.trim()
+    ? raw.category.trim()
+    : typeof raw?.key === "string" && raw.key.trim()
+    ? raw.key.trim()
+    : "";
+}
+
+function appendRequiredDoc(
+  raw: any,
+  seen: Set<string>,
+  satisfied: Set<string>,
+  stillNeeded: NeededDoc[]
+): void {
+  const docType = docTypeFromRequirement(raw);
+  if (!docType) return;
+  if (raw && typeof raw === "object" && raw.required === false) return;
+  if (CMP_FORM.test(docType)) return;
+  if (satisfied.has(docType)) return;
+  if (seen.has(docType)) return;
+  seen.add(docType);
+  stillNeeded.push({ document_type: docType, label: docType });
+}
+
+function productRequirementItems(metadata: any): any[] {
+  const md = metadata && typeof metadata === "object" ? metadata : {};
+  const fd = md.formData && typeof md.formData === "object" ? md.formData : md;
+  const pr = fd.productRequirements ?? md.productRequirements;
+  const selectedProductId = fd.selectedProductId ?? md.selectedProductId;
+
+  const aggregated = pr?.aggregated;
+  if (Array.isArray(aggregated)) return aggregated;
+
+  if (pr && selectedProductId && Array.isArray(pr[selectedProductId])) return pr[selectedProductId];
+
+  if (pr && typeof pr === "object" && !Array.isArray(pr)) {
+    return Object.values(pr).flatMap((value) => (Array.isArray(value) ? value : []));
+  }
+
+  return [];
+}
+
 router.get("/needed", async (req: Request, res: Response) => {
-  const applicationId = typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : "";
+  const applicationId =
+    typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : "";
   if (!applicationId) return res.status(400).json({ error: "applicationId is required" });
 
   try {
@@ -29,11 +82,15 @@ router.get("/needed", async (req: Request, res: Response) => {
       `SELECT category, status FROM documents WHERE application_id::text = ($1)::text`,
       [applicationId]
     ).catch(() => ({ rows: [] as Array<{ category: string | null; status: string | null }> }));
-    const uploaded = uploadedRes.rows;
-    const satisfied = new Set(
-      uploaded.filter((r) => r.category && r.status !== "rejected").map((r) => r.category as string)
+    const uploaded: UploadedDocRow[] = uploadedRes.rows;
+    const satisfied: Set<string> = new Set(
+      uploaded
+        .filter((r: UploadedDocRow) => r.category && r.status !== "rejected")
+        .map((r: UploadedDocRow) => r.category as string)
     );
-    const rejectedRows = uploaded.filter((r) => r.status === "rejected" && r.category);
+    const rejectedRows = uploaded.filter(
+      (r: UploadedDocRow) => r.status === "rejected" && r.category
+    );
 
     // Required = the application's own document_requirements (required = true).
     const reqRes = await pool.query<{ category: string }>(
@@ -42,18 +99,34 @@ router.get("/needed", async (req: Request, res: Response) => {
       [applicationId]
     ).catch(() => ({ rows: [] as Array<{ category: string }> }));
 
-    let stillNeeded = reqRes.rows
-      .filter((r) => r.category && !satisfied.has(r.category))
-      .map((r) => ({ document_type: r.category, label: humanize(r.category) }));
+    const stillNeeded: NeededDoc[] = reqRes.rows
+      .filter((r: { category: string }) => r.category && !satisfied.has(r.category))
+      .map((r: { category: string }) => ({
+        document_type: r.category,
+        label: humanize(r.category),
+      }));
 
-    // BF_SERVER_BLOCK_v722_DOCS_NEEDED_FALLBACK_v1 — document_requirements is not
+    // BF_SERVER_BLOCK_v722b_PRODUCTREQS_FALLBACK_v1 — document_requirements is not
     // always populated at submit, which left the mini-portal DocPicker empty and
-    // blocked post-submit uploads (e.g. Government ID). When empty, fall back to
-    // the application's product required_documents. CMP forms (net worth, Flinks,
-    // CRA, debt, real estate, equipment, advisors) are excluded — they have their
-    // own buttons. Already-uploaded categories are excluded via `satisfied`.
+    // blocked post-submit uploads. Primary fallback:
+    // metadata.formData.productRequirements.aggregated,
+    // the same source the CMP messenger seeds upload steps from. This surfaces
+    // Government ID / void cheque / Stage-2 uploads even on received-but-unmatched
+    // apps (no lender_product_id). CMP forms and already-uploaded categories are excluded.
     if (stillNeeded.length === 0) {
-      const CMP_FORM = /net worth|flinks|banking connection|connect bank|\bcra\b|debt|real estate|equipment|professional advisor|\badvisor/i;
+      const metaRes = await pool.query<{ metadata: any }>(
+        `SELECT metadata FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+        [applicationId]
+      ).catch(() => ({ rows: [] as Array<{ metadata: any }> }));
+      const items = productRequirementItems(metaRes.rows[0]?.metadata);
+      const seen = new Set<string>();
+      for (const item of items) appendRequiredDoc(item, seen, satisfied, stillNeeded);
+    }
+
+    // BF_SERVER_BLOCK_v722_DOCS_NEEDED_FALLBACK_v1b — secondary fallback: the matched
+    // product's required_documents (covers apps with a lender_product_id but no
+    // productRequirements snapshot). CMP forms and already-uploaded categories are excluded.
+    if (stillNeeded.length === 0) {
       const prodRes = await pool.query<{ required_documents: any }>(
         `SELECT lp.required_documents
            FROM applications a
@@ -62,29 +135,14 @@ router.get("/needed", async (req: Request, res: Response) => {
           LIMIT 1`,
         [applicationId]
       ).catch(() => ({ rows: [] as Array<{ required_documents: any }> }));
-      const arr = prodRes.rows[0]?.required_documents;
-      const items = Array.isArray(arr) ? arr : [];
+      const items = Array.isArray(prodRes.rows[0]?.required_documents)
+        ? prodRes.rows[0]?.required_documents
+        : [];
       const seen = new Set<string>();
-      for (const it of items) {
-        const docType =
-          typeof it === "string"
-            ? it.trim()
-            : typeof it?.document_type === "string" && it.document_type.trim()
-            ? it.document_type.trim()
-            : typeof it?.category === "string" && it.category.trim()
-            ? it.category.trim()
-            : "";
-        if (!docType) continue;
-        if (it && typeof it === "object" && it.required === false) continue;
-        if (CMP_FORM.test(docType)) continue;
-        if (satisfied.has(docType)) continue;
-        if (seen.has(docType)) continue;
-        seen.add(docType);
-        stillNeeded.push({ document_type: docType, label: docType });
-      }
+      for (const item of items) appendRequiredDoc(item, seen, satisfied, stillNeeded);
     }
 
-    const rejected = rejectedRows.map((r) => ({
+    const rejected = rejectedRows.map((r: UploadedDocRow) => ({
       document_type: r.category as string,
       label: humanize(r.category as string),
     }));
