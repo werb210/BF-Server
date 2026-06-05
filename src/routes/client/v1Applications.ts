@@ -1326,23 +1326,39 @@ router.get(
   "/applications/by-phone",
   requireAuth,
   safeHandler(async (req: any, res: any) => {
-    const phone = String(req.user?.phone ?? "").trim();
-    if (!phone) return res.status(401).json({ found: false, error: "no_phone_claim" });
+    // BF_SERVER_BLOCK_v727_MULTI_APP_BY_PHONE_v1 — return ALL of the caller's
+    // applications (multi-application switcher), matched by last-10 phone digits
+    // so format differences don't drop one. Includes product_category + amount +
+    // stage for the switcher labels. `application` (first/most-recent) is kept for
+    // backward compatibility with single-app callers.
+    const phoneRaw = String(req.user?.phone ?? "").trim();
+    const phone10 = phoneRaw.replace(/[^0-9]/g, "").slice(-10);
+    if (!phone10) return res.status(401).json({ found: false, error: "no_phone_claim" });
 
     const r = await pool.query(
-      `SELECT a.id, a.pipeline_state, a.submitted_at, a.business_name, a.updated_at
+      `SELECT a.id, a.pipeline_state, a.submitted_at, a.business_name,
+              a.product_category, a.requested_amount, a.updated_at
          FROM applications a
          JOIN crm_contacts c ON c.application_id = a.id
-        WHERE c.phone = $1
+        WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $1
           AND a.pipeline_state NOT IN ('draft','Draft','')
           AND a.pipeline_state IS NOT NULL
-        ORDER BY a.updated_at DESC
-        LIMIT 1`,
-      [phone],
+        ORDER BY a.updated_at DESC`,
+      [phone10],
     );
 
-    if (!r.rows.length) return res.json({ found: false });
-    return res.json({ found: true, application: r.rows[0] });
+    // de-dupe by application id (a phone can appear on multiple crm_contacts rows)
+    const seen = new Set<string>();
+    const applications = [] as any[];
+    for (const row of r.rows) {
+      const id = String((row as any).id);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      applications.push(row);
+    }
+
+    if (!applications.length) return res.json({ found: false, applications: [] });
+    return res.json({ found: true, applications, application: applications[0] });
   }),
 );
 
