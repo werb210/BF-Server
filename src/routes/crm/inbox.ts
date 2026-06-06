@@ -82,7 +82,34 @@ router.get("/:messageId", safeHandler(async (req: any, res: any) => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ isRead: true }),
   }).catch(() => undefined);
-  respondOk(res, await r.json());
+  const message: any = await r.json();
+  // BF_SERVER_BLOCK_v746_INBOX_INLINE_IMAGES — inline images. The HTML body has <img src="cid:...">
+  // references to inline attachments; fetch them and swap in data: URIs so the
+  // signature logo + icons render. Best-effort; never blocks the message view.
+  try {
+    const body = message?.body;
+    if (body && typeof body.content === "string" && body.content.includes("cid:")) {
+      const ar = await graph.fetch(
+        `${base}/messages/${encodeURIComponent(req.params.messageId)}/attachments`
+          + `?$select=name,contentType,contentId,isInline,contentBytes`,
+      );
+      if (ar.ok) {
+        const aj: any = await ar.json();
+        let html: string = body.content;
+        for (const att of (aj.value ?? [])) {
+          const bytes: string | undefined = att?.contentBytes;
+          const ctype: string = att?.contentType || "image/png";
+          const cidRaw = String(att?.contentId ?? "").replace(/^<|>$/g, "");
+          if (bytes && cidRaw) {
+            const dataUri = `data:${ctype};base64,${bytes}`;
+            html = html.split(`cid:${cidRaw}`).join(dataUri);
+          }
+        }
+        message.body.content = html;
+      }
+    }
+  } catch { /* best-effort: leave body unchanged on any inlining error */ }
+  respondOk(res, message);
 }));
 
 // BF_SERVER_BLOCK_v641_INBOX_DELETE_v1
