@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { bumpBiOutreachToEngagedByPhone } from "../services/biOutreach.js"; // BF_SERVER_BLOCK_v345_BI_OUTREACH_ENGAGED_v1
 import express from "express";
 import twilio from "twilio";
 import VoiceResponse from "twilio/lib/twiml/VoiceResponse.js";
@@ -476,6 +477,10 @@ async function persistInboundSms(req: any): Promise<void> {
     silo: resolvedSilo,
     sid,
   }));
+
+  // BF_SERVER_BLOCK_v345_BI_OUTREACH_ENGAGED_v1 — an inbound SMS reply from a BI
+  // outreach lead advances their pipeline stage to Engaged (matched by phone).
+  void bumpBiOutreachToEngagedByPhone(fromNum);
 
   // ON CONFLICT on comm_messages_twilio_sid_idx (unique partial index from
   // migration 109) makes Twilio retries idempotent without a duplicate row.
