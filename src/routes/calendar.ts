@@ -374,7 +374,7 @@ router.post("/tasks", safeHandler(async (req: any, res: any) => {
           title,
           body: notes ? { content: String(notes), contentType: "text" } : undefined,
           dueDateTime: dueAt ? { dateTime: new Date(dueAt).toISOString(), timeZone: "UTC" } : undefined,
-          importance: priority,
+          importance: (priority === "low" || priority === "high") ? priority : "normal", // v343_TODO_IMPORTANCE
           status: status === "done" ? "completed" : "notStarted",
           }),
         });
@@ -476,8 +476,8 @@ router.patch("/tasks/:id", safeHandler(async (req: any, res: any) => {
           body: JSON.stringify({
           title: updated.title,
           body: updated.notes ? { content: updated.notes, contentType: "text" } : undefined,
-          dueDateTime: updated.due_at ? { dateTime: new Date(updated.due_at).toISOString(), timeZone: "UTC" } : null,
-          importance: updated.priority,
+          dueDateTime: updated.due_at ? { dateTime: new Date(updated.due_at).toISOString(), timeZone: "UTC" } : undefined, // v343_TODO_IMPORTANCE
+          importance: (updated.priority === "low" || updated.priority === "high") ? updated.priority : "normal", // v343_TODO_IMPORTANCE
           status: updated.status === "done" ? "completed" : "notStarted",
           }),
         });
