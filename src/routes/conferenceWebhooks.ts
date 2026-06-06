@@ -10,6 +10,7 @@ import {
   notifyConferenceState,
 } from "../voice/conferenceService.js";
 import { getPublicBaseUrl } from "../voice/twilioClient.js";
+import { bumpBiOutreachToContacted } from "../services/biOutreach.js"; // BF_SERVER_BLOCK_v744
 import recordingWebhooksRoutes from "./recordingWebhooks.js";
 import transcriptionWebhooksRoutes from "./transcriptionWebhooks.js";
 
@@ -94,9 +95,34 @@ router.post("/conference/status", twilioWebhookValidation, async (req: any, res)
     case "conference-start":
       await pool.query(`UPDATE conferences SET status = 'active', updated_at = now() WHERE id = $1`, [conf.id]);
       break;
-    case "conference-end":
-      await pool.query(`UPDATE conferences SET status = 'ended', ended_at = now(), updated_at = now() WHERE id = $1`, [conf.id]);
+    case "conference-end": {
+      // BF_SERVER_BLOCK_v744 — guarded so duplicate Twilio conference-end
+      // callbacks only log the call once. On the first end of an OUTBOUND
+      // conference tied to a contact, write a call.ended event (lands on the
+      // CRM timeline) and advance a BI outreach lead New->Contacted.
+      const endRow = await pool.query(
+        `UPDATE conferences SET status = 'ended', ended_at = now(), updated_at = now()
+           WHERE id = $1 AND COALESCE(status, '') <> 'ended'
+         RETURNING contact_id, direction, silo, created_by_user_id,
+                   GREATEST(0, EXTRACT(EPOCH FROM (now() - created_at)))::int AS duration_seconds`,
+        [conf.id],
+      );
+      const er: any = endRow.rows[0];
+      if (er && er.contact_id && er.direction === "outbound") {
+        try {
+          await pool.query(
+            `INSERT INTO call_events
+               (user_id, contact_id, silo, event_type, direction, twilio_call_sid, duration_seconds, payload)
+             VALUES ($1, $2::uuid, $3, 'call.ended', 'outbound', $4, $5, $6::jsonb)`,
+            [er.created_by_user_id ?? null, er.contact_id, er.silo ?? "BF",
+             confSid || conf.twilio_conference_sid || null, er.duration_seconds ?? 0,
+             JSON.stringify({ conference_id: conf.id, source: "conference-end" })],
+          );
+        } catch { /* timeline logging is best-effort; never break the webhook */ }
+        void bumpBiOutreachToContacted(String(er.contact_id));
+      }
       break;
+    }
     case "participant-join": {
       if (label) {
         await pool.query(`UPDATE conference_participants SET status = 'joined', joined_at = COALESCE(joined_at, now()), twilio_call_sid = COALESCE(twilio_call_sid, $2) WHERE id = $1`, [label, callSid || null]);

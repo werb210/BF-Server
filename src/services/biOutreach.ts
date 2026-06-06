@@ -43,3 +43,43 @@ export async function bumpBiOutreachToEngagedByPhone(phone: string | null | unde
     /* best-effort */
   }
 }
+
+// BF_SERVER_BLOCK_v744_OUTREACH_AUTOADVANCE_COMPLETE
+// An inbound EMAIL reply from a BI lead advances New/Contacted -> Engaged, matched
+// on bi_contacts.email (case-insensitive). Forward-only and best-effort.
+export async function bumpBiOutreachToEngagedByEmail(email: string | null | undefined): Promise<void> {
+  if (!email) return;
+  const e = String(email).trim().toLowerCase();
+  if (!e) return;
+  try {
+    await pool.query(
+      `UPDATE bi_contacts
+          SET outreach_status = 'engaged',
+              outreach_updated_at = now()
+        WHERE lower(coalesce(email, '')) = $1
+          AND COALESCE(outreach_status, 'new') IN ('new', 'contacted')`,
+      [e],
+    );
+  } catch {
+    /* best-effort */
+  }
+}
+
+// BF_SERVER_BLOCK_v744_OUTREACH_AUTOADVANCE_COMPLETE
+// Booking a meeting with a BI lead advances New/Contacted/Engaged -> Demo Booked.
+// Forward-only (won't drag an Onboarding/Active lead back) and best-effort.
+export async function bumpBiOutreachToDemoBooked(contactId: string | null | undefined): Promise<void> {
+  if (!contactId) return;
+  try {
+    await pool.query(
+      `UPDATE bi_contacts
+          SET outreach_status = 'demo_booked',
+              outreach_updated_at = now()
+        WHERE id::text = $1
+          AND COALESCE(outreach_status, 'new') IN ('new', 'contacted', 'engaged')`,
+      [String(contactId)],
+    );
+  } catch {
+    /* best-effort */
+  }
+}
