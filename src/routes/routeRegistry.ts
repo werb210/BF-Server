@@ -35,6 +35,7 @@ import offerAcceptanceRoutes from "./offerAcceptance.js";
 import applicationNotesRoutes from "./applicationNotes.js";
 // BF_NOTIFICATIONS_v50
 import notificationsRoutes from "./notifications.js";
+import teamRoutes from "./team.js"; // BF_SERVER_BLOCK_v750_TEAM_CHAT
 import messagesRoutes from "./messages.js";
 import reportingRoutes from "./reporting.js";
 import reportsRoutes from "./reports.js";
@@ -186,6 +187,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/applications/:id/notes", router: applicationNotesRoutes },
   // BF_NOTIFICATIONS_v50 — mounted at /api/notifications
   { path: "/notifications", router: notificationsRoutes },
+  { path: "/team", router: teamRoutes }, // BF_SERVER_BLOCK_v750_TEAM_CHAT
   { path: "/documents", router: documentsRoutes },
   // BF_SERVER_BLOCK_v335_AUTH_HARDENING_AND_DEAD_CODE_v1 -- Edit 5
   // Mount removed: dead "/lender-submissions" stub route entry.
