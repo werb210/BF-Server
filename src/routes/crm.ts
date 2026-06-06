@@ -567,6 +567,30 @@ router.post("/timeline/calls", requireCrmWrite, safeHandler(async (req: any, res
     resolve(rawUserId, "users"),
   ]);
 
+  // BF_SERVER_BLOCK_v335_CALL_CONTACT_BY_PHONE_v1 — dialer calls often arrive with no
+  // contactId, so they never attach to a contact on the timeline. When contactId is
+  // null, resolve the OTHER party's phone (to_number for outbound, from_number for
+  // inbound) to a contact in this silo by last-10 digits and stamp it.
+  let resolvedContactId: string | null = contactId;
+  if (!resolvedContactId) {
+    const dir = String(b.direction ?? "outbound");
+    const fromNumber = b.fromNumber ?? b.from_number ?? null;
+    const otherParty = dir === "inbound" ? fromNumber : toNumber;
+    const d = String(otherParty ?? "").replace(/[^0-9]/g, "").slice(-10);
+    if (d) {
+      try {
+        const m = await pool.query(
+          `SELECT id FROM contacts
+             WHERE silo = $1
+               AND right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10) = $2
+             ORDER BY created_at ASC LIMIT 1`,
+          [silo, d],
+        );
+        if (m.rows[0]?.id) resolvedContactId = m.rows[0].id as string;
+      } catch { /* best-effort; never block call logging */ }
+    }
+  }
+
   const outcomePart = b.outcome ? `outcome:${b.outcome}` : null;
   const failurePart = b.failureReason ? `failure:${b.failureReason}` : null;
   const notes = [outcomePart, failurePart].filter(Boolean).join(" ") || null;
@@ -582,9 +606,10 @@ router.post("/timeline/calls", requireCrmWrite, safeHandler(async (req: any, res
       b.callSid ?? b.twilio_call_sid ?? null,
       durationSec,
       b.recordingUrl ?? b.recording_url ?? null,
+
       notes,
       userId,
-      contactId,
+      resolvedContactId,
       companyId,
       silo,
     ],
