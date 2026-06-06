@@ -146,6 +146,11 @@ export async function start(): Promise<void> {
     try { const w = startReadReceiptWorker(pool); workerStops.push(w.stop); console.log("[startup] read-receipt worker started"); }
     catch (err) { console.error("[startup] read-receipt worker failed to start:", err); }
 
+    // BF_SERVER_BLOCK_v744 — advance BI leads to Engaged on an email reply.
+    const { startBiOutreachEmailReplyWorker } = await import("./workers/biOutreachEmailReplyWorker.js");
+    try { const w = startBiOutreachEmailReplyWorker(pool); workerStops.push(w.stop); console.log("[startup] BI outreach email-reply worker started"); }
+    catch (err) { console.error("[startup] BI outreach email-reply worker failed to start:", err); }
+
     const { startScheduledEmailWorker } = await import("./workers/scheduledEmailWorker.js");
     try { const w = startScheduledEmailWorker(pool); workerStops.push(w.stop); console.log("[startup] scheduled-email worker started"); }
     catch (err) { console.error("[startup] scheduled-email worker failed to start:", err); }
