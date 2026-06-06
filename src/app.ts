@@ -46,6 +46,9 @@ export function createApp() {
     // shot_4_48_11 of Todd's BI silo. v638 also wires the proxy to forward it.
     allowedHeaders: ["Content-Type", "Authorization", "x-silo", "X-Request-Id", "x-maya-audience"],
     credentials: true,
+    // v758 — cache preflights for 24h so browsers stop re-preflighting every
+    // cross-origin call (HAR showed ~1 OPTIONS per request, doubling traffic).
+    maxAge: 86400,
   };
 
   /**
