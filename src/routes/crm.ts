@@ -8,6 +8,7 @@ import { respondOk } from "../utils/respondOk.js";
 import { handleListCrmTimeline } from "../modules/crm/timeline.controller.js";
 import { SupportController } from "../modules/support/support.controller.js";
 import { pool } from "../db.js";
+import { bumpBiOutreachToContacted } from "../services/biOutreach.js"; // BF_SERVER_BLOCK_v344_BI_OUTREACH_AUTOADVANCE_v1
 import { getSilo, resolveSiloFromRequest } from "../middleware/silo.js";
 import { createContact } from "../services/contacts.js";
 import notesRoutes from "./crm/notes.js";
@@ -614,6 +615,7 @@ router.post("/timeline/calls", requireCrmWrite, safeHandler(async (req: any, res
       silo,
     ],
   );
+  void bumpBiOutreachToContacted(resolvedContactId); // BF_SERVER_BLOCK_v344_BI_OUTREACH_AUTOADVANCE_v1
   res.status(201).json({
     ok: true,
     data: rows[0],

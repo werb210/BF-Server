@@ -2,6 +2,7 @@ import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { pool } from "../db.js";
+import { bumpBiOutreachToContacted } from "../services/biOutreach.js"; // BF_SERVER_BLOCK_v344_BI_OUTREACH_AUTOADVANCE_v1
 import { getGraphForUser } from "../modules/o365/graphClient.js";
 import { getStorage } from "../lib/storage/index.js"; // v693
 import { resolveSiloFromRequest } from "../middleware/silo.js";
@@ -243,6 +244,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
         [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, logContactId, logCompanyId, _silo],
       );
+      void bumpBiOutreachToContacted(logContactId); // BF_SERVER_BLOCK_v344_BI_OUTREACH_AUTOADVANCE_v1
     } else {
       const _recips = Array.from(new Set([...(Array.isArray(to) ? to : []), ...(Array.isArray(cc) ? cc : [])]
         .map((a: any) => String(a || "").trim().toLowerCase()).filter(Boolean)));
