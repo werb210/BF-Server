@@ -125,3 +125,13 @@ export async function unreadCount(userId: string): Promise<number> {
   );
   return Number(r.rows[0]?.c ?? 0);
 }
+
+// BF_SERVER_BLOCK_v748_NOTIFICATIONS_DELETE
+export async function deleteForUser(userId: string, id: string): Promise<boolean> {
+  const r = await runQuery<{ id: string }>(`DELETE FROM notifications WHERE id = $1 AND user_id = $2 RETURNING id`, [id, userId]);
+  return Boolean(r.rows[0]);
+}
+export async function deleteAllForUser(userId: string): Promise<number> {
+  const r = await runQuery<{ id: string }>(`DELETE FROM notifications WHERE user_id = $1 RETURNING id`, [userId]);
+  return r.rows.length;
+}

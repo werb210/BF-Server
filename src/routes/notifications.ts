@@ -3,7 +3,7 @@ import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { AppError } from "../middleware/errors.js";
 import { safeHandler } from "../middleware/safeHandler.js";
-import { listForUser, markAllRead, markRead, unreadCount } from "../services/notifications/notifications.service.js";
+import { deleteAllForUser, deleteForUser, listForUser, markAllRead, markRead, unreadCount } from "../services/notifications/notifications.service.js";
 
 const router = Router();
 
@@ -46,6 +46,30 @@ router.post(
   safeHandler(async (req: any, res: any) => {
     const userId = userIdOf(req);
     const count = await markAllRead(userId);
+    res.status(200).json({ ok: true, count });
+  })
+);
+
+// BF_SERVER_BLOCK_v748_NOTIFICATIONS_DELETE
+router.delete(
+  "/:id",
+  requireAuth,
+  safeHandler(async (req: any, res: any) => {
+    const userId = userIdOf(req);
+    const id = String(req.params.id ?? "").trim();
+    if (!id) throw new AppError("validation_error", "id required.", 400);
+    const ok = await deleteForUser(userId, id);
+    if (!ok) throw new AppError("not_found", "Notification not found.", 404);
+    res.status(200).json({ ok: true, id });
+  })
+);
+
+router.delete(
+  "/",
+  requireAuth,
+  safeHandler(async (req: any, res: any) => {
+    const userId = userIdOf(req);
+    const count = await deleteAllForUser(userId);
     res.status(200).json({ ok: true, count });
   })
 );
