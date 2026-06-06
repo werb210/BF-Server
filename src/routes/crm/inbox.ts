@@ -1,10 +1,119 @@
+import { lookup } from "node:dns/promises";
+import * as net from "node:net";
 import express from "express";
 import { pool } from "../../db.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { respondOk } from "../../utils/respondOk.js";
 import { getGraphForUser, type GraphClient } from "../../modules/o365/graphClient.js";
-// BF_SERVER_BLOCK_BI_ROUND5_CRM_SILO_RESOLVE_v1
 import { resolveSiloFromRequest } from "../../middleware/silo.js";
+
+// BF_SERVER_BLOCK_BI_ROUND5_CRM_SILO_RESOLVE_v1
+
+// BF_SERVER_BLOCK_v747_INBOX_ALL_IMAGES
+// Resolve every image in an email body so it renders under the strict portal CSP
+// (img-src 'self' data: blob:). cid: -> inline-attachment data: URI; remote http(s)
+// -> fetched server-side and inlined as data: URI (so the recipient browser never
+// loads the sender's tracking pixel). Best-effort; never blocks the message view.
+const MAX_INLINE_IMAGE_BYTES = 2_000_000;
+const INLINE_IMAGE_TIMEOUT_MS = 5000;
+const MAX_INLINE_IMAGE_REDIRECTS = 4;
+
+function isBlockedRemoteImageHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (!host || host === "localhost" || host.endsWith(".local")) return true;
+
+  if (host.startsWith("::ffff:")) return isBlockedRemoteImageHost(host.slice("::ffff:".length));
+
+  if (net.isIPv4(host)) {
+    return /^(127\.|0\.|10\.|169\.254\.|192\.168\.)/.test(host)
+      || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+  }
+
+  if (net.isIPv6(host)) {
+    return host === "::" || host === "::1" || host.startsWith("fe80:") || /^f[cd][0-9a-f]{2}:/.test(host);
+  }
+
+  return false;
+}
+
+async function isAllowedRemoteImageUrl(rawUrl: string): Promise<boolean> {
+  const u = new URL(rawUrl);
+  if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+  if (isBlockedRemoteImageHost(u.hostname)) return false;
+
+  const records = await lookup(u.hostname, { all: true, verbatim: false });
+  return records.length > 0 && records.every((record) => !isBlockedRemoteImageHost(record.address));
+}
+
+async function fetchImageAsDataUri(rawUrl: string): Promise<string | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), INLINE_IMAGE_TIMEOUT_MS);
+  try {
+    let currentUrl = rawUrl;
+    for (let redirects = 0; redirects <= MAX_INLINE_IMAGE_REDIRECTS; redirects += 1) {
+      if (!(await isAllowedRemoteImageUrl(currentUrl))) return null;
+      const r = await fetch(currentUrl, { signal: ctrl.signal, redirect: "manual" });
+
+      if (r.status >= 300 && r.status < 400) {
+        const location = r.headers.get("location");
+        if (!location) return null;
+        currentUrl = new URL(location, currentUrl).toString();
+        continue;
+      }
+
+      if (!r.ok) return null;
+      const ctype = (r.headers.get("content-type") || "").split(";")[0].trim();
+      if (!ctype.startsWith("image/")) return null;
+
+      const contentLength = Number(r.headers.get("content-length") || "0");
+      if (contentLength > MAX_INLINE_IMAGE_BYTES) return null;
+
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > MAX_INLINE_IMAGE_BYTES) return null;
+      return `data:${ctype};base64,${buf.toString("base64")}`;
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function inlineEmailImages(graph: GraphClient, base: string, messageId: string, message: any): Promise<void> {
+  try {
+    const body = message?.body;
+    if (!body || typeof body.content !== "string") return;
+    let html: string = body.content;
+
+    if (html.includes("cid:")) {
+      const ar = await graph.fetch(
+        `${base}/messages/${encodeURIComponent(messageId)}/attachments`
+          + `?$select=name,contentType,contentId,isInline,contentBytes`,
+      );
+      if (ar.ok) {
+        const aj: any = await ar.json();
+        for (const att of (aj.value ?? [])) {
+          const bytes: string | undefined = att?.contentBytes;
+          const ctype: string = att?.contentType || "image/png";
+          const cidRaw = String(att?.contentId ?? "").replace(/^<|>$/g, "");
+          if (bytes && cidRaw) html = html.split(`cid:${cidRaw}`).join(`data:${ctype};base64,${bytes}`);
+        }
+      }
+    }
+
+    const urls = new Set<string>();
+    const re = /<img[^>]+src=["'](https?:\/\/[^"']+)["']/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(html)) !== null) urls.add(m[1]);
+    for (const url of urls) {
+      const dataUri = await fetchImageAsDataUri(url);
+      if (dataUri) html = html.split(url).join(dataUri);
+    }
+
+    message.body.content = html;
+  } catch { /* best-effort: never block the message view */ }
+}
 
 const router = express.Router();
 
@@ -83,32 +192,7 @@ router.get("/:messageId", safeHandler(async (req: any, res: any) => {
     body: JSON.stringify({ isRead: true }),
   }).catch(() => undefined);
   const message: any = await r.json();
-  // BF_SERVER_BLOCK_v746_INBOX_INLINE_IMAGES — inline images. The HTML body has <img src="cid:...">
-  // references to inline attachments; fetch them and swap in data: URIs so the
-  // signature logo + icons render. Best-effort; never blocks the message view.
-  try {
-    const body = message?.body;
-    if (body && typeof body.content === "string" && body.content.includes("cid:")) {
-      const ar = await graph.fetch(
-        `${base}/messages/${encodeURIComponent(req.params.messageId)}/attachments`
-          + `?$select=name,contentType,contentId,isInline,contentBytes`,
-      );
-      if (ar.ok) {
-        const aj: any = await ar.json();
-        let html: string = body.content;
-        for (const att of (aj.value ?? [])) {
-          const bytes: string | undefined = att?.contentBytes;
-          const ctype: string = att?.contentType || "image/png";
-          const cidRaw = String(att?.contentId ?? "").replace(/^<|>$/g, "");
-          if (bytes && cidRaw) {
-            const dataUri = `data:${ctype};base64,${bytes}`;
-            html = html.split(`cid:${cidRaw}`).join(dataUri);
-          }
-        }
-        message.body.content = html;
-      }
-    }
-  } catch { /* best-effort: leave body unchanged on any inlining error */ }
+  await inlineEmailImages(graph, base, req.params.messageId, message); // BF_SERVER_BLOCK_v747
   respondOk(res, message);
 }));
 
