@@ -346,6 +346,121 @@ router.post("/contacts", requireCrmWrite, safeHandler(async (req: any, res: any)
 }));
 
 
+// BF_SERVER_BLOCK_v759_CONTACT_CSV_IMPORT — bulk upsert from a CSV the portal
+// parsed client-side. Dedupe by email within the silo: existing -> update with
+// the new (non-empty) fields; new -> insert. Imported contacts are owned by the
+// importing staff user; an existing contact's owner is filled only if unset.
+router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const ownerId = req.user?.id ?? req.user?.userId ?? null;
+  const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  if (!Array.isArray(req.body?.rows)) {
+    return res.status(400).json({ error: { field: "rows", message: "rows[] is required" } });
+  }
+  if (rows.length > 20000) {
+    return res.status(400).json({ error: { field: "rows", message: "too many rows (max 20000)" } });
+  }
+
+  const colRes = await pool.query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'contacts'`,
+  );
+  const cols = new Set<string>(colRes.rows.map((r: any) => r.column_name));
+  const has = (c: string) => cols.has(c);
+
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const raw of rows) {
+      const r = raw ?? {};
+      const email = String(r.email ?? "").trim();
+      let fname = String(r.first_name ?? "").trim();
+      let lname = String(r.last_name ?? "").trim();
+      const full = String(r.name ?? "").trim();
+      if ((!fname || !lname) && full) {
+        const parts = full.split(/\s+/).filter(Boolean);
+        if (!fname) fname = parts[0] ?? "";
+        if (!lname) lname = parts.slice(1).join(" ");
+      }
+      if (!email && !fname && !lname) { skipped++; continue; }
+
+      const phone = String(r.phone ?? "").trim() || null;
+      const companyName = String(r.company_name ?? "").trim() || null;
+      const jobTitle = String(r.job_title ?? "").trim() || null;
+      const leadStatus = String(r.lead_status ?? "").trim() || null;
+      const displayName = `${fname} ${lname}`.trim();
+
+      let existingId: string | null = null;
+      if (email) {
+        const ex = await client.query(
+          `SELECT id FROM contacts WHERE silo = $1 AND lower(email) = lower($2) LIMIT 1`,
+          [silo, email],
+        );
+        existingId = ex.rows[0]?.id ?? null;
+      }
+
+      if (existingId) {
+        const sets: string[] = [];
+        const vals: any[] = [];
+        let i = 1;
+        const overwrite = (col: string, val: any) => {
+          if (has(col) && val != null && val !== "") { sets.push(`${col} = $${i}`); vals.push(val); i++; }
+        };
+        overwrite("first_name", fname || null);
+        overwrite("last_name", lname || null);
+        overwrite("name", displayName || null);
+        overwrite("phone", phone);
+        overwrite("company_name", companyName);
+        overwrite("job_title", jobTitle);
+        overwrite("lead_status", leadStatus);
+        if (has("owner_id") && ownerId) { sets.push(`owner_id = COALESCE(owner_id, $${i})`); vals.push(ownerId); i++; }
+        if (has("updated_at")) { sets.push("updated_at = now()"); }
+        if (!sets.length) { skipped++; continue; }
+        vals.push(existingId);
+        await client.query(`UPDATE contacts SET ${sets.join(", ")} WHERE id = $${i}`, vals);
+        updated++;
+      } else {
+        const insCols: string[] = [];
+        const ph: string[] = [];
+        const vals: any[] = [];
+        let i = 1;
+        const add = (col: string, val: any) => {
+          if (has(col)) { insCols.push(col); ph.push(`$${i}`); vals.push(val); i++; }
+        };
+        add("first_name", fname || "");
+        add("last_name", lname || "");
+        add("name", displayName || email || "");
+        add("email", email || null);
+        add("phone", phone);
+        add("company_name", companyName);
+        add("job_title", jobTitle);
+        add("lead_status", leadStatus || "New");
+        add("silo", silo);
+        add("owner_id", ownerId);
+        await client.query(
+          `INSERT INTO contacts (${insCols.join(", ")}) VALUES (${ph.join(", ")})`,
+          vals,
+        );
+        created++;
+      }
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  return res.json({ ok: true, created, updated, skipped, total: rows.length });
+}));
+
+
 router.get("/contacts/:id", safeHandler(async (req: any, res: any) => {
   const id = String(req.params.id);
   if (!/^[0-9a-f-]{36}$/i.test(id)) {
