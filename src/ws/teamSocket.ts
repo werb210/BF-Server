@@ -37,7 +37,7 @@ function register(userId: string, ws: WebSocket): void {
   });
 }
 
-export function attachTeamWebSocket(server: Server): void {
+export function initTeamWebSocket(server: Server): void {
   if (wss) return;
   wss = new WebSocketServer({ noServer: true });
 
