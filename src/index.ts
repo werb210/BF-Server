@@ -14,7 +14,7 @@ import { listRoutes } from "./debug/printRoutes.js";
 import { pgcryptoAvailable } from "./security/ssnCrypto.js";
 import { markReady } from "./startupState.js";
 import { startKeepWarm } from "./ops/keepWarm.js";
-import { attachTeamWebSocket } from "./ws/teamSocket.js"; // BF_SERVER_BLOCK_v750_TEAM_CHAT
+import { initTeamWebSocket } from "./ws/teamSocket.js"; // BF_SERVER_BLOCK_v750_TEAM_CHAT
 import { logGraphConfigStatus } from "./services/email/graphSendService.js"; // BF_SERVER_v72_BLOCK_1_5
 
 const PORT = Number(process.env.PORT) || 8080;
@@ -177,7 +177,7 @@ export async function start(): Promise<void> {
     markReady();
     startKeepWarm();
   });
-  attachTeamWebSocket(httpServer); // BF_SERVER_BLOCK_v750_TEAM_CHAT
+  initTeamWebSocket(httpServer); // BF_SERVER_BLOCK_v750_TEAM_CHAT
 }
 
 if (process.env.NODE_ENV !== "test") {
