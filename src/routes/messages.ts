@@ -24,7 +24,7 @@ router.get(
     const condition = contactId
       ? "contact_id = $1"
       : `contact_id = (
-           SELECT id FROM crm_contacts WHERE application_id = $1 LIMIT 1
+           SELECT contact_id FROM applications WHERE id = $1 LIMIT 1 -- v342_FIX_CRM_CONTACTS
          )`;
 
     const rows = await pool.query(

@@ -1339,7 +1339,7 @@ router.get(
       `SELECT a.id, a.pipeline_state, a.submitted_at, a.business_name,
               a.product_category, a.requested_amount, a.updated_at
          FROM applications a
-         JOIN crm_contacts c ON c.application_id = a.id
+         JOIN contacts c ON c.id = a.contact_id -- v342_FIX_CRM_CONTACTS
         WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $1
           AND a.pipeline_state NOT IN ('draft','Draft','')
           AND a.pipeline_state IS NOT NULL
@@ -1347,7 +1347,7 @@ router.get(
       [phone10],
     );
 
-    // de-dupe by application id (a phone can appear on multiple crm_contacts rows)
+    // de-dupe by application id (a phone can appear on multiple contact-linked rows)
     const seen = new Set<string>();
     const applications = [] as any[];
     for (const row of r.rows) {

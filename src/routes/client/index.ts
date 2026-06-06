@@ -57,10 +57,11 @@ router.use(async (req: any, res: any, next: any) => {
     const r = await dbQuery(
       `SELECT COUNT(*)::int AS total,
               COUNT(*) FILTER (
-                WHERE right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10) = $2
+                WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $2
               )::int AS mine
-         FROM crm_contacts
-        WHERE application_id::text = ($1)::text`,
+         FROM applications a
+         JOIN contacts c ON c.id = a.contact_id -- v342_FIX_CRM_CONTACTS
+        WHERE a.id::text = ($1)::text`,
       [aid, phone10],
     );
     const total = Number(r.rows?.[0]?.total ?? 0);
