@@ -206,7 +206,7 @@ router.get(
         getSilo(res) ??
         "BF"
       ).toUpperCase();
-      const where: string[] = ["a.silo = $1"];
+      const where: string[] = ["UPPER(a.silo) = UPPER($1)"]; // BF_SERVER_BLOCK_v755_PIPELINE_SILO_CASE_INSENSITIVE
       const values: unknown[] = [businessUnit];
       if (!showDrafts) {
         where.push(`COALESCE(a.pipeline_state, '') NOT IN ('draft','Draft','')`);
