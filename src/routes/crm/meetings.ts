@@ -33,6 +33,9 @@ router.post("/", safeHandler(async (req: any, res: any) => {
     return res.status(400).json({ error: "title, start_at, end_at required" });
 
   let graphId: string | null = null;
+  // BF_SERVER_BLOCK_v336_TEAMS_MEETING_v1 — create a real Teams online meeting + capture link
+  let joinUrl: string | null = null;
+  const wantsOnline = b.online === true || b.meeting_type === "teams";
   const graph = await getGraphForUser(pool, userId);
   if (graph) {
     try {
@@ -49,9 +52,14 @@ router.post("/", safeHandler(async (req: any, res: any) => {
             type: a.optional ? "optional" : "required",
           })),
           reminderMinutesBeforeStart: b.reminder_minutes ?? 60,
+          ...(wantsOnline ? { isOnlineMeeting: true, onlineMeetingProvider: "teamsForBusiness" } : {}),
         }),
       });
-      if (create.ok) graphId = (await create.json()).id ?? null;
+      if (create.ok) {
+        const j: any = await create.json();
+        graphId = j.id ?? null;
+        joinUrl = j.onlineMeeting?.joinUrl ?? null;
+      }
     } catch {
       graphId = null;
     }
@@ -70,7 +78,7 @@ router.post("/", safeHandler(async (req: any, res: any) => {
       b.internal_note ?? null,
       b.start_at,
       b.end_at,
-      b.location ?? null,
+      joinUrl ?? b.location ?? null, // BF_SERVER_BLOCK_v336_TEAMS_MEETING_v1
       JSON.stringify(b.attendees ?? []),
       b.reminder_minutes ?? 60,
       userId,
