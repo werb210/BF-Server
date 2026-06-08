@@ -543,21 +543,23 @@ router.post(
               }).catch(() => {});
             }
           }
-          // BF_SERVER_BLOCK_v772_DOC_UPLOAD_PROMPT — document uploads are not
-          // Stage-2 forms, so a docs-only product (e.g. equipment finance) got
-          // no messenger prompt at all. Post one real "Upload documents" message
-          // (cta_action='upload_docs' opens the client uploader) listing the
-          // required documents that are not forms.
+          // BF_SERVER_BLOCK_v775_DOC_UPLOAD_PROMPT — document uploads are not
+          // Stage-2 forms, so a docs-only product (e.g. equipment finance) got no
+          // messenger prompt. Post one real "Upload documents" message (button
+          // cta_action='upload_docs' opens the client uploader) AND move the card
+          // to "Documents Required" — the v70 advance only checks whether ANY
+          // document row exists, so an app missing only some required docs wrongly
+          // sat in "Received".
           {
-            const v772_docs = v711_agg
+            const v775_docs = v711_agg
               .filter((row) => row?.required !== false)
               .map((row) => String(row?.document_type ?? "").trim())
               .filter((dt) => dt && !FORM_BY_KEYWORD.some(([re]) => re.test(dt)));
-            if (v772_docs.length) {
-              const v772_uniq = Array.from(new Set(v772_docs));
-              const v772_list = v772_uniq.length === 1
-                ? v772_uniq[0]
-                : `${v772_uniq.slice(0, -1).join(", ")} and ${v772_uniq[v772_uniq.length - 1]}`;
+            if (v775_docs.length) {
+              const v775_uniq = Array.from(new Set(v775_docs));
+              const v775_list = v775_uniq.length === 1
+                ? v775_uniq[0]
+                : `${v775_uniq.slice(0, -1).join(", ")} and ${v775_uniq[v775_uniq.length - 1]}`;
               await pool.query(
                 `INSERT INTO communications_messages
                    (id, type, direction, status, application_id, contact_id, silo, body, staff_name, cta_label, cta_action, created_at)
@@ -565,7 +567,12 @@ router.post(
                    (SELECT contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1),
                    COALESCE((SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1), 'BF'),
                    $2, 'Boreal Financial', $3, 'upload_docs', now())`,
-                [application.id, `To continue your application, please upload your supporting documents: ${v772_list}.`, "Upload documents"],
+                [application.id, `To continue your application, please upload your supporting documents: ${v775_list}.`, "Upload documents"],
+              );
+              await pool.query(
+                `UPDATE applications SET pipeline_state = 'Documents Required', updated_at = now()
+                  WHERE id::text = ($1)::text AND pipeline_state IN ('Received','received')`,
+                [application.id],
               );
             }
           }
