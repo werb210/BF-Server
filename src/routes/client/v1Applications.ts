@@ -1011,13 +1011,28 @@ router.post(
                 [r.biApplicationId, r.biPublicId, r.completionUrl, v330_t.bfApplicationId],
               );
               // v330: one messenger message per funding app's PGI policy.
-              // The body names the role so the applicant can tell which
-              // policy goes with which funding leg.
+              // The body names the product category when available so the
+              // applicant can tell which policy belongs to which application.
               const v330_roleLabel = v330_t.role === "primary"
                 ? "main funding"
                 : v330_t.role === "equipment_leg"
                   ? "equipment"
                   : "closing costs";
+              // BF_SERVER_BLOCK_v777_PGI_PRODUCT_LABEL — name the PGI message after
+              // the BF app's product category (LOC / Equipment / …) instead of the
+              // generic funding-leg role, so a client with several apps can tell
+              // which policy belongs to which application.
+              const v777_catRow = await pool.query<{ product_category: string | null; product_type: string | null }>(
+                `SELECT product_category, product_type FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+                [v330_t.bfApplicationId],
+              );
+              const v777_label = (() => {
+                const raw = String(v777_catRow.rows[0]?.product_category ?? v777_catRow.rows[0]?.product_type ?? "").trim();
+                if (!raw) return v330_roleLabel;
+                const k = raw.toLowerCase().replace(/[\s-]+/g, "_");
+                const m: Record<string, string> = { line_of_credit: "LOC", loc: "LOC", equipment_financing: "Equipment", equipment: "Equipment", equipment_finance: "Equipment", working_capital: "Working Capital", term_loan: "Term Loan", factoring: "Factoring" };
+                return m[k] ?? raw.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+              })();
               try {
                 const v650_existingMsg = await pool.query<{ id: string }>(
                   `SELECT id FROM communications_messages
@@ -1040,7 +1055,7 @@ router.post(
                     [
                       biRandomUUID(),
                       v330_t.bfApplicationId,
-                      `Your PGI application for the ${v330_roleLabel} portion is ready. Log in with your phone number to add the remaining underwriting details.`,
+                      `Your PGI application for the ${v777_label} funding portion is ready to complete.`,
                       "Complete PGI Application",
                       r.completionUrl,
                     ],
@@ -1076,7 +1091,7 @@ router.post(
                   const { sendSms } = await import("../../modules/notifications/sms.service.js");
                   await sendSms({
                     to: v650_to,
-                    message: `Boreal Insurance: your PGI application for the ${v330_roleLabel} portion is ready. Complete it here: ${r.completionUrl}`,
+                    message: `Boreal Insurance: your PGI application for the ${v777_label} funding portion is ready to complete: ${r.completionUrl}`,
                   }).catch((smsErr) => {
                     logError("bi_handoff_sms_failed_nonfatal", {
                       code: "bi_handoff_sms_failed_nonfatal",

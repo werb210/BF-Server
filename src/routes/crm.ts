@@ -461,6 +461,49 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
 }));
 
 
+// BF_SERVER_BLOCK_v777_DEDUPE_PREVIEW — read-only. Counts duplicate contact
+// groups (same normalized email, or same last-10 phone) and anonymous
+// "Website Visitor" rows for the selected silo. NON-DESTRUCTIVE — the merge
+// ships separately after review. Registered before /contacts/:id so the path
+// isn't captured as an :id.
+router.get("/contacts/dedupe-preview", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const emailGroups = await pool.query(
+    `SELECT lower(trim(email)) AS key, count(*)::int AS n,
+            array_agg(id ORDER BY created_at ASC) AS ids,
+            array_agg(coalesce(name,'(no name)') ORDER BY created_at ASC) AS names
+       FROM contacts
+      WHERE silo = $1 AND email IS NOT NULL AND trim(email) <> ''
+        AND coalesce(status,'active') <> 'archived'
+      GROUP BY lower(trim(email)) HAVING count(*) > 1
+      ORDER BY count(*) DESC`, [silo]);
+  const phoneGroups = await pool.query(
+    `SELECT right(regexp_replace(phone,'[^0-9]','','g'),10) AS key, count(*)::int AS n,
+            array_agg(id ORDER BY created_at ASC) AS ids,
+            array_agg(coalesce(name,'(no name)') ORDER BY created_at ASC) AS names
+       FROM contacts
+      WHERE silo = $1 AND phone IS NOT NULL
+        AND length(regexp_replace(phone,'[^0-9]','','g')) >= 10
+        AND coalesce(status,'active') <> 'archived'
+      GROUP BY right(regexp_replace(phone,'[^0-9]','','g'),10) HAVING count(*) > 1
+      ORDER BY count(*) DESC`, [silo]);
+  const wv = await pool.query(
+    `SELECT count(*)::int AS n FROM contacts
+      WHERE silo = $1 AND coalesce(status,'active') <> 'archived'
+        AND name ILIKE 'website visitor%'`, [silo]);
+  const mergedAway = (rows: any[]) => rows.reduce((a, g) => a + (Number(g.n) - 1), 0);
+  res.json({
+    silo,
+    emailDuplicateGroups: emailGroups.rows.length,
+    emailContactsMergedAway: mergedAway(emailGroups.rows),
+    phoneDuplicateGroups: phoneGroups.rows.length,
+    phoneContactsMergedAway: mergedAway(phoneGroups.rows),
+    websiteVisitorCount: wv.rows[0]?.n ?? 0,
+    sampleEmailGroups: emailGroups.rows.slice(0, 10),
+    samplePhoneGroups: phoneGroups.rows.slice(0, 10),
+  });
+}));
+
 router.get("/contacts/:id", safeHandler(async (req: any, res: any) => {
   const id = String(req.params.id);
   if (!/^[0-9a-f-]{36}$/i.test(id)) {
