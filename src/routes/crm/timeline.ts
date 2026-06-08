@@ -76,7 +76,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
           FROM call_recordings cr
           JOIN conferences cf ON cf.id = cr.conference_id
           LEFT JOIN call_transcripts ct ON ct.conference_id = cr.conference_id
-         WHERE cf.contact_id = $1 AND cf.silo = $2 AND cr.url IS NOT NULL
+         WHERE cf.contact_id = $1::text AND cf.silo = $2 AND cr.url IS NOT NULL
         UNION ALL
         -- BF_SERVER_BLOCK_47_v1 -- SMS / chat messages from
         -- communications_messages. Title = "SMS in" / "SMS out".
