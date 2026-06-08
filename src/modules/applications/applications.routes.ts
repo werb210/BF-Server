@@ -132,7 +132,7 @@ router.get('/phone-debug', safeHandler(async (req: any, res: any) => {
   }
 
   const cols = `a.id, a.pipeline_state, a.product_category, a.requested_amount,
-                a.business_name, a.contact_id, c.phone AS contact_phone,
+                a.name AS business_name, a.contact_id, c.phone AS contact_phone,
                 right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) AS contact_phone_last10,
                 a.updated_at`;
 
