@@ -43,6 +43,12 @@ router.post("/conference/join", twilioWebhookValidation, async (req: any, res) =
   //   4. waitUrl="" is documented behavior-undefined.
   //   5. endConferenceOnExit=false stranded the other party on hangup.
   const enableRecording = process.env.ENABLE_CALL_RECORDING === "true";
+  // BF_SERVER_BLOCK_v764_RECORDING_CONSENT — Canada is two-party consent.
+  // Announce recording to each party as they join a recorded conference,
+  // before they enter. Only when recording is actually on.
+  if (enableRecording) {
+    vr.say({ voice: "Polly.Joanna" }, "This call may be recorded for quality and training purposes.");
+  }
   const dial = vr.dial({ answerOnBridge: true });
   const confAttrs: Record<string, unknown> = {
     statusCallback: `${base}/api/webhooks/twilio/conference/status?conf=${encodeURIComponent(conf)}`,
