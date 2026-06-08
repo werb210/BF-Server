@@ -478,7 +478,7 @@ router.post(
           [/government issued id|gov.*id|photo id|pieces of/i, "upload", "Upload Government ID"],
         ];
         const v711_already = await pool.query(
-          `SELECT 1 FROM communications_messages WHERE application_id = $1 AND (cta_action LIKE 'form:%' OR cta_action IN ('networth','flinks','cra','debt','realestate','equipment','upload')) LIMIT 1`,
+          `SELECT 1 FROM communications_messages WHERE application_id = $1 AND (cta_action LIKE 'form:%' OR cta_action IN ('networth','flinks','cra','debt','realestate','equipment','upload','upload_docs')) LIMIT 1`,
           [application.id],
         );
         if (!v711_already.rows.length) {
@@ -541,6 +541,32 @@ router.post(
                 to: String(v711_phone),
                 message: `Boreal Financial: your application was received. A few quick forms remain — log in to complete them: ${v711_url}`,
               }).catch(() => {});
+            }
+          }
+          // BF_SERVER_BLOCK_v772_DOC_UPLOAD_PROMPT — document uploads are not
+          // Stage-2 forms, so a docs-only product (e.g. equipment finance) got
+          // no messenger prompt at all. Post one real "Upload documents" message
+          // (cta_action='upload_docs' opens the client uploader) listing the
+          // required documents that are not forms.
+          {
+            const v772_docs = v711_agg
+              .filter((row) => row?.required !== false)
+              .map((row) => String(row?.document_type ?? "").trim())
+              .filter((dt) => dt && !FORM_BY_KEYWORD.some(([re]) => re.test(dt)));
+            if (v772_docs.length) {
+              const v772_uniq = Array.from(new Set(v772_docs));
+              const v772_list = v772_uniq.length === 1
+                ? v772_uniq[0]
+                : `${v772_uniq.slice(0, -1).join(", ")} and ${v772_uniq[v772_uniq.length - 1]}`;
+              await pool.query(
+                `INSERT INTO communications_messages
+                   (id, type, direction, status, application_id, contact_id, silo, body, staff_name, cta_label, cta_action, created_at)
+                 VALUES (gen_random_uuid(), 'message', 'outbound', 'sent', $1,
+                   (SELECT contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1),
+                   COALESCE((SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1), 'BF'),
+                   $2, 'Boreal Financial', $3, 'upload_docs', now())`,
+                [application.id, `To continue your application, please upload your supporting documents: ${v772_list}.`, "Upload documents"],
+              );
             }
           }
         }
