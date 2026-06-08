@@ -504,6 +504,148 @@ router.get("/contacts/dedupe-preview", safeHandler(async (req: any, res: any) =>
   });
 }));
 
+// BF_SERVER_BLOCK_v779_DEDUPE_MERGE — staff-triggered contact dedupe. Defaults to
+// DRY-RUN (no changes); pass ?execute=true to apply. Merges active contacts that
+// share a normalized email, then (on the survivors) a last-10 phone, into the
+// earliest "canonical" row; repoints EVERY public table that has a contact_id
+// column (uuid or text-like) to the canonical id; then ARCHIVES the duplicates
+// (status='archived' — reversible, never hard-deleted, like v688). Also archives
+// anonymous "Website Visitor" rows that have no application/message/note/task/
+// call attached. Idempotent: after a run each group has one active contact.
+router.post("/contacts/dedupe-merge", requireCrmWrite, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const execute = String(req.query.execute ?? "") === "true";
+  const quoteIdent = (identifier: string) => `"${identifier.replace(/"/g, '""')}"`;
+
+  const refCols = await pool.query<{ table_name: string; data_type: string }>(
+    `SELECT table_name, data_type
+       FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND column_name = 'contact_id'
+        AND table_name <> 'contacts'
+        AND data_type IN ('uuid', 'text', 'character varying', 'character')
+      ORDER BY table_name`,
+  );
+  const refTables = refCols.rows;
+
+  const emailQ = `SELECT lower(trim(email)) AS key,
+                         array_agg(id ORDER BY created_at ASC, id ASC) AS ids,
+                         array_agg(coalesce(name,'(no name)') ORDER BY created_at ASC, id ASC) AS names
+                    FROM contacts
+                   WHERE silo = $1 AND email IS NOT NULL AND trim(email) <> ''
+                     AND coalesce(status,'active') <> 'archived'
+                   GROUP BY lower(trim(email)) HAVING count(*) > 1
+                   ORDER BY count(*) DESC`;
+  const phoneQ = `SELECT right(regexp_replace(phone,'[^0-9]','','g'),10) AS key,
+                         array_agg(id ORDER BY created_at ASC, id ASC) AS ids,
+                         array_agg(coalesce(name,'(no name)') ORDER BY created_at ASC, id ASC) AS names
+                    FROM contacts
+                   WHERE silo = $1 AND phone IS NOT NULL
+                     AND length(regexp_replace(phone,'[^0-9]','','g')) >= 10
+                     AND coalesce(status,'active') <> 'archived'
+                   GROUP BY right(regexp_replace(phone,'[^0-9]','','g'),10) HAVING count(*) > 1
+                   ORDER BY count(*) DESC`;
+  const wvWhere = `c.silo = $1 AND c.name ILIKE 'website visitor%'
+          AND coalesce(c.status,'active') <> 'archived'
+          AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.contact_id = c.id)
+          AND NOT EXISTS (SELECT 1 FROM application_contacts ac WHERE ac.contact_id = c.id)
+          AND NOT EXISTS (SELECT 1 FROM communications_messages m WHERE m.contact_id = c.id)
+          AND NOT EXISTS (SELECT 1 FROM crm_notes n WHERE n.contact_id = c.id)
+          AND NOT EXISTS (SELECT 1 FROM crm_tasks t WHERE t.contact_id = c.id)
+          AND NOT EXISTS (SELECT 1 FROM call_events e WHERE e.contact_id = c.id)`;
+  const toPlan = (rows: any[]) => rows.map((r: any) => ({
+    key: r.key,
+    canonicalId: r.ids[0],
+    dupIds: r.ids.slice(1),
+    names: r.names,
+  }));
+  const planArchiveCount = (plan: any[]) => plan.reduce((a: number, g: any) => a + g.dupIds.length, 0);
+
+  if (!execute) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const eg = await client.query(emailQ, [silo]);
+      const emailPlan = toPlan(eg.rows);
+      for (const g of emailPlan) {
+        if (g.dupIds.length) {
+          await client.query(`UPDATE contacts SET status='archived' WHERE id = ANY($1::uuid[])`, [g.dupIds]);
+        }
+      }
+      const pg = await client.query(phoneQ, [silo]);
+      await client.query("ROLLBACK");
+
+      const phonePlan = toPlan(pg.rows);
+      const wv = await pool.query(`SELECT count(*)::int AS n FROM contacts c WHERE ${wvWhere}`, [silo]);
+      res.json({
+        mode: "dry-run", silo,
+        emailGroups: emailPlan.length,
+        emailContactsToArchive: planArchiveCount(emailPlan),
+        phoneGroups: phonePlan.length,
+        phoneContactsToArchive: planArchiveCount(phonePlan),
+        anonymousWebsiteVisitorsToArchive: wv.rows[0]?.n ?? 0,
+        referenceTablesRepointed: refTables.map((t: { table_name: string }) => t.table_name),
+        sampleEmailGroups: emailPlan.slice(0, 10),
+        samplePhoneGroups: phonePlan.slice(0, 10),
+        note: "DRY-RUN — nothing changed. Re-run with ?execute=true to apply.",
+      });
+      return;
+    } catch (e: any) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (_) {
+        // Ignore rollback failures; surface the original error.
+      }
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  const client = await pool.connect();
+  const repointed: Record<string, number> = {};
+  let archived = 0;
+  try {
+    await client.query("BEGIN");
+    const mergeGroups = async (groups: any[]) => {
+      for (const g of groups) {
+        if (!g.dupIds?.length) continue;
+        for (const t of refTables) {
+          const tableName = quoteIdent(t.table_name);
+          const sql = t.data_type === "uuid"
+            ? `UPDATE public.${tableName} SET contact_id = $1 WHERE contact_id = ANY($2::uuid[])`
+            : `UPDATE public.${tableName} SET contact_id = $1::text WHERE contact_id::text = ANY($2::text[])`;
+          const r = await client.query(sql, [g.canonicalId, g.dupIds]);
+          if (r.rowCount) repointed[t.table_name] = (repointed[t.table_name] ?? 0) + r.rowCount;
+        }
+        const a = await client.query(
+          `UPDATE contacts SET status='archived', updated_at=now() WHERE id = ANY($1::uuid[])`,
+          [g.dupIds],
+        );
+        archived += a.rowCount ?? 0;
+      }
+    };
+    const eg = await client.query(emailQ, [silo]);
+    await mergeGroups(toPlan(eg.rows));
+    const pg = await client.query(phoneQ, [silo]); // survivors only
+    await mergeGroups(toPlan(pg.rows));
+    const wv = await client.query(`UPDATE contacts c SET status='archived', updated_at=now() WHERE ${wvWhere}`, [silo]);
+    await client.query("COMMIT");
+    res.json({
+      mode: "executed",
+      silo,
+      contactsArchived: archived,
+      anonymousWebsiteVisitorsArchived: wv.rowCount ?? 0,
+      referencesRepointed: repointed,
+    });
+  } catch (e: any) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}));
+
 router.get("/contacts/:id", safeHandler(async (req: any, res: any) => {
   const id = String(req.params.id);
   if (!/^[0-9a-f-]{36}$/i.test(id)) {
