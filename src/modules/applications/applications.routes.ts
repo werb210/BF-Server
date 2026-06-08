@@ -118,6 +118,58 @@ router.get('/', safeHandler(async (req: any, res: any) => {
   });
 }));
 
+// BF_SERVER_BLOCK_v766_PHONE_DEBUG — read-only staff diagnostic. Shows what the
+// CMP switcher's by-phone lookup matches for a given phone, plus the contact
+// phone each application is actually linked to, so a grouping mismatch (two apps
+// on different phones) is visible. Optional ?ids=id1,id2 inspects specific apps.
+// Gated by the requireAuth + APPLICATION_READ capability set above. No writes.
+router.get('/phone-debug', safeHandler(async (req: any, res: any) => {
+  const phoneRaw = String(req.query?.phone ?? "").trim();
+  const phone10 = phoneRaw.replace(/[^0-9]/g, "").slice(-10);
+  const ids = String(req.query?.ids ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!phone10 && ids.length === 0) {
+    return res.status(400).json({ error: "provide ?phone= or ?ids=id1,id2" });
+  }
+
+  const cols = `a.id, a.pipeline_state, a.product_category, a.requested_amount,
+                a.business_name, a.contact_id, c.phone AS contact_phone,
+                right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) AS contact_phone_last10,
+                a.updated_at`;
+
+  let matched: any[] = [];
+  if (phone10) {
+    const r = await pool.query(
+      `SELECT ${cols}
+         FROM applications a
+         JOIN contacts c ON c.id = a.contact_id
+        WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $1
+        ORDER BY a.updated_at DESC`,
+      [phone10],
+    );
+    matched = r.rows;
+  }
+
+  let byIds: any[] = [];
+  if (ids.length) {
+    const r = await pool.query(
+      `SELECT ${cols}
+         FROM applications a
+         LEFT JOIN contacts c ON c.id = a.contact_id
+        WHERE a.id::text = ANY($1::text[])`,
+      [ids],
+    );
+    byIds = r.rows;
+  }
+
+  return res.json({
+    phone10: phone10 || null,
+    matched_count: matched.length,
+    matched,
+    by_ids: byIds,
+    note: "matched = apps whose linked contact phone (last 10 digits) equals phone10. The switcher groups exactly these. If two apps you expect are not both here, compare their contact_phone_last10 via ?ids=.",
+  });
+}));
+
 // GET /api/applications/:id — single application with documents
 router.get('/:id', safeHandler(async (req: any, res: any) => {
   // BF_SERVER_BLOCK_v216_APPLICATION_DETAIL_BI_FIELDS_v1
