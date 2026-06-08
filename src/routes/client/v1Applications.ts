@@ -1156,8 +1156,11 @@ router.post(
         owner_id: ownerId,
       };
 
-      const { row: applicant } = applicantInput.email
-        ? await findOrCreateContactByEmailAndCompany(tx, applicantInput.email, company.id, silo, applicantInput)
+      // BF_SERVER_BLOCK_v780_APPLY_MATCH — match an existing contact by email OR
+      // phone (the helper already does both); previously a phone-only applicant
+      // with no email fell through to createContact and made a duplicate.
+      const { row: applicant } = (applicantInput.email || applicantInput.phone)
+        ? await findOrCreateContactByEmailAndCompany(tx, applicantInput.email ?? "", company.id, silo, applicantInput)
         : { row: await createContact(tx, applicantInput) };
 
       let partner: { id: string } | null = null;
@@ -1170,8 +1173,8 @@ router.post(
           silo,
           owner_id: ownerId,
         };
-        const result = partnerInput.email
-          ? await findOrCreateContactByEmailAndCompany(tx, partnerInput.email, company.id, silo, partnerInput)
+        const result = (partnerInput.email || partnerInput.phone)
+          ? await findOrCreateContactByEmailAndCompany(tx, partnerInput.email ?? "", company.id, silo, partnerInput)
           : { row: await createContact(tx, partnerInput) };
         partner = result.row;
       }
