@@ -234,9 +234,62 @@ router.get(
       [applicationId]
     );
 
+    // BF_SERVER_BLOCK_v778_HIDE_COMPLETED_TASKS — once a client finishes a task
+    // (submits a CMP form, uploads the gov-ID / required docs, re-uploads a
+    // rejected doc), drop that task's prompt message from the thread so only
+    // outstanding to-dos remain. Each lookup degrades to "nothing completed" on
+    // error, so a schema surprise just leaves the thread unchanged.
+    const v778_forms = await dbQuery(
+      `SELECT doc_type FROM application_form_responses WHERE application_id::text = ($1)::text AND submitted_at IS NOT NULL`,
+      [applicationId]
+    ).catch(() => ({ rows: [] as any[] }));
+    const v778_docs = await dbQuery(
+      `SELECT DISTINCT lower(coalesce(category,'')) AS category FROM documents WHERE application_id::text = ($1)::text AND coalesce(status,'') <> 'rejected'`,
+      [applicationId]
+    ).catch(() => ({ rows: [] as any[] }));
+    const v778_req = await dbQuery(
+      `SELECT lower(coalesce(category,'')) AS category FROM document_requirements WHERE application_id::text = ($1)::text AND required = true AND category IS NOT NULL`,
+      [applicationId]
+    ).catch(() => ({ rows: [] as any[] }));
+    const v778_formKey = (dt: any): string | null => {
+      const s = String(dt ?? "").toLowerCase();
+      if (/cra/.test(s)) return "cra";
+      if (/net.?worth/.test(s)) return "networth";
+      if (/advisor/.test(s)) return "advisors";
+      if (/debt/.test(s)) return "debt";
+      if (/equipment/.test(s)) return "equipment";
+      if (/real.?estate/.test(s)) return "realestate";
+      if (/flinks|bank/.test(s)) return "flinks";
+      return null;
+    };
+    const v778_completed = new Set<string>();
+    for (const r of (v778_forms.rows ?? [])) { const k = v778_formKey((r as any).doc_type); if (k) v778_completed.add(k); }
+    const v778_uploaded = new Set<string>((v778_docs.rows ?? []).map((r: any) => String(r.category || "")).filter(Boolean));
+    if ([...v778_uploaded].some((c) => /gov|government|photo.?id|identification|\bid\b/.test(c))) v778_completed.add("upload");
+    const v778_required: string[] = (v778_req.rows ?? []).map((r: any) => String(r.category || "")).filter(Boolean);
+    const v778_stillNeeded = v778_required.filter((c) => !v778_uploaded.has(c));
+    if (v778_required.length > 0 && v778_stillNeeded.length === 0) v778_completed.add("upload_docs");
+    const V778_TASK_KEYS = new Set<string>(["cra", "networth", "advisors", "debt", "equipment", "realestate", "flinks", "upload", "upload_docs"]);
+    const v778_isTask = (cta: any): boolean => { if (!cta) return false; let k = String(cta); if (k.startsWith("form:")) k = k.slice(5); return V778_TASK_KEYS.has(k) || k.startsWith("upload:"); };
+    const v778_isDone = (cta: any): boolean => {
+      if (!cta) return false;
+      let k = String(cta);
+      if (k.startsWith("form:")) k = k.slice(5);
+      if (k.startsWith("upload:")) {
+        const t = k.slice(7).toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (!t) return false;
+        return [...v778_uploaded].some((c) => { const cc = c.replace(/[^a-z0-9]/g, ""); return !!cc && (cc.includes(t) || t.includes(cc)); });
+      }
+      return v778_completed.has(k);
+    };
+    let v778_rows = (rows.rows ?? []).filter((r: any) => !v778_isDone(r.cta_action));
+    if (!v778_rows.some((r: any) => v778_isTask(r.cta_action))) {
+      v778_rows = v778_rows.filter((r: any) => !(typeof r.body === "string" && /few quick steps to finish/i.test(r.body)));
+    }
+
     res.status(200).json({
       status: "ok",
-      data: (rows.rows ?? []).map((r: any) => ({
+      data: v778_rows.map((r: any) => ({
         id: r.id,
         direction: r.direction,
         body: r.body,
