@@ -151,12 +151,11 @@ router.post(
        JSON.stringify({ summary, recipients: recipientsRaw, contact_id: resolvedContactId, phone: phoneDigits })],
     );
 
-    await pool.query(
-      `INSERT INTO communications_messages
-         (id, type, direction, status, silo, body, contact_id, application_id, created_at)
-       VALUES ($1, 'maya_handoff', 'inbound', 'received', $2, $3, $4, $5, NOW())`,
-      [randomUUID(), silo, summary ?? "Maya handoff: visitor requested human.", resolvedContactId, applicationIdHint],
-    );
+    // BF_SERVER_BLOCK_v763_MAYA_COMMS_SEPARATION — Maya's own auto-handoff no
+    // longer writes a row into communications_messages (it used to pollute the
+    // Messages tab with anonymous "Website Visitor" / Maya-transcript entries).
+    // The handoff is recorded in maya_escalations and staff are pinged by SMS;
+    // the full Maya conversation is viewable in the Maya tab (chat_sessions).
 
     const smsBody = `Maya handoff (${surface}): ${summary ?? "visitor requested human"}. Session ${sessionId ?? "n/a"}.`;
     const fanout = await sendStaffNotification({ recipients: recipientsRaw, body: smsBody });
@@ -202,6 +201,50 @@ router.get("/messages", safeHandler(async (req: any, res: any) => {
       [contactId, silo]
     );
     res.json({ messages: result.rows, total: result.rows.length });
+  } catch {
+    res.json({ messages: [], total: 0 });
+  }
+}));
+
+// BF_SERVER_BLOCK_v763_MAYA_COMMS_SEPARATION — staff Maya tab. Lists Maya AI
+// conversations that had a real back-and-forth (>= 2 messages) and serves one
+// session's full transcript. Read-only; sourced from chat_sessions /
+// chat_messages, independent of the Messages tab.
+router.get("/maya-sessions", safeHandler(async (_req: any, res: any) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT s.id, s.source, s.channel, s.status, s.created_at,
+              count(m.id)::int AS message_count,
+              max(m.created_at) AS last_message_at,
+              (SELECT COALESCE(message, content)
+                 FROM chat_messages
+                WHERE session_id = s.id
+                ORDER BY created_at DESC LIMIT 1) AS last_message
+         FROM chat_sessions s
+         JOIN chat_messages m ON m.session_id = s.id
+        GROUP BY s.id
+       HAVING count(m.id) >= 2
+        ORDER BY max(m.created_at) DESC
+        LIMIT 200`,
+    );
+    res.json({ sessions: rows, total: rows.length });
+  } catch {
+    res.json({ sessions: [], total: 0 });
+  }
+}));
+
+router.get("/maya-sessions/:id/messages", safeHandler(async (req: any, res: any) => {
+  const sessionId = String(req.params.id ?? "");
+  if (!sessionId) return res.status(400).json({ error: "missing_session_id" });
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, role, COALESCE(message, content) AS message, created_at
+         FROM chat_messages
+        WHERE session_id = $1
+        ORDER BY created_at ASC`,
+      [sessionId],
+    );
+    res.json({ messages: rows, total: rows.length });
   } catch {
     res.json({ messages: [], total: 0 });
   }

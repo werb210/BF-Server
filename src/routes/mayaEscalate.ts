@@ -79,6 +79,9 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
   const kind = String(b.kind ?? "");
   const contact = b.contact ?? {};
   const conversationId = b.conversation_id ? String(b.conversation_id) : null;
+  // BF_SERVER_BLOCK_v763_MAYA_COMMS_SEPARATION — resolve the real silo from the
+  // payload instead of hardcoding 'BF', so BI escalations file under BI.
+  const silo = (typeof b.silo === "string" && b.silo.trim() ? b.silo.trim() : "BF").toUpperCase();
 
   if (kind !== "talk_to_human" && kind !== "report_issue") {
     return res.status(400).json({ error: "invalid_kind" });
@@ -94,27 +97,50 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
       const nameIn = typeof contact.name === "string" ? contact.name.trim() : null;
       const contactName: string = nameIn || phone || email || "Anonymous visitor";
 
+      // BF_SERVER_BLOCK_v763_MAYA_COMMS_SEPARATION — the Messages thread shows
+      // the HUMAN handoff, not the Maya transcript. The transcript stays in the
+      // Maya tab (chat_sessions); the body here is a clean marker, and the
+      // visitor's own follow-ups arrive via the conversation poll endpoint.
+      const displayBody = `${contactName} requested to talk to a human.`;
+
       // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 — attach to a CRM contact first.
-      const contactId = await resolveContactId({ name: nameIn, email, phone, silo: "BF" });
+      const contactId = await resolveContactId({ name: nameIn, email, phone, silo });
 
-      const conv = await pool.query<{ id: string }>(
-        `INSERT INTO communications_conversations
-           (contact_id, contact_name, contact_phone, channel, last_message_preview, last_message_at, unread, silo)
-         VALUES ($1, $2, $3, 'messenger', $4, NOW(), 1, 'BF')
-         RETURNING id`,
-        [contactId, contactName, phone, message.slice(0, 200)]
-      );
-      const convId: string = conv.rows[0].id;
+      // Reuse the contact's existing open messenger thread instead of spawning a
+      // brand-new conversation on every click (the v686 fragmentation bug).
+      let convId: string | null = null;
+      if (contactId) {
+        const existing = await pool.query<{ id: string }>(
+          `SELECT id FROM communications_conversations
+            WHERE contact_id = $1 AND silo = $2 AND channel = 'messenger'
+            ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
+          [contactId, silo]
+        );
+        convId = existing.rows[0]?.id ?? null;
+      }
+      if (convId) {
+        await pool.query(
+          `UPDATE communications_conversations
+              SET last_message_preview = $2, last_message_at = NOW(), unread = unread + 1
+            WHERE id = $1`,
+          [convId, displayBody.slice(0, 200)]
+        );
+      } else {
+        const conv = await pool.query<{ id: string }>(
+          `INSERT INTO communications_conversations
+             (contact_id, contact_name, contact_phone, channel, last_message_preview, last_message_at, unread, silo)
+           VALUES ($1, $2, $3, 'messenger', $4, NOW(), 1, $5)
+           RETURNING id`,
+          [contactId, contactName, phone, displayBody.slice(0, 200), silo]
+        );
+        convId = conv.rows[0].id;
+      }
 
-      // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 — stamp contact_id + silo +
-      // type='message' + conversation_id so the row shows in the staff Messages
-      // tab (type='message', contact_id) AND the CRM timeline (contact_id+silo),
-      // while staying on the conversation_id the visitor widget polls.
       await pool.query(
         `INSERT INTO communications_messages
            (id, conversation_id, contact_id, channel, type, direction, body, silo, from_number, created_at)
-         VALUES (gen_random_uuid(), $1, $2, 'messenger', 'message', 'inbound', $3, 'BF', $4, NOW())`,
-        [convId, contactId, message, phone]
+         VALUES (gen_random_uuid(), $1, $2, 'messenger', 'message', 'inbound', $3, $5, $4, NOW())`,
+        [convId, contactId, displayBody, phone, silo]
       );
 
       // BF_SERVER_BLOCK_v222_MAYA_ESCALATE_STAFF_NOTIFY_v1
@@ -150,31 +176,26 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
     const description = String(b.description ?? "").trim();
     if (!description) return res.status(400).json({ error: "missing_description" });
 
-    // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 — issues must also attach to a CRM
-    // contact and be logged to the timeline. Resolve/create the contact, open a
-    // messenger conversation + inbound message (so it shows in the Messages tab
-    // and CRM timeline and staff can reply — /messages/send SMS-falls-back to
-    // the reporter when they're offline), then link the issue row to both.
+    // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 — issues still attach to a CRM
+    // contact, but BF_SERVER_BLOCK_v763_MAYA_COMMS_SEPARATION keeps the issue
+    // report itself out of communications_messages so it does not render as a
+    // duplicate staff Messages-tab entry.
     const issuePhone = (typeof contact.phone === "string" ? contact.phone.trim() : "") || null;
     const issueEmail = (typeof contact.email === "string" ? contact.email.trim() : "") || null;
     const issueName = typeof contact.name === "string" ? contact.name.trim() : null;
-    const issueContactId = await resolveContactId({ name: issueName, email: issueEmail, phone: issuePhone, silo: "BF" });
+    const issueContactId = await resolveContactId({ name: issueName, email: issueEmail, phone: issuePhone, silo });
     const issueConvName = issueName || issuePhone || issueEmail || "Issue report";
     const issuePreview = `[Issue] ${description}`.slice(0, 200);
     const issueConv = await pool.query<{ id: string }>(
       `INSERT INTO communications_conversations
          (contact_id, contact_name, contact_phone, channel, last_message_preview, last_message_at, unread, silo)
-       VALUES ($1, $2, $3, 'messenger', $4, NOW(), 1, 'BF')
+       VALUES ($1, $2, $3, 'messenger', $4, NOW(), 1, $5)
        RETURNING id`,
-      [issueContactId, issueConvName, issuePhone, issuePreview]
+      [issueContactId, issueConvName, issuePhone, issuePreview, silo]
     );
     const issueConvId = issueConv.rows[0].id;
-    await pool.query(
-      `INSERT INTO communications_messages
-         (id, conversation_id, contact_id, channel, type, direction, body, silo, from_number, created_at)
-       VALUES (gen_random_uuid(), $1, $2, 'messenger', 'message', 'inbound', $3, 'BF', $4, NOW())`,
-      [issueConvId, issueContactId, `[Issue] ${description}`, issuePhone]
-    );
+    // BF_SERVER_BLOCK_v763_MAYA_COMMS_SEPARATION — issues live ONLY in the
+    // Issues tab. Do NOT double-post a messenger row into the Messages tab.
 
     // BF_SERVER_BLOCK_v645_INBOX_AND_SCREENSHOT_v1 — accept three field-name
     // aliases so all current callers work without a wire-protocol break:
@@ -198,7 +219,7 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
       `INSERT INTO issues
          (source, kind, description, conversation_id, contact_id, contact_email, contact_phone,
           page_url, screenshot_url, silo)
-       VALUES ('maya_escalate', 'report_issue', $1, $2, $3, $4, $5, $6, $7, 'BF')
+       VALUES ('maya_escalate', 'report_issue', $1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
       [
         description,
@@ -208,6 +229,7 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
         issuePhone,
         (typeof b.page_url === "string" ? b.page_url : null) || null,
         screenshotUrl,
+        silo,
       ]
     );
 
