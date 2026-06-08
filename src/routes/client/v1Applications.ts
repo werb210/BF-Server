@@ -1344,7 +1344,7 @@ router.get(
       : "AND a.pipeline_state NOT IN ('draft','Draft','') AND a.pipeline_state IS NOT NULL";
 
     const r = await pool.query(
-      `SELECT a.id, a.pipeline_state, a.submitted_at, a.business_name,
+      `SELECT a.id, a.pipeline_state, a.submitted_at, a.name AS business_name,
               a.product_category, a.requested_amount, a.updated_at
          FROM applications a
          JOIN contacts c ON c.id = a.contact_id -- v342_FIX_CRM_CONTACTS
