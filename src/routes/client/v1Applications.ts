@@ -1335,14 +1335,21 @@ router.get(
     const phone10 = phoneRaw.replace(/[^0-9]/g, "").slice(-10);
     if (!phone10) return res.status(401).json({ found: false, error: "no_phone_claim" });
 
+    // BF_SERVER_BLOCK_v765_BY_PHONE_INCLUDE_DRAFTS — the switcher opts in to
+    // drafts via ?includeDrafts=true. Default (OTP routing) still excludes them
+    // so a draft-only caller resumes the wizard instead of routing to a portal.
+    const includeDrafts = String(req.query?.includeDrafts ?? "") === "true";
+    const draftFilter = includeDrafts
+      ? "AND a.pipeline_state IS NOT NULL AND a.pipeline_state <> ''"
+      : "AND a.pipeline_state NOT IN ('draft','Draft','') AND a.pipeline_state IS NOT NULL";
+
     const r = await pool.query(
       `SELECT a.id, a.pipeline_state, a.submitted_at, a.business_name,
               a.product_category, a.requested_amount, a.updated_at
          FROM applications a
          JOIN contacts c ON c.id = a.contact_id -- v342_FIX_CRM_CONTACTS
         WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $1
-          AND a.pipeline_state NOT IN ('draft','Draft','')
-          AND a.pipeline_state IS NOT NULL
+          ${draftFilter}
         ORDER BY a.updated_at DESC`,
       [phone10],
     );
