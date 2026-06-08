@@ -65,6 +65,19 @@ router.get("/", safeHandler(async (req: any, res: any) => {
          WHERE contact_id = $1 AND (silo = $2 OR silo IS NULL)
            AND event_type IN ('call.ended','call.missed','call.failed','call.declined')
         UNION ALL
+        -- BF_SERVER_BLOCK_v762_RECORDING_TIMELINE — recorded calls + Voice
+        -- Intelligence transcripts (both keyed by conference) surfaced on the
+        -- contact timeline. body carries the transcript (or VI summary) and may
+        -- be null until transcription finishes; extra carries the recording URL.
+        SELECT 'recording' AS kind, cr.id::text, cr.created_at AS ts,
+               'Call recording' AS title,
+               COALESCE(ct.full_text, ct.voice_intelligence_summary) AS body,
+               cr.url AS extra
+          FROM call_recordings cr
+          JOIN conferences cf ON cf.id = cr.conference_id
+          LEFT JOIN call_transcripts ct ON ct.conference_id = cr.conference_id
+         WHERE cf.contact_id = $1 AND cf.silo = $2 AND cr.url IS NOT NULL
+        UNION ALL
         -- BF_SERVER_BLOCK_47_v1 -- SMS / chat messages from
         -- communications_messages. Title = "SMS in" / "SMS out".
         -- staff_name surfaces who sent outbound (NULL on inbound).
