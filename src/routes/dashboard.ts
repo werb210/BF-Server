@@ -15,28 +15,34 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
   const silo = getSilo(res);
   const [active, won, stageRows] = await Promise.all([
     pool.query<{ count: string }>(
-      // v635: exclude drafts from "Active Applications" count so the dashboard
-      // matches the Pipeline kanban (which defaults to Show drafts = off).
+      // BF_SERVER_BLOCK_v786_DASHBOARD_MATCH_BOARD — count exactly what the
+      // Pipeline board shows: the same source/filter as GET /api/portal/applications
+      // (UPPER(silo) match, drafts excluded). Accepted/Rejected are NOT excluded so
+      // the headline number matches the board's "N applications" header.
       `SELECT COUNT(*)::text AS count FROM applications
-       WHERE silo = $3
-         AND pipeline_state NOT IN ($1, $2, 'draft')`,
-      [ApplicationStage.ACCEPTED, ApplicationStage.REJECTED, silo]
+       WHERE UPPER(silo) = UPPER($1)
+         AND COALESCE(pipeline_state, '') NOT IN ('draft', 'Draft', '')`,
+      [silo]
     ),
     pool.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM applications
-       WHERE silo = $2 -- BF_SERVER_BLOCK_v156_SILO_LEAK_FIX_v1
+       WHERE UPPER(silo) = UPPER($2)
          AND pipeline_state = $1
          AND updated_at >= date_trunc('month', now())`,
       [ApplicationStage.ACCEPTED, silo]
     ),
     pool.query<{ stage: string; count: string }>(
-      // v635: also exclude drafts from the stage breakdown so card labels match.
-      `SELECT pipeline_state AS stage, COUNT(*)::text AS count
+      // Bucket into the board's columns; any unknown state falls to "Received",
+      // matching the board's effectiveStage().
+      `SELECT (CASE WHEN pipeline_state IN
+                 ('Received','In Review','Documents Required','Additional Steps Required','Off to Lender','Offer','Accepted','Rejected')
+               THEN pipeline_state ELSE 'Received' END) AS stage,
+              COUNT(*)::text AS count
        FROM applications
-       WHERE silo = $3
-         AND pipeline_state NOT IN ($1, $2, 'draft')
-       GROUP BY pipeline_state`,
-      [ApplicationStage.ACCEPTED, ApplicationStage.REJECTED, silo]
+       WHERE UPPER(silo) = UPPER($1)
+         AND COALESCE(pipeline_state, '') NOT IN ('draft', 'Draft', '')
+       GROUP BY 1`,
+      [silo]
     ),
   ]);
 
