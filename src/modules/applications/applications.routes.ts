@@ -118,6 +118,46 @@ router.get('/', safeHandler(async (req: any, res: any) => {
   });
 }));
 
+router.get('/dup-debug', safeHandler(async (req: any, res: any) => {
+  // BF_SERVER_BLOCK_v781_DUP_DEBUG — read-only. Lists applications matching a
+  // name (business or contact) or a contactId, with the fields that tell a true
+  // duplicate submission from an expected companion/child app. No writes.
+  const q = String(req.query?.q ?? "").trim();
+  const contactId = String(req.query?.contactId ?? "").trim();
+  if (!q && !contactId) return res.status(400).json({ error: "provide ?q=<name> or ?contactId=<uuid>" });
+  const cols = `a.id, a.name AS business_name, a.product_category, a.requested_amount,
+                a.pipeline_state, a.source, a.parent_application_id, a.contact_id,
+                a.created_at, a.submitted_at,
+                c.name AS contact_name, c.email AS contact_email,
+                right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) AS contact_phone_last10`;
+  let rows: any[] = [];
+  if (contactId) {
+    const r = await pool.query(
+      `SELECT ${cols} FROM applications a LEFT JOIN contacts c ON c.id = a.contact_id
+        WHERE a.contact_id::text = $1 ORDER BY a.created_at ASC`, [contactId]);
+    rows = r.rows;
+  } else {
+    const r = await pool.query(
+      `SELECT ${cols} FROM applications a LEFT JOIN contacts c ON c.id = a.contact_id
+        WHERE a.name ILIKE $1 OR c.name ILIKE $1
+        ORDER BY a.contact_id NULLS LAST, a.created_at ASC`, [`%${q}%`]);
+    rows = r.rows;
+  }
+  const apps = rows.map((r) => ({
+    id: r.id, idShort: String(r.id).slice(-8).toUpperCase(),
+    business_name: r.business_name, contact_name: r.contact_name, contact_email: r.contact_email,
+    contact_phone_last10: r.contact_phone_last10, contact_id: r.contact_id,
+    product: r.product_category, amount: r.requested_amount, stage: r.pipeline_state,
+    product_category: r.product_category, requested_amount: r.requested_amount,
+    pipeline_state: r.pipeline_state, source: r.source,
+    parent_application_id: r.parent_application_id,
+    isCompanion: !!r.parent_application_id,
+    submitted: !!r.submitted_at,
+    created_at: r.created_at, submitted_at: r.submitted_at,
+  }));
+  return res.json({ query: q || contactId, count: apps.length, applications: apps });
+}));
+
 // BF_SERVER_BLOCK_v766_PHONE_DEBUG — read-only staff diagnostic. Shows what the
 // CMP switcher's by-phone lookup matches for a given phone, plus the contact
 // phone each application is actually linked to, so a grouping mismatch (two apps
