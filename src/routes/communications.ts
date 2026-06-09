@@ -1498,4 +1498,87 @@ router.post(
   }),
 );
 
+// BF_SERVER_BLOCK_v795_BROADCAST — multi-send: one outbound per selected contact
+// (individual 1:1 sends, NOT a group thread), mirroring POST /sms (Twilio + persist)
+// for channel 'sms' and posting a messenger row for channel 'message'. Each row is
+// logged to that contact's timeline with the resolved silo. Hard cap of 500.
+router.post("/broadcast", safeHandler(async (req: any, res: any) => {
+  const { contactIds, body, channel } = req.body ?? {};
+  const ch = channel === "message" ? "message" : "sms";
+  if (!Array.isArray(contactIds) || contactIds.length === 0 || !body) {
+    return res.status(400).json({ error: { message: "contactIds and body are required", code: "validation_error" } });
+  }
+  const ids = Array.from(new Set(contactIds.map((x: any) => String(x).trim())))
+    .filter((x) => /^[0-9a-f-]{36}$/i.test(x))
+    .slice(0, 500);
+  if (!ids.length) return res.status(400).json({ error: { message: "no valid contactIds", code: "validation_error" } });
+
+  const { resolveSiloFromRequest } = await import("../middleware/silo.js");
+  const silo = resolveSiloFromRequest(req);
+  const staffName = (req as any).user?.name ?? (req as any).user?.email ?? null;
+
+  const { rows: contacts } = await pool.query<{ id: string; phone: string | null; name: string | null }>(
+    `SELECT id, phone, name FROM contacts WHERE id = ANY($1::uuid[])`, [ids],
+  );
+
+  let client: any = null;
+  let from: string | undefined;
+  if (ch === "sms") {
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    from = process.env.TWILIO_FROM_NUMBER ?? process.env.TWILIO_PHONE_NUMBER ?? process.env.TWILIO_FROM ?? process.env.TWILIO_PHONE ?? process.env.TWILIO_NUMBER;
+    if (!accountSid || !authToken || !from) {
+      return res.status(503).json({ error: { message: "SMS not configured", code: "service_unavailable" } });
+    }
+    client = twilio(accountSid, authToken);
+  }
+
+  const results: Array<{ contactId: string; ok: boolean; error?: string }> = [];
+  for (const c of contacts) {
+    try {
+      const appRow = await pool.query<{ id: string }>(
+        `SELECT id FROM applications WHERE contact_id = $1 ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST LIMIT 1`, [c.id],
+      ).catch(() => ({ rows: [] as any[] }));
+      const applicationId = appRow.rows[0]?.id ?? null;
+      const ctx = await mergeCtxForContact({ contactId: c.id, phone: c.phone });
+      const mergedBody = renderMergeTokensComm(String(body), ctx);
+
+      if (ch === "sms") {
+        if (!c.phone) { results.push({ contactId: c.id, ok: false, error: "no_phone" }); continue; }
+        const digits = String(c.phone).replace(/\D/g, "");
+        const to = digits.length === 10 ? `+1${digits}` : String(c.phone);
+        const msg = await client.messages.create({ body: String(mergedBody), from, to });
+        await pool.query(
+          `INSERT INTO communications_messages
+             (id, type, direction, status, body, phone_number, from_number, to_number, twilio_sid, contact_id, application_id, staff_name, silo, created_at)
+           VALUES (gen_random_uuid(), 'sms', 'outbound', $1, $2, $3, $4, $3, $5, $6, $7, $8, $9, now())`,
+          [msg.status, String(mergedBody), to, from, msg.sid, c.id, applicationId, staffName, silo],
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO communications_messages
+             (id, type, direction, status, body, contact_id, application_id, staff_name, silo, created_at)
+           VALUES (gen_random_uuid(), 'message', 'outbound', 'sent', $1, $2, $3, $4, $5, now())`,
+          [String(mergedBody), c.id, applicationId, staffName, silo],
+        );
+      }
+      results.push({ contactId: c.id, ok: true });
+    } catch {
+      results.push({ contactId: c.id, ok: false, error: "send_failed" });
+    }
+  }
+  for (const id of ids.filter((x) => !contacts.some((c) => c.id === x))) {
+    results.push({ contactId: id, ok: false, error: "not_found" });
+  }
+
+  return res.json({
+    ok: true,
+    channel: ch,
+    requested: ids.length,
+    sent: results.filter((r) => r.ok).length,
+    failed: results.filter((r) => !r.ok).length,
+    results,
+  });
+}));
+
 export default router;
