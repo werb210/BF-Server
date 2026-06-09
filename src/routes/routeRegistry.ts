@@ -64,6 +64,7 @@ import pipelineRoutes from "./pipeline.js";
 import telephonyRoutes from "../telephony/routes/telephonyRoutes.js";
 import realtimeRoutes from "../voice/realtimeRoutes.js";
 import webhooksRoutes from "./webhooks.js";
+import emailPixelRoutes from "./emailPixel.js"; // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING
 import voiceCallsRoutes from "./voiceCalls.js";
 import voiceMidCallRoutes from "./voiceMidCall.js";
 import conferenceWebhooksRoutes from "./conferenceWebhooks.js";
@@ -212,6 +213,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/referrals", router: referralsRoutes },
   { path: "/pipeline", router: pipelineRoutes },
   { path: "/webhooks", router: webhooksRoutes },
+  { path: "/track", router: emailPixelRoutes }, // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING (public)
   { path: "/voice", router: voiceCallsRoutes },
   { path: "/webhooks/twilio", router: conferenceWebhooksRoutes },
   { path: "/sms", router: webhooksRoutes },
