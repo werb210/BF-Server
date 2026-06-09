@@ -5,6 +5,7 @@ import { respondOk } from "../../utils/respondOk.js";
 import { getGraphForUser } from "../../modules/o365/graphClient.js";
 // BF_SERVER_BLOCK_BI_ROUND5_CRM_SILO_RESOLVE_v1
 import { resolveSiloFromRequest } from "../../middleware/silo.js";
+import { randomUUID } from "node:crypto"; // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING
 
 const router = express.Router({ mergeParams: true });
 
@@ -52,12 +53,18 @@ router.post("/", safeHandler(async (req: any, res: any) => {
     endpoint = `/users/${encodeURIComponent(from)}/sendMail`;
   }
 
+  // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING — embed a 1x1 tracking pixel so an open
+  // is detected reliably (not just via opt-in "Read:" receipts). The token ties the open
+  // back to this crm_email_log row; the follow-up worker alerts the sender if unopened.
+  const pixelToken = randomUUID();
+  const serverBase = (process.env.SERVER_PUBLIC_URL ?? process.env.PUBLIC_SERVER_URL ?? "https://server.boreal.financial").replace(/\/+$/, "");
+  const trackedHtml = `${body_html}<img src="${serverBase}/api/track/email/${pixelToken}.gif" width="1" height="1" alt="" style="display:none;width:1px;height:1px;" />`;
   const graphRes = await graph.fetch(endpoint, {
     method: "POST",
     body: JSON.stringify({
       message: {
         subject,
-        body: { contentType: "HTML", content: body_html },
+        body: { contentType: "HTML", content: trackedHtml },
         toRecipients: to.map((a: string) => ({ emailAddress: { address: a } })),
         ccRecipients: cc.map((a: string) => ({ emailAddress: { address: a } })),
         bccRecipients: bcc.map((a: string) => ({ emailAddress: { address: a } })),
@@ -76,9 +83,9 @@ router.post("/", safeHandler(async (req: any, res: any) => {
   const { rows } = await pool.query(
     `INSERT INTO crm_email_log
        (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,
-        owner_id,contact_id,company_id,silo)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-    [from, to, cc, bcc, subject, body_html, userId, contactId, companyId, silo],
+        owner_id,contact_id,company_id,silo,pixel_token)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+    [from, to, cc, bcc, subject, body_html, userId, contactId, companyId, silo, pixelToken],
   );
   res.status(201).json({ ok: true, data: rows[0] });
 }));
