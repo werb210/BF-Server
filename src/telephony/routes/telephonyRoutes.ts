@@ -202,7 +202,7 @@ router.get("/quick-call", auth, async (req: any, res: Response) => {
             (sp.status = 'available' AND sp.last_heartbeat > now() - interval '5 minutes') AS online
        FROM users u
        LEFT JOIN staff_presence sp ON sp.user_id = u.id
-      WHERE upper(u.role) IN ('ADMIN','STAFF')
+      WHERE coalesce(upper(u.role), '') NOT IN ('APPLICANT','CLIENT','LENDER','REFERRER','BROKER') -- BF_SERVER_BLOCK_v788_QUICKCALL_ALL_STAFF: include all internal staff (admin/staff/marketing), exclude external parties
         AND coalesce(u.active, true) = true
         AND coalesce(u.disabled, false) = false
         AND coalesce(u.is_active, true) = true
