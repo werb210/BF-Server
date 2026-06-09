@@ -226,6 +226,12 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
       where.push(`coalesce(c.lead_status, 'New') = $${values.length}`);
     }
   }
+  // BF_SERVER_BLOCK_v805_TAG_FILTER — filter contacts by a single tag (e.g. "active"); case-insensitive.
+  const tagFilter = typeof req.query.tag === "string" ? req.query.tag.trim().toLowerCase() : "";
+  if (tagFilter && hasTags) {
+    values.push(tagFilter);
+    where.push(`EXISTS (SELECT 1 FROM unnest(coalesce(c.tags, '{}'::text[])) t WHERE lower(t) = $${values.length})`);
+  }
   if (search) {
     values.push(`%${search}%`);
     const searchParts = [
