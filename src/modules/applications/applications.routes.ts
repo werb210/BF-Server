@@ -158,6 +158,74 @@ router.get('/dup-debug', safeHandler(async (req: any, res: any) => {
   return res.json({ query: q || contactId, count: apps.length, applications: apps });
 }));
 
+// GET /api/applications/:id/task-status — read-only staff task completion status.
+// Gated by the requireAuth + APPLICATION_READ capability set above. No writes.
+router.get('/:id/task-status', safeHandler(async (req: any, res: any) => {
+  // BF_SERVER_BLOCK_v782_TASK_STATUS — read-only staff view of whether the
+  // applicant has finished the tasks we asked of them (Connect Bank/Flinks, CRA,
+  // Net Worth, Advisors, Debt, collateral, Gov ID, document upload). The required
+  // set is exactly the task-prompt messages already posted to the client; each is
+  // checked against the same completion signals v778 uses (submitted form
+  // responses + uploaded non-rejected documents + all required docs in).
+  const id = String(req.params.id);
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: "invalid id" });
+
+  const prompts = await pool.query(
+    `SELECT DISTINCT cta_action, max(cta_label) AS cta_label
+       FROM communications_messages
+      WHERE application_id::text = ($1)::text
+        AND (cta_action LIKE 'form:%' OR cta_action LIKE 'upload:%'
+             OR cta_action IN ('networth','flinks','cra','debt','realestate','equipment','advisors','upload','upload_docs'))
+      GROUP BY cta_action`, [id]).catch(() => ({ rows: [] as any[] }));
+  const forms = await pool.query(
+    `SELECT doc_type FROM application_form_responses WHERE application_id::text = ($1)::text AND submitted_at IS NOT NULL`, [id]).catch(() => ({ rows: [] as any[] }));
+  const docs = await pool.query(
+    `SELECT DISTINCT lower(coalesce(category,'')) AS category FROM documents WHERE application_id::text = ($1)::text AND coalesce(status,'') <> 'rejected'`, [id]).catch(() => ({ rows: [] as any[] }));
+  const req2 = await pool.query(
+    `SELECT lower(coalesce(category,'')) AS category FROM document_requirements WHERE application_id::text = ($1)::text AND required = true AND category IS NOT NULL`, [id]).catch(() => ({ rows: [] as any[] }));
+
+  const formKey = (dt: any): string | null => {
+    const x = String(dt ?? "").toLowerCase();
+    if (/cra/.test(x)) return "cra";
+    if (/net.?worth/.test(x)) return "networth";
+    if (/advisor/.test(x)) return "advisors";
+    if (/debt/.test(x)) return "debt";
+    if (/equipment/.test(x)) return "equipment";
+    if (/real.?estate/.test(x)) return "realestate";
+    if (/flinks|bank/.test(x)) return "flinks";
+    return null;
+  };
+  const completed = new Set<string>();
+  for (const r of (forms.rows ?? [])) { const k = formKey((r as any).doc_type); if (k) completed.add(k); }
+  const uploaded = new Set<string>((docs.rows ?? []).map((r: any) => String(r.category || "")).filter(Boolean));
+  if ([...uploaded].some((c) => /gov|government|photo.?id|identification|\bid\b/.test(c))) completed.add("upload");
+  const required = (req2.rows ?? []).map((r: any) => String(r.category || "")).filter(Boolean);
+  if (required.length > 0 && required.every((c) => uploaded.has(c))) completed.add("upload_docs");
+
+  const LABELS: Record<string, string> = {
+    networth: "Personal Net Worth", flinks: "Connect Bank (View-Only)", cra: "CRA Authorization",
+    debt: "Debt Stack", realestate: "Real Estate Collateral", equipment: "Equipment Collateral",
+    advisors: "Professional Advisors", upload: "Upload Government ID", upload_docs: "Upload Documents",
+  };
+  const isDone = (cta: any): boolean => {
+    let k = String(cta ?? ""); if (k.startsWith("form:")) k = k.slice(5);
+    if (k.startsWith("upload:")) {
+      const t = k.slice(7).toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (!t) return false;
+      return [...uploaded].some((c) => { const cc = c.replace(/[^a-z0-9]/g, ""); return !!cc && (cc.includes(t) || t.includes(cc)); });
+    }
+    return completed.has(k);
+  };
+  const tasks = (prompts.rows ?? []).map((m: any) => {
+    let k = String(m.cta_action ?? ""); if (k.startsWith("form:")) k = k.slice(5);
+    const label = (k.startsWith("upload:")) ? (m.cta_label || ("Re-upload " + k.slice(7))) : (m.cta_label || LABELS[k] || k);
+    return { key: k, label, complete: isDone(m.cta_action) };
+  }).sort((a: any, b: any) => Number(a.complete) - Number(b.complete));
+  const total = tasks.length;
+  const done = tasks.filter((t: any) => t.complete).length;
+  return res.json({ applicationId: id, tasks, summary: { total, complete: done, outstanding: total - done, allComplete: total > 0 && done === total } });
+}));
+
 // BF_SERVER_BLOCK_v766_PHONE_DEBUG — read-only staff diagnostic. Shows what the
 // CMP switcher's by-phone lookup matches for a given phone, plus the contact
 // phone each application is actually linked to, so a grouping mismatch (two apps
