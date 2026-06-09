@@ -226,6 +226,115 @@ router.get('/:id/task-status', safeHandler(async (req: any, res: any) => {
   return res.json({ applicationId: id, tasks, summary: { total, complete: done, outstanding: total - done, allComplete: total > 0 && done === total } });
 }));
 
+// BF_SERVER_BLOCK_v792_REQUEST_STEPS — staff-initiated "request additional steps".
+// Posts the picked Stage-2 forms and/or a document-upload task to the client
+// mini-portal as real task buttons (reusing the v711/v775 cta_action contract that
+// v778 hides on completion and v782 reports), advances the card to "Additional
+// Steps Required", and sends ONE SMS. Idempotent: forms already requested are
+// skipped; a second doc request without a fresh button posts an informational note.
+router.post('/:id/request-steps', requireCapability([CAPABILITIES.CRM_WRITE]), safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id);
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: 'invalid id' });
+
+  const FORM_LABELS: Record<string, string> = {
+    networth: 'Personal Net Worth', flinks: 'Connect Bank (View-Only)', cra: 'CRA Authorization',
+    debt: 'Debt Stack', realestate: 'Real Estate Collateral', equipment: 'Equipment Collateral',
+    advisors: 'Professional Advisors', upload: 'Upload Government ID',
+  };
+  const b = req.body ?? {};
+  const reqForms: string[] = Array.isArray(b.forms)
+    ? b.forms.map((x: any) => String(x).trim().toLowerCase()).filter((x: string) => x in FORM_LABELS) : [];
+  const reqDocs: string[] = Array.isArray(b.documents)
+    ? b.documents.map((x: any) => String(x).trim()).filter(Boolean) : [];
+  const uniqForms = Array.from(new Set(reqForms));
+  const uniqDocs = Array.from(new Set(reqDocs));
+  if (!uniqForms.length && !uniqDocs.length) {
+    return res.status(400).json({ error: 'no_steps', message: 'Pick at least one form or document.' });
+  }
+
+  const appRow = await pool.query(`SELECT id FROM applications WHERE id::text = ($1)::text LIMIT 1`, [id]);
+  if (!appRow.rows.length) return res.status(404).json({ error: 'not_found' });
+
+  // Existing prompts → idempotency.
+  const existing = await pool.query(
+    `SELECT DISTINCT cta_action FROM communications_messages WHERE application_id::text = ($1)::text`, [id],
+  ).catch(() => ({ rows: [] as any[] }));
+  const existingActions: string[] = (existing.rows ?? []).map((r: any) => String(r.cta_action ?? ''));
+  const existingCta = new Set<string>(existingActions.flatMap((cta: string) => {
+    const normalized = cta.startsWith('form:') ? cta.slice(5) : cta;
+    return normalized === cta ? [cta] : [cta, normalized];
+  }));
+  const hasUploadDocs = existingActions.some((cta: string) => cta === 'upload_docs' || cta.startsWith('upload:'));
+
+  const contactSub = `(SELECT contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1)`;
+  const siloSub = `COALESCE((SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1), 'BF')`;
+
+  const postedForms: string[] = [];
+  for (const fid of uniqForms) {
+    if (existingCta.has(fid)) continue;
+    const label = FORM_LABELS[fid];
+    await pool.query(
+      `INSERT INTO communications_messages
+         (id, type, direction, status, application_id, contact_id, silo, body, staff_name, cta_label, cta_action, created_at)
+       VALUES (gen_random_uuid(), 'message', 'outbound', 'sent', $1, ${contactSub}, ${siloSub}, $2, 'Boreal Financial', $3, $4, now())`,
+      [id, `Please complete the ${label} step to continue your application.`, label, fid],
+    );
+    postedForms.push(fid);
+  }
+
+  if (uniqDocs.length) {
+    const list = uniqDocs.length === 1
+      ? uniqDocs[0]
+      : `${uniqDocs.slice(0, -1).join(', ')} and ${uniqDocs[uniqDocs.length - 1]}`;
+    if (!hasUploadDocs) {
+      await pool.query(
+        `INSERT INTO communications_messages
+           (id, type, direction, status, application_id, contact_id, silo, body, staff_name, cta_label, cta_action, created_at)
+         VALUES (gen_random_uuid(), 'message', 'outbound', 'sent', $1, ${contactSub}, ${siloSub}, $2, 'Boreal Financial', 'Upload documents', 'upload_docs', now())`,
+        [id, `To continue your application, please upload your supporting documents: ${list}.`],
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO communications_messages
+           (id, type, direction, status, application_id, contact_id, silo, body, staff_name, created_at)
+         VALUES (gen_random_uuid(), 'message', 'outbound', 'sent', $1, ${contactSub}, ${siloSub}, $2, 'Boreal Financial', now())`,
+        [id, `We've added more documents to your checklist: ${list}. Please upload them using the Upload documents button.`],
+      );
+    }
+  }
+
+  // Advance the card — but never resurrect a closed deal.
+  await pool.query(
+    `UPDATE applications SET pipeline_state = 'Additional Steps Required', updated_at = now()
+      WHERE id::text = ($1)::text AND COALESCE(pipeline_state, '') NOT IN ('Accepted','Rejected','Archived')`,
+    [id],
+  ).catch(() => {});
+
+  // ONE SMS to the client.
+  let smsSent = false;
+  try {
+    const ph = await pool.query<{ phone: string | null }>(
+      `SELECT c.phone FROM applications a LEFT JOIN contacts c ON c.id = a.contact_id WHERE a.id::text = ($1)::text LIMIT 1`, [id],
+    );
+    const phone = ph.rows[0]?.phone ?? null;
+    if (phone) {
+      const base = (process.env.CLIENT_BASE_URL ?? 'https://client.boreal.financial').replace(/\/+$/, '');
+      const url = `${base}/application/${id}`;
+      const { sendSms } = await import('../notifications/sms.service.js');
+      await sendSms({ to: String(phone), message: `Boreal Financial: we need a few more items to continue your application. Please log in to complete them: ${url}` }).catch(() => {});
+      smsSent = true;
+    }
+  } catch { /* non-fatal */ }
+
+  return res.json({
+    ok: true,
+    applicationId: id,
+    posted: { forms: postedForms, formsSkipped: uniqForms.filter((f) => !postedForms.includes(f)), documents: uniqDocs },
+    pipeline_state: 'Additional Steps Required',
+    sms_sent: smsSent,
+  });
+}));
+
 // BF_SERVER_BLOCK_v766_PHONE_DEBUG — read-only staff diagnostic. Shows what the
 // CMP switcher's by-phone lookup matches for a given phone, plus the contact
 // phone each application is actually linked to, so a grouping mismatch (two apps
