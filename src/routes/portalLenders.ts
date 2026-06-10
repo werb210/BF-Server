@@ -233,13 +233,15 @@ router.delete(
 // Reads bi_companies (shared DB) by id; creates a BF lender (+ CRM company via mirrorLenderToCrm)
 // and a lender_product per Type Of Financing tag. Dedupe by lender name. Financing + country tags
 // (CA/US) were written on bi_companies by the BI company importer (v814).
-const BI_FINANCING_TO_CATEGORY: Record<string, string> = {
-  "equipment financing": "EQUIPMENT",
-  factoring: "FACTORING",
-  loc: "LOC",
-  "a/r loc": "LOC",
-  "wc/stl": "TERM",
-  other: "TERM",
+// BF_SERVER_BLOCK_v824_IMPORT_MAPPING_FIX — map each BI financing tag to the BF lender_product
+// { category, name }. "Other" is intentionally ABSENT so it is skipped (never imported as a BF
+// product). A/R LOC and LOC both map to "LOC" and are deduped in the loop below.
+const BI_FINANCING_MAP: Record<string, { category: string; name: string }> = {
+  "equipment financing": { category: "EQUIPMENT", name: "Equipment Financing" },
+  factoring: { category: "FACTORING", name: "Factoring" },
+  loc: { category: "LOC", name: "LOC" },
+  "a/r loc": { category: "LOC", name: "LOC" },
+  "wc/stl": { category: "TERM", name: "Term Loans" },
 };
 
 type BIImportCompany = {
@@ -298,7 +300,7 @@ router.post(
       const lower = tags.map((t) => String(t).toLowerCase());
       const country = lower.includes("ca") ? "CA" : "US";
       const financing = tags.filter(
-        (t) => BI_FINANCING_TO_CATEGORY[String(t).toLowerCase()] !== undefined,
+        (t) => BI_FINANCING_MAP[String(t).toLowerCase()] !== undefined,
       );
 
       const exists = await pool.query<{ id: string }>(
@@ -351,14 +353,18 @@ router.post(
         contact_phone: (lender as any).primary_contact_phone ?? null,
       });
 
+      const seenProducts = new Set<string>();
       for (const f of financing) {
-        const category = BI_FINANCING_TO_CATEGORY[String(f).toLowerCase()] ?? "TERM";
+        const m = BI_FINANCING_MAP[String(f).toLowerCase()];
+        if (!m) continue; // "Other"/unmapped tags create no BF product
+        if (seenProducts.has(m.name)) continue; // dedupe LOC (from both "LOC" and "A/R LOC")
+        seenProducts.add(m.name);
         try {
           await createLenderProduct({
             lenderId: lender.id,
-            name: String(f),
+            name: m.name,
             active: true,
-            category,
+            category: m.category,
             requiredDocuments: [],
             country,
           });
