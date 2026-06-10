@@ -202,10 +202,13 @@ router.get("/quick-call", auth, async (req: any, res: Response) => {
             (sp.status = 'available' AND sp.last_heartbeat > now() - interval '5 minutes') AS online
        FROM users u
        LEFT JOIN staff_presence sp ON sp.user_id = u.id
-      WHERE coalesce(upper(u.role), '') NOT IN ('APPLICANT','CLIENT','LENDER','REFERRER','BROKER') -- BF_SERVER_BLOCK_v788_QUICKCALL_ALL_STAFF: include all internal staff (admin/staff/marketing), exclude external parties
-        AND coalesce(u.active, true) = true
-        AND coalesce(u.disabled, false) = false
-        AND coalesce(u.is_active, true) = true
+      -- BF_SERVER_BLOCK_v825_QUICKCALL_MATCH_TEAM_LIST: use the EXACT filter as /api/team/users
+      -- (listStaffUsers) so quick-call shows the same staff. The old v788 query also tested the
+      -- legacy u.active / u.disabled columns, which wrongly excluded staff (e.g. Caden) whose
+      -- legacy active=false even though is_active=true and status=ACTIVE.
+      WHERE COALESCE(u.is_active, true) = true
+        AND u.deleted_at IS NULL
+        AND u.role IN ('Admin', 'Staff', 'Ops', 'Marketing')
         AND u.id <> $1
       ORDER BY name NULLS LAST, u.email`,
     [userId],
