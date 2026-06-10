@@ -58,6 +58,9 @@ async function persistAndEnqueue(opts: {
   //      Any real schema mismatch now bubbles up and triggers outer ROLLBACK.
   const tx = await pool.connect();
   try {
+    // BF_SERVER_BLOCK_v818_OTHER_SKIP_OCR — "Other" docs are not OCR'd; they still reach the
+    // lender package through the normal Accept flow (the package includes any accepted doc).
+    const isOtherDoc = String(opts.category ?? "").trim().toLowerCase() === "other";
     await tx.query("BEGIN");
 
     await tx.query(
@@ -66,7 +69,7 @@ async function persistAndEnqueue(opts: {
          (id, application_id, filename, hash, category,
           storage_path, blob_name, blob_url, size_bytes,
           status, ocr_status, uploaded_by, document_type, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'uploaded','pending',$10,$5,now(),now())`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'uploaded',$11,$10,$5,now(),now())`, // BF_SERVER_BLOCK_v818_OTHER_SKIP_OCR
       [
         documentId,
         opts.applicationId,
@@ -84,6 +87,7 @@ async function persistAndEnqueue(opts: {
         // a not-null constraint violation that previously broke every
         // public upload with a 500.
         opts.uploadedBy ?? 'client',
+        isOtherDoc ? 'skipped' : 'pending', // BF_SERVER_BLOCK_v818_OTHER_SKIP_OCR — $11
       ]
     );
 
@@ -145,10 +149,13 @@ async function persistAndEnqueue(opts: {
   }
 
   // OCR is best-effort — if it fails we still return success for the upload.
-  try {
-    await enqueueOcrForDocument(documentId);
-  } catch (err) {
-    console.warn("[documents] OCR enqueue failed", { documentId, err: String(err) });
+  // BF_SERVER_BLOCK_v818_OTHER_SKIP_OCR — never OCR "Other" docs.
+  if (String(opts.category ?? "").trim().toLowerCase() !== "other") {
+    try {
+      await enqueueOcrForDocument(documentId);
+    } catch (err) {
+      console.warn("[documents] OCR enqueue failed", { documentId, err: String(err) });
+    }
   }
 
   return {
