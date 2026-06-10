@@ -19,6 +19,7 @@ import {
   createLender,
   updateLender,
 } from "../repositories/lenders.repo.js";
+import { createLenderProduct } from "../repositories/lenderProducts.repo.js"; // BF_SERVER_BLOCK_v815_IMPORT_FROM_BI
 
 const router = Router();
 const uploadDir = "/tmp/lender-documents";
@@ -226,6 +227,160 @@ router.delete(
       res.status(500).json({ error: { message: "delete_failed", code: err?.code ?? "unknown" } });
     }
   })
+);
+
+// BF_SERVER_BLOCK_v815_IMPORT_FROM_BI — pull selected BI lender companies into the BF Lenders list.
+// Reads bi_companies (shared DB) by id; creates a BF lender (+ CRM company via mirrorLenderToCrm)
+// and a lender_product per Type Of Financing tag. Dedupe by lender name. Financing + country tags
+// (CA/US) were written on bi_companies by the BI company importer (v814).
+const BI_FINANCING_TO_CATEGORY: Record<string, string> = {
+  "equipment financing": "EQUIPMENT",
+  factoring: "FACTORING",
+  loc: "LOC",
+  "a/r loc": "LOC",
+  "wc/stl": "TERM",
+  other: "TERM",
+};
+
+type BIImportCompany = {
+  id: string;
+  legal_name: string;
+  website: string | null;
+  phone: string | null;
+  city: string | null;
+  province: string | null;
+  postal_code: string | null;
+  tags: string[] | null;
+};
+
+router.post(
+  "/lenders/import-from-bi",
+  requireAuth,
+  safeHandler(async (req: any, res: any) => {
+    const rawIds = req.body?.companyIds ?? req.body?.company_ids;
+    const ids: string[] = Array.isArray(rawIds)
+      ? Array.from(
+          new Set(rawIds.filter((x: unknown): x is string => typeof x === "string" && x.trim().length > 0)),
+        )
+      : [];
+    if (ids.length === 0) throw new AppError("validation_error", "companyIds is required.", 400);
+
+    let lendersCreated = 0;
+    let lendersSkipped = 0;
+    let productsCreated = 0;
+    const created: Array<{ company_id: string; lender_id: string; name: string }> = [];
+    const skipped: Array<{ company_id: string; name: string; reason: string }> = [];
+
+    const companies = await pool.query<BIImportCompany>(
+      `SELECT id, legal_name, website, phone, city, province, postal_code, tags
+         FROM bi_companies WHERE id = ANY($1::uuid[])`,
+      [ids],
+    );
+    const companyById = new Map<string, BIImportCompany>(
+      companies.rows.map((company: BIImportCompany) => [company.id, company]),
+    );
+
+    for (const id of ids) {
+      const c = companyById.get(id);
+      if (!c) {
+        skipped.push({ company_id: id, name: "", reason: "not_found" });
+        lendersSkipped++;
+        continue;
+      }
+
+      const name = (c.legal_name ?? "").trim();
+      if (!name) {
+        skipped.push({ company_id: c.id, name: "", reason: "missing_name" });
+        lendersSkipped++;
+        continue;
+      }
+      const tags = Array.isArray(c.tags) ? c.tags : [];
+      const lower = tags.map((t) => String(t).toLowerCase());
+      const country = lower.includes("ca") ? "CA" : "US";
+      const financing = tags.filter(
+        (t) => BI_FINANCING_TO_CATEGORY[String(t).toLowerCase()] !== undefined,
+      );
+
+      const exists = await pool.query<{ id: string }>(
+        `SELECT id FROM lenders WHERE lower(name) = lower($1) LIMIT 1`,
+        [name],
+      );
+      if (exists.rows[0]) {
+        skipped.push({ company_id: c.id, name, reason: "lender_exists" });
+        lendersSkipped++;
+        continue;
+      }
+
+      const contact = await pool.query<{
+        full_name: string | null;
+        email: string | null;
+        phone_e164: string | null;
+      }>(
+        `SELECT full_name, email, phone_e164 FROM bi_contacts
+          WHERE company_id = $1 ORDER BY created_at ASC LIMIT 1`,
+        [c.id],
+      );
+      const pc = contact.rows[0] ?? { full_name: null, email: null, phone_e164: null };
+
+      const lender = await createLender(pool, {
+        name,
+        country,
+        submission_method: "EMAIL",
+        active: true,
+        status: "ACTIVE",
+        website: c.website ?? null,
+        phone: c.phone ?? null,
+        city: c.city ?? null,
+        region: c.province ?? null,
+        postal_code: c.postal_code ?? null,
+        primary_contact_name: pc.full_name ?? null,
+        primary_contact_email: pc.email ?? null,
+        primary_contact_phone: pc.phone_e164 ?? null,
+        silo: "BF",
+      });
+
+      // BF_LENDER_TO_CRM_v38 — also create the BF CRM company.
+      void mirrorLenderToCrm({
+        id: lender.id,
+        name: lender.name ?? null,
+        phone: (lender as any).phone ?? null,
+        silo: (lender as any).silo ?? "BF",
+        country: (lender as any).country ?? null,
+        contact_name: (lender as any).primary_contact_name ?? null,
+        contact_email: (lender as any).primary_contact_email ?? null,
+        contact_phone: (lender as any).primary_contact_phone ?? null,
+      });
+
+      for (const f of financing) {
+        const category = BI_FINANCING_TO_CATEGORY[String(f).toLowerCase()] ?? "TERM";
+        try {
+          await createLenderProduct({
+            lenderId: lender.id,
+            name: String(f),
+            active: true,
+            category,
+            requiredDocuments: [],
+            country,
+          });
+          productsCreated++;
+        } catch {
+          // A single product failing must not abort the whole import.
+        }
+      }
+
+      created.push({ company_id: c.id, lender_id: lender.id, name });
+      lendersCreated++;
+    }
+
+    res.status(200).json({
+      ok: true,
+      lenders_created: lendersCreated,
+      lenders_skipped: lendersSkipped,
+      products_created: productsCreated,
+      created,
+      skipped,
+    });
+  }),
 );
 
 export default router;
