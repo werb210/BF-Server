@@ -14,7 +14,10 @@ export async function bumpBiOutreachToContacted(contactId: string | null | undef
           SET outreach_status = 'contacted',
               outreach_updated_at = now()
         WHERE id::text = $1
-          AND COALESCE(outreach_status, 'new') = 'new'`,
+          /* v822_BUMP_LEGACY_STAGES — also advance legacy early stages, not just 'new',
+             so emailing/calling a cold/attempting/voicemail contact moves it to contacted.
+             Never touches engaged/demo_booked/demo_completed/onboarding/active. */
+          AND COALESCE(outreach_status, 'new') IN ('new', 'cold', 'attempting', 'voicemail')`,
       [String(contactId)],
     );
   } catch {
