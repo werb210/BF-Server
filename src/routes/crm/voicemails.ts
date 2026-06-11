@@ -14,8 +14,8 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   const r = await pool.query(
     `SELECT v.id, v.recording_url, v.call_sid, v.created_at,
             v.contact_id,
-            c.full_name AS contact_name,
-            c.phone     AS contact_phone
+            c.name  AS contact_name,
+            c.phone AS contact_phone
        FROM voicemails v
        LEFT JOIN contacts c ON c.id = v.contact_id
       WHERE (c.silo = $1 OR c.silo IS NULL)
