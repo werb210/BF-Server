@@ -20,6 +20,7 @@ import {
   updateLender,
 } from "../repositories/lenders.repo.js";
 import { createLenderProduct } from "../repositories/lenderProducts.repo.js"; // BF_SERVER_BLOCK_v815_IMPORT_FROM_BI
+import { fetchBiCompaniesByIds } from "../services/biCompanyFetch.js"; // BF_SERVER_BLOCK_v819_IMPORT_FROM_BI_VIA_API
 
 const router = Router();
 const uploadDir = "/tmp/lender-documents";
@@ -230,7 +231,7 @@ router.delete(
 );
 
 // BF_SERVER_BLOCK_v815_IMPORT_FROM_BI — pull selected BI lender companies into the BF Lenders list.
-// Reads bi_companies (shared DB) by id; creates a BF lender (+ CRM company via mirrorLenderToCrm)
+// Fetches BI companies by id via BI-Server; creates a BF lender (+ CRM company via mirrorLenderToCrm)
 // and a lender_product per Type Of Financing tag. Dedupe by lender name. Financing + country tags
 // (CA/US) were written on bi_companies by the BI company importer (v814).
 // BF_SERVER_BLOCK_v824_IMPORT_MAPPING_FIX — map each BI financing tag to the BF lender_product
@@ -242,17 +243,6 @@ const BI_FINANCING_MAP: Record<string, { category: string; name: string }> = {
   loc: { category: "LOC", name: "LOC" },
   "a/r loc": { category: "LOC", name: "LOC" },
   "wc/stl": { category: "TERM", name: "Term Loans" },
-};
-
-type BIImportCompany = {
-  id: string;
-  legal_name: string;
-  website: string | null;
-  phone: string | null;
-  city: string | null;
-  province: string | null;
-  postal_code: string | null;
-  tags: string[] | null;
 };
 
 router.post(
@@ -273,13 +263,11 @@ router.post(
     const created: Array<{ company_id: string; lender_id: string; name: string }> = [];
     const skipped: Array<{ company_id: string; name: string; reason: string }> = [];
 
-    const companies = await pool.query<BIImportCompany>(
-      `SELECT id, legal_name, website, phone, city, province, postal_code, tags
-         FROM bi_companies WHERE id = ANY($1::uuid[])`,
-      [ids],
-    );
-    const companyById = new Map<string, BIImportCompany>(
-      companies.rows.map((company: BIImportCompany) => [company.id, company]),
+    // BF_SERVER_BLOCK_v819_IMPORT_FROM_BI_VIA_API — bi_companies lives in BI's
+    // database; fetch over HTTP instead of querying a table BF cannot see.
+    const biCompanies = await fetchBiCompaniesByIds(ids);
+    const companyById = new Map<string, (typeof biCompanies)[number]>(
+      biCompanies.map((company) => [company.id, company]),
     );
 
     for (const id of ids) {
@@ -313,16 +301,7 @@ router.post(
         continue;
       }
 
-      const contact = await pool.query<{
-        full_name: string | null;
-        email: string | null;
-        phone_e164: string | null;
-      }>(
-        `SELECT full_name, email, phone_e164 FROM bi_contacts
-          WHERE company_id = $1 ORDER BY created_at ASC LIMIT 1`,
-        [c.id],
-      );
-      const pc = contact.rows[0] ?? { full_name: null, email: null, phone_e164: null };
+      const pc = c.primary_contact ?? { full_name: null, email: null, phone_e164: null };
 
       const lender = await createLender(pool, {
         name,
