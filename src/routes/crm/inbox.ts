@@ -142,7 +142,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   }
 
   const base = mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
-  const select = "$select=id,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview,isRead";
+  const select = "$select=id,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview,isRead,flag"; // BF_SERVER_BLOCK_v832_INBOX_FLAG
   // BF_SERVER_BLOCK_v823_INBOX_READSTATUS_AND_SORT — optional sort (default desc).
   const sortDir = String((req.query.sort ?? "")).toLowerCase() === "asc" ? "asc" : "desc";
   const orderby = `$orderby=receivedDateTime ${sortDir}`;
@@ -197,6 +197,41 @@ router.get("/:messageId", safeHandler(async (req: any, res: any) => {
   const message: any = await r.json();
   await inlineEmailImages(graph, base, req.params.messageId, message); // BF_SERVER_BLOCK_v747
   respondOk(res, message);
+}));
+
+// BF_SERVER_BLOCK_v832_INBOX_FLAG
+// PATCH /api/crm/inbox/:messageId/flag  body: { flagged: boolean }
+router.patch("/:messageId/flag", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const flagged = req.body?.flagged !== false; // default true
+  const mailbox = (req.query.mailbox ?? "").toString().trim();
+  if (mailbox) {
+    const role = (req.user?.role ?? "").toString().toLowerCase();
+    if (role !== "admin") {
+      const silo = resolveSiloFromRequest(req);
+      const { rows } = await pool.query(
+        `SELECT 1 FROM shared_mailbox_settings
+         WHERE LOWER(address)=LOWER($1) AND silo = $2 AND LOWER($3) = ANY(SELECT LOWER(r) FROM unnest(allowed_roles) r)
+         LIMIT 1`,
+        [mailbox, silo, role],
+      );
+      if (!rows.length) return res.status(403).json({ error: "mailbox_not_allowed" });
+    }
+  }
+  const base = mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
+  const r = await graph.fetch(`${base}/messages/${encodeURIComponent(req.params.messageId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ flag: { flagStatus: flagged ? "flagged" : "notFlagged" } }),
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!r.ok) {
+    const errBody = await r.text().catch(() => "");
+    return res.status(r.status).json({ error: "graph_flag_failed", detail: errBody.slice(0, 300) });
+  }
+  return res.json({ success: true, flagged });
 }));
 
 // BF_SERVER_BLOCK_v823_INBOX_READSTATUS_AND_SORT
