@@ -55,15 +55,21 @@ export function startEmailFollowupWorker(pool: Pool): { stop: () => void } {
           const subject = r.subject || "(no subject)";
           const body = `No open after 24h: "${subject}"${recipient ? ` to ${recipient}` : ""}. Consider following up.`;
           const contextUrl = r.contact_id ? `/crm/contacts/${r.contact_id}` : "/communications";
-          await pool.query(
-            `INSERT INTO notifications (id, user_id, type, ref_table, ref_id, body, context_url)
-             VALUES (gen_random_uuid(), $1, 'email_unopened', 'crm_email_log', $2, $3, $4)
-             ON CONFLICT ON CONSTRAINT notifications_unique_per_ref DO NOTHING`,
-            [String(r.owner_id), String(r.id), body, contextUrl],
-          );
+          // BF_SERVER_BLOCK_v841_FOLLOWUP_NOTIFY_ONCE — mark notified FIRST so a
+          // failed INSERT can never cause infinite regeneration (the bug where
+          // cleared notifications kept coming back). Each email notifies at most once.
           await pool.query(
             `UPDATE crm_email_log SET followup_notified_at = now() WHERE id = $1`,
             [r.id],
+          );
+          await pool.query(
+            `INSERT INTO notifications (id, user_id, type, ref_table, ref_id, body, context_url)
+             SELECT gen_random_uuid(), $1, 'email_unopened', 'crm_email_log', $2, $3, $4
+              WHERE NOT EXISTS (
+                SELECT 1 FROM notifications
+                 WHERE user_id = $1 AND ref_table = 'crm_email_log' AND ref_id = $2 AND type = 'email_unopened'
+              )`,
+            [String(r.owner_id), String(r.id), body, contextUrl],
           );
         } catch (err) {
           console.error("[emailFollowupWorker] notify failed:", err);
