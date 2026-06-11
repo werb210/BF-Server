@@ -236,15 +236,31 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   // (Inbox or a CRM card). No UI hint required.
   try {
     const _silo = resolveSiloFromRequest(req);
-    if (logContactId || logCompanyId) {
+    // BF_SERVER_BLOCK_v848_EMAIL_LOG_FK_GUARD — logContactId/logCompanyId may be a
+    // bi_contacts/bi id (BI card sends through this BF route). crm_email_log has a
+    // FK to BF's contacts/companies, so a BI id throws crm_email_log_contact_id_fkey
+    // and aborts logging. Null any id that doesn't exist in BF before inserting.
+    let _safeContactId: string | null = logContactId;
+    let _safeCompanyId: string | null = logCompanyId;
+    if (_safeContactId) {
+      const _c = await pool.query(`SELECT 1 FROM contacts WHERE id = $1 LIMIT 1`, [_safeContactId]).catch(() => ({ rows: [] as any[] }));
+      if (!_c.rows[0]) _safeContactId = null;
+    }
+    if (_safeCompanyId) {
+      const _co = await pool.query(`SELECT 1 FROM companies WHERE id = $1 LIMIT 1`, [_safeCompanyId]).catch(() => ({ rows: [] as any[] }));
+      if (!_co.rows[0]) _safeCompanyId = null;
+    }
+    if (_safeContactId || _safeCompanyId) {
       await pool.query(
         `INSERT INTO crm_email_log
            (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,
             owner_id,contact_id,company_id,silo)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-        [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, logContactId, logCompanyId, _silo],
+        [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, _safeContactId, _safeCompanyId, _silo],
       );
-      void bumpBiOutreachToContacted(logContactId); // BF_SERVER_BLOCK_v344_BI_OUTREACH_AUTOADVANCE_v1
+      if (logContactId) void bumpBiOutreachToContacted(logContactId); // BF_SERVER_BLOCK_v344_BI_OUTREACH_AUTOADVANCE_v1
+    } else if (logContactId || logCompanyId) {
+      if (logContactId) void bumpBiOutreachToContacted(logContactId);
     } else {
       const _recips = Array.from(new Set([...(Array.isArray(to) ? to : []), ...(Array.isArray(cc) ? cc : [])]
         .map((a: any) => String(a || "").trim().toLowerCase()).filter(Boolean)));
