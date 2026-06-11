@@ -300,6 +300,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET", path: "/api/crm", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/crm/contacts", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/crm/inbox", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
+  { method: "GET", path: "/api/crm/voicemails", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] }, // BF_SERVER_BLOCK_v830_VOICEMAILS_LIST
   { method: "GET", path: "/api/crm/shared-mailboxes", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "GET", path: "/api/crm/contacts/:id/notes", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "POST", path: "/api/crm/contacts/:id/notes", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
