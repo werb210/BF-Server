@@ -154,7 +154,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
       const silo = resolveSiloFromRequest(req);
       const store = getStorage();
       const cr = await pool.query(
-        `SELECT id, name, content_type, blob_name FROM collateral_assets WHERE id = ANY($1::uuid[]) AND silo = $2`,
+        `SELECT id, name, content_type, blob_name FROM collateral_assets WHERE id = ANY($1::uuid[]) AND silo IN ('BF', $2)` /* BF_SERVER_BLOCK_v847_BI_COLLATERAL_ATTACH — match the list endpoint (silo IN ('BF',silo)); send was silo=$2 only, so BF-library collateral selected from the BI composer never attached */,
         [collateralIds.map(String).slice(0, 10), silo]
       );
       for (const row of cr.rows) {
