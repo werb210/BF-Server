@@ -19,10 +19,13 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
       // Pipeline board shows: the same source/filter as GET /api/portal/applications
       // (UPPER(silo) match, drafts excluded). Accepted/Rejected are NOT excluded so
       // the headline number matches the board's "N applications" header.
+      // BF_SERVER_BLOCK_v838_DASHBOARD_EXCLUDE_NAMELESS — match the board, which
+      // hides nameless "draft-like" rows client-side (isDraftLikeApplication).
       `SELECT COUNT(*)::text AS count FROM applications
        WHERE UPPER(silo) = UPPER($1)
          AND parent_application_id IS NULL  -- v829: count DEALS, not companion legs
-         AND COALESCE(pipeline_state, '') NOT IN ('draft', 'Draft', '')`,
+         AND COALESCE(pipeline_state, '') NOT IN ('draft', 'Draft', '')
+         AND COALESCE(NULLIF(TRIM(name), ''), NULLIF(TRIM(business_legal_name), '')) IS NOT NULL`,
       [silo]
     ),
     pool.query<{ count: string }>(
@@ -44,6 +47,7 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
        WHERE UPPER(silo) = UPPER($1)
          AND parent_application_id IS NULL  -- v829: count DEALS, not companion legs
          AND COALESCE(pipeline_state, '') NOT IN ('draft', 'Draft', '')
+         AND COALESCE(NULLIF(TRIM(name), ''), NULLIF(TRIM(business_legal_name), '')) IS NOT NULL  -- BF_SERVER_BLOCK_v838_DASHBOARD_EXCLUDE_NAMELESS
        GROUP BY 1`,
       [silo]
     ),
