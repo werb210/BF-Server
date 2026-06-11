@@ -11,7 +11,7 @@ router.get("/", requireAuth, safeHandler(async (_req: any, res: any) => {
   res.json({ ok: true });
 }));
 
-router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
+router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => { // BF_SERVER_BLOCK_v829_DEALS_NOT_COMPANIONS
   const silo = getSilo(res);
   const [active, won, stageRows] = await Promise.all([
     pool.query<{ count: string }>(
@@ -21,12 +21,14 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
       // the headline number matches the board's "N applications" header.
       `SELECT COUNT(*)::text AS count FROM applications
        WHERE UPPER(silo) = UPPER($1)
+         AND parent_application_id IS NULL  -- v829: count DEALS, not companion legs
          AND COALESCE(pipeline_state, '') NOT IN ('draft', 'Draft', '')`,
       [silo]
     ),
     pool.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM applications
        WHERE UPPER(silo) = UPPER($2)
+         AND parent_application_id IS NULL  -- v829: count DEALS, not companion legs
          AND pipeline_state = $1
          AND updated_at >= date_trunc('month', now())`,
       [ApplicationStage.ACCEPTED, silo]
@@ -40,6 +42,7 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
               COUNT(*)::text AS count
        FROM applications
        WHERE UPPER(silo) = UPPER($1)
+         AND parent_application_id IS NULL  -- v829: count DEALS, not companion legs
          AND COALESCE(pipeline_state, '') NOT IN ('draft', 'Draft', '')
        GROUP BY 1`,
       [silo]

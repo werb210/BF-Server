@@ -220,6 +220,12 @@ router.get(
       if (parentIdRaw && APP_UUID_RE.test(parentIdRaw)) {
         values.push(parentIdRaw);
         where.push(`a.parent_application_id::text = $${values.length}::text`);
+      } else {
+        // BF_SERVER_BLOCK_v829_DEALS_NOT_COMPANIONS — the default pipeline (and the dashboard count that mirrors
+        // it) shows DEALS, i.e. parent applications, not companion/child legs. A multi-leg
+        // deal (e.g. Equipment + LOC companion) is ONE card here; its companion legs are
+        // reachable via the parent drill-down (?parent_application_id=...) / linked-chip drawer.
+        where.push(`a.parent_application_id IS NULL`);
       }
       // BF_SERVER_BLOCK_v131_PIPELINE_SQL_REPAIR_v1
       // Replace the bogus `a.primary_contact_id` JOIN — that column was
