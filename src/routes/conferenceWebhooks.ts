@@ -49,18 +49,36 @@ router.post("/conference/join", twilioWebhookValidation, async (req: any, res) =
   if (enableRecording) {
     vr.say({ voice: "Polly.Joanna" }, "This call may be recorded for quality and training purposes.");
   }
+  // BF_SERVER_BLOCK_v843_NO_ANSWER_VOICEMAIL — look up this leg's kind so the
+  // caller (pstn / client_miniportal) waits with a bounded hold that falls to
+  // voicemail when nobody answers, while staff legs start the conference on join.
+  let legKind: string | null = null;
+  if (pid) {
+    const kr = await pool.query<{ kind: string | null }>(
+      `SELECT kind FROM conference_participants WHERE id = $1 LIMIT 1`, [pid],
+    ).catch(() => ({ rows: [] as any[] }));
+    legKind = kr.rows[0]?.kind ?? null;
+  }
+  const isCallerLeg = legKind === "pstn" || legKind === "client_miniportal";
+
   const dial = vr.dial({ answerOnBridge: true });
   const confAttrs: Record<string, unknown> = {
     statusCallback: `${base}/api/webhooks/twilio/conference/status?conf=${encodeURIComponent(conf)}`,
     statusCallbackEvent: "start end join leave mute hold",
     statusCallbackMethod: "POST",
-    startConferenceOnEnter: true,
+    // Caller waits (doesn't start conf) so its waitUrl can escape to voicemail on
+    // no-answer; staff joining starts the conference and ends the caller's wait.
+    startConferenceOnEnter: isCallerLeg ? false : true,
     // 2-party PSTN call: either party hangup ends the conference.
     endConferenceOnExit: true,
     // No periodic chirp on participant flap.
     beep: false,
     trim: "trim-silence",
   };
+  if (isCallerLeg) {
+    confAttrs.waitUrl = `${base}/api/webhooks/twilio/conference/wait?conf=${encodeURIComponent(conf)}&pid=${encodeURIComponent(pid)}&n=0`;
+    confAttrs.waitMethod = "POST";
+  }
   if (enableRecording) {
     confAttrs.record = "record-from-start";
     confAttrs.recordingChannels = "dual";
@@ -81,6 +99,45 @@ router.post("/conference/join", twilioWebhookValidation, async (req: any, res) =
     twiml_bytes: twiml.length,
   }));
   return res.send(twiml);
+});
+
+// BF_SERVER_BLOCK_v843_NO_ANSWER_VOICEMAIL — caller hold loop with voicemail escape.
+router.post("/conference/wait", twilioWebhookValidation, async (req: any, res) => {
+  res.setHeader("Content-Type", "text/xml");
+  const base = getPublicBaseUrl();
+  const conf = String(req.query.conf ?? req.body?.conf ?? "").trim();
+  const pid  = String(req.query.pid ?? req.body?.pid ?? "").trim();
+  const n = Number.parseInt(String(req.query.n ?? "0"), 10) || 0;
+  const vr = new VoiceResponse();
+
+  if (conf) {
+    const joined = await pool.query<{ c: number }>(
+      `SELECT COUNT(*)::int AS c FROM conference_participants cp
+         JOIN conferences c ON c.id = cp.conference_id
+        WHERE c.friendly_name = $1 AND cp.kind = 'staff' AND cp.status = 'joined'`,
+      [conf],
+    ).catch(() => ({ rows: [{ c: 0 }] }));
+    if ((joined.rows[0]?.c ?? 0) > 0) {
+      vr.play({ loop: 1 }, "http://com.twilio.sounds.music.s3.amazonaws.com/MARKOVICHAMP-Borghestral.mp3");
+      return res.send(vr.toString());
+    }
+  }
+
+  if (n >= 4) {
+    vr.say({ voice: "Polly.Joanna" }, "Sorry, no one is available to take your call. Please leave a message after the tone and we will call you back.");
+    vr.record({
+      action: `${base}/api/webhooks/twilio/voicemail`,
+      method: "POST",
+      maxLength: 120,
+      transcribe: false,
+      playBeep: true,
+    });
+    return res.send(vr.toString());
+  }
+
+  vr.play({ loop: 1 }, "http://com.twilio.sounds.music.s3.amazonaws.com/MARKOVICHAMP-Borghestral.mp3");
+  vr.redirect({ method: "POST" }, `${base}/api/webhooks/twilio/conference/wait?conf=${encodeURIComponent(conf)}&pid=${encodeURIComponent(pid)}&n=${n + 1}`);
+  return res.send(vr.toString());
 });
 
 router.post("/conference/status", twilioWebhookValidation, async (req: any, res) => {
