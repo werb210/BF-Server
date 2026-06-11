@@ -25,7 +25,8 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
        WHERE UPPER(silo) = UPPER($1)
          AND parent_application_id IS NULL  -- v829: count DEALS, not companion legs
          AND COALESCE(pipeline_state, '') NOT IN ('draft', 'Draft', '')
-         AND COALESCE(NULLIF(TRIM(name), ''), NULLIF(TRIM(business_legal_name), '')) IS NOT NULL`,
+         AND COALESCE(NULLIF(TRIM(name), ''), NULLIF(TRIM(business_legal_name), '')) IS NOT NULL
+         AND LOWER(TRIM(COALESCE(name, business_legal_name, ''))) NOT IN ('draft', 'draft application') -- BF_SERVER_BLOCK_v844_DASHBOARD_EXCLUDE_DRAFT_NAMES`,
       [silo]
     ),
     pool.query<{ count: string }>(
@@ -47,7 +48,8 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
        WHERE UPPER(silo) = UPPER($1)
          AND parent_application_id IS NULL  -- v829: count DEALS, not companion legs
          AND COALESCE(pipeline_state, '') NOT IN ('draft', 'Draft', '')
-         AND COALESCE(NULLIF(TRIM(name), ''), NULLIF(TRIM(business_legal_name), '')) IS NOT NULL  -- BF_SERVER_BLOCK_v838_DASHBOARD_EXCLUDE_NAMELESS
+         AND COALESCE(NULLIF(TRIM(name), ''), NULLIF(TRIM(business_legal_name), '')) IS NOT NULL
+         AND LOWER(TRIM(COALESCE(name, business_legal_name, ''))) NOT IN ('draft', 'draft application') -- BF_SERVER_BLOCK_v844_DASHBOARD_EXCLUDE_DRAFT_NAMES  -- BF_SERVER_BLOCK_v838_DASHBOARD_EXCLUDE_NAMELESS
        GROUP BY 1`,
       [silo]
     ),
