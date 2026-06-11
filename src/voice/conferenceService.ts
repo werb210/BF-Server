@@ -200,9 +200,19 @@ export async function broadcastIncomingRing(conferenceIdOrRow: any, fromLabel?: 
   if (!conferenceId) return;
   const parts = await listParticipants(conferenceId);
   const staffIds = parts.filter(p => p.kind === "staff" && p.identity).map(p => p.identity as string);
-  const payload = { conferenceId, from: fromLabel ?? "unknown" };
-  if (staffIds.length === 0) __pubAll("incoming.call", payload);
-  else __pubMany(staffIds, "incoming.call", payload);
+  // BF_SERVER_BLOCK_v839_INCOMING_CALLER_NUMBER — the client listens for
+  // "conference.incoming" with { conferenceFriendly, fromDisplay }. Emit that
+  // (carrying the real caller number) plus the legacy "incoming.call".
+  const caller = fromLabel ?? "unknown";
+  const legacy = { conferenceId, from: caller };
+  const toast = { conferenceId, conferenceFriendly: conferenceId, fromDisplay: caller };
+  if (staffIds.length === 0) {
+    __pubAll("incoming.call", legacy);
+    __pubAll("conference.incoming", toast);
+  } else {
+    __pubMany(staffIds, "incoming.call", legacy);
+    __pubMany(staffIds, "conference.incoming", toast);
+  }
 }
 
 export async function broadcastIncomingAnswered(conferenceIdOrRow: any, ..._rest: any[]): Promise<void> {
