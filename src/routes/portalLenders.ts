@@ -303,54 +303,65 @@ router.post(
 
       const pc = c.primary_contact ?? { full_name: null, email: null, phone_e164: null };
 
-      const lender = await createLender(pool, {
-        name,
-        country,
-        submission_method: "EMAIL",
-        active: true,
-        status: "ACTIVE",
-        website: c.website ?? null,
-        phone: c.phone ?? null,
-        city: c.city ?? null,
-        region: c.province ?? null,
-        postal_code: c.postal_code ?? null,
-        primary_contact_name: pc.full_name ?? null,
-        primary_contact_email: pc.email ?? null,
-        primary_contact_phone: pc.phone_e164 ?? null,
-        silo: "BF",
-      });
+      let lender: Awaited<ReturnType<typeof createLender>>;
+      try {
+        lender = await createLender(pool, {
+          name,
+          country,
+          submission_method: "EMAIL",
+          active: true,
+          status: "ACTIVE",
+          website: c.website ?? null,
+          phone: c.phone ?? null,
+          city: c.city ?? null,
+          region: c.province ?? null,
+          postal_code: c.postal_code ?? null,
+          primary_contact_name: pc.full_name ?? null,
+          primary_contact_email: pc.email ?? null,
+          primary_contact_phone: pc.phone_e164 ?? null,
+          silo: "BF",
+        });
 
-      // BF_LENDER_TO_CRM_v38 — also create the BF CRM company.
-      void mirrorLenderToCrm({
-        id: lender.id,
-        name: lender.name ?? null,
-        phone: (lender as any).phone ?? null,
-        silo: (lender as any).silo ?? "BF",
-        country: (lender as any).country ?? null,
-        contact_name: (lender as any).primary_contact_name ?? null,
-        contact_email: (lender as any).primary_contact_email ?? null,
-        contact_phone: (lender as any).primary_contact_phone ?? null,
-      });
+        // BF_LENDER_TO_CRM_v38 — also create the BF CRM company.
+        void mirrorLenderToCrm({
+          id: lender.id,
+          name: lender.name ?? null,
+          phone: (lender as any).phone ?? null,
+          silo: (lender as any).silo ?? "BF",
+          country: (lender as any).country ?? null,
+          contact_name: (lender as any).primary_contact_name ?? null,
+          contact_email: (lender as any).primary_contact_email ?? null,
+          contact_phone: (lender as any).primary_contact_phone ?? null,
+        });
 
-      const seenProducts = new Set<string>();
-      for (const f of financing) {
-        const m = BI_FINANCING_MAP[String(f).toLowerCase()];
-        if (!m) continue; // "Other"/unmapped tags create no BF product
-        if (seenProducts.has(m.name)) continue; // dedupe LOC (from both "LOC" and "A/R LOC")
-        seenProducts.add(m.name);
-        try {
-          await createLenderProduct({
-            lenderId: lender.id,
-            name: m.name,
-            active: true,
-            category: m.category,
-            requiredDocuments: [],
-            country,
-          });
-          productsCreated++;
-        } catch {
-          // A single product failing must not abort the whole import.
+        const seenProducts = new Set<string>();
+        for (const f of financing) {
+          const m = BI_FINANCING_MAP[String(f).toLowerCase()];
+          if (!m) continue; // "Other"/unmapped tags create no BF product
+          if (seenProducts.has(m.name)) continue; // dedupe LOC (from both "LOC" and "A/R LOC")
+          seenProducts.add(m.name);
+          try {
+            await createLenderProduct({
+              lenderId: lender.id,
+              name: m.name,
+              active: true,
+              category: m.category,
+              requiredDocuments: [],
+              country,
+            });
+            productsCreated++;
+          } catch {
+            // A single product failing must not abort the whole import.
+          }
         }
+      } catch (e: any) {
+        // BF_SERVER_BLOCK_v819 — a unique/constraint failure on one company
+        // (e.g. lender name collision) must not abort the whole import.
+        const code = e?.code ? String(e.code) : "";
+        const reason = code === "23505" ? "duplicate" : "create_failed";
+        skipped.push({ company_id: c.id, name, reason });
+        lendersSkipped++;
+        continue;
       }
 
       created.push({ company_id: c.id, lender_id: lender.id, name });
