@@ -291,8 +291,11 @@ router.post(
         (t) => BI_FINANCING_MAP[String(t).toLowerCase()] !== undefined,
       );
 
+      // BF_SERVER_BLOCK_v837_IMPORT_LENDER_SILO_SCOPED_DEDUP — scope the dedup to
+      // the BF silo we actually create into. A cross-silo match was false-skipping
+      // lenders (e.g. "Capitally") that don't exist in the BF list the user views.
       const exists = await pool.query<{ id: string }>(
-        `SELECT id FROM lenders WHERE lower(name) = lower($1) LIMIT 1`,
+        `SELECT id FROM lenders WHERE lower(name) = lower($1) AND COALESCE(silo,'BF') = 'BF' LIMIT 1`,
         [name],
       );
       if (exists.rows[0]) {
