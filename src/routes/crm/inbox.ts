@@ -142,13 +142,19 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   }
 
   const base = mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
-  const select = "$select=id,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview,isRead,flag"; // BF_SERVER_BLOCK_v832_INBOX_FLAG
+  const select = "$select=id,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview,isRead,flag,conversationId"; // BF_SERVER_BLOCK_v833_INBOX_SEARCH_THREAD_FOLDERS
   // BF_SERVER_BLOCK_v823_INBOX_READSTATUS_AND_SORT — optional sort (default desc).
   const sortDir = String((req.query.sort ?? "")).toLowerCase() === "asc" ? "asc" : "desc";
   const orderby = `$orderby=receivedDateTime ${sortDir}`;
 
   async function fetchFolder(client: GraphClient, folderId: "Inbox" | "SentItems"): Promise<any[]> {
-    const r = await client.fetch(`${base}/mailFolders/${folderId}/messages?$top=50&${select}&${orderby}`);
+    // BF_SERVER_BLOCK_v833_INBOX_SEARCH_THREAD_FOLDERS — $search (relevance order,
+    // no $orderby allowed by Graph) when a query is present; else normal sorted list.
+    const q = String(req.query.q ?? "").trim();
+    const url = q
+      ? `${base}/mailFolders/${folderId}/messages?$top=50&${select}&$search="${encodeURIComponent(q)}"`
+      : `${base}/mailFolders/${folderId}/messages?$top=50&${select}&${orderby}`;
+    const r = await client.fetch(url, q ? { headers: { ConsistencyLevel: "eventual" } } : undefined);
     if (!r.ok) return [];
     const data = await r.json();
     return Array.isArray(data?.value) ? data.value : [];
@@ -232,6 +238,37 @@ router.patch("/:messageId/flag", safeHandler(async (req: any, res: any) => {
     return res.status(r.status).json({ error: "graph_flag_failed", detail: errBody.slice(0, 300) });
   }
   return res.json({ success: true, flagged });
+}));
+
+// BF_SERVER_BLOCK_v833_INBOX_SEARCH_THREAD_FOLDERS
+// GET /api/crm/inbox/folders/list — list the mailbox's Outlook folders (id + name + unread).
+router.get("/folders/list", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const mailbox = (req.query.mailbox ?? "").toString().trim();
+  if (mailbox) {
+    const role = (req.user?.role ?? "").toString().toLowerCase();
+    if (role !== "admin") {
+      const silo = resolveSiloFromRequest(req);
+      const { rows } = await pool.query(
+        `SELECT 1 FROM shared_mailbox_settings
+         WHERE LOWER(address)=LOWER($1) AND silo = $2 AND LOWER($3) = ANY(SELECT LOWER(r) FROM unnest(allowed_roles) r)
+         LIMIT 1`,
+        [mailbox, silo, role],
+      );
+      if (!rows.length) return res.status(403).json({ error: "mailbox_not_allowed" });
+    }
+  }
+  const base = mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
+  const r = await graph.fetch(`${base}/mailFolders?$top=60&$select=id,displayName,unreadItemCount,totalItemCount`);
+  if (!r.ok) return res.json({ success: true, data: [] });
+  const data = await r.json();
+  const folders = (Array.isArray(data?.value) ? data.value : []).map((f: any) => ({
+    id: f.id, name: f.displayName, unread: f.unreadItemCount ?? 0, total: f.totalItemCount ?? 0,
+  }));
+  respondOk(res, folders);
 }));
 
 // BF_SERVER_BLOCK_v823_INBOX_READSTATUS_AND_SORT
