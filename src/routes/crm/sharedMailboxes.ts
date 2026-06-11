@@ -29,4 +29,38 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   respondOk(res, { mine, shared });
 }));
 
+// BF_SERVER_BLOCK_v824_PER_ACCOUNT_SIGNATURE
+// GET /api/crm/shared-mailboxes/:address/signature
+router.get("/:address/signature", safeHandler(async (req: any, res: any) => {
+  const role = (req.user?.role ?? "").toString();
+  const silo = resolveSiloFromRequest(req);
+  const address = String(req.params.address ?? "").toLowerCase();
+  const { rows } = await pool.query(
+    `SELECT signature_html FROM shared_mailbox_settings
+      WHERE LOWER(address) = $1 AND silo = $2 AND $3 = ANY(allowed_roles) LIMIT 1`,
+    [address, silo, role],
+  );
+  if (!rows.length) return res.status(404).json({ error: "mailbox_not_found_or_not_allowed" });
+  respondOk(res, { address, signature_html: rows[0].signature_html ?? "" });
+}));
+
+// PUT /api/crm/shared-mailboxes/:address/signature  body: { signature_html }
+router.put("/:address/signature", safeHandler(async (req: any, res: any) => {
+  const role = (req.user?.role ?? "").toString();
+  const silo = resolveSiloFromRequest(req);
+  const address = String(req.params.address ?? "").toLowerCase();
+  const html = typeof req.body?.signature_html === "string" ? req.body.signature_html : "";
+  const { rows } = await pool.query(
+    `SELECT 1 FROM shared_mailbox_settings
+      WHERE LOWER(address) = $1 AND silo = $2 AND $3 = ANY(allowed_roles) LIMIT 1`,
+    [address, silo, role],
+  );
+  if (!rows.length) return res.status(403).json({ error: "mailbox_not_allowed" });
+  await pool.query(
+    `UPDATE shared_mailbox_settings SET signature_html = $3 WHERE LOWER(address) = $1 AND silo = $2`,
+    [address, silo, html],
+  );
+  respondOk(res, { address, signature_html: html });
+}));
+
 export default router;
