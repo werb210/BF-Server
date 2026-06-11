@@ -143,9 +143,12 @@ router.get("/", safeHandler(async (req: any, res: any) => {
 
   const base = mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
   const select = "$select=id,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview,isRead";
+  // BF_SERVER_BLOCK_v823_INBOX_READSTATUS_AND_SORT — optional sort (default desc).
+  const sortDir = String((req.query.sort ?? "")).toLowerCase() === "asc" ? "asc" : "desc";
+  const orderby = `$orderby=receivedDateTime ${sortDir}`;
 
   async function fetchFolder(client: GraphClient, folderId: "Inbox" | "SentItems"): Promise<any[]> {
-    const r = await client.fetch(`${base}/mailFolders/${folderId}/messages?$top=50&${select}`);
+    const r = await client.fetch(`${base}/mailFolders/${folderId}/messages?$top=50&${select}&${orderby}`);
     if (!r.ok) return [];
     const data = await r.json();
     return Array.isArray(data?.value) ? data.value : [];
@@ -168,7 +171,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
     ].sort((a, b) => {
       const ta = new Date(a.receivedDateTime ?? a.sentDateTime ?? 0).getTime();
       const tb = new Date(b.receivedDateTime ?? b.sentDateTime ?? 0).getTime();
-      return tb - ta;
+      return sortDir === "asc" ? ta - tb : tb - ta;
     });
   }
 
@@ -194,6 +197,41 @@ router.get("/:messageId", safeHandler(async (req: any, res: any) => {
   const message: any = await r.json();
   await inlineEmailImages(graph, base, req.params.messageId, message); // BF_SERVER_BLOCK_v747
   respondOk(res, message);
+}));
+
+// BF_SERVER_BLOCK_v823_INBOX_READSTATUS_AND_SORT
+// PATCH /api/crm/inbox/:messageId/read  body: { isRead: boolean }
+router.patch("/:messageId/read", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const isRead = req.body?.isRead !== false; // default true
+  const mailbox = (req.query.mailbox ?? "").toString().trim();
+  if (mailbox) {
+    const role = (req.user?.role ?? "").toString().toLowerCase();
+    if (role !== "admin") {
+      const silo = resolveSiloFromRequest(req);
+      const { rows } = await pool.query(
+        `SELECT 1 FROM shared_mailbox_settings
+         WHERE LOWER(address)=LOWER($1) AND silo = $2 AND LOWER($3) = ANY(SELECT LOWER(r) FROM unnest(allowed_roles) r)
+         LIMIT 1`,
+        [mailbox, silo, role],
+      );
+      if (!rows.length) return res.status(403).json({ error: "mailbox_not_allowed" });
+    }
+  }
+  const base = mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
+  const r = await graph.fetch(`${base}/messages/${encodeURIComponent(req.params.messageId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ isRead }),
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!r.ok) {
+    const errBody = await r.text().catch(() => "");
+    return res.status(r.status).json({ error: "graph_read_failed", detail: errBody.slice(0, 300) });
+  }
+  return res.json({ success: true, isRead });
 }));
 
 // BF_SERVER_BLOCK_v641_INBOX_DELETE_v1
