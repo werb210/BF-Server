@@ -160,7 +160,16 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
       for (const row of cr.rows) {
         const obj = await store.get(row.blob_name);
         if (!obj) continue;
-        collateralAttachments.push({ "@odata.type": "#microsoft.graph.fileAttachment", name: row.name, contentType: row.content_type || "application/pdf", contentBytes: obj.buffer.toString("base64") });
+        // BF_SERVER_BLOCK_v851 — mail clients pick the open program by filename
+        // extension. Collateral names are label-only ("BI - Lender - One pager")
+        // with no extension, so Outlook prompts for a program. Append the blob's
+        // extension to the attachment filename so it opens as a PDF.
+        const blobName = String(row.blob_name || "");
+        const blobExtMatch = blobName.match(/\.([a-zA-Z0-9]{1,5})$/);
+        const blobExt = blobExtMatch ? blobExtMatch[1].toLowerCase() : "pdf";
+        let fname = String(row.name || "attachment").trim();
+        if (!/\.[a-zA-Z0-9]{1,5}$/.test(fname)) fname = `${fname}.${blobExt}`;
+        collateralAttachments.push({ "@odata.type": "#microsoft.graph.fileAttachment", name: fname, contentType: row.content_type || "application/pdf", contentBytes: obj.buffer.toString("base64") });
       }
     } catch { /* collateral fetch is best-effort — never block the send */ }
   }

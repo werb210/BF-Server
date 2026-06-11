@@ -882,7 +882,44 @@ router.get("/timeline", safeHandler(async (req: any, res: any) => {
     return { rows: [] as any[] };
   });
 
+  // BF_SERVER_BLOCK_v851 — surface call recordings + transcripts on the
+  // phone-keyed timeline (the BI contact card reads this), so BI shows the same
+  // recording/transcript history BF does.
+  const recRes = await pool.query(
+    `SELECT cr.id, cr.url, cr.duration_sec, cr.created_at,
+            ct.full_text, ct.voice_intelligence_summary
+       FROM call_recordings cr
+       JOIN conferences c ON c.id = cr.conference_id
+       JOIN conference_participants cp ON cp.conference_id = c.id
+       LEFT JOIN call_transcripts ct ON ct.conference_id = cr.conference_id
+      WHERE c.silo = $1
+        AND cp.phone_number = ANY($2::text[])
+      ORDER BY cr.created_at DESC
+      LIMIT $3`,
+    [silo, phoneVariants, limit],
+  ).catch((err: any) => {
+    console.warn("communications.timeline.recordings_query_failed", { silo, phone, message: err?.message, code: err?.code });
+    return { rows: [] as any[] };
+  });
+
   const events = [
+    ...recRes.rows.map((r: any) => ({
+      id: r.id,
+      kind: "recording" as const,
+      direction: null,
+      status: null,
+      body: r.voice_intelligence_summary ?? r.full_text ?? null,
+      duration_seconds: r.duration_sec ?? null,
+      from_number: null,
+      to_number: null,
+      silo,
+      application_id: null,
+      twilio_sid: null,
+      staff_name: null,
+      staff_user_id: null,
+      recording_url: r.url ?? null,
+      created_at: r.created_at,
+    })),
     ...callsRes.rows.map((r: any) => ({
       id: r.id,
       kind: "call" as const,
