@@ -56,7 +56,11 @@ router.get("/token", auth, async (req: any, res: Response) => {
       `INSERT INTO staff_presence (user_id, twilio_identity, status, last_heartbeat, updated_at)
        VALUES ($1, $2, 'available', now(), now())
        ON CONFLICT (user_id) DO UPDATE
-         SET twilio_identity = $2, last_heartbeat = now(), updated_at = now()`,
+         -- BF_SERVER_BLOCK_v829_PRESENCE_AVAILABLE_ON_HEARTBEAT — a fresh token means
+         -- the browser is alive; promote offline -> available, but never clobber an
+         -- explicit 'busy' the staff member chose in the topbar.
+         SET twilio_identity = $2, last_heartbeat = now(), updated_at = now(),
+             status = CASE WHEN staff_presence.status = 'busy' THEN 'busy' ELSE 'available' END`,
       [identity, identity]
     ).catch(() => {}); // non-fatal
     return res.status(200).json({ success: true, data: { token, identity, outbound_caller_id: outboundCallerId, missing_outbound_caller_id: missingOutboundCallerId } });
@@ -110,7 +114,13 @@ router.post("/presence/heartbeat", auth, async (req: any, res: Response) => {
   lastPresenceHeartbeatByUser.set(userId, now);
 
   await pool.query(
-    `UPDATE staff_presence SET last_heartbeat = now() WHERE user_id = $1`,
+    // BF_SERVER_BLOCK_v829_PRESENCE_AVAILABLE_ON_HEARTBEAT — keep status fresh:
+    // an active heartbeat means the browser can receive calls, so promote
+    // offline -> available; preserve an explicit 'busy'.
+    `UPDATE staff_presence
+        SET last_heartbeat = now(),
+            status = CASE WHEN status = 'busy' THEN 'busy' ELSE 'available' END
+      WHERE user_id = $1`,
     [userId]
   ).catch(() => {});
   res.json({ ok: true });
