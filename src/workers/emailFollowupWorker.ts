@@ -56,8 +56,8 @@ export function startEmailFollowupWorker(pool: Pool): { stop: () => void } {
           const body = `No open after 24h: "${subject}"${recipient ? ` to ${recipient}` : ""}. Consider following up.`;
           const contextUrl = r.contact_id ? `/crm/contacts/${r.contact_id}` : "/communications";
           await pool.query(
-            `INSERT INTO notifications (user_id, type, ref_table, ref_id, body, context_url)
-             VALUES ($1, 'email_unopened', 'crm_email_log', $2, $3, $4)
+            `INSERT INTO notifications (id, user_id, type, ref_table, ref_id, body, context_url)
+             VALUES (gen_random_uuid(), $1, 'email_unopened', 'crm_email_log', $2, $3, $4)
              ON CONFLICT ON CONSTRAINT notifications_unique_per_ref DO NOTHING`,
             [String(r.owner_id), String(r.id), body, contextUrl],
           );
