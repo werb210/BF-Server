@@ -19,6 +19,7 @@ import callsActivityRoutes from "./crm/calls.js";
 import timelineRoutes from "./crm/timeline.js";
 import sharedMailboxesRoutes from "./crm/sharedMailboxes.js";
 import inboxRoutes from "./crm/inbox.js";
+import voicemailsRoutes from "./crm/voicemails.js"; // BF_SERVER_BLOCK_v830_VOICEMAILS_LIST
 
 const router = Router();
 
@@ -951,6 +952,7 @@ router.use("/companies/:id/timeline", timelineRoutes);
 
 router.use("/shared-mailboxes", sharedMailboxesRoutes);
 router.use("/inbox", inboxRoutes);
+router.use("/voicemails", voicemailsRoutes); // BF_SERVER_BLOCK_v830_VOICEMAILS_LIST
 
 router.get("/timeline", safeHandler(handleListCrmTimeline));
 router.get("/web-leads", SupportController.fetchWebLeads);
