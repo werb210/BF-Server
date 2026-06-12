@@ -8,6 +8,7 @@ import lendersRouter from "./lenders.js";
 import lenderProductsRouter from "./lenderProducts.js";
 import clientSubmissionRoutes from "../../modules/clientSubmission/clientSubmission.routes.js";
 import sessionRouter from "./session.js";
+import submitAttemptsRouter from "./submitAttempts.js";
 import {
   clientDocumentsRateLimit,
   clientReadRateLimit,
@@ -17,6 +18,7 @@ import { dbQuery } from "../../db.js";
 import { AppError } from "../../middleware/errors.js";
 
 const router = Router();
+router.use(submitAttemptsRouter); // BF_SERVER_BLOCK_v842_SUBMIT_ATTEMPTS — frictionless beacon, before rate-limit/ownership middleware
 const clientReadLimiter = clientReadRateLimit() as any;
 
 router.use((req: any, res: any, next: any) => {
