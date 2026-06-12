@@ -225,7 +225,11 @@ router.get(
         // it) shows DEALS, i.e. parent applications, not companion/child legs. A multi-leg
         // deal (e.g. Equipment + LOC companion) is ONE card here; its companion legs are
         // reachable via the parent drill-down (?parent_application_id=...) / linked-chip drawer.
-        where.push(`a.parent_application_id IS NULL`);
+        // BF_SERVER_BLOCK_v862_PIPELINE_SHOW_CLOSING_COSTS — EXCEPT closing-cost
+        // companions: a closing-cost facility is its own application (its own
+        // lender/docs) and must appear as its own pipeline card rather than be
+        // hidden as a child leg. Other companion types stay collapsed.
+        where.push(`(a.parent_application_id IS NULL OR a.source = 'closing_costs_companion')`);
       }
       // BF_SERVER_BLOCK_v131_PIPELINE_SQL_REPAIR_v1
       // Replace the bogus `a.primary_contact_id` JOIN — that column was
