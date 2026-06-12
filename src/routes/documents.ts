@@ -10,6 +10,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { ok, fail } from "../middleware/response.js";
 import { toStringSafe } from "../utils/toStringSafe.js";
 import { pool } from "../db.js";
+import { resolveUploadCategory } from "./uploadCategory.js";
 import { getStorage } from "../lib/storage/index.js";
 import { enqueueOcrForDocument } from "../modules/ocr/ocr.service.js";
 import { requireAuthorization } from "../middleware/auth.js";
@@ -169,7 +170,7 @@ async function persistAndEnqueue(opts: {
 
 router.post("/public-upload", upload.single("file"), async (req: Request, res: Response) => {
   const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
-  const category      = typeof req.body?.category === "string"      ? req.body.category.trim()      : "";
+  const category      = resolveUploadCategory(req.body) ?? ""; // BF_SERVER_BLOCK_v843 — accept category | document_type | documentType
   if (!applicationId || !category) return fail(res, 400, "MISSING_FIELDS");
   const file = (req as Request & { file?: Express.Multer.File }).file;
   if (!file) return fail(res, 400, "NO_FILE");
@@ -261,7 +262,7 @@ router.post("/public-upload", upload.single("file"), async (req: Request, res: R
 
 router.post("/upload", requireAuth, upload.single("file"), async (req: Request, res: Response) => {
   const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : null;
-  const category      = typeof req.body?.category === "string"      ? req.body.category.trim()      : null;
+  const category      = resolveUploadCategory(req.body); // BF_SERVER_BLOCK_v843 — accept category | document_type | documentType
   const file = (req as Request & { file?: Express.Multer.File }).file;
   if (!applicationId || !category || !file) return fail(res, 400, "INVALID_DOCUMENT_UPLOAD_PAYLOAD");
   try {
