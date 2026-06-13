@@ -123,7 +123,7 @@ router.post("/conference/wait", twilioWebhookValidation, async (req: any, res) =
     }
   }
 
-  if (n >= 4) {
+  if (n >= 3) {
     vr.say({ voice: "Polly.Joanna" }, "Sorry, no one is available to take your call. Please leave a message after the tone and we will call you back.");
     vr.record({
       action: `${base}/api/webhooks/twilio/voicemail`,
@@ -135,7 +135,14 @@ router.post("/conference/wait", twilioWebhookValidation, async (req: any, res) =
     return res.send(vr.toString());
   }
 
-  vr.play({ loop: 1 }, "http://com.twilio.sounds.music.s3.amazonaws.com/MARKOVICHAMP-Borghestral.mp3");
+  // BF_SERVER_NO_ANSWER_15S — bounded ~5s hold per poll so an unanswered caller
+  // reaches voicemail in ~15s (3 polls) instead of being parked behind a ~60s
+  // music track per poll (~4 min to voicemail). A staff answer starts the
+  // conference and bridges the caller out of this loop automatically.
+  if (n === 0) {
+    vr.say({ voice: "Polly.Joanna" }, "Please hold while we connect your call.");
+  }
+  vr.pause({ length: 5 });
   vr.redirect({ method: "POST" }, `${base}/api/webhooks/twilio/conference/wait?conf=${encodeURIComponent(conf)}&pid=${encodeURIComponent(pid)}&n=${n + 1}`);
   return res.send(vr.toString());
 });
