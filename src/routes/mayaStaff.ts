@@ -9,6 +9,7 @@ import { pool } from "../db.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { logError } from "../observability/logger.js";
 import { runPipelineQuery } from "../services/mayaPipelineQuery.js";
+import { retrieveContext } from "../modules/ai/knowledge.service.js";
 import { sendSms } from "../modules/notifications/sms.service.js";
 
 const router = Router();
@@ -365,6 +366,46 @@ router.post(
       await audit({ audience: "staff", tool: "call.initiate", args: { to, contact_id: contactId }, ok: false, summary: e?.message ?? "error", errorCode: "call_initiate_exception" });
       logError("maya_call_initiate_failed", { code: "maya_call_initiate_failed", error: e?.message ?? "unknown" });
       return res.status(500).json({ ok: false, error: "call_initiate_failed" });
+    }
+  }),
+);
+
+
+// BF_SERVER_MAYA_KNOWLEDGE_SEARCH — agent retrieval over the trained knowledge base (all audiences).
+router.post(
+  "/knowledge-search",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) {
+      return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    }
+    const query = typeof req.body?.query === "string" ? req.body.query.trim() : "";
+    if (!query) return res.json({ ok: true, context: "" });
+    try {
+      const context = await retrieveContext(pool, query);
+      return res.json({ ok: true, context });
+    } catch (e: any) {
+      logError("maya_knowledge_search_failed", { code: "maya_knowledge_search_failed", error: e?.message ?? "unknown" });
+      return res.json({ ok: true, context: "" });
+    }
+  }),
+);
+
+// BF_SERVER_MAYA_PERSONA — agent reads tuned persona/greeting/tone (maya.* rules).
+router.post(
+  "/maya-persona",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) {
+      return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    }
+    try {
+      const { rows } = await pool.query<{ rule_key: string; rule_value: string }>(
+        `SELECT rule_key, rule_value FROM ai_system_rules WHERE rule_key IN ('maya.persona','maya.greeting','maya.tone')`,
+      );
+      const cfg: Record<string, string> = {};
+      for (const r of rows) cfg[r.rule_key] = r.rule_value;
+      return res.json({ ok: true, persona: cfg["maya.persona"] ?? "", greeting: cfg["maya.greeting"] ?? "", tone: cfg["maya.tone"] ?? "" });
+    } catch {
+      return res.json({ ok: true, persona: "", greeting: "", tone: "" });
     }
   }),
 );
