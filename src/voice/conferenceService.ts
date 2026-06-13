@@ -284,7 +284,7 @@ export async function dialClientIntoConference(args: DialIntoConferenceArgs): Pr
     statusCallback: `${__baseUrl()}/api/webhooks/twilio/voice/call-status`,
     statusCallbackEvent: ["initiated","ringing","answered","completed"],
     statusCallbackMethod: "POST",
-    timeout: 25,
+    timeout: 15, // BF_SERVER_NO_ANSWER_15S — ring staff 15s, then caller -> voicemail
   });
   return { callSid: call.sid };
 }
