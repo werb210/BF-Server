@@ -9,6 +9,7 @@ import { pool } from "../db.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { logError } from "../observability/logger.js";
 import { runPipelineQuery } from "../services/mayaPipelineQuery.js";
+import { sendSms } from "../modules/notifications/sms.service.js";
 
 const router = Router();
 
@@ -305,6 +306,65 @@ router.post(
     } catch (e: any) {
       logError("maya_audit_recent_failed", { code: "maya_audit_recent_failed", error: e?.message ?? "unknown" });
       return res.status(500).json({ ok: false, error: "audit_recent_failed" });
+    }
+  }),
+);
+
+// BF_SERVER_MAYA_STAFF_SEND_SMS — 2-step: returns a draft unless approved===true, then sends via Twilio.
+router.post(
+  "/staff/send-sms",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) {
+      return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    }
+    const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
+    let to = typeof req.body?.to === "string" ? req.body.to.trim() : "";
+    const contactId = typeof req.body?.contact_id === "string" ? req.body.contact_id.trim() : "";
+    const approved = req.body?.approved === true;
+    if (!body) return res.status(400).json({ ok: false, error: "body_required" });
+    try {
+      if (!to && contactId) {
+        const cr = await pool.query(`SELECT phone FROM contacts WHERE id::text = $1 LIMIT 1`, [contactId]);
+        to = cr.rows[0]?.phone ?? "";
+      }
+      if (!to) return res.status(400).json({ ok: false, error: "recipient_required" });
+      if (!approved) {
+        await audit({ audience: "staff", tool: "comm.send_sms", args: { to, contact_id: contactId, approved: false }, ok: true, summary: `draft sms to ${to}`, userId: typeof req.body?.user_id === "string" ? req.body.user_id : null, sessionId: typeof req.body?.session_id === "string" ? req.body.session_id : null });
+        return res.json({ ok: true, draft: true, to, body, status: "draft_pending_approval", note: "Draft only — re-call with approved=true to send after staff confirms." });
+      }
+      const r: any = await sendSms({ to, message: body });
+      const sid = r?.sid ?? null;
+      await audit({ audience: "staff", tool: "comm.send_sms", args: { to, contact_id: contactId, approved: true }, ok: true, summary: `sent sms to ${to}`, userId: typeof req.body?.user_id === "string" ? req.body.user_id : null, sessionId: typeof req.body?.session_id === "string" ? req.body.session_id : null });
+      return res.json({ ok: true, sent: true, to, sid });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "comm.send_sms", args: { to, contact_id: contactId, approved }, ok: false, summary: e?.message ?? "error", errorCode: "send_sms_exception" });
+      logError("maya_send_sms_failed", { code: "maya_send_sms_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "send_sms_failed" });
+    }
+  }),
+);
+
+// BF_SERVER_MAYA_STAFF_CALL_INITIATE — resolve number + audit; returns a dial directive (live calling wired later).
+router.post(
+  "/staff/call-initiate",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) {
+      return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    }
+    let to = typeof req.body?.to === "string" ? req.body.to.trim() : "";
+    const contactId = typeof req.body?.contact_id === "string" ? req.body.contact_id.trim() : "";
+    try {
+      if (!to && contactId) {
+        const cr = await pool.query(`SELECT phone FROM contacts WHERE id::text = $1 LIMIT 1`, [contactId]);
+        to = cr.rows[0]?.phone ?? "";
+      }
+      if (!to) return res.status(400).json({ ok: false, error: "recipient_required" });
+      await audit({ audience: "staff", tool: "call.initiate", args: { to, contact_id: contactId }, ok: true, summary: `dial directive ${to}`, userId: typeof req.body?.user_id === "string" ? req.body.user_id : null, sessionId: typeof req.body?.session_id === "string" ? req.body.session_id : null });
+      return res.json({ ok: true, to, contact_id: contactId || null });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "call.initiate", args: { to, contact_id: contactId }, ok: false, summary: e?.message ?? "error", errorCode: "call_initiate_exception" });
+      logError("maya_call_initiate_failed", { code: "maya_call_initiate_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "call_initiate_failed" });
     }
   }),
 );
