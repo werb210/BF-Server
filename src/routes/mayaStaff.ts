@@ -250,4 +250,63 @@ router.post(
   }),
 );
 
+// BF_SERVER_MAYA_STAFF_APPLICATION_NEWEST — resolve the newest deal (for "open newest application").
+router.post(
+  "/staff/application-newest",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) {
+      return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    }
+    try {
+      const { rows } = await pool.query(
+        `SELECT id::text AS id, name, pipeline_state, status, requested_amount, product_type, created_at, updated_at
+           FROM applications
+          WHERE parent_application_id IS NULL
+          ORDER BY created_at DESC NULLS LAST
+          LIMIT 1`,
+      );
+      const app = rows[0] ?? null;
+      await audit({ audience: "staff", tool: "application.open_newest", args: {}, ok: true, summary: app ? `app=${app.id}` : "none", userId: typeof req.body?.user_id === "string" ? req.body.user_id : null, sessionId: typeof req.body?.session_id === "string" ? req.body.session_id : null });
+      return res.json({ ok: true, application: app });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "application.open_newest", args: {}, ok: false, summary: e?.message ?? "error", errorCode: "application_newest_exception" });
+      logError("maya_application_newest_failed", { code: "maya_application_newest_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "application_newest_failed" });
+    }
+  }),
+);
+
+// BF_SERVER_MAYA_STAFF_AUDIT_RECENT — read recent Maya staff audit entries.
+router.post(
+  "/staff/audit-recent",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) {
+      return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    }
+    const limit = Math.min(Math.max(Number(req.body?.limit) || 10, 1), 50);
+    const tool = typeof req.body?.tool === "string" ? req.body.tool.trim() : "";
+    try {
+      const params: unknown[] = [];
+      let where = "audience = 'staff'";
+      if (tool) {
+        params.push(tool);
+        where += ` AND tool = $${params.length}`;
+      }
+      params.push(limit);
+      const { rows } = await pool.query(
+        `SELECT tool, audience, result_summary, ok, error_code, ts
+           FROM maya_audit
+          WHERE ${where}
+          ORDER BY ts DESC
+          LIMIT $${params.length}`,
+        params,
+      );
+      return res.json({ ok: true, count: rows.length, entries: rows });
+    } catch (e: any) {
+      logError("maya_audit_recent_failed", { code: "maya_audit_recent_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "audit_recent_failed" });
+    }
+  }),
+);
+
 export default router;
