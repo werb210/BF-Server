@@ -113,4 +113,141 @@ router.post(
   }),
 );
 
+// BF_SERVER_MAYA_STAFF_CONTACT_FIND — staff contact lookup by name/email/phone/company.
+router.post(
+  "/staff/contact-find",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) {
+      return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    }
+    const query = typeof req.body?.query === "string" ? req.body.query.trim() : "";
+    if (!query) {
+      return res.status(400).json({ ok: false, error: "query_required" });
+    }
+    const silo = typeof req.body?.silo === "string" ? req.body.silo.trim() : "";
+    try {
+      const params: unknown[] = [`%${query}%`];
+      let where =
+        "(c.name ILIKE $1 OR coalesce(c.email,'') ILIKE $1 OR coalesce(c.phone,'') ILIKE $1 OR coalesce(c.company_name,'') ILIKE $1)";
+      if (silo) {
+        params.push(silo);
+        where += ` AND c.silo = $${params.length}`;
+      }
+      const { rows } = await pool.query(
+        `SELECT c.id::text AS id, c.name, c.email, c.phone,
+                coalesce(c.company_name, '') AS company,
+                coalesce(c.lead_status, 'New') AS lead_status,
+                c.silo
+           FROM contacts c
+          WHERE ${where}
+          ORDER BY c.updated_at DESC NULLS LAST
+          LIMIT 10`,
+        params,
+      );
+      await audit({ audience: "staff", tool: "contact.find", args: { query, silo }, ok: true, summary: `${rows.length} matches`, userId: typeof req.body?.user_id === "string" ? req.body.user_id : null, sessionId: typeof req.body?.session_id === "string" ? req.body.session_id : null });
+      return res.json({ ok: true, count: rows.length, contacts: rows });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "contact.find", args: { query, silo }, ok: false, summary: e?.message ?? "error", errorCode: "contact_find_exception" });
+      logError("maya_contact_find_failed", { code: "maya_contact_find_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "contact_find_failed" });
+    }
+  }),
+);
+
+// BF_SERVER_MAYA_STAFF_APPLICATION_SUMMARY — one-shot deal summary for staff copilot.
+router.post(
+  "/staff/application-summary",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) {
+      return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    }
+    const appId = typeof req.body?.application_id === "string" ? req.body.application_id.trim() : "";
+    if (!appId) {
+      return res.status(400).json({ ok: false, error: "application_id_required" });
+    }
+    try {
+      const ar = await pool.query(
+        `SELECT id::text AS id, name, pipeline_state, status, requested_amount, product_type, updated_at
+           FROM applications WHERE id::text = $1 LIMIT 1`,
+        [appId],
+      );
+      const app = ar.rows[0];
+      if (!app) {
+        return res.status(404).json({ ok: false, error: "not_found" });
+      }
+      const cr = await pool.query(
+        `SELECT c.name, c.email, c.phone, coalesce(c.company_name, '') AS company
+           FROM application_contacts ac
+           JOIN contacts c ON c.id = ac.contact_id
+          WHERE ac.application_id::text = $1 AND ac.role = 'applicant'
+          LIMIT 1`,
+        [appId],
+      );
+      const applicant = cr.rows[0] ?? null;
+      const dr = await pool.query(
+        `SELECT status, document_category FROM application_required_documents WHERE application_id::text = $1`,
+        [appId],
+      );
+      const docsTotal = dr.rows.length;
+      const missing = dr.rows
+        .filter((r: any) => String(r.status) !== "accepted")
+        .map((r: any) => r.document_category)
+        .filter(Boolean);
+      const accepted = docsTotal - missing.length;
+      const stage = app.pipeline_state ?? app.status ?? "unknown";
+      const nextAction =
+        missing.length > 0
+          ? `Collect ${missing.length} outstanding document(s): ${missing.join(", ")}`
+          : "Documents complete — ready for lender match / submission review.";
+      const summary = {
+        applicationId: app.id,
+        name: app.name,
+        stage,
+        status: app.status,
+        requestedAmount: app.requested_amount,
+        productType: app.product_type,
+        applicant,
+        docs: { total: docsTotal, accepted, missing },
+        lastActivityAt: app.updated_at,
+        nextAction,
+      };
+      await audit({ audience: "staff", tool: "application.summary", args: { application_id: appId }, ok: true, summary: `stage=${stage} missing=${missing.length}`, userId: typeof req.body?.user_id === "string" ? req.body.user_id : null, sessionId: typeof req.body?.session_id === "string" ? req.body.session_id : null });
+      return res.json({ ok: true, summary });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "application.summary", args: { application_id: appId }, ok: false, summary: e?.message ?? "error", errorCode: "application_summary_exception" });
+      logError("maya_application_summary_failed", { code: "maya_application_summary_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "application_summary_failed" });
+    }
+  }),
+);
+
+// BF_SERVER_MAYA_STAFF_DRAFT_EMAIL — record a staff email draft (suggest-then-approve; never sends).
+router.post(
+  "/staff/draft-email",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) {
+      return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    }
+    const subject = typeof req.body?.subject === "string" ? req.body.subject.trim() : "";
+    const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
+    let to = typeof req.body?.to === "string" ? req.body.to.trim() : "";
+    const contactId = typeof req.body?.contact_id === "string" ? req.body.contact_id.trim() : "";
+    if (!subject || !body) {
+      return res.status(400).json({ ok: false, error: "subject_and_body_required" });
+    }
+    try {
+      if (!to && contactId) {
+        const cr = await pool.query(`SELECT email FROM contacts WHERE id::text = $1 LIMIT 1`, [contactId]);
+        to = cr.rows[0]?.email ?? "";
+      }
+      await audit({ audience: "staff", tool: "comm.draft_email", args: { to, subject, contact_id: contactId }, ok: true, summary: `draft to ${to || "(unspecified)"}`, userId: typeof req.body?.user_id === "string" ? req.body.user_id : null, sessionId: typeof req.body?.session_id === "string" ? req.body.session_id : null });
+      return res.json({ ok: true, draft: { to, subject, body }, status: "draft_pending_approval", note: "Draft only — not sent. Staff must review and send." });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "comm.draft_email", args: { to, subject, contact_id: contactId }, ok: false, summary: e?.message ?? "error", errorCode: "draft_email_exception" });
+      logError("maya_draft_email_failed", { code: "maya_draft_email_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "draft_email_failed" });
+    }
+  }),
+);
+
 export default router;
