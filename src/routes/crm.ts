@@ -737,6 +737,12 @@ router.get("/companies", safeHandler(async (req: any, res: any) => {
     params.push(ownerId);
     where += ` AND co.owner_id = $${params.length}`;
   }
+  // BF_SERVER_CRM_COMPANY_TAG_FILTER — single-tag filter parity with contacts.
+  const tagFilter = String(req.query.tag ?? "").trim().toLowerCase();
+  if (tagFilter) {
+    params.push(tagFilter);
+    where += ` AND EXISTS (SELECT 1 FROM unnest(coalesce(co.tags, '{}'::text[])) t WHERE lower(t) = $${params.length})`;
+  }
   const { rows } = await pool.query(
     `SELECT co.*, (u.first_name || ' ' || u.last_name) AS owner_name
      FROM companies co
