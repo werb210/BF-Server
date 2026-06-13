@@ -229,7 +229,11 @@ router.get(
         // companions: a closing-cost facility is its own application (its own
         // lender/docs) and must appear as its own pipeline card rather than be
         // hidden as a child leg. Other companion types stay collapsed.
-        where.push(`(a.parent_application_id IS NULL OR a.source = 'closing_costs_companion')`);
+        // BF_SERVER_PIPELINE_SHOW_EQUIPMENT_LEG — the capital+equipment fan-out
+        // creates the equipment leg as its own application (own EQUIPMENT lenders
+        // + docs), exactly like a closing-cost companion. Surface it as its own
+        // card too instead of hiding it as a collapsed child.
+        where.push(`(a.parent_application_id IS NULL OR a.source IN ('closing_costs_companion', 'capital_and_equipment_leg'))`);
       }
       // BF_SERVER_BLOCK_v131_PIPELINE_SQL_REPAIR_v1
       // Replace the bogus `a.primary_contact_id` JOIN — that column was
