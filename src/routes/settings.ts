@@ -266,4 +266,35 @@ router.put("/maya-config", requireAdminWrite, safeHandler(async (req: any, res: 
   respondOk(res, { ok: true, updated });
 }));
 
+// MAYA_TTS — speak text in Maya's configured voice (default nova) via OpenAI TTS.
+router.post("/maya-tts", safeHandler(async (req: any, res: any) => {
+  const text = typeof req.body?.text === "string" ? req.body.text.trim().slice(0, 4000) : "";
+  if (!text) return res.status(400).json({ error: { code: "validation_error", message: "text required" } });
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return res.status(503).json({ ok: false, error: "openai_not_configured" });
+  const ALLOWED_VOICES = new Set(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]);
+  let voice = "nova";
+  try {
+    const { rows } = await pool.query<{ rule_value: string }>(
+      `SELECT rule_value FROM ai_system_rules WHERE rule_key = 'maya.voice' LIMIT 1`,
+    );
+    const v = rows[0]?.rule_value?.trim().toLowerCase();
+    if (v && ALLOWED_VOICES.has(v)) voice = v;
+  } catch {
+    /* fall back to nova */
+  }
+  try {
+    const OpenAI = (await import("openai")).default;
+    const client = new OpenAI({ apiKey });
+    const speech = await client.audio.speech.create({ model: "tts-1", voice: voice as any, input: text });
+    const buf = Buffer.from(await speech.arrayBuffer());
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Length", String(buf.length));
+    return res.end(buf);
+  } catch (e: any) {
+    console.error("maya_tts_failed", e?.message ?? "unknown");
+    return res.status(502).json({ ok: false, error: "tts_failed" });
+  }
+}));
+
 export default router;
