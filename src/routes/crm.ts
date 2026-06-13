@@ -476,6 +476,110 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
   return res.json({ ok: true, created, updated, skipped, total: rows.length });
 }));
 
+// BF_SERVER_CRM_COMPANY_CSV_IMPORT — upsert companies by name within silo. Mirrors /contacts/import.
+router.post("/companies/import", requireCrmWrite, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const ownerId = req.user?.id ?? req.user?.userId ?? null;
+  const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  if (!Array.isArray(req.body?.rows)) {
+    return res.status(400).json({ error: { field: "rows", message: "rows[] is required" } });
+  }
+  if (rows.length > 20000) {
+    return res.status(400).json({ error: { field: "rows", message: "too many rows (max 20000)" } });
+  }
+
+  const colRes = await pool.query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'companies'`,
+  );
+  const cols = new Set<string>(colRes.rows.map((r: any) => r.column_name));
+  const has = (c: string) => cols.has(c);
+  const splitList = (v: any): string[] => String(v ?? "").split(/[;,|]/).map((s) => s.trim()).filter(Boolean);
+
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const raw of rows) {
+      const r = raw ?? {};
+      const name = String(r.name ?? "").trim();
+      if (!name) { skipped++; continue; }
+
+      const industry = String(r.industry ?? "").trim() || null;
+      const domain = String(r.domain ?? "").trim() || null;
+      const city = String(r.city ?? "").trim() || null;
+      const region = String(r.region ?? "").trim() || null;
+      const financing = splitList(r.types_of_financing);
+      const tags = splitList(r.tags);
+      const ex = await client.query(
+        `SELECT id FROM companies WHERE silo = $1 AND lower(name) = lower($2) LIMIT 1`,
+        [silo, name],
+      );
+      const existingId: string | null = ex.rows[0]?.id ?? null;
+
+      if (existingId) {
+        const sets: string[] = [];
+        const vals: any[] = [];
+        let i = 1;
+        const overwrite = (col: string, val: any) => {
+          if (has(col) && val != null && val !== "") { sets.push(`${col} = $${i}`); vals.push(val); i++; }
+        };
+        overwrite("industry", industry);
+        overwrite("domain", domain);
+        overwrite("city", city);
+        overwrite("region", region);
+        if (has("types_of_financing") && financing.length) {
+          sets.push(`types_of_financing = $${i}`);
+          vals.push(financing);
+          i++;
+        }
+        if (has("tags") && tags.length) {
+          sets.push(`tags = (SELECT ARRAY(SELECT DISTINCT unnest(coalesce(companies.tags,'{}'::text[]) || $${i}::text[])))`);
+          vals.push(tags);
+          i++;
+        }
+        if (has("owner_id") && ownerId) { sets.push(`owner_id = COALESCE(owner_id, $${i})`); vals.push(ownerId); i++; }
+        if (has("updated_at")) { sets.push("updated_at = now()"); }
+        if (!sets.length) { skipped++; continue; }
+        vals.push(existingId);
+        await client.query(`UPDATE companies SET ${sets.join(", ")} WHERE id = $${i}`, vals);
+        updated++;
+      } else {
+        const insCols: string[] = [];
+        const ph: string[] = [];
+        const vals: any[] = [];
+        let i = 1;
+        const add = (col: string, val: any) => {
+          if (has(col)) { insCols.push(col); ph.push(`$${i}`); vals.push(val); i++; }
+        };
+        add("name", name);
+        add("industry", industry);
+        add("domain", domain);
+        add("city", city);
+        add("region", region);
+        if (has("types_of_financing")) { insCols.push("types_of_financing"); ph.push(`$${i}`); vals.push(financing); i++; }
+        if (has("tags")) { insCols.push("tags"); ph.push(`$${i}`); vals.push(tags); i++; }
+        add("silo", silo);
+        add("owner_id", ownerId);
+        await client.query(`INSERT INTO companies (${insCols.join(", ")}) VALUES (${ph.join(", ")})`, vals);
+        created++;
+      }
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  return res.json({ created, updated, skipped });
+}));
+
 
 // BF_SERVER_BLOCK_v777_DEDUPE_PREVIEW — read-only. Counts duplicate contact
 // groups (same normalized email, or same last-10 phone) and anonymous
