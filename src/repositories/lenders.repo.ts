@@ -372,9 +372,18 @@ export async function createLender(
     name: "primary_contact_phone",
     value: primary_contact_phone ?? null,
   });
+  // submission_method is NOT NULL. reconcileSubmissionPayload nulls the method
+  // when its config is incomplete (e.g. EMAIL with no submission_email), which
+  // would violate the constraint and abort the INSERT. Fall back to the requested
+  // method (default EMAIL) so the column is always populated; email/config stay
+  // null until staff complete them.
+  const submissionMethodValue =
+    reconciledSubmission.method ??
+    normalizeSubmissionMethod(input.submission_method) ??
+    "EMAIL";
   columns.push({
     name: "submission_method",
-    value: reconciledSubmission.method,
+    value: submissionMethodValue,
   });
   columns.push({
     name: "submission_email",
