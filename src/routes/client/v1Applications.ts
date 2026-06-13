@@ -715,7 +715,7 @@ router.post(
                     lender_id, lender_product_id, source, metadata, submitted_at, created_at, updated_at)
                  VALUES
                    ($1, $2, $3, $4, $5,
-                    $6, 'EQUIPMENT', 'Received', 'received',
+                    $6, 'EQUIPMENT', 'Received', $10,
                     $7, $8, 'capital_and_equipment_leg',
                     jsonb_build_object('capital_and_equipment_leg', true,
                                        'parent_application_id', $5::text,
@@ -731,6 +731,7 @@ router.post(
                   null,
                   null,
                   JSON.stringify(metaPatch),
+                  statusFromPipeline(ApplicationStage.RECEIVED),
                 ]
               );
               v330_equipmentLegId = equipmentId;
