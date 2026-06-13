@@ -312,6 +312,7 @@ router.post(
           name,
           country,
           submission_method: "EMAIL",
+          submission_email: pc.email ?? null,
           active: true,
           status: "ACTIVE",
           website: c.website ?? null,
@@ -362,6 +363,13 @@ router.post(
         // (e.g. lender name collision) must not abort the whole import.
         const code = e?.code ? String(e.code) : "";
         const reason = code === "23505" ? "duplicate" : "create_failed";
+        // Log the real DB error so import failures are diagnosable instead of
+        // silently surfacing as a "skip (already exist)" in the UI.
+        console.warn(JSON.stringify({
+          event: "import_from_bi_create_failed",
+          company_id: c.id, name, code,
+          message: String(e?.message ?? "").slice(0, 300),
+        }));
         skipped.push({ company_id: c.id, name, reason });
         lendersSkipped++;
         continue;
