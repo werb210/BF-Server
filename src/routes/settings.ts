@@ -138,7 +138,7 @@ router.delete("/ai-knowledge/:id", requireAdminWrite, safeHandler(async (req: an
   if (!id) {
     return res.status(400).json({ error: { code: "validation_error", message: "id required" } });
   }
-  await pool.query(`DELETE FROM ai_knowledge WHERE id = $1`, [id]);
+  await pool.query(`DELETE FROM ai_knowledge WHERE id::text = $1`, [id]);
   respondOk(res, { ok: true });
 }));
 
@@ -186,6 +186,84 @@ router.post("/branding", requireAdminWrite, safeHandler(async (req: any, res: an
     console.warn("[settings.branding POST] write failed", { err: String(err) });
   }
   respondOk(res, { ok: true });
+}));
+
+
+// MAYA_TRAINING_URL — ingest a web page URL into the Maya knowledge base.
+function htmlToText(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+router.post("/ai-knowledge/url", requireAdminWrite, safeHandler(async (req: any, res: any) => {
+  const url = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+  if (!/^https?:\/\//i.test(url)) {
+    return res.status(400).json({ error: { code: "validation_error", message: "valid http(s) url required" } });
+  }
+  let text = "";
+  try {
+    const r = await fetch(url, { redirect: "follow", headers: { "User-Agent": "BorealMayaBot/1.0" } });
+    if (!r.ok) return res.status(502).json({ ok: false, error: "fetch_failed", status: r.status });
+    const html = await r.text();
+    text = htmlToText(html);
+  } catch {
+    return res.status(502).json({ ok: false, error: "fetch_failed" });
+  }
+  if (!text) return res.status(422).json({ ok: false, error: "no_text_extracted" });
+  const { embedAndStore } = await import("../modules/ai/knowledge.service.js");
+  try {
+    await embedAndStore(pool, text.slice(0, 200_000), "url", url, url);
+    respondOk(res, { ok: true, chars: text.length, url });
+  } catch (e: any) {
+    if (e?.code === "openai_not_configured" || e?.code === "embedding_failed" || e?.code === "no_vector") {
+      return res.status(503).json({ ok: false, savedWithoutIndex: true, message: "Saved, but embeddings are unavailable. Try again later." });
+    }
+    throw e;
+  }
+}));
+
+// MAYA_CONFIG — voice + persona tuning stored as ai_system_rules (maya.* keys).
+const MAYA_CONFIG_KEYS = new Set([
+  "maya.voice",
+  "maya.voice_rate",
+  "maya.voice_pitch",
+  "maya.greeting",
+  "maya.persona",
+  "maya.tone",
+]);
+
+router.get("/maya-config", safeHandler(async (_req: any, res: any) => {
+  const { rows } = await pool.query<{ rule_key: string; rule_value: string }>(
+    `SELECT rule_key, rule_value FROM ai_system_rules WHERE rule_key LIKE 'maya.%'`,
+  );
+  const config: Record<string, string> = {};
+  for (const r of rows) config[r.rule_key] = r.rule_value;
+  respondOk(res, { config });
+}));
+
+router.put("/maya-config", requireAdminWrite, safeHandler(async (req: any, res: any) => {
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const updated: string[] = [];
+  for (const [k, v] of Object.entries(body)) {
+    if (!MAYA_CONFIG_KEYS.has(k)) continue;
+    const val = typeof v === "string" ? v : String(v ?? "");
+    await pool.query(
+      `INSERT INTO ai_system_rules (rule_key, rule_value, updated_at)
+         VALUES ($1, $2, now())
+       ON CONFLICT (rule_key) DO UPDATE SET rule_value = EXCLUDED.rule_value, updated_at = now()`,
+      [k, val],
+    );
+    updated.push(k);
+  }
+  respondOk(res, { ok: true, updated });
 }));
 
 export default router;
