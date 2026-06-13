@@ -243,6 +243,15 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
     if (hasCompanyName) {
       searchParts.push(`coalesce(c.company_name, '') ILIKE $${values.length}`);
     }
+    if (hasTags) {
+      searchParts.push(`array_to_string(coalesce(c.tags, '{}'::text[]), ' ') ILIKE $${values.length}`);
+    }
+    if (hasLeadStatus) {
+      searchParts.push(`coalesce(c.lead_status, 'New') ILIKE $${values.length}`);
+    }
+    if (hasOwnerId) {
+      searchParts.push(`coalesce(u.first_name || ' ' || u.last_name, '') ILIKE $${values.length}`);
+    }
     where.push(`(${searchParts.join(" OR ")})`);
   }
   if (hasActiveApplications) {
@@ -712,7 +721,21 @@ router.get("/companies", safeHandler(async (req: any, res: any) => {
   let where = "co.silo = $1";
   if (q) {
     params.push(`%${q}%`);
-    where += ` AND (co.name ILIKE $${params.length} OR co.domain ILIKE $${params.length} OR co.industry ILIKE $${params.length})`;
+    where +=
+      ` AND (co.name ILIKE $${params.length}` +
+      ` OR co.domain ILIKE $${params.length}` +
+      ` OR co.industry ILIKE $${params.length}` +
+      ` OR array_to_string(coalesce(co.tags, '{}'::text[]), ' ') ILIKE $${params.length}` +
+      ` OR array_to_string(coalesce(co.types_of_financing, '{}'::text[]), ' ') ILIKE $${params.length}` +
+      ` OR coalesce(co.city, '') ILIKE $${params.length}` +
+      ` OR coalesce(co.region, '') ILIKE $${params.length}` +
+      ` OR coalesce(u.first_name || ' ' || u.last_name, '') ILIKE $${params.length})`;
+  }
+  // BF_SERVER_CRM_COMPANY_OWNER_FILTER — owner dropdown parity with contacts.
+  const ownerId = String(req.query.owner_id ?? "").trim();
+  if (ownerId) {
+    params.push(ownerId);
+    where += ` AND co.owner_id = $${params.length}`;
   }
   const { rows } = await pool.query(
     `SELECT co.*, (u.first_name || ' ' || u.last_name) AS owner_name
