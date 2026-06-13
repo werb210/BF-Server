@@ -476,7 +476,7 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
   return res.json({ ok: true, created, updated, skipped, total: rows.length });
 }));
 
-// BF_SERVER_CRM_COMPANY_CSV_IMPORT — upsert companies by name within silo. Mirrors /contacts/import.
+// BF_SERVER_CRM_COMPANY_IMPORT_ENDPOINT — upsert companies by name within silo. Mirrors /contacts/import.
 router.post("/companies/import", requireCrmWrite, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const ownerId = req.user?.id ?? req.user?.userId ?? null;
