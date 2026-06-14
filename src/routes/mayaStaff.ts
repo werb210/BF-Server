@@ -673,4 +673,160 @@ router.post(
   }),
 );
 
+// BF_SERVER_MAYA_BATCH_B_STAFF_READS_v1 — four read-only staff endpoints
+// (lender-product lookup, contact-360 timeline, call/voicemail triage, deal
+// risk flags). Service-JWT gated like the rest of mayaStaff; audits to
+// maya_audit. BF-silo data only.
+function biStr(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+function biNum(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() && Number.isFinite(Number(v))) return Number(v);
+  return null;
+}
+
+// 35. lender.products — search active lender products by category/country/amount.
+router.post(
+  "/staff/lender-products",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const category = biStr(req.body?.category);
+    const country = biStr(req.body?.country);
+    const amount = biNum(req.body?.amount);
+    try {
+      const r = await pool.query(
+        `SELECT lp.id::text AS id, lp.name, lp.category, lp.country, lp.region,
+                lp.amount_min, lp.amount_max, l.name AS lender_name
+           FROM lender_products lp
+           JOIN lenders l ON l.id = lp.lender_id
+          WHERE lp.active = true
+            AND ($1::text IS NULL OR upper(lp.category) = upper($1))
+            AND ($2::text IS NULL OR lp.country = $2)
+            AND ($3::numeric IS NULL OR (
+                  (lp.amount_min IS NULL OR lp.amount_min <= $3)
+              AND (lp.amount_max IS NULL OR lp.amount_max >= $3)))
+          ORDER BY l.name, lp.name
+          LIMIT 50`,
+        [category, country, amount],
+      );
+      const products = r.rows.map((p: any) => ({
+        id: p.id,
+        lender: p.lender_name,
+        product: p.name,
+        category: p.category ?? null,
+        country: p.country ?? null,
+        region: p.region ?? null,
+        amountMin: p.amount_min ?? null,
+        amountMax: p.amount_max ?? null,
+      }));
+      const summary = products.length ? `${products.length} matching lender product(s).` : "No active lender products match those filters.";
+      await audit({ audience: "staff", tool: "lender.products", args: { category, country, amount }, ok: true, summary, userId: biStr(req.body?.user_id), sessionId: biStr(req.body?.session_id) });
+      return res.json({ ok: true, products, summary });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "lender.products", args: { category, country, amount }, ok: false, summary: e?.message ?? "error", errorCode: "lender_products_exception" });
+      logError("maya_lender_products_failed", { code: "maya_lender_products_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "lender_products_failed" });
+    }
+  }),
+);
+
+// 37. contact.timeline — UNION of call_events + communications_messages for a contact.
+router.post(
+  "/staff/contact-timeline",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const contactId = biStr(req.body?.contact_id);
+    const silo = biStr(req.body?.silo);
+    const limit = Math.min(biNum(req.body?.limit) ?? 25, 100);
+    if (!contactId) return res.status(400).json({ ok: false, error: "contact_id_required" });
+    try {
+      const r = await pool.query(
+        `SELECT kind, subtype, direction, created_at, from_number, to_number, body FROM (
+            SELECT 'call' AS kind, event_type AS subtype, direction, created_at,
+                   from_number, to_number, NULL::text AS body
+              FROM call_events
+             WHERE contact_id::text = $1 AND ($2::text IS NULL OR silo = $2)
+            UNION ALL
+            SELECT 'message' AS kind, type AS subtype, direction, created_at,
+                   NULL::text AS from_number, NULL::text AS to_number, body
+              FROM communications_messages
+             WHERE contact_id::text = $1
+         ) t
+         ORDER BY created_at DESC
+         LIMIT $3`,
+        [contactId, silo, limit],
+      );
+      const events = r.rows.map((e: any) => ({ kind: e.kind, type: e.subtype ?? null, direction: e.direction ?? null, at: e.created_at, from: e.from_number ?? null, to: e.to_number ?? null, body: e.body ?? null }));
+      const summary = events.length ? `${events.length} recent activity item(s).` : "No recent calls or messages for this contact.";
+      await audit({ audience: "staff", tool: "contact.timeline", args: { contact_id: contactId, silo }, ok: true, summary, userId: biStr(req.body?.user_id), sessionId: biStr(req.body?.session_id) });
+      return res.json({ ok: true, events, summary });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "contact.timeline", args: { contact_id: contactId, silo }, ok: false, summary: e?.message ?? "error", errorCode: "contact_timeline_exception" });
+      logError("maya_contact_timeline_failed", { code: "maya_contact_timeline_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "contact_timeline_failed" });
+    }
+  }),
+);
+
+// 42. call.triage — recent voicemails + missed calls needing follow-up.
+router.post(
+  "/staff/call-triage",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const silo = biStr(req.body?.silo);
+    const limit = Math.min(biNum(req.body?.limit) ?? 15, 50);
+    try {
+      const vm = await pool.query(`SELECT id::text AS id, call_sid, recording_url, created_at FROM voicemails ORDER BY created_at DESC LIMIT $1`, [limit]);
+      const missed = await pool.query(
+        `SELECT id::text AS id, contact_id::text AS contact_id, from_number, to_number, created_at
+           FROM call_events
+          WHERE event_type = 'call.missed' AND ($1::text IS NULL OR silo = $1)
+          ORDER BY created_at DESC LIMIT $2`,
+        [silo, limit],
+      );
+      const voicemails = vm.rows.map((v: any) => ({ id: v.id, callSid: v.call_sid, recordingUrl: v.recording_url, at: v.created_at }));
+      const missedCalls = missed.rows.map((m: any) => ({ id: m.id, contactId: m.contact_id, from: m.from_number, to: m.to_number, at: m.created_at }));
+      const summary = `${voicemails.length} voicemail(s) and ${missedCalls.length} missed call(s) awaiting follow-up.`;
+      await audit({ audience: "staff", tool: "call.triage", args: { silo }, ok: true, summary, userId: biStr(req.body?.user_id), sessionId: biStr(req.body?.session_id) });
+      return res.json({ ok: true, voicemails, missedCalls, summary });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "call.triage", args: { silo }, ok: false, summary: e?.message ?? "error", errorCode: "call_triage_exception" });
+      logError("maya_call_triage_failed", { code: "maya_call_triage_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "call_triage_failed" });
+    }
+  }),
+);
+
+// 45. application.risk_flags — lightweight read-only risk flags for a deal.
+router.post(
+  "/staff/risk-flags",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const appId = biStr(req.body?.application_id);
+    if (!appId) return res.status(400).json({ ok: false, error: "application_id_required" });
+    try {
+      const ar = await pool.query(`SELECT id::text AS id, name, pipeline_state, status, requested_amount, product_type, updated_at FROM applications WHERE id::text = $1 LIMIT 1`, [appId]);
+      const app = ar.rows[0];
+      if (!app) return res.status(404).json({ ok: false, error: "not_found" });
+      const dr = await pool.query(`SELECT status, document_category FROM application_required_documents WHERE application_id::text = $1`, [appId]);
+      const missing = dr.rows.filter((r: any) => String(r.status) !== "accepted").map((r: any) => r.document_category).filter(Boolean);
+      const flags: string[] = [];
+      const amount = biNum(app.requested_amount);
+      if (missing.length) flags.push(`${missing.length} document(s) outstanding: ${missing.join(", ")}`);
+      if (amount != null && amount >= 1000000) flags.push("Large request (≥ $1M) — extra scrutiny.");
+      const updated = app.updated_at ? new Date(app.updated_at).getTime() : null;
+      const stale = updated != null && Date.now() - updated > 14 * 864e5 && !/funded|declined|closed/i.test(String(app.pipeline_state ?? app.status ?? ""));
+      if (stale) flags.push("No activity in 14+ days — at risk of going cold.");
+      const summary = flags.length ? `${flags.length} risk flag(s): ${flags.join("; ")}` : "No notable risk flags on this deal.";
+      await audit({ audience: "staff", tool: "application.risk_flags", args: { application_id: appId }, ok: true, summary, userId: biStr(req.body?.user_id), sessionId: biStr(req.body?.session_id) });
+      return res.json({ ok: true, applicationId: app.id, stage: app.pipeline_state ?? app.status ?? null, flags, summary });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "application.risk_flags", args: { application_id: appId }, ok: false, summary: e?.message ?? "error", errorCode: "risk_flags_exception" });
+      logError("maya_risk_flags_failed", { code: "maya_risk_flags_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "risk_flags_failed" });
+    }
+  }),
+);
+
 export default router;
