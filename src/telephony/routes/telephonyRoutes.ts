@@ -3,6 +3,7 @@ import { v4 as uuid } from "uuid";
 import { auth } from "../../middleware/auth.js";
 import { generateVoiceToken } from "../services/tokenService.js";
 import { pool } from "../../db.js";
+import { recomputePresence, setManualBusy } from "../../modules/presence/presenceService.js";
 
 const router = express.Router();
 const HEARTBEAT_MIN_INTERVAL_MS = 25_000;
@@ -56,13 +57,12 @@ router.get("/token", auth, async (req: any, res: Response) => {
       `INSERT INTO staff_presence (user_id, twilio_identity, status, last_heartbeat, updated_at)
        VALUES ($1, $2, 'available', now(), now())
        ON CONFLICT (user_id) DO UPDATE
-         -- BF_SERVER_BLOCK_v829_PRESENCE_AVAILABLE_ON_HEARTBEAT — a fresh token means
-         -- the browser is alive; promote offline -> available, but never clobber an
-         -- explicit 'busy' the staff member chose in the topbar.
-         SET twilio_identity = $2, last_heartbeat = now(), updated_at = now(),
-             status = CASE WHEN staff_presence.status = 'busy' THEN 'busy' ELSE 'available' END`,
+         -- BF_SERVER_PRESENCE_AUTO_BUSY_v1 — bump heartbeat/identity only; the
+         -- recompute below derives status from reasons + hours.
+         SET twilio_identity = $2, last_heartbeat = now(), updated_at = now()`,
       [identity, identity]
     ).catch(() => {}); // non-fatal
+    await recomputePresence(identity).catch(() => {});
     return res.status(200).json({ success: true, data: { token, identity, outbound_caller_id: outboundCallerId, missing_outbound_caller_id: missingOutboundCallerId } });
   } catch {
     return res.status(500).json({ success: false, error: "token_generation_failed" });
@@ -92,12 +92,15 @@ router.post("/presence", auth, async (req: any, res: Response) => {
   }
   const userId = req.user?.userId || req.user?.id;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
+  // BF_SERVER_PRESENCE_AUTO_BUSY_v1 — topbar toggle sets the manual_busy reason.
+  const manualBusy = status === "busy";
   await pool.query(
-    `INSERT INTO staff_presence (user_id, status, last_heartbeat, updated_at)
-     VALUES ($1, $2, now(), now())
-     ON CONFLICT (user_id) DO UPDATE SET status = $2, last_heartbeat = now(), updated_at = now()`,
-    [userId, status]
+    `INSERT INTO staff_presence (user_id, status, manual_busy, last_heartbeat, updated_at)
+     VALUES ($1, 'available', $2, now(), now())
+     ON CONFLICT (user_id) DO UPDATE SET manual_busy = $2, last_heartbeat = now(), updated_at = now()`,
+    [userId, manualBusy]
   ).catch(() => {});
+  await setManualBusy(userId, manualBusy).catch(() => {});
   res.json({ ok: true, status });
 });
 
@@ -114,15 +117,11 @@ router.post("/presence/heartbeat", auth, async (req: any, res: Response) => {
   lastPresenceHeartbeatByUser.set(userId, now);
 
   await pool.query(
-    // BF_SERVER_BLOCK_v829_PRESENCE_AVAILABLE_ON_HEARTBEAT — keep status fresh:
-    // an active heartbeat means the browser can receive calls, so promote
-    // offline -> available; preserve an explicit 'busy'.
-    `UPDATE staff_presence
-        SET last_heartbeat = now(),
-            status = CASE WHEN status = 'busy' THEN 'busy' ELSE 'available' END
-      WHERE user_id = $1`,
+    // BF_SERVER_PRESENCE_AUTO_BUSY_v1 — bump heartbeat; recompute derives status.
+    `UPDATE staff_presence SET last_heartbeat = now() WHERE user_id = $1`,
     [userId]
   ).catch(() => {});
+  await recomputePresence(userId).catch(() => {});
   res.json({ ok: true });
 });
 
