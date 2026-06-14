@@ -507,4 +507,69 @@ router.post(
   }),
 );
 
+// BF_SERVER_MAYA_LENDER_MATCH_EXPLAIN — read-only: which lenders matched a deal and why.
+router.post(
+  "/staff/lender-match-explain",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) {
+      return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    }
+    const appId = typeof req.body?.application_id === "string" ? req.body.application_id.trim() : "";
+    if (!appId) return res.status(400).json({ ok: false, error: "application_id_required" });
+    try {
+      const ar = await pool.query(
+        `SELECT id::text AS id, name, requested_amount, product_type,
+                lender_matches, lender_matches_inputs, lender_matches_missing_inputs,
+                lender_matches_computed_at, lender_matches_stale
+           FROM applications WHERE id::text = $1 LIMIT 1`,
+        [appId],
+      );
+      const app = ar.rows[0];
+      if (!app) return res.status(404).json({ ok: false, error: "not_found" });
+
+      const raw = app.lender_matches;
+      const arr = Array.isArray(raw) ? raw : Array.isArray(raw?.matches) ? raw.matches : [];
+      const matches = arr.slice(0, 10).map((m: any) => ({
+        lender: m?.lenderName ?? m?.lender_name ?? null,
+        product: m?.productName ?? m?.product_name ?? null,
+        category: m?.productCategory ?? m?.product_category ?? null,
+        matchPercent: m?.matchPercent ?? m?.match_percent ?? null,
+        reasoning: m?.reasoning ?? null,
+      }));
+      const inputs = app.lender_matches_inputs && typeof app.lender_matches_inputs === "object" ? app.lender_matches_inputs : null;
+      const missingInputs = Array.isArray(app.lender_matches_missing_inputs) ? app.lender_matches_missing_inputs : [];
+      const computedAt = app.lender_matches_computed_at;
+      const stale = app.lender_matches_stale === true;
+
+      const notes: string[] = [];
+      if (!computedAt) notes.push("Matches not computed yet (they run when the last required document is accepted).");
+      else if (stale) notes.push("Matches are stale — recompute to reflect recent changes.");
+      if (missingInputs.length > 0) notes.push(`Match engine was missing: ${missingInputs.map(String).join(", ")}.`);
+      if (computedAt && arr.length === 0 && missingInputs.length === 0) notes.push("No lenders matched the current amount / product / profile.");
+
+      const result = {
+        applicationId: app.id,
+        name: app.name,
+        requestedAmount: app.requested_amount,
+        productType: app.product_type,
+        inputsUsed: inputs,
+        missingInputs,
+        computedAt,
+        stale,
+        matchCount: arr.length,
+        matches,
+        notes,
+        readOnly: true,
+      };
+
+      await audit({ audience: "staff", tool: "lender.match_explain", args: { application_id: appId }, ok: true, summary: `matches=${arr.length} stale=${stale}`, userId: typeof req.body?.user_id === "string" ? req.body.user_id : null, sessionId: typeof req.body?.session_id === "string" ? req.body.session_id : null });
+      return res.json({ ok: true, result });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "lender.match_explain", args: { application_id: appId }, ok: false, summary: e?.message ?? "error", errorCode: "lender_match_explain_exception" });
+      logError("maya_lender_match_explain_failed", { code: "maya_lender_match_explain_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "lender_match_explain_failed" });
+    }
+  }),
+);
+
 export default router;
