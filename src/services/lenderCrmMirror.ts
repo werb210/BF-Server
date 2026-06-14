@@ -86,7 +86,7 @@ export async function mirrorLenderToCrm(lender: LenderForMirror): Promise<void> 
       `UPDATE contacts SET
          name       = COALESCE(NULLIF($2,''), name),
          email      = COALESCE(NULLIF($3,''), email),
-         phone      = COALESCE(NULLIF($4,''), phone),
+         phone      = COALESCE(NULLIF(phone,''), NULLIF($4,'')) /* BF_SERVER_CRM_MIRROR_PHONE_NO_CLOBBER_v1: fill empty, never overwrite a known-good number */,
          updated_at = now()
        WHERE company_id = $1 AND lifecycle_stage = 'lender'`,
       [companyId, contactName, contactEmail, contactPhone]

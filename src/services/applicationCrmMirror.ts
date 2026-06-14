@@ -84,7 +84,7 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
           `UPDATE companies SET
              name       = COALESCE(NULLIF($2,''), name),
              email      = COALESCE(NULLIF($3,''), email),
-             phone      = COALESCE(NULLIF($4,''), phone),
+             phone      = COALESCE(NULLIF(phone,''), NULLIF($4,'')) /* BF_SERVER_CRM_MIRROR_PHONE_NO_CLOBBER_v1: fill empty, never overwrite a known-good number */,
              website    = COALESCE(NULLIF($5,''), website),
              industry   = COALESCE(NULLIF($6,''), industry),
              city       = COALESCE(NULLIF($7,''), city),
@@ -158,7 +158,7 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
           `UPDATE contacts SET
              name       = COALESCE(NULLIF($2,''), name),
              email      = COALESCE(NULLIF($3,''), email),
-             phone      = COALESCE(NULLIF($4,''), phone),
+             phone      = COALESCE(NULLIF(phone,''), NULLIF($4,'')) /* BF_SERVER_CRM_MIRROR_PHONE_NO_CLOBBER_v1: fill empty, never overwrite a known-good number */,
              company_id = COALESCE($5, company_id),
              updated_at = now()
            WHERE id = $1`,
