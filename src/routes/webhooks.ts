@@ -261,7 +261,7 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
       try {
         await dialClientIntoConference({
           conferenceFriendly: conf.friendly_name,
-          identity: row.twilio_identity, participantId: pid,
+          identity: row.twilio_identity, participantId: pid, fromNumber: from,
         });
       } catch (e: any) { console.warn("ring_all_dial_failed", { identity: row.twilio_identity, message: e?.message }); }
     }));

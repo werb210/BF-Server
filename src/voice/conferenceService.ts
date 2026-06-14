@@ -278,7 +278,11 @@ export async function dialClientIntoConference(args: DialIntoConferenceArgs): Pr
   if (!friendly || !identity) throw new Error("dialClientIntoConference: missing args");
   const tw = __getTw();
   const call = await tw.calls.create({
-    to: `client:${identity}`, from: __callerId(),
+    // BF_SERVER_CALLER_NUMBER_DISPLAY_v1 — show the real caller number on the
+    // staff dialer instead of our own Twilio number. fromNumber is the PSTN
+    // caller; fall back to our caller ID when no real number is available.
+    to: `client:${identity}`,
+    from: (typeof args.fromNumber === "string" && args.fromNumber.trim() ? args.fromNumber : __callerId()),
     url: `${__baseUrl()}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(friendly)}&pid=${encodeURIComponent(String(args.participantId ?? ""))}`,
     method: "POST",
     statusCallback: `${__baseUrl()}/api/webhooks/twilio/voice/call-status`,
