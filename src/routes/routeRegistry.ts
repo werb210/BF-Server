@@ -64,6 +64,7 @@ import pipelineRoutes from "./pipeline.js";
 import telephonyRoutes from "../telephony/routes/telephonyRoutes.js";
 import realtimeRoutes from "../voice/realtimeRoutes.js";
 import webhooksRoutes from "./webhooks.js";
+import receptionRoutes from "./reception.js"; // BF_SERVER_RECEPTION_v1
 import emailPixelRoutes from "./emailPixel.js"; // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING
 import voiceCallsRoutes from "./voiceCalls.js";
 import voiceMidCallRoutes from "./voiceMidCall.js";
@@ -215,6 +216,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/webhooks", router: webhooksRoutes },
   { path: "/track", router: emailPixelRoutes }, // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING (public)
   { path: "/voice", router: voiceCallsRoutes },
+  { path: "/webhooks/twilio/reception", router: receptionRoutes }, // BF_SERVER_RECEPTION_v1
   { path: "/webhooks/twilio", router: conferenceWebhooksRoutes },
   { path: "/sms", router: webhooksRoutes },
   { path: "/website", router: websiteRoutes },
@@ -273,6 +275,11 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET",  path: "/api/realtime/stream", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET",  path: "/api/realtime/diag",   roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "POST", path: "/api/webhooks/twilio/voice/twiml", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/reception/greeting", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/reception/company", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/reception/intent", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/reception/unavailable", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/reception/fallback", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/conference/join", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/conference/status", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/call/status", roles: [] },
