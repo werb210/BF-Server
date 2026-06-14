@@ -5,6 +5,7 @@
 
 import { Router } from "express";
 import { auth } from "../middleware/auth.js";
+import { pool } from "../db.js";
 import {
   createConference,
   addParticipantRow,
@@ -25,6 +26,33 @@ function normalizeE164(raw: string): string {
   if (digits.length >= 8 && digits.length <= 15) return `+${digits}`;
   return "";
 }
+
+// BF_SERVER_CALLER_RESOLVE_v1 — resolve an inbound caller's number to a CRM
+// contact (name + id + most-recent application) so the incoming-call toast
+// shows who is calling and staff can open the contact mid-call. Read-only.
+router.post("/resolve-caller", auth, async (req: any, res) => {
+  const raw = typeof req.body?.phone === "string" ? req.body.phone : "";
+  const phone10 = raw.replace(/[^0-9]/g, "").slice(-10);
+  if (phone10.length < 10) return res.json({ ok: true, matched: false, name: null });
+  try {
+    const { rows } = await pool.query(
+      `SELECT c.id::text AS contact_id, c.name,
+              coalesce(c.company_name, '') AS company,
+              (SELECT a.id::text FROM applications a WHERE a.contact_id = c.id ORDER BY a.updated_at DESC NULLS LAST LIMIT 1) AS application_id,
+              (SELECT a.name FROM applications a WHERE a.contact_id = c.id ORDER BY a.updated_at DESC NULLS LAST LIMIT 1) AS application_name
+         FROM contacts c
+        WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $1
+        ORDER BY c.updated_at DESC NULLS LAST LIMIT 1`,
+      [phone10],
+    );
+    const r = rows[0];
+    if (!r) return res.json({ ok: true, matched: false, name: null });
+    const display = (r.name && String(r.name).trim()) || (r.company && String(r.company).trim()) || null;
+    return res.json({ ok: true, matched: true, name: display, contactId: r.contact_id, companyName: r.company || null, applicationId: r.application_id || null, applicationName: r.application_name || null });
+  } catch {
+    return res.json({ ok: true, matched: false, name: null });
+  }
+});
 
 router.post("/calls", auth, async (req: any, res) => {
   const target = req.body ?? {};
