@@ -133,6 +133,43 @@ const QUERIES: ReadonlyArray<QueryDef> = [
     `,
     describe: (rows) => `${rows.length} application(s) currently in review.`,
   },
+  {
+    key: "count_applications",
+    label: "Total application count",
+    keywords: [["how many", "count", "total", "number of"], ["application", "applications", "app", "apps", "deal", "deals"]],
+    sql: `
+      SELECT COUNT(*)::int AS total,
+             COUNT(*) FILTER (WHERE COALESCE(pipeline_state, '') NOT IN ('Closed','Declined','Withdrawn','Funded'))::int AS active
+        FROM applications
+    `,
+    describe: (rows) => {
+      const r = (rows[0] ?? {}) as Record<string, unknown>;
+      return `${r.total ?? 0} application(s) total, ${r.active ?? 0} active.`;
+    },
+  },
+  {
+    key: "count_contacts",
+    label: "Total contact count",
+    keywords: [["how many", "count", "total", "number of"], ["contact", "contacts", "crm", "lead", "leads", "people"]],
+    sql: `SELECT COUNT(*)::int AS total FROM contacts`,
+    describe: (rows) => `${(rows[0] as Record<string, unknown> | undefined)?.total ?? 0} contact(s) in the CRM.`,
+  },
+  {
+    key: "applications_by_stage",
+    label: "Applications by stage",
+    keywords: [["by stage", "per stage", "each stage", "breakdown", "by status"], ["application", "applications", "app", "apps", "pipeline", "deal", "deals"]],
+    sql: `
+      SELECT COALESCE(pipeline_state, '(none)') AS stage, COUNT(*)::int AS n
+        FROM applications
+       WHERE COALESCE(pipeline_state, '') NOT IN ('Closed','Declined','Withdrawn','Funded')
+       GROUP BY 1
+       ORDER BY 2 DESC
+    `,
+    describe: (rows) =>
+      rows.length
+        ? "Active pipeline by stage: " + rows.map((r) => `${(r as Record<string, unknown>).stage}: ${(r as Record<string, unknown>).n}`).join(", ") + "."
+        : "No active applications.",
+  },
 ];
 
 type MatchResult =
