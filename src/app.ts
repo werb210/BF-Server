@@ -67,6 +67,7 @@ export function createApp() {
         connectSrc: [
           "'self'",
           "https://server.boreal.financial",
+          "wss://server.boreal.financial",
           "https://staff.boreal.financial",
           "https://client.boreal.financial",
           "https://boreal.financial",
