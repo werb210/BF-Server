@@ -829,4 +829,235 @@ router.post(
   }),
 );
 
+// BF_SERVER_MAYA_BATCH_B2_STAFF_READS_v1 — five read-only staff endpoints
+// (banking summary, credit-summary readout, contact notes, missing-doc request
+// draft, daily briefing). Service-JWT gated; audits to maya_audit. BF silo.
+function b2Str(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+function b2Num(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() && Number.isFinite(Number(v))) return Number(v);
+  return null;
+}
+
+// 28. banking.summary — latest banking-analysis metrics for a deal.
+router.post(
+  "/staff/banking-summary",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const appId = b2Str(req.body?.application_id);
+    if (!appId) return res.status(400).json({ ok: false, error: "application_id_required" });
+    try {
+      const appRow = await pool.query(
+        `SELECT banking_completed_at,
+                COALESCE((metadata->>'banking_auto_skip')::boolean, false) AS banking_auto_skip
+           FROM applications WHERE id::text = $1 LIMIT 1`,
+        [appId],
+      );
+      if (appRow.rowCount === 0) return res.status(404).json({ ok: false, error: "not_found" });
+      if (appRow.rows[0].banking_auto_skip) {
+        await audit({ audience: "staff", tool: "banking.summary", args: { application_id: appId }, ok: true, summary: "auto_skip" });
+        return res.json({ ok: true, applicationId: appId, available: false, summary: "Banking analysis was skipped — no bank statements were found on this application." });
+      }
+      const r = await pool.query(
+        `SELECT total_avg_monthly_deposits, average_daily_balance, total_deposits,
+                total_withdrawals, average_monthly_nsfs, months_profitable_numerator,
+                months_profitable_denominator, period_start, period_end, months_detected, status, updated_at
+           FROM banking_analyses
+          WHERE application_id::text = $1
+          ORDER BY updated_at DESC LIMIT 1`,
+        [appId],
+      );
+      if (r.rowCount === 0) {
+        await audit({ audience: "staff", tool: "banking.summary", args: { application_id: appId }, ok: true, summary: "waiting" });
+        return res.json({ ok: true, applicationId: appId, available: false, summary: "No banking analysis yet — still waiting on or processing bank statements." });
+      }
+      const b = r.rows[0];
+      const metrics = {
+        avgMonthlyDeposits: b.total_avg_monthly_deposits ?? null,
+        averageDailyBalance: b.average_daily_balance ?? null,
+        totalDeposits: b.total_deposits ?? null,
+        totalWithdrawals: b.total_withdrawals ?? null,
+        avgMonthlyNSFs: b.average_monthly_nsfs ?? null,
+        monthsProfitable: b.months_profitable_numerator != null && b.months_profitable_denominator != null ? `${b.months_profitable_numerator}/${b.months_profitable_denominator}` : null,
+        periodStart: b.period_start ?? null,
+        periodEnd: b.period_end ?? null,
+        monthsDetected: b.months_detected ?? null,
+        status: b.status ?? null,
+      };
+      const summary = `Banking: avg monthly deposits ${metrics.avgMonthlyDeposits ?? "n/a"}, avg daily balance ${metrics.averageDailyBalance ?? "n/a"}, avg monthly NSFs ${metrics.avgMonthlyNSFs ?? "n/a"}${metrics.monthsProfitable ? `, profitable ${metrics.monthsProfitable} months` : ""} over ${metrics.monthsDetected ?? "?"} month(s).`;
+      await audit({ audience: "staff", tool: "banking.summary", args: { application_id: appId }, ok: true, summary: `nsf=${metrics.avgMonthlyNSFs ?? "?"}` });
+      return res.json({ ok: true, applicationId: appId, available: true, metrics, summary });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "banking.summary", args: { application_id: appId }, ok: false, summary: e?.message ?? "error", errorCode: "banking_summary_exception" });
+      logError("maya_banking_summary_failed", { code: "maya_banking_summary_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "banking_summary_failed" });
+    }
+  }),
+);
+
+// 30. credit.summary — read existing credit summary (never regenerates).
+router.post(
+  "/staff/credit-summary",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const appId = b2Str(req.body?.application_id);
+    if (!appId) return res.status(400).json({ ok: false, error: "application_id_required" });
+    try {
+      const r = await pool.query(
+        `SELECT sections, status, version, updated_at
+           FROM credit_summaries WHERE application_id::text = $1
+          ORDER BY updated_at DESC LIMIT 1`,
+        [appId],
+      );
+      if (r.rowCount === 0) {
+        await audit({ audience: "staff", tool: "credit.summary", args: { application_id: appId }, ok: true, summary: "none" });
+        return res.json({ ok: true, applicationId: appId, available: false, summary: "No credit summary has been generated for this deal yet." });
+      }
+      const row = r.rows[0];
+      const sections = row.sections && typeof row.sections === "object" ? row.sections : {};
+      const sectionReadout: Record<string, string> = {};
+      for (const [key, val] of Object.entries(sections as Record<string, unknown>)) {
+        let text = "";
+        if (typeof val === "string") text = val;
+        else if (val && typeof val === "object") {
+          const narrative = (val as any).narrative ?? (val as any).text ?? (val as any).content;
+          if (typeof narrative === "string") text = narrative;
+          else text = JSON.stringify(val);
+        }
+        if (text.trim()) sectionReadout[key] = text.trim().slice(0, 400);
+      }
+      const summary = `Credit summary (status: ${row.status ?? "draft"}, v${row.version ?? 1}) with section(s): ${Object.keys(sectionReadout).join(", ") || "none populated"}.`;
+      await audit({ audience: "staff", tool: "credit.summary", args: { application_id: appId }, ok: true, summary: `status=${row.status}` });
+      return res.json({ ok: true, applicationId: appId, available: true, status: row.status ?? null, version: row.version ?? null, sections: sectionReadout, summary });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "credit.summary", args: { application_id: appId }, ok: false, summary: e?.message ?? "error", errorCode: "credit_summary_exception" });
+      logError("maya_credit_summary_failed", { code: "maya_credit_summary_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "credit_summary_failed" });
+    }
+  }),
+);
+
+// 31. notes.read — recent CRM notes for a contact (and/or company).
+router.post(
+  "/staff/notes-read",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const contactId = b2Str(req.body?.contact_id);
+    const companyId = b2Str(req.body?.company_id);
+    const silo = b2Str(req.body?.silo);
+    const limit = Math.min(b2Num(req.body?.limit) ?? 20, 100);
+    if (!contactId && !companyId) return res.status(400).json({ ok: false, error: "contact_id_or_company_id_required" });
+    try {
+      const r = await pool.query(
+        `SELECT id::text AS id, body, owner_id::text AS owner_id, created_at
+           FROM crm_notes
+          WHERE ($1::uuid IS NULL OR contact_id = $1::uuid)
+            AND ($2::uuid IS NULL OR company_id = $2::uuid)
+            AND ($3::text IS NULL OR silo = $3)
+          ORDER BY created_at DESC LIMIT $4`,
+        [contactId, companyId, silo, limit],
+      );
+      const notes = r.rows.map((nr: any) => ({ id: nr.id, body: typeof nr.body === "string" ? nr.body.slice(0, 600) : "", ownerId: nr.owner_id ?? null, at: nr.created_at }));
+      const summary = notes.length ? `${notes.length} note(s), most recent first.` : "No notes on file for this contact.";
+      await audit({ audience: "staff", tool: "notes.read", args: { contact_id: contactId, company_id: companyId, silo }, ok: true, summary });
+      return res.json({ ok: true, notes, summary });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "notes.read", args: { contact_id: contactId, company_id: companyId, silo }, ok: false, summary: e?.message ?? "error", errorCode: "notes_read_exception" });
+      logError("maya_notes_read_failed", { code: "maya_notes_read_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "notes_read_failed" });
+    }
+  }),
+);
+
+// 32. docs.request_draft — draft (NOT send) a missing-document request message.
+router.post(
+  "/staff/docs-request-draft",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const appId = b2Str(req.body?.application_id);
+    if (!appId) return res.status(400).json({ ok: false, error: "application_id_required" });
+    try {
+      const ar = await pool.query(
+        `SELECT a.name AS app_name, c.name AS applicant_name
+           FROM applications a
+           LEFT JOIN application_contacts ac ON ac.application_id = a.id AND ac.role = 'applicant'
+           LEFT JOIN contacts c ON c.id = ac.contact_id
+          WHERE a.id::text = $1 LIMIT 1`,
+        [appId],
+      );
+      if (ar.rowCount === 0) return res.status(404).json({ ok: false, error: "not_found" });
+      const applicantName = b2Str(ar.rows[0].applicant_name) ?? "there";
+      const dr = await pool.query(
+        `SELECT document_category FROM application_required_documents
+          WHERE application_id::text = $1 AND status <> 'accepted'`,
+        [appId],
+      );
+      const missing = dr.rows.map((r: any) => r.document_category).filter(Boolean);
+      if (!missing.length) {
+        await audit({ audience: "staff", tool: "docs.request_draft", args: { application_id: appId }, ok: true, summary: "nothing_missing" });
+        return res.json({ ok: true, applicationId: appId, missing: [], draft: null, summary: "All required documents are in — nothing to request." });
+      }
+      const draft = `Hi ${applicantName.split(" ")[0]}, to keep your Boreal application moving we still need: ${missing.join(", ")}. You can upload them any time in your application — reply here if you have any questions. Thanks!`;
+      await audit({ audience: "staff", tool: "docs.request_draft", args: { application_id: appId }, ok: true, summary: `missing=${missing.length}` });
+      return res.json({ ok: true, applicationId: appId, missing, draft, summary: `Drafted a request for ${missing.length} document(s). Review and send manually — Maya does not send it.` });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "docs.request_draft", args: { application_id: appId }, ok: false, summary: e?.message ?? "error", errorCode: "docs_request_draft_exception" });
+      logError("maya_docs_request_draft_failed", { code: "maya_docs_request_draft_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "docs_request_draft_failed" });
+    }
+  }),
+);
+
+// 43. daily.briefing — what needs staff attention right now (silo-scoped).
+router.post(
+  "/staff/daily-briefing",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const silo = b2Str(req.body?.silo) ?? "BF";
+    try {
+      const outstanding = await pool.query(
+        `SELECT COUNT(DISTINCT a.id)::int AS n
+           FROM applications a
+           JOIN application_required_documents d ON d.application_id = a.id
+          WHERE ($1::text IS NULL OR a.silo = $1) AND d.status <> 'accepted'`,
+        [silo],
+      );
+      const stale = await pool.query(
+        `SELECT COUNT(*)::int AS n FROM applications a
+          WHERE ($1::text IS NULL OR a.silo = $1)
+            AND a.updated_at < now() - interval '14 days'
+            AND COALESCE(a.pipeline_state, a.status, '') !~* 'funded|declined|closed'`,
+        [silo],
+      );
+      const vms = await pool.query(`SELECT COUNT(*)::int AS n FROM voicemails WHERE created_at > now() - interval '2 days'`);
+      const missed = await pool.query(
+        `SELECT COUNT(*)::int AS n FROM call_events
+          WHERE event_type = 'call.missed' AND ($1::text IS NULL OR silo = $1)
+            AND created_at > now() - interval '2 days'`,
+        [silo],
+      );
+      const counts = {
+        dealsAwaitingDocs: outstanding.rows[0]?.n ?? 0,
+        staleDeals: stale.rows[0]?.n ?? 0,
+        recentVoicemails: vms.rows[0]?.n ?? 0,
+        recentMissedCalls: missed.rows[0]?.n ?? 0,
+      };
+      const parts: string[] = [];
+      if (counts.dealsAwaitingDocs) parts.push(`${counts.dealsAwaitingDocs} deal(s) waiting on documents`);
+      if (counts.staleDeals) parts.push(`${counts.staleDeals} deal(s) with no activity in 14+ days`);
+      if (counts.recentVoicemails) parts.push(`${counts.recentVoicemails} recent voicemail(s)`);
+      if (counts.recentMissedCalls) parts.push(`${counts.recentMissedCalls} recent missed call(s)`);
+      const summary = parts.length ? `Today in ${silo}: ${parts.join("; ")}.` : `Nothing urgent in ${silo} right now — you're clear.`;
+      await audit({ audience: "staff", tool: "daily.briefing", args: { silo }, ok: true, summary });
+      return res.json({ ok: true, silo, counts, summary });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "daily.briefing", args: { silo }, ok: false, summary: e?.message ?? "error", errorCode: "daily_briefing_exception" });
+      logError("maya_daily_briefing_failed", { code: "maya_daily_briefing_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "daily_briefing_failed" });
+    }
+  }),
+);
+
 export default router;
