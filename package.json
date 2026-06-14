@@ -41,7 +41,8 @@
     "zod": "^3.23.8",
     "archiver": "^7.0.1",
     "@azure-rest/ai-document-intelligence": "^1.0.0",
-    "pdf-lib": "^1.17.1"
+    "pdf-lib": "^1.17.1",
+    "@simplewebauthn/server": "^13.3.1"
   },
   "devDependencies": {
     "@rolldown/binding-linux-x64-gnu": "^1.0.0-rc.15",
