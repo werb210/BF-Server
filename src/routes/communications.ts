@@ -1017,9 +1017,31 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
     return res.status(503).json({ error: { message: "SMS not configured", code: "service_unavailable" } });
   }
   const client: any = twilio(accountSid, authToken);
-  const __smsCtx = await mergeCtxForContact({ contactId, phone: to });
-  const mergedBody = renderMergeTokensComm(String(body), __smsCtx);
-  const message = await client.messages.create({ body: String(mergedBody), from, to: String(to) });
+  // BF_SERVER_COMMS_SMS_TWILIO_ERROR_v1 — wrap the Twilio send so a rejection
+  // (invalid number, A2P/10DLC, geo-permission, funds) returns the real code
+  // instead of an opaque 500. Without this every Twilio failure looked
+  // identical from the portal and was easy to mistake for a refresh bug.
+  let message: any;
+  let mergedBody: string = String(body);
+  try {
+    const __smsCtx = await mergeCtxForContact({ contactId, phone: to });
+    mergedBody = renderMergeTokensComm(String(body), __smsCtx);
+    message = await client.messages.create({ body: String(mergedBody), from, to: String(to) });
+  } catch (err: any) {
+    // eslint-disable-next-line no-console
+    console.error("communications.sms.twilio_failed", {
+      to: String(to), from, code: err?.code, status: err?.status,
+      message: err?.message, moreInfo: err?.moreInfo,
+    });
+    return res.status(502).json({
+      error: {
+        message: err?.message || "Failed to send SMS",
+        code: err?.code ? `twilio_${err.code}` : "sms_send_failed",
+        twilioCode: err?.code ?? null,
+        moreInfo: err?.moreInfo ?? null,
+      },
+    });
+  }
 
   // Persist outbound message to DB
   // BF_SERVER_BLOCK_v312_COMMS_SMS_PERSIST_LOG_v1
