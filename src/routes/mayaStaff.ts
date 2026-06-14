@@ -1017,39 +1017,47 @@ router.post(
     if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
     const silo = b2Str(req.body?.silo) ?? "BF";
     try {
-      const outstanding = await pool.query(
-        `SELECT COUNT(DISTINCT a.id)::int AS n
-           FROM applications a
-           JOIN application_required_documents d ON d.application_id = a.id
-          WHERE ($1::text IS NULL OR a.silo = $1) AND d.status <> 'accepted'`,
-        [silo],
-      );
-      const stale = await pool.query(
-        `SELECT COUNT(*)::int AS n FROM applications a
-          WHERE ($1::text IS NULL OR a.silo = $1)
-            AND a.updated_at < now() - interval '14 days'
-            AND COALESCE(a.pipeline_state, a.status, '') !~* 'funded|declined|closed'`,
-        [silo],
-      );
-      const vms = await pool.query(`SELECT COUNT(*)::int AS n FROM voicemails WHERE created_at > now() - interval '2 days'`);
-      const missed = await pool.query(
-        `SELECT COUNT(*)::int AS n FROM call_events
-          WHERE event_type = 'call.missed' AND ($1::text IS NULL OR silo = $1)
-            AND created_at > now() - interval '2 days'`,
-        [silo],
-      );
+      const num = async (sql: string, params: unknown[] = []): Promise<number> =>
+        pool.query(sql, params).then((r) => Number((r.rows[0] as { n?: unknown })?.n ?? 0) || 0).catch(() => 0);
+      const sp: unknown[] = [silo];
+      const [
+        newAppsToday, submittedToday, dealsAwaitingDocs, staleDeals,
+        inboundSmsToday, inboundEmailsToday, chatsToday, recentNotes,
+        openCrmTasks, openAppTasks, recentVoicemails, recentMissedCalls,
+      ] = await Promise.all([
+        num(`SELECT COUNT(*)::int AS n FROM applications WHERE ($1::text IS NULL OR silo = $1) AND created_at >= date_trunc('day', now())`, sp),
+        num(`SELECT COUNT(*)::int AS n FROM applications WHERE ($1::text IS NULL OR silo = $1) AND submitted_at >= date_trunc('day', now())`, sp),
+        num(`SELECT COUNT(DISTINCT a.id)::int AS n FROM applications a JOIN application_required_documents d ON d.application_id = a.id WHERE ($1::text IS NULL OR a.silo = $1) AND d.status <> 'accepted'`, sp),
+        num(`SELECT COUNT(*)::int AS n FROM applications a WHERE ($1::text IS NULL OR a.silo = $1) AND a.updated_at < now() - interval '14 days' AND COALESCE(a.pipeline_state, a.status, '') !~* 'funded|declined|closed'`, sp),
+        num(`SELECT COUNT(*)::int AS n FROM communications_messages WHERE ($1::text IS NULL OR silo = $1) AND lower(COALESCE(type, '')) = 'sms' AND lower(COALESCE(direction, '')) = 'inbound' AND created_at >= date_trunc('day', now())`, sp),
+        num(`SELECT COUNT(*)::int AS n FROM communications_messages WHERE ($1::text IS NULL OR silo = $1) AND lower(COALESCE(type, '')) = 'email' AND lower(COALESCE(direction, '')) = 'inbound' AND created_at >= date_trunc('day', now())`, sp),
+        num(`SELECT COUNT(*)::int AS n FROM communications_messages WHERE ($1::text IS NULL OR silo = $1) AND lower(COALESCE(type, '')) IN ('chat', 'message') AND lower(COALESCE(direction, '')) = 'inbound' AND created_at >= date_trunc('day', now())`, sp),
+        num(`SELECT COUNT(*)::int AS n FROM crm_notes WHERE ($1::text IS NULL OR silo = $1) AND created_at >= date_trunc('day', now())`, sp),
+        num(`SELECT COUNT(*)::int AS n FROM crm_tasks WHERE ($1::text IS NULL OR silo = $1) AND lower(COALESCE(status, '')) NOT IN ('done', 'completed', 'complete', 'closed', 'cancelled')`, sp),
+        num(`SELECT COUNT(*)::int AS n FROM application_tasks t JOIN applications a ON a.id = t.application_id WHERE ($1::text IS NULL OR a.silo = $1) AND t.completed_at IS NULL`, sp),
+        num(`SELECT COUNT(*)::int AS n FROM voicemails WHERE created_at > now() - interval '2 days'`),
+        num(`SELECT COUNT(*)::int AS n FROM call_events WHERE event_type = 'call.missed' AND ($1::text IS NULL OR silo = $1) AND created_at > now() - interval '2 days'`, sp),
+      ]);
       const counts = {
-        dealsAwaitingDocs: outstanding.rows[0]?.n ?? 0,
-        staleDeals: stale.rows[0]?.n ?? 0,
-        recentVoicemails: vms.rows[0]?.n ?? 0,
-        recentMissedCalls: missed.rows[0]?.n ?? 0,
+        newAppsToday, submittedToday, dealsAwaitingDocs, staleDeals,
+        inboundSmsToday, inboundEmailsToday, chatsToday, recentNotes,
+        openTasks: openCrmTasks + openAppTasks, recentVoicemails, recentMissedCalls,
       };
       const parts: string[] = [];
+      if (counts.newAppsToday) parts.push(`${counts.newAppsToday} new application(s) today`);
+      if (counts.submittedToday) parts.push(`${counts.submittedToday} submitted today`);
       if (counts.dealsAwaitingDocs) parts.push(`${counts.dealsAwaitingDocs} deal(s) waiting on documents`);
-      if (counts.staleDeals) parts.push(`${counts.staleDeals} deal(s) with no activity in 14+ days`);
+      if (counts.staleDeals) parts.push(`${counts.staleDeals} stale deal(s) (14+ days quiet)`);
+      if (counts.inboundSmsToday) parts.push(`${counts.inboundSmsToday} inbound SMS today`);
+      if (counts.inboundEmailsToday) parts.push(`${counts.inboundEmailsToday} inbound email(s) today`);
+      if (counts.chatsToday) parts.push(`${counts.chatsToday} new chat message(s) today`);
+      if (counts.recentNotes) parts.push(`${counts.recentNotes} note(s) added today`);
+      if (counts.openTasks) parts.push(`${counts.openTasks} open task(s)`);
       if (counts.recentVoicemails) parts.push(`${counts.recentVoicemails} recent voicemail(s)`);
       if (counts.recentMissedCalls) parts.push(`${counts.recentMissedCalls} recent missed call(s)`);
-      const summary = parts.length ? `Today in ${silo}: ${parts.join("; ")}.` : `Nothing urgent in ${silo} right now — you're clear.`;
+      const summary = parts.length
+        ? `Here is your day in ${silo}: ${parts.join("; ")}.`
+        : `Nothing outstanding in ${silo} right now — you are clear.`;
       await audit({ audience: "staff", tool: "daily.briefing", args: { silo }, ok: true, summary });
       return res.json({ ok: true, silo, counts, summary });
     } catch (e: any) {
