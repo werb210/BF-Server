@@ -1060,4 +1060,57 @@ router.post(
   }),
 );
 
+// BF_SERVER_MAYA_CLIENT_HISTORY_v1 — resolve a signed-in client's own
+// application(s) by phone so Maya "knows them" without an application_id.
+function myAppStr(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+router.post(
+  "/staff/applications-by-phone",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const phone = myAppStr(req.body?.phone);
+    const phone10 = phone ? phone.replace(/[^0-9]/g, "").slice(-10) : "";
+    if (phone10.length < 10) {
+      return res.json({ ok: true, applications: [], summary: "I don't have a valid phone number on file to look you up." });
+    }
+    try {
+      const r = await pool.query(
+        `SELECT a.id::text AS id, a.name, a.pipeline_state, a.status,
+                a.requested_amount, a.product_type, a.updated_at
+           FROM applications a
+           JOIN contacts c ON c.id = a.contact_id
+          WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $1
+          ORDER BY a.updated_at DESC
+          LIMIT 10`,
+        [phone10],
+      );
+      const applications = r.rows.map((a: any) => ({
+        id: a.id, name: a.name ?? null,
+        stage: a.pipeline_state ?? a.status ?? null, status: a.status ?? null,
+        requestedAmount: a.requested_amount ?? null, productType: a.product_type ?? null,
+        updatedAt: a.updated_at,
+      }));
+      let latestDocs: { total: number; missing: string[] } | null = null;
+      if (applications.length) {
+        const dr = await pool.query(
+          `SELECT status, document_category FROM application_required_documents WHERE application_id::text = $1`,
+          [applications[0].id],
+        );
+        const missing = dr.rows.filter((x: any) => String(x.status) !== "accepted").map((x: any) => x.document_category).filter(Boolean);
+        latestDocs = { total: dr.rows.length, missing };
+      }
+      const summary = applications.length
+        ? `Found ${applications.length} application(s). Most recent: "${applications[0].name ?? "your application"}" at stage "${applications[0].stage ?? "in progress"}".`
+        : "No applications found for that phone number yet — they may be just getting started.";
+      await audit({ audience: "client", tool: "application.find_mine", args: { phone10 }, ok: true, summary: `${applications.length} apps`, userId: myAppStr(req.body?.user_id), sessionId: myAppStr(req.body?.session_id) });
+      return res.json({ ok: true, applications, latestDocs, summary });
+    } catch (e: any) {
+      await audit({ audience: "client", tool: "application.find_mine", args: { phone10 }, ok: false, summary: e?.message ?? "error", errorCode: "applications_by_phone_exception" });
+      logError("maya_applications_by_phone_failed", { code: "maya_applications_by_phone_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "applications_by_phone_failed" });
+    }
+  }),
+);
+
 export default router;
