@@ -410,4 +410,101 @@ router.post(
   }),
 );
 
+// BF_SERVER_MAYA_UNDERWRITING_SUMMARY — read-only underwriting view (docs + lender-match state + blockers + draft request).
+router.post(
+  "/staff/underwriting-summary",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) {
+      return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    }
+    const appId = typeof req.body?.application_id === "string" ? req.body.application_id.trim() : "";
+    if (!appId) return res.status(400).json({ ok: false, error: "application_id_required" });
+    try {
+      const ar = await pool.query(
+        `SELECT id::text AS id, name, pipeline_state, status, requested_amount, product_type, updated_at,
+                lender_matches, lender_matches_computed_at, lender_matches_stale, lender_matches_missing_inputs
+           FROM applications WHERE id::text = $1 LIMIT 1`,
+        [appId],
+      );
+      const app = ar.rows[0];
+      if (!app) return res.status(404).json({ ok: false, error: "not_found" });
+
+      const cr = await pool.query(
+        `SELECT c.name, c.email, c.phone, coalesce(c.company_name, '') AS company
+           FROM application_contacts ac
+           JOIN contacts c ON c.id = ac.contact_id
+          WHERE ac.application_id::text = $1 AND ac.role = 'applicant'
+          LIMIT 1`,
+        [appId],
+      );
+      const applicant = cr.rows[0] ?? null;
+
+      const dr = await pool.query(
+        `SELECT status, document_category, is_required FROM application_required_documents WHERE application_id::text = $1`,
+        [appId],
+      );
+      const required = dr.rows.filter((r: any) => r.is_required !== false);
+      const missing = required
+        .filter((r: any) => String(r.status) !== "accepted")
+        .map((r: any) => r.document_category)
+        .filter(Boolean);
+      const acceptedCount = required.length - missing.length;
+      const docsComplete = required.length > 0 && missing.length === 0;
+
+      const rawMatches = app.lender_matches;
+      const matches = Array.isArray(rawMatches)
+        ? rawMatches
+        : Array.isArray(rawMatches?.matches)
+          ? rawMatches.matches
+          : [];
+      const matchCount = matches.length;
+      const matchesStale = app.lender_matches_stale === true;
+      const missingInputs = Array.isArray(app.lender_matches_missing_inputs) ? app.lender_matches_missing_inputs : [];
+
+      const blockers: string[] = [];
+      if (missing.length > 0) blockers.push(`${missing.length} required document(s) outstanding: ${missing.join(", ")}`);
+      if (!app.lender_matches_computed_at) blockers.push("Lender matches not yet computed (they run when the last required document is accepted).");
+      else if (matchesStale) blockers.push("Lender matches are stale — recompute after the recent document/data changes.");
+      if (missingInputs.length > 0) blockers.push(`Match engine is missing inputs: ${missingInputs.map(String).join(", ")}.`);
+      if (matchCount === 0 && app.lender_matches_computed_at) blockers.push("No lender matches found for the current profile.");
+
+      const strengths: string[] = [];
+      if (docsComplete) strengths.push("All required documents accepted.");
+      if (matchCount > 0) strengths.push(`${matchCount} lender match(es) available.`);
+      if (app.requested_amount) strengths.push(`Requested amount on file: ${app.requested_amount}.`);
+
+      const firstName = applicant?.name ? String(applicant.name).split(" ")[0] : "";
+      const draftRequest =
+        missing.length > 0
+          ? `Hi${firstName ? " " + firstName : ""}, to move your application forward we still need the following: ${missing.join(", ")}. You can upload them through your secure portal link. Thank you!`
+          : "";
+
+      const stage = app.pipeline_state ?? app.status ?? "unknown";
+      const summary = {
+        applicationId: app.id,
+        name: app.name,
+        stage,
+        status: app.status,
+        requestedAmount: app.requested_amount,
+        productType: app.product_type,
+        applicant,
+        docs: { requiredTotal: required.length, accepted: acceptedCount, missing },
+        lenderMatches: { count: matchCount, computedAt: app.lender_matches_computed_at, stale: matchesStale, missingInputs },
+        strengths,
+        blockers,
+        draftRequest,
+        readOnly: true,
+        lastActivityAt: app.updated_at,
+      };
+
+      await audit({ audience: "staff", tool: "application.underwriting_summary", args: { application_id: appId }, ok: true, summary: `missing=${missing.length} matches=${matchCount}`, userId: typeof req.body?.user_id === "string" ? req.body.user_id : null, sessionId: typeof req.body?.session_id === "string" ? req.body.session_id : null });
+      return res.json({ ok: true, summary });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "application.underwriting_summary", args: { application_id: appId }, ok: false, summary: e?.message ?? "error", errorCode: "underwriting_summary_exception" });
+      logError("maya_underwriting_summary_failed", { code: "maya_underwriting_summary_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "underwriting_summary_failed" });
+    }
+  }),
+);
+
 export default router;
