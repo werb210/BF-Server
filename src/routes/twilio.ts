@@ -15,6 +15,7 @@ import { fail, ok } from "../lib/apiResponse.js";
 import { wrap } from "../lib/routeWrap.js";
 import { pool, runQuery } from "../db.js";
 import { updateCallStatus } from "../modules/calls/calls.service.js";
+import { setOnCall } from "../modules/presence/presenceService.js";
 import { findCallLogByTwilioSid } from "../modules/calls/calls.repo.js";
 // BF_SERVER_BLOCK_v720_VOICEMAIL_FULL_v1
 import { enrichAndDistributeVoicemail } from "../modules/voice/voicemailEnrich.service.js";
@@ -353,6 +354,12 @@ router.post(
       fromNumber: toNullable(typeof req.body?.From === "string" ? req.body.From : undefined),
       toNumber: toNullable(typeof req.body?.To === "string" ? req.body.To : undefined),
     }));
+
+    // BF_SERVER_PRESENCE_AUTO_BUSY_v1 — busy while on a call; clear when it ends.
+    if (found.staff_user_id) {
+      if (status === "in_progress") void setOnCall(found.staff_user_id, true);
+      else if (callStatus === "completed" || callStatus === "failed" || callStatus === "busy" || callStatus === "no-answer") void setOnCall(found.staff_user_id, false);
+    }
 
     const priceEstimateCents = isCompleted && typeof durationSeconds === "number" ? durationSeconds * 3 : null;
     await runQuery(
