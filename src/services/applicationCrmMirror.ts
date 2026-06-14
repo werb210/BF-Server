@@ -24,6 +24,8 @@ type Wizard = {
     email?: string | null;
     phone?: string | null;
   } | null;
+  // OTP-verified login phone (proven to receive SMS); authoritative for the contact.
+  verifiedPhone?: string | null;
 };
 
 export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
@@ -37,6 +39,8 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
       (app.fullName ?? `${app.firstName ?? ""} ${app.lastName ?? ""}`).trim() || null;
     const applicantEmail = (app.email ?? "").trim() || null;
     const applicantPhone = (app.phone ?? "").trim() || null;
+    // OTP-verified phone wins over anything the applicant typed in the form.
+    const authoritativePhone = (input.verifiedPhone ?? "").trim() || null;
 
     // BF_SERVER_v70_BLOCK_1_3 — company dedup keyed on email primary,
     // phone secondary, name+silo last resort. Email is the canonical
@@ -134,35 +138,43 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
     }
 
     let contactId: string | null = null;
-    if (applicantPhone || applicantEmail) {
-      // BF_SERVER_v65_CRM_DEDUP_EMAIL — match by phone first; if that misses
-      // and we also have an email, retry with the email lookup before
-      // falling through to INSERT. The previous code chose ONE strategy
-      // (phone OR email, not both), so a returning applicant whose phone
-      // is stored in a different format (E.164 vs hyphenated, +1 prefix,
-      // etc.) showed up as a duplicate next to the existing email match.
-      const matchSql = applicantPhone
-        ? `SELECT id FROM contacts WHERE silo = $1 AND phone = $2 LIMIT 1`
-        : `SELECT id FROM contacts WHERE silo = $1 AND lower(email) = lower($2) LIMIT 1`;
-      const matchVal = applicantPhone ? applicantPhone : applicantEmail!;
-      let existing = await pool.query<{ id: string }>(matchSql, [silo, matchVal]);
-      if (!existing.rows[0] && applicantPhone && applicantEmail) {
-        existing = await pool.query<{ id: string }>(
-          `SELECT id FROM contacts WHERE silo = $1 AND lower(email) = lower($2) LIMIT 1`,
+    if (applicantPhone || applicantEmail || authoritativePhone) {
+      // BF_SERVER_CRM_MIRROR_OTP_PHONE_AUTHORITATIVE_v1
+      // Match the applicant's existing contact. Prefer the OTP-verified phone
+      // (proven to receive SMS), then the form phone, then email; match on the
+      // last 10 digits so format differences (E.164 vs hyphenated) don't miss.
+      const matchPhone = authoritativePhone ?? applicantPhone;
+      const matchSql = matchPhone
+        ? `SELECT id, phone FROM contacts
+             WHERE silo = $1
+               AND right(regexp_replace(coalesce(phone,''),'[^0-9]','','g'),10)
+                 = right(regexp_replace($2,'[^0-9]','','g'),10)
+             LIMIT 1`
+        : `SELECT id, phone FROM contacts WHERE silo = $1 AND lower(email) = lower($2) LIMIT 1`;
+      const matchVal = matchPhone ? matchPhone : applicantEmail!;
+      let existing = await pool.query<{ id: string; phone: string | null }>(matchSql, [silo, matchVal]);
+      if (!existing.rows[0] && matchPhone && applicantEmail) {
+        existing = await pool.query<{ id: string; phone: string | null }>(
+          `SELECT id, phone FROM contacts WHERE silo = $1 AND lower(email) = lower($2) LIMIT 1`,
           [silo, applicantEmail]
         );
       }
+      // Phone precedence: OTP-verified wins (proven), else keep the contact's
+      // existing number, else fall back to the form-entered one. A form-entered
+      // number can therefore never clobber a known-good phone.
+      const existingPhone = (existing.rows[0]?.phone ?? "").trim() || null;
+      const finalPhone = authoritativePhone ?? existingPhone ?? applicantPhone ?? null;
       if (existing.rows[0]) {
         contactId = existing.rows[0].id;
         await pool.query(
           `UPDATE contacts SET
-             name       = COALESCE(NULLIF($2,''), name),
-             email      = COALESCE(NULLIF($3,''), email),
-             phone      = COALESCE(NULLIF(phone,''), NULLIF($4,'')) /* BF_SERVER_CRM_MIRROR_PHONE_NO_CLOBBER_v1: fill empty, never overwrite a known-good number */,
+             name       = COALESCE(NULLIF(name,''),  NULLIF($2,'')),
+             email      = COALESCE(NULLIF(email,''), NULLIF($3,'')),
+             phone      = NULLIF($4,''),
              company_id = COALESCE($5, company_id),
              updated_at = now()
            WHERE id = $1`,
-          [contactId, applicantName ?? "", applicantEmail ?? "", applicantPhone ?? "", companyId]
+          [contactId, applicantName ?? "", applicantEmail ?? "", finalPhone ?? "", companyId]
         );
       } else {
         const created = await pool.query<{ id: string }>(
@@ -176,7 +188,7 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
              'applicant', now(), now() -- BF_SERVER_v63_CRM_MIRROR_ROLE
            )
            RETURNING id`,
-          [companyId, applicantName ?? "", applicantEmail ?? "", applicantPhone ?? "", silo]
+          [companyId, applicantName ?? "", applicantEmail ?? "", finalPhone ?? "", silo]
         );
         contactId = created.rows[0]?.id ?? null;
       }
