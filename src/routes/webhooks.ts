@@ -220,6 +220,13 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
   const looksLikePhoneFrom = /^\+?\d{8,15}$/.test(from);
   if (looksLikePhoneFrom && !from.startsWith("client:")) {
     const { default: VoiceResponse } = await import("twilio/lib/twiml/VoiceResponse.js");
+    // BF_SERVER_RECEPTION_v1 — when enabled, hand PSTN callers to the Maya
+    // receptionist instead of ring-all. Inert unless RECEPTION_ENABLED=true.
+    if (process.env.RECEPTION_ENABLED === "true") {
+      const vredir = new VoiceResponse();
+      vredir.redirect({ method: "POST" }, "/api/webhooks/twilio/reception/greeting");
+      return res.send(vredir.toString());
+    }
     const { pool } = await import("../db.js");
     const { createConference, addParticipantRow, setParticipantCallSid, dialClientIntoConference, broadcastIncomingRing } = await import("../voice/conferenceService.js");
     const { getPublicBaseUrl } = await import("../voice/twilioClient.js");
