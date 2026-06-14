@@ -955,6 +955,9 @@ router.post(
           silo: (silo || "BF").toUpperCase(),
           business: md?.business ?? md?.company ?? null,
           applicant: md?.applicant ?? md?.borrower ?? null,
+          // BF_SERVER_CRM_MIRROR_OTP_PHONE_AUTHORITATIVE_v1 — the signed-in
+          // applicant's OTP-verified phone is authoritative for their contact.
+          verifiedPhone: (req as any)?.user?.phone ?? null,
         });
       } catch { /* never block submit on mirror */ }
 
