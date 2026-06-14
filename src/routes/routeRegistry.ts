@@ -275,6 +275,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET",  path: "/api/realtime/stream", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET",  path: "/api/realtime/diag",   roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "POST", path: "/api/webhooks/twilio/voice/twiml", roles: [] },
+  { method: "GET", path: "/api/webhooks/twilio/reception/voice", roles: [] }, // NOVA_VOICE_v1
   { method: "POST", path: "/api/webhooks/twilio/reception/greeting", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/reception/company", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/reception/intent", roles: [] },
