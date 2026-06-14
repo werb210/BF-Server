@@ -64,6 +64,7 @@ import pipelineRoutes from "./pipeline.js";
 import telephonyRoutes from "../telephony/routes/telephonyRoutes.js";
 import realtimeRoutes from "../voice/realtimeRoutes.js";
 import webhooksRoutes from "./webhooks.js";
+import webauthnRoutes from "./webauthn.js"; // BF_SERVER_WEBAUTHN_v1
 import receptionRoutes from "./reception.js"; // BF_SERVER_RECEPTION_v1
 import emailPixelRoutes from "./emailPixel.js"; // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING
 import voiceCallsRoutes from "./voiceCalls.js";
@@ -217,6 +218,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/track", router: emailPixelRoutes }, // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING (public)
   { path: "/voice", router: voiceCallsRoutes },
   { path: "/webhooks/twilio/reception", router: receptionRoutes }, // BF_SERVER_RECEPTION_v1
+  { path: "/webauthn", router: webauthnRoutes }, // BF_SERVER_WEBAUTHN_v1
   { path: "/webhooks/twilio", router: conferenceWebhooksRoutes },
   { path: "/sms", router: webhooksRoutes },
   { path: "/website", router: websiteRoutes },
@@ -264,6 +266,10 @@ export const V1_REQUIRED_ROUTE_SURFACE = [
 export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/auth/otp/start", roles: ALL_ROLES },
   { method: "POST", path: "/api/auth/otp/verify", roles: ALL_ROLES },
+  { method: "POST", path: "/api/webauthn/register/options", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { method: "POST", path: "/api/webauthn/register/verify", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { method: "POST", path: "/api/webauthn/login/options", roles: [] },
+  { method: "POST", path: "/api/webauthn/login/verify", roles: [] },
   { method: "GET", path: "/api/auth/me", roles: ALL_ROLES },
   { method: "POST", path: "/api/auth/logout", roles: ALL_ROLES },
   { method: "GET", path: "/api/telephony/token", roles: [ROLES.ADMIN, ROLES.STAFF] },
