@@ -219,6 +219,25 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
   // ── v503: PSTN inbound -> conference + ring-all staff
   const looksLikePhoneFrom = /^\+?\d{8,15}$/.test(from);
   if (looksLikePhoneFrom && !from.startsWith("client:")) {
+    // BF_SERVER_INBOUND_CALL_LOG_v1 — record every inbound PSTN call up front so
+    // the later /twilio/voice status callback can find it. Without this the
+    // callback logs voice_webhook_call_not_found and the call never lands in
+    // call history (true for both the reception IVR and ring-all paths below).
+    try {
+      const { startCall } = await import("../modules/calls/calls.service.js");
+      await startCall({
+        phoneNumber: from,
+        fromNumber: from,
+        toNumber: to || null,
+        direction: "inbound",
+        status: "initiated",
+        staffUserId: null,
+        twilioCallSid: callSid || null,
+        silo: "BF",
+      });
+    } catch (err: any) {
+      console.warn("inbound_call_log_create_failed", { callSid, message: err?.message });
+    }
     const { default: VoiceResponse } = await import("twilio/lib/twiml/VoiceResponse.js");
     // BF_SERVER_RECEPTION_v1 — when enabled, hand PSTN callers to the Maya
     // receptionist instead of ring-all. Inert unless RECEPTION_ENABLED=true.
