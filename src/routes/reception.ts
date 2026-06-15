@@ -11,6 +11,7 @@
 import express, { Router, type Request, type Response } from "express";
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
 import { pool } from "../db.js";
+import { config } from "../config/index.js";
 
 const router = Router();
 
@@ -81,19 +82,32 @@ type Target = "sales" | "underwriting";
 function displayFor(t: Target): string { return t === "sales" ? "Todd" : "Andrew"; }
 function lkey(t: Target): string { return t === "sales" ? "todd" : "andrew"; }
 
-async function resolveTarget(t: Target): Promise<{ identity: string | null; available: boolean; onCall: boolean }> {
+function toE164(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = String(raw).trim();
+  if (/^\+\d{10,15}$/.test(trimmed)) return trimmed;
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return null;
+}
+
+async function resolveTarget(t: Target): Promise<{ identity: string | null; available: boolean; onCall: boolean; clientReady: boolean; cell: string | null }> {
   const nameLike = t === "sales" ? "%todd%" : "%andrew%";
   try {
-    const { rows } = await pool.query<{ status: string; twilio_identity: string | null; on_call: boolean }>(
-      `SELECT sp.status, sp.twilio_identity, coalesce(sp.on_call, false) AS on_call
+    const { rows } = await pool.query<{ status: string; twilio_identity: string | null; on_call: boolean; fresh: boolean; phone: string | null }>(
+      `SELECT sp.status, sp.twilio_identity, coalesce(sp.on_call, false) AS on_call,
+              (sp.last_heartbeat > now() - interval '90 seconds') AS fresh,
+              coalesce(u.phone_number, u.phone) AS phone
          FROM users u JOIN staff_presence sp ON sp.user_id = u.id
         WHERE (u.first_name ILIKE $1 OR u.last_name ILIKE $1) ORDER BY sp.last_heartbeat DESC NULLS LAST LIMIT 1`,
       [nameLike],
     );
     const r = rows[0];
-    if (!r) return { identity: null, available: false, onCall: false };
-    return { identity: r.twilio_identity, available: r.status === "available" && !!r.twilio_identity, onCall: !!r.on_call };
-  } catch { return { identity: null, available: false, onCall: false }; }
+    if (!r) return { identity: null, available: false, onCall: false, clientReady: false, cell: null };
+    const clientReady = r.status === "available" && !!r.twilio_identity && !!r.fresh;
+    return { identity: r.twilio_identity, available: r.status === "available" && !!r.twilio_identity, onCall: !!r.on_call, clientReady, cell: toE164(r.phone) };
+  } catch { return { identity: null, available: false, onCall: false, clientReady: false, cell: null }; }
 }
 
 function offerMessageOrVoicemail(v: any, openerKey: string, openerText: string): void {
@@ -154,10 +168,16 @@ router.post("/intent", twilioWebhookValidation, async (req: Request, res: Respon
   if (!target) { offerMessageOrVoicemail(v, "opener_unclear", PHRASES.opener_unclear); return send(res, v); }
   const t = await resolveTarget(target);
   const name = displayFor(target);
-  if (t.available && t.identity) {
+  // BF_SERVER_RECEPTION_SIMRING_v1 — ring the softphone only when its heartbeat
+  // is fresh (a stale "available" row was dialing a dead WebRTC client -> 0-sec
+  // no-answer); ALSO ring the staff cell so they're reachable regardless of the
+  // browser softphone. First leg to answer wins.
+  const callerId = config.twilio.callerId ?? config.twilio.from ?? config.twilio.number ?? undefined;
+  if (t.clientReady || t.cell) {
     emit(v, `connect_${lkey(target)}`, `One moment, connecting you to ${name}.`);
-    const dial = v.dial({ answerOnBridge: true, timeout: 20, action: `${BASE}/unavailable?target=${target}`, method: "POST" });
-    dial.client(t.identity);
+    const dial = v.dial({ answerOnBridge: true, timeout: 25, action: `${BASE}/unavailable?target=${target}`, method: "POST", callerId });
+    if (t.clientReady && t.identity) dial.client(t.identity);
+    if (t.cell) dial.number(t.cell);
     return send(res, v);
   }
   const reasonKey = t.onCall ? `reason_${lkey(target)}_oncall` : `reason_${lkey(target)}_unavail`;
