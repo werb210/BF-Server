@@ -350,6 +350,13 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
   if ((looksLikePhone || outboundFlag) && to) {
     const dial = vr.dial({ callerId, answerOnBridge: true, timeout: 30 });
     dial.number(to);
+  } else if (rawFrom.startsWith("client:")) {
+    // BF_SERVER_STAFF_LEG_NO_VOICEMAIL_v1 — a staff browser (SDK) leg that
+    // lands here has no conference to join (it ended, or the callee never
+    // answered). Hang up. A staff leg must never be routed to the inbound
+    // "leave a message" voicemail — that produced phantom voicemails and the
+    // "no agents available" the operator heard on their own outbound call.
+    vr.hangup();
   } else {
     vr.say({ voice: "Polly.Joanna" }, "Sorry, no agents are available right now. Please leave a message after the tone.");
     vr.record({ maxLength: 120, playBeep: true, action: "/api/webhooks/twilio/voicemail" });
