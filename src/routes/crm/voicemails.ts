@@ -26,4 +26,29 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   respondOk(res, r.rows ?? []);
 }));
 
+// BF_SERVER_VOICEMAIL_AUDIO_PROXY_v1 — stream the Twilio recording with Basic
+// auth so the portal <audio> can play it. Raw Twilio recording URLs require
+// auth the browser can't supply; the portal fetches this via apiBlob (staff JWT).
+router.get("/:id/audio", safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id || "");
+  const r = await pool.query<{ recording_url: string }>(
+    `SELECT recording_url FROM voicemails WHERE id = $1 LIMIT 1`,
+    [id],
+  ).catch(() => ({ rows: [] as any[] }));
+  const url = r.rows[0]?.recording_url;
+  if (!url) return res.status(404).end();
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const tok = process.env.TWILIO_AUTH_TOKEN;
+  if (!sid || !tok) return res.status(503).end();
+  const mp3 = url.endsWith(".mp3") ? url : `${url}.mp3`;
+  const auth = Buffer.from(`${sid}:${tok}`).toString("base64");
+  const tw = await fetch(mp3, { headers: { Authorization: `Basic ${auth}` } });
+  if (!tw.ok) return res.status(502).end();
+  const buf = Buffer.from(await tw.arrayBuffer());
+  res.setHeader("Content-Type", "audio/mpeg");
+  res.setHeader("Content-Length", String(buf.length));
+  res.setHeader("Cache-Control", "private, max-age=3600");
+  return res.send(buf);
+}));
+
 export default router;
