@@ -54,7 +54,7 @@ router.post("/register/options", requireAuth, async (req: any, res) => {
     userID: new TextEncoder().encode(String(user.id)),
     attestationType: "none",
     excludeCredentials: existing.map((c) => ({ id: c.credential_id, transports: (c.transports as any) ?? undefined })),
-    authenticatorSelection: { residentKey: "preferred", userVerification: "preferred" },
+    authenticatorSelection: { residentKey: "required", requireResidentKey: true, userVerification: "preferred" },
   });
   await purgeExpiredChallenges();
   await pool.query(`INSERT INTO webauthn_challenges (challenge, user_id, kind) VALUES ($1, $2, 'register')`, [options.challenge, userId]);
