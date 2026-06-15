@@ -135,14 +135,14 @@ async function sendDocumentRejectionSms(params: {
   if (!accountSid || !authToken || !from) return;
 
   // Find the contact phone via application → owner
-  const result = await pool.query<{ phone: string | null; phone_number: string | null }>(
-    `SELECT u.phone_number AS phone_number, c.phone AS phone
+  const result = await pool.query<{ phone: string | null; phone_number: string | null; contact_id: string | null; silo: string | null }>(
+    `SELECT u.phone_number AS phone_number, c.phone AS phone, a.contact_id AS contact_id, a.silo AS silo
      FROM applications a
      LEFT JOIN users u ON u.id = a.owner_user_id
      LEFT JOIN contacts c ON c.id = a.contact_id
      WHERE a.id::text = ($1)::text LIMIT 1`,
     [params.applicationId]
-  ).catch(() => ({ rows: [] }));
+  ).catch(() => ({ rows: [] as any[] }));
 
   const row = result.rows[0];
   const to = row?.phone ?? row?.phone_number;
@@ -158,9 +158,9 @@ async function sendDocumentRejectionSms(params: {
   if (msg) {
     await pool.query(
       `INSERT INTO communications_messages
-         (id, type, direction, status, body, phone_number, from_number, to_number, twilio_sid, application_id, created_at)
-       VALUES (gen_random_uuid(), 'sms', 'outbound', $1, $2, $3, $4, $3, $5, $6, now())`,
-      [msg.status, body, to, from, msg.sid, params.applicationId]
+         (id, type, direction, status, body, phone_number, from_number, to_number, twilio_sid, application_id, contact_id, silo, created_at)
+       VALUES (gen_random_uuid(), 'sms', 'outbound', $1, $2, $3, $4, $3, $5, $6, $7, COALESCE($8, 'BF'), now())`,
+      [msg.status, body, to, from, msg.sid, params.applicationId, row?.contact_id ?? null, row?.silo ?? null]
     ).catch(() => {});
   }
 }
