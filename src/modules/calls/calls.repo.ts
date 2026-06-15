@@ -57,7 +57,7 @@ export async function createCallLog(params: {
   const id = randomUUID();
   const hasTwilioSid = Boolean(params.twilioCallSid);
   const conflictClause = hasTwilioSid
-    ? `on conflict (twilio_call_sid)
+    ? `on conflict (twilio_call_sid) where twilio_call_sid is not null
        do update set phone_number = call_logs.phone_number`
     : "";
   const res = await runner.query<CallLogRecord>(
