@@ -78,6 +78,14 @@ router.get("/", safeHandler(async (req: any, res: any) => {
           LEFT JOIN call_transcripts ct ON ct.conference_id = cr.conference_id
          WHERE cf.contact_id = $1::text AND cf.silo = $2 AND cr.url IS NOT NULL
         UNION ALL
+        -- BF_SERVER_VOICEMAIL_TIMELINE_v1 — saved voicemails on the contact
+        -- timeline. kind 'call' so the existing UI renders it; title "Voicemail".
+        SELECT 'call' AS kind, id::text, created_at AS ts,
+               'Voicemail' AS title,
+               NULL::text AS body,
+               from_number AS extra
+          FROM voicemails WHERE contact_id = $1 AND (silo = $2 OR silo IS NULL)
+        UNION ALL
         -- BF_SERVER_BLOCK_47_v1 -- SMS / chat messages from
         -- communications_messages. Title = "SMS in" / "SMS out".
         -- staff_name surfaces who sent outbound (NULL on inbound).
