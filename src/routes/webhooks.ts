@@ -381,7 +381,7 @@ router.post("/twilio/voicemail", twilioWebhookValidation, safeHandler(async (req
   res.setHeader("Content-Type", "text/xml");
   const vr = new VoiceResponse();
 
-  const { RecordingUrl, RecordingDuration, CallSid, From } = req.body ?? {};
+  const { RecordingUrl, RecordingDuration, RecordingSid, CallSid, From } = req.body ?? {};
   if (RecordingUrl && CallSid) {
     const fromNum = typeof From === "string" ? From : null;
     // Look up contact by phone
@@ -397,17 +397,18 @@ router.post("/twilio/voicemail", twilioWebhookValidation, safeHandler(async (req
       : null;
 
     await pool.query(
-      `INSERT INTO voicemails (id, recording_url, recording_sid, duration, from_number, contact_id, created_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, now())
+      `INSERT INTO voicemails (id, call_sid, recording_sid, recording_url, duration, from_number, contact_id, created_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, now())
        ON CONFLICT DO NOTHING`,
       [
-        String(RecordingUrl),
         String(CallSid),
+        String(RecordingSid ?? CallSid),
+        String(RecordingUrl),
         parseInt(String(RecordingDuration ?? "0"), 10) || 0,
         fromNum,
         contact?.id ?? null,
       ]
-    ).catch(() => {});
+    ).catch((e: any) => console.error("voicemail_insert_failed", e?.message));
   }
 
   vr.say({ voice: "Polly.Joanna" }, "Thank you. We will be in touch shortly. Goodbye.");
