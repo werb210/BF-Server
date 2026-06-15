@@ -87,7 +87,7 @@ async function resolveTarget(t: Target): Promise<{ identity: string | null; avai
     const { rows } = await pool.query<{ status: string; twilio_identity: string | null; on_call: boolean }>(
       `SELECT sp.status, sp.twilio_identity, coalesce(sp.on_call, false) AS on_call
          FROM users u JOIN staff_presence sp ON sp.user_id = u.id
-        WHERE u.name ILIKE $1 ORDER BY sp.last_heartbeat DESC NULLS LAST LIMIT 1`,
+        WHERE (u.first_name ILIKE $1 OR u.last_name ILIKE $1) ORDER BY sp.last_heartbeat DESC NULLS LAST LIMIT 1`,
       [nameLike],
     );
     const r = rows[0];
@@ -97,9 +97,9 @@ async function resolveTarget(t: Target): Promise<{ identity: string | null; avai
 }
 
 function offerMessageOrVoicemail(v: any, openerKey: string, openerText: string): void {
-  const g = v.gather({ input: "speech dtmf", numDigits: 1, speechTimeout: "auto", timeout: 6, action: `${BASE}/fallback`, method: "POST" });
-  emit(g, openerKey, openerText);
-  emit(g, "offer", PHRASES.offer);
+  // BF_SERVER_RECEPTION_VOICEMAIL_ONLY_v1 — no "take a message vs voicemail"
+  // choice; play the opener, then go straight to recording a voicemail.
+  emit(v, openerKey, openerText);
   emit(v, "record_prompt", PHRASES.record_prompt);
   v.record({ maxLength: 120, playBeep: true, action: "/api/webhooks/twilio/voicemail" });
 }
