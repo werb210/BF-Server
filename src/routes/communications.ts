@@ -1385,26 +1385,48 @@ ${link}`;
 router.post(
   "/messages/mark-read",
   safeHandler(async (req: any, res: any) => {
-    const contactId = typeof req.body?.contactId === "string" ? req.body.contactId.trim() : "";
+    const rawContact = typeof req.body?.contactId === "string" ? req.body.contactId.trim() : "";
+    const phoneIn = typeof req.body?.phone === "string" ? req.body.phone.trim() : "";
     const throughTs = typeof req.body?.throughTs === "string" ? req.body.throughTs : null;
-    if (!contactId) {
-      return res.status(400).json({ error: { code: "validation_error", message: "contactId required" } });
+    if (!rawContact && !phoneIn) {
+      return res.status(400).json({ error: { code: "validation_error", message: "contactId or phone required" } });
     }
     const cutoff = throughTs && !Number.isNaN(Date.parse(throughTs)) ? throughTs : new Date().toISOString();
+    const isUuid = /^[0-9a-f-]{36}$/i.test(rawContact);
     // BF_SERVER_BLOCK_v689_MARK_READ_ALL_TYPES_v1 — clear read_at for EVERY
     // inbound row for this contact, not just type='message'. SMS rows carry
     // type='sms', so the old filter left them permanently unread — the unread
     // count queries count all inbound regardless of type, so the nav badge and
     // per-thread tags stayed stuck (the "16"/"1" that never cleared on open).
-    const r = await pool.query(
-      `UPDATE communications_messages
-          SET read_at = NOW()
-        WHERE direction = 'inbound'
-          AND read_at IS NULL
-          AND contact_id = NULLIF($1, '')::uuid
-          AND created_at <= $2::timestamptz`,
-      [contactId, cutoff],
-    );
+    let r: any;
+    if (isUuid) {
+      r = await pool.query(
+        `UPDATE communications_messages
+            SET read_at = NOW()
+          WHERE direction = 'inbound'
+            AND read_at IS NULL
+            AND contact_id = $1::uuid
+            AND created_at <= $2::timestamptz`,
+        [rawContact, cutoff],
+      );
+    } else {
+      // BF_SERVER_BLOCK_v840_MARK_READ_ORPHAN_SMS_v1 — orphan inbound SMS (from a
+      // number with no CRM contact) thread by from_number, not a uuid; clear by
+      // from_number so the SMS badge can finally reach zero.
+      const phone = phoneIn || rawContact;
+      const compact = phone.replace(/[^\d]/g, "");
+      const e164 = phone.startsWith("+") ? phone : `+${compact}`;
+      r = await pool.query(
+        `UPDATE communications_messages
+            SET read_at = NOW()
+          WHERE direction = 'inbound'
+            AND read_at IS NULL
+            AND contact_id IS NULL
+            AND from_number IN ($1, $2, $3)
+            AND created_at <= $4::timestamptz`,
+        [phone, e164, compact, cutoff],
+      );
+    }
     res.json({ ok: true, updated: r.rowCount ?? 0 });
   }),
 );
