@@ -41,6 +41,19 @@ export async function createEmbeddedGroupInvite(groupId: string, signer: Embedde
   if (typeof inviteId !== "string") throw new SignNowError("SignNow embedded group invite returned no id", undefined, body);
   return { inviteId };
 }
+// BF_SERVER_BLOCK_v203_SIGNNOW_ACCORD_GROUP_v1
+export async function uploadDocumentWithFieldExtract(pdfBytes: Uint8Array, filename: string): Promise<UploadDocumentResult> {
+  const blob = new Blob([new Uint8Array(pdfBytes)], { type: "application/pdf" });
+  const form = new FormData(); form.append("file", blob, filename);
+  const body = (await signnowFetch("/document/fieldextract", { method: "POST", body: form })) as { id?: string };
+  if (!body || typeof body.id !== "string") throw new SignNowError("SignNow fieldextract returned no document id", undefined, body);
+  return { documentId: body.id };
+}
+export async function sendGroupEmailInvite(groupId: string, signer: EmbeddedSigner & { fromEmail: string; order?: number }): Promise<{ inviteId?: string }> {
+  const payload = { invite: { invite_steps: [{ order: signer.order ?? 2, invite_emails: [{ email: signer.email, ...(signer.name ? { full_name: signer.name } : {}), role_name: signer.roleName }] }] } };
+  const body = (await signnowFetch(`/documentgroup/${encodeURIComponent(groupId)}/groupinvite`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })) as { id?: string; data?: { id?: string } };
+  return { inviteId: body?.data?.id ?? body?.id };
+}
 export async function createEmbeddedGroupLink(groupId: string, inviteId: string, email: string): Promise<{ url: string; expiresAt: string | null }> {
   const payload = { email, auth_method: "none", link_expiration: 45 };
   const body = (await signnowFetch(`/v2/document-groups/${encodeURIComponent(groupId)}/embedded-invites/${encodeURIComponent(inviteId)}/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })) as { data?: { link?: string }; link?: string };

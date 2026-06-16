@@ -1,16 +1,16 @@
 // BF_SERVER_BLOCK_v712_EMBEDDED_GROUP_SIGNING_v1
-// Builds ONE embedded SignNow signing session for the borrower: our application
-// template + each finalized lender's form template, grouped into a single
-// document group, signed in one in-portal iframe. No email is sent.
+// BF_SERVER_BLOCK_v203_SIGNNOW_ACCORD_GROUP_v1
 import { dbQuery } from "../db.js";
 import { loadApplicationForPdf } from "./sendApplicationForSignature.js";
+import { buildApplicationPdf } from "./pdfBuilder.js";
+import { buildAccordPdf } from "./accordPdfBuilder.js";
 import * as signnow from "./signnowClient.js";
 
-const SIGNER_ROLE = process.env.SIGNNOW_SIGNER_ROLE || "Borrower";
-function isStubMode(): boolean {
-  const v = (process.env.SIGNNOW_STUB_MODE ?? "").trim().toLowerCase();
-  return ["1", "true", "yes", "on"].includes(v);
-}
+const ROLE_OWNER1 = "Owner 1";
+const ROLE_OWNER2 = "Owner 2";
+function fromEmail(): string { return process.env.SIGNNOW_FROM_EMAIL || "no-reply@boreal.financial"; }
+function isStubMode(): boolean { const v = (process.env.SIGNNOW_STUB_MODE ?? "").trim().toLowerCase(); return ["1", "true", "yes", "on"].includes(v); }
+
 export type SigningSessionResult =
   | { status: "signed" }
   | { status: "not_ready"; reason: string }
@@ -18,25 +18,15 @@ export type SigningSessionResult =
   | { status: "ready"; url: string; expiresAt: string | null }
   | { status: "error"; reason: string };
 
-async function resolveTemplateIds(applicationId: string): Promise<string[]> {
-  const ids: string[] = [];
-  const appTpl = (process.env.SIGNNOW_APPLICATION_TEMPLATE_ID || "").trim();
-  if (appTpl) ids.push(appTpl);
-  const res = await dbQuery<{ signnow_template_id: string | null }>(
-    `SELECT DISTINCT lp.signnow_template_id
+async function isAccordFinalized(applicationId: string): Promise<boolean> {
+  const res = await dbQuery<{ n: string }>(
+    `SELECT COUNT(*) AS n
        FROM application_lender_selections s
-       JOIN lender_products lp ON lp.lender_id::text = s.lender_id::text
+       JOIN lenders l ON l.id::text = s.lender_id::text
       WHERE s.application_id::text = ($1)::text
         AND s.finalized_at IS NOT NULL
-        AND lp.signnow_template_id IS NOT NULL
-        AND length(trim(lp.signnow_template_id)) > 0`,
-    [applicationId],
-  );
-  for (const r of res.rows) {
-    const t = (r.signnow_template_id ?? "").trim();
-    if (t && !ids.includes(t)) ids.push(t);
-  }
-  return ids;
+        AND l.name ILIKE 'accord%'`, [applicationId]).catch(() => ({ rows: [{ n: "0" }] }));
+  return Number(res.rows[0]?.n ?? 0) > 0;
 }
 
 export async function getOrCreateEmbeddedSigningSession(applicationId: string): Promise<SigningSessionResult> {
@@ -45,9 +35,7 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
     `SELECT a.signnow_app_signed_at, a.metadata,
             (SELECT COUNT(*) FROM application_lender_selections s
               WHERE s.application_id::text = a.id::text AND s.finalized_at IS NOT NULL) AS finalized_count
-       FROM applications a WHERE a.id::text = ($1)::text LIMIT 1`,
-    [applicationId],
-  );
+       FROM applications a WHERE a.id::text = ($1)::text LIMIT 1`, [applicationId]);
   const row = appRes.rows[0];
   if (!row) return { status: "not_ready", reason: "application_not_found" };
   if (row.signnow_app_signed_at) return { status: "signed" };
@@ -65,16 +53,28 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
       const link = await signnow.createEmbeddedGroupLink(String(sess.group_id), String(sess.invite_id), email);
       return { status: "ready", url: link.url, expiresAt: link.expiresAt };
     }
-    const templateIds = await resolveTemplateIds(applicationId);
-    if (templateIds.length === 0) return { status: "not_ready", reason: "no_templates_configured" };
+
     const docIds: string[] = [];
-    for (const t of templateIds) {
-      const d = await signnow.createDocumentFromTemplate(t, `app-${applicationId}`);
-      docIds.push(d.documentId);
+    const borealPdf = await buildApplicationPdf(inputs);
+    const boreal = await signnow.uploadDocumentWithFieldExtract(borealPdf, `app-${applicationId}.pdf`);
+    docIds.push(boreal.documentId);
+
+    if (await isAccordFinalized(applicationId)) {
+      const accordPdf = await buildAccordPdf(applicationId);
+      const accord = await signnow.uploadDocumentWithFieldExtract(accordPdf, `accord-${applicationId}.pdf`);
+      docIds.push(accord.documentId);
     }
+
     const group = await signnow.createDocumentGroup(docIds, `Boreal application ${applicationId}`);
-    const invite = await signnow.createEmbeddedGroupInvite(group.groupId, { email, name: inputs.applicantName ?? undefined, roleName: SIGNER_ROLE });
+    const invite = await signnow.createEmbeddedGroupInvite(group.groupId, { email, name: inputs.applicantName ?? undefined, roleName: ROLE_OWNER1 });
     const link = await signnow.createEmbeddedGroupLink(group.groupId, invite.inviteId, email);
+
+    const o2 = inputs.owners[1];
+    if (o2?.email) {
+      const o2name = [o2.firstName, o2.lastName].filter(Boolean).join(" ").trim() || undefined;
+      await signnow.sendGroupEmailInvite(group.groupId, { email: o2.email, name: o2name, roleName: ROLE_OWNER2, fromEmail: fromEmail(), order: 2 }).catch(() => {});
+    }
+
     await dbQuery(
       `UPDATE applications
           SET signnow_document_id = $2,
@@ -84,8 +84,7 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
                   'created_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))),
               updated_at = now()
         WHERE id::text = ($1)::text`,
-      [applicationId, group.groupId, invite.inviteId, JSON.stringify(docIds)],
-    );
+      [applicationId, group.groupId, invite.inviteId, JSON.stringify(docIds)]);
     return { status: "ready", url: link.url, expiresAt: link.expiresAt };
   } catch (err) {
     return { status: "error", reason: err instanceof Error ? err.message : "signnow_error" };

@@ -9,6 +9,12 @@ function getBackend(): AzureBlobBackend | null {
   cached = new AzureBlobBackend(CONTAINER, conn);
   return cached;
 }
+export async function downloadBlobAsset(blobName: string): Promise<Buffer | null> {
+  const b = getBackend();
+  if (!b) throw new Error("AZURE_STORAGE_CONNECTION_STRING not configured");
+  const got = await b.get(blobName);
+  return got ? got.buffer : null;
+}
 export async function uploadSignedApplicationPdf(applicationId: string, buffer: Buffer): Promise<{ blobName: string; url: string; sizeBytes: number; hash: string }> {
   const b = getBackend();
   if (!b) throw new Error("AZURE_STORAGE_CONNECTION_STRING not configured");
