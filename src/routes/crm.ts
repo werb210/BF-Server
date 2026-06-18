@@ -1069,6 +1069,52 @@ router.post("/timeline/calls", requireCrmWrite, safeHandler(async (req: any, res
   });
 }));
 
+// #48 — contact email feed: subject/body for inline expand + read-receipt.
+router.get("/contacts/:id/emails", safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id);
+  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    return res.status(400).json({ error: "invalid_id" });
+  }
+  const { rows } = await pool.query(
+    `SELECT id, subject, body_html, from_address, to_addresses, opened_at, created_at
+       FROM crm_email_log
+      WHERE contact_id = $1
+      ORDER BY created_at DESC
+      LIMIT 200`,
+    [id]
+  );
+  return res.json({ items: rows });
+}));
+
+// #49 — contact call feed: recording + transcript joined by conference.
+router.get("/contacts/:id/calls", safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id);
+  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    return res.status(400).json({ error: "invalid_id" });
+  }
+  const { rows } = await pool.query(
+    `SELECT cf.id AS conference_id,
+            cf.direction,
+            cf.started_at,
+            cf.ended_at,
+            cf.created_at,
+            r.url           AS recording_url,
+            r.duration_sec  AS recording_duration_sec,
+            r.status        AS recording_status,
+            t.full_text     AS transcript_text,
+            t.segments_json AS transcript_segments,
+            t.voice_intelligence_summary AS transcript_summary
+       FROM conferences cf
+       LEFT JOIN call_recordings  r ON r.conference_id = cf.id
+       LEFT JOIN call_transcripts t ON t.conference_id = cf.id
+      WHERE cf.contact_id = $1
+      ORDER BY cf.created_at DESC
+      LIMIT 200`,
+    [id]
+  );
+  return res.json({ items: rows });
+}));
+
 router.use("/contacts/:id/notes", notesRoutes);
 router.use("/contacts/:id/tasks", tasksRoutes);
 router.use("/contacts/:id/emails", emailsRoutes);
@@ -1145,5 +1191,6 @@ router.post('/companies/bulk-assign', safeHandler(async (req: any, res: any) => 
   const u = await pool.query(`SELECT id FROM users WHERE id::text = ($1)::text LIMIT 1`, [ownerUserId]); if (!u.rows[0]) return res.status(400).json({ error: 'invalid_owner' });
   const out = await pool.query(`UPDATE companies SET owner_id = $2 WHERE id = ANY($1::uuid[]) AND silo = $3`, [selected, ownerUserId, silo]); res.json({ updated: out.rowCount ?? 0 });
 }));
+
 
 export default router;
