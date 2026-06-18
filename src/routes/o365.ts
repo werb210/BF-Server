@@ -324,7 +324,13 @@ router.post("/mail/draft", safeHandler(async (req: any, res: any) => {
   const r = draftId
     ? await graph.fetch(`/me/messages/${encodeURIComponent(draftId)}`, { method: "PATCH", body: JSON.stringify(msg) })
     : await graph.fetch(`/me/messages`, { method: "POST", body: JSON.stringify(msg) });
-  if (!r.ok) return res.status(502).json({ error: "graph_draft_failed", detail: (await r.text()).slice(0, 500) });
+  if (!r.ok) {
+    const detail = (await r.text()).slice(0, 500);
+    // eslint-disable-next-line no-console
+    console.error("o365_draft_failed", { status: r.status, detail });
+    if (r.status === 401 || r.status === 403) return res.status(412).json({ error: "o365_insufficient_scope", detail });
+    return res.status(502).json({ error: "graph_draft_failed", detail });
+  }
   const j = await r.json();
   res.json({ id: j.id ?? draftId });
 }));
@@ -335,7 +341,13 @@ router.get("/mail/drafts", safeHandler(async (req: any, res: any) => {
   const graph = await getGraphForUser(pool, userId);
   if (!graph) return res.status(412).json({ error: "o365_not_connected" });
   const r = await graph.fetch(`/me/mailFolders/drafts/messages?$top=25&$select=id,subject,bodyPreview,toRecipients,lastModifiedDateTime&$orderby=lastModifiedDateTime desc`);
-  if (!r.ok) return res.status(502).json({ error: "graph_drafts_failed", detail: (await r.text()).slice(0, 500) });
+  if (!r.ok) {
+    const detail = (await r.text()).slice(0, 500);
+    // eslint-disable-next-line no-console
+    console.error("o365_drafts_failed", { status: r.status, detail });
+    if (r.status === 401 || r.status === 403) return res.status(412).json({ error: "o365_insufficient_scope", detail });
+    return res.status(502).json({ error: "graph_drafts_failed", detail });
+  }
   const j = await r.json();
   const items = (j.value ?? []).map((m: any) => ({
     id: m.id,
@@ -353,7 +365,13 @@ router.get("/mail/draft/:id", safeHandler(async (req: any, res: any) => {
   const graph = await getGraphForUser(pool, userId);
   if (!graph) return res.status(412).json({ error: "o365_not_connected" });
   const r = await graph.fetch(`/me/messages/${encodeURIComponent(req.params.id)}?$select=id,subject,body,toRecipients,ccRecipients,bccRecipients,importance`);
-  if (!r.ok) return res.status(502).json({ error: "graph_draft_failed", detail: (await r.text()).slice(0, 500) });
+  if (!r.ok) {
+    const detail = (await r.text()).slice(0, 500);
+    // eslint-disable-next-line no-console
+    console.error("o365_draft_failed", { status: r.status, detail });
+    if (r.status === 401 || r.status === 403) return res.status(412).json({ error: "o365_insufficient_scope", detail });
+    return res.status(502).json({ error: "graph_draft_failed", detail });
+  }
   const m = await r.json();
   const addrs = (xs: any) => (xs ?? []).map((x: any) => x?.emailAddress?.address).filter(Boolean);
   res.json({
