@@ -317,7 +317,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 router.delete(
   "/:applicationId/documents/:documentId",
   requireAuth,
-  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  requireAuthorization({ roles: [ROLES.ADMIN] }),
   safeHandler(async (req: Request, res: Response) => {
     const applicationId = String(req.params.applicationId ?? "").trim();
     const documentId = String(req.params.documentId ?? "").trim();
@@ -331,8 +331,21 @@ router.delete(
     );
     if (!exists.rows[0]) return fail(res, 404, "DOCUMENT_NOT_FOUND");
 
+    // #8 — delete the blob first so storage is not orphaned on row removal.
+    const blobRow = await pool.query<{ blob_name: string | null }>(
+      `SELECT blob_name FROM documents WHERE id = $1 LIMIT 1`,
+      [documentId]
+    );
+    const blobName = blobRow.rows[0]?.blob_name ?? null;
+    if (blobName) {
+      try {
+        await getStorage().delete(blobName);
+      } catch (err) {
+        console.error("document_blob_delete_failed", { documentId, blobName, err });
+      }
+    }
+
     await pool.query(`DELETE FROM documents WHERE id = $1`, [documentId]);
-    // TODO: Intentionally hard-delete only DB row in this iteration; blob/S3 delete follows in separate change.
 
     const hasEvents = await pool.query<{ present: boolean }>(
       `SELECT EXISTS (
