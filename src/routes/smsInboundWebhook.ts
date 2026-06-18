@@ -101,7 +101,11 @@ router.post("/webhooks/twilio/sms-inbound", async (req: any, res) => {
     );
 
     return res.type("text/xml").send("<Response/>");
-  } catch {
+  } catch (err) {
+    // #11 — an inbound message that fails to persist must not vanish silently.
+    // Log the real reason (still ACK Twilio 200 so it does not retry-storm).
+    // eslint-disable-next-line no-console
+    console.error("sms_inbound_persist_failed", err);
     return res.type("text/xml").send("<Response/>");
   }
 });
