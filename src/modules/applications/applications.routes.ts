@@ -200,7 +200,10 @@ router.get('/:id/task-status', safeHandler(async (req: any, res: any) => {
   const uploaded = new Set<string>((docs.rows ?? []).map((r: any) => String(r.category || "")).filter(Boolean));
   if ([...uploaded].some((c) => /gov|government|photo.?id|identification|\bid\b/.test(c))) completed.add("upload");
   const required = (req2.rows ?? []).map((r: any) => String(r.category || "")).filter(Boolean);
-  if (required.length > 0 && required.every((c) => uploaded.has(c))) completed.add("upload_docs");
+  const normUploaded = new Set<string>([...uploaded].map((c) => c.trim().toLowerCase()));
+  if (required.length > 0 && required.every((c) => normUploaded.has(c.trim().toLowerCase()))) {
+    completed.add("upload_docs");
+  }
 
   const LABELS: Record<string, string> = {
     networth: "Personal Net Worth", flinks: "Connect Bank (View-Only)", cra: "CRA Authorization",

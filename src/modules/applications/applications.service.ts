@@ -1110,6 +1110,33 @@ export async function uploadDocument(params: {
       client,
     });
 
+    // Option A — once all required docs are RECEIVED (uploaded, non-rejected), advance
+    // Documents Required -> In Review without waiting for staff acceptance.
+    {
+      const reqDocsNow = await listApplicationRequiredDocuments({
+        applicationId: params.applicationId,
+        client,
+      });
+      const allReceived =
+        reqDocsNow.length > 0 &&
+        reqDocsNow.every((d) => d.status !== "missing" && d.status !== "rejected");
+      if (allReceived && application.pipeline_state === ApplicationStage.DOCUMENTS_REQUIRED) {
+        await updateApplicationPipelineState({
+          applicationId: params.applicationId,
+          pipelineState: ApplicationStage.IN_REVIEW,
+          client,
+        });
+        await createApplicationStageEvent({
+          applicationId: params.applicationId,
+          fromStage: ApplicationStage.DOCUMENTS_REQUIRED,
+          toStage: ApplicationStage.IN_REVIEW,
+          trigger: "documents_received",
+          triggeredBy: params.actorUserId,
+          client,
+        });
+      }
+    }
+
     const response: DocumentUploadResponse = {
       documentId,
       versionId: version.id,
@@ -1345,8 +1372,9 @@ export async function acceptDocumentVersion(params: {
       applicationId: params.applicationId,
       client,
     });
+    // Option A — advance on RECEIVED (uploaded, non-rejected); acceptance stays a review action.
     const hasPendingDocuments = requiredDocuments.some(
-      (doc) => doc.status !== "accepted"
+      (doc) => doc.status === "missing" || doc.status === "rejected"
     );
     if (!hasPendingDocuments && application.pipeline_state === ApplicationStage.DOCUMENTS_REQUIRED) {
       await updateApplicationPipelineState({
