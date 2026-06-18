@@ -72,4 +72,28 @@ router.patch("/users/:id", requireCapability([CAPABILITIES.USER_MANAGE]), async 
 
 router.use("/", lenderAdminRoutes);
 
+// BF_SERVER_BLOCK_vA_REINGEST_PRODUCTS_v1 — rebuild Maya's product knowledge.
+// embedAndStore APPENDS (no replace), so we DELETE the prior product rows first
+// to avoid duplicate embeddings, then re-ingest all lender_products. Trigger
+// once after a product seed. Admin-gated (USER_MANAGE), like sibling /users.
+router.post(
+  "/reingest-products",
+  requireCapability([CAPABILITIES.USER_MANAGE]),
+  async (_req: any, res: any) => {
+    try {
+      const { pool } = await import("../db.js");
+      const { ingestAllProducts } = await import("../modules/ai/productIngest.service.js");
+      const del = await pool.query(
+        "DELETE FROM ai_knowledge WHERE source_type = 'product' OR source_type LIKE 'product:%'",
+      );
+      await ingestAllProducts(pool);
+      const cnt = await pool.query("SELECT count(*)::int AS n FROM lender_products");
+      res.json({ ok: true, deleted: del.rowCount ?? 0, ingested: cnt.rows[0]?.n ?? 0 });
+    } catch (e: any) {
+      console.error("reingest_products_failed", { message: e?.message });
+      res.status(500).json({ ok: false, error: e?.message ?? "reingest_failed" });
+    }
+  },
+);
+
 export default router;

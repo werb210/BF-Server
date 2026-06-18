@@ -1,7 +1,7 @@
 // BF_SERVER_BLOCK_v501_OUTBOUND_CORE_v1
 // Twilio conference-join TwiML + status callbacks.
 
-import { Router } from "express";
+import express, { Router } from "express";
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
 import { pool } from "../db.js";
 import {
@@ -17,6 +17,12 @@ import transcriptionWebhooksRoutes from "./transcriptionWebhooks.js";
 import VoiceResponse from "twilio/lib/twiml/VoiceResponse.js";
 
 const router = Router();
+
+// BF_SERVER_BLOCK_vA_CONF_URLENCODED_v1 — Twilio posts urlencoded; app.ts only
+// applies express.json globally. Without this, req.body={} on every conference
+// webhook -> signature computed over empty body -> 403 -> conference never forms.
+// Mounted before the route defs so recording/transcription subrouters inherit it.
+router.use(express.urlencoded({ extended: false }));
 
 router.post("/conference/join", twilioWebhookValidation, async (req: any, res) => {
   res.setHeader("Content-Type", "text/xml");
