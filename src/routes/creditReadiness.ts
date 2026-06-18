@@ -165,7 +165,7 @@ router.post("/", async (req: any, res: any, next: any) => {
       await pool.query(`UPDATE applications SET contact_id = $2 WHERE id = $1`, [applicationId, rdContact.id]);
     }
   } catch (err) {
-    logError("readiness_contact_link_failed", err as Error);
+    logError("readiness_contact_link_failed", { error: String(err) });
   }
 
   const readinessSession = await createOrReuseReadinessSession(stripUndefined({
