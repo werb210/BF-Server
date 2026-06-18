@@ -74,6 +74,8 @@ router.post(
       api_config: body.apiConfig ?? body.api_config ?? null,
       submission_config: body.submissionConfig ?? body.submission_config ?? null,
       website: body.website ?? null,
+      application_url: body.application_url ?? null,
+      announcement: body.announcement ?? null,
       street: body.street ?? body.address?.street ?? null,
       city: body.city ?? body.address?.city ?? null,
       region: body.region ?? body.address?.stateProvince ?? null,
@@ -122,6 +124,8 @@ router.patch(
       submission_config: body.submissionConfig ?? body.submission_config,
       website: body.website,
       webpage: body.webpage,
+      application_url: body.application_url,
+      announcement: body.announcement,
       active: body.active,
       silo: body.silo ?? existing.silo ?? silo,
     });

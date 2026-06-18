@@ -7,6 +7,8 @@ export interface CreateLenderInput {
   name: string;
   country: string;
   submission_method: string;
+  application_url?: string | null;
+  announcement?: string | null;
   active?: boolean;
   status?: string | null;
   email?: string | null;
@@ -177,6 +179,8 @@ function buildSelectColumns(existing: Set<string>): string {
     { name: "primary_contact_phone", fallback: "null::text" },
     { name: "website", fallback: "null::text" },
     { name: "webpage", fallback: "null::text" },
+    { name: "application_url", fallback: "null::text" },
+    { name: "announcement", fallback: "null::text" },
     { name: "street", fallback: "null::text" },
     { name: "city", fallback: "null::text" },
     { name: "region", fallback: "null::text" },
@@ -316,6 +320,8 @@ export async function createLender(
     postal_code,
     phone,
     silo,
+    application_url,
+    announcement,
   } = input;
   const existingColumns = await fetchLenderColumns();
   const includeActive = existingColumns.has("active");
@@ -343,6 +349,8 @@ export async function createLender(
     { name: "id", value: "gen_random_uuid()", raw: true },
     { name: "name", value: name },
     { name: "country", value: country },
+    { name: "application_url", value: application_url ?? null },
+    { name: "announcement", value: announcement ?? null },
     { name: "website", value: website ?? null },
     { name: "webpage", value: webpage ?? null },
     { name: "street", value: street ?? null },
@@ -482,6 +490,8 @@ export async function updateLender(
     submission_config?: Record<string, unknown> | null;
     website?: string | null;
     webpage?: string | null;
+    application_url?: string | null;
+    announcement?: string | null;
     active?: boolean;
     silo?: string | null;
   }
@@ -577,6 +587,12 @@ export async function updateLender(
   }
   if (params.webpage !== undefined && existingColumns.has("webpage")) {
     updates.push({ name: "webpage", value: params.webpage });
+  }
+  if (params.application_url !== undefined && existingColumns.has("application_url")) {
+    updates.push({ name: "application_url", value: params.application_url });
+  }
+  if (params.announcement !== undefined && existingColumns.has("announcement")) {
+    updates.push({ name: "announcement", value: params.announcement });
   }
   if (resolvedActive !== undefined && existingColumns.has("active")) {
     updates.push({ name: "active", value: resolvedActive });
