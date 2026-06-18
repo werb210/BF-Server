@@ -142,10 +142,26 @@ router.get("/needed", async (req: Request, res: Response) => {
       for (const item of items) appendRequiredDoc(item, seen, satisfied, stillNeeded);
     }
 
-    const rejected = rejectedRows.map((r: UploadedDocRow) => ({
-      document_type: r.category as string,
-      label: humanize(r.category as string),
-    }));
+    // Dedupe by normalized category and drop any category the client has since
+    // re-uploaded (now satisfied). Fixes the "same doc listed ~10x" spam and the
+    // casing mismatch that listed one doc in both rejected and still-needed.
+    const satisfiedNorm = new Set(
+      Array.from(satisfied).map((c) => c.trim().toLowerCase())
+    );
+    const seenRejected = new Set<string>();
+    const rejected = rejectedRows
+      .filter((r: UploadedDocRow) => {
+        const cat = (r.category as string).trim();
+        const key = cat.toLowerCase();
+        if (satisfiedNorm.has(key)) return false;
+        if (seenRejected.has(key)) return false;
+        seenRejected.add(key);
+        return true;
+      })
+      .map((r: UploadedDocRow) => ({
+        document_type: r.category as string,
+        label: humanize(r.category as string),
+      }));
 
     return res.status(200).json({ stillNeeded, rejected });
   } catch (err: any) {
