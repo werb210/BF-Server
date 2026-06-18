@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
-import { db } from "../db.js";
+import { db, pool } from "../db.js";
 import { config } from "../config/index.js";
 import { ApplicationStage } from "../modules/applications/pipelineState.js";
 import { sendSms } from "../modules/notifications/sms.service.js";
 import { createContinuation } from "../models/continuation.js";
 import { createOrReuseReadinessSession } from "../modules/readiness/readinessSession.service.js";
 import { upsertCrmLead } from "../modules/crm/leadUpsert.service.js";
+import { findOrCreateContactByEmailAndCompany } from "../services/contacts.js";
 import { retry } from "../utils/retry.js";
 import { logError } from "../observability/logger.js";
 import { stripUndefined, toNullable } from "../utils/clean.js";
@@ -137,6 +138,35 @@ router.post("/", async (req: any, res: any, next: any) => {
     activityType: "credit_readiness_submission",
     activityPayload: { applicationId },
   }));
+
+  // #6 — make the readiness lead usable in the CRM. Ensure a BF contact exists
+  // (dedups on email/phone, v725 — no duplicates), tag it credit_readiness, and
+  // link the readiness application so its answers surface on the contact.
+  try {
+    if (email || phone) {
+      const SENTINEL = "00000000-0000-0000-0000-000000000000";
+      const nameParts = String(fullName ?? "").trim().split(/\s+/).filter(Boolean);
+      const first = nameParts[0] ?? (companyName ?? "Lead");
+      const last = nameParts.slice(1).join(" ");
+      const { row: rdContact } = await findOrCreateContactByEmailAndCompany(
+        pool,
+        email ?? "",
+        SENTINEL,
+        "BF",
+        { first_name: first, last_name: last, email: email || null, phone: phone || null, company_id: SENTINEL, silo: "BF", role: "applicant" },
+      );
+      await pool.query(
+        `UPDATE contacts
+            SET tags = (SELECT array(SELECT DISTINCT unnest(COALESCE(tags, '{}'::text[]) || ARRAY['credit_readiness']::text[]))),
+                updated_at = now()
+          WHERE id = $1`,
+        [rdContact.id],
+      );
+      await pool.query(`UPDATE applications SET contact_id = $2 WHERE id = $1`, [applicationId, rdContact.id]);
+    }
+  } catch (err) {
+    logError("readiness_contact_link_failed", err as Error);
+  }
 
   const readinessSession = await createOrReuseReadinessSession(stripUndefined({
     companyName,
