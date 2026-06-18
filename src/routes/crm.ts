@@ -1193,4 +1193,27 @@ router.post('/companies/bulk-assign', safeHandler(async (req: any, res: any) => 
 }));
 
 
+// #47/#50 — resolve the contact's most recent application and return its
+// owner/guarantor (personal_net_worth) and advisor (professional_advisors) forms.
+router.get("/contacts/:id/application-forms", safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id);
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: "invalid_id" });
+  const app = await pool.query(
+    `SELECT id FROM applications WHERE contact_id = $1 ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST LIMIT 1`,
+    [id]
+  );
+  const appId = app.rows[0]?.id;
+  if (!appId) return res.json({ owners: null, advisors: null });
+  const { rows } = await pool.query(
+    `SELECT doc_type, data FROM application_form_responses WHERE application_id = $1 AND doc_type IN ('personal_net_worth','professional_advisors')`,
+    [appId]
+  );
+  let owners: any = null, advisors: any = null;
+  for (const r of rows) {
+    if (r.doc_type === "personal_net_worth") owners = r.data;
+    if (r.doc_type === "professional_advisors") advisors = r.data?.advisors ?? null;
+  }
+  return res.json({ owners, advisors });
+}));
+
 export default router;
