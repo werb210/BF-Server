@@ -45,10 +45,18 @@ async function resolveInboundSmsContact(from: string): Promise<string | null> {
 router.post("/webhooks/twilio/sms-inbound", async (req: any, res) => {
   const from = String(req.body?.From ?? "");
   const to = String(req.body?.To ?? "");
-  const body = String(req.body?.Body ?? "").trim();
+  const rawBody = String(req.body?.Body ?? "").trim();
   const messageSid = String(req.body?.MessageSid ?? "");
 
-  if (!from || !body) return res.type("text/xml").send("<Response/>");
+  // BF_SERVER — capture inbound MMS. Twilio posts NumMedia + MediaUrl0..N.
+  // The handler previously read only Body and dropped any message without it,
+  // so client screenshots (caption-less MMS) vanished entirely.
+  const numMedia = Number.parseInt(String(req.body?.NumMedia ?? "0"), 10) || 0;
+  const mediaUrl = numMedia > 0 ? (String(req.body?.MediaUrl0 ?? "").trim() || null) : null;
+  const body = rawBody || (mediaUrl ? "[media]" : "");
+
+  // Drop only truly empty messages: no sender, or no text AND no media.
+  if (!from || (!body && !mediaUrl)) return res.type("text/xml").send("<Response/>");
 
   try {
     const conv = await pool.query<{ id: string }>(
@@ -86,10 +94,10 @@ router.post("/webhooks/twilio/sms-inbound", async (req: any, res) => {
     const contactId = await resolveInboundSmsContact(from);
     await pool.query(
       `INSERT INTO communications_messages
-        (conversation_id, contact_id, channel, type, direction, body, from_number, to_number, silo, twilio_message_sid, created_at)
-       VALUES ($1, $2, 'sms', 'sms', 'inbound', $3, $4, $5, 'BF', $6, NOW())
+        (conversation_id, contact_id, channel, type, direction, body, media_url, from_number, to_number, silo, twilio_message_sid, created_at)
+       VALUES ($1, $2, 'sms', 'sms', 'inbound', $3, $4, $5, $6, 'BF', $7, NOW())
        ON CONFLICT (twilio_message_sid) DO NOTHING`,
-      [convId, contactId, body, from, to || null, messageSid || null],
+      [convId, contactId, body, mediaUrl, from, to || null, messageSid || null],
     );
 
     return res.type("text/xml").send("<Response/>");
