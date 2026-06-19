@@ -11,7 +11,9 @@ export async function readReadinessSnapshot(ctx: OrchestratorContext): Promise<R
   // credit_summary_submitted_at and signed_at, neither of which exist.
   // Real columns: credit_summary_completed_at (stamped by creditSummary.repo)
   // and signnow_app_signed_at (stamped by the SignNow webhook after v141).
-  const app = await pool.query<{ credit_summary_completed_at: string | null; signnow_app_signed_at: string | null; }>(`SELECT credit_summary_completed_at, signnow_app_signed_at FROM applications WHERE id::text = $1`, [id]).catch(() => ({ rows: [] as Array<{ credit_summary_completed_at: string | null; signnow_app_signed_at: string | null }> }));
+  // BF_SERVER_CREDIT_SUMMARY_UNDER_500K_v1 — also load requested_amount so we can waive the
+  // credit-summary requirement for applications under $500,000.
+  const app = await pool.query<{ credit_summary_completed_at: string | null; signnow_app_signed_at: string | null; requested_amount: string | number | null; }>(`SELECT credit_summary_completed_at, signnow_app_signed_at, requested_amount FROM applications WHERE id::text = $1`, [id]).catch(() => ({ rows: [] as Array<{ credit_summary_completed_at: string | null; signnow_app_signed_at: string | null; requested_amount: string | number | null }> }));
   const docsBlocked = Boolean(docCheck.rows[0]?.blocked ?? false);
   const openTasks = Number(taskCheck.rows[0]?.open_count ?? "0");
   const finalizedAt = sel.rows[0]?.finalized_at ?? null;
@@ -40,7 +42,12 @@ export async function readReadinessSnapshot(ctx: OrchestratorContext): Promise<R
      ) AS complete`,
     [id]
   ).catch(() => ({ rows: [{ complete: false }] }));
-  return { allDocsAccepted: !docsBlocked, allTasksComplete: openTasks === 0, lenderSelectionsFinalized: finalizedAt !== null, creditSummarySubmitted: Boolean(appRow?.credit_summary_completed_at), applicationSigned: Boolean(appRow?.signnow_app_signed_at), collateralRequired: Boolean(collateralReqRes.rows[0]?.accord ?? false), collateralComplete: Boolean(collateralDoneRes.rows[0]?.complete ?? false) };
+  // BF_SERVER_CREDIT_SUMMARY_UNDER_500K_v1 — applications with a requested amount strictly
+  // under $500,000 do not require a completed credit summary. Missing/unparseable amounts are
+  // treated as NOT waived (credit summary still required), to stay conservative.
+  const reqAmtNum = appRow?.requested_amount == null ? NaN : Number(appRow.requested_amount);
+  const creditSummaryWaived = Number.isFinite(reqAmtNum) && reqAmtNum < 500000;
+  return { allDocsAccepted: !docsBlocked, allTasksComplete: openTasks === 0, lenderSelectionsFinalized: finalizedAt !== null, creditSummarySubmitted: Boolean(appRow?.credit_summary_completed_at) || creditSummaryWaived, applicationSigned: Boolean(appRow?.signnow_app_signed_at), collateralRequired: Boolean(collateralReqRes.rows[0]?.accord ?? false), collateralComplete: Boolean(collateralDoneRes.rows[0]?.complete ?? false) };
 }
 export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): Promise<{ fired: boolean; reason?: string }> {
   const snap = await readReadinessSnapshot(ctx);
