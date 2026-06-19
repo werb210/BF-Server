@@ -1188,6 +1188,14 @@ router.post(
         await linkContactToApplication(tx, application.id, partner.id, "partner");
       }
 
+      // Set the application's primary contact so downstream reads (conversation
+      // names, CRM People panel, "contact linked" checks) resolve a real person
+      // instead of falling back to the application UUID. Only set when unset.
+      await tx.query(
+        "UPDATE applications SET contact_id = $1 WHERE id::text = ($2)::text AND contact_id IS NULL",
+        [applicant.id, application.id]
+      );
+
       await tx.query(
         "UPDATE applications SET company_id = $1 WHERE id::text = ($2)::text AND (company_id IS NULL OR company_id = $1)",
         [company.id, application.id]
