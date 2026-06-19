@@ -1117,9 +1117,10 @@ export async function uploadDocument(params: {
         applicationId: params.applicationId,
         client,
       });
+      const requiredDocsNow = reqDocsNow.filter((d) => d.is_required);
       const allReceived =
-        reqDocsNow.length > 0 &&
-        reqDocsNow.every((d) => d.status !== "missing" && d.status !== "rejected");
+        requiredDocsNow.length > 0 &&
+        requiredDocsNow.every((d) => d.status !== "missing" && d.status !== "rejected");
       if (allReceived && application.pipeline_state === ApplicationStage.DOCUMENTS_REQUIRED) {
         await updateApplicationPipelineState({
           applicationId: params.applicationId,
@@ -1374,7 +1375,7 @@ export async function acceptDocumentVersion(params: {
     });
     // Option A — advance on RECEIVED (uploaded, non-rejected); acceptance stays a review action.
     const hasPendingDocuments = requiredDocuments.some(
-      (doc) => doc.status === "missing" || doc.status === "rejected"
+      (doc) => doc.is_required && (doc.status === "missing" || doc.status === "rejected")
     );
     if (!hasPendingDocuments && application.pipeline_state === ApplicationStage.DOCUMENTS_REQUIRED) {
       await updateApplicationPipelineState({
