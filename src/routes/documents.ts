@@ -268,6 +268,25 @@ router.post("/upload", requireAuth, upload.single("file"), async (req: Request, 
   try {
     const userId = (req as any)?.user?.id ?? null;
     const r = await persistAndEnqueue({ applicationId, category, file, uploadedBy: userId });
+    // #7 — a received document advances the stage into review (Option A: on received,
+    // not only when every doc is accepted). Non-fatal; never block the upload response.
+    try {
+      const appRes = await pool.query<{ processing_stage: string | null }>(
+        `SELECT processing_stage FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+        [applicationId],
+      );
+      const stage = appRes.rows[0]?.processing_stage ?? null;
+      if (stage === "documents_incomplete") {
+        await setProcessingStage({
+          applicationId,
+          toStage: "documents_complete",
+          reason: "document_received",
+          actorUserId: userId,
+        });
+      }
+    } catch (err) {
+      console.error("[documents] auto-advance on received failed", { applicationId, err: String(err) });
+    }
     return ok(res, {
       id: r.id,
       versionId: r.versionId,

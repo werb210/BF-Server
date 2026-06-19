@@ -19,8 +19,15 @@ router.get("/email/:token.gif", async (req, res) => {
   const token = String(req.params.token ?? "").trim();
   if (token) {
     try {
+      // First-open stamp (back-compat) ...
       await pool.query(
         `UPDATE crm_email_log SET opened_at = now() WHERE pixel_token = $1 AND opened_at IS NULL`,
+        [token],
+      );
+      // ... plus one event row per open (#48 Option B): every open, each timestamped.
+      await pool.query(
+        `INSERT INTO email_open_events (email_log_id, opened_at)
+         SELECT id, now() FROM crm_email_log WHERE pixel_token = $1 LIMIT 1`,
         [token],
       );
     } catch {

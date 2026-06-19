@@ -46,9 +46,15 @@ router.get("/", safeHandler(async (req: any, res: any) => {
         UNION ALL
         -- BF_SERVER_BLOCK_v706_READ_RECEIPTS — read receipts as a separate
         -- "Opened:" entry (reuses the 'email' kind, so no UI change).
-        SELECT 'email' AS kind, ('opened-' || id::text) AS id, opened_at AS ts,
-               ('Opened: ' || subject) AS title, NULL::text AS body, from_address AS extra
-          FROM crm_email_log WHERE ${col} = $1 AND silo = $2 AND opened_at IS NOT NULL
+        SELECT 'email' AS kind, ('opened-' || e.id::text) AS id, e.opened_at AS ts,
+               ('Opened: ' || e.subject ||
+                 CASE WHEN oc.n > 1 THEN ' (' || oc.n || ' opens)' ELSE '' END) AS title,
+               NULL::text AS body, e.from_address AS extra
+          FROM crm_email_log e
+          LEFT JOIN LATERAL (
+            SELECT count(*)::int AS n FROM email_open_events ev WHERE ev.email_log_id = e.id
+          ) oc ON true
+         WHERE e.${col} = $1 AND e.silo = $2 AND e.opened_at IS NOT NULL
         UNION ALL
         SELECT 'meeting' AS kind, id::text, created_at AS ts,
                title, attendee_description AS body, location AS extra
@@ -115,9 +121,15 @@ router.get("/", safeHandler(async (req: any, res: any) => {
         UNION ALL
         -- BF_SERVER_BLOCK_v706_READ_RECEIPTS — read receipts as a separate
         -- "Opened:" entry (reuses the 'email' kind, so no UI change).
-        SELECT 'email' AS kind, ('opened-' || id::text) AS id, opened_at AS ts,
-               ('Opened: ' || subject) AS title, NULL::text AS body, from_address AS extra
-          FROM crm_email_log WHERE ${col} = $1 AND silo = $2 AND opened_at IS NOT NULL
+        SELECT 'email' AS kind, ('opened-' || e.id::text) AS id, e.opened_at AS ts,
+               ('Opened: ' || e.subject ||
+                 CASE WHEN oc.n > 1 THEN ' (' || oc.n || ' opens)' ELSE '' END) AS title,
+               NULL::text AS body, e.from_address AS extra
+          FROM crm_email_log e
+          LEFT JOIN LATERAL (
+            SELECT count(*)::int AS n FROM email_open_events ev WHERE ev.email_log_id = e.id
+          ) oc ON true
+         WHERE e.${col} = $1 AND e.silo = $2 AND e.opened_at IS NOT NULL
         UNION ALL
         SELECT 'meeting' AS kind, id::text, created_at AS ts,
                title, attendee_description AS body, location AS extra

@@ -131,8 +131,17 @@ export async function submitCreditReadiness(req: Request, res: Response) {
         phone: normalizedPhone,
         silo: "BF",
       });
+      // #6 — tag the contact (not just the lead) so readiness leads are filterable in CRM.
+      await pool.query(
+        `UPDATE contacts
+            SET tags = (
+              SELECT ARRAY(SELECT DISTINCT unnest(COALESCE(tags,'{}') || ARRAY['credit_readiness']))
+            )
+          WHERE silo = 'BF' AND lower(email) = lower($1)`,
+        [String(email)],
+      );
     } catch (e) {
-      console.warn("[readiness] createContact failed", e);
+      console.warn("[readiness] createContact/tag failed", e);
     }
 
     // BF_SERVER_BLOCK_v101_READINESS_DRAFT_APPLICATION_v1
