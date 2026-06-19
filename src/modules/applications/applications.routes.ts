@@ -6,6 +6,7 @@ import { isPipelineState } from './pipelineState.js';
 import { transitionPipelineState } from './applications.service.js';
 import { AppError } from '../../middleware/errors.js';
 import { safeHandler } from '../../middleware/safeHandler.js';
+import { computeOutstandingDocs } from '../../routes/clientDocumentsNeeded.js';
 import { getSilo } from '../../middleware/silo.js';
 import { requireAdmin } from '../../middleware/requireAdmin.js';
 // BF_APP_LENDERS_ENDPOINT_v42 — Block 42-A
@@ -181,8 +182,6 @@ router.get('/:id/task-status', safeHandler(async (req: any, res: any) => {
     `SELECT doc_type FROM application_form_responses WHERE application_id::text = ($1)::text AND submitted_at IS NOT NULL`, [id]).catch(() => ({ rows: [] as any[] }));
   const docs = await pool.query(
     `SELECT DISTINCT lower(coalesce(category,'')) AS category FROM documents WHERE application_id::text = ($1)::text AND coalesce(status,'') <> 'rejected'`, [id]).catch(() => ({ rows: [] as any[] }));
-  const req2 = await pool.query(
-    `SELECT lower(coalesce(category,'')) AS category FROM document_requirements WHERE application_id::text = ($1)::text AND required = true AND category IS NOT NULL`, [id]).catch(() => ({ rows: [] as any[] }));
 
   const formKey = (dt: any): string | null => {
     const x = String(dt ?? "").toLowerCase();
@@ -199,11 +198,17 @@ router.get('/:id/task-status', safeHandler(async (req: any, res: any) => {
   for (const r of (forms.rows ?? [])) { const k = formKey((r as any).doc_type); if (k) completed.add(k); }
   const uploaded = new Set<string>((docs.rows ?? []).map((r: any) => String(r.category || "")).filter(Boolean));
   if ([...uploaded].some((c) => /gov|government|photo.?id|identification|\bid\b/.test(c))) completed.add("upload");
-  const required = (req2.rows ?? []).map((r: any) => String(r.category || "")).filter(Boolean);
-  const normUploaded = new Set<string>([...uploaded].map((c) => c.trim().toLowerCase()));
-  if (required.length > 0 && required.every((c) => normUploaded.has(c.trim().toLowerCase()))) {
-    completed.add("upload_docs");
-  }
+  // BF_SERVER_TASK_STATUS_DOCS_PARITY_v1 — reuse the client mini-portal's outstanding-docs
+  // computation so staff task completion can never disagree with what the client is told.
+  // The old check read only document_requirements (often empty at submit, with no
+  // productRequirements / matched-product fallback), so upload_docs never completed even
+  // when the client was already "all caught up".
+  try {
+    const outstanding = await computeOutstandingDocs(id);
+    if (outstanding.stillNeeded.length === 0 && outstanding.rejected.length === 0) {
+      completed.add("upload_docs");
+    }
+  } catch { /* on error, leave upload_docs incomplete */ }
 
   const LABELS: Record<string, string> = {
     networth: "Personal Net Worth", flinks: "Connect Bank (View-Only)", cra: "CRA Authorization",
