@@ -70,7 +70,7 @@ function productRequirementItems(metadata: any): any[] {
 // BF_SERVER_DOCS_PARITY_v1 — shared outstanding-docs computation, reused by both the
 // client mini-portal endpoint below AND the staff task-status endpoint, so the two can
 // never disagree about whether the applicant still owes documents.
-export async function computeOutstandingDocs(
+async function computeOutstandingDocsRaw(
   applicationId: string
 ): Promise<{ stillNeeded: NeededDoc[]; rejected: NeededDoc[] }> {
   // Uploaded documents by category + status. documents uses `category`
@@ -164,6 +164,35 @@ export async function computeOutstandingDocs(
     }));
 
   return { stillNeeded, rejected };
+}
+
+// BF_SERVER_DOC_WAIVERS_v1 — per-application admin waivers. A waived requirement is removed
+// from the outstanding set everywhere (client upload list, staff block, Send/SignNow gate).
+export async function getWaivedDocTypes(applicationId: string): Promise<Set<string>> {
+  const res = await pool.query<{ document_type: string }>(
+    `SELECT document_type FROM application_document_waivers WHERE application_id::text = ($1)::text`,
+    [applicationId]
+  ).catch(() => ({ rows: [] as Array<{ document_type: string }> }));
+  return new Set(res.rows.map((r: { document_type: string }) => String(r.document_type ?? "").trim().toLowerCase()));
+}
+
+export async function computeOutstandingDocs(
+  applicationId: string
+): Promise<{ stillNeeded: NeededDoc[]; rejected: NeededDoc[] }> {
+  const raw = await computeOutstandingDocsRaw(applicationId);
+  const waived = await getWaivedDocTypes(applicationId);
+  return {
+    stillNeeded: raw.stillNeeded.filter((d) => !waived.has(String(d.document_type ?? "").trim().toLowerCase())),
+    rejected: raw.rejected,
+  };
+}
+
+export async function getRequestItemsForApp(
+  applicationId: string
+): Promise<{ required: NeededDoc[]; waived: string[] }> {
+  const raw = await computeOutstandingDocsRaw(applicationId);
+  const waived = await getWaivedDocTypes(applicationId);
+  return { required: raw.stillNeeded, waived: Array.from(waived) };
 }
 
 router.get("/needed", async (req: Request, res: Response) => {
