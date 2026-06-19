@@ -1721,7 +1721,34 @@ router.post(
       }
     }
 
-    res.status(201).json({ submissions });
+    // BF_SERVER_LENDER_SUBMIT_TRIGGER_v1 — wire the staff "Send" to actually start the
+    // submission chain: resolve selected products -> lenders, finalize the lender selection,
+    // then run the orchestrator so SignNow fires (Stage A) and, post-signing, the package
+    // dispatches + the stage advances. Previously this endpoint only recorded a row.
+    let orchestrator: any = null;
+    try {
+      const lenderRows = await runQuery<{ lender_id: string }>(
+        `SELECT DISTINCT lender_id FROM lender_products WHERE id::text = ANY($1::text[])`,
+        [selectedLenders.map((x) => String(x))]
+      );
+      let position = 0;
+      for (const r of lenderRows.rows) {
+        const lid = String(r.lender_id || "");
+        if (!lid) continue;
+        await runQuery(
+          `INSERT INTO application_lender_selections (id, application_id, lender_id, position, finalized_at, created_at)
+             VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NOW())
+             ON CONFLICT (application_id, lender_id) DO UPDATE
+               SET position = EXCLUDED.position, finalized_at = NOW()`,
+          [applicationId, lid, position++]
+        ).catch(() => {});
+      }
+      orchestrator = await progressSubmission({ pool, applicationId });
+    } catch (e) {
+      orchestrator = { error: (e as any)?.message ?? "orchestrator_failed" };
+    }
+
+    res.status(201).json({ submissions, orchestrator });
   })
 );
 
