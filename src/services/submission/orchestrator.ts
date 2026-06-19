@@ -22,11 +22,18 @@ export async function readReadinessSnapshot(ctx: OrchestratorContext): Promise<R
   // Facility section. collateralRequired = an Accord lender is in the finalized
   // selection; collateralComplete = the collateral_facility form has at least one
   // included class with a value.
+  // BF_SERVER_COLLATERAL_LOC_ONLY_v1 — Collateral & Facility is an Accord LOC requirement ONLY.
+  // Require it iff a SELECTED product is both an Accord-lender product AND category = 'LOC'.
+  // lender_submissions.lender_id holds the selected lender_product_id (see portal Send).
   const collateralReqRes = await pool.query<{ accord: boolean }>(
     `SELECT EXISTS (
-       SELECT 1 FROM application_lender_selections s
-       JOIN lenders l ON l.id::text = s.lender_id::text
-       WHERE s.application_id::text = $1 AND l.name ILIKE '%accord%'
+       SELECT 1
+         FROM lender_submissions ls
+         JOIN lender_products lp ON lp.id::text = ls.lender_id::text
+         JOIN lenders l ON l.id::text = lp.lender_id::text
+        WHERE ls.application_id::text = $1
+          AND lp.category = 'LOC'
+          AND l.name ILIKE '%accord%'
      ) AS accord`,
     [id]
   ).catch(() => ({ rows: [{ accord: false }] }));
