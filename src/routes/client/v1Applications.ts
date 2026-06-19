@@ -1320,13 +1320,20 @@ router.get(
     for (const row of docRows) {
       const key = row.document_type || (row as any).category;
       if (!key) continue;
-      // Last-write-wins per docType; the wizard treats one row per type.
+      // Top-level fields are last-write-wins (status/gate compat); files[] keeps
+      // EVERY uploaded document of this type so the wizard lists all of them
+      // (e.g. 6 bank statements) on reload, not just the most recent.
+      const prevFiles = (documents[key]?.files as Array<any> | undefined) ?? [];
       documents[key] = {
         id: row.id,
         name: row.filename ?? null,
         status: row.status,
         rejectionReason: (row as any).rejection_reason ?? null,
         uploadedAt: row.created_at,
+        files: [
+          ...prevFiles,
+          { id: row.id, name: row.filename ?? null, uploadedAt: row.created_at },
+        ],
       };
     }
 
