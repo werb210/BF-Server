@@ -1135,6 +1135,25 @@ export async function uploadDocument(params: {
           triggeredBy: params.actorUserId,
           client,
         });
+        // Post a confirmation to the client thread so the conversation reflects
+        // that documents are complete (instead of ending on the stale "please
+        // upload" prompt). Fire within the same transaction; non-fatal on error.
+        try {
+          await client.query(
+            `INSERT INTO communications_messages
+               (id, type, direction, status, application_id, contact_id, silo, body, staff_name, created_at)
+             VALUES (gen_random_uuid(), 'message', 'outbound', 'sent', $1,
+               (SELECT contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1),
+               COALESCE((SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1), 'BF'),
+               $2, 'Boreal Financial', now())`,
+            [params.applicationId, "All required documents received \u2014 thank you. Our team is now reviewing your application."]
+          );
+        } catch (err) {
+          console.warn("docs_received_confirmation_message_failed", {
+            applicationId: params.applicationId,
+            message: err instanceof Error ? err.message : "unknown_error",
+          });
+        }
       }
     }
 
