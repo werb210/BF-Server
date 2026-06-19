@@ -11,6 +11,22 @@ import { logError } from "../observability/logger.js";
 
 type Queryable = Pick<PoolClient, "query">;
 
+// When a lender product is created or edited, the cached lender matches on
+// every still-in-progress application become out of date. Flag them stale so
+// the Lenders tab shows the Recalculate prompt. Applications already sent to a
+// lender (Off to Lender and beyond) are left untouched. Fire-and-forget.
+async function markPreLenderMatchesStale(): Promise<void> {
+  try {
+    await runQuery(
+      `update applications set lender_matches_stale = true
+         where pipeline_state in ('Received','In Review','Documents Required','Additional Steps Required')
+           and coalesce(lender_matches_stale, false) = false`
+    );
+  } catch (err) {
+    logError('lender_product_mark_matches_stale_failed', { error: err instanceof Error ? err.message : 'unknown_error' });
+  }
+}
+
 const LENDER_PRODUCTS_REPO = "src/repositories/lenderProducts.repo.ts";
 const LENDER_PRODUCTS_TABLE = "lender_products";
 
@@ -244,6 +260,7 @@ export async function createLenderProduct(params: {
   if (!created) {
     throw new AppError("db_error", "Failed to create lender product.", 500);
   }
+  void markPreLenderMatchesStale();
   return created;
 }
 
@@ -565,5 +582,6 @@ export async function updateLenderProduct(params: {
      returning ${selectColumns}`,
     values
   );
+  void markPreLenderMatchesStale();
   return res.rows[0] ?? null;
 }
