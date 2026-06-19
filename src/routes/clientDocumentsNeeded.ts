@@ -67,103 +67,112 @@ function productRequirementItems(metadata: any): any[] {
   return [];
 }
 
+// BF_SERVER_DOCS_PARITY_v1 — shared outstanding-docs computation, reused by both the
+// client mini-portal endpoint below AND the staff task-status endpoint, so the two can
+// never disagree about whether the applicant still owes documents.
+export async function computeOutstandingDocs(
+  applicationId: string
+): Promise<{ stillNeeded: NeededDoc[]; rejected: NeededDoc[] }> {
+  // Uploaded documents by category + status. documents uses `category`
+  // (not document_type). A category counts as satisfied once it has any
+  // non-rejected upload (uploaded / pending / accepted) — the client has
+  // done their part and shouldn't be asked again. Rejected docs go in their
+  // own bucket so the client knows to re-upload.
+  const uploadedRes = await pool.query<{ category: string | null; status: string | null }>(
+    `SELECT category, status FROM documents WHERE application_id::text = ($1)::text`,
+    [applicationId]
+  ).catch(() => ({ rows: [] as Array<{ category: string | null; status: string | null }> }));
+  const uploaded: UploadedDocRow[] = uploadedRes.rows;
+  const satisfied: Set<string> = new Set(
+    uploaded
+      .filter((r: UploadedDocRow) => r.category && r.status !== "rejected")
+      .map((r: UploadedDocRow) => r.category as string)
+  );
+  const rejectedRows = uploaded.filter(
+    (r: UploadedDocRow) => r.status === "rejected" && r.category
+  );
+
+  // Required = the application's own document_requirements (required = true).
+  const reqRes = await pool.query<{ category: string }>(
+    `SELECT DISTINCT category FROM document_requirements
+      WHERE application_id::text = ($1)::text AND required = true AND category IS NOT NULL`,
+    [applicationId]
+  ).catch(() => ({ rows: [] as Array<{ category: string }> }));
+
+  const stillNeeded: NeededDoc[] = reqRes.rows
+    .filter((r: { category: string }) => r.category && !satisfied.has(r.category))
+    .map((r: { category: string }) => ({
+      document_type: r.category,
+      label: humanize(r.category),
+    }));
+
+  // BF_SERVER_BLOCK_v722b_PRODUCTREQS_FALLBACK_v1 — document_requirements is not
+  // always populated at submit, which left the mini-portal DocPicker empty and
+  // blocked post-submit uploads. Primary fallback:
+  // metadata.formData.productRequirements.aggregated,
+  // the same source the CMP messenger seeds upload steps from. This surfaces
+  // Government ID / void cheque / Stage-2 uploads even on received-but-unmatched
+  // apps (no lender_product_id). CMP forms and already-uploaded categories are excluded.
+  if (stillNeeded.length === 0) {
+    const metaRes = await pool.query<{ metadata: any }>(
+      `SELECT metadata FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+      [applicationId]
+    ).catch(() => ({ rows: [] as Array<{ metadata: any }> }));
+    const items = productRequirementItems(metaRes.rows[0]?.metadata);
+    const seen = new Set<string>();
+    for (const item of items) appendRequiredDoc(item, seen, satisfied, stillNeeded);
+  }
+
+  // BF_SERVER_BLOCK_v722_DOCS_NEEDED_FALLBACK_v1b — secondary fallback: the matched
+  // product's required_documents (covers apps with a lender_product_id but no
+  // productRequirements snapshot). CMP forms and already-uploaded categories are excluded.
+  if (stillNeeded.length === 0) {
+    const prodRes = await pool.query<{ required_documents: any }>(
+      `SELECT lp.required_documents
+         FROM applications a
+         JOIN lender_products lp ON lp.id::text = a.lender_product_id::text
+        WHERE a.id::text = ($1)::text
+        LIMIT 1`,
+      [applicationId]
+    ).catch(() => ({ rows: [] as Array<{ required_documents: any }> }));
+    const items = Array.isArray(prodRes.rows[0]?.required_documents)
+      ? prodRes.rows[0]?.required_documents
+      : [];
+    const seen = new Set<string>();
+    for (const item of items) appendRequiredDoc(item, seen, satisfied, stillNeeded);
+  }
+
+  // Dedupe by normalized category and drop any category the client has since
+  // re-uploaded (now satisfied). Fixes the "same doc listed ~10x" spam and the
+  // casing mismatch that listed one doc in both rejected and still-needed.
+  const satisfiedNorm = new Set(
+    Array.from(satisfied).map((c) => c.trim().toLowerCase())
+  );
+  const seenRejected = new Set<string>();
+  const rejected = rejectedRows
+    .filter((r: UploadedDocRow) => {
+      const cat = (r.category as string).trim();
+      const key = cat.toLowerCase();
+      if (satisfiedNorm.has(key)) return false;
+      if (seenRejected.has(key)) return false;
+      seenRejected.add(key);
+      return true;
+    })
+    .map((r: UploadedDocRow) => ({
+      document_type: r.category as string,
+      label: humanize(r.category as string),
+    }));
+
+  return { stillNeeded, rejected };
+}
+
 router.get("/needed", async (req: Request, res: Response) => {
   const applicationId =
     typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : "";
   if (!applicationId) return res.status(400).json({ error: "applicationId is required" });
-
   try {
-    // Uploaded documents by category + status. documents uses `category`
-    // (not document_type). A category counts as satisfied once it has any
-    // non-rejected upload (uploaded / pending / accepted) — the client has
-    // done their part and shouldn't be asked again. Rejected docs go in their
-    // own bucket so the client knows to re-upload.
-    const uploadedRes = await pool.query<{ category: string | null; status: string | null }>(
-      `SELECT category, status FROM documents WHERE application_id::text = ($1)::text`,
-      [applicationId]
-    ).catch(() => ({ rows: [] as Array<{ category: string | null; status: string | null }> }));
-    const uploaded: UploadedDocRow[] = uploadedRes.rows;
-    const satisfied: Set<string> = new Set(
-      uploaded
-        .filter((r: UploadedDocRow) => r.category && r.status !== "rejected")
-        .map((r: UploadedDocRow) => r.category as string)
-    );
-    const rejectedRows = uploaded.filter(
-      (r: UploadedDocRow) => r.status === "rejected" && r.category
-    );
-
-    // Required = the application's own document_requirements (required = true).
-    const reqRes = await pool.query<{ category: string }>(
-      `SELECT DISTINCT category FROM document_requirements
-        WHERE application_id::text = ($1)::text AND required = true AND category IS NOT NULL`,
-      [applicationId]
-    ).catch(() => ({ rows: [] as Array<{ category: string }> }));
-
-    const stillNeeded: NeededDoc[] = reqRes.rows
-      .filter((r: { category: string }) => r.category && !satisfied.has(r.category))
-      .map((r: { category: string }) => ({
-        document_type: r.category,
-        label: humanize(r.category),
-      }));
-
-    // BF_SERVER_BLOCK_v722b_PRODUCTREQS_FALLBACK_v1 — document_requirements is not
-    // always populated at submit, which left the mini-portal DocPicker empty and
-    // blocked post-submit uploads. Primary fallback:
-    // metadata.formData.productRequirements.aggregated,
-    // the same source the CMP messenger seeds upload steps from. This surfaces
-    // Government ID / void cheque / Stage-2 uploads even on received-but-unmatched
-    // apps (no lender_product_id). CMP forms and already-uploaded categories are excluded.
-    if (stillNeeded.length === 0) {
-      const metaRes = await pool.query<{ metadata: any }>(
-        `SELECT metadata FROM applications WHERE id::text = ($1)::text LIMIT 1`,
-        [applicationId]
-      ).catch(() => ({ rows: [] as Array<{ metadata: any }> }));
-      const items = productRequirementItems(metaRes.rows[0]?.metadata);
-      const seen = new Set<string>();
-      for (const item of items) appendRequiredDoc(item, seen, satisfied, stillNeeded);
-    }
-
-    // BF_SERVER_BLOCK_v722_DOCS_NEEDED_FALLBACK_v1b — secondary fallback: the matched
-    // product's required_documents (covers apps with a lender_product_id but no
-    // productRequirements snapshot). CMP forms and already-uploaded categories are excluded.
-    if (stillNeeded.length === 0) {
-      const prodRes = await pool.query<{ required_documents: any }>(
-        `SELECT lp.required_documents
-           FROM applications a
-           JOIN lender_products lp ON lp.id::text = a.lender_product_id::text
-          WHERE a.id::text = ($1)::text
-          LIMIT 1`,
-        [applicationId]
-      ).catch(() => ({ rows: [] as Array<{ required_documents: any }> }));
-      const items = Array.isArray(prodRes.rows[0]?.required_documents)
-        ? prodRes.rows[0]?.required_documents
-        : [];
-      const seen = new Set<string>();
-      for (const item of items) appendRequiredDoc(item, seen, satisfied, stillNeeded);
-    }
-
-    // Dedupe by normalized category and drop any category the client has since
-    // re-uploaded (now satisfied). Fixes the "same doc listed ~10x" spam and the
-    // casing mismatch that listed one doc in both rejected and still-needed.
-    const satisfiedNorm = new Set(
-      Array.from(satisfied).map((c) => c.trim().toLowerCase())
-    );
-    const seenRejected = new Set<string>();
-    const rejected = rejectedRows
-      .filter((r: UploadedDocRow) => {
-        const cat = (r.category as string).trim();
-        const key = cat.toLowerCase();
-        if (satisfiedNorm.has(key)) return false;
-        if (seenRejected.has(key)) return false;
-        seenRejected.add(key);
-        return true;
-      })
-      .map((r: UploadedDocRow) => ({
-        document_type: r.category as string,
-        label: humanize(r.category as string),
-      }));
-
-    return res.status(200).json({ stillNeeded, rejected });
+    const result = await computeOutstandingDocs(applicationId);
+    return res.status(200).json(result);
   } catch (err: any) {
     return res.status(500).json({ error: err?.message ?? "needed_docs_failed" });
   }
