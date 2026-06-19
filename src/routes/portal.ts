@@ -19,6 +19,8 @@ import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 import { AppError } from "../middleware/errors.js";
 import { getSilo } from "../middleware/silo.js";
+import { requireAdmin } from "../middleware/requireAdmin.js";
+import { getRequestItemsForApp } from "./clientDocumentsNeeded.js";
 import { isPipelineState } from "../modules/applications/pipelineState.js";
 import { transitionPipelineState, openApplicationForStaff } from "../modules/applications/applications.service.js";
 import { recordAuditEvent } from "../modules/audit/audit.service.js";
@@ -47,6 +49,34 @@ import { computeAndCacheLenderMatches, markLenderMatchesStale, getOutstandingReq
 // BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const router = Router();
+
+// BF_SERVER_DOC_WAIVERS_ROUTES_v1 — Request Items checklist (dynamic Step-5 required set) +
+// admin-only per-application document waivers.
+router.get("/applications/:id/request-items", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req: any, res: any) => {
+  const appId = String(req.params.id ?? "").trim();
+  if (!appId) throw new AppError("validation_error", "application id is required.", 400);
+  const data = await getRequestItemsForApp(appId);
+  res.json(data);
+}));
+router.post("/applications/:id/document-waivers", requireAuth, requireAdmin, safeHandler(async (req: any, res: any) => {
+  const appId = String(req.params.id ?? "").trim();
+  const documentType = String(req.body?.document_type ?? req.body?.documentType ?? "").trim();
+  if (!appId || !documentType) throw new AppError("validation_error", "application id and document_type are required.", 400);
+  await runQuery(
+    `INSERT INTO application_document_waivers (id, application_id, document_type, waived_by, created_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, now())
+       ON CONFLICT (application_id, document_type) DO UPDATE SET waived_by = EXCLUDED.waived_by`,
+    [appId, documentType, req.user?.userId ?? null]
+  );
+  res.status(201).json({ ok: true, application_id: appId, document_type: documentType });
+}));
+router.delete("/applications/:id/document-waivers/:documentType", requireAuth, requireAdmin, safeHandler(async (req: any, res: any) => {
+  const appId = String(req.params.id ?? "").trim();
+  const documentType = decodeURIComponent(String(req.params.documentType ?? "")).trim();
+  if (!appId || !documentType) throw new AppError("validation_error", "application id and document_type are required.", 400);
+  await runQuery(`DELETE FROM application_document_waivers WHERE application_id::text = ($1)::text AND document_type = $2`, [appId, documentType]);
+  res.json({ ok: true });
+}));
 const portalLimiter = portalRateLimit();
 
 function ensureReady(res: Response): boolean {
