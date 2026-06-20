@@ -119,7 +119,15 @@ router.post("/login/verify", async (req: any, res) => {
         transports: (cred.transports as any) ?? undefined,
       },
     });
-  } catch (err: any) { return res.status(401).json({ error: "verification_failed", detail: err?.message }); }
+  } catch (err: any) {
+    // BF_SERVER_WEBAUTHN_VERIFY_DIAG_v1 — verifyAuthenticationResponse threw for a credential
+    // that was found and a challenge that was valid, so the cause is environmental (origin not
+    // in WEBAUTHN_ORIGINS, RP_ID mismatch vs where the passkey was registered, or a stale
+    // public key from an older lib version). Log the exact reason + expected RP/origin so the
+    // failure is diagnosable from the server logs instead of a generic 401.
+    console.warn("[webauthn] login/verify failed", { detail: err?.message, credentialId: body.id, expectedRPID: RP_ID, expectedOrigin: ORIGINS });
+    return res.status(401).json({ error: "verification_failed", detail: err?.message });
+  }
   if (!verification.verified) return res.status(401).json({ error: "not_verified" });
   await pool.query(`UPDATE webauthn_credentials SET counter = $1, last_used_at = now() WHERE credential_id = $2`,
     [verification.authenticationInfo.newCounter ?? 0, cred.credential_id]);
