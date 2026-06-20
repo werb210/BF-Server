@@ -210,6 +210,20 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
   const values: unknown[] = [silo];
   const where: string[] = ["c.silo = $1"];
 
+  // BF_SERVER_CONTACTS_COMPANY_FILTER_v1 — the portal company page requests a single company's
+  // people via ?companyId=<uuid>. Without this filter the endpoint ignored companyId and returned
+  // every contact in the silo, so unrelated lenders showed under the company's "Other" people.
+  const companyId = (typeof req.query.companyId === "string" ? req.query.companyId
+    : typeof req.query.company_id === "string" ? req.query.company_id : "").trim();
+  if (companyId) {
+    if (!hasCompanyId || !/^[0-9a-f-]{36}$/i.test(companyId)) {
+      where.push("1 = 0");
+    } else {
+      values.push(companyId);
+      where.push(`c.company_id = $${values.length}`);
+    }
+  }
+
   if (ownerId) {
     if (!hasOwnerId) {
       where.push("1 = 0");
