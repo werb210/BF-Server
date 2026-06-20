@@ -71,7 +71,7 @@ router.post("/register/verify", requireAuth, async (req: any, res) => {
   if (!ch) return res.status(400).json({ error: "no_pending_challenge" });
   let verification: any;
   try {
-    verification = await verifyRegistrationResponse({ response: req.body, expectedChallenge: ch.challenge, expectedOrigin: ORIGINS, expectedRPID: RP_ID });
+    verification = await verifyRegistrationResponse({ response: req.body, expectedChallenge: ch.challenge, expectedOrigin: ORIGINS, expectedRPID: RP_ID, requireUserVerification: false }); // BF_SERVER_WEBAUTHN_UV_PREFERRED_v1
   } catch (err: any) { return res.status(400).json({ error: "verification_failed", detail: err?.message }); }
   if (!verification.verified || !verification.registrationInfo) return res.status(400).json({ error: "not_verified" });
   const cred = verification.registrationInfo.credential;
@@ -112,6 +112,7 @@ router.post("/login/verify", async (req: any, res) => {
   try {
     verification = await verifyAuthenticationResponse({
       response: body, expectedChallenge: issuedChallenge, expectedOrigin: ORIGINS, expectedRPID: RP_ID,
+      requireUserVerification: false, // BF_SERVER_WEBAUTHN_UV_PREFERRED_v1 — options use "preferred"; verify must not force UV
       credential: {
         id: cred.credential_id,
         publicKey: new Uint8Array(Buffer.from(cred.public_key, "base64url")),

@@ -33,20 +33,20 @@ function docTypeFromRequirement(raw: any): string {
     : "";
 }
 
-function appendRequiredDoc(
+// BF_SERVER_REQUEST_ITEMS_FULL_SET_v1 — keeps a document regardless of whether
+// it has been uploaded yet, so the full required set can be built.
+function appendRequiredDocAll(
   raw: any,
   seen: Set<string>,
-  satisfied: Set<string>,
-  stillNeeded: NeededDoc[]
+  out: NeededDoc[]
 ): void {
   const docType = docTypeFromRequirement(raw);
   if (!docType) return;
   if (raw && typeof raw === "object" && raw.required === false) return;
   if (CMP_FORM.test(docType)) return;
-  if (satisfied.has(docType)) return;
   if (seen.has(docType)) return;
   seen.add(docType);
-  stillNeeded.push({ document_type: docType, label: docType });
+  out.push({ document_type: docType, label: docType });
 }
 
 function productRequirementItems(metadata: any): any[] {
@@ -72,12 +72,9 @@ function productRequirementItems(metadata: any): any[] {
 // never disagree about whether the applicant still owes documents.
 async function computeOutstandingDocsRaw(
   applicationId: string
-): Promise<{ stillNeeded: NeededDoc[]; rejected: NeededDoc[] }> {
-  // Uploaded documents by category + status. documents uses `category`
-  // (not document_type). A category counts as satisfied once it has any
-  // non-rejected upload (uploaded / pending / accepted) — the client has
-  // done their part and shouldn't be asked again. Rejected docs go in their
-  // own bucket so the client knows to re-upload.
+): Promise<{ stillNeeded: NeededDoc[]; rejected: NeededDoc[]; required: NeededDoc[] }> {
+  // Uploaded documents by category + status. A category counts as satisfied
+  // once it has any non-rejected upload. Rejected docs go in their own bucket.
   const uploadedRes = await pool.query<{ category: string | null; status: string | null }>(
     `SELECT category, status FROM documents WHERE application_id::text = ($1)::text`,
     [applicationId]
@@ -92,41 +89,39 @@ async function computeOutstandingDocsRaw(
     (r: UploadedDocRow) => r.status === "rejected" && r.category
   );
 
-  // Required = the application's own document_requirements (required = true).
+  // BF_SERVER_REQUEST_ITEMS_FULL_SET_v1 — build the FULL required set for this deal
+  // (every required document, uploaded or not). This is what the staff Request Items
+  // checkboxes reflect, so they match the Application tab. stillNeeded (the client
+  // mini-portal list) is then this set minus already-satisfied uploads. Fallbacks now
+  // fire when the PRIMARY required set is empty (not when the outstanding set is empty).
+  const required: NeededDoc[] = [];
+  const seen = new Set<string>();
+
+  // Primary: the application's own document_requirements (required = true).
   const reqRes = await pool.query<{ category: string }>(
     `SELECT DISTINCT category FROM document_requirements
       WHERE application_id::text = ($1)::text AND required = true AND category IS NOT NULL`,
     [applicationId]
   ).catch(() => ({ rows: [] as Array<{ category: string }> }));
+  for (const r of reqRes.rows) {
+    if (r.category && !seen.has(r.category)) {
+      seen.add(r.category);
+      required.push({ document_type: r.category, label: humanize(r.category) });
+    }
+  }
 
-  const stillNeeded: NeededDoc[] = reqRes.rows
-    .filter((r: { category: string }) => r.category && !satisfied.has(r.category))
-    .map((r: { category: string }) => ({
-      document_type: r.category,
-      label: humanize(r.category),
-    }));
-
-  // BF_SERVER_BLOCK_v722b_PRODUCTREQS_FALLBACK_v1 — document_requirements is not
-  // always populated at submit, which left the mini-portal DocPicker empty and
-  // blocked post-submit uploads. Primary fallback:
-  // metadata.formData.productRequirements.aggregated,
-  // the same source the CMP messenger seeds upload steps from. This surfaces
-  // Government ID / void cheque / Stage-2 uploads even on received-but-unmatched
-  // apps (no lender_product_id). CMP forms and already-uploaded categories are excluded.
-  if (stillNeeded.length === 0) {
+  // Fallback 1: wizard-stored product requirements (metadata productRequirements.aggregated).
+  if (required.length === 0) {
     const metaRes = await pool.query<{ metadata: any }>(
       `SELECT metadata FROM applications WHERE id::text = ($1)::text LIMIT 1`,
       [applicationId]
     ).catch(() => ({ rows: [] as Array<{ metadata: any }> }));
     const items = productRequirementItems(metaRes.rows[0]?.metadata);
-    const seen = new Set<string>();
-    for (const item of items) appendRequiredDoc(item, seen, satisfied, stillNeeded);
+    for (const item of items) appendRequiredDocAll(item, seen, required);
   }
 
-  // BF_SERVER_BLOCK_v722_DOCS_NEEDED_FALLBACK_v1b — secondary fallback: the matched
-  // product's required_documents (covers apps with a lender_product_id but no
-  // productRequirements snapshot). CMP forms and already-uploaded categories are excluded.
-  if (stillNeeded.length === 0) {
+  // Fallback 2: the matched product's required_documents.
+  if (required.length === 0) {
     const prodRes = await pool.query<{ required_documents: any }>(
       `SELECT lp.required_documents
          FROM applications a
@@ -138,16 +133,18 @@ async function computeOutstandingDocsRaw(
     const items = Array.isArray(prodRes.rows[0]?.required_documents)
       ? prodRes.rows[0]?.required_documents
       : [];
-    const seen = new Set<string>();
-    for (const item of items) appendRequiredDoc(item, seen, satisfied, stillNeeded);
+    for (const item of items) appendRequiredDocAll(item, seen, required);
   }
 
-  // Dedupe by normalized category and drop any category the client has since
-  // re-uploaded (now satisfied). Fixes the "same doc listed ~10x" spam and the
-  // casing mismatch that listed one doc in both rejected and still-needed.
+  // stillNeeded = full required set minus categories already uploaded (non-rejected).
   const satisfiedNorm = new Set(
     Array.from(satisfied).map((c) => c.trim().toLowerCase())
   );
+  const stillNeeded = required.filter(
+    (d) => !satisfiedNorm.has(d.document_type.trim().toLowerCase())
+  );
+
+  // Rejected docs (client must re-upload), deduped and not already re-satisfied.
   const seenRejected = new Set<string>();
   const rejected = rejectedRows
     .filter((r: UploadedDocRow) => {
@@ -163,7 +160,7 @@ async function computeOutstandingDocsRaw(
       label: humanize(r.category as string),
     }));
 
-  return { stillNeeded, rejected };
+  return { stillNeeded, rejected, required };
 }
 
 // BF_SERVER_DOC_WAIVERS_v1 — per-application admin waivers. A waived requirement is removed
@@ -192,7 +189,7 @@ export async function getRequestItemsForApp(
 ): Promise<{ required: NeededDoc[]; waived: string[] }> {
   const raw = await computeOutstandingDocsRaw(applicationId);
   const waived = await getWaivedDocTypes(applicationId);
-  return { required: raw.stillNeeded, waived: Array.from(waived) };
+  return { required: raw.required, waived: Array.from(waived) };
 }
 
 router.get("/needed", async (req: Request, res: Response) => {
