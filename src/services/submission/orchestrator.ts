@@ -79,7 +79,28 @@ export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): 
     .catch(() => ({ rows: [] as Array<{ id: string }> }));
   if (!claim.rows.length) return { fired: false, reason: "already_started" };
   try { const pth = "../notifications/notifyAdminsForCreditSummary.js"; const mod = await import(pth).catch(() => null as any); if (mod && typeof (mod as any).notifyAdminsForCreditSummary === "function") await (mod as any).notifyAdminsForCreditSummary(ctx); else console.log(`[orchestrator] would notify admins for app=${ctx.applicationId}`);} catch (e) { console.warn("[orchestrator] notify admins failed", e); }
-  try { const pth = "../signnow/sendApplicationForSignature.js"; const mod = await import(pth).catch(() => null as any); if (mod && typeof (mod as any).sendApplicationForSignature === "function") await (mod as any).sendApplicationForSignature(ctx); else console.log(`[orchestrator] would fire SignNow for app=${ctx.applicationId}`);} catch (e) { console.warn("[orchestrator] signnow fire failed", e); }
+  // BF_SERVER_SIGNNOW_GROUP_FIRE_v1 — fire the embedded document-GROUP signing path
+  // (fieldextract signature fields; Boreal application + Accord form; Owner 1 / Owner 2 roles;
+  // signnow_document_id = group id, which the webhook matches on group-signed events) in REAL
+  // mode. The legacy single-document path produced a field-less document and is kept only for
+  // stub / unconfigured environments (its stub auto-sign keeps the test pipeline moving).
+  try {
+    const hasKey = (process.env.SIGNNOW_API_KEY ?? "").trim().length > 0;
+    const stub = ["1", "true", "yes", "on"].includes((process.env.SIGNNOW_STUB_MODE ?? "").trim().toLowerCase());
+    if (hasKey && !stub) {
+      const pthG = "../signnow/embeddedSigningSession.js";
+      const mod = await import(pthG).catch(() => null as any);
+      if (mod && typeof (mod as any).getOrCreateEmbeddedSigningSession === "function") {
+        const r = await (mod as any).getOrCreateEmbeddedSigningSession(ctx.applicationId);
+        if (r && r.status === "error") console.warn(`[orchestrator] signnow group fire error app=${ctx.applicationId}: ${r.reason}`);
+      } else { console.log(`[orchestrator] would fire SignNow group for app=${ctx.applicationId}`); }
+    } else {
+      const pthL = "../signnow/sendApplicationForSignature.js";
+      const mod = await import(pthL).catch(() => null as any);
+      if (mod && typeof (mod as any).sendApplicationForSignature === "function") await (mod as any).sendApplicationForSignature(ctx);
+      else console.log(`[orchestrator] would fire SignNow (stub) for app=${ctx.applicationId}`);
+    }
+  } catch (e) { console.warn("[orchestrator] signnow fire failed", e); }
   return { fired: true };
 }
 export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promise<{ fired: boolean; reason?: string; sentTo?: string[] }> {

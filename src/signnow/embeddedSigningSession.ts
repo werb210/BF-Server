@@ -4,6 +4,7 @@ import { dbQuery } from "../db.js";
 import { loadApplicationForPdf } from "./sendApplicationForSignature.js";
 import { buildApplicationPdf } from "./pdfBuilder.js";
 import { buildAccordPdf } from "./accordPdfBuilder.js";
+import { uploadSignedApplicationPdf } from "./blobStorage.js";
 import * as signnow from "./signnowClient.js";
 
 const ROLE_OWNER1 = "Owner 1";
@@ -56,6 +57,12 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
 
     const docIds: string[] = [];
     const borealPdf = await buildApplicationPdf(inputs);
+    // BF_SERVER_SIGNNOW_GROUP_BLOB_v1 — persist the formatted application PDF to blob so the
+    // lender package keeps the real PDF (loadSignedApplicationPdf reads signed_application_blob_name;
+    // without this it falls back to a plain-text field dump).
+    let blobName: string | null = null;
+    let blobUrl: string | null = null;
+    try { const up = await uploadSignedApplicationPdf(applicationId, Buffer.from(borealPdf)); blobName = up.blobName; blobUrl = up.url; } catch { /* non-fatal: lender package falls back to text render */ }
     const boreal = await signnow.uploadDocumentWithFieldExtract(borealPdf, `app-${applicationId}.pdf`);
     docIds.push(boreal.documentId);
 
@@ -78,13 +85,17 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
     await dbQuery(
       `UPDATE applications
           SET signnow_document_id = $2,
-              metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
-                'signnow_embedded', jsonb_build_object(
-                  'group_id', $2::text, 'invite_id', $3::text, 'doc_ids', $4::jsonb,
-                  'created_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))),
+              metadata = COALESCE(metadata, '{}'::jsonb)
+                || jsonb_build_object(
+                  'signed_application_blob_name', COALESCE($5::text, metadata->>'signed_application_blob_name'),
+                  'signed_application_blob_url',  COALESCE($6::text, metadata->>'signed_application_blob_url'))
+                || jsonb_build_object(
+                  'signnow_embedded', jsonb_build_object(
+                    'group_id', $2::text, 'invite_id', $3::text, 'doc_ids', $4::jsonb,
+                    'created_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))),
               updated_at = now()
         WHERE id::text = ($1)::text`,
-      [applicationId, group.groupId, invite.inviteId, JSON.stringify(docIds)]);
+      [applicationId, group.groupId, invite.inviteId, JSON.stringify(docIds), blobName, blobUrl]);
     return { status: "ready", url: link.url, expiresAt: link.expiresAt };
   } catch (err) {
     return { status: "error", reason: err instanceof Error ? err.message : "signnow_error" };
