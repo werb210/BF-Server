@@ -15,7 +15,7 @@ function isStubMode(): boolean { const v = (process.env.SIGNNOW_STUB_MODE ?? "")
 export type SigningSessionResult =
   | { status: "signed" }
   | { status: "not_ready"; reason: string }
-  | { status: "stub" }
+  | { status: "stub"; reason?: string }
   | { status: "ready"; url: string; expiresAt: string | null }
   | { status: "error"; reason: string };
 
@@ -43,7 +43,8 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
   if (!row) return { status: "not_ready", reason: "application_not_found" };
   if (row.signnow_app_signed_at) return { status: "signed" };
   if (Number(row.finalized_count ?? 0) <= 0) return { status: "not_ready", reason: "lender_not_finalized" };
-  if (isStubMode() || !signnow.isApiKeyConfigured()) return { status: "stub" };
+  if (isStubMode()) return { status: "stub", reason: "SIGNNOW_STUB_MODE is enabled on this server" };
+  if (!signnow.isApiKeyConfigured()) return { status: "stub", reason: "SIGNNOW_API_KEY is empty on this server" };
 
   const md = row.metadata && typeof row.metadata === "object" ? (row.metadata as Record<string, any>) : {};
   const inputs = await loadApplicationForPdf(applicationId);
