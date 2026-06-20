@@ -46,12 +46,12 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
   if (isStubMode()) return { status: "stub", reason: "SIGNNOW_STUB_MODE is enabled on this server" };
   if (!signnow.isApiKeyConfigured()) return { status: "stub", reason: "SIGNNOW_API_KEY is empty on this server" };
 
-  const md = row.metadata && typeof row.metadata === "object" ? (row.metadata as Record<string, any>) : {};
-  const inputs = await loadApplicationForPdf(applicationId);
-  const email = inputs.applicantEmail;
-  if (!email) return { status: "not_ready", reason: "no_applicant_email" };
-
   try {
+    const md = row.metadata && typeof row.metadata === "object" ? (row.metadata as Record<string, any>) : {};
+    const inputs = await loadApplicationForPdf(applicationId);
+    const email = inputs.applicantEmail;
+    if (!email) return { status: "not_ready", reason: "no_applicant_email" };
+
     const sess = md.signnow_embedded && typeof md.signnow_embedded === "object" ? md.signnow_embedded : null;
     if (sess?.group_id && sess?.invite_id) {
       const link = await signnow.createEmbeddedGroupLink(String(sess.group_id), String(sess.invite_id), email);
@@ -105,6 +105,7 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
       [applicationId, group.groupId, invite.inviteId, JSON.stringify(docIds), blobName, blobUrl]);
     return { status: "ready", url: link.url, expiresAt: link.expiresAt };
   } catch (err) {
+    console.error(`[signnow] signing-session error app=${applicationId}:`, err instanceof Error ? (err.stack ?? err.message) : err);
     return { status: "error", reason: err instanceof Error ? err.message : "signnow_error" };
   }
 }
