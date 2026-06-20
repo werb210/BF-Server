@@ -33,6 +33,9 @@ export interface TeamMessage {
   reply_to_id?: string | null;
   reactions?: TeamReaction[];
   reply_to?: TeamReplyPreview | null;
+  // BF_SERVER_TEAM_MENTIONS_v1
+  mentions?: string[] | null;
+  pinned_at?: string | null;
 }
 
 export interface TeamChannelSummary {
@@ -46,6 +49,7 @@ export interface TeamChannelSummary {
   last_read_at: string | null;
   last_message: TeamMessage | null;
   unread_count: number;
+  has_mention: boolean; // BF_SERVER_TEAM_MENTIONS_v1
 }
 
 export interface TeamUser {
@@ -71,7 +75,14 @@ export async function listChannelsForUser(userId: string): Promise<TeamChannelSu
             (SELECT COUNT(*)::int FROM team_messages tm
               WHERE tm.channel_id = c.id
                 AND tm.sender_id IS DISTINCT FROM $1
-                AND (m.last_read_at IS NULL OR tm.created_at > m.last_read_at)) AS unread_count
+                AND (m.last_read_at IS NULL OR tm.created_at > m.last_read_at)) AS unread_count,
+            (SELECT EXISTS(
+               SELECT 1 FROM team_messages tm
+                WHERE tm.channel_id = c.id
+                  AND $1::uuid = ANY(tm.mentions)
+                  AND tm.sender_id IS DISTINCT FROM $1
+                  AND (m.last_read_at IS NULL OR tm.created_at > m.last_read_at)
+             )) AS has_mention
        FROM team_channel_members m
        JOIN team_channels c ON c.id = m.channel_id
       WHERE m.user_id = $1
@@ -156,7 +167,7 @@ export async function listMessages(channelId: string, opts: { before?: string; l
   const r = await runQuery<TeamMessage>(
     `SELECT id, channel_id, sender_id,
             CASE WHEN deleted_at IS NOT NULL THEN '' ELSE body END AS body,
-            created_at, edited_at, deleted_at, reply_to_id,
+            created_at, edited_at, deleted_at, reply_to_id, mentions, pinned_at,
             CASE WHEN deleted_at IS NOT NULL THEN NULL ELSE attachments END AS attachments
        FROM team_messages
       WHERE channel_id = $1 ${beforeClause}
@@ -228,7 +239,7 @@ export async function editMessage(messageId: string, userId: string, body: strin
   const r = await runQuery<TeamMessage>(
     `UPDATE team_messages SET body = $3, edited_at = now()
       WHERE id = $1 AND sender_id = $2 AND deleted_at IS NULL
-      RETURNING id, channel_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_id, attachments`,
+      RETURNING id, channel_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_id, mentions, pinned_at, attachments`,
     [messageId, userId, body],
   );
   const msg = r.rows[0] ?? null;
@@ -243,7 +254,7 @@ export async function deleteMessage(messageId: string, userId: string): Promise<
   const r = await runQuery<TeamMessage>(
     `UPDATE team_messages SET deleted_at = now(), body = ''
       WHERE id = $1 AND sender_id = $2 AND deleted_at IS NULL
-      RETURNING id, channel_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_id, attachments`,
+      RETURNING id, channel_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_id, mentions, pinned_at, attachments`,
     [messageId, userId],
   );
   const msg = r.rows[0] ?? null;
@@ -269,16 +280,53 @@ export async function removeReaction(messageId: string, userId: string, emoji: s
   );
 }
 
-export async function postMessage(channelId: string, senderId: string, body: string, attachments?: TeamAttachment[] | null, replyToId?: string | null): Promise<TeamMessage> {
+export async function postMessage(channelId: string, senderId: string, body: string, attachments?: TeamAttachment[] | null, replyToId?: string | null, mentions?: string[] | null): Promise<TeamMessage> {
   const r = await runQuery<TeamMessage>(
-    `INSERT INTO team_messages (channel_id, sender_id, body, attachments, reply_to_id) VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, channel_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_id, attachments`,
-    [channelId, senderId, body, attachments && attachments.length ? JSON.stringify(attachments) : null, replyToId ?? null],
+    `INSERT INTO team_messages (channel_id, sender_id, body, attachments, reply_to_id, mentions) VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, channel_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_id, mentions, pinned_at, attachments`,
+    [channelId, senderId, body, attachments && attachments.length ? JSON.stringify(attachments) : null, replyToId ?? null, mentions && mentions.length ? mentions : null],
   );
   const msg = r.rows[0];
   msg.reactions = [];
   msg.reply_to = await replyPreview(msg.reply_to_id ?? null);
   return msg;
+}
+
+export async function setPinned(messageId: string, channelId: string, pinned: boolean): Promise<TeamMessage | null> {
+  const r = await runQuery<TeamMessage>(
+    `UPDATE team_messages SET pinned_at = ${pinned ? "now()" : "NULL"}
+      WHERE id = $1 AND channel_id = $2 AND deleted_at IS NULL
+      RETURNING id, channel_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_id, mentions, pinned_at, attachments`,
+    [messageId, channelId],
+  );
+  const msg = r.rows[0] ?? null;
+  if (msg) {
+    msg.reactions = await reactionsForOne(messageId);
+    msg.reply_to = await replyPreview(msg.reply_to_id ?? null);
+  }
+  return msg;
+}
+
+export async function listPins(channelId: string): Promise<TeamMessage[]> {
+  const r = await runQuery<TeamMessage>(
+    `SELECT id, channel_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_id, mentions, pinned_at, attachments
+       FROM team_messages
+      WHERE channel_id = $1 AND pinned_at IS NOT NULL AND deleted_at IS NULL
+      ORDER BY pinned_at DESC LIMIT 50`,
+    [channelId],
+  );
+  return r.rows;
+}
+
+export async function searchMessages(channelId: string, q: string): Promise<TeamMessage[]> {
+  const r = await runQuery<TeamMessage>(
+    `SELECT id, channel_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_id, mentions, pinned_at, attachments
+       FROM team_messages
+      WHERE channel_id = $1 AND deleted_at IS NULL AND body ILIKE $2
+      ORDER BY created_at DESC LIMIT 50`,
+    [channelId, `%${q}%`],
+  );
+  return r.rows.reverse();
 }
 
 export async function markRead(channelId: string, userId: string): Promise<void> {
