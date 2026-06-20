@@ -23,6 +23,9 @@ import {
   getMessageMeta,
   listReads,
   listPresence,
+  setPinned,
+  listPins,
+  searchMessages,
 } from "../services/team/team.service.js";
 import { broadcastToUsers } from "../ws/teamSocket.js";
 
@@ -121,9 +124,10 @@ router.post(
         dataUrl: String(a.dataUrl),
       }));
     const replyToId = typeof req.body?.reply_to_id === "string" ? req.body.reply_to_id : null;
+    const mentions: string[] = Array.isArray(req.body?.mentions) ? req.body.mentions.map(String).slice(0, 50) : [];
     if (!body && attachments.length === 0) throw new AppError("validation_error", "Message body or attachment required.", 400);
     if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
-    const message = await postMessage(id, userId, body, attachments.length ? attachments : null, replyToId);
+    const message = await postMessage(id, userId, body, attachments.length ? attachments : null, replyToId, mentions.length ? mentions : null);
     const members = await memberIdsOf(id);
     broadcastToUsers(members, { type: "message", channel_id: id, message });
     res.status(200).json({ ok: true, message });
@@ -258,6 +262,50 @@ router.get(
   requireStaff,
   safeHandler(async (_req: any, res: any) => {
     res.status(200).json({ ok: true, presence: await listPresence() });
+  }),
+);
+
+// BF_SERVER_TEAM_MENTIONS_v1 — pin / unpin, pinned list, in-conversation search.
+router.post(
+  "/channels/:id/messages/:mid/pin",
+  requireAuth,
+  requireStaff,
+  safeHandler(async (req: any, res: any) => {
+    const userId = userIdOf(req);
+    const id = String(req.params.id);
+    const mid = String(req.params.mid);
+    const pinned = req.body?.pinned !== false;
+    if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
+    const message = await setPinned(mid, id, pinned);
+    if (!message) throw new AppError("not_found", "Message not found.", 404);
+    broadcastToUsers(await memberIdsOf(id), { type: "message_update", channel_id: id, message });
+    res.status(200).json({ ok: true, message });
+  }),
+);
+
+router.get(
+  "/channels/:id/pins",
+  requireAuth,
+  requireStaff,
+  safeHandler(async (req: any, res: any) => {
+    const userId = userIdOf(req);
+    const id = String(req.params.id);
+    if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
+    res.status(200).json({ ok: true, pins: await listPins(id) });
+  }),
+);
+
+router.get(
+  "/channels/:id/search",
+  requireAuth,
+  requireStaff,
+  safeHandler(async (req: any, res: any) => {
+    const userId = userIdOf(req);
+    const id = String(req.params.id);
+    const q = typeof req.query?.q === "string" ? req.query.q.trim() : "";
+    if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
+    if (!q) { res.status(200).json({ ok: true, messages: [] }); return; }
+    res.status(200).json({ ok: true, messages: await searchMessages(id, q) });
   }),
 );
 
