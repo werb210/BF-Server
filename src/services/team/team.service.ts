@@ -288,6 +288,24 @@ export async function markRead(channelId: string, userId: string): Promise<void>
   );
 }
 
+// BF_SERVER_TEAM_PRESENCE_v1 — read receipts + presence (typing is ephemeral, WS-only).
+export async function listReads(channelId: string): Promise<Array<{ user_id: string; last_read_at: string | null }>> {
+  const r = await runQuery<{ user_id: string; last_read_at: string | null }>(
+    `SELECT user_id, last_read_at FROM team_channel_members WHERE channel_id = $1`,
+    [channelId],
+  );
+  return r.rows;
+}
+
+export async function listPresence(): Promise<Array<{ user_id: string; status: string }>> {
+  const r = await runQuery<{ user_id: string; status: string }>(
+    `SELECT user_id,
+            CASE WHEN last_heartbeat < now() - interval '5 minutes' THEN 'offline' ELSE status END AS status
+       FROM staff_presence`,
+  );
+  return r.rows;
+}
+
 export async function listStaffUsers(): Promise<TeamUser[]> {
   const r = await runQuery<{ id: string; first_name: string | null; last_name: string | null; email: string | null }>(
     `SELECT id, first_name, last_name, email FROM users
