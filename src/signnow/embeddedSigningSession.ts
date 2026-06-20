@@ -24,9 +24,11 @@ async function isAccordFinalized(applicationId: string): Promise<boolean> {
     `SELECT COUNT(*) AS n
        FROM application_lender_selections s
        JOIN lenders l ON l.id::text = s.lender_id::text
+       JOIN applications a ON a.id::text = s.application_id::text
       WHERE s.application_id::text = ($1)::text
         AND s.finalized_at IS NOT NULL
-        AND l.name ILIKE 'accord%'`, [applicationId]).catch(() => ({ rows: [{ n: "0" }] }));
+        AND l.name ILIKE 'accord%'
+        AND upper(coalesce(a.product_category, '')) = 'LOC'`, [applicationId]).catch(() => ({ rows: [{ n: "0" }] }));
   return Number(res.rows[0]?.n ?? 0) > 0;
 }
 
@@ -67,9 +69,13 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
     docIds.push(boreal.documentId);
 
     if (await isAccordFinalized(applicationId)) {
-      const accordPdf = await buildAccordPdf(applicationId);
-      const accord = await signnow.uploadDocumentWithFieldExtract(accordPdf, `accord-${applicationId}.pdf`);
-      docIds.push(accord.documentId);
+      try {
+        const accordPdf = await buildAccordPdf(applicationId);
+        const accord = await signnow.uploadDocumentWithFieldExtract(accordPdf, `accord-${applicationId}.pdf`);
+        docIds.push(accord.documentId);
+      } catch (e) {
+        console.warn(`[signnow] Accord form skipped for app=${applicationId}: ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
 
     const group = await signnow.createDocumentGroup(docIds, `Boreal application ${applicationId}`);
