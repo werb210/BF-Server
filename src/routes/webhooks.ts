@@ -469,11 +469,15 @@ router.post(
 // Broader phone lookup matches the voicemail handler on line 209.
 async function persistInboundSms(req: any): Promise<void> {
   const { Body, From, To, MessageSid } = req.body ?? {};
-  if (!(Body && From)) return;
+  // BF_SERVER_SMS_MEDIA_v1 — capture inbound MMS media (Twilio posts NumMedia + MediaUrl0..N)
+  // and stop dropping caption-less image MMS (Body empty but media present).
+  const numMedia = Number.parseInt(String(req.body?.NumMedia ?? "0"), 10) || 0;
+  const mediaUrl = numMedia > 0 ? (String(req.body?.MediaUrl0 ?? "").trim() || null) : null;
+  if (!From || (!Body && !mediaUrl)) return;
 
   const fromNum = String(From);
   const toNum = typeof To === "string" ? To : null;
-  const body = String(Body);
+  const body = Body ? String(Body) : "[media]";
   const sid = typeof MessageSid === "string" ? MessageSid : null;
 
   // BF_SERVER_BLOCK_v637_MOBILE_PHONE_AND_BACKFILL_v1 — contacts.mobile_phone does not exist.
@@ -520,10 +524,10 @@ async function persistInboundSms(req: any): Promise<void> {
   // migration 109) makes Twilio retries idempotent without a duplicate row.
   await pool.query(
     `INSERT INTO communications_messages
-       (id, type, direction, status, contact_id, body, from_number, to_number, phone_number, twilio_sid, silo, created_at)
-     VALUES (gen_random_uuid(), 'sms', 'inbound', 'received', $1, $2, $3, $4, $3, $5, $6, now())
+       (id, type, direction, status, contact_id, body, media_url, from_number, to_number, phone_number, twilio_sid, silo, created_at)
+     VALUES (gen_random_uuid(), 'sms', 'inbound', 'received', $1, $2, $3, $4, $5, $4, $6, $7, now())
      ON CONFLICT (twilio_sid) WHERE twilio_sid IS NOT NULL DO NOTHING`,
-    [contact?.id ?? null, body, fromNum, toNum, sid, resolvedSilo]
+    [contact?.id ?? null, body, mediaUrl, fromNum, toNum, sid, resolvedSilo]
   ).catch((err) => {
     // Surface the failure in logs instead of swallowing it silently.
     console.error({ event: "sms_inbound_persist_failed", err: String(err) });
