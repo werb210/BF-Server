@@ -5,6 +5,7 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { respondOk } from "../utils/respondOk.js";
 import { pool } from "../db.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
+import { ga4Configured, runGa4Report } from "../services/ga4Service.js";
 
 const router = Router();
 
@@ -72,6 +73,14 @@ router.get("/funnel", safeHandler(async (req: any, res: any) => {
     return { ...sStep, pctOfStart, dropFromPrev };
   });
   respondOk(res, { days, steps });
+}));
+
+// BF_SERVER_MARKETING_GA4_v1 — GA4 traffic/sources/devices via the Analytics Data API.
+router.get("/ga4", safeHandler(async (req: any, res: any) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
+  if (!ga4Configured()) { respondOk(res, { configured: false }); return; }
+  const report = await runGa4Report(days);
+  respondOk(res, report ?? { configured: false });
 }));
 
 export default router;
