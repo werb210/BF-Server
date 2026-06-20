@@ -15,6 +15,12 @@ import {
   markRead,
   memberIdsOf,
   postMessage,
+  editMessage,
+  deleteMessage,
+  addReaction,
+  removeReaction,
+  reactionsForOne,
+  getMessageMeta,
 } from "../services/team/team.service.js";
 import { broadcastToUsers } from "../ws/teamSocket.js";
 
@@ -112,9 +118,10 @@ router.post(
         contentType: typeof a.contentType === "string" ? a.contentType.slice(0, 100) : "application/octet-stream",
         dataUrl: String(a.dataUrl),
       }));
+    const replyToId = typeof req.body?.reply_to_id === "string" ? req.body.reply_to_id : null;
     if (!body && attachments.length === 0) throw new AppError("validation_error", "Message body or attachment required.", 400);
     if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
-    const message = await postMessage(id, userId, body, attachments.length ? attachments : null);
+    const message = await postMessage(id, userId, body, attachments.length ? attachments : null, replyToId);
     const members = await memberIdsOf(id);
     broadcastToUsers(members, { type: "message", channel_id: id, message });
     res.status(200).json({ ok: true, message });
@@ -131,6 +138,87 @@ router.post(
     if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
     await markRead(id, userId);
     res.status(200).json({ ok: true });
+  }),
+);
+
+// BF_SERVER_TEAM_LIFECYCLE_v1 — edit / delete own message + reactions.
+router.patch(
+  "/channels/:id/messages/:mid",
+  requireAuth,
+  requireStaff,
+  safeHandler(async (req: any, res: any) => {
+    const userId = userIdOf(req);
+    const id = String(req.params.id);
+    const mid = String(req.params.mid);
+    const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
+    if (!body) throw new AppError("validation_error", "Message body required.", 400);
+    if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
+    const meta = await getMessageMeta(mid);
+    if (!meta || meta.channel_id !== id) throw new AppError("not_found", "Message not found.", 404);
+    const message = await editMessage(mid, userId, body);
+    if (!message) throw new AppError("forbidden", "You can only edit your own message.", 403);
+    broadcastToUsers(await memberIdsOf(id), { type: "message_update", channel_id: id, message });
+    res.status(200).json({ ok: true, message });
+  }),
+);
+
+router.delete(
+  "/channels/:id/messages/:mid",
+  requireAuth,
+  requireStaff,
+  safeHandler(async (req: any, res: any) => {
+    const userId = userIdOf(req);
+    const id = String(req.params.id);
+    const mid = String(req.params.mid);
+    if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
+    const meta = await getMessageMeta(mid);
+    if (!meta || meta.channel_id !== id) throw new AppError("not_found", "Message not found.", 404);
+    const message = await deleteMessage(mid, userId);
+    if (!message) throw new AppError("forbidden", "You can only delete your own message.", 403);
+    broadcastToUsers(await memberIdsOf(id), { type: "message_update", channel_id: id, message });
+    res.status(200).json({ ok: true, message });
+  }),
+);
+
+router.post(
+  "/channels/:id/messages/:mid/reactions",
+  requireAuth,
+  requireStaff,
+  safeHandler(async (req: any, res: any) => {
+    const userId = userIdOf(req);
+    const id = String(req.params.id);
+    const mid = String(req.params.mid);
+    const emoji = typeof req.body?.emoji === "string" ? req.body.emoji.slice(0, 16) : "";
+    if (!emoji) throw new AppError("validation_error", "Emoji required.", 400);
+    if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
+    const meta = await getMessageMeta(mid);
+    if (!meta || meta.channel_id !== id) throw new AppError("not_found", "Message not found.", 404);
+    await addReaction(mid, userId, emoji);
+    const reactions = await reactionsForOne(mid);
+    broadcastToUsers(await memberIdsOf(id), { type: "reaction", channel_id: id, message_id: mid, reactions });
+    res.status(200).json({ ok: true, reactions });
+  }),
+);
+
+router.delete(
+  "/channels/:id/messages/:mid/reactions",
+  requireAuth,
+  requireStaff,
+  safeHandler(async (req: any, res: any) => {
+    const userId = userIdOf(req);
+    const id = String(req.params.id);
+    const mid = String(req.params.mid);
+    const emoji = typeof req.query?.emoji === "string"
+      ? String(req.query.emoji).slice(0, 16)
+      : (typeof req.body?.emoji === "string" ? req.body.emoji.slice(0, 16) : "");
+    if (!emoji) throw new AppError("validation_error", "Emoji required.", 400);
+    if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
+    const meta = await getMessageMeta(mid);
+    if (!meta || meta.channel_id !== id) throw new AppError("not_found", "Message not found.", 404);
+    await removeReaction(mid, userId, emoji);
+    const reactions = await reactionsForOne(mid);
+    broadcastToUsers(await memberIdsOf(id), { type: "reaction", channel_id: id, message_id: mid, reactions });
+    res.status(200).json({ ok: true, reactions });
   }),
 );
 
