@@ -21,6 +21,8 @@ import {
   removeReaction,
   reactionsForOne,
   getMessageMeta,
+  listReads,
+  listPresence,
 } from "../services/team/team.service.js";
 import { broadcastToUsers } from "../ws/teamSocket.js";
 
@@ -137,6 +139,7 @@ router.post(
     const id = String(req.params.id);
     if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
     await markRead(id, userId);
+    broadcastToUsers(await memberIdsOf(id), { type: "read", channel_id: id, user_id: userId, last_read_at: new Date().toISOString() });
     res.status(200).json({ ok: true });
   }),
 );
@@ -219,6 +222,42 @@ router.delete(
     const reactions = await reactionsForOne(mid);
     broadcastToUsers(await memberIdsOf(id), { type: "reaction", channel_id: id, message_id: mid, reactions });
     res.status(200).json({ ok: true, reactions });
+  }),
+);
+
+// BF_SERVER_TEAM_PRESENCE_v1 — typing (ephemeral), read receipts, presence.
+router.post(
+  "/channels/:id/typing",
+  requireAuth,
+  requireStaff,
+  safeHandler(async (req: any, res: any) => {
+    const userId = userIdOf(req);
+    const id = String(req.params.id);
+    if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
+    const others = (await memberIdsOf(id)).filter((m) => m !== userId);
+    broadcastToUsers(others, { type: "typing", channel_id: id, user_id: userId });
+    res.status(200).json({ ok: true });
+  }),
+);
+
+router.get(
+  "/channels/:id/reads",
+  requireAuth,
+  requireStaff,
+  safeHandler(async (req: any, res: any) => {
+    const userId = userIdOf(req);
+    const id = String(req.params.id);
+    if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
+    res.status(200).json({ ok: true, reads: await listReads(id) });
+  }),
+);
+
+router.get(
+  "/presence",
+  requireAuth,
+  requireStaff,
+  safeHandler(async (_req: any, res: any) => {
+    res.status(200).json({ ok: true, presence: await listPresence() });
   }),
 );
 
