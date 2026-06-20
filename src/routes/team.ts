@@ -102,9 +102,19 @@ router.post(
     const userId = userIdOf(req);
     const id = String(req.params.id);
     const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
-    if (!body) throw new AppError("validation_error", "Message body required.", 400);
+    // BF_SERVER_TEAM_ATTACH_v1 — accept up to 10 attachments (data URLs, ~5MB each).
+    const rawAtts: any[] = Array.isArray(req.body?.attachments) ? req.body.attachments : [];
+    const attachments = rawAtts
+      .filter((a) => a && typeof a.dataUrl === "string" && a.dataUrl.length < 7_000_000)
+      .slice(0, 10)
+      .map((a) => ({
+        name: typeof a.name === "string" ? a.name.slice(0, 200) : "file",
+        contentType: typeof a.contentType === "string" ? a.contentType.slice(0, 100) : "application/octet-stream",
+        dataUrl: String(a.dataUrl),
+      }));
+    if (!body && attachments.length === 0) throw new AppError("validation_error", "Message body or attachment required.", 400);
     if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
-    const message = await postMessage(id, userId, body);
+    const message = await postMessage(id, userId, body, attachments.length ? attachments : null);
     const members = await memberIdsOf(id);
     broadcastToUsers(members, { type: "message", channel_id: id, message });
     res.status(200).json({ ok: true, message });
