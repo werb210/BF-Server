@@ -9,6 +9,17 @@ export interface TeamAttachment {
   dataUrl: string;
 }
 
+export interface TeamReaction {
+  emoji: string;
+  user_ids: string[];
+}
+
+export interface TeamReplyPreview {
+  id: string;
+  sender_id: string | null;
+  body: string;
+}
+
 export interface TeamMessage {
   id: string;
   channel_id: string;
@@ -16,6 +27,12 @@ export interface TeamMessage {
   body: string;
   created_at: string;
   attachments?: TeamAttachment[] | null; // BF_SERVER_TEAM_ATTACH_v1
+  // BF_SERVER_TEAM_LIFECYCLE_v1
+  edited_at?: string | null;
+  deleted_at?: string | null;
+  reply_to_id?: string | null;
+  reactions?: TeamReaction[];
+  reply_to?: TeamReplyPreview | null;
 }
 
 export interface TeamChannelSummary {
@@ -137,23 +154,131 @@ export async function listMessages(channelId: string, opts: { before?: string; l
     beforeClause = `AND created_at < $2`;
   }
   const r = await runQuery<TeamMessage>(
-    `SELECT id, channel_id, sender_id, body, created_at, attachments
+    `SELECT id, channel_id, sender_id,
+            CASE WHEN deleted_at IS NOT NULL THEN '' ELSE body END AS body,
+            created_at, edited_at, deleted_at, reply_to_id,
+            CASE WHEN deleted_at IS NOT NULL THEN NULL ELSE attachments END AS attachments
        FROM team_messages
       WHERE channel_id = $1 ${beforeClause}
       ORDER BY created_at DESC
       LIMIT ${limit}`,
     params,
   );
-  return r.rows.reverse();
+  const rows = r.rows.reverse();
+  if (rows.length === 0) return rows;
+  const ids = rows.map((m) => m.id);
+  const rx = await runQuery<{ message_id: string; emoji: string; user_ids: string[] }>(
+    `SELECT message_id, emoji, json_agg(user_id ORDER BY created_at) AS user_ids
+       FROM team_message_reactions WHERE message_id = ANY($1::uuid[])
+      GROUP BY message_id, emoji ORDER BY MIN(created_at)`,
+    [ids],
+  );
+  const rxByMsg = new Map<string, TeamReaction[]>();
+  for (const row of rx.rows) {
+    const arr = rxByMsg.get(row.message_id) ?? [];
+    arr.push({ emoji: row.emoji, user_ids: row.user_ids });
+    rxByMsg.set(row.message_id, arr);
+  }
+  const replyIds = Array.from(new Set(rows.map((m) => m.reply_to_id).filter((x): x is string => Boolean(x))));
+  const replyMap = new Map<string, TeamReplyPreview>();
+  if (replyIds.length) {
+    const rep = await runQuery<TeamReplyPreview>(
+      `SELECT id, sender_id, CASE WHEN deleted_at IS NOT NULL THEN '' ELSE body END AS body
+         FROM team_messages WHERE id = ANY($1::uuid[])`,
+      [replyIds],
+    );
+    for (const row of rep.rows) replyMap.set(row.id, row);
+  }
+  for (const m of rows) {
+    m.reactions = rxByMsg.get(m.id) ?? [];
+    m.reply_to = m.reply_to_id ? (replyMap.get(m.reply_to_id) ?? null) : null;
+  }
+  return rows;
 }
 
-export async function postMessage(channelId: string, senderId: string, body: string, attachments?: TeamAttachment[] | null): Promise<TeamMessage> {
-  const r = await runQuery<TeamMessage>(
-    `INSERT INTO team_messages (channel_id, sender_id, body, attachments) VALUES ($1, $2, $3, $4)
-     RETURNING id, channel_id, sender_id, body, created_at, attachments`,
-    [channelId, senderId, body, attachments && attachments.length ? JSON.stringify(attachments) : null],
+export async function reactionsForOne(messageId: string): Promise<TeamReaction[]> {
+  const r = await runQuery<TeamReaction>(
+    `SELECT emoji, json_agg(user_id ORDER BY created_at) AS user_ids
+       FROM team_message_reactions WHERE message_id = $1
+      GROUP BY emoji ORDER BY MIN(created_at)`,
+    [messageId],
   );
-  return r.rows[0];
+  return r.rows;
+}
+
+async function replyPreview(replyToId: string | null): Promise<TeamReplyPreview | null> {
+  if (!replyToId) return null;
+  const r = await runQuery<TeamReplyPreview>(
+    `SELECT id, sender_id, CASE WHEN deleted_at IS NOT NULL THEN '' ELSE body END AS body
+       FROM team_messages WHERE id = $1`,
+    [replyToId],
+  );
+  return r.rows[0] ?? null;
+}
+
+export async function getMessageMeta(messageId: string): Promise<{ channel_id: string; sender_id: string | null } | null> {
+  const r = await runQuery<{ channel_id: string; sender_id: string | null }>(
+    `SELECT channel_id, sender_id FROM team_messages WHERE id = $1`,
+    [messageId],
+  );
+  return r.rows[0] ?? null;
+}
+
+export async function editMessage(messageId: string, userId: string, body: string): Promise<TeamMessage | null> {
+  const r = await runQuery<TeamMessage>(
+    `UPDATE team_messages SET body = $3, edited_at = now()
+      WHERE id = $1 AND sender_id = $2 AND deleted_at IS NULL
+      RETURNING id, channel_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_id, attachments`,
+    [messageId, userId, body],
+  );
+  const msg = r.rows[0] ?? null;
+  if (msg) {
+    msg.reactions = await reactionsForOne(messageId);
+    msg.reply_to = await replyPreview(msg.reply_to_id ?? null);
+  }
+  return msg;
+}
+
+export async function deleteMessage(messageId: string, userId: string): Promise<TeamMessage | null> {
+  const r = await runQuery<TeamMessage>(
+    `UPDATE team_messages SET deleted_at = now(), body = ''
+      WHERE id = $1 AND sender_id = $2 AND deleted_at IS NULL
+      RETURNING id, channel_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_id, attachments`,
+    [messageId, userId],
+  );
+  const msg = r.rows[0] ?? null;
+  if (msg) {
+    msg.reactions = [];
+    msg.reply_to = null;
+    msg.attachments = null;
+  }
+  return msg;
+}
+
+export async function addReaction(messageId: string, userId: string, emoji: string): Promise<void> {
+  await runQuery(
+    `INSERT INTO team_message_reactions (message_id, user_id, emoji) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+    [messageId, userId, emoji],
+  );
+}
+
+export async function removeReaction(messageId: string, userId: string, emoji: string): Promise<void> {
+  await runQuery(
+    `DELETE FROM team_message_reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3`,
+    [messageId, userId, emoji],
+  );
+}
+
+export async function postMessage(channelId: string, senderId: string, body: string, attachments?: TeamAttachment[] | null, replyToId?: string | null): Promise<TeamMessage> {
+  const r = await runQuery<TeamMessage>(
+    `INSERT INTO team_messages (channel_id, sender_id, body, attachments, reply_to_id) VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, channel_id, sender_id, body, created_at, edited_at, deleted_at, reply_to_id, attachments`,
+    [channelId, senderId, body, attachments && attachments.length ? JSON.stringify(attachments) : null, replyToId ?? null],
+  );
+  const msg = r.rows[0];
+  msg.reactions = [];
+  msg.reply_to = await replyPreview(msg.reply_to_id ?? null);
+  return msg;
 }
 
 export async function markRead(channelId: string, userId: string): Promise<void> {
