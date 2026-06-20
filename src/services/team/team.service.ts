@@ -3,12 +3,19 @@ import { runQuery } from "../../db.js";
 
 export type TeamChannelKind = "channel" | "dm" | "group";
 
+export interface TeamAttachment {
+  name: string;
+  contentType: string;
+  dataUrl: string;
+}
+
 export interface TeamMessage {
   id: string;
   channel_id: string;
   sender_id: string | null;
   body: string;
   created_at: string;
+  attachments?: TeamAttachment[] | null; // BF_SERVER_TEAM_ATTACH_v1
 }
 
 export interface TeamChannelSummary {
@@ -130,7 +137,7 @@ export async function listMessages(channelId: string, opts: { before?: string; l
     beforeClause = `AND created_at < $2`;
   }
   const r = await runQuery<TeamMessage>(
-    `SELECT id, channel_id, sender_id, body, created_at
+    `SELECT id, channel_id, sender_id, body, created_at, attachments
        FROM team_messages
       WHERE channel_id = $1 ${beforeClause}
       ORDER BY created_at DESC
@@ -140,11 +147,11 @@ export async function listMessages(channelId: string, opts: { before?: string; l
   return r.rows.reverse();
 }
 
-export async function postMessage(channelId: string, senderId: string, body: string): Promise<TeamMessage> {
+export async function postMessage(channelId: string, senderId: string, body: string, attachments?: TeamAttachment[] | null): Promise<TeamMessage> {
   const r = await runQuery<TeamMessage>(
-    `INSERT INTO team_messages (channel_id, sender_id, body) VALUES ($1, $2, $3)
-     RETURNING id, channel_id, sender_id, body, created_at`,
-    [channelId, senderId, body],
+    `INSERT INTO team_messages (channel_id, sender_id, body, attachments) VALUES ($1, $2, $3, $4)
+     RETURNING id, channel_id, sender_id, body, created_at, attachments`,
+    [channelId, senderId, body, attachments && attachments.length ? JSON.stringify(attachments) : null],
   );
   return r.rows[0];
 }
