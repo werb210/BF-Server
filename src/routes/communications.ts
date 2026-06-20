@@ -4,6 +4,7 @@ import { CAPABILITIES } from "../auth/capabilities.js";
 import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { pool } from "../db.js";
+import { verifyAccessToken } from "../auth/jwt.js"; // BF_SERVER_SMS_MEDIA_v1
 import twilio from "twilio";
 
 const router = Router();
@@ -516,7 +517,7 @@ router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
   try {
     const { rows } = await pool.query(
       `SELECT id, contact_id, from_number, to_number, direction, body,
-              created_at, read_at
+              media_url, created_at, read_at
        FROM communications_messages
        WHERE ${where}
          AND type = 'sms'
@@ -529,6 +530,41 @@ router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
     console.error({ event: "sms_thread_error", err: String(err) });
     return res.status(200).json({ messages: [] });
   }
+}));
+
+// BF_SERVER_SMS_MEDIA_v1 — stream an inbound MMS image/file. Twilio media URLs
+// require Basic auth, so the browser can't <img> them directly; proxy with the
+// account creds. Token rides the query string so it works in an <img src>.
+router.get("/messages/:id/media", safeHandler(async (req: any, res: any) => {
+  const token = String(req.query?.token ?? "");
+  try { verifyAccessToken(token); } catch { return res.status(401).end(); }
+  const id = String(req.params?.id ?? "");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).end();
+  const { rows } = await pool.query<{ media_url: string | null }>(
+    "SELECT media_url FROM communications_messages WHERE id = $1::uuid LIMIT 1",
+    [id],
+  );
+  const mediaUrl = rows[0]?.media_url ?? null;
+  if (!mediaUrl) return res.status(404).end();
+  const sid = process.env.TWILIO_ACCOUNT_SID ?? "";
+  const tok = process.env.TWILIO_AUTH_TOKEN ?? "";
+  const headers: Record<string, string> = {};
+  if (/api\.twilio\.com/.test(mediaUrl) && sid && tok) {
+    headers.Authorization = "Basic " + Buffer.from(`${sid}:${tok}`).toString("base64");
+  }
+  let buf: Buffer;
+  let ct = "application/octet-stream";
+  try {
+    const upstream = await fetch(mediaUrl, { headers });
+    if (!upstream.ok) return res.status(502).end();
+    ct = upstream.headers.get("content-type") ?? ct;
+    buf = Buffer.from(await upstream.arrayBuffer());
+  } catch {
+    return res.status(502).end();
+  }
+  res.setHeader("Content-Type", ct);
+  res.setHeader("Cache-Control", "private, max-age=86400");
+  return res.status(200).end(buf);
 }));
 
 // BF_SERVER_BLOCK_BI_ROUND6_THREADS_LIST_v1
