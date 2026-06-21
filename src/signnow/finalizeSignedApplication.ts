@@ -15,25 +15,35 @@ export async function finalizeSignedApplication(
       returning id`,
     [app.id]
   );
-  if (stamped.rows.length === 0) return false; // already finalized
+  const fresh = stamped.rows.length > 0;
 
-  await dbQuery(`update applicants set ssn = null, sin = null, updated_at = now() where application_id = $1`, [app.id]);
-  await dbQuery(`update application_partners set ssn = null, sin = null, updated_at = now() where application_id = $1`, [app.id]);
+  // Best-effort PII purge. The exact tables/columns vary by deploy (these may not
+  // exist), so guard each — a missing relation must never abort finalization,
+  // otherwise the signed stamp lands but the lender package is never enqueued.
+  await dbQuery(`update applicants set ssn = null, sin = null, updated_at = now() where application_id = $1`, [app.id]).catch(() => {});
+  await dbQuery(`update application_partners set ssn = null, sin = null, updated_at = now() where application_id = $1`, [app.id]).catch(() => {});
 
-  if (app.contactId) {
+  if (fresh && app.contactId) {
     await logCrmEvent({
       contactId: app.contactId,
       applicationId: app.id,
       eventType: "signnow_signed",
       payload: { signerEmail: opts.signerEmail ?? null, documentId: opts.documentId ?? null },
-    });
+    }).catch(() => {});
   }
 
+  // Enqueue the lender package once per application. Guard on "no job ever for
+  // this app" (any status) so a half-finalized app — stamped on an earlier run
+  // whose enqueue was skipped — still gets queued, while a completed or in-flight
+  // job is never duplicated.
   await dbQuery(
     `insert into job_queue (id, type, payload, status, created_at)
-     values (gen_random_uuid(), 'send_lender_package', $1::jsonb, 'pending', now())
-     on conflict ((payload->>'applicationId')) where type = 'send_lender_package' and status in ('pending','running') do nothing`,
-    [JSON.stringify({ applicationId: app.id })]
+     select gen_random_uuid(), 'send_lender_package', $1::jsonb, 'pending', now()
+      where not exists (
+        select 1 from job_queue
+         where type = 'send_lender_package' and payload->>'applicationId' = $2
+      )`,
+    [JSON.stringify({ applicationId: app.id }), app.id]
   );
-  return true;
+  return fresh;
 }
