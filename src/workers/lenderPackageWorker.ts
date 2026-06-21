@@ -79,6 +79,18 @@ export function startLenderPackageWorker(pool: Pool): { stop: () => void } {
 
           await dispatchToSelected({ pool, applicationId }, lenders.rows);
 
+          // Advance the pipeline once the package is actually dispatched. The
+          // worker is the delivery path for webhook/poller/admin-finalized apps
+          // (the orchestrator's Stage B that sets this is reached only via portal
+          // routes), so without this the lender receives the package but the card
+          // never leaves its column. Guard against regressing a later stage.
+          await pool.query(
+            `UPDATE applications SET pipeline_state = 'Off to Lender', updated_at = now()
+               WHERE id::text = ($1)::text
+                 AND pipeline_state NOT IN ('Off to Lender','Offer','Accepted','Rejected','Declined','Funded','Closed')`,
+            [applicationId]
+          );
+
           await pool.query(
             `UPDATE job_queue SET status = 'completed', updated_at = now() WHERE id = $1`,
             [job.id]
