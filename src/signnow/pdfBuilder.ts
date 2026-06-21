@@ -107,7 +107,7 @@ export async function buildApplicationPdf(inputs: ApplicationPdfInputs): Promise
   };
   ensure(44);
   sigRow("Owner 1", M);
-  sigRow("Owner 2", M + CW / 2 + 4);
+  if (inputs.owners[1]?.email) sigRow("Owner 2", M + CW / 2 + 4);
   y -= 40;
 
   return doc.save();
