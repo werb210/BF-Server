@@ -57,14 +57,22 @@ function flatten(prefix: string, v: unknown, out: FlatField[]): void {
   if (prefix) out.push({ label: prefix, value: String(v) });
 }
 
-async function loadSignedApplicationPdf(ctx: LoadCtx, fields: FlatField[]): Promise<Buffer | null> {
+async function loadSignedApplicationPdf(ctx: LoadCtx, _fields: FlatField[]): Promise<Buffer | null> {
   const r = await ctx.pool.query<{signnow_document_id:string|null;signed_application_blob_name:string|null}>(`SELECT signnow_document_id, COALESCE(metadata->>'signed_application_blob_name', NULL) AS signed_application_blob_name FROM applications WHERE id::text = $1 LIMIT 1`, [ctx.applicationId]).catch(() => ({ rows: [] as Array<{signnow_document_id:string|null;signed_application_blob_name:string|null}> }));
   const blobName = r.rows[0]?.signed_application_blob_name ?? null;
   if (blobName) { try { const got = await getStorage().get(blobName); if (got?.buffer?.length) return got.buffer; } catch {} }
-  const lines = [`Application ${ctx.applicationId}`, "", "(Signed application PDF unavailable; rendered from form data.)", "", ...fields.map((f)=>`${f.label}: ${f.value == null ? "" : String(f.value)}`)];
-  return renderTextPdf(lines);
+  // Never fabricate a "signed" application from form data. If the real signed PDF
+  // is not in storage, return null; the package build hard-fails upstream so a
+  // lender can never receive an unsigned document labelled as signed.
+  return null;
 }
 async function loadCreditSummaryPdf(ctx: LoadCtx): Promise<Buffer | null> {
+  // Credit summary is waived under $500k and must never be a draft. Only include
+  // it when the deal is >= $500k AND the summary was actually submitted.
+  const g = await ctx.pool.query<{requested_amount:string|number|null;credit_summary_completed_at:string|null}>(`SELECT requested_amount, credit_summary_completed_at FROM applications WHERE id::text = $1 LIMIT 1`, [ctx.applicationId]).catch(()=>({rows:[] as Array<{requested_amount:string|number|null;credit_summary_completed_at:string|null}>}));
+  const amt = Number(g.rows[0]?.requested_amount ?? 0);
+  const submitted = g.rows[0]?.credit_summary_completed_at != null;
+  if ((Number.isFinite(amt) && amt < 500000) || !submitted) return null;
   const r = await ctx.pool.query<{sections:unknown;status:string|null}>(`SELECT sections, status FROM credit_summaries WHERE application_id::text = $1 ORDER BY updated_at DESC LIMIT 1`, [ctx.applicationId]).catch(()=>({rows:[] as Array<{sections:unknown;status:string|null}>}));
   if (!r.rows.length) return null; const row = r.rows[0]!; const sections = (row.sections ?? {}) as Record<string, unknown>;
   const lines = [`Credit Summary — Application ${ctx.applicationId}`]; if (row.status) lines.push(`Status: ${row.status}`); lines.push("");

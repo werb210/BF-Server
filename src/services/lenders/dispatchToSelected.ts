@@ -55,6 +55,13 @@ export async function dispatchToSelected(
     console.warn("[dispatch] loadPackageInputs failed", e);
   }
 
+  // Never email a package without the real signed application. If the signed PDF
+  // could not be loaded, fail loudly so the worker retries instead of sending an
+  // unsigned (or fabricated) document to a lender.
+  if (!signedApp) {
+    throw new Error("signed_application_pdf_missing");
+  }
+
   const pkg = await buildApplicationPackage({
     applicationId: ctx.applicationId,
     signedApplicationPdf: signedApp,
@@ -192,13 +199,15 @@ export async function dispatchToSelected(
       error = `unknown_submission_method:${method}`;
     }
 
+    void deliveredTo;
     await ctx.pool.query(
       `INSERT INTO application_packages
-         (id, application_id, lender_id, status, delivered_to, error, bytes, created_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, NOW())
+         (id, application_id, lender_id, status, failure_reason, size_bytes, built_at, sent_at, created_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NOW(),
+               CASE WHEN $3 = 'sent' THEN NOW() ELSE NULL END, NOW())
        ON CONFLICT (application_id, lender_id) DO NOTHING
        RETURNING id`,
-      [ctx.applicationId, l.lender_id, ok ? "sent" : "failed", deliveredTo, error, pkg.zipBuffer.length]
+      [ctx.applicationId, l.lender_id, ok ? "sent" : "failed", error, pkg.zipBuffer.length]
     )
       .then((rs) => {
         if (!rs.rowCount) {
