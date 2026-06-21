@@ -122,6 +122,18 @@ router.post(
         { id, contactId: row.rows[0]?.contact_id ?? null },
         { documentId: null },
       );
+      // Safety net: if the lender package already went out on an earlier run
+      // (worker dispatched before the pipeline-advance fix), advance the card now.
+      // Gated on an existing 'sent' package row, so it never moves prematurely and
+      // never re-dispatches. The fresh path advances via the worker after dispatch.
+      await pool.query(
+        `UPDATE applications SET pipeline_state = 'Off to Lender', updated_at = now()
+           WHERE id::text = ($1)::text
+             AND pipeline_state NOT IN ('Off to Lender','Offer','Accepted','Rejected','Declined','Funded','Closed')
+             AND EXISTS (SELECT 1 FROM application_packages p
+                          WHERE p.application_id::text = ($1)::text AND p.status = 'sent')`,
+        [id],
+      );
       res.json({
         ok: true,
         finalized: fired,
