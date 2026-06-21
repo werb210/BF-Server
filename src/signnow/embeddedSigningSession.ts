@@ -68,10 +68,18 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
         // If it was signed, staff run the admin mark-signed route to finalize.
         const m = e instanceof Error ? e.message : String(e);
         if (/19001041|different|denied|not readable|65610|access/i.test(m)) {
-          console.warn(`[signnow] orphaned signing group for app=${applicationId} (${m}); returning stale state`);
-          return { status: "not_ready", reason: "signing_session_stale" };
+          // The stored group is orphaned by an API-key/app rotation: it can never
+          // be relinked, read, or downloaded with the current key, so it is dead
+          // weight regardless of whether it was signed under the old key. The app
+          // is NOT recorded as signed (we returned "signed" earlier otherwise), and
+          // the old group is unrecoverable anyway, so leaving the client on a stale
+          // session strands the deal. Fall through and mint a FRESH group with the
+          // current key so the client can sign and the package can move.
+          console.warn(`[signnow] orphaned signing group for app=${applicationId} (${m}); regenerating a fresh signing session`);
+          // intentional fall-through to fresh-session creation below
+        } else {
+          throw e;
         }
-        throw e;
       }
     }
 
