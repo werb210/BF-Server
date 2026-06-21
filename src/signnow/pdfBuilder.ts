@@ -103,8 +103,7 @@ export async function buildApplicationPdf(inputs: ApplicationPdfInputs): Promise
   const sigRow = (role: string, leftX: number) => {
     cellbox(leftX, y - 40, CW / 2 - 4, 40);
     text(role.toUpperCase() + " — SIGNATURE", leftX + 4, y - 9, 6, F, GREY);
-    text(`{{t:s;r:y;o:"${role}";w:120;h:16;}}`, leftX + 4, y - 30, 6, F, rgb(1, 1, 1));
-    text(`{{t:t;r:y;o:"${role}";w:70;h:16;}}`, leftX + 150, y - 30, 6, F, rgb(1, 1, 1));
+    text(`{{t:s;r:y;o:"${role}";w:140;h:16;}}`, leftX + 4, y - 30, 6, F, rgb(1, 1, 1));
   };
   ensure(44);
   sigRow("Owner 1", M);
