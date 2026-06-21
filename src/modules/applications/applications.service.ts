@@ -141,7 +141,7 @@ type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
 async function fetchApplicationCrmContactId(applicationId: string): Promise<string | null> {
   const result = await runQuery<{ crm_contact_id: string | null }>(
-    `select crm_contact_id from applications where id::text = ($1)::text limit 1`,
+    `select contact_id as crm_contact_id from applications where id::text = ($1)::text limit 1`,
     [applicationId]
   );
   return result.rows[0]?.crm_contact_id ?? null;
