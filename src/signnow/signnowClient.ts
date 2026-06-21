@@ -73,3 +73,26 @@ export async function createEmbeddedGroupLink(groupId: string, inviteId: string,
   if (typeof url !== "string") throw new SignNowError("SignNow embedded link returned no url", undefined, body);
   return { url, expiresAt: null };
 }
+export async function getDocumentGroupStatus(groupId: string): Promise<{ signed: boolean; summary: string }> {
+  const body = (await signnowFetch(`/v2/document-groups/${encodeURIComponent(groupId)}`, { method: "GET" })) as any;
+  const data = body?.data ?? body ?? {};
+  const statuses: string[] = [];
+  const docs = Array.isArray(data?.documents) ? data.documents : [];
+  for (const d of docs) {
+    const fis = Array.isArray(d?.field_invites) ? d.field_invites : [];
+    for (const fi of fis) if (typeof fi?.status === "string") statuses.push(String(fi.status).toLowerCase());
+  }
+  if (statuses.length === 0) {
+    const seen: string[] = [];
+    const walk = (v: any) => {
+      if (!v || typeof v !== "object") return;
+      if (typeof v.status === "string" && (v.email || v.role || v.signer_email)) seen.push(String(v.status).toLowerCase());
+      for (const k of Object.keys(v)) walk((v as Record<string, unknown>)[k]);
+    };
+    walk(data);
+    statuses.push(...seen);
+  }
+  const fulfilled = statuses.filter((s) => s === "fulfilled").length;
+  const signed = statuses.length > 0 && fulfilled === statuses.length;
+  return { signed, summary: `invites=${statuses.length} fulfilled=${fulfilled} states=[${[...new Set(statuses)].join(",")}]` };
+}
