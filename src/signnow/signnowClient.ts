@@ -6,7 +6,7 @@ function getApiKey(): string { const k = (process.env.SIGNNOW_API_KEY ?? "").tri
 async function signnowFetch(path: string, init: RequestInit): Promise<unknown> {
   const apiKey = getApiKey(); const headers = new Headers(init.headers); headers.set("Authorization", `Bearer ${apiKey}`); if (!headers.has("Accept")) headers.set("Accept", "application/json");
   const res = await fetch(`${BASE_URL}${path}`, { ...init, headers }); const text = await res.text(); let body: unknown; try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-  if (!res.ok) throw new SignNowError(`SignNow ${init.method ?? "GET"} ${path} failed: ${res.status}`, res.status, body); return body;
+  if (!res.ok) throw new SignNowError(`SignNow ${init.method ?? "GET"} ${path} failed: ${res.status} ${(typeof body === "string" ? body : JSON.stringify(body ?? "")).slice(0, 400)}`, res.status, body); return body;
 }
 export type UploadDocumentResult = { documentId: string };
 export async function uploadDocument(pdfBytes: Uint8Array, filename: string): Promise<UploadDocumentResult> {
@@ -34,8 +34,22 @@ export async function createDocumentGroup(documentIds: string[], groupName: stri
   return { groupId: body.id };
 }
 export type EmbeddedSigner = { email: string; name?: string; roleName: string };
-export async function createEmbeddedGroupInvite(groupId: string, signer: EmbeddedSigner): Promise<{ inviteId: string }> {
-  const payload = { invite: { invite_steps: [{ order: 1, invite_actions: [{ email: signer.email, role_name: signer.roleName, action: "sign", ...(signer.name ? { full_name: signer.name } : {}) }] }] } };
+export async function createEmbeddedGroupInvite(groupId: string, documentIds: string[], signer: EmbeddedSigner): Promise<{ inviteId: string }> {
+  const parts = (signer.name ?? "").trim().split(/\s+/).filter(Boolean);
+  const firstName = parts[0] ?? "";
+  const lastName = parts.slice(1).join(" ");
+  const payload = {
+    invites: [
+      {
+        email: signer.email,
+        order: 1,
+        auth_method: "none",
+        ...(firstName ? { first_name: firstName } : {}),
+        ...(lastName ? { last_name: lastName } : {}),
+        documents: documentIds.map((id) => ({ id, role: signer.roleName, action: "sign" })),
+      },
+    ],
+  };
   const body = (await signnowFetch(`/v2/document-groups/${encodeURIComponent(groupId)}/embedded-invites`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })) as { data?: { id?: string }; id?: string };
   const inviteId = body?.data?.id ?? body?.id;
   if (typeof inviteId !== "string") throw new SignNowError("SignNow embedded group invite returned no id", undefined, body);
