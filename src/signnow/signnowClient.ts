@@ -115,6 +115,21 @@ export async function getDocumentSignedStatus(documentId: string): Promise<{ sig
   const signed = statuses.length > 0 && fulfilled === statuses.length;
   return { signed, summary: `doc=${documentId.slice(0, 8)} invites=${statuses.length} fulfilled=${fulfilled} states=[${[...new Set(statuses)].join(",")}]` };
 }
+export async function downloadDocument(documentId: string): Promise<Buffer | null> {
+  const k = (process.env.SIGNNOW_API_KEY ?? "").trim();
+  if (!k) return null;
+  try {
+    const res = await fetch(`${BASE_URL}/document/${encodeURIComponent(documentId)}/download?type=collapsed`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${k}`, Accept: "application/pdf" },
+    });
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    return buf.length > 0 ? buf : null;
+  } catch {
+    return null;
+  }
+}
 export async function getAuthenticatedUserId(): Promise<string | null> {
   const body = (await signnowFetch(`/user`, { method: "GET" })) as any;
   const id = body?.id ?? body?.data?.id ?? null;
