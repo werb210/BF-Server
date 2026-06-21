@@ -148,6 +148,11 @@ export async function start(): Promise<void> {
     try { const w = startSignNowCompletionPoller(pool); workerStops.push(w.stop); console.log("[startup] signnow completion poller started"); }
     catch (err) { console.error("[startup] signnow completion poller failed to start:", err); }
 
+    // Push-based completion: register the SignNow signed-event webhook (reads of
+    // signed docs are denied, so the webhook is the only reliable signal).
+    try { const { ensureSignnowWebhook } = await import("./signnow/ensureWebhookSubscription.js"); void ensureSignnowWebhook(); console.log("[startup] signnow webhook subscription ensured"); }
+    catch (err) { console.error("[startup] signnow webhook subscription failed:", err); }
+
     // BF_SERVER_BLOCK_v706_READ_RECEIPTS — stamp opened_at from inbox read receipts.
     const { startReadReceiptWorker } = await import("./workers/readReceiptWorker.js");
     try { const w = startReadReceiptWorker(pool); workerStops.push(w.stop); console.log("[startup] read-receipt worker started"); }
