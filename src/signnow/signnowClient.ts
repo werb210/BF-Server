@@ -96,3 +96,22 @@ export async function getDocumentGroupStatus(groupId: string): Promise<{ signed:
   const signed = statuses.length > 0 && fulfilled === statuses.length;
   return { signed, summary: `invites=${statuses.length} fulfilled=${fulfilled} states=[${[...new Set(statuses)].join(",")}]` };
 }
+export async function getDocumentSignedStatus(documentId: string): Promise<{ signed: boolean; summary: string }> {
+  const body = (await signnowFetch(`/document/${encodeURIComponent(documentId)}`, { method: "GET" })) as any;
+  const data = body?.data ?? body ?? {};
+  const fis = Array.isArray(data?.field_invites) ? data.field_invites : [];
+  const statuses: string[] = fis.map((fi: any) => String(fi?.status ?? "").toLowerCase()).filter((x: string) => x.length > 0);
+  if (statuses.length === 0) {
+    const seen: string[] = [];
+    const walk = (v: any) => {
+      if (!v || typeof v !== "object") return;
+      if (typeof v.status === "string" && (v.email || v.role || v.signer_email || v.roles)) seen.push(String(v.status).toLowerCase());
+      for (const k of Object.keys(v)) walk((v as Record<string, unknown>)[k]);
+    };
+    walk(data);
+    statuses.push(...seen);
+  }
+  const fulfilled = statuses.filter((s) => s === "fulfilled").length;
+  const signed = statuses.length > 0 && fulfilled === statuses.length;
+  return { signed, summary: `doc=${documentId.slice(0, 8)} invites=${statuses.length} fulfilled=${fulfilled} states=[${[...new Set(statuses)].join(",")}]` };
+}

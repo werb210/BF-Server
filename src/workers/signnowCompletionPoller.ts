@@ -9,7 +9,7 @@ import { finalizeSignedApplication } from "../signnow/finalizeSignedApplication.
 const POLL_MS = Math.max(5000, Number(process.env.SIGNNOW_POLL_MS || 20000));
 const BATCH = Math.max(1, Number(process.env.SIGNNOW_POLL_BATCH || 5));
 
-type Row = { id: string; contact_id: string | null; signnow_document_id: string };
+type Row = { id: string; contact_id: string | null; signnow_document_id: string; doc_ids: unknown };
 
 export function startSignNowCompletionPoller(pool: Pool): { stop: () => void } {
   let stopped = false;
@@ -21,7 +21,8 @@ export function startSignNowCompletionPoller(pool: Pool): { stop: () => void } {
     running = true;
     try {
       const rows = await pool.query<Row>(
-        `SELECT id, contact_id, signnow_document_id
+        `SELECT id, contact_id, signnow_document_id,
+                metadata->'signnow_embedded'->'doc_ids' AS doc_ids
            FROM applications
           WHERE signnow_document_id IS NOT NULL
             AND signnow_app_signed_at IS NULL
@@ -32,18 +33,24 @@ export function startSignNowCompletionPoller(pool: Pool): { stop: () => void } {
       );
       for (const app of rows.rows) {
         try {
-          const status = await signnow.getDocumentGroupStatus(app.signnow_document_id);
-          if (status.signed) {
+          const docIds = Array.isArray(app.doc_ids) ? (app.doc_ids as unknown[]).filter((x): x is string => typeof x === "string") : [];
+          if (docIds.length === 0) {
+            console.warn(`[signnow-poll] app=${app.id} has no doc_ids in metadata — cannot verify; skipping`);
+            continue;
+          }
+          const results = await Promise.all(docIds.map((d) => signnow.getDocumentSignedStatus(d)));
+          const allSigned = results.every((r) => r.signed);
+          if (allSigned) {
             const fired = await finalizeSignedApplication(
               { id: app.id, contactId: app.contact_id },
               { documentId: app.signnow_document_id }
             );
             if (fired) {
-              console.log(`[signnow-poll] app=${app.id} signed (${status.summary}) — enqueued lender package`);
+              console.log(`[signnow-poll] app=${app.id} signed (${results.map((r) => r.summary).join("; ")}) — enqueued lender package`);
             }
           }
         } catch (e) {
-          console.warn(`[signnow-poll] check failed app=${app.id} group=${app.signnow_document_id}: ${e instanceof Error ? e.message : String(e)}`);
+          console.warn(`[signnow-poll] check failed app=${app.id}: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
     } catch (e) {
