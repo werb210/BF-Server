@@ -96,4 +96,42 @@ router.post(
   },
 );
 
+// One-shot finalize for an application already signed in SignNow whose signed
+// event never reached us (embedded signing has no read-back; webhook may not
+// have been registered yet). Stamps signnow_app_signed_at, purges SSN/SIN, logs
+// the CRM event, and enqueues the lender package. Idempotent: finalize no-ops if
+// already signed. Admin-gated (USER_MANAGE), like sibling admin routes.
+router.post(
+  "/applications/:id/mark-signed",
+  requireCapability([CAPABILITIES.USER_MANAGE]),
+  async (req: any, res: any) => {
+    try {
+      const id = String(req.params.id || "");
+      if (!id) return res.status(400).json({ ok: false, error: "missing id" });
+      const { pool } = await import("../db.js");
+      const { finalizeSignedApplication } = await import(
+        "../signnow/finalizeSignedApplication.js"
+      );
+      const row = await pool.query<{ contact_id: string | null }>(
+        "SELECT contact_id FROM applications WHERE id::text = $1::text LIMIT 1",
+        [id],
+      );
+      if (row.rows.length === 0)
+        return res.status(404).json({ ok: false, error: "application not found" });
+      const fired = await finalizeSignedApplication(
+        { id, contactId: row.rows[0]?.contact_id ?? null },
+        { documentId: null },
+      );
+      res.json({
+        ok: true,
+        finalized: fired,
+        note: fired ? "lender package enqueued" : "already finalized",
+      });
+    } catch (e: any) {
+      console.error("mark_signed_failed", { message: e?.message });
+      res.status(500).json({ ok: false, error: e?.message ?? "mark_signed_failed" });
+    }
+  },
+);
+
 export default router;

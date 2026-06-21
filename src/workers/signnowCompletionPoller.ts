@@ -15,6 +15,15 @@ export function startSignNowCompletionPoller(pool: Pool): { stop: () => void } {
   let stopped = false;
   let running = false;
 
+  // Reads of signed documents/groups are denied by SignNow for our API key
+  // (group GET -> 403, document GET -> 400 "not readable"), so polling cannot
+  // detect completion. Disabled by default; completion arrives via the webhook
+  // (/api/webhooks/signnow). Set SIGNNOW_POLL_ENABLED=true only if reads work.
+  if (process.env.SIGNNOW_POLL_ENABLED !== "true") {
+    console.log("[signnow-poll] disabled (SignNow blocks signed-doc reads; using webhook)");
+    return { stop: () => {} };
+  }
+
   const tick = async () => {
     if (stopped || running) return;
     if (!signnow.isApiKeyConfigured()) return;
