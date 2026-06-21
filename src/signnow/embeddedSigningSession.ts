@@ -6,6 +6,7 @@ import { buildApplicationPdf } from "./pdfBuilder.js";
 import { buildAccordPdf } from "./accordPdfBuilder.js";
 import { uploadSignedApplicationPdf } from "./blobStorage.js";
 import * as signnow from "./signnowClient.js";
+import { sendViaGraph } from "../services/email/graphSendService.js";
 
 const ROLE_OWNER1 = "Owner 1";
 const ROLE_OWNER2 = "Owner 2";
@@ -80,13 +81,28 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
     }
 
     const group = await signnow.createDocumentGroup(docIds, `Boreal application ${applicationId}`);
-    const invite = await signnow.createEmbeddedGroupInvite(group.groupId, docIds, { email, name: inputs.applicantName ?? undefined, roleName: ROLE_OWNER1 });
+    const o2 = inputs.owners[1];
+    const o2name = o2?.email ? ([o2.firstName, o2.lastName].filter(Boolean).join(" ").trim() || undefined) : undefined;
+    const signers: signnow.EmbeddedSigner[] = [{ email, name: inputs.applicantName ?? undefined, roleName: ROLE_OWNER1 }];
+    if (o2?.email) signers.push({ email: o2.email, name: o2name, roleName: ROLE_OWNER2 });
+
+    const invite = await signnow.createEmbeddedGroupInvite(group.groupId, docIds, signers);
     const link = await signnow.createEmbeddedGroupLink(group.groupId, invite.inviteId, email);
 
-    const o2 = inputs.owners[1];
     if (o2?.email) {
-      const o2name = [o2.firstName, o2.lastName].filter(Boolean).join(" ").trim() || undefined;
-      await signnow.sendGroupEmailInvite(group.groupId, { email: o2.email, name: o2name, roleName: ROLE_OWNER2, fromEmail: fromEmail(), order: 2 }).catch(() => {});
+      try {
+        const o2link = await signnow.createEmbeddedGroupLink(group.groupId, invite.inviteId, o2.email);
+        const greeting = o2name ? `Hi ${o2name},` : "Hello,";
+        const sent = await sendViaGraph({
+          to: o2.email,
+          subject: "Your Boreal application is ready to sign",
+          bodyHtml: `<p>${greeting}</p><p>An application you are listed on as an owner is ready for your signature. Please review and sign using your secure link below:</p><p><a href="${o2link.url}">Review &amp; sign your application</a></p><p>This link is unique to you. If you weren't expecting this, you can safely ignore this email.</p>`,
+          bodyText: `${greeting}\n\nAn application you are listed on as an owner is ready for your signature. Please review and sign using your secure link:\n${o2link.url}\n\nThis link is unique to you.`,
+        });
+        if (!sent.ok) console.warn(`[signnow] Owner 2 email not sent for app=${applicationId}: ${sent.error}`);
+      } catch (e) {
+        console.warn(`[signnow] failed to email Owner 2 signing link for app=${applicationId}: ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
 
     await dbQuery(

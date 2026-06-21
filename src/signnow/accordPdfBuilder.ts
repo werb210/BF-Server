@@ -105,9 +105,9 @@ export async function buildAccordPdf(applicationId: string): Promise<Uint8Array>
   const pg3 = doc.getPage(2);
   const tag = (p: typeof pg, txt: string, x: number, y: number) => p.drawText(txt, { x, y: PH - y, size: 6, font: F, color: rgb(1, 1, 1) });
   tag(pg, "{{t:s;r:y;o:\"Owner 1\";w:140;h:18;}}", 40, 684);
-  tag(pg, "{{t:s;r:y;o:\"Owner 2\";w:140;h:18;}}", 234, 684);
+  if (owners[1]?.email) tag(pg, "{{t:s;r:y;o:\"Owner 2\";w:140;h:18;}}", 234, 684);
   tag(pg3, "{{t:s;r:y;o:\"Owner 1\";w:140;h:18;}}", 95, 521);
-  tag(pg3, "{{t:s;r:y;o:\"Owner 2\";w:140;h:18;}}", 329, 521);
+  if (owners[1]?.email) tag(pg3, "{{t:s;r:y;o:\"Owner 2\";w:140;h:18;}}", 329, 521);
 
   return doc.save();
 }
