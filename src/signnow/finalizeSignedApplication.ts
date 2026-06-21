@@ -6,7 +6,7 @@ import { logCrmEvent } from "../modules/crm/crmTimeline.service.js";
 // cannot double-fire the CRM log or the lender-package enqueue. The enqueue is
 // also ON CONFLICT DO NOTHING against the dedup index.
 export async function finalizeSignedApplication(
-  app: { id: string; crm_contact_id: string | null },
+  app: { id: string; contactId: string | null },
   opts: { signerEmail?: string | null; documentId?: string | null } = {}
 ): Promise<boolean> {
   const stamped = await dbQuery<{ id: string }>(
@@ -20,9 +20,9 @@ export async function finalizeSignedApplication(
   await dbQuery(`update applicants set ssn = null, sin = null, updated_at = now() where application_id = $1`, [app.id]);
   await dbQuery(`update application_partners set ssn = null, sin = null, updated_at = now() where application_id = $1`, [app.id]);
 
-  if (app.crm_contact_id) {
+  if (app.contactId) {
     await logCrmEvent({
-      contactId: app.crm_contact_id,
+      contactId: app.contactId,
       applicationId: app.id,
       eventType: "signnow_signed",
       payload: { signerEmail: opts.signerEmail ?? null, documentId: opts.documentId ?? null },

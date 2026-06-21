@@ -57,8 +57,8 @@ router.post(
     }
     const matchId = document_group_id ?? document_id;
 
-    const appResult = await dbQuery<{ id: string; crm_contact_id: string | null }>(
-      `select id, crm_contact_id from applications where signnow_document_id = $1 limit 1`,
+    const appResult = await dbQuery<{ id: string; contact_id: string | null }>(
+      `select id, contact_id from applications where signnow_document_id = $1 limit 1`,
       [matchId]
     );
 
@@ -71,7 +71,7 @@ router.post(
     // Shared finalize: stamp signed, purge SIN/SSN, log CRM, enqueue lender
     // package. Same path the completion poller uses. Idempotent across retries.
     await finalizeSignedApplication(
-      { id: app.id, crm_contact_id: app.crm_contact_id },
+      { id: app.id, contactId: app.contact_id },
       { signerEmail: signer_email, documentId: document_id }
     );
 
