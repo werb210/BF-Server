@@ -115,3 +115,37 @@ export async function getDocumentSignedStatus(documentId: string): Promise<{ sig
   const signed = statuses.length > 0 && fulfilled === statuses.length;
   return { signed, summary: `doc=${documentId.slice(0, 8)} invites=${statuses.length} fulfilled=${fulfilled} states=[${[...new Set(statuses)].join(",")}]` };
 }
+export async function getAuthenticatedUserId(): Promise<string | null> {
+  const body = (await signnowFetch(`/user`, { method: "GET" })) as any;
+  const id = body?.id ?? body?.data?.id ?? null;
+  return typeof id === "string" && id.trim() ? id.trim() : null;
+}
+export async function listEventSubscriptions(): Promise<unknown[]> {
+  const body = (await signnowFetch(`/api/v2/events`, { method: "GET" })) as any;
+  return Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : [];
+}
+export async function ensureUserSignedSubscription(
+  callbackUrl: string,
+  eventName = "user.document.fieldinvite.signed",
+): Promise<{ created: boolean; summary: string }> {
+  const userId = await getAuthenticatedUserId();
+  if (!userId) return { created: false, summary: "no user id from GET /user" };
+  let existing: unknown[] = [];
+  try { existing = await listEventSubscriptions(); } catch { existing = []; }
+  const already = existing.some((it) => {
+    const s = JSON.stringify(it ?? "");
+    return s.includes(eventName) && s.includes(callbackUrl);
+  });
+  if (already) return { created: false, summary: `subscription already present (${eventName})` };
+  await signnowFetch(`/api/v2/events`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event: eventName,
+      entity_id: userId,
+      action: "callback",
+      attributes: { callback: callbackUrl, use_tls_12: true },
+    }),
+  });
+  return { created: true, summary: `subscription created (${eventName} -> ${callbackUrl})` };
+}

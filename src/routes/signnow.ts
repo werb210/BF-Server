@@ -47,24 +47,58 @@ router.post(
       return;
     }
 
-    const { document_id, document_group_id, status, signer_email } = req.body ?? {};
+    const b: any = req.body ?? {};
+    try { console.log("[signnow-webhook] raw:", JSON.stringify(b).slice(0, 1500)); } catch { /* ignore */ }
 
-    // BF_SERVER_BLOCK_v712 — accept document-group completion as well as single-doc.
+    // SignNow payloads vary (flat vs nested under meta/content/data). Search the
+    // common containers for ids and the event/status signal.
+    const nests = [b, b.content, b.data, b.meta, b.meta?.content].filter(
+      (x: any) => x && typeof x === "object",
+    );
+    const grab = (keys: string[]): string | null => {
+      for (const n of nests) for (const k of keys) {
+        const v = n[k];
+        if (typeof v === "string" && v.trim()) return v.trim();
+      }
+      return null;
+    };
+    const eventName = (grab(["event", "event_name", "event_type"]) ?? "").toLowerCase();
+    const status = (grab(["status"]) ?? "").toLowerCase();
+    const documentId = grab(["document_id", "documentId", "doc_id", "docid"]);
+    const documentGroupId = grab(["document_group_id", "documentGroupId", "group_id", "documentgroup_id"]);
+    const signerEmail = grab(["signer_email", "email"]);
+
+    // Accept either an explicit signed status or a signing event name (e.g.
+    // user.document.fieldinvite.signed, document.complete, document_group...completed).
     const signedStatuses = new Set(["document_signed","document_group_invite_signed","document_group_invite_complete","document_group_signed"]);
-    if (!signedStatuses.has(String(status))) {
-      res.status(200).json({ received: true });
+    const isSigningEvent = signedStatuses.has(status) || /signed|complete/.test(eventName);
+    if (!isSigningEvent) {
+      res.status(200).json({ received: true, ignored: true });
       return;
     }
-    const matchId = document_group_id ?? document_id;
 
-    const appResult = await dbQuery<{ id: string; contact_id: string | null }>(
-      `select id, contact_id from applications where signnow_document_id = $1 limit 1`,
-      [matchId]
-    );
-
-    const app = appResult.rows[0];
+    // Match by group id or document id against signnow_document_id, then fall
+    // back to the embedded doc_ids array stored at signing time.
+    const ids = [documentGroupId, documentId].filter(Boolean) as string[];
+    let app: { id: string; contact_id: string | null } | undefined;
+    if (ids.length) {
+      const r = await dbQuery<{ id: string; contact_id: string | null }>(
+        `select id, contact_id from applications where signnow_document_id = any($1::text[]) limit 1`,
+        [ids]
+      );
+      app = r.rows[0];
+    }
+    if (!app && documentId) {
+      const r = await dbQuery<{ id: string; contact_id: string | null }>(
+        `select id, contact_id from applications
+           where metadata->'signnow_embedded'->'doc_ids' @> $1::jsonb limit 1`,
+        [JSON.stringify([documentId])]
+      );
+      app = r.rows[0];
+    }
     if (!app) {
-      res.status(200).json({ received: true });
+      console.warn(`[signnow-webhook] no app match (group=${documentGroupId ?? "-"} doc=${documentId ?? "-"} event=${eventName || status})`);
+      res.status(200).json({ received: true, matched: false });
       return;
     }
 
@@ -72,7 +106,7 @@ router.post(
     // package. Same path the completion poller uses. Idempotent across retries.
     await finalizeSignedApplication(
       { id: app.id, contactId: app.contact_id },
-      { signerEmail: signer_email, documentId: document_id }
+      { signerEmail, documentId }
     );
 
     res.status(200).json({ received: true, purged: true });
