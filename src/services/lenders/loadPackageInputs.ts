@@ -58,11 +58,41 @@ function flatten(prefix: string, v: unknown, out: FlatField[]): void {
 }
 
 async function loadSignedApplicationPdf(ctx: LoadCtx, _fields: FlatField[]): Promise<Buffer | null> {
-  const r = await ctx.pool.query<{signnow_document_id:string|null;signed_application_blob_name:string|null}>(`SELECT signnow_document_id, COALESCE(metadata->>'signed_application_blob_name', NULL) AS signed_application_blob_name FROM applications WHERE id::text = $1 LIMIT 1`, [ctx.applicationId]).catch(() => ({ rows: [] as Array<{signnow_document_id:string|null;signed_application_blob_name:string|null}> }));
-  const blobName = r.rows[0]?.signed_application_blob_name ?? null;
+  const r = await ctx.pool.query<{signnow_document_id:string|null;primary_doc_id:string|null;signed_at:string|null;signed_application_blob_name:string|null}>(
+    `SELECT signnow_document_id,
+            (metadata->'signnow_embedded'->'doc_ids'->>0) AS primary_doc_id,
+            signnow_app_signed_at AS signed_at,
+            COALESCE(metadata->>'signed_application_blob_name', NULL) AS signed_application_blob_name
+       FROM applications WHERE id::text = $1 LIMIT 1`,
+    [ctx.applicationId]
+  ).catch(() => ({ rows: [] as Array<{signnow_document_id:string|null;primary_doc_id:string|null;signed_at:string|null;signed_application_blob_name:string|null}> }));
+  const row = r.rows[0];
+  const blobName = row?.signed_application_blob_name ?? null;
   if (blobName) { try { const got = await getStorage().get(blobName); if (got?.buffer?.length) return got.buffer; } catch {} }
+  // SELF-HEAL: the blob may be missing if finalize never ran (e.g. the SignNow
+  // webhook never reached us). Only fetch the REAL signed document on demand when
+  // the app is genuinely signed (signnow_app_signed_at set) so we can never ship
+  // an unsigned PDF labelled as signed. The download needs a DOCUMENT id, so use
+  // doc_ids[0]; signnow_document_id is the GROUP id and would 404 the endpoint.
+  if (row?.signed_at) {
+    const docId = row.primary_doc_id ?? row.signnow_document_id ?? null;
+    if (docId) {
+      try {
+        const { downloadDocument } = await import("../../signnow/signnowClient.js");
+        const pdf = await downloadDocument(docId);
+        if (pdf && pdf.length) {
+          try {
+            const { uploadSignedApplicationPdf } = await import("../../signnow/blobStorage.js");
+            const stored = await uploadSignedApplicationPdf(ctx.applicationId, pdf);
+            await ctx.pool.query(`UPDATE applications SET metadata = COALESCE(metadata,'{}'::jsonb) || jsonb_build_object('signed_application_blob_name', $2::text, 'signed_application_blob_url', $3::text), updated_at = now() WHERE id::text = $1`, [ctx.applicationId, stored.blobName, stored.url]).catch(() => {});
+          } catch {}
+          return pdf;
+        }
+      } catch (e) { console.warn("[loadPackageInputs] on-demand signed PDF download failed", e instanceof Error ? e.message : String(e)); }
+    }
+  }
   // Never fabricate a "signed" application from form data. If the real signed PDF
-  // is not in storage, return null; the package build hard-fails upstream so a
+  // is not available, return null; the package build hard-fails upstream so a
   // lender can never receive an unsigned document labelled as signed.
   return null;
 }
