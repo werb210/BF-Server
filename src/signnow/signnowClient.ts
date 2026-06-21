@@ -34,26 +34,20 @@ export async function createDocumentGroup(documentIds: string[], groupName: stri
   return { groupId: body.id };
 }
 export type EmbeddedSigner = { email: string; name?: string; roleName: string };
-export async function createEmbeddedGroupInvite(groupId: string, documentIds: string[], signer: EmbeddedSigner): Promise<{ inviteId: string }> {
-  const parts = (signer.name ?? "").trim().split(/\s+/).filter(Boolean);
-  const firstName = parts[0] ?? "";
-  const lastName = parts.slice(1).join(" ");
-  const payload = {
-    invites: [
-      {
-        order: 1,
-        signers: [
-          {
-            email: signer.email,
-            auth_method: "none",
-            ...(firstName ? { first_name: firstName } : {}),
-            ...(lastName ? { last_name: lastName } : {}),
-            documents: documentIds.map((id) => ({ id, role: signer.roleName, action: "sign" })),
-          },
-        ],
-      },
-    ],
-  };
+export async function createEmbeddedGroupInvite(groupId: string, documentIds: string[], signers: EmbeddedSigner[]): Promise<{ inviteId: string }> {
+  const signerPayloads = signers.map((signer) => {
+    const parts = (signer.name ?? "").trim().split(/\s+/).filter(Boolean);
+    const firstName = parts[0] ?? "";
+    const lastName = parts.slice(1).join(" ");
+    return {
+      email: signer.email,
+      auth_method: "none",
+      ...(firstName ? { first_name: firstName } : {}),
+      ...(lastName ? { last_name: lastName } : {}),
+      documents: documentIds.map((id) => ({ id, role: signer.roleName, action: "sign" })),
+    };
+  });
+  const payload = { invites: [{ order: 1, signers: signerPayloads }] };
   const body = (await signnowFetch(`/v2/document-groups/${encodeURIComponent(groupId)}/embedded-invites`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })) as { data?: { id?: string }; id?: string };
   const inviteId = body?.data?.id ?? body?.id;
   if (typeof inviteId !== "string") throw new SignNowError("SignNow embedded group invite returned no id", undefined, body);
