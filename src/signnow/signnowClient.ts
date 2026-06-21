@@ -137,15 +137,27 @@ export async function ensureUserSignedSubscription(
     return s.includes(eventName) && s.includes(callbackUrl);
   });
   if (already) return { created: false, summary: `subscription already present (${eventName})` };
-  await signnowFetch(`/api/v2/events`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      event: eventName,
-      entity_id: userId,
-      action: "callback",
-      attributes: { callback: callbackUrl, use_tls_12: true },
-    }),
-  });
+  try {
+    await signnowFetch(`/api/v2/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event: eventName,
+        entity_id: userId,
+        action: "callback",
+        attributes: { callback: callbackUrl, use_tls_12: true },
+      }),
+    });
+  } catch (e) {
+    // SignNow rejects a duplicate subscription with code 15006045 / "must have
+    // different combinations of entityId, eventName, and callbackUrl". That just
+    // means the subscription already exists -> treat as success (avoids an error
+    // log on every reboot when GET /api/v2/events doesn't dedup cleanly).
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/different combinations|15006045/i.test(msg)) {
+      return { created: false, summary: `subscription already active (${eventName})` };
+    }
+    throw e;
+  }
   return { created: true, summary: `subscription created (${eventName} -> ${callbackUrl})` };
 }
