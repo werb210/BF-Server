@@ -55,8 +55,24 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
 
     const sess = md.signnow_embedded && typeof md.signnow_embedded === "object" ? md.signnow_embedded : null;
     if (sess?.group_id && sess?.invite_id) {
-      const link = await signnow.createEmbeddedGroupLink(String(sess.group_id), String(sess.invite_id), email);
-      return { status: "ready", url: link.url, expiresAt: link.expiresAt };
+      try {
+        const link = await signnow.createEmbeddedGroupLink(String(sess.group_id), String(sess.invite_id), email);
+        return { status: "ready", url: link.url, expiresAt: link.expiresAt };
+      } catch (e) {
+        // 19001041 / "different application" / "denied" / "not readable" (65610)
+        // all mean the stored group belongs to a different SignNow app — orphaned
+        // by an API-key/app rotation. We can't relink or read it. Surface a soft
+        // "stale" state instead of a raw error (the CMP shows a calm message). We
+        // do NOT auto-recreate: we can't tell from an unreadable group whether it
+        // was already signed, and recreating would wrongly re-prompt a signed app.
+        // If it was signed, staff run the admin mark-signed route to finalize.
+        const m = e instanceof Error ? e.message : String(e);
+        if (/19001041|different|denied|not readable|65610|access/i.test(m)) {
+          console.warn(`[signnow] orphaned signing group for app=${applicationId} (${m}); returning stale state`);
+          return { status: "not_ready", reason: "signing_session_stale" };
+        }
+        throw e;
+      }
     }
 
     const docIds: string[] = [];
