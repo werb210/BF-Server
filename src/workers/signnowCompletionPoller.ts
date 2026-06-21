@@ -9,7 +9,7 @@ import { finalizeSignedApplication } from "../signnow/finalizeSignedApplication.
 const POLL_MS = Math.max(5000, Number(process.env.SIGNNOW_POLL_MS || 20000));
 const BATCH = Math.max(1, Number(process.env.SIGNNOW_POLL_BATCH || 5));
 
-type Row = { id: string; crm_contact_id: string | null; signnow_document_id: string };
+type Row = { id: string; contact_id: string | null; signnow_document_id: string };
 
 export function startSignNowCompletionPoller(pool: Pool): { stop: () => void } {
   let stopped = false;
@@ -21,7 +21,7 @@ export function startSignNowCompletionPoller(pool: Pool): { stop: () => void } {
     running = true;
     try {
       const rows = await pool.query<Row>(
-        `SELECT id, crm_contact_id, signnow_document_id
+        `SELECT id, contact_id, signnow_document_id
            FROM applications
           WHERE signnow_document_id IS NOT NULL
             AND signnow_app_signed_at IS NULL
@@ -35,7 +35,7 @@ export function startSignNowCompletionPoller(pool: Pool): { stop: () => void } {
           const status = await signnow.getDocumentGroupStatus(app.signnow_document_id);
           if (status.signed) {
             const fired = await finalizeSignedApplication(
-              { id: app.id, crm_contact_id: app.crm_contact_id },
+              { id: app.id, contactId: app.contact_id },
               { documentId: app.signnow_document_id }
             );
             if (fired) {
