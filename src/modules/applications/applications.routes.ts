@@ -13,9 +13,14 @@ import { requireAdmin } from '../../middleware/requireAdmin.js';
 import { matchLenders, type LenderMatch } from '../../ai/lenderMatchEngine.js';
 // BF_SERVER_BLOCK_v198_LENDER_MATCH_GATE_AND_CACHE_v1
 import { readLenderMatchEnvelope, computeAndCacheLenderMatches, readCachedMatchesArray } from '../../services/lenderMatchCache.js';
+import multer from 'multer';
+import { getStorage } from '../../lib/storage/index.js';
+import { sendSMS } from '../../services/smsService.js';
+import { randomUUID } from 'node:crypto';
 // BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const router = Router();
+const lenderTermSheetUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
 
 router.get('/:publicId/required-documents', safeHandler(async (req: any, res: any) => {
@@ -1409,12 +1414,19 @@ router.patch('/:id/financials', safeHandler(async (req: any, res: any) => {
 // Silo guard preserved above the early return so it still runs for the
 // 404 case (don't reveal cross-silo application existence even on a
 // 501 surface).
-router.post('/:id/lenders/:lenderId/files', safeHandler(async (req: any, res: any) => {
+// Per-lender term-sheet upload. A term sheet IS that lender's offer, so this
+// stores the PDF, creates an offer row tied to the lender (archiving only THIS
+// lender's prior active offer so competing offers from other lenders survive),
+// advances Off to Lender -> Offer, and texts the client a review link.
+router.post('/:id/lenders/:lenderId/files', lenderTermSheetUpload.single('file'), safeHandler(async (req: any, res: any) => {
   const appId = String(req.params.id ?? '').trim();
   const lenderId = String(req.params.lenderId ?? '').trim();
   if (!appId || !lenderId) throw new AppError('validation_error', 'application id and lender id required.', 400);
-  const appRes = await pool.query<{ silo: string | null }>(
-    `SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1`, [appId],
+  const file = req.file as Express.Multer.File | undefined;
+  if (!file) throw new AppError('validation_error', 'Term sheet file is required.', 400);
+
+  const appRes = await pool.query<{ silo: string | null; pipeline_state: string | null; metadata: any }>(
+    `SELECT silo, pipeline_state, metadata FROM applications WHERE id::text = ($1)::text LIMIT 1`, [appId],
   );
   const app = appRes.rows[0];
   if (!app) throw new AppError('not_found', 'Application not found.', 404);
@@ -1422,13 +1434,81 @@ router.post('/:id/lenders/:lenderId/files', safeHandler(async (req: any, res: an
   if (app.silo && silo && app.silo !== silo) {
     throw new AppError('not_found', 'Application not found.', 404);
   }
-  // BF_SERVER_BLOCK_v328_LENDERS_FILES_HONEST_501_v1 — see header comment.
-  return res.status(501).json({
-    ok: false,
-    error: 'not_implemented',
-    code: 'lender_per_vendor_upload_not_wired',
-    message: 'Per-lender file upload is not yet wired (no multer, no storage). Use POST /api/documents/upload instead.',
+
+  const lenderRes = await pool.query<{ name: string | null }>(
+    `SELECT name FROM lenders WHERE id::text = ($1)::text LIMIT 1`, [lenderId],
+  );
+  const lenderName = (lenderRes.rows[0]?.name ?? '').trim();
+  if (!lenderName) throw new AppError('not_found', 'Lender not found.', 404);
+
+  const b = req.body ?? {};
+  const num = (v: any) => (v === undefined || v === null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+  const str = (v: any) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const amount = num(b.amount);
+  const rateFactor = str(b.rate_factor);
+  const term = str(b.term);
+  const paymentFrequency = str(b.payment_frequency);
+  const expiryDate = str(b.expiry_date);
+  const notes = str(b.notes);
+
+  const put = await getStorage().put({
+    buffer: file.buffer,
+    filename: file.originalname,
+    contentType: file.mimetype,
+    pathPrefix: `applications/${appId}/term-sheets`,
   });
+
+  // Archive only this lender's prior active offer (competing offers preserved).
+  await pool.query(
+    `UPDATE offers SET is_archived = TRUE, archived_at = now(), updated_at = now()
+      WHERE application_id::text = ($1)::text AND lender_id::text = ($2)::text AND is_archived = FALSE`,
+    [appId, lenderId],
+  ).catch(() => {});
+
+  const offerId = randomUUID();
+  await pool.query(
+    `INSERT INTO offers (
+       id, application_id, lender_id, lender_name, amount, rate_factor, term, payment_frequency,
+       expiry_date, document_url, notes, status, recommended,
+       term_sheet_blob_name, term_sheet_filename, term_sheet_size_bytes, term_sheet_uploaded_at,
+       is_archived, created_at, updated_at
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending', false,
+             $12, $13, $14, now(), false, now(), now())`,
+    [offerId, appId, lenderId, lenderName, amount, rateFactor, term, paymentFrequency,
+     expiryDate, put.url, notes, put.blobName, file.originalname, put.sizeBytes],
+  );
+
+  let stage = app.pipeline_state ?? null;
+  if (stage === 'Off to Lender') {
+    await pool.query(
+      `UPDATE applications SET pipeline_state = 'Offer', updated_at = now() WHERE id::text = ($1)::text`,
+      [appId],
+    ).catch(() => {});
+    stage = 'Offer';
+  }
+
+  try {
+    const phoneRes = await pool.query<{ phone: string | null }>(
+      `SELECT c.phone FROM applications a LEFT JOIN contacts c ON c.id = a.contact_id WHERE a.id::text = ($1)::text LIMIT 1`,
+      [appId],
+    );
+    const phone = phoneRes.rows[0]?.phone ?? (() => {
+      try {
+        const md = app.metadata ?? {};
+        const fd = md.formData ?? {};
+        return fd?.applicant?.phone ?? md?.applicant?.phone ?? md?.borrower?.phone ?? null;
+      } catch { return null; }
+    })();
+    if (phone) {
+      const portalBase = process.env.CLIENT_PORTAL_URL || 'https://client.boreal.financial';
+      await sendSMS(phone, `Your term sheet from ${lenderName} is ready to review: ${portalBase}/application/${appId}`);
+    }
+  } catch (err) {
+    console.warn('[lender-term-sheet] SMS notification failed', { appId, err: String(err) });
+  }
+
+  return res.status(201).json({ ok: true, offer_id: offerId, lender_id: lenderId, blob_name: put.blobName, stage });
 }));
 
 export default router;
