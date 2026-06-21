@@ -80,7 +80,7 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
     }
 
     const group = await signnow.createDocumentGroup(docIds, `Boreal application ${applicationId}`);
-    const invite = await signnow.createEmbeddedGroupInvite(group.groupId, { email, name: inputs.applicantName ?? undefined, roleName: ROLE_OWNER1 });
+    const invite = await signnow.createEmbeddedGroupInvite(group.groupId, docIds, { email, name: inputs.applicantName ?? undefined, roleName: ROLE_OWNER1 });
     const link = await signnow.createEmbeddedGroupLink(group.groupId, invite.inviteId, email);
 
     const o2 = inputs.owners[1];
