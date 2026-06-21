@@ -37,7 +37,7 @@ export function startLenderPackageWorker(pool: Pool): { stop: () => void } {
             FOR UPDATE SKIP LOCKED
          )
          UPDATE job_queue
-            SET status = 'in_progress', updated_at = now()
+            SET status = 'running', updated_at = now()
           WHERE id IN (SELECT id FROM next_jobs)
           RETURNING id, payload`,
         [BATCH]
