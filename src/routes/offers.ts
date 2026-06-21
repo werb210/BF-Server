@@ -11,6 +11,34 @@ import { ROLES } from "../auth/roles.js";
 import multer from "multer";
 import { getStorage } from "../lib/storage/index.js";
 
+// Replace each offer's document_url (a raw, non-public blob URL the browser
+// cannot open) with a short-lived signed URL. Falls back to the stored value
+// when there is no term-sheet blob or the backend cannot sign (e.g. local dev).
+async function attachTermSheetUrls(rows: any[]): Promise<any[]> {
+  if (!rows.length) return rows;
+  const ids = rows.map((r) => String(r.id));
+  const blobById = new Map<string, string>();
+  try {
+    const b = await runQuery(
+      `select id::text as id, term_sheet_blob_name from offers where id::text = any($1::text[])`,
+      [ids]
+    );
+    for (const r of b.rows as Array<{ id: string; term_sheet_blob_name: string | null }>) {
+      if (r.term_sheet_blob_name) blobById.set(r.id, r.term_sheet_blob_name);
+    }
+  } catch { return rows; }
+  const storage = getStorage();
+  if (!storage.getSignedUrl) return rows;
+  return Promise.all(
+    rows.map(async (r) => {
+      const blob = blobById.get(String(r.id));
+      if (!blob) return r;
+      const signed = await storage.getSignedUrl!(blob).catch(() => null);
+      return signed ? { ...r, document_url: signed } : r;
+    })
+  );
+}
+
 const router = Router();
 
 const offerUpload = multer({
@@ -53,7 +81,8 @@ router.get(
           values: [callerSilo],
         };
     const rows = await runQuery(query.text, query.values);
-    res.status(200).json({ items: rows.rows });
+    const items = await attachTermSheetUrls(rows.rows);
+    res.status(200).json({ items });
   })
 );
 
@@ -204,6 +233,51 @@ router.patch(
       eventBus.emit("offer_accepted", { offerId: id, applicationId: offer.application_id });
     }
     res.status(200).json({ offer });
+  })
+);
+
+// Client requests changes to an offer: a flag + staff notification, NOT a
+// decline and NOT a stage change. Keep the offer active so staff can follow up
+// with the lender and re-issue.
+router.post(
+  "/:id/request-changes",
+  requireAuth,
+  safeHandler(async (req: any, res: any) => {
+    const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
+    if (!id) throw new AppError("validation_error", "Offer id is required.", 400);
+    const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+    const { getSilo } = await import("../middleware/silo.js");
+    const callerSilo = getSilo(res) ?? null;
+    const updated = await runQuery(
+      `update offers
+          set status = 'changes_requested',
+              notes = case when $3::text is null or $3::text = '' then notes else $3::text end,
+              updated_at = now()
+        where id = $1
+          and exists (
+            select 1 from applications a
+             where a.id::text = offers.application_id::text
+               and ($2::text is null or a.silo is null or a.silo = $2::text)
+          )
+       returning id, application_id, lender_name, status`,
+      [id, callerSilo, reason || null]
+    );
+    const offer = updated.rows[0] as { id: string; application_id: string; lender_name: string | null } | undefined;
+    if (!offer) throw new AppError("not_found", "Offer not found.", 404);
+    try {
+      const { notifyAllStaff } = await import("../services/notifications/notifyAllStaff.js");
+      await notifyAllStaff({
+        pool,
+        notificationType: "offer_changes_requested",
+        title: "Offer changes requested",
+        body: `The client requested changes on the ${offer.lender_name ?? "lender"} offer${reason ? `: ${reason}` : "."}`,
+        refTable: "offers",
+        refId: id,
+        silo: callerSilo ?? "BF",
+      });
+    } catch (e) { console.warn("[offers] request-changes notify failed", e instanceof Error ? e.message : String(e)); }
+    eventBus.emit("offer_changes_requested", { offerId: id, applicationId: offer.application_id, reason });
+    res.status(200).json({ ok: true, offer_id: id, status: "changes_requested" });
   })
 );
 

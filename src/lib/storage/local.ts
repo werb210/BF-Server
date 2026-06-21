@@ -20,6 +20,8 @@ export class LocalBackend implements StorageBackend {
     return { blobName, url: `local://${blobName}`, hash, sizeBytes: p.buffer.length };
   }
 
+  async getSignedUrl(_blobName: string, _expiresInSeconds?: number): Promise<string | null> { return null; }
+
   async get(blobName: string) {
     try {
       const buf = await fs.readFile(path.join(this.root, blobName));
