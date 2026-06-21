@@ -41,12 +41,16 @@ export async function createEmbeddedGroupInvite(groupId: string, documentIds: st
   const payload = {
     invites: [
       {
-        email: signer.email,
         order: 1,
-        auth_method: "none",
-        ...(firstName ? { first_name: firstName } : {}),
-        ...(lastName ? { last_name: lastName } : {}),
-        documents: documentIds.map((id) => ({ id, role: signer.roleName, action: "sign" })),
+        signers: [
+          {
+            email: signer.email,
+            auth_method: "none",
+            ...(firstName ? { first_name: firstName } : {}),
+            ...(lastName ? { last_name: lastName } : {}),
+            documents: documentIds.map((id) => ({ id, role: signer.roleName, action: "sign" })),
+          },
+        ],
       },
     ],
   };
