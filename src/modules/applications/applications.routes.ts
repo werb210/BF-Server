@@ -1425,8 +1425,8 @@ router.post('/:id/lenders/:lenderId/files', lenderTermSheetUpload.single('file')
   const file = req.file as Express.Multer.File | undefined;
   if (!file) throw new AppError('validation_error', 'Term sheet file is required.', 400);
 
-  const appRes = await pool.query<{ silo: string | null; pipeline_state: string | null; metadata: any }>(
-    `SELECT silo, pipeline_state, metadata FROM applications WHERE id::text = ($1)::text LIMIT 1`, [appId],
+  const appRes = await pool.query<{ silo: string | null; pipeline_state: string | null }>(
+    `SELECT silo, pipeline_state FROM applications WHERE id::text = ($1)::text LIMIT 1`, [appId],
   );
   const app = appRes.rows[0];
   if (!app) throw new AppError('not_found', 'Application not found.', 404);
@@ -1435,11 +1435,25 @@ router.post('/:id/lenders/:lenderId/files', lenderTermSheetUpload.single('file')
     throw new AppError('not_found', 'Application not found.', 404);
   }
 
-  const lenderRes = await pool.query<{ name: string | null }>(
-    `SELECT name FROM lenders WHERE id::text = ($1)::text LIMIT 1`, [lenderId],
+  // The Lenders tab sends the lender_product_id as :lenderId (match.id = product
+  // id). Resolve it to the owning lender; fall back to a direct lender id.
+  const prodRes = await pool.query<{ lender_id: string | null; name: string | null }>(
+    `SELECT l.id::text AS lender_id, l.name
+       FROM lender_products lp JOIN lenders l ON l.id = lp.lender_id
+      WHERE lp.id::text = ($1)::text LIMIT 1`,
+    [lenderId],
   );
-  const lenderName = (lenderRes.rows[0]?.name ?? '').trim();
-  if (!lenderName) throw new AppError('not_found', 'Lender not found.', 404);
+  let resolvedLenderId = prodRes.rows[0]?.lender_id ?? null;
+  let lenderName = (prodRes.rows[0]?.name ?? '').trim();
+  if (!resolvedLenderId) {
+    const direct = await pool.query<{ id: string; name: string | null }>(
+      `SELECT id::text AS id, name FROM lenders WHERE id::text = ($1)::text LIMIT 1`,
+      [lenderId],
+    );
+    resolvedLenderId = direct.rows[0]?.id ?? null;
+    lenderName = (direct.rows[0]?.name ?? '').trim();
+  }
+  if (!resolvedLenderId || !lenderName) throw new AppError('not_found', 'Lender not found.', 404);
 
   const b = req.body ?? {};
   const num = (v: any) => (v === undefined || v === null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
@@ -1462,7 +1476,7 @@ router.post('/:id/lenders/:lenderId/files', lenderTermSheetUpload.single('file')
   await pool.query(
     `UPDATE offers SET is_archived = TRUE, archived_at = now(), updated_at = now()
       WHERE application_id::text = ($1)::text AND lender_id::text = ($2)::text AND is_archived = FALSE`,
-    [appId, lenderId],
+    [appId, resolvedLenderId],
   ).catch(() => {});
 
   const offerId = randomUUID();
@@ -1475,7 +1489,7 @@ router.post('/:id/lenders/:lenderId/files', lenderTermSheetUpload.single('file')
      )
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending', false,
              $12, $13, $14, now(), false, now(), now())`,
-    [offerId, appId, lenderId, lenderName, amount, rateFactor, term, paymentFrequency,
+    [offerId, appId, resolvedLenderId, lenderName, amount, rateFactor, term, paymentFrequency,
      expiryDate, put.url, notes, put.blobName, file.originalname, put.sizeBytes],
   );
 
@@ -1490,16 +1504,10 @@ router.post('/:id/lenders/:lenderId/files', lenderTermSheetUpload.single('file')
 
   try {
     const phoneRes = await pool.query<{ phone: string | null }>(
-      `SELECT c.phone FROM applications a LEFT JOIN contacts c ON c.id = a.contact_id WHERE a.id::text = ($1)::text LIMIT 1`,
+      `SELECT COALESCE(applicant_phone, contact_phone, NULL) AS phone FROM applications WHERE id::text = ($1)::text LIMIT 1`,
       [appId],
     );
-    const phone = phoneRes.rows[0]?.phone ?? (() => {
-      try {
-        const md = app.metadata ?? {};
-        const fd = md.formData ?? {};
-        return fd?.applicant?.phone ?? md?.applicant?.phone ?? md?.borrower?.phone ?? null;
-      } catch { return null; }
-    })();
+    const phone = phoneRes.rows[0]?.phone ?? null;
     if (phone) {
       const portalBase = process.env.CLIENT_PORTAL_URL || 'https://client.boreal.financial';
       await sendSMS(phone, `Your term sheet from ${lenderName} is ready to review: ${portalBase}/application/${appId}`);
@@ -1508,7 +1516,7 @@ router.post('/:id/lenders/:lenderId/files', lenderTermSheetUpload.single('file')
     console.warn('[lender-term-sheet] SMS notification failed', { appId, err: String(err) });
   }
 
-  return res.status(201).json({ ok: true, offer_id: offerId, lender_id: lenderId, blob_name: put.blobName, stage });
+  return res.status(201).json({ ok: true, offer_id: offerId, lender_id: resolvedLenderId, blob_name: put.blobName, stage });
 }));
 
 export default router;
