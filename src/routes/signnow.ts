@@ -2,7 +2,7 @@ import { Router, type Request } from "express";
 import crypto from "node:crypto";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { dbQuery } from "../db.js";
-import { logCrmEvent } from "../modules/crm/crmTimeline.service.js";
+import { finalizeSignedApplication } from "../signnow/finalizeSignedApplication.js";
 
 // BF_SERVER_BLOCK_v141_SIGNNOW_WEBHOOK_REPAIR_v1
 // HMAC-SHA256 verify against SIGNNOW_WEBHOOK_SECRET. SignNow sends the
@@ -68,43 +68,11 @@ router.post(
       return;
     }
 
-    // BF_SERVER_BLOCK_v141_SIGNNOW_WEBHOOK_REPAIR_v1 — stamp the column
-    // the orchestrator's Stage B gate reads (see v142). Without this the
-    // gate would always be false even with the webhook now firing.
-    await dbQuery(
-      `update applications set signnow_app_signed_at = now(), updated_at = now()
-        where id::text = ($1)::text`,
-      [app.id]
-    );
-
-    await dbQuery(
-      `update applicants set ssn = null, sin = null, updated_at = now() where application_id = $1`,
-      [app.id]
-    );
-
-    await dbQuery(
-      `update application_partners set ssn = null, sin = null, updated_at = now() where application_id = $1`,
-      [app.id]
-    );
-
-    if (app.crm_contact_id) {
-      await logCrmEvent({
-        contactId: app.crm_contact_id,
-        applicationId: app.id,
-        eventType: "signnow_signed",
-        payload: { signerEmail: signer_email, documentId: document_id },
-      });
-    }
-
-    // BF_SERVER_BLOCK_v185_LENDER_PACKAGE_DEDUP_v1
-    // ON CONFLICT DO NOTHING against the partial unique index from
-    // migration 2026_05_06_lender_package_dedup_v185.sql. SignNow webhook
-    // retries no longer cause duplicate dispatches.
-    await dbQuery(
-      `insert into job_queue (id, type, payload, status, created_at)
-       values (gen_random_uuid(), 'send_lender_package', $1::jsonb, 'pending', now())
-       on conflict ((payload->>'applicationId')) where type = 'send_lender_package' and status in ('pending','running') do nothing`,
-      [JSON.stringify({ applicationId: app.id })]
+    // Shared finalize: stamp signed, purge SIN/SSN, log CRM, enqueue lender
+    // package. Same path the completion poller uses. Idempotent across retries.
+    await finalizeSignedApplication(
+      { id: app.id, crm_contact_id: app.crm_contact_id },
+      { signerEmail: signer_email, documentId: document_id }
     );
 
     res.status(200).json({ received: true, purged: true });

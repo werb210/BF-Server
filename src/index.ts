@@ -142,6 +142,12 @@ export async function start(): Promise<void> {
     try { const w = startLenderPackageWorker(pool); workerStops.push(w.stop); console.log("[startup] lender-package worker started"); }
     catch (err) { console.error("[startup] lender-package worker failed to start:", err); }
 
+    // SignNow completion poller — embedded signing has no webhook subscription,
+    // so poll document-group status and run the same finalize the webhook would.
+    const { startSignNowCompletionPoller } = await import("./workers/signnowCompletionPoller.js");
+    try { const w = startSignNowCompletionPoller(pool); workerStops.push(w.stop); console.log("[startup] signnow completion poller started"); }
+    catch (err) { console.error("[startup] signnow completion poller failed to start:", err); }
+
     // BF_SERVER_BLOCK_v706_READ_RECEIPTS — stamp opened_at from inbox read receipts.
     const { startReadReceiptWorker } = await import("./workers/readReceiptWorker.js");
     try { const w = startReadReceiptWorker(pool); workerStops.push(w.stop); console.log("[startup] read-receipt worker started"); }
