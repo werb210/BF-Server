@@ -27,11 +27,18 @@ export async function finalizeSignedApplication(
       const { uploadSignedApplicationPdf } = await import("./blobStorage.js");
       let docId = opts.documentId ?? null;
       if (!docId) {
-        const d = await dbQuery<{ signnow_document_id: string | null }>(
-          `select signnow_document_id from applications where id::text = ($1)::text limit 1`,
+        // signnow_document_id holds the document GROUP id; the real signable
+        // document ids live in metadata.signnow_embedded.doc_ids. The
+        // /document/{id}/download endpoint needs a DOCUMENT id, so prefer
+        // doc_ids[0] and only fall back to the group id for legacy single-doc
+        // envelopes.
+        const d = await dbQuery<{ signnow_document_id: string | null; primary_doc_id: string | null }>(
+          `select signnow_document_id,
+                  (metadata->'signnow_embedded'->'doc_ids'->>0) as primary_doc_id
+             from applications where id::text = ($1)::text limit 1`,
           [app.id]
         );
-        docId = d.rows[0]?.signnow_document_id ?? null;
+        docId = d.rows[0]?.primary_doc_id ?? d.rows[0]?.signnow_document_id ?? null;
       }
       if (docId) {
         const pdf = await downloadDocument(docId);
