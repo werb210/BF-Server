@@ -1494,7 +1494,10 @@ router.post('/:id/lenders/:lenderId/files', lenderTermSheetUpload.single('file')
   );
 
   let stage = app.pipeline_state ?? null;
-  if (stage === 'Off to Lender') {
+  // A term sheet IS the lender's offer, so issuing one moves the app to the
+  // Offer stage regardless of where it was — staff may upload an offer before
+  // the app was formally marked Off to Lender. Never move terminal stages.
+  if (stage !== 'Offer' && stage !== 'Accepted' && stage !== 'Rejected') {
     await pool.query(
       `UPDATE applications SET pipeline_state = 'Offer', updated_at = now() WHERE id::text = ($1)::text`,
       [appId],
@@ -1504,7 +1507,7 @@ router.post('/:id/lenders/:lenderId/files', lenderTermSheetUpload.single('file')
 
   try {
     const phoneRes = await pool.query<{ phone: string | null }>(
-      `SELECT COALESCE(applicant_phone, contact_phone, NULL) AS phone FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+      `SELECT c.phone AS phone FROM applications a LEFT JOIN contacts c ON c.id::text = a.contact_id::text WHERE a.id::text = ($1)::text LIMIT 1`,
       [appId],
     );
     const phone = phoneRes.rows[0]?.phone ?? null;
