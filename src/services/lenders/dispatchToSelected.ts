@@ -40,6 +40,7 @@ export async function dispatchToSelected(
   let signedApp: Buffer | null = null;
   let creditSummary: Buffer | null = null;
   let docs: { category: string; files: { filename: string; content: Buffer }[] }[] = [];
+  let additionalSignedDocs: { filename: string; content: Buffer }[] = []; // v_ACCORD_PACKAGE_ROOT_v1
   type FieldRow = { label: string; value: string | number | boolean | null };
   let fields: FieldRow[] = [];
 
@@ -49,6 +50,7 @@ export async function dispatchToSelected(
     signedApp = inp.signedApplicationPdf ?? null;
     creditSummary = inp.creditSummaryPdf ?? null;
     docs = inp.documents ?? [];
+    additionalSignedDocs = inp.additionalSignedDocs ?? [];
     fields = inp.fields ?? [];
   } catch (e) {
     // best-effort: leave fallbacks (null/[]) in place; do not block dispatch
@@ -65,6 +67,7 @@ export async function dispatchToSelected(
   const pkg = await buildApplicationPackage({
     applicationId: ctx.applicationId,
     signedApplicationPdf: signedApp,
+    additionalSignedDocs,
     creditSummaryPdf: creditSummary,
     fields,
     documents: docs.map((g) => ({
@@ -117,6 +120,7 @@ export async function dispatchToSelected(
           fields: fields.reduce<Record<string, unknown>>((acc, f) => { acc[f.label] = f.value; return acc; }, {}),
           attachments: [
             ...(signedApp ? [{ filename: `application-${ctx.applicationId}.pdf`, contentType: "application/pdf", contentBase64: signedApp.toString("base64") }] : []),
+            ...additionalSignedDocs.map((d) => ({ filename: d.filename, contentType: "application/pdf", contentBase64: d.content.toString("base64") })),
             ...(creditSummary ? [{ filename: `credit-summary-${ctx.applicationId}.pdf`, contentType: "application/pdf", contentBase64: creditSummary.toString("base64") }] : []),
             ...docs.flatMap((g) => g.files.map((f) => ({ filename: f.filename, contentType: "application/octet-stream", category: g.category, contentBase64: f.content.toString("base64") }))),
           ],
