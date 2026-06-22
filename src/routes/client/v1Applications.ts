@@ -551,10 +551,31 @@ router.post(
           // document row exists, so an app missing only some required docs wrongly
           // sat in "Received".
           {
-            const v775_docs = v711_agg
+            // BF_SERVER_BLOCK_v_DOCSREQ_ONLY_IF_MISSING_v1 — restore the intended
+            // rule: docs present -> leave v70's 'Received'; only genuinely MISSING
+            // (or rejected) required docs flip the card to 'Documents Required'.
+            // Previously this fired whenever required doc TYPES existed at all, with
+            // no upload check, so fully-documented apps were wrongly parked in
+            // 'Documents Required'. Source of truth = documents table (status <>
+            // 'rejected'), matched to required types by a case/punctuation-insensitive key.
+            const v775_reqTypes = v711_agg
               .filter((row) => row?.required !== false)
               .map((row) => String(row?.document_type ?? "").trim())
               .filter((dt) => dt && !FORM_BY_KEYWORD.some(([re]) => re.test(dt)));
+            const v775_key = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+            const v775_uploaded = await pool.query<{ dt: string | null }>(
+              `SELECT DISTINCT document_type AS dt
+                 FROM documents
+                WHERE application_id::text = ($1)::text
+                  AND COALESCE(status, '') <> 'rejected'`,
+              [application.id],
+            );
+            const v775_have = new Set(
+              v775_uploaded.rows.map((r) => v775_key(String(r.dt ?? ""))).filter(Boolean),
+            );
+            const v775_docs = Array.from(new Set(v775_reqTypes)).filter(
+              (dt) => !v775_have.has(v775_key(dt)),
+            );
             if (v775_docs.length) {
               const v775_uniq = Array.from(new Set(v775_docs));
               const v775_list = v775_uniq.length === 1
