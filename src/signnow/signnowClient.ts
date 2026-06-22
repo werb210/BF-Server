@@ -92,9 +92,17 @@ export async function getDocumentGroupStatus(groupId: string): Promise<{ signed:
     walk(data);
     statuses.push(...seen);
   }
-  const fulfilled = statuses.filter((s) => s === "fulfilled").length;
-  const signed = statuses.length > 0 && fulfilled === statuses.length;
-  return { signed, summary: `invites=${statuses.length} fulfilled=${fulfilled} states=[${[...new Set(statuses)].join(",")}]` };
+  // BF_SERVER_BLOCK_v_SIGN_STATUS_APPLICANT_v1 — a signed APPLICANT releases the
+  // application to the lender; do NOT deadlock waiting on co-owner signatures. The
+  // applicant signs synchronously in the CMP (order:1); co-owners sign later via
+  // their own emailed links. Requiring every invite "fulfilled" meant any app with
+  // a second owner could never read as signed when the applicant tested solo.
+  // Also accept the several completed-status strings SignNow uses, not just
+  // "fulfilled". The summary still reports the raw states for diagnosis.
+  const COMPLETE = new Set(["fulfilled", "signed", "completed", "complete", "document_signed"]);
+  const completed = statuses.filter((s) => COMPLETE.has(s)).length;
+  const signed = completed > 0;
+  return { signed, summary: `invites=${statuses.length} completed=${completed} states=[${[...new Set(statuses)].join(",")}]` };
 }
 export async function getDocumentSignedStatus(documentId: string): Promise<{ signed: boolean; summary: string }> {
   const body = (await signnowFetch(`/document/${encodeURIComponent(documentId)}`, { method: "GET" })) as any;
