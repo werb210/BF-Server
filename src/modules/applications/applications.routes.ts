@@ -229,11 +229,21 @@ router.get('/:id/task-status', safeHandler(async (req: any, res: any) => {
     }
     return completed.has(k);
   };
+  // BF_SERVER_BLOCK_v_FORM_WAIVERS_v1 — a waived form (unchecked in Request Items)
+  // must also drop off the client's task list so both tabs agree.
+  const v_waivedFormsRes = await pool.query<{ document_type: string }>(
+    `SELECT document_type FROM application_document_waivers
+      WHERE application_id::text = ($1)::text AND lower(document_type) LIKE 'form:%'`, [id]
+  ).catch(() => ({ rows: [] as Array<{ document_type: string }> }));
+  const v_waivedForms = new Set(
+    v_waivedFormsRes.rows.map((r: any) => String(r.document_type ?? "").trim().toLowerCase().slice(5)).filter(Boolean)
+  );
   const tasks = (prompts.rows ?? []).map((m: any) => {
     let k = String(m.cta_action ?? ""); if (k.startsWith("form:")) k = k.slice(5);
     const label = (k.startsWith("upload:")) ? (m.cta_label || ("Re-upload " + k.slice(7))) : (m.cta_label || LABELS[k] || k);
     return { key: k, label, complete: isDone(m.cta_action) };
-  }).sort((a: any, b: any) => Number(a.complete) - Number(b.complete));
+  }).filter((t: any) => !v_waivedForms.has(String(t.key).toLowerCase()))
+    .sort((a: any, b: any) => Number(a.complete) - Number(b.complete));
   const total = tasks.length;
   const done = tasks.filter((t: any) => t.complete).length;
   return res.json({ applicationId: id, tasks, summary: { total, complete: done, outstanding: total - done, allComplete: total > 0 && done === total } });
