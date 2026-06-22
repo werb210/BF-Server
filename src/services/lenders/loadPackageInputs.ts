@@ -10,6 +10,8 @@ export type PackageInputs = {
   signedApplicationPdf: Buffer | null;
   creditSummaryPdf: Buffer | null;
   documents: PackageInputDocs[];
+  // BF_SERVER_BLOCK_v_ACCORD_PACKAGE_ROOT_v1 — root-level signed supplemental forms.
+  additionalSignedDocs: { filename: string; content: Buffer }[];
   fields: Array<{ label: string; value: string | number | boolean | null }>;
 };
 export type LoadCtx = { pool: Pool; applicationId: string };
@@ -130,7 +132,7 @@ async function loadFields(ctx: LoadCtx): Promise<FlatField[]> {
 // (the Boreal app), so the SIGNED Accord form never reached the lender package.
 // Download every signed group doc beyond doc_ids[0] and add it to the package as
 // its own document group so it ships in BOTH the email zip and the API payload.
-async function loadAdditionalSignedDocs(ctx: LoadCtx): Promise<PackageInputDocs[]> {
+async function loadAdditionalSignedDocs(ctx: LoadCtx): Promise<{ filename: string; content: Buffer }[]> {
   const r = await ctx.pool.query<{ signed_at: string | null; doc_ids: unknown }>(
     `SELECT signnow_app_signed_at AS signed_at,
             (metadata->'signnow_embedded'->'doc_ids') AS doc_ids
@@ -154,7 +156,6 @@ async function loadAdditionalSignedDocs(ctx: LoadCtx): Promise<PackageInputDocs[
     [ctx.applicationId]
   ).catch(() => ({ rows: [{ n: "0" }] }));
   const isAccord = Number(acc.rows[0]?.n ?? 0) > 0;
-  const category = isAccord ? "Accord Credit Application" : "Signed Lender Forms";
   const files: { filename: string; content: Buffer }[] = [];
   const { downloadDocument } = await import("../../signnow/signnowClient.js");
   for (let i = 0; i < extra.length; i++) {
@@ -172,11 +173,11 @@ async function loadAdditionalSignedDocs(ctx: LoadCtx): Promise<PackageInputDocs[
       console.warn("[loadPackageInputs] supplemental signed doc download failed", id, e instanceof Error ? e.message : String(e));
     }
   }
-  return files.length ? [{ category, files }] : [];
+  return files; // root-level; placed alongside signed-application.pdf by the package builder
 }
 
 export async function loadPackageInputs(ctx: LoadCtx): Promise<PackageInputs> {
   const fields = await loadFields(ctx);
-  const [signedApplicationPdf, creditSummaryPdf, documents, extraSigned] = await Promise.all([loadSignedApplicationPdf(ctx, fields), loadCreditSummaryPdf(ctx), loadAcceptedDocuments(ctx), loadAdditionalSignedDocs(ctx)]);
-  return { signedApplicationPdf, creditSummaryPdf, documents: [...documents, ...extraSigned], fields };
+  const [signedApplicationPdf, creditSummaryPdf, documents, additionalSignedDocs] = await Promise.all([loadSignedApplicationPdf(ctx, fields), loadCreditSummaryPdf(ctx), loadAcceptedDocuments(ctx), loadAdditionalSignedDocs(ctx)]);
+  return { signedApplicationPdf, creditSummaryPdf, documents, additionalSignedDocs, fields };
 }
