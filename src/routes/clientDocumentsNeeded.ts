@@ -184,12 +184,42 @@ export async function computeOutstandingDocs(
   };
 }
 
+// BF_SERVER_BLOCK_v_FORM_WAIVERS_v1 — form ids that have been requested of the
+// client (posted as task prompts). Mirrors the cta_action contract used by
+// task-status so the Request Items tab and the Application tab agree on forms.
+const FORM_IDS = ["networth", "flinks", "cra", "debt", "realestate", "equipment", "advisors"];
+export async function getRequestedFormIds(applicationId: string): Promise<string[]> {
+  const res = await pool.query<{ cta_action: string }>(
+    `SELECT DISTINCT cta_action FROM communications_messages
+      WHERE application_id::text = ($1)::text
+        AND (cta_action LIKE 'form:%'
+             OR cta_action IN ('networth','flinks','cra','debt','realestate','equipment','advisors'))`,
+    [applicationId]
+  ).catch(() => ({ rows: [] as Array<{ cta_action: string }> }));
+  const ids = new Set<string>();
+  for (const r of res.rows) {
+    let k = String(r.cta_action ?? "");
+    if (k.startsWith("form:")) k = k.slice(5);
+    if (FORM_IDS.includes(k)) ids.add(k);
+  }
+  return Array.from(ids);
+}
+
 export async function getRequestItemsForApp(
   applicationId: string
-): Promise<{ required: NeededDoc[]; waived: string[] }> {
+): Promise<{ required: NeededDoc[]; waived: string[]; forms: string[]; formsWaived: string[] }> {
   const raw = await computeOutstandingDocsRaw(applicationId);
-  const waived = await getWaivedDocTypes(applicationId);
-  return { required: raw.required, waived: Array.from(waived) };
+  const allWaived = await getWaivedDocTypes(applicationId);
+  // Form waivers are stored in the same table with a "form:<id>" document_type,
+  // so split them out from real document waivers.
+  const waived: string[] = [];
+  const formsWaived: string[] = [];
+  for (const w of allWaived) {
+    if (w.startsWith("form:")) formsWaived.push(w.slice(5));
+    else waived.push(w);
+  }
+  const forms = await getRequestedFormIds(applicationId);
+  return { required: raw.required, waived, forms, formsWaived };
 }
 
 router.get("/needed", async (req: Request, res: Response) => {
