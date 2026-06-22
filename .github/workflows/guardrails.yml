@@ -11,7 +11,7 @@ jobs:
     name: Repo guardrails
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: No SQL in src/db/migrations (dead directory)
         shell: bash
