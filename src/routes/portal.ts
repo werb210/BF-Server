@@ -40,6 +40,9 @@ import { eventBus } from "../events/eventBus.js";
 // BF_AZURE_OCR_TERMSHEET_v44 — term sheet upload deps
 import multer from "multer";
 import { getStorage } from "../lib/storage/index.js";
+// BF_SERVER_BLOCK_v_DOC_FRAUD_SIGNALS_v1
+import { extractPdfMeta, scoreFraudSignals, classifyDocKind } from "../services/documents/fraudSignals.js";
+import { hashBuffer } from "../services/documents/hashService.js";
 import { sendSMS } from "../services/smsService.js";
 import { toStringSafe } from "../utils/toStringSafe.js";
 import twilio from "twilio";
@@ -1304,6 +1307,63 @@ router.get(
     res.setHeader("Cache-Control", "private, no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.send(fileResult.buffer);
+  })
+);
+
+// BF_SERVER_BLOCK_v_DOC_FRAUD_SIGNALS_v1 — on-demand, staff-triggered tamper scan.
+// Returns explainable fraud SIGNALS for staff review — never a verdict, never auto-rejects.
+router.post(
+  "/documents/:id/fraud-scan",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  portalLimiter,
+  safeHandler(async (req: any, res: any) => {
+    const docId = String(req.params.id ?? "").trim();
+    if (!docId) throw new AppError("validation_error", "Document id required.", 400);
+
+    const docResult = await runQuery<{
+      id: string; application_id: string; filename: string | null; category: string | null;
+      hash: string | null; storage_key: string | null; blob_name: string | null; storage_path: string | null;
+    }>(
+      `SELECT id, application_id, filename, COALESCE(category, document_type, signed_category) AS category, hash, storage_key, blob_name, storage_path
+         FROM documents WHERE id::text = ($1)::text LIMIT 1`,
+      [docId]
+    );
+    const doc = docResult.rows[0];
+    if (!doc) throw new AppError("not_found", "Document not found.", 404);
+
+    const appResult = await runQuery<{ silo: string | null }>(
+      `SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+      [doc.application_id]
+    );
+    const silo = getSilo(res);
+    const appSilo = appResult.rows[0]?.silo ?? null;
+    if (appSilo && silo && appSilo !== silo) throw new AppError("not_found", "Document not found.", 404);
+
+    const version = await findActiveDocumentVersion({ documentId: doc.id });
+    const vmeta = version && version.metadata && typeof version.metadata === "object"
+      ? (version.metadata as { storageKey?: string }) : {};
+    const storageKey = vmeta.storageKey ?? doc.storage_key ?? doc.blob_name ?? doc.storage_path;
+    if (!storageKey) throw new AppError("not_found", "Document file not available.", 404);
+
+    const fileResult = await getStorage().get(storageKey);
+    if (!fileResult) throw new AppError("not_found", "Document file not available.", 404);
+    const buffer = Buffer.from(fileResult.buffer);
+
+    // Duplicate-reuse: this file's hash present on ANOTHER application.
+    const hash = doc.hash ?? hashBuffer(buffer);
+    const dupRes = await runQuery<{ n: string }>(
+      `SELECT COUNT(DISTINCT application_id)::text AS n FROM documents
+        WHERE hash = $1 AND hash IS NOT NULL AND application_id::text <> ($2)::text`,
+      [hash, doc.application_id]
+    ).catch(() => ({ rows: [{ n: "0" }] }));
+    const duplicateCount = Number(dupRes.rows[0]?.n ?? 0);
+
+    const meta = await extractPdfMeta(buffer);
+    const kind = classifyDocKind(doc.category);
+    const result = scoreFraudSignals(meta, { kind, duplicateCount });
+
+    return res.json({ ok: true, documentId: doc.id, kind, duplicateCount, meta, ...result });
   })
 );
 
