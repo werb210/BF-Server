@@ -88,14 +88,14 @@ export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): 
     const hasKey = (process.env.SIGNNOW_API_KEY ?? "").trim().length > 0;
     const stub = ["1", "true", "yes", "on"].includes((process.env.SIGNNOW_STUB_MODE ?? "").trim().toLowerCase());
     if (hasKey && !stub) {
-      const pthG = "../signnow/embeddedSigningSession.js";
+      const pthG = "../../signnow/embeddedSigningSession.js";
       const mod = await import(pthG).catch(() => null as any);
       if (mod && typeof (mod as any).getOrCreateEmbeddedSigningSession === "function") {
         const r = await (mod as any).getOrCreateEmbeddedSigningSession(ctx.applicationId);
         if (r && r.status === "error") console.warn(`[orchestrator] signnow group fire error app=${ctx.applicationId}: ${r.reason}`);
       } else { console.log(`[orchestrator] would fire SignNow group for app=${ctx.applicationId}`); }
     } else {
-      const pthL = "../signnow/sendApplicationForSignature.js";
+      const pthL = "../../signnow/sendApplicationForSignature.js";
       const mod = await import(pthL).catch(() => null as any);
       if (mod && typeof (mod as any).sendApplicationForSignature === "function") await (mod as any).sendApplicationForSignature(ctx);
       else console.log(`[orchestrator] would fire SignNow (stub) for app=${ctx.applicationId}`);
