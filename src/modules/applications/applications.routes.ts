@@ -164,6 +164,28 @@ router.get('/dup-debug', safeHandler(async (req: any, res: any) => {
   return res.json({ query: q || contactId, count: apps.length, applications: apps });
 }));
 
+// BF_SERVER_BLOCK_v_TASK_DOCS_AUTHORITATIVE_v1 — the client's CMP reports "nothing
+// outstanding" entirely from the live outstanding-docs computation. Make every
+// document-upload task (bare 'upload' = Gov ID, and 'upload:<type>' re-uploads) read
+// complete from that SAME signal so the staff Application tab can never disagree with
+// what the client sees. While docs are still outstanding, fall back to per-category
+// matching so a specific already-satisfied doc can still read complete mid-flight.
+export function isDocUploadTaskComplete(
+  ctaAction: string,
+  ctx: { uploadedCategories: string[]; outstandingDocsClear: boolean }
+): boolean {
+  if (ctx.outstandingDocsClear) return true;
+  const k = String(ctaAction ?? "");
+  const cats = ctx.uploadedCategories.map((c) => String(c ?? "").toLowerCase());
+  if (k.startsWith("upload:")) {
+    const t = k.slice(7).toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (!t) return false;
+    return cats.some((c) => { const cc = c.replace(/[^a-z0-9]/g, ""); return !!cc && (cc.includes(t) || t.includes(cc)); });
+  }
+  // bare "upload" = Government ID
+  return cats.some((c) => /gov|government|photo.?id|identification|\bid\b/.test(c));
+}
+
 // GET /api/applications/:id/task-status — read-only staff task completion status.
 // Gated by the requireAuth + APPLICATION_READ capability set above. No writes.
 router.get('/:id/task-status', safeHandler(async (req: any, res: any) => {
@@ -202,18 +224,16 @@ router.get('/:id/task-status', safeHandler(async (req: any, res: any) => {
   const completed = new Set<string>();
   for (const r of (forms.rows ?? [])) { const k = formKey((r as any).doc_type); if (k) completed.add(k); }
   const uploaded = new Set<string>((docs.rows ?? []).map((r: any) => String(r.category || "")).filter(Boolean));
-  if ([...uploaded].some((c) => /gov|government|photo.?id|identification|\bid\b/.test(c))) completed.add("upload");
-  // BF_SERVER_TASK_STATUS_DOCS_PARITY_v1 — reuse the client mini-portal's outstanding-docs
-  // computation so staff task completion can never disagree with what the client is told.
-  // The old check read only document_requirements (often empty at submit, with no
-  // productRequirements / matched-product fallback), so upload_docs never completed even
-  // when the client was already "all caught up".
+  // BF_SERVER_BLOCK_v_TASK_DOCS_AUTHORITATIVE_v1 — document tasks are authoritative from
+  // the client's live outstanding-docs signal (see helper above), so the staff checklist
+  // matches the CMP. Forms stay form-response driven (added to `completed` above).
+  let outstandingDocsClear = false;
   try {
     const outstanding = await computeOutstandingDocs(id);
-    if (outstanding.stillNeeded.length === 0 && outstanding.rejected.length === 0) {
-      completed.add("upload_docs");
-    }
-  } catch { /* on error, leave upload_docs incomplete */ }
+    outstandingDocsClear = outstanding.stillNeeded.length === 0 && outstanding.rejected.length === 0;
+  } catch { /* on error, treat as NOT clear so nothing is falsely marked done */ }
+  if (isDocUploadTaskComplete("upload", { uploadedCategories: [...uploaded], outstandingDocsClear })) completed.add("upload");
+  if (outstandingDocsClear) completed.add("upload_docs");
 
   const LABELS: Record<string, string> = {
     networth: "Personal Net Worth", flinks: "Connect Bank (View-Only)", cra: "CRA Authorization",
@@ -222,11 +242,7 @@ router.get('/:id/task-status', safeHandler(async (req: any, res: any) => {
   };
   const isDone = (cta: any): boolean => {
     let k = String(cta ?? ""); if (k.startsWith("form:")) k = k.slice(5);
-    if (k.startsWith("upload:")) {
-      const t = k.slice(7).toLowerCase().replace(/[^a-z0-9]/g, "");
-      if (!t) return false;
-      return [...uploaded].some((c) => { const cc = c.replace(/[^a-z0-9]/g, ""); return !!cc && (cc.includes(t) || t.includes(cc)); });
-    }
+    if (k.startsWith("upload:")) return isDocUploadTaskComplete(k, { uploadedCategories: [...uploaded], outstandingDocsClear });
     return completed.has(k);
   };
   // BF_SERVER_BLOCK_v_FORM_WAIVERS_v1 — a waived form (unchecked in Request Items)
