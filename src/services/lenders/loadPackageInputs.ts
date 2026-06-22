@@ -123,8 +123,60 @@ async function loadFields(ctx: LoadCtx): Promise<FlatField[]> {
   out.push({label:"Application ID", value:ctx.applicationId},{label:"Application Name",value:row.name??null},{label:"Requested Amount",value:row.requested_amount==null?null:Number(row.requested_amount)},{label:"Product Category",value:row.product_category??null},{label:"Product Type",value:row.product_type??null});
   flatten("", row.metadata ?? {}, out); return out;
 }
+// BF_SERVER_BLOCK_v_ACCORD_PACKAGE_INCLUDE_v1 — the embedded signing GROUP can
+// contain more than the Boreal application: when an Accord LOC lender is
+// finalized, the Accord credit application is doc_ids[1] and the applicant signs
+// it in the same group. finalize/loadSignedApplicationPdf only pull doc_ids[0]
+// (the Boreal app), so the SIGNED Accord form never reached the lender package.
+// Download every signed group doc beyond doc_ids[0] and add it to the package as
+// its own document group so it ships in BOTH the email zip and the API payload.
+async function loadAdditionalSignedDocs(ctx: LoadCtx): Promise<PackageInputDocs[]> {
+  const r = await ctx.pool.query<{ signed_at: string | null; doc_ids: unknown }>(
+    `SELECT signnow_app_signed_at AS signed_at,
+            (metadata->'signnow_embedded'->'doc_ids') AS doc_ids
+       FROM applications WHERE id::text = $1 LIMIT 1`,
+    [ctx.applicationId]
+  ).catch(() => ({ rows: [] as Array<{ signed_at: string | null; doc_ids: unknown }> }));
+  const row = r.rows[0];
+  if (!row?.signed_at) return [];
+  const ids = Array.isArray(row.doc_ids) ? (row.doc_ids as unknown[]).map((v) => String(v)) : [];
+  // doc_ids[0] is the Boreal application (already the signedApplicationPdf). Only
+  // the SUPPLEMENTAL signed forms (Accord today, future co-forms) are pulled here.
+  const extra = ids.slice(1).filter((s) => s && s.length > 0);
+  if (extra.length === 0) return [];
+  // Label as the Accord credit application iff an Accord lender is finalized; the
+  // only supplemental form the signing group adds today is Accord's. Generic
+  // fallback guarantees nothing signed is dropped if the mix ever changes.
+  const acc = await ctx.pool.query<{ n: string }>(
+    `SELECT COUNT(*) AS n FROM application_lender_selections s
+       JOIN lenders l ON l.id::text = s.lender_id::text
+      WHERE s.application_id::text = $1 AND s.finalized_at IS NOT NULL AND l.name ILIKE 'accord%'`,
+    [ctx.applicationId]
+  ).catch(() => ({ rows: [{ n: "0" }] }));
+  const isAccord = Number(acc.rows[0]?.n ?? 0) > 0;
+  const category = isAccord ? "Accord Credit Application" : "Signed Lender Forms";
+  const files: { filename: string; content: Buffer }[] = [];
+  const { downloadDocument } = await import("../../signnow/signnowClient.js");
+  for (let i = 0; i < extra.length; i++) {
+    const id = extra[i];
+    if (!id) continue;
+    try {
+      const pdf = await downloadDocument(id);
+      if (pdf && pdf.length) {
+        const name = isAccord && extra.length === 1
+          ? `accord-credit-application-${ctx.applicationId}.pdf`
+          : `signed-form-${i + 1}-${ctx.applicationId}.pdf`;
+        files.push({ filename: name, content: Buffer.from(pdf) });
+      }
+    } catch (e) {
+      console.warn("[loadPackageInputs] supplemental signed doc download failed", id, e instanceof Error ? e.message : String(e));
+    }
+  }
+  return files.length ? [{ category, files }] : [];
+}
+
 export async function loadPackageInputs(ctx: LoadCtx): Promise<PackageInputs> {
   const fields = await loadFields(ctx);
-  const [signedApplicationPdf, creditSummaryPdf, documents] = await Promise.all([loadSignedApplicationPdf(ctx, fields), loadCreditSummaryPdf(ctx), loadAcceptedDocuments(ctx)]);
-  return { signedApplicationPdf, creditSummaryPdf, documents, fields };
+  const [signedApplicationPdf, creditSummaryPdf, documents, extraSigned] = await Promise.all([loadSignedApplicationPdf(ctx, fields), loadCreditSummaryPdf(ctx), loadAcceptedDocuments(ctx), loadAdditionalSignedDocs(ctx)]);
+  return { signedApplicationPdf, creditSummaryPdf, documents: [...documents, ...extraSigned], fields };
 }
