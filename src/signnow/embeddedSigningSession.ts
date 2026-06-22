@@ -33,6 +33,15 @@ async function isAccordFinalized(applicationId: string): Promise<boolean> {
   return Number(res.rows[0]?.n ?? 0) > 0;
 }
 
+// BF_SERVER_BLOCK_v_ACCORD_GROUP_REFRESH_v1 — a cached signing group is reused as-is.
+// If it was minted before the Accord LOC lender was finalized (or before buildAccordPdf
+// succeeded), it holds only the Boreal app, so the Accord form never reaches the signing
+// group OR the lender package. Regenerate when Accord is finalized but the cached group
+// has fewer than two docs (i.e. no Accord form). Pure + tested.
+export function accordGroupNeedsRefresh(accordFinalized: boolean, cachedDocCount: number): boolean {
+  return accordFinalized && cachedDocCount < 2;
+}
+
 export async function getOrCreateEmbeddedSigningSession(applicationId: string): Promise<SigningSessionResult> {
   if (!applicationId) return { status: "not_ready", reason: "missing_application_id" };
   const appRes = await dbQuery<{ signnow_app_signed_at: string | null; metadata: any; finalized_count: string }>(
@@ -54,7 +63,11 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
     if (!email) return { status: "not_ready", reason: "no_applicant_email" };
 
     const sess = md.signnow_embedded && typeof md.signnow_embedded === "object" ? md.signnow_embedded : null;
-    if (sess?.group_id && sess?.invite_id) {
+    // BF_SERVER_BLOCK_v_ACCORD_GROUP_REFRESH_v1 — never reuse a cached group that is
+    // missing the Accord form while Accord is finalized; fall through to regenerate it.
+    const cachedDocIds = Array.isArray(sess?.doc_ids) ? (sess!.doc_ids as unknown[]) : [];
+    const needsAccordRefresh = accordGroupNeedsRefresh(await isAccordFinalized(applicationId), cachedDocIds.length);
+    if (sess?.group_id && sess?.invite_id && !needsAccordRefresh) {
       try {
         const link = await signnow.createEmbeddedGroupLink(String(sess.group_id), String(sess.invite_id), email);
         return { status: "ready", url: link.url, expiresAt: link.expiresAt };
