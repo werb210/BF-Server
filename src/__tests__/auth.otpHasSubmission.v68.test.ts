@@ -32,7 +32,11 @@ describe("BF_SERVER_v68_OTP_HAS_SUBMISSION", () => {
     expect(src).toMatch(/INNER JOIN contacts c/);
     expect(src).toMatch(/a\.submitted_at IS NOT NULL/);
     expect(src).toMatch(/ac\.role = 'applicant'/);
-    expect(src).toMatch(/c\.phone = \$1/);
+    // BF_SERVER_BLOCK_v_OTP_PHONE_NORMALIZED_MATCH_v1 — the lookup now matches the
+    // last 10 digits of each phone (E.164 login vs as-typed stored), not an exact string.
+    expect(src).toMatch(/right\(regexp_replace\(coalesce\(c\.phone/);
+    expect(src).toMatch(/right\(regexp_replace\(\$1/);
+    expect(src).not.toMatch(/AND c\.phone = \$1/);
   });
 
   it("submission lookup is wrapped in try/catch so OTP verify never fails on a DB hiccup", () => {
