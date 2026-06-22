@@ -133,6 +133,63 @@ router.get(
   })
 );
 
+// BF_SERVER_BLOCK_v_CLIENT_SIGNING_COMPLETE_v1 — the SignNow webhook does not
+// reliably fire, so the signed stamp + lender-package dispatch never happen.
+// The CMP calls this when the signing iframe completes / closes; we VERIFY with
+// SignNow (field-invite statuses) that every invite is fulfilled before marking
+// signed, so a client can never fake it. On confirmed-signed we run the exact
+// finalize path the admin mark-signed route uses.
+router.post(
+  "/signing-complete",
+  safeHandler(async (req: any, res: any) => {
+    const applicationId =
+      typeof req.query.applicationId === "string"
+        ? req.query.applicationId.trim()
+        : typeof req.body?.applicationId === "string"
+          ? req.body.applicationId.trim()
+          : null;
+    if (!applicationId) { res.status(400).json({ error: "applicationId_required" }); return; }
+    const { pool } = await import("../../db.js");
+    const appRes = await pool.query<{ contact_id: string | null; signnow_app_signed_at: string | null; group_id: string | null }>(
+      `SELECT contact_id, signnow_app_signed_at,
+              (metadata->'signnow_embedded'->>'group_id') AS group_id
+         FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+      [applicationId]
+    );
+    if (!appRes.rows.length) { res.status(404).json({ error: "not_found" }); return; }
+    const row = appRes.rows[0];
+    if (row.signnow_app_signed_at) { res.json({ ok: true, signed: true, alreadySigned: true }); return; }
+    const groupId = row.group_id;
+    if (!groupId) { res.json({ ok: true, signed: false, reason: "no_signing_group" }); return; }
+
+    let signed = false; let summary = "";
+    try {
+      const snow = await import("../../signnow/signnowClient.js");
+      const st = await snow.getDocumentGroupStatus(String(groupId));
+      signed = !!st.signed; summary = st.summary;
+    } catch (e: any) {
+      res.json({ ok: true, signed: false, reason: "status_check_failed", detail: e?.message ?? "unknown" });
+      return;
+    }
+    if (!signed) { res.json({ ok: true, signed: false, summary }); return; }
+
+    const { finalizeSignedApplication } = await import("../../signnow/finalizeSignedApplication.js");
+    const fired = await finalizeSignedApplication(
+      { id: applicationId, contactId: row.contact_id ?? null },
+      { documentId: null }
+    );
+    await pool.query(
+      `UPDATE applications SET pipeline_state = 'Off to Lender', updated_at = now()
+         WHERE id::text = ($1)::text
+           AND pipeline_state NOT IN ('Off to Lender','Offer','Accepted','Rejected','Declined','Funded','Closed')
+           AND EXISTS (SELECT 1 FROM application_packages p
+                        WHERE p.application_id::text = ($1)::text AND p.status = 'sent')`,
+      [applicationId]
+    );
+    res.json({ ok: true, signed: true, finalized: fired, summary });
+  })
+);
+
 router.get(
   "/readiness-prefill",
   safeHandler(async (req: any, res: any) => {
