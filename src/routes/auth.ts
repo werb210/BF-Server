@@ -237,7 +237,14 @@ router.post("/otp/verify", async (req, res) => {
            INNER JOIN contacts c              ON c.id             = ac.contact_id
           WHERE a.submitted_at IS NOT NULL
             AND ac.role = 'applicant'
-            AND c.phone = $1
+            -- BF_SERVER_BLOCK_v_OTP_PHONE_NORMALIZED_MATCH_v1 — login sends E.164
+            -- (+1NXXNXXXXXX) but contacts.phone is stored as typed ("(780) 264-8467"),
+            -- so an exact c.phone = $1 never matched and returning clients were
+            -- routed back to Step 1. Match the last 10 digits of each (country-code
+            -- and punctuation agnostic), mirroring the digit-normalized contact dedup.
+            AND right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10)
+              = right(regexp_replace($1, '[^0-9]', '', 'g'), 10)
+            AND length(regexp_replace($1, '[^0-9]', '', 'g')) >= 10
           ORDER BY a.submitted_at DESC
           LIMIT 1`,
         [phone]
