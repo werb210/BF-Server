@@ -804,12 +804,28 @@ router.get('/:id/banking-analysis', safeHandler(async (req: any, res: any) => {
 }));
 
 // GET /api/applications/:id/details — flat shape for portal drawer
+// BF_SERVER_BLOCK_v_SIGNING_INDICATOR_v1 — derive the staff-facing signing state
+// for the application header chip. Mirrors the CMP's signing-session readiness:
+//   signed       — signnow_app_signed_at is set
+//   started      — a SignNow group has been minted (metadata.signnow_embedded.group_id)
+//   ready        — a lender is finalized (the CMP would show "Sign Documents"), no group yet
+//   not_started  — no lender finalized
+export function deriveSigningStatus(input: { signedAt: unknown; groupId: unknown; finalizedLenders: number }): 'signed' | 'started' | 'ready' | 'not_started' {
+  if (input.signedAt) return 'signed';
+  if (input.groupId) return 'started';
+  if (input.finalizedLenders > 0) return 'ready';
+  return 'not_started';
+}
+
 router.get('/:id/details', safeHandler(async (req: any, res: any) => {
   const { id } = req.params;
   const result = await pool.query(
     `SELECT a.id, a.name, a.product_type, a.pipeline_state, a.status,
             a.requested_amount, a.metadata, a.processing_stage,
-            a.current_stage, a.silo, a.created_at, a.updated_at
+            a.current_stage, a.silo, a.created_at, a.updated_at,
+            a.signnow_app_signed_at,
+            (SELECT count(*) FROM application_lender_selections s
+              WHERE s.application_id::text = a.id::text AND s.finalized_at IS NOT NULL) AS finalized_lenders
        FROM applications a WHERE a.id::text = ($1)::text`,
     [id]
   );
@@ -848,6 +864,14 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
       ? md.readiness as Record<string, any>
       : null;
 
+  // BF_SERVER_BLOCK_v_SIGNING_INDICATOR_v1 — staff signing-state indicator source.
+  const snEmbed = (md?.signnow_embedded && typeof md.signnow_embedded === 'object') ? md.signnow_embedded as Record<string, any> : null;
+  const signingStatus = deriveSigningStatus({
+    signedAt: app.signnow_app_signed_at ?? null,
+    groupId: snEmbed?.group_id ?? null,
+    finalizedLenders: Number(app.finalized_lenders ?? 0),
+  });
+
   const details = {
     id: app.id,
     applicant: app.name,
@@ -883,6 +907,7 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
     },
     productCategory: md?.application?.productCategory ?? md?.product_category ?? fd?.productCategory ?? null,
     documents: Array.isArray(md?.documents) ? md.documents : null,
+    signing: { status: signingStatus, signedAt: app.signnow_app_signed_at ?? null },
     rawPayload: md,
   };
 
