@@ -1663,8 +1663,9 @@ router.post(
 
     try {
       const phoneRes = await runQuery<{ phone: string | null }>(
-        `SELECT COALESCE(applicant_phone, contact_phone, NULL) AS phone
-           FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+        `SELECT c.phone AS phone
+           FROM applications a LEFT JOIN contacts c ON c.id::text = a.contact_id::text
+          WHERE a.id::text = ($1)::text LIMIT 1`,
         [appId]
       );
       const phone = phoneRes.rows[0]?.phone ?? null;
