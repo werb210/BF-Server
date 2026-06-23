@@ -475,7 +475,9 @@ router.post(
           [/real estate/i, "realestate", "Real Estate Collateral"],
           [/equipment/i, "equipment", "Equipment Collateral"],
           [/professional advisor|\badvisor/i, "advisors", "Professional Advisors"], // BF_SERVER_BLOCK_v711_ADVISORS_MESSENGER_v1
-          [/government issued id|gov.*id|photo id|pieces of/i, "upload", "Upload Government ID"],
+          // v_NO_GOVID_TASK_v1 — standalone "Upload Government ID" task removed;
+          // gov ID is a required DOCUMENT (upload_docs flow), so the separate task
+          // was redundant and left a task perpetually incomplete.
         ];
         const v711_already = await pool.query(
           `SELECT 1 FROM communications_messages WHERE application_id = $1 AND (cta_action LIKE 'form:%' OR cta_action IN ('networth','flinks','cra','debt','realestate','equipment','upload','upload_docs')) LIMIT 1`,
