@@ -122,6 +122,9 @@ export async function buildAccordPdf(applicationId: string): Promise<Uint8Array>
   const FB = await doc.embedFont(StandardFonts.HelveticaBold);
   const p1 = doc.getPage(0), p2 = doc.getPage(1), p3 = doc.getPage(2);
   const put = (pg: any, txt: string, x: number, y: number, size = 7.5) => { if (txt) pg.drawText(txt, { x, y: PH - y, size, font: F, color: INK }); };
+  // v_ACCORD_OWN_ALIGN_v1 — right-align ownership numbers so they sit just left of the
+  // form's pre-printed "%" (a left-anchored "100" overran the % glyph).
+  const putR = (pg: any, txt: string, rightX: number, y: number, size = 7.5) => { if (txt) pg.drawText(txt, { x: rightX - F.widthOfTextAtSize(txt, size), y: PH - y, size, font: F, color: INK }); };
   const tick = (pg: any, x: number, y: number) => pg.drawText("X", { x, y: PH - (y + 8), size: 9, font: FB, color: INK });
 
   // ── PAGE 1 ──
@@ -141,7 +144,7 @@ export async function buildAccordPdf(applicationId: string): Promise<Uint8Array>
     put(p1, o.propVal, OWN_X.propVal, OWN_Y.propRow + dy); put(p1, o.mortgage, OWN_X.mortgage, OWN_Y.propRow + dy);
     put(p1, o.sinceAddr, OWN_X.sinceAddr, OWN_Y.propRow + dy); put(p1, o.bankruptWhen, OWN_X.bankruptWhen, OWN_Y.bankRow + dy);
     put(p1, o.home, OWN_X.home, OWN_Y.phoneRow + dy); put(p1, o.mobile, OWN_X.mobile, OWN_Y.phoneRow + dy);
-    put(p1, bizPhone, OWN_X.work, OWN_Y.phoneRow + dy); put(p1, o.ownership, OWN_X.ownership, OWN_Y.phoneRow + dy);
+    put(p1, bizPhone, OWN_X.work, OWN_Y.phoneRow + dy); putR(p1, o.ownership, 551.5, OWN_Y.phoneRow + dy);
     put(p1, o.email, OWN_X.email, OWN_Y.email + dy);
     if (/own/i.test(o.ownRent)) tick(p1, CB.own.x, CB.own.y + dy); else if (/rent/i.test(o.ownRent)) tick(p1, CB.rent.x, CB.rent.y + dy);
     if (o.bankrupt === "Yes") tick(p1, CB.bkYes.x, CB.bkYes.y + dy); else if (o.bankrupt === "No") tick(p1, CB.bkNo.x, CB.bkNo.y + dy);
@@ -157,14 +160,14 @@ export async function buildAccordPdf(applicationId: string): Promise<Uint8Array>
     const dy = i * OWNTBL.rowDY;
     put(p2, o.fullName, OWNTBL.name, OWNTBL.yName + dy, 6.5); put(p2, o.addr, OWNTBL.addr, OWNTBL.yName + dy, 6.5);
     ownContact(p2, OWNTBL.contact, o, OWNTBL.yOff + dy, OWNTBL.yMob + dy, OWNTBL.yEmail + dy);
-    put(p2, o.ownership, OWNTBL.own, OWNTBL.yOwn + dy, 6.5); put(p2, o.director, OWNTBL.dir, OWNTBL.yName + dy, 6.5); put(p2, o.officer, OWNTBL.off, OWNTBL.yName + dy, 6.5);
+    putR(p2, o.ownership, 414.5, OWNTBL.yOwn + dy, 6.5); put(p2, o.director, OWNTBL.dir, OWNTBL.yName + dy, 6.5); put(p2, o.officer, OWNTBL.off, OWNTBL.yName + dy, 6.5);
   });
   // additional shareholders (rows 3+)
   additional.slice(0, 2).forEach((o, i) => {
     const dy = i * OWNADDL.rowDY;
     put(p2, o.fullName, OWNTBL.name, OWNADDL.yName + dy, 6.5); put(p2, o.addr, OWNTBL.addr, OWNADDL.yName + dy, 6.5);
     ownContact(p2, OWNTBL.contact, o, OWNADDL.yOff + dy, OWNADDL.yMob + dy, OWNADDL.yEmail + dy);
-    put(p2, o.ownership, OWNTBL.own, OWNADDL.yMob + dy, 6.5); put(p2, o.director, OWNTBL.dir, OWNADDL.yName + dy, 6.5); put(p2, o.officer, OWNTBL.off, OWNADDL.yName + dy, 6.5);
+    putR(p2, o.ownership, 418.5, OWNADDL.yMob + dy, 6.5); put(p2, o.director, OWNTBL.dir, OWNADDL.yName + dy, 6.5); put(p2, o.officer, OWNTBL.off, OWNADDL.yName + dy, 6.5);
   });
   // senior leadership: ALL owners
   const everyone = [...owners, ...additional].slice(0, 4);
