@@ -29,7 +29,12 @@ async function isAccordFinalized(applicationId: string): Promise<boolean> {
       WHERE s.application_id::text = ($1)::text
         AND s.finalized_at IS NOT NULL
         AND l.name ILIKE 'accord%'
-        AND upper(coalesce(a.product_category, '')) = 'LOC'`, [applicationId]).catch(() => ({ rows: [{ n: "0" }] }));
+        -- BF_SERVER_BLOCK_v_ACCORD_LOC_CATEGORY_FIX_v1 — applications.product_category stores the
+        -- RAW wizard value ('LINE_OF_CREDIT'), never the normalized 'LOC' that lender_products.category
+        -- holds. The old '= LOC' check was therefore always false for real Accord LOC apps, so the
+        -- Accord credit application was never uploaded to the signing group (1-doc group) and so never
+        -- reached the lender package. Accept both spellings (normalizeProductCategory maps them equal).
+        AND upper(coalesce(a.product_category, '')) IN ('LOC', 'LINE_OF_CREDIT')`, [applicationId]).catch(() => ({ rows: [{ n: "0" }] }));
   return Number(res.rows[0]?.n ?? 0) > 0;
 }
 
