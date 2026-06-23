@@ -10,12 +10,18 @@ import { loadPackageInputs } from "./loadPackageInputs.js"; // BF_SERVER_v76_BLO
 // treat api_key_encrypted as plaintext fallback until encryption utility is added.
 const decryptSecret = async (value: string): Promise<string> => value;
 
-let googleAdapter: any = null;
-try {
-  const mod = await import("../../modules/submissions/adapters/GoogleSheetSubmissionAdapter.js");
-  googleAdapter = mod.GoogleSheetSubmissionAdapter;
-} catch (err) {
-  console.warn("[dispatch] google adapter unavailable", err);
+// v_DISPATCH_LAZY_GOOGLE_ADAPTER_v1 — lazy-load the Google Sheet adapter only
+// when a google_sheet lender is dispatched. Removing the module-level
+// `await import` keeps this module synchronous (so unit-test module mocks wire in
+// before evaluation) and avoids loading googleapis on every dispatch.
+async function loadGoogleAdapter(): Promise<any> {
+  try {
+    const mod = await import("../../modules/submissions/adapters/GoogleSheetSubmissionAdapter.js");
+    return mod.GoogleSheetSubmissionAdapter;
+  } catch (err) {
+    console.warn("[dispatch] google adapter unavailable", err);
+    return null;
+  }
 }
 
 export type DispatchLender = {
@@ -35,7 +41,11 @@ export type DispatchCtx = {
 
 export async function dispatchToSelected(
   ctx: DispatchCtx,
-  lenders: DispatchLender[]
+  lenders: DispatchLender[],
+  // v_DISPATCH_LAZY_GOOGLE_ADAPTER_v1 — optional injection seam so the Google
+  // Sheet adapter loader can be stubbed in unit tests (the real lazy import is
+  // not interceptable by module mocks). Production callers pass two args.
+  deps: { loadGoogleAdapter?: () => Promise<any> } = {}
 ): Promise<string[]> {
   let signedApp: Buffer | null = null;
   let creditSummary: Buffer | null = null;
@@ -163,6 +173,7 @@ export async function dispatchToSelected(
         }
       }
     } else if (method === "google_sheet") {
+      const googleAdapter = await (deps.loadGoogleAdapter ?? loadGoogleAdapter)();
       if (!l.google_sheet_id) {
         error = "missing_google_sheet_id";
       } else if (!googleAdapter) {
