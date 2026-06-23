@@ -3,6 +3,7 @@
 // fill across all 3 pages. Every coordinate render-verified against the blank.
 // Data sources: applications.metadata (.business/.applicant/.kyc, raw camelCase)
 // and application_form_responses (doc_type='professional_advisors').
+// NOTE: blank template is pre-cleaned (##-#/0 placeholders removed); no runtime masking.
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { dbQuery } from "../db.js";
 import { downloadBlobAsset } from "./blobStorage.js";
@@ -33,7 +34,7 @@ const ADV_ROW: Record<string, number> = { cpa: 361.4, attorney: 371.7, insurance
 // page-2 layout
 const P2_CLIENT = [{ x: 74, y: 75.3 }, { x: 74, y: 564.7 }];
 const P3_CLIENT = { x: 121, y: 77.7 };
-const OWNTBL = { name: 60, addr: 176, contact: 313, own: 404, dir: 458, off: 508, yName: 156, yOff: 156.5, yMob: 166.4, yEmail: 176.2, yOwn: 158.6, rowDY: 30 };
+const OWNTBL = { name: 60, addr: 176, contact: 313, own: 404, dir: 458, off: 508, yName: 156, yOff: 156.5, yMob: 166.4, yEmail: 176.2, yOwn: 166.1, rowDY: 30 };
 const OWNADDL = { yName: 234, yOff: 232.8, yMob: 242.7, yEmail: 252.5, rowDY: 30 };
 const SRL = { name: 62, title: 190, contact: 327, dir: 458, off: 508, yName: 355, yOff: 351.4, yMob: 361.2, yEmail: 371.1, rowDY: 30 };
 const MON: Record<string, { x: number; y: number }> = { acctSoftware: { x: 150, y: 606.7 }, acctRemote: { x: 485, y: 606.7 }, primaryBank: { x: 150, y: 623 }, bankRemote: { x: 485, y: 623 }, craMyBiz: { x: 278, y: 639.4 } };
@@ -122,7 +123,6 @@ export async function buildAccordPdf(applicationId: string): Promise<Uint8Array>
   const p1 = doc.getPage(0), p2 = doc.getPage(1), p3 = doc.getPage(2);
   const put = (pg: any, txt: string, x: number, y: number, size = 7.5) => { if (txt) pg.drawText(txt, { x, y: PH - y, size, font: F, color: INK }); };
   const tick = (pg: any, x: number, y: number) => pg.drawText("X", { x, y: PH - (y + 8), size: 9, font: FB, color: INK });
-  const wmask = (pg: any, x0: number, y0: number, x1: number, y1: number) => pg.drawRectangle({ x: x0, y: PH - y1, width: x1 - x0, height: y1 - y0, color: rgb(1, 1, 1) });
 
   // ── PAGE 1 ──
   for (const [k, v] of Object.entries(biz)) { const p = BIZ[k]; if (p) put(p1, v, p.x, p.y); }
@@ -155,11 +155,9 @@ export async function buildAccordPdf(applicationId: string): Promise<Uint8Array>
   // ownership table: owner1/owner2 in the two auto rows (mask the ##-#/0% placeholders)
   owners.slice(0, 2).forEach((o, i) => {
     const dy = i * OWNTBL.rowDY;
-    [OWNTBL.yOff, OWNTBL.yMob].forEach((y) => wmask(p2, 330, y + dy - 7, 353, y + dy + 1));
-    wmask(p2, 409, OWNTBL.yOwn + dy - 1, 425, OWNTBL.yOwn + dy + 9);
     put(p2, o.fullName, OWNTBL.name, OWNTBL.yName + dy, 6.5); put(p2, o.addr, OWNTBL.addr, OWNTBL.yName + dy, 6.5);
     ownContact(p2, OWNTBL.contact, o, OWNTBL.yOff + dy, OWNTBL.yMob + dy, OWNTBL.yEmail + dy);
-    put(p2, o.ownership ? o.ownership + "%" : "", OWNTBL.own, OWNTBL.yOwn + dy, 6.5); put(p2, o.director, OWNTBL.dir, OWNTBL.yName + dy, 6.5); put(p2, o.officer, OWNTBL.off, OWNTBL.yName + dy, 6.5);
+    put(p2, o.ownership, OWNTBL.own, OWNTBL.yOwn + dy, 6.5); put(p2, o.director, OWNTBL.dir, OWNTBL.yName + dy, 6.5); put(p2, o.officer, OWNTBL.off, OWNTBL.yName + dy, 6.5);
   });
   // additional shareholders (rows 3+)
   additional.slice(0, 2).forEach((o, i) => {
