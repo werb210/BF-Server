@@ -57,6 +57,23 @@ export function startLenderPackageWorker(pool: Pool): { stop: () => void } {
         }
 
         try {
+          // BF_SERVER_BLOCK_v_SIGN_ALLSIGNERS_v1 — never dispatch a package whose
+          // application is not actually all-signed. Guards against a stray/early
+          // webhook that enqueued before every signer completed.
+          const sg = await pool.query<{ signed: boolean }>(
+            `SELECT signnow_app_signed_at IS NOT NULL AS signed
+               FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+            [applicationId]
+          );
+          if (!sg.rows[0]?.signed) {
+            await pool.query(
+              `UPDATE job_queue SET status = 'pending', updated_at = now() WHERE id = $1`,
+              [job.id]
+            );
+            console.warn("[lender_package_worker] not signed yet — requeued", { applicationId, jobId: job.id });
+            continue;
+          }
+
           const lenders = await pool.query<DispatchLender>(
             `SELECT l.id::text AS lender_id, l.name, l.submission_method,
                     l.submission_email, l.api_endpoint, l.api_key_encrypted,

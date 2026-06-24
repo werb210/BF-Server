@@ -141,7 +141,19 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
           bodyHtml: `<p>${greeting}</p><p>An application you are listed on as an owner is ready for your signature. Please review and sign using your secure link below:</p><p><a href="${o2link.url}">Review &amp; sign your application</a></p><p>This link is unique to you. If you weren't expecting this, you can safely ignore this email.</p>`,
           bodyText: `${greeting}\n\nAn application you are listed on as an owner is ready for your signature. Please review and sign using your secure link:\n${o2link.url}\n\nThis link is unique to you.`,
         });
-        if (!sent.ok) console.warn(`[signnow] Owner 2 email not sent for app=${applicationId}: ${sent.error}`);
+        if (!sent.ok) {
+          // BF_SERVER_BLOCK_v_SIGN_ALLSIGNERS_v1 — a swallowed partner-invite
+          // failure now DEADLOCKS the package (all-signers gate). Persist a
+          // visible signal so staff can resend rather than the app stalling silently.
+          console.error(`[signnow] PARTNER INVITE FAILED app=${applicationId}: ${sent.error}`);
+          await dbQuery(
+            `update applications set metadata = coalesce(metadata,'{}'::jsonb)
+               || jsonb_build_object('partner_invite_error', $2::text,
+                                     'partner_invite_error_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))
+             where id::text = ($1)::text`,
+            [applicationId, String(sent.error).slice(0,400)]
+          ).catch(() => {});
+        }
       } catch (e) {
         console.warn(`[signnow] failed to email Owner 2 signing link for app=${applicationId}: ${e instanceof Error ? e.message : String(e)}`);
       }

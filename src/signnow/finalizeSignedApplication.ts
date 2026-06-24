@@ -55,11 +55,14 @@ export async function finalizeSignedApplication(
     }
   }
 
-  // Best-effort PII purge. The exact tables/columns vary by deploy (these may not
-  // exist), so guard each — a missing relation must never abort finalization,
-  // otherwise the signed stamp lands but the lender package is never enqueued.
-  await dbQuery(`update applicants set ssn = null, sin = null, updated_at = now() where application_id = $1`, [app.id]).catch(() => {});
-  await dbQuery(`update application_partners set ssn = null, sin = null, updated_at = now() where application_id = $1`, [app.id]).catch(() => {});
+  // BF_SERVER_BLOCK_v_SIGN_ALLSIGNERS_v1 — purge SIN/SSN only on the confirmed
+  // all-signed finalize (fresh). Purging earlier wiped co-owner SIN/SSN before
+  // they signed. Caller only invokes finalize once getDocumentGroupStatus reports
+  // ALL invites complete, so `fresh` here is the true all-signed transition.
+  if (fresh) {
+    await dbQuery(`update applicants set ssn = null, sin = null, updated_at = now() where application_id = $1`, [app.id]).catch(() => {});
+    await dbQuery(`update application_partners set ssn = null, sin = null, updated_at = now() where application_id = $1`, [app.id]).catch(() => {});
+  }
 
   if (fresh && app.contactId) {
     await logCrmEvent({

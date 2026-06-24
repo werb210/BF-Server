@@ -101,7 +101,10 @@ export async function getDocumentGroupStatus(groupId: string): Promise<{ signed:
   // "fulfilled". The summary still reports the raw states for diagnosis.
   const COMPLETE = new Set(["fulfilled", "signed", "completed", "complete", "document_signed"]);
   const completed = statuses.filter((s) => COMPLETE.has(s)).length;
-  const signed = completed > 0;
+  // BF_SERVER_BLOCK_v_SIGN_ALLSIGNERS_v1 — require EVERY invite complete before
+  // the group reads as signed. The prior `completed > 0` released the lender
+  // package on the FIRST signer (applicant) without waiting for co-owners.
+  const signed = statuses.length > 0 && completed === statuses.length;
   return { signed, summary: `invites=${statuses.length} completed=${completed} states=[${[...new Set(statuses)].join(",")}]` };
 }
 export async function getDocumentSignedStatus(documentId: string): Promise<{ signed: boolean; summary: string }> {
