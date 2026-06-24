@@ -58,14 +58,28 @@ router.use(async (req: any, res: any, next: any) => {
       return next(); // invalid/expired token -> treat as capability access, don't block
     }
     if (!phone10) return next();
+    // BF_SERVER_BLOCK_v_CLIENT_OWNERSHIP_PARTNER_FIX_v1 — ownership must consider
+    // ALL contacts linked to the application (applicant + partner + guarantor) via
+    // application_contacts, not just the single applications.contact_id. On a
+    // partner application, contact_id can point at the co-owner, which made the
+    // applicant's own phone read as mine===0 -> 403. Mirrors auth.ts. We UNION the
+    // primary contact_id (legacy/back-compat) with the application_contacts members
+    // so single-contact apps that predate the link table still resolve.
     const r = await dbQuery(
-      `SELECT COUNT(*)::int AS total,
-              COUNT(*) FILTER (
-                WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $2
-              )::int AS mine
-         FROM applications a
-         JOIN contacts c ON c.id = a.contact_id -- v342_FIX_CRM_CONTACTS
-        WHERE a.id::text = ($1)::text`,
+      `WITH app_phones AS (
+         SELECT right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),10) AS p10
+           FROM application_contacts ac
+           JOIN contacts c ON c.id = ac.contact_id
+          WHERE ac.application_id::text = ($1)::text
+         UNION
+         SELECT right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),10) AS p10
+           FROM applications a
+           JOIN contacts c ON c.id = a.contact_id
+          WHERE a.id::text = ($1)::text
+       )
+       SELECT
+         (SELECT COUNT(*)::int FROM applications WHERE id::text = ($1)::text) AS total,
+         (SELECT COUNT(*)::int FROM app_phones WHERE p10 = $2)               AS mine`,
       [aid, phone10],
     );
     const total = Number(r.rows?.[0]?.total ?? 0);
