@@ -60,11 +60,11 @@ router.use(async (req: any, res: any, next: any) => {
     if (!phone10) return next();
     // BF_SERVER_BLOCK_v_CLIENT_OWNERSHIP_PARTNER_FIX_v1 — ownership must consider
     // ALL contacts linked to the application (applicant + partner + guarantor) via
-    // application_contacts, not just the single applications.contact_id. On a
-    // partner application, contact_id can point at the co-owner, which made the
-    // applicant's own phone read as mine===0 -> 403. Mirrors auth.ts. We UNION the
-    // primary contact_id (legacy/back-compat) with the application_contacts members
-    // so single-contact apps that predate the link table still resolve.
+    // application_contacts, not just applications.contact_id. On a partner app the
+    // logged-in person can be the PARTNER, whose phone != the applicant contact,
+    // which made mine===0 -> 403 on every CMP read. UNION the link-table members
+    // with the legacy single contact_id so pre-link-table solo apps still resolve.
+    // Mirrors the correct pattern in auth.ts.
     const r = await dbQuery(
       `WITH app_phones AS (
          SELECT right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),10) AS p10
