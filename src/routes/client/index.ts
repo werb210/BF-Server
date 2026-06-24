@@ -13,11 +13,11 @@ import submitAttemptsRouter from "./submitAttempts.js";
 import {
   clientDocumentsRateLimit,
   clientReadRateLimit,
+  safeKeyGenerator,
 } from "../../middleware/rateLimit.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { dbQuery } from "../../db.js";
 import { AppError } from "../../middleware/errors.js";
-import { rateLimitKeyFromRequest } from "../../middleware/clientIp.js";
 
 const router = Router();
 router.use(submitAttemptsRouter); // BF_SERVER_BLOCK_v842_SUBMIT_ATTEMPTS — frictionless beacon, before rate-limit/ownership middleware
@@ -90,13 +90,16 @@ router.use("/", sessionRouter);
 // (loadAll fans 6 GETs/15s + typing/10s + signing-complete/8s). The shared
 // globalLimiter (200/15min) starved /signing-session, hiding the Sign button.
 // Give authenticated client polling a realistic ceiling.
+// BF_SERVER_BLOCK_v_SIGN_ALLSIGNERS_HOTFIX1 — use safeKeyGenerator (wraps
+// express-rate-limit's ipKeyGenerator) instead of rateLimitKeyFromRequest,
+// which threw ERR_ERL_KEY_GEN_IPV6 at construction and crashed boot.
 const cmpPollLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 240,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "RATE_LIMITED" },
-  keyGenerator: rateLimitKeyFromRequest,
+  keyGenerator: safeKeyGenerator,
   validate: { xForwardedForHeader: false, trustProxy: false },
 });
 router.use(cmpPollLimiter);
