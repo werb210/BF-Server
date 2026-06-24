@@ -74,6 +74,15 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
     const needsAccordRefresh = accordGroupNeedsRefresh(await isAccordFinalized(applicationId), cachedDocIds.length);
     if (sess?.group_id && sess?.invite_id && !needsAccordRefresh) {
       try {
+        // BF_SERVER_BLOCK_v_SIGNING_SESSION_PERSIGNER_v1 — if THIS applicant has
+        // already signed their invite (group still open for partners), do NOT
+        // re-open their consumed embedded link (which 401s into SignNow's login
+        // page). Report "signed" so the CMP shows the signed state for them.
+        try {
+          if (await signnow.getSignerInviteComplete(String(sess.group_id), email)) {
+            return { status: "signed" };
+          }
+        } catch { /* status check is best-effort; fall through to link */ }
         const link = await signnow.createEmbeddedGroupLink(String(sess.group_id), String(sess.invite_id), email);
         return { status: "ready", url: link.url, expiresAt: link.expiresAt };
       } catch (e) {
