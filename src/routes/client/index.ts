@@ -100,6 +100,151 @@ router.use("/lenders", lendersRouter);
 router.use("/", lenderProductsRouter);
 router.use("/", clientSubmissionRoutes);
 router.use("/", sessionRouter);
+
+// BF_SERVER_BLOCK_v_CLIENT_FORM_RESPONSES_v1 — client-authenticated form-responses.
+// The CMP previously used the STAFF-gated /api/portal/.../form-responses routes,
+// so the client could never save CRA/flinks/advisors/etc. These mirror the portal
+// routes on the SAME application_form_responses table, but authorize via the client
+// router's phone-based ownership. doc_type is the long key the forms use
+// (cra_view_only_authorization, flinks_banking, ...).
+{
+  const formResponseApplicationId = (req: any) =>
+    (typeof req.query?.applicationId === "string" && req.query.applicationId.trim()) ||
+    (typeof req.body?.applicationId === "string" && req.body.applicationId.trim()) ||
+    (typeof req.params?.id === "string" && req.params.id.trim()) ||
+    null;
+
+  const verifyFormResponseOwnership = async (req: any, res: any, appId: string) => {
+    const auth = req.headers?.authorization;
+    if (!auth || typeof auth !== "string" || !auth.startsWith("Bearer ")) return true;
+    const secret = process.env.JWT_SECRET;
+    if (!secret) return true;
+    let phone10 = "";
+    try {
+      const decoded = jwt.verify(auth.slice(7), secret) as Record<string, unknown>;
+      phone10 = String(typeof decoded.phone === "string" ? decoded.phone : "")
+        .replace(/[^0-9]/g, "")
+        .slice(-10);
+    } catch {
+      return true;
+    }
+    if (!phone10) return true;
+    const result = await dbQuery(
+      `WITH app_phones AS (
+         SELECT right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),10) AS p10
+           FROM application_contacts ac
+           JOIN contacts c ON c.id = ac.contact_id
+          WHERE ac.application_id::text = ($1)::text
+         UNION
+         SELECT right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),10) AS p10
+           FROM applications a
+           JOIN contacts c ON c.id = a.contact_id
+          WHERE a.id::text = ($1)::text
+       )
+       SELECT
+         (SELECT COUNT(*)::int FROM applications WHERE id::text = ($1)::text) AS total,
+         (SELECT COUNT(*)::int FROM app_phones WHERE p10 = $2)               AS mine`,
+      [appId, phone10],
+    );
+    const total = Number(result.rows?.[0]?.total ?? 0);
+    const mine = Number(result.rows?.[0]?.mine ?? 0);
+    if (total > 0 && mine === 0) {
+      res.status(403).json({ error: "forbidden" });
+      return false;
+    }
+    return true;
+  };
+
+  router.get(
+    "/applications/:id/form-responses/:doc_type",
+    safeHandler(async (req: any, res: any) => {
+      const appId = formResponseApplicationId(req);
+      const docType = String(req.params.doc_type);
+      if (!appId) { res.status(400).json({ error: "applicationId_required" }); return; }
+      if (!(await verifyFormResponseOwnership(req, res, appId))) return;
+      const result = await dbQuery(
+        `SELECT id, doc_type, data, submitted_at, created_at, updated_at
+           FROM application_form_responses
+          WHERE application_id::text = ($1)::text AND doc_type = $2
+          LIMIT 1`,
+        [appId, docType],
+      );
+      if (result.rowCount === 0) { res.status(404).json({ error: "not_found" }); return; }
+      res.json({ item: result.rows[0] });
+    }),
+  );
+
+  router.get(
+    "/applications/:id/form-responses",
+    safeHandler(async (req: any, res: any) => {
+      const appId = formResponseApplicationId(req);
+      if (!appId) { res.status(400).json({ error: "applicationId_required" }); return; }
+      if (!(await verifyFormResponseOwnership(req, res, appId))) return;
+      const result = await dbQuery(
+        `SELECT id, doc_type, data, submitted_at, created_at, updated_at
+           FROM application_form_responses
+          WHERE application_id::text = ($1)::text
+          ORDER BY updated_at DESC`,
+        [appId],
+      );
+      res.json({ items: result.rows });
+    }),
+  );
+
+  router.put(
+    "/applications/:id/form-responses/:doc_type",
+    safeHandler(async (req: any, res: any) => {
+      const appId = formResponseApplicationId(req);
+      const docType = String(req.params.doc_type);
+      const data = req.body?.data;
+      if (!appId) { res.status(400).json({ error: "applicationId_required" }); return; }
+      if (!(await verifyFormResponseOwnership(req, res, appId))) return;
+      if (!data || typeof data !== "object" || Array.isArray(data)) {
+        res.status(400).json({ error: "data_required" });
+        return;
+      }
+      const result = await dbQuery(
+        `INSERT INTO application_form_responses (application_id, doc_type, data, updated_at)
+              VALUES ($1, $2, $3::jsonb, NOW())
+              ON CONFLICT (application_id, doc_type)
+              DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
+           RETURNING id, doc_type, data, submitted_at, created_at, updated_at`,
+        [appId, docType, JSON.stringify(data)],
+      );
+      res.json({ item: result.rows[0] });
+    }),
+  );
+
+  router.post(
+    "/applications/:id/form-responses/:doc_type/submit",
+    safeHandler(async (req: any, res: any) => {
+      const appId = formResponseApplicationId(req);
+      const docType = String(req.params.doc_type);
+      const data = req.body?.data;
+      const hasData = data && typeof data === "object" && !Array.isArray(data);
+      if (!appId) { res.status(400).json({ error: "applicationId_required" }); return; }
+      if (!(await verifyFormResponseOwnership(req, res, appId))) return;
+      const result = hasData
+        ? await dbQuery(
+            `INSERT INTO application_form_responses (application_id, doc_type, data, submitted_at, updated_at)
+                  VALUES ($1, $2, $3::jsonb, NOW(), NOW())
+                  ON CONFLICT (application_id, doc_type)
+                  DO UPDATE SET data = EXCLUDED.data, submitted_at = NOW(), updated_at = NOW()
+               RETURNING id, doc_type, data, submitted_at, created_at, updated_at`,
+            [appId, docType, JSON.stringify(data)],
+          )
+        : await dbQuery(
+            `UPDATE application_form_responses
+                SET submitted_at = NOW(), updated_at = NOW()
+              WHERE application_id::text = ($1)::text AND doc_type = $2
+              RETURNING id, doc_type, data, submitted_at, created_at, updated_at`,
+            [appId, docType],
+          );
+      if (result.rowCount === 0) { res.status(404).json({ error: "not_found" }); return; }
+      res.json({ item: result.rows[0] });
+    }),
+  );
+}
 // BF_SERVER_BLOCK_v_SIGN_ALLSIGNERS_v1 — the CMP legitimately polls ~38 req/min
 // (loadAll fans 6 GETs/15s + typing/10s + signing-complete/8s). The shared
 // globalLimiter (200/15min) starved /signing-session, hiding the Sign button.
