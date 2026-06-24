@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import jwt from "jsonwebtoken";
 import continuationRouter from "./continuation.js";
 import documentsRouter from "./documents.js";
@@ -16,6 +17,7 @@ import {
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { dbQuery } from "../../db.js";
 import { AppError } from "../../middleware/errors.js";
+import { rateLimitKeyFromRequest } from "../../middleware/clientIp.js";
 
 const router = Router();
 router.use(submitAttemptsRouter); // BF_SERVER_BLOCK_v842_SUBMIT_ATTEMPTS — frictionless beacon, before rate-limit/ownership middleware
@@ -84,6 +86,21 @@ router.use("/lenders", lendersRouter);
 router.use("/", lenderProductsRouter);
 router.use("/", clientSubmissionRoutes);
 router.use("/", sessionRouter);
+// BF_SERVER_BLOCK_v_SIGN_ALLSIGNERS_v1 — the CMP legitimately polls ~38 req/min
+// (loadAll fans 6 GETs/15s + typing/10s + signing-complete/8s). The shared
+// globalLimiter (200/15min) starved /signing-session, hiding the Sign button.
+// Give authenticated client polling a realistic ceiling.
+const cmpPollLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "RATE_LIMITED" },
+  keyGenerator: rateLimitKeyFromRequest,
+  validate: { xForwardedForHeader: false, trustProxy: false },
+});
+router.use(cmpPollLimiter);
+
 router.use("/documents", clientDocumentsRateLimit(), documentsRouter);
 
 // BF_SERVER_BLOCK_v696_CLIENT_STAGE_v1 — client-accessible application stage.
