@@ -101,6 +101,26 @@ router.use("/", lenderProductsRouter);
 router.use("/", clientSubmissionRoutes);
 router.use("/", sessionRouter);
 
+// BF_SERVER_BLOCK_v_CLIENT_ACCOUNT_DELETE_v1 — store-required (Apple 5.1.1(v) +
+// Google) account/data deletion. The CMP "Delete account" button POSTs here with
+// { applicationId }. Ownership is already enforced by the client router's phone-
+// match middleware (non-owners get 403 before reaching this). Hard-deletes the
+// application; child rows (form responses, contacts links, messages, documents,
+// packages, call events, etc.) chain via ON DELETE CASCADE
+// (migration 2026_06_03_v694_application_delete_cascade.sql).
+router.post("/account/delete", safeHandler(async (req: any, res: any) => {
+  const applicationId =
+    (typeof req.body?.applicationId === "string" && req.body.applicationId.trim()) ||
+    (typeof req.query?.applicationId === "string" && req.query.applicationId.trim()) || null;
+  if (!applicationId) { res.status(400).json({ error: "applicationId_required" }); return; }
+  if (!/^[0-9a-f-]{36}$/i.test(applicationId)) { res.status(400).json({ error: "invalid_id" }); return; }
+  const { pool } = await import("../../db.js");
+  const { rowCount } = await pool.query(
+    `DELETE FROM applications WHERE id::text = ($1)::text`, [applicationId]);
+  if (!rowCount) { res.status(404).json({ error: "not_found" }); return; }
+  res.json({ ok: true, deleted: true });
+}));
+
 // BF_SERVER_BLOCK_v_CLIENT_FORM_RESPONSES_v1 — client-authenticated form-responses.
 // The CMP previously used the STAFF-gated /api/portal/.../form-responses routes,
 // so the client could never save CRA/flinks/advisors/etc. These mirror the portal
