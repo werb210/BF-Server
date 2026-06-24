@@ -107,6 +107,25 @@ export async function getDocumentGroupStatus(groupId: string): Promise<{ signed:
   const signed = statuses.length > 0 && completed === statuses.length;
   return { signed, summary: `invites=${statuses.length} completed=${completed} states=[${[...new Set(statuses)].join(",")}]` };
 }
+export async function getSignerInviteComplete(groupId: string, signerEmail: string): Promise<boolean> {
+  // BF_SERVER_BLOCK_v_SIGNING_SESSION_PERSIGNER_v1 — returns true iff the invite
+  // belonging to signerEmail is in a completed state, independent of other signers.
+  const want = String(signerEmail || "").trim().toLowerCase();
+  if (!want) return false;
+  const body = (await signnowFetch(`/v2/document-groups/${encodeURIComponent(groupId)}`, { method: "GET" })) as any;
+  const data = body?.data ?? body ?? {};
+  const COMPLETE = new Set(["fulfilled", "signed", "completed", "complete", "document_signed"]);
+  let found = false;
+  const walk = (v: any) => {
+    if (!v || typeof v !== "object") return;
+    const em = String(v.email ?? v.signer_email ?? "").trim().toLowerCase();
+    const st = String(v.status ?? "").trim().toLowerCase();
+    if (em && em === want && COMPLETE.has(st)) found = true;
+    for (const k of Object.keys(v)) walk((v as Record<string, unknown>)[k]);
+  };
+  walk(data);
+  return found;
+}
 export async function getDocumentSignedStatus(documentId: string): Promise<{ signed: boolean; summary: string }> {
   const body = (await signnowFetch(`/document/${encodeURIComponent(documentId)}`, { method: "GET" })) as any;
   const data = body?.data ?? body ?? {};
