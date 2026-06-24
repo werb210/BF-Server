@@ -176,8 +176,61 @@ async function loadAdditionalSignedDocs(ctx: LoadCtx): Promise<{ filename: strin
   return files; // root-level; placed alongside signed-application.pdf by the package builder
 }
 
+// BF_SERVER_BLOCK_v_FORM_PDFS_v1 — render client-completed CMP forms to PDF and
+// attach to the lender package (root, alongside signed-application.pdf).
+const FORM_PDF_SPECS: Array<{ docType: string; title: string; file: string }> = [
+  { docType: "personal_net_worth", title: "Personal Net Worth Statement", file: "personal-net-worth.pdf" },
+  { docType: "net_worth_statement", title: "Personal Net Worth Statement", file: "personal-net-worth.pdf" },
+  { docType: "debt_stack", title: "Debt Stack", file: "debt-stack.pdf" },
+  { docType: "equipment_list", title: "Equipment Collateral", file: "equipment-collateral.pdf" },
+  { docType: "real_estate_collateral_disclosure", title: "Real Estate Collateral", file: "real-estate-collateral.pdf" },
+];
+
+function flattenForPdf(value: unknown, prefix = ""): string[] {
+  const out: string[] = [];
+  const label = (k: string) => (prefix ? `${prefix}.${k}` : k);
+  if (Array.isArray(value)) {
+    value.forEach((v, i) => { out.push(...flattenForPdf(v, `${prefix}[${i + 1}]`)); });
+  } else if (value && typeof value === "object") {
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v && typeof v === "object") out.push(...flattenForPdf(v, label(k)));
+      else out.push(`${label(k)}: ${v === null || v === undefined ? "" : String(v)}`);
+    }
+  } else {
+    out.push(`${prefix}: ${value === null || value === undefined ? "" : String(value)}`);
+  }
+  return out;
+}
+
+async function loadFormPdfs(ctx: LoadCtx): Promise<{ filename: string; content: Buffer }[]> {
+  const r = await ctx.pool.query<{ doc_type: string; data: any; submitted_at: string | null }>(
+    `SELECT doc_type, data, submitted_at FROM application_form_responses
+      WHERE application_id::text = ($1)::text AND submitted_at IS NOT NULL`,
+    [ctx.applicationId],
+  ).catch(() => ({ rows: [] as Array<{ doc_type: string; data: any; submitted_at: string | null }> }));
+  const bySpec = new Map<string, { title: string; file: string }>();
+  for (const s of FORM_PDF_SPECS) bySpec.set(s.docType, { title: s.title, file: s.file });
+  const out: { filename: string; content: Buffer }[] = [];
+  const seenFiles = new Set<string>();
+  for (const row of r.rows) {
+    const spec = bySpec.get(String(row.doc_type));
+    if (!spec || seenFiles.has(spec.file)) continue;
+    seenFiles.add(spec.file);
+    const header = [spec.title, `Application: ${ctx.applicationId}`,
+      row.submitted_at ? `Submitted: ${row.submitted_at}` : "", ""];
+    const body = flattenForPdf(row.data ?? {});
+    try {
+      out.push({ filename: spec.file, content: renderTextPdf([...header, ...body]) });
+    } catch (e) {
+      console.warn("[loadPackageInputs] form pdf render failed", row.doc_type, e instanceof Error ? e.message : String(e));
+    }
+  }
+  return out;
+}
+
 export async function loadPackageInputs(ctx: LoadCtx): Promise<PackageInputs> {
   const fields = await loadFields(ctx);
-  const [signedApplicationPdf, creditSummaryPdf, documents, additionalSignedDocs] = await Promise.all([loadSignedApplicationPdf(ctx, fields), loadCreditSummaryPdf(ctx), loadAcceptedDocuments(ctx), loadAdditionalSignedDocs(ctx)]);
-  return { signedApplicationPdf, creditSummaryPdf, documents, additionalSignedDocs, fields };
+  const [signedApplicationPdf, creditSummaryPdf, documents, additionalSignedDocs, formPdfs] = await Promise.all([loadSignedApplicationPdf(ctx, fields), loadCreditSummaryPdf(ctx), loadAcceptedDocuments(ctx), loadAdditionalSignedDocs(ctx), loadFormPdfs(ctx)]);
+  // BF_SERVER_BLOCK_v_FORM_PDFS_v1 — generated CMP form PDFs ride in at package root.
+  return { signedApplicationPdf, creditSummaryPdf, documents, additionalSignedDocs: [...additionalSignedDocs, ...formPdfs], fields };
 }
