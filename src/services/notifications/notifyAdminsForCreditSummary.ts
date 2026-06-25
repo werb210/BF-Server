@@ -61,7 +61,8 @@ export async function notifyAdminsForCreditSummary(ctx: NotifyCtx): Promise<{
         await ctx.pool.query(
           `INSERT INTO notifications
              (id, user_id, type, ref_table, ref_id, body, context_url, is_read, created_at)
-           VALUES (gen_random_uuid(), $1, 'credit_summary_ready', 'applications', $2, $3, $4, false, now())`,
+           VALUES (gen_random_uuid(), $1, 'credit_summary_ready', 'applications', $2, $3, $4, false, now())
+           ON CONFLICT ON CONSTRAINT notifications_unique_per_ref DO NOTHING`,
           [
             admin.id,
             id,
