@@ -1594,13 +1594,16 @@ router.get('/:id/signing-readiness', safeHandler(async (req: any, res: any) => {
   const snapshot = await readReadinessSnapshot({ pool, applicationId: id });
   const reason = signingBlockReason(snapshot);
   const d = await pool.query(
-    `SELECT signnow_app_signed_at, signnow_document_id, metadata->'signnow_embedded' AS embedded FROM applications WHERE id::text = ($1)::text`,
+    `SELECT signnow_app_signed_at, signnow_document_id, requested_amount, metadata->'signnow_embedded' AS embedded FROM applications WHERE id::text = ($1)::text`,
     [id]
   ).catch(() => ({ rows: [] as any[] }));
   const drow: any = d.rows[0] ?? {};
+  // BF_SERVER_BLOCK_v_COLLATERAL_THRESHOLD_v1 — Accord LOC collateral applies only above $250k.
+  const v_amt = drow?.requested_amount == null ? NaN : Number(drow.requested_amount);
   res.json({ status: 'ok', data: {
     reason,
     canSend: reason === 'ready',
+    collateralApplies: Number.isFinite(v_amt) && v_amt > 250000,
     snapshot,
     signing: {
       signed: Boolean(drow.signnow_app_signed_at),

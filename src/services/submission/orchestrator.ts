@@ -54,7 +54,7 @@ export async function readReadinessSnapshot(ctx: OrchestratorContext): Promise<R
   // treated as NOT waived (credit summary still required), to stay conservative.
   const reqAmtNum = appRow?.requested_amount == null ? NaN : Number(appRow.requested_amount);
   const creditSummaryWaived = Number.isFinite(reqAmtNum) && reqAmtNum < 500000;
-  return { allDocsAccepted: !docsBlocked, allTasksComplete: openTasks === 0, lenderSelectionsFinalized: finalizedAt !== null, creditSummarySubmitted: Boolean(appRow?.credit_summary_completed_at) || creditSummaryWaived, applicationSigned: Boolean(appRow?.signnow_app_signed_at), collateralRequired: Boolean(collateralReqRes.rows[0]?.accord ?? false), collateralComplete: Boolean(collateralDoneRes.rows[0]?.complete ?? false) };
+  return { allDocsAccepted: !docsBlocked, allTasksComplete: openTasks === 0, lenderSelectionsFinalized: finalizedAt !== null, creditSummarySubmitted: Boolean(appRow?.credit_summary_completed_at) || creditSummaryWaived, applicationSigned: Boolean(appRow?.signnow_app_signed_at), collateralRequired: Boolean(collateralReqRes.rows[0]?.accord ?? false) && Number.isFinite(reqAmtNum) && reqAmtNum > 250000 /* BF_SERVER_BLOCK_v_COLLATERAL_THRESHOLD_v1: Accord LOC needs collateral only above $250k */, collateralComplete: Boolean(collateralDoneRes.rows[0]?.complete ?? false) };
 }
 export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): Promise<{ fired: boolean; reason?: string }> {
   const snap = await readReadinessSnapshot(ctx);
