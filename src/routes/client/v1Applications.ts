@@ -732,12 +732,16 @@ router.post(
             } else {
               const equipmentId = randomUUID();
               await pool.query(
+                // BF_SERVER_BLOCK_v_CE_LEG_CONTACT_ID_v1 — the equipment leg was inserted
+                // without contact_id, so the CMP by-phone switcher (INNER JOIN on contact_id)
+                // never showed it and the client could never sign it. Set it from the parent.
                 `INSERT INTO applications
-                   (id, name, silo, owner_user_id, parent_application_id,
+                   (id, name, silo, owner_user_id, parent_application_id, contact_id,
                     requested_amount, product_category, pipeline_state, status,
                     lender_id, lender_product_id, source, metadata, submitted_at, created_at, updated_at)
                  VALUES
                    ($1, $2, $3, $4, $5,
+                    (SELECT contact_id FROM applications WHERE id::text = ($5)::text),
                     $6, 'EQUIPMENT', 'Received', $10,
                     $7, $8, 'capital_and_equipment_leg',
                     jsonb_build_object('capital_and_equipment_leg', true,
