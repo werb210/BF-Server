@@ -64,6 +64,11 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
   try {
     const md = row.metadata && typeof row.metadata === "object" ? (row.metadata as Record<string, any>) : {};
     const inputs = await loadApplicationForPdf(applicationId);
+    // BF_SERVER_BLOCK_v_SIGN_DOC_NAMES_v1 — name minted docs/group by business + date
+    // so they are findable in the SignNow UI instead of "app-<uuid>".
+    const _bizName = (inputs.business?.legalName || inputs.business?.dba || inputs.applicantName || "Boreal application").toString().slice(0, 60);
+    const _stamp = new Date().toISOString().slice(0, 10);
+    const _docLabel = `${_bizName} — ${_stamp}`;
     const email = inputs.applicantEmail;
     if (!email) return { status: "not_ready", reason: "no_applicant_email" };
 
@@ -122,20 +127,20 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
     let blobName: string | null = null;
     let blobUrl: string | null = null;
     try { const up = await uploadSignedApplicationPdf(applicationId, Buffer.from(borealPdf)); blobName = up.blobName; blobUrl = up.url; } catch { /* non-fatal: lender package falls back to text render */ }
-    const boreal = await signnow.uploadDocumentWithFieldExtract(borealPdf, `app-${applicationId}.pdf`);
+    const boreal = await signnow.uploadDocumentWithFieldExtract(borealPdf, `${_docLabel}.pdf`);
     docIds.push(boreal.documentId);
 
     if (await isAccordFinalized(applicationId)) {
       try {
         const accordPdf = await buildAccordPdf(applicationId);
-        const accord = await signnow.uploadDocumentWithFieldExtract(accordPdf, `accord-${applicationId}.pdf`);
+        const accord = await signnow.uploadDocumentWithFieldExtract(accordPdf, `${_docLabel} (Accord Credit Application).pdf`);
         docIds.push(accord.documentId);
       } catch (e) {
         console.warn(`[signnow] Accord form skipped for app=${applicationId}: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
 
-    const group = await signnow.createDocumentGroup(docIds, `Boreal application ${applicationId}`);
+    const group = await signnow.createDocumentGroup(docIds, _docLabel);
     // BF_SERVER_BLOCK_v_MULTISIGNER_STEPS_v1 — Owner 2 is a real second signer whenever the
     // application has a second owner with an email, INCLUDING when it equals the applicant's
     // (co-owners who share an inbox). The same email is valid as long as the two signers sit
