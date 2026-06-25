@@ -1573,4 +1573,61 @@ router.post('/:id/lenders/:lenderId/files', lenderTermSheetUpload.single('file')
   return res.status(201).json({ ok: true, offer_id: offerId, lender_id: resolvedLenderId, blob_name: put.blobName, stage });
 }));
 
+// BF_SERVER_BLOCK_v_SIGNING_READINESS_v1 — staff visibility + resend for the embedded
+// signing build. The orchestrator gates signing on readiness (incl. the Accord collateral
+// requirement) but previously failed silently. These endpoints expose the exact blocking
+// reason and let staff re-fire once resolved. resend enforces the SAME gate, so it can never
+// mint an incomplete Accord signing group.
+function signingBlockReason(s: { allDocsAccepted: boolean; allTasksComplete: boolean; lenderSelectionsFinalized: boolean; applicationSigned: boolean; collateralRequired: boolean; collateralComplete: boolean; }): string {
+  if (s.applicationSigned) return 'signed';
+  if (!s.allDocsAccepted) return 'docs_not_accepted';
+  if (!s.allTasksComplete) return 'tasks_incomplete';
+  if (!s.lenderSelectionsFinalized) return 'lender_not_finalized';
+  if (s.collateralRequired && !s.collateralComplete) return 'collateral_incomplete';
+  return 'ready';
+}
+
+router.get('/:id/signing-readiness', safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id ?? '').trim();
+  if (!id) throw new AppError('validation_error', 'Application id required.', 400);
+  const { readReadinessSnapshot } = await import('../../services/submission/orchestrator.js');
+  const snapshot = await readReadinessSnapshot({ pool, applicationId: id });
+  const reason = signingBlockReason(snapshot);
+  const d = await pool.query(
+    `SELECT signnow_app_signed_at, signnow_document_id, metadata->'signnow_embedded' AS embedded FROM applications WHERE id::text = ($1)::text`,
+    [id]
+  ).catch(() => ({ rows: [] as any[] }));
+  const drow: any = d.rows[0] ?? {};
+  res.json({ status: 'ok', data: {
+    reason,
+    canSend: reason === 'ready',
+    snapshot,
+    signing: {
+      signed: Boolean(drow.signnow_app_signed_at),
+      documentId: drow.signnow_document_id ?? null,
+      sessionMinted: Boolean(drow.embedded),
+    },
+  } });
+}));
+
+router.post('/:id/resend-signing', safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id ?? '').trim();
+  if (!id) throw new AppError('validation_error', 'Application id required.', 400);
+  const { readReadinessSnapshot } = await import('../../services/submission/orchestrator.js');
+  const snapshot = await readReadinessSnapshot({ pool, applicationId: id });
+  const reason = signingBlockReason(snapshot);
+  if (reason !== 'ready') {
+    res.json({ status: 'ok', data: { ok: false, reason, snapshot } });
+    return;
+  }
+  const mod: any = await import('../../signnow/embeddedSigningSession.js').catch(() => null);
+  if (!mod || typeof mod.getOrCreateEmbeddedSigningSession !== 'function') {
+    res.json({ status: 'ok', data: { ok: false, reason: 'signing_unavailable', snapshot } });
+    return;
+  }
+  const result: any = await mod.getOrCreateEmbeddedSigningSession(id);
+  const ok = result?.status === 'ready' || result?.status === 'signed';
+  res.json({ status: 'ok', data: { ok, sessionStatus: result?.status ?? 'unknown', reason: ok ? 'ready' : (result?.reason ?? result?.status ?? 'not_ready'), snapshot } });
+}));
+
 export default router;
