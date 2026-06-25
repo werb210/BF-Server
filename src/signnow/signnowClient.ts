@@ -73,10 +73,10 @@ export async function sendGroupEmailInvite(groupId: string, signer: EmbeddedSign
 export async function createEmbeddedGroupLink(groupId: string, inviteId: string, email: string): Promise<{ url: string; expiresAt: string | null }> {
   // BF_SERVER_BLOCK_v_SIGN_LINK_EXPIRY_v1 — link_expiration is in MINUTES. The old 45 expired
   // every signing link 45 minutes after it was generated, so a client returning even an hour
-  // later hit a dead link. Default to 30 days (SignNow's max); override via SIGNNOW_LINK_EXPIRATION_MINUTES
-  // (clamped to SignNow's 15..43200-minute range).
+  // later hit a dead link. Default to SignNow's embedded-invite cap; override via SIGNNOW_LINK_EXPIRATION_MINUTES
+  // (SignNow hard-caps embedded-invite links at 45 min; we clamp to 1..45).
   const expRaw = Number((process.env.SIGNNOW_LINK_EXPIRATION_MINUTES ?? "").trim());
-  const link_expiration = Number.isFinite(expRaw) && expRaw > 0 ? Math.min(43200, Math.max(15, Math.round(expRaw))) : 43200; // BF_SERVER_BLOCK_v_SIGN_LINK_EXPIRY_30D_v1 default 30 days
+  const link_expiration = Number.isFinite(expRaw) && expRaw > 0 ? Math.min(45, Math.max(1, Math.round(expRaw))) : 45; // BF_SERVER_BLOCK_v_SIGN_LINK_EXPIRY_45CAP_v1 — SignNow HARD-CAPS embedded-invite links at 45 minutes (code 19019003); the CMP regenerates a fresh link on every load, so the practical signing window is unlimited.
   const payload = { email, auth_method: "none", link_expiration };
   const body = (await signnowFetch(`/v2/document-groups/${encodeURIComponent(groupId)}/embedded-invites/${encodeURIComponent(inviteId)}/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })) as { data?: { link?: string }; link?: string };
   const url = body?.data?.link ?? body?.link;
