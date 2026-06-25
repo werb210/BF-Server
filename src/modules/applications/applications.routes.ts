@@ -1630,4 +1630,18 @@ router.post('/:id/resend-signing', safeHandler(async (req: any, res: any) => {
   res.json({ status: 'ok', data: { ok, sessionStatus: result?.status ?? 'unknown', reason: ok ? 'ready' : (result?.reason ?? result?.status ?? 'not_ready'), snapshot } });
 }));
 
+// BF_SERVER_BLOCK_v_SENT_LENDERS_v1 — which lenders already received the package (Lenders-tab "Sent \u2713").
+router.get('/:id/sent-lenders', safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id ?? '').trim();
+  if (!id) throw new AppError('validation_error', 'Application id required.', 400);
+  const r = await pool.query(
+    `SELECT lender_id::text AS lender_id, MAX(sent_at) AS sent_at
+       FROM application_packages
+      WHERE application_id::text = ($1)::text AND sent_at IS NOT NULL
+      GROUP BY lender_id`,
+    [id]
+  ).catch(() => ({ rows: [] as any[] }));
+  res.json({ status: 'ok', data: { sent: r.rows.map((x: any) => ({ lenderId: String(x.lender_id), sentAt: x.sent_at })) } });
+}));
+
 export default router;
