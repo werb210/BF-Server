@@ -71,7 +71,13 @@ export async function sendGroupEmailInvite(groupId: string, signer: EmbeddedSign
   return { inviteId: body?.data?.id ?? body?.id };
 }
 export async function createEmbeddedGroupLink(groupId: string, inviteId: string, email: string): Promise<{ url: string; expiresAt: string | null }> {
-  const payload = { email, auth_method: "none", link_expiration: 45 };
+  // BF_SERVER_BLOCK_v_SIGN_LINK_EXPIRY_v1 — link_expiration is in MINUTES. The old 45 expired
+  // every signing link 45 minutes after it was generated, so a client returning even an hour
+  // later hit a dead link. Default to 1 week; override via SIGNNOW_LINK_EXPIRATION_MINUTES
+  // (clamped to SignNow's 15..43200-minute range).
+  const expRaw = Number((process.env.SIGNNOW_LINK_EXPIRATION_MINUTES ?? "").trim());
+  const link_expiration = Number.isFinite(expRaw) && expRaw > 0 ? Math.min(43200, Math.max(15, Math.round(expRaw))) : 10080;
+  const payload = { email, auth_method: "none", link_expiration };
   const body = (await signnowFetch(`/v2/document-groups/${encodeURIComponent(groupId)}/embedded-invites/${encodeURIComponent(inviteId)}/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })) as { data?: { link?: string }; link?: string };
   const url = body?.data?.link ?? body?.link;
   if (typeof url !== "string") throw new SignNowError("SignNow embedded link returned no url", undefined, body);
