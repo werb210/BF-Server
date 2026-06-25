@@ -94,7 +94,11 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
         // was already signed, and recreating would wrongly re-prompt a signed app.
         // If it was signed, staff run the admin mark-signed route to finalize.
         const m = e instanceof Error ? e.message : String(e);
-        if (/19001041|different|denied|not readable|65610|access/i.test(m)) {
+        // BF_SERVER_BLOCK_v_SIGN_REINVITE_EXPIRED_v1 — 19001037 / "does not have an active
+        // invitation" means the cached invite EXPIRED. The group is still readable with the
+        // current key (and we already returned "signed" above if this signer had signed), so
+        // re-minting a fresh group is safe — it is exactly what a re-send should do.
+        if (/19001041|19001037|active invitation|different|denied|not readable|65610|access/i.test(m)) {
           // The stored group is orphaned by an API-key/app rotation: it can never
           // be relinked, read, or downloaded with the current key, so it is dead
           // weight regardless of whether it was signed under the old key. The app
