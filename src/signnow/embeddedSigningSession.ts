@@ -132,22 +132,23 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
     }
 
     const group = await signnow.createDocumentGroup(docIds, `Boreal application ${applicationId}`);
-    // BF_SERVER_BLOCK_v_SIGNING_HARDENING_v1 — Owner 2 is a DISTINCT signer only when it
-    // has an email that differs from the applicant's. A single-owner app flagged
-    // "multiple owners" duplicates the applicant as Owner 2; the same email twice makes
-    // SignNow reject the whole invite ("Email must be unique within one invite step") and
-    // nothing is ever sent.
+    // BF_SERVER_BLOCK_v_MULTISIGNER_STEPS_v1 — Owner 2 is a real second signer whenever the
+    // application has a second owner with an email, INCLUDING when it equals the applicant's
+    // (co-owners who share an inbox). The same email is valid as long as the two signers sit
+    // in SEPARATE invite steps, which createEmbeddedGroupInvite now enforces (one signer per
+    // sequential step). Keeping both signers also keeps the PDF's Owner 2 role filled, so the
+    // invite no longer fails with "Role Owner 2 was not specified".
     const o2 = inputs.owners[1];
     const o2email = (o2?.email ?? "").trim();
-    const o2distinct = o2email.length > 0 && o2email.toLowerCase() !== email.trim().toLowerCase();
-    const o2name = o2distinct ? ([o2!.firstName, o2!.lastName].filter(Boolean).join(" ").trim() || undefined) : undefined;
+    const o2present = o2email.length > 0;
+    const o2name = o2present ? ([o2!.firstName, o2!.lastName].filter(Boolean).join(" ").trim() || undefined) : undefined;
     const signers: signnow.EmbeddedSigner[] = [{ email, name: inputs.applicantName ?? undefined, roleName: ROLE_OWNER1 }];
-    if (o2distinct) signers.push({ email: o2email, name: o2name, roleName: ROLE_OWNER2 });
+    if (o2present) signers.push({ email: o2email, name: o2name, roleName: ROLE_OWNER2 });
 
     const invite = await signnow.createEmbeddedGroupInvite(group.groupId, docIds, signers);
     const link = await signnow.createEmbeddedGroupLink(group.groupId, invite.inviteId, email);
 
-    if (o2distinct) {
+    if (o2present) {
       try {
         const o2link = await signnow.createEmbeddedGroupLink(group.groupId, invite.inviteId, o2email);
         const greeting = o2name ? `Hi ${o2name},` : "Hello,";
