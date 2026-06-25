@@ -47,7 +47,11 @@ export async function createEmbeddedGroupInvite(groupId: string, documentIds: st
       documents: documentIds.map((id) => ({ id, role: signer.roleName, action: "sign" })),
     };
   });
-  const payload = { invites: [{ order: 1, signers: signerPayloads }] };
+  // BF_SERVER_BLOCK_v_MULTISIGNER_STEPS_v1 — one signer per SEQUENTIAL step. SignNow requires
+  // emails unique WITHIN a step but allows the same email across DIFFERENT steps, so putting
+  // each signer in their own step lets co-owners (incl. those sharing an inbox) both sign in
+  // order and removes the "Email must be unique within one invite step" rejection.
+  const payload = { invites: signerPayloads.map((sp, i) => ({ order: i + 1, signers: [sp] })) };
   const body = (await signnowFetch(`/v2/document-groups/${encodeURIComponent(groupId)}/embedded-invites`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })) as { data?: { id?: string }; id?: string };
   const inviteId = body?.data?.id ?? body?.id;
   if (typeof inviteId !== "string") throw new SignNowError("SignNow embedded group invite returned no id", undefined, body);
