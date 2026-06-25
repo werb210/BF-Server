@@ -84,6 +84,12 @@ export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): 
   // signnow_document_id = group id, which the webhook matches on group-signed events) in REAL
   // mode. The legacy single-document path produced a field-less document and is kept only for
   // stub / unconfigured environments (its stub auto-sign keeps the test pipeline moving).
+  // BF_SERVER_BLOCK_v_SIGNING_HARDENING_v1 — if the SignNow fire does not actually start
+  // (error/not_ready, or a thrown exception), RELEASE the chain claim so a later Send /
+  // auto-trigger can retry. Without this, a failed first fire leaves
+  // submission_chain_started_at set and every retry returns "already_started" — the app
+  // is permanently wedged in "Ready to sign".
+  let signFailReason: string | null = null;
   try {
     const hasKey = (process.env.SIGNNOW_API_KEY ?? "").trim().length > 0;
     const stub = ["1", "true", "yes", "on"].includes((process.env.SIGNNOW_STUB_MODE ?? "").trim().toLowerCase());
@@ -92,7 +98,7 @@ export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): 
       const mod = await import(pthG).catch(() => null as any);
       if (mod && typeof (mod as any).getOrCreateEmbeddedSigningSession === "function") {
         const r = await (mod as any).getOrCreateEmbeddedSigningSession(ctx.applicationId);
-        if (r && r.status === "error") console.warn(`[orchestrator] signnow group fire error app=${ctx.applicationId}: ${r.reason}`);
+        if (r && (r.status === "error" || r.status === "not_ready")) { signFailReason = String(r.reason ?? r.status); console.warn(`[orchestrator] signnow group fire did not start app=${ctx.applicationId}: ${signFailReason}`); }
       } else { console.log(`[orchestrator] would fire SignNow group for app=${ctx.applicationId}`); }
     } else {
       const pthL = "../../signnow/sendApplicationForSignature.js";
@@ -100,7 +106,11 @@ export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): 
       if (mod && typeof (mod as any).sendApplicationForSignature === "function") await (mod as any).sendApplicationForSignature(ctx);
       else console.log(`[orchestrator] would fire SignNow (stub) for app=${ctx.applicationId}`);
     }
-  } catch (e) { console.warn("[orchestrator] signnow fire failed", e); }
+  } catch (e) { signFailReason = e instanceof Error ? e.message : "signnow_fire_failed"; console.warn("[orchestrator] signnow fire failed", e); }
+  if (signFailReason) {
+    await ctx.pool.query(`UPDATE applications SET submission_chain_started_at = NULL WHERE id::text = $1`, [ctx.applicationId]).catch(() => {});
+    return { fired: false, reason: signFailReason };
+  }
   return { fired: true };
 }
 export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promise<{ fired: boolean; reason?: string; sentTo?: string[] }> {

@@ -132,20 +132,27 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
     }
 
     const group = await signnow.createDocumentGroup(docIds, `Boreal application ${applicationId}`);
+    // BF_SERVER_BLOCK_v_SIGNING_HARDENING_v1 — Owner 2 is a DISTINCT signer only when it
+    // has an email that differs from the applicant's. A single-owner app flagged
+    // "multiple owners" duplicates the applicant as Owner 2; the same email twice makes
+    // SignNow reject the whole invite ("Email must be unique within one invite step") and
+    // nothing is ever sent.
     const o2 = inputs.owners[1];
-    const o2name = o2?.email ? ([o2.firstName, o2.lastName].filter(Boolean).join(" ").trim() || undefined) : undefined;
+    const o2email = (o2?.email ?? "").trim();
+    const o2distinct = o2email.length > 0 && o2email.toLowerCase() !== email.trim().toLowerCase();
+    const o2name = o2distinct ? ([o2!.firstName, o2!.lastName].filter(Boolean).join(" ").trim() || undefined) : undefined;
     const signers: signnow.EmbeddedSigner[] = [{ email, name: inputs.applicantName ?? undefined, roleName: ROLE_OWNER1 }];
-    if (o2?.email) signers.push({ email: o2.email, name: o2name, roleName: ROLE_OWNER2 });
+    if (o2distinct) signers.push({ email: o2email, name: o2name, roleName: ROLE_OWNER2 });
 
     const invite = await signnow.createEmbeddedGroupInvite(group.groupId, docIds, signers);
     const link = await signnow.createEmbeddedGroupLink(group.groupId, invite.inviteId, email);
 
-    if (o2?.email) {
+    if (o2distinct) {
       try {
-        const o2link = await signnow.createEmbeddedGroupLink(group.groupId, invite.inviteId, o2.email);
+        const o2link = await signnow.createEmbeddedGroupLink(group.groupId, invite.inviteId, o2email);
         const greeting = o2name ? `Hi ${o2name},` : "Hello,";
         const sent = await sendViaGraph({
-          to: o2.email,
+          to: o2email,
           subject: "Your Boreal application is ready to sign",
           bodyHtml: `<p>${greeting}</p><p>An application you are listed on as an owner is ready for your signature. Please review and sign using your secure link below:</p><p><a href="${o2link.url}">Review &amp; sign your application</a></p><p>This link is unique to you. If you weren't expecting this, you can safely ignore this email.</p>`,
           bodyText: `${greeting}\n\nAn application you are listed on as an owner is ready for your signature. Please review and sign using your secure link:\n${o2link.url}\n\nThis link is unique to you.`,
