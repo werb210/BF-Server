@@ -122,7 +122,8 @@ pool.on("connect", (client) => {
   void client
     .query("SET statement_timeout = 10000")
     .catch((err: any) => logWarn("db_statement_timeout_set_failed", { message: err.message }));
-  logInfo("db_client_connected");
+  // BF_SERVER_BLOCK_v_LOG_NOISE_AND_NOTIF_DUPE_v1 — db_client_connected was logged on
+  // EVERY pool connection, flooding the log and burying real errors. Removed.
 });
 
 pool.on("error", (err: any) => {
