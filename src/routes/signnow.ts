@@ -104,6 +104,28 @@ router.post(
 
     // Shared finalize: stamp signed, purge SIN/SSN, log CRM, enqueue lender
     // package. Same path the completion poller uses. Idempotent across retries.
+    // BF_SERVER_BLOCK_v_SIGNING_HARDENING_v1 — finalize (stamp signed, purge SIN, enqueue
+    // lender package) ONLY when the whole group is complete. A per-signer event
+    // (user.document.fieldinvite.signed) must NOT finalize a multi-owner app before the
+    // co-owner has signed. If the group status is unreadable, fall back to finalizing so
+    // the single-signer happy path is never blocked.
+    const groupIdForStatus = documentGroupId
+      ?? (await dbQuery<{ gid: string | null }>(
+            `select coalesce(signnow_document_id, metadata->'signnow_embedded'->>'group_id') as gid from applications where id::text = ($1)::text limit 1`,
+            [app.id]).then((r) => r.rows[0]?.gid ?? null).catch(() => null));
+    let groupComplete = true;
+    if (groupIdForStatus) {
+      try {
+        const { getDocumentGroupStatus } = await import("../signnow/signnowClient.js");
+        groupComplete = (await getDocumentGroupStatus(String(groupIdForStatus))).signed;
+      } catch { groupComplete = true; }
+    }
+    if (!groupComplete) {
+      console.log(`[signnow-webhook] app=${app.id} signer signed but group not complete — waiting for other signers`);
+      res.status(200).json({ received: true, waiting_for_other_signers: true });
+      return;
+    }
+
     await finalizeSignedApplication(
       { id: app.id, contactId: app.contact_id },
       { signerEmail, documentId }
