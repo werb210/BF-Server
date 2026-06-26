@@ -47,6 +47,7 @@ import supportRoutes from "./support.js";
 import tasksRoutes from "./tasks.js";
 import usersRoutes from "./users.js";
 import o365TokensRoutes from "./o365Tokens.js";
+import o365OAuthRoutes from "./o365OAuth.js";
 import portalRoutes from "./portal.js";
 import portalLendersRoutes from "./portalLenders.js";
 import portalLenderProductsRoutes from "./portalLenderProducts.js";
@@ -226,6 +227,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/ai/maya", router: aiMayaAlias },
   { path: "/ai", router: aiRoutes },
   { path: "/email", router: emailRoutes },
+  { path: "/o365-oauth", router: o365OAuthRoutes },
   { path: "/o365", router: o365Routes },
   { path: "/ocr/admin", router: ocrAdminRoutes },
   { path: "/_diag", router: diagnosticsRoutes },
