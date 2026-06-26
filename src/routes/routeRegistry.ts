@@ -76,6 +76,7 @@ import ocrAdminRoutes from "../modules/ocr/ocr.admin.routes.js"; // BF_SERVER_BL
 import signnowRoutes from "./signnow.js";
 import submissionOrchestrationRoutes from "./submissionOrchestration.js"; // BF_SERVER_v74_BLOCK_1_7
 import emailRoutes from "./email.js";
+import smsRedirectRoutes from "./smsRedirect.js"; // BF_SERVER_SMS_REDIRECT_v1 (public)
 import sendgridWebhookRoutes from "./sendgridWebhook.js"; // BF_SERVER_SENDGRID_WEBHOOK_v1 (public)
 import websiteRoutes from "./website.js";
 import mayaRoutes, { proxyMayaToAgent } from "./maya.js";
@@ -228,6 +229,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/ai/maya", router: aiMayaAlias },
   { path: "/ai", router: aiRoutes },
   { path: "/email", router: emailRoutes },
+  { path: "/r", router: smsRedirectRoutes }, // BF_SERVER_SMS_REDIRECT_v1 (public)
   { path: "/webhooks/sendgrid", router: sendgridWebhookRoutes }, // BF_SERVER_SENDGRID_WEBHOOK_v1 (public)
   { path: "/o365-oauth", router: o365OAuthRoutes },
   { path: "/o365", router: o365Routes },
