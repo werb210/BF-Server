@@ -32,7 +32,7 @@ const CB = { own: { x: 33, y: 477.6 }, rent: { x: 75, y: 477.6 }, bkYes: { x: 22
 const ADV_COL = { firm: 142, contact: 255, phone: 345, email: 448 };
 const ADV_ROW: Record<string, number> = { cpa: 361.4, attorney: 371.7, insurance: 382.0, ar_credit_insurance: 392.4 };
 // page-2 layout
-const P2_CLIENT = [{ x: 74, y: 75.3 }, { x: 74, y: 564.7 }];
+const P2_CLIENT = [{ x: 74, y: 564.7 }];  // v_ACCORD_FIX: dropped y:75.3 (overlapped 'PAGE 2 of 3' header)
 const P3_CLIENT = { x: 121, y: 77.7 };
 const OWNTBL = { name: 60, addr: 176, contact: 313, own: 404, dir: 458, off: 508, yName: 156, yOff: 156.5, yMob: 166.4, yEmail: 176.2, yOwn: 166.1, rowDY: 30 };
 const OWNADDL = { yName: 234, yOff: 232.8, yMob: 242.7, yEmail: 252.5, rowDY: 30 };
@@ -126,6 +126,21 @@ export async function buildAccordPdf(applicationId: string): Promise<Uint8Array>
   // form's pre-printed "%" (a left-anchored "100" overran the % glyph).
   const putR = (pg: any, txt: string, rightX: number, y: number, size = 7.5) => { if (txt) pg.drawText(txt, { x: rightX - F.widthOfTextAtSize(txt, size), y: PH - y, size, font: F, color: INK }); };
   const tick = (pg: any, x: number, y: number) => pg.drawText("X", { x, y: PH - (y + 8), size: 9, font: FB, color: INK });
+  // v_ACCORD_FIX: wrap long values within a column width (used for page-2 owner addresses
+  // that previously overflowed into the OFFICE#/contact column).
+  const putWrap = (pg: any, txt: string, x: number, y: number, maxWidth: number, size = 6.5, lineGap = 8.5, maxLines = 2) => {
+    if (!txt) return;
+    const words = txt.split(/\s+/);
+    const lines: string[] = [];
+    let cur = "";
+    for (const w of words) {
+      const trial = cur ? cur + " " + w : w;
+      if (cur && F.widthOfTextAtSize(trial, size) > maxWidth) { lines.push(cur); cur = w; }
+      else cur = trial;
+    }
+    if (cur) lines.push(cur);
+    lines.slice(0, maxLines).forEach((ln, i) => put(pg, ln, x, y + i * lineGap, size));
+  };
 
   // ── PAGE 1 ──
   for (const [k, v] of Object.entries(biz)) { const p = BIZ[k]; if (p) put(p1, v, p.x, p.y); }
@@ -153,19 +168,19 @@ export async function buildAccordPdf(applicationId: string): Promise<Uint8Array>
   // ── PAGE 2 ──
   P2_CLIENT.forEach((c) => put(p2, biz.dba || biz.legalName, c.x, c.y + 8));
   const ownContact = (pg: any, x: number, o: Owner, yOff: number, yMob: number, yEmail: number) => {
-    put(pg, sv((o as any).office) || "", x, yOff); put(pg, o.mobile, x, yMob); put(pg, o.email, x, yEmail, 6);
+    put(pg, sv((o as any).office) || "", x, yOff); put(pg, o.mobile, x, yMob); put(pg, o.email, x, yEmail, 5.5);
   };
   // ownership table: owner1/owner2 in the two auto rows (mask the ##-#/0% placeholders)
   owners.slice(0, 2).forEach((o, i) => {
     const dy = i * OWNTBL.rowDY;
-    put(p2, o.fullName, OWNTBL.name, OWNTBL.yName + dy, 6.5); put(p2, o.addr, OWNTBL.addr, OWNTBL.yName + dy, 6.5);
+    put(p2, o.fullName, OWNTBL.name, OWNTBL.yName + dy, 6.5); putWrap(p2, o.addr, OWNTBL.addr, OWNTBL.yName + dy, 132, 6.5);
     ownContact(p2, OWNTBL.contact, o, OWNTBL.yOff + dy, OWNTBL.yMob + dy, OWNTBL.yEmail + dy);
     putR(p2, o.ownership, 414.5, OWNTBL.yOwn + dy, 6.5); put(p2, o.director, OWNTBL.dir, OWNTBL.yName + dy, 6.5); put(p2, o.officer, OWNTBL.off, OWNTBL.yName + dy, 6.5);
   });
   // additional shareholders (rows 3+)
   additional.slice(0, 2).forEach((o, i) => {
     const dy = i * OWNADDL.rowDY;
-    put(p2, o.fullName, OWNTBL.name, OWNADDL.yName + dy, 6.5); put(p2, o.addr, OWNTBL.addr, OWNADDL.yName + dy, 6.5);
+    put(p2, o.fullName, OWNTBL.name, OWNADDL.yName + dy, 6.5); putWrap(p2, o.addr, OWNTBL.addr, OWNADDL.yName + dy, 132, 6.5);
     ownContact(p2, OWNTBL.contact, o, OWNADDL.yOff + dy, OWNADDL.yMob + dy, OWNADDL.yEmail + dy);
     putR(p2, o.ownership, 418.5, OWNADDL.yMob + dy, 6.5); put(p2, o.director, OWNTBL.dir, OWNADDL.yName + dy, 6.5); put(p2, o.officer, OWNTBL.off, OWNADDL.yName + dy, 6.5);
   });
@@ -185,12 +200,14 @@ export async function buildAccordPdf(applicationId: string): Promise<Uint8Array>
   put(p2, yesno(monitoring.craMyBusiness), MON.craMyBiz.x, MON.craMyBiz.y, 7);
 
   // ── PAGE 3 ──
-  put(p3, biz.dba || biz.legalName, P3_CLIENT.x, P3_CLIENT.y + 8);
+  put(p3, biz.dba || biz.legalName, P3_CLIENT.x, P3_CLIENT.y + 10);
 
   // SignNow signature/date anchors (white = invisible; fieldextract creates the fields)
   const tag = (pg: any, txt: string, x: number, y: number) => pg.drawText(txt, { x, y: PH - y, size: 6, font: F, color: rgb(1, 1, 1) });
   tag(p1, '{{t:s;r:y;o:"Owner 1";w:140;h:18;}}', 40, 684);
   if (owners[1]?.email) tag(p1, '{{t:s;r:y;o:"Owner 2";w:140;h:18;}}', 234, 684);
+  // v_ACCORD_FIX: signing DATE field (third column) — auto date-signed, assigned to Owner 1.
+  tag(p1, '{{t:d;r:y;o:"Owner 1";w:100;h:14;}}', 440, 684);
   tag(p3, '{{t:s;r:y;o:"Owner 1";w:140;h:18;}}', 95, 521);
   if (owners[1]?.email) tag(p3, '{{t:s;r:y;o:"Owner 2";w:140;h:18;}}', 329, 521);
 
