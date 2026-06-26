@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import jwt from "jsonwebtoken";
+import { createPnwSigningSession, isPnwDocType } from "../../signnow/pnwSigning.js";
 import continuationRouter from "./continuation.js";
 import documentsRouter from "./documents.js";
 import applicationsRouter from "./applications.js";
@@ -261,7 +262,14 @@ router.post("/account/delete", safeHandler(async (req: any, res: any) => {
             [appId, docType],
           );
       if (result.rowCount === 0) { res.status(404).json({ error: "not_found" }); return; }
-      res.json({ item: result.rows[0] });
+      // BF_SERVER_BLOCK_v_PNW_SIGNING_v1 — sign the Personal Net Worth statement
+      // individually, the instant it is submitted (its own one-signer envelope).
+      let signing_url: string | null = null;
+      if (isPnwDocType(docType)) {
+        try { signing_url = (await createPnwSigningSession(appId)).url; }
+        catch (e) { console.warn("[pnw_signing] session create failed", e instanceof Error ? e.message : String(e)); }
+      }
+      res.json({ item: result.rows[0], ...(signing_url ? { signing_url } : {}) });
     }),
   );
 }
