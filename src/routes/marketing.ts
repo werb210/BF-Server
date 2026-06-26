@@ -76,6 +76,37 @@ router.get("/funnel", safeHandler(async (req: any, res: any) => {
   respondOk(res, { days, steps });
 }));
 
+// BF_SERVER_MARKETING_SOURCES_v1 - conversion by marketing source. Joins the
+// internal funnel to apply-start attribution (utm_source, else referrer host,
+// else 'direct'): how many applications each source STARTED vs SUBMITTED, and the
+// conversion rate. Silo-aware.
+router.get("/sources", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const days = Math.min(Math.max(Number(req.query.days) || 90, 1), 365);
+  const { rows } = await pool.query<{ source: string; started: number; submitted: number }>(
+    `SELECT
+       COALESCE(
+         NULLIF(metadata->'attribution'->>'utm_source', ''),
+         NULLIF(regexp_replace(COALESCE(metadata->'attribution'->>'referrer',''), '^https?://([^/]+).*$', '\\1'), ''),
+         'direct'
+       ) AS source,
+       count(*)::int AS started,
+       count(*) FILTER (WHERE submitted_at IS NOT NULL)::int AS submitted
+     FROM applications
+     WHERE silo = $1
+       AND created_at >= now() - ($2 || ' days')::interval
+     GROUP BY 1
+     ORDER BY started DESC
+     LIMIT 25`,
+    [silo, String(days)],
+  );
+  const sources = rows.map((r) => {
+    const started = Number(r.started), submitted = Number(r.submitted);
+    return { source: r.source, started, submitted, conversion: started ? Math.round((submitted / started) * 1000) / 10 : 0 };
+  });
+  respondOk(res, { days, sources });
+}));
+
 // BF_SERVER_MARKETING_GA4_v1 — GA4 traffic/sources/devices via the Analytics Data API.
 router.get("/ga4", safeHandler(async (req: any, res: any) => {
   const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
