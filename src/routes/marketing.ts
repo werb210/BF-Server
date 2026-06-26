@@ -6,6 +6,7 @@ import { respondOk } from "../utils/respondOk.js";
 import { pool } from "../db.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { ga4Configured, runGa4Report } from "../services/ga4Service.js";
+import { clarityConfigured, runClarityReport } from "../services/clarityService.js";
 
 const router = Router();
 
@@ -80,6 +81,14 @@ router.get("/ga4", safeHandler(async (req: any, res: any) => {
   const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
   if (!ga4Configured()) { respondOk(res, { configured: false }); return; }
   const report = await runGa4Report(days);
+  respondOk(res, report ?? { configured: false });
+}));
+
+// BF_SERVER_MARKETING_CLARITY_v1 — Microsoft Clarity behavioral analytics (Data Export API).
+router.get("/clarity", safeHandler(async (req: any, res: any) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 3, 1), 3);
+  if (!clarityConfigured()) { respondOk(res, { configured: false }); return; }
+  const report = await runClarityReport(days);
   respondOk(res, report ?? { configured: false });
 }));
 
