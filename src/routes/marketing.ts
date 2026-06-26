@@ -5,6 +5,7 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { respondOk } from "../utils/respondOk.js";
 import { pool } from "../db.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
+import { suggestionsConfigured, buildSuggestions, applySuggestion } from "../services/googleAdsSuggestions.js";
 import { previewIcp, buildHashedList } from "../services/googleAdsCustomerMatch.js";
 import { ga4Configured, runGa4Report } from "../services/ga4Service.js";
 import { clarityConfigured, runClarityReport } from "../services/clarityService.js";
@@ -150,6 +151,18 @@ router.post("/google-ads/icp/export", safeHandler(async (req: any, res: any) => 
   const type = b.type === "exclusion" ? "exclusion" : "seed";
   const filters = { productCategory: b.productCategory || undefined, minAmount: typeof b.minAmount === "number" ? b.minAmount : undefined, maxAmount: typeof b.maxAmount === "number" ? b.maxAmount : undefined };
   respondOk(res, await buildHashedList(silo, filters, type));
+}));
+
+// BF_SERVER_MARKETING_ADS_SUGGESTIONS_v1 - Maya campaign recommendations (human-approved).
+router.get("/google-ads/suggestions", safeHandler(async (req: any, res: any) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 90);
+  if (!suggestionsConfigured()) { respondOk(res, { configured: false, suggestions: [] }); return; }
+  respondOk(res, await buildSuggestions(days));
+}));
+router.post("/google-ads/suggestions/apply", safeHandler(async (req: any, res: any) => {
+  const action = req.body && req.body.action;
+  if (!action || typeof action.type !== "string") { respondOk(res, { ok: false, error: "missing action" }); return; }
+  respondOk(res, await applySuggestion(action));
 }));
 
 router.get("/clarity", safeHandler(async (req: any, res: any) => {
