@@ -694,10 +694,14 @@ router.post(
     const category = biStr(req.body?.category);
     const country = biStr(req.body?.country);
     const amount = biNum(req.body?.amount);
+    const audience = biStr(req.body?.audience);
+    const isStaff = !audience || audience === "staff";
     try {
       const r = await pool.query(
         `SELECT lp.id::text AS id, lp.name, lp.category, lp.country, lp.region,
-                lp.amount_min, lp.amount_max, lp.interest_min, lp.interest_max, l.name AS lender_name
+                lp.amount_min, lp.amount_max, lp.interest_min, lp.interest_max,
+                lp.rate_type, lp.rate_kind, lp.term_min, lp.term_max, lp.term_unit,
+                lp.required_documents, l.name AS lender_name
            FROM lender_products lp
            JOIN lenders l ON l.id = lp.lender_id
           WHERE lp.active = true
@@ -712,7 +716,11 @@ router.post(
       );
       const products = r.rows.map((p: any) => ({
         id: p.id,
-        lender: p.lender_name,
+        // Lender identity (name) is returned ONLY to staff. For visitor/client
+        // audiences Maya may describe everything about the product economics but
+        // must never know which lender it is, their address, phone, or contracts
+        // — Boreal presents these as "our lending partners".
+        ...(isStaff ? { lender: p.lender_name } : {}),
         product: p.name,
         category: p.category ?? null,
         country: p.country ?? null,
@@ -721,6 +729,12 @@ router.post(
         amountMax: p.amount_max ?? null,
         interestMin: p.interest_min ?? null,
         interestMax: p.interest_max ?? null,
+        rateType: p.rate_type ?? null,
+        rateKind: p.rate_kind ?? null,
+        termMin: p.term_min ?? null,
+        termMax: p.term_max ?? null,
+        termUnit: p.term_unit ?? null,
+        requiredDocuments: p.required_documents ?? null,
       }));
       const summary = products.length ? `${products.length} matching lender product(s).` : "No active lender products match those filters.";
       await audit({ audience: "staff", tool: "lender.products", args: { category, country, amount }, ok: true, summary, userId: biStr(req.body?.user_id), sessionId: biStr(req.body?.session_id) });
