@@ -697,7 +697,7 @@ router.post(
     try {
       const r = await pool.query(
         `SELECT lp.id::text AS id, lp.name, lp.category, lp.country, lp.region,
-                lp.amount_min, lp.amount_max, l.name AS lender_name
+                lp.amount_min, lp.amount_max, lp.interest_min, lp.interest_max, l.name AS lender_name
            FROM lender_products lp
            JOIN lenders l ON l.id = lp.lender_id
           WHERE lp.active = true
@@ -719,6 +719,8 @@ router.post(
         region: p.region ?? null,
         amountMin: p.amount_min ?? null,
         amountMax: p.amount_max ?? null,
+        interestMin: p.interest_min ?? null,
+        interestMax: p.interest_max ?? null,
       }));
       const summary = products.length ? `${products.length} matching lender product(s).` : "No active lender products match those filters.";
       await audit({ audience: "staff", tool: "lender.products", args: { category, country, amount }, ok: true, summary, userId: biStr(req.body?.user_id), sessionId: biStr(req.body?.session_id) });
