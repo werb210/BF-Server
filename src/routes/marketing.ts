@@ -5,6 +5,7 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { respondOk } from "../utils/respondOk.js";
 import { pool } from "../db.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
+import { previewIcp, buildHashedList } from "../services/googleAdsCustomerMatch.js";
 import { ga4Configured, runGa4Report } from "../services/ga4Service.js";
 import { clarityConfigured, runClarityReport } from "../services/clarityService.js";
 import { conversionsConfigured, findPendingConversions, uploadFundedConversions } from "../services/googleAdsConversions.js";
@@ -135,6 +136,20 @@ router.get("/google-ads/conversions/pending", safeHandler(async (_req: any, res:
 router.post("/google-ads/conversions/upload", safeHandler(async (_req: any, res: any) => {
   const result = await uploadFundedConversions();
   respondOk(res, result);
+}));
+
+// BF_SERVER_MARKETING_ICP_v1 - ideal-client engine (Customer Match seed + exclusion).
+router.get("/google-ads/icp/preview", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const filters = { productCategory: req.query.productCategory ? String(req.query.productCategory) : undefined, minAmount: req.query.minAmount ? Number(req.query.minAmount) : undefined, maxAmount: req.query.maxAmount ? Number(req.query.maxAmount) : undefined };
+  respondOk(res, await previewIcp(silo, filters));
+}));
+router.post("/google-ads/icp/export", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const b = req.body || {};
+  const type = b.type === "exclusion" ? "exclusion" : "seed";
+  const filters = { productCategory: b.productCategory || undefined, minAmount: typeof b.minAmount === "number" ? b.minAmount : undefined, maxAmount: typeof b.maxAmount === "number" ? b.maxAmount : undefined };
+  respondOk(res, await buildHashedList(silo, filters, type));
 }));
 
 router.get("/clarity", safeHandler(async (req: any, res: any) => {
