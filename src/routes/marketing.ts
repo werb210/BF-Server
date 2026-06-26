@@ -5,6 +5,7 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { respondOk } from "../utils/respondOk.js";
 import { pool } from "../db.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
+import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js";
 import { suggestionsConfigured, buildSuggestions, applySuggestion } from "../services/googleAdsSuggestions.js";
 import { previewIcp, buildHashedList } from "../services/googleAdsCustomerMatch.js";
 import { ga4Configured, runGa4Report } from "../services/ga4Service.js";
@@ -163,6 +164,59 @@ router.post("/google-ads/suggestions/apply", safeHandler(async (req: any, res: a
   const action = req.body && req.body.action;
   if (!action || typeof action.type !== "string") { respondOk(res, { ok: false, error: "missing action" }); return; }
   respondOk(res, await applySuggestion(action));
+}));
+
+// BF_SERVER_MARKETING_EMAIL_v1 - SendGrid bulk marketing email (BF silo).
+router.get("/email/segments", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const tags = await pool.query(
+    `SELECT tag, count(*)::int AS n FROM (
+       SELECT unnest(tags) AS tag FROM contacts
+        WHERE silo = $1 AND COALESCE(email,'') <> '' AND COALESCE(marketing_opt_out,false) = false
+     ) t GROUP BY tag ORDER BY n DESC`,
+    [silo],
+  );
+  const total = await pool.query(
+    `SELECT count(*)::int AS n FROM contacts WHERE silo = $1 AND COALESCE(email,'') <> '' AND COALESCE(marketing_opt_out,false) = false`,
+    [silo],
+  );
+  respondOk(res, { configured: sendgridConfigured(), all: total.rows[0]?.n ?? 0, segments: tags.rows });
+}));
+
+router.post("/email/send", safeHandler(async (req: any, res: any) => {
+  if (!sendgridConfigured()) { respondOk(res, { configured: false }); return; }
+  const silo = resolveSiloFromRequest(req);
+  const b = req.body || {};
+  const subject = String(b.subject || "").trim();
+  const html = String(b.html || "").trim();
+  if (!subject || !html) { respondOk(res, { error: "subject and html required" }); return; }
+  if (b.test && typeof b.test === "string") {
+    const r = await sendOne({ to: b.test, subject: mergeFields(subject, { first_name: "there", name: "there", email: b.test, company: "" }), html: mergeFields(html, { first_name: "there", name: "there", email: b.test, company: "" }) });
+    respondOk(res, { test: true, ...r });
+    return;
+  }
+  const tag = b.tag ? String(b.tag) : null;
+  const recips = await pool.query<{ id: string; email: string; name: string | null; company: string | null }>(
+    `SELECT c.id, c.email, c.name, co.name AS company
+       FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
+      WHERE c.silo = $1 AND COALESCE(c.email,'') <> '' AND COALESCE(c.marketing_opt_out,false) = false
+        AND ($2::text IS NULL OR $2 = ANY(c.tags))
+      LIMIT 500`,
+    [silo, tag],
+  );
+  let sent = 0, failed = 0;
+  for (const c of recips.rows) {
+    const first = (c.name || "").trim().split(/\s+/)[0] || "there";
+    const vars = { first_name: first, name: c.name || "there", email: c.email, company: c.company || "" };
+    try {
+      const r = await sendOne({ to: c.email, subject: mergeFields(subject, vars), html: mergeFields(html, vars), contactId: c.id });
+      if (r.ok) {
+        sent++;
+        await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [c.id, "email_marketing_sent", JSON.stringify({ subject, tag })]);
+      } else { failed++; }
+    } catch { failed++; }
+  }
+  respondOk(res, { configured: true, recipients: recips.rows.length, sent, failed, capped: recips.rows.length >= 500 });
 }));
 
 router.get("/clarity", safeHandler(async (req: any, res: any) => {

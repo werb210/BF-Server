@@ -4,8 +4,7 @@
 // (SHA-256 email/phone) plus an exclusion list of all funded clients. Uploading
 // hashed PII to ad platforms is a "sensitive data" action under PIPEDA/CASL and
 // the compliant standard is EXPRESS opt-in; this gate includes funded contacts by
-// default (implied consent) and honors an explicit opt-out (metadata.ad_consent =
-// 'denied'). No raw PII leaves the server - only SHA-256 hashes.
+// default (implied consent) and honors the durable marketing_opt_out suppression flag. No raw PII leaves the server - only SHA-256 hashes.
 import { createHash } from "crypto";
 import { pool } from "../db.js";
 
@@ -24,7 +23,7 @@ function amountBand(v: number | null): string {
 
 async function querySeed(silo: string, filters: IcpFilters, idealOnly: boolean): Promise<Array<SeedRow & { product_category: string | null; requested_amount: number | null }>> {
   const params: any[] = [silo, FUNDED_STATES];
-  let where = `a.silo = $1 AND a.pipeline_state = ANY($2) AND COALESCE(c.email,'') <> '' AND COALESCE(c.metadata->>'ad_consent','') <> 'denied'`;
+  let where = `a.silo = $1 AND a.pipeline_state = ANY($2) AND COALESCE(c.email,'') <> '' AND COALESCE(c.marketing_opt_out, false) = false`;
   if (idealOnly) {
     if (filters.productCategory) { params.push(filters.productCategory); where += ` AND a.product_category = $${params.length}`; }
     if (typeof filters.minAmount === "number") { params.push(filters.minAmount); where += ` AND COALESCE(a.requested_amount,0) >= $${params.length}`; }
