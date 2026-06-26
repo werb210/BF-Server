@@ -7,6 +7,7 @@ import { pool } from "../db.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { ga4Configured, runGa4Report } from "../services/ga4Service.js";
 import { clarityConfigured, runClarityReport } from "../services/clarityService.js";
+import { googleAdsConfigured, runGoogleAdsReport } from "../services/googleAdsService.js";
 
 const router = Router();
 
@@ -112,6 +113,14 @@ router.get("/ga4", safeHandler(async (req: any, res: any) => {
   const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
   if (!ga4Configured()) { respondOk(res, { configured: false }); return; }
   const report = await runGa4Report(days);
+  respondOk(res, report ?? { configured: false });
+}));
+
+// BF_SERVER_MARKETING_GOOGLE_ADS_v1 - Google Ads spend/performance (read).
+router.get("/google-ads", safeHandler(async (req: any, res: any) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
+  if (!googleAdsConfigured()) { respondOk(res, { configured: false }); return; }
+  const report = await runGoogleAdsReport(days);
   respondOk(res, report ?? { configured: false });
 }));
 
