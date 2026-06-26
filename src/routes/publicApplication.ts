@@ -18,6 +18,9 @@ const StartSchema = z.object({
   // phone here so we can claim the orphaned draft from the website
   // readiness submission instead of minting a fresh row.
   readiness_phone: z.string().trim().optional(),
+  // BF_SERVER_BLOCK_v_ATTRIBUTION_v1 - marketing source attribution captured at
+  // apply-start (utm_source/medium/campaign, referrer, landing_page).
+  attribution: z.record(z.string()).optional(),
 });
 
 /**
@@ -55,7 +58,7 @@ router.post(
       setPhase("parse_input");
       const parsed = StartSchema.safeParse(req.body ?? {});
       if (!parsed.success) { res.status(400).json(fail(res, "INVALID_INPUT")); return; }
-      const { sessionId, source } = parsed.data;
+      const { sessionId, source, attribution } = parsed.data;
       const silo = getSilo(res);
 
       if (sessionId) {
@@ -240,7 +243,7 @@ router.post(
       const created = await createApplication({
         ownerUserId: (config.client.submissionOwnerUserId || "00000000-0000-0000-0000-000000000001"),
         name: "Draft application",
-        metadata: {},
+        metadata: (attribution && Object.keys(attribution).length ? { attribution } : {}),
         productType: "standard",
         productCategory: "standard",
         source: source ?? "client_direct",
