@@ -6,6 +6,7 @@ import { Buffer } from "node:buffer";
 import { getStorage } from "../../lib/storage/index.js";
 
 import { buildPnwPdfFromData } from "../../signnow/pnwPdfBuilder.js";
+import { getSignedPnwPdf } from "../../signnow/pnwSigning.js";
 
 export type PackageInputDocs = { category: string; files: { filename: string; content: Buffer }[] };
 export type PackageInputs = {
@@ -222,7 +223,9 @@ async function loadFormPdfs(ctx: LoadCtx): Promise<{ filename: string; content: 
       // BF_SERVER_BLOCK_v_PNW_BUILDER_v1 — the Personal Net Worth form renders to
       // the branded Boreal template; every other CMP form keeps the text renderer.
       if (spec.file === "personal-net-worth.pdf") {
-        out.push({ filename: spec.file, content: Buffer.from(await buildPnwPdfFromData((row.data ?? {}) as any)) });
+        // v_PNW_SIGNING_v1 — prefer the individually-signed copy; fall back to the fill.
+        const signed = await getSignedPnwPdf(ctx.applicationId);
+        out.push({ filename: spec.file, content: signed ?? Buffer.from(await buildPnwPdfFromData((row.data ?? {}) as any)) });
       } else {
         const header = [spec.title, `Application: ${ctx.applicationId}`,
           row.submitted_at ? `Submitted: ${row.submitted_at}` : "", ""];
