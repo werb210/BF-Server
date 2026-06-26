@@ -140,6 +140,19 @@ router.post("/google-ads/conversions/upload", safeHandler(async (_req: any, res:
   respondOk(res, result);
 }));
 
+// BF_SERVER_MARKETING_ICP_PRODUCTS_v1 - product categories present on funded apps.
+router.get("/google-ads/icp/products", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const { rows } = await pool.query<{ product_category: string }>(
+    `SELECT DISTINCT product_category FROM applications
+      WHERE silo = $1 AND pipeline_state = ANY(ARRAY['Accepted','Funded'])
+        AND COALESCE(product_category,'') <> ''
+      ORDER BY product_category`,
+    [silo],
+  );
+  respondOk(res, { products: rows.map((r) => r.product_category) });
+}));
+
 // BF_SERVER_MARKETING_ICP_v1 - ideal-client engine (Customer Match seed + exclusion).
 router.get("/google-ads/icp/preview", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
