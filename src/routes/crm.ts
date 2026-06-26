@@ -8,6 +8,7 @@ import { respondOk } from "../utils/respondOk.js";
 import { handleListCrmTimeline } from "../modules/crm/timeline.controller.js";
 import { SupportController } from "../modules/support/support.controller.js";
 import { pool } from "../db.js";
+import { normalizePhoneNumber } from "../modules/auth/phone.js";
 import { bumpBiOutreachToContacted } from "../services/biOutreach.js"; // BF_SERVER_BLOCK_v344_BI_OUTREACH_AUTOADVANCE_v1
 import { getSilo, resolveSiloFromRequest } from "../middleware/silo.js";
 import { createContact } from "../services/contacts.js";
@@ -1228,6 +1229,51 @@ router.get("/contacts/:id/application-forms", safeHandler(async (req: any, res: 
     if (r.doc_type === "professional_advisors") advisors = r.data?.advisors ?? null;
   }
   return res.json({ owners, advisors });
+}));
+
+// MAYA_LEAD_CAPTURE_v1 — Maya visitor.identify / waitlist.join intake.
+// Creates (or updates) a CRM contact the moment a website visitor gives a name
+// PLUS an email or phone, so the lead is immediately marketable. Deduped by
+// email/phone; new leads land in the BF silo with status 'prospect'. Public
+// intake (the agent calls this server-to-server); gated by name + contact.
+router.post("/startup-waitlist", safeHandler(async (req: any, res: any) => {
+  const name = (req.body?.name ?? req.body?.fullName ?? "").toString().trim();
+  const email = ((req.body?.email ?? "").toString().trim().toLowerCase()) || null;
+  const phoneRaw = ((req.body?.phone ?? "").toString().trim()) || null;
+  const phone = phoneRaw ? (normalizePhoneNumber(phoneRaw) ?? phoneRaw) : null;
+  if (!name || (!email && !phone)) {
+    res.status(200).json({ ok: false, error: "name_and_contact_required" });
+    return;
+  }
+  const parts = name.split(/\s+/);
+  const firstName = parts[0] ?? name;
+  const lastName = parts.length > 1 ? parts.slice(1).join(" ") : "";
+  const existing = await pool.query(
+    `select id from contacts
+      where (email = $1 and $1 is not null) or (phone = $2 and $2 is not null)
+      order by created_at asc limit 1`,
+    [email, phone],
+  );
+  let id: string;
+  let created = false;
+  if (existing.rows[0]) {
+    id = existing.rows[0].id;
+    await pool.query(
+      `update contacts set name = coalesce($2, name), email = coalesce($3, email),
+              phone = coalesce($4, phone), updated_at = now() where id = $1`,
+      [id, name || null, email, phone],
+    );
+  } else {
+    created = true;
+    const ins = await pool.query(
+      `insert into contacts (id, name, first_name, last_name, email, phone, status, silo, created_at, updated_at)
+       values (gen_random_uuid(), $1, $2, $3, $4, $5, 'prospect', 'BF', now(), now())
+       returning id`,
+      [name || null, firstName, lastName, email, phone],
+    );
+    id = ins.rows[0].id;
+  }
+  res.status(200).json({ ok: true, id, created });
 }));
 
 export default router;

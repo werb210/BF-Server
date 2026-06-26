@@ -1,5 +1,8 @@
 import express from "express";
 import { safeHandler } from "../middleware/safeHandler.js";
+import { pool } from "../db.js";
+import { addMessage } from "../modules/ai/chat.repo.js";
+import { logError } from "../observability/logger.js";
 // BF_SERVER_BLOCK_v317_MAYA_ESCALATIONS_AUTH_v1
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
@@ -42,6 +45,38 @@ export async function proxyMayaToAgent(
     });
     clearTimeout(t);
     const data = await upstream.json().catch(() => ({}));
+
+    // MAYA_TRANSCRIPT_PERSIST_v1 — record the website/client Maya turn into
+    // chat_sessions/chat_messages so it appears under Communications -> Maya in
+    // the portal. Best-effort: any failure here must NEVER break the reply.
+    if (agentPath.includes("/api/maya/message") || agentPath.includes("/api/maya/chat")) {
+      try {
+        const b: any = body ?? {};
+        const sessionId: string | null =
+          typeof b.sessionId === "string" && b.sessionId
+            ? b.sessionId
+            : typeof b.session_id === "string" && b.session_id
+              ? b.session_id
+              : null;
+        const userMsg: string | null = typeof b.message === "string" ? b.message.trim() : null;
+        const reply: string | null =
+          data && typeof (data as any).reply === "string" ? (data as any).reply.trim() : null;
+        if (sessionId && userMsg) {
+          const chan = audience ? String(audience) : "web";
+          await pool.query(
+            `insert into chat_sessions (id, source, channel, status)
+             values ($1, 'maya', $2, 'ai')
+             on conflict (id) do nothing`,
+            [sessionId, chan],
+          );
+          await addMessage({ sessionId, role: "user", message: userMsg });
+          if (reply) await addMessage({ sessionId, role: "ai", message: reply });
+        }
+      } catch (e: any) {
+        logError("maya_transcript_persist_failed", { code: "maya_transcript_persist_failed", error: e?.message ?? "unknown" });
+      }
+    }
+
     res.status(upstream.status).json(data);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "agent_proxy_error";
