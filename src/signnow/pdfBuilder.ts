@@ -104,6 +104,10 @@ export async function buildApplicationPdf(inputs: ApplicationPdfInputs): Promise
     cellbox(leftX, y - 40, CW / 2 - 4, 40);
     text(role.toUpperCase() + " — SIGNATURE", leftX + 4, y - 9, 6, F, GREY);
     text(`{{t:s;r:y;o:"${role}";w:140;h:16;}}`, leftX + 4, y - 30, 6, F, rgb(1, 1, 1));
+    // v_BF_FIX: date-signed field to the right of the signature, inside the same cell.
+    const dateX = leftX + (CW / 2 - 4) - 96;
+    text("DATE SIGNED", dateX, y - 9, 6, F, GREY);
+    text(`{{t:d;r:y;o:"${role}";w:90;h:16;}}`, dateX, y - 30, 6, F, rgb(1, 1, 1));
   };
   ensure(44);
   sigRow("Owner 1", M);
