@@ -5,6 +5,8 @@ import type { Pool } from "pg";
 import { Buffer } from "node:buffer";
 import { getStorage } from "../../lib/storage/index.js";
 
+import { buildPnwPdfFromData } from "../../signnow/pnwPdfBuilder.js";
+
 export type PackageInputDocs = { category: string; files: { filename: string; content: Buffer }[] };
 export type PackageInputs = {
   signedApplicationPdf: Buffer | null;
@@ -216,11 +218,17 @@ async function loadFormPdfs(ctx: LoadCtx): Promise<{ filename: string; content: 
     const spec = bySpec.get(String(row.doc_type));
     if (!spec || seenFiles.has(spec.file)) continue;
     seenFiles.add(spec.file);
-    const header = [spec.title, `Application: ${ctx.applicationId}`,
-      row.submitted_at ? `Submitted: ${row.submitted_at}` : "", ""];
-    const body = flattenForPdf(row.data ?? {});
     try {
-      out.push({ filename: spec.file, content: renderTextPdf([...header, ...body]) });
+      // BF_SERVER_BLOCK_v_PNW_BUILDER_v1 — the Personal Net Worth form renders to
+      // the branded Boreal template; every other CMP form keeps the text renderer.
+      if (spec.file === "personal-net-worth.pdf") {
+        out.push({ filename: spec.file, content: Buffer.from(await buildPnwPdfFromData((row.data ?? {}) as any)) });
+      } else {
+        const header = [spec.title, `Application: ${ctx.applicationId}`,
+          row.submitted_at ? `Submitted: ${row.submitted_at}` : "", ""];
+        const body = flattenForPdf(row.data ?? {});
+        out.push({ filename: spec.file, content: renderTextPdf([...header, ...body]) });
+      }
     } catch (e) {
       console.warn("[loadPackageInputs] form pdf render failed", row.doc_type, e instanceof Error ? e.message : String(e));
     }
