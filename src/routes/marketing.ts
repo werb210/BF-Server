@@ -7,6 +7,7 @@ import { pool } from "../db.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { ga4Configured, runGa4Report } from "../services/ga4Service.js";
 import { clarityConfigured, runClarityReport } from "../services/clarityService.js";
+import { conversionsConfigured, findPendingConversions, uploadFundedConversions } from "../services/googleAdsConversions.js";
 import { googleAdsConfigured, runGoogleAdsReport } from "../services/googleAdsService.js";
 
 const router = Router();
@@ -125,6 +126,17 @@ router.get("/google-ads", safeHandler(async (req: any, res: any) => {
 }));
 
 // BF_SERVER_MARKETING_CLARITY_v1 — Microsoft Clarity behavioral analytics (Data Export API).
+// BF_SERVER_MARKETING_ADS_CONVERSIONS_v1 - closed-loop funded-deal conversions.
+router.get("/google-ads/conversions/pending", safeHandler(async (_req: any, res: any) => {
+  if (!conversionsConfigured()) { respondOk(res, { configured: false, pending: [] }); return; }
+  const pending = await findPendingConversions();
+  respondOk(res, { configured: true, count: pending.length, pending });
+}));
+router.post("/google-ads/conversions/upload", safeHandler(async (_req: any, res: any) => {
+  const result = await uploadFundedConversions();
+  respondOk(res, result);
+}));
+
 router.get("/clarity", safeHandler(async (req: any, res: any) => {
   const days = Math.min(Math.max(Number(req.query.days) || 3, 1), 3);
   if (!clarityConfigured()) { respondOk(res, { configured: false }); return; }
