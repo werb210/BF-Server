@@ -78,6 +78,16 @@ export function extractMatchInputs(app: { metadata: any; requested_amount: any; 
     if (raw === null || raw === undefined || raw === "") return null;
     return String(raw).trim();
   })();
+  // BF_SERVER_LENDER_MATCH_DUAL_v1 — closing-cost companions (and any app) can
+  // carry metadata.match_categories to match more than one product category.
+  const productCategories = (() => {
+    const raw = meta.match_categories ?? meta.matchCategories ?? null;
+    if (Array.isArray(raw)) {
+      const arr = raw.map((x: any) => String(x).trim()).filter(Boolean);
+      return arr.length ? arr : null;
+    }
+    return null;
+  })();
   if (requestedAmount == null || productCategory == null) {
     console.info({
       event: "lender_match_input_incomplete",
@@ -88,7 +98,7 @@ export function extractMatchInputs(app: { metadata: any; requested_amount: any; 
       metadataKeys: Object.keys(meta).slice(0, 20),
     });
   }
-  return { requestedAmount, country, province, industry, revenue, timeInBusiness, productCategory };
+  return { requestedAmount, country, province, industry, revenue, timeInBusiness, productCategory, productCategories };
 }
 
 async function enrichWithSubmissions(applicationId: string, matches: LenderMatch[]) {
