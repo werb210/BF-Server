@@ -8,6 +8,7 @@ import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js";
 import { smsMarketingConfigured, sendMarketingSms, trackedLink } from "../services/marketingSms.js";
 import { suggestionsConfigured, buildSuggestions, applySuggestion } from "../services/googleAdsSuggestions.js";
+import { linkedInSuggestionsConfigured, buildLinkedInSuggestions, applyLinkedInSuggestion } from "../services/linkedInAdsSuggestions.js"; // BF_SERVER_LINKEDIN_SUGGESTIONS_v1
 import { previewIcp, buildHashedList, buildLinkedInAudienceCsv } from "../services/googleAdsCustomerMatch.js";
 import { ga4Configured, runGa4Report } from "../services/ga4Service.js";
 import { clarityConfigured, runClarityReport } from "../services/clarityService.js";
@@ -208,6 +209,18 @@ router.post("/google-ads/suggestions/apply", safeHandler(async (req: any, res: a
   const action = req.body && req.body.action;
   if (!action || typeof action.type !== "string") { respondOk(res, { ok: false, error: "missing action" }); return; }
   respondOk(res, await applySuggestion(action));
+}));
+
+// BF_SERVER_LINKEDIN_SUGGESTIONS_v1 - Maya LinkedIn campaign recommendations (human-approved).
+router.get("/linkedin-ads/suggestions", safeHandler(async (req: any, res: any) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 90);
+  if (!linkedInSuggestionsConfigured()) { respondOk(res, { configured: false, suggestions: [] }); return; }
+  respondOk(res, await buildLinkedInSuggestions(days));
+}));
+router.post("/linkedin-ads/suggestions/apply", safeHandler(async (req: any, res: any) => {
+  const action = req.body && req.body.action;
+  if (!action || typeof action.type !== "string") { respondOk(res, { ok: false, error: "missing action" }); return; }
+  respondOk(res, await applyLinkedInSuggestion(action));
 }));
 
 // BF_SERVER_MARKETING_EMAIL_v1 - SendGrid bulk marketing email (BF silo).
