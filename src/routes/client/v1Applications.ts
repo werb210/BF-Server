@@ -858,9 +858,29 @@ router.post(
               source: "submit_skipped_duplicate",
             });
           } else {
-            const primaryAmount = Number(wizardCols.requestedAmount ?? 0);
+            // BF_SERVER_CLOSING_COST_FIX_v1 — pure-Equipment parents store the
+            // amount in the equipment field, not requested_amount, so derive it
+            // from the same fallback chain the equipment leg uses (else the
+            // companion got a null amount). Closing cost is 20% of equipment.
+            const primaryAmount =
+              Number(wizardCols.requestedAmount ?? 0) ||
+              Number(bfParseAmount((legacyApp as any)?.equipment_amount) ?? 0) ||
+              Number(bfParseAmount((legacyApp as any)?.equipmentAmount) ?? 0) ||
+              Number(bfParseAmount((legacyApp as any)?.kyc?.equipmentAmount) ?? 0) ||
+              Number(bfParseAmount((legacyApp as any)?.requestedAmount) ?? 0) ||
+              0;
             const companionAmount = Math.round(primaryAmount * 0.2);
             const companionCategory = companionAmount <= 50_000 ? "TERM" : "LOC";
+            // Locked rule: <=$50k TERM only; $50,001-$250k matches BOTH TERM and
+            // LOC products (one app); above that, LOC. product_category is
+            // CHECK-constrained to one value, so "both" rides in metadata and is
+            // applied by the lender-match query.
+            const companionMatchCategories =
+              companionAmount <= 50_000
+                ? ["TERM"]
+                : companionAmount <= 250_000
+                  ? ["TERM", "LOC"]
+                  : ["LOC"];
             const companionId = randomUUID();
             // BF_SERVER_BLOCK_v125a_CLOSING_COSTS_END_TO_END_v1 — copy parent
             // wizard payload into companion metadata so the companion's
@@ -872,17 +892,19 @@ router.post(
               closing_cost_companion: true,
               parent_application_id: application.id,
               companion_category: companionCategory,
+              match_categories: companionMatchCategories,
               kind: "closing_costs",
               linked_application_reason: "closing_costs",
               companion_origin: "submit_fallback",
             };
             await pool.query(
               `INSERT INTO applications
-                 (id, name, silo, owner_user_id, parent_application_id,
+                 (id, name, silo, owner_user_id, parent_application_id, contact_id,
                   requested_amount, product_category, pipeline_state, status,
                   lender_id, lender_product_id, source, metadata, submitted_at, created_at, updated_at)
                VALUES
                  ($1, $2, $3, $4, $5,
+                  (SELECT contact_id FROM applications WHERE id::text = ($5)::text),
                   $6, $7, 'Received', 'received',
                   $8, $9, 'closing_costs_companion',
                   $10::jsonb,
@@ -1446,7 +1468,11 @@ router.get(
       `SELECT a.id, a.pipeline_state, a.submitted_at, a.name AS business_name,
               a.product_category, a.requested_amount, a.updated_at
          FROM applications a
-         JOIN contacts c ON c.id = a.contact_id -- v342_FIX_CRM_CONTACTS
+         -- BF_SERVER_CLOSING_COST_FIX_v1 — resolve the contact via the parent for
+         -- linked legs created without their own contact_id, so every leg
+         -- (equipment / closing-cost companion) surfaces in the CMP switcher.
+         JOIN contacts c ON c.id = COALESCE(a.contact_id,
+                (SELECT p.contact_id FROM applications p WHERE p.id::text = a.parent_application_id::text)) -- v342_FIX_CRM_CONTACTS
         WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $1
           ${draftFilter}
         ORDER BY a.updated_at DESC`,
