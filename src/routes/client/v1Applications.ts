@@ -6,6 +6,7 @@ import { config } from "../../config/index.js";
 import { AppError } from "../../middleware/errors.js";
 import { requireAuth } from "../../middleware/requireAuth.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
+import { prettyDocLabel } from "../../lib/docDisplay.js"; // BF_SERVER_PNL_DISPLAY_v1
 import { ApplicationStage, statusFromPipeline } from "../../modules/applications/pipelineState.js";
 import {
   findApplicationById,
@@ -580,9 +581,10 @@ router.post(
             );
             if (v775_docs.length) {
               const v775_uniq = Array.from(new Set(v775_docs));
-              const v775_list = v775_uniq.length === 1
-                ? v775_uniq[0]
-                : `${v775_uniq.slice(0, -1).join(", ")} and ${v775_uniq[v775_uniq.length - 1]}`;
+              const v775_disp = v775_uniq.map(prettyDocLabel);
+              const v775_list = v775_disp.length === 1
+                ? v775_disp[0]
+                : `${v775_disp.slice(0, -1).join(", ")} and ${v775_disp[v775_disp.length - 1]}`;
               await pool.query(
                 `INSERT INTO communications_messages
                    (id, type, direction, status, application_id, contact_id, silo, body, staff_name, cta_label, cta_action, created_at)
