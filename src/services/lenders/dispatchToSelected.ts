@@ -67,6 +67,16 @@ export async function dispatchToSelected(
     console.warn("[dispatch] loadPackageInputs failed", e);
   }
 
+  // BF_SERVER_LENDER_QA_EXPORT_v1 -- attach finalized Q&A export(s) to the
+  // lender package (flows into both the email zip and the API attachments).
+  try {
+    const { buildFinalizedQaExports } = await import("./qaExport.js");
+    const qaPdfs = await buildFinalizedQaExports(ctx.applicationId);
+    if (qaPdfs.length) additionalSignedDocs = [...additionalSignedDocs, ...qaPdfs];
+  } catch (e) {
+    console.warn("[dispatch] qa export attach failed", e instanceof Error ? e.message : String(e));
+  }
+
   // Never email a package without the real signed application. If the signed PDF
   // could not be loaded, fail loudly so the worker retries instead of sending an
   // unsigned (or fabricated) document to a lender.
