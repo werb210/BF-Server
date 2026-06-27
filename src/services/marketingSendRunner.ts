@@ -6,6 +6,7 @@
 // exactly (same recipient filter, merge vars, and timeline event).
 import type { Pool } from "pg";
 import { sendOne, mergeFields } from "./sendgridService.js";
+import { sendMarketingSms, trackedLink } from "./marketingSms.js"; // BF_SERVER_SEND_QUEUE_SMS_v1
 
 export type EmailJob = { silo: string; tag: string | null; subject: string; html: string };
 export type SendProgress = (sent: number, failed: number) => Promise<void>;
@@ -45,4 +46,70 @@ export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendP
   }
   if (onProgress) { try { await onProgress(sent, failed); } catch { /* best-effort */ } }
   return { total: recips.rows.length, sent, failed };
+}
+
+
+// BF_SERVER_SEND_QUEUE_SMS_v1 - SMS path on the shared runner. Creates the
+// sms_campaigns row inside the runner so inline and queued sends behave
+// identically (and the 36h cascade worker can find the campaign). Mirrors the
+// original inline loop exactly: tracked link, per-send row, opt-out capture, and
+// the no-mobile immediate fallback email.
+export type SmsJob = { silo: string; tag: string | null; body: string; linkUrl: string | null; fbSubject: string | null; fbHtml: string | null; createdBy: string | null };
+
+export async function countSmsRecipients(pool: Pool, silo: string, tag: string | null): Promise<number> {
+  const r = await pool.query<{ n: number }>(
+    `SELECT count(*)::int AS n
+       FROM contacts c
+      WHERE c.silo = $1 AND ($2::text IS NULL OR $2 = ANY(c.tags))
+        AND (COALESCE(c.phone,'') <> '' OR COALESCE(c.email,'') <> '')`,
+    [silo, tag],
+  );
+  return r.rows[0]?.n ?? 0;
+}
+
+export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgress): Promise<{ total: number; smsSent: number; emailSent: number; failed: number; campaignId: string }> {
+  const cam = await pool.query<{ id: string }>(
+    `INSERT INTO sms_campaigns (silo, tag, sms_body, link_url, fallback_subject, fallback_html, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+    [job.silo, job.tag, job.body, job.linkUrl, job.fbSubject, job.fbHtml, job.createdBy],
+  );
+  const campaignId = cam.rows[0].id;
+  const recips = await pool.query<{ id: string; email: string | null; phone: string | null; name: string | null; company: string | null; sms_opt_out: boolean; marketing_opt_out: boolean }>(
+    `SELECT c.id, c.email, c.phone, c.name, co.name AS company, COALESCE(c.sms_opt_out,false) AS sms_opt_out, COALESCE(c.marketing_opt_out,false) AS marketing_opt_out
+       FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
+      WHERE c.silo = $1 AND ($2::text IS NULL OR $2 = ANY(c.tags))
+        AND (COALESCE(c.phone,'') <> '' OR COALESCE(c.email,'') <> '')`,
+    [job.silo, job.tag],
+  );
+  let smsSent = 0, emailSent = 0, failed = 0, i = 0;
+  for (const c of recips.rows) {
+    const first = (c.name || "").trim().split(/\s+/)[0] || "there";
+    const vars = { first_name: first, name: c.name || "there", email: c.email || "", company: c.company || "" };
+    const hasPhone = Boolean(c.phone) && !c.sms_opt_out;
+    if (hasPhone) {
+      const send = await pool.query<{ id: string }>(`INSERT INTO sms_campaign_sends (campaign_id, contact_id, silo, phone) VALUES ($1,$2,$3,$4) RETURNING id`, [campaignId, c.id, job.silo, c.phone]);
+      const sendId = send.rows[0].id;
+      const text = job.linkUrl ? `${job.body} ${trackedLink(sendId, job.linkUrl)}` : job.body;
+      const r = await sendMarketingSms(String(c.phone), text);
+      if (r.ok) {
+        smsSent++;
+        await pool.query(`UPDATE sms_campaign_sends SET message_sid = $2, delivery_status = 'queued' WHERE id = $1`, [sendId, r.sid ?? null]);
+        await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [c.id, "sms_marketing_sent", JSON.stringify({ campaignId })]);
+      } else {
+        failed++;
+        if (r.optedOut) await pool.query(`UPDATE contacts SET sms_opt_out = true, updated_at = now() WHERE id = $1`, [c.id]);
+      }
+    } else if (c.email && !c.marketing_opt_out && job.fbHtml) {
+      const r = await sendOne({ to: c.email, subject: mergeFields(job.fbSubject || "Following up", vars), html: mergeFields(job.fbHtml, vars), contactId: c.id });
+      if (r.ok) {
+        emailSent++;
+        await pool.query(`INSERT INTO sms_campaign_sends (campaign_id, contact_id, silo, fallback_sent, fallback_at) VALUES ($1,$2,$3,true,now())`, [campaignId, c.id, job.silo]);
+        await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [c.id, "email_cascade_sent", JSON.stringify({ campaignId, reason: "no_mobile" })]);
+      } else { failed++; }
+    }
+    i++;
+    if (onProgress && i % 50 === 0) { try { await onProgress(smsSent + emailSent, failed); } catch { /* best-effort */ } }
+  }
+  if (onProgress) { try { await onProgress(smsSent + emailSent, failed); } catch { /* best-effort */ } }
+  return { total: recips.rows.length, smsSent, emailSent, failed, campaignId };
 }
