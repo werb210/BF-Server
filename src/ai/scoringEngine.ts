@@ -8,6 +8,7 @@ export type PrequalInput = {
   country?: "CA" | "US" | null;
   requestedAmount?: number | null;
   productCategory?: string | null;
+  productCategories?: string[] | null; // BF_SERVER_LENDER_MATCH_DUAL_v1 — match multiple categories (e.g. closing-cost TERM+LOC)
 };
 
 export function scoreAmountFit(

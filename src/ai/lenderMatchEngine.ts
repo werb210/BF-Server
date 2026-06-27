@@ -50,7 +50,7 @@ function geographyAllows(productCountry: string | null, applicantCountry: Prequa
 
 export async function matchLenders(input: PrequalInput): Promise<LenderMatch[]> {
   const requestedAmount = input.requestedAmount ?? null;
-  const { rows } = await runQuery<ProductRow>(
+  const { rows: productRows } = await runQuery<ProductRow>(
     `select lp.id                       as product_id,
             lp.lender_id                as lender_id,
             l.name                      as lender_name,
@@ -108,15 +108,23 @@ export async function matchLenders(input: PrequalInput): Promise<LenderMatch[]> 
     };
     return map[upper] ?? upper;
   }
-  const wantedCategory = toBucketId(input.productCategory ?? null);
+  // BF_SERVER_LENDER_MATCH_DUAL_v1 — match against the full set of wanted
+  // categories (closing-cost companions carry TERM+LOC); fall back to the single
+  // productCategory when no multi-category set is present.
+  const wantedSource = (input.productCategories && input.productCategories.length)
+    ? input.productCategories
+    : (input.productCategory ? [input.productCategory] : []);
+  const wantedBuckets = new Set(wantedSource.map((c) => toBucketId(c)).filter(Boolean));
 
-  const filtered = rows.filter((row) => {
+  const rows = productRows as ProductRow[];
+
+  const filtered = rows.filter((row: ProductRow) => {
     if (!geographyAllows(row.country, input.country ?? null)) return false;
     if (requestedAmount && row.min_amount && requestedAmount < Number(row.min_amount)) return false;
     if (requestedAmount && row.max_amount && requestedAmount > Number(row.max_amount)) return false;
-    if (wantedCategory) {
+    if (wantedBuckets.size) {
       const rowBucket = toBucketId(row.product_category);
-      if (rowBucket !== wantedCategory) return false;
+      if (!wantedBuckets.has(rowBucket)) return false;
     }
     return true;
   });
@@ -145,5 +153,5 @@ export async function matchLenders(input: PrequalInput): Promise<LenderMatch[]> 
         amountMax:        maxN,
       };
     })
-    .sort((a, b) => b.matchPercent - a.matchPercent);
+    .sort((a: LenderMatch, b: LenderMatch) => b.matchPercent - a.matchPercent);
 }
