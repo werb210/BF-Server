@@ -6,8 +6,8 @@ import { respondOk } from "../utils/respondOk.js";
 import { pool } from "../db.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js";
-import { smsMarketingConfigured, sendMarketingSms, trackedLink } from "../services/marketingSms.js";
-import { countEmailRecipients, runEmailSend } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1
+import { smsMarketingConfigured, sendMarketingSms } from "../services/marketingSms.js";
+import { countEmailRecipients, runEmailSend, countSmsRecipients, runSmsSend } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1 BF_SERVER_SEND_QUEUE_SMS_v1
 import { suggestionsConfigured, buildSuggestions, applySuggestion } from "../services/googleAdsSuggestions.js";
 import { linkedInSuggestionsConfigured, buildLinkedInSuggestions, applyLinkedInSuggestion } from "../services/linkedInAdsSuggestions.js"; // BF_SERVER_LINKEDIN_SUGGESTIONS_v1
 import { previewIcp, buildHashedList, buildLinkedInAudienceCsv } from "../services/googleAdsCustomerMatch.js";
@@ -320,49 +320,20 @@ router.post("/sms/send", safeHandler(async (req: any, res: any) => {
   const linkUrl = b.linkUrl ? String(b.linkUrl) : null;
   const fbSubject = b.fallbackSubject ? String(b.fallbackSubject) : null;
   const fbHtml = b.fallbackHtml ? String(b.fallbackHtml) : null;
-  const cam = await pool.query<{ id: string }>(
-    `INSERT INTO sms_campaigns (silo, tag, sms_body, link_url, fallback_subject, fallback_html, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-    [silo, tag, body, linkUrl, fbSubject, fbHtml, req.user?.userId ?? null],
-  );
-  const campaignId = cam.rows[0].id;
-  const recips = await pool.query<{ id: string; email: string | null; phone: string | null; name: string | null; company: string | null; sms_opt_out: boolean; marketing_opt_out: boolean }>(
-    `SELECT c.id, c.email, c.phone, c.name, co.name AS company, COALESCE(c.sms_opt_out,false) AS sms_opt_out, COALESCE(c.marketing_opt_out,false) AS marketing_opt_out
-       FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
-      WHERE c.silo = $1 AND ($2::text IS NULL OR $2 = ANY(c.tags))
-        AND (COALESCE(c.phone,'') <> '' OR COALESCE(c.email,'') <> '')
-      LIMIT 1000`,
-    [silo, tag],
-  );
-  let smsSent = 0, emailSent = 0, failed = 0;
-  for (const c of recips.rows) {
-    const first = (c.name || "").trim().split(/\s+/)[0] || "there";
-    const vars = { first_name: first, name: c.name || "there", email: c.email || "", company: c.company || "" };
-    const hasPhone = Boolean(c.phone) && !c.sms_opt_out;
-    if (hasPhone) {
-      const send = await pool.query<{ id: string }>(`INSERT INTO sms_campaign_sends (campaign_id, contact_id, silo, phone) VALUES ($1,$2,$3,$4) RETURNING id`, [campaignId, c.id, silo, c.phone]);
-      const sendId = send.rows[0].id;
-      const text = linkUrl ? `${body} ${trackedLink(sendId, linkUrl)}` : body;
-      const r = await sendMarketingSms(String(c.phone), text);
-      if (r.ok) {
-        smsSent++;
-        await pool.query(`UPDATE sms_campaign_sends SET message_sid = $2, delivery_status = 'queued' WHERE id = $1`, [sendId, r.sid ?? null]);
-        await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [c.id, "sms_marketing_sent", JSON.stringify({ campaignId })]);
-      } else {
-        failed++;
-        if (r.optedOut) await pool.query(`UPDATE contacts SET sms_opt_out = true, updated_at = now() WHERE id = $1`, [c.id]);
-      }
-    } else if (c.email && !c.marketing_opt_out && fbHtml) {
-      // No mobile -> immediate fallback email.
-      const r = await sendOne({ to: c.email, subject: mergeFields(fbSubject || "Following up", vars), html: mergeFields(fbHtml, vars), contactId: c.id });
-      if (r.ok) {
-        emailSent++;
-        await pool.query(`INSERT INTO sms_campaign_sends (campaign_id, contact_id, silo, fallback_sent, fallback_at) VALUES ($1,$2,$3,true,now())`, [campaignId, c.id, silo]);
-        await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [c.id, "email_cascade_sent", JSON.stringify({ campaignId, reason: "no_mobile" })]);
-      } else { failed++; }
-    }
+  // BF_SERVER_SEND_QUEUE_SMS_v1 - small blasts inline; large ones queue (no cap, no blocking).
+  const total = await countSmsRecipients(pool, silo, tag);
+  if (total === 0) { respondOk(res, { configured: true, recipients: 0, smsSent: 0, emailSent: 0, failed: 0 }); return; }
+  if (total > 1000) {
+    const job = await pool.query<{ id: string }>(
+      `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by)
+       VALUES ('sms', $1, $2, $3, $4, $5) RETURNING id`,
+      [silo, tag, JSON.stringify({ body, linkUrl, fbSubject, fbHtml }), total, req.user?.userId ?? null],
+    );
+    respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total });
+    return;
   }
-  respondOk(res, { configured: true, recipients: recips.rows.length, smsSent, emailSent, failed });
+  const out = await runSmsSend(pool, { silo, tag, body, linkUrl, fbSubject, fbHtml, createdBy: req.user?.userId ?? null });
+  respondOk(res, { configured: true, recipients: out.total, smsSent: out.smsSent, emailSent: out.emailSent, failed: out.failed });
 }));
 
 router.get("/clarity", safeHandler(async (req: any, res: any) => {
