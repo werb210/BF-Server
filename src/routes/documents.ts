@@ -27,6 +27,86 @@ const upload = multer({
   limits: { fileSize: 25 * 1024 * 1024 },
 });
 
+// BF_SERVER_SHARED_DOCS_v1 — a document required by more than one linked
+// application leg should only be uploaded once. After a doc lands on one leg,
+// mirror it (same stored blob, no re-upload) to every sibling leg in the same
+// family that REQUIRES the same category and does not already have it. Each
+// mirror is enqueued for OCR so that leg's own analysis works. Best-effort.
+async function mirrorDocToSiblingLegs(args: {
+  applicationId: string;
+  category: string;
+  fileName: string;
+  hash: string;
+  blobName: string;
+  url: string;
+  sizeBytes: number;
+  uploadedBy?: string | null;
+}): Promise<void> {
+  const category = String(args.category ?? "").trim();
+  if (!category || category.toLowerCase() === "other") return;
+  const fam = await pool.query<{ id: string }>(
+    `WITH root AS (
+       SELECT COALESCE(parent_application_id, id) AS root_id
+         FROM applications WHERE id::text = ($1)::text
+     )
+     SELECT a.id FROM applications a, root r
+      WHERE (a.id::text = (r.root_id)::text OR a.parent_application_id::text = (r.root_id)::text)
+        AND a.id::text <> ($1)::text`,
+    [args.applicationId],
+  );
+  for (const sib of fam.rows) {
+    const sibId = String(sib.id);
+    const need = await pool.query<{ ok: boolean }>(
+      `SELECT (
+          EXISTS (
+            SELECT 1 FROM document_requirements dr
+             WHERE dr.application_id::text = ($1)::text
+               AND COALESCE(dr.required, true) = true
+               AND lower(coalesce(dr.category,'')) = lower($2)
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM documents d
+             WHERE d.application_id::text = ($1)::text
+               AND lower(coalesce(d.category,'')) = lower($2)
+               AND coalesce(d.status,'') <> 'rejected'
+          )
+        ) AS ok`,
+      [sibId, category],
+    );
+    if (!need.rows[0]?.ok) continue;
+    const newDocId = randomUUID();
+    const newVerId = randomUUID();
+    const tx = await pool.connect();
+    try {
+      await tx.query("BEGIN");
+      await tx.query(
+        `INSERT INTO documents
+           (id, application_id, filename, hash, category,
+            storage_path, blob_name, blob_url, size_bytes,
+            status, ocr_status, uploaded_by, document_type, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'uploaded','pending',$10,$5,now(),now())`,
+        [newDocId, sibId, args.fileName, args.hash, category,
+         args.blobName, args.blobName, args.url, args.sizeBytes,
+         args.uploadedBy ?? "client"],
+      );
+      await tx.query(
+        `INSERT INTO document_versions
+           (id, document_id, version, blob_name, hash, metadata, content, created_at)
+         VALUES ($1, $2, 1, $3, $4, $5::jsonb, $6, now())`,
+        [newVerId, newDocId, args.blobName, args.hash,
+         JSON.stringify({ sharedFromApplicationId: args.applicationId }), args.url],
+      );
+      await tx.query("COMMIT");
+    } catch {
+      await tx.query("ROLLBACK").catch(() => undefined);
+      tx.release();
+      continue;
+    }
+    tx.release();
+    try { await enqueueOcrForDocument(newDocId); } catch { /* best-effort */ }
+  }
+}
+
 async function persistAndEnqueue(opts: {
   applicationId: string;
   category: string;
@@ -128,6 +208,22 @@ async function persistAndEnqueue(opts: {
     );
   } catch {
     // non-fatal
+  }
+
+  // BF_SERVER_SHARED_DOCS_v1 — share this doc across linked legs that require it.
+  try {
+    await mirrorDocToSiblingLegs({
+      applicationId: String(opts.applicationId),
+      category: String(opts.category),
+      fileName: opts.file.originalname,
+      hash: put.hash,
+      blobName: put.blobName,
+      url: put.url,
+      sizeBytes: put.sizeBytes,
+      uploadedBy: opts.uploadedBy ?? null,
+    });
+  } catch (err) {
+    console.warn("[documents] sibling-leg share failed", { applicationId: opts.applicationId, err: String(err) });
   }
 
   // BF_SERVER_BLOCK_v215_BF_TO_BI_DOC_MIRROR_v1
