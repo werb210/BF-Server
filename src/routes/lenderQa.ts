@@ -159,9 +159,19 @@ router.post(
         return;
       }
       await pool.query(
+        // BF_SERVER_QA_ADD_TO_SENT_v1 — a question added to a set that is already
+        // sent/answered must be immediately answerable by the client (status 'sent'),
+        // otherwise it never appears in the CMP (which only loads sent/rejected).
         `INSERT INTO qa_questions (set_id, position, prompt, request_document, review_status)
-         VALUES ($1, (SELECT COALESCE(MAX(position), 0) + 1 FROM qa_questions WHERE set_id = $1), $2, $3, 'draft')`,
+         VALUES ($1, (SELECT COALESCE(MAX(position), 0) + 1 FROM qa_questions WHERE set_id = $1), $2, $3,
+                 CASE WHEN (SELECT status FROM qa_sets WHERE id = $1) IN ('sent','answered') THEN 'sent' ELSE 'draft' END)`,
         [setId, prompt, requestDocument],
+      );
+      // BF_SERVER_QA_ADD_TO_SENT_v1 — reopen an already-answered set so it shows as
+      // awaiting answers again once a new question is added.
+      await pool.query(
+        `UPDATE qa_sets SET status = 'sent', updated_at = now() WHERE id = $1 AND status = 'answered'`,
+        [setId],
       );
       res.status(201).json({ set: await loadSetWithQuestions(setId) });
     } catch (e) {
