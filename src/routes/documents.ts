@@ -13,6 +13,7 @@ import { pool } from "../db.js";
 import { resolveUploadCategory } from "./uploadCategory.js";
 import { getStorage } from "../lib/storage/index.js";
 import { enqueueOcrForDocument } from "../modules/ocr/ocr.service.js";
+import { computeOutstandingDocs } from "./clientDocumentsNeeded.js"; // BF_SERVER_SHARED_DOCS_GATE_v1
 import { requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
@@ -56,24 +57,17 @@ async function mirrorDocToSiblingLegs(args: {
   );
   for (const sib of fam.rows) {
     const sibId = String(sib.id);
-    const need = await pool.query<{ ok: boolean }>(
-      `SELECT (
-          EXISTS (
-            SELECT 1 FROM document_requirements dr
-             WHERE dr.application_id::text = ($1)::text
-               AND COALESCE(dr.required, true) = true
-               AND lower(coalesce(dr.category,'')) = lower($2)
-          )
-          AND NOT EXISTS (
-            SELECT 1 FROM documents d
-             WHERE d.application_id::text = ($1)::text
-               AND lower(coalesce(d.category,'')) = lower($2)
-               AND coalesce(d.status,'') <> 'rejected'
-          )
-        ) AS ok`,
-      [sibId, category],
-    );
-    if (!need.rows[0]?.ok) continue;
+    // BF_SERVER_SHARED_DOCS_GATE_v1 — document_requirements is essentially never
+    // populated; the live required-docs source is product metadata / matched-product
+    // fallbacks. Gate on computeOutstandingDocs (required-minus-uploaded): the sibling
+    // needs this category iff it appears in its outstanding set.
+    let needs = false;
+    try {
+      const { stillNeeded } = await computeOutstandingDocs(sibId);
+      const want = category.toLowerCase();
+      needs = stillNeeded.some((d) => String(d.document_type ?? "").trim().toLowerCase() === want);
+    } catch { needs = false; }
+    if (!needs) continue;
     const newDocId = randomUUID();
     const newVerId = randomUUID();
     const tx = await pool.connect();
