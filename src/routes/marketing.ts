@@ -13,6 +13,7 @@ import { ga4Configured, runGa4Report } from "../services/ga4Service.js";
 import { clarityConfigured, runClarityReport } from "../services/clarityService.js";
 import { conversionsConfigured, findPendingConversions, uploadFundedConversions } from "../services/googleAdsConversions.js";
 import { googleAdsConfigured, runGoogleAdsReport } from "../services/googleAdsService.js";
+import { linkedInAdsConfigured, runLinkedInAdsReport } from "../services/linkedInAdsService.js"; // BF_SERVER_LINKEDIN_ADS_v1
 
 const router = Router();
 
@@ -126,6 +127,14 @@ router.get("/google-ads", safeHandler(async (req: any, res: any) => {
   const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
   if (!googleAdsConfigured()) { respondOk(res, { configured: false }); return; }
   const report = await runGoogleAdsReport(days);
+  respondOk(res, report ?? { configured: false });
+}));
+
+// BF_SERVER_LINKEDIN_ADS_v1 - LinkedIn Ads spend/performance (read).
+router.get("/linkedin-ads", safeHandler(async (req: any, res: any) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
+  if (!linkedInAdsConfigured()) { respondOk(res, { configured: false }); return; }
+  const report = await runLinkedInAdsReport(days);
   respondOk(res, report ?? { configured: false });
 }));
 
