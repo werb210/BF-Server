@@ -499,4 +499,28 @@ router.post(
   },
 );
 
+// Download the finalized export for a set (staff; manual send to lender).
+router.get(
+  "/applications/:id/qa/sets/:setId/export",
+  requireAuth,
+  requireStaffOrAdmin,
+  async (req: AuthRequest, res: Response) => {
+    const setId = String(req.params.setId);
+    try {
+      const { buildQaExportForSet } = await import("../services/lenders/qaExport.js");
+      const pdf = await buildQaExportForSet(setId);
+      if (!pdf) {
+        res.status(404).json({ error: "not_available" });
+        return;
+      }
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${pdf.filename}"`);
+      res.send(pdf.content);
+    } catch (e) {
+      console.error("[qa.export] failed", e);
+      res.status(500).json({ error: "internal" });
+    }
+  },
+);
+
 export default router;
