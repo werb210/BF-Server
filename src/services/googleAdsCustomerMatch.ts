@@ -65,6 +65,23 @@ function normPhone(p: string | null): string {
 
 // Build a Customer Match CSV of SHA-256 hashes. type 'seed' = ideal clients
 // (filtered); type 'exclusion' = ALL funded clients (to suppress from prospecting).
+// BF_SERVER_LINKEDIN_AUDIENCE_v1 - LinkedIn Matched Audiences contact list.
+// LinkedIn's manual list upload takes a single "email" column of SHA-256 hashes
+// (lowercased, trimmed), so no raw PII leaves the server. type 'seed' = ideal
+// clients (filtered); 'exclusion' = ALL funded clients (to suppress).
+export async function buildLinkedInAudienceCsv(silo: string, filters: IcpFilters, type: "seed" | "exclusion"): Promise<{ rows: number; csv: string }> {
+  const rows = await querySeed(silo, filters, type === "seed");
+  const seen = new Set<string>();
+  const lines = ["email"];
+  for (const r of rows) {
+    const he = normEmail(r.email);
+    if (!he || seen.has(he)) continue;
+    seen.add(he);
+    lines.push(he);
+  }
+  return { rows: lines.length - 1, csv: lines.join("\n") };
+}
+
 export async function buildHashedList(silo: string, filters: IcpFilters, type: "seed" | "exclusion"): Promise<{ rows: number; csv: string }> {
   const rows = await querySeed(silo, filters, type === "seed");
   const seen = new Set<string>();

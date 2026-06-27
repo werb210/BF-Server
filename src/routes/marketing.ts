@@ -8,7 +8,7 @@ import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js";
 import { smsMarketingConfigured, sendMarketingSms, trackedLink } from "../services/marketingSms.js";
 import { suggestionsConfigured, buildSuggestions, applySuggestion } from "../services/googleAdsSuggestions.js";
-import { previewIcp, buildHashedList } from "../services/googleAdsCustomerMatch.js";
+import { previewIcp, buildHashedList, buildLinkedInAudienceCsv } from "../services/googleAdsCustomerMatch.js";
 import { ga4Configured, runGa4Report } from "../services/ga4Service.js";
 import { clarityConfigured, runClarityReport } from "../services/clarityService.js";
 import { conversionsConfigured, findPendingConversions, uploadFundedConversions } from "../services/googleAdsConversions.js";
@@ -187,6 +187,15 @@ router.post("/google-ads/icp/export", safeHandler(async (req: any, res: any) => 
   const type = b.type === "exclusion" ? "exclusion" : "seed";
   const filters = { productCategory: b.productCategory || undefined, minAmount: typeof b.minAmount === "number" ? b.minAmount : undefined, maxAmount: typeof b.maxAmount === "number" ? b.maxAmount : undefined };
   respondOk(res, await buildHashedList(silo, filters, type));
+}));
+
+// BF_SERVER_LINKEDIN_AUDIENCE_v1 - LinkedIn Matched Audiences contact list export.
+router.post("/linkedin-ads/icp/export", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const b = req.body || {};
+  const type = b.type === "exclusion" ? "exclusion" : "seed";
+  const filters = { productCategory: b.productCategory || undefined, minAmount: typeof b.minAmount === "number" ? b.minAmount : undefined, maxAmount: typeof b.maxAmount === "number" ? b.maxAmount : undefined };
+  respondOk(res, await buildLinkedInAudienceCsv(silo, filters, type));
 }));
 
 // BF_SERVER_MARKETING_ADS_SUGGESTIONS_v1 - Maya campaign recommendations (human-approved).
