@@ -176,6 +176,10 @@ export async function start(): Promise<void> {
     try { const w = startSmsCascadeWorker(pool); workerStops.push(w.stop); console.log("[startup] sms-cascade worker started"); }
     catch (err) { console.error("[startup] sms-cascade worker failed to start:", err); }
 
+    const { startSendQueueWorker } = await import("./workers/sendQueueWorker.js");
+    try { const w = startSendQueueWorker(pool); workerStops.push(w.stop); console.log("[startup] send-queue worker started"); }
+    catch (err) { console.error("[startup] send-queue worker failed to start:", err); }
+
     // BF_SERVER_BLOCK_v665 — graceful shutdown. On container recycle the workers'
     // poll loops must stop BEFORE the pool tears down, otherwise each tick queries
     // a dying pool and logs "Connection terminated due to connection timeout".

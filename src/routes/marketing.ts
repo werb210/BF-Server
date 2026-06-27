@@ -7,6 +7,7 @@ import { pool } from "../db.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js";
 import { smsMarketingConfigured, sendMarketingSms, trackedLink } from "../services/marketingSms.js";
+import { countEmailRecipients, runEmailSend } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1
 import { suggestionsConfigured, buildSuggestions, applySuggestion } from "../services/googleAdsSuggestions.js";
 import { linkedInSuggestionsConfigured, buildLinkedInSuggestions, applyLinkedInSuggestion } from "../services/linkedInAdsSuggestions.js"; // BF_SERVER_LINKEDIN_SUGGESTIONS_v1
 import { previewIcp, buildHashedList, buildLinkedInAudienceCsv } from "../services/googleAdsCustomerMatch.js";
@@ -253,27 +254,41 @@ router.post("/email/send", safeHandler(async (req: any, res: any) => {
     return;
   }
   const tag = b.tag ? String(b.tag) : null;
-  const recips = await pool.query<{ id: string; email: string; name: string | null; company: string | null }>(
-    `SELECT c.id, c.email, c.name, co.name AS company
-       FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
-      WHERE c.silo = $1 AND COALESCE(c.email,'') <> '' AND COALESCE(c.marketing_opt_out,false) = false
-        AND ($2::text IS NULL OR $2 = ANY(c.tags))
-      LIMIT 500`,
-    [silo, tag],
-  );
-  let sent = 0, failed = 0;
-  for (const c of recips.rows) {
-    const first = (c.name || "").trim().split(/\s+/)[0] || "there";
-    const vars = { first_name: first, name: c.name || "there", email: c.email, company: c.company || "" };
-    try {
-      const r = await sendOne({ to: c.email, subject: mergeFields(subject, vars), html: mergeFields(html, vars), contactId: c.id });
-      if (r.ok) {
-        sent++;
-        await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [c.id, "email_marketing_sent", JSON.stringify({ subject, tag })]);
-      } else { failed++; }
-    } catch { failed++; }
+  // BF_SERVER_SEND_QUEUE_v1 - small blasts send inline (unchanged response);
+  // large ones go to the durable background queue (no cap, no request blocking).
+  const total = await countEmailRecipients(pool, silo, tag);
+  if (total === 0) { respondOk(res, { configured: true, recipients: 0, sent: 0, failed: 0, capped: false }); return; }
+  if (total > 500) {
+    const job = await pool.query<{ id: string }>(
+      `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by)
+       VALUES ('email', $1, $2, $3, $4, $5) RETURNING id`,
+      [silo, tag, JSON.stringify({ subject, html }), total, req.user?.userId ?? null],
+    );
+    respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total });
+    return;
   }
-  respondOk(res, { configured: true, recipients: recips.rows.length, sent, failed, capped: recips.rows.length >= 500 });
+  const out = await runEmailSend(pool, { silo, tag, subject, html });
+  respondOk(res, { configured: true, recipients: out.total, sent: out.sent, failed: out.failed, capped: false });
+}));
+
+// BF_SERVER_SEND_QUEUE_v1 - background blast job status (for the portal progress UI).
+router.get("/send-jobs", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const r = await pool.query(
+    `SELECT id, channel, tag, status, total, sent, failed, error, created_at, started_at, finished_at
+       FROM marketing_send_jobs WHERE silo = $1 ORDER BY created_at DESC LIMIT 50`,
+    [silo],
+  );
+  respondOk(res, { jobs: r.rows });
+}));
+router.get("/send-jobs/:id", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const r = await pool.query(
+    `SELECT id, channel, tag, status, total, sent, failed, error, created_at, started_at, finished_at
+       FROM marketing_send_jobs WHERE id = $1 AND silo = $2`,
+    [req.params.id, silo],
+  );
+  respondOk(res, r.rows[0] || { error: "not found" });
 }));
 
 // BF_SERVER_MARKETING_SMS_v1 - bulk SMS + 36h fallback-email cascade (BF silo).
