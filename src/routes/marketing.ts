@@ -12,6 +12,7 @@ import { previewIcp, buildHashedList } from "../services/googleAdsCustomerMatch.
 import { ga4Configured, runGa4Report } from "../services/ga4Service.js";
 import { clarityConfigured, runClarityReport } from "../services/clarityService.js";
 import { conversionsConfigured, findPendingConversions, uploadFundedConversions } from "../services/googleAdsConversions.js";
+import { linkedInConversionsConfigured, findPendingLinkedInConversions, uploadFundedLinkedInConversions } from "../services/linkedInAdsConversions.js"; // BF_SERVER_LINKEDIN_CONVERSIONS_v1
 import { googleAdsConfigured, runGoogleAdsReport } from "../services/googleAdsService.js";
 import { linkedInAdsConfigured, runLinkedInAdsReport } from "../services/linkedInAdsService.js"; // BF_SERVER_LINKEDIN_ADS_v1
 
@@ -147,6 +148,17 @@ router.get("/google-ads/conversions/pending", safeHandler(async (_req: any, res:
 }));
 router.post("/google-ads/conversions/upload", safeHandler(async (_req: any, res: any) => {
   const result = await uploadFundedConversions();
+  respondOk(res, result);
+}));
+
+// BF_SERVER_LINKEDIN_CONVERSIONS_v1 - closed-loop funded-deal conversions to LinkedIn.
+router.get("/linkedin-ads/conversions/pending", safeHandler(async (_req: any, res: any) => {
+  if (!linkedInConversionsConfigured()) { respondOk(res, { configured: false, pending: [] }); return; }
+  const pending = await findPendingLinkedInConversions();
+  respondOk(res, { configured: true, count: pending.length, pending });
+}));
+router.post("/linkedin-ads/conversions/upload", safeHandler(async (_req: any, res: any) => {
+  const result = await uploadFundedLinkedInConversions();
   respondOk(res, result);
 }));
 
