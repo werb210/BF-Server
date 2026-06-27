@@ -190,6 +190,8 @@ export async function updateMe(req: Request, res: Response) {
     if ((input as any).lastName) normalized.last_name = (input as any).lastName;
     if (input.email) normalized.email = input.email;
     if ((input as any).phone) normalized.phone = (input as any).phone;
+    // BF_SERVER_AVATAR_MAP_v1 — persist the profile image (data URL) the portal sends.
+    if (input.profileImage) normalized.profile_image_url = input.profileImage;
 
     if (Object.keys(normalized).length === 0) {
       res["json"]({ ok: true });
