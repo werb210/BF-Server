@@ -6,6 +6,7 @@ import { isPipelineState } from './pipelineState.js';
 import { transitionPipelineState } from './applications.service.js';
 import { AppError } from '../../middleware/errors.js';
 import { safeHandler } from '../../middleware/safeHandler.js';
+import { prettyDocLabel } from '../../lib/docDisplay.js'; // BF_SERVER_PNL_DISPLAY_v1
 import { computeOutstandingDocs } from '../../routes/clientDocumentsNeeded.js';
 import { getSilo } from '../../middleware/silo.js';
 import { requireAdmin } from '../../middleware/requireAdmin.js';
@@ -322,9 +323,10 @@ router.post('/:id/request-steps', requireCapability([CAPABILITIES.CRM_WRITE]), s
   }
 
   if (uniqDocs.length) {
-    const list = uniqDocs.length === 1
-      ? uniqDocs[0]
-      : `${uniqDocs.slice(0, -1).join(', ')} and ${uniqDocs[uniqDocs.length - 1]}`;
+    const dispDocs = uniqDocs.map(prettyDocLabel);
+    const list = dispDocs.length === 1
+      ? dispDocs[0]
+      : `${dispDocs.slice(0, -1).join(', ')} and ${dispDocs[dispDocs.length - 1]}`;
     if (!hasUploadDocs) {
       await pool.query(
         `INSERT INTO communications_messages
