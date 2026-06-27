@@ -70,7 +70,8 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx): Promise<{
         await ctx.pool.query(
           `INSERT INTO notifications
              (id, user_id, type, title, ref_table, ref_id, body, context_url, is_read, created_at)
-           VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, false, now())`,
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, false, now())
+           ON CONFLICT (user_id, ref_table, ref_id, type) DO NOTHING`, // BF_SERVER_NOTIF_ONCONFLICT_v1
           [
             user.id,
             ctx.notificationType,
