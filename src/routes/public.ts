@@ -8,6 +8,16 @@ import { stripUndefined } from "../utils/clean.js";
 
 const router = Router();
 
+// BF_EMAIL_LOGO_ROUTE_v1 - public Boreal email logo (PNG), no auth, immutable cache.
+const EMAIL_LOGO_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAASwAAAA8CAIAAACzY5qXAAABc0lEQVR4nO3bMQ7CMAwF0e5/Rx9gE1WCCJYSxk3nFYqgHwDCn7bW+4f7AABAzhIsAWELCFiCJQgIWyBYSxAQtkCwliAgbIFgLUFA2ALBWoKAsAWCtQQBYQsEawkCwhYI1hIEhC0QrCUIuJ59z+u6zj3PuS1Jkkwmk8nkfD4/Ho+f5/nxePxwOHw4HC4Wi8VisVgsFovFYnE4HA6Hw+FwOBwOh8PhcDgcDo8vIYQQQgg5juP7vl3X9Xq9Xq/X6/V6vV6v1+v1er1er9fr9Xq9Xq/X6/V6vV6v1+v1er1er9fr9Xq9Xq/X6/V6vV6v1+v1er1er9fr9Xq9Xq/X6/V6vV6v1+v1er1er9fr9Xq9Xq/X6/V6vV6v1+v1er1er9fr9Xq9Xq/X6/V6vV6v1+v1egEAAAAA4O8SLAELCFiCJQgIWyBYSxAQtkCwliAgbIFgLUFA2ALBWoKAsAWCtQQBYQsEawkCwhYI1hIEhC0QrCUIuB+Y3Qd0HhZGzAAAAABJRU5ErkJggg==";
+router.get("/email/logo.png", (_req, res) => {
+  const buf = Buffer.from(EMAIL_LOGO_PNG_B64, "base64");
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  res.end(buf);
+});
+
+
 type LeadPayload = {
   email?: string;
   phone?: string;
@@ -40,7 +50,7 @@ async function createLead(payload: LeadPayload): Promise<{ leadId?: string }> {
   return stripUndefined({ leadId: result.rows[0]?.id });
 }
 
-// BF_SERVER_v68_LEAD_RES_JSON — every branch must explicitly call
+// BF_SERVER_v68_LEAD_RES_JSON - every branch must explicitly call
 // res.status(N).json(envelope). `wrap()` only catches errors; `ok`/`fail`
 // only build envelope objects. Without an explicit res.json the response
 // is never sent and the client hangs until timeout.
@@ -58,7 +68,7 @@ router.post(
     }),
 );
 
-// BF_SERVER_v66_LENDER_COUNT — GET /api/public/lender-count
+// BF_SERVER_v66_LENDER_COUNT - GET /api/public/lender-count
 // Lightweight public endpoint used by the client wizard's Step 6 to
 // render "Submitted to our network of {N}+ lenders." Returns
 // { count: number } where N is the count of active lenders. Tolerant
@@ -93,7 +103,7 @@ router.get(
 
 router.all("/lead", wrap(async (_req, res) => res.status(405).json(fail(res, "METHOD_NOT_ALLOWED"))));
 
-// BF_SERVER_BLOCK_v738_PUBLIC_COLLATERAL — public download link for shareable
+// BF_SERVER_BLOCK_v738_PUBLIC_COLLATERAL - public download link for shareable
 // collateral so SMS/messenger recipients can open it. Collateral is marketing
 // material and keyed by an unguessable UUID, so no auth is required here.
 router.get(
@@ -122,7 +132,7 @@ router.get(
 // After "Talk to a Human" the widget holds the conversation_id (unguessable
 // UUID). These let the anonymous visitor receive staff replies and post
 // follow-ups into the SAME communications_conversations thread the staff
-// inbox (v683) reads/writes — two-way without exposing other conversations.
+// inbox (v683) reads/writes - two-way without exposing other conversations.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 router.get(
@@ -157,7 +167,7 @@ router.post(
     const convContactId = conv.rows[0].contact_id;
     const convSilo = conv.rows[0].silo ?? "BF";
     const convPhone = conv.rows[0].contact_phone;
-    // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 — carry contact_id + silo +
+    // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 - carry contact_id + silo +
     // type='message' so visitor follow-ups also surface in the staff Messages
     // tab and the CRM timeline, not just the conversation_id poll.
     const inserted = await dbQuery<{ id: string; direction: string; body: string; created_at: string }>(
