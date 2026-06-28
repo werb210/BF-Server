@@ -165,6 +165,15 @@ router.get("/customers", safeHandler((req: any, res: any) => {
   );
 }));
 
+// BF_SERVER_CRM_COUNTS_v1 - total contacts + companies for the selected silo, powering
+// the CRM tab count badges. Cheap silo-scoped COUNT(*).
+router.get("/counts", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const c = await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM contacts WHERE silo = $1`, [silo]);
+  const co = await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM companies WHERE silo = $1`, [silo]);
+  res.json({ data: { contacts: c.rows[0]?.n ?? 0, companies: co.rows[0]?.n ?? 0 } });
+}));
+
 router.get("/contacts", safeHandler(async (req: any, res: any) => {
   const page = Math.max(Number(req.query.page) || 1, 1);
   const pageSize = Math.min(Number(req.query.pageSize) || 200, 500);
