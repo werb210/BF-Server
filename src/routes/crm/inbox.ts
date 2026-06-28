@@ -210,6 +210,51 @@ router.get("/:messageId", safeHandler(async (req: any, res: any) => {
   respondOk(res, message);
 }));
 
+// BF_SERVER_INBOX_ATTACHMENTS_v1 - list real (non-inline) file attachments for a message
+// so the portal can show/download them. Inline images are already embedded in the body.
+router.get("/:messageId/attachments", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const mailbox = (req.query.mailbox ?? "").toString().trim();
+  const base = mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
+  const r = await graph.fetch(
+    `${base}/messages/${encodeURIComponent(req.params.messageId)}/attachments`
+      + `?$select=id,name,contentType,size,isInline`,
+  );
+  if (!r.ok) return res.status(r.status).json({ error: "graph_attachments_failed" });
+  const data: any = await r.json();
+  const list = (Array.isArray(data?.value) ? data.value : [])
+    .filter((a: any) => a && a.isInline !== true)
+    .map((a: any) => ({ id: a.id, name: a.name ?? "attachment", contentType: a.contentType ?? "application/octet-stream", size: a.size ?? 0 }));
+  respondOk(res, list);
+}));
+
+// BF_SERVER_INBOX_ATTACHMENTS_v1 - download one attachment as base64 JSON so the JSON api
+// client can decode it to a Blob. Graph fileAttachment carries contentBytes (base64).
+router.get("/:messageId/attachments/:attachmentId", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const mailbox = (req.query.mailbox ?? "").toString().trim();
+  const base = mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
+  const r = await graph.fetch(
+    `${base}/messages/${encodeURIComponent(req.params.messageId)}/attachments/${encodeURIComponent(req.params.attachmentId)}`,
+  );
+  if (!r.ok) return res.status(r.status).json({ error: "graph_attachment_failed" });
+  const att: any = await r.json();
+  const contentBytes: string | undefined = att?.contentBytes;
+  if (!contentBytes) return res.status(415).json({ error: "not_a_file_attachment" });
+  respondOk(res, {
+    name: att?.name ?? "attachment",
+    contentType: att?.contentType ?? "application/octet-stream",
+    size: att?.size ?? 0,
+    contentBytes,
+  });
+}));
+
 // BF_SERVER_BLOCK_v832_INBOX_FLAG
 // PATCH /api/crm/inbox/:messageId/flag  body: { flagged: boolean }
 router.patch("/:messageId/flag", safeHandler(async (req: any, res: any) => {
