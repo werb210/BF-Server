@@ -394,6 +394,11 @@ router.get("/messages-list", safeHandler(async (req: any, res: any) => {
       FROM communications_messages m
       LEFT JOIN contacts c ON c.id = m.contact_id
       WHERE m.silo = $1
+        -- BF_SERVER_MESSAGES_LIST_DROP_ORPHANS_v1: a deleted CRM contact sets
+        -- communications_messages.contact_id to NULL (ON DELETE SET NULL). Inbound now
+        -- always creates a contact, so a NULL contact_id here means the contact was
+        -- deleted; drop those threads so they stop showing as "Unknown contact".
+        AND m.contact_id IS NOT NULL
         ${typeClause}
     ),
     ranked AS (
