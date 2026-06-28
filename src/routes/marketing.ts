@@ -17,6 +17,13 @@ import { conversionsConfigured, findPendingConversions, uploadFundedConversions 
 import { linkedInConversionsConfigured, findPendingLinkedInConversions, uploadFundedLinkedInConversions } from "../services/linkedInAdsConversions.js"; // BF_SERVER_LINKEDIN_CONVERSIONS_v1
 import { googleAdsConfigured, runGoogleAdsReport } from "../services/googleAdsService.js";
 import { linkedInAdsConfigured, runLinkedInAdsReport } from "../services/linkedInAdsService.js"; // BF_SERVER_LINKEDIN_ADS_v1
+// BF_EMAIL_TEMPLATE_IMPORTS_v1
+import multer from "multer";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { BlobServiceClient } from "@azure/storage-blob";
+import { renderBrandedEmail, type BrandedEmailFields } from "../services/emailTemplateRender.js";
+
 
 const router = Router();
 
@@ -43,7 +50,7 @@ router.get("/campaigns", safeHandler((req: any, res: any) => {
   );
 }));
 
-// BF_SERVER_MARKETING_FUNNEL_v1 — internal application funnel from our own DB (no external deps):
+// BF_SERVER_MARKETING_FUNNEL_v1 - internal application funnel from our own DB (no external deps):
 // how many applications reached each wizard step, and how many submitted, with drop-off per step.
 router.get("/funnel", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
@@ -117,7 +124,7 @@ router.get("/sources", safeHandler(async (req: any, res: any) => {
   respondOk(res, { days, sources });
 }));
 
-// BF_SERVER_MARKETING_GA4_v1 — GA4 traffic/sources/devices via the Analytics Data API.
+// BF_SERVER_MARKETING_GA4_v1 - GA4 traffic/sources/devices via the Analytics Data API.
 router.get("/ga4", safeHandler(async (req: any, res: any) => {
   const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
   if (!ga4Configured()) { respondOk(res, { configured: false }); return; }
@@ -141,7 +148,7 @@ router.get("/linkedin-ads", safeHandler(async (req: any, res: any) => {
   respondOk(res, report ?? { configured: false });
 }));
 
-// BF_SERVER_MARKETING_CLARITY_v1 — Microsoft Clarity behavioral analytics (Data Export API).
+// BF_SERVER_MARKETING_CLARITY_v1 - Microsoft Clarity behavioral analytics (Data Export API).
 // BF_SERVER_MARKETING_ADS_CONVERSIONS_v1 - closed-loop funded-deal conversions.
 router.get("/google-ads/conversions/pending", safeHandler(async (_req: any, res: any) => {
   if (!conversionsConfigured()) { respondOk(res, { configured: false, pending: [] }); return; }
@@ -341,6 +348,103 @@ router.get("/clarity", safeHandler(async (req: any, res: any) => {
   if (!clarityConfigured()) { respondOk(res, { configured: false }); return; }
   const report = await runClarityReport(days);
   respondOk(res, report ?? { configured: false });
+}));
+
+// BF_EMAIL_TEMPLATE_ROUTES_v1 - branded email template (BF): save/load, image upload, preview, send.
+const emailAssetUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
+
+async function uploadMarketingImage(buf: Buffer, contentType: string, ext: string): Promise<string | null> {
+  const conn = process.env.AZURE_STORAGE_CONNECTION_STRING;
+  if (!conn) return null;
+  const containerName = process.env.AZURE_STORAGE_CONTAINER_MARKETING || "marketing-assets";
+  const svc = BlobServiceClient.fromConnectionString(conn);
+  const container = svc.getContainerClient(containerName);
+  await container.createIfNotExists({ access: "blob" });
+  const blob = container.getBlockBlobClient(`email/${randomUUID()}${ext}`);
+  await blob.uploadData(buf, { blobHTTPHeaders: { blobContentType: contentType || "application/octet-stream" } });
+  return blob.url;
+}
+
+function templateFieldsFromBody(b: any): BrandedEmailFields {
+  return {
+    headline: String(b.headline || ""),
+    heroUrl: String(b.heroUrl || ""),
+    heroLink: String(b.heroLink || ""),
+    body: String(b.body || ""),
+    ctaLabel: String(b.ctaLabel || ""),
+    ctaUrl: String(b.ctaUrl || ""),
+    image2Url: String(b.image2Url || ""),
+    image2Link: String(b.image2Link || ""),
+  };
+}
+
+router.get("/email/template", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const r = await pool.query(`SELECT headline, hero_url, hero_link, body, cta_label, cta_url, image2_url, image2_link FROM marketing_email_template WHERE silo = $1`, [silo]);
+  const row: any = r.rows[0] || {};
+  respondOk(res, { template: {
+    headline: row.headline ?? "", heroUrl: row.hero_url ?? "", heroLink: row.hero_link ?? "",
+    body: row.body ?? "", ctaLabel: row.cta_label ?? "", ctaUrl: row.cta_url ?? "",
+    image2Url: row.image2_url ?? "", image2Link: row.image2_link ?? "",
+  } });
+}));
+
+router.post("/email/template", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const f = templateFieldsFromBody(req.body || {});
+  await pool.query(
+    `INSERT INTO marketing_email_template (silo, headline, hero_url, hero_link, body, cta_label, cta_url, image2_url, image2_link, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
+     ON CONFLICT (silo) DO UPDATE SET headline=$2, hero_url=$3, hero_link=$4, body=$5, cta_label=$6, cta_url=$7, image2_url=$8, image2_link=$9, updated_at=now()`,
+    [silo, f.headline, f.heroUrl, f.heroLink, f.body, f.ctaLabel, f.ctaUrl, f.image2Url, f.image2Link],
+  );
+  respondOk(res, { saved: true });
+}));
+
+router.post("/email/template/preview", safeHandler(async (req: any, res: any) => {
+  respondOk(res, { html: renderBrandedEmail(templateFieldsFromBody(req.body || {})) });
+}));
+
+router.post("/email/assets/upload", emailAssetUpload.single("file"), safeHandler(async (req: any, res: any) => {
+  const file = (req as any).file as { buffer: Buffer; originalname: string; mimetype: string } | undefined;
+  if (!file || !file.buffer || !file.buffer.length) { respondOk(res, { error: "no file" }); return; }
+  if (!/^image\//.test(file.mimetype || "")) { respondOk(res, { error: "image files only" }); return; }
+  try {
+    const ext = (path.extname(file.originalname || "") || ".png").toLowerCase();
+    const url = await uploadMarketingImage(file.buffer, file.mimetype, ext);
+    if (!url) { respondOk(res, { error: "storage not configured" }); return; }
+    respondOk(res, { url });
+  } catch {
+    respondOk(res, { error: "upload failed (check Allow Blob public access)" });
+  }
+}));
+
+router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
+  if (!sendgridConfigured()) { respondOk(res, { configured: false }); return; }
+  const silo = resolveSiloFromRequest(req);
+  const b = req.body || {};
+  const subject = String(b.subject || "").trim();
+  if (!subject) { respondOk(res, { error: "subject required" }); return; }
+  const html = renderBrandedEmail(templateFieldsFromBody(b));
+  if (b.test && typeof b.test === "string") {
+    const vars = { first_name: "there", name: "there", email: b.test, company: "" };
+    const r = await sendOne({ to: b.test, subject: mergeFields(subject, vars), html: mergeFields(html, vars) });
+    respondOk(res, { test: true, ...r });
+    return;
+  }
+  const tag = b.tag ? String(b.tag) : null;
+  const total = await countEmailRecipients(pool, silo, tag);
+  if (total === 0) { respondOk(res, { configured: true, recipients: 0, sent: 0, failed: 0 }); return; }
+  if (total > 500) {
+    const job = await pool.query<{ id: string }>(
+      `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by) VALUES ('email', $1, $2, $3, $4, $5) RETURNING id`,
+      [silo, tag, JSON.stringify({ subject, html }), total, req.user?.userId ?? null],
+    );
+    respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total });
+    return;
+  }
+  const out = await runEmailSend(pool, { silo, tag, subject, html });
+  respondOk(res, { configured: true, recipients: out.total, sent: out.sent, failed: out.failed });
 }));
 
 export default router;
