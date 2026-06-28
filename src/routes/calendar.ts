@@ -199,6 +199,29 @@ router.get("/events", safeHandler(async (req: any, res: any) => {
   }
 }));
 
+// BF_SERVER_CALENDAR_ATTENDEES_v1 - the Add Event form sends `attendees` as a comma string
+// (or omits it). Graph requires an array of { emailAddress:{address}, type }. Normalize a
+// string, an array of strings, or an array of {emailAddress|email} objects into that shape.
+function toGraphAttendees(raw: any): Array<{ emailAddress: { address: string }; type: string }> {
+  let list: string[] = [];
+  if (Array.isArray(raw)) {
+    list = raw.map((a: any) => (typeof a === "string" ? a : (a?.emailAddress?.address ?? a?.email ?? ""))).filter(Boolean);
+  } else if (typeof raw === "string") {
+    list = raw.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+  }
+  const seen = new Set<string>();
+  const out: Array<{ emailAddress: { address: string }; type: string }> = [];
+  for (const e of list) {
+    const addr = String(e).trim();
+    if (!addr || !addr.includes("@")) continue;
+    const key = addr.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ emailAddress: { address: addr }, type: "required" });
+  }
+  return out;
+}
+
 // POST /api/calendar/events
 // BF_SERVER_BLOCK_v649_SHOWSTOPPER_PATCHES_v1 — propagate Graph 4xx and
 // return the event in the same flat shape as GET so the portal cache
@@ -207,6 +230,7 @@ router.post("/events", safeHandler(async (req: any, res: any) => {
   const graph = await getGraphForUser(pool, req.user?.userId).catch(() => null);
   if (!graph) return res.status(412).json({ status: "error", code: "o365_not_connected", message: "Connect Microsoft 365 to save calendar events." });
   const body = req.body ?? {};
+  const graphAttendees = toGraphAttendees(body.attendees); // BF_SERVER_CALENDAR_ATTENDEES_v1
   try {
     const event = await graphCall(graph, "/me/events", {
       method: "POST",
@@ -219,7 +243,7 @@ router.post("/events", safeHandler(async (req: any, res: any) => {
       // Accept `description` too for any older callers.
       ...((body.notes ?? body.description) ? { body: { contentType: "text", content: body.notes ?? body.description } } : {}),
       ...(body.location ? { location: { displayName: body.location } } : {}),
-      ...(body.attendees ? { attendees: body.attendees } : {}),
+      ...(graphAttendees.length ? { attendees: graphAttendees } : {}),
       }),
     });
     // BF_SERVER_BLOCK_v734 — channel-level meeting logging. A calendar event
