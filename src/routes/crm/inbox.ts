@@ -126,6 +126,9 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   const mailbox = (req.query.mailbox ?? "").toString().trim();
   const folderRaw = (req.query.folder ?? "inbox").toString().toLowerCase().trim();
   const folder = ["inbox", "sent", "all"].includes(folderRaw) ? folderRaw : "inbox";
+  // BF_SERVER_INBOX_FOLDERID_v1 - optional explicit Outlook folder id (from /folders/list)
+  // to browse any folder; falls back to the inbox/sent/all shortcuts when absent.
+  const folderId = (req.query.folderId ?? "").toString().trim();
 
   if (mailbox) {
     const role = (req.user?.role ?? "").toString().toLowerCase();
@@ -147,13 +150,13 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   const sortDir = String((req.query.sort ?? "")).toLowerCase() === "asc" ? "asc" : "desc";
   const orderby = `$orderby=receivedDateTime ${sortDir}`;
 
-  async function fetchFolder(client: GraphClient, folderId: "Inbox" | "SentItems"): Promise<any[]> {
+  async function fetchFolder(client: GraphClient, folderId: string): Promise<any[]> {
     // BF_SERVER_BLOCK_v833_INBOX_SEARCH_THREAD_FOLDERS — $search (relevance order,
     // no $orderby allowed by Graph) when a query is present; else normal sorted list.
     const q = String(req.query.q ?? "").trim();
     const url = q
-      ? `${base}/mailFolders/${folderId}/messages?$top=50&${select}&$search="${encodeURIComponent(q)}"`
-      : `${base}/mailFolders/${folderId}/messages?$top=50&${select}&${orderby}`;
+      ? `${base}/mailFolders/${encodeURIComponent(folderId)}/messages?$top=50&${select}&$search="${encodeURIComponent(q)}"`
+      : `${base}/mailFolders/${encodeURIComponent(folderId)}/messages?$top=50&${select}&${orderby}`;
     const r = await client.fetch(url, q ? { headers: { ConsistencyLevel: "eventual" } } : undefined);
     if (!r.ok) return [];
     const data = await r.json();
@@ -161,7 +164,9 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   }
 
   let messages: any[] = [];
-  if (folder === "inbox") {
+  if (folderId) {
+    messages = await fetchFolder(graph, folderId);
+  } else if (folder === "inbox") {
     messages = await fetchFolder(graph, "Inbox");
   } else if (folder === "sent") {
     messages = await fetchFolder(graph, "SentItems");
