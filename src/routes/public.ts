@@ -14,6 +14,9 @@ router.get("/email/logo.png", (_req, res) => {
   const buf = Buffer.from(EMAIL_LOGO_PNG_B64, "base64");
   res.setHeader("Content-Type", "image/png");
   res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  // BF_EMAIL_LOGO_CORP_v1 - override Helmet default CORP (same-origin) so the logo
+  // can be embedded cross-origin in the portal email preview iframe.
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   res.end(buf);
 });
 
