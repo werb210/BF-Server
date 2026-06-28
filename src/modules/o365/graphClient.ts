@@ -76,6 +76,51 @@ async function persistRefreshedToken(
   );
 }
 
+// BF_O365_REFRESH_SINGLEFLIGHT_v1 -- Microsoft Entra rotates the refresh token on
+// every redemption and revokes the ENTIRE token family if an already-consumed refresh
+// token is redeemed again (reuse detection). On portal load, Inbox/Calendar/Tasks fire
+// almost simultaneously; each getGraphForUser call read the same refresh token and
+// refreshed independently, so the 2nd/3rd redemption reused a consumed token -> family
+// revoked -> user forced to fully re-login (the recurring "logged out twice a day"
+// symptom). Fix: serialize refresh PER USER. The first caller performs the refresh +
+// persist; concurrent callers await the same in-flight promise and reuse its result.
+// The locked section always re-reads the freshest refresh token from the DB so a stale
+// (already rotated) token is never redeemed.
+const refreshInFlight = new Map<string, Promise<RefreshResult | null>>();
+
+async function refreshAndPersistOnce(
+  db: Pool,
+  userId: string,
+): Promise<RefreshResult | null> {
+  const existing = refreshInFlight.get(userId);
+  if (existing) return existing;
+  const run = (async (): Promise<RefreshResult | null> => {
+    const { rows } = await db.query<{ o365_refresh_token: string | null }>(
+      `SELECT o365_refresh_token FROM users WHERE id = $1`,
+      [userId],
+    );
+    const rt = rows[0]?.o365_refresh_token;
+    if (!rt) return null;
+    const refreshed = await refreshAccessToken(rt);
+    if (refreshed) {
+      await persistRefreshedToken(
+        db,
+        userId,
+        refreshed.accessToken,
+        refreshed.refreshToken,
+        refreshed.expiresAt,
+      );
+    }
+    return refreshed;
+  })();
+  refreshInFlight.set(userId, run);
+  try {
+    return await run;
+  } finally {
+    refreshInFlight.delete(userId);
+  }
+}
+
 export type GraphClient = {
   fetch: (path: string, init?: RequestInit) => Promise<Response>;
   accessToken: string;
@@ -125,16 +170,9 @@ export async function getGraphForUser(
   const expiresSoon =
     !expiresAt || expiresAt.getTime() - Date.now() < EXPIRY_SKEW_MS;
   if (expiresSoon && refreshToken) {
-    const refreshed = await refreshAccessToken(refreshToken);
+    const refreshed = await refreshAndPersistOnce(db, userId);
     if (refreshed) {
       currentToken = refreshed.accessToken;
-      await persistRefreshedToken(
-        db,
-        userId,
-        refreshed.accessToken,
-        refreshed.refreshToken,
-        refreshed.expiresAt,
-      );
     }
   }
 
@@ -154,16 +192,9 @@ export async function getGraphForUser(
 
     let resp = await doFetch(currentToken);
     if (resp.status === 401 && refreshToken) {
-      const refreshed = await refreshAccessToken(refreshToken);
+      const refreshed = await refreshAndPersistOnce(db, userId);
       if (refreshed) {
         currentToken = refreshed.accessToken;
-        await persistRefreshedToken(
-          db,
-          userId,
-          refreshed.accessToken,
-          refreshed.refreshToken,
-          refreshed.expiresAt,
-        );
         resp = await doFetch(currentToken);
       }
     }
