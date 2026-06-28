@@ -12,6 +12,7 @@ import { normalizePhoneNumber } from "../modules/auth/phone.js";
 import { bumpBiOutreachToContacted } from "../services/biOutreach.js"; // BF_SERVER_BLOCK_v344_BI_OUTREACH_AUTOADVANCE_v1
 import { getSilo, resolveSiloFromRequest } from "../middleware/silo.js";
 import { createContact } from "../services/contacts.js";
+import { getStorage } from "../lib/storage/index.js"; // BF_SERVER_CONTACT_DOCUMENTS_v1
 import notesRoutes from "./crm/notes.js";
 import tasksRoutes from "./crm/tasks.js";
 import emailsRoutes from "./crm/emails.js";
@@ -1283,6 +1284,43 @@ router.post("/startup-waitlist", safeHandler(async (req: any, res: any) => {
     id = ins.rows[0].id;
   }
   res.status(200).json({ ok: true, id, created });
+}));
+
+// BF_SERVER_CONTACT_DOCUMENTS_v1 - list documents filed against a contact (e.g. auto-filed
+// inbound email attachments), silo-scoped.
+router.get("/contacts/:id/documents", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const { rows } = await pool.query(
+    `SELECT id::text AS id, filename, content_type AS "contentType", size_bytes AS "sizeBytes",
+            source, created_at AS "createdAt"
+       FROM contact_documents
+      WHERE contact_id::text = $1 AND silo = $2
+      ORDER BY created_at DESC`,
+    [req.params.id, silo],
+  );
+  return res.json(rows);
+}));
+
+// BF_SERVER_CONTACT_DOCUMENTS_v1 - download one contact document as base64 JSON (the portal
+// decodes it to a Blob), silo-scoped and verified to belong to the contact.
+router.get("/contacts/:id/documents/:docId/download", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const { rows } = await pool.query<{ filename: string; content_type: string | null; blob_name: string }>(
+    `SELECT filename, content_type, blob_name
+       FROM contact_documents
+      WHERE id::text = $1 AND contact_id::text = $2 AND silo = $3
+      LIMIT 1`,
+    [req.params.docId, req.params.id, silo],
+  );
+  const doc = rows[0];
+  if (!doc) return res.status(404).json({ error: "not_found" });
+  const obj = await getStorage().get(doc.blob_name);
+  if (!obj) return res.status(404).json({ error: "blob_missing" });
+  return res.json({
+    name: doc.filename,
+    contentType: doc.content_type ?? obj.contentType ?? "application/octet-stream",
+    contentBytes: obj.buffer.toString("base64"),
+  });
 }));
 
 export default router;
