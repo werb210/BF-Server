@@ -6,6 +6,7 @@ import { safeHandler } from "../../middleware/safeHandler.js";
 import { respondOk } from "../../utils/respondOk.js";
 import { getGraphForUser, type GraphClient } from "../../modules/o365/graphClient.js";
 import { resolveSiloFromRequest } from "../../middleware/silo.js";
+import { fileInboundAttachments } from "../../services/contactDocuments.js"; // BF_SERVER_INBOX_FILE_TO_CRM_v1
 
 // BF_SERVER_BLOCK_BI_ROUND5_CRM_SILO_RESOLVE_v1
 
@@ -428,6 +429,24 @@ router.post("/:messageId/move", safeHandler(async (req: any, res: any) => {
     return res.status(r.status).json({ error: "graph_move_failed", detail: errBody.slice(0, 300) });
   }
   return res.json({ success: true });
+}));
+
+// BF_SERVER_INBOX_FILE_TO_CRM_v1 - file a message's attachments to the matching (or newly
+// created) CRM contact in the request's silo. Manual trigger; the inbound poller reuses
+// fileInboundAttachments. Idempotent via the contact_documents dedupe key.
+router.post("/:messageId/file-to-crm", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const mailbox = (req.query.mailbox ?? "").toString().trim();
+  const base = mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
+  const r = await graph.fetch(`${base}/messages/${encodeURIComponent(req.params.messageId)}?$select=id,from,hasAttachments`);
+  if (!r.ok) return res.status(r.status).json({ error: "graph_message_failed" });
+  const message: any = await r.json();
+  const silo = resolveSiloFromRequest(req);
+  const result = await fileInboundAttachments({ pool, graph, base, message, silo, ownerId: userId });
+  respondOk(res, result);
 }));
 
 export default router;
