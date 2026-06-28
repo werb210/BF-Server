@@ -214,7 +214,11 @@ router.post("/events", safeHandler(async (req: any, res: any) => {
       subject: body.title ?? body.subject ?? "Untitled Event",
       start: { dateTime: body.start ?? body.startDateTime ?? new Date().toISOString(), timeZone: "UTC" },
       end: { dateTime: body.end ?? body.endDateTime ?? new Date(Date.now() + 3600000).toISOString(), timeZone: "UTC" },
-      ...(body.description ? { body: { contentType: "text", content: body.description } } : {}),
+      // BF_SERVER_CALENDAR_NOTES_LOCATION_v1 - the Add Event form sends `notes` and
+      // `location`; map them onto the Graph event (notes -> body, location -> displayName).
+      // Accept `description` too for any older callers.
+      ...((body.notes ?? body.description) ? { body: { contentType: "text", content: body.notes ?? body.description } } : {}),
+      ...(body.location ? { location: { displayName: body.location } } : {}),
       ...(body.attendees ? { attendees: body.attendees } : {}),
       }),
     });
