@@ -6,6 +6,7 @@ import { bumpBiOutreachToContacted } from "../services/biOutreach.js"; // BF_SER
 import { getGraphForUser } from "../modules/o365/graphClient.js";
 import { getStorage } from "../lib/storage/index.js"; // v693
 import { resolveSiloFromRequest } from "../middleware/silo.js";
+import { randomUUID } from "node:crypto";
 
 // BF_SERVER_BLOCK_v705_INBOX_MERGE_TOKENS_v1 — shared merge-token renderer.
 // Replaces {{token}} occurrences with values from ctx; unrecognized tokens -> ""
@@ -175,6 +176,22 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   }
   const allAttachments = [...graphAttachments, ...collateralAttachments];
 
+  // BF_SERVER_EMAIL_PIXEL_O365_v1 - open tracking for composer-sent 1:1 email. The
+  // CRM-card send path already injects a pixel + pixel_token; this main composer route
+  // did not, so opens never reached the timeline. Inject the same 1x1 pixel and thread
+  // pixel_token through every crm_email_log insert so the v706 "Opened:" timeline entry
+  // fires for composer-sent mail too.
+  const pixelToken = randomUUID();
+  const _pxBase = (process.env.SERVER_PUBLIC_URL ?? process.env.PUBLIC_SERVER_URL ?? "https://server.boreal.financial").replace(/\/+$/, "");
+  bodyWithSig = `${bodyWithSig}<img src="${_pxBase}/api/track/email/${pixelToken}.gif" width="1" height="1" alt="" style="display:none;width:1px;height:1px;" />`;
+  const logEmail = (cid: string | null, coid: string | null, siloVal: string) =>
+    pool.query(
+      `INSERT INTO crm_email_log
+         (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,
+          owner_id,contact_id,company_id,silo,pixel_token)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, cid, coid, siloVal, pixelToken],
+    );
   const message: any = {
     subject: mergedSubject,
     body: { contentType: "HTML", content: bodyWithSig },
@@ -204,12 +221,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
     );
     try {
       if (logContactId || logCompanyId) {
-        await pool.query(
-          `INSERT INTO crm_email_log
-             (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,owner_id,contact_id,company_id,silo)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-          [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, logContactId, logCompanyId, _scheduleSilo],
-        );
+        await logEmail(logContactId, logCompanyId, _scheduleSilo);
       } else {
         const _recips = Array.from(new Set([...(Array.isArray(to) ? to : []), ...(Array.isArray(cc) ? cc : [])]
           .map((a: any) => String(a || "").trim().toLowerCase()).filter(Boolean)));
@@ -219,12 +231,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
             [_scheduleSilo, _recips],
           );
           for (const _row of _m.rows) {
-            await pool.query(
-              `INSERT INTO crm_email_log
-                 (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,owner_id,contact_id,company_id,silo)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9)`,
-              [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, _row.id, _scheduleSilo],
-            );
+            await logEmail(_row.id, null, _scheduleSilo);
           }
         }
       }
@@ -260,13 +267,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
       if (!_co.rows[0]) _safeCompanyId = null;
     }
     if (_safeContactId || _safeCompanyId) {
-      await pool.query(
-        `INSERT INTO crm_email_log
-           (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,
-            owner_id,contact_id,company_id,silo)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-        [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, _safeContactId, _safeCompanyId, _silo],
-      );
+      await logEmail(_safeContactId, _safeCompanyId, _silo);
       if (logContactId) void bumpBiOutreachToContacted(logContactId); // BF_SERVER_BLOCK_v344_BI_OUTREACH_AUTOADVANCE_v1
     } else if (logContactId || logCompanyId) {
       if (logContactId) void bumpBiOutreachToContacted(logContactId);
@@ -279,13 +280,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
           [_silo, _recips],
         );
         for (const _row of _m.rows) {
-          await pool.query(
-            `INSERT INTO crm_email_log
-               (from_address,to_addresses,cc_addresses,bcc_addresses,subject,body_html,
-                owner_id,contact_id,company_id,silo)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9)`,
-            [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, _row.id, _silo],
-          );
+          await logEmail(_row.id, null, _silo);
         }
       }
     }
