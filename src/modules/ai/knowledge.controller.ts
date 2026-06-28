@@ -1,7 +1,6 @@
 import type { MulterRequest } from "../../types/multer.js";
 import type { Request, Response } from "express";
 import fs from "fs";
-import readline from "readline";
 import multer from "multer";
 import { v4 as uuid } from "uuid";
 import { pool, runQuery } from "../../db.js";
@@ -31,6 +30,8 @@ const knowledgeDocs: Array<{
   uploadedAt: number;
 }> = [];
 const MAX_KNOWLEDGE_DOCS = 500;
+const FILE_TEXT_PARSE_ERROR =
+  "Could not read text from this file. Supported: PDF and plain-text files (scanned PDFs have no text layer).";
 
 function pushBounded<T>(arr: T[], item: T, maxItems = MAX_KNOWLEDGE_DOCS): void {
   arr.push(item);
@@ -41,23 +42,6 @@ function pushBounded<T>(arr: T[], item: T, maxItems = MAX_KNOWLEDGE_DOCS): void 
 
 function cleanupFile(filePath: string): void {
   fs.unlink(filePath, () => undefined);
-}
-
-async function readTextPreview(filePath: string, maxChars = 200_000): Promise<string> {
-  const stream = fs.createReadStream(filePath, { encoding: "utf8" });
-  const lineReader = readline.createInterface({ input: stream, crlfDelay: Infinity });
-  let combined = "";
-
-  for await (const line of lineReader) {
-    if (combined.length >= maxChars) {
-      break;
-    }
-    combined += `${line}\n`;
-  }
-
-  lineReader.close();
-  stream.close();
-  return combined.trim();
 }
 
 export const AIKnowledgeController = {
@@ -77,7 +61,24 @@ export const AIKnowledgeController = {
     });
 
     try {
-      const extractedText = await readTextPreview(file.path);
+      // BF_AI_KNOWLEDGE_PDF_EXTRACT_v1 - extract real text per file type (PDF via
+      // pdf-parse, else utf8). The old path read PDFs as raw utf8 bytes, producing
+      // binary garbage that 500'd the embed/insert. extractTextFromBuffer already
+      // handles PDFs.
+      const buffer = await fs.promises.readFile(file.path);
+      const { extractTextFromBuffer } = await import("../../ai/embeddingService.js");
+      let extractedText = "";
+      try {
+        const raw = await extractTextFromBuffer(buffer, file.mimetype || "");
+        extractedText = (raw || "").slice(0, 200_000).trim();
+      } catch {
+        res.status(422).json({ error: FILE_TEXT_PARSE_ERROR });
+        return;
+      }
+      if (!extractedText && file.mimetype === "application/pdf") {
+        res.status(422).json({ error: FILE_TEXT_PARSE_ERROR });
+        return;
+      }
       if (extractedText.length > 0) {
         await embedAndStore(pool, extractedText, "sheet", sheetId, sheetId);
       }
