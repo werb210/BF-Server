@@ -342,4 +342,42 @@ router.delete("/:messageId", safeHandler(async (req: any, res: any) => {
   return res.json({ success: true });
 }));
 
+// BF_SERVER_INBOX_MOVE_v1 - POST /api/crm/inbox/:messageId/move  body: { destinationId }
+// Move a message to any Outlook folder (id from /folders/list, or well-known names like
+// "inbox"/"archive"/"junkemail"/"deleteditems"). Same auth + shared-mailbox checks as
+// delete; delete is just this with destinationId fixed to "deleteditems".
+router.post("/:messageId/move", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const destinationId = String(req.body?.destinationId ?? "").trim();
+  if (!destinationId) return res.status(400).json({ error: "destinationId_required" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const mailbox = (req.query.mailbox ?? "").toString().trim();
+  if (mailbox) {
+    const role = (req.user?.role ?? "").toString().toLowerCase();
+    if (role !== "admin") {
+      const silo = resolveSiloFromRequest(req);
+      const { rows } = await pool.query(
+        `SELECT 1 FROM shared_mailbox_settings
+         WHERE LOWER(address)=LOWER($1) AND silo = $2 AND LOWER($3) = ANY(SELECT LOWER(r) FROM unnest(allowed_roles) r)
+         LIMIT 1`,
+        [mailbox, silo, role],
+      );
+      if (!rows.length) return res.status(403).json({ error: "mailbox_not_allowed" });
+    }
+  }
+  const base = mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
+  const r = await graph.fetch(`${base}/messages/${encodeURIComponent(req.params.messageId)}/move`, {
+    method: "POST",
+    body: JSON.stringify({ destinationId }),
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!r.ok) {
+    const errBody = await r.text().catch(() => "");
+    return res.status(r.status).json({ error: "graph_move_failed", detail: errBody.slice(0, 300) });
+  }
+  return res.json({ success: true });
+}));
+
 export default router;
