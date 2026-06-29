@@ -88,17 +88,33 @@ async function inlineEmailImages(graph: GraphClient, base: string, messageId: st
     let html: string = body.content;
 
     if (html.includes("cid:")) {
+      // BF_SERVER_BLOCK_v848_INLINE_CID_PER_ATTACHMENT: contentBytes is a
+      // fileAttachment-derived property that Graph does not reliably project
+      // when it is $select-ed on the polymorphic /attachments collection, so
+      // the list call returned metadata with empty bytes and inline images
+      // stayed as cid: (broken). List metadata only, then fetch each referenced
+      // inline image individually, which always returns contentBytes.
       const ar = await graph.fetch(
         `${base}/messages/${encodeURIComponent(messageId)}/attachments`
-          + `?$select=name,contentType,contentId,isInline,contentBytes`,
+          + `?$select=id,name,contentType,contentId,isInline`,
       );
       if (ar.ok) {
         const aj: any = await ar.json();
         for (const att of (aj.value ?? [])) {
-          const bytes: string | undefined = att?.contentBytes;
-          const ctype: string = att?.contentType || "image/png";
           const cidRaw = String(att?.contentId ?? "").replace(/^<|>$/g, "");
-          if (bytes && cidRaw) html = html.split(`cid:${cidRaw}`).join(`data:${ctype};base64,${bytes}`);
+          if (!cidRaw || !html.includes(`cid:${cidRaw}`)) continue;
+          const ctype: string = att?.contentType || "image/png";
+          let bytes: string | undefined = att?.contentBytes;
+          if (!bytes && att?.id) {
+            const one = await graph.fetch(
+              `${base}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(att.id)}`,
+            );
+            if (one.ok) {
+              const oj: any = await one.json();
+              bytes = oj?.contentBytes;
+            }
+          }
+          if (bytes) html = html.split(`cid:${cidRaw}`).join(`data:${ctype};base64,${bytes}`);
         }
       }
     }
