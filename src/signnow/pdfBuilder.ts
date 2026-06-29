@@ -104,7 +104,10 @@ export async function buildApplicationPdf(inputs: ApplicationPdfInputs): Promise
     cellbox(leftX, y - 40, CW / 2 - 4, 40);
     text(role.toUpperCase() + " — SIGNATURE", leftX + 4, y - 9, 6, F, GREY);
     text(`{{t:s;r:y;o:"${role}";w:140;h:16;}}`, leftX + 4, y - 30, 6, F, rgb(1, 1, 1));
-    // v_SIGNNOW_DROP_DATE_TAG: removed {{t:d;...}} date field - SignNow fieldextract rejects t:d (65656).
+    // v_SIGNNOW_DATE_TAG_FIX: date-signed field (t:t text + "Date" label; date-type t:d breaks fieldextract 65656).
+    const dateX = leftX + (CW / 2 - 4) - 96;
+    text("DATE SIGNED", dateX, y - 9, 6, F, GREY);
+    text(`{{t:t;r:y;o:"${role}";l:"Date";w:90;h:16;}}`, dateX, y - 30, 6, F, rgb(1, 1, 1));
   };
   ensure(44);
   sigRow("Owner 1", M);
