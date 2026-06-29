@@ -16,6 +16,19 @@ import transcriptionWebhooksRoutes from "./transcriptionWebhooks.js";
 
 import VoiceResponse from "twilio/lib/twiml/VoiceResponse.js";
 
+// BF_SERVER_BLOCK_v2_LIVE_TRANSCRIPTION - twilio-node 4.x has no <Transcription>
+// verb, so inject it as raw TwiML. Gated by ENABLE_LIVE_TRANSCRIPTION (default
+// off, reversible without redeploy) and only on the staff leg (!isCallerLeg)
+// with both_tracks => staff inbound + caller (conference mix) outbound, so the
+// conversation is transcribed once. Events POST to the existing
+// /transcription/event handler, which emits transcript.live over SSE.
+export function injectLiveTranscription(twiml: string, base: string, conf: string, isCallerLeg: boolean): string {
+  if (process.env.ENABLE_LIVE_TRANSCRIPTION !== "true" || isCallerLeg) return twiml;
+  const txUrl = `${base}/api/webhooks/twilio/transcription/event?conf=${encodeURIComponent(conf)}`;
+  const startTx = `<Start><Transcription statusCallbackUrl="${txUrl}" track="both_tracks" partialResults="true"/></Start>`;
+  return twiml.replace("<Response>", `<Response>${startTx}`);
+}
+
 const router = Router();
 
 // BF_SERVER_BLOCK_vA_CONF_URLENCODED_v1 — Twilio posts urlencoded; app.ts only
@@ -94,7 +107,7 @@ router.post("/conference/join", twilioWebhookValidation, async (req: any, res) =
   }
   dial.conference(confAttrs as any, conf);
 
-  const twiml = vr.toString();
+  const twiml = injectLiveTranscription(vr.toString(), base, conf, isCallerLeg);
   console.log(JSON.stringify({
     event: "conference_join_twiml",
     conf,
