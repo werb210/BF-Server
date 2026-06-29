@@ -146,4 +146,76 @@ router.post(
   },
 );
 
+// BF_SERVER_SIGNNOW_SELFTEST_RESET_v1 - diagnose the SignNow fieldextract 65656 with the REAL
+// key by uploading a minimal, known-valid-tag PDF. If this succeeds, the 65656 is specific to the
+// application PDF; if it fails the same way, the problem is account/plan/auth level. Admin-only.
+router.post(
+  "/signnow-fieldextract-selftest",
+  requireCapability([CAPABILITIES.USER_MANAGE]),
+  async (_req: any, res: any) => {
+    try {
+      const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
+      const doc = await PDFDocument.create();
+      const page = doc.addPage([612, 792]);
+      const font = await doc.embedFont(StandardFonts.Helvetica);
+      page.drawText("SignNow fieldextract self-test", { x: 40, y: 740, size: 12, font, color: rgb(0, 0, 0) });
+      // The exact tag shape the real application PDF emits (white = invisible).
+      page.drawText('{{t:s;r:y;o:"Owner 1";w:140;h:16;}}', { x: 40, y: 700, size: 6, font, color: rgb(1, 1, 1) });
+      page.drawText('{{t:d;r:y;o:"Owner 1";w:90;h:16;}}', { x: 240, y: 700, size: 6, font, color: rgb(1, 1, 1) });
+      const bytes = await doc.save();
+      const signnow = await import("../signnow/signnowClient.js");
+      try {
+        const r = await signnow.uploadDocumentWithFieldExtract(bytes, "fieldextract-selftest.pdf");
+        return res.json({
+          ok: true,
+          documentId: r.documentId,
+          verdict: "fieldextract SUCCEEDED on a minimal valid-tag PDF. The tags/account are fine; the 65656 is specific to the generated application PDF (content/placement).",
+        });
+      } catch (e: any) {
+        return res.status(200).json({
+          ok: false,
+          status: e?.status ?? null,
+          body: e?.body ?? null,
+          message: e instanceof Error ? e.message : String(e),
+          verdict: "fieldextract FAILED even on a minimal valid-tag PDF. The 65656 is account/plan/auth level (e.g. the SignNow plan or key does not permit field extraction), not the application PDF.",
+        });
+      }
+    } catch (e: any) {
+      return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+);
+
+// BF_SERVER_SIGNNOW_SELFTEST_RESET_v1 - clear a wedged signing session so the next "Send for
+// signing" mints a fresh one. Local-only (does not cancel the SignNow-side group; the session
+// logic already regenerates orphaned groups). Refuses to touch an already-signed application.
+router.post(
+  "/applications/:id/reset-signing",
+  requireCapability([CAPABILITIES.USER_MANAGE]),
+  async (req: any, res: any) => {
+    try {
+      const id = String(req.params.id || "");
+      if (!id) return res.status(400).json({ ok: false, error: "missing id" });
+      const { pool } = await import("../db.js");
+      const upd = await pool.query<{ id: string }>(
+        `UPDATE applications
+            SET signnow_document_id = NULL,
+                submission_chain_started_at = NULL,
+                metadata = (COALESCE(metadata, '{}'::jsonb) - 'signnow_embedded'),
+                updated_at = now()
+          WHERE id::text = ($1)::text
+            AND signnow_app_signed_at IS NULL
+          RETURNING id`,
+        [id],
+      );
+      if (upd.rows.length === 0) {
+        return res.status(409).json({ ok: false, error: "already_signed_or_not_found" });
+      }
+      return res.json({ ok: true, id });
+    } catch (e: any) {
+      return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+);
+
 export default router;
