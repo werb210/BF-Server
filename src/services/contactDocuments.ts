@@ -59,9 +59,11 @@ export async function fileInboundAttachments(opts: {
   message: { id?: string; hasAttachments?: boolean; from?: { emailAddress?: { address?: string; name?: string } } };
   silo: string;
   ownerId?: string | null;
+  attachmentId?: string | null; // BF_SERVER_INBOX_FILE_ONE_TO_CRM_v1: file just this attachment
 }): Promise<FileInboundResult> {
   const { pool, graph, base, message, silo } = opts;
   const ownerId = opts.ownerId ?? null;
+  const onlyAttachmentId = opts.attachmentId ?? null; // BF_SERVER_INBOX_FILE_ONE_TO_CRM_v1
   if (!message?.hasAttachments) return { filed: 0, contactId: null };
   const messageId = String(message.id ?? "");
   if (!messageId) return { filed: 0, contactId: null };
@@ -83,6 +85,7 @@ export async function fileInboundAttachments(opts: {
   let filed = 0;
   for (const att of atts) {
     if (!att || att.isInline === true) continue;
+    if (onlyAttachmentId && String(att.id ?? "") !== onlyAttachmentId) continue; // BF_SERVER_INBOX_FILE_ONE_TO_CRM_v1
     const bytesB64: string | undefined = att.contentBytes;
     if (!bytesB64) continue; // itemAttachment / reference attachment -> no bytes, skip
     if (Number(att.size ?? 0) > MAX_ATTACHMENT_BYTES) continue;

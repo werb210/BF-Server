@@ -465,4 +465,21 @@ router.post("/:messageId/file-to-crm", safeHandler(async (req: any, res: any) =>
   respondOk(res, result);
 }));
 
+// BF_SERVER_INBOX_FILE_ONE_TO_CRM_v1: file a single inbound attachment (by id) to the
+// sender's CRM contact. Mirrors /file-to-crm but scoped to one attachment via the service.
+router.post("/:messageId/attachments/:attachmentId/file-to-crm", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const mailbox = (req.query.mailbox ?? "").toString().trim();
+  const base = mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
+  const r = await graph.fetch(`${base}/messages/${encodeURIComponent(req.params.messageId)}?$select=id,from,hasAttachments`);
+  if (!r.ok) return res.status(r.status).json({ error: "graph_message_failed" });
+  const message: any = await r.json();
+  const silo = resolveSiloFromRequest(req);
+  const result = await fileInboundAttachments({ pool, graph, base, message, silo, ownerId: userId, attachmentId: req.params.attachmentId });
+  respondOk(res, result);
+}));
+
 export default router;
