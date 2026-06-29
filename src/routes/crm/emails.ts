@@ -16,7 +16,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   if (contactId) { params.push(contactId); where.push(`contact_id = $${params.length}`); }
   if (companyId) { params.push(companyId); where.push(`company_id = $${params.length}`); }
   const { rows } = await pool.query(
-    `SELECT id, from_address, to_addresses, subject, created_at
+    `SELECT id, from_address, to_addresses, subject, created_at, opened_at, body_html
      FROM crm_email_log WHERE ${where.join(" AND ")}
      ORDER BY created_at DESC LIMIT 200`,
     params,
