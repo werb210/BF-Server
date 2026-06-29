@@ -155,31 +155,40 @@ router.post(
   async (_req: any, res: any) => {
     try {
       const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
-      const doc = await PDFDocument.create();
-      const page = doc.addPage([612, 792]);
-      const font = await doc.embedFont(StandardFonts.Helvetica);
-      page.drawText("SignNow fieldextract self-test", { x: 40, y: 740, size: 12, font, color: rgb(0, 0, 0) });
-      // The exact tag shape the real application PDF emits (white = invisible).
-      page.drawText('{{t:s;r:y;o:"Owner 1";w:140;h:16;}}', { x: 40, y: 700, size: 6, font, color: rgb(1, 1, 1) });
-      page.drawText('{{t:d;r:y;o:"Owner 1";w:90;h:16;}}', { x: 240, y: 700, size: 6, font, color: rgb(1, 1, 1) });
-      const bytes = await doc.save();
       const signnow = await import("../signnow/signnowClient.js");
-      try {
-        const r = await signnow.uploadDocumentWithFieldExtract(bytes, "fieldextract-selftest.pdf");
-        return res.json({
-          ok: true,
-          documentId: r.documentId,
-          verdict: "fieldextract SUCCEEDED on a minimal valid-tag PDF. The tags/account are fine; the 65656 is specific to the generated application PDF (content/placement).",
-        });
-      } catch (e: any) {
-        return res.status(200).json({
-          ok: false,
-          status: e?.status ?? null,
-          body: e?.body ?? null,
-          message: e instanceof Error ? e.message : String(e),
-          verdict: "fieldextract FAILED even on a minimal valid-tag PDF. The 65656 is account/plan/auth level (e.g. the SignNow plan or key does not permit field extraction), not the application PDF.",
-        });
+      // v_SIGNNOW_DROP_DATE_TAG: fieldextract is all-or-nothing, so probe each date-tag
+      // candidate in its OWN PDF (each paired with a known-good signature tag). Whichever
+      // returns ok is the date syntax SignNow accepts here -> put that exact tag in the builders.
+      const candidates: { id: string; dateTag: string }[] = [
+        { id: "signature only (control - must pass)", dateTag: "" },
+        { id: 't:t with l:"Date"', dateTag: '{{t:t;r:y;o:"Owner 1";l:"Date";w:90;h:16;}}' },
+        { id: 't:d with l:"Date"', dateTag: '{{t:d;r:y;o:"Owner 1";l:"Date";w:90;h:16;}}' },
+        { id: 't:d bare (the tag that broke signing)', dateTag: '{{t:d;r:y;o:"Owner 1";w:90;h:16;}}' },
+      ];
+      const results: any[] = [];
+      for (const c of candidates) {
+        const doc = await PDFDocument.create();
+        const page = doc.addPage([612, 792]);
+        const font = await doc.embedFont(StandardFonts.Helvetica);
+        page.drawText("SignNow fieldextract self-test", { x: 40, y: 740, size: 12, font, color: rgb(0, 0, 0) });
+        page.drawText('{{t:s;r:y;o:"Owner 1";w:140;h:16;}}', { x: 40, y: 700, size: 6, font, color: rgb(1, 1, 1) });
+        if (c.dateTag) page.drawText(c.dateTag, { x: 240, y: 700, size: 6, font, color: rgb(1, 1, 1) });
+        const bytes = await doc.save();
+        try {
+          const r = await signnow.uploadDocumentWithFieldExtract(bytes, "fieldextract-selftest.pdf");
+          results.push({ candidate: c.id, dateTag: c.dateTag || null, ok: true, documentId: r.documentId });
+        } catch (e: any) {
+          results.push({ candidate: c.id, dateTag: c.dateTag || null, ok: false, status: e?.status ?? null, body: e?.body ?? null, message: e instanceof Error ? e.message : String(e) });
+        }
       }
+      const working = results.filter((r) => r.ok && r.dateTag).map((r) => r.dateTag);
+      return res.json({
+        ok: results.some((r) => r.ok),
+        results,
+        verdict: working.length
+          ? "Date-tag syntax that PASSED fieldextract (use this in the PDF builders): " + working.join(" | ")
+          : "No date-tag candidate passed; only signature-only works on this account.",
+      });
     } catch (e: any) {
       return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
     }
