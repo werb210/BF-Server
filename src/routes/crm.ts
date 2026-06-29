@@ -800,7 +800,22 @@ router.get("/contacts/:id", safeHandler(async (req: any, res: any) => {
   const { rows } = await pool.query(
     `SELECT c.*,
             co.name AS company_name,
-            (u.first_name || ' ' || u.last_name) AS owner_name
+            (u.first_name || ' ' || u.last_name) AS owner_name,
+            -- BF_SERVER_CRM_CONTACT_APPLICATION_IDS_v1: contact-detail panels key off
+            -- contact.applicationIds; this aggregates every linked application id so the
+            -- applicant/advisors/partners/business panels actually render.
+            COALESCE((
+              SELECT array_agg(DISTINCT aid)
+                FROM (
+                  SELECT ac.application_id::text AS aid
+                    FROM application_contacts ac
+                   WHERE ac.contact_id = c.id
+                  UNION
+                  SELECT a.id::text AS aid
+                    FROM applications a
+                   WHERE a.contact_id = c.id
+                ) x
+            ), ARRAY[]::text[]) AS "applicationIds"
      FROM contacts c
      LEFT JOIN companies co ON co.id = c.company_id
      LEFT JOIN users u ON u.id = c.owner_id
