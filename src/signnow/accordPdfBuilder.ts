@@ -206,8 +206,8 @@ export async function buildAccordPdf(applicationId: string): Promise<Uint8Array>
   const tag = (pg: any, txt: string, x: number, y: number) => pg.drawText(txt, { x, y: PH - y, size: 6, font: F, color: rgb(1, 1, 1) });
   tag(p1, '{{t:s;r:y;o:"Owner 1";w:140;h:18;}}', 40, 684);
   if (owners[1]?.email) tag(p1, '{{t:s;r:y;o:"Owner 2";w:140;h:18;}}', 234, 684);
-  // v_SIGNNOW_DATE_TAG_FIX: signing DATE field (t:t text + "Date" label; date-type t:d breaks fieldextract 65656).
-  tag(p1, '{{t:t;r:y;o:"Owner 1";l:"Date";w:100;h:14;}}', 440, 684);
+  // v_SIGNNOW_DATE_STAMP: no SignNow date field (account rejects auto-date). The real
+  // signing date is stamped post-completion at native coords (page 0, x=440, y=108).
   tag(p3, '{{t:s;r:y;o:"Owner 1";w:140;h:18;}}', 95, 521);
   if (owners[1]?.email) tag(p3, '{{t:s;r:y;o:"Owner 2";w:140;h:18;}}', 329, 521);
 

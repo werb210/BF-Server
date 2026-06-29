@@ -43,7 +43,25 @@ export async function finalizeSignedApplication(
       if (docId) {
         const pdf = await downloadDocument(docId);
         if (pdf && pdf.length) {
-          const stored = await uploadSignedApplicationPdf(app.id, pdf);
+          // v_SIGNNOW_DATE_STAMP: stamp the real signing date BEFORE the signed blob is
+          // cached, so the lender package (which reads this cached blob) shows the date.
+          let outPdf: Buffer = Buffer.from(pdf);
+          try {
+            const a = await dbQuery<{ anchors: unknown; signed_at: string | null }>(
+              `select (metadata->'signnow_date_anchors'->$2) as anchors,
+                      signnow_app_signed_at as signed_at
+                 from applications where id::text = ($1)::text limit 1`,
+              [app.id, docId]
+            );
+            const anchors = (a.rows[0]?.anchors ?? null) as Array<{ role: string; page: number; x: number; y: number }> | null;
+            const signedAt = a.rows[0]?.signed_at ?? null;
+            if (anchors?.length && signedAt) {
+              const { stampSignDate } = await import("./stampSignDate.js");
+              const dateText = new Date(signedAt).toLocaleDateString("en-CA", { timeZone: "America/Toronto" });
+              outPdf = Buffer.from(await stampSignDate(outPdf, anchors, dateText));
+            }
+          } catch { /* best-effort: never block finalize on stamping */ }
+          const stored = await uploadSignedApplicationPdf(app.id, outPdf);
           await dbQuery(
             `update applications set metadata = coalesce(metadata,'{}'::jsonb) || jsonb_build_object('signed_application_blob_name', $2::text, 'signed_application_blob_url', $3::text), updated_at = now() where id::text = ($1)::text`,
             [app.id, stored.blobName, stored.url]

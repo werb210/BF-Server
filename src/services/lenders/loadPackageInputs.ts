@@ -62,15 +62,26 @@ function flatten(prefix: string, v: unknown, out: FlatField[]): void {
   if (prefix) out.push({ label: prefix, value: String(v) });
 }
 
+type DateAnchorRec = { role: string; page: number; x: number; y: number };
+function fmtSignDate(signedAt: string | null, mode: "iso" | "us"): string {
+  if (!signedAt) return "";
+  const d = new Date(signedAt);
+  if (isNaN(d.getTime())) return "";
+  return mode === "us"
+    ? d.toLocaleDateString("en-US", { timeZone: "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit" })
+    : d.toLocaleDateString("en-CA", { timeZone: "America/Toronto" });
+}
+
 async function loadSignedApplicationPdf(ctx: LoadCtx, _fields: FlatField[]): Promise<Buffer | null> {
-  const r = await ctx.pool.query<{signnow_document_id:string|null;primary_doc_id:string|null;signed_at:string|null;signed_application_blob_name:string|null}>(
+  const r = await ctx.pool.query<{signnow_document_id:string|null;primary_doc_id:string|null;signed_at:string|null;signed_application_blob_name:string|null;date_anchors:unknown}>(
     `SELECT signnow_document_id,
             (metadata->'signnow_embedded'->'doc_ids'->>0) AS primary_doc_id,
             signnow_app_signed_at AS signed_at,
+            (metadata->'signnow_date_anchors') AS date_anchors,
             COALESCE(metadata->>'signed_application_blob_name', NULL) AS signed_application_blob_name
        FROM applications WHERE id::text = $1 LIMIT 1`,
     [ctx.applicationId]
-  ).catch(() => ({ rows: [] as Array<{signnow_document_id:string|null;primary_doc_id:string|null;signed_at:string|null;signed_application_blob_name:string|null}> }));
+  ).catch(() => ({ rows: [] as Array<{signnow_document_id:string|null;primary_doc_id:string|null;signed_at:string|null;signed_application_blob_name:string|null;date_anchors:unknown}> }));
   const row = r.rows[0];
   const blobName = row?.signed_application_blob_name ?? null;
   if (blobName) { try { const got = await getStorage().get(blobName); if (got?.buffer?.length) return got.buffer; } catch {} }
@@ -86,12 +97,22 @@ async function loadSignedApplicationPdf(ctx: LoadCtx, _fields: FlatField[]): Pro
         const { downloadDocument } = await import("../../signnow/signnowClient.js");
         const pdf = await downloadDocument(docId);
         if (pdf && pdf.length) {
+          // v_SIGNNOW_DATE_STAMP: stamp the real signing date at the builder anchors.
+          let outPdf: Buffer = Buffer.from(pdf);
+          try {
+            const anchorsMap = (row?.date_anchors ?? {}) as Record<string, DateAnchorRec[]>;
+            const anchors = docId ? anchorsMap[docId] : undefined;
+            if (anchors?.length && row?.signed_at) {
+              const { stampSignDate } = await import("../../signnow/stampSignDate.js");
+              outPdf = Buffer.from(await stampSignDate(outPdf, anchors, fmtSignDate(row.signed_at, "iso")));
+            }
+          } catch {}
           try {
             const { uploadSignedApplicationPdf } = await import("../../signnow/blobStorage.js");
-            const stored = await uploadSignedApplicationPdf(ctx.applicationId, pdf);
+            const stored = await uploadSignedApplicationPdf(ctx.applicationId, outPdf);
             await ctx.pool.query(`UPDATE applications SET metadata = COALESCE(metadata,'{}'::jsonb) || jsonb_build_object('signed_application_blob_name', $2::text, 'signed_application_blob_url', $3::text), updated_at = now() WHERE id::text = $1`, [ctx.applicationId, stored.blobName, stored.url]).catch(() => {});
           } catch {}
-          return pdf;
+          return outPdf;
         }
       } catch (e) { console.warn("[loadPackageInputs] on-demand signed PDF download failed", e instanceof Error ? e.message : String(e)); }
     }
@@ -136,12 +157,13 @@ async function loadFields(ctx: LoadCtx): Promise<FlatField[]> {
 // Download every signed group doc beyond doc_ids[0] and add it to the package as
 // its own document group so it ships in BOTH the email zip and the API payload.
 async function loadAdditionalSignedDocs(ctx: LoadCtx): Promise<{ filename: string; content: Buffer }[]> {
-  const r = await ctx.pool.query<{ signed_at: string | null; doc_ids: unknown }>(
+  const r = await ctx.pool.query<{ signed_at: string | null; doc_ids: unknown; date_anchors: unknown }>(
     `SELECT signnow_app_signed_at AS signed_at,
-            (metadata->'signnow_embedded'->'doc_ids') AS doc_ids
+            (metadata->'signnow_embedded'->'doc_ids') AS doc_ids,
+            (metadata->'signnow_date_anchors') AS date_anchors
        FROM applications WHERE id::text = $1 LIMIT 1`,
     [ctx.applicationId]
-  ).catch(() => ({ rows: [] as Array<{ signed_at: string | null; doc_ids: unknown }> }));
+  ).catch(() => ({ rows: [] as Array<{ signed_at: string | null; doc_ids: unknown; date_anchors: unknown }> }));
   const row = r.rows[0];
   if (!row?.signed_at) return [];
   const ids = Array.isArray(row.doc_ids) ? (row.doc_ids as unknown[]).map((v) => String(v)) : [];
@@ -167,10 +189,20 @@ async function loadAdditionalSignedDocs(ctx: LoadCtx): Promise<{ filename: strin
     try {
       const pdf = await downloadDocument(id);
       if (pdf && pdf.length) {
+        // v_SIGNNOW_DATE_STAMP: stamp the real signing date (MM/DD/YYYY on the Accord form).
+        let content: Buffer = Buffer.from(pdf);
+        try {
+          const anchorsMap = (row?.date_anchors ?? {}) as Record<string, DateAnchorRec[]>;
+          const anchors = anchorsMap[id];
+          if (anchors?.length && row?.signed_at) {
+            const { stampSignDate } = await import("../../signnow/stampSignDate.js");
+            content = Buffer.from(await stampSignDate(content, anchors, fmtSignDate(row.signed_at, "us")));
+          }
+        } catch {}
         const name = isAccord && extra.length === 1
           ? `accord-credit-application-${ctx.applicationId}.pdf`
           : `signed-form-${i + 1}-${ctx.applicationId}.pdf`;
-        files.push({ filename: name, content: Buffer.from(pdf) });
+        files.push({ filename: name, content });
       }
     } catch (e) {
       console.warn("[loadPackageInputs] supplemental signed doc download failed", id, e instanceof Error ? e.message : String(e));

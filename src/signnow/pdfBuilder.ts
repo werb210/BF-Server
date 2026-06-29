@@ -33,7 +33,8 @@ function val(s: unknown): string { return (s === null || s === undefined || s ==
 
 type Cell = { label: string; value: unknown } | null;
 
-export async function buildApplicationPdf(inputs: ApplicationPdfInputs): Promise<Uint8Array> {
+export type DateAnchor = { role: string; page: number; x: number; y: number };
+export async function buildApplicationPdf(inputs: ApplicationPdfInputs, out?: { dateAnchors: DateAnchor[] }): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const F = await doc.embedFont(StandardFonts.Helvetica);
   const FB = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -104,10 +105,12 @@ export async function buildApplicationPdf(inputs: ApplicationPdfInputs): Promise
     cellbox(leftX, y - 40, CW / 2 - 4, 40);
     text(role.toUpperCase() + " — SIGNATURE", leftX + 4, y - 9, 6, F, GREY);
     text(`{{t:s;r:y;o:"${role}";w:140;h:16;}}`, leftX + 4, y - 30, 6, F, rgb(1, 1, 1));
-    // v_SIGNNOW_DATE_TAG_FIX: date-signed field (t:t text + "Date" label; date-type t:d breaks fieldextract 65656).
+    // v_SIGNNOW_DATE_STAMP: SignNow cannot auto-fill a date field on this account, so the
+    // real signing date is stamped post-completion at this recorded anchor, to the right of
+    // the signature box. Anchor is captured in native PDF coords on the current page.
     const dateX = leftX + (CW / 2 - 4) - 96;
     text("DATE SIGNED", dateX, y - 9, 6, F, GREY);
-    text(`{{t:t;r:y;o:"${role}";l:"Date";w:90;h:16;}}`, dateX, y - 30, 6, F, rgb(1, 1, 1));
+    out?.dateAnchors.push({ role, page: doc.getPages().indexOf(page), x: dateX, y: y - 26 });
   };
   ensure(44);
   sigRow("Owner 1", M);

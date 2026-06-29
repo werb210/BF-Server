@@ -120,7 +120,11 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
     }
 
     const docIds: string[] = [];
-    const borealPdf = await buildApplicationPdf(inputs);
+    // v_SIGNNOW_DATE_STAMP: capture the builder's date anchors so the real signing date
+    // can be stamped per document after completion (SignNow can't auto-fill a date field).
+    const dateAnchorsByDoc: Record<string, import("./pdfBuilder.js").DateAnchor[]> = {};
+    const borealAnchorsOut = { dateAnchors: [] as import("./pdfBuilder.js").DateAnchor[] };
+    const borealPdf = await buildApplicationPdf(inputs, borealAnchorsOut);
     // BF_SERVER_SIGNNOW_GROUP_BLOB_v1 — persist the formatted application PDF to blob so the
     // lender package keeps the real PDF (loadSignedApplicationPdf reads signed_application_blob_name;
     // without this it falls back to a plain-text field dump).
@@ -129,12 +133,15 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
     try { const up = await uploadSignedApplicationPdf(applicationId, Buffer.from(borealPdf)); blobName = up.blobName; blobUrl = up.url; } catch { /* non-fatal: lender package falls back to text render */ }
     const boreal = await signnow.uploadDocumentWithFieldExtract(borealPdf, `${_docLabel}.pdf`);
     docIds.push(boreal.documentId);
+    dateAnchorsByDoc[boreal.documentId] = borealAnchorsOut.dateAnchors;
 
     if (await isAccordFinalized(applicationId)) {
       try {
         const accordPdf = await buildAccordPdf(applicationId);
         const accord = await signnow.uploadDocumentWithFieldExtract(accordPdf, `${_docLabel} (Accord Credit Application).pdf`);
         docIds.push(accord.documentId);
+        // Accord's date box is a fixed-position template field (page 0, native coords).
+        dateAnchorsByDoc[accord.documentId] = [{ role: "Owner 1", page: 0, x: 440, y: 108 }];
       } catch (e) {
         console.warn(`[signnow] Accord form skipped for app=${applicationId}: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -195,10 +202,11 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
                 || jsonb_build_object(
                   'signnow_embedded', jsonb_build_object(
                     'group_id', $2::text, 'invite_id', $3::text, 'doc_ids', $4::jsonb,
-                    'created_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))),
+                    'created_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')))
+                || jsonb_build_object('signnow_date_anchors', $7::jsonb),
               updated_at = now()
         WHERE id::text = ($1)::text`,
-      [applicationId, group.groupId, invite.inviteId, JSON.stringify(docIds), blobName, blobUrl]);
+      [applicationId, group.groupId, invite.inviteId, JSON.stringify(docIds), blobName, blobUrl, JSON.stringify(dateAnchorsByDoc)]);
     return { status: "ready", url: link.url, expiresAt: link.expiresAt };
   } catch (err) {
     console.error(`[signnow] signing-session error app=${applicationId}:`, err instanceof Error ? (err.stack ?? err.message) : err);
