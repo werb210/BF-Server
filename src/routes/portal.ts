@@ -289,6 +289,8 @@ router.get(
           ct.name                                               AS contact_name,
           ct.email                                              AS contact_email,
           ct.id AS contact_id,
+          pt.name                                               AS partner_name,
+          pt.id                                                 AS partner_contact_id,
           u.first_name || ' ' || u.last_name                    AS owner_name,
           u.first_name                                          AS owner_first_name,
           u.last_name                                           AS owner_last_name,
@@ -328,6 +330,14 @@ router.get(
            LIMIT 1
         ) ac ON true
         LEFT JOIN contacts ct ON ct.id = ac.contact_id
+        LEFT JOIN LATERAL (
+          SELECT contact_id
+            FROM application_contacts
+           WHERE application_id = a.id AND role = 'partner'
+           ORDER BY created_at ASC
+           LIMIT 1
+        ) pc ON true
+        LEFT JOIN contacts pt ON pt.id = pc.contact_id
         LEFT JOIN users u    ON u.id = a.owner_user_id
         WHERE ${where.join(" AND ")}
         ORDER BY a.updated_at DESC
@@ -368,6 +378,8 @@ router.get(
         contact_name: r.contact_name ?? null,
         contact_email: r.contact_email ?? null,
         contact_id: r.contact_id ?? null,
+        partner_name: r.partner_name ?? null,
+        partner_contact_id: r.partner_contact_id ?? null,
       }));
       return res.json({
         stages: PIPELINE_STAGES,
