@@ -105,7 +105,7 @@ export async function buildPnwPdfFromData(payload: PnwPayload): Promise<Uint8Arr
   p2.drawLine({ start: { x: M, y: PH - y2 }, end: { x: M + sigW, y: PH - y2 }, thickness: 0.8, color: rgb(0.3, 0.3, 0.3) });
   p2.drawLine({ start: { x: M + sigW + 30, y: PH - y2 }, end: { x: M + CW, y: PH - y2 }, thickness: 0.8, color: rgb(0.3, 0.3, 0.3) });
   T(p2, '{{t:s;r:y;o:"Owner 1";w:160;h:18;}}', M + 2, y2 - 3, 6, F, WHITE);
-  T(p2, '{{t:d;r:y;o:"Owner 1";w:90;h:16;}}', M + sigW + 32, y2 - 3, 6, F, WHITE);
+  // v_SIGNNOW_DROP_DATE_TAG: removed {{t:d;...}} date field - SignNow fieldextract rejects t:d (65656).
   T(p2, "Signature", M, y2 + 11, 8, F, GREY); T(p2, "Date", M + sigW + 30, y2 + 11, 8, F, GREY);
 
   return doc.save();
