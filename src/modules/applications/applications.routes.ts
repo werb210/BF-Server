@@ -908,8 +908,11 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
         null,
     },
     kyc: md?.borrower ?? md?.kyc_responses ?? md?.kyc ?? fd?.kyc ?? fd?.financialProfile ?? readinessSrc ?? null,
-    applicantDetails: md?.borrower ?? md?.applicant ?? fd?.applicant ?? readinessSrc ?? null,
-    applicantInfo: md?.borrower ?? md?.applicant ?? fd?.applicant ?? readinessSrc ?? null,
+    // v_CRM_APPLICANT_SOURCE: prefer md.applicant (raw camelCase Step-4 fields, the same
+    // source the Accord PDF builder reads) over md.borrower (a trimmed shape) so the CRM
+    // contact panels render the full applicant detail for existing and new contacts.
+    applicantDetails: md?.applicant ?? md?.borrower ?? fd?.applicant ?? readinessSrc ?? null,
+    applicantInfo: md?.applicant ?? md?.borrower ?? fd?.applicant ?? readinessSrc ?? null,
     businessDetails: md?.company ?? md?.business ?? fd?.business ?? readinessSrc ?? null,
     business: md?.company ?? md?.business ?? fd?.business ?? readinessSrc ?? null,
     owners: Array.isArray(md?.owners)
