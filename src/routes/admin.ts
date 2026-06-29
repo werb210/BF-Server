@@ -227,4 +227,80 @@ router.post(
   },
 );
 
+// v_SIGNNOW_REALPDF_SELFTEST_v1 - run the REAL signing PDFs (same buildApplicationPdf +
+// buildAccordPdf the live flow uses) through fieldextract, and dump every {{...}} token found
+// in each PDF's extractable text layer so we can see exactly which doc/tag SignNow chokes on.
+router.post(
+  "/applications/:id/signing-pdf-selftest",
+  requireCapability([CAPABILITIES.USER_MANAGE]),
+  async (req: any, res: any) => {
+    const id = String(req.params.id || "");
+    if (!id) return res.status(400).json({ ok: false, error: "missing application id" });
+    try {
+      const { loadApplicationForPdf } = await import("../signnow/sendApplicationForSignature.js");
+      const { buildApplicationPdf } = await import("../signnow/pdfBuilder.js");
+      const { buildAccordPdf } = await import("../signnow/accordPdfBuilder.js");
+      const signnow = await import("../signnow/signnowClient.js");
+      const pdfParseMod: any = await import("pdf-parse");
+      const pdfParse: any = pdfParseMod.default || pdfParseMod;
+
+      const docs: any[] = [];
+      const run = async (label: string, build: () => Promise<Uint8Array>) => {
+        let bytes: Uint8Array;
+        try {
+          bytes = await build();
+        } catch (e: any) {
+          docs.push({ doc: label, ok: false, stage: "build", error: e instanceof Error ? e.message : String(e) });
+          return;
+        }
+        const buf = Buffer.from(bytes);
+        let tags: string[] = [];
+        let textError: string | null = null;
+        try {
+          const parsed: any = await pdfParse(buf);
+          const text: string = String((parsed && parsed.text) || "");
+          tags = (text.match(/\{\{[\s\S]{0,90}/g) || []).map((t: string) => t.replace(/\s+/g, " ").trim());
+        } catch (e: any) {
+          textError = e instanceof Error ? e.message : String(e);
+        }
+        let pdfUrl: string | null = null;
+        try {
+          const { getStorage } = await import("../lib/storage/index.js");
+          const up = await getStorage().put({ buffer: buf, filename: `signing-selftest-${label}-${id}.pdf`, contentType: "application/pdf", pathPrefix: `diag/${id}` });
+          pdfUrl = up.url;
+        } catch {
+          /* non-fatal */
+        }
+        try {
+          const r = await signnow.uploadDocumentWithFieldExtract(bytes, `selftest-${label}.pdf`);
+          docs.push({ doc: label, ok: true, sizeBytes: buf.length, tagCount: tags.length, extractedTags: tags, textError, pdfUrl, documentId: r.documentId });
+        } catch (e: any) {
+          docs.push({ doc: label, ok: false, stage: "fieldextract", status: e?.status ?? null, body: e?.body ?? null, message: e instanceof Error ? e.message : String(e), sizeBytes: buf.length, tagCount: tags.length, extractedTags: tags, textError, pdfUrl });
+        }
+      };
+
+      const inputs = await loadApplicationForPdf(id);
+      await run("boreal", () => buildApplicationPdf(inputs));
+      await run("accord", () => buildAccordPdf(id));
+
+      const boreal = docs.find((d) => d.doc === "boreal");
+      const accord = docs.find((d) => d.doc === "accord");
+      const borealOk = !!(boreal && boreal.ok);
+      const accordFieldFail = !!(accord && accord.stage === "fieldextract" && !accord.ok);
+      return res.json({
+        ok: borealOk,
+        applicationId: id,
+        docs,
+        verdict: borealOk
+          ? (accordFieldFail
+              ? "Boreal form PASSES fieldextract (signing works); the Accord form fails and is auto-skipped. See the accord doc extractedTags/body."
+              : "Both signing PDFs pass fieldextract; signing should work for this application.")
+          : "BOREAL form FAILS fieldextract -- this is what 65656s the real signing. Inspect its extractedTags for a malformed {{...}} tag (or open pdfUrl).",
+      });
+    } catch (e: any) {
+      return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+);
+
 export default router;
