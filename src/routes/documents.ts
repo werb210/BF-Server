@@ -63,11 +63,20 @@ async function mirrorDocToSiblingLegs(args: {
     // needs this category iff it appears in its outstanding set.
     let needs = false;
     try {
-      const { stillNeeded } = await computeOutstandingDocs(sibId);
+      // BF_SERVER_SHARED_DOCS_ALL_FILES_v1 - gate on the FULL required set, not the
+      // outstanding set. Outstanding is satisfied after the first shared file, which
+      // dropped FS (and any multi-file category) to 1-of-N on linked legs.
+      const { required } = await computeOutstandingDocs(sibId);
       const want = category.toLowerCase();
-      needs = stillNeeded.some((d) => String(d.document_type ?? "").trim().toLowerCase() === want);
+      needs = required.some((d) => String(d.document_type ?? "").trim().toLowerCase() === want);
     } catch { needs = false; }
     if (!needs) continue;
+    // Idempotent share: skip if this exact file (by hash) already exists on the sibling.
+    const dup = await pool.query(
+      `SELECT 1 FROM documents WHERE application_id::text = ($1)::text AND hash = $2 LIMIT 1`,
+      [sibId, args.hash],
+    ).catch(() => ({ rows: [] as any[] }));
+    if (dup.rows.length > 0) continue;
     const newDocId = randomUUID();
     const newVerId = randomUUID();
     const tx = await pool.connect();
