@@ -175,12 +175,13 @@ export async function getWaivedDocTypes(applicationId: string): Promise<Set<stri
 
 export async function computeOutstandingDocs(
   applicationId: string
-): Promise<{ stillNeeded: NeededDoc[]; rejected: NeededDoc[] }> {
+): Promise<{ stillNeeded: NeededDoc[]; rejected: NeededDoc[]; required: NeededDoc[] }> {
   const raw = await computeOutstandingDocsRaw(applicationId);
   const waived = await getWaivedDocTypes(applicationId);
   return {
     stillNeeded: raw.stillNeeded.filter((d) => !waived.has(String(d.document_type ?? "").trim().toLowerCase())),
     rejected: raw.rejected,
+    required: raw.required.filter((d) => !waived.has(String(d.document_type ?? "").trim().toLowerCase())),
   };
 }
 
