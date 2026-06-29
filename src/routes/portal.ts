@@ -288,6 +288,7 @@ router.get(
           COALESCE(NULLIF(a.name, ''), c.name, 'Unnamed application') AS business_name,
           ct.name                                               AS contact_name,
           ct.email                                              AS contact_email,
+          ct.id AS contact_id,
           u.first_name || ' ' || u.last_name                    AS owner_name,
           u.first_name                                          AS owner_first_name,
           u.last_name                                           AS owner_last_name,
@@ -366,6 +367,7 @@ router.get(
         doc_progress: r.doc_progress ?? { accepted: 0, rejected: 0, pending: 0, total: 0 },
         contact_name: r.contact_name ?? null,
         contact_email: r.contact_email ?? null,
+        contact_id: r.contact_id ?? null,
       }));
       return res.json({
         stages: PIPELINE_STAGES,
