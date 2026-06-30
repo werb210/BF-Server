@@ -16,7 +16,11 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   if (contactId) { params.push(contactId); where.push(`contact_id = $${params.length}`); }
   if (companyId) { params.push(companyId); where.push(`company_id = $${params.length}`); }
   const { rows } = await pool.query(
-    `SELECT id, from_address, to_addresses, subject, created_at, opened_at, body_html
+    `SELECT id, from_address, to_addresses, subject, created_at, opened_at, body_html,
+            -- BF_SERVER_BLOCK_EMAIL_OPEN_COUNT_v1 — surface per-email open analytics.
+            (SELECT count(*)::int FROM email_open_events ev WHERE ev.email_log_id = crm_email_log.id) AS open_count,
+            (SELECT min(opened_at)  FROM email_open_events ev WHERE ev.email_log_id = crm_email_log.id) AS first_opened_at,
+            (SELECT max(opened_at)  FROM email_open_events ev WHERE ev.email_log_id = crm_email_log.id) AS last_opened_at
      FROM crm_email_log WHERE ${where.join(" AND ")}
      ORDER BY created_at DESC LIMIT 200`,
     params,
