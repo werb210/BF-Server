@@ -10,6 +10,22 @@ import twilio from "twilio";
 
 const router = Router();
 
+// BF_SERVER_MEDIA_QUERY_AUTH_v1 - <img>/<audio> elements cannot send an
+// Authorization header, so media/recording proxy routes carry the access token
+// in a ?token= query param. This runs BEFORE router.use(requireAuth): for those
+// paths it promotes the query token into a Bearer header so the normal auth and
+// capability checks still apply. Non-media routes are untouched. This is what
+// makes inbound MMS images and call-recording <audio> actually load.
+router.use((req: any, _res: any, next: any) => {
+  const p = String(req.path || "");
+  const isMedia = /\/media$/.test(p) && (/\/messages\//.test(p) || /\/recordings\//.test(p));
+  if (isMedia && !req.headers.authorization) {
+    const t = String(req.query?.token ?? "");
+    if (t) req.headers.authorization = "Bearer " + t;
+  }
+  next();
+});
+
 // BF_SERVER_BLOCK_v736_MERGE_TOKENS_SMS_MSG - substitute {{first_name}} (and other
 // tokens) on SMS / messenger sends, the same way email (o365 v705) already does.
 function renderMergeTokensComm(t: string, ctx: Record<string, string>): string {
@@ -576,6 +592,54 @@ router.get("/messages/:id/media", safeHandler(async (req: any, res: any) => {
   } else {
     try {
       const upstream = await fetch(mediaUrl);
+      if (!upstream.ok) return res.status(502).end();
+      ct = upstream.headers.get("content-type") ?? ct;
+      buf = Buffer.from(await upstream.arrayBuffer());
+    } catch {
+      return res.status(502).end();
+    }
+  }
+  res.setHeader("Content-Type", ct);
+  res.setHeader("Cache-Control", "private, max-age=86400");
+  return res.status(200).end(buf);
+}));
+
+// BF_SERVER_RECORDING_PROXY_v1 - stream a call recording for the contact-card
+// <audio> player. Twilio Recording URLs require Basic auth (browser stalls at
+// 0:00), so proxy by conference id and self-heal raw Twilio URLs into public
+// blob so playback survives Twilio media purge.
+router.get("/recordings/by-conference/:conferenceId/media", safeHandler(async (req: any, res: any) => {
+  const token = String(req.query?.token ?? "");
+  try { verifyAccessToken(token); } catch { return res.status(401).end(); }
+  const cid = String(req.params?.conferenceId ?? "");
+  if (!/^[0-9a-fA-F-]{8,40}$/.test(cid)) return res.status(400).end();
+  const { rows } = await pool.query<{ id: string; url: string | null }>(
+    "SELECT id::text AS id, url FROM call_recordings WHERE conference_id = $1 AND url IS NOT NULL ORDER BY created_at DESC LIMIT 1",
+    [cid],
+  );
+  const recUrl = rows[0]?.url ?? null;
+  if (!recUrl) return res.status(404).end();
+  let buf: Buffer;
+  let ct = "audio/mpeg";
+  if (/api\.twilio\.com/.test(recUrl)) {
+    const persisted = await persistTwilioMediaToBlob(recUrl);
+    if (persisted) {
+      const recId = rows[0]?.id;
+      if (recId) {
+        await pool.query("UPDATE call_recordings SET url = $2 WHERE id = $1::uuid", [recId, persisted.url]).catch(() => {});
+      }
+      await pool.query("UPDATE conferences SET recording_url = $2 WHERE id = $1", [cid, persisted.url]).catch(() => {});
+      ct = persisted.contentType || ct;
+      buf = persisted.buffer;
+    } else {
+      const direct = await fetchTwilioMedia(recUrl);
+      if (!direct) return res.status(502).end();
+      ct = direct.contentType || ct;
+      buf = direct.buffer;
+    }
+  } else {
+    try {
+      const upstream = await fetch(recUrl);
       if (!upstream.ok) return res.status(502).end();
       ct = upstream.headers.get("content-type") ?? ct;
       buf = Buffer.from(await upstream.arrayBuffer());
