@@ -24,19 +24,25 @@ export type BankTransaction = {
   balance?: number;
 };
 
-const NUMERIC_RE = /-?\$?\(?-?[\d,]+\.\d{2}\)?/;
+const NUMERIC_RE = /-?\$?\(?-?[\d,]+\.\d{2}-?\)?/;  // v_BANK_TRAILING_MINUS: TD/Canadian negatives use a trailing minus (e.g. 1,234.00-)
 const DATE_RE = /\b(\d{1,2})[\/\-\.](\d{1,2})(?:[\/\-\.](\d{2,4}))?\b/;
 
-function parseAmount(s: string | null | undefined): number | null {
+export function parseAmount(s: string | null | undefined): number | null {
   if (!s) return null;
   const m = s.match(NUMERIC_RE);
   if (!m) return null;
   let raw = m[0] ?? "";
-  const negParen = raw.startsWith("(") && raw.endsWith(")");
-  raw = raw.replace(/[()$,\s]/g, "");
+  // v_BANK_TRAILING_MINUS: negative is signalled by parentheses, a leading minus,
+  // OR a trailing minus (Canadian/TD statements). Without the trailing case an
+  // overdrawn balance like "24,908.00-" parsed as +24,908 and masked the overdraft.
+  const negative =
+    (raw.startsWith("(") && raw.endsWith(")")) ||
+    raw.trimStart().startsWith("-") ||
+    raw.trimEnd().endsWith("-");
+  raw = raw.replace(/[()$,\s-]/g, "");
   const n = Number(raw);
   if (Number.isNaN(n)) return null;
-  return negParen ? -Math.abs(n) : n;
+  return negative ? -Math.abs(n) : n;
 }
 
 // BF_SERVER_BLOCK_v721 — month-name dates ("Nov 16", "Nov16", "November 16")

@@ -41,14 +41,13 @@ export function parseLlmTransactions(raw: string): BankTransaction[] {
     let amount: number | undefined;
     if (typeof t?.amount === "number" && Number.isFinite(t.amount)) amount = t.amount;
     else if (typeof t?.amount === "string") {
-      const n = Number(t.amount.replace(/[,$\s]/g, ""));
-      if (Number.isFinite(n)) amount = n;
+      const n = numSigned(t.amount);
+      if (n !== null) amount = n;
     }
     let balance: number | null = null;
     if (typeof t?.balance === "number" && Number.isFinite(t.balance)) balance = t.balance;
     else if (typeof t?.balance === "string") {
-      const n = Number(t.balance.replace(/[,$\s]/g, ""));
-      if (Number.isFinite(n)) balance = n;
+      balance = numSigned(t.balance);
     }
     if (!date || amount === undefined) continue; // pipeline requires date + finite amount
     const tx: BankTransaction = { date, description };
@@ -365,6 +364,17 @@ export async function runBankingAnalysis(
     };
   }
 
+  // v_BANK_RECON_GATE: do not present numbers that do not reconcile to the balances.
+  const recon = await reconcileExtraction(applicationId);
+  if (!recon.reconciled) {
+    await pool.query(
+      `UPDATE banking_analyses SET status = 'needs_review', last_error = $2, updated_at = now() WHERE application_id::text = ($1)::text`,
+      [applicationId, `Automated extraction did not reconcile against the statement balances (${recon.reason}). Figures are withheld - review the statements manually before relying on any numbers.`]
+    );
+    logInfo("banking_pipeline_needs_review", { applicationId, reason: recon.reason, transactions: allTransactions.length });
+    return { application_id: applicationId, transaction_count: allTransactions.length, documents: documentStatuses };
+  }
+
   await pool.query(`UPDATE banking_analyses SET status = 'analysis_complete', completed_at = now(), updated_at = now() WHERE application_id::text = ($1)::text`, [applicationId]);
   await pool.query(`UPDATE applications SET banking_completed_at = now(), updated_at = now() WHERE id::text = ($1)::text`, [applicationId]);
   logInfo("banking_pipeline_complete", { applicationId, transactions: allTransactions.length, months: aggregates.months });
@@ -379,4 +389,49 @@ function rowifyTableCells(table: any): Array<Array<{ text: string }>> { if (!tab
 async function insertTransactions(applicationId: string, transactions: Array<BankTransaction & { document_id: string }>) { const rows: string[] = []; const params: any[] = []; let i = 0; for (const tx of transactions) { rows.push(`($${++i}, $${++i}, $${++i}::date, $${++i}, $${++i}::numeric, $${++i}::numeric, $${++i})`); params.push(applicationId, tx.document_id, tx.date, tx.description ?? null, tx.amount ?? 0, tx.balance ?? null, (tx.description ?? "").toLowerCase().includes("nsf") || (tx.description ?? "").toLowerCase().includes("returned") || (tx.description ?? "").toLowerCase().includes("insufficient")); } await pool.query(`INSERT INTO banking_transactions (application_id, document_id, transaction_date, description, amount, balance_after, is_nsf) VALUES ` + rows.join(","), params); }
 async function aggregateMonthlySummaries(applicationId: string) { await pool.query(`WITH month_buckets AS (SELECT date_trunc('month', transaction_date)::date AS month_start, COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS total_deposits, COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS total_withdrawals, COALESCE(SUM(amount), 0) AS net_cash_flow, COUNT(*) FILTER (WHERE is_nsf) AS nsf_count FROM banking_transactions WHERE application_id::text = ($1)::text GROUP BY date_trunc('month', transaction_date)), endings AS (SELECT DISTINCT ON (date_trunc('month', transaction_date)::date) date_trunc('month', transaction_date)::date AS month_start, balance_after AS ending_balance FROM banking_transactions WHERE application_id::text = ($1)::text AND balance_after IS NOT NULL ORDER BY date_trunc('month', transaction_date)::date, transaction_date DESC, created_at DESC) INSERT INTO banking_monthly_summaries (application_id, month_start, total_deposits, total_withdrawals, net_cash_flow, ending_balance, nsf_count) SELECT $1::uuid, m.month_start, m.total_deposits, m.total_withdrawals, m.net_cash_flow, e.ending_balance, m.nsf_count FROM month_buckets m LEFT JOIN endings e ON e.month_start = m.month_start ON CONFLICT (application_id, month_start) DO UPDATE SET total_deposits = EXCLUDED.total_deposits, total_withdrawals = EXCLUDED.total_withdrawals, net_cash_flow = EXCLUDED.net_cash_flow, ending_balance = EXCLUDED.ending_balance, nsf_count = EXCLUDED.nsf_count`, [applicationId]); const sumRes = await pool.query<any>(`SELECT COUNT(*)::text AS months, COALESCE(SUM(total_deposits), 0)::text AS total_deposits, COALESCE(SUM(total_withdrawals), 0)::text AS total_withdrawals, (SELECT AVG(bt2.balance_after)::text FROM banking_transactions bt2 WHERE bt2.application_id::text = ($1)::text AND bt2.balance_after IS NOT NULL) AS avg_balance, MIN(month_start)::text AS period_start, MAX(month_start)::text AS period_end, COALESCE(SUM(nsf_count), 0)::text AS nsf_total, COALESCE(SUM(CASE WHEN net_cash_flow > 0 THEN 1 ELSE 0 END), 0)::text AS months_profitable FROM banking_monthly_summaries WHERE application_id::text = ($1)::text`, [applicationId]); const r=sumRes.rows[0]; const months=Number(r?.months??0); return {months,totalDeposits:Number(r?.total_deposits??0),totalWithdrawals:Number(r?.total_withdrawals??0),averageDailyBalance:r?.avg_balance?Number(r.avg_balance):null,avgMonthlyDeposits:months>0?Number(r?.total_deposits??0)/months:0,periodStart:r?.period_start??null,periodEnd:r?.period_end??null,nsfTotal:Number(r?.nsf_total??0),monthsProfitable:Number(r?.months_profitable??0),averageMonthlyNsfs:months>0?Number(r?.nsf_total??0)/months:0}; }
 async function flagWithOpenAI(_applicationId: string, transactions: Array<BankTransaction & { document_id: string }>) { if (!openai || transactions.length===0) return { unusualTransactions: [], topVendors: [] }; return { unusualTransactions: [], topVendors: [] }; }
+// v_BANK_TRAILING_MINUS: parse a money string allowing parentheses, leading, or
+// trailing minus (Canadian/TD statements write overdrawn balances as "1,234.00-").
+function numSigned(str: string): number | null {
+  let r = str.replace(/[,$\s]/g, "");
+  if (!r) return null;
+  const neg = r.startsWith("(") && r.endsWith(")") ? true : r.startsWith("-") || r.endsWith("-");
+  r = r.replace(/[()\-]/g, "");
+  const n = Number(r);
+  return Number.isFinite(n) ? (neg ? -Math.abs(n) : n) : null;
+}
+
+// v_BANK_RECON_GATE: verify the parsed transactions actually tie back to the
+// statement balances. If the net of parsed amounts does not match the movement
+// in the running balance (incomplete capture, mis-signed values, or column
+// misalignment from the generic-layout fallback), the figures are NOT trustworthy
+// and must not be presented as fact.
+async function reconcileExtraction(applicationId: string): Promise<{ reconciled: boolean; reason: string | null }> {
+  const q = await pool.query<any>(
+    `WITH t AS (
+       SELECT amount, balance_after,
+              ROW_NUMBER() OVER (ORDER BY transaction_date ASC, created_at ASC) AS rn_a,
+              ROW_NUMBER() OVER (ORDER BY transaction_date DESC, created_at DESC) AS rn_d
+         FROM banking_transactions WHERE application_id::text = ($1)::text
+     )
+     SELECT (SELECT COUNT(*) FROM t)::int                              AS n,
+            (SELECT COUNT(balance_after) FROM t)::int                  AS n_bal,
+            (SELECT COALESCE(SUM(amount),0) FROM t)                    AS net_flow,
+            (SELECT COALESCE(SUM(ABS(amount)),0) FROM t)              AS gross_flow,
+            (SELECT balance_after - amount FROM t WHERE rn_a = 1)      AS opening,
+            (SELECT balance_after FROM t WHERE rn_d = 1)               AS closing`,
+    [applicationId]);
+  const r = q.rows[0];
+  if (!r || Number(r.n) === 0) return { reconciled: false, reason: "no transactions parsed" };
+  const n = Number(r.n), nBal = Number(r.n_bal);
+  const coverage = n > 0 ? nBal / n : 0;
+  if (coverage < 0.7) return { reconciled: false, reason: `running balance captured on only ${Math.round(coverage * 100)}% of transactions` };
+  if (r.opening === null || r.closing === null) return { reconciled: false, reason: "missing opening/closing balance" };
+  const expectedNet = Number(r.closing) - Number(r.opening);
+  const netFlow = Number(r.net_flow), grossFlow = Number(r.gross_flow);
+  const gap = Math.abs(expectedNet - netFlow);
+  const tol = Math.max(1000, grossFlow * 0.02);
+  if (gap > tol) return { reconciled: false, reason: `balance moved $${expectedNet.toFixed(0)} but parsed transactions net $${netFlow.toFixed(0)} (gap $${gap.toFixed(0)} > tolerance $${tol.toFixed(0)})` };
+  return { reconciled: true, reason: null };
+}
+
 async function persistAnalysis(applicationId: string, agg: Awaited<ReturnType<typeof aggregateMonthlySummaries>>, llm: { unusualTransactions: any[]; topVendors: any[] }, txCount: number, country: Country, model: string, documentStatuses: BankingDocumentStatus[]) { await pool.query(`INSERT INTO banking_analyses (application_id, accounts, total_avg_monthly_deposits, average_daily_balance,total_deposits, total_withdrawals, average_monthly_nsfs,months_profitable_numerator, months_profitable_denominator,unusual_transactions, top_vendors, period_start, period_end,months_detected, status, updated_at) VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb,$12::date, $13::date, $14, 'analysis_complete', now()) ON CONFLICT (application_id) DO UPDATE SET accounts = EXCLUDED.accounts,total_avg_monthly_deposits = EXCLUDED.total_avg_monthly_deposits,average_daily_balance = EXCLUDED.average_daily_balance,total_deposits = EXCLUDED.total_deposits,total_withdrawals = EXCLUDED.total_withdrawals,average_monthly_nsfs = EXCLUDED.average_monthly_nsfs,months_profitable_numerator = EXCLUDED.months_profitable_numerator,months_profitable_denominator = EXCLUDED.months_profitable_denominator,unusual_transactions = EXCLUDED.unusual_transactions,top_vendors = EXCLUDED.top_vendors,period_start = EXCLUDED.period_start,period_end = EXCLUDED.period_end,months_detected = EXCLUDED.months_detected,status = 'analysis_complete',updated_at = now()`, [applicationId, JSON.stringify([{ note: `${txCount} transactions parsed via ${model} (${country})` }, { documentStatuses }]), agg.avgMonthlyDeposits || null, agg.averageDailyBalance, agg.totalDeposits, agg.totalWithdrawals, agg.averageMonthlyNsfs, agg.monthsProfitable, agg.months, JSON.stringify(llm.unusualTransactions), JSON.stringify(llm.topVendors), agg.periodStart, agg.periodEnd, agg.months]); }
