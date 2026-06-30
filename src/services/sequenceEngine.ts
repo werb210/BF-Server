@@ -106,7 +106,10 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
         const html = effHtml && String(effHtml).trim()
           ? String(effHtml)
           : renderBrandedEmail({ headline: "", heroUrl: "", heroLink: "", body: String(effBody || ""), ctaLabel: "", ctaUrl: "", image2Url: "", image2Link: "" });
-        const r = await sendOne({ to: String(c.email), subject: mergeFields(String(effSubject || ""), vars), html: mergeFields(html, vars), contactId: c.id });
+        // BF_SERVER_BLOCK_v790 - track the email send so SendGrid opens/clicks attribute per-sequence.
+        const es = await pool.query<{ id: string }>(`INSERT INTO sequence_sends (sequence_id, contact_id, silo, channel) VALUES ($1,$2,$3,'email') RETURNING id`, [en.sequence_id, c.id, c.silo || "BF"]);
+        const esId = es.rows[0]?.id || "";
+        const r = await sendOne({ to: String(c.email), subject: mergeFields(String(effSubject || ""), vars), html: mergeFields(html, vars), contactId: c.id, customArgs: esId ? { seq_send_id: esId } : undefined });
         if (r.ok) await logStep(pool, c.id, en.sequence_id, idx, "email");
       }
     }

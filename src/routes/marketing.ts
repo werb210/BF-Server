@@ -529,7 +529,9 @@ router.get("/sequences", requireAuth, safeHandler(async (req: any, res: any) => 
             (SELECT count(*)::int FROM marketing_sequence_enrollments e WHERE e.sequence_id=s.id AND e.status='replied') AS replied,
             (SELECT count(*)::int FROM crm_timeline_events t WHERE t.event_type='sequence_step_sent' AND t.payload->>'sequenceId'=s.id::text AND t.payload->>'channel'='email') AS emails_sent,
             (SELECT count(*)::int FROM crm_timeline_events t WHERE t.event_type='sequence_step_sent' AND t.payload->>'sequenceId'=s.id::text AND t.payload->>'channel'='sms') AS sms_sent,
-            (SELECT count(*)::int FROM sequence_sends ss WHERE ss.sequence_id=s.id AND ss.clicked_at IS NOT NULL) AS sms_clicks,
+            (SELECT count(*)::int FROM sequence_sends ss WHERE ss.sequence_id=s.id AND ss.channel='sms' AND ss.clicked_at IS NOT NULL) AS sms_clicks,
+            (SELECT count(*)::int FROM sequence_sends ss WHERE ss.sequence_id=s.id AND ss.channel='email' AND ss.opened_at IS NOT NULL) AS email_opens,
+            (SELECT count(*)::int FROM sequence_sends ss WHERE ss.sequence_id=s.id AND ss.channel='email' AND ss.clicked_at IS NOT NULL) AS email_clicks,
             (SELECT count(*)::int FROM marketing_sequence_enrollments e JOIN contacts c ON c.id=e.contact_id WHERE e.sequence_id=s.id AND c.marketing_opt_out=true) AS unsubscribed
        FROM marketing_sequences s WHERE s.silo=$1 ORDER BY s.created_at DESC LIMIT 200`,
     [silo]);
