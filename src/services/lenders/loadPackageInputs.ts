@@ -5,7 +5,6 @@ import type { Pool } from "pg";
 import { Buffer } from "node:buffer";
 import { getStorage } from "../../lib/storage/index.js";
 
-import { buildPnwPdfFromData } from "../../signnow/pnwPdfBuilder.js";
 import { getSignedPnwPdf } from "../../signnow/pnwSigning.js";
 
 export type PackageInputDocs = { category: string; files: { filename: string; content: Buffer }[] };
@@ -255,9 +254,13 @@ async function loadFormPdfs(ctx: LoadCtx): Promise<{ filename: string; content: 
       // BF_SERVER_BLOCK_v_PNW_BUILDER_v1 — the Personal Net Worth form renders to
       // the branded Boreal template; every other CMP form keeps the text renderer.
       if (spec.file === "personal-net-worth.pdf") {
-        // v_PNW_SIGNING_v1 — prefer the individually-signed copy; fall back to the fill.
+        // v_PNW_SIGNING_v1 — include only the individually-signed copy.
         const signed = await getSignedPnwPdf(ctx.applicationId);
-        out.push({ filename: spec.file, content: signed ?? Buffer.from(await buildPnwPdfFromData((row.data ?? {}) as any)) });
+        // BF_SERVER_BLOCK_PNW_GATE_v1 — NEVER substitute an unsigned PNW. Only the
+        // genuinely SignNow-signed copy is shipped; if unsigned, omit it. The lender
+        // package worker gate blocks dispatch until the PNW is signed, so by the time
+        // the package builds for a gated dispatch this returns the signed copy.
+        if (signed) out.push({ filename: spec.file, content: signed });
       } else {
         const header = [spec.title, `Application: ${ctx.applicationId}`,
           row.submitted_at ? `Submitted: ${row.submitted_at}` : "", ""];

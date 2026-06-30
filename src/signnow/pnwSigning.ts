@@ -81,3 +81,24 @@ export async function getSignedPnwPdf(applicationId: string): Promise<Buffer | n
     return null;
   }
 }
+
+
+// BF_SERVER_BLOCK_PNW_GATE_v1 — gate helper for the lender package worker.
+// Returns true when no PNW signing group exists for the app (PNW not in play)
+// OR the existing PNW group is fully signed. Returns false when a PNW group
+// exists but is not yet signed (or its status cannot be confirmed) — so the
+// dispatch worker requeues instead of shipping an unsigned PNW. Never throws.
+export async function isPnwSignedOrAbsent(applicationId: string): Promise<boolean> {
+  if (!isApiKeyConfigured()) return true;
+  try {
+    const r = await dbQuery<{ group_id: string | null }>(
+      `SELECT metadata->'pnw_signnow'->>'group_id' AS group_id
+         FROM applications WHERE id::text = ($1)::text LIMIT 1`, [applicationId]);
+    const groupId = r.rows[0]?.group_id;
+    if (!groupId) return true; // no PNW signing session => nothing to gate on
+    const status = await getDocumentGroupStatus(groupId);
+    return status.signed === true;
+  } catch {
+    return false; // never ship unsigned on an unconfirmed status; requeue instead
+  }
+}
