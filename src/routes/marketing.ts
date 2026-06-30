@@ -481,4 +481,39 @@ router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
   respondOk(res, { configured: true, recipients: out.total, sent: out.sent, failed: out.failed });
 }));
 
+// BF_SERVER_BLOCK_v783_MARKETING_TEMPLATES — named templates per channel.
+router.get("/templates", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const channel = String(req.query.channel || "").trim();
+  const params: any[] = [silo];
+  let where = "silo = $1";
+  if (channel) { params.push(channel); where += ` AND channel = $${params.length}`; }
+  const r = await pool.query(
+    `SELECT id, channel, name, body, link_url, subject, updated_at
+       FROM marketing_template WHERE ${where} ORDER BY updated_at DESC LIMIT 200`,
+    params,
+  );
+  respondOk(res, { items: r.rows });
+}));
+
+router.post("/templates", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const b = req.body || {};
+  const channel = String(b.channel || "").trim();
+  const name = String(b.name || "").trim();
+  if (!channel || !name) { respondOk(res, { error: "channel and name required" }); return; }
+  const r = await pool.query(
+    `INSERT INTO marketing_template (silo, channel, name, body, link_url, subject, html, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+    [silo, channel, name, b.body ?? null, b.linkUrl ?? null, b.subject ?? null, b.html ?? null, req.user?.userId ?? null],
+  );
+  respondOk(res, { id: r.rows[0].id, saved: true });
+}));
+
+router.delete("/templates/:id", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  await pool.query("DELETE FROM marketing_template WHERE id = $1 AND silo = $2", [String(req.params.id), silo]);
+  respondOk(res, { deleted: true });
+}));
+
 export default router;
