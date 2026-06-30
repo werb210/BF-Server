@@ -335,11 +335,11 @@ router.get("/sms/segments", safeHandler(async (req: any, res: any) => {
   const tags = await pool.query(
     `SELECT tag, count(*)::int AS n FROM (
        SELECT unnest(tags) AS tag FROM contacts
-        WHERE silo = $1 AND COALESCE(phone,'') <> '' AND COALESCE(sms_opt_out,false) = false
+        WHERE silo = $1 AND COALESCE(phone,'') <> '' AND COALESCE(sms_opt_out,false) = false AND (line_type IS NULL OR line_type = 'mobile')
      ) t GROUP BY tag ORDER BY n DESC`,
     [silo],
   );
-  const all = await pool.query(`SELECT count(*)::int AS n FROM contacts WHERE silo = $1 AND COALESCE(phone,'') <> '' AND COALESCE(sms_opt_out,false) = false`, [silo]);
+  const all = await pool.query(`SELECT count(*)::int AS n FROM contacts WHERE silo = $1 AND COALESCE(phone,'') <> '' AND COALESCE(sms_opt_out,false) = false AND (line_type IS NULL OR line_type = 'mobile')`, [silo]);
   respondOk(res, { configured: smsMarketingConfigured(), all: all.rows[0]?.n ?? 0, segments: tags.rows });
 }));
 

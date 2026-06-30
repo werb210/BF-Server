@@ -32,3 +32,17 @@ export async function sendMarketingSms(to: string, body: string): Promise<{ ok: 
     return { ok: false, error: String(e?.message ?? e).slice(0, 200) };
   }
 }
+
+// BF_SERVER_BLOCK_v784_LINE_TYPE_HELPER - Twilio Lookup v2 line type intelligence.
+// Returns 'mobile' | 'landline' | 'voip' | 'nonFixedVoip' | ... or null if unknown.
+export async function lookupLineType(phone: string): Promise<string | null> {
+  if (!phone || !process.env.TWILIO_ACCOUNT_SID) return null;
+  try {
+    const client = fetchTwilioClient();
+    const r: any = await client.lookups.v2.phoneNumbers(phone).fetch({ fields: "line_type_intelligence" });
+    const t = r?.lineTypeIntelligence?.type;
+    return t ? String(t) : null;
+  } catch {
+    return null;
+  }
+}
