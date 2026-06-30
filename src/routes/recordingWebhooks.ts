@@ -2,6 +2,7 @@
 import { Router } from "express";
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
 import { pool } from "../db.js";
+import { persistTwilioMediaToBlob } from "../services/mmsMedia.js"; // BF_SERVER_RECORDING_BLOB_PERSIST_v1
 import { getConferenceByFriendly, notifyConferenceState } from "../voice/conferenceService.js";
 import { getTwilio } from "../voice/twilioClient.js";
 
@@ -32,6 +33,19 @@ router.post("/recording/status", twilioWebhookValidation, async (req: any, res) 
       `UPDATE conferences SET recording_sid = $2, recording_url = $3, updated_at = now() WHERE id = $1`,
       [conf.id, recSid, url],
     );
+    // BF_SERVER_RECORDING_BLOB_PERSIST_v1 - copy the recording to public blob so
+    // the contact-card <audio> plays without Twilio creds and survives purge.
+    void (async () => {
+      const persisted = await persistTwilioMediaToBlob(url);
+      if (persisted) {
+        await pool
+          .query("UPDATE call_recordings SET url = $2 WHERE twilio_recording_sid = $1", [recSid, persisted.url])
+          .catch(() => {});
+        await pool
+          .query("UPDATE conferences SET recording_url = $2 WHERE id = $1", [conf.id, persisted.url])
+          .catch(() => {});
+      }
+    })();
     // Fire Voice Intelligence transcript on the completed recording (best-effort).
     void triggerVoiceIntelligence(conf.id, recSid).catch((e) =>
       console.warn("vi_trigger_failed", { conf: conf.id, recSid, message: e?.message }),
