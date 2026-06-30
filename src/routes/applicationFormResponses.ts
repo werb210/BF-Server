@@ -47,7 +47,9 @@ router.get("/applications/:id/form-responses/:doc_type", requireAuth, async (req
       [appId, docType],
     );
     if (r.rowCount === 0) {
-      return res.status(404).json({ error: "not_found" });
+      // BF_SERVER_BLOCK_v773_FORMRESP_EMPTY_OK: probing an optional form
+      // (e.g. professional_advisors) before it's filled is not an error.
+      return res.json({ item: null });
     }
     return res.json({ item: r.rows[0] });
   } catch (err) {
