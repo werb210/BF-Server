@@ -5,11 +5,12 @@ import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { pool } from "../db.js";
 import { verifyAccessToken } from "../auth/jwt.js"; // BF_SERVER_SMS_MEDIA_v1
+import { fetchTwilioMedia, persistTwilioMediaToBlob } from "../services/mmsMedia.js"; // BF_SERVER_MMS_BLOB_PROXY_v1
 import twilio from "twilio";
 
 const router = Router();
 
-// BF_SERVER_BLOCK_v736_MERGE_TOKENS_SMS_MSG — substitute {{first_name}} (and other
+// BF_SERVER_BLOCK_v736_MERGE_TOKENS_SMS_MSG - substitute {{first_name}} (and other
 // tokens) on SMS / messenger sends, the same way email (o365 v705) already does.
 function renderMergeTokensComm(t: string, ctx: Record<string, string>): string {
   return String(t ?? "").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_m: string, k: string) => {
@@ -57,7 +58,7 @@ router.post("/call-events", safeHandler(async (req: any, res: any) => {
   const eventType = typeof body.event_type === "string" ? body.event_type : "";
   const toNumber = typeof body.to_number === "string" ? body.to_number : "";
   if (!eventType || !toNumber) return res.status(400).json({ error: "event_type and to_number are required" });
-  // BF_SERVER_BLOCK_v708 — when the client doesn't thread contact_id, resolve it
+  // BF_SERVER_BLOCK_v708 - when the client doesn't thread contact_id, resolve it
   // by matching the call's numbers (last 10 digits) to a contact in this silo.
   let contactId: string | null = body.contact_id ?? null;
   if (!contactId) {
@@ -75,7 +76,7 @@ router.post("/call-events", safeHandler(async (req: any, res: any) => {
   const { rows } = await pool.query(`INSERT INTO call_events (user_id, contact_id, application_id, silo, event_type, direction, from_number, to_number, twilio_call_sid, duration_seconds, error_code, payload)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb) RETURNING id, occurred_at`,
     [userId, contactId, body.application_id ?? null, silo, eventType, body.direction ?? null, body.from_number ?? null, toNumber, body.twilio_call_sid ?? null, body.duration_seconds ?? null, body.error_code ?? null, JSON.stringify(body.payload ?? {})]);
-  // BF_SERVER_BLOCK_v822_BI_OUTBOUND_CONTACTED — a BI outbound call advances the contact to
+  // BF_SERVER_BLOCK_v822_BI_OUTBOUND_CONTACTED - a BI outbound call advances the contact to
   // "contacted" (matched by dialed number; only from an earlier stage, so it never downgrades
   // engaged/demo_booked/onboarding/active, and re-firing on later call events is a no-op).
   if (silo === "BI" && String(body.direction ?? "").toLowerCase() !== "inbound") {
@@ -170,7 +171,7 @@ router.post(
        JSON.stringify({ summary, recipients: recipientsRaw, contact_id: resolvedContactId, phone: phoneDigits })],
     );
 
-    // BF_SERVER_BLOCK_v763_MAYA_COMMS_SEPARATION — Maya's own auto-handoff no
+    // BF_SERVER_BLOCK_v763_MAYA_COMMS_SEPARATION - Maya's own auto-handoff no
     // longer writes a row into communications_messages (it used to pollute the
     // Messages tab with anonymous "Website Visitor" / Maya-transcript entries).
     // The handoff is recorded in maya_escalations and staff are pinged by SMS;
@@ -187,8 +188,8 @@ router.get("/", safeHandler((_req: any, res: any) => {
   res.json({ status: "ok" });
 }));
 
-// GET /api/communications/messages — queries the actual DB.
-// BF_SERVER_v65_COMMS_NO_400 — when contact_id is absent, return an empty
+// GET /api/communications/messages - queries the actual DB.
+// BF_SERVER_v65_COMMS_NO_400 - when contact_id is absent, return an empty
 // list with 200 instead of 400. Portal Communications page calls this
 // before any thread is selected; the previous 400 just spammed the
 // console without changing the rendered empty-state.
@@ -225,7 +226,7 @@ router.get("/messages", safeHandler(async (req: any, res: any) => {
   }
 }));
 
-// BF_SERVER_BLOCK_v763_MAYA_COMMS_SEPARATION — staff Maya tab. Lists Maya AI
+// BF_SERVER_BLOCK_v763_MAYA_COMMS_SEPARATION - staff Maya tab. Lists Maya AI
 // conversations that had a real back-and-forth (>= 2 messages) and serves one
 // session's full transcript. Read-only; sourced from chat_sessions /
 // chat_messages, independent of the Messages tab.
@@ -362,10 +363,10 @@ router.get("/sms", safeHandler(async (req: any, res: any) => {
 // Threads are grouped by contact_id when present, otherwise application_id
 // so application-linked handoff messages (without a contact yet) still show.
 // BF_SERVER_BLOCK_v636_MESSAGES_TAB_FIXES_v1
-// BF_SERVER_BLOCK_v637_MOBILE_PHONE_AND_BACKFILL_v1 — siloMiddleware runs BEFORE
+// BF_SERVER_BLOCK_v637_MOBILE_PHONE_AND_BACKFILL_v1 - siloMiddleware runs BEFORE
 // requireAuth so getSilo(res) always returned "BF" on authed routes (see comment
 // at the bottom of silo.ts). Use resolveSiloFromRequest(req) which reads X-Silo
-// + req.user together — otherwise BI-silo staff see BF threads.
+// + req.user together - otherwise BI-silo staff see BF threads.
 router.get("/messages-list", safeHandler(async (req: any, res: any) => {
   const { resolveSiloFromRequest } = await import("../middleware/silo.js");
   const silo = resolveSiloFromRequest(req);
@@ -497,7 +498,7 @@ router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
       OR (contact_id IS NULL AND EXISTS (
         -- BF_SERVER_BLOCK_v637_MOBILE_PHONE_AND_BACKFILL_v1: contacts.mobile_phone
         -- column does not exist (see migrations/099_create_contacts_table.sql).
-        -- This query threw on every authed SMS thread fetch — "sms_thread_error"
+        -- This query threw on every authed SMS thread fetch - "sms_thread_error"
         -- in BF-Server logs every 5s. Only c.phone is real.
         SELECT 1 FROM contacts c
          WHERE c.id = $${cIdx}
@@ -537,7 +538,7 @@ router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
   }
 }));
 
-// BF_SERVER_SMS_MEDIA_v1 — stream an inbound MMS image/file. Twilio media URLs
+// BF_SERVER_SMS_MEDIA_v1 - stream an inbound MMS image/file. Twilio media URLs
 // require Basic auth, so the browser can't <img> them directly; proxy with the
 // account creds. Token rides the query string so it works in an <img src>.
 router.get("/messages/:id/media", safeHandler(async (req: any, res: any) => {
@@ -551,21 +552,36 @@ router.get("/messages/:id/media", safeHandler(async (req: any, res: any) => {
   );
   const mediaUrl = rows[0]?.media_url ?? null;
   if (!mediaUrl) return res.status(404).end();
-  const sid = process.env.TWILIO_ACCOUNT_SID ?? "";
-  const tok = process.env.TWILIO_AUTH_TOKEN ?? "";
-  const headers: Record<string, string> = {};
-  if (/api\.twilio\.com/.test(mediaUrl) && sid && tok) {
-    headers.Authorization = "Basic " + Buffer.from(`${sid}:${tok}`).toString("base64");
-  }
+  // BF_SERVER_MMS_BLOB_PROXY_v1 - render inbound MMS reliably. Already-persisted
+  // (public blob / non-Twilio) URLs stream directly. A raw Twilio URL is copied
+  // to public blob on first view (self-heal) so it never breaks again when Twilio
+  // purges the media, then streamed from the bytes we just downloaded. The fetch
+  // follows Twilio's S3 redirect WITHOUT leaking the auth header.
   let buf: Buffer;
   let ct = "application/octet-stream";
-  try {
-    const upstream = await fetch(mediaUrl, { headers });
-    if (!upstream.ok) return res.status(502).end();
-    ct = upstream.headers.get("content-type") ?? ct;
-    buf = Buffer.from(await upstream.arrayBuffer());
-  } catch {
-    return res.status(502).end();
+  if (/api\.twilio\.com/.test(mediaUrl)) {
+    const persisted = await persistTwilioMediaToBlob(mediaUrl);
+    if (persisted) {
+      await pool
+        .query("UPDATE communications_messages SET media_url = $2 WHERE id = $1::uuid", [id, persisted.url])
+        .catch(() => {});
+      ct = persisted.contentType || ct;
+      buf = persisted.buffer;
+    } else {
+      const direct = await fetchTwilioMedia(mediaUrl);
+      if (!direct) return res.status(502).end();
+      ct = direct.contentType || ct;
+      buf = direct.buffer;
+    }
+  } else {
+    try {
+      const upstream = await fetch(mediaUrl);
+      if (!upstream.ok) return res.status(502).end();
+      ct = upstream.headers.get("content-type") ?? ct;
+      buf = Buffer.from(await upstream.arrayBuffer());
+    } catch {
+      return res.status(502).end();
+    }
   }
   res.setHeader("Content-Type", ct);
   res.setHeader("Cache-Control", "private, max-age=86400");
@@ -695,7 +711,7 @@ router.get("/threads/:id", safeHandler(async (req: any, res: any) => {
 
   const isAdmin = String(req.user?.role ?? "").toLowerCase() === "admin";
 
-  // BF_SERVER_BLOCK_v685_THREADS_ON_COMMUNICATIONS_v1 — detail reads
+  // BF_SERVER_BLOCK_v685_THREADS_ON_COMMUNICATIONS_v1 - detail reads
   // the live communications_conversations store (dead chat_sessions
   // retired). contact_silo is the conversation's own silo column.
   const sessionResult = await pool.query(`
@@ -787,7 +803,7 @@ router.get("/threads/:id", safeHandler(async (req: any, res: any) => {
 }));
 
 // BF_SERVER_BLOCK_v685_THREADS_REPLY_v1
-// POST /api/communications/threads/:id/messages — staff reply.
+// POST /api/communications/threads/:id/messages - staff reply.
 // The portal (sendCommunication) posts here; previously no such
 // route existed, so Send 404'd. Writes an outbound row into
 // communications_messages and bumps the conversation preview, then
@@ -923,7 +939,7 @@ router.get("/timeline", safeHandler(async (req: any, res: any) => {
     return { rows: [] as any[] };
   });
 
-  // BF_SERVER_BLOCK_v851 — surface call recordings + transcripts on the
+  // BF_SERVER_BLOCK_v851 - surface call recordings + transcripts on the
   // phone-keyed timeline (the BI contact card reads this), so BI shows the same
   // recording/transcript history BF does.
   const recRes = await pool.query(
@@ -1004,7 +1020,7 @@ router.get("/timeline", safeHandler(async (req: any, res: any) => {
   return res.status(200).json({ events, total: events.length, silo });
 }));
 
-// POST /api/communications/sms — send outbound + persist to DB
+// POST /api/communications/sms - send outbound + persist to DB
 router.post("/sms", safeHandler(async (req: any, res: any) => {
   const { contactId, to, body } = req.body ?? {};
   let applicationId = req.body?.applicationId ?? null;
@@ -1058,7 +1074,7 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
     return res.status(503).json({ error: { message: "SMS not configured", code: "service_unavailable" } });
   }
   const client: any = twilio(accountSid, authToken);
-  // BF_SERVER_COMMS_SMS_TWILIO_ERROR_v1 — wrap the Twilio send so a rejection
+  // BF_SERVER_COMMS_SMS_TWILIO_ERROR_v1 - wrap the Twilio send so a rejection
   // (invalid number, A2P/10DLC, geo-permission, funds) returns the real code
   // instead of an opaque 500. Without this every Twilio failure looked
   // identical from the portal and was easy to mistake for a refresh bug.
@@ -1086,7 +1102,7 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
 
   // Persist outbound message to DB
   // BF_SERVER_BLOCK_v312_COMMS_SMS_PERSIST_LOG_v1
-  // Pre-fix this used .catch(() => {}) — the Twilio send had already
+  // Pre-fix this used .catch(() => {}) - the Twilio send had already
   // succeeded (the user received the SMS) but the local persistence INSERT
   // would silently swallow on column drift / DB hiccup. On the next refresh
   // of the Communications thread, the outbound message would be absent
@@ -1157,7 +1173,7 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
 // a specific application's thread (alongside the SMS that
 // sendDocumentRejectionSms already fires).
 
-// BF_SERVER_BLOCK_v644_PORTAL_MESSAGES_CONTACT_v1 — contact-keyed thread
+// BF_SERVER_BLOCK_v644_PORTAL_MESSAGES_CONTACT_v1 - contact-keyed thread
 // fetch. Returns all type='message' rows across every application the
 // contact has (one rolling conversation per contact, per Todd's #2).
 // Either ?contactId=... or ?applicationId=... is accepted; contactId wins
@@ -1275,7 +1291,7 @@ router.get(
 // chat bubble. Does NOT auto-send SMS -- staff use /communications/sms
 // when they want a phone-channel side effect.
 router.post(
-  // BF_SERVER_BLOCK_v644_PORTAL_MESSAGES_CONTACT_v1 — accept contactId so
+  // BF_SERVER_BLOCK_v644_PORTAL_MESSAGES_CONTACT_v1 - accept contactId so
   // the staff Messages tab can address a contact directly without needing
   // an applicationId. Threads are contact-keyed. Offline-fallback SMS
   // uses contact.phone directly when no application is in play.
@@ -1290,7 +1306,7 @@ router.post(
     const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
     const ctaLabel  = typeof req.body?.ctaLabel  === "string" ? req.body.ctaLabel.trim().slice(0, 80)  : null;
     const ctaAction = typeof req.body?.ctaAction === "string" ? req.body.ctaAction.trim().slice(0, 120) : null;
-    // BF_SERVER_BLOCK_v646_COMPLETE_COMMS_v1 — attachments passed through
+    // BF_SERVER_BLOCK_v646_COMPLETE_COMMS_v1 - attachments passed through
     // as a JSONB array of {name,contentType,dataUrl} (each capped at
     // ~3MB by the client). MessageThread renders them inline.
     const rawAttach = Array.isArray(req.body?.attachments) ? req.body.attachments : [];
@@ -1320,7 +1336,7 @@ router.post(
     const { getSilo } = await import("../middleware/silo.js");
     const silo = String(getSilo(res) ?? (req as any).user?.silo ?? "BF").toUpperCase();
 
-    // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 — if this contact has a messenger
+    // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 - if this contact has a messenger
     // thread (Talk-to-a-Human / Report-an-Issue), stamp its conversation_id on
     // the outbound reply so the visitor widget's poll
     // (/api/public/conversation/:id/messages, direction='outbound') receives it.
@@ -1351,7 +1367,7 @@ router.post(
        )`,
       [id, applicationId, resolvedContactId ?? "", silo, __msgMerged, staffName, ctaLabel, ctaAction, JSON.stringify(attachments), replyConversationId],
     );
-    // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 — bump the messenger thread preview
+    // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 - bump the messenger thread preview
     // so it reorders in the staff list and the visitor sees fresh activity.
     if (replyConversationId) {
       await pool.query(
@@ -1364,8 +1380,8 @@ router.post(
 
     // BF_SERVER_BLOCK_v636_MESSAGES_TAB_FIXES_v1: offline-fallback SMS.
     // Mini-portal bumps applications.last_portal_seen_at on every poll (~20s).
-    // No bump in 60s → treat as offline → SMS the contact with a deep-link.
-    // SMS-only client comms — no email.
+    // No bump in 60s -> treat as offline -> SMS the contact with a deep-link.
+    // SMS-only client comms - no email.
     try {
       const presence = await pool.query<{
         last_seen: string | null;
@@ -1390,7 +1406,7 @@ router.post(
         const link = applicationId
           ? `${clientBase}/portal/${encodeURIComponent(applicationId)}`
           : `${clientBase}/portal`;
-        const preview = body.length > 120 ? body.slice(0, 117) + "…" : body;
+        const preview = body.length > 120 ? body.slice(0, 117) + "..." : body;
         const smsBody = `Boreal: ${preview}
 ${link}`;
         void sendSms({ to: row.phone, message: smsBody }).catch((err: unknown) => {
@@ -1418,10 +1434,10 @@ ${link}`;
   }),
 );
 
-// ─────────────────────────────────────────────────────────────────────────
-// BF_SERVER_BLOCK_v646_COMPLETE_COMMS_v1 — read receipts, typing indicators,
+// -------------------------------------------------------------------------
+// BF_SERVER_BLOCK_v646_COMPLETE_COMMS_v1 - read receipts, typing indicators,
 // SSE message stream. All endpoints are contact-keyed to match v644.
-// ─────────────────────────────────────────────────────────────────────────
+// -------------------------------------------------------------------------
 
 router.post(
   "/messages/mark-read",
@@ -1434,9 +1450,9 @@ router.post(
     }
     const cutoff = throughTs && !Number.isNaN(Date.parse(throughTs)) ? throughTs : new Date().toISOString();
     const isUuid = /^[0-9a-f-]{36}$/i.test(rawContact);
-    // BF_SERVER_BLOCK_v689_MARK_READ_ALL_TYPES_v1 — clear read_at for EVERY
+    // BF_SERVER_BLOCK_v689_MARK_READ_ALL_TYPES_v1 - clear read_at for EVERY
     // inbound row for this contact, not just type='message'. SMS rows carry
-    // type='sms', so the old filter left them permanently unread — the unread
+    // type='sms', so the old filter left them permanently unread - the unread
     // count queries count all inbound regardless of type, so the nav badge and
     // per-thread tags stayed stuck (the "16"/"1" that never cleared on open).
     let r: any;
@@ -1451,7 +1467,7 @@ router.post(
         [rawContact, cutoff],
       );
     } else {
-      // BF_SERVER_BLOCK_v840_MARK_READ_ORPHAN_SMS_v1 — orphan inbound SMS (from a
+      // BF_SERVER_BLOCK_v840_MARK_READ_ORPHAN_SMS_v1 - orphan inbound SMS (from a
       // number with no CRM contact) thread by from_number, not a uuid; clear by
       // from_number so the SMS badge can finally reach zero.
       const phone = phoneIn || rawContact;
@@ -1567,7 +1583,7 @@ router.get(
 
 // BF_SERVER_BLOCK_v683_UNIFIED_INBOX_v1
 // Contact-list inbox + two-way thread on the CANONICAL store
-// (communications_conversations / communications_messages) — the tables that
+// (communications_conversations / communications_messages) - the tables that
 // actually hold conversation data. chat_sessions/chat_messages are empty/dead.
 // Surfaces EVERY channel incl. the "messenger" handoffs from website/client
 // "Talk to a Human", newest conversation first, and lets staff reply.
@@ -1638,7 +1654,7 @@ router.post(
   }),
 );
 
-// BF_SERVER_BLOCK_v795_BROADCAST — multi-send: one outbound per selected contact
+// BF_SERVER_BLOCK_v795_BROADCAST - multi-send: one outbound per selected contact
 // (individual 1:1 sends, NOT a group thread), mirroring POST /sms (Twilio + persist)
 // for channel 'sms' and posting a messenger row for channel 'message'. Each row is
 // logged to that contact's timeline with the resolved silo. Hard cap of 500.

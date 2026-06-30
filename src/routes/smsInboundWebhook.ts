@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { pool } from "../db.js";
 import { createContact } from "../services/contacts.js";
+import { persistTwilioMediaToBlob } from "../services/mmsMedia.js"; // BF_SERVER_MMS_BLOB_PERSIST_v1
 
 const router = Router();
 
-// BF_SERVER_BLOCK_v690_INBOUND_SMS_CONTACT_STAMP_v1 — resolve-or-create a
+// BF_SERVER_BLOCK_v690_INBOUND_SMS_CONTACT_STAMP_v1 - resolve-or-create a
 // contact for the sender and stamp contact_id + type='sms' + from/to + silo on
 // the inbound row. Previously these were omitted, so every inbound SMS was born
 // orphaned (contact_id NULL, type NULL): it fell into the Messages-tab "null"
@@ -48,7 +49,7 @@ router.post("/webhooks/twilio/sms-inbound", async (req: any, res) => {
   const rawBody = String(req.body?.Body ?? "").trim();
   const messageSid = String(req.body?.MessageSid ?? "");
 
-  // BF_SERVER — capture inbound MMS. Twilio posts NumMedia + MediaUrl0..N.
+  // BF_SERVER - capture inbound MMS. Twilio posts NumMedia + MediaUrl0..N.
   // The handler previously read only Body and dropped any message without it,
   // so client screenshots (caption-less MMS) vanished entirely.
   const numMedia = Number.parseInt(String(req.body?.NumMedia ?? "0"), 10) || 0;
@@ -100,9 +101,22 @@ router.post("/webhooks/twilio/sms-inbound", async (req: any, res) => {
       [convId, contactId, body, mediaUrl, from, to || null, messageSid || null],
     );
 
+    // BF_SERVER_MMS_BLOB_PERSIST_v1 - copy the MMS to public blob off the hot
+    // path so it renders without Twilio creds at view time and survives purge.
+    if (mediaUrl && messageSid) {
+      void (async () => {
+        const persisted = await persistTwilioMediaToBlob(mediaUrl);
+        if (persisted) {
+          await pool
+            .query("UPDATE communications_messages SET media_url = $2 WHERE twilio_message_sid = $1", [messageSid, persisted.url])
+            .catch(() => {});
+        }
+      })();
+    }
+
     return res.type("text/xml").send("<Response/>");
   } catch (err) {
-    // #11 — an inbound message that fails to persist must not vanish silently.
+    // #11 - an inbound message that fails to persist must not vanish silently.
     // Log the real reason (still ACK Twilio 200 so it does not retry-storm).
     // eslint-disable-next-line no-console
     console.error("sms_inbound_persist_failed", err);
