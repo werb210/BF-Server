@@ -5,6 +5,7 @@ import { LeadSchema } from "../validation.js";
 import { fail, ok } from "../lib/apiResponse.js";
 import { wrap } from "../lib/routeWrap.js";
 import { stripUndefined } from "../utils/clean.js";
+import { getLandingBySlug } from "../services/landingPage.service.js"; // BF_SERVER_BLOCK_v780_PUBLIC_LANDING_IMPORT
 
 const router = Router();
 
@@ -21,6 +22,20 @@ router.get("/email/logo.png", (_req, res) => {
   // can be embedded cross-origin in the portal email preview iframe.
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   res.end(buf);
+});
+
+// BF_SERVER_BLOCK_v780_PUBLIC_LANDING — hosted email page; bf-website /e/:slug
+// fetches this. Public + permissive CORS so boreal.finance can read it.
+router.get("/landing/:slug", async (req, res) => {
+  try {
+    const page = await getLandingBySlug(String(req.params.slug));
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    if (!page) return res.status(404).json({ ok: false, error: "not_found" });
+    res.setHeader("Cache-Control", "public, max-age=300");
+    return res.json({ ok: true, title: page.title, html: page.html });
+  } catch {
+    return res.status(500).json({ ok: false, error: "landing_failed" });
+  }
 });
 
 

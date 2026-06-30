@@ -5,6 +5,7 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { respondOk } from "../utils/respondOk.js";
 import { pool } from "../db.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
+import { createLandingPage } from "../services/landingPage.service.js"; // BF_SERVER_BLOCK_v780_PUBLIC_LANDING
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js";
 import { smsMarketingConfigured, sendMarketingSms } from "../services/marketingSms.js";
 import { countEmailRecipients, runEmailSend, countSmsRecipients, runSmsSend } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1 BF_SERVER_SEND_QUEUE_SMS_v1
@@ -29,6 +30,21 @@ const router = Router();
 
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.MARKETING_VIEW]));
+
+// BF_SERVER_BLOCK_v780_PUBLIC_LANDING — render+store a landing page from
+// branded-email fields; returns the public boreal.finance URL.
+router.post("/landing", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const b = req.body ?? {};
+  const fields = {
+    headline: String(b.headline ?? ""), heroUrl: String(b.heroUrl ?? ""),
+    heroLink: String(b.heroLink ?? ""), body: String(b.body ?? ""),
+    ctaLabel: String(b.ctaLabel ?? ""), ctaUrl: String(b.ctaUrl ?? ""),
+    image2Url: String(b.image2Url ?? ""), image2Link: String(b.image2Link ?? ""),
+  };
+  const out = await createLandingPage({ fields, silo, title: b.title ?? b.headline ?? null, createdBy: req.user?.userId ?? null });
+  respondOk(res, out);
+}));
 
 router.get("/", safeHandler((_req: any, res: any) => {
   respondOk(res, { status: "ok" });
