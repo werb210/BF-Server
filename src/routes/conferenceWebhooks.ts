@@ -61,7 +61,10 @@ router.post("/conference/join", twilioWebhookValidation, async (req: any, res) =
   //      <Conference> verb if the account lacks recording capability.
   //   4. waitUrl="" is documented behavior-undefined.
   //   5. endConferenceOnExit=false stranded the other party on hangup.
-  const enableRecording = process.env.ENABLE_CALL_RECORDING === "true";
+  // BF_SERVER_BLOCK_v771_RECORDING_DEFAULT_ON: recording + the Canada
+  // two-party consent announcement are core, not opt-in. On by default; the
+  // only kill switch is an explicit ENABLE_CALL_RECORDING="false".
+  const enableRecording = process.env.ENABLE_CALL_RECORDING !== "false";
   // BF_SERVER_BLOCK_v764_RECORDING_CONSENT — Canada is two-party consent.
   // Announce recording to each party as they join a recorded conference,
   // before they enter. Only when recording is actually on.
