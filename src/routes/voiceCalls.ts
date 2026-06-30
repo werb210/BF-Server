@@ -6,6 +6,42 @@
 import { Router } from "express";
 import { auth } from "../middleware/auth.js";
 import { pool } from "../db.js";
+
+// BF_SERVER_BLOCK_CALL_CONTACT_RESOLVE_v1 — resolve the CRM contact for a dialed
+// call when the client did not send one. Order: explicit contactId -> the
+// application's crm_contact_id -> an existing contact by phone (last-10,
+// silo-scoped). Never creates a contact. Pure + unit-tested.
+type QueryRunner = (text: string, params: unknown[]) => Promise<{ rows: any[] }>;
+export async function resolveCallContactId(
+  q: QueryRunner,
+  args: { contactId: string | null; applicationId: string | null; toPstn: string; silo: string },
+): Promise<string | null> {
+  if (args.contactId) return args.contactId;
+  if (args.applicationId) {
+    const ar = await q(
+      `SELECT crm_contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+      [args.applicationId],
+    ).catch(() => ({ rows: [] as any[] }));
+    const cid = (ar.rows[0]?.crm_contact_id as string | null | undefined) ?? null;
+    if (cid) return cid;
+  }
+  if (args.toPstn) {
+    const digits = args.toPstn.replace(/[^0-9]/g, "");
+    const last10 = digits.length >= 10 ? digits.slice(-10) : digits;
+    if (last10) {
+      const cr = await q(
+        `SELECT id FROM contacts
+           WHERE silo = $2 AND phone IS NOT NULL
+             AND length(regexp_replace(phone, '[^0-9]', '', 'g')) >= 10
+             AND right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = $1
+           ORDER BY created_at ASC LIMIT 1`,
+        [last10, args.silo],
+      ).catch(() => ({ rows: [] as any[] }));
+      return (cr.rows[0]?.id as string | undefined) ?? null;
+    }
+  }
+  return null;
+}
 import {
   createConference,
   addParticipantRow,
@@ -78,12 +114,16 @@ router.post("/calls", auth, async (req: any, res) => {
   }
 
   try {
+    const resolvedContactId = await resolveCallContactId(
+      (text, params) => pool.query(text, params),
+      { contactId, applicationId, toPstn, silo },
+    );
     const conf = await createConference({
       createdByUserId: userId,
       silo,
       direction: kind === "staff" ? "internal" : "outbound",
       applicationId,
-      contactId,
+      contactId: resolvedContactId,
     });
 
     // Caller participant row (staff in browser — joined when their SDK
