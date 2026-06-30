@@ -16,13 +16,17 @@ async function repliedSince(pool: Pool, contactId: string, since: any): Promise<
   catch { return false; }
 }
 async function openedSince(pool: Pool, contactId: string, since: any): Promise<boolean> {
-  try { const r = await pool.query(`SELECT 1 FROM crm_email_log WHERE contact_id=$1 AND opened_at IS NOT NULL AND opened_at > $2 LIMIT 1`, [contactId, since]); return (r.rowCount ?? 0) > 0; }
-  catch { return false; }
+  try {
+    const r = await pool.query(`SELECT 1 FROM crm_email_log WHERE contact_id=$1 AND opened_at IS NOT NULL AND opened_at > $2
+                                UNION ALL SELECT 1 FROM crm_timeline_events WHERE contact_id=$1 AND event_type='email_open' AND created_at > $2 LIMIT 1`, [contactId, since]);
+    return (r.rowCount ?? 0) > 0;
+  } catch { return false; }
 }
 async function clickedSince(pool: Pool, contactId: string, since: any): Promise<boolean> {
   try {
     const r = await pool.query(`SELECT 1 FROM sms_campaign_sends WHERE contact_id=$1 AND clicked_at IS NOT NULL AND clicked_at > $2
-                                UNION ALL SELECT 1 FROM sequence_sends WHERE contact_id=$1 AND clicked_at IS NOT NULL AND clicked_at > $2 LIMIT 1`, [contactId, since]);
+                                UNION ALL SELECT 1 FROM sequence_sends WHERE contact_id=$1 AND clicked_at IS NOT NULL AND clicked_at > $2
+                                UNION ALL SELECT 1 FROM crm_timeline_events WHERE contact_id=$1 AND event_type='email_click' AND created_at > $2 LIMIT 1`, [contactId, since]);
     return (r.rowCount ?? 0) > 0;
   } catch { return false; }
 }
