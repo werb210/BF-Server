@@ -44,6 +44,12 @@ function buildPoolConfig(): PoolConfig {
     max: 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
+    // BF_SERVER_BLOCK_v791_KEEPALIVE — Azure silently drops idle TCP connections;
+    // without keepalive a culled pooled connection throws read/connect ETIMEDOUT
+    // on next use (the ocr.worker / readReceiptWorker errors). Keepalive probes
+    // hold idle connections open so they survive Azure's idle cull.
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
   };
 }
 
