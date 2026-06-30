@@ -9,6 +9,7 @@ import { createLandingPage, createLandingPageFromHtml, withViewInBrowser } from 
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js";
 import { smsMarketingConfigured, sendMarketingSms } from "../services/marketingSms.js";
 import { countEmailRecipients, runEmailSend, countSmsRecipients, runSmsSend } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1 BF_SERVER_SEND_QUEUE_SMS_v1
+import { enrollSequence } from "../services/sequenceEngine.js"; // BF_SERVER_BLOCK_v785_SEQUENCES
 import { suggestionsConfigured, buildSuggestions, applySuggestion } from "../services/googleAdsSuggestions.js";
 import { linkedInSuggestionsConfigured, buildLinkedInSuggestions, applyLinkedInSuggestion } from "../services/linkedInAdsSuggestions.js"; // BF_SERVER_LINKEDIN_SUGGESTIONS_v1
 import { previewIcp, buildHashedList, buildLinkedInAudienceCsv } from "../services/googleAdsCustomerMatch.js";
@@ -513,6 +514,73 @@ router.post("/templates", requireAuth, safeHandler(async (req: any, res: any) =>
 router.delete("/templates/:id", requireAuth, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   await pool.query("DELETE FROM marketing_template WHERE id = $1 AND silo = $2", [String(req.params.id), silo]);
+  respondOk(res, { deleted: true });
+}));
+
+// BF_SERVER_BLOCK_v785_SEQUENCES — drip sequence CRUD + activate/pause.
+router.get("/sequences", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const r = await pool.query(
+    `SELECT s.id, s.name, s.audience_tag, s.status, s.stop_on_reply, s.created_at,
+            (SELECT count(*)::int FROM marketing_sequence_steps st WHERE st.sequence_id=s.id) AS steps,
+            (SELECT count(*)::int FROM marketing_sequence_enrollments e WHERE e.sequence_id=s.id) AS enrolled,
+            (SELECT count(*)::int FROM marketing_sequence_enrollments e WHERE e.sequence_id=s.id AND e.status='active') AS active,
+            (SELECT count(*)::int FROM marketing_sequence_enrollments e WHERE e.sequence_id=s.id AND e.status='completed') AS completed
+       FROM marketing_sequences s WHERE s.silo=$1 ORDER BY s.created_at DESC LIMIT 200`,
+    [silo]);
+  respondOk(res, { items: r.rows });
+}));
+
+router.get("/sequences/:id", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const s = await pool.query(`SELECT id, name, audience_tag, status, stop_on_reply, quiet_start, quiet_end FROM marketing_sequences WHERE id=$1 AND silo=$2`, [String(req.params.id), silo]);
+  if (s.rowCount === 0) { respondOk(res, { item: null }); return; }
+  const steps = await pool.query(`SELECT step_order, channel, wait_minutes, condition, subject, body, html, link_url FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC`, [String(req.params.id)]);
+  respondOk(res, { item: s.rows[0], steps: steps.rows });
+}));
+
+router.post("/sequences", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const b = req.body || {};
+  const name = String(b.name || "").trim();
+  const steps = Array.isArray(b.steps) ? b.steps : [];
+  if (!name || steps.length === 0) { respondOk(res, { error: "name and at least one step required" }); return; }
+  const seq = await pool.query(
+    `INSERT INTO marketing_sequences (silo, name, audience_tag, stop_on_reply, quiet_start, quiet_end, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+    [silo, name, b.audienceTag ? String(b.audienceTag) : null, b.stopOnReply !== false, Number(b.quietStart ?? 9), Number(b.quietEnd ?? 21), req.user?.userId ?? null]);
+  const seqId = seq.rows[0].id;
+  for (let i = 0; i < steps.length; i++) {
+    const st = steps[i] || {};
+    await pool.query(
+      `INSERT INTO marketing_sequence_steps (sequence_id, step_order, channel, wait_minutes, condition, subject, body, html, link_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [seqId, i, String(st.channel || "email"), Number(st.waitMinutes ?? 0), String(st.condition || "always"), st.subject ?? null, st.body ?? null, st.html ?? null, st.linkUrl ?? null]);
+  }
+  respondOk(res, { id: seqId, saved: true });
+}));
+
+router.post("/sequences/:id/activate", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const id = String(req.params.id);
+  const upd = await pool.query(`UPDATE marketing_sequences SET status='active', updated_at=now() WHERE id=$1 AND silo=$2 RETURNING id`, [id, silo]);
+  if (upd.rowCount === 0) { respondOk(res, { error: "not found" }); return; }
+  const enrolled = await enrollSequence(pool, id);
+  respondOk(res, { activated: true, enrolled });
+}));
+
+router.post("/sequences/:id/pause", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  await pool.query(`UPDATE marketing_sequences SET status='paused', updated_at=now() WHERE id=$1 AND silo=$2`, [String(req.params.id), silo]);
+  respondOk(res, { paused: true });
+}));
+
+router.delete("/sequences/:id", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const id = String(req.params.id);
+  await pool.query(`DELETE FROM marketing_sequence_enrollments WHERE sequence_id=$1`, [id]);
+  await pool.query(`DELETE FROM marketing_sequence_steps WHERE sequence_id=$1`, [id]);
+  await pool.query(`DELETE FROM marketing_sequences WHERE id=$1 AND silo=$2`, [id, silo]);
   respondOk(res, { deleted: true });
 }));
 
