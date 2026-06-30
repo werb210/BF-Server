@@ -8,7 +8,7 @@ import {
   dispatchToSelected,
   type DispatchLender,
 } from "../services/lenders/dispatchToSelected.js";
-import { pnwSigningSatisfied } from "../signnow/pnwSigning.js";
+import { pnwSigningSatisfiedForDispatch } from "../signnow/pnwSigning.js";
 
 const POLL_MS = Number(process.env.LENDER_PACKAGE_POLL_MS || 15000);
 const BATCH = Math.max(1, Number(process.env.LENDER_PACKAGE_BATCH || 3));
@@ -75,9 +75,9 @@ export function startLenderPackageWorker(pool: Pool): { stop: () => void } {
             continue;
           }
 
-          // BF_SERVER_BLOCK_PNW_ORDER_GATE_v1 — never dispatch while a required
-          // Personal Net Worth is unsigned (defense-in-depth behind the signing gate).
-          if (!(await pnwSigningSatisfied(applicationId))) {
+          // BF_SERVER_BLOCK_PNW_ORDER_GATE_v2 — never dispatch while a PNW group
+          // exists and is not confirmed-signed (defense-in-depth behind the signing gate).
+          if (!(await pnwSigningSatisfiedForDispatch(applicationId))) {
             await pool.query(
               `UPDATE job_queue SET status = 'pending', updated_at = now() WHERE id = $1`,
               [job.id]
