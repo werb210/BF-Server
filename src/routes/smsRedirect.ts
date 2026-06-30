@@ -12,7 +12,10 @@ router.post("/status", async (req: any, res: any) => {
   try {
     const sid = String(req.body?.MessageSid || "");
     const status = String(req.body?.MessageStatus || "");
-    if (sid) await pool.query(`UPDATE sms_campaign_sends SET delivery_status = $2 WHERE message_sid = $1`, [sid, status]);
+    if (sid) {
+      await pool.query(`UPDATE sms_campaign_sends SET delivery_status = $2 WHERE message_sid = $1`, [sid, status]);
+      await pool.query(`UPDATE sequence_sends SET delivery_status = $2 WHERE message_sid = $1`, [sid, status]).catch(() => {});
+    }
   } catch { /* ignore */ }
   res.status(204).end();
 });
@@ -24,7 +27,9 @@ router.get("/:token", async (req: any, res: any) => {
     const url = payload?.u && /^https?:\/\//i.test(payload.u) ? payload.u : fallbackUrl;
     if (payload?.sid) {
       await pool.query(`UPDATE sms_campaign_sends SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [payload.sid]);
-      const r = await pool.query<{ contact_id: string }>(`SELECT contact_id FROM sms_campaign_sends WHERE id = $1`, [payload.sid]);
+      // BF_SERVER_BLOCK_v786_SEQ_CLICKS - sequence sends are tracked separately.
+      await pool.query(`UPDATE sequence_sends SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [payload.sid]).catch(() => {});
+      const r = await pool.query<{ contact_id: string }>(`SELECT contact_id FROM sms_campaign_sends WHERE id = $1 UNION ALL SELECT contact_id FROM sequence_sends WHERE id = $1 LIMIT 1`, [payload.sid]);
       const cid = r.rows[0]?.contact_id;
       if (cid) await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [cid, "sms_link_clicked", JSON.stringify({ url })]);
     }
