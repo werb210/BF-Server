@@ -256,10 +256,10 @@ async function loadFormPdfs(ctx: LoadCtx): Promise<{ filename: string; content: 
       if (spec.file === "personal-net-worth.pdf") {
         // v_PNW_SIGNING_v1 — include only the individually-signed copy.
         const signed = await getSignedPnwPdf(ctx.applicationId);
-        // BF_SERVER_BLOCK_PNW_GATE_v1 — NEVER substitute an unsigned PNW. Only the
-        // genuinely SignNow-signed copy is shipped; if unsigned, omit it. The lender
-        // package worker gate blocks dispatch until the PNW is signed, so by the time
-        // the package builds for a gated dispatch this returns the signed copy.
+        // BF_SERVER_BLOCK_PNW_ORDER_GATE_v1 — NEVER substitute an unsigned PNW.
+        // Only the genuinely SignNow-signed copy is shipped; if unsigned, omit it. The
+        // lender package worker gate blocks dispatch until required PNW is signed, so
+        // by the time the package builds for a gated dispatch this returns the signed copy.
         if (signed) out.push({ filename: spec.file, content: signed });
       } else {
         const header = [spec.title, `Application: ${ctx.applicationId}`,
