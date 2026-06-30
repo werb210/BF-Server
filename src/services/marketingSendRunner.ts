@@ -6,7 +6,7 @@
 // exactly (same recipient filter, merge vars, and timeline event).
 import type { Pool } from "pg";
 import { sendOne, mergeFields } from "./sendgridService.js";
-import { sendMarketingSms, trackedLink } from "./marketingSms.js"; // BF_SERVER_SEND_QUEUE_SMS_v1
+import { sendMarketingSms, trackedLink, lookupLineType } from "./marketingSms.js"; // BF_SERVER_SEND_QUEUE_SMS_v1 BF_SERVER_BLOCK_v784_LINE_TYPE_IMPORT
 
 export type EmailJob = { silo: string; tag: string | null; subject: string; html: string };
 export type SendProgress = (sent: number, failed: number) => Promise<void>;
@@ -61,7 +61,7 @@ export async function countSmsRecipients(pool: Pool, silo: string, tag: string |
     `SELECT count(*)::int AS n
        FROM contacts c
       WHERE c.silo = $1 AND ($2::text IS NULL OR $2 = ANY(c.tags))
-        AND (COALESCE(c.phone,'') <> '' OR COALESCE(c.email,'') <> '')`,
+        AND ( (COALESCE(c.phone,'') <> '' AND (c.line_type IS NULL OR c.line_type = 'mobile')) OR COALESCE(c.email,'') <> '' )`,
     [silo, tag],
   );
   return r.rows[0]?.n ?? 0;
@@ -74,8 +74,8 @@ export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgr
     [job.silo, job.tag, job.body, job.linkUrl, job.fbSubject, job.fbHtml, job.createdBy],
   );
   const campaignId = cam.rows[0].id;
-  const recips = await pool.query<{ id: string; email: string | null; phone: string | null; name: string | null; company: string | null; sms_opt_out: boolean; marketing_opt_out: boolean }>(
-    `SELECT c.id, c.email, c.phone, c.name, co.name AS company, COALESCE(c.sms_opt_out,false) AS sms_opt_out, COALESCE(c.marketing_opt_out,false) AS marketing_opt_out
+  const recips = await pool.query<{ id: string; email: string | null; phone: string | null; name: string | null; company: string | null; sms_opt_out: boolean; marketing_opt_out: boolean; line_type: string | null }>(
+    `SELECT c.id, c.email, c.phone, c.name, co.name AS company, COALESCE(c.sms_opt_out,false) AS sms_opt_out, COALESCE(c.marketing_opt_out,false) AS marketing_opt_out, c.line_type
        FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
       WHERE c.silo = $1 AND ($2::text IS NULL OR $2 = ANY(c.tags))
         AND (COALESCE(c.phone,'') <> '' OR COALESCE(c.email,'') <> '')`,
@@ -85,7 +85,15 @@ export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgr
   for (const c of recips.rows) {
     const first = (c.name || "").trim().split(/\s+/)[0] || "there";
     const vars = { first_name: first, name: c.name || "there", email: c.email || "", company: c.company || "" };
-    const hasPhone = Boolean(c.phone) && !c.sms_opt_out;
+    // BF_SERVER_BLOCK_v784_LINE_TYPE_LOOP - lazily verify line type; skip non-mobile, cache result.
+    let hasPhone = Boolean(c.phone) && !c.sms_opt_out;
+    if (hasPhone && c.line_type == null) {
+      const lt = await lookupLineType(String(c.phone));
+      if (lt) await pool.query(`UPDATE contacts SET line_type = $2, line_type_checked_at = now() WHERE id = $1`, [c.id, lt]);
+      if (lt && lt !== "mobile") hasPhone = false;
+    } else if (hasPhone && c.line_type && c.line_type !== "mobile") {
+      hasPhone = false;
+    }
     if (hasPhone) {
       const send = await pool.query<{ id: string }>(`INSERT INTO sms_campaign_sends (campaign_id, contact_id, silo, phone) VALUES ($1,$2,$3,$4) RETURNING id`, [campaignId, c.id, job.silo, c.phone]);
       const sendId = send.rows[0].id;
