@@ -6,7 +6,7 @@ import { buildApplicationPdf } from "./pdfBuilder.js";
 import { buildAccordPdf } from "./accordPdfBuilder.js";
 import { uploadSignedApplicationPdf } from "./blobStorage.js";
 import * as signnow from "./signnowClient.js";
-import { pnwSigningSatisfied } from "./pnwSigning.js";
+import { pnwSigningSatisfiedForAppSigning } from "./pnwSigning.js";
 import { sendViaGraph } from "../services/email/graphSendService.js";
 
 const ROLE_OWNER1 = "Owner 1";
@@ -59,9 +59,9 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
   if (!row) return { status: "not_ready", reason: "application_not_found" };
   if (row.signnow_app_signed_at) return { status: "signed" };
   if (Number(row.finalized_count ?? 0) <= 0) return { status: "not_ready", reason: "lender_not_finalized" };
-  // BF_SERVER_BLOCK_PNW_ORDER_GATE_v1 — the Personal Net Worth statement must be
+  // BF_SERVER_BLOCK_PNW_ORDER_GATE_v2 — the Personal Net Worth statement must be
   // signed (its own envelope) BEFORE the application signing session may open.
-  if (!(await pnwSigningSatisfied(applicationId))) return { status: "not_ready", reason: "pnw_not_signed" };
+  if (!(await pnwSigningSatisfiedForAppSigning(applicationId))) return { status: "not_ready", reason: "pnw_not_signed" };
   if (isStubMode()) return { status: "stub", reason: "SIGNNOW_STUB_MODE is enabled on this server" };
   if (!signnow.isApiKeyConfigured()) return { status: "stub", reason: "SIGNNOW_API_KEY is empty on this server" };
 

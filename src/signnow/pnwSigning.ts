@@ -103,45 +103,46 @@ export async function isPnwSignedOrAbsent(applicationId: string): Promise<boolea
   }
 }
 
-
-// BF_SERVER_BLOCK_PNW_ORDER_GATE_v1 — ordering helpers. The Personal Net Worth
-// statement must be SIGNED before the application signing session may open, and
-// before the lender package may ship. Requiredness is read from
-// application_required_documents (the same source the CMP uses); signed-ness is
-// the live SignNow group status. Both never throw.
-export async function isPnwRequired(applicationId: string): Promise<boolean> {
-  try {
-    const r = await dbQuery<{ one: number }>(
-      `SELECT 1 AS one
-         FROM application_required_documents
-        WHERE application_id::text = ($1)::text
-          AND document_category IN ('personal_net_worth','net_worth_statement')
-          AND is_required = true
-        LIMIT 1`, [applicationId]);
-    return (r.rows.length ?? 0) > 0;
-  } catch {
-    return false;
-  }
-}
-
-export async function isPnwSigned(applicationId: string): Promise<boolean> {
-  if (!isApiKeyConfigured()) return false;
+// BF_SERVER_BLOCK_PNW_ORDER_GATE_v2 — ordering helpers anchored on the PNW
+// signing GROUP (which exists exactly when a PNW is in play; the
+// application_required_documents table is NOT reliably populated for PNW).
+async function pnwGroupId(applicationId: string): Promise<string | null> {
   try {
     const r = await dbQuery<{ group_id: string | null }>(
       `SELECT metadata->'pnw_signnow'->>'group_id' AS group_id
          FROM applications WHERE id::text = ($1)::text LIMIT 1`, [applicationId]);
-    const groupId = r.rows[0]?.group_id;
-    if (!groupId) return false;
+    return r.rows[0]?.group_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// App-signing gate: block ONLY on a confirmed-unsigned PNW. No group => no PNW
+// in play => allow. Group present but SignNow status cannot be confirmed (outage)
+// => allow: nothing can be signed during an outage anyway.
+export async function pnwSigningSatisfiedForAppSigning(applicationId: string): Promise<boolean> {
+  if (!isApiKeyConfigured()) return true;
+  const groupId = await pnwGroupId(applicationId);
+  if (!groupId) return true;
+  try {
+    const status = await getDocumentGroupStatus(groupId);
+    return status.signed === true ? true : false;
+  } catch {
+    return true;
+  }
+}
+
+// Dispatch gate (stricter): never ship a package while a PNW group exists and is
+// not confirmed-signed. On a status error this returns false so the worker
+// REQUEUES (waits) rather than shipping an unsigned PNW.
+export async function pnwSigningSatisfiedForDispatch(applicationId: string): Promise<boolean> {
+  if (!isApiKeyConfigured()) return true;
+  const groupId = await pnwGroupId(applicationId);
+  if (!groupId) return true;
+  try {
     const status = await getDocumentGroupStatus(groupId);
     return status.signed === true;
   } catch {
     return false;
   }
-}
-
-// Gate predicate: true => OK to proceed (PNW not required, or required and signed).
-// false => a required PNW is not yet signed; callers must block / requeue.
-export async function pnwSigningSatisfied(applicationId: string): Promise<boolean> {
-  if (!(await isPnwRequired(applicationId))) return true;
-  return await isPnwSigned(applicationId);
 }
