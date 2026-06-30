@@ -59,17 +59,29 @@ router.get("/funnel", safeHandler(async (req: any, res: any) => {
     started: number; step2: number; step3: number; step4: number;
     step5: number; step6: number; submitted: number;
   }>(
-    `SELECT
+    // BF_SERVER_BLOCK_v772_FUNNEL_METADATA_STEP: the wizard persists progress
+    // into metadata.currentStep, not the current_step column (which the
+    // save/resume path defaults to 1). Read the real source, and credit
+    // submitted apps with the full path since submission implies all steps.
+    `WITH a AS (
+       SELECT COALESCE(
+                NULLIF(metadata->>'currentStep','')::int,
+                NULLIF(metadata->>'current_step','')::int,
+                current_step, 1) AS step,
+              submitted_at
+         FROM applications
+        WHERE silo = $1
+          AND created_at >= now() - ($2 || ' days')::interval
+     )
+     SELECT
        count(*)::int AS started,
-       count(*) FILTER (WHERE current_step >= 2)::int AS step2,
-       count(*) FILTER (WHERE current_step >= 3)::int AS step3,
-       count(*) FILTER (WHERE current_step >= 4)::int AS step4,
-       count(*) FILTER (WHERE current_step >= 5)::int AS step5,
-       count(*) FILTER (WHERE current_step >= 6)::int AS step6,
+       count(*) FILTER (WHERE step >= 2 OR submitted_at IS NOT NULL)::int AS step2,
+       count(*) FILTER (WHERE step >= 3 OR submitted_at IS NOT NULL)::int AS step3,
+       count(*) FILTER (WHERE step >= 4 OR submitted_at IS NOT NULL)::int AS step4,
+       count(*) FILTER (WHERE step >= 5 OR submitted_at IS NOT NULL)::int AS step5,
+       count(*) FILTER (WHERE step >= 6 OR submitted_at IS NOT NULL)::int AS step6,
        count(*) FILTER (WHERE submitted_at IS NOT NULL)::int AS submitted
-     FROM applications
-     WHERE silo = $1
-       AND created_at >= now() - ($2 || ' days')::interval`,
+     FROM a`,
     [silo, String(days)],
   );
   const r = rows[0] ?? { started: 0, step2: 0, step3: 0, step4: 0, step5: 0, step6: 0, submitted: 0 };
