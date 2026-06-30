@@ -20,8 +20,11 @@ async function openedSince(pool: Pool, contactId: string, since: any): Promise<b
   catch { return false; }
 }
 async function clickedSince(pool: Pool, contactId: string, since: any): Promise<boolean> {
-  try { const r = await pool.query(`SELECT 1 FROM sms_campaign_sends WHERE contact_id=$1 AND clicked_at IS NOT NULL AND clicked_at > $2 LIMIT 1`, [contactId, since]); return (r.rowCount ?? 0) > 0; }
-  catch { return false; }
+  try {
+    const r = await pool.query(`SELECT 1 FROM sms_campaign_sends WHERE contact_id=$1 AND clicked_at IS NOT NULL AND clicked_at > $2
+                                UNION ALL SELECT 1 FROM sequence_sends WHERE contact_id=$1 AND clicked_at IS NOT NULL AND clicked_at > $2 LIMIT 1`, [contactId, since]);
+    return (r.rowCount ?? 0) > 0;
+  } catch { return false; }
 }
 async function logStep(pool: Pool, contactId: string, seqId: string, stepIdx: number, channel: string): Promise<void> {
   await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [contactId, "sequence_step_sent", JSON.stringify({ sequenceId: seqId, step: stepIdx, channel })]).catch(() => {});
@@ -62,7 +65,7 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
 
   if (en.stop_on_reply && (await repliedSince(pool, en.contact_id, en.enrolled_at))) { await stop(pool, en.id, "replied"); return; }
 
-  const cq = await pool.query(`SELECT id, email, phone, name, COALESCE(sms_opt_out,false) AS sms_opt_out, COALESCE(marketing_opt_out,false) AS marketing_opt_out, line_type, (SELECT name FROM companies WHERE id=contacts.company_id) AS company FROM contacts WHERE id=$1`, [en.contact_id]);
+  const cq = await pool.query(`SELECT id, silo, email, phone, name, COALESCE(sms_opt_out,false) AS sms_opt_out, COALESCE(marketing_opt_out,false) AS marketing_opt_out, line_type, (SELECT name FROM companies WHERE id=contacts.company_id) AS company FROM contacts WHERE id=$1`, [en.contact_id]);
   const c = cq.rows[0];
   if (!c) { await complete(pool, en.id); return; }
 
@@ -79,10 +82,12 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
       if (!blocked) {
         const h = smsHourLocal();
         if (h < en.quiet_start || h >= en.quiet_end) { await bump(pool, en.id, 60); return; }
-        const sendId = randomUUID();
+        // BF_SERVER_BLOCK_v786_SEQ_CLICKS - track this send so a link click attributes back.
+        const ss = await pool.query<{ id: string }>(`INSERT INTO sequence_sends (sequence_id, contact_id, silo, channel) VALUES ($1,$2,$3,'sms') RETURNING id`, [en.sequence_id, c.id, c.silo || "BF"]);
+        const sendId = ss.rows[0]?.id || randomUUID();
         const text = step.link_url ? `${step.body || ""} ${trackedLink(sendId, String(step.link_url))}` : String(step.body || "");
         const r = await sendMarketingSms(String(c.phone), text);
-        if (r.ok) await logStep(pool, c.id, en.sequence_id, idx, "sms");
+        if (r.ok) { await logStep(pool, c.id, en.sequence_id, idx, "sms"); await pool.query(`UPDATE sequence_sends SET message_sid=$2 WHERE id=$1`, [sendId, r.sid ?? null]).catch(() => {}); }
         else if (r.optedOut) await pool.query(`UPDATE contacts SET sms_opt_out=true, updated_at=now() WHERE id=$1`, [c.id]).catch(() => {});
       }
     } else {
