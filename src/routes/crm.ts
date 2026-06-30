@@ -1116,10 +1116,21 @@ router.get("/contacts/:id/emails", safeHandler(async (req: any, res: any) => {
     return res.status(400).json({ error: "invalid_id" });
   }
   const { rows } = await pool.query(
-    `SELECT id, subject, body_html, from_address, to_addresses, opened_at, created_at
-       FROM crm_email_log
-      WHERE contact_id = $1
-      ORDER BY created_at DESC
+    // BF_SERVER_BLOCK_v770_EMAIL_OPEN_DETAIL: open_count + each open's time.
+    `SELECT e.id, e.subject, e.body_html, e.from_address, e.to_addresses,
+            e.opened_at, e.created_at,
+            COALESCE(oc.n, 0) AS open_count,
+            COALESCE(oc.opens, '[]'::json) AS opens
+       FROM crm_email_log e
+       LEFT JOIN LATERAL (
+         SELECT count(*)::int AS n,
+                json_agg(json_build_object('opened_at', ev.opened_at)
+                         ORDER BY ev.opened_at) AS opens
+           FROM email_open_events ev
+          WHERE ev.email_log_id = e.id
+       ) oc ON true
+      WHERE e.contact_id = $1
+      ORDER BY e.created_at DESC
       LIMIT 200`,
     [id]
   );
@@ -1147,7 +1158,20 @@ router.get("/contacts/:id/calls", safeHandler(async (req: any, res: any) => {
        FROM conferences cf
        LEFT JOIN call_recordings  r ON r.conference_id = cf.id
        LEFT JOIN call_transcripts t ON t.conference_id = cf.id
+      -- BF_SERVER_BLOCK_v770_CALLS_ORPHAN_RECOVERY: a call orphaned at dial
+      -- time (conferences.contact_id NULL) still surfaces when a participant
+      -- phone matches this contact's phone on the last 10 digits.
       WHERE cf.contact_id = $1
+         OR cf.id IN (
+              SELECT cp.conference_id
+                FROM conference_participants cp
+                JOIN contacts c ON c.id::text = $1
+               WHERE c.phone IS NOT NULL
+                 AND cp.phone_number IS NOT NULL
+                 AND length(regexp_replace(cp.phone_number, '[^0-9]', '', 'g')) >= 10
+                 AND right(regexp_replace(cp.phone_number, '[^0-9]', '', 'g'), 10)
+                   = right(regexp_replace(c.phone, '[^0-9]', '', 'g'), 10)
+            )
       ORDER BY cf.created_at DESC
       LIMIT 200`,
     [id]
