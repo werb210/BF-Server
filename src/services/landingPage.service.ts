@@ -4,7 +4,7 @@ import { pool } from "../db.js";
 import { renderBrandedEmail, type BrandedEmailFields } from "./emailTemplateRender.js";
 
 function landingBase(): string {
-  return (process.env.LANDING_BASE_URL || "https://boreal.finance").replace(/\/+$/, "");
+  return (process.env.LANDING_BASE_URL || "https://boreal.financial").replace(/\/+$/, "");
 }
 
 function slugify(): string {
