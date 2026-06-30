@@ -51,6 +51,10 @@ router.post("/", async (req: any, res: any) => {
       if (SUPPRESS.has(event)) {
         await pool.query(`UPDATE contacts SET marketing_opt_out = true, updated_at = now() WHERE id = $1`, [cid]);
       }
+      // BF_SERVER_BLOCK_v790 - attribute sequence email opens/clicks.
+      const seqSendId = ev?.seq_send_id ? String(ev.seq_send_id) : null;
+      if (seqSendId && event === "open") await pool.query(`UPDATE sequence_sends SET opened_at = COALESCE(opened_at, now()) WHERE id = $1`, [seqSendId]).catch(() => {});
+      else if (seqSendId && event === "click") await pool.query(`UPDATE sequence_sends SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [seqSendId]).catch(() => {});
     } catch { /* skip bad event */ }
   }
   res.status(200).json({ ok: true });

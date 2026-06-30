@@ -101,6 +101,28 @@ router.get("/", safeHandler(async (req: any, res: any) => {
                COALESCE(staff_name, from_number, phone_number) AS extra
           FROM communications_messages
          WHERE contact_id = $1 AND silo = $2
+        UNION ALL
+        -- BF_SERVER_BLOCK_v790 — sequence + engagement events on the contact record.
+        SELECT (CASE WHEN event_type LIKE 'sms_%' THEN 'sms'
+                     WHEN event_type = 'sequence_step_sent' THEN COALESCE(payload->>'channel','email')
+                     ELSE 'email' END) AS kind,
+               id::text, created_at AS ts,
+               (CASE event_type
+                  WHEN 'sequence_step_sent' THEN 'Sequence ' || COALESCE(payload->>'channel','') || ' sent'
+                  WHEN 'email_open' THEN 'Email opened'
+                  WHEN 'email_click' THEN 'Email link clicked'
+                  WHEN 'email_bounce' THEN 'Email bounced'
+                  WHEN 'email_dropped' THEN 'Email dropped'
+                  WHEN 'email_spamreport' THEN 'Marked as spam'
+                  WHEN 'email_unsubscribe' THEN 'Unsubscribed'
+                  WHEN 'email_group_unsubscribe' THEN 'Unsubscribed'
+                  WHEN 'sms_link_clicked' THEN 'SMS link clicked'
+                  ELSE event_type END) AS title,
+               NULLIF(payload->>'url','') AS body,
+               NULL::text AS extra
+          FROM crm_timeline_events
+         WHERE contact_id = $1
+           AND event_type IN ('sequence_step_sent','email_open','email_click','email_bounce','email_dropped','email_spamreport','email_unsubscribe','email_group_unsubscribe','sms_link_clicked')
         ORDER BY ts DESC LIMIT 500`
     : `
         SELECT 'note' AS kind, id::text, created_at AS ts,
