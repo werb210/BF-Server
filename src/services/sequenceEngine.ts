@@ -57,11 +57,17 @@ export async function enrollSequence(pool: Pool, sequenceId: string): Promise<nu
 }
 
 async function processClaimed(pool: Pool, en: any): Promise<void> {
-  const steps = (await pool.query(`SELECT channel, wait_minutes, condition, subject, body, html, link_url FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC`, [en.sequence_id])).rows;
+  const steps = (await pool.query(`SELECT channel, wait_minutes, condition, subject, body, html, link_url, template_id FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC`, [en.sequence_id])).rows;
   const idx: number = en.current_step;
   if (idx >= steps.length) { await complete(pool, en.id); return; }
   const step = steps[idx];
   const since = en.last_step_at || en.enrolled_at;
+  // BF_SERVER_BLOCK_v788_SEQ_TEMPLATES - resolve step content from a saved template.
+  let effSubject = step.subject, effBody = step.body, effHtml = step.html, effLink = step.link_url;
+  if (step.template_id) {
+    const t = await pool.query(`SELECT subject, body, html, link_url FROM marketing_template WHERE id=$1`, [step.template_id]);
+    if (t.rows[0]) { effSubject = t.rows[0].subject; effBody = t.rows[0].body; effHtml = t.rows[0].html; effLink = t.rows[0].link_url; }
+  }
 
   if (en.stop_on_reply && (await repliedSince(pool, en.contact_id, en.enrolled_at))) { await stop(pool, en.id, "replied"); return; }
 
@@ -85,7 +91,7 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
         // BF_SERVER_BLOCK_v786_SEQ_CLICKS - track this send so a link click attributes back.
         const ss = await pool.query<{ id: string }>(`INSERT INTO sequence_sends (sequence_id, contact_id, silo, channel) VALUES ($1,$2,$3,'sms') RETURNING id`, [en.sequence_id, c.id, c.silo || "BF"]);
         const sendId = ss.rows[0]?.id || randomUUID();
-        const text = step.link_url ? `${step.body || ""} ${trackedLink(sendId, String(step.link_url))}` : String(step.body || "");
+        const text = effLink ? `${effBody || ""} ${trackedLink(sendId, String(effLink))}` : String(effBody || "");
         const r = await sendMarketingSms(String(c.phone), text);
         if (r.ok) { await logStep(pool, c.id, en.sequence_id, idx, "sms"); await pool.query(`UPDATE sequence_sends SET message_sid=$2 WHERE id=$1`, [sendId, r.sid ?? null]).catch(() => {}); }
         else if (r.optedOut) await pool.query(`UPDATE contacts SET sms_opt_out=true, updated_at=now() WHERE id=$1`, [c.id]).catch(() => {});
@@ -93,10 +99,10 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
     } else {
       const blocked = !c.email || c.marketing_opt_out;
       if (!blocked) {
-        const html = step.html && String(step.html).trim()
-          ? String(step.html)
-          : renderBrandedEmail({ headline: "", heroUrl: "", heroLink: "", body: String(step.body || ""), ctaLabel: "", ctaUrl: "", image2Url: "", image2Link: "" });
-        const r = await sendOne({ to: String(c.email), subject: mergeFields(String(step.subject || ""), vars), html: mergeFields(html, vars), contactId: c.id });
+        const html = effHtml && String(effHtml).trim()
+          ? String(effHtml)
+          : renderBrandedEmail({ headline: "", heroUrl: "", heroLink: "", body: String(effBody || ""), ctaLabel: "", ctaUrl: "", image2Url: "", image2Link: "" });
+        const r = await sendOne({ to: String(c.email), subject: mergeFields(String(effSubject || ""), vars), html: mergeFields(html, vars), contactId: c.id });
         if (r.ok) await logStep(pool, c.id, en.sequence_id, idx, "email");
       }
     }
