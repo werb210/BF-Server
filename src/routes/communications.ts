@@ -601,6 +601,7 @@ router.get("/messages/:id/media", safeHandler(async (req: any, res: any) => {
   }
   res.setHeader("Content-Type", ct);
   res.setHeader("Cache-Control", "private, max-age=86400");
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   return res.status(200).end(buf);
 }));
 
@@ -649,6 +650,7 @@ router.get("/recordings/by-conference/:conferenceId/media", safeHandler(async (r
   }
   res.setHeader("Content-Type", ct);
   res.setHeader("Cache-Control", "private, max-age=86400");
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   return res.status(200).end(buf);
 }));
 
