@@ -31,7 +31,7 @@ import internalProcessingRoutes from "./internal/processing.js";
 import marketingRoutes from "./marketing.js";
 import offersRoutes from "./offers.js";
 import offerAcceptanceRoutes from "./offerAcceptance.js";
-// BF_MINI_PORTAL_NOTES_v47 — application-scoped notes
+// BF_MINI_PORTAL_NOTES_v47 - application-scoped notes
 import applicationNotesRoutes from "./applicationNotes.js";
 // BF_NOTIFICATIONS_v50
 import notificationsRoutes from "./notifications.js";
@@ -119,7 +119,7 @@ const ALL_ROLES: Role[] = [
 const combinedPortalRoutes = Router();
 combinedPortalRoutes.use(portalRoutes);
 combinedPortalRoutes.use(portalLendersRoutes);
-// BF_SERVER_BLOCK_v110_REQUIRED_DOCS_ROUTE_ORDER_v1 — required-docs route
+// BF_SERVER_BLOCK_v110_REQUIRED_DOCS_ROUTE_ORDER_v1 - required-docs route
 // MUST mount BEFORE portalLenderProductsRoutes. The latter has
 // GET /lender-products/:id which captures `required-docs` as the :id
 // value and 404s before our handler is reached.
@@ -135,15 +135,16 @@ combinedPortalRoutes.use(documentTypesRouter);
 const rootRoutes = Router();
 rootRoutes.use(readinessRoutes);
 rootRoutes.use(signnowRoutes);
-// BF_SERVER_v77_BLOCK_1_11_OFFERS_COLLISION — fold orchestration into root mount
+// BF_SERVER_v77_BLOCK_1_11_OFFERS_COLLISION - fold orchestration into root mount
 rootRoutes.use(submissionOrchestrationRoutes);
 rootRoutes.use(mayaEscalateRoutes);
 rootRoutes.use(issuesRoutes);
 rootRoutes.use(conversationsRoutes);
 rootRoutes.use(smsInboundWebhookRoutes);
+rootRoutes.use(applicationFormResponses); // BF_SERVER_FORMRESP_ROOT_v1
 
 const combinedMayaRoutes = Router();
-// BF_SERVER_BLOCK_v674 — website widget posts /api/maya/website-chat
+// BF_SERVER_BLOCK_v674 - website widget posts /api/maya/website-chat
 combinedMayaRoutes.post("/website-chat", async (req, res) => {
   await proxyMayaToAgent(
     "/api/maya/message",
@@ -162,7 +163,7 @@ combinedMayaRoutes.use(mayaAdminStubs);
 // BF_SERVER_BLOCK_v214_MAYA_STAFF_PIPELINE_QUERY_v1
 combinedMayaRoutes.use(mayaStaffRouter);
 
-// BF_SERVER_v77_BLOCK_1_11_OFFERS_COLLISION — single mount at /offers,
+// BF_SERVER_v77_BLOCK_1_11_OFFERS_COLLISION - single mount at /offers,
 // composed of the legacy offers router (list/create/status) plus the
 // pending-acceptance router (accept / confirm-acceptance / decline).
 const combinedOffersRoutes = Router();
@@ -191,9 +192,9 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/crm", router: crmRoutes },
   { path: "/dashboard", router: dashboardRoutes },
   { path: "/credit-summary", router: creditSummaryRoutes },
-  // BF_MINI_PORTAL_NOTES_v47 — mounted at /api/applications/:id/notes
+  // BF_MINI_PORTAL_NOTES_v47 - mounted at /api/applications/:id/notes
   { path: "/applications/:id/notes", router: applicationNotesRoutes },
-  // BF_NOTIFICATIONS_v50 — mounted at /api/notifications
+  // BF_NOTIFICATIONS_v50 - mounted at /api/notifications
   { path: "/notifications", router: notificationsRoutes },
   { path: "/team", router: teamRoutes }, // BF_SERVER_BLOCK_v750_TEAM_CHAT
   { path: "/documents", router: documentsRoutes },
