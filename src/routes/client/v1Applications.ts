@@ -330,7 +330,13 @@ router.post(
     }
     const metadata: Record<string, unknown> = {
       ...(data.kyc_responses ? { kyc_responses: data.kyc_responses } : {}),
-      ...(product_category ? { product_category } : {}),
+      // BF_SERVER_CLOSING_COST_CATEGORY_v1 - a closing-cost companion is a Term
+      // Loan application (base case), NOT the bogus "Closing-Costs Financing"
+      // category that matches no lender. Routing to LOC as well when >= $50k is
+      // handled by closing_cost_routing on the match side.
+      ...(isClosingCostsCompanion
+        ? { product_category: "Term Loan" }
+        : (product_category ? { product_category } : {})),
       ...wizardMeta,
       ...(isClosingCostsCompanion
         ? {
