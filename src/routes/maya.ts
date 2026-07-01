@@ -48,14 +48,39 @@ export async function proxyMayaToAgent(
         const m = /^Bearer\s+(.+)$/i.exec(String(authz));
         const secret = process.env.JWT_SECRET;
         if (m && secret) {
-          const decoded = jwt.verify(m[1], secret) as { phone?: unknown };
+          const decoded = jwt.verify(m[1], secret) as { phone?: unknown; sub?: unknown; role?: unknown };
           const tokenPhone = typeof decoded?.phone === "string" ? decoded.phone : null;
-          if (tokenPhone) {
-            const b: Record<string, unknown> =
-              body && typeof body === "object" ? { ...(body as Record<string, unknown>) } : {};
-            if (typeof b.phone !== "string" || !b.phone) b.phone = tokenPhone;
-            fwdBody = b;
+          const b: Record<string, unknown> =
+            body && typeof body === "object" ? { ...(body as Record<string, unknown>) } : {};
+          let mutated = false;
+          if (tokenPhone && (typeof b.phone !== "string" || !b.phone)) {
+            b.phone = tokenPhone;
+            mutated = true;
           }
+          // BF_SERVER_MAYA_STAFF_IDENTITY_v1 - staff Maya must know which signed-in staff
+          // member it is assisting. Resolve the token subject to a user and forward name/
+          // email/role so the agent can inject a staff identity (parallel to the client one).
+          const tokenRole = typeof decoded?.role === "string" ? decoded.role : null;
+          const tokenSub = typeof decoded?.sub === "string" ? decoded.sub : null;
+          if (tokenSub && tokenRole && tokenRole.toLowerCase() !== "client" && !b.staff) {
+            try {
+              const u = await pool.query(
+                "SELECT first_name, last_name, email, role FROM users WHERE id::text = $1 LIMIT 1",
+                [tokenSub],
+              );
+              const row = u.rows?.[0] as
+                | { first_name?: string | null; last_name?: string | null; email?: string | null; role?: string | null }
+                | undefined;
+              if (row) {
+                const staffName = [row.first_name, row.last_name].filter(Boolean).join(" ").trim() || null;
+                b.staff = { id: tokenSub, name: staffName, email: row.email ?? null, role: row.role ?? tokenRole };
+                mutated = true;
+              }
+            } catch {
+              // best-effort staff identity; never block the reply
+            }
+          }
+          if (mutated) fwdBody = b;
         }
       } catch {
         // Invalid/expired token: keep caller anonymous.
