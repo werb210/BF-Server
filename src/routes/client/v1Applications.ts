@@ -490,6 +490,24 @@ router.post(
           wizardBusinessName,
         ]
       );
+      // BF_SERVER_CLOSING_COST_COMPANION_NAME_v1 - a closing-cost companion is created at
+      // wizard step 2, before the business name is entered (step 3), so it defaults to
+      // "Untitled Application". When the parent submits and its real name is known,
+      // propagate that name to any companion child still carrying a placeholder so the
+      // add-on reads the business name (matching the primary) instead of "Untitled".
+      if (wizardBusinessName) {
+        try {
+          await pool.query(
+            `UPDATE applications
+                SET name = $2, updated_at = NOW()
+              WHERE parent_application_id::text = ($1)::text
+                AND COALESCE((metadata->>'closing_cost_companion')::boolean, false) = true
+                AND (name IS NULL OR name = '' OR name ILIKE 'draft%'
+                     OR name = 'Draft application' OR name = 'Untitled Application')`,
+            [application.id, wizardBusinessName],
+          );
+        } catch { /* best-effort: name propagation is non-fatal */ }
+      }
       // BF_SERVER_BLOCK_v711_STAGE2_PROMPTS - after submit, prompt the applicant
       // to complete the product's Stage-2 CMP forms. Insert one CTA message per
       // form (mini-portal renders cta_action="form:<id>" as a tap-to-open button)
