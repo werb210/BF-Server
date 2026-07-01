@@ -8,6 +8,10 @@ import jwt from "jsonwebtoken";
 import { pool } from "../db.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { logError } from "../observability/logger.js";
+import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js"; // BF_SERVER_MAYA_MKT_TOOLS_v1
+import { smsMarketingConfigured, sendMarketingSms } from "../services/marketingSms.js"; // BF_SERVER_MAYA_MKT_TOOLS_v1
+import { countEmailRecipients, runEmailSend, countSmsRecipients, runSmsSend } from "../services/marketingSendRunner.js"; // BF_SERVER_MAYA_MKT_TOOLS_v1
+import { createLandingPageFromHtml, withViewInBrowser } from "../services/landingPage.service.js"; // BF_SERVER_MAYA_MKT_TOOLS_v1
 import { runPipelineQuery } from "../services/mayaPipelineQuery.js";
 import { retrieveContext } from "../modules/ai/knowledge.service.js";
 import { sendSms } from "../modules/notifications/sms.service.js";
@@ -1262,6 +1266,115 @@ router.post(
       await audit({ audience: "staff", tool: "crm.create_task", args: { contact_id: contactId }, ok: false, summary: e?.message ?? "error", errorCode: "crm_create_task_exception" });
       logError("maya_crm_create_task_failed", { code: "maya_crm_create_task_failed", error: e?.message ?? "unknown" });
       return res.status(500).json({ ok: false, error: "crm_create_task_failed" });
+    }
+  }),
+);
+
+// BF_SERVER_MAYA_MKT_TOOLS_v1 - staff Maya marketing read + gated send.
+router.post(
+  "/staff/marketing-overview",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const silo = biStr(req.body?.silo) ?? "BF";
+    try {
+      const emailSeg = await pool.query(
+        `SELECT tag, count(*)::int AS n FROM (
+           SELECT unnest(tags) AS tag FROM contacts
+            WHERE silo = $1 AND COALESCE(email,'') <> '' AND COALESCE(marketing_opt_out,false) = false
+         ) t GROUP BY tag ORDER BY n DESC`, [silo]);
+      const emailAll = await pool.query(
+        `SELECT count(*)::int AS n FROM contacts WHERE silo = $1 AND COALESCE(email,'') <> '' AND COALESCE(marketing_opt_out,false) = false`, [silo]);
+      const smsSeg = await pool.query(
+        `SELECT tag, count(*)::int AS n FROM (
+           SELECT unnest(tags) AS tag FROM contacts
+            WHERE silo = $1 AND COALESCE(phone,'') <> '' AND COALESCE(sms_opt_out,false) = false AND (line_type IS NULL OR line_type = 'mobile')
+         ) t GROUP BY tag ORDER BY n DESC`, [silo]);
+      const smsAll = await pool.query(
+        `SELECT count(*)::int AS n FROM contacts WHERE silo = $1 AND COALESCE(phone,'') <> '' AND COALESCE(sms_opt_out,false) = false AND (line_type IS NULL OR line_type = 'mobile')`, [silo]);
+      const jobs = await pool.query(
+        `SELECT id::text AS id, channel, tag, status, total, sent, failed, created_at
+           FROM marketing_send_jobs WHERE silo = $1 ORDER BY created_at DESC LIMIT 10`, [silo]);
+      const email = { configured: sendgridConfigured(), all: emailAll.rows[0]?.n ?? 0, segments: emailSeg.rows };
+      const sms = { configured: smsMarketingConfigured(), all: smsAll.rows[0]?.n ?? 0, segments: smsSeg.rows };
+      const summary = `Email audience ${email.all} across ${email.segments.length} segment(s); SMS audience ${sms.all} across ${sms.segments.length} segment(s); ${jobs.rows.length} recent send job(s).`;
+      await audit({ audience: "staff", tool: "marketing.overview", args: { silo }, ok: true, summary, sessionId: biStr(req.body?.session_id) });
+      return res.json({ ok: true, email, sms, recentJobs: jobs.rows, summary });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "marketing.overview", args: { silo }, ok: false, summary: e?.message ?? "error", errorCode: "marketing_overview_exception" });
+      logError("maya_marketing_overview_failed", { code: "maya_marketing_overview_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "marketing_overview_failed" });
+    }
+  }),
+);
+
+router.post(
+  "/staff/marketing-send",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const silo = biStr(req.body?.silo) ?? "BF";
+    const channel = (biStr(req.body?.channel) ?? "email").toLowerCase();
+    const tag = biStr(req.body?.tag) ?? null;
+    const test = biStr(req.body?.test) ?? null;
+    const confirm = req.body?.confirm === true;
+    const sid = biStr(req.body?.session_id);
+    try {
+      if (channel === "sms") {
+        if (!smsMarketingConfigured()) return res.json({ ok: false, error: "sms_not_configured" });
+        const body = biStr(req.body?.body);
+        if (!body) return res.status(400).json({ ok: false, error: "body_required" });
+        if (test) {
+          const r = await sendMarketingSms(test, body);
+          await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, test: true }, ok: true, summary: "Sent SMS test.", sessionId: sid });
+          return res.json({ ok: true, test: true, ...r });
+        }
+        const total = await countSmsRecipients(pool, silo, tag);
+        if (!confirm) {
+          const summary = `PREVIEW: this SMS would reach ${total} recipient(s)${tag ? ` in segment '${tag}'` : " (entire opted-in SMS audience)"}. Nothing was sent. Confirm to send.`;
+          await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, tag, preview: true }, ok: true, summary, sessionId: sid });
+          return res.json({ ok: true, preview: true, channel: "sms", tag, recipients: total, summary });
+        }
+        if (total === 0) return res.json({ ok: true, recipients: 0, smsSent: 0, emailSent: 0, failed: 0 });
+        const out = await runSmsSend(pool, { silo, tag, body, linkUrl: null, fbSubject: null, fbHtml: null, createdBy: null });
+        const summary = `Sent SMS to ${out.total} recipient(s): ${out.smsSent} SMS, ${out.emailSent} email fallback, ${out.failed} failed.`;
+        await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, tag, sent: true }, ok: true, summary, sessionId: sid });
+        return res.json({ ok: true, sent: true, channel: "sms", recipients: out.total, smsSent: out.smsSent, emailSent: out.emailSent, failed: out.failed, summary });
+      }
+      if (!sendgridConfigured()) return res.json({ ok: false, error: "email_not_configured" });
+      const subject = biStr(req.body?.subject);
+      const html = biStr(req.body?.html);
+      if (!subject || !html) return res.status(400).json({ ok: false, error: "subject_and_html_required" });
+      if (test) {
+        const merge = { first_name: "there", name: "there", email: test, company: "" };
+        const r = await sendOne({ to: test, subject: mergeFields(subject, merge), html: mergeFields(html, merge) });
+        await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, test: true }, ok: true, summary: "Sent email test.", sessionId: sid });
+        return res.json({ ok: true, test: true, ...r });
+      }
+      const total = await countEmailRecipients(pool, silo, tag);
+      if (!confirm) {
+        const summary = `PREVIEW: this email would reach ${total} recipient(s)${tag ? ` in segment '${tag}'` : " (entire opted-in email audience)"}. Nothing was sent. Confirm to send.`;
+        await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, tag, preview: true }, ok: true, summary, sessionId: sid });
+        return res.json({ ok: true, preview: true, channel: "email", tag, recipients: total, summary });
+      }
+      if (total === 0) return res.json({ ok: true, recipients: 0, sent: 0, failed: 0 });
+      const { url: viewUrl } = await createLandingPageFromHtml(html, silo, subject, null);
+      const htmlOut = withViewInBrowser(html, viewUrl);
+      if (total > 500) {
+        const job = await pool.query<{ id: string }>(
+          `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by)
+           VALUES ('email', $1, $2, $3, $4, NULL) RETURNING id`,
+          [silo, tag, JSON.stringify({ subject, html: htmlOut }), total]);
+        const summary = `Queued email blast to ${total} recipient(s) (job ${job.rows[0].id}).`;
+        await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, tag, queued: true }, ok: true, summary, sessionId: sid });
+        return res.json({ ok: true, queued: true, jobId: job.rows[0].id, recipients: total, summary });
+      }
+      const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut });
+      const summary = `Sent email to ${out.total} recipient(s): ${out.sent} sent, ${out.failed} failed.`;
+      await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, tag, sent: true }, ok: true, summary, sessionId: sid });
+      return res.json({ ok: true, sent: true, channel: "email", recipients: out.total, sentCount: out.sent, failed: out.failed, summary });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, tag }, ok: false, summary: e?.message ?? "error", errorCode: "marketing_send_exception" });
+      logError("maya_marketing_send_failed", { code: "maya_marketing_send_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "marketing_send_failed" });
     }
   }),
 );
