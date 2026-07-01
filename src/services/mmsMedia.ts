@@ -35,11 +35,13 @@ export async function fetchTwilioMedia(
     headers.Authorization = "Basic " + Buffer.from(`${sid}:${tok}`).toString("base64");
   }
   try {
-    let resp = await fetch(url, { headers, redirect: "manual" });
-    if (resp.status >= 300 && resp.status < 400) {
-      const loc = resp.headers.get("location");
-      if (loc) resp = await fetch(loc);
-    }
+    // BF_SERVER_MMS_REDIRECT_FIX_v1 - default redirect follow. The api.twilio.com
+    // media URL 307-redirects to a presigned CDN/S3 URL; undici follows it and
+    // strips Authorization on the cross-origin hop, so S3 accepts it.
+    // redirect:"manual" returned an unreadable status-0 opaque response, so the
+    // fetch ALWAYS failed -> 502 - that one line broke both MMS images and
+    // call-recording playback.
+    const resp = await fetch(url, { headers });
     if (!resp.ok) {
       // eslint-disable-next-line no-console
       console.error({ event: "mms_media_fetch_fail", status: resp.status, twilio: isTwilio });
