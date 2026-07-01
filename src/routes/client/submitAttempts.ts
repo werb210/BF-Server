@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { dbQuery } from "../../db.js";
+import { sendGa4Event } from "../../services/ga4Mp.js"; // BF_SERVER_GA4_MP_CALL_v1
 
 // BF_SERVER_BLOCK_v842_SUBMIT_ATTEMPTS
 // Fire-and-forget beacon from the client: "attempted" the instant Submit is
 // tapped, then "completed" on success. Rows stuck at "attempted" are the
-// submissions that never reached the server — the previously-invisible failures.
+// submissions that never reached the server - the previously-invisible failures.
 
 export type SubmitAttemptInput = {
   applicationToken?: unknown;
@@ -21,7 +22,7 @@ export type SubmitAttemptInput = {
 const s = (v: unknown, max: number): string | null =>
   typeof v === "string" && v.length ? v.slice(0, max) : null;
 
-// Pure query builder — unit-tested without a DB.
+// Pure query builder - unit-tested without a DB.
 export function buildSubmitAttemptWrite(input: SubmitAttemptInput): {
   sql: string;
   params: unknown[];
@@ -74,6 +75,9 @@ router.post(
       silo: (req as any).silo ?? "BF",
     });
     await dbQuery(sql, params);
+    if (req.body?.status === "completed") {
+      void sendGa4Event("generate_lead", { currency: "CAD", value: 100 });
+    }
     res.json({ ok: true });
   }),
 );
