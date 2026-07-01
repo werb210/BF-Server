@@ -76,7 +76,23 @@ router.post(
     });
     await dbQuery(sql, params);
     if (req.body?.status === "completed") {
-      void sendGa4Event("generate_lead", { currency: "CAD", value: 100 });
+      // BF_SERVER_GENERATE_LEAD_ATTRIBUTION_v1 - use the real GA client id (from the _ga
+      // cookie, sent by the client beacon) so the conversion joins the user's GA session,
+      // and include gclid. Without the real client_id ga4Mp used a random uuid and the
+      // conversion attributed nothing in Google Ads.
+      const gaClientId =
+        typeof req.body?.ga_client_id === "string" && req.body.ga_client_id.trim()
+          ? req.body.ga_client_id.trim()
+          : undefined;
+      const gclid =
+        typeof req.body?.gclid === "string" && req.body.gclid.trim()
+          ? req.body.gclid.trim()
+          : undefined;
+      void sendGa4Event(
+        "generate_lead",
+        gclid ? { currency: "CAD", value: 100, gclid } : { currency: "CAD", value: 100 },
+        gaClientId,
+      );
     }
     res.json({ ok: true });
   }),
