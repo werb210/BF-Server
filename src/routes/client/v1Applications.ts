@@ -22,11 +22,11 @@ import { mirrorApplicationToCrm } from "../../services/applicationCrmMirror.js";
 // BF_SERVER_BLOCK_v213_BF_TO_BI_HANDOFF_v1
 import { postBiHandoff } from "../../services/biHandoff.js";
 import { randomUUID as biRandomUUID } from "node:crypto";
-// BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
+// BF_APP_ID_CAST_v39 - Block 39-A - applications.id comparisons cast to text
 
 const router = Router();
 
-// BF_WIZARD_TO_PORTAL_v33 — shared extraction helpers used by both PATCH and
+// BF_WIZARD_TO_PORTAL_v33 - shared extraction helpers used by both PATCH and
 // /submit so the portal drawer reads the same shape regardless of which path
 // the wizard took.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -62,7 +62,7 @@ function bfBuildWizardMetadata(input: Record<string, any> | null | undefined): R
   if (input.readiness_lead_id !== undefined)    out.readiness_lead_id = input.readiness_lead_id;
   if (input.session_token !== undefined)        out.session_token = input.session_token;
   if (input.source !== undefined)               out.source = input.source;
-  // BF_SERVER_BLOCK_v82_DEFER_PERSIST — persist documentsDeferred and other
+  // BF_SERVER_BLOCK_v82_DEFER_PERSIST - persist documentsDeferred and other
   // simple flags from the wizard PATCH. Without this, "send docs later"
   // disappears across sessions and the submit gate re-locks.
   if (typeof input.documentsDeferred === "boolean")    out.documentsDeferred = input.documentsDeferred;
@@ -181,14 +181,14 @@ async function loadApplicationByToken(token: string): Promise<TokenApplicationRo
   return continuation.rows[0] ?? null;
 }
 
-// BF_CREATE_WIZARD_v34 — Block 34: createSchema must accept the wizard's
+// BF_CREATE_WIZARD_v34 - Block 34: createSchema must accept the wizard's
 // actual payload (same shape as patchSchema in 33-A). Step 4's POST fallback
 // previously 400'd every time because none of business_name / requested_amount
 // / lender_id / product_id are present at the time of submit. Strict types
 // kept on the few fields we still validate; the rest are passthrough into
 // applications.metadata via bfBuildWizardMetadata.
 const createWizardObject = z.record(z.string(), z.unknown());
-// BF_CREATE_SCHEMA_NULLABLE_v40 — Block 40-B — closing-costs linked
+// BF_CREATE_SCHEMA_NULLABLE_v40 - Block 40-B - closing-costs linked
 // applications send `requested_amount: null` when the borrower hasn't
 // entered an amount yet. Zod's `.optional()` only allows undefined; add
 // `.nullable()` so these fields accept null.
@@ -199,7 +199,7 @@ const createSchema = z.object({
   product_id: z.string().uuid().nullable().optional(),
   product_category: z.string().min(1).nullable().optional(),
   kyc_responses: z.record(z.string(), z.unknown()).optional(),
-  // BF_SERVER_BLOCK_v125a_CLOSING_COSTS_END_TO_END_v1 — accept linked-app
+  // BF_SERVER_BLOCK_v125a_CLOSING_COSTS_END_TO_END_v1 - accept linked-app
   // fields the wizard sends when creating a closing-costs companion at
   // Step 2. Without these, Zod silently strips them; the companion was
   // saved with parent_application_id=NULL and the metadata.kind marker
@@ -223,12 +223,12 @@ const createSchema = z.object({
   source: z.string().optional(),
 });
 
-// BF_WIZARD_TO_PORTAL_v33 — Block 33: PATCH must accept the wizard's actual
+// BF_WIZARD_TO_PORTAL_v33 - Block 33: PATCH must accept the wizard's actual
 // payload shape (financialProfile/business/applicant/partner/kyc/...).
 // Every named field is merged into applications.metadata so the portal
 // drawer's /:id/details reader (which looks at metadata.kyc, metadata.business,
 // metadata.applicant, metadata.financials, metadata.product_category) sees the
-// real data. Without this expansion Zod silently strips everything → the
+// real data. Without this expansion Zod silently strips everything -> the
 // wizard "saves" but the server keeps NULL, and the portal drawer is empty.
 const wizardPatchObject = z.record(z.string(), z.unknown());
 const patchSchema = z.object({
@@ -239,14 +239,14 @@ const patchSchema = z.object({
   lender_product_id: z.string().uuid().nullable().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 
-  // Wizard step tracker — snake_case is the canonical legacy name; the
+  // Wizard step tracker - snake_case is the canonical legacy name; the
   // camelCase `currentStep` is added in v82 because the BF-client wizard
   // sends camelCase keys. bfBuildWizardMetadata accepts both and writes
   // a single `currentStep` into metadata.
   current_step: z.number().int().positive().optional(),
   currentStep:  z.number().int().min(1).max(6).optional(),
 
-  // Wizard nested objects — stored under metadata as-is.
+  // Wizard nested objects - stored under metadata as-is.
   financialProfile: wizardPatchObject.optional(),
   business: wizardPatchObject.optional(),
   applicant: wizardPatchObject.optional(),
@@ -263,7 +263,7 @@ const patchSchema = z.object({
   session_token: z.string().optional(),
   source: z.string().optional(),
 
-  // BF_SERVER_BLOCK_v82_DEFER_PERSIST — wizard state that the PATCH must
+  // BF_SERVER_BLOCK_v82_DEFER_PERSIST - wizard state that the PATCH must
   // persist so "send docs later" survives refresh and the submit gates
   // re-enable on resume. Both naming conventions accepted; bfBuildWizardMetadata
   // normalizes to canonical keys.
@@ -281,7 +281,7 @@ const patchSchema = z.object({
 router.post(
   "/applications",
   safeHandler(async (req: any, res: any, next: any) => {
-    // BF_CREATE_WIZARD_v34 — Block 34: accept wizard payload. Derive missing
+    // BF_CREATE_WIZARD_v34 - Block 34: accept wizard payload. Derive missing
     // columns from selected_product / business / kyc.fundingAmount instead
     // of rejecting. Persist wizard fields into metadata so the portal drawer
     // sees the same shape it does for PATCHed applications.
@@ -312,6 +312,22 @@ router.post(
     const isClosingCostsCompanion =
       (data as any).kind === "closing_costs" ||
       (data as any).linked_application_reason === "closing_costs";
+    // BF_SERVER_CLOSING_COST_AMOUNT_v1 - companion amount = 15% of the parent
+    // equipment total, capped at $250,000, computed server-side so it is always
+    // correct. Routing: under $50k -> term loan only; $50k+ -> term loan AND LOC.
+    let effectiveAmount: number | null = requested_amount;
+    let closingCostRouting: string | null = null;
+    if (isClosingCostsCompanion && parent_application_id) {
+      const parentRes: any = await runQuery(
+        `select requested_amount from applications where id = $1 limit 1`,
+        [parent_application_id]
+      ).catch(() => ({ rows: [] }));
+      const parentAmt = Number(parentRes?.rows?.[0]?.requested_amount ?? 0);
+      if (parentAmt > 0) {
+        effectiveAmount = Math.min(Math.round(parentAmt * 0.15), 250000);
+      }
+      closingCostRouting = Number(effectiveAmount ?? 0) >= 50000 ? "term_and_loc" : "term";
+    }
     const metadata: Record<string, unknown> = {
       ...(data.kyc_responses ? { kyc_responses: data.kyc_responses } : {}),
       ...(product_category ? { product_category } : {}),
@@ -323,6 +339,7 @@ router.post(
             kind: "closing_costs",
             linked_application_reason: (data as any).linked_application_reason ?? "closing_costs",
             companion_origin: "client_step2",
+            closing_cost_routing: closingCostRouting,
           }
         : {}),
     };
@@ -340,7 +357,7 @@ router.post(
         statusFromPipeline(ApplicationStage.RECEIVED),
         lender_id,
         product_id,
-        requested_amount,
+        effectiveAmount,
         isClosingCostsCompanion ? "closing_costs_companion" : "client",
         silo,
         parent_application_id,
@@ -358,7 +375,7 @@ router.post(
         ...(req.headers["user-agent"] ? { userAgent: req.headers["user-agent"] } : {}),
       });
     }
-    // BF_SERVER_BLOCK_v125a_CLOSING_COSTS_END_TO_END_v1 — also include
+    // BF_SERVER_BLOCK_v125a_CLOSING_COSTS_END_TO_END_v1 - also include
     // `token` field at top level so the client's
     // ClientAppStartResponseSchema (z.object({ token: z.string() })) passes.
     // Existing consumers reading res.data.application.id continue to work.
@@ -394,7 +411,7 @@ router.post(
     const ownerId = application.owner_user_id || null;
 
     if (legacyApp && typeof legacyApp === "object") {
-      // BF_WIZARD_TO_PORTAL_v33 — Block 33: write to metadata (jsonb column
+      // BF_WIZARD_TO_PORTAL_v33 - Block 33: write to metadata (jsonb column
       // that exists), NOT form_data (which does not exist in the schema).
       // Mirror wizard fields into the metadata keys the portal /:id/details
       // endpoint reads, and stash the full app blob under metadata.formData
@@ -407,13 +424,13 @@ router.post(
         formData: legacyApp,
         submittedAt,
       };
-      // BF_SERVER_v70_BLOCK_1_2 — advance pipeline_state on submit.
+      // BF_SERVER_v70_BLOCK_1_2 - advance pipeline_state on submit.
       // With docs already uploaded -> 'Received'; without -> 'Documents Required'.
       // Only updates pipeline_state if currently null/draft so we don't
       // clobber a stage staff has manually advanced.
-      // BF_SERVER_BLOCK_1_32_BACKLOG_CLEANUP — also promote applications.name from the
+      // BF_SERVER_BLOCK_1_32_BACKLOG_CLEANUP - also promote applications.name from the
       // wizard payload when the current name is empty / 'Draft application'.
-      // BF_SERVER_BLOCK_v140_WIZARD_BUSINESS_NAME_v1 — wizard's Step 3 writes
+      // BF_SERVER_BLOCK_v140_WIZARD_BUSINESS_NAME_v1 - wizard's Step 3 writes
       // business.companyName / businessName / legalName, NOT business.name.
       // Reading only `name` left applications.name as 'Draft application' on
       // every submitted app, so pipeline cards rendered "Unnamed application"
@@ -460,12 +477,12 @@ router.post(
           wizardBusinessName,
         ]
       );
-      // BF_SERVER_BLOCK_v711_STAGE2_PROMPTS — after submit, prompt the applicant
+      // BF_SERVER_BLOCK_v711_STAGE2_PROMPTS - after submit, prompt the applicant
       // to complete the product's Stage-2 CMP forms. Insert one CTA message per
       // form (mini-portal renders cta_action="form:<id>" as a tap-to-open button)
       // and send one SMS. Idempotent: skips if form prompts already exist.
       try {
-        // BF_SERVER_BLOCK_v721_STAGE2_BUTTONS — greeting + one button per REQUIRED
+        // BF_SERVER_BLOCK_v721_STAGE2_BUTTONS - greeting + one button per REQUIRED
         // Stage-2 item, sourced from the wizard's computed set; cta_action is the
         // mini-portal chip id so the form opens as a modal.
         const FORM_BY_KEYWORD: Array<[RegExp, string, string]> = [
@@ -476,7 +493,7 @@ router.post(
           [/real estate/i, "realestate", "Real Estate Collateral"],
           [/equipment/i, "equipment", "Equipment Collateral"],
           [/professional advisor|\badvisor/i, "advisors", "Professional Advisors"], // BF_SERVER_BLOCK_v711_ADVISORS_MESSENGER_v1
-          // v_NO_GOVID_TASK_v1 — standalone "Upload Government ID" task removed;
+          // v_NO_GOVID_TASK_v1 - standalone "Upload Government ID" task removed;
           // gov ID is a required DOCUMENT (upload_docs flow), so the separate task
           // was redundant and left a task perpetually incomplete.
         ];
@@ -496,7 +513,7 @@ router.post(
           const v711_forms: Array<{ id: string; name: string }> = [];
           for (const row of v711_agg) {
             if (row?.required === false) continue;
-            // BF_SERVER_BLOCK_v711_ADVISORS_MESSENGER_v1 — advisors is inherently a
+            // BF_SERVER_BLOCK_v711_ADVISORS_MESSENGER_v1 - advisors is inherently a
             // Stage-2 CMP form; seed its messenger step even if the product left it stage 1.
             const v711_isAdvisor = /professional advisor|\badvisor/i.test(String(row?.document_type ?? ""));
             if (!v711_isAdvisor && Number(row?.stage ?? 1) !== 2) continue;
@@ -516,7 +533,7 @@ router.post(
                  ${v711_contactSilo},
                  COALESCE((SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1), 'BF'),
                  $2, 'Boreal Financial', now())`,
-              [application.id, `Hello, and thank you for your application. You still have a few quick steps to finish — please complete ${v711_list} using the buttons below.`],
+              [application.id, `Hello, and thank you for your application. You still have a few quick steps to finish - please complete ${v711_list} using the buttons below.`],
             );
             for (const f of v711_forms) {
               await pool.query(
@@ -542,19 +559,19 @@ router.post(
               const { sendSms } = await import("../../modules/notifications/sms.service.js");
               await sendSms({
                 to: String(v711_phone),
-                message: `Boreal Financial: your application was received. A few quick forms remain — log in to complete them: ${v711_url}`,
+                message: `Boreal Financial: your application was received. A few quick forms remain - log in to complete them: ${v711_url}`,
               }).catch(() => {});
             }
           }
-          // BF_SERVER_BLOCK_v775_DOC_UPLOAD_PROMPT — document uploads are not
+          // BF_SERVER_BLOCK_v775_DOC_UPLOAD_PROMPT - document uploads are not
           // Stage-2 forms, so a docs-only product (e.g. equipment finance) got no
           // messenger prompt. Post one real "Upload documents" message (button
           // cta_action='upload_docs' opens the client uploader) AND move the card
-          // to "Documents Required" — the v70 advance only checks whether ANY
+          // to "Documents Required" - the v70 advance only checks whether ANY
           // document row exists, so an app missing only some required docs wrongly
           // sat in "Received".
           {
-            // BF_SERVER_BLOCK_v_DOCSREQ_ONLY_IF_MISSING_v1 — restore the intended
+            // BF_SERVER_BLOCK_v_DOCSREQ_ONLY_IF_MISSING_v1 - restore the intended
             // rule: docs present -> leave v70's 'Received'; only genuinely MISSING
             // (or rejected) required docs flip the card to 'Documents Required'.
             // Previously this fired whenever required doc TYPES existed at all, with
@@ -679,7 +696,7 @@ router.post(
             bfParseAmount((legacyApp as any)?.kyc?.equipmentAmount) ??
             null;
           if (equipmentAmount && equipmentAmount > 0) {
-            // BF_SERVER_BLOCK_v126a_CAPITAL_EQUIPMENT_FIXES_v1 — idempotency.
+            // BF_SERVER_BLOCK_v126a_CAPITAL_EQUIPMENT_FIXES_v1 - idempotency.
             // Re-submit (network retry, tab reload + resubmit) previously
             // created duplicate equipment legs because no existence check
             // ran before INSERT. Mirrors v125a closing-costs idempotency.
@@ -734,7 +751,7 @@ router.post(
             } else {
               const equipmentId = randomUUID();
               await pool.query(
-                // BF_SERVER_BLOCK_v_CE_LEG_CONTACT_ID_v1 — the equipment leg was inserted
+                // BF_SERVER_BLOCK_v_CE_LEG_CONTACT_ID_v1 - the equipment leg was inserted
                 // without contact_id, so the CMP by-phone switcher (INNER JOIN on contact_id)
                 // never showed it and the client could never sign it. Set it from the parent.
                 `INSERT INTO applications
@@ -752,7 +769,7 @@ router.post(
                     now(), now(), now())`,
                 [
                   equipmentId,
-                  `Equipment leg — ${wizardBusinessName ?? application.id.slice(0, 8)}`,
+                  `Equipment leg - ${wizardBusinessName ?? application.id.slice(0, 8)}`,
                   silo,
                   ownerId,
                   application.id,
@@ -785,7 +802,7 @@ router.post(
           error: fanOutErr instanceof Error ? fanOutErr.message : "unknown",
         });
       }
-      // BF_SERVER_BLOCK_v81_CLOSING_COSTS_COMPANION — companion app for closing
+      // BF_SERVER_BLOCK_v81_CLOSING_COSTS_COMPANION - companion app for closing
       // costs.
       const wantsClosingCosts = Boolean(
         (legacyApp as any)?.requires_closing_cost_funding ??
@@ -798,14 +815,14 @@ router.post(
       ).toUpperCase();
       // BF_SERVER_BLOCK_v85_MULTI_LEG_SUBMIT_v1
       // Companion only fires for pure-Equipment parents (Capital&Equipment
-      // users have no companion — their capital leg serves the same role).
-      // Companion category is amount-based: TERM ≤ $50k, else LOC.
+      // users have no companion - their capital leg serves the same role).
+      // Companion category is amount-based: TERM <= $50k, else LOC.
       const EQUIPMENT_PARENT_ALIASES = new Set([
         "EQUIPMENT", "EQUIPMENT_FINANCE", "EQUIPMENT_FINANCING",
       ]);
       if (wantsClosingCosts && EQUIPMENT_PARENT_ALIASES.has(primaryCategory)) {
         try {
-          // BF_SERVER_BLOCK_v125a_CLOSING_COSTS_END_TO_END_v1 — idempotency.
+          // BF_SERVER_BLOCK_v125a_CLOSING_COSTS_END_TO_END_v1 - idempotency.
           // If Step 2 already created a companion (now possible after
           // v125a fixes the schema/response), do not create a duplicate.
           const existingCompanion = await pool.query<{ id: string }>(
@@ -858,7 +875,7 @@ router.post(
               source: "submit_skipped_duplicate",
             });
           } else {
-            // BF_SERVER_CLOSING_COST_FIX_v1 — pure-Equipment parents store the
+            // BF_SERVER_CLOSING_COST_FIX_v1 - pure-Equipment parents store the
             // amount in the equipment field, not requested_amount, so derive it
             // from the same fallback chain the equipment leg uses (else the
             // companion got a null amount). Closing cost is 20% of equipment.
@@ -882,7 +899,7 @@ router.post(
                   ? ["TERM", "LOC"]
                   : ["LOC"];
             const companionId = randomUUID();
-            // BF_SERVER_BLOCK_v125a_CLOSING_COSTS_END_TO_END_v1 — copy parent
+            // BF_SERVER_BLOCK_v125a_CLOSING_COSTS_END_TO_END_v1 - copy parent
             // wizard payload into companion metadata so the companion's
             // drawer Application tab renders properly (otherwise it shows
             // mostly empty: just id/stage/source).
@@ -911,7 +928,7 @@ router.post(
                   now(), now(), now())`,
               [
                 companionId,
-                `Closing costs — ${wizardBusinessName ?? application.id.slice(0, 8)}`,
+                `Closing costs - ${wizardBusinessName ?? application.id.slice(0, 8)}`,
                 silo,
                 ownerId,
                 application.id,
@@ -998,7 +1015,7 @@ router.post(
         } catch {}
       }
 
-      // BF_APP_TO_CRM_v38 — Block 38-E — fire-and-forget CRM mirror.
+      // BF_APP_TO_CRM_v38 - Block 38-E - fire-and-forget CRM mirror.
       try {
         const md: any = (legacyApp && typeof legacyApp === "object") ? legacyApp : {};
         void mirrorApplicationToCrm({
@@ -1006,7 +1023,7 @@ router.post(
           silo: (silo || "BF").toUpperCase(),
           business: md?.business ?? md?.company ?? null,
           applicant: md?.applicant ?? md?.borrower ?? null,
-          // BF_SERVER_CRM_MIRROR_OTP_PHONE_AUTHORITATIVE_v1 — the signed-in
+          // BF_SERVER_CRM_MIRROR_OTP_PHONE_AUTHORITATIVE_v1 - the signed-in
           // applicant's OTP-verified phone is authoritative for their contact.
           verifiedPhone: (req as any)?.user?.phone ?? null,
         });
@@ -1017,7 +1034,7 @@ router.post(
       // BI-Server. Synchronous (not fire-and-forget) so the response
       // includes the completion URL and the mini-portal messenger
       // can show the link immediately. Bounded to 8s by biHandoff.
-      // Failure here is non-fatal — BF submit still succeeds and
+      // Failure here is non-fatal - BF submit still succeeds and
       // staff can re-trigger the handoff from the portal later.
       try {
         const pgiOptIn = String((legacyApp as any)?.pgi_opt_in ?? "").toLowerCase();
@@ -1073,8 +1090,8 @@ router.post(
                 : v330_t.role === "equipment_leg"
                   ? "equipment"
                   : "closing costs";
-              // BF_SERVER_BLOCK_v777_PGI_PRODUCT_LABEL — name the PGI message after
-              // the BF app's product category (LOC / Equipment / …) instead of the
+              // BF_SERVER_BLOCK_v777_PGI_PRODUCT_LABEL - name the PGI message after
+              // the BF app's product category (LOC / Equipment / ...) instead of the
               // generic funding-leg role, so a client with several apps can tell
               // which policy belongs to which application.
               const v777_catRow = await pool.query<{ product_category: string | null; product_type: string | null }>(
@@ -1211,7 +1228,7 @@ router.post(
         owner_id: ownerId,
       };
 
-      // BF_SERVER_BLOCK_v780_APPLY_MATCH — match an existing contact by email OR
+      // BF_SERVER_BLOCK_v780_APPLY_MATCH - match an existing contact by email OR
       // phone (the helper already does both); previously a phone-only applicant
       // with no email fell through to createContact and made a duplicate.
       const { row: applicant } = (applicantInput.email || applicantInput.phone)
@@ -1314,7 +1331,7 @@ router.patch(
         { applicationId }
       );
     }
-    // BF_WIZARD_TO_PORTAL_v33 — merge wizard payload into metadata so the
+    // BF_WIZARD_TO_PORTAL_v33 - merge wizard payload into metadata so the
     // portal drawer reads it. Also pluck out columnar fields when present.
     const nextName = parsed.data.business_name ?? application.name;
     const wizardMeta = bfBuildWizardMetadata(parsed.data as any);
@@ -1403,7 +1420,7 @@ router.get(
         processingStage: (application as any).processing_stage ?? null,
         updatedAt: application.updated_at,
 
-        // BF_SERVER_BLOCK_STATUS_HYDRATION_v80 — full wizard rehydration.
+        // BF_SERVER_BLOCK_STATUS_HYDRATION_v80 - full wizard rehydration.
         business: meta.business ?? formData.business ?? null,
         applicant: meta.applicant ?? formData.applicant ?? null,
         partner: meta.partner ?? formData.partner ?? null,
@@ -1422,7 +1439,7 @@ router.get(
           formData.selectedProductType ??
           formData.selected_product_type ??
           null,
-        // BF_SERVER_BLOCK_v82_DEFER_PERSIST — read from either path; PATCH
+        // BF_SERVER_BLOCK_v82_DEFER_PERSIST - read from either path; PATCH
         // writes to meta.documentsDeferred, submit writes to meta.formData.
         documentsDeferred:
           meta.documentsDeferred ??
@@ -1447,7 +1464,7 @@ router.get(
   "/applications/by-phone",
   requireAuth,
   safeHandler(async (req: any, res: any) => {
-    // BF_SERVER_BLOCK_v727_MULTI_APP_BY_PHONE_v1 — return ALL of the caller's
+    // BF_SERVER_BLOCK_v727_MULTI_APP_BY_PHONE_v1 - return ALL of the caller's
     // applications (multi-application switcher), matched by last-10 phone digits
     // so format differences don't drop one. Includes product_category + amount +
     // stage for the switcher labels. `application` (first/most-recent) is kept for
@@ -1456,7 +1473,7 @@ router.get(
     const phone10 = phoneRaw.replace(/[^0-9]/g, "").slice(-10);
     if (!phone10) return res.status(401).json({ found: false, error: "no_phone_claim" });
 
-    // BF_SERVER_BLOCK_v765_BY_PHONE_INCLUDE_DRAFTS — the switcher opts in to
+    // BF_SERVER_BLOCK_v765_BY_PHONE_INCLUDE_DRAFTS - the switcher opts in to
     // drafts via ?includeDrafts=true. Default (OTP routing) still excludes them
     // so a draft-only caller resumes the wizard instead of routing to a portal.
     const includeDrafts = String(req.query?.includeDrafts ?? "") === "true";
@@ -1468,7 +1485,7 @@ router.get(
       `SELECT a.id, a.pipeline_state, a.submitted_at, a.name AS business_name,
               a.product_category, a.requested_amount, a.updated_at
          FROM applications a
-         -- BF_SERVER_CLOSING_COST_FIX_v1 — resolve the contact via the parent for
+         -- BF_SERVER_CLOSING_COST_FIX_v1 - resolve the contact via the parent for
          -- linked legs created without their own contact_id, so every leg
          -- (equipment / closing-cost companion) surfaces in the CMP switcher.
          JOIN contacts c ON c.id = COALESCE(a.contact_id,
