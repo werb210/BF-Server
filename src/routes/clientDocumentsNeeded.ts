@@ -1,4 +1,4 @@
-// BF_SERVER_BLOCK_v698_DOCS_NEEDED_REAL_v1 — mini-portal DocPicker backing endpoint.
+// BF_SERVER_BLOCK_v698_DOCS_NEEDED_REAL_v1 - mini-portal DocPicker backing endpoint.
 // Returns the docs the client still needs, in two buckets:
 //   rejected    = documents staff rejected (client must re-upload)
 //   stillNeeded = required categories with no upload yet
@@ -16,7 +16,7 @@ function humanize(category: string): string {
 }
 
 const CMP_FORM =
-  /net worth|flinks|banking connection|connect bank|\bcra\b|debt|real estate|equipment|professional advisor|\badvisor/i;
+  /net worth|flinks|banking connection|connect bank|\bcra\b|debt stack|real estate collateral|equipment collateral|professional advisor|\badvisor/i; // BF_SERVER_CMP_FORM_FIX_v1
 
 type NeededDoc = { document_type: string; label: string };
 type UploadedDocRow = { category: string | null; status: string | null };
@@ -33,7 +33,7 @@ function docTypeFromRequirement(raw: any): string {
     : "";
 }
 
-// BF_SERVER_REQUEST_ITEMS_FULL_SET_v1 — keeps a document regardless of whether
+// BF_SERVER_REQUEST_ITEMS_FULL_SET_v1 - keeps a document regardless of whether
 // it has been uploaded yet, so the full required set can be built.
 function appendRequiredDocAll(
   raw: any,
@@ -67,7 +67,7 @@ function productRequirementItems(metadata: any): any[] {
   return [];
 }
 
-// BF_SERVER_DOCS_PARITY_v1 — shared outstanding-docs computation, reused by both the
+// BF_SERVER_DOCS_PARITY_v1 - shared outstanding-docs computation, reused by both the
 // client mini-portal endpoint below AND the staff task-status endpoint, so the two can
 // never disagree about whether the applicant still owes documents.
 async function computeOutstandingDocsRaw(
@@ -89,7 +89,7 @@ async function computeOutstandingDocsRaw(
     (r: UploadedDocRow) => r.status === "rejected" && r.category
   );
 
-  // BF_SERVER_REQUEST_ITEMS_FULL_SET_v1 — build the FULL required set for this deal
+  // BF_SERVER_REQUEST_ITEMS_FULL_SET_v1 - build the FULL required set for this deal
   // (every required document, uploaded or not). This is what the staff Request Items
   // checkboxes reflect, so they match the Application tab. stillNeeded (the client
   // mini-portal list) is then this set minus already-satisfied uploads. Fallbacks now
@@ -120,8 +120,10 @@ async function computeOutstandingDocsRaw(
     for (const item of items) appendRequiredDocAll(item, seen, required);
   }
 
-  // Fallback 2: the matched product's required_documents.
-  if (required.length === 0) {
+  // BF_SERVER_DOCS_PRODUCT_ALWAYS_MERGE_v1 - product always-required docs
+  // (e.g. the equipment PO/Invoice) must ALWAYS be in the required set, not
+  // fallback-only, or staff Request Items silently drops mandatory docs.
+  {
     const prodRes = await pool.query<{ required_documents: any }>(
       `SELECT lp.required_documents
          FROM applications a
@@ -163,7 +165,7 @@ async function computeOutstandingDocsRaw(
   return { stillNeeded, rejected, required };
 }
 
-// BF_SERVER_DOC_WAIVERS_v1 — per-application admin waivers. A waived requirement is removed
+// BF_SERVER_DOC_WAIVERS_v1 - per-application admin waivers. A waived requirement is removed
 // from the outstanding set everywhere (client upload list, staff block, Send/SignNow gate).
 export async function getWaivedDocTypes(applicationId: string): Promise<Set<string>> {
   const res = await pool.query<{ document_type: string }>(
@@ -185,7 +187,7 @@ export async function computeOutstandingDocs(
   };
 }
 
-// BF_SERVER_BLOCK_v_FORM_WAIVERS_v1 — form ids that have been requested of the
+// BF_SERVER_BLOCK_v_FORM_WAIVERS_v1 - form ids that have been requested of the
 // client (posted as task prompts). Mirrors the cta_action contract used by
 // task-status so the Request Items tab and the Application tab agree on forms.
 const FORM_IDS = ["networth", "flinks", "cra", "debt", "realestate", "equipment", "advisors"];
