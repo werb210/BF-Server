@@ -698,9 +698,9 @@ router.post(
     const isStaff = !audience || audience === "staff";
     try {
       const r = await pool.query(
-        `SELECT lp.id::text AS id, lp.name, lp.category, lp.country, lp.region,
+        `SELECT lp.id::text AS id, lp.name, lp.category, lp.country,
                 lp.amount_min, lp.amount_max, lp.interest_min, lp.interest_max,
-                lp.rate_type, lp.rate_kind, lp.term_min, lp.term_max, lp.term_unit,
+                lp.rate_type, lp.rate_kind,
                 lp.required_documents, l.name AS lender_name
            FROM lender_products lp
            JOIN lenders l ON l.id = lp.lender_id
@@ -724,16 +724,12 @@ router.post(
         product: p.name,
         category: p.category ?? null,
         country: p.country ?? null,
-        region: p.region ?? null,
         amountMin: p.amount_min ?? null,
         amountMax: p.amount_max ?? null,
         interestMin: p.interest_min ?? null,
         interestMax: p.interest_max ?? null,
         rateType: p.rate_type ?? null,
         rateKind: p.rate_kind ?? null,
-        termMin: p.term_min ?? null,
-        termMax: p.term_max ?? null,
-        termUnit: p.term_unit ?? null,
         requiredDocuments: p.required_documents ?? null,
       }));
       const summary = products.length ? `${products.length} matching lender product(s).` : "No active lender products match those filters.";

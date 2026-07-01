@@ -85,7 +85,13 @@ export async function proxyMayaToAgent(
         const userMsg: string | null = typeof b.message === "string" ? b.message.trim() : null;
         const reply: string | null =
           data && typeof (data as any).reply === "string" ? (data as any).reply.trim() : null;
-        if (sessionId && userMsg) {
+        // BF_SERVER_MAYA_TRANSCRIPT_UUID_GUARD_v1 - chat_sessions.id is a uuid column, but
+        // client Maya sends non-uuid session ids (e.g. "client-..."), which threw
+        // "invalid input syntax for type uuid" on every turn and spammed the logs. Only
+        // persist when the session id is a real uuid; otherwise skip quietly.
+        const isUuidSession = typeof sessionId === "string" &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionId);
+        if (sessionId && userMsg && isUuidSession) {
           const chan = audience ? String(audience) : "web";
           await pool.query(
             `insert into chat_sessions (id, source, channel, status)
