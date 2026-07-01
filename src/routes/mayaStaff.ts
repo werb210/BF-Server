@@ -1101,7 +1101,16 @@ router.post(
     try {
       const r = await pool.query(
         `SELECT a.id::text AS id, a.name, a.pipeline_state, a.status,
-                a.requested_amount, a.product_type, a.updated_at
+                a.requested_amount, a.product_type, a.updated_at,
+                c.name AS contact_name, c.first_name, c.company_name, c.dob, c.email,
+                COALESCE(a.metadata->>'industry', a.metadata->'kyc'->>'industry',
+                         a.metadata->'formData'->'kyc'->>'industry') AS industry,
+                COALESCE(a.metadata->>'yearsInBusiness', a.metadata->>'years_in_business',
+                         a.metadata->'kyc'->>'yearsInBusiness',
+                         a.metadata->'formData'->'kyc'->>'yearsInBusiness') AS years_in_business,
+                COALESCE(a.metadata->>'annualRevenue', a.metadata->>'revenueLast12Months',
+                         a.metadata->'kyc'->>'annualRevenue',
+                         a.metadata->'formData'->'kyc'->>'annualRevenue') AS annual_revenue
            FROM applications a
            JOIN contacts c ON c.id = a.contact_id
           WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $1
@@ -1109,12 +1118,25 @@ router.post(
           LIMIT 10`,
         [phone10],
       );
+      // BF_SERVER_MAYA_PROFILE_ENRICH_v1 - include the caller's known profile and
+      // per-application business details so client Maya can answer identity questions.
       const applications = r.rows.map((a: any) => ({
         id: a.id, name: a.name ?? null,
         stage: a.pipeline_state ?? a.status ?? null, status: a.status ?? null,
         requestedAmount: a.requested_amount ?? null, productType: a.product_type ?? null,
         updatedAt: a.updated_at,
+        industry: a.industry ?? null,
+        yearsInBusiness: a.years_in_business ?? null,
+        annualRevenue: a.annual_revenue ?? null,
       }));
+      const first = r.rows[0] as any | undefined;
+      const contact = first ? {
+        contactName: first.contact_name ?? null,
+        firstName: first.first_name ?? null,
+        companyName: first.company_name ?? null,
+        dob: first.dob ?? null,
+        email: first.email ?? null,
+      } : null;
       let latestDocs: { total: number; missing: string[] } | null = null;
       if (applications.length) {
         const dr = await pool.query(
@@ -1128,7 +1150,7 @@ router.post(
         ? `Found ${applications.length} application(s). Most recent: "${applications[0].name ?? "your application"}" at stage "${applications[0].stage ?? "in progress"}".`
         : "No applications found for that phone number yet — they may be just getting started.";
       await audit({ audience: "client", tool: "application.find_mine", args: { phone10 }, ok: true, summary: `${applications.length} apps`, userId: myAppStr(req.body?.user_id), sessionId: myAppStr(req.body?.session_id) });
-      return res.json({ ok: true, applications, latestDocs, summary });
+      return res.json({ ok: true, contactName: contact?.contactName ?? null, contact, applications, latestDocs, summary });
     } catch (e: any) {
       await audit({ audience: "client", tool: "application.find_mine", args: { phone10 }, ok: false, summary: e?.message ?? "error", errorCode: "applications_by_phone_exception" });
       logError("maya_applications_by_phone_failed", { code: "maya_applications_by_phone_failed", error: e?.message ?? "unknown" });

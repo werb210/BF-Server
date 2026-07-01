@@ -1,6 +1,7 @@
 import express from "express";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { pool } from "../db.js";
+import jwt from "jsonwebtoken";
 import { addMessage } from "../modules/ai/chat.repo.js";
 import { logError } from "../observability/logger.js";
 // BF_SERVER_BLOCK_v317_MAYA_ESCALATIONS_AUTH_v1
@@ -37,10 +38,33 @@ export async function proxyMayaToAgent(
     if (audience) fwdHeaders["X-Maya-Audience"] = String(audience);
     const silo = req?.header("x-silo");
     if (silo) fwdHeaders["X-Silo"] = String(silo);
+    // BF_SERVER_MAYA_CLIENT_IDENTITY_v1 - client widget requests carry the OTP
+    // bearer token, not a body phone. Decode that token and forward phone so the
+    // Maya agent can recognize the signed-in client via ctx.phone.
+    let fwdBody: unknown = body;
+    if (method === "POST" && (agentPath.includes("/api/maya/message") || agentPath.includes("/api/maya/chat"))) {
+      try {
+        const authz = req?.header("authorization") || "";
+        const m = /^Bearer\s+(.+)$/i.exec(String(authz));
+        const secret = process.env.JWT_SECRET;
+        if (m && secret) {
+          const decoded = jwt.verify(m[1], secret) as { phone?: unknown };
+          const tokenPhone = typeof decoded?.phone === "string" ? decoded.phone : null;
+          if (tokenPhone) {
+            const b: Record<string, unknown> =
+              body && typeof body === "object" ? { ...(body as Record<string, unknown>) } : {};
+            if (typeof b.phone !== "string" || !b.phone) b.phone = tokenPhone;
+            fwdBody = b;
+          }
+        }
+      } catch {
+        // Invalid/expired token: keep caller anonymous.
+      }
+    }
     const upstream = await fetch(`${mayaUrl}${agentPath}`, {
       method,
       headers: fwdHeaders,
-      body: method === "POST" ? JSON.stringify(body ?? {}) : undefined,
+      body: method === "POST" ? JSON.stringify(fwdBody ?? {}) : undefined,
       signal: ctrl.signal,
     });
     clearTimeout(t);
