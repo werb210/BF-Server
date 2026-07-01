@@ -1325,7 +1325,7 @@ router.post(
         if (test) {
           const r = await sendMarketingSms(test, body);
           await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, test: true }, ok: true, summary: "Sent SMS test.", sessionId: sid });
-          return res.json({ ok: true, test: true, ...r });
+          return res.json({ ...r, ok: true, test: true });
         }
         const total = await countSmsRecipients(pool, silo, tag);
         if (!confirm) {
@@ -1347,7 +1347,7 @@ router.post(
         const merge = { first_name: "there", name: "there", email: test, company: "" };
         const r = await sendOne({ to: test, subject: mergeFields(subject, merge), html: mergeFields(html, merge) });
         await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, test: true }, ok: true, summary: "Sent email test.", sessionId: sid });
-        return res.json({ ok: true, test: true, ...r });
+        return res.json({ ...r, ok: true, test: true });
       }
       const total = await countEmailRecipients(pool, silo, tag);
       if (!confirm) {
