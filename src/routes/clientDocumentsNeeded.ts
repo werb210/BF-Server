@@ -76,7 +76,18 @@ async function computeOutstandingDocsRaw(
   // Uploaded documents by category + status. A category counts as satisfied
   // once it has any non-rejected upload. Rejected docs go in their own bucket.
   const uploadedRes = await pool.query<{ category: string | null; status: string | null }>(
-    `SELECT category, status FROM documents WHERE application_id::text = ($1)::text`,
+    // BF_SERVER_DOCS_FAMILY_SHARE_v1 - a document uploaded anywhere in the
+    // parent/child family (e.g. the primary equipment app or its closing-cost
+    // add-on) satisfies the matching requirement on EVERY app in the family, so
+    // the client is never asked to upload the same doc twice across linked apps.
+    `WITH fam AS (
+       SELECT COALESCE(a.parent_application_id, a.id) AS root_id
+       FROM applications a WHERE a.id::text = ($1)::text
+     )
+     SELECT d.category, d.status FROM documents d
+     JOIN applications da ON da.id = d.application_id
+     WHERE da.id::text IN (SELECT root_id::text FROM fam)
+        OR da.parent_application_id::text IN (SELECT root_id::text FROM fam)`,
     [applicationId]
   ).catch(() => ({ rows: [] as Array<{ category: string | null; status: string | null }> }));
   const uploaded: UploadedDocRow[] = uploadedRes.rows;
