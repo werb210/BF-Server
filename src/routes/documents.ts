@@ -45,31 +45,42 @@ async function mirrorDocToSiblingLegs(args: {
 }): Promise<void> {
   const category = String(args.category ?? "").trim();
   if (!category || category.toLowerCase() === "other") return;
-  const fam = await pool.query<{ id: string }>(
+  const fam = await pool.query<{ id: string; is_companion: boolean }>(
     `WITH root AS (
        SELECT COALESCE(parent_application_id, id) AS root_id
          FROM applications WHERE id::text = ($1)::text
      )
-     SELECT a.id FROM applications a, root r
+     SELECT a.id,
+            COALESCE((a.metadata->>'closing_cost_companion')::boolean, false) AS is_companion
+       FROM applications a, root r
       WHERE (a.id::text = (r.root_id)::text OR a.parent_application_id::text = (r.root_id)::text)
         AND a.id::text <> ($1)::text`,
     [args.applicationId],
   );
   for (const sib of fam.rows) {
     const sibId = String(sib.id);
+    // BF_SERVER_SHARED_DOCS_COMPANION_ALL_v1 - a closing-cost companion is the SAME
+    // borrower and SAME underlying deal as its parent, so it must receive the parent's
+    // documents regardless of its own required set. That set is almost always empty on a
+    // freshly-spawned companion (created at wizard step 2, before any product match), which
+    // is why the requirement gate below silently skipped companions and left their
+    // Documents tab at 0. For companions, mirror unconditionally; for any other linked leg,
+    // keep the requirement-aware gate so we do not over-share across different products.
+    let needs = sib.is_companion === true;
     // BF_SERVER_SHARED_DOCS_GATE_v1 — document_requirements is essentially never
     // populated; the live required-docs source is product metadata / matched-product
     // fallbacks. Gate on computeOutstandingDocs (required-minus-uploaded): the sibling
     // needs this category iff it appears in its outstanding set.
-    let needs = false;
-    try {
-      // BF_SERVER_SHARED_DOCS_ALL_FILES_v1 - gate on the FULL required set, not the
-      // outstanding set. Outstanding is satisfied after the first shared file, which
-      // dropped FS (and any multi-file category) to 1-of-N on linked legs.
-      const { required } = await computeOutstandingDocs(sibId);
-      const want = category.toLowerCase();
-      needs = required.some((d) => String(d.document_type ?? "").trim().toLowerCase() === want);
-    } catch { needs = false; }
+    if (!needs) {
+      try {
+        // BF_SERVER_SHARED_DOCS_ALL_FILES_v1 - gate on the FULL required set, not the
+        // outstanding set. Outstanding is satisfied after the first shared file, which
+        // dropped FS (and any multi-file category) to 1-of-N on linked legs.
+        const { required } = await computeOutstandingDocs(sibId);
+        const want = category.toLowerCase();
+        needs = required.some((d) => String(d.document_type ?? "").trim().toLowerCase() === want);
+      } catch { needs = false; }
+    }
     if (!needs) continue;
     // Idempotent share: skip if this exact file (by hash) already exists on the sibling.
     const dup = await pool.query(
