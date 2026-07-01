@@ -346,6 +346,13 @@ router.post(
             linked_application_reason: (data as any).linked_application_reason ?? "closing_costs",
             companion_origin: "client_step2",
             closing_cost_routing: closingCostRouting,
+            // BF_SERVER_CLOSING_COST_MATCH_CATEGORIES_v1 - the lender-match engine reads
+            // metadata.match_categories to match MORE THAN ONE product category. The step-2
+            // companion previously set only closing_cost_routing (an intent string the
+            // matcher ignores), so the Lenders tab matched Term-only. Set the array the
+            // matcher actually consumes so a >= $50k companion surfaces BOTH Term and LOC
+            // lenders (still filtered by country/amount); < $50k stays Term-only.
+            match_categories: closingCostRouting === "term_and_loc" ? ["TERM", "LOC"] : ["TERM"],
           }
         : {}),
     };
