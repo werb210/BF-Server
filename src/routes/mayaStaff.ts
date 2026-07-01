@@ -11,6 +11,7 @@ import { logError } from "../observability/logger.js";
 import { runPipelineQuery } from "../services/mayaPipelineQuery.js";
 import { retrieveContext } from "../modules/ai/knowledge.service.js";
 import { sendSms } from "../modules/notifications/sms.service.js";
+import { parseAndResolveMentions } from "../services/notes/mentions.js"; // BF_SERVER_MAYA_CRM_TOOLS_v1
 
 const router = Router();
 
@@ -1151,6 +1152,116 @@ router.post(
       await audit({ audience: "client", tool: "application.find_mine", args: { phone10 }, ok: false, summary: e?.message ?? "error", errorCode: "applications_by_phone_exception" });
       logError("maya_applications_by_phone_failed", { code: "maya_applications_by_phone_failed", error: e?.message ?? "unknown" });
       return res.status(500).json({ ok: false, error: "applications_by_phone_failed" });
+    }
+  }),
+);
+
+// BF_SERVER_MAYA_CRM_TOOLS_v1 - staff Maya CRM read+act (notes + tasks).
+router.post(
+  "/staff/crm-notes",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const contactId = biStr(req.body?.contact_id);
+    if (!contactId) return res.status(400).json({ ok: false, error: "contact_id_required" });
+    try {
+      const r = await pool.query(
+        `SELECT n.id::text AS id, n.body, n.created_at,
+                NULLIF(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), '') AS owner_name
+           FROM crm_notes n LEFT JOIN users u ON u.id = n.owner_id
+          WHERE n.contact_id::text = $1 ORDER BY n.created_at DESC LIMIT 50`,
+        [contactId],
+      );
+      const notes = r.rows.map((x: any) => ({ id: x.id, body: x.body, at: x.created_at, owner: x.owner_name ?? null }));
+      const summary = notes.length ? `${notes.length} note(s) for this contact.` : "No notes for this contact.";
+      await audit({ audience: "staff", tool: "crm.notes", args: { contact_id: contactId }, ok: true, summary, sessionId: biStr(req.body?.session_id) });
+      return res.json({ ok: true, notes, summary });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "crm.notes", args: { contact_id: contactId }, ok: false, summary: e?.message ?? "error", errorCode: "crm_notes_exception" });
+      logError("maya_crm_notes_failed", { code: "maya_crm_notes_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "crm_notes_failed" });
+    }
+  }),
+);
+
+router.post(
+  "/staff/crm-add-note",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const contactId = biStr(req.body?.contact_id);
+    const noteBody = biStr(req.body?.body);
+    const silo = biStr(req.body?.silo) ?? "BF";
+    if (!contactId || !noteBody) return res.status(400).json({ ok: false, error: "contact_id_and_body_required" });
+    try {
+      const mentions = await parseAndResolveMentions(noteBody);
+      const r = await pool.query(
+        `INSERT INTO crm_notes (body, owner_id, contact_id, company_id, silo, mentions)
+         VALUES ($1, NULL, $2, NULL, $3, $4) RETURNING id::text AS id`,
+        [noteBody, contactId, silo, mentions],
+      );
+      const summary = "Note added to the contact.";
+      await audit({ audience: "staff", tool: "crm.add_note", args: { contact_id: contactId }, ok: true, summary, sessionId: biStr(req.body?.session_id) });
+      return res.json({ ok: true, id: r.rows?.[0]?.id ?? null, summary });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "crm.add_note", args: { contact_id: contactId }, ok: false, summary: e?.message ?? "error", errorCode: "crm_add_note_exception" });
+      logError("maya_crm_add_note_failed", { code: "maya_crm_add_note_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "crm_add_note_failed" });
+    }
+  }),
+);
+
+router.post(
+  "/staff/crm-tasks",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const contactId = biStr(req.body?.contact_id);
+    if (!contactId) return res.status(400).json({ ok: false, error: "contact_id_required" });
+    try {
+      const r = await pool.query(
+        `SELECT t.id::text AS id, t.title, t.status, t.priority, t.due_at,
+                NULLIF(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), '') AS assignee_name
+           FROM crm_tasks t LEFT JOIN users u ON u.id = t.assigned_to
+          WHERE t.contact_id::text = $1 ORDER BY COALESCE(t.due_at, t.created_at) DESC LIMIT 50`,
+        [contactId],
+      );
+      const tasks = r.rows.map((x: any) => ({ id: x.id, title: x.title, status: x.status ?? null, priority: x.priority ?? null, dueAt: x.due_at ?? null, assignee: x.assignee_name ?? null }));
+      const summary = tasks.length ? `${tasks.length} task(s) for this contact.` : "No tasks for this contact.";
+      await audit({ audience: "staff", tool: "crm.tasks", args: { contact_id: contactId }, ok: true, summary, sessionId: biStr(req.body?.session_id) });
+      return res.json({ ok: true, tasks, summary });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "crm.tasks", args: { contact_id: contactId }, ok: false, summary: e?.message ?? "error", errorCode: "crm_tasks_exception" });
+      logError("maya_crm_tasks_failed", { code: "maya_crm_tasks_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "crm_tasks_failed" });
+    }
+  }),
+);
+
+router.post(
+  "/staff/crm-create-task",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const contactId = biStr(req.body?.contact_id);
+    const title = biStr(req.body?.title);
+    const silo = biStr(req.body?.silo) ?? "BF";
+    const dueAt = biStr(req.body?.due_at);
+    const priority = biStr(req.body?.priority) ?? "none";
+    const notes = biStr(req.body?.notes);
+    if (!contactId || !title) return res.status(400).json({ ok: false, error: "contact_id_and_title_required" });
+    try {
+      const r = await pool.query(
+        `INSERT INTO crm_tasks
+           (title, notes, due_at, reminder_at, task_type, priority, queue_name,
+            assigned_to, owner_id, contact_id, company_id, status, graph_id, silo)
+         VALUES ($1,$2,$3,NULL,'todo',$4,NULL,NULL,NULL,$5,NULL,'open',NULL,$6)
+         RETURNING id::text AS id`,
+        [title, notes ?? null, dueAt ?? null, priority, contactId, silo],
+      );
+      const summary = "Task created for the contact.";
+      await audit({ audience: "staff", tool: "crm.create_task", args: { contact_id: contactId, title }, ok: true, summary, sessionId: biStr(req.body?.session_id) });
+      return res.json({ ok: true, id: r.rows?.[0]?.id ?? null, summary });
+    } catch (e: any) {
+      await audit({ audience: "staff", tool: "crm.create_task", args: { contact_id: contactId }, ok: false, summary: e?.message ?? "error", errorCode: "crm_create_task_exception" });
+      logError("maya_crm_create_task_failed", { code: "maya_crm_create_task_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "crm_create_task_failed" });
     }
   }),
 );
