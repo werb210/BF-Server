@@ -1021,6 +1021,54 @@ router.post(
         } catch {}
       }
 
+      // BF_SERVER_CLOSING_COST_NORMALIZE_v1 - single source of truth for the
+      // closing-cost companion, run unconditionally at submit so it is correct
+      // no matter which branch created the companion. Amount = 15% of the parent
+      // equipment total (capped $250k); category TERM; routing term_and_loc when
+      // >= $50k (matches BOTH term + LOC products via metadata.match_categories),
+      // else term-only. Without a non-null amount the lender matcher hard-fails.
+      try {
+        await pool.query(
+          `WITH parent AS (
+             SELECT COALESCE(
+               NULLIF(requested_amount, 0),
+               NULLIF((metadata->>'equipment_amount')::numeric, 0),
+               NULLIF((metadata->>'equipmentAmount')::numeric, 0),
+               NULLIF((metadata->'kyc'->>'equipmentAmount')::numeric, 0),
+               NULLIF((metadata->'formData'->>'equipmentAmount')::numeric, 0),
+               NULLIF((metadata->'formData'->'kyc'->>'equipmentAmount')::numeric, 0)
+             ) AS amt
+             FROM applications WHERE id::text = ($1)::text
+           ),
+           calc AS (SELECT LEAST(ROUND(amt * 0.15), 250000)::numeric AS cc FROM parent)
+           UPDATE applications c
+              SET requested_amount = (SELECT cc FROM calc),
+                  product_category = 'TERM',
+                  metadata = COALESCE(c.metadata, '{}'::jsonb) || jsonb_build_object(
+                    'match_categories', CASE WHEN (SELECT cc FROM calc) >= 50000
+                      THEN '["TERM","LOC"]'::jsonb ELSE '["TERM"]'::jsonb END,
+                    'companion_category', 'TERM',
+                    'closing_cost_routing', CASE WHEN (SELECT cc FROM calc) >= 50000
+                      THEN 'term_and_loc' ELSE 'term' END,
+                    'closing_cost_normalized_v1', 'true'
+                  ),
+                  updated_at = now()
+            WHERE c.parent_application_id::text = ($1)::text
+              AND (c.source = 'closing_costs_companion'
+                   OR c.metadata->>'closing_cost_companion' = 'true'
+                   OR c.metadata->>'kind' = 'closing_costs')
+              AND (SELECT cc FROM calc) IS NOT NULL
+              AND (SELECT cc FROM calc) > 0`,
+          [application.id]
+        );
+      } catch (ccNormErr) {
+        logError("closing_cost_normalize_failed", {
+          code: "closing_cost_normalize_failed",
+          parentApplicationId: application.id,
+          error: ccNormErr instanceof Error ? ccNormErr.message : "unknown",
+        });
+      }
+
       // BF_APP_TO_CRM_v38 - Block 38-E - fire-and-forget CRM mirror.
       try {
         const md: any = (legacyApp && typeof legacyApp === "object") ? legacyApp : {};
