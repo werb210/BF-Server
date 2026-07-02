@@ -1379,4 +1379,30 @@ router.post(
   }),
 );
 
+// BF_SERVER_MAYA_CATALOG_v1 - catalog counts for Maya (counts only, no lender names).
+router.post(
+  "/catalog-summary",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const silo = biStr(req.body?.silo) ?? "BF";
+    try {
+      const l = await pool.query(`SELECT count(*)::int AS n FROM lenders WHERE silo = $1 AND active = true`, [silo]);
+      const p = await pool.query(`SELECT count(*)::int AS n FROM lender_products WHERE silo = $1 AND active = true`, [silo]);
+      const byCat = await pool.query(
+        `SELECT category, count(*)::int AS n FROM lender_products
+          WHERE silo = $1 AND active = true GROUP BY category ORDER BY n DESC`, [silo]);
+      const lenders = l.rows[0]?.n ?? 0;
+      const products = p.rows[0]?.n ?? 0;
+      const catStr = byCat.rows.map((r: any) => `${r.category} (${r.n})`).join(", ");
+      const summary = `Boreal currently works with ${lenders} lender(s) offering ${products} financing product(s)${catStr ? ` across these categories: ${catStr}` : ""}.`;
+      await audit({ audience: "client", tool: "catalog.summary", args: { silo }, ok: true, summary, sessionId: biStr(req.body?.session_id) });
+      return res.json({ ok: true, lenders, products, byCategory: byCat.rows, summary });
+    } catch (e: any) {
+      await audit({ audience: "client", tool: "catalog.summary", args: { silo }, ok: false, summary: e?.message ?? "error", errorCode: "catalog_summary_exception" });
+      logError("maya_catalog_summary_failed", { code: "maya_catalog_summary_failed", error: e?.message ?? "unknown" });
+      return res.status(500).json({ ok: false, error: "catalog_summary_failed" });
+    }
+  }),
+);
+
 export default router;
