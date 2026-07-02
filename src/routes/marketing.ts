@@ -286,6 +286,7 @@ router.post("/email/send", safeHandler(async (req: any, res: any) => {
   if (!subject || !html) { respondOk(res, { error: "subject and html required" }); return; }
   if (b.test && typeof b.test === "string") {
     const r = await sendOne({ to: b.test, subject: mergeFields(subject, { first_name: "there", name: "there", email: b.test, company: "" }), html: mergeFields(html, { first_name: "there", name: "there", email: b.test, company: "" }) });
+    if (!r.ok) console.error("sendgrid_test_failed", { to: b.test, status: r.status, error: r.error });
     respondOk(res, { test: true, ...r });
     return;
   }
