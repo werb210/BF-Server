@@ -504,12 +504,23 @@ router.post("/templates", requireAuth, safeHandler(async (req: any, res: any) =>
   const channel = String(b.channel || "").trim();
   const name = String(b.name || "").trim();
   if (!channel || !name) { respondOk(res, { error: "channel and name required" }); return; }
+  // BF_SERVER_EMAIL_TEMPLATE_LANDING_v1 - an email template also hosts a public landing-page copy
+  // and returns its URL, so the operator can paste it into an SMS template for a sequence.
+  let landingUrl: string | null = b.linkUrl ?? null;
+  if (channel === "email" && b.html) {
+    try {
+      const lp = await createLandingPageFromHtml(String(b.html), silo, String(b.subject || name || "Boreal"), req.user?.userId ?? null);
+      landingUrl = lp.url;
+    } catch (e) {
+      console.error("email_template_landing_failed", { error: e instanceof Error ? e.message : String(e) });
+    }
+  }
   const r = await pool.query(
     `INSERT INTO marketing_template (silo, channel, name, body, link_url, subject, html, created_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-    [silo, channel, name, b.body ?? null, b.linkUrl ?? null, b.subject ?? null, b.html ?? null, req.user?.userId ?? null],
+    [silo, channel, name, b.body ?? null, landingUrl, b.subject ?? null, b.html ?? null, req.user?.userId ?? null],
   );
-  respondOk(res, { id: r.rows[0].id, saved: true });
+  respondOk(res, { id: r.rows[0].id, saved: true, landingUrl });
 }));
 
 router.delete("/templates/:id", requireAuth, safeHandler(async (req: any, res: any) => {
