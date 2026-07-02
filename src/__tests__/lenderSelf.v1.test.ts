@@ -31,6 +31,6 @@ describe("lender self-service API", () => {
     expect(src).toContain('const COUNTRIES = ["CA", "US", "BOTH"]');
     expect(src).toContain('const RATE_KINDS = ["apr", "monthly", "factor"]');
     expect(src).toContain('const RATE_TYPES = ["VARIABLE", "FIXED"]');
-    expect(src).toContain("type = $5");
+    expect(src).toContain("type = $4");
   });
 });

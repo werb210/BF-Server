@@ -1,14 +1,18 @@
 // BF_SERVER_LENDER_SELF_v1 - lender self-service API. Gated to the Lender role and scoped to the
 // token's lenderId. Lenders read/edit their own profile and list/create/edit their own products.
+// BF_SERVER_LENDER_SELF_V2 - lender_products.description is a phantom column (dropped by
+// migration 041, never re-added) and 500ed every GET/POST/PATCH on /products. Removed it,
+// added term_min/term_max/rate_period_days (real columns: 110 + v640), and added the
+// /uploads pair (lender_documents + Maya ingest), mirroring the staff pipeline in
+// portalLenders.ts.
 import { Router, type NextFunction, type Request, type Response } from "express";
-import jwt from "jsonwebtoken";
+import fs from "fs";
+import path from "path";
 import multer from "multer";
-import os from "node:os";
-import path from "node:path";
+import jwt from "jsonwebtoken";
 import { ROLES } from "../auth/roles.js";
 import { pool } from "../db.js";
 import { safeHandler } from "../middleware/safeHandler.js";
-// BF_SERVER_LENDER_SELF_UPLOADS_v1
 
 const router = Router();
 
@@ -118,9 +122,9 @@ router.get(
   requireLender,
   safeHandler(async (req: LenderRequest, res: Response) => {
     const result = await pool.query(
-      `SELECT id, name, description, category, type, country, active,
+      `SELECT id, name, category, type, country, active,
               amount_min, amount_max, interest_min, interest_max, rate_kind, rate_type,
-              min_credit_score, eligibility_notes
+              rate_period_days, term_min, term_max, min_credit_score, eligibility_notes
          FROM lender_products
         WHERE lender_id::text = $1 AND silo = 'BF'
         ORDER BY category, name`,
@@ -151,11 +155,13 @@ function validateProduct(body: Record<string, unknown>): { error?: string; value
       country,
       rate_kind: rateKind,
       rate_type: rateType,
-      description: str(body.description),
       amount_min: numOrNull(body.amount_min),
       amount_max: numOrNull(body.amount_max),
       interest_min: str(body.interest_min),
       interest_max: str(body.interest_max),
+      rate_period_days: numOrNull(body.rate_period_days),
+      term_min: numOrNull(body.term_min),
+      term_max: numOrNull(body.term_max),
       min_credit_score: numOrNull(body.min_credit_score),
       eligibility_notes: str(body.eligibility_notes),
     },
@@ -171,16 +177,15 @@ router.post(
 
     const result = await pool.query(
       `INSERT INTO lender_products
-         (id, lender_id, name, description, category, type, country, silo, active,
+         (id, lender_id, name, category, type, country, silo, active,
           amount_min, amount_max, interest_min, interest_max, rate_kind, rate_type,
-          min_credit_score, eligibility_notes)
-       VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $4, $5, 'BF', true,
-          $6, $7, $8, $9, $10, $11, $12, $13)
+          rate_period_days, term_min, term_max, min_credit_score, eligibility_notes)
+       VALUES (gen_random_uuid()::text, $1, $2, $3, $3, $4, 'BF', true,
+          $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING id`,
       [
         req.lenderId,
         value.name,
-        value.description,
         value.category,
         value.country,
         value.amount_min,
@@ -189,6 +194,9 @@ router.post(
         value.interest_max,
         value.rate_kind,
         value.rate_type,
+        value.rate_period_days,
+        value.term_min,
+        value.term_max,
         value.min_credit_score,
         value.eligibility_notes,
       ]
@@ -207,9 +215,10 @@ router.patch(
 
     const result = await pool.query(
       `UPDATE lender_products
-          SET name = $3, description = $4, category = $5, type = $5, country = $6,
-              amount_min = $7, amount_max = $8, interest_min = $9, interest_max = $10,
-              rate_kind = $11, rate_type = $12, min_credit_score = $13, eligibility_notes = $14,
+          SET name = $3, category = $4, type = $4, country = $5,
+              amount_min = $6, amount_max = $7, interest_min = $8, interest_max = $9,
+              rate_kind = $10, rate_type = $11, rate_period_days = $12,
+              term_min = $13, term_max = $14, min_credit_score = $15, eligibility_notes = $16,
               updated_at = now()
         WHERE id::text = $2 AND lender_id::text = $1 AND silo = 'BF'
         RETURNING id`,
@@ -217,7 +226,6 @@ router.patch(
         req.lenderId,
         req.params.id,
         value.name,
-        value.description,
         value.category,
         value.country,
         value.amount_min,
@@ -226,6 +234,9 @@ router.patch(
         value.interest_max,
         value.rate_kind,
         value.rate_type,
+        value.rate_period_days,
+        value.term_min,
+        value.term_max,
         value.min_credit_score,
         value.eligibility_notes,
       ]
@@ -236,23 +247,33 @@ router.patch(
   })
 );
 
-// BF_SERVER_LENDER_SELF_UPLOADS_v1 - lender uploads their own product/marketing docs; stored in
-// lender_documents (scoped to their lender_id) and ingested into Maya. Mirrors the staff pipeline.
-const uploadDir = path.join(os.tmpdir(), "lender-uploads");
-const upload = multer({ storage: multer.diskStorage({ destination: uploadDir }) });
+// BF_SERVER_LENDER_SELF_V2 - lender uploads (product sheets / marketing -> trains Maya).
+// Mirrors the staff pipeline in portalLenders.ts: multer disk file -> lender_documents
+// row -> best-effort POST to MAYA_URL /api/knowledge/ingest. uploaded_by is NULL because
+// lender tokens carry no users.id (FK references users).
+const uploadDir = "/tmp/lender-documents";
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadDir),
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_")}`),
+  }),
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
 
 router.get(
   "/uploads",
   requireLender,
   safeHandler(async (req: LenderRequest, res: Response) => {
     const result = await pool.query(
-      `SELECT id, filename, mime_type, blob_url, created_at
+      `SELECT id, filename, mime_type, created_at
          FROM lender_documents
-        WHERE lender_id::text = $1 AND silo = 'BF'
+        WHERE lender_id::text = $1
         ORDER BY created_at DESC`,
       [req.lenderId]
     );
-
     return res.json({ status: "ok", data: result.rows });
   })
 );
@@ -262,39 +283,32 @@ router.post(
   requireLender,
   upload.single("file"),
   safeHandler(async (req: LenderRequest, res: Response) => {
-    const file = req.file;
+    const file = (req as unknown as { file?: Express.Multer.File }).file;
     if (!file) return res.status(400).json({ status: "error", message: "file_required" });
 
-    const mimeType = file.mimetype || "application/octet-stream";
     const blobUrl = `file://${path.join(uploadDir, file.filename)}`;
     const result = await pool.query(
-      `INSERT INTO lender_documents
-         (id, lender_id, filename, mime_type, blob_url, uploaded_by, silo, created_at)
-       VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, 'BF', now())
-       RETURNING id`,
-      [req.lenderId, file.originalname, mimeType, blobUrl, `lender:${req.lenderId}`]
+      `INSERT INTO lender_documents (id, lender_id, filename, mime_type, blob_url, uploaded_by, created_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, NULL, now())
+       RETURNING id, filename, mime_type, created_at`,
+      [req.lenderId, file.originalname, file.mimetype || "application/octet-stream", blobUrl]
     );
 
     const mayaUrl = process.env.MAYA_URL;
     if (mayaUrl) {
-      try {
-        await fetch(`${mayaUrl}/api/knowledge/ingest`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            lenderId: req.lenderId,
-            filename: file.originalname,
-            blobUrl,
-            mimeType,
-            source: "lender_portal",
-          }),
-        });
-      } catch (error) {
-        console.warn("[lender_upload] maya ingest failed", error instanceof Error ? error.message : String(error));
-      }
+      await fetch(`${mayaUrl}/api/knowledge/ingest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          lenderId: req.lenderId,
+          filename: file.originalname,
+          blobUrl,
+          mimeType: file.mimetype || "application/octet-stream",
+        }),
+      }).catch(() => undefined);
     }
 
-    return res.status(201).json({ status: "ok", data: { id: result.rows[0]?.id ?? null } });
+    return res.status(201).json({ status: "ok", data: result.rows[0] });
   })
 );
 
