@@ -59,6 +59,39 @@ router.post("/webhooks/twilio/sms-inbound", async (req: any, res) => {
   // Drop only truly empty messages: no sender, or no text AND no media.
   if (!from || (!body && !mediaUrl)) return res.type("text/xml").send("<Response/>");
 
+  // BF_SERVER_SMS_STOP_HANDLER_v1 - CASL opt-out/opt-in. Honor STOP-family and START-family
+  // keywords, scoped to this inbound number's silo (BF). Runs before normal logging. If Twilio
+  // Advanced Opt-Out is enabled it intercepts STOP upstream (this never fires, no double reply);
+  // if not, this sets our DB flag and confirms. Our sends already suppress on sms_opt_out.
+  {
+    const kw = body.trim().toUpperCase().replace(/[^A-Z]/g, "");
+    const STOP_WORDS = new Set(["STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "OPTOUT"]);
+    const START_WORDS = new Set(["START", "YES", "UNSTOP", "SUBSCRIBE", "OPTIN"]);
+    if (STOP_WORDS.has(kw) || START_WORDS.has(kw)) {
+      const optOut = STOP_WORDS.has(kw);
+      const digits = from.replace(/[^0-9]/g, "");
+      const last10 = digits.length >= 10 ? digits.slice(-10) : digits;
+      try {
+        if (last10) {
+          await pool.query(
+            `UPDATE contacts SET sms_opt_out = $2, updated_at = now()
+              WHERE silo = 'BF' AND phone IS NOT NULL
+                AND length(regexp_replace(phone, '[^0-9]', '', 'g')) >= 10
+                AND right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = $1`,
+            [last10, optOut],
+          );
+        }
+        console.log("[sms-inbound] opt_" + (optOut ? "out" : "in"), { from, silo: "BF" });
+      } catch (err: unknown) {
+        console.warn("[sms-inbound] opt-out update failed", err instanceof Error ? err.message : String(err));
+      }
+      const reply = optOut
+        ? "You have been unsubscribed from Boreal Financial messages. Reply START to resubscribe."
+        : "You are resubscribed to Boreal Financial messages. Reply STOP to opt out.";
+      return res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
+    }
+  }
+
   try {
     const conv = await pool.query<{ id: string }>(
       `SELECT id

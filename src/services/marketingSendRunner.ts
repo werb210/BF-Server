@@ -100,7 +100,9 @@ export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgr
     if (hasPhone) {
       const send = await pool.query<{ id: string }>(`INSERT INTO sms_campaign_sends (campaign_id, contact_id, silo, phone) VALUES ($1,$2,$3,$4) RETURNING id`, [campaignId, c.id, job.silo, c.phone]);
       const sendId = send.rows[0].id;
-      const text = job.linkUrl ? `${job.body} ${trackedLink(sendId, job.linkUrl)}` : job.body;
+      // BF_SERVER_SMS_CASL_FOOTER_v1 - CASL identification + opt-out on every marketing SMS.
+      const baseText = job.linkUrl ? `${job.body} ${trackedLink(sendId, job.linkUrl)}` : job.body;
+      const text = `${baseText} Reply STOP to opt out. Info: boreal.financial/sms`;
       const r = await sendMarketingSms(String(c.phone), text);
       if (r.ok) {
         smsSent++;
