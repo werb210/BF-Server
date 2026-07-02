@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { ROLES, type Role } from "../auth/roles.js";
 import adminRoutes from "./admin.js";
+import lenderSelfRoutes from "./lenderSelf.js"; // BF_SERVER_LENDER_SELF_v1
 import slfRoutes from "./slf.js"; // BF_SERVER_BLOCK_v153_SLF_BACKEND_MINIMAL_v1
 import applicationsRoutes from "../modules/applications/applications.routes.js";
 import bankingRoutes from "./banking.js";
@@ -181,6 +182,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/internal/processing", router: internalProcessingRoutes },
   { path: "/calendar", router: calendarRoutes },
   { path: "/calls", router: callsRoutes },
+  { path: "/lender", router: lenderSelfRoutes }, // BF_SERVER_LENDER_SELF_v1
   { path: "/telephony", router: telephonyRoutes },
   { path: "/realtime", router: realtimeRoutes },
   { path: "/banking", router: bankingRoutes },
@@ -361,6 +363,9 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET", path: "/api/lender/applications", roles: [ROLES.LENDER] },
   { method: "GET", path: "/api/lender/applications/:id", roles: [ROLES.LENDER] },
   { method: "GET", path: "/api/lender/products", roles: [ROLES.LENDER] },
+  { method: "PATCH", path: "/api/lender/me", roles: [ROLES.LENDER] },
+  { method: "POST", path: "/api/lender/products", roles: [ROLES.LENDER] },
+  { method: "PATCH", path: "/api/lender/products/:id", roles: [ROLES.LENDER] },
   { method: "POST", path: "/api/lenders/:lenderId/users", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/staff/overview", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/dashboard", roles: [ROLES.ADMIN, ROLES.STAFF] },
