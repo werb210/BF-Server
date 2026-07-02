@@ -66,3 +66,39 @@ export async function ingestProductById(db: Queryable, productId: string): Promi
       product.name ?? `Product ${product.id}`,
     );
 }
+
+// BF_SERVER_PRODUCT_KNOWLEDGE_SYNC_v1 - reconcile Maya knowledge with lender_products.
+// Ingests any product not yet in ai_knowledge (covers manual/portal/raw-SQL inserts) and
+// prunes knowledge rows for products that no longer exist. Safe to run repeatedly.
+export async function reconcileProductKnowledge(
+  db: Queryable,
+): Promise<{ ingested: number; pruned: number }> {
+  const missing = await db.query<{ id: string }>(
+    `select p.id
+       from lender_products p
+      where not exists (
+        select 1 from ai_knowledge k
+         where k.source_type like 'product%' and k.source_id = p.id
+      )`
+  );
+
+  let ingested = 0;
+  for (const row of missing.rows) {
+    try {
+      await ingestProductById(db, row.id);
+      ingested += 1;
+    } catch {
+      // embedAndStore throws if OPENAI_API_KEY is unset or embedding fails; skip and retry next tick.
+    }
+  }
+
+  const prunedRes = await db.query<{ id: string }>(
+    `delete from ai_knowledge
+      where source_type like 'product%'
+        and source_id is not null
+        and source_id not in (select id from lender_products)
+    returning id`
+  );
+
+  return { ingested, pruned: prunedRes.rows.length };
+}
