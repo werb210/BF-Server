@@ -39,8 +39,11 @@ export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendP
       if (r.ok) {
         sent++;
         await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [c.id, "email_marketing_sent", JSON.stringify({ subject: job.subject, tag: job.tag })]);
-      } else { failed++; }
-    } catch { failed++; }
+      } else {
+        failed++;
+        console.error("sendgrid_email_failed", { to: c.email, status: r.status, error: r.error });
+      }
+    } catch (e) { failed++; console.error("sendgrid_email_exception", { to: c.email, error: e instanceof Error ? e.message : String(e) }); }
     i++;
     if (onProgress && i % 50 === 0) { try { await onProgress(sent, failed); } catch { /* progress best-effort */ } }
   }
