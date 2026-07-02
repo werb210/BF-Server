@@ -2,9 +2,13 @@
 // token's lenderId. Lenders read/edit their own profile and list/create/edit their own products.
 import { Router, type NextFunction, type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
+import multer from "multer";
+import os from "node:os";
+import path from "node:path";
 import { ROLES } from "../auth/roles.js";
 import { pool } from "../db.js";
 import { safeHandler } from "../middleware/safeHandler.js";
+// BF_SERVER_LENDER_SELF_UPLOADS_v1
 
 const router = Router();
 
@@ -229,6 +233,68 @@ router.patch(
 
     if (!result.rows[0]) return res.status(404).json({ status: "error", message: "product_not_found_or_not_yours" });
     return res.json({ status: "ok", data: { id: result.rows[0].id } });
+  })
+);
+
+// BF_SERVER_LENDER_SELF_UPLOADS_v1 - lender uploads their own product/marketing docs; stored in
+// lender_documents (scoped to their lender_id) and ingested into Maya. Mirrors the staff pipeline.
+const uploadDir = path.join(os.tmpdir(), "lender-uploads");
+const upload = multer({ storage: multer.diskStorage({ destination: uploadDir }) });
+
+router.get(
+  "/uploads",
+  requireLender,
+  safeHandler(async (req: LenderRequest, res: Response) => {
+    const result = await pool.query(
+      `SELECT id, filename, mime_type, blob_url, created_at
+         FROM lender_documents
+        WHERE lender_id::text = $1 AND silo = 'BF'
+        ORDER BY created_at DESC`,
+      [req.lenderId]
+    );
+
+    return res.json({ status: "ok", data: result.rows });
+  })
+);
+
+router.post(
+  "/uploads",
+  requireLender,
+  upload.single("file"),
+  safeHandler(async (req: LenderRequest, res: Response) => {
+    const file = req.file;
+    if (!file) return res.status(400).json({ status: "error", message: "file_required" });
+
+    const mimeType = file.mimetype || "application/octet-stream";
+    const blobUrl = `file://${path.join(uploadDir, file.filename)}`;
+    const result = await pool.query(
+      `INSERT INTO lender_documents
+         (id, lender_id, filename, mime_type, blob_url, uploaded_by, silo, created_at)
+       VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, 'BF', now())
+       RETURNING id`,
+      [req.lenderId, file.originalname, mimeType, blobUrl, `lender:${req.lenderId}`]
+    );
+
+    const mayaUrl = process.env.MAYA_URL;
+    if (mayaUrl) {
+      try {
+        await fetch(`${mayaUrl}/api/knowledge/ingest`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            lenderId: req.lenderId,
+            filename: file.originalname,
+            blobUrl,
+            mimeType,
+            source: "lender_portal",
+          }),
+        });
+      } catch (error) {
+        console.warn("[lender_upload] maya ingest failed", error instanceof Error ? error.message : String(error));
+      }
+    }
+
+    return res.status(201).json({ status: "ok", data: { id: result.rows[0]?.id ?? null } });
   })
 );
 
