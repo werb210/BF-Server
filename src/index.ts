@@ -168,6 +168,11 @@ export async function start(): Promise<void> {
     try { const w = startEmailFollowupWorker(pool); workerStops.push(w.stop); console.log("[startup] email follow-up worker started"); }
     catch (err) { console.error("[startup] email follow-up worker failed to start:", err); }
 
+    // BF_SERVER_PRODUCT_KNOWLEDGE_SYNC_v1 - keep Maya product knowledge in sync with lender_products (incl. manual/SQL inserts).
+    const { startProductKnowledgeWorker } = await import("./workers/productKnowledgeWorker.js");
+    try { const w = startProductKnowledgeWorker(pool); workerStops.push(w.stop); console.log("[startup] product-knowledge worker started"); }
+    catch (err) { console.error("[startup] product-knowledge worker failed to start:", err); }
+
     // BF_SERVER_BLOCK_v744 — advance BI leads to Engaged on an email reply.
     const { startBiOutreachEmailReplyWorker } = await import("./workers/biOutreachEmailReplyWorker.js");
     try { const w = startBiOutreachEmailReplyWorker(pool); workerStops.push(w.stop); console.log("[startup] BI outreach email-reply worker started"); }
