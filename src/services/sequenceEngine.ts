@@ -99,6 +99,13 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
         const r = await sendMarketingSms(String(c.phone), text);
         if (r.ok) { await logStep(pool, c.id, en.sequence_id, idx, "sms"); await pool.query(`UPDATE sequence_sends SET message_sid=$2 WHERE id=$1`, [sendId, r.sid ?? null]).catch(() => {}); }
         else if (r.optedOut) await pool.query(`UPDATE contacts SET sms_opt_out=true, updated_at=now() WHERE id=$1`, [c.id]).catch(() => {});
+        else {
+          // BF_SERVER_SEQ_NO_ADVANCE_ON_SEND_FAIL_v1 - see email branch.
+          await pool.query(`DELETE FROM sequence_sends WHERE id=$1`, [sendId]).catch(() => {});
+          console.error("[sequence] sms send failed; will retry", { enrollmentId: en.id });
+          await bump(pool, en.id, 60);
+          return;
+        }
       }
     } else {
       const blocked = !c.email || c.marketing_opt_out;
@@ -111,6 +118,18 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
         const esId = es.rows[0]?.id || "";
         const r = await sendOne({ to: String(c.email), subject: mergeFields(String(effSubject || ""), vars), html: mergeFields(html, vars), contactId: c.id, customArgs: esId ? { seq_send_id: esId } : undefined });
         if (r.ok) await logStep(pool, c.id, en.sequence_id, idx, "email");
+        else {
+          // BF_SERVER_SEQ_NO_ADVANCE_ON_SEND_FAIL_v1 - a failed send (e.g.
+          // SendGrid 401 on a dead key) used to advance/complete the
+          // enrollment anyway, and the pre-inserted sequence_sends row made
+          // analytics count it as a sent email. The July 3rd blast reported
+          // 805 emails / 1637 done while SendGrid rejected everything.
+          // Remove the attempt row and retry this step in 60 minutes.
+          if (esId) await pool.query(`DELETE FROM sequence_sends WHERE id=$1`, [esId]).catch(() => {});
+          console.error("[sequence] email send failed; will retry", { enrollmentId: en.id, status: r.status, error: r.error });
+          await bump(pool, en.id, 60);
+          return;
+        }
       }
     }
   }
