@@ -276,11 +276,34 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
         .map((a: any) => String(a || "").trim().toLowerCase()).filter(Boolean)));
       if (_recips.length) {
         const _m = await pool.query(
-          `SELECT id FROM contacts WHERE silo = $1 AND lower(email) = ANY($2::text[])`,
+          `SELECT id, lower(email) AS email FROM contacts WHERE silo = $1 AND lower(email) = ANY($2::text[])`,
           [_silo, _recips],
         );
+        const _matched = new Set(_m.rows.map((r: any) => String(r.email)));
         for (const _row of _m.rows) {
           await logEmail(_row.id, null, _silo);
+        }
+        // BF_SERVER_EMAIL_AUTOCREATE_CONTACT_v1 - emailing someone from the
+        // Inbox who has no CRM contact previously logged NOTHING and created
+        // NOTHING, so the exchange was invisible in CRM. Create a lead contact
+        // for each unknown external recipient, then log the email to it.
+        // Internal boreal addresses are skipped.
+        for (const _addr of _recips) {
+          if (_matched.has(_addr)) continue;
+          if (/@boreal\.(financial|insure)$/i.test(_addr)) continue;
+          const _local = String(_addr.split("@")[0] ?? _addr);
+          const _guessName =
+            _local.replace(/[._-]+/g, " ").replace(/[0-9]+/g, " ").trim().replace(/\s+/g, " ")
+              .split(" ").map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(" ").trim() || _addr;
+          try {
+            const _created = await pool.query(
+              `INSERT INTO contacts (id, company_id, name, email, phone, status, silo, lead_status, tags, lifecycle_stage, created_at, updated_at)
+               VALUES (gen_random_uuid(), NULL, $1, $2, NULL, 'active', $3, 'New', ARRAY['email']::text[], 'lead', now(), now())
+               RETURNING id`,
+              [_guessName, _addr, _silo],
+            );
+            if (_created.rows[0]?.id) await logEmail(_created.rows[0].id, null, _silo);
+          } catch (_ce) { console.warn("[crm_email_log] auto-create contact failed", _addr, _ce); }
         }
       }
     }

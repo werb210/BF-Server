@@ -42,6 +42,13 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
     // OTP-verified phone wins over anything the applicant typed in the form.
     const authoritativePhone = (input.verifiedPhone ?? "").trim() || null;
 
+    // BF_SERVER_CRM_MIRROR_NORMALIZED_FALLBACKS_v1 - a silent no-op here is how
+    // a submitted application ends up with no CRM record; make skips visible.
+    if (!businessName && !applicantName && !applicantEmail && !applicantPhone && !authoritativePhone) {
+      console.warn("[crm_mirror] skipped - no business/applicant data", { applicationId: input.applicationId });
+      return;
+    }
+
     // BF_SERVER_v70_BLOCK_1_3 — company dedup keyed on email primary,
     // phone secondary, name+silo last resort. Email is the canonical
     // company identifier per locked spec; previous code matched on
