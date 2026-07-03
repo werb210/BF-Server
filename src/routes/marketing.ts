@@ -452,6 +452,23 @@ router.post("/email/assets/upload", emailAssetUpload.single("file"), safeHandler
   }
 }));
 
+// BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1 - sanitize a tag list from body/query.
+function tagArr(v: unknown): string[] | null {
+  const raw = Array.isArray(v) ? v : typeof v === "string" ? v.split(",") : [];
+  const out = [...new Set(raw.map((x) => String(x).trim()).filter(Boolean))];
+  return out.length ? out : null;
+}
+
+// BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1 - live recipient count for an
+// include/exclude tag combination (branded email composer preview).
+router.get("/email/audience-count", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const include = tagArr(req.query.include);
+  const exclude = tagArr(req.query.exclude);
+  const n = await countEmailRecipients(pool, silo, null, include, exclude);
+  respondOk(res, { n });
+}));
+
 router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
   if (!sendgridConfigured()) { respondOk(res, { configured: false }); return; }
   const silo = resolveSiloFromRequest(req);
@@ -466,20 +483,23 @@ router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
     return;
   }
   const tag = b.tag ? String(b.tag) : null;
+  // BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1 - multi-tag include/exclude audience.
+  const includeTags = tagArr(b.tags);
+  const excludeTags = tagArr(b.excludeTags);
   // BF_SERVER_BLOCK_v782_VIEW_IN_BROWSER
   const { url: __viewUrl } = await createLandingPageFromHtml(html, silo, subject, req.user?.userId ?? null);
   const htmlOut = withViewInBrowser(html, __viewUrl);
-  const total = await countEmailRecipients(pool, silo, tag);
+  const total = await countEmailRecipients(pool, silo, tag, includeTags, excludeTags);
   if (total === 0) { respondOk(res, { configured: true, recipients: 0, sent: 0, failed: 0 }); return; }
   if (total > 500) {
     const job = await pool.query<{ id: string }>(
       `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by) VALUES ('email', $1, $2, $3, $4, $5) RETURNING id`,
-      [silo, tag, JSON.stringify({ subject, html: htmlOut }), total, req.user?.userId ?? null],
+      [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags }), total, req.user?.userId ?? null],
     );
     respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total });
     return;
   }
-  const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut });
+  const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut, tags: includeTags, excludeTags });
   respondOk(res, { configured: true, recipients: out.total, sent: out.sent, failed: out.failed });
 }));
 

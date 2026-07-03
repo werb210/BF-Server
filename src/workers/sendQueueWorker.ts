@@ -7,7 +7,7 @@ import { runEmailSend, runSmsSend } from "../services/marketingSendRunner.js";
 
 const TICK_MS = 30_000;
 
-type ClaimedJob = { id: string; channel: string; silo: string; tag: string | null; created_by: string | null; payload: { subject?: string; html?: string; body?: string; linkUrl?: string | null; fbSubject?: string | null; fbHtml?: string | null } };
+type ClaimedJob = { id: string; channel: string; silo: string; tag: string | null; created_by: string | null; payload: { subject?: string; html?: string; body?: string; linkUrl?: string | null; fbSubject?: string | null; fbHtml?: string | null; tags?: string[] | null; excludeTags?: string[] | null } };
 
 export function startSendQueueWorker(pool: Pool): { stop: () => void } {
   let stopped = false, running = false;
@@ -40,7 +40,7 @@ export function startSendQueueWorker(pool: Pool): { stop: () => void } {
             [job.id, result.total, result.smsSent + result.emailSent, result.failed],
           );
         } else {
-          const result = await runEmailSend(pool, { silo: job.silo, tag: job.tag, subject: String(p.subject || ""), html: String(p.html || "") }, progress);
+          const result = await runEmailSend(pool, { silo: job.silo, tag: job.tag, subject: String(p.subject || ""), html: String(p.html || ""), tags: (p.tags as string[] | undefined) ?? null, excludeTags: (p.excludeTags as string[] | undefined) ?? null }, progress); // BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1
           await pool.query(
             `UPDATE marketing_send_jobs SET status='done', total=$2, sent=$3, failed=$4, finished_at=now(), updated_at=now() WHERE id=$1`,
             [job.id, result.total, result.sent, result.failed],

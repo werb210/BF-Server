@@ -8,16 +8,22 @@ import type { Pool } from "pg";
 import { sendOne, mergeFields } from "./sendgridService.js";
 import { sendMarketingSms, trackedLink, lookupLineType } from "./marketingSms.js"; // BF_SERVER_SEND_QUEUE_SMS_v1 BF_SERVER_BLOCK_v784_LINE_TYPE_IMPORT
 
-export type EmailJob = { silo: string; tag: string | null; subject: string; html: string };
+// BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1 - include/exclude tag arrays. Include
+// empty/null = all contacts; otherwise a contact must carry AT LEAST ONE include
+// tag. A contact carrying ANY exclude tag is removed; exclude wins over include.
+// Single `tag` kept for back-compat (raw email panel, SMS, Maya tools, old jobs).
+export type EmailJob = { silo: string; tag: string | null; subject: string; html: string; tags?: string[] | null; excludeTags?: string[] | null };
 export type SendProgress = (sent: number, failed: number) => Promise<void>;
 
-export async function countEmailRecipients(pool: Pool, silo: string, tag: string | null): Promise<number> {
+export async function countEmailRecipients(pool: Pool, silo: string, tag: string | null, tags: string[] | null = null, excludeTags: string[] | null = null): Promise<number> {
   const r = await pool.query<{ n: number }>(
     `SELECT count(*)::int AS n
        FROM contacts c
       WHERE c.silo = $1 AND COALESCE(c.email,'') <> '' AND COALESCE(c.marketing_opt_out,false) = false
-        AND ($2::text IS NULL OR $2 = ANY(c.tags))`,
-    [silo, tag],
+        AND ($2::text IS NULL OR $2 = ANY(c.tags))
+        AND ($3::text[] IS NULL OR COALESCE(c.tags,'{}') && $3)
+        AND ($4::text[] IS NULL OR NOT (COALESCE(c.tags,'{}') && $4))`,
+    [silo, tag, tags, excludeTags],
   );
   return r.rows[0]?.n ?? 0;
 }
@@ -27,8 +33,10 @@ export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendP
     `SELECT c.id, c.email, c.name, co.name AS company
        FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
       WHERE c.silo = $1 AND COALESCE(c.email,'') <> '' AND COALESCE(c.marketing_opt_out,false) = false
-        AND ($2::text IS NULL OR $2 = ANY(c.tags))`,
-    [job.silo, job.tag],
+        AND ($2::text IS NULL OR $2 = ANY(c.tags))
+        AND ($3::text[] IS NULL OR COALESCE(c.tags,'{}') && $3)
+        AND ($4::text[] IS NULL OR NOT (COALESCE(c.tags,'{}') && $4))`,
+    [job.silo, job.tag, job.tags ?? null, job.excludeTags ?? null],
   );
   let sent = 0, failed = 0, i = 0;
   for (const c of recips.rows) {
