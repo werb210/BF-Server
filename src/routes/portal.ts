@@ -285,7 +285,12 @@ router.get(
           a.parent_application_id                               AS parent_application_id,
           a.owner_user_id                                       AS owner_user_id,
           COALESCE(a.pipeline_state IN ('draft','Draft',''),false) AS is_draft,
-          COALESCE(NULLIF(a.name, ''), c.name, 'Unnamed application') AS business_name,
+          -- BF_SERVER_PIPELINE_PLACEHOLDER_NAME_v1 - treat wizard placeholders as
+          -- absent so a submitted app never renders (or gets client-filtered) as
+          -- "Draft application"; falls back to the company name, then Unnamed.
+          COALESCE(
+            NULLIF(NULLIF(NULLIF(a.name, ''), 'Draft application'), 'Untitled Application'),
+            c.name, 'Unnamed application') AS business_name,
           ct.name                                               AS contact_name,
           ct.email                                              AS contact_email,
           ct.id AS contact_id,

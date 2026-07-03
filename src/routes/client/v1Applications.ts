@@ -448,13 +448,25 @@ router.post(
       // Reading only `name` left applications.name as 'Draft application' on
       // every submitted app, so pipeline cards rendered "Unnamed application"
       // and the staff drawer's overview tab showed nothing.
+      // BF_SERVER_SUBMIT_NAME_FALLBACKS_v1 - a submitted app (544b5a65, "Bismillah
+      // Grocers") kept name='Draft application' because none of the five keys below
+      // resolved, which made the pipeline board hide the card as a junk draft while
+      // the detail page (reading metadata) showed the business fine. Widen the
+      // fallbacks to every place the client puts the name: business_info (the
+      // buildSubmissionPayload shape) and normalized.company.name (buildSubmitBody).
+      const normalizedBody: any = normalized && typeof normalized === "object" ? normalized : {};
       const wizardBusinessName: string | null =
         (legacyApp && typeof legacyApp === 'object'
           ? ((legacyApp as any)?.business?.companyName ??
              (legacyApp as any)?.business?.businessName ??
              (legacyApp as any)?.business?.legalName ??
              (legacyApp as any)?.business?.name ??
-             (legacyApp as any)?.company?.name ?? null)
+             (legacyApp as any)?.company?.name ??
+             (legacyApp as any)?.business_info?.companyName ??
+             (legacyApp as any)?.business_info?.businessName ??
+             (legacyApp as any)?.business_info?.legalName ??
+             (legacyApp as any)?.business_info?.name ??
+             normalizedBody?.company?.name ?? null)
           : null) || null;
       await pool.query(
         `UPDATE applications
