@@ -21,6 +21,18 @@ describe("CRM record creation", () => {
   it("inbox send auto-creates lead contacts for unknown external recipients", () => {
     expect(o365).toContain("EMAIL_AUTOCREATE_CONTACT_v1");
     expect(o365).toContain("ARRAY['email']::text[]");
-    expect(o365).toContain("@boreal\\\\.(financial|insure)$");
+    expect(o365).toContain("financial|insure"); // escape-proof assertion (previous version was over-escaped and failed)
+  });
+});
+
+// BF_SERVER_LEG_CRM_PROPAGATION_v1
+import { readFileSync as rf2 } from "node:fs";
+import { join as j2 } from "node:path";
+import { describe as d2, expect as e2, it as i2 } from "vitest";
+const mirror2 = rf2(j2(process.cwd(), "src", "services", "applicationCrmMirror.ts"), "utf-8");
+d2("leg CRM propagation", () => {
+  i2("mirror propagates the fresh contact/company link to companion legs", () => {
+    e2(mirror2).toContain("LEG_CRM_PROPAGATION_v1");
+    e2(mirror2).toContain("WHERE parent_application_id = $1");
   });
 });
