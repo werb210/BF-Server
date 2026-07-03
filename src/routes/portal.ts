@@ -632,6 +632,139 @@ router.get(
 // admin-only delete here under the portal namespace so the existing
 // portal admin auth chain handles it. Hard-cast id::text so a non-uuid
 // param 400s without poisoning the connection with a 22P02.
+// BF_SERVER_PURGE_JUNK_DRAFTS_v1 - full delete cascade for ONE application:
+// Azure blobs first, then documents/document_versions rows explicitly, then
+// catalog-discovered FK children, then the application row. Mirrors the steps
+// of the single DELETE /applications/:id handler below (kept inline there to
+// avoid refactoring a battle-tested route); if the cascade steps ever change,
+// change BOTH places.
+async function purgeApplicationCascade(applicationId: string): Promise<number> {
+  try {
+    const blobRows = await pool.query<{ blob_name: string | null }>(
+      `SELECT blob_name FROM documents WHERE application_id::text = ($1)::text AND blob_name IS NOT NULL`,
+      [applicationId]
+    );
+    for (const b of blobRows.rows) {
+      if (!b.blob_name) continue;
+      try {
+        await getStorage().delete(b.blob_name);
+      } catch (blobErr) {
+        console.error("purge_junk_blob_failed", { applicationId, blobName: b.blob_name, err: blobErr });
+      }
+    }
+  } catch (collectErr) {
+    console.error("purge_junk_blob_collect_failed", { applicationId, err: collectErr });
+  }
+
+  const fkRows = await pool.query<{ child_table: string; child_column: string }>(
+    `SELECT con.conrelid::regclass::text AS child_table,
+            att.attname                  AS child_column
+       FROM pg_constraint con
+       JOIN pg_attribute att
+         ON att.attrelid = con.conrelid
+        AND att.attnum = ANY(con.conkey)
+      WHERE con.contype = 'f'
+        AND con.confrelid = 'applications'::regclass`
+  );
+  const client = await pool.connect();
+  let rowCount = 0;
+  try {
+    await client.query("BEGIN");
+    for (const stmt of [
+      `DELETE FROM document_versions WHERE document_id IN (SELECT id FROM documents WHERE application_id::text = ($1)::text)`,
+      `DELETE FROM documents WHERE application_id::text = ($1)::text`,
+      `UPDATE applications SET parent_application_id = NULL WHERE parent_application_id::text = ($1)::text`,
+    ]) {
+      try {
+        await client.query("SAVEPOINT sp");
+        await client.query(stmt, [applicationId]);
+        await client.query("RELEASE SAVEPOINT sp");
+      } catch (e: any) {
+        await client.query("ROLLBACK TO SAVEPOINT sp");
+        await client.query("RELEASE SAVEPOINT sp");
+        if (e?.code !== "42P01" && e?.code !== "42703") throw e;
+      }
+    }
+    let pending = fkRows.rows.filter((r) => r.child_table !== "applications");
+    for (let pass = 0; pass < 5 && pending.length > 0; pass++) {
+      const stillBlocked: { child_table: string; child_column: string }[] = [];
+      for (const { child_table, child_column } of pending) {
+        try {
+          await client.query("SAVEPOINT s");
+          await client.query(
+            `DELETE FROM ${child_table} WHERE ${child_column}::text = ($1)::text`,
+            [applicationId]
+          );
+          await client.query("RELEASE SAVEPOINT s");
+        } catch (e: any) {
+          await client.query("ROLLBACK TO SAVEPOINT s");
+          await client.query("RELEASE SAVEPOINT s");
+          if (e?.code === "42P01") {
+            // missing table - drop from the queue
+          } else if (e?.code === "23503") {
+            stillBlocked.push({ child_table, child_column });
+          } else {
+            throw e;
+          }
+        }
+      }
+      if (stillBlocked.length === pending.length) break;
+      pending = stillBlocked;
+    }
+    const r = await client.query(
+      `DELETE FROM applications WHERE id::text = ($1)::text`,
+      [applicationId]
+    );
+    rowCount = r.rowCount ?? 0;
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+  return rowCount;
+}
+
+// BF_SERVER_PURGE_JUNK_DRAFTS_v1 - Admin bulk cleanup: unsubmitted applications
+// with an empty/placeholder name older than N days (default 3, body
+// {"olderThanDays": N}) in the caller's silo are deleted via the FULL cascade
+// (blobs + rows), unlike a raw psql delete which orphans blob storage.
+router.post(
+  "/applications/purge-junk-drafts",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN] }),
+  portalLimiter,
+  safeHandler(async (req: any, res: Response) => {
+    if (!ensureReady(res)) {
+      return;
+    }
+    const silo = getSilo(res);
+    const days = Math.max(1, Math.min(365, Number(req.body?.olderThanDays ?? 3) || 3));
+    const rows = await runQuery<{ id: string }>(
+      `SELECT id FROM applications
+        WHERE submitted_at IS NULL
+          AND (name IS NULL OR name = '' OR name IN ('Draft application', 'Untitled Application'))
+          AND created_at < NOW() - ($2 || ' days')::interval
+          AND (silo IS NULL OR UPPER(silo) = UPPER($1))
+        ORDER BY created_at ASC
+        LIMIT 200`,
+      [silo, String(days)]
+    );
+    let purged = 0;
+    const failed: string[] = [];
+    for (const row of rows.rows) {
+      try {
+        purged += await purgeApplicationCascade(row.id);
+      } catch (err) {
+        failed.push(row.id);
+        console.error("purge_junk_draft_failed", { applicationId: row.id, err });
+      }
+    }
+    res.status(200).json({ ok: true, matched: rows.rows.length, purged, failed });
+  })
+);
+
 router.delete(
   "/applications/:id",
   requireAuth,
