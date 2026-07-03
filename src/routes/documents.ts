@@ -323,7 +323,11 @@ router.post("/public-upload", upload.single("file"), async (req: Request, res: R
     "text/plain",
   ];
   const mime = typeof file.mimetype === "string" ? file.mimetype.toLowerCase() : "";
-  const mimeAllowed = ALLOWED_MIME_PREFIXES.some((p) => mime === p || mime.startsWith(p + ";") || mime.startsWith(p + "/"));
+  // BF_SERVER_MIME_DOT_SUFFIX_v1 - docx/xlsx/pptx mimes continue the allowed
+  // "application/vnd.openxmlformats-officedocument" prefix with a DOT
+  // (".wordprocessingml.document"), which the ";"/"/" separators never matched,
+  // so every Word/Excel upload 415ed despite the allowlist intending them.
+  const mimeAllowed = ALLOWED_MIME_PREFIXES.some((p) => mime === p || mime.startsWith(p + ";") || mime.startsWith(p + "/") || mime.startsWith(p + "."));
   if (!mimeAllowed) {
     console.warn("[documents] public-upload rejected non-allowed mime", { applicationId, mime, filename: file.originalname });
     return fail(res, 415, "UNSUPPORTED_FILE_TYPE");
