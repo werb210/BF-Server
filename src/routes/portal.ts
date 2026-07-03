@@ -300,6 +300,7 @@ router.get(
           u.first_name                                          AS owner_first_name,
           u.last_name                                           AS owner_last_name,
           a.updated_at                                          AS last_activity_at,
+          a.submitted_at                                        AS submitted_at, -- BF_SERVER_SUBMITTED_AT_ON_CARD_v1
           -- BF_SERVER_BLOCK_v655_PIPELINE_AND_DIALER_v1
           -- application_stage_history (created by v651 migration
           -- 2026_05_24_v651_application_stage_history.sql) has columns
@@ -363,6 +364,7 @@ router.get(
         pipeline_state: r.stage,
         requested_amount: r.requested_amount,
         created_at: r.last_activity_at,
+        submitted_at: r.submitted_at ?? null, // BF_SERVER_SUBMITTED_AT_ON_CARD_v1
         // Modern shape used by parsePipelineResponse (camelCase):
         stage: r.stage ?? "draft",
         requestedAmount: r.requested_amount,
@@ -679,10 +681,49 @@ router.delete(
         WHERE con.contype = 'f'
           AND con.confrelid = 'applications'::regclass`
     );
+    // BF_SERVER_DELETE_PURGES_DOCUMENTS_v1 - deleting an application must not
+    // orphan storage. The FK-discovery loop below removes child ROWS, but blobs
+    // in Azure storage were never touched (only the single-document endpoint
+    // deleted its blob). Collect blob names first and delete them best-effort;
+    // rows are then purged explicitly too, so even a live table missing the
+    // documents.application_id FK cannot leave rows behind.
+    try {
+      const blobRows = await pool.query<{ blob_name: string | null }>(
+        `SELECT blob_name FROM documents WHERE application_id::text = ($1)::text AND blob_name IS NOT NULL`,
+        [applicationId]
+      );
+      for (const b of blobRows.rows) {
+        if (!b.blob_name) continue;
+        try {
+          await getStorage().delete(b.blob_name);
+        } catch (blobErr) {
+          console.error("application_delete_blob_failed", { applicationId, blobName: b.blob_name, err: blobErr });
+        }
+      }
+    } catch (collectErr) {
+      console.error("application_delete_blob_collect_failed", { applicationId, err: collectErr });
+    }
+
     const client = await pool.connect();
     let rowCount = 0;
     try {
       await client.query("BEGIN");
+      // BF_SERVER_DELETE_PURGES_DOCUMENTS_v1 - explicit row purge, independent
+      // of catalog FK discovery (savepointed: missing tables are skipped).
+      for (const stmt of [
+        `DELETE FROM document_versions WHERE document_id IN (SELECT id FROM documents WHERE application_id::text = ($1)::text)`,
+        `DELETE FROM documents WHERE application_id::text = ($1)::text`,
+      ]) {
+        try {
+          await client.query("SAVEPOINT docs");
+          await client.query(stmt, [applicationId]);
+          await client.query("RELEASE SAVEPOINT docs");
+        } catch (e: any) {
+          await client.query("ROLLBACK TO SAVEPOINT docs");
+          await client.query("RELEASE SAVEPOINT docs");
+          if (e?.code !== "42P01" && e?.code !== "42703") throw e;
+        }
+      }
       // Null any self-referential parent pointer so child apps don't block.
       try {
         await client.query("SAVEPOINT sp");
