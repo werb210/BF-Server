@@ -202,8 +202,16 @@ router.post("/otp/verify", async (req, res) => {
            FROM lenders
           WHERE active = true
             AND silo = 'BF'
-            AND right(regexp_replace(coalesce(contact_phone, ''), '[^0-9]', '', 'g'), 10)
-              = right(regexp_replace($1, '[^0-9]', '', 'g'), 10)
+            -- BF_SERVER_LENDER_OTP_PHONE_COLUMNS_v2 - the staff lender form
+            -- saves the OTP phone to primary_contact_phone; older seeds used
+            -- contact_phone. Match EITHER column so a staff-edited lender can
+            -- actually log in (no_lender_for_phone with a correct number).
+            AND (
+              right(regexp_replace(coalesce(contact_phone, ''), '[^0-9]', '', 'g'), 10)
+                = right(regexp_replace($1, '[^0-9]', '', 'g'), 10)
+              OR right(regexp_replace(coalesce(primary_contact_phone, ''), '[^0-9]', '', 'g'), 10)
+                = right(regexp_replace($1, '[^0-9]', '', 'g'), 10)
+            )
             AND length(regexp_replace($1, '[^0-9]', '', 'g')) >= 10
           ORDER BY updated_at DESC
           LIMIT 1`,
