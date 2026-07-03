@@ -1107,13 +1107,43 @@ router.post(
       }
 
       // BF_APP_TO_CRM_v38 - Block 38-E - fire-and-forget CRM mirror.
+      // BF_SERVER_CRM_MIRROR_NORMALIZED_FALLBACKS_v1 - Bismillah Grocers
+      // (544b5a65) submitted with a thin legacy body: business/applicant were
+      // absent, the mirror silently got nulls, and NO CRM contact or company
+      // was created even though the detail page showed both (it reads
+      // metadata/normalized). Map every payload shape into the mirror keys.
       try {
         const md: any = (legacyApp && typeof legacyApp === "object") ? legacyApp : {};
+        const nrm: any = (normalized && typeof normalized === "object") ? normalized : {};
+        const bizSrc: any = md?.business ?? md?.company ?? md?.business_info ?? nrm?.company ?? null;
+        const appSrc: any =
+          md?.applicant ?? md?.borrower ?? nrm?.applicant ??
+          (Array.isArray(md?.applicants) ? md.applicants[0] : null) ??
+          (Array.isArray(nrm?.applicants) ? nrm.applicants[0] : null) ?? null;
         void mirrorApplicationToCrm({
           applicationId: application.id,
           silo: (silo || "BF").toUpperCase(),
-          business: md?.business ?? md?.company ?? null,
-          applicant: md?.applicant ?? md?.borrower ?? null,
+          business: bizSrc
+            ? {
+                companyName: bizSrc.companyName ?? bizSrc.businessName ?? bizSrc.legalName ?? bizSrc.name ?? null,
+                industry: bizSrc.industry ?? null,
+                phone: bizSrc.phone ?? bizSrc.businessPhone ?? null,
+                email: bizSrc.email ?? null,
+                website: bizSrc.website ?? null,
+                city: bizSrc.city ?? null,
+                province: bizSrc.province ?? bizSrc.state ?? null,
+                country: bizSrc.country ?? null,
+              }
+            : null,
+          applicant: appSrc
+            ? {
+                firstName: appSrc.firstName ?? null,
+                lastName: appSrc.lastName ?? null,
+                fullName: appSrc.fullName ?? appSrc.name ?? null,
+                email: appSrc.email ?? null,
+                phone: appSrc.phone ?? appSrc.mobile ?? appSrc.cellPhone ?? null,
+              }
+            : null,
           // BF_SERVER_CRM_MIRROR_OTP_PHONE_AUTHORITATIVE_v1 - the signed-in
           // applicant's OTP-verified phone is authoritative for their contact.
           verifiedPhone: (req as any)?.user?.phone ?? null,
