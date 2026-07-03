@@ -9,7 +9,7 @@ import { isTest } from "../config/runtime.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { authMeHandler } from "./auth/me.js";
 import { findAuthUserByPhone } from "../modules/auth/auth.repo.js";
-// BF_SERVER_v68_OTP_HAS_SUBMISSION — server-authoritative submission lookup
+// BF_SERVER_v68_OTP_HAS_SUBMISSION - server-authoritative submission lookup
 // during OTP verify so the client can route to /portal even when localStorage
 // is empty (logout, different browser, cleared cache).
 import { runQuery as dbQuery_v68 } from "../lib/db.js";
@@ -104,7 +104,7 @@ router.post("/otp/start", async (req, res) => {
     // can show "Too many attempts, wait 10 minutes" instead of a server-down
     // error spinner.
     const message = err instanceof Error ? err.message : "Unknown OTP error";
-    console.error("❌ OTP ERROR:", message);
+    console.error("[error] OTP ERROR:", message);
 
     if (/max send attempts|too many|rate.?limit/i.test(message)) {
       res.setHeader("Retry-After", "600");
@@ -124,7 +124,7 @@ router.post("/otp/start", async (req, res) => {
 router.post("/otp/verify", async (req, res) => {
   const { phone, code } = req.body;
 
-  // Test mode — use in-memory store
+  // Test mode - use in-memory store
   if (isTest) {
     // BF_SERVER_BLOCK_v335_AUTH_HARDENING_AND_DEAD_CODE_v1 -- Edit 3
     // Belt-and-suspenders: see Edit 2 rationale. This branch issues a real
@@ -179,7 +179,7 @@ router.post("/otp/verify", async (req, res) => {
       return res.status(500).json({ error: "auth not configured" });
     }
 
-    // BF_SERVER_BLOCK_v146_OTP_CLIENT_FALLTHROUGH_PORTED_v1 — port the v145
+    // BF_SERVER_BLOCK_v146_OTP_CLIENT_FALLTHROUGH_PORTED_v1 - port the v145
     // fallthrough from the dead src/routes/auth/otp.ts into the actually-
     // mounted handler. Twilio has approved the code. If the phone is an
     // active staff user, mint a STAFF JWT (unchanged behavior). Otherwise
@@ -188,6 +188,48 @@ router.post("/otp/verify", async (req, res) => {
     // carry role:"client", which is lowercase and not in ROLE_SET, so
     // every staff requireAuthorization / requireCapability check rejects
     // them on staff routes.
+    // BF_SERVER_LENDER_OTP_v1 - lender-portal login. LenderLoginPage sends
+    // userType:"lender" on verify. Match the phone (last-10-digits, punctuation
+    // agnostic, same rule as the v68 client dedup) against lenders.contact_phone
+    // of active BF lenders; if several match, most recently updated wins. Lender
+    // wins over staff for lender-portal logins. If no lender matches, refuse with
+    // 403 instead of falling through to a client token, so the login page can
+    // show a clear "not registered as a lender" error.
+    const wantsLender = String((req.body ?? {}).userType ?? "") === "lender";
+    if (wantsLender) {
+      const lenderResult = await dbQuery_v68<{ id: string; name: string | null }>(
+        `SELECT id, name
+           FROM lenders
+          WHERE active = true
+            AND silo = 'BF'
+            AND right(regexp_replace(coalesce(contact_phone, ''), '[^0-9]', '', 'g'), 10)
+              = right(regexp_replace($1, '[^0-9]', '', 'g'), 10)
+            AND length(regexp_replace($1, '[^0-9]', '', 'g')) >= 10
+          ORDER BY updated_at DESC
+          LIMIT 1`,
+        [phone]
+      );
+      const lender = lenderResult.rows[0];
+      if (!lender) {
+        console.log("[otp_verify] lender_login_no_match", { phone });
+        return res.status(403).json({ error: "no_lender_for_phone" });
+      }
+      const lenderToken = signAccessToken({
+        sub: `lender:${lender.id}`,
+        role: ROLES.LENDER,
+        tokenVersion: 0,
+        phone,
+        lenderId: String(lender.id),
+      });
+      return res.status(200).json({
+        status: "ok",
+        data: {
+          token: lenderToken,
+          user: { id: String(lender.id), name: lender.name, phone, userType: "lender" },
+        },
+      });
+    }
+
     const user = await findAuthUserByPhone(phone);
     const isActiveStaff = Boolean(
       user && user.role && !user.disabled && user.active
@@ -224,7 +266,7 @@ router.post("/otp/verify", async (req, res) => {
       );
     }
 
-    // BF_SERVER_v68_OTP_HAS_SUBMISSION — best-effort phone -> submitted
+    // BF_SERVER_v68_OTP_HAS_SUBMISSION - best-effort phone -> submitted
     // application lookup. Errors here MUST NOT block a successful verify;
     // we degrade silently to hasSubmittedApplication=false on any failure.
     let hasSubmittedApplication = false;
@@ -237,7 +279,7 @@ router.post("/otp/verify", async (req, res) => {
            INNER JOIN contacts c              ON c.id             = ac.contact_id
           WHERE a.submitted_at IS NOT NULL
             AND ac.role = 'applicant'
-            -- BF_SERVER_BLOCK_v_OTP_PHONE_NORMALIZED_MATCH_v1 — login sends E.164
+            -- BF_SERVER_BLOCK_v_OTP_PHONE_NORMALIZED_MATCH_v1 - login sends E.164
             -- (+1NXXNXXXXXX) but contacts.phone is stored as typed ("(780) 264-8467"),
             -- so an exact c.phone = $1 never matched and returning clients were
             -- routed back to Step 1. Match the last 10 digits of each (country-code

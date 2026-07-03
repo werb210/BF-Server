@@ -9,6 +9,7 @@ export type AccessTokenPayload = {
   role: Role;
   tokenVersion: number;
   phone?: string | null;
+  lenderId?: string; // BF_SERVER_LENDER_OTP_v1 - lender-portal tokens bind to a lenders.id
   silo?: string;
   silos?: string[]; // v620: accessible silos for multi-silo users
   capabilities?: Capability[];
@@ -67,6 +68,13 @@ function validatePayload(payload: unknown): asserts payload is AccessTokenPayloa
     typeof raw.phone !== "string"
   ) {
     throw new AccessTokenVerificationError("Token phone claim is invalid");
+  }
+
+  if (
+    raw.lenderId !== undefined &&
+    (typeof raw.lenderId !== "string" || raw.lenderId.trim().length === 0)
+  ) {
+    throw new AccessTokenVerificationError("Token lenderId claim is invalid");
   }
 
   if (
@@ -134,6 +142,9 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
     tokenVersion: decoded.tokenVersion,
     phone: decoded.phone ?? null,
   };
+  if (typeof decoded.lenderId === "string") {
+    payload.lenderId = decoded.lenderId;
+  }
   if (typeof decoded.silo === "string") {
     payload.silo = decoded.silo;
   }
