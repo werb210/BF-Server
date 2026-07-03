@@ -66,7 +66,10 @@ router.get(
   requireLender,
   safeHandler(async (req: LenderRequest, res: Response) => {
     const result = await pool.query(
-      `SELECT id, name, phone, website, description, contact_name, contact_email, contact_phone,
+      // see BF_SERVER_LENDER_OTP_PHONE_COLUMNS_v2 in auth.ts: staff edits land
+      // in primary_contact_phone; show whichever is set.
+      `SELECT id, name, phone, website, description, contact_name, contact_email,
+              COALESCE(NULLIF(primary_contact_phone, ''), contact_phone) AS contact_phone,
               street, city, region, postal_code, country, silo, active
          FROM lenders
         WHERE id::text = $1
@@ -103,11 +106,17 @@ router.patch(
 
     const sets = keys.map((key, index) => `${key} = $${index + 2}`).join(", ");
     const values = keys.map((key) => fields[key]);
+    // BF_SERVER_LENDER_OTP_PHONE_COLUMNS_v2 - keep both phone columns in sync
+    // when the lender edits their OTP contact phone.
+    const extraSync = keys.includes("contact_phone")
+      ? `, primary_contact_phone = $${keys.indexOf("contact_phone") + 2}`
+      : "";
     const result = await pool.query(
       `UPDATE lenders
-          SET ${sets}, updated_at = now()
+          SET ${sets}${extraSync}, updated_at = now()
         WHERE id::text = $1
-        RETURNING id, name, phone, website, description, contact_name, contact_email, contact_phone,
+        RETURNING id, name, phone, website, description, contact_name, contact_email,
+                  COALESCE(NULLIF(primary_contact_phone, ''), contact_phone) AS contact_phone,
                   street, city, region, postal_code, country, silo, active`,
       [req.lenderId, ...values]
     );

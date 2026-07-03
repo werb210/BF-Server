@@ -20,6 +20,8 @@ describe("lender OTP branch", () => {
     expect(auth).toContain("FROM lenders");
     expect(auth).toContain("contact_phone");
     expect(auth).toContain("ORDER BY updated_at DESC");
+    // BF_SERVER_LENDER_OTP_PHONE_COLUMNS_v2 - staff form writes primary_contact_phone
+    expect(auth).toContain("primary_contact_phone");
     expect(auth).toContain("silo = 'BF'");
   });
   it("refuses with no_lender_for_phone instead of minting a client token", () => {
