@@ -1,4 +1,4 @@
-// BF_APP_TO_CRM_v38 — Block 38-E
+// BF_APP_TO_CRM_v38 - Block 38-E
 // On wizard submit, upsert a companies row (matched by name+silo) and a
 // contacts row (matched by phone or email+silo), then update the application
 // with company_id / contact_id. Best-effort: never throws.
@@ -49,7 +49,7 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
       return;
     }
 
-    // BF_SERVER_v70_BLOCK_1_3 — company dedup keyed on email primary,
+    // BF_SERVER_v70_BLOCK_1_3 - company dedup keyed on email primary,
     // phone secondary, name+silo last resort. Email is the canonical
     // company identifier per locked spec; previous code matched on
     // lowercased name only, which created duplicates whenever the
@@ -203,7 +203,7 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
 
     // Link the application. Use COALESCE so we don't overwrite a manual link.
     if (companyId || contactId) {
-      // applications.contact_id may not exist on every deploy — guard via
+      // applications.contact_id may not exist on every deploy - guard via
       // information_schema.
       const hasContactId = await pool.query<{ exists: boolean }>(
         `SELECT EXISTS (
@@ -218,6 +218,21 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
              contact_id = COALESCE(contact_id, $3),
              updated_at = now()
            WHERE id = $1`,
+          [input.applicationId, companyId, contactId]
+        );
+        // BF_SERVER_LEG_CRM_PROPAGATION_v1 - companion/equipment legs are
+        // INSERTed at submit time and copy the parent's contact_id via
+        // subselect, but this mirror links the parent asynchronously AFTER
+        // submit - so the legs copied NULL and stayed orphaned (Equipment
+        // leg - Trucking Co, 08533f8c). Propagate the fresh link to any
+        // children that still lack it.
+        await pool.query(
+          `UPDATE applications SET
+             company_id = COALESCE(company_id, $2),
+             contact_id = COALESCE(contact_id, $3),
+             updated_at = now()
+           WHERE parent_application_id = $1
+             AND (contact_id IS NULL OR company_id IS NULL)`,
           [input.applicationId, companyId, contactId]
         );
       } else {
