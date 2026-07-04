@@ -105,6 +105,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
         -- BF_SERVER_BLOCK_v790 — sequence + engagement events on the contact record.
         SELECT (CASE WHEN event_type LIKE 'sms_%' THEN 'sms'
                      WHEN event_type = 'sequence_step_sent' THEN COALESCE(payload->>'channel','email')
+                     WHEN event_type = 'attribution' THEN 'system'
                      ELSE 'email' END) AS kind,
                id::text, created_at AS ts,
                (CASE event_type
@@ -117,12 +118,24 @@ router.get("/", safeHandler(async (req: any, res: any) => {
                   WHEN 'email_unsubscribe' THEN 'Unsubscribed'
                   WHEN 'email_group_unsubscribe' THEN 'Unsubscribed'
                   WHEN 'sms_link_clicked' THEN 'SMS link clicked'
+                  -- BF_SERVER_ATTRIBUTION_ON_TIMELINE_v1 - render the ad click
+                  -- readably; the portal shows kind='system' rows as-is.
+                  WHEN 'attribution' THEN 'Ad click attribution'
                   ELSE event_type END) AS title,
-               NULLIF(payload->>'url','') AS body,
+               (CASE WHEN event_type = 'attribution' THEN
+                  NULLIF(concat_ws(' | ',
+                    NULLIF('source: ' || COALESCE(payload->>'utm_source',''), 'source: '),
+                    NULLIF('medium: ' || COALESCE(payload->>'utm_medium',''), 'medium: '),
+                    NULLIF('campaign: ' || COALESCE(payload->>'utm_campaign',''), 'campaign: '),
+                    NULLIF('term: ' || COALESCE(payload->>'utm_term',''), 'term: '),
+                    NULLIF('ad: ' || COALESCE(payload->>'utm_content',''), 'ad: '),
+                    NULLIF('gclid: ' || COALESCE(payload->>'gclid',''), 'gclid: ')
+                  ), '')
+                ELSE NULLIF(payload->>'url','') END) AS body,
                NULL::text AS extra
           FROM crm_timeline_events
          WHERE contact_id = $1
-           AND event_type IN ('sequence_step_sent','email_open','email_click','email_bounce','email_dropped','email_spamreport','email_unsubscribe','email_group_unsubscribe','sms_link_clicked')
+           AND event_type IN ('sequence_step_sent','email_open','email_click','email_bounce','email_dropped','email_spamreport','email_unsubscribe','email_group_unsubscribe','sms_link_clicked','attribution')
         ORDER BY ts DESC LIMIT 500`
     : `
         SELECT 'note' AS kind, id::text, created_at AS ts,
