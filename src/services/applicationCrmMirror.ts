@@ -5,6 +5,11 @@
 import { pool } from "../db.js";
 
 type Wizard = {
+  // BF_SERVER_ATTRIBUTION_TO_CONTACT_v1 - the ad click (gclid + UTMs) captured
+  // on the marketing site and stored on applications.metadata.attribution is
+  // stamped onto the CRM contact timeline so staff can see which ad/campaign
+  // produced the contact.
+  attribution?: Record<string, unknown> | null;
   applicationId: string;
   silo: string;
   business?: {
@@ -220,6 +225,13 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
            WHERE id = $1`,
           [input.applicationId, companyId, contactId]
         );
+        // BF_SERVER_ATTRIBUTION_TO_CONTACT_v1 - visible on the contact card.
+        if (contactId && input.attribution && Object.values(input.attribution).some((v) => v)) {
+          await pool.query(
+            `INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1, 'attribution', $2)`,
+            [contactId, JSON.stringify({ applicationId: input.applicationId, ...input.attribution })]
+          ).catch((e) => console.warn("[crm_mirror] attribution event failed", e instanceof Error ? e.message : String(e)));
+        }
         // BF_SERVER_LEG_CRM_PROPAGATION_v1 - companion/equipment legs are
         // INSERTed at submit time and copy the parent's contact_id via
         // subselect, but this mirror links the parent asynchronously AFTER

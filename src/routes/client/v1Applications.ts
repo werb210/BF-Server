@@ -1123,6 +1123,8 @@ router.post(
         void mirrorApplicationToCrm({
           applicationId: application.id,
           silo: (silo || "BF").toUpperCase(),
+          // BF_SERVER_ATTRIBUTION_TO_CONTACT_v1 - forward the ad-click data.
+          attribution: ((md?.metadata?.attribution ?? md?.attribution ?? (application as any)?.metadata?.attribution) as Record<string, unknown> | null) ?? null,
           business: bizSrc
             ? {
                 companyName: bizSrc.companyName ?? bizSrc.businessName ?? bizSrc.legalName ?? bizSrc.name ?? null,
