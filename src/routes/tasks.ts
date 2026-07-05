@@ -17,6 +17,36 @@ function respondError(res: any, status: number, message: string): void {
 // BF_SERVER_SEQ_TASK_STEP_v1 (Tasks M5) - completing a SEQUENCE-sourced task
 // resumes its paused enrollment. Best-effort: a resume failure must never
 // fail the completion itself.
+// BF_SERVER_TASKS_M6_v1 - when a recurring task is completed or deleted,
+// spawn the next occurrence (parity with HubSpot's regenerate-on-
+// complete/delete/overdue; the overdue arm lives in the reminders worker).
+async function regenerateRecurrence(row: {
+  id?: string; silo?: string; title?: string; body?: string | null; type?: string;
+  priority?: string; due_at?: string | null; queue_id?: string | null;
+  assignee_user_id?: string; contact_id?: string | null; company_id?: string | null;
+  created_by?: string | null; repeat_active?: boolean | null;
+  repeat_interval?: number | null; repeat_unit?: string | null;
+}): Promise<void> {
+  if (!row?.repeat_active || !row.repeat_interval || !row.repeat_unit || !row.due_at) return;
+  const d = new Date(row.due_at);
+  const n = row.repeat_interval;
+  if (row.repeat_unit === "DAY") d.setUTCDate(d.getUTCDate() + n);
+  else if (row.repeat_unit === "WEEK") d.setUTCDate(d.getUTCDate() + n * 7);
+  else if (row.repeat_unit === "MONTH") d.setUTCMonth(d.getUTCMonth() + n);
+  else if (row.repeat_unit === "YEAR") d.setUTCFullYear(d.getUTCFullYear() + n);
+  else return;
+  await pool.query(
+    `INSERT INTO tasks (silo, title, body, type, priority, due_at, queue_id, assignee_user_id,
+                        contact_id, company_id, created_by, source, repeat_interval, repeat_unit,
+                        repeat_parent_id, repeat_active)
+     SELECT silo, title, body, type, priority, $2::timestamptz, queue_id, assignee_user_id,
+            contact_id, company_id, created_by, 'MANUAL', repeat_interval, repeat_unit, id, true
+       FROM tasks WHERE id::text = $1
+       AND NOT EXISTS (SELECT 1 FROM tasks c WHERE c.repeat_parent_id::text = $1)`,
+    [row.id, d.toISOString()]
+  ).catch((e) => console.warn("[tasks] recurrence regen failed", e instanceof Error ? e.message : String(e)));
+}
+
 function resumeIfSequenceTask(rows: Array<{ source?: string | null; source_ref_id?: string | null }>): void {
   for (const r of rows) {
     if (r?.source === "SEQUENCE" && r?.source_ref_id) {
@@ -240,11 +270,14 @@ router.post("/", safeHandler(async (req: any, res: any) => {
     const chk = await pool.query(`SELECT 1 FROM ${table} WHERE id::text = $1 AND silo = $2`, [id, silo]);
     if (!chk.rowCount) { respondError(res, 400, `${table.slice(0, -1)}_silo_mismatch`); return; }
   }
+  // BF_SERVER_TASKS_M6_v1 - accept recurrence on create.
+  const repeatUnit = ["DAY", "WEEK", "MONTH", "YEAR"].includes(b.repeat_unit) ? b.repeat_unit : null;
+  const repeatInterval = repeatUnit && Number(b.repeat_interval) > 0 ? Number(b.repeat_interval) : null;
   const r = await pool.query(
-    `INSERT INTO tasks (silo, title, body, type, priority, due_at, reminder_at, queue_id, assignee_user_id, contact_id, company_id, created_by, source)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'MANUAL')
+    `INSERT INTO tasks (silo, title, body, type, priority, due_at, reminder_at, queue_id, assignee_user_id, contact_id, company_id, created_by, source, repeat_interval, repeat_unit, repeat_active)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'MANUAL',$13,$14,$15)
      RETURNING id`,
-    [silo, title, s(b.body), type, priority, b.due_at || null, b.reminder_at || null, s(b.queue_id), assignee, s(b.contact_id), s(b.company_id), req.user.userId]
+    [silo, title, s(b.body), type, priority, b.due_at || null, b.reminder_at || null, s(b.queue_id), assignee, s(b.contact_id), s(b.company_id), req.user.userId, repeatInterval, repeatUnit, !!(repeatInterval && repeatUnit)]
   );
   respondOk(res, { id: r.rows[0].id });
 }));
@@ -261,6 +294,7 @@ router.patch("/:id", safeHandler(async (req: any, res: any) => {
         priority = COALESCE($6, priority),
         due_at = COALESCE($7, due_at),
         reminder_at = COALESCE($8, reminder_at),
+        reminder_sent_at = CASE WHEN $8 IS NOT NULL THEN NULL ELSE reminder_sent_at END,
         queue_id = CASE WHEN $9::text = '__clear__' THEN NULL WHEN $9::text IS NOT NULL THEN $9::uuid ELSE queue_id END,
         assignee_user_id = COALESCE($10::uuid, assignee_user_id),
         status = COALESCE($11, status),
@@ -284,11 +318,14 @@ router.post("/:id/complete", safeHandler(async (req: any, res: any) => {
   const r = await pool.query(
     `UPDATE tasks SET status = 'COMPLETED', completed_at = now(), updated_at = now()
       WHERE id::text = $1 AND silo = $2 AND deleted_at IS NULL AND status <> 'COMPLETED'
-      RETURNING id, source, source_ref_id`,
+      RETURNING id, source, source_ref_id, silo, title, body, type, priority, due_at,
+                queue_id, assignee_user_id, contact_id, company_id, created_by,
+                repeat_active, repeat_interval, repeat_unit`,
     [req.params.id, silo]
   );
   if (!r.rowCount) { respondError(res, 404, "task_not_found"); return; }
   resumeIfSequenceTask(r.rows); // BF_SERVER_SEQ_TASK_STEP_v1
+  await regenerateRecurrence(r.rows[0]); // BF_SERVER_TASKS_M6_v1
   respondOk(res, { ok: true });
 }));
 
@@ -332,10 +369,13 @@ router.post("/bulk", safeHandler(async (req: any, res: any) => {
 router.delete("/:id", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const r = await pool.query(
-    `UPDATE tasks SET deleted_at = now(), updated_at = now() WHERE id::text = $1 AND silo = $2 AND deleted_at IS NULL RETURNING id`,
+    `UPDATE tasks SET deleted_at = now(), updated_at = now() WHERE id::text = $1 AND silo = $2 AND deleted_at IS NULL
+      RETURNING id, silo, title, body, type, priority, due_at, queue_id, assignee_user_id,
+                contact_id, company_id, created_by, repeat_active, repeat_interval, repeat_unit`,
     [req.params.id, silo]
   );
   if (!r.rowCount) { respondError(res, 404, "task_not_found"); return; }
+  await regenerateRecurrence(r.rows[0]); // BF_SERVER_TASKS_M6_v1
   respondOk(res, { ok: true });
 }));
 

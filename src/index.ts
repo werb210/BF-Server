@@ -200,6 +200,11 @@ export async function start(): Promise<void> {
     try { const w = startMailReplyWorker(pool); workerStops.push(w.stop); console.log("[startup] mail-reply worker started"); }
     catch (err) { console.error("[startup] mail-reply worker failed to start:", err); }
 
+    // BF_SERVER_TASKS_M6_v1 - task reminders + recurrence catch-up + daily digest.
+    const { startTaskRemindersWorker } = await import("./workers/taskRemindersWorker.js");
+    try { const w = startTaskRemindersWorker(pool); workerStops.push(w.stop); console.log("[startup] task-reminders worker started"); }
+    catch (err) { console.error("[startup] task-reminders worker failed to start:", err); }
+
     // BF_SERVER_BLOCK_v665 — graceful shutdown. On container recycle the workers'
     // poll loops must stop BEFORE the pool tears down, otherwise each tick queries
     // a dying pool and logs "Connection terminated due to connection timeout".
