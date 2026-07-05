@@ -6,11 +6,25 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
+import { resumeSequenceTask } from "../services/sequenceEngine.js"; // BF_SERVER_SEQ_TASK_STEP_v1
 import { safeHandler } from "../middleware/safeHandler.js";
 import { respondOk } from "../utils/respondOk.js";
 
 function respondError(res: any, status: number, message: string): void {
   res.status(status).json({ error: { message } });
+}
+
+// BF_SERVER_SEQ_TASK_STEP_v1 (Tasks M5) - completing a SEQUENCE-sourced task
+// resumes its paused enrollment. Best-effort: a resume failure must never
+// fail the completion itself.
+function resumeIfSequenceTask(rows: Array<{ source?: string | null; source_ref_id?: string | null }>): void {
+  for (const r of rows) {
+    if (r?.source === "SEQUENCE" && r?.source_ref_id) {
+      void resumeSequenceTask(pool, String(r.source_ref_id)).catch((e) =>
+        console.warn("[tasks] sequence resume failed", e instanceof Error ? e.message : String(e))
+      );
+    }
+  }
 }
 
 const router = Router();
@@ -255,12 +269,13 @@ router.patch("/:id", safeHandler(async (req: any, res: any) => {
                             ELSE completed_at END,
         updated_at = now()
       WHERE id::text = $1 AND silo = $2 AND deleted_at IS NULL
-      RETURNING id`,
+      RETURNING id, status, source, source_ref_id`,
     [req.params.id, silo, s(b.title), s(b.body), TYPES.includes(b.type) ? b.type : null,
      PRIORITIES.includes(b.priority) ? b.priority : null, b.due_at || null, b.reminder_at || null,
      b.queue_id === null ? "__clear__" : s(b.queue_id), s(b.assignee_user_id), status]
   );
   if (!r.rowCount) { respondError(res, 404, "task_not_found"); return; }
+  if (status === "COMPLETED") resumeIfSequenceTask(r.rows); // BF_SERVER_SEQ_TASK_STEP_v1
   respondOk(res, { ok: true });
 }));
 
@@ -269,10 +284,11 @@ router.post("/:id/complete", safeHandler(async (req: any, res: any) => {
   const r = await pool.query(
     `UPDATE tasks SET status = 'COMPLETED', completed_at = now(), updated_at = now()
       WHERE id::text = $1 AND silo = $2 AND deleted_at IS NULL AND status <> 'COMPLETED'
-      RETURNING id`,
+      RETURNING id, source, source_ref_id`,
     [req.params.id, silo]
   );
   if (!r.rowCount) { respondError(res, 404, "task_not_found"); return; }
+  resumeIfSequenceTask(r.rows); // BF_SERVER_SEQ_TASK_STEP_v1
   respondOk(res, { ok: true });
 }));
 
@@ -284,9 +300,11 @@ router.post("/bulk", safeHandler(async (req: any, res: any) => {
   if (action === "complete") {
     const r = await pool.query(
       `UPDATE tasks SET status='COMPLETED', completed_at = now(), updated_at = now()
-        WHERE id::text = ANY($1) AND silo = $2 AND deleted_at IS NULL AND status <> 'COMPLETED'`,
+        WHERE id::text = ANY($1) AND silo = $2 AND deleted_at IS NULL AND status <> 'COMPLETED'
+        RETURNING id, source, source_ref_id`,
       [ids, silo]
     );
+    resumeIfSequenceTask(r.rows); // BF_SERVER_SEQ_TASK_STEP_v1
     respondOk(res, { updated: r.rowCount }); return;
   }
   if (action === "change_queue") {

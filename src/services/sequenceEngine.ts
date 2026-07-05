@@ -42,6 +42,21 @@ async function advance(pool: Pool, id: string, nextIdx: number, steps: any[]): P
   await pool.query(`UPDATE marketing_sequence_enrollments SET status='active', current_step=$2, last_step_at=now(), next_run_at=now()+($3||' minutes')::interval, updated_at=now() WHERE id=$1`, [id, nextIdx, String(wait)]);
 }
 
+// BF_SERVER_SEQ_TASK_STEP_v1 - called by the tasks routes when a
+// SEQUENCE-sourced task completes: un-parks the enrollment and advances.
+export async function resumeSequenceTask(pool: Pool, enrollmentId: string): Promise<void> {
+  const en = (await pool.query(
+    `SELECT id, sequence_id, current_step FROM marketing_sequence_enrollments WHERE id=$1 AND status='waiting_task'`,
+    [enrollmentId]
+  )).rows[0];
+  if (!en) return;
+  const steps = (await pool.query(
+    `SELECT channel, wait_minutes FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC`,
+    [en.sequence_id]
+  )).rows;
+  await advance(pool, en.id, Number(en.current_step) + 1, steps);
+}
+
 export async function enrollSequence(pool: Pool, sequenceId: string): Promise<number> {
   const seq = await pool.query(`SELECT silo, audience_tag FROM marketing_sequences WHERE id=$1`, [sequenceId]);
   if (seq.rowCount === 0) return 0;
@@ -61,7 +76,7 @@ export async function enrollSequence(pool: Pool, sequenceId: string): Promise<nu
 }
 
 async function processClaimed(pool: Pool, en: any): Promise<void> {
-  const steps = (await pool.query(`SELECT channel, wait_minutes, condition, subject, body, html, link_url, template_id FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC`, [en.sequence_id])).rows;
+  const steps = (await pool.query(`SELECT channel, wait_minutes, condition, subject, body, html, link_url, template_id, task_type, task_priority, task_queue_id, task_pause FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC`, [en.sequence_id])).rows;
   const idx: number = en.current_step;
   if (idx >= steps.length) { await complete(pool, en.id); return; }
   const step = steps[idx];
@@ -75,7 +90,7 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
 
   if (en.stop_on_reply && (await repliedSince(pool, en.contact_id, en.enrolled_at))) { await stop(pool, en.id, "replied"); return; }
 
-  const cq = await pool.query(`SELECT id, silo, email, phone, name, COALESCE(sms_opt_out,false) AS sms_opt_out, COALESCE(marketing_opt_out,false) AS marketing_opt_out, line_type, (SELECT name FROM companies WHERE id=contacts.company_id) AS company FROM contacts WHERE id=$1`, [en.contact_id]);
+  const cq = await pool.query(`SELECT id, silo, owner_id, email, phone, name, COALESCE(sms_opt_out,false) AS sms_opt_out, COALESCE(marketing_opt_out,false) AS marketing_opt_out, line_type, (SELECT name FROM companies WHERE id=contacts.company_id) AS company FROM contacts WHERE id=$1`, [en.contact_id]);
   const c = cq.rows[0];
   if (!c) { await complete(pool, en.id); return; }
 
@@ -87,6 +102,36 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
   if (!skipSend) {
     const first = String(c.name || "").trim().split(/\s+/)[0] || "there";
     const vars = { first_name: first, name: c.name || "there", email: c.email || "", company: c.company || "" };
+    // BF_SERVER_SEQ_TASK_STEP_v1 (Tasks M5) - a "task" step creates a tasks
+    // row (source=SEQUENCE, source_ref_id=enrollment) assigned to the
+    // contact's owner (admin fallback). If task_pause (default), the
+    // enrollment parks as status='waiting_task' until the task is completed,
+    // which calls resumeSequenceTask below; otherwise it advances normally.
+    if (step.channel === "task") {
+      if (!skipSend) {
+        const tt = ["CALL", "EMAIL", "SMS", "TODO"].includes(step.task_type) ? step.task_type : "TODO";
+        const tp = ["NONE", "LOW", "MEDIUM", "HIGH"].includes(step.task_priority) ? step.task_priority : "NONE";
+        const title = mergeFields(String(effSubject || `${tt} ${c.name || "contact"}`), vars);
+        const notes = effBody ? mergeFields(String(effBody), vars) : null;
+        const siloVal = c.silo || "BF";
+        await pool.query(
+          `INSERT INTO tasks (silo, title, body, type, priority, due_at, queue_id, assignee_user_id, contact_id, source, source_ref_id)
+           VALUES ($1,$2,$3,$4,$5,now(),
+                   (SELECT id FROM task_queues WHERE id = $6::uuid AND silo = $1),
+                   COALESCE($7::uuid, (SELECT id FROM users WHERE active = true ORDER BY (role = 'Admin') DESC, created_at ASC LIMIT 1)),
+                   $8, 'SEQUENCE', $9::uuid)`,
+          [siloVal, title, notes, tt, tp, step.task_queue_id ?? null, c.owner_id ?? null, c.id, en.id]
+        );
+        await logStep(pool, c.id, en.sequence_id, idx, "task");
+      }
+      if (!skipSend && step.task_pause !== false) {
+        await pool.query(`UPDATE marketing_sequence_enrollments SET status='waiting_task', updated_at=now() WHERE id=$1`, [en.id]);
+        return;
+      }
+      await advance(pool, en.id, idx + 1, steps);
+      return;
+    }
+
     if (step.channel === "sms") {
       const blocked = !c.phone || c.sms_opt_out || (c.line_type && c.line_type !== "mobile");
       if (!blocked) {
