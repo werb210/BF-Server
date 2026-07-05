@@ -189,7 +189,9 @@ router.delete("/queues/:id/shares/:userId", safeHandler(async (req: any, res: an
 router.post("/runs", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const b = req.body ?? {};
-  const conds: string[] = ["t.silo = $1", "t.deleted_at IS NULL", "t.status <> 'COMPLETED'"];
+  // BF_SERVER_TASKS_CONTACT_REQUIRED_v1 - runs only include actionable, contact-
+  // attached tasks: Call/Email/SMS with a contact. To-do is excluded from runs.
+  const conds: string[] = ["t.silo = $1", "t.deleted_at IS NULL", "t.status <> 'COMPLETED'", "t.contact_id IS NOT NULL", "t.type IN ('CALL','EMAIL','SMS')"];
   const vals: unknown[] = [silo];
   let i = 2;
   const view = typeof b.view === "string" ? b.view : "";
@@ -262,6 +264,13 @@ router.post("/", safeHandler(async (req: any, res: any) => {
   const title = s(b.title);
   if (!title) { respondError(res, 400, "title_required"); return; }
   const type = TYPES.includes(b.type) ? b.type : "TODO";
+  // BF_SERVER_TASKS_CONTACT_REQUIRED_v1 - Call/Email/SMS tasks must be attached
+  // to a contact (the runner navigates to the contact record and opens the
+  // matching surface). To-do tasks may be contactless.
+  if (["CALL", "EMAIL", "SMS"].includes(type) && !s(b.contact_id)) {
+    respondError(res, 400, "contact_required_for_" + String(type).toLowerCase());
+    return;
+  }
   const priority = PRIORITIES.includes(b.priority) ? b.priority : "NONE";
   const assignee = s(b.assignee_user_id) ?? req.user.userId;
   // Silo integrity: queue/contact/company must live in the same silo.
