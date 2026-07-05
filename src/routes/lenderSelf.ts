@@ -68,7 +68,8 @@ router.get(
     const result = await pool.query(
       // see BF_SERVER_LENDER_OTP_PHONE_COLUMNS_v2 in auth.ts: staff edits land
       // in primary_contact_phone; show whichever is set.
-      `SELECT id, name, phone, website, description, contact_name, contact_email,
+      `SELECT id, name, phone, website, description, COALESCE(NULLIF(primary_contact_name, ''), contact_name) AS contact_name,
+              COALESCE(NULLIF(primary_contact_email, ''), contact_email) AS contact_email,
               COALESCE(NULLIF(primary_contact_phone, ''), contact_phone) AS contact_phone,
               street, city, region, postal_code, country, silo, active
          FROM lenders
@@ -99,6 +100,7 @@ router.patch(
       city: str(body.city),
       region: str(body.region),
       postal_code: str(body.postal_code),
+      country: str(body.country),
     };
     const keys = Object.keys(fields).filter((key) => body[key] !== undefined);
 
@@ -106,16 +108,25 @@ router.patch(
 
     const sets = keys.map((key, index) => `${key} = $${index + 2}`).join(", ");
     const values = keys.map((key) => fields[key]);
-    // BF_SERVER_LENDER_OTP_PHONE_COLUMNS_v2 - keep both phone columns in sync
-    // when the lender edits their OTP contact phone.
-    const extraSync = keys.includes("contact_phone")
-      ? `, primary_contact_phone = $${keys.indexOf("contact_phone") + 2}`
-      : "";
+    // BF_SERVER_LENDER_CONTACT_SYNC_v3 - staff forms read/write primary_contact_*
+    // while this portal edits contact_*; keep both column families in sync so a
+    // change made in either form always shows in the other.
+    const SYNC_COLS: Record<string, string> = {
+      contact_phone: "primary_contact_phone",
+      contact_name: "primary_contact_name",
+      contact_email: "primary_contact_email",
+    };
+    const extraSync = keys
+      .filter((key) => SYNC_COLS[key] !== undefined)
+      .map((key) => `, ${SYNC_COLS[key]} = $${keys.indexOf(key) + 2}`)
+      .join("");
     const result = await pool.query(
       `UPDATE lenders
           SET ${sets}${extraSync}, updated_at = now()
         WHERE id::text = $1
-        RETURNING id, name, phone, website, description, contact_name, contact_email,
+        RETURNING id, name, phone, website, description,
+                  COALESCE(NULLIF(primary_contact_name, ''), contact_name) AS contact_name,
+                  COALESCE(NULLIF(primary_contact_email, ''), contact_email) AS contact_email,
                   COALESCE(NULLIF(primary_contact_phone, ''), contact_phone) AS contact_phone,
                   street, city, region, postal_code, country, silo, active`,
       [req.lenderId, ...values]

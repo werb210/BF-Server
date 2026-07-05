@@ -127,6 +127,13 @@ router.patch(
       application_url: body.application_url,
       announcement: body.announcement,
       active: body.active,
+      // BF_SERVER_LENDER_EDIT_ADDRESS_v1 - staff edit modal sends address and
+      // main phone; forward them so the repo can persist those PATCH edits.
+      street: body.street ?? body.address?.street,
+      city: body.city ?? body.address?.city,
+      region: body.region ?? body.address?.stateProvince ?? body.address?.region,
+      postal_code: body.postalCode ?? body.postal_code ?? body.address?.postalCode,
+      phone: body.phone,
       silo: body.silo ?? existing.silo ?? silo,
     });
       // BF_LENDER_TO_CRM_v38 — fire-and-forget CRM mirror on update
