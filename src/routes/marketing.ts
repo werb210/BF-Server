@@ -574,7 +574,7 @@ router.get("/sequences/:id", requireAuth, safeHandler(async (req: any, res: any)
   const silo = resolveSiloFromRequest(req);
   const s = await pool.query(`SELECT id, name, audience_tag, status, stop_on_reply, quiet_start, quiet_end FROM marketing_sequences WHERE id=$1 AND silo=$2`, [String(req.params.id), silo]);
   if (s.rowCount === 0) { respondOk(res, { item: null }); return; }
-  const steps = await pool.query(`SELECT step_order, channel, wait_minutes, condition, subject, body, html, link_url, template_id FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC`, [String(req.params.id)]);
+  const steps = await pool.query(`SELECT step_order, channel, wait_minutes, condition, subject, body, html, link_url, template_id, task_type, task_priority, task_queue_id, task_pause FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC`, [String(req.params.id)]);
   respondOk(res, { item: s.rows[0], steps: steps.rows });
 }));
 
@@ -592,9 +592,11 @@ router.post("/sequences", requireAuth, safeHandler(async (req: any, res: any) =>
   for (let i = 0; i < steps.length; i++) {
     const st = steps[i] || {};
     await pool.query(
-      `INSERT INTO marketing_sequence_steps (sequence_id, step_order, channel, wait_minutes, condition, subject, body, html, link_url, template_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [seqId, i, String(st.channel || "email"), Number(st.waitMinutes ?? 0), String(st.condition || "always"), st.subject ?? null, st.body ?? null, st.html ?? null, st.linkUrl ?? null, st.templateId ?? null]);
+      // BF_SERVER_SEQ_TASK_STEP_v1 - task-step fields ride along.
+      `INSERT INTO marketing_sequence_steps (sequence_id, step_order, channel, wait_minutes, condition, subject, body, html, link_url, template_id, task_type, task_priority, task_queue_id, task_pause)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      [seqId, i, String(st.channel || "email"), Number(st.waitMinutes ?? 0), String(st.condition || "always"), st.subject ?? null, st.body ?? null, st.html ?? null, st.linkUrl ?? null, st.templateId ?? null,
+       st.taskType ?? null, st.taskPriority ?? null, st.taskQueueId ?? null, st.taskPause !== false]);
   }
   respondOk(res, { id: seqId, saved: true });
 }));
