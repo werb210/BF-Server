@@ -15,7 +15,7 @@ const TICK_MS = 5 * 60 * 1000; // every 5 minutes
 async function runReminders(pool: Pool): Promise<void> {
   await pool.query(
     `INSERT INTO notifications (user_id, type, ref_table, ref_id, body, context_url)
-     SELECT t.assignee_user_id::text, 'task_reminder', 'tasks', t.id::text,
+     SELECT t.assignee_user_id, 'task_reminder', 'tasks', t.id::text,
             'Task reminder: ' || t.title, '/tasks'
        FROM tasks t
       WHERE t.reminder_at IS NOT NULL AND t.reminder_at <= now()
@@ -72,7 +72,7 @@ async function runDigest(pool: Pool): Promise<void> {
   if (hourUtc < 8) return;
   await pool.query(
     `INSERT INTO task_digest_log (user_id, digest_date)
-     SELECT t.assignee_user_id::text, current_date
+     SELECT t.assignee_user_id, current_date
        FROM tasks t
       WHERE t.deleted_at IS NULL AND t.status <> 'COMPLETED'
         AND t.due_at::date = current_date AND t.assignee_user_id IS NOT NULL
@@ -87,7 +87,7 @@ async function runDigest(pool: Pool): Promise<void> {
        FROM task_digest_log dl
        JOIN LATERAL (
          SELECT count(*)::int AS n FROM tasks t
-          WHERE t.assignee_user_id::text = dl.user_id AND t.deleted_at IS NULL
+          WHERE t.assignee_user_id = dl.user_id AND t.deleted_at IS NULL
             AND t.status <> 'COMPLETED' AND t.due_at::date = current_date
        ) cnt ON true
       WHERE dl.digest_date = current_date AND dl.notified_at IS NULL AND cnt.n > 0`
