@@ -490,6 +490,11 @@ export async function updateLender(
     submission_config?: Record<string, unknown> | null;
     website?: string | null;
     webpage?: string | null;
+    street?: string | null;
+    city?: string | null;
+    region?: string | null;
+    postal_code?: string | null;
+    phone?: string | null;
     application_url?: string | null;
     announcement?: string | null;
     active?: boolean;
@@ -581,6 +586,22 @@ export async function updateLender(
     if (existingColumns.has("submission_config")) {
       updates.push({ name: "submission_config", value: reconciledSubmission.submissionConfig });
     }
+  }
+  // BF_SERVER_LENDER_EDIT_ADDRESS_v1 - write-through for address + main phone.
+  if (params.street !== undefined && existingColumns.has("street")) {
+    updates.push({ name: "street", value: params.street });
+  }
+  if (params.city !== undefined && existingColumns.has("city")) {
+    updates.push({ name: "city", value: params.city });
+  }
+  if (params.region !== undefined && existingColumns.has("region")) {
+    updates.push({ name: "region", value: params.region });
+  }
+  if (params.postal_code !== undefined && existingColumns.has("postal_code")) {
+    updates.push({ name: "postal_code", value: params.postal_code });
+  }
+  if (params.phone !== undefined && existingColumns.has("phone")) {
+    updates.push({ name: "phone", value: params.phone });
   }
   if (params.website !== undefined && existingColumns.has("website")) {
     updates.push({ name: "website", value: params.website });
