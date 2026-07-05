@@ -82,6 +82,99 @@ router.delete("/queues/:id", safeHandler(async (req: any, res: any) => {
   respondOk(res, { ok: true });
 }));
 
+// ---- M2: queue shares + staff picker (BF_SERVER_TASKS_M2_M3_v1) ----------
+
+router.get("/staff", safeHandler(async (_req: any, res: any) => {
+  const r = await pool.query(
+    `SELECT id, COALESCE(NULLIF(TRIM(first_name || ' ' || last_name), ''), email) AS name
+       FROM users WHERE active = true ORDER BY 2`
+  );
+  respondOk(res, { staff: r.rows });
+}));
+
+router.get("/queues/:id/shares", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const r = await pool.query(
+    `SELECT sh.user_id, COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.email) AS name
+       FROM task_queue_shares sh
+       JOIN task_queues q ON q.id = sh.queue_id
+       LEFT JOIN users u ON u.id = sh.user_id
+      WHERE sh.queue_id::text = $1 AND q.silo = $2 AND q.owner_user_id = $3`,
+    [req.params.id, silo, req.user.userId]
+  );
+  respondOk(res, { shares: r.rows });
+}));
+
+router.post("/queues/:id/shares", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const userId = s(req.body?.user_id);
+  if (!userId) { respondError(res, 400, "user_id_required"); return; }
+  const own = await pool.query(
+    `SELECT 1 FROM task_queues WHERE id::text = $1 AND silo = $2 AND owner_user_id = $3`,
+    [req.params.id, silo, req.user.userId]
+  );
+  if (!own.rowCount) { respondError(res, 404, "queue_not_found"); return; }
+  await pool.query(
+    `INSERT INTO task_queue_shares (queue_id, user_id, silo) VALUES ($1::uuid, $2::uuid, $3)
+     ON CONFLICT (queue_id, user_id) DO NOTHING`,
+    [req.params.id, userId, silo]
+  );
+  respondOk(res, { ok: true });
+}));
+
+router.delete("/queues/:id/shares/:userId", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const r = await pool.query(
+    `DELETE FROM task_queue_shares sh
+      USING task_queues q
+      WHERE sh.queue_id = q.id AND sh.queue_id::text = $1 AND sh.user_id::text = $2
+        AND q.silo = $3 AND q.owner_user_id = $4`,
+    [req.params.id, req.params.userId, silo, req.user.userId]
+  );
+  if (!r.rowCount) { respondError(res, 404, "share_not_found"); return; }
+  respondOk(res, { ok: true });
+}));
+
+// ---- M3: the Start-N-tasks run (BF_SERVER_TASKS_M2_M3_v1) ----------------
+// Stateless run: computes the ordered OPEN task list (index-view ordering:
+// due asc, priority desc, created asc) with the contact channel details the
+// runner and later type-specific actions (M4) need. Run state lives client-
+// side; completion binds strictly to a task id (avoids HubSpot's
+// cross-contact mis-completion bug by construction).
+
+router.post("/runs", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const b = req.body ?? {};
+  const conds: string[] = ["t.silo = $1", "t.deleted_at IS NULL", "t.status <> 'COMPLETED'"];
+  const vals: unknown[] = [silo];
+  let i = 2;
+  const view = typeof b.view === "string" ? b.view : "";
+  if (view === "due_today") conds.push(`t.due_at::date = now()::date`);
+  else if (view === "overdue") conds.push(`t.due_at < now() AND t.due_at::date < now()::date`);
+  else if (view === "upcoming") conds.push(`(t.due_at IS NULL OR t.due_at::date > now()::date)`);
+  for (const [key, col] of [["type", "t.type"], ["priority", "t.priority"], ["queue_id", "t.queue_id::text"]] as const) {
+    const v = s(b[key]);
+    if (v) { conds.push(`${col} = $${i}`); vals.push(v); i += 1; }
+  }
+  const r = await pool.query(
+    `SELECT t.id, t.title, t.body, t.type, t.priority, t.due_at,
+            t.queue_id, q.name AS queue_name,
+            t.contact_id, c.name AS contact_name, c.phone AS contact_phone, c.email AS contact_email,
+            t.company_id, co.name AS company_name
+       FROM tasks t
+       LEFT JOIN task_queues q ON q.id = t.queue_id
+       LEFT JOIN contacts c ON c.id = t.contact_id
+       LEFT JOIN companies co ON co.id = t.company_id
+      WHERE ${conds.join(" AND ")}
+      ORDER BY t.due_at ASC NULLS LAST,
+               CASE t.priority WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 WHEN 'LOW' THEN 2 ELSE 3 END,
+               t.created_at ASC
+      LIMIT 500`,
+    vals
+  );
+  respondOk(res, { tasks: r.rows });
+}));
+
 // ---- Tasks --------------------------------------------------------------
 
 router.get("/", safeHandler(async (req: any, res: any) => {
