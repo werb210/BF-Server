@@ -24,3 +24,19 @@ describe("tasks milestone 1", () => {
     expect(mig).toContain("('BF','BI','SLF')");
   });
 });
+
+// BF_SERVER_TASKS_M2_M3_v1 - queue shares (owner-only), staff picker, and the
+// stateless Start-N-tasks run with strict-per-task completion binding.
+describe("tasks milestones 2+3", () => {
+  const src = readFileSync(join(process.cwd(), "src", "routes", "tasks.ts"), "utf-8");
+  it("exposes shares CRUD and a staff picker", () => {
+    expect(src).toContain('"/queues/:id/shares"');
+    expect(src).toContain("ON CONFLICT (queue_id, user_id) DO NOTHING");
+    expect(src).toContain('"/staff"');
+  });
+  it("runs return ordered open tasks with contact channels", () => {
+    expect(src).toContain('"/runs"');
+    expect(src).toContain("c.phone AS contact_phone");
+    expect(src).toContain("t.status <> 'COMPLETED'");
+  });
+});
