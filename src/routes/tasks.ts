@@ -259,7 +259,6 @@ router.get("/", safeHandler(async (req: any, res: any) => {
 }));
 
 router.post("/", safeHandler(async (req: any, res: any) => {
-  const silo = resolveSiloFromRequest(req);
   const b = req.body ?? {};
   const title = s(b.title);
   if (!title) { respondError(res, 400, "title_required"); return; }
@@ -273,11 +272,28 @@ router.post("/", safeHandler(async (req: any, res: any) => {
   }
   const priority = PRIORITIES.includes(b.priority) ? b.priority : "NONE";
   const assignee = s(b.assignee_user_id) ?? req.user.userId;
-  // Silo integrity: queue/contact/company must live in the same silo.
-  for (const [table, id] of [["task_queues", s(b.queue_id)], ["contacts", s(b.contact_id)], ["companies", s(b.company_id)]] as const) {
-    if (!id) continue;
-    const chk = await pool.query(`SELECT 1 FROM ${table} WHERE id::text = $1 AND silo = $2`, [id, silo]);
-    if (!chk.rowCount) { respondError(res, 400, `${table.slice(0, -1)}_silo_mismatch`); return; }
+  // BF_SERVER_TASKS_CONTACT_SILO_v1 - a task's silo is the silo of the record it
+  // is attached to. When a contact or company is given, derive the silo FROM
+  // that record (the source of truth) rather than trusting the request's active
+  // silo, which can lag the record being viewed and previously produced a
+  // spurious silo-mismatch rejection (e.g. creating a task on a BI contact while
+  // the request resolved to BF). Contactless to-dos keep the request silo.
+  let silo = resolveSiloFromRequest(req);
+  const contactId = s(b.contact_id);
+  const companyId = s(b.company_id);
+  if (contactId) {
+    const cr = await pool.query<{ silo: string }>(`SELECT silo FROM contacts WHERE id::text = $1`, [contactId]);
+    if (!cr.rowCount) { respondError(res, 400, "contact_not_found"); return; }
+    silo = (cr.rows[0]!.silo || silo) as typeof silo;
+  } else if (companyId) {
+    const cr = await pool.query<{ silo: string }>(`SELECT silo FROM companies WHERE id::text = $1`, [companyId]);
+    if (!cr.rowCount) { respondError(res, 400, "company_not_found"); return; }
+    silo = (cr.rows[0]!.silo || silo) as typeof silo;
+  }
+  // Queue must live in the task's (now record-derived) silo.
+  if (s(b.queue_id)) {
+    const chk = await pool.query(`SELECT 1 FROM task_queues WHERE id::text = $1 AND silo = $2`, [s(b.queue_id), silo]);
+    if (!chk.rowCount) { respondError(res, 400, "queue_silo_mismatch"); return; }
   }
   // BF_SERVER_TASKS_M6_v1 - accept recurrence on create.
   const repeatUnit = ["DAY", "WEEK", "MONTH", "YEAR"].includes(b.repeat_unit) ? b.repeat_unit : null;
