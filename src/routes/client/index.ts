@@ -434,6 +434,68 @@ router.get(
       row = result.rows[0];
     }
 
+    // READINESS_PREFILL_CRM_FALLBACK_v1 - a returning client who OTP's straight
+    // into the wizard (never did the marketing-site readiness check) has no
+    // readiness_sessions row, so the wizard used to open blank even though we
+    // already know them from their CRM contact + prior applications. When the
+    // phone path finds no readiness session, fall back to their most recent
+    // application and hydrate the same prefill shape from contact columns +
+    // application.metadata->'kyc'. Token path is unaffected.
+    if (!row && phone) {
+      const appResult = await dbQuery(
+        `SELECT c.name AS full_name, c.first_name, c.company_name, c.email, c.phone,
+                COALESCE(a.metadata->'kyc'->>'industry', a.metadata->>'industry',
+                         a.metadata->'formData'->'kyc'->>'industry') AS industry,
+                COALESCE(a.metadata->'kyc'->>'businessLocation', a.metadata->>'businessLocation') AS business_location,
+                COALESCE(a.metadata->'kyc'->>'fundingType', a.metadata->'kyc'->>'lookingFor', a.metadata->>'fundingType') AS funding_type,
+                COALESCE(a.metadata->'kyc'->>'purposeOfFunds', a.metadata->>'purposeOfFunds') AS purpose_of_funds,
+                COALESCE(a.metadata->'kyc'->>'requestedAmount', a.metadata->'kyc'->>'fundingAmount', a.requested_amount::text) AS requested_amount,
+                COALESCE(a.metadata->'kyc'->>'salesHistory', a.metadata->'kyc'->>'yearsInBusiness') AS sales_history_years,
+                COALESCE(a.metadata->'kyc'->>'revenueLast12Months', a.metadata->'kyc'->>'annualRevenue') AS annual_revenue_range,
+                a.metadata->'kyc'->>'monthlyRevenue' AS avg_monthly_revenue_range,
+                COALESCE(a.metadata->'kyc'->>'accountsReceivable', a.metadata->'kyc'->>'arBalance') AS accounts_receivable_range,
+                COALESCE(a.metadata->'kyc'->>'fixedAssets', a.metadata->'kyc'->>'availableCollateral') AS fixed_assets_value_range
+           FROM applications a
+           JOIN contacts c ON c.id = a.contact_id
+          WHERE right(regexp_replace(coalesce(c.phone, ''), '\D', '', 'g'), 10)
+                = right(regexp_replace($1, '\D', '', 'g'), 10)
+            AND length(regexp_replace($1, '\D', '', 'g')) >= 10
+            AND a.silo = 'BF'
+          ORDER BY a.updated_at DESC NULLS LAST, a.created_at DESC
+          LIMIT 1`,
+        [phone]
+      );
+      const c = appResult.rows[0];
+      if (c) {
+        res.status(200).json({
+          found: true,
+          source: "crm",
+          prefill: {
+            companyName: c.company_name ?? null,
+            fullName: c.full_name ?? null,
+            email: c.email ?? null,
+            phone: c.phone ?? phone,
+            industry: c.industry ?? null,
+            businessLocation: c.business_location ?? null,
+            fundingType: c.funding_type ?? null,
+            requestedAmount: c.requested_amount ?? null,
+            purposeOfFunds: c.purpose_of_funds ?? null,
+            salesHistoryYears: c.sales_history_years ?? null,
+            annualRevenueRange: c.annual_revenue_range ?? null,
+            avgMonthlyRevenueRange: c.avg_monthly_revenue_range ?? null,
+            accountsReceivableRange: c.accounts_receivable_range ?? null,
+            fixedAssetsValueRange: c.fixed_assets_value_range ?? null,
+            yearsInBusiness: c.sales_history_years ?? null,
+            annualRevenue: c.annual_revenue_range ?? null,
+            profitable: null,
+            existing_debt: null,
+            score: null,
+          },
+        });
+        return;
+      }
+    }
+
     if (!row) {
       res.status(200).json({ found: false });
       return;
