@@ -245,6 +245,52 @@ router.post("/otp/verify", async (req, res) => {
       });
     }
 
+    // BF_SERVER_REFERRER_OTP_v1 - referrer-portal login. ReferrerLoginPage sends
+    // userType:"referrer". A referrer is a users row with role 'Referrer'. Match
+    // the phone (last-10-digits, punctuation agnostic) against active Referrer
+    // users and mint a referrer-bound token. Referrer wins over staff for
+    // referrer-portal logins; no match -> 403 so the page shows a clear error.
+    const wantsReferrer = String((req.body ?? {}).userType ?? "") === "referrer";
+    if (wantsReferrer) {
+      const referrerResult = await dbQuery_v68<{ id: string; first_name: string | null; last_name: string | null; profile_complete: boolean | null }>(
+        `SELECT id, first_name, last_name, COALESCE(profile_complete, false) AS profile_complete
+           FROM users
+          WHERE role = $2
+            AND COALESCE(active, true) = true
+            AND COALESCE(disabled, false) = false
+            AND right(regexp_replace(coalesce(phone_number, ''), '[^0-9]', '', 'g'), 10)
+              = right(regexp_replace($1, '[^0-9]', '', 'g'), 10)
+            AND length(regexp_replace($1, '[^0-9]', '', 'g')) >= 10
+          ORDER BY updated_at DESC NULLS LAST`,
+        [phone, ROLES.REFERRER]
+      );
+      if (referrerResult.rows.length > 1) {
+        console.log("[otp_verify] referrer_login_ambiguous_phone", { phone, matches: referrerResult.rows.length });
+        return res.status(409).json({ error: "ambiguous_referrer_phone", message: "This phone number is set on more than one referrer. Contact CBoreal to give each referrer a unique phone." });
+      }
+      const referrer = referrerResult.rows[0];
+      if (!referrer) {
+        console.log("[otp_verify] referrer_login_no_match", { phone });
+        return res.status(403).json({ error: "no_referrer_for_phone" });
+      }
+      const referrerToken = signAccessToken({
+        sub: `referrer:${referrer.id}`,
+        role: ROLES.REFERRER,
+        tokenVersion: 0,
+        phone,
+        referrerId: String(referrer.id),
+      });
+      const referrerName = [referrer.first_name, referrer.last_name].filter(Boolean).join(" ") || null;
+      return res.status(200).json({
+        status: "ok",
+        data: {
+          token: referrerToken,
+          user: { id: String(referrer.id), name: referrerName, phone, userType: "referrer" },
+          profileComplete: referrer.profile_complete === true,
+        },
+      });
+    }
+
     const user = await findAuthUserByPhone(phone);
     const isActiveStaff = Boolean(
       user && user.role && !user.disabled && user.active

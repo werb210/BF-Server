@@ -2,6 +2,7 @@ import { Router } from "express";
 import { ROLES, type Role } from "../auth/roles.js";
 import adminRoutes from "./admin.js";
 import lenderSelfRoutes from "./lenderSelf.js"; // BF_SERVER_LENDER_SELF_v1
+import referrerSelfRoutes from "./referrerSelf.js"; // BF_SERVER_REFERRER_SELF_v1
 import slfRoutes from "./slf.js"; // BF_SERVER_BLOCK_v153_SLF_BACKEND_MINIMAL_v1
 import applicationsRoutes from "../modules/applications/applications.routes.js";
 import bankingRoutes from "./banking.js";
@@ -183,6 +184,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/calendar", router: calendarRoutes },
   { path: "/calls", router: callsRoutes },
   { path: "/lender", router: lenderSelfRoutes }, // BF_SERVER_LENDER_SELF_v1
+  { path: "/referrer", router: referrerSelfRoutes }, // BF_SERVER_REFERRER_SELF_v1
   { path: "/telephony", router: telephonyRoutes },
   { path: "/realtime", router: realtimeRoutes },
   { path: "/banking", router: bankingRoutes },
