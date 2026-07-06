@@ -10,6 +10,7 @@ export type AccessTokenPayload = {
   tokenVersion: number;
   phone?: string | null;
   lenderId?: string; // BF_SERVER_LENDER_OTP_v1 - lender-portal tokens bind to a lenders.id
+  referrerId?: string; // BF_SERVER_REFERRER_OTP_v1 - referrer-portal tokens bind to a users.id (role Referrer)
   silo?: string;
   silos?: string[]; // v620: accessible silos for multi-silo users
   capabilities?: Capability[];
@@ -78,6 +79,13 @@ function validatePayload(payload: unknown): asserts payload is AccessTokenPayloa
   }
 
   if (
+    raw.referrerId !== undefined &&
+    (typeof raw.referrerId !== "string" || raw.referrerId.trim().length === 0)
+  ) {
+    throw new AccessTokenVerificationError("Token referrerId claim is invalid");
+  }
+
+  if (
     raw.silo !== undefined &&
     (typeof raw.silo !== "string" || raw.silo.trim().length === 0)
   ) {
@@ -142,6 +150,9 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
     tokenVersion: decoded.tokenVersion,
     phone: decoded.phone ?? null,
   };
+  if (typeof decoded.referrerId === "string") {
+    payload.referrerId = decoded.referrerId;
+  }
   if (typeof decoded.lenderId === "string") {
     payload.lenderId = decoded.lenderId;
   }
