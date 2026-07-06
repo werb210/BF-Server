@@ -16,10 +16,10 @@ export function startSendQueueWorker(pool: Pool): { stop: () => void } {
     running = true;
     try {
       const claim = await pool.query<ClaimedJob>(
-        `UPDATE marketing_send_jobs SET status='running', started_at=now(), updated_at=now()
+        `UPDATE marketing_send_jobs SET status='running', started_at=COALESCE(started_at, now()), updated_at=now()
           WHERE id = (
             SELECT id FROM marketing_send_jobs
-             WHERE status='queued'
+             WHERE (status='queued' OR (status='running' AND updated_at < now() - interval '10 minutes'))
              ORDER BY created_at ASC
              FOR UPDATE SKIP LOCKED
              LIMIT 1
@@ -42,8 +42,8 @@ export function startSendQueueWorker(pool: Pool): { stop: () => void } {
         } else {
           const result = await runEmailSend(pool, { silo: job.silo, tag: job.tag, subject: String(p.subject || ""), html: String(p.html || ""), tags: (p.tags as string[] | undefined) ?? null, excludeTags: (p.excludeTags as string[] | undefined) ?? null }, progress); // BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1
           await pool.query(
-            `UPDATE marketing_send_jobs SET status='done', total=$2, sent=$3, failed=$4, finished_at=now(), updated_at=now() WHERE id=$1`,
-            [job.id, result.total, result.sent, result.failed],
+            `UPDATE marketing_send_jobs SET status='done', total=$2, sent=$3, failed=$4, error=$5, finished_at=now(), updated_at=now() WHERE id=$1`,
+            [job.id, result.total, result.sent, result.failed, result.rejectError ? `rejected (status ${result.rejectStatus ?? "unknown"}): ${result.rejectError}` : null],
           );
         }
       } catch (err) {
