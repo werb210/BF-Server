@@ -303,4 +303,49 @@ router.post(
   },
 );
 
+// BF_SERVER_SENDGRID_DIAGNOSTICS_v1 - "test SendGrid now". Reports whether the
+// key + from are set, and (if a `to` is given) does a real single send and
+// returns SendGrid's EXACT status + error body. This turns a silent failure
+// (the email tab / sequences going nowhere) into an immediate, legible answer:
+// 401 => bad/rotated API key; 403 with a "from"/"sender" message => the
+// SENDGRID_FROM address (info@boreal.financial) is not a verified sender or its
+// domain authentication lapsed. Admin-guarded (requireAuth + AUDIT_VIEW above).
+router.post(
+  "/sendgrid-diagnostics",
+  requireCapability([CAPABILITIES.USER_MANAGE]),
+  async (req: any, res: any) => {
+    try {
+      const { sendgridConfigured, sendOne } = await import("../services/sendgridService.js");
+      const keySet = Boolean(process.env.SENDGRID_API_KEY);
+      const fromSet = Boolean(process.env.SENDGRID_FROM);
+      const from = process.env.SENDGRID_FROM ? String(process.env.SENDGRID_FROM) : null;
+      const keyPrefix = process.env.SENDGRID_API_KEY ? String(process.env.SENDGRID_API_KEY).slice(0, 3) : null;
+      const base = { configured: sendgridConfigured(), keySet, fromSet, from, keyPrefix, keyLooksValid: keyPrefix === "SG." };
+
+      const to = typeof req.body?.to === "string" ? req.body.to.trim() : "";
+      if (!to) {
+        return res.json({ ...base, tested: false, hint: "POST { to } to run a live test send and see SendGrid's exact response." });
+      }
+      if (!sendgridConfigured()) {
+        return res.json({ ...base, tested: false, error: "not_configured", hint: "SENDGRID_API_KEY and/or SENDGRID_FROM is missing." });
+      }
+      const r = await sendOne({
+        to,
+        subject: "Boreal SendGrid diagnostics",
+        html: "<p>This is a Boreal SendGrid diagnostics test send. If you received this, sending works.</p>",
+      });
+      // Interpret the common failure codes so the operator gets a plain answer.
+      let diagnosis = "ok";
+      if (!r.ok) {
+        if (r.status === 401) diagnosis = "api_key_invalid";
+        else if (r.status === 403) diagnosis = "sender_not_verified_or_forbidden";
+        else diagnosis = `sendgrid_error_${r.status}`;
+      }
+      return res.json({ ...base, tested: true, sendStatus: r.status, ok: r.ok, diagnosis, error: r.error ?? null });
+    } catch (e: any) {
+      return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+);
+
 export default router;
