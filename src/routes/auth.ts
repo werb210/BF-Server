@@ -252,8 +252,9 @@ router.post("/otp/verify", async (req, res) => {
     // referrer-portal logins; no match -> 403 so the page shows a clear error.
     const wantsReferrer = String((req.body ?? {}).userType ?? "") === "referrer";
     if (wantsReferrer) {
-      const referrerResult = await dbQuery_v68<{ id: string; first_name: string | null; last_name: string | null; profile_complete: boolean | null }>(
-        `SELECT id, first_name, last_name, COALESCE(profile_complete, false) AS profile_complete
+      const referrerResult = await dbQuery_v68<{ id: string; first_name: string | null; last_name: string | null; profile_complete: boolean | null; referrer_status: string | null }>(
+        `SELECT id, first_name, last_name, COALESCE(profile_complete, false) AS profile_complete,
+                referrer_status
            FROM users
           WHERE role = $2
             AND COALESCE(active, true) = true
@@ -272,6 +273,12 @@ router.post("/otp/verify", async (req, res) => {
       if (!referrer) {
         console.log("[otp_verify] referrer_login_no_match", { phone });
         return res.status(403).json({ error: "no_referrer_for_phone" });
+      }
+      // BF_SERVER_REFERRER_SIGNUP_v1 - only agreement-signed (active) referrers
+      // may log in. Pending self-signups must finish the signing flow first.
+      if (referrer.referrer_status && referrer.referrer_status !== "active") {
+        console.log("[otp_verify] referrer_login_pending_agreement", { phone });
+        return res.status(403).json({ error: "referrer_agreement_pending" });
       }
       const referrerToken = signAccessToken({
         sub: `referrer:${referrer.id}`,

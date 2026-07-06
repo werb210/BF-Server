@@ -11,8 +11,165 @@ import { pool } from "../db.js";
 import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { submitReferral } from "../modules/referrals/referrals.service.js";
+// BF_SERVER_REFERRER_SIGNUP_v1
+import { randomUUID } from "node:crypto";
+import { signAccessToken } from "../auth/jwt.js";
+import { createReferrerAgreementSession, isReferrerAgreementSigned, referrerAgreementConfigured } from "../modules/referrals/referrerAgreement.service.js";
 
 const router = Router();
+
+
+// -----------------------------------------------------------------------------
+// BF_SERVER_REFERRER_SIGNUP_v1 - PUBLIC self-signup + SignNow agreement.
+// A prospective referrer submits name/email/phone/address; we create their
+// users row as role Referrer, referrer_status='pending_agreement', kick off a
+// SignNow referral-agreement embedded signing session, and return the signing
+// URL. The SignNow webhook (routes/signnow.ts) flips them to 'active' when the
+// agreement is signed. Only 'active' referrers can OTP-log in (auth.ts). These
+// endpoints are intentionally UNAUTHENTICATED (the person is not a referrer yet).
+// -----------------------------------------------------------------------------
+
+const digits10 = (v: unknown): string | null => {
+  const d = String(v ?? "").replace(/[^0-9]/g, "");
+  return d.length >= 10 ? d.slice(-10) : null;
+};
+
+// POST /api/referrer/signup - create pending referrer + agreement session.
+router.post(
+  "/signup",
+  safeHandler(async (req: Request, res: Response) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const fullName = str(b.full_name) ?? str(b.fullName);
+    const email = str(b.email);
+    const phone = str(b.phone);
+    const street = str(b.street) ?? str(b.address);
+    const city = str(b.city);
+    const province = str(b.province) ?? str(b.state);
+    const postal = str(b.postal_code) ?? str(b.postalCode) ?? str(b.zip);
+    const company = str(b.company_name) ?? str(b.companyName) ?? str(b.company);
+    const etransfer = str(b.etransfer_email) ?? str(b.etransferEmail) ?? email;
+
+    if (!fullName || !email || !phone) {
+      res.status(400).json({ status: "error", message: "name_email_phone_required" });
+      return;
+    }
+    if (!street || !city || !province || !postal) {
+      res.status(400).json({ status: "error", message: "address_required" });
+      return;
+    }
+    const p10 = digits10(phone);
+    if (!p10) {
+      res.status(400).json({ status: "error", message: "invalid_phone" });
+      return;
+    }
+
+    const first = fullName.split(/\s+/)[0] ?? fullName;
+    const last = fullName.split(/\s+/).slice(1).join(" ") || null;
+
+    // Idempotent: if a referrer already exists for this phone, don't duplicate.
+    // active -> client should log in. pending -> update contact details and reuse
+    // the same agreement record (the stored group/document ids remain intact).
+    const existing = await pool.query<{ id: string; referrer_status: string | null; agreement_document_group_id: string | null }>(
+      `SELECT id::text AS id, referrer_status, agreement_document_group_id
+         FROM users
+        WHERE role = $1
+          AND right(regexp_replace(coalesce(phone_number, ''), '[^0-9]', '', 'g'), 10) = $2
+        ORDER BY updated_at DESC NULLS LAST
+        LIMIT 1`,
+      [ROLES.REFERRER, p10],
+    );
+
+    let referrerId: string;
+    const prior = existing.rows[0];
+    if (prior?.referrer_status === "active") {
+      res.status(200).json({ status: "ok", data: { alreadyActive: true } });
+      return;
+    }
+    if (prior) {
+      referrerId = prior.id;
+      await pool.query(
+        `UPDATE users SET first_name=$2, last_name=$3, email=$4, company_name=$5,
+                 street=$6, city=$7, province=$8, postal_code=$9, etransfer_email=$10,
+                 updated_at=now()
+           WHERE id::text = $1`,
+        [referrerId, first, last, email, company, street, city, province, postal, etransfer],
+      );
+    } else {
+      referrerId = randomUUID();
+      await pool.query(
+        `INSERT INTO users (id, first_name, last_name, email, phone_number, company_name,
+                            street, city, province, postal_code, etransfer_email,
+                            role, referrer_status, active, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                 $12, 'pending_agreement', true, 'active', now(), now())`,
+        [referrerId, first, last, email, phone, company, street, city, province, postal, etransfer, ROLES.REFERRER],
+      );
+    }
+
+    if (!referrerAgreementConfigured()) {
+      res.status(200).json({ status: "ok", data: { referrerId, agreementConfigured: false } });
+      return;
+    }
+
+    const session = await createReferrerAgreementSession({ referrerId, fullName, email });
+    await pool.query(
+      `UPDATE users SET agreement_document_group_id=$2, agreement_document_id=$3, updated_at=now()
+        WHERE id::text = $1`,
+      [referrerId, session.groupId, session.documentId],
+    );
+    res.status(201).json({
+      status: "ok",
+      data: { referrerId, agreementConfigured: true, signingUrl: session.url, groupId: session.groupId },
+    });
+  }),
+);
+
+// POST /api/referrer/signup/complete - verify SignNow, activate, and mint token.
+router.post(
+  "/signup/complete",
+  safeHandler(async (req: Request, res: Response) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const referrerId = typeof b.referrerId === "string" ? b.referrerId : null;
+    if (!referrerId) {
+      res.status(400).json({ status: "error", message: "referrerId_required" });
+      return;
+    }
+    const r = await pool.query<{ id: string; first_name: string | null; last_name: string | null; phone_number: string | null; referrer_status: string | null; agreement_document_group_id: string | null }>(
+      `SELECT id::text AS id, first_name, last_name, phone_number, referrer_status, agreement_document_group_id
+         FROM users WHERE id::text = $1 AND role = $2 LIMIT 1`,
+      [referrerId, ROLES.REFERRER],
+    );
+    const ref = r.rows[0];
+    if (!ref) {
+      res.status(404).json({ status: "error", message: "referrer_not_found" });
+      return;
+    }
+
+    if (ref.referrer_status !== "active") {
+      const groupId = ref.agreement_document_group_id;
+      const signed = groupId ? await isReferrerAgreementSigned(groupId) : false;
+      if (!signed) {
+        res.status(409).json({ status: "error", message: "agreement_not_signed" });
+        return;
+      }
+      await pool.query(
+        `UPDATE users SET referrer_status='active', agreement_signed_at=COALESCE(agreement_signed_at, now()), updated_at=now()
+          WHERE id::text = $1`,
+        [referrerId],
+      );
+    }
+
+    const token = signAccessToken({
+      sub: `referrer:${ref.id}`,
+      role: ROLES.REFERRER,
+      tokenVersion: 0,
+      phone: ref.phone_number ?? "",
+      referrerId: ref.id,
+    });
+    const name = [ref.first_name, ref.last_name].filter(Boolean).join(" ") || null;
+    res.status(200).json({ status: "ok", data: { token, user: { id: ref.id, name, userType: "referrer" } } });
+  }),
+);
 
 interface ReferrerRequest extends Request {
   referrerId?: string;

@@ -77,6 +77,31 @@ router.post(
       return;
     }
 
+    // BF_SERVER_REFERRER_SIGNUP_v1 - referrer agreement signed. If the group id
+    // matches a pending referrer agreement, flip them to active and stop (this
+    // is not an application signature). Idempotent: repeated webhooks no-op.
+    if (documentGroupId || documentId) {
+      const rIds = [documentGroupId, documentId].filter(Boolean) as string[];
+      const refMatch = await dbQuery<{ id: string }>(
+        `select id::text as id from users
+          where role = 'Referrer'
+            and (agreement_document_group_id = any($1::text[]) or agreement_document_id = any($1::text[]))
+          limit 1`,
+        [rIds],
+      );
+      if (refMatch.rows[0]) {
+        await dbQuery(
+          `update users set referrer_status='active',
+                 agreement_signed_at=coalesce(agreement_signed_at, now()), updated_at=now()
+            where id::text = $1`,
+          [refMatch.rows[0].id],
+        );
+        console.log("[signnow-webhook] referrer_agreement_signed", { referrerId: refMatch.rows[0].id });
+        res.status(200).json({ received: true, match: "referrer" });
+        return;
+      }
+    }
+
     // Match by group id or document id against signnow_document_id, then fall
     // back to the embedded doc_ids array stored at signing time.
     const ids = [documentGroupId, documentId].filter(Boolean) as string[];
