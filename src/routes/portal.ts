@@ -37,6 +37,7 @@ import {
 import { config } from "../config/index.js";
 import { listLenders } from "../repositories/lenders.repo.js";
 import { eventBus } from "../events/eventBus.js";
+import { attachSignedPnwDocument } from "../signnow/pnwSigning.js";
 // BF_AZURE_OCR_TERMSHEET_v44 — term sheet upload deps
 import multer from "multer";
 import { getStorage } from "../lib/storage/index.js";
@@ -470,6 +471,12 @@ router.get(
       });
       return;
     }
+
+    // BF_SERVER_PNW_ATTACH_v1 - backfill signed Personal Net Worth PDFs into
+    // Documents when staff open an application. This covers PNWs signed before
+    // this fix or webhook delivery misses. Best-effort and idempotent.
+    await attachSignedPnwDocument(record.id).catch(() => undefined);
+
     const documents = await listDocumentsByApplicationId(record.id);
     const documentsWithVersions = await Promise.all(
       documents.map(async (doc) => {
