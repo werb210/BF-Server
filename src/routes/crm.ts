@@ -14,7 +14,6 @@ import { getSilo, resolveSiloFromRequest } from "../middleware/silo.js";
 import { createContact } from "../services/contacts.js";
 import { getStorage } from "../lib/storage/index.js"; // BF_SERVER_CONTACT_DOCUMENTS_v1
 import notesRoutes from "./crm/notes.js";
-import tasksRoutes from "./crm/tasks.js";
 import emailsRoutes from "./crm/emails.js";
 import meetingsRoutes from "./crm/meetings.js";
 import callsActivityRoutes from "./crm/calls.js";
@@ -1180,14 +1179,12 @@ router.get("/contacts/:id/calls", safeHandler(async (req: any, res: any) => {
 }));
 
 router.use("/contacts/:id/notes", notesRoutes);
-router.use("/contacts/:id/tasks", tasksRoutes);
 router.use("/contacts/:id/emails", emailsRoutes);
 router.use("/contacts/:id/meetings", meetingsRoutes);
 router.use("/contacts/:id/calls", callsActivityRoutes);
 router.use("/contacts/:id/timeline", timelineRoutes);
 
 router.use("/companies/:id/notes", notesRoutes);
-router.use("/companies/:id/tasks", tasksRoutes);
 router.use("/companies/:id/emails", emailsRoutes);
 router.use("/companies/:id/meetings", meetingsRoutes);
 router.use("/companies/:id/calls", callsActivityRoutes);

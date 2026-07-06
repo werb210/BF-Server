@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 const timeline = readFileSync(join(process.cwd(), "src", "routes", "crm", "timeline.ts"), "utf-8");
 
 describe("CRM timeline includes unified tasks", () => {
-  it("UNIONs the unified tasks table alongside crm_tasks", () => {
+  it("UNIONs the unified tasks table", () => {
     expect(timeline).toContain("BF_SERVER_TIMELINE_UNIFIED_TASKS_v1");
     expect(timeline).toContain("FROM tasks WHERE ${col} = $1 AND silo = $2 AND deleted_at IS NULL");
   });
@@ -17,9 +17,9 @@ describe("CRM timeline includes unified tasks", () => {
     const branches = timeline.split("FROM tasks WHERE ${col} = $1 AND silo = $2 AND deleted_at IS NULL").length - 1;
     expect(branches).toBe(2);
   });
-  it("emits the same kind/shape as the crm_tasks branch (silo-scoped, no UI change)", () => {
+  it("emits the task kind from the unified tasks branch (silo-scoped, no UI change)", () => {
     expect(timeline).toContain("SELECT 'task' AS kind, id::text, created_at AS ts,");
-    // both crm_tasks and tasks branches present
-    expect(timeline).toContain("FROM crm_tasks WHERE ${col} = $1 AND silo = $2");
+    // crm_tasks branch has been retired; timeline reads the unified tasks table only.
+    expect(timeline).not.toContain("FROM crm_tasks WHERE ${col} = $1 AND silo = $2");
   });
 });
