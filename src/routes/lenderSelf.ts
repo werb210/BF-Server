@@ -328,7 +328,7 @@ router.patch(
   })
 );
 
-// BF_SERVER_LENDER_SELF_V2 - lender uploads (product sheets / marketing -> trains Maya).
+// BF_SERVER_LENDER_SELF_UPLOADS_v1 / BF_SERVER_LENDER_SELF_V2 - lender uploads (product sheets / marketing -> trains Maya).
 // Mirrors the staff pipeline in portalLenders.ts: multer disk file -> lender_documents
 // row -> best-effort POST to MAYA_URL /api/knowledge/ingest. uploaded_by is NULL because
 // lender tokens carry no users.id (FK references users).
