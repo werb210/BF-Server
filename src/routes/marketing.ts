@@ -278,7 +278,7 @@ router.get("/email/segments", safeHandler(async (req: any, res: any) => {
 }));
 
 router.post("/email/send", safeHandler(async (req: any, res: any) => {
-  if (!sendgridConfigured()) { respondOk(res, { configured: false }); return; }
+  if (!sendgridConfigured()) { respondOk(res, { configured: false, error: "sendgrid_not_configured", message: "SendGrid is not configured; no email was sent." }); return; }
   const silo = resolveSiloFromRequest(req);
   const b = req.body || {};
   const subject = String(b.subject || "").trim();
@@ -308,7 +308,7 @@ router.post("/email/send", safeHandler(async (req: any, res: any) => {
     return;
   }
   const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut });
-  respondOk(res, { configured: true, recipients: out.total, sent: out.sent, failed: out.failed, capped: false });
+  respondOk(res, { configured: true, recipients: out.total, sent: out.sent, failed: out.failed, rejected: out.failed, rejectStatus: out.rejectStatus, rejectError: out.rejectError, capped: false });
 }));
 
 // BF_SERVER_SEND_QUEUE_v1 - background blast job status (for the portal progress UI).
@@ -470,7 +470,7 @@ router.get("/email/audience-count", safeHandler(async (req: any, res: any) => {
 }));
 
 router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
-  if (!sendgridConfigured()) { respondOk(res, { configured: false }); return; }
+  if (!sendgridConfigured()) { respondOk(res, { configured: false, error: "sendgrid_not_configured", message: "SendGrid is not configured; no email was sent." }); return; }
   const silo = resolveSiloFromRequest(req);
   const b = req.body || {};
   const subject = String(b.subject || "").trim();
@@ -500,7 +500,7 @@ router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
     return;
   }
   const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut, tags: includeTags, excludeTags });
-  respondOk(res, { configured: true, recipients: out.total, sent: out.sent, failed: out.failed });
+  respondOk(res, { configured: true, recipients: out.total, sent: out.sent, failed: out.failed, rejected: out.failed, rejectStatus: out.rejectStatus, rejectError: out.rejectError });
 }));
 
 // BF_SERVER_BLOCK_v783_MARKETING_TEMPLATES — named templates per channel.

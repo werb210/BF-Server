@@ -14,6 +14,7 @@ import { sendMarketingSms, trackedLink, lookupLineType } from "./marketingSms.js
 // Single `tag` kept for back-compat (raw email panel, SMS, Maya tools, old jobs).
 export type EmailJob = { silo: string; tag: string | null; subject: string; html: string; tags?: string[] | null; excludeTags?: string[] | null };
 export type SendProgress = (sent: number, failed: number) => Promise<void>;
+export type EmailSendResult = { total: number; sent: number; failed: number; rejectStatus?: number; rejectError?: string }; // BF_SERVER_EMAIL_FAIL_VISIBILITY_v1
 
 export async function countEmailRecipients(pool: Pool, silo: string, tag: string | null, tags: string[] | null = null, excludeTags: string[] | null = null): Promise<number> {
   const r = await pool.query<{ n: number }>(
@@ -28,7 +29,7 @@ export async function countEmailRecipients(pool: Pool, silo: string, tag: string
   return r.rows[0]?.n ?? 0;
 }
 
-export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendProgress): Promise<{ total: number; sent: number; failed: number }> {
+export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendProgress): Promise<EmailSendResult> { // BF_SERVER_EMAIL_FAIL_VISIBILITY_v1
   const recips = await pool.query<{ id: string; email: string; name: string | null; company: string | null }>(
     `SELECT c.id, c.email, c.name, co.name AS company
        FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
@@ -38,8 +39,19 @@ export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendP
         AND ($4::text[] IS NULL OR NOT (COALESCE(c.tags,'{}') && $4))`,
     [job.silo, job.tag, job.tags ?? null, job.excludeTags ?? null],
   );
-  let sent = 0, failed = 0, i = 0;
+  let sent = 0, failed = 0, skipped = 0, i = 0;
+  let rejectStatus: number | undefined;
+  let rejectError: string | undefined;
   for (const c of recips.rows) {
+    const alreadySent = await pool.query<{ id: string }>(
+      `SELECT id FROM crm_timeline_events
+        WHERE contact_id = $1 AND event_type = 'email_marketing_sent'
+          AND created_at > now() - interval '24 hours'
+          AND payload->>'subject' = $2
+        LIMIT 1`,
+      [c.id, job.subject],
+    );
+    if (alreadySent.rows[0]) { skipped++; i++; continue; }
     const first = (c.name || "").trim().split(/\s+/)[0] || "there";
     const vars = { first_name: first, name: c.name || "there", email: c.email, company: c.company || "" };
     try {
@@ -49,14 +61,16 @@ export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendP
         await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [c.id, "email_marketing_sent", JSON.stringify({ subject: job.subject, tag: job.tag })]);
       } else {
         failed++;
+        if (rejectStatus === undefined) rejectStatus = r.status;
+        if (rejectError === undefined) rejectError = r.error;
         console.error("sendgrid_email_failed", { to: c.email, status: r.status, error: r.error });
       }
-    } catch (e) { failed++; console.error("sendgrid_email_exception", { to: c.email, error: e instanceof Error ? e.message : String(e) }); }
+    } catch (e) { failed++; if (rejectError === undefined) rejectError = e instanceof Error ? e.message : String(e); console.error("sendgrid_email_exception", { to: c.email, error: e instanceof Error ? e.message : String(e) }); }
     i++;
     if (onProgress && i % 50 === 0) { try { await onProgress(sent, failed); } catch { /* progress best-effort */ } }
   }
   if (onProgress) { try { await onProgress(sent, failed); } catch { /* best-effort */ } }
-  return { total: recips.rows.length, sent, failed };
+  return { total: recips.rows.length - skipped, sent, failed, rejectStatus, rejectError };
 }
 
 
