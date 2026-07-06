@@ -74,6 +74,7 @@ router.post(
       api_config: body.apiConfig ?? body.api_config ?? null,
       submission_config: body.submissionConfig ?? body.submission_config ?? null,
       website: body.website ?? null,
+      description: body.description ?? null, // BF_SERVER_LENDER_COMPANY_PARITY_v1
       application_url: body.application_url ?? null,
       announcement: body.announcement ?? null,
       street: body.street ?? body.address?.street ?? null,
@@ -134,6 +135,7 @@ router.patch(
       region: body.region ?? body.address?.stateProvince ?? body.address?.region,
       postal_code: body.postalCode ?? body.postal_code ?? body.address?.postalCode,
       phone: body.phone,
+      description: body.description, // BF_SERVER_LENDER_COMPANY_PARITY_v1
       silo: body.silo ?? existing.silo ?? silo,
     });
       // BF_LENDER_TO_CRM_v38 — fire-and-forget CRM mirror on update

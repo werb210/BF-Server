@@ -25,6 +25,7 @@ export interface CreateLenderInput {
   region?: string | null;
   postal_code?: string | null;
   phone?: string | null;
+  description?: string | null; // BF_SERVER_LENDER_COMPANY_PARITY_v1
   silo?: string | null;
 }
 
@@ -181,6 +182,7 @@ function buildSelectColumns(existing: Set<string>): string {
     { name: "webpage", fallback: "null::text" },
     { name: "application_url", fallback: "null::text" },
     { name: "announcement", fallback: "null::text" },
+    { name: "description", fallback: "null::text" },
     { name: "street", fallback: "null::text" },
     { name: "city", fallback: "null::text" },
     { name: "region", fallback: "null::text" },
@@ -322,6 +324,7 @@ export async function createLender(
     silo,
     application_url,
     announcement,
+    description,
   } = input;
   const existingColumns = await fetchLenderColumns();
   const includeActive = existingColumns.has("active");
@@ -352,6 +355,7 @@ export async function createLender(
     { name: "application_url", value: application_url ?? null },
     { name: "announcement", value: announcement ?? null },
     { name: "website", value: website ?? null },
+    { name: "description", value: description ?? null }, // BF_SERVER_LENDER_COMPANY_PARITY_v1
     { name: "webpage", value: webpage ?? null },
     { name: "street", value: street ?? null },
     { name: "city", value: city ?? null },
@@ -495,6 +499,7 @@ export async function updateLender(
     region?: string | null;
     postal_code?: string | null;
     phone?: string | null;
+    description?: string | null; // BF_SERVER_LENDER_COMPANY_PARITY_v1
     application_url?: string | null;
     announcement?: string | null;
     active?: boolean;
@@ -602,6 +607,9 @@ export async function updateLender(
   }
   if (params.phone !== undefined && existingColumns.has("phone")) {
     updates.push({ name: "phone", value: params.phone });
+  }
+  if (params.description !== undefined && existingColumns.has("description")) {
+    updates.push({ name: "description", value: params.description }); // BF_SERVER_LENDER_COMPANY_PARITY_v1
   }
   if (params.website !== undefined && existingColumns.has("website")) {
     updates.push({ name: "website", value: params.website });
