@@ -32,10 +32,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
                NULL::text AS title, body AS body, NULL::text AS extra
           FROM crm_notes WHERE ${col} = $1 AND silo = $2
         UNION ALL
-        SELECT 'task' AS kind, id::text, created_at AS ts,
-               title, notes AS body, status AS extra
-          FROM crm_tasks WHERE ${col} = $1 AND silo = $2
-        UNION ALL
+        -- BF_SERVER_RETIRE_CRM_TASKS_v1 - crm_tasks retired; timeline reads unified tasks only.
         -- BF_SERVER_TIMELINE_UNIFIED_TASKS_v1 - the HubSpot-style TaskPopup now
         -- writes to the unified tasks table (via /api/tasks), not crm_tasks.
         -- Without this branch a task created from a contact (BF or BI) never
@@ -152,10 +149,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
                NULL::text AS title, body AS body, NULL::text AS extra
           FROM crm_notes WHERE ${col} = $1 AND silo = $2
         UNION ALL
-        SELECT 'task' AS kind, id::text, created_at AS ts,
-               title, notes AS body, status AS extra
-          FROM crm_tasks WHERE ${col} = $1 AND silo = $2
-        UNION ALL
+        -- BF_SERVER_RETIRE_CRM_TASKS_v1 - crm_tasks retired; timeline reads unified tasks only.
         -- BF_SERVER_TIMELINE_UNIFIED_TASKS_v1 - the HubSpot-style TaskPopup now
         -- writes to the unified tasks table (via /api/tasks), not crm_tasks.
         -- Without this branch a task created from a contact (BF or BI) never
