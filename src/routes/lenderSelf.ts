@@ -13,6 +13,7 @@ import jwt from "jsonwebtoken";
 import { ROLES } from "../auth/roles.js";
 import { pool } from "../db.js";
 import { safeHandler } from "../middleware/safeHandler.js";
+import { notifyAllStaff } from "../services/notifications/notifyAllStaff.js"; // BF_SERVER_LENDER_PRODUCT_NOTIFY_v1
 
 const router = Router();
 
@@ -61,6 +62,20 @@ const numOrNull = (value: unknown): number | null => {
   return Number.isFinite(numberValue) ? numberValue : null;
 };
 
+function normalizeRequiredDocuments(value: unknown): string | null {
+  if (!Array.isArray(value)) return null;
+  return JSON.stringify(
+    (value as Array<Record<string, unknown>>)
+      .filter((doc) => doc && typeof doc === "object" && String(doc.category ?? "").trim() !== "")
+      .map((doc) => ({
+        category: String(doc.category).trim(),
+        required: true,
+        description: null,
+        stage: Number(doc.stage) === 2 ? 2 : 1,
+      }))
+  );
+}
+
 router.get(
   "/me",
   requireLender,
@@ -71,7 +86,8 @@ router.get(
       `SELECT id, name, phone, website, description, COALESCE(NULLIF(primary_contact_name, ''), contact_name) AS contact_name,
               COALESCE(NULLIF(primary_contact_email, ''), contact_email) AS contact_email,
               COALESCE(NULLIF(primary_contact_phone, ''), contact_phone) AS contact_phone,
-              street, city, region, postal_code, country, silo, active
+              street, city, region, postal_code, country, silo, active,
+              application_url, announcement, submission_method, submission_email
          FROM lenders
         WHERE id::text = $1
         LIMIT 1`,
@@ -101,6 +117,12 @@ router.patch(
       region: str(body.region),
       postal_code: str(body.postal_code),
       country: str(body.country),
+      // BF_SERVER_LENDER_COMPANY_PARITY_v1 - same field set as the staff lender form
+      // (commission-free); lenders can maintain these themselves.
+      application_url: str(body.application_url),
+      announcement: str(body.announcement),
+      submission_method: body.submission_method !== undefined && body.submission_method !== null && String(body.submission_method).trim() !== "" ? String(body.submission_method).trim().toUpperCase() : null,
+      submission_email: str(body.submission_email),
     };
     const keys = Object.keys(fields).filter((key) => body[key] !== undefined);
 
@@ -128,7 +150,8 @@ router.patch(
                   COALESCE(NULLIF(primary_contact_name, ''), contact_name) AS contact_name,
                   COALESCE(NULLIF(primary_contact_email, ''), contact_email) AS contact_email,
                   COALESCE(NULLIF(primary_contact_phone, ''), contact_phone) AS contact_phone,
-                  street, city, region, postal_code, country, silo, active`,
+                  street, city, region, postal_code, country, silo, active,
+                  application_url, announcement, submission_method, submission_email`,
       [req.lenderId, ...values]
     );
 
@@ -144,7 +167,8 @@ router.get(
     const result = await pool.query(
       `SELECT id, name, category, type, country, active,
               amount_min, amount_max, interest_min, interest_max, rate_kind, rate_type,
-              rate_period_days, term_min, term_max, min_credit_score, eligibility_notes
+              rate_period_days, term_min, term_max, min_credit_score, eligibility_notes,
+              required_documents
          FROM lender_products
         WHERE lender_id::text = $1 AND silo = 'BF'
         ORDER BY category, name`,
@@ -154,6 +178,27 @@ router.get(
     return res.json({ status: "ok", data: result.rows });
   })
 );
+
+// BF_SERVER_LENDER_PRODUCT_NOTIFY_v1 - fire-and-forget staff notification when a
+// lender creates or edits one of their products. contextUrl opens the product
+// editor in the staff portal (LendersPage reads ?editProduct=). refId is unique
+// per event so every change notifies (the notifications table dedupes on refId).
+function notifyStaffOfProductChange(lenderId: string, productId: string, productName: string, verb: "created" | "updated"): void {
+  void (async () => {
+    const lender = await pool.query<{ name: string | null }>(`SELECT name FROM lenders WHERE id::text = $1 LIMIT 1`, [lenderId]);
+    const lenderName = lender.rows[0]?.name ?? "A lender";
+    await notifyAllStaff({
+      pool,
+      notificationType: "lender_product_updated",
+      title: "Lender product " + verb,
+      body: lenderName + " " + verb + " product \"" + productName + "\" in the lender portal - please review.",
+      refTable: "lender_products",
+      refId: productId + ":" + Date.now(),
+      contextUrl: "/lenders?editProduct=" + encodeURIComponent(productId),
+      silo: "BF",
+    });
+  })().catch((err) => console.error("[lender-self] product notify failed:", err));
+}
 
 function validateProduct(body: Record<string, unknown>): { error?: string; value?: Record<string, unknown> } {
   const name = str(body.name);
@@ -184,6 +229,10 @@ function validateProduct(body: Record<string, unknown>): { error?: string; value
       term_max: numOrNull(body.term_max),
       min_credit_score: numOrNull(body.min_credit_score),
       eligibility_notes: str(body.eligibility_notes),
+      // BF_SERVER_LENDER_PRODUCT_PARITY_v1 - active toggle + required documents,
+      // same as the staff product form (only commission stays staff-only).
+      active: typeof body.active === "boolean" ? body.active : null,
+      required_documents: normalizeRequiredDocuments(body.required_documents),
     },
   };
 }
@@ -199,10 +248,12 @@ router.post(
       `INSERT INTO lender_products
          (id, lender_id, name, category, type, country, silo, active,
           amount_min, amount_max, interest_min, interest_max, rate_kind, rate_type,
-          rate_period_days, term_min, term_max, min_credit_score, eligibility_notes)
-       VALUES (gen_random_uuid()::text, $1, $2, $3, $3, $4, 'BF', true,
-          $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-       RETURNING id`,
+          rate_period_days, term_min, term_max, min_credit_score, eligibility_notes,
+          required_documents)
+       VALUES (gen_random_uuid()::text, $1, $2, $3, $3, $4, 'BF', COALESCE($16, true),
+          $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+          COALESCE($17::jsonb, '[]'::jsonb))
+       RETURNING id, name`,
       [
         req.lenderId,
         value.name,
@@ -219,8 +270,12 @@ router.post(
         value.term_max,
         value.min_credit_score,
         value.eligibility_notes,
+        value.active,
+        value.required_documents,
       ]
     );
+
+    if (result.rows[0]?.id) notifyStaffOfProductChange(req.lenderId as string, String(result.rows[0].id), String(result.rows[0].name ?? value.name), "created");
 
     return res.status(201).json({ status: "ok", data: { id: result.rows[0]?.id ?? null } });
   })
@@ -239,9 +294,11 @@ router.patch(
               amount_min = $6, amount_max = $7, interest_min = $8, interest_max = $9,
               rate_kind = $10, rate_type = $11, rate_period_days = $12,
               term_min = $13, term_max = $14, min_credit_score = $15, eligibility_notes = $16,
+              active = COALESCE($17, active),
+              required_documents = COALESCE($18::jsonb, required_documents),
               updated_at = now()
         WHERE id::text = $2 AND lender_id::text = $1 AND silo = 'BF'
-        RETURNING id`,
+        RETURNING id, name`,
       [
         req.lenderId,
         req.params.id,
@@ -259,10 +316,14 @@ router.patch(
         value.term_max,
         value.min_credit_score,
         value.eligibility_notes,
+        value.active,
+        value.required_documents,
       ]
     );
 
     if (!result.rows[0]) return res.status(404).json({ status: "error", message: "product_not_found_or_not_yours" });
+    // BF_SERVER_LENDER_PRODUCT_NOTIFY_v1
+    notifyStaffOfProductChange(req.lenderId as string, String(result.rows[0].id), String(result.rows[0].name ?? value.name), "updated");
     return res.json({ status: "ok", data: { id: result.rows[0].id } });
   })
 );
