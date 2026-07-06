@@ -36,6 +36,16 @@ router.get("/", safeHandler(async (req: any, res: any) => {
                title, notes AS body, status AS extra
           FROM crm_tasks WHERE ${col} = $1 AND silo = $2
         UNION ALL
+        -- BF_SERVER_TIMELINE_UNIFIED_TASKS_v1 - the HubSpot-style TaskPopup now
+        -- writes to the unified tasks table (via /api/tasks), not crm_tasks.
+        -- Without this branch a task created from a contact (BF or BI) never
+        -- appeared on that contact's timeline. Same kind/shape so no UI change;
+        -- body maps from tasks.body, status from tasks.status. Excludes
+        -- soft-deleted rows.
+        SELECT 'task' AS kind, id::text, created_at AS ts,
+               title, body AS body, status AS extra
+          FROM tasks WHERE ${col} = $1 AND silo = $2 AND deleted_at IS NULL
+        UNION ALL
         SELECT 'call' AS kind, id::text, created_at AS ts,
                direction AS title, notes AS body, twilio_call_sid AS extra
           FROM crm_call_log WHERE ${col} = $1 AND silo = $2
@@ -145,6 +155,16 @@ router.get("/", safeHandler(async (req: any, res: any) => {
         SELECT 'task' AS kind, id::text, created_at AS ts,
                title, notes AS body, status AS extra
           FROM crm_tasks WHERE ${col} = $1 AND silo = $2
+        UNION ALL
+        -- BF_SERVER_TIMELINE_UNIFIED_TASKS_v1 - the HubSpot-style TaskPopup now
+        -- writes to the unified tasks table (via /api/tasks), not crm_tasks.
+        -- Without this branch a task created from a contact (BF or BI) never
+        -- appeared on that contact's timeline. Same kind/shape so no UI change;
+        -- body maps from tasks.body, status from tasks.status. Excludes
+        -- soft-deleted rows.
+        SELECT 'task' AS kind, id::text, created_at AS ts,
+               title, body AS body, status AS extra
+          FROM tasks WHERE ${col} = $1 AND silo = $2 AND deleted_at IS NULL
         UNION ALL
         SELECT 'call' AS kind, id::text, created_at AS ts,
                direction AS title, notes AS body, twilio_call_sid AS extra
