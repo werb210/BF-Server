@@ -74,6 +74,43 @@ export async function authMeHandler(
       return;
     }
 
+    // AUTH_ME_CLIENT_IDENTITY_v1 - OTP-verified CLIENT tokens are not users rows:
+    // their sub is "client:<phone>" (not a UUID) and role is "client" (outside the
+    // staff role enum). The UUID gate below returned 401 for every signed-in client,
+    // so the client app's useAuth() got null, never learned the phone, and Maya
+    // could not recognize the logged-in user. Return identity straight from the
+    // verified token claims instead. This does NOT relax auth: requireAuth already
+    // verified the JWT signature upstream.
+    const rawRole = (user as { role?: unknown }).role;
+    const isClientToken =
+      (user as { isClient?: unknown }).isClient === true ||
+      (typeof rawRole === "string" && rawRole.toLowerCase() === "client");
+    if (isClientToken) {
+      const clientPhone = typeof user.phone === "string" ? user.phone : null;
+      const clientBody = {
+        success: true as const,
+        ok: true as const,
+        data: {
+          user: {
+            id: String(user.userId ?? (clientPhone ? `client:${clientPhone}` : "client")),
+            role: "client",
+            silo: "BF",
+            phone: clientPhone,
+            first_name: null,
+            last_name: null,
+            email:
+              typeof (user as { email?: unknown }).email === "string"
+                ? (user as { email?: string }).email
+                : null,
+            silos: [] as string[],
+          },
+        },
+      };
+      res.set("Cache-Control", "no-store");
+      res.status(200).json(clientBody);
+      return;
+    }
+
     const rawUserId = user.userId ?? "";
     if (!UUID_REGEX.test(rawUserId)) {
       respondAuthError(
