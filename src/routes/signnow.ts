@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { dbQuery } from "../db.js";
 import { finalizeSignedApplication } from "../signnow/finalizeSignedApplication.js";
+import { attachSignedPnwDocument } from "../signnow/pnwSigning.js";
 
 // BF_SERVER_BLOCK_v141_SIGNNOW_WEBHOOK_REPAIR_v1
 // HMAC-SHA256 verify against SIGNNOW_WEBHOOK_SECRET. SignNow sends the
@@ -98,6 +99,26 @@ router.post(
         );
         console.log("[signnow-webhook] referrer_agreement_signed", { referrerId: refMatch.rows[0].id });
         res.status(200).json({ received: true, match: "referrer" });
+        return;
+      }
+    }
+
+    // BF_SERVER_PNW_ATTACH_v1 - Personal Net Worth signed. PNW uses its own
+    // single-document SignNow envelope, separate from application signing.
+    // Attach the signed PDF to the application's Documents list and stop here.
+    if (documentGroupId || documentId) {
+      const pnwIds = [documentGroupId, documentId].filter(Boolean) as string[];
+      const pnwMatch = await dbQuery<{ id: string }>(
+        `select id::text as id from applications
+          where metadata->'pnw_signnow'->>'group_id' = any($1::text[])
+             or metadata->'pnw_signnow'->>'doc_id'   = any($1::text[])
+          limit 1`,
+        [pnwIds],
+      );
+      if (pnwMatch.rows[0]) {
+        const result = await attachSignedPnwDocument(pnwMatch.rows[0].id);
+        console.log("[signnow-webhook] pnw_signed_attach", { applicationId: pnwMatch.rows[0].id, ...result });
+        res.status(200).json({ received: true, match: "pnw", attached: result.attached });
         return;
       }
     }

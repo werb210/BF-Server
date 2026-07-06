@@ -3,7 +3,8 @@
 // submits it (a one-document, one-signer SignNow envelope), separate from the
 // application signing group. The signed copy is then preferred in the lender
 // package over the freshly-rendered fill.
-import { dbQuery } from "../db.js";
+import { randomUUID, createHash } from "node:crypto";
+import { dbQuery, pool } from "../db.js";
 import {
   isApiKeyConfigured,
   uploadDocumentWithFieldExtract,
@@ -14,6 +15,10 @@ import {
   downloadDocument,
 } from "./signnowClient.js";
 import { buildPnwPdf } from "./pnwPdfBuilder.js";
+import { getStorage } from "../lib/storage/index.js";
+
+// Category shown in the staff Documents list for the signed PNW.
+export const PNW_DOCUMENT_CATEGORY = "Personal Net Worth";
 
 export const PNW_DOC_TYPES = ["net_worth_statement", "personal_net_worth"];
 export function isPnwDocType(docType: string): boolean { return PNW_DOC_TYPES.includes(docType); }
@@ -79,6 +84,105 @@ export async function getSignedPnwPdf(applicationId: string): Promise<Buffer | n
     return await downloadDocument(docId);
   } catch {
     return null;
+  }
+}
+
+// BF_SERVER_PNW_ATTACH_v1 — attach the SIGNED Personal Net Worth PDF to the
+// application's Documents list. The PNW is signed in its own SignNow envelope
+// and was previously only fetched for the lender package, so no `documents`
+// row existed for staff to view. Best-effort and idempotent by content hash:
+// repeated webhook delivery or backfill calls no-op and never throw.
+export async function attachSignedPnwDocument(applicationId: string): Promise<{ attached: boolean; reason?: string }> {
+  if (!applicationId) return { attached: false, reason: "missing_application_id" };
+  if (!isApiKeyConfigured()) return { attached: false, reason: "signnow_not_configured" };
+
+  try {
+    const r = await dbQuery<{ group_id: string | null; doc_id: string | null }>(
+      `SELECT metadata->'pnw_signnow'->>'group_id' AS group_id,
+              metadata->'pnw_signnow'->>'doc_id'   AS doc_id
+         FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+      [applicationId],
+    );
+    const groupId = r.rows[0]?.group_id;
+    const docId = r.rows[0]?.doc_id;
+    if (!groupId || !docId) return { attached: false, reason: "no_pnw_session" };
+
+    const status = await getDocumentGroupStatus(groupId);
+    if (!status.signed) return { attached: false, reason: "not_signed" };
+
+    const pdf = await downloadDocument(docId);
+    if (!pdf || pdf.length === 0) return { attached: false, reason: "download_failed" };
+
+    const hash = createHash("sha256").update(pdf).digest("hex");
+    const dup = await dbQuery<{ id: string }>(
+      `SELECT id::text AS id FROM documents
+        WHERE application_id::text = ($1)::text AND hash = $2
+        LIMIT 1`,
+      [applicationId, hash],
+    ).catch(() => ({ rows: [] as { id: string }[] }));
+    if (dup.rows.length > 0) return { attached: true, reason: "already_attached" };
+
+    const filename = `Personal-Net-Worth-Signed-${applicationId}.pdf`;
+    const put = await getStorage().put({
+      buffer: pdf,
+      filename,
+      contentType: "application/pdf",
+      pathPrefix: `applications/${applicationId}`,
+    });
+
+    const documentId = randomUUID();
+    const versionId = randomUUID();
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `INSERT INTO documents
+           (id, application_id, filename, hash, category,
+            storage_path, blob_name, blob_url, size_bytes,
+            status, ocr_status, uploaded_by, document_type, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'accepted','skipped','system',$10,now(),now())`,
+        [
+          documentId,
+          applicationId,
+          filename,
+          hash,
+          PNW_DOCUMENT_CATEGORY,
+          put.blobName,
+          put.blobName,
+          put.url,
+          put.sizeBytes,
+          "personal_net_worth",
+        ],
+      );
+      await client.query(
+        `INSERT INTO document_versions
+           (id, document_id, version, blob_name, hash, metadata, content, created_at)
+         VALUES ($1, $2, 1, $3, $4, $5::jsonb, $6, now())`,
+        [
+          versionId,
+          documentId,
+          put.blobName,
+          hash,
+          JSON.stringify({
+            source: "signnow_pnw",
+            groupId,
+            docId,
+            signedAt: new Date().toISOString(),
+          }),
+          put.url,
+        ],
+      );
+      await client.query("COMMIT");
+    } catch {
+      await client.query("ROLLBACK").catch(() => undefined);
+      return { attached: false, reason: "insert_failed" };
+    } finally {
+      client.release();
+    }
+
+    return { attached: true };
+  } catch {
+    return { attached: false, reason: "error" };
   }
 }
 
