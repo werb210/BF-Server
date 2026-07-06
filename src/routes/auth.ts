@@ -191,7 +191,7 @@ router.post("/otp/verify", async (req, res) => {
     // BF_SERVER_LENDER_OTP_v1 - lender-portal login. LenderLoginPage sends
     // userType:"lender" on verify. Match the phone (last-10-digits, punctuation
     // agnostic, same rule as the v68 client dedup) against lenders.contact_phone
-    // of active BF lenders; if several match, most recently updated wins. Lender
+    // of active BF lenders; ambiguous shared-phone matches are refused. Lender
     // wins over staff for lender-portal logins. If no lender matches, refuse with
     // 403 instead of falling through to a client token, so the login page can
     // show a clear "not registered as a lender" error.
@@ -213,10 +213,17 @@ router.post("/otp/verify", async (req, res) => {
                 = right(regexp_replace($1, '[^0-9]', '', 'g'), 10)
             )
             AND length(regexp_replace($1, '[^0-9]', '', 'g')) >= 10
-          ORDER BY updated_at DESC
-          LIMIT 1`,
+          ORDER BY updated_at DESC`,
         [phone]
       );
+      // BF_SERVER_LENDER_OTP_AMBIGUOUS_v1 - if the same phone matches more than
+      // one active lender (e.g. a shared fallback contact number), do not silently
+      // pick one - refuse with a clear error so the data collision is caught and
+      // fixed rather than locking the other lenders out invisibly.
+      if (lenderResult.rows.length > 1) {
+        console.log("[otp_verify] lender_login_ambiguous_phone", { phone, matches: lenderResult.rows.length });
+        return res.status(409).json({ error: "ambiguous_lender_phone", message: "This phone number is set on more than one lender. Contact CBoreal to give each lender a unique contact phone." });
+      }
       const lender = lenderResult.rows[0];
       if (!lender) {
         console.log("[otp_verify] lender_login_no_match", { phone });

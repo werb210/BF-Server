@@ -360,8 +360,6 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET", path: "/api/lenders", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/settings", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/lender/me", roles: [ROLES.LENDER] },
-  { method: "GET", path: "/api/lender/applications", roles: [ROLES.LENDER] },
-  { method: "GET", path: "/api/lender/applications/:id", roles: [ROLES.LENDER] },
   { method: "GET", path: "/api/lender/products", roles: [ROLES.LENDER] },
   { method: "PATCH", path: "/api/lender/me", roles: [ROLES.LENDER] },
   { method: "POST", path: "/api/lender/products", roles: [ROLES.LENDER] },
