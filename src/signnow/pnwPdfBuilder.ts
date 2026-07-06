@@ -49,7 +49,9 @@ export async function buildPnwPdfFromData(payload: PnwPayload): Promise<Uint8Arr
     TR(pg, "Personal Net Worth Declaration", PW - M, 58, 9.5, F, rgb(0.78, 0.82, 0.88));
   };
   const bar = (pg: PDFPage, label: string, yTop: number) => { rect(pg, M, yTop, CW, 16, NAVY); T(pg, label.toUpperCase(), M + 7, yTop + 12, 9.5, FB, WHITE); return yTop + 16; };
-  const cell = (pg: PDFPage, x: number, yTop: number, w: number, h: number, label: string, value: string, o: { size?: number; font?: PDFFont } = {}) => { box(pg, x, yTop, w, h); T(pg, label.toUpperCase(), x + 5, yTop + 9, 6, F, GREY); if (value !== "") T(pg, value, x + 5, yTop + 20, o.size ?? 9.5, o.font ?? FB, INK); };
+  // BF_SERVER_PNW_CELL_FIT_v1 - measure the value and shrink the font (then
+  // ellipsize) so a long value never overflows into the neighbouring column.
+  const cell = (pg: PDFPage, x: number, yTop: number, w: number, h: number, label: string, value: string, o: { size?: number; font?: PDFFont } = {}) => { box(pg, x, yTop, w, h); T(pg, label.toUpperCase(), x + 5, yTop + 9, 6, F, GREY); if (value !== "") { const fnt = o.font ?? FB; const avail = w - 10; let sz = o.size ?? 9.5; while (sz > 6 && fnt.widthOfTextAtSize(String(value), sz) > avail) sz -= 0.5; let val = String(value); if (fnt.widthOfTextAtSize(val, sz) > avail) { while (val.length > 1 && fnt.widthOfTextAtSize(val + "...", sz) > avail) val = val.slice(0, -1); val = val + "..."; } T(pg, val, x + 5, yTop + 20, sz, fnt, INK); } };
   const row = (pg: PDFPage, yTop: number, h: number, cells: Cell[]) => { let x = M; for (const c of cells) { const w = CW * c.f; cell(pg, x, yTop, w, h, c.l, c.v ?? "", c.o ?? {}); x += w; } return yTop + h; };
 
   // ── PAGE 1 ──
