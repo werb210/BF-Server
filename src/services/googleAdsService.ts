@@ -117,3 +117,70 @@ export async function runGoogleAdsReport(days: number): Promise<AdsReport | AdsN
     return { ...base, error: e instanceof Error ? e.message : "Google Ads request failed" };
   }
 }
+
+// BF_SERVER_GOOGLE_ADS_DIAGNOSTICS_v1 - "test Google Ads now". Reports which of
+// the five credentials are present, then (if all present) does a live token
+// exchange + a trivial GAQL call, mapping the exact failure to a plain
+// diagnosis so setup is a checklist, not a guessing game. Never returns secrets.
+export async function googleAdsDiagnostics(): Promise<{
+  devTokenSet: boolean; clientIdSet: boolean; clientSecretSet: boolean;
+  refreshTokenSet: boolean; customerIdSet: boolean; loginCustomerIdSet: boolean;
+  customerId: string | null; loginCustomerId: string | null;
+  missing: string[]; tokenExchange?: string; apiCall?: string; diagnosis: string;
+}> {
+  const devTokenSet = Boolean(process.env.GOOGLE_ADS_DEVELOPER_TOKEN);
+  const clientIdSet = Boolean(process.env.GOOGLE_ADS_CLIENT_ID);
+  const clientSecretSet = Boolean(process.env.GOOGLE_ADS_CLIENT_SECRET);
+  const refreshTokenSet = Boolean(process.env.GOOGLE_ADS_REFRESH_TOKEN);
+  const customerIdSet = Boolean(process.env.GOOGLE_ADS_CUSTOMER_ID);
+  const loginCustomerIdSet = Boolean(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID);
+  const missing: string[] = [];
+  if (!devTokenSet) missing.push("GOOGLE_ADS_DEVELOPER_TOKEN");
+  if (!clientIdSet) missing.push("GOOGLE_ADS_CLIENT_ID");
+  if (!clientSecretSet) missing.push("GOOGLE_ADS_CLIENT_SECRET");
+  if (!refreshTokenSet) missing.push("GOOGLE_ADS_REFRESH_TOKEN");
+  if (!customerIdSet) missing.push("GOOGLE_ADS_CUSTOMER_ID");
+  const base = {
+    devTokenSet, clientIdSet, clientSecretSet, refreshTokenSet, customerIdSet, loginCustomerIdSet,
+    customerId: customerIdSet ? cid() : null,
+    loginCustomerId: loginCustomerIdSet ? loginCid() : null,
+    missing,
+  };
+  if (missing.length) {
+    return { ...base, diagnosis: `missing_env: ${missing.join(", ")}` };
+  }
+  // Step 1: refresh token -> access token.
+  let accessToken = "";
+  try {
+    tokenCache = null; // force a fresh exchange for the test
+    accessToken = await getAccessToken();
+  } catch (e) {
+    return { ...base, tokenExchange: e instanceof Error ? e.message : String(e), diagnosis: "refresh_token_or_oauth_client_invalid" };
+  }
+  // Step 2: a trivial GAQL call to confirm the dev token + customer id work.
+  try {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${accessToken}`,
+      "developer-token": String(process.env.GOOGLE_ADS_DEVELOPER_TOKEN),
+      "Content-Type": "application/json",
+    };
+    const lc = loginCid();
+    if (lc) headers["login-customer-id"] = lc;
+    const r = await fetch(`https://googleads.googleapis.com/v18/customers/${cid()}/googleAds:search`, {
+      method: "POST", headers,
+      body: JSON.stringify({ query: "SELECT customer.id FROM customer LIMIT 1" }),
+    });
+    if (r.ok) {
+      return { ...base, tokenExchange: "ok", apiCall: "ok", diagnosis: "ok" };
+    }
+    const text = (await r.text()).slice(0, 600);
+    let diagnosis = `api_error_${r.status}`;
+    if (r.status === 401) diagnosis = "developer_token_or_auth_invalid";
+    else if (r.status === 403 && /not.*approved|test|DEVELOPER_TOKEN_NOT_APPROVED|PROHIBITED/i.test(text)) diagnosis = "developer_token_not_approved_for_production";
+    else if (r.status === 403) diagnosis = "forbidden_check_login_customer_id_or_access";
+    else if (r.status === 404) diagnosis = "customer_id_not_found_or_not_linked";
+    return { ...base, tokenExchange: "ok", apiCall: `status ${r.status}: ${text}`, diagnosis };
+  } catch (e) {
+    return { ...base, tokenExchange: "ok", apiCall: e instanceof Error ? e.message : String(e), diagnosis: "api_call_failed" };
+  }
+}

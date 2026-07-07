@@ -348,4 +348,23 @@ router.post(
   },
 );
 
+// BF_SERVER_GOOGLE_ADS_DIAGNOSTICS_v1 - "test Google Ads now". Reports which of
+// the five credentials are set and, when all are present, does a live token
+// exchange + trivial API call, returning a plain diagnosis (e.g.
+// developer_token_not_approved_for_production, refresh_token_or_oauth_client_invalid,
+// customer_id_not_found_or_not_linked, ok). Never returns secrets. Admin-guarded.
+router.post(
+  "/google-ads-diagnostics",
+  requireCapability([CAPABILITIES.USER_MANAGE]),
+  async (_req: any, res: any) => {
+    try {
+      const { googleAdsDiagnostics } = await import("../services/googleAdsService.js");
+      const out = await googleAdsDiagnostics();
+      return res.json(out);
+    } catch (e: any) {
+      return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+);
+
 export default router;
