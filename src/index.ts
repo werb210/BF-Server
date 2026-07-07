@@ -173,6 +173,11 @@ export async function start(): Promise<void> {
     try { const w = startProductKnowledgeWorker(pool); workerStops.push(w.stop); console.log("[startup] product-knowledge worker started"); }
     catch (err) { console.error("[startup] product-knowledge worker failed to start:", err); }
 
+    // BF_SERVER_MARKETING_KNOWLEDGE_v1 - ingest marketing templates + collateral into Maya knowledge.
+    const { startMarketingKnowledgeWorker } = await import("./workers/marketingKnowledgeWorker.js");
+    try { const w = startMarketingKnowledgeWorker(pool); workerStops.push(w.stop); console.log("[startup] marketing-knowledge worker started"); }
+    catch (err) { console.error("[startup] marketing-knowledge worker failed to start:", err); }
+
     // BF_SERVER_BLOCK_v744 — advance BI leads to Engaged on an email reply.
     const { startBiOutreachEmailReplyWorker } = await import("./workers/biOutreachEmailReplyWorker.js");
     try { const w = startBiOutreachEmailReplyWorker(pool); workerStops.push(w.stop); console.log("[startup] BI outreach email-reply worker started"); }
