@@ -166,7 +166,7 @@ export async function googleAdsDiagnostics(): Promise<{
     };
     const lc = loginCid();
     if (lc) headers["login-customer-id"] = lc;
-    const r = await fetch(`https://googleads.googleapis.com/v18/customers/${cid()}/googleAds:search`, {
+    const r = await fetch(`https://googleads.googleapis.com/${API_VERSION}/customers/${cid()}/googleAds:search`, {
       method: "POST", headers,
       body: JSON.stringify({ query: "SELECT customer.id FROM customer LIMIT 1" }),
     });
