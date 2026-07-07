@@ -367,4 +367,49 @@ router.post(
   },
 );
 
+// BF_SERVER_AD_ATTRIBUTION_BACKFILL_v1 - re-resolve gclids captured while Google Ads
+// creds were down. Finds contacts with an 'attribution' timeline event carrying a
+// gclid but no contact_ad_attribution row, and resolves each via the Google Ads API.
+// Google's click_view only reaches back ~90 days, so older clicks may not resolve.
+// Admin-guarded. Returns candidate count and how many actually resolved.
+router.post(
+  "/backfill-ad-attribution",
+  requireCapability([CAPABILITIES.USER_MANAGE]),
+  async (_req: any, res: any) => {
+    try {
+      const { googleAdsConfigured } = await import("../services/googleAdsService.js");
+      if (!googleAdsConfigured()) return res.json({ ok: false, error: "google_ads_not_configured" });
+      const { resolveAndStoreAdAttribution } = await import("../services/googleAdsAttribution.js");
+      const { pool } = await import("../db.js");
+      const rows = (await pool.query<{ contact_id: string; gclid: string; captured_at: string | null }>(
+        `SELECT DISTINCT ON (e.contact_id::text)
+                e.contact_id::text AS contact_id,
+                e.payload->>'gclid' AS gclid,
+                e.payload->>'capturedAt' AS captured_at
+           FROM crm_timeline_events e
+          WHERE e.event_type = 'attribution'
+            AND COALESCE(e.payload->>'gclid','') <> ''
+            AND NOT EXISTS (
+              SELECT 1 FROM contact_ad_attribution a WHERE a.contact_id::text = e.contact_id::text
+            )
+          ORDER BY e.contact_id::text, e.created_at DESC
+          LIMIT 1000`,
+      )).rows;
+      const ids = rows.map((r) => r.contact_id);
+      for (const r of rows) {
+        try { await resolveAndStoreAdAttribution({ contactId: r.contact_id, gclid: r.gclid, occurredAt: r.captured_at }); } catch { /* skip */ }
+      }
+      const resolved = ids.length
+        ? Number((await pool.query<{ n: number }>(
+            `SELECT count(DISTINCT contact_id)::int AS n FROM contact_ad_attribution WHERE contact_id::text = ANY($1)`,
+            [ids],
+          )).rows[0]?.n ?? 0)
+        : 0;
+      return res.json({ ok: true, candidates: rows.length, resolved, note: "Clicks older than ~90 days may not resolve (Google limit)." });
+    } catch (e: any) {
+      return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+);
+
 export default router;
