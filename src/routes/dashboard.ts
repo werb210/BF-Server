@@ -13,7 +13,7 @@ router.get("/", requireAuth, safeHandler(async (_req: any, res: any) => {
 
 router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => { // BF_SERVER_BLOCK_v829_DEALS_NOT_COMPANIONS
   const silo = getSilo(res);
-  const [active, won, stageRows] = await Promise.all([
+  const [active, won, stageRows, commissionRows] = await Promise.all([
     pool.query<{ count: string }>(
       // BF_SERVER_BLOCK_v786_DASHBOARD_MATCH_BOARD — count exactly what the
       // Pipeline board shows: the same source/filter as GET /api/portal/applications
@@ -53,6 +53,38 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
        GROUP BY 1`,
       [silo]
     ),
+    // BF_SERVER_DASHBOARD_COMMISSION_v1 - projected BF commission per pipeline
+    // stage. BF earns 2% of the funded amount unless the chosen product carries
+    // a commission override (lender_products.commission, a percent). Funded
+    // amount = the accepted term sheet amount when one exists (offers.amount,
+    // status='accepted'), else the requested_amount. Grouped into the same board
+    // columns as the counts above so the dashboard can show a commission figure
+    // sitting in every stage, not just earned. (lender_products.id is text;
+    // applications.lender_product_id is uuid, so the join casts to text.)
+    pool.query<{ stage: string; commission: string }>(
+      `SELECT (CASE WHEN a.pipeline_state IN
+                 ('Received','In Review','Documents Required','Additional Steps Required','Off to Lender','Offer','Accepted','Rejected')
+               THEN a.pipeline_state ELSE 'Received' END) AS stage,
+              COALESCE(SUM(
+                COALESCE(off.amount, a.requested_amount, 0)
+                * (COALESCE(lp.commission, 2) / 100.0)
+              ), 0)::text AS commission
+       FROM applications a
+       LEFT JOIN lender_products lp ON lp.id = a.lender_product_id::text
+       LEFT JOIN LATERAL (
+         SELECT o.amount FROM offers o
+          WHERE o.application_id = a.id AND o.status = 'accepted'
+          ORDER BY o.updated_at DESC NULLS LAST
+          LIMIT 1
+       ) off ON TRUE
+       WHERE UPPER(a.silo) = UPPER($1)
+         AND a.parent_application_id IS NULL
+         AND COALESCE(a.pipeline_state, '') NOT IN ('draft', 'Draft', '')
+         AND COALESCE(NULLIF(TRIM(a.name), ''), NULLIF(TRIM(a.business_legal_name), '')) IS NOT NULL
+         AND LOWER(TRIM(COALESCE(a.name, a.business_legal_name, ''))) NOT IN ('draft', 'draft application')
+       GROUP BY 1`,
+      [silo]
+    ),
   ]);
 
   const pipelineByStage: Record<string, number> = {};
@@ -60,14 +92,23 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
     pipelineByStage[r.stage] = parseInt(r.count, 10);
   });
 
+  // BF_SERVER_DASHBOARD_COMMISSION_v1 - projected commission per stage + the
+  // earned figure (the Accepted bucket = commission on funded deals).
+  const commissionByStage: Record<string, number> = {};
+  (commissionRows.rows ?? []).forEach((r: any) => {
+    commissionByStage[r.stage] = Math.round((Number(r.commission) || 0) * 100) / 100;
+  });
+  const commissionEarned = commissionByStage["Accepted"] ?? 0;
+
   res.json({
     status: "ok",
     data: {
       activeApplications: parseInt(active.rows[0]?.count ?? "0", 10),
       dealsWonThisMonth: parseInt(won.rows[0]?.count ?? "0", 10),
-      commissionEarned: 0,
+      commissionEarned,
       newLeadsToday: 0,
       pipelineByStage,
+      commissionByStage,
     },
   });
 }));
