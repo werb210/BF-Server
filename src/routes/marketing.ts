@@ -670,4 +670,31 @@ router.delete("/sequences/:id", requireAuth, safeHandler(async (req: any, res: a
   respondOk(res, { deleted: true });
 }));
 
+// BF_SERVER_AUTOMATIONS_INVENTORY_v1 - read-only list of every background automation
+// ("when X happens -> do Y") currently wired and firing. Source of truth for the
+// portal Automations section. Curated from the running workers + event hooks.
+router.get("/automations", requireAuth, safeHandler(async (_req: any, res: any) => {
+  const items = [
+    { id: "product-knowledge", name: "Product knowledge sync", type: "scheduled", cadence: "Every 10 min", trigger: "A lender product is added or changed", action: "Ingest it into Maya's knowledge; prune removed products", status: "active" },
+    { id: "marketing-knowledge", name: "Marketing knowledge sync", type: "scheduled", cadence: "Every 10 min", trigger: "A marketing template or collateral file is added", action: "Ingest it into Maya's knowledge", status: "active" },
+    { id: "sequence-worker", name: "Drip sequences", type: "scheduled", cadence: "Every 30 sec", trigger: "A contact is enrolled in a sequence and a step is due", action: "Send the next email/SMS step", status: "active" },
+    { id: "sms-cascade", name: "SMS-to-email fallback", type: "scheduled", cadence: "36h after send", trigger: "A marketing SMS gets no click and no reply within 36h", action: "Send the fallback marketing email", status: "active" },
+    { id: "scheduled-email", name: "Scheduled email send", type: "scheduled", cadence: "When due", trigger: "A drafted email reaches its scheduled send time", action: "Send it via Outlook/Graph", status: "active" },
+    { id: "email-followup", name: "Unopened-email nudge", type: "scheduled", cadence: "24 business hrs", trigger: "A staff 1:1 email is not opened within 24 business hours", action: "Notify the sender to follow up", status: "active" },
+    { id: "read-receipt", name: "Email open tracking", type: "scheduled", cadence: "Polling", trigger: "A recipient opens a tracked email", action: "Log the open on the contact timeline", status: "active" },
+    { id: "mail-reply", name: "Inbound reply capture", type: "scheduled", cadence: "Polling", trigger: "A contact replies by email", action: "File the reply on the timeline (stops their sequence if set)", status: "active" },
+    { id: "task-reminders", name: "Task reminders", type: "scheduled", cadence: "When due", trigger: "A task reminder time passes", action: "Send an in-app notification", status: "active" },
+    { id: "lender-package", name: "Lender package dispatch", type: "scheduled", cadence: "Job queue", trigger: "An application is finalized for sending", action: "Dispatch the package to the selected lenders", status: "active" },
+    { id: "banking-auto", name: "Banking analysis", type: "scheduled", cadence: "When OCR ready", trigger: "Bank-statement documents finish OCR", action: "Run the banking analysis", status: "active" },
+    { id: "inbound-attachment", name: "Inbound attachment filing", type: "scheduled", cadence: "Every few min", trigger: "An inbound email has attachments", action: "File them to the matching CRM contact", status: "active" },
+    { id: "signnow-poller", name: "SignNow completion", type: "scheduled", cadence: "Polling", trigger: "A SignNow document is signed", action: "Finalize the application", status: "active" },
+    { id: "bi-outreach-reply", name: "BI outreach auto-advance", type: "scheduled", cadence: "Polling", trigger: "A BI outreach lead replies", action: "Advance New/Contacted -> Engaged", status: "active" },
+    { id: "sendgrid-suppress", name: "CASL suppression", type: "event", cadence: "On event", trigger: "An email bounces, is marked spam, or unsubscribes", action: "Flag the contact opted-out (no more marketing)", status: "active" },
+    { id: "stop-on-reply", name: "Stop sequence on reply", type: "event", cadence: "On event", trigger: "A contact replies while in a stop-on-reply sequence", action: "Stop their sequence", status: "active" },
+    { id: "signnow-referrer", name: "Referrer activation", type: "event", cadence: "On event", trigger: "A referrer signs their agreement in SignNow", action: "Activate the referrer / attach the signed PNW", status: "active" },
+    { id: "product-update-notify", name: "Product update alert", type: "event", cadence: "On event", trigger: "A lender product is updated", action: "Notify staff", status: "active" },
+  ];
+  respondOk(res, { items });
+}));
+
 export default router;
