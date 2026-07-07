@@ -283,8 +283,44 @@ router.post("/", safeHandler(async (req: any, res: any) => {
   const companyId = s(b.company_id);
   if (contactId) {
     const cr = await pool.query<{ silo: string }>(`SELECT silo FROM contacts WHERE id::text = $1`, [contactId]);
-    if (!cr.rowCount) { respondError(res, 400, "contact_not_found"); return; }
-    silo = (cr.rows[0]!.silo || silo) as typeof silo;
+    if (cr.rowCount) {
+      silo = (cr.rows[0]!.silo || silo) as typeof silo;
+    } else {
+      // BF_SERVER_TASKS_BI_CONTACT_PROMOTE_v1 - the id may belong to a BI outreach
+      // lead (bi_contacts), which the tasks table cannot reference (tasks.contact_id
+      // is FK -> contacts). When staff task/call/email an outreach lead, promote it
+      // into the main CRM contacts table (silo='BI') and attach the task to that
+      // real contact - matching how a BF contact behaves. Idempotent: reuse an
+      // existing BI contacts row matched by phone/email before creating one.
+      const bi = await pool.query<{ full_name: string | null; email: string | null; phone_e164: string | null; company_id: string | null }>(
+        `SELECT full_name, email, phone_e164, company_id FROM bi_contacts WHERE id::text = $1`,
+        [contactId],
+      );
+      if (!bi.rowCount) { respondError(res, 400, "contact_not_found"); return; }
+      const lead = bi.rows[0]!;
+      const phone = lead.phone_e164 ? String(lead.phone_e164) : null;
+      const email = lead.email ? String(lead.email) : null;
+      let promotedId: string | null = null;
+      if (phone || email) {
+        const dupe = await pool.query<{ id: string }>(
+          `SELECT id FROM contacts
+             WHERE silo = 'BI'
+               AND ( ($1::text IS NOT NULL AND phone = $1) OR ($2::text IS NOT NULL AND lower(email) = lower($2)) )
+             LIMIT 1`,
+          [phone, email],
+        );
+        if (dupe.rowCount) promotedId = dupe.rows[0]!.id;
+      }
+      if (!promotedId) {
+        const ins = await pool.query<{ id: string }>(
+          `INSERT INTO contacts (name, email, phone, silo) VALUES ($1,$2,$3,'BI') RETURNING id`,
+          [lead.full_name ?? "BI Contact", email, phone],
+        );
+        promotedId = ins.rows[0]!.id;
+      }
+      b.contact_id = promotedId; // attach the task to the promoted CRM contact
+      silo = "BI" as typeof silo;
+    }
   } else if (companyId) {
     const cr = await pool.query<{ silo: string }>(`SELECT silo FROM companies WHERE id::text = $1`, [companyId]);
     if (!cr.rowCount) { respondError(res, 400, "company_not_found"); return; }
