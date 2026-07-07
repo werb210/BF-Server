@@ -485,6 +485,7 @@ router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
     return;
   }
   const tag = b.tag ? String(b.tag) : null;
+  const templateId = b.templateId ? String(b.templateId) : null; // BF_SERVER_TEMPLATE_ANALYTICS_SENDTPL_v1
   // BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1 - multi-tag include/exclude audience.
   const includeTags = tagArr(b.tags);
   const excludeTags = tagArr(b.excludeTags);
@@ -496,12 +497,12 @@ router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
   if (total > 500) {
     const job = await pool.query<{ id: string }>(
       `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by) VALUES ('email', $1, $2, $3, $4, $5) RETURNING id`,
-      [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags }), total, req.user?.userId ?? null],
+      [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId }), total, req.user?.userId ?? null],
     );
     respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total });
     return;
   }
-  const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut, tags: includeTags, excludeTags });
+  const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut, tags: includeTags, excludeTags, templateId }); // BF_SERVER_TEMPLATE_ANALYTICS_SENDTPL_v1
   respondOk(res, { configured: true, recipients: out.total, sent: out.sent, failed: out.failed, rejected: out.failed, rejectStatus: out.rejectStatus, rejectError: out.rejectError });
 }));
 
