@@ -3,7 +3,7 @@
 // credentials are set, so the portal degrades gracefully. In-memory cached.
 import { logError } from "../observability/logger.js";
 
-const API_VERSION = "v18";
+const API_VERSION = "v24";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 export type AdsRow = { name: string; status?: string; cost: number; impressions: number; clicks: number; ctr: number; cpc: number; conversions: number; convValue: number };
