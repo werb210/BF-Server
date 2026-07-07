@@ -12,7 +12,7 @@ import { sendMarketingSms, trackedLink, lookupLineType } from "./marketingSms.js
 // empty/null = all contacts; otherwise a contact must carry AT LEAST ONE include
 // tag. A contact carrying ANY exclude tag is removed; exclude wins over include.
 // Single `tag` kept for back-compat (raw email panel, SMS, Maya tools, old jobs).
-export type EmailJob = { silo: string; tag: string | null; subject: string; html: string; tags?: string[] | null; excludeTags?: string[] | null };
+export type EmailJob = { silo: string; tag: string | null; subject: string; html: string; tags?: string[] | null; excludeTags?: string[] | null; templateId?: string | null }; // BF_SERVER_TEMPLATE_ANALYTICS_v1
 export type SendProgress = (sent: number, failed: number) => Promise<void>;
 export type EmailSendResult = { total: number; sent: number; failed: number; rejectStatus?: number; rejectError?: string }; // BF_SERVER_EMAIL_FAIL_VISIBILITY_v1
 
@@ -54,18 +54,30 @@ export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendP
     if (alreadySent.rows[0]) { skipped++; i++; continue; }
     const first = (c.name || "").trim().split(/\s+/)[0] || "there";
     const vars = { first_name: first, name: c.name || "there", email: c.email, company: c.company || "" };
+    // BF_SERVER_TEMPLATE_ANALYTICS_v1 - ledger row + tse_id custom arg so SendGrid open/click attributes back to the template.
+    let __tseId: string | null = null;
+    if (job.templateId) {
+      try {
+        const __t = await pool.query<{ id: string }>(
+          `INSERT INTO template_send_events (template_id, contact_id, channel, silo, subject) VALUES ($1,$2,'email',$3,$4) RETURNING id`,
+          [job.templateId, c.id, job.silo, job.subject],
+        );
+        __tseId = __t.rows[0]?.id ?? null;
+      } catch { __tseId = null; }
+    }
     try {
-      const r = await sendOne({ to: c.email, subject: mergeFields(job.subject, vars), html: mergeFields(job.html, vars), contactId: c.id });
+      const r = await sendOne({ to: c.email, subject: mergeFields(job.subject, vars), html: mergeFields(job.html, vars), contactId: c.id, customArgs: __tseId ? { tse_id: __tseId } : undefined });
       if (r.ok) {
         sent++;
         await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [c.id, "email_marketing_sent", JSON.stringify({ subject: job.subject, tag: job.tag })]);
       } else {
         failed++;
+        if (__tseId) await pool.query(`DELETE FROM template_send_events WHERE id = $1`, [__tseId]).catch(() => {});
         if (rejectStatus === undefined) rejectStatus = r.status;
         if (rejectError === undefined) rejectError = r.error;
         console.error("sendgrid_email_failed", { to: c.email, status: r.status, error: r.error });
       }
-    } catch (e) { failed++; if (rejectError === undefined) rejectError = e instanceof Error ? e.message : String(e); console.error("sendgrid_email_exception", { to: c.email, error: e instanceof Error ? e.message : String(e) }); }
+    } catch (e) { failed++; if (__tseId) await pool.query(`DELETE FROM template_send_events WHERE id = $1`, [__tseId]).catch(() => {}); if (rejectError === undefined) rejectError = e instanceof Error ? e.message : String(e); console.error("sendgrid_email_exception", { to: c.email, error: e instanceof Error ? e.message : String(e) }); }
     i++;
     if (onProgress && i % 50 === 0) { try { await onProgress(sent, failed); } catch { /* progress best-effort */ } }
   }
@@ -79,7 +91,7 @@ export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendP
 // identically (and the 36h cascade worker can find the campaign). Mirrors the
 // original inline loop exactly: tracked link, per-send row, opt-out capture, and
 // the no-mobile immediate fallback email.
-export type SmsJob = { silo: string; tag: string | null; body: string; linkUrl: string | null; fbSubject: string | null; fbHtml: string | null; createdBy: string | null };
+export type SmsJob = { silo: string; tag: string | null; body: string; linkUrl: string | null; fbSubject: string | null; fbHtml: string | null; createdBy: string | null; templateId?: string | null }; // BF_SERVER_TEMPLATE_ANALYTICS_v1
 
 export async function countSmsRecipients(pool: Pool, silo: string, tag: string | null): Promise<number> {
   const r = await pool.query<{ n: number }>(
@@ -130,6 +142,8 @@ export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgr
         smsSent++;
         await pool.query(`UPDATE sms_campaign_sends SET message_sid = $2, delivery_status = 'queued' WHERE id = $1`, [sendId, r.sid ?? null]);
         await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [c.id, "sms_marketing_sent", JSON.stringify({ campaignId })]);
+        // BF_SERVER_TEMPLATE_ANALYTICS_v1 - SMS send ledger (sends + replies; SMS click tracking is a follow-up).
+        if (job.templateId) { try { await pool.query(`INSERT INTO template_send_events (template_id, contact_id, channel, silo) VALUES ($1,$2,'sms',$3)`, [job.templateId, c.id, job.silo]); } catch { /* ledger best-effort */ } }
       } else {
         failed++;
         if (r.optedOut) await pool.query(`UPDATE contacts SET sms_opt_out = true, updated_at = now() WHERE id = $1`, [c.id]);

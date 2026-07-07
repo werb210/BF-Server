@@ -291,6 +291,7 @@ router.post("/email/send", safeHandler(async (req: any, res: any) => {
     return;
   }
   const tag = b.tag ? String(b.tag) : null;
+  const templateId = b.templateId ? String(b.templateId) : null; // BF_SERVER_TEMPLATE_ANALYTICS_v1
   // BF_SERVER_BLOCK_v782_VIEW_IN_BROWSER: host a public copy, inject the link.
   const { url: __viewUrl } = await createLandingPageFromHtml(html, silo, subject, req.user?.userId ?? null);
   const htmlOut = withViewInBrowser(html, __viewUrl);
@@ -302,12 +303,12 @@ router.post("/email/send", safeHandler(async (req: any, res: any) => {
     const job = await pool.query<{ id: string }>(
       `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by)
        VALUES ('email', $1, $2, $3, $4, $5) RETURNING id`,
-      [silo, tag, JSON.stringify({ subject, html: htmlOut }), total, req.user?.userId ?? null],
+      [silo, tag, JSON.stringify({ subject, html: htmlOut, templateId }), total, req.user?.userId ?? null],
     );
     respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total });
     return;
   }
-  const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut });
+  const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut, templateId });
   respondOk(res, { configured: true, recipients: out.total, sent: out.sent, failed: out.failed, rejected: out.failed, rejectStatus: out.rejectStatus, rejectError: out.rejectError, capped: false });
 }));
 
@@ -357,6 +358,7 @@ router.post("/sms/send", safeHandler(async (req: any, res: any) => {
     return;
   }
   const tag = b.tag ? String(b.tag) : null;
+  const templateId = b.templateId ? String(b.templateId) : null; // BF_SERVER_TEMPLATE_ANALYTICS_v1
   const linkUrl = b.linkUrl ? String(b.linkUrl) : null;
   const fbSubject = b.fallbackSubject ? String(b.fallbackSubject) : null;
   const fbHtml = b.fallbackHtml ? String(b.fallbackHtml) : null;
@@ -367,12 +369,12 @@ router.post("/sms/send", safeHandler(async (req: any, res: any) => {
     const job = await pool.query<{ id: string }>(
       `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by)
        VALUES ('sms', $1, $2, $3, $4, $5) RETURNING id`,
-      [silo, tag, JSON.stringify({ body, linkUrl, fbSubject, fbHtml }), total, req.user?.userId ?? null],
+      [silo, tag, JSON.stringify({ body, linkUrl, fbSubject, fbHtml, templateId }), total, req.user?.userId ?? null],
     );
     respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total });
     return;
   }
-  const out = await runSmsSend(pool, { silo, tag, body, linkUrl, fbSubject, fbHtml, createdBy: req.user?.userId ?? null });
+  const out = await runSmsSend(pool, { silo, tag, body, linkUrl, fbSubject, fbHtml, createdBy: req.user?.userId ?? null, templateId });
   respondOk(res, { configured: true, recipients: out.total, smsSent: out.smsSent, emailSent: out.emailSent, failed: out.failed });
 }));
 
@@ -547,6 +549,48 @@ router.delete("/templates/:id", requireAuth, safeHandler(async (req: any, res: a
   const silo = resolveSiloFromRequest(req);
   await pool.query("DELETE FROM marketing_template WHERE id = $1 AND silo = $2", [String(req.params.id), silo]);
   respondOk(res, { deleted: true });
+}));
+
+// BF_SERVER_TEMPLATE_ANALYTICS_v1 - per-template sends/opens/clicks/replies. Sends/opens/clicks
+// from the template_send_events ledger; replies attributed to the last template sent to that
+// contact before an inbound message ("last-template-sent" heuristic). Forward-only by design.
+router.get("/templates/analytics", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const r = await pool.query(
+    `SELECT t.id, t.channel, t.name, t.updated_at,
+            COALESCE(s.sends, 0)::int   AS sends,
+            COALESCE(s.opens, 0)::int   AS opens,
+            COALESCE(s.clicks, 0)::int  AS clicks,
+            COALESCE(rp.replies, 0)::int AS replies
+       FROM marketing_template t
+       LEFT JOIN (
+         SELECT template_id,
+                count(*)          AS sends,
+                count(opened_at)  AS opens,
+                count(clicked_at) AS clicks
+           FROM template_send_events
+          WHERE silo = $1
+          GROUP BY template_id
+       ) s ON s.template_id = t.id::text
+       LEFT JOIN (
+         SELECT tse.template_id, count(*) AS replies
+           FROM communications_messages m
+           JOIN LATERAL (
+             SELECT e.template_id
+               FROM template_send_events e
+              WHERE e.contact_id = m.contact_id::text AND e.sent_at < m.created_at
+              ORDER BY e.sent_at DESC
+              LIMIT 1
+           ) tse ON true
+          WHERE m.direction = 'inbound' AND m.silo = $1
+          GROUP BY tse.template_id
+       ) rp ON rp.template_id = t.id::text
+      WHERE t.silo = $1
+      ORDER BY t.updated_at DESC
+      LIMIT 200`,
+    [silo],
+  );
+  respondOk(res, { items: r.rows });
 }));
 
 // BF_SERVER_BLOCK_v785_SEQUENCES — drip sequence CRUD + activate/pause.

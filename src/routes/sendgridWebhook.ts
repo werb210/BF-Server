@@ -55,6 +55,10 @@ router.post("/", async (req: any, res: any) => {
       const seqSendId = ev?.seq_send_id ? String(ev.seq_send_id) : null;
       if (seqSendId && event === "open") await pool.query(`UPDATE sequence_sends SET opened_at = COALESCE(opened_at, now()) WHERE id = $1`, [seqSendId]).catch(() => {});
       else if (seqSendId && event === "click") await pool.query(`UPDATE sequence_sends SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [seqSendId]).catch(() => {});
+      // BF_SERVER_TEMPLATE_ANALYTICS_v1 - attribute per-template email opens/clicks via the tse_id custom arg.
+      const tseId = ev?.tse_id ? String(ev.tse_id) : null;
+      if (tseId && event === "open") await pool.query(`UPDATE template_send_events SET opened_at = COALESCE(opened_at, now()) WHERE id = $1`, [tseId]).catch(() => {});
+      else if (tseId && event === "click") await pool.query(`UPDATE template_send_events SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [tseId]).catch(() => {});
     } catch { /* skip bad event */ }
   }
   res.status(200).json({ ok: true });
