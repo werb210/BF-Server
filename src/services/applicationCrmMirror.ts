@@ -3,6 +3,7 @@
 // contacts row (matched by phone or email+silo), then update the application
 // with company_id / contact_id. Best-effort: never throws.
 import { pool } from "../db.js";
+import { resolveAndStoreAdAttribution } from "./googleAdsAttribution.js";
 
 type Wizard = {
   // BF_SERVER_ATTRIBUTION_TO_CONTACT_v1 - the ad click (gclid + UTMs) captured
@@ -227,10 +228,20 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
         );
         // BF_SERVER_ATTRIBUTION_TO_CONTACT_v1 - visible on the contact card.
         if (contactId && input.attribution && Object.values(input.attribution).some((v) => v)) {
+          const attributionPayload = { applicationId: input.applicationId, ...input.attribution };
           await pool.query(
             `INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1, 'attribution', $2)`,
-            [contactId, JSON.stringify({ applicationId: input.applicationId, ...input.attribution })]
+            [contactId, JSON.stringify(attributionPayload)]
           ).catch((e) => console.warn("[crm_mirror] attribution event failed", e instanceof Error ? e.message : String(e)));
+          const gclid = typeof input.attribution.gclid === "string" ? input.attribution.gclid.trim() : "";
+          if (gclid) {
+            void resolveAndStoreAdAttribution({
+              contactId,
+              gclid,
+              applicationId: input.applicationId,
+              occurredAt: typeof input.attribution.capturedAt === "string" ? input.attribution.capturedAt : null,
+            });
+          }
         }
         // BF_SERVER_LEG_CRM_PROPAGATION_v1 - companion/equipment legs are
         // INSERTed at submit time and copy the parent's contact_id via

@@ -52,7 +52,7 @@ function loginCid(): string { return String(process.env.GOOGLE_ADS_LOGIN_CUSTOME
 const micros = (v: unknown): number => Number(v ?? 0) / 1_000_000;
 const num = (v: unknown): number => Number(v ?? 0);
 
-async function gaql(query: string): Promise<any[]> {
+export async function googleAdsSearch(query: string): Promise<any[]> {
   const token = await getAccessToken();
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
@@ -94,9 +94,9 @@ export async function runGoogleAdsReport(days: number): Promise<AdsReport | AdsN
   const base: AdsReport = { configured: true, days, cached: false, totals: { cost: 0, impressions: 0, clicks: 0, conversions: 0, convValue: 0, cpa: 0, roas: 0 }, campaigns: [], keywords: [], searchTerms: [] };
   try {
     const [camp, kw, st] = await Promise.all([
-      gaql(`SELECT campaign.name, campaign.status, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.conversions, metrics.conversions_value FROM campaign WHERE ${W} ORDER BY metrics.cost_micros DESC`),
-      gaql(`SELECT ad_group_criterion.keyword.text, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.conversions, metrics.conversions_value FROM keyword_view WHERE ${W} ORDER BY metrics.cost_micros DESC LIMIT 25`),
-      gaql(`SELECT search_term_view.search_term, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.conversions, metrics.conversions_value FROM search_term_view WHERE ${W} ORDER BY metrics.impressions DESC LIMIT 25`),
+      googleAdsSearch(`SELECT campaign.name, campaign.status, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.conversions, metrics.conversions_value FROM campaign WHERE ${W} ORDER BY metrics.cost_micros DESC`),
+      googleAdsSearch(`SELECT ad_group_criterion.keyword.text, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.conversions, metrics.conversions_value FROM keyword_view WHERE ${W} ORDER BY metrics.cost_micros DESC LIMIT 25`),
+      googleAdsSearch(`SELECT search_term_view.search_term, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.conversions, metrics.conversions_value FROM search_term_view WHERE ${W} ORDER BY metrics.impressions DESC LIMIT 25`),
     ]);
     const mapRow = (name: string, status: string | undefined, m: any): AdsRow => ({
       name, ...(status ? { status } : {}), cost: micros(m?.costMicros), impressions: num(m?.impressions), clicks: num(m?.clicks), ctr: num(m?.ctr), cpc: micros(m?.averageCpc), conversions: num(m?.conversions), convValue: num(m?.conversionsValue),

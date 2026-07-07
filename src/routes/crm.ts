@@ -79,6 +79,56 @@ router.get("/leads", safeHandler(async (_req: any, res: any) => {
 const requireCrmWrite = requireCapability([CAPABILITIES.CRM_WRITE]);
 
 
+
+// BF_SERVER_AD_ATTRIBUTION_v1 - resolved Google Ads click details for the CRM Marketing Source card.
+router.get("/contacts/:id/ad-attribution", safeHandler(async (req: any, res: any) => {
+  const contactId = String(req.params.id ?? "");
+  const { rows } = await pool.query(
+    `SELECT contact_id::text AS "contactId",
+            gclid,
+            click_date AS "clickDate",
+            campaign_id AS "campaignId",
+            campaign_name AS "campaignName",
+            ad_group_id AS "adGroupId",
+            ad_group_name AS "adGroupName",
+            ad_id AS "adId",
+            keyword,
+            keyword_match_type AS "keywordMatchType",
+            raw_click AS "rawClick",
+            updated_at AS "updatedAt"
+       FROM contact_ad_attribution
+      WHERE contact_id::text = $1
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+    [contactId],
+  ).catch(() => ({ rows: [] as any[] }));
+  if (rows[0]) return res.json({ ok: true, data: { source: "google_ads", ...rows[0] } });
+
+  const fallback = await pool.query(
+    `SELECT payload
+       FROM crm_timeline_events
+      WHERE contact_id::text = $1
+        AND event_type = 'attribution'
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [contactId],
+  ).catch(() => ({ rows: [] as any[] }));
+  const payload = fallback.rows[0]?.payload ?? null;
+  return res.json({
+    ok: true,
+    data: payload ? {
+      source: payload.gclid ? "google_unresolved" : "utm",
+      gclid: payload.gclid ?? null,
+      utmSource: payload.utm_source ?? payload.utmSource ?? null,
+      utmMedium: payload.utm_medium ?? payload.utmMedium ?? null,
+      utmCampaign: payload.utm_campaign ?? payload.utmCampaign ?? null,
+      utmTerm: payload.utm_term ?? payload.utmTerm ?? null,
+      utmContent: payload.utm_content ?? payload.utmContent ?? null,
+      rawAttribution: payload,
+    } : null,
+  });
+}));
+
 router.get("/contacts/:id/companies", safeHandler(async (req: any, res: any) => {
   try {
     const { rows } = await pool.query(
