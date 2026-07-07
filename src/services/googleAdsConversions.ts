@@ -8,7 +8,7 @@
 import { pool } from "../db.js";
 import { logError } from "../observability/logger.js";
 
-const API_VERSION = "v18";
+const API_VERSION = "v24";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const FUNDED_STATES = ["Accepted", "Funded"];
 
