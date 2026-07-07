@@ -412,4 +412,36 @@ router.post(
   },
 );
 
+// BF_SERVER_AD_ATTRIBUTION_DIAG_v1 - settles "why is Marketing Source empty" by
+// counting where gclids exist across the funnel. Apps-with-gclid but no contact
+// events => mirror not propagating; no apps-with-gclid => the site isn't capturing
+// gclid (or no ad-clicker has applied yet). Admin-guarded, counts only.
+router.post(
+  "/ad-attribution-diagnostics",
+  requireCapability([CAPABILITIES.USER_MANAGE]),
+  async (_req: any, res: any) => {
+    try {
+      const { pool } = await import("../db.js");
+      const { googleAdsConfigured } = await import("../services/googleAdsService.js");
+      const { conversionsConfigured } = await import("../services/googleAdsConversions.js");
+      const applicationsWithGclid = Number((await pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM applications WHERE COALESCE(metadata->'attribution'->>'gclid','') <> ''`,
+      )).rows[0]?.n ?? 0);
+      const contactsWithGclidEvent = Number((await pool.query<{ n: number }>(
+        `SELECT count(DISTINCT contact_id)::int AS n FROM crm_timeline_events WHERE event_type='attribution' AND COALESCE(payload->>'gclid','') <> ''`,
+      )).rows[0]?.n ?? 0);
+      const contactsResolved = Number((await pool.query<{ n: number }>(
+        `SELECT count(DISTINCT contact_id)::int AS n FROM contact_ad_attribution`,
+      )).rows[0]?.n ?? 0);
+      let diagnosis = "no_gclids_captured_yet_or_no_ad_clicker_applied";
+      if (applicationsWithGclid > 0 && contactsWithGclidEvent === 0) diagnosis = "captured_on_applications_but_not_propagated_to_contacts";
+      else if (contactsWithGclidEvent > 0 && contactsResolved === 0) diagnosis = "captured_on_contacts_but_none_resolved_check_google_ads_creds_or_90day_window";
+      else if (contactsResolved > 0) diagnosis = "working";
+      return res.json({ ok: true, googleAdsConfigured: googleAdsConfigured(), conversionsConfigured: conversionsConfigured(), applicationsWithGclid, contactsWithGclidEvent, contactsResolved, diagnosis });
+    } catch (e: any) {
+      return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+);
+
 export default router;
