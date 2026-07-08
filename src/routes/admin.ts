@@ -573,4 +573,60 @@ router.post(
   },
 );
 
+// BF_SERVER_EMAIL_FORENSICS_v1 - reconstruct exactly what a past email blast did from the
+// per-contact audit trail (crm_timeline_events, event_type='email_marketing_sent'), which is
+// written once per successful send. Answers "how many actually went out on day X, to whom,
+// under what subject" from the source of truth rather than from job counters. Admin-guarded.
+router.post(
+  "/email-forensics",
+  requireCapability([CAPABILITIES.USER_MANAGE]),
+  async (req: any, res: any) => {
+    try {
+      const { pool } = await import("../db.js");
+      const day = typeof req.body?.day === "string" && req.body.day.trim() ? req.body.day.trim() : null; // 'YYYY-MM-DD'
+
+      const bySubject = (await pool.query(
+        `SELECT (created_at AT TIME ZONE 'UTC')::date AS day,
+                COALESCE(payload->>'subject','(none)') AS subject,
+                COUNT(*)::int AS sent,
+                MIN(created_at) AS first_at,
+                MAX(created_at) AS last_at
+           FROM crm_timeline_events
+          WHERE event_type = 'email_marketing_sent'
+            ${day ? "AND (created_at AT TIME ZONE 'UTC')::date = $1::date" : ""}
+          GROUP BY 1,2
+          ORDER BY day DESC, sent DESC
+          LIMIT 50`,
+        day ? [day] : [],
+      )).rows;
+
+      const totals = (await pool.query(
+        `SELECT COUNT(*)::int AS total_contacts,
+                COUNT(*) FILTER (WHERE email IS NOT NULL AND email <> '')::int AS with_email
+           FROM contacts`,
+      )).rows[0];
+
+      let missed: any = undefined;
+      if (day) {
+        missed = (await pool.query(
+          `SELECT COUNT(*)::int AS missed_with_email
+             FROM contacts c
+            WHERE c.email IS NOT NULL AND c.email <> ''
+              AND NOT EXISTS (
+                SELECT 1 FROM crm_timeline_events e
+                 WHERE e.contact_id = c.id
+                   AND e.event_type = 'email_marketing_sent'
+                   AND (e.created_at AT TIME ZONE 'UTC')::date = $1::date
+              )`,
+          [day],
+        )).rows[0];
+      }
+
+      return res.json({ ok: true, day, totals, missed, bySubject });
+    } catch (e: any) {
+      return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+);
+
 export default router;
