@@ -684,4 +684,36 @@ router.post(
   },
 );
 
+// BF_SERVER_SEND_BREAKDOWN_v1 - count EVERY send-event type per day from crm_timeline_events,
+// so a day's activity is attributed to the exact path that produced it: email_marketing_sent
+// (the blast) vs sequence_step_sent (the drip sequence). Answers "what actually sent on day X
+// and through which system" from the per-contact audit trail. Admin-guarded.
+router.post(
+  "/send-breakdown",
+  requireCapability([CAPABILITIES.USER_MANAGE]),
+  async (req: any, res: any) => {
+    try {
+      const { pool } = await import("../db.js");
+      const day = typeof req.body?.day === "string" && req.body.day.trim() ? req.body.day.trim() : null;
+      const rows = (await pool.query(
+        `SELECT (created_at AT TIME ZONE 'UTC')::date AS day,
+                event_type,
+                COUNT(*)::int AS n,
+                COUNT(DISTINCT contact_id)::int AS distinct_contacts,
+                MIN(created_at) AS first_at,
+                MAX(created_at) AS last_at
+           FROM crm_timeline_events
+          WHERE event_type IN ('email_marketing_sent','sequence_step_sent')
+            ${day ? "AND (created_at AT TIME ZONE 'UTC')::date = $1::date" : "AND created_at > now() - interval '30 days'"}
+          GROUP BY 1,2
+          ORDER BY day DESC, n DESC`,
+        day ? [day] : [],
+      )).rows;
+      return res.json({ ok: true, day, breakdown: rows });
+    } catch (e: any) {
+      return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+);
+
 export default router;
