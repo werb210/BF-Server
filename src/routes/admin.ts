@@ -499,4 +499,42 @@ router.post(
   },
 );
 
+// BF_SERVER_REFERRER_TEMPLATE_GEN_v1 - generate the SignNow referrer-agreement TEMPLATE
+// from code instead of building it by hand in the SignNow dashboard. Builds the agreement
+// PDF with field-extract text tags (role "Referrer"), uploads it via /document/fieldextract
+// so SignNow parses the tags into real fields, then promotes the document to a template.
+// Returns the template id to put in SIGNNOW_REFERRER_TEMPLATE_ID. Admin-guarded.
+router.post(
+  "/generate-referrer-template",
+  requireCapability([CAPABILITIES.USER_MANAGE]),
+  async (req: any, res: any) => {
+    try {
+      const { isApiKeyConfigured, uploadDocumentWithFieldExtract, createTemplateFromDocument } = await import("../signnow/signnowClient.js");
+      if (!isApiKeyConfigured()) return res.status(400).json({ ok: false, error: "signnow_api_key_missing" });
+      const { buildReferrerAgreementPdf } = await import("../signnow/referrerAgreementPdfBuilder.js");
+      const pdf = await buildReferrerAgreementPdf();
+      if (req.body?.pdfOnly === true) {
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", 'inline; filename="boreal-referral-partner-agreement.pdf"');
+        return res.end(Buffer.from(pdf));
+      }
+      const name = typeof req.body?.name === "string" && req.body.name.trim()
+        ? req.body.name.trim()
+        : "Boreal Referral Partner Agreement";
+      const { documentId } = await uploadDocumentWithFieldExtract(pdf, `${name}.pdf`);
+      const { templateId } = await createTemplateFromDocument(documentId, name);
+      const roleName = (process.env.SIGNNOW_REFERRER_ROLE_NAME ?? "Referrer").trim();
+      return res.json({
+        ok: true,
+        templateId,
+        documentId,
+        roleName,
+        next: `Set SIGNNOW_REFERRER_TEMPLATE_ID=${templateId} on boreal-staff-server (tick "Deployment slot setting"), then re-run referrer-agreement-diagnostics with probe:true.`,
+      });
+    } catch (e: any) {
+      return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+);
+
 export default router;

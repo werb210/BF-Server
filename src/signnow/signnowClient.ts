@@ -23,6 +23,14 @@ export async function sendInvite(p: SendInviteParams): Promise<{ inviteId?: stri
 // template-copy and document-group are stable SignNow endpoints. The v2
 // embedded-invite + link endpoints are isolated here so a payload correction
 // after the first live signing is a one-line change, not a rebuild.
+// BF_SERVER_REFERRER_TEMPLATE_GEN_v1 - promote an uploaded document to a reusable template.
+// SignNow: POST /template with { document_id, document_name } -> { id } (the template id).
+export async function createTemplateFromDocument(documentId: string, templateName: string): Promise<{ templateId: string }> {
+  const body = (await signnowFetch("/template", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ document_id: documentId, document_name: templateName }) })) as { id?: string };
+  if (!body || typeof body.id !== "string") throw new SignNowError("SignNow template creation returned no template id", undefined, body);
+  return { templateId: body.id };
+}
+
 export async function createDocumentFromTemplate(templateId: string, documentName: string): Promise<{ documentId: string }> {
   const body = (await signnowFetch(`/template/${encodeURIComponent(templateId)}/copy`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ document_name: documentName }) })) as { id?: string };
   if (!body || typeof body.id !== "string") throw new SignNowError("SignNow template copy returned no document id", undefined, body);
