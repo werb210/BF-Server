@@ -85,6 +85,23 @@ router.post("/:id/confirm-acceptance", requireAuth, requireAuthorization({ roles
   const row = r.rows[0];
   if (!row) return res.status(409).json({ error: "offer_not_pending" });
 
+  // BF_SERVER_FUNDED_AMOUNT_v1 - staff enter the ACTUAL amount the lender advanced. Commission
+  // and ad-conversion value are computed from this, not from the requested or quoted amount.
+  // Falls back to the offer amount when staff do not supply one.
+  const rawFunded = (req.body ?? {}).fundedAmount ?? (req.body ?? {}).funded_amount;
+  const fundedAmount = rawFunded === undefined || rawFunded === null || rawFunded === "" ? null : Number(rawFunded);
+  if (fundedAmount !== null && (!Number.isFinite(fundedAmount) || fundedAmount < 0)) {
+    return res.status(400).json({ error: "invalid_funded_amount" });
+  }
+  await pool.query(
+    `UPDATE applications
+        SET funded_amount = COALESCE($2::numeric, (SELECT o.amount FROM offers o WHERE o.id::text = $3)),
+            funded_at = COALESCE(funded_at, now()),
+            updated_at = now()
+      WHERE id::text = $1`,
+    [row.application_id, fundedAmount, id],
+  ).catch((e) => console.warn("[offer_accept] funded_amount write failed", e instanceof Error ? e.message : String(e)));
+
   // Fire SignNow envelope on the lender's term sheet (best-effort).
   try {
     const pth = "../services/signnow/sendOfferTermSheet.js";

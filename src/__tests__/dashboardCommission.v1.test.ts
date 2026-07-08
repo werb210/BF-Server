@@ -1,6 +1,6 @@
 // BF_SERVER_DASHBOARD_COMMISSION_v1 - the dashboard reports BF's projected
-// commission per pipeline stage: 2% of the funded amount (accepted term sheet
-// amount when present, else requested_amount) unless the product carries a
+// commission per pipeline stage: 2% of the funded amount (actual funded_amount
+// when present, accepted term sheet amount next, else requested_amount) unless the product carries a
 // commission override. commissionEarned is the Accepted bucket.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -13,9 +13,9 @@ describe("dashboard BF commission", () => {
     expect(dash).not.toContain("commissionEarned: 0");
     expect(dash).toContain("const commissionEarned = commissionByStage[\"Accepted\"] ?? 0;");
   });
-  it("uses the accepted offer amount, falling back to requested_amount", () => {
+  it("uses actual funded_amount, falling back to accepted offer amount and requested_amount", () => {
     expect(dash).toContain("BF_SERVER_DASHBOARD_COMMISSION_v1");
-    expect(dash).toContain("COALESCE(off.amount, a.requested_amount, 0)");
+    expect(dash).toContain("COALESCE(a.funded_amount, off.amount, a.requested_amount, 0)");
     expect(dash).toContain("o.status = 'accepted'");
   });
   it("applies the product commission override, defaulting to 2 percent", () => {

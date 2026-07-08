@@ -37,7 +37,7 @@ export async function findPendingLinkedInConversions(limit = 200): Promise<Pendi
   const { rows } = await pool.query<{ id: string; li_fat_id: string; value: string | null; funded_at: string }>(
     `SELECT id,
             metadata->'attribution'->>'li_fat_id' AS li_fat_id,
-            requested_amount AS value,
+            COALESCE(funded_amount, requested_amount) AS value, -- BF_SERVER_FUNDED_AMOUNT_v1
             COALESCE(updated_at, now())::text AS funded_at
        FROM applications
       WHERE silo = 'BF'
