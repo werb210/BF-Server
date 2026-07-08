@@ -444,4 +444,59 @@ router.post(
   },
 );
 
+// BF_SERVER_REFERRER_AGREEMENT_DIAG_v1 - verify the SignNow referrer-agreement config
+// without running a real signup. Reports which env vars are set, whether the API key
+// actually authenticates, and (when probe=true) whether the template id resolves by
+// creating a throwaway document from it. Never returns secrets. Admin-guarded.
+router.post(
+  "/referrer-agreement-diagnostics",
+  requireCapability([CAPABILITIES.USER_MANAGE]),
+  async (req: any, res: any) => {
+    const apiKeySet = Boolean((process.env.SIGNNOW_API_KEY ?? "").trim());
+    const templateId = (process.env.SIGNNOW_REFERRER_TEMPLATE_ID ?? "").trim();
+    const roleName = (process.env.SIGNNOW_REFERRER_ROLE_NAME ?? "Referrer").trim();
+    const out: Record<string, unknown> = {
+      apiKeySet,
+      templateIdSet: templateId.length > 0,
+      roleName,
+      configured: apiKeySet && templateId.length > 0,
+    };
+    if (!apiKeySet) {
+      out.diagnosis = "signnow_api_key_missing";
+      return res.json(out);
+    }
+    try {
+      const { getAuthenticatedUserId } = await import("../signnow/signnowClient.js");
+      await getAuthenticatedUserId();
+      out.apiKeyValid = true;
+    } catch (e: any) {
+      out.apiKeyValid = false;
+      out.diagnosis = "signnow_api_key_invalid_or_expired";
+      out.error = e instanceof Error ? e.message : String(e);
+      return res.json(out);
+    }
+    if (!templateId) {
+      out.diagnosis = "template_id_missing_set_SIGNNOW_REFERRER_TEMPLATE_ID";
+      return res.json(out);
+    }
+    if (req.body?.probe === true) {
+      try {
+        const { createDocumentFromTemplate } = await import("../signnow/signnowClient.js");
+        const { documentId } = await createDocumentFromTemplate(templateId, "Boreal referrer-agreement diagnostics probe");
+        out.templateResolves = true;
+        out.probeDocumentId = documentId;
+        out.diagnosis = "ok";
+        out.note = "A throwaway document was created from the template; delete it in SignNow if you wish.";
+      } catch (e: any) {
+        out.templateResolves = false;
+        out.diagnosis = "template_id_not_found_or_not_a_template";
+        out.error = e instanceof Error ? e.message : String(e);
+      }
+      return res.json(out);
+    }
+    out.diagnosis = "configured_send_probe_true_to_verify_template";
+    return res.json(out);
+  },
+);
+
 export default router;
