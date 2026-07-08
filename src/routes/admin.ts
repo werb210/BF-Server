@@ -629,4 +629,59 @@ router.post(
   },
 );
 
+// BF_SERVER_BLAST_AUDIENCE_DIAG_v1 - show exactly who a marketing email blast would target,
+// broken down by silo, so a "sent to nobody / only N" blast is explained by data. The blast
+// route counts contacts WHERE silo = resolveSiloFromRequest(req) AND email present AND NOT
+// opted out AND tag matches - if that resolves to the wrong silo, the count is 0 or partial
+// and the route silently succeeds with zero recipients. Admin-guarded.
+router.post(
+  "/blast-audience-diagnostics",
+  requireCapability([CAPABILITIES.USER_MANAGE]),
+  async (req: any, res: any) => {
+    try {
+      const { pool } = await import("../db.js");
+      const tag = typeof req.body?.tag === "string" && req.body.tag.trim() ? req.body.tag.trim() : null;
+
+      const perSilo = (await pool.query(
+        `SELECT COALESCE(silo,'(null)') AS silo,
+                COUNT(*)::int AS contacts,
+                COUNT(*) FILTER (WHERE COALESCE(email,'') <> '')::int AS with_email,
+                COUNT(*) FILTER (WHERE COALESCE(email,'') <> '' AND COALESCE(marketing_opt_out,false) = false)::int AS emailable,
+                COUNT(*) FILTER (WHERE COALESCE(email,'') <> '' AND COALESCE(marketing_opt_out,false) = false
+                                 AND ($1::text IS NULL OR $1 = ANY(tags)))::int AS emailable_with_tag
+           FROM contacts
+          GROUP BY 1
+          ORDER BY emailable DESC`,
+        [tag],
+      )).rows;
+
+      const grand = perSilo.reduce((a: any, r: any) => ({
+        contacts: a.contacts + r.contacts,
+        with_email: a.with_email + r.with_email,
+        emailable: a.emailable + r.emailable,
+        emailable_with_tag: a.emailable_with_tag + r.emailable_with_tag,
+      }), { contacts: 0, with_email: 0, emailable: 0, emailable_with_tag: 0 });
+
+      const role = String(req.user?.role || "").toLowerCase();
+      const primary = req.user?.silo ?? "BF";
+      const allowlist = Array.isArray(req.user?.silos) ? req.user.silos : [];
+      const requested = (req.headers["x-silo"] || (req.query?.silo)) ?? null;
+      let resolvedSilo = primary;
+      if (role === "admin") resolvedSilo = requested || primary;
+      else if (allowlist.length > 1 && requested && allowlist.includes(requested)) resolvedSilo = requested;
+
+      return res.json({
+        ok: true,
+        tag,
+        yourUser: { role, primarySilo: primary, allowlist, requestedSilo: requested, resolvedSilo },
+        note: "A blast from this session targets 'emailable' (or 'emailable_with_tag') for silo = resolvedSilo. If that number is 0 or ~800 when you expected more, either the wrong silo resolved or your list lives in another silo.",
+        grandTotal: grand,
+        perSilo,
+      });
+    } catch (e: any) {
+      return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+);
+
 export default router;
