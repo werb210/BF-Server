@@ -1353,6 +1353,27 @@ router.patch(
       reason: typeof req.body?.reason === "string" ? req.body.reason.trim() : null,
       ...statusMeta,
     });
+    // BF_SERVER_FUNDED_AMOUNT_v1 - when staff mark a deal Accepted they enter the ACTUAL amount
+    // the lender advanced. Commission and ad-conversion value are computed from this, never from
+    // the requested amount. If omitted, fall back to the accepted term sheet amount.
+    if (status === ApplicationStage.ACCEPTED || status === "Accepted") {
+      const raw = req.body?.fundedAmount ?? req.body?.funded_amount;
+      const fundedAmount = raw === undefined || raw === null || raw === "" ? null : Number(raw);
+      if (fundedAmount !== null && (!Number.isFinite(fundedAmount) || fundedAmount < 0)) {
+        throw new AppError("validation_error", "fundedAmount is invalid.", 400);
+      }
+      await runQuery(
+        `UPDATE applications
+            SET funded_amount = COALESCE($2::numeric, funded_amount,
+                  (SELECT o.amount FROM offers o
+                    WHERE o.application_id::text = ($1)::text AND o.status = 'accepted'
+                    ORDER BY o.updated_at DESC NULLS LAST LIMIT 1)),
+                funded_at = COALESCE(funded_at, now()),
+                updated_at = now()
+          WHERE id::text = ($1)::text`,
+        [applicationId, fundedAmount],
+      ).catch((e) => console.warn("[status] funded_amount write failed", e instanceof Error ? e.message : String(e)));
+    }
     res.status(200).json({ ok: true, applicationId, status });
   })
 );

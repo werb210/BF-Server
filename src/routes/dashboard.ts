@@ -56,8 +56,9 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
     // BF_SERVER_DASHBOARD_COMMISSION_v1 - projected BF commission per pipeline
     // stage. BF earns 2% of the funded amount unless the chosen product carries
     // a commission override (lender_products.commission, a percent). Funded
-    // amount = the accepted term sheet amount when one exists (offers.amount,
-    // status='accepted'), else the requested_amount. Grouped into the same board
+    // amount = applications.funded_amount (the ACTUAL advance, entered by staff at
+    // acceptance) when set; else the accepted term sheet amount (offers.amount,
+    // status='accepted'); else the requested_amount. Grouped into the same board
     // columns as the counts above so the dashboard can show a commission figure
     // sitting in every stage, not just earned. (lender_products.id is text;
     // applications.lender_product_id is uuid, so the join casts to text.)
@@ -66,7 +67,7 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
                  ('Received','In Review','Documents Required','Additional Steps Required','Off to Lender','Offer','Accepted','Rejected')
                THEN a.pipeline_state ELSE 'Received' END) AS stage,
               COALESCE(SUM(
-                COALESCE(off.amount, a.requested_amount, 0)
+                COALESCE(a.funded_amount, off.amount, a.requested_amount, 0)
                 * (COALESCE(lp.commission, 2) / 100.0)
               ), 0)::text AS commission
        FROM applications a
