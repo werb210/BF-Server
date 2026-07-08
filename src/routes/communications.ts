@@ -418,25 +418,32 @@ router.get("/messages-list", safeHandler(async (req: any, res: any) => {
         AND m.contact_id IS NOT NULL
         ${typeClause}
     ),
-    ranked AS (
-      SELECT
-        *,
-        ROW_NUMBER() OVER (PARTITION BY thread_key ORDER BY created_at DESC) AS rn,
-        SUM(CASE WHEN read_at IS NULL AND direction = 'inbound' THEN 1 ELSE 0 END)
-          OVER (PARTITION BY thread_key) AS unread_count
+    -- BF_SERVER_MESSAGES_LIST_PERF_v1: DISTINCT ON walks the (silo, contact_id, created_at DESC)
+    -- index and stops at the first row per thread, instead of ranking every message in the silo
+    -- with two window functions. Unread is a separate aggregate over the partial index.
+    latest AS (
+      SELECT DISTINCT ON (thread_key)
+        thread_key, contact_id, display_name, phone, email, created_at, body
       FROM base
+      ORDER BY thread_key, created_at DESC
+    ),
+    unread AS (
+      SELECT thread_key, COUNT(*)::int AS unread_count
+      FROM base
+      WHERE read_at IS NULL AND direction = 'inbound'
+      GROUP BY thread_key
     )
     SELECT
-      thread_key,
-      contact_id,
-      display_name,
-      phone,
-      email,
-      created_at AS last_at,
-      body AS last_body,
-      unread_count
-    FROM ranked
-    WHERE rn = 1
+      l.thread_key,
+      l.contact_id,
+      l.display_name,
+      l.phone,
+      l.email,
+      l.created_at AS last_at,
+      l.body AS last_body,
+      COALESCE(u.unread_count, 0) AS unread_count
+    FROM latest l
+    LEFT JOIN unread u ON u.thread_key = l.thread_key
   `;
 
   if (mode === "all") {
