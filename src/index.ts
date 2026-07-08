@@ -173,6 +173,11 @@ export async function start(): Promise<void> {
     try { const w = startProductKnowledgeWorker(pool); workerStops.push(w.stop); console.log("[startup] product-knowledge worker started"); }
     catch (err) { console.error("[startup] product-knowledge worker failed to start:", err); }
 
+    // BF_SERVER_ADS_WAREHOUSE_v1 - own Google Ads history locally.
+    const { startGoogleAdsWarehouseWorker } = await import("./workers/googleAdsWarehouseWorker.js");
+    try { const w = startGoogleAdsWarehouseWorker(pool); workerStops.push(w.stop); console.log("[startup] ads-warehouse worker started"); }
+    catch (err) { console.error("[startup] ads-warehouse worker failed to start:", err); }
+
     // BF_SERVER_MARKETING_KNOWLEDGE_v1 - ingest marketing templates + collateral into Maya knowledge.
     const { startMarketingKnowledgeWorker } = await import("./workers/marketingKnowledgeWorker.js");
     try { const w = startMarketingKnowledgeWorker(pool); workerStops.push(w.stop); console.log("[startup] marketing-knowledge worker started"); }

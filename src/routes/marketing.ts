@@ -697,4 +697,31 @@ router.get("/automations", requireAuth, safeHandler(async (_req: any, res: any) 
   respondOk(res, { items });
 }));
 
+// BF_SERVER_ADS_WAREHOUSE_v1 - locally-owned Google Ads history (survives restarts and
+// Google's retention). ?days=90&level=campaign|keyword|search_term. Daily series +
+// per-name totals, read from google_ads_daily, not from the Google API.
+router.get("/google-ads/history", requireAuth, safeHandler(async (req: any, res: any) => {
+  const days = Math.min(Math.max(parseInt(String(req.query.days ?? "90"), 10) || 90, 1), 730);
+  const level = ["campaign", "keyword", "search_term"].includes(String(req.query.level)) ? String(req.query.level) : "campaign";
+  const series = await pool.query(
+    `SELECT stat_date, SUM(cost)::float AS cost, SUM(impressions)::bigint AS impressions,
+            SUM(clicks)::bigint AS clicks, SUM(conversions)::float AS conversions,
+            SUM(conv_value)::float AS conv_value
+       FROM google_ads_daily
+      WHERE level = $1 AND stat_date >= (CURRENT_DATE - $2::int)
+      GROUP BY stat_date ORDER BY stat_date ASC`,
+    [level, days],
+  );
+  const byName = await pool.query(
+    `SELECT name, SUM(cost)::float AS cost, SUM(impressions)::bigint AS impressions,
+            SUM(clicks)::bigint AS clicks, SUM(conversions)::float AS conversions,
+            SUM(conv_value)::float AS conv_value
+       FROM google_ads_daily
+      WHERE level = $1 AND stat_date >= (CURRENT_DATE - $2::int)
+      GROUP BY name ORDER BY cost DESC LIMIT 50`,
+    [level, days],
+  );
+  respondOk(res, { level, days, series: series.rows, byName: byName.rows });
+}));
+
 export default router;
