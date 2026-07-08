@@ -23,8 +23,17 @@ export async function sendOne(opts: { to: string; subject: string; html: string;
     tracking_settings: { click_tracking: { enable: true }, open_tracking: { enable: true } },
     ...asm,
   };
-  const resp = await fetch(SEND_URL, { method: "POST", headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  if (resp.status === 202) return { ok: true, status: 202 };
-  const text = await resp.text().catch(() => "");
-  return { ok: false, status: resp.status, error: text.slice(0, 200) };
+  // BF_SERVER_EMAIL_HARDENING_v1 - hard 30s timeout. The send-queue worker
+  // processes one job at a time behind an in-process "running" flag; a single
+  // hung socket previously froze ALL email+SMS jobs until an App Service recycle.
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 30_000);
+  try {
+    const resp = await fetch(SEND_URL, { method: "POST", headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctl.signal });
+    if (resp.status === 202) return { ok: true, status: 202 };
+    const text = await resp.text().catch(() => "");
+    return { ok: false, status: resp.status, error: text.slice(0, 200) };
+  } catch (e) {
+    return { ok: false, status: 0, error: e instanceof Error ? e.message : String(e) };
+  } finally { clearTimeout(timer); }
 }
