@@ -1356,7 +1356,7 @@ router.patch(
     // BF_SERVER_FUNDED_AMOUNT_v1 - when staff mark a deal Accepted they enter the ACTUAL amount
     // the lender advanced. Commission and ad-conversion value are computed from this, never from
     // the requested amount. If omitted, fall back to the accepted term sheet amount.
-    if (status === ApplicationStage.ACCEPTED || status === "Accepted") {
+    if (status === ApplicationStage.ACCEPTED) {
       const raw = req.body?.fundedAmount ?? req.body?.funded_amount;
       const fundedAmount = raw === undefined || raw === null || raw === "" ? null : Number(raw);
       if (fundedAmount !== null && (!Number.isFinite(fundedAmount) || fundedAmount < 0)) {
