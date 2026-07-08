@@ -537,4 +537,40 @@ router.post(
   },
 );
 
+// BF_SERVER_SEND_JOB_DIAG_v1 - read recent marketing send jobs. Answers "why did only N of M
+// go out": status='done' with a large `failed` means SendGrid rejected them (see `error`);
+// status='running' long after started_at means the process died mid-blast and (before the
+// reclaim shipped) nothing resumed it - those recipients were never attempted. Admin-guarded.
+router.post(
+  "/send-job-diagnostics",
+  requireCapability([CAPABILITIES.USER_MANAGE]),
+  async (req: any, res: any) => {
+    try {
+      const { pool } = await import("../db.js");
+      const limit = Math.min(Math.max(parseInt(String(req.body?.limit ?? "10"), 10) || 10, 1), 50);
+      const rows = (await pool.query(
+        `SELECT id::text, channel, silo, tag, status, total, sent, failed, error,
+                created_at, started_at, finished_at, updated_at,
+                (total - sent - failed) AS never_attempted,
+                EXTRACT(EPOCH FROM (COALESCE(finished_at, now()) - started_at))::int AS run_seconds
+           FROM marketing_send_jobs
+          ORDER BY created_at DESC
+          LIMIT $1`,
+        [limit],
+      )).rows;
+      const jobs = rows.map((r: any) => {
+        let diagnosis = "ok";
+        if (r.status === "running" && r.started_at) diagnosis = "stalled_mid_blast_recipients_never_attempted";
+        else if (r.status === "failed") diagnosis = "job_threw_see_error";
+        else if (r.status === "done" && Number(r.failed) > 0) diagnosis = "sendgrid_rejected_some_see_error";
+        else if (Number(r.never_attempted) > 0) diagnosis = "counts_do_not_add_up_recipients_unaccounted";
+        return { ...r, diagnosis };
+      });
+      return res.json({ ok: true, jobs });
+    } catch (e: any) {
+      return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+);
+
 export default router;
