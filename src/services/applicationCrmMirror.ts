@@ -233,6 +233,14 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
             `INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1, 'attribution', $2)`,
             [contactId, JSON.stringify(attributionPayload)]
           ).catch((e) => console.warn("[crm_mirror] attribution event failed", e instanceof Error ? e.message : String(e)));
+          // BF_SERVER_VISITOR_JOURNEY_v1 - stitch the anonymous pre-application session to this contact.
+          const sessionId = typeof (input.attribution as any).sessionId === "string" ? String((input.attribution as any).sessionId).trim() : "";
+          if (sessionId) {
+            void pool.query(
+              `UPDATE visitor_sessions SET contact_id = $2, stitched_at = now() WHERE session_id = $1 AND contact_id IS NULL`,
+              [sessionId, contactId],
+            ).catch((e) => console.warn("[crm_mirror] journey stitch failed", e instanceof Error ? e.message : String(e)));
+          }
           const gclid = typeof input.attribution.gclid === "string" ? input.attribution.gclid.trim() : "";
           if (gclid) {
             void resolveAndStoreAdAttribution({
