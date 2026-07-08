@@ -106,7 +106,11 @@ export function createApp() {
   // pending and the login UI sticks on "Sending...".
   app.options(/^\/api\/auth\//, cors(corsOptions), (_req, res) => { res.sendStatus(204); });
 
-  app.use(express.json({ limit: "10mb" }));
+  // BF_SERVER_EMAIL_HARDENING_v1 - capture exact raw request bytes so webhook
+  // signature verification (SendGrid ECDSA) runs over the true payload. The
+  // global json parser consumes the stream before router-level express.raw
+  // sees it, so without this the webhook verifies re-serialized JSON (wrong bytes).
+  app.use(express.json({ limit: "10mb", verify: (req, _res, buf) => { (req as unknown as { rawBody?: Buffer }).rawBody = buf; } }));
   app.use(cookieParser());
 
   /**

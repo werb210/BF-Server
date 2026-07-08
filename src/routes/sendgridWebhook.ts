@@ -10,7 +10,16 @@ import { pool } from "../db.js";
 const router = Router();
 router.use(express.raw({ type: "*/*", limit: "2mb" }));
 
-const SUPPRESS = new Set(["bounce", "dropped", "spamreport", "unsubscribe", "group_unsubscribe"]);
+// BF_SERVER_EMAIL_HARDENING_v1 - only PERMANENT signals suppress. "dropped"
+// (already on SendGrid suppression list) and "blocked"-type soft bounces no
+// longer flip marketing_opt_out; previously every greylist/mailbox-full event
+// permanently shrank the audience blast after blast.
+const SUPPRESS = new Set(["spamreport", "unsubscribe", "group_unsubscribe"]);
+function isSuppressEvent(event: string, ev: any): boolean {
+  if (SUPPRESS.has(event)) return true;
+  if (event === "bounce" && String(ev?.type ?? "bounce") === "bounce") return true; // hard bounce only
+  return false;
+}
 
 function verify(rawBody: Buffer, signature: string, timestamp: string): boolean {
   const key = process.env.SENDGRID_WEBHOOK_PUBLIC_KEY;
@@ -27,7 +36,10 @@ function verify(rawBody: Buffer, signature: string, timestamp: string): boolean 
 }
 
 router.post("/", async (req: any, res: any) => {
-  const raw: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body ?? []));
+  // BF_SERVER_EMAIL_HARDENING_v1 - prefer the true raw bytes captured by the
+  // global json parser (req.rawBody); the router-level raw parser never runs
+  // because the stream is already consumed upstream.
+  const raw: Buffer = Buffer.isBuffer((req as any).rawBody) ? (req as any).rawBody : Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body ?? []));
   const sig = String(req.header("X-Twilio-Email-Event-Webhook-Signature") || "");
   const ts = String(req.header("X-Twilio-Email-Event-Webhook-Timestamp") || "");
   if (!verify(raw, sig, ts)) { res.status(403).json({ ok: false }); return; }
@@ -48,7 +60,7 @@ router.post("/", async (req: any, res: any) => {
         `INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1, $2, $3)`,
         [cid, "email_" + (event || "event"), JSON.stringify({ sg_event_id: ev?.sg_event_id ?? null, email, event, ts: ev?.timestamp ?? null })],
       );
-      if (SUPPRESS.has(event)) {
+      if (isSuppressEvent(event, ev)) {
         await pool.query(`UPDATE contacts SET marketing_opt_out = true, updated_at = now() WHERE id = $1`, [cid]);
       }
       // BF_SERVER_BLOCK_v790 - attribute sequence email opens/clicks.

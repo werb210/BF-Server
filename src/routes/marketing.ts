@@ -292,23 +292,33 @@ router.post("/email/send", safeHandler(async (req: any, res: any) => {
   }
   const tag = b.tag ? String(b.tag) : null;
   const templateId = b.templateId ? String(b.templateId) : null; // BF_SERVER_TEMPLATE_ANALYTICS_v1
+  // BF_SERVER_EMAIL_HARDENING_v1 - raw email panel gains include/exclude tag
+  // parity with the branded composer; previously b.tags/b.excludeTags were
+  // silently dropped here and the blast targeted the whole silo.
+  const includeTags = tagArr(b.tags);
+  const excludeTags = tagArr(b.excludeTags);
   // BF_SERVER_BLOCK_v782_VIEW_IN_BROWSER: host a public copy, inject the link.
-  const { url: __viewUrl } = await createLandingPageFromHtml(html, silo, subject, req.user?.userId ?? null);
-  const htmlOut = withViewInBrowser(html, __viewUrl);
+  // BF_SERVER_EMAIL_HARDENING_v1 - landing hosting is best-effort; a failed
+  // insert must not 500 the whole blast.
+  let htmlOut = html;
+  try {
+    const { url: __viewUrl } = await createLandingPageFromHtml(html, silo, subject, req.user?.userId ?? null);
+    htmlOut = withViewInBrowser(html, __viewUrl);
+  } catch (e) { console.error("landing_page_failed", { error: e instanceof Error ? e.message : String(e) }); }
   // BF_SERVER_SEND_QUEUE_v1 - small blasts send inline (unchanged response);
   // large ones go to the durable background queue (no cap, no request blocking).
-  const total = await countEmailRecipients(pool, silo, tag);
+  const total = await countEmailRecipients(pool, silo, tag, includeTags, excludeTags);
   if (total === 0) { respondOk(res, { configured: true, recipients: 0, sent: 0, failed: 0, capped: false }); return; }
   if (total > 0) { // BF_SERVER_ALWAYS_QUEUE_v1 - always use the durable queue; inline sends cannot resume
     const job = await pool.query<{ id: string }>(
       `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by)
        VALUES ('email', $1, $2, $3, $4, $5) RETURNING id`,
-      [silo, tag, JSON.stringify({ subject, html: htmlOut, templateId }), total, req.user?.userId ?? null],
+      [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId }), total, req.user?.userId ?? null],
     );
     respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total });
     return;
   }
-  const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut, templateId });
+  const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut, tags: includeTags, excludeTags, templateId });
   respondOk(res, { configured: true, recipients: out.total, sent: out.sent, failed: out.failed, rejected: out.failed, rejectStatus: out.rejectStatus, rejectError: out.rejectError, capped: false });
 }));
 
@@ -490,8 +500,12 @@ router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
   const includeTags = tagArr(b.tags);
   const excludeTags = tagArr(b.excludeTags);
   // BF_SERVER_BLOCK_v782_VIEW_IN_BROWSER
-  const { url: __viewUrl } = await createLandingPageFromHtml(html, silo, subject, req.user?.userId ?? null);
-  const htmlOut = withViewInBrowser(html, __viewUrl);
+  // BF_SERVER_EMAIL_HARDENING_v1 - landing hosting is best-effort here too.
+  let htmlOut = html;
+  try {
+    const { url: __viewUrl } = await createLandingPageFromHtml(html, silo, subject, req.user?.userId ?? null);
+    htmlOut = withViewInBrowser(html, __viewUrl);
+  } catch (e) { console.error("landing_page_failed", { error: e instanceof Error ? e.message : String(e) }); }
   const total = await countEmailRecipients(pool, silo, tag, includeTags, excludeTags);
   if (total === 0) { respondOk(res, { configured: true, recipients: 0, sent: 0, failed: 0 }); return; }
   if (total > 0) { // BF_SERVER_ALWAYS_QUEUE_v1 - always use the durable queue; inline sends cannot resume
