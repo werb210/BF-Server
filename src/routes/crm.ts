@@ -1409,4 +1409,39 @@ router.get("/contacts/:id/documents/:docId/download", safeHandler(async (req: an
   });
 }));
 
+// BF_SERVER_VISITOR_JOURNEY_v1 - full pre-application journey for a contact: which ad
+// brought them, every page + dwell time, the drop-off page, and their wizard path.
+router.get("/contacts/:id/journey", requireAuth, safeHandler(async (req: any, res: any) => {
+  const contactId = String(req.params.id);
+  const sess = await pool.query(
+    `SELECT session_id, first_seen_at, last_seen_at, landing_page, referrer, gclid,
+            utm_source, utm_medium, utm_campaign, utm_term, utm_content
+       FROM visitor_sessions WHERE contact_id = $1 ORDER BY first_seen_at ASC`,
+    [contactId],
+  );
+  if (!sess.rows.length) return respondOk(res, { sessions: [], events: [] });
+  const ids = sess.rows.map((r: any) => r.session_id);
+  const ev = await pool.query(
+    `SELECT session_id, event_type, path, title, step, dwell_ms, occurred_at
+       FROM visitor_events WHERE session_id = ANY($1) ORDER BY occurred_at ASC LIMIT 1000`,
+    [ids],
+  );
+  const pageviews = ev.rows.filter((e: any) => e.event_type === "pageview");
+  const lastPage = pageviews.length ? pageviews[pageviews.length - 1] : null;
+  const totalDwell = pageviews.reduce((acc: number, e: any) => acc + (Number(e.dwell_ms) || 0), 0);
+  const wizardSteps = ev.rows.filter((e: any) => e.event_type === "wizard_step");
+  const submitted = ev.rows.some((e: any) => e.event_type === "application_submitted");
+  respondOk(res, {
+    sessions: sess.rows,
+    events: ev.rows,
+    summary: {
+      pageviewCount: pageviews.length,
+      totalDwellMs: totalDwell,
+      exitPage: submitted ? null : lastPage?.path ?? null,
+      lastWizardStep: wizardSteps.length ? wizardSteps[wizardSteps.length - 1].step : null,
+      submitted,
+    },
+  });
+}));
+
 export default router;

@@ -63,6 +63,7 @@ import lenderProductsRequiredDocsPreviewRoutes from "./lenderProductsRequiredDoc
 import documentTypesRouter from "./documentTypes.js";
 import pwaRoutes from "./pwa.js";
 import publicApplicationRoutes from "./publicApplication.js";
+import visitorTrackRoutes from "./visitorTrack.js"; // BF_SERVER_VISITOR_JOURNEY_v1 (public)
 import referralsRoutes from "./referrals.js";
 import pipelineRoutes from "./pipeline.js";
 import telephonyRoutes from "../telephony/routes/telephonyRoutes.js";
@@ -243,6 +244,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/ocr/admin", router: ocrAdminRoutes },
   { path: "/_diag", router: diagnosticsRoutes },
   { path: "/public", router: publicApplicationRoutes },
+  { path: "/track", router: visitorTrackRoutes }, // BF_SERVER_VISITOR_JOURNEY_v1 (public)
   { path: "/", router: rootRoutes },
   { path: "/slf", router: slfRoutes },
   { path: "/applications", router: applicationsRoutes },
@@ -368,6 +370,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/website/credit-readiness", roles: [] },
   { method: "POST", path: "/api/website/contact", roles: [] },
   { method: "POST", path: "/api/public/application/start", roles: [] },
+  { method: "POST", path: "/api/track/journey", roles: [] }, // BF_SERVER_VISITOR_JOURNEY_v1
   { method: "POST", path: "/api/public/readiness", roles: [] },
   { method: "POST", path: "/api/crm/readiness", roles: [] },
   { method: "GET", path: "/api/client/application-stage", roles: [] },
