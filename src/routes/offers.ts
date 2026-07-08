@@ -281,4 +281,54 @@ router.post(
   })
 );
 
+
+// BF_SERVER_TERM_SHEET_STREAM_v1 - serve the term-sheet PDF through the API instead of
+// handing the browser a raw/SAS blob URL. Fixes: SAS expiry, private-container 403s,
+// and wrong Content-Type (Chrome renders an XML error as "Failed to load PDF document").
+// Streams with the correct inline PDF headers and validates the %PDF- magic bytes.
+router.get("/:id/term-sheet", requireAuth, safeHandler(async (req: any, res: any) => {
+  const offerId = String(req.params.id);
+  const row = await runQuery<{ term_sheet_blob_name: string | null; term_sheet_filename: string | null }>(
+    `select term_sheet_blob_name, term_sheet_filename from offers where id::text = $1 limit 1`,
+    [offerId],
+  );
+  const blobName = row.rows[0]?.term_sheet_blob_name ?? null;
+  if (!blobName) return res.status(404).json({ error: "no_term_sheet" });
+  const got = await getStorage().get(blobName).catch(() => null);
+  if (!got?.buffer?.length) return res.status(404).json({ error: "blob_missing" });
+  const isPdf = got.buffer.subarray(0, 5).toString("latin1") === "%PDF-";
+  if (!isPdf) return res.status(422).json({ error: "not_a_pdf", storedContentType: got.contentType, sizeBytes: got.buffer.length });
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="${(row.rows[0]?.term_sheet_filename ?? "term-sheet.pdf").replace(/[^\w.\-]/g, "_")}"`);
+  res.setHeader("Content-Length", String(got.buffer.length));
+  res.setHeader("Cache-Control", "private, max-age=60");
+  return res.end(got.buffer);
+}));
+
+// BF_SERVER_TERM_SHEET_STREAM_v1 - why a term sheet will not render. Reports whether the
+// blob exists, its stored content type, size, and whether the bytes start with %PDF-.
+router.get("/:id/term-sheet/diagnostics", requireAuth, safeHandler(async (req: any, res: any) => {
+  const offerId = String(req.params.id);
+  const row = await runQuery<{ term_sheet_blob_name: string | null; term_sheet_filename: string | null; document_url: string | null }>(
+    `select term_sheet_blob_name, term_sheet_filename, document_url from offers where id::text = $1 limit 1`,
+    [offerId],
+  );
+  const r = row.rows[0];
+  if (!r) return res.status(404).json({ ok: false, error: "offer_not_found" });
+  if (!r.term_sheet_blob_name) return res.json({ ok: false, diagnosis: "no_blob_name_on_offer", documentUrl: r.document_url });
+  const got = await getStorage().get(r.term_sheet_blob_name).catch(() => null);
+  if (!got?.buffer?.length) return res.json({ ok: false, diagnosis: "blob_missing_in_storage", blobName: r.term_sheet_blob_name });
+  const head = got.buffer.subarray(0, 5).toString("latin1");
+  const isPdf = head === "%PDF-";
+  return res.json({
+    ok: isPdf,
+    diagnosis: isPdf ? "valid_pdf" : "stored_bytes_are_not_a_pdf",
+    blobName: r.term_sheet_blob_name,
+    filename: r.term_sheet_filename,
+    storedContentType: got.contentType,
+    sizeBytes: got.buffer.length,
+    firstBytes: head,
+  });
+}));
+
 export default router;
