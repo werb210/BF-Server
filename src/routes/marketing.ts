@@ -299,7 +299,7 @@ router.post("/email/send", safeHandler(async (req: any, res: any) => {
   // large ones go to the durable background queue (no cap, no request blocking).
   const total = await countEmailRecipients(pool, silo, tag);
   if (total === 0) { respondOk(res, { configured: true, recipients: 0, sent: 0, failed: 0, capped: false }); return; }
-  if (total > 500) {
+  if (total > 0) { // BF_SERVER_ALWAYS_QUEUE_v1 - always use the durable queue; inline sends cannot resume
     const job = await pool.query<{ id: string }>(
       `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by)
        VALUES ('email', $1, $2, $3, $4, $5) RETURNING id`,
@@ -494,7 +494,7 @@ router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
   const htmlOut = withViewInBrowser(html, __viewUrl);
   const total = await countEmailRecipients(pool, silo, tag, includeTags, excludeTags);
   if (total === 0) { respondOk(res, { configured: true, recipients: 0, sent: 0, failed: 0 }); return; }
-  if (total > 500) {
+  if (total > 0) { // BF_SERVER_ALWAYS_QUEUE_v1 - always use the durable queue; inline sends cannot resume
     const job = await pool.query<{ id: string }>(
       `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by) VALUES ('email', $1, $2, $3, $4, $5) RETURNING id`,
       [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId }), total, req.user?.userId ?? null],
