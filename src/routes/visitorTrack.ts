@@ -14,9 +14,9 @@ const s = (v: unknown, max = 512): string | null => {
   return v.slice(0, max);
 };
 
-// POST /api/track/journey
+// POST /api/track/journey  (router is mounted at "/track/journey", so the path here is "/")
 // { sessionId, attribution?: {...}, events: [{ type, path, title, step, dwellMs, meta }] }
-router.post("/journey", async (req: any, res: any) => {
+router.post("/", async (req: any, res: any) => {
   try {
     const b = req.body ?? {};
     const sessionId = s(b.sessionId, 100);

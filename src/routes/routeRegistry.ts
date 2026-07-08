@@ -244,7 +244,11 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/ocr/admin", router: ocrAdminRoutes },
   { path: "/_diag", router: diagnosticsRoutes },
   { path: "/public", router: publicApplicationRoutes },
-  { path: "/track", router: visitorTrackRoutes }, // BF_SERVER_VISITOR_JOURNEY_v1 (public)
+  // BF_SERVER_VISITOR_JOURNEY_MOUNT_FIX_v1 - mounted at "/track/journey", NOT "/track":
+  // emailPixelRoutes already owns "/track" and _canonicalMount drops duplicate mount paths
+  // (keeping the first), which silently unmounted this collector. Public URL is unchanged:
+  // POST /api/track/journey.
+  { path: "/track/journey", router: visitorTrackRoutes }, // BF_SERVER_VISITOR_JOURNEY_v1 (public)
   { path: "/", router: rootRoutes },
   { path: "/slf", router: slfRoutes },
   { path: "/applications", router: applicationsRoutes },
