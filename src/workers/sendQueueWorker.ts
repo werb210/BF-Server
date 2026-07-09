@@ -32,20 +32,25 @@ export function startSendQueueWorker(pool: Pool): { stop: () => void } {
       const progress = async (sent: number, failed: number) => {
         await pool.query(`UPDATE marketing_send_jobs SET sent=$2, failed=$3, updated_at=now() WHERE id=$1`, [job.id, sent, failed]);
       };
+      // BF_SERVER_SEND_KILL_SWITCH_v1 - between-recipient abort: stop this blast
+      // if a cancel was requested while it is actively sending.
+      const abortCheck = async (): Promise<boolean> => {
+        try { const c = await pool.query<{ cancel_requested: boolean }>(`SELECT cancel_requested FROM marketing_send_jobs WHERE id=$1`, [job.id]); return Boolean(c.rows[0]?.cancel_requested); } catch { return false; }
+      };
       try {
         const p = job.payload || {};
         if (job.channel === "sms") {
-          const result = await runSmsSend(pool, { silo: job.silo, tag: job.tag, body: String(p.body || ""), linkUrl: p.linkUrl ?? null, fbSubject: p.fbSubject ?? null, fbHtml: p.fbHtml ?? null, createdBy: job.created_by ?? null, templateId: (p as any).templateId ?? null }, progress);
+          const result = await runSmsSend(pool, { silo: job.silo, tag: job.tag, body: String(p.body || ""), linkUrl: p.linkUrl ?? null, fbSubject: p.fbSubject ?? null, fbHtml: p.fbHtml ?? null, createdBy: job.created_by ?? null, templateId: (p as any).templateId ?? null }, progress, abortCheck);
           await pool.query(
-            `UPDATE marketing_send_jobs SET status='done', total=$2, sent=$3, failed=$4, finished_at=now(), updated_at=now() WHERE id=$1`,
-            [job.id, result.total, result.smsSent + result.emailSent, result.failed],
-          );
+            `UPDATE marketing_send_jobs SET status=$5, total=$2, sent=$3, failed=$4, finished_at=now(), updated_at=now() WHERE id=$1`,
+            [job.id, result.total, result.smsSent + result.emailSent, result.failed, result.aborted ? 'canceled' : 'done'],
+          ); // BF_SERVER_SEND_KILL_SWITCH_v1
         } else {
-          const result = await runEmailSend(pool, { silo: job.silo, tag: job.tag, subject: String(p.subject || ""), html: String(p.html || ""), tags: (p.tags as string[] | undefined) ?? null, excludeTags: (p.excludeTags as string[] | undefined) ?? null, templateId: (p as any).templateId ?? null }, progress); // BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1 BF_SERVER_TEMPLATE_ANALYTICS_v1
+          const result = await runEmailSend(pool, { silo: job.silo, tag: job.tag, subject: String(p.subject || ""), html: String(p.html || ""), tags: (p.tags as string[] | undefined) ?? null, excludeTags: (p.excludeTags as string[] | undefined) ?? null, templateId: (p as any).templateId ?? null }, progress, abortCheck); // BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1 BF_SERVER_TEMPLATE_ANALYTICS_v1 BF_SERVER_SEND_KILL_SWITCH_v1
           await pool.query(
-            `UPDATE marketing_send_jobs SET status='done', total=$2, sent=$3, failed=$4, error=$5, finished_at=now(), updated_at=now() WHERE id=$1`,
-            [job.id, result.total, result.sent, result.failed, result.rejectError ? `rejected (status ${result.rejectStatus ?? "unknown"}): ${result.rejectError}` : null],
-          );
+            `UPDATE marketing_send_jobs SET status=$6, total=$2, sent=$3, failed=$4, error=$5, finished_at=now(), updated_at=now() WHERE id=$1`,
+            [job.id, result.total, result.sent, result.failed, result.rejectError ? `rejected (status ${result.rejectStatus ?? "unknown"}): ${result.rejectError}` : null, result.aborted ? 'canceled' : 'done'],
+          ); // BF_SERVER_SEND_KILL_SWITCH_v1
         }
       } catch (err) {
         await pool.query(
