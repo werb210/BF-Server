@@ -69,6 +69,9 @@ router.get("/campaigns", safeHandler((req: any, res: any) => {
 
 // BF_SERVER_MARKETING_FUNNEL_v1 - internal application funnel from our own DB (no external deps):
 // how many applications reached each wizard step, and how many submitted, with drop-off per step.
+// BF_SERVER_SEND_HOLD_WINDOW_v1 - every queued blast is held this long before
+// the worker will send it, so staff can cancel. 5 minutes.
+const SEND_HOLD_MINUTES = 5;
 router.get("/funnel", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const days = Math.min(Math.max(Number(req.query.days) || 90, 1), 365);
@@ -310,12 +313,12 @@ router.post("/email/send", safeHandler(async (req: any, res: any) => {
   const total = await countEmailRecipients(pool, silo, tag, includeTags, excludeTags);
   if (total === 0) { respondOk(res, { configured: true, recipients: 0, sent: 0, failed: 0, capped: false }); return; }
   if (total > 0) { // BF_SERVER_ALWAYS_QUEUE_v1 - always use the durable queue; inline sends cannot resume
-    const job = await pool.query<{ id: string }>(
-      `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by)
-       VALUES ('email', $1, $2, $3, $4, $5) RETURNING id`,
-      [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId }), total, req.user?.userId ?? null],
+    const job = await pool.query<{ id: string; not_before: string }>(
+      `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by, not_before)
+       VALUES ('email', $1, $2, $3, $4, $5, now() + ($6 || ' minutes')::interval) RETURNING id, not_before`,
+      [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId }), total, req.user?.userId ?? null, String(SEND_HOLD_MINUTES)],
     );
-    respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total });
+    respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total, notBefore: job.rows[0].not_before, holdMinutes: SEND_HOLD_MINUTES });
     return;
   }
   const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut, tags: includeTags, excludeTags, templateId });
@@ -326,7 +329,7 @@ router.post("/email/send", safeHandler(async (req: any, res: any) => {
 router.get("/send-jobs", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const r = await pool.query(
-    `SELECT id, channel, tag, status, total, sent, failed, error, created_at, started_at, finished_at
+    `SELECT id, channel, tag, status, total, sent, failed, error, created_at, started_at, finished_at, not_before
        FROM marketing_send_jobs WHERE silo = $1 ORDER BY created_at DESC LIMIT 50`,
     [silo],
   );
@@ -335,11 +338,27 @@ router.get("/send-jobs", safeHandler(async (req: any, res: any) => {
 router.get("/send-jobs/:id", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const r = await pool.query(
-    `SELECT id, channel, tag, status, total, sent, failed, error, created_at, started_at, finished_at
+    `SELECT id, channel, tag, status, total, sent, failed, error, created_at, started_at, finished_at, not_before
        FROM marketing_send_jobs WHERE id = $1 AND silo = $2`,
     [req.params.id, silo],
   );
   respondOk(res, r.rows[0] || { error: "not found" });
+}));
+
+// BF_SERVER_SEND_HOLD_WINDOW_v1 - cancel a queued blast during its hold window.
+// Only cancels jobs that have not started sending (started_at IS NULL AND
+// status='queued'); once the worker has claimed it, it is too late.
+router.post("/send-jobs/:id/cancel", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const r = await pool.query(
+    `UPDATE marketing_send_jobs
+        SET status='canceled', finished_at=now(), updated_at=now()
+      WHERE id = $1 AND silo = $2 AND status='queued' AND started_at IS NULL
+      RETURNING id, status`,
+    [req.params.id, silo],
+  );
+  if (!r.rows[0]) { respondOk(res, { canceled: false, reason: "already sending or finished" }); return; }
+  respondOk(res, { canceled: true, id: r.rows[0].id });
 }));
 
 // BF_SERVER_MARKETING_SMS_v1 - bulk SMS + 36h fallback-email cascade (BF silo).
@@ -376,12 +395,12 @@ router.post("/sms/send", safeHandler(async (req: any, res: any) => {
   const total = await countSmsRecipients(pool, silo, tag);
   if (total === 0) { respondOk(res, { configured: true, recipients: 0, smsSent: 0, emailSent: 0, failed: 0 }); return; }
   if (total > 1000) {
-    const job = await pool.query<{ id: string }>(
-      `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by)
-       VALUES ('sms', $1, $2, $3, $4, $5) RETURNING id`,
-      [silo, tag, JSON.stringify({ body, linkUrl, fbSubject, fbHtml, templateId }), total, req.user?.userId ?? null],
+    const job = await pool.query<{ id: string; not_before: string }>(
+      `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by, not_before)
+       VALUES ('sms', $1, $2, $3, $4, $5, now() + ($6 || ' minutes')::interval) RETURNING id, not_before`,
+      [silo, tag, JSON.stringify({ body, linkUrl, fbSubject, fbHtml, templateId }), total, req.user?.userId ?? null, String(SEND_HOLD_MINUTES)],
     );
-    respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total });
+    respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total, notBefore: job.rows[0].not_before, holdMinutes: SEND_HOLD_MINUTES });
     return;
   }
   const out = await runSmsSend(pool, { silo, tag, body, linkUrl, fbSubject, fbHtml, createdBy: req.user?.userId ?? null, templateId });
@@ -509,11 +528,11 @@ router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
   const total = await countEmailRecipients(pool, silo, tag, includeTags, excludeTags);
   if (total === 0) { respondOk(res, { configured: true, recipients: 0, sent: 0, failed: 0 }); return; }
   if (total > 0) { // BF_SERVER_ALWAYS_QUEUE_v1 - always use the durable queue; inline sends cannot resume
-    const job = await pool.query<{ id: string }>(
-      `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by) VALUES ('email', $1, $2, $3, $4, $5) RETURNING id`,
-      [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId }), total, req.user?.userId ?? null],
+    const job = await pool.query<{ id: string; not_before: string }>(
+      `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by, not_before) VALUES ('email', $1, $2, $3, $4, $5, now() + ($6 || ' minutes')::interval) RETURNING id, not_before`,
+      [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId }), total, req.user?.userId ?? null, String(SEND_HOLD_MINUTES)],
     );
-    respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total });
+    respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total, notBefore: job.rows[0].not_before, holdMinutes: SEND_HOLD_MINUTES });
     return;
   }
   const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut, tags: includeTags, excludeTags, templateId }); // BF_SERVER_TEMPLATE_ANALYTICS_SENDTPL_v1

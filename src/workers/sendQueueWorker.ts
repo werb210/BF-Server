@@ -19,7 +19,8 @@ export function startSendQueueWorker(pool: Pool): { stop: () => void } {
         `UPDATE marketing_send_jobs SET status='running', started_at=COALESCE(started_at, now()), updated_at=now()
           WHERE id = (
             SELECT id FROM marketing_send_jobs
-             WHERE (status='queued' OR (status='running' AND updated_at < now() - interval '10 minutes'))
+             WHERE ((status='queued' AND (not_before IS NULL OR not_before <= now()))
+                OR (status='running' AND updated_at < now() - interval '10 minutes')) -- BF_SERVER_SEND_HOLD_WINDOW_v1
              ORDER BY created_at ASC
              FOR UPDATE SKIP LOCKED
              LIMIT 1
