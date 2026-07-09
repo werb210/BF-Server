@@ -61,7 +61,8 @@ router.post(
       refTable: "crm_notes",
       refId: note.id,
       body,
-      contextUrl: `/applications/${applicationId}`,
+      // BF_SERVER_NOTE_DEEPLINK_v1 - land on the Notes tab and the exact note.
+      contextUrl: `/applications/${applicationId}/notes#note-${note.id}`,
     });
 
     res.status(201).json({ ok: true, data: note });
@@ -102,7 +103,8 @@ router.patch(
       refTable: "crm_notes",
       refId: noteId,
       body,
-      contextUrl: applicationId ? `/applications/${applicationId}` : null,
+      // BF_SERVER_NOTE_DEEPLINK_v1 - land on the Notes tab and the exact note.
+      contextUrl: applicationId ? `/applications/${applicationId}/notes#note-${noteId}` : null,
     });
 
     res.status(200).json({ ok: true, data: r.rows[0] });
