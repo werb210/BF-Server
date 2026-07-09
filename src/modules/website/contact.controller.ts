@@ -7,6 +7,8 @@ import { pool } from "../../db.js";
 import { findOrCreateContactByEmailAndCompany } from "../../services/contacts.js";
 import { findOrCreateCompanyByNameAndSilo } from "../../services/companies.js";
 import { notifyAllStaff } from "../../services/notifications/notifyAllStaff.js";
+// BF_SERVER_CONTACT_FORM_AUTOMATION_v1 - tag + auto-send template email on contact-form submit.
+import { sendOne, mergeFields, sendgridConfigured } from "../../services/sendgridService.js";
 
 export async function submitContactForm(req: Request, res: Response) {
   try {
@@ -37,6 +39,7 @@ export async function submitContactForm(req: Request, res: Response) {
     // Companies. Idempotent on re-submit (find-or-create by name / email),
     // which also fixes the old silent duplicate-email failure.
     const [firstName, ...lastNameParts] = fullName.trim().split(/\s+/);
+    let contactId: string | null = null;
     try {
       const { row: company } = await findOrCreateCompanyByNameAndSilo(pool, companyName, "BF", {
         name: companyName,
@@ -44,7 +47,7 @@ export async function submitContactForm(req: Request, res: Response) {
         email: email ?? null,
         silo: "BF",
       });
-      await findOrCreateContactByEmailAndCompany(pool, email ?? "", company.id, "BF", {
+      const contactRes = await findOrCreateContactByEmailAndCompany(pool, email ?? "", company.id, "BF", {
         first_name: firstName || fullName,
         last_name: lastNameParts.join(" "),
         email,
@@ -52,8 +55,47 @@ export async function submitContactForm(req: Request, res: Response) {
         company_id: company.id,
         silo: "BF",
       });
+      contactId = (contactRes?.row as { id?: string } | undefined)?.id ?? null;
+
+      // BF_SERVER_CONTACT_FORM_AUTOMATION_v1 - tag the CONTACT (not just the lead)
+      // "Contact form" so it is filterable in CRM.
+      await pool.query(
+        `UPDATE contacts
+            SET tags = (SELECT ARRAY(SELECT DISTINCT unnest(COALESCE(tags,'{}') || ARRAY['Contact form'])))
+          WHERE silo = 'BF' AND lower(email) = lower($1)`,
+        [String(email)],
+      );
     } catch (e) {
       console.warn("[website_contact] CRM contact/company upsert failed", e);
+    }
+
+    // BF_SERVER_CONTACT_FORM_AUTOMATION_v1 - auto-send the "BF-After contact form"
+    // template email to the person who submitted the form. Best-effort: never
+    // fails the submit. (Interim hardcode until the Automations builder ships.)
+    try {
+      if (email && sendgridConfigured()) {
+        const tpl = await pool.query<{ subject: string | null; html: string | null; body: string | null }>(
+          `SELECT subject, html, body FROM marketing_template
+            WHERE silo = 'BF' AND channel = 'email' AND lower(name) = lower($1)
+            ORDER BY updated_at DESC LIMIT 1`,
+          ["BF-After contact form"],
+        );
+        const t = tpl.rows[0];
+        if (t) {
+          const vars = { first_name: firstName || fullName, name: fullName, email: String(email), company: companyName ?? "" };
+          const htmlSource = t.html || t.body || "";
+          await sendOne({
+            to: String(email),
+            subject: mergeFields(t.subject || "Thanks for reaching out", vars),
+            html: mergeFields(htmlSource, vars),
+            contactId,
+          });
+        } else {
+          console.warn('[website_contact] template "BF-After contact form" not found; skipped auto-email');
+        }
+      }
+    } catch (e) {
+      console.warn("[website_contact] auto-template-email failed", e);
     }
 
     // BF_SERVER_BLOCK_v123_READINESS_SQL_AND_SILO_AUTH_RESOLUTION_v1
@@ -71,7 +113,9 @@ export async function submitContactForm(req: Request, res: Response) {
       body,
       refTable: "crm_leads",
       refId: lead.id,
-      contextUrl: `/crm/leads/${encodeURIComponent(lead.id)}`,
+      // BF_SERVER_CONTACT_FORM_AUTOMATION_v1 - deep-link to the contact record so
+      // the bell notification opens the person, not the CRM list.
+      contextUrl: contactId ? `/crm/contacts/${encodeURIComponent(contactId)}` : `/crm/leads/${encodeURIComponent(lead.id)}`,
       silo: "BF",
     }).catch((err) => {
       console.warn("[website_contact] notifyAllStaff failed", err);
