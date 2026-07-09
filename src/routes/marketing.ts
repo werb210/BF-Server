@@ -616,16 +616,22 @@ router.get("/templates/analytics", requireAuth, safeHandler(async (req: any, res
           GROUP BY template_id
        ) s ON s.template_id = t.id::text
        LEFT JOIN (
+         -- BF_SERVER_REPLY_CHANNEL_MATCH_v1 - only count an inbound message as a
+         -- reply to a template when the CHANNEL matches: an email template counts
+         -- inbound email, an SMS template counts inbound SMS. Without this, an
+         -- inbound SMS from a contact whose last template was an email blast was
+         -- miscounted as an "email reply" (the phantom "15 replies" bug).
          SELECT tse.template_id, count(*) AS replies
            FROM communications_messages m
            JOIN LATERAL (
-             SELECT e.template_id
+             SELECT e.template_id, e.channel
                FROM template_send_events e
               WHERE e.contact_id = m.contact_id::text AND e.sent_at < m.created_at
               ORDER BY e.sent_at DESC
               LIMIT 1
            ) tse ON true
           WHERE m.direction = 'inbound' AND m.silo = $1
+            AND m.type = tse.channel
           GROUP BY tse.template_id
        ) rp ON rp.template_id = t.id::text
       WHERE t.silo = $1
