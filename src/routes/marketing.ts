@@ -664,11 +664,25 @@ router.get("/sequences", requireAuth, safeHandler(async (req: any, res: any) => 
             (SELECT count(*)::int FROM marketing_sequence_enrollments e WHERE e.sequence_id=s.id AND e.status='active') AS active,
             (SELECT count(*)::int FROM marketing_sequence_enrollments e WHERE e.sequence_id=s.id AND e.status='completed') AS completed,
             (SELECT count(*)::int FROM marketing_sequence_enrollments e WHERE e.sequence_id=s.id AND e.status='replied') AS replied,
-            (SELECT count(*)::int FROM crm_timeline_events t WHERE t.event_type='sequence_step_sent' AND t.payload->>'sequenceId'=s.id::text AND t.payload->>'channel'='email') AS emails_sent,
+            -- BF_SERVER_SEQUENCE_TSE_METRICS_v1 - email sends/opens/clicks from the
+            -- authoritative template_send_events ledger (same source Template
+            -- Performance uses), attributed via the sequence's step templates. The old
+            -- sequence-specific ledgers under-counted sends (804 vs 1631 real) and
+            -- barely tracked opens (3 vs 456 real).
+            (SELECT count(*)::int FROM template_send_events tse
+               WHERE tse.channel='email' AND tse.silo=s.silo
+                 AND tse.template_id IN (SELECT st.template_id::text FROM marketing_sequence_steps st
+                                          WHERE st.sequence_id=s.id AND st.template_id IS NOT NULL)) AS emails_sent,
             (SELECT count(*)::int FROM crm_timeline_events t WHERE t.event_type='sequence_step_sent' AND t.payload->>'sequenceId'=s.id::text AND t.payload->>'channel'='sms') AS sms_sent,
             (SELECT count(*)::int FROM sequence_sends ss WHERE ss.sequence_id=s.id AND ss.channel='sms' AND ss.clicked_at IS NOT NULL) AS sms_clicks,
-            (SELECT count(*)::int FROM sequence_sends ss WHERE ss.sequence_id=s.id AND ss.channel='email' AND ss.opened_at IS NOT NULL) AS email_opens,
-            (SELECT count(*)::int FROM sequence_sends ss WHERE ss.sequence_id=s.id AND ss.channel='email' AND ss.clicked_at IS NOT NULL) AS email_clicks,
+            (SELECT count(tse.opened_at)::int FROM template_send_events tse
+               WHERE tse.channel='email' AND tse.silo=s.silo
+                 AND tse.template_id IN (SELECT st.template_id::text FROM marketing_sequence_steps st
+                                          WHERE st.sequence_id=s.id AND st.template_id IS NOT NULL)) AS email_opens,
+            (SELECT count(tse.clicked_at)::int FROM template_send_events tse
+               WHERE tse.channel='email' AND tse.silo=s.silo
+                 AND tse.template_id IN (SELECT st.template_id::text FROM marketing_sequence_steps st
+                                          WHERE st.sequence_id=s.id AND st.template_id IS NOT NULL)) AS email_clicks,
             (SELECT count(*)::int FROM marketing_sequence_enrollments e JOIN contacts c ON c.id=e.contact_id WHERE e.sequence_id=s.id AND c.marketing_opt_out=true) AS unsubscribed
        FROM marketing_sequences s WHERE s.silo=$1 ORDER BY s.created_at DESC LIMIT 200`,
     [silo]);
