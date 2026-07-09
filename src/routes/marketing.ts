@@ -92,6 +92,18 @@ router.get("/funnel", safeHandler(async (req: any, res: any) => {
          FROM applications
         WHERE silo = $1
           AND created_at >= now() - ($2 || ' days')::interval
+          -- BF_SERVER_FUNNEL_EXCLUDE_BLANKS_v1 - do not count empty-shell drafts:
+          -- a "Draft application" that never progressed past step 1 and was never
+          -- submitted is a wizard load that never became a real application, and
+          -- was inflating "started" (12 shown vs ~5 real form_starts in GA4).
+          AND NOT (
+            name = 'Draft application'
+            AND submitted_at IS NULL
+            AND COALESCE(
+                  NULLIF(metadata->>'currentStep','')::int,
+                  NULLIF(metadata->>'current_step','')::int,
+                  current_step, 1) <= 1
+          )
      )
      SELECT
        count(*)::int AS started,
