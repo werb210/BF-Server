@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import { pool } from "../db.js";
 // BF_AGENT_AUTH_HYDRATE_v53
 import { fetchCapabilitiesForRole } from "../auth/capabilities.js";
-import { isRole } from "../auth/roles.js";
+import { isRole, ROLES } from "../auth/roles.js";
 // BF_SERVER_BLOCK_BI_ROUND5_AUTH_SILO_REFRESH_v1 -- see comment by
 // the call site below.
 import { resolveSiloFromRequest } from "./silo.js";
@@ -110,7 +110,16 @@ export function requireAuthorization(options: AuthorizationOptions = {}): Reques
       return res.status(401).json({ status: "error", error: "NO_TOKEN" });
     }
 
-    if (requiredRoles.length > 0 && (!user.role || !requiredRoles.includes(user.role))) {
+    // BF_SERVER_MARKETING_INHERITS_STAFF_v1 - a Marketing user has the same
+    // access as a Staff user (Marketing-only surfaces are gated separately). Any
+    // endpoint that admits Staff also admits Marketing, so Marketing staff are
+    // not 403'd on the pipeline / CRM / communications endpoints (81 of which
+    // gate on [ADMIN, STAFF]). Admin-only endpoints stay admin-only.
+    const roleSatisfied =
+      !!user.role &&
+      (requiredRoles.includes(user.role) ||
+        (user.role === ROLES.MARKETING && requiredRoles.includes(ROLES.STAFF)));
+    if (requiredRoles.length > 0 && !roleSatisfied) {
       return res.status(403).json({ status: "error", error: "FORBIDDEN" });
     }
 
