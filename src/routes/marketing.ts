@@ -741,6 +741,8 @@ router.get("/automations", requireAuth, safeHandler(async (_req: any, res: any) 
     { id: "stop-on-reply", name: "Stop sequence on reply", type: "event", cadence: "On event", trigger: "A contact replies while in a stop-on-reply sequence", action: "Stop their sequence", status: "active" },
     { id: "signnow-referrer", name: "Referrer activation", type: "event", cadence: "On event", trigger: "A referrer signs their agreement in SignNow", action: "Activate the referrer / attach the signed PNW", status: "active" },
     { id: "product-update-notify", name: "Product update alert", type: "event", cadence: "On event", trigger: "A lender product is updated", action: "Notify staff", status: "active" },
+    // BF_SERVER_CONTACT_FORM_AUTOMATION_v1 - surfaced in the live Automations list.
+    { id: "contact-form-autoreply", name: "Contact form auto-reply", type: "event", cadence: "On submit", trigger: "Someone submits the website contact form", action: "Tag the contact \"Contact form\" and send the BF-After contact form template email", status: "active" },
   ];
   respondOk(res, { items });
 }));
