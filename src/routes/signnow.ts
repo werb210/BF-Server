@@ -4,11 +4,15 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { dbQuery } from "../db.js";
 import { finalizeSignedApplication } from "../signnow/finalizeSignedApplication.js";
 import { attachSignedPnwDocument } from "../signnow/pnwSigning.js";
+import { attachSignedTermSheet } from "../services/signnow/sendOfferTermSheet.js"; // BF_SERVER_OFFER_TERMSHEET_SIGNING_v1
+import { transitionPipelineState } from "../modules/applications/applications.service.js"; // BF_SERVER_OFFER_TERMSHEET_SIGNING_v1
+import { notifyAllStaff } from "../services/notifications/notifyAllStaff.js"; // BF_SERVER_OFFER_TERMSHEET_SIGNING_v1
+import { pool } from "../db.js"; // BF_SERVER_OFFER_TERMSHEET_SIGNING_v1
 
 // BF_SERVER_BLOCK_v141_SIGNNOW_WEBHOOK_REPAIR_v1
 // HMAC-SHA256 verify against SIGNNOW_WEBHOOK_SECRET. SignNow sends the
 // signature in the x-signnow-signature header (hex). When the env var
-// is absent we DENY rather than fall open — this used to be a no-op
+// is absent we DENY rather than fall open - this used to be a no-op
 // echo so any attacker could trigger SSN/SIN purge by faking a payload.
 function verifySignNowSignature(req: Request): boolean {
   // BF_SERVER_BLOCK_v188_SIGNNOW_SECRET_OPTIONAL_v1
@@ -18,7 +22,7 @@ function verifySignNowSignature(req: Request): boolean {
   if (!verifyEnabled) {
     // eslint-disable-next-line no-console
     console.warn(
-      "[signnow] SIGNNOW_WEBHOOK_SECRET is unset — accepting webhook without HMAC verify (paid SignNow feature not enabled)"
+      "[signnow] SIGNNOW_WEBHOOK_SECRET is unset - accepting webhook without HMAC verify (paid SignNow feature not enabled)"
     );
     return true;
   }
@@ -40,7 +44,7 @@ const router = Router();
 router.post(
   "/webhooks/signnow",
   safeHandler(async (req: any, res: any) => {
-    // BF_SERVER_BLOCK_v141_SIGNNOW_WEBHOOK_REPAIR_v1 — verify before doing
+    // BF_SERVER_BLOCK_v141_SIGNNOW_WEBHOOK_REPAIR_v1 - verify before doing
     // anything destructive (the handler purges SSN/SIN). Deny on missing
     // secret so a misconfigured deploy fails closed instead of open.
     if (!verifySignNowSignature(req as any)) {
@@ -123,6 +127,31 @@ router.post(
       }
     }
 
+    // BF_SERVER_OFFER_TERMSHEET_SIGNING_v1 - signed lender term sheet.
+    if (documentGroupId || documentId) {
+      const offerIds = [documentGroupId, documentId].filter(Boolean) as string[];
+      const offerMatch = await dbQuery<{ id: string }>(
+        `select id::text as id from applications
+          where metadata->'offer_signnow'->>'group_id' = any($1::text[])
+             or metadata->'offer_signnow'->>'doc_id'   = any($1::text[])
+          limit 1`,
+        [offerIds],
+      );
+      if (offerMatch.rows[0]) {
+        const applicationId = offerMatch.rows[0].id;
+        const attach = await attachSignedTermSheet(pool, applicationId);
+        try {
+          await transitionPipelineState({ applicationId, nextState: "Accepted", actorUserId: null, actorRole: null, trigger: "offer_term_sheet_signed" });
+        } catch (e) { console.warn("[signnow-webhook] offer stage transition failed", e instanceof Error ? e.message : String(e)); }
+        try {
+          await notifyAllStaff({ pool, notificationType: "offer_term_sheet_signed", title: "Term sheet signed", body: `A client signed their term sheet (application ${applicationId}).`, refTable: "applications", refId: applicationId, contextUrl: `/applications/${applicationId}` });
+        } catch (e) { console.warn("[signnow-webhook] offer notify failed", e instanceof Error ? e.message : String(e)); }
+        console.log("[signnow-webhook] offer_term_sheet_signed", { applicationId, ...attach });
+        res.status(200).json({ received: true, match: "offer_term_sheet", attached: attach.attached });
+        return;
+      }
+    }
+
     // Match by group id or document id against signnow_document_id, then fall
     // back to the embedded doc_ids array stored at signing time.
     const ids = [documentGroupId, documentId].filter(Boolean) as string[];
@@ -150,7 +179,7 @@ router.post(
 
     // Shared finalize: stamp signed, purge SIN/SSN, log CRM, enqueue lender
     // package. Same path the completion poller uses. Idempotent across retries.
-    // BF_SERVER_BLOCK_v_SIGNING_HARDENING_v1 — finalize (stamp signed, purge SIN, enqueue
+    // BF_SERVER_BLOCK_v_SIGNING_HARDENING_v1 - finalize (stamp signed, purge SIN, enqueue
     // lender package) ONLY when the whole group is complete. A per-signer event
     // (user.document.fieldinvite.signed) must NOT finalize a multi-owner app before the
     // co-owner has signed. If the group status is unreadable, fall back to finalizing so
@@ -167,7 +196,7 @@ router.post(
       } catch { groupComplete = true; }
     }
     if (!groupComplete) {
-      console.log(`[signnow-webhook] app=${app.id} signer signed but group not complete — waiting for other signers`);
+      console.log(`[signnow-webhook] app=${app.id} signer signed but group not complete - waiting for other signers`);
       res.status(200).json({ received: true, waiting_for_other_signers: true });
       return;
     }
