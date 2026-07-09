@@ -346,19 +346,28 @@ router.get("/send-jobs/:id", safeHandler(async (req: any, res: any) => {
 }));
 
 // BF_SERVER_SEND_HOLD_WINDOW_v1 - cancel a queued blast during its hold window.
-// Only cancels jobs that have not started sending (started_at IS NULL AND
-// status='queued'); once the worker has claimed it, it is too late.
+// BF_SERVER_SEND_KILL_SWITCH_v1 - a queued job (hold window, not started) is
+// canceled outright; a running job is flagged cancel_requested so the send
+// runner aborts between recipients within ~50 sends.
 router.post("/send-jobs/:id/cancel", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
-  const r = await pool.query(
+  const q = await pool.query(
     `UPDATE marketing_send_jobs
         SET status='canceled', finished_at=now(), updated_at=now()
       WHERE id = $1 AND silo = $2 AND status='queued' AND started_at IS NULL
-      RETURNING id, status`,
+      RETURNING id`,
     [req.params.id, silo],
   );
-  if (!r.rows[0]) { respondOk(res, { canceled: false, reason: "already sending or finished" }); return; }
-  respondOk(res, { canceled: true, id: r.rows[0].id });
+  if (q.rows[0]) { respondOk(res, { canceled: true, id: q.rows[0].id, phase: "held" }); return; }
+  const run = await pool.query(
+    `UPDATE marketing_send_jobs
+        SET cancel_requested=true, updated_at=now()
+      WHERE id = $1 AND silo = $2 AND status='running'
+      RETURNING id`,
+    [req.params.id, silo],
+  );
+  if (run.rows[0]) { respondOk(res, { canceled: true, id: run.rows[0].id, phase: "stopping" }); return; }
+  respondOk(res, { canceled: false, reason: "already finished" });
 }));
 
 // BF_SERVER_MARKETING_SMS_v1 - bulk SMS + 36h fallback-email cascade (BF silo).

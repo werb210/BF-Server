@@ -14,7 +14,9 @@ import { sendMarketingSms, trackedLink, lookupLineType } from "./marketingSms.js
 // Single `tag` kept for back-compat (raw email panel, SMS, Maya tools, old jobs).
 export type EmailJob = { silo: string; tag: string | null; subject: string; html: string; tags?: string[] | null; excludeTags?: string[] | null; templateId?: string | null }; // BF_SERVER_TEMPLATE_ANALYTICS_v1
 export type SendProgress = (sent: number, failed: number) => Promise<void>;
-export type EmailSendResult = { total: number; sent: number; failed: number; rejectStatus?: number; rejectError?: string }; // BF_SERVER_EMAIL_FAIL_VISIBILITY_v1
+// BF_SERVER_SEND_KILL_SWITCH_v1 - worker callback checked between recipient batches.
+export type ShouldAbort = () => Promise<boolean>;
+export type EmailSendResult = { total: number; sent: number; failed: number; rejectStatus?: number; rejectError?: string; aborted?: boolean }; // BF_SERVER_EMAIL_FAIL_VISIBILITY_v1
 
 export async function countEmailRecipients(pool: Pool, silo: string, tag: string | null, tags: string[] | null = null, excludeTags: string[] | null = null): Promise<number> {
   const r = await pool.query<{ n: number }>(
@@ -29,7 +31,7 @@ export async function countEmailRecipients(pool: Pool, silo: string, tag: string
   return r.rows[0]?.n ?? 0;
 }
 
-export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendProgress): Promise<EmailSendResult> { // BF_SERVER_EMAIL_FAIL_VISIBILITY_v1
+export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendProgress, shouldAbort?: ShouldAbort): Promise<EmailSendResult> { // BF_SERVER_EMAIL_FAIL_VISIBILITY_v1 BF_SERVER_SEND_KILL_SWITCH_v1
   const recips = await pool.query<{ id: string; email: string; name: string | null; company: string | null }>(
     `SELECT c.id, c.email, c.name, co.name AS company
        FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
@@ -40,6 +42,7 @@ export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendP
     [job.silo, job.tag, job.tags ?? null, job.excludeTags ?? null],
   );
   let sent = 0, failed = 0, skipped = 0, i = 0;
+  let aborted = false; // BF_SERVER_SEND_KILL_SWITCH_v1
   let rejectStatus: number | undefined;
   let rejectError: string | undefined;
   for (const c of recips.rows) {
@@ -79,10 +82,13 @@ export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendP
       }
     } catch (e) { failed++; if (__tseId) await pool.query(`DELETE FROM template_send_events WHERE id = $1`, [__tseId]).catch(() => {}); if (rejectError === undefined) rejectError = e instanceof Error ? e.message : String(e); console.error("sendgrid_email_exception", { to: c.email, error: e instanceof Error ? e.message : String(e) }); }
     i++;
-    if (onProgress && i % 50 === 0) { try { await onProgress(sent, failed); } catch { /* progress best-effort */ } }
+    if (i % 50 === 0) {
+      if (onProgress) { try { await onProgress(sent, failed); } catch { /* progress best-effort */ } }
+      if (shouldAbort) { try { if (await shouldAbort()) { aborted = true; break; } } catch { /* keep sending */ } } // BF_SERVER_SEND_KILL_SWITCH_v1
+    }
   }
   if (onProgress) { try { await onProgress(sent, failed); } catch { /* best-effort */ } }
-  return { total: recips.rows.length - skipped, sent, failed, rejectStatus, rejectError };
+  return { total: recips.rows.length - skipped, sent, failed, rejectStatus, rejectError, aborted };
 }
 
 
@@ -104,7 +110,7 @@ export async function countSmsRecipients(pool: Pool, silo: string, tag: string |
   return r.rows[0]?.n ?? 0;
 }
 
-export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgress): Promise<{ total: number; smsSent: number; emailSent: number; failed: number; campaignId: string }> {
+export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgress, shouldAbort?: ShouldAbort): Promise<{ total: number; smsSent: number; emailSent: number; failed: number; campaignId: string; aborted?: boolean }> { // BF_SERVER_SEND_KILL_SWITCH_v1
   const cam = await pool.query<{ id: string }>(
     `INSERT INTO sms_campaigns (silo, tag, sms_body, link_url, fallback_subject, fallback_html, created_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
@@ -119,6 +125,7 @@ export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgr
     [job.silo, job.tag],
   );
   let smsSent = 0, emailSent = 0, failed = 0, i = 0;
+  let aborted = false; // BF_SERVER_SEND_KILL_SWITCH_v1
   for (const c of recips.rows) {
     const first = (c.name || "").trim().split(/\s+/)[0] || "there";
     const vars = { first_name: first, name: c.name || "there", email: c.email || "", company: c.company || "" };
@@ -157,8 +164,11 @@ export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgr
       } else { failed++; }
     }
     i++;
-    if (onProgress && i % 50 === 0) { try { await onProgress(smsSent + emailSent, failed); } catch { /* best-effort */ } }
+    if (i % 50 === 0) {
+      if (onProgress) { try { await onProgress(smsSent + emailSent, failed); } catch { /* best-effort */ } }
+      if (shouldAbort) { try { if (await shouldAbort()) { aborted = true; break; } } catch { /* keep sending */ } } // BF_SERVER_SEND_KILL_SWITCH_v1
+    }
   }
   if (onProgress) { try { await onProgress(smsSent + emailSent, failed); } catch { /* best-effort */ } }
-  return { total: recips.rows.length, smsSent, emailSent, failed, campaignId };
+  return { total: recips.rows.length, smsSent, emailSent, failed, campaignId, aborted };
 }
