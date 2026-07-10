@@ -163,9 +163,9 @@ export async function enrichAndDistributeVoicemail(params: {
   try {
     await pool.query(
       `INSERT INTO voicemails
-        (id, client_id, call_sid, recording_sid, recording_url, blob_url, transcript, duration_seconds, contact_id, application_id, silo, from_number, conversation_id, message_id, created_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())`,
-      [initialClientId ?? contactId, callSid, recordingSid, recordingUrl, mediaUrl, transcript || null, durationSeconds, contactId, applicationId, silo, fromNumber, convId, messageId],
+        (id, client_id, call_sid, recording_sid, recording_url, blob_url, transcript, duration_seconds, contact_id, application_id, silo, from_number, conversation_id, message_id, staff_user_id, created_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, now())`,
+      [initialClientId ?? contactId, callSid, recordingSid, recordingUrl, mediaUrl, transcript || null, durationSeconds, contactId, applicationId, silo, fromNumber, convId, messageId, callLog?.staff_user_id ?? null],
     );
   } catch {
     // Voicemail enrichment is best effort; do not fail the Twilio callback.

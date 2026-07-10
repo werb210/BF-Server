@@ -11,6 +11,9 @@ const router = express.Router();
 
 router.get("/", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
+  // BF_SERVER_VOICEMAIL_PER_STAFF_v1 - voicemails are private to the staff member
+  // the call was for. Each user sees only their own (Todd sees Todd's, etc.).
+  const userId = req.user?.userId ?? req.user?.id ?? null;
   const r = await pool.query(
     `SELECT v.id, v.recording_url, v.call_sid, v.created_at,
             v.contact_id,
@@ -19,9 +22,10 @@ router.get("/", safeHandler(async (req: any, res: any) => {
        FROM voicemails v
        LEFT JOIN contacts c ON c.id = v.contact_id
       WHERE (c.silo = $1 OR c.silo IS NULL)
+        AND v.staff_user_id = $2
       ORDER BY v.created_at DESC
       LIMIT 200`,
-    [silo],
+    [silo, userId],
   ).catch(() => ({ rows: [] as any[] }));
   respondOk(res, r.rows ?? []);
 }));
