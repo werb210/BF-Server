@@ -36,6 +36,21 @@ export async function createDocumentFromTemplate(templateId: string, documentNam
   if (!body || typeof body.id !== "string") throw new SignNowError("SignNow template copy returned no document id", undefined, body);
   return { documentId: body.id };
 }
+// BF_SERVER_REFERRER_AGREEMENT_PREFILL_v1 - fill text fields by name so a signer
+// doesn't retype data we already have. SignNow: PUT /v2/documents/{id}/prefill-texts
+// with { fields: [{ field_name, prefilled_text }] }. Field names come from the
+// field-extract tag labels (l:"...").
+export async function prefillTextFields(documentId: string, fields: { name: string; value: string | null | undefined }[]): Promise<void> {
+  const clean = fields
+    .filter((f) => typeof f.value === "string" && f.value.trim().length > 0)
+    .map((f) => ({ field_name: f.name, prefilled_text: String(f.value).trim() }));
+  if (clean.length === 0) return;
+  await signnowFetch(`/v2/documents/${encodeURIComponent(documentId)}/prefill-texts`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: clean }),
+  });
+}
 export async function createDocumentGroup(documentIds: string[], groupName: string): Promise<{ groupId: string }> {
   const body = (await signnowFetch(`/documentgroup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ document_ids: documentIds, group_name: groupName }) })) as { id?: string };
   if (!body || typeof body.id !== "string") throw new SignNowError("SignNow document group returned no id", undefined, body);
