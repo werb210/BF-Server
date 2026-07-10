@@ -98,14 +98,32 @@ router.post(
       );
     } else {
       referrerId = randomUUID();
-      await pool.query(
-        `INSERT INTO users (id, first_name, last_name, email, phone_number, company_name,
-                            street, city, province, postal_code, etransfer_email,
-                            role, referrer_status, active, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                 $12, 'pending_agreement', true, 'active', now(), now())`,
-        [referrerId, first, last, email, phone, company, street, city, province, postal, etransfer, ROLES.REFERRER],
-      );
+      try {
+        // BF_SERVER_REFERRER_SIGNUP_FIX_v1 - status must be 'ACTIVE' (uppercase)
+        // to satisfy users_status_check; lowercase 'active' 500'd every signup.
+        await pool.query(
+          `INSERT INTO users (id, first_name, last_name, email, phone_number, company_name,
+                              street, city, province, postal_code, etransfer_email,
+                              role, referrer_status, active, status, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                   $12, 'pending_agreement', true, 'ACTIVE', now(), now())`,
+          [referrerId, first, last, email, phone, company, street, city, province, postal, etransfer, ROLES.REFERRER],
+        );
+      } catch (e) {
+        // BF_SERVER_REFERRER_SIGNUP_FIX_v1 - a UNIQUE email/phone (often an
+        // existing staff or referrer account) should tell the person to log in,
+        // not surface a raw 500.
+        const code = (e as { code?: string })?.code;
+        if (code === "23505") {
+          res.status(409).json({
+            status: "error",
+            error: "already_registered",
+            message: "That email or phone is already registered. Please log in instead.",
+          });
+          return;
+        }
+        throw e;
+      }
     }
 
     if (!referrerAgreementConfigured()) {
