@@ -13,6 +13,7 @@ import {
   createEmbeddedGroupLink,
   getDocumentGroupStatus,
   prefillTextFields,
+  getDocumentTextFields,
 } from "../../signnow/signnowClient.js";
 
 export function referrerAgreementConfigured(): boolean {
@@ -53,17 +54,35 @@ export async function createReferrerAgreementSession(params: {
   // Best-effort: a prefill hiccup must not block signing.
   const today = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const cityLine = [params.city, params.province, params.postal].filter((v) => v && String(v).trim()).join(" ");
+  // BF_SERVER_REFERRER_PREFILL_BY_NAME_v1 - map our labels to the document's real
+  // SignNow field names, then prefill by name. Ordered to match the PDF builder
+  // (Full name, Company, Email, Phone, Street, City/Prov/Postal, Payout, Date) so
+  // a positional fallback works if labels are not preserved by fieldextract.
+  const wanted: { label: string; value: string | null | undefined }[] = [
+    { label: "Full name", value: params.fullName },
+    { label: "Company", value: params.company },
+    { label: "Email", value: params.email },
+    { label: "Phone", value: params.phone },
+    { label: "Street address", value: params.street },
+    { label: "City Province Postal", value: cityLine },
+    { label: "Payout email", value: params.etransfer },
+    { label: "Date", value: today },
+  ];
   try {
-    await prefillTextFields(documentId, [
-      { name: "Full name", value: params.fullName },
-      { name: "Company", value: params.company },
-      { name: "Email", value: params.email },
-      { name: "Phone", value: params.phone },
-      { name: "Street address", value: params.street },
-      { name: "City Province Postal", value: cityLine },
-      { name: "Payout email", value: params.etransfer },
-      { name: "Date", value: today },
-    ]);
+    const fields = await getDocumentTextFields(documentId);
+    console.log("[referrer_agreement] doc text fields", JSON.stringify(fields));
+    const byLabel = new Map(fields.map((f) => [f.label.toLowerCase(), f.name]));
+    let prefills = wanted
+      .map((w) => ({ name: byLabel.get(w.label.toLowerCase()), value: w.value }))
+      .filter((x): x is { name: string; value: string } => typeof x.name === "string" && x.name.length > 0 && typeof x.value === "string" && x.value.trim().length > 0);
+    // Positional fallback: labels not preserved but field count lines up.
+    if (prefills.length === 0 && fields.length >= wanted.length) {
+      prefills = wanted
+        .map((w, i) => ({ name: fields[i]?.name, value: w.value }))
+        .filter((x): x is { name: string; value: string } => typeof x.name === "string" && x.name.length > 0 && typeof x.value === "string" && x.value.trim().length > 0);
+      console.log("[referrer_agreement] using positional prefill fallback");
+    }
+    if (prefills.length) await prefillTextFields(documentId, prefills);
   } catch (err) {
     console.warn("[referrer_agreement] prefill failed (non-fatal)", err instanceof Error ? err.message : String(err));
   }

@@ -40,6 +40,24 @@ export async function createDocumentFromTemplate(templateId: string, documentNam
 // doesn't retype data we already have. SignNow: PUT /v2/documents/{id}/prefill-texts
 // with { fields: [{ field_name, prefilled_text }] }. Field names come from the
 // field-extract tag labels (l:"...").
+// BF_SERVER_REFERRER_PREFILL_BY_NAME_v1 - fetch a document's TEXT fields with
+// their real SignNow name + label. prefill-texts matches on `name` (auto-
+// generated), not the l:"..." label, so callers must map label -> name.
+export async function getDocumentTextFields(documentId: string): Promise<{ name: string; label: string }[]> {
+  const body = (await signnowFetch(`/document/${encodeURIComponent(documentId)}`, { method: "GET" })) as { fields?: unknown };
+  const raw = Array.isArray((body as { fields?: unknown })?.fields) ? ((body as { fields: unknown[] }).fields) : [];
+  const out: { name: string; label: string }[] = [];
+  for (const f of raw) {
+    const fo = (f ?? {}) as Record<string, unknown>;
+    const attrs = (fo.json_attributes ?? {}) as Record<string, unknown>;
+    const type = String(fo.type ?? attrs.type ?? "").toLowerCase();
+    if (type && type !== "text") continue;
+    const name = String(attrs.name ?? fo.name ?? "").trim();
+    const label = String(attrs.label ?? attrs.tooltip ?? name).trim();
+    if (name) out.push({ name, label });
+  }
+  return out;
+}
 export async function prefillTextFields(documentId: string, fields: { name: string; value: string | null | undefined }[]): Promise<void> {
   const clean = fields
     .filter((f) => typeof f.value === "string" && f.value.trim().length > 0)
