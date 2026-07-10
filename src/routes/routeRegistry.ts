@@ -66,6 +66,7 @@ import pwaRoutes from "./pwa.js";
 import publicApplicationRoutes from "./publicApplication.js";
 import visitorTrackRoutes from "./visitorTrack.js"; // BF_SERVER_VISITOR_JOURNEY_v1 (public)
 import referralsRoutes from "./referrals.js";
+import referralsExtRoutes from "./referralsExt.js";
 import pipelineRoutes from "./pipeline.js";
 import telephonyRoutes from "../telephony/routes/telephonyRoutes.js";
 import realtimeRoutes from "../voice/realtimeRoutes.js";
@@ -226,6 +227,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/portal", router: combinedPortalRoutes },
   { path: "/pwa", router: pwaRoutes },
   { path: "/referrals", router: referralsRoutes },
+  { path: "/referrals", router: referralsExtRoutes },
   { path: "/pipeline", router: pipelineRoutes },
   { path: "/webhooks", router: webhooksRoutes },
   { path: "/track", router: emailPixelRoutes }, // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING (public)

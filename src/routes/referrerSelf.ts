@@ -1,4 +1,5 @@
 // BF_SERVER_REFERRER_SELF_v1 - referrer-portal self-service API for BF.
+// BF_SERVER_REFERRAL_CROSS_SILO_v1 - cross-silo invite + conversion crediting.
 // A referrer is a users row with role "Referrer". Login (auth.ts, userType
 // "referrer") mints a token { sub: "referrer:<userId>", role: "Referrer",
 // referrerId: <userId> }. Referrals are CRM contacts tagged with
@@ -11,6 +12,7 @@ import { pool } from "../db.js";
 import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { submitReferral } from "../modules/referrals/referrals.service.js";
+import { normalizeReferralSilos } from "../modules/referrals/referralInvite.js";
 // BF_SERVER_REFERRER_SIGNUP_v1
 import { randomUUID } from "node:crypto";
 import { signAccessToken } from "../auth/jwt.js";
@@ -247,6 +249,10 @@ router.post(
     }
     const companyName = str(body.company_name) ?? str(body.companyName);
     const email = str(body.email);
+    const requestedSilos = normalizeReferralSilos(body.silos);
+    const silos = requestedSilos.length > 0 ? requestedSilos : ["BF"];
+    const message = str(body.message);
+    const referrerName = str(body.referrer_name) ?? str(body.referrerName);
 
     // Reuse the canonical referral service (company + contact, transactional,
     // referrer_id tagged) so we write through the same repos the rest of BF
@@ -258,8 +264,11 @@ router.post(
       email,
       phone,
       referrerId: req.referrerId ?? null,
+      silos,
+      message,
+      referrerName,
     });
-    res.status(201).json({ status: "ok", data: { id: result.contactId, companyId: result.companyId } });
+    res.status(201).json({ status: "ok", data: { id: result.contactId, companyId: result.companyId, refCode: result.refCode, silos } });
   }),
 );
 
