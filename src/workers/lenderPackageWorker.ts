@@ -89,7 +89,7 @@ export function startLenderPackageWorker(pool: Pool): { stop: () => void } {
           const lenders = await pool.query<DispatchLender>(
             `SELECT l.id::text AS lender_id, l.name, l.submission_method,
                     l.submission_email, l.api_endpoint, l.api_key_encrypted,
-                    l.google_sheet_id
+                    l.google_sheet_id, l.google_sheet_tab
                FROM application_lender_selections s
                JOIN lenders l ON l.id::text = s.lender_id::text
               WHERE s.application_id::text = ($1)::text
