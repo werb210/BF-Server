@@ -90,6 +90,27 @@ router.post("/resolve-caller", auth, async (req: any, res) => {
   }
 });
 
+// BF_SERVER_RECENT_CALLS_v1 - recent calls for the logged-in staff member, newest
+// first, with the resolved contact name. Powers the dialer "Recents" list.
+router.get("/recent-calls", auth, async (req: any, res) => {
+  const userId = req.user?.userId ?? req.user?.id ?? null;
+  if (!userId) return res.json({ ok: true, items: [] });
+  const r = await pool
+    .query(
+      `SELECT cl.id, cl.direction, cl.status, cl.duration_seconds, cl.created_at,
+              cl.phone_number, cl.crm_contact_id AS contact_id,
+              c.name AS contact_name
+         FROM call_logs cl
+         LEFT JOIN contacts c ON c.id = cl.crm_contact_id
+        WHERE cl.staff_user_id = $1
+        ORDER BY cl.created_at DESC
+        LIMIT 50`,
+      [userId],
+    )
+    .catch(() => ({ rows: [] as any[] }));
+  return res.json({ ok: true, items: r.rows ?? [] });
+});
+
 router.post("/calls", auth, async (req: any, res) => {
   const target = req.body ?? {};
   const userId: string = req.user?.userId || req.user?.id || req.user?.sub || "";
