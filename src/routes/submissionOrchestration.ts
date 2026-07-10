@@ -83,7 +83,7 @@ router.post("/applications/:id/lenders/send", requireAuth, requireAuthorization(
 
   const result = await progressSubmission({ pool, applicationId: id });
   const lenders = await pool.query<DispatchLender>(`SELECT id::text AS lender_id, name, submission_method, submission_email,
-            api_endpoint, api_key_encrypted, google_sheet_id
+            api_endpoint, api_key_encrypted, google_sheet_id, google_sheet_tab
        FROM lenders
       WHERE id::text = ANY($1::text[])`, [lenderIds]);
   const sent = await dispatchToSelected({ pool, applicationId: id }, lenders.rows).catch((): string[] => []);

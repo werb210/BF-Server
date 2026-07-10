@@ -32,6 +32,7 @@ export type DispatchLender = {
   api_endpoint: string | null;
   api_key_encrypted: string | null;
   google_sheet_id: string | null;
+  google_sheet_tab?: string | null;
 };
 
 export type DispatchCtx = {
@@ -189,35 +190,69 @@ export async function dispatchToSelected(
       } else if (!googleAdapter) {
         error = "google_adapter_unavailable";
       } else {
+        // BF_SERVER_GSHEET_ROW_v1 - idempotency claim so a worker retry can't append
+        // a duplicate row for the same (application, lender). If already claimed, skip.
+        const release = async () => {
+          await ctx.pool
+            .query(`DELETE FROM lender_sheet_dispatches WHERE application_id = $1 AND lender_id = $2`, [ctx.applicationId, l.lender_id])
+            .catch(() => {});
+        };
         try {
-          const adapter = new googleAdapter({
-            payload: {
-              application: {
-                id: ctx.applicationId,
-                ownerUserId: null,
-                name: `Application ${ctx.applicationId}`,
-                metadata: {},
-                productType: "",
-                lenderId: l.lender_id,
-                lenderProductId: null,
-                requestedAmount: null,
-              },
-              documents: [],
-              submittedAt: new Date().toISOString(),
-            },
-            config: { spreadsheetId: l.google_sheet_id, sheetName: null, columnMapVersion: "v1" },
-          });
-          const result = await adapter.submit({} as any);
-          if (result.success) {
+          const claim = await ctx.pool.query(
+            `INSERT INTO lender_sheet_dispatches (application_id, lender_id)
+             VALUES ($1, $2)
+             ON CONFLICT (application_id, lender_id) DO NOTHING
+             RETURNING application_id`,
+            [ctx.applicationId, l.lender_id],
+          );
+          if (claim.rowCount === 0) {
+            // Already appended in a prior attempt - treat as delivered, don't duplicate.
             ok = true;
             deliveredTo = l.google_sheet_id;
           } else {
-            ok = false;
-            error = result.failureReason ?? "google_sheet_failed";
+            // BF_SERVER_GSHEET_ROW_v1 - build the REAL, column-ordered row from the
+            // application (the old path submitted {} -> a blank row).
+            const { loadSheetRowData, buildSheetRow } = await import("../../modules/submissions/merchantGrowthSheet.js");
+            const rowData = await loadSheetRowData(ctx.pool, ctx.applicationId);
+            const { values } = buildSheetRow(rowData);
+            const adapter = new googleAdapter({
+              payload: {
+                application: {
+                  id: ctx.applicationId,
+                  ownerUserId: null,
+                  name: `Application ${ctx.applicationId}`,
+                  metadata: {},
+                  productType: "",
+                  lenderId: l.lender_id,
+                  lenderProductId: null,
+                  requestedAmount: null,
+                },
+                documents: [],
+                submittedAt: new Date().toISOString(),
+              },
+              config: {
+                spreadsheetId: l.google_sheet_id,
+                sheetName: l.google_sheet_tab ?? null,
+                columnMapVersion: "v1",
+              },
+            });
+            const result =
+              typeof adapter.appendRow === "function"
+                ? await adapter.appendRow(values)
+                : await adapter.submit({} as any);
+            if (result.success) {
+              ok = true;
+              deliveredTo = l.google_sheet_id;
+            } else {
+              ok = false;
+              error = result.failureReason ?? "google_sheet_failed";
+              await release();
+            }
           }
         } catch (sheetErr) {
           ok = false;
           error = `google_sheet_error: ${sheetErr instanceof Error ? sheetErr.message : String(sheetErr)}`;
+          await release();
         }
       }
     } else {

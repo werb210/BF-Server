@@ -38,6 +38,8 @@ function unavailableResult(reason: string): SubmissionResult {
 export class GoogleSheetSubmissionAdapter implements SubmissionAdapter {
   private sheets: any = null;
   private spreadsheetId: string | null = null;
+  // BF_SERVER_GSHEET_ROW_v1 - honor the configured tab instead of hardcoding "Sheet1".
+  private sheetName: string = "Sheet1";
 
   constructor(params: { payload: SubmissionPayload; config: GoogleSheetSubmissionConfig }) {
     if (!google) {
@@ -46,6 +48,9 @@ export class GoogleSheetSubmissionAdapter implements SubmissionAdapter {
     }
 
     this.spreadsheetId = params.config.spreadsheetId;
+    if (params.config.sheetName && String(params.config.sheetName).trim()) {
+      this.sheetName = String(params.config.sheetName).trim();
+    }
 
     const auth = new google.auth.GoogleAuth({
       credentials: {
@@ -56,6 +61,42 @@ export class GoogleSheetSubmissionAdapter implements SubmissionAdapter {
     });
 
     this.sheets = google.sheets({ version: "v4", auth });
+  }
+
+  // BF_SERVER_GSHEET_ROW_v1 - append a pre-built, column-ordered row. This is the
+  // real submission path (the generic submit() dumped Object.values, which is not
+  // column-mapped). Values must already be in the sheet's column order.
+  async appendRow(values: (string | number | null)[]): Promise<SubmissionResult> {
+    if (!this.sheets) {
+      logError("google_sheets_unavailable_skip");
+      return unavailableResult("Google Sheets adapter unavailable.");
+    }
+    try {
+      await this.sheets.spreadsheets.values.append({
+        spreadsheetId: this.spreadsheetId,
+        range: `${this.sheetName}!A1`,
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: { values: [values] },
+      });
+      logInfo("google_sheet_row_appended");
+      return {
+        success: true,
+        response: {
+          status: "accepted",
+          detail: "Appended row to Google Sheets.",
+          receivedAt: new Date().toISOString(),
+          externalReference: null,
+        },
+        failureReason: null,
+        retryable: false,
+      };
+    } catch (err) {
+      logError("google_sheet_append_failed", { error: err });
+      return unavailableResult(
+        `Google Sheets append failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   async submit(data: SubmissionPayload): Promise<SubmissionResult> {
