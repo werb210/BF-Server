@@ -425,7 +425,10 @@ router.post("/twilio/voicemail", twilioWebhookValidation, safeHandler(async (req
 
     // BF_SERVER_VOICEMAIL_PER_STAFF_v1 - stamp the staff member the call was for
     // so the voicemail is private to them (Todd sees only Todd's, etc.).
-    const vmStaffUserId = await findCallLogByTwilioSid(String(CallSid))
+    // BF_SERVER_PHONE_HOTFIX_v1 - the reception IVR passes the resolved target staff as
+    // ?staff=<userId>; prefer it, else fall back to the call_log lookup.
+    const staffHint = typeof req.query?.staff === "string" && req.query.staff.trim() ? String(req.query.staff).trim() : null;
+    const vmStaffUserId = staffHint ?? await findCallLogByTwilioSid(String(CallSid))
       .then((cl) => cl?.staff_user_id ?? null)
       .catch(() => null);
     await pool.query(
