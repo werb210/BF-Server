@@ -13,6 +13,7 @@ import { eventBus } from "../events/eventBus.js";
 // src/middleware/twilioWebhookValidation.ts) on every Twilio webhook
 // instead of an inline ad-hoc check.
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
+import { findCallLogByTwilioSid } from "../modules/calls/calls.repo.js"; // BF_SERVER_VOICEMAIL_PER_STAFF_v1
 
 void twilio;
 const router = Router();
@@ -422,9 +423,14 @@ router.post("/twilio/voicemail", twilioWebhookValidation, safeHandler(async (req
         ).then((r) => r.rows[0] ?? null).catch(() => null)
       : null;
 
+    // BF_SERVER_VOICEMAIL_PER_STAFF_v1 - stamp the staff member the call was for
+    // so the voicemail is private to them (Todd sees only Todd's, etc.).
+    const vmStaffUserId = await findCallLogByTwilioSid(String(CallSid))
+      .then((cl) => cl?.staff_user_id ?? null)
+      .catch(() => null);
     await pool.query(
-      `INSERT INTO voicemails (id, call_sid, recording_sid, recording_url, duration, from_number, contact_id, created_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, now())
+      `INSERT INTO voicemails (id, call_sid, recording_sid, recording_url, duration, from_number, contact_id, staff_user_id, created_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, now())
        ON CONFLICT DO NOTHING`,
       [
         String(CallSid),
@@ -433,6 +439,7 @@ router.post("/twilio/voicemail", twilioWebhookValidation, safeHandler(async (req
         parseInt(String(RecordingDuration ?? "0"), 10) || 0,
         fromNum,
         contact?.id ?? null,
+        vmStaffUserId,
       ]
     ).catch((e: any) => console.error("voicemail_insert_failed", e?.message));
   }
