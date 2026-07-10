@@ -135,7 +135,11 @@ router.post(
       return;
     }
 
-    const session = await createReferrerAgreementSession({ referrerId, fullName, email });
+    // BF_SERVER_REFERRER_AGREEMENT_PREFILL_v1 - pass profile data so the agreement
+    // is pre-filled and the referrer only signs.
+    const session = await createReferrerAgreementSession({
+      referrerId, fullName, email, company, phone, street, city, province, postal, etransfer,
+    });
     await pool.query(
       `UPDATE users SET agreement_document_group_id=$2, agreement_document_id=$3, updated_at=now()
         WHERE id::text = $1`,
