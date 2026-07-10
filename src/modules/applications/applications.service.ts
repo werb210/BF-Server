@@ -57,6 +57,7 @@ import {
   createDocumentProcessingJob,
 } from "../processing/processing.service.js";
 import { logCrmEvent } from "../crm/crmTimeline.service.js";
+import { creditReferralConversion } from "../referrals/referralConversions.service.js";
 // BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const BANK_STATEMENT_CATEGORY = "bank_statements_6_months";
@@ -1296,6 +1297,7 @@ export async function changePipelineState(params: {
   // Commission should trigger only when the deal is marked accepted.
   if (stage === ApplicationStage.ACCEPTED) {
     await triggerCommission(params.applicationId);
+    await creditReferralConversion({ applicationId: params.applicationId, sourceSilo: "BF" });
   }
 }
 
