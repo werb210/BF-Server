@@ -90,9 +90,11 @@ router.post(
     if (prior) {
       referrerId = prior.id;
       await pool.query(
+        // BF_SERVER_REFERRER_SIGNUP_PROFILE_v1 - signup captures the full profile,
+        // so mark it complete and skip the redundant /referrer/profile form.
         `UPDATE users SET first_name=$2, last_name=$3, email=$4, company_name=$5,
                  street=$6, city=$7, province=$8, postal_code=$9, etransfer_email=$10,
-                 updated_at=now()
+                 profile_complete=true, updated_at=now()
            WHERE id::text = $1`,
         [referrerId, first, last, email, company, street, city, province, postal, etransfer],
       );
@@ -102,11 +104,13 @@ router.post(
         // BF_SERVER_REFERRER_SIGNUP_FIX_v1 - status must be 'ACTIVE' (uppercase)
         // to satisfy users_status_check; lowercase 'active' 500'd every signup.
         await pool.query(
+          // BF_SERVER_REFERRER_SIGNUP_PROFILE_v1 - profile_complete=true so a
+          // self-signup referrer lands on the dashboard, not the profile form.
           `INSERT INTO users (id, first_name, last_name, email, phone_number, company_name,
                               street, city, province, postal_code, etransfer_email,
-                              role, referrer_status, active, status, created_at, updated_at)
+                              role, referrer_status, active, status, profile_complete, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                   $12, 'pending_agreement', true, 'ACTIVE', now(), now())`,
+                   $12, 'pending_agreement', true, 'ACTIVE', true, now(), now())`,
           [referrerId, first, last, email, phone, company, street, city, province, postal, etransfer, ROLES.REFERRER],
         );
       } catch (e) {
