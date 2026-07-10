@@ -92,11 +92,11 @@ function toE164(raw: string | null | undefined): string | null {
   return null;
 }
 
-async function resolveTarget(t: Target): Promise<{ identity: string | null; available: boolean; onCall: boolean; clientReady: boolean; cell: string | null }> {
+async function resolveTarget(t: Target): Promise<{ identity: string | null; available: boolean; onCall: boolean; clientReady: boolean; cell: string | null; userId: string | null }> {
   const nameLike = t === "sales" ? "%todd%" : "%andrew%";
   try {
-    const { rows } = await pool.query<{ status: string; twilio_identity: string | null; on_call: boolean; fresh: boolean; phone: string | null }>(
-      `SELECT sp.status, sp.twilio_identity, coalesce(sp.on_call, false) AS on_call,
+    const { rows } = await pool.query<{ status: string; twilio_identity: string | null; on_call: boolean; fresh: boolean; phone: string | null; user_id: string | null }>(
+      `SELECT sp.status, sp.twilio_identity, coalesce(sp.on_call, false) AS on_call, u.id AS user_id,
               (sp.last_heartbeat > now() - interval '90 seconds') AS fresh,
               coalesce(u.phone_number, u.phone) AS phone
          FROM users u JOIN staff_presence sp ON sp.user_id = u.id
@@ -104,18 +104,21 @@ async function resolveTarget(t: Target): Promise<{ identity: string | null; avai
       [nameLike],
     );
     const r = rows[0];
-    if (!r) return { identity: null, available: false, onCall: false, clientReady: false, cell: null };
+    if (!r) return { identity: null, available: false, onCall: false, clientReady: false, cell: null, userId: null };
     const clientReady = r.status === "available" && !!r.twilio_identity && !!r.fresh;
-    return { identity: r.twilio_identity, available: r.status === "available" && !!r.twilio_identity, onCall: !!r.on_call, clientReady, cell: toE164(r.phone) };
-  } catch { return { identity: null, available: false, onCall: false, clientReady: false, cell: null }; }
+    return { identity: r.twilio_identity, available: r.status === "available" && !!r.twilio_identity, onCall: !!r.on_call, clientReady, cell: toE164(r.phone), userId: r.user_id ?? null };
+  } catch { return { identity: null, available: false, onCall: false, clientReady: false, cell: null, userId: null }; }
 }
 
-function offerMessageOrVoicemail(v: any, openerKey: string, openerText: string): void {
+function offerMessageOrVoicemail(v: any, openerKey: string, openerText: string, staffUserId?: string | null): void {
   // BF_SERVER_RECEPTION_VOICEMAIL_ONLY_v1 — no "take a message vs voicemail"
   // choice; play the opener, then go straight to recording a voicemail.
   emit(v, openerKey, openerText);
   emit(v, "record_prompt", PHRASES.record_prompt);
-  v.record({ maxLength: 120, playBeep: true, action: "/api/webhooks/twilio/voicemail" });
+  // BF_SERVER_PHONE_HOTFIX_v1 - when the caller asked for a specific person, stamp the
+  // voicemail with that staff user id so it stays private to them (Todd sees Todd's).
+  const action = staffUserId ? `/api/webhooks/twilio/voicemail?staff=${encodeURIComponent(staffUserId)}` : "/api/webhooks/twilio/voicemail";
+  v.record({ maxLength: 120, playBeep: true, action });
 }
 
 router.get("/voice", async (req: Request, res: Response) => {
@@ -172,7 +175,9 @@ router.post("/intent", twilioWebhookValidation, async (req: Request, res: Respon
   // is fresh (a stale "available" row was dialing a dead WebRTC client -> 0-sec
   // no-answer); ALSO ring the staff cell so they're reachable regardless of the
   // browser softphone. First leg to answer wins.
-  const callerId = config.twilio.callerId ?? config.twilio.from ?? config.twilio.number ?? undefined;
+  // BF_SERVER_PHONE_HOTFIX_v1 - forward the ORIGINAL caller's number so staff see who
+  // is calling (Twilio allows the inbound caller's number as callerId when forwarding).
+  const callerId = String((req.body?.From ?? "")).trim() || config.twilio.callerId || config.twilio.from || config.twilio.number || undefined;
   if (t.clientReady || t.cell) {
     emit(v, `connect_${lkey(target)}`, `One moment, connecting you to ${name}.`);
     const dial = v.dial({ answerOnBridge: true, timeout: 25, action: `${BASE}/unavailable?target=${target}`, method: "POST", callerId });
@@ -182,7 +187,7 @@ router.post("/intent", twilioWebhookValidation, async (req: Request, res: Respon
   }
   const reasonKey = t.onCall ? `reason_${lkey(target)}_oncall` : `reason_${lkey(target)}_unavail`;
   const reasonText = `Sorry, ${name} ${t.onCall ? "is on another call" : "isn't available right now"}.`;
-  offerMessageOrVoicemail(v, reasonKey, reasonText);
+  offerMessageOrVoicemail(v, reasonKey, reasonText, t.userId);
   return send(res, v);
 });
 
@@ -191,7 +196,8 @@ router.post("/unavailable", twilioWebhookValidation, async (req: Request, res: R
   const dialStatus = String(req.body?.DialCallStatus ?? "");
   const v = await newVR();
   if (dialStatus === "completed") { v.hangup(); return send(res, v); }
-  offerMessageOrVoicemail(v, `noanswer_${lkey(target)}`, `Sorry, ${displayFor(target)} didn't pick up.`);
+  const tt = await resolveTarget(target);
+  offerMessageOrVoicemail(v, `noanswer_${lkey(target)}`, `Sorry, ${displayFor(target)} didn't pick up.`, tt.userId);
   return send(res, v);
 });
 
