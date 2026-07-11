@@ -10,7 +10,7 @@
 //   o: role name       must match SIGNNOW_REFERRER_ROLE_NAME (default "Referrer")
 //   l: label
 //   w:/h: size in pt
-// The date field is t:t with n:"ref_date";l:"Date" on purpose. A real date field (t:d) breaks this
+// The date field is t:t with l:"Date" on purpose. A real date field (t:d) breaks this
 // account's fieldextract with error 65656; dates are stamped server-side instead.
 import { PDFDocument, StandardFonts, rgb, PDFFont, PDFPage } from "pdf-lib";
 
@@ -162,13 +162,13 @@ export async function buildReferrerAgreementPdf(): Promise<Uint8Array> {
   text(ctx, "REFERRAL PARTNER", 9.5, B, BLACK);
   ctx.y += 18;
 
-  fieldLine(ctx, "Full name", `{{t:t;r:y;o:"${ROLE}";n:"ref_full_name";l:"Full name";w:230;h:16;}}`, true);
-  fieldLine(ctx, "Company (if any)", `{{t:t;r:n;o:"${ROLE}";n:"ref_company";l:"Company";w:230;h:16;}}`, false);
-  fieldLine(ctx, "Email", `{{t:t;r:y;o:"${ROLE}";n:"ref_email";l:"Email";w:230;h:16;}}`, true);
-  fieldLine(ctx, "Phone", `{{t:t;r:y;o:"${ROLE}";n:"ref_phone";l:"Phone";w:230;h:16;}}`, true);
-  fieldLine(ctx, "Street address", `{{t:t;r:y;o:"${ROLE}";n:"ref_street";l:"Street address";w:230;h:16;}}`, true);
-  fieldLine(ctx, "City / Province / Postal code", `{{t:t;r:y;o:"${ROLE}";n:"ref_city_prov_postal";l:"City Province Postal";w:230;h:16;}}`, true);
-  fieldLine(ctx, "Payout (e-Transfer) email", `{{t:t;r:y;o:"${ROLE}";n:"ref_payout_email";l:"Payout email";w:230;h:16;}}`, true);
+  fieldLine(ctx, "Full name", `{{t:t;r:y;o:"${ROLE}";l:"Full name";w:230;h:16;}}`, true);
+  fieldLine(ctx, "Company (if any)", `{{t:t;r:n;o:"${ROLE}";l:"Company";w:230;h:16;}}`, false);
+  fieldLine(ctx, "Email", `{{t:t;r:y;o:"${ROLE}";l:"Email";w:230;h:16;}}`, true);
+  fieldLine(ctx, "Phone", `{{t:t;r:y;o:"${ROLE}";l:"Phone";w:230;h:16;}}`, true);
+  fieldLine(ctx, "Street address", `{{t:t;r:y;o:"${ROLE}";l:"Street address";w:230;h:16;}}`, true);
+  fieldLine(ctx, "City / Province / Postal code", `{{t:t;r:y;o:"${ROLE}";l:"City Province Postal";w:230;h:16;}}`, true);
+  fieldLine(ctx, "Payout (e-Transfer) email", `{{t:t;r:y;o:"${ROLE}";l:"Payout email";w:230;h:16;}}`, true);
 
   ensure(ctx, 60);
   ctx.y += 10;
@@ -176,8 +176,8 @@ export async function buildReferrerAgreementPdf(): Promise<Uint8Array> {
   ctx.page.drawLine({ start: { x: M, y: PH - ctx.y }, end: { x: M + sigW, y: PH - ctx.y }, thickness: 0.8, color: rgb(0.3, 0.3, 0.3) });
   ctx.page.drawLine({ start: { x: M + sigW + 40, y: PH - ctx.y }, end: { x: M + CW, y: PH - ctx.y }, thickness: 0.8, color: rgb(0.3, 0.3, 0.3) });
   ctx.page.drawText(`{{t:s;r:y;o:"${ROLE}";w:170;h:20;}}`, { x: M + 2, y: PH - ctx.y + 3, size: 6, font: F, color: WHITE });
-  // t:t + n:"ref_date";l:"Date" on purpose - t:d breaks fieldextract (65656) on this account.
-  ctx.page.drawText(`{{t:t;r:y;o:"${ROLE}";n:"ref_date";l:"Date";w:90;h:16;}}`, { x: M + sigW + 42, y: PH - ctx.y + 3, size: 6, font: F, color: WHITE });
+  // t:t + l:"Date" on purpose - t:d breaks fieldextract (65656) on this account.
+  ctx.page.drawText(`{{t:t;r:y;o:"${ROLE}";l:"Date";w:90;h:16;}}`, { x: M + sigW + 42, y: PH - ctx.y + 3, size: 6, font: F, color: WHITE });
   ctx.y += 12;
   text(ctx, "Signature", 8, F, GREY);
   ctx.page.drawText("Date", { x: M + sigW + 40, y: PH - ctx.y, size: 8, font: F, color: GREY });
