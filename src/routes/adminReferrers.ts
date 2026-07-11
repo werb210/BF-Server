@@ -26,7 +26,10 @@ router.get("/", async (_req, res) => {
               u.profile_complete AS profile_completed,
               u.created_at,
               COALESCE(rc.referrals_count, 0) AS referrals_count,
-              COALESCE(rc.matched_count, 0)   AS matched_count
+              COALESCE(rc.matched_count, 0)   AS matched_count,
+              -- BF_SERVER_REFERRER_ROLLUP_v1 - commission rollup from referral_conversions.
+              COALESCE(conv.total_accrued, 0) AS total_accrued,
+              COALESCE(conv.total_paid, 0)    AS total_paid
          FROM users u
          LEFT JOIN LATERAL (
            SELECT count(*)::int      AS referrals_count,
@@ -35,6 +38,13 @@ router.get("/", async (_req, res) => {
              LEFT JOIN applications a ON a.contact_id = c.id AND a.silo = 'BF'
             WHERE c.referrer_id = u.id AND c.silo = 'BF'
          ) rc ON true
+         LEFT JOIN LATERAL (
+           -- accrued = credited but unpaid; paid = paid out. Flat 20% credit_amount.
+           SELECT COALESCE(SUM(rcv.credit_amount) FILTER (WHERE rcv.status = 'credited'), 0) AS total_accrued,
+                  COALESCE(SUM(rcv.credit_amount) FILTER (WHERE rcv.status = 'paid'), 0)     AS total_paid
+             FROM referral_conversions rcv
+            WHERE rcv.referrer_id = u.id
+         ) conv ON true
         WHERE u.role = 'Referrer'
         ORDER BY u.created_at DESC NULLS LAST`,
     )
