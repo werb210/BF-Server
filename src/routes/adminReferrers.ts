@@ -52,6 +52,32 @@ router.get("/", async (_req, res) => {
   res.json({ referrers: r.rows ?? [] });
 });
 
+// BF_SERVER_REFERRER_PAYOUT_v1
+// POST /api/admin/referrers/:id/pay - ADMIN ONLY. Flip this referrer's credited
+// conversions to paid and stamp paid_at; returns count + total paid. Idempotent
+// (a second call finds nothing still 'credited' and pays 0).
+router.post("/:id/pay", requireAuthorization({ roles: [ROLES.ADMIN] }), async (req, res) => {
+  const referrerId = String(req.params.id ?? "").trim();
+  if (!referrerId) {
+    res.status(400).json({ error: "referrer_id_required" });
+    return;
+  }
+  const r = await pool
+    .query<{ paid_count: number; paid_amount: string | number | null }>(
+      `WITH upd AS (
+         UPDATE referral_conversions
+            SET status = 'paid', paid_at = now(), updated_at = now()
+          WHERE referrer_id::text = $1 AND status = 'credited'
+          RETURNING credit_amount
+       )
+       SELECT count(*)::int AS paid_count, COALESCE(SUM(credit_amount), 0) AS paid_amount FROM upd`,
+      [referrerId],
+    )
+    .catch(() => ({ rows: [{ paid_count: 0, paid_amount: 0 }] as any[] }));
+  const row = r.rows[0] ?? { paid_count: 0, paid_amount: 0 };
+  res.json({ status: "ok", paidCount: Number(row.paid_count ?? 0), paidAmount: Number(row.paid_amount ?? 0) });
+});
+
 // GET /api/admin/referrers/:id/detail - one referrer's referrals + matched apps.
 router.get("/:id/detail", async (req, res) => {
   const id = String(req.params.id || "");
