@@ -190,7 +190,9 @@ export async function buildReferrerAgreementPdf(data?: ReferrerAgreementData): P
   const sigW = (CW - 40) / 2;
   ctx.page.drawLine({ start: { x: M, y: PH - ctx.y }, end: { x: M + sigW, y: PH - ctx.y }, thickness: 0.8, color: rgb(0.3, 0.3, 0.3) });
   ctx.page.drawLine({ start: { x: M + sigW + 40, y: PH - ctx.y }, end: { x: M + CW, y: PH - ctx.y }, thickness: 0.8, color: rgb(0.3, 0.3, 0.3) });
-  ctx.page.drawText(`{{t:s;r:y;o:"${ROLE}";w:170;h:20;}}`, { x: M + 2, y: PH - ctx.y + 3, size: 6, font: F, color: WHITE });
+  // BF_SERVER_SIG_POSITION_v1 - lift the signature field so its box sits above the
+  // signing line instead of bisecting it (h:20 box anchored top-left, extends down).
+  ctx.page.drawText(`{{t:s;r:y;o:"${ROLE}";w:170;h:20;}}`, { x: M + 2, y: PH - ctx.y + 22, size: 6, font: F, color: WHITE });
   // t:t + l:"Date" on purpose - t:d breaks fieldextract (65656) on this account.
   // BF_SERVER_REFERRER_AGREEMENT_BAKE_v1 - bake today's date; only the signature is left.
   if (data) {

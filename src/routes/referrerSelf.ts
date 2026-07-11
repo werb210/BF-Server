@@ -279,13 +279,17 @@ router.post(
   requireReferrer,
   safeHandler(async (req: ReferrerRequest, res: Response) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const fullName = str(body.full_name) ?? str(body.contactName);
+    // BF_SERVER_ADD_REFERRAL_NAMES_v1 - the form posts first_name/last_name/business_name;
+    // accept those (was only reading full_name/contactName -> name_and_phone_required).
+    const fullName = str(body.full_name) ?? str(body.contactName)
+      ?? ([str(body.first_name) ?? str(body.firstName), str(body.last_name) ?? str(body.lastName)]
+            .filter(Boolean).join(" ").trim() || null);
     const phone = str(body.phone) ?? str(body.phone_e164);
     if (!fullName || !phone) {
       res.status(400).json({ status: "error", message: "name_and_phone_required" });
       return;
     }
-    const companyName = str(body.company_name) ?? str(body.companyName);
+    const companyName = str(body.company_name) ?? str(body.companyName) ?? str(body.business_name);
     const email = str(body.email);
     const requestedSilos = normalizeReferralSilos(body.silos);
     const silos = requestedSilos.length > 0 ? requestedSilos : ["BF"];
