@@ -227,7 +227,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/portal", router: combinedPortalRoutes },
   { path: "/pwa", router: pwaRoutes },
   { path: "/referrals", router: referralsRoutes },
-  { path: "/referrals", router: referralsExtRoutes },
+  { path: "/referrals-ext", router: referralsExtRoutes }, // BF_SERVER_REFERRALS_EXT_MOUNT_v1 - own path (was colliding with /referrals)
   { path: "/pipeline", router: pipelineRoutes },
   { path: "/webhooks", router: webhooksRoutes },
   { path: "/track", router: emailPixelRoutes }, // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING (public)
