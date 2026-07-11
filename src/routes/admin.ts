@@ -485,6 +485,30 @@ router.post(
         const { documentId } = await createDocumentFromTemplate(templateId, "Boreal referrer-agreement diagnostics probe");
         out.templateResolves = true;
         out.probeDocumentId = documentId;
+        // BF_SERVER_SIGNNOW_FIELD_DUMP_v1 - reveal where SignNow stores the text-field
+        // names (getDocumentTextFields returned [] against the legacy /document view).
+        try {
+          const { signnowGetRaw } = await import("../signnow/signnowClient.js");
+          const legacy: any = await signnowGetRaw(`/document/${documentId}`);
+          const v2: any = await signnowGetRaw(`/v2/documents/${documentId}`);
+          const trim = (arr: any) => Array.isArray(arr) ? arr.slice(0, 12).map((f: any) => ({
+            keys: Object.keys(f ?? {}),
+            type: f?.type ?? f?.json_attributes?.type,
+            name: f?.name ?? f?.json_attributes?.name ?? f?.field_name,
+            label: f?.label ?? f?.json_attributes?.label ?? f?.tooltip,
+          })) : (arr ?? null);
+          out.fieldDump = {
+            legacyKeys: legacy && typeof legacy === "object" ? Object.keys(legacy) : typeof legacy,
+            legacyFields: trim(legacy?.fields),
+            legacyTexts: trim(legacy?.texts),
+            v2Keys: v2 && typeof v2 === "object" ? Object.keys(v2) : typeof v2,
+            v2Fields: trim(v2?.fields ?? v2?.document?.fields),
+            v2FieldInvites: trim(v2?.field_invites),
+            v2First: (Array.isArray(v2?.fields) ? v2.fields[0] : (Array.isArray(v2?.document?.fields) ? v2.document.fields[0] : null)),
+          };
+        } catch (eDump: any) {
+          out.fieldDumpError = eDump instanceof Error ? eDump.message : String(eDump);
+        }
         out.diagnosis = "ok";
         out.note = "A throwaway document was created from the template; delete it in SignNow if you wish.";
       } catch (e: any) {
