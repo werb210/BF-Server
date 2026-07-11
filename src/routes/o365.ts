@@ -239,12 +239,32 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
     return res.json({ ok: true, scheduled: true, sendAt: when.toISOString() });
   }
 
-  const send = await graph.fetch(endpoint, {
+  // BF_SERVER_SENDMAIL_ITEMNOTFOUND_RETRY_v1
+  // A mailbox converted from a licensed user mailbox to a shared mailbox can end
+  // up with a Sent Items folder Graph cannot write to, even though the mailbox is
+  // otherwise healthy and sends fine from OWA. Graph then fails the whole
+  // sendMail with ErrorItemNotFound ("The specified object was not found in the
+  // store.") because of the saveToSentItems copy, not the delivery itself.
+  // Retry once without the Sent Items copy so the mail still goes out.
+  let send = await graph.fetch(endpoint, {
     method: "POST",
     body: JSON.stringify({ message, saveToSentItems: true }),
   });
 
-  if (!send.ok) return res.status(502).json({ error: "graph_send_failed", detail: (await send.text()).slice(0, 500) });
+  if (!send.ok) {
+    const firstDetail = (await send.text()).slice(0, 500);
+    if (firstDetail.includes("ErrorItemNotFound")) {
+      send = await graph.fetch(endpoint, {
+        method: "POST",
+        body: JSON.stringify({ message, saveToSentItems: false }),
+      });
+      if (!send.ok) {
+        return res.status(502).json({ error: "graph_send_failed", detail: (await send.text()).slice(0, 500) });
+      }
+    } else {
+      return res.status(502).json({ error: "graph_send_failed", detail: firstDetail });
+    }
+  }
 
   // BF_SERVER_BLOCK_v733 — channel-level email logging. Resolve the CRM
   // contact(s) by recipient email and write crm_email_log, so a sent email
