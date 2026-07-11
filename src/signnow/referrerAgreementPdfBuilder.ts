@@ -72,7 +72,7 @@ function heading(ctx: Ctx, s: string): void {
 }
 
 // A labelled line with an invisible SignNow text field sitting on it.
-function fieldLine(ctx: Ctx, label: string, tag: string, required: boolean): void {
+function fieldLine(ctx: Ctx, label: string, tag: string, required: boolean, value?: string | null): void {
   ensure(ctx, 30);
   text(ctx, label, 8, ctx.F, GREY);
   ctx.y += 13;
@@ -82,13 +82,28 @@ function fieldLine(ctx: Ctx, label: string, tag: string, required: boolean): voi
     thickness: 0.7,
     color: rgb(0.6, 0.62, 0.66),
   });
-  // Tag drawn in white -> invisible to a human reader, still extracted by SignNow.
-  text(ctx, tag, 6, ctx.F, WHITE, 2);
+  // BF_SERVER_REFERRER_AGREEMENT_BAKE_v1 - print the value directly when we have it
+  // (nothing for the referrer to fill); otherwise draw the invisible field tag.
+  if (value && String(value).trim()) {
+    ctx.page.drawText(String(value).trim(), { x: M + 2, y: PH - ctx.y + 3, size: 9, font: ctx.F, color: BLACK });
+  } else {
+    text(ctx, tag, 6, ctx.F, WHITE, 2);
+  }
   ctx.y += 18;
   void required;
 }
 
-export async function buildReferrerAgreementPdf(): Promise<Uint8Array> {
+export type ReferrerAgreementData = {
+  fullName?: string | null;
+  company?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  street?: string | null;
+  cityProvincePostal?: string | null;
+  payoutEmail?: string | null;
+};
+
+export async function buildReferrerAgreementPdf(data?: ReferrerAgreementData): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const F = await doc.embedFont(StandardFonts.Helvetica);
   const B = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -162,13 +177,13 @@ export async function buildReferrerAgreementPdf(): Promise<Uint8Array> {
   text(ctx, "REFERRAL PARTNER", 9.5, B, BLACK);
   ctx.y += 18;
 
-  fieldLine(ctx, "Full name", `{{t:t;r:y;o:"${ROLE}";l:"Full name";w:230;h:16;}}`, true);
-  fieldLine(ctx, "Company (if any)", `{{t:t;r:n;o:"${ROLE}";l:"Company";w:230;h:16;}}`, false);
-  fieldLine(ctx, "Email", `{{t:t;r:y;o:"${ROLE}";l:"Email";w:230;h:16;}}`, true);
-  fieldLine(ctx, "Phone", `{{t:t;r:y;o:"${ROLE}";l:"Phone";w:230;h:16;}}`, true);
-  fieldLine(ctx, "Street address", `{{t:t;r:y;o:"${ROLE}";l:"Street address";w:230;h:16;}}`, true);
-  fieldLine(ctx, "City / Province / Postal code", `{{t:t;r:y;o:"${ROLE}";l:"City Province Postal";w:230;h:16;}}`, true);
-  fieldLine(ctx, "Payout (e-Transfer) email", `{{t:t;r:y;o:"${ROLE}";l:"Payout email";w:230;h:16;}}`, true);
+  fieldLine(ctx, "Full name", `{{t:t;r:y;o:"${ROLE}";l:"Full name";w:230;h:16;}}`, true, data?.fullName);
+  fieldLine(ctx, "Company (if any)", `{{t:t;r:n;o:"${ROLE}";l:"Company";w:230;h:16;}}`, false, data?.company);
+  fieldLine(ctx, "Email", `{{t:t;r:y;o:"${ROLE}";l:"Email";w:230;h:16;}}`, true, data?.email);
+  fieldLine(ctx, "Phone", `{{t:t;r:y;o:"${ROLE}";l:"Phone";w:230;h:16;}}`, true, data?.phone);
+  fieldLine(ctx, "Street address", `{{t:t;r:y;o:"${ROLE}";l:"Street address";w:230;h:16;}}`, true, data?.street);
+  fieldLine(ctx, "City / Province / Postal code", `{{t:t;r:y;o:"${ROLE}";l:"City Province Postal";w:230;h:16;}}`, true, data?.cityProvincePostal);
+  fieldLine(ctx, "Payout (e-Transfer) email", `{{t:t;r:y;o:"${ROLE}";l:"Payout email";w:230;h:16;}}`, true, data?.payoutEmail);
 
   ensure(ctx, 60);
   ctx.y += 10;
@@ -177,7 +192,13 @@ export async function buildReferrerAgreementPdf(): Promise<Uint8Array> {
   ctx.page.drawLine({ start: { x: M + sigW + 40, y: PH - ctx.y }, end: { x: M + CW, y: PH - ctx.y }, thickness: 0.8, color: rgb(0.3, 0.3, 0.3) });
   ctx.page.drawText(`{{t:s;r:y;o:"${ROLE}";w:170;h:20;}}`, { x: M + 2, y: PH - ctx.y + 3, size: 6, font: F, color: WHITE });
   // t:t + l:"Date" on purpose - t:d breaks fieldextract (65656) on this account.
-  ctx.page.drawText(`{{t:t;r:y;o:"${ROLE}";l:"Date";w:90;h:16;}}`, { x: M + sigW + 42, y: PH - ctx.y + 3, size: 6, font: F, color: WHITE });
+  // BF_SERVER_REFERRER_AGREEMENT_BAKE_v1 - bake today's date; only the signature is left.
+  if (data) {
+    const bakedDate = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    ctx.page.drawText(bakedDate, { x: M + sigW + 42, y: PH - ctx.y + 3, size: 9, font: F, color: BLACK });
+  } else {
+    ctx.page.drawText(`{{t:t;r:y;o:"${ROLE}";l:"Date";w:90;h:16;}}`, { x: M + sigW + 42, y: PH - ctx.y + 3, size: 6, font: F, color: WHITE });
+  }
   ctx.y += 12;
   text(ctx, "Signature", 8, F, GREY);
   ctx.page.drawText("Date", { x: M + sigW + 40, y: PH - ctx.y, size: 8, font: F, color: GREY });
