@@ -261,6 +261,13 @@ export async function createLenderProduct(params: {
     throw new AppError("db_error", "Failed to create lender product.", 500);
   }
   void markPreLenderMatchesStale();
+  // BF_SERVER_STARTUP_WAITLIST_v1 - creating a Startup Capital product fires a one-time SMS
+  // blast to referrals waiting on the startup-capital list. Best-effort; never blocks.
+  if (/startup/i.test(String(params.category ?? ""))) {
+    void import("../modules/referrals/startupWaitlist.service.js")
+      .then((m) => m.notifyStartupWaitlistOnce())
+      .catch(() => undefined);
+  }
   return created;
 }
 
