@@ -54,37 +54,46 @@ export async function createReferrerAgreementSession(params: {
   // Best-effort: a prefill hiccup must not block signing.
   const today = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const cityLine = [params.city, params.province, params.postal].filter((v) => v && String(v).trim()).join(" ");
-  // BF_SERVER_REFERRER_PREFILL_BY_NAME_v1 - map our labels to the document's real
-  // SignNow field names, then prefill by name. Ordered to match the PDF builder
-  // (Full name, Company, Email, Phone, Street, City/Prov/Postal, Payout, Date) so
-  // a positional fallback works if labels are not preserved by fieldextract.
-  const wanted: { label: string; value: string | null | undefined }[] = [
-    { label: "Full name", value: params.fullName },
-    { label: "Company", value: params.company },
-    { label: "Email", value: params.email },
-    { label: "Phone", value: params.phone },
-    { label: "Street address", value: params.street },
-    { label: "City Province Postal", value: cityLine },
-    { label: "Payout email", value: params.etransfer },
-    { label: "Date", value: today },
+  // BF_SERVER_REFERRER_PREFILL_DETERMINISTIC_v1 - the template sets explicit field
+  // names (n:"ref_*"), so prefill by those exact names - no guessing. If a template
+  // predates the named fields, fall back to discovering names + mapping by label.
+  const byName: { name: string; value: string | null | undefined }[] = [
+    { name: "ref_full_name", value: params.fullName },
+    { name: "ref_company", value: params.company },
+    { name: "ref_email", value: params.email },
+    { name: "ref_phone", value: params.phone },
+    { name: "ref_street", value: params.street },
+    { name: "ref_city_prov_postal", value: cityLine },
+    { name: "ref_payout_email", value: params.etransfer },
+    { name: "ref_date", value: today },
   ];
+  const labelFor: Record<string, string> = {
+    ref_full_name: "Full name", ref_company: "Company", ref_email: "Email",
+    ref_phone: "Phone", ref_street: "Street address",
+    ref_city_prov_postal: "City Province Postal", ref_payout_email: "Payout email",
+    ref_date: "Date",
+  };
   try {
-    const fields = await getDocumentTextFields(documentId);
-    console.log("[referrer_agreement] doc text fields", JSON.stringify(fields));
-    const byLabel = new Map(fields.map((f) => [f.label.toLowerCase(), f.name]));
-    let prefills = wanted
-      .map((w) => ({ name: byLabel.get(w.label.toLowerCase()), value: w.value }))
-      .filter((x): x is { name: string; value: string } => typeof x.name === "string" && x.name.length > 0 && typeof x.value === "string" && x.value.trim().length > 0);
-    // Positional fallback: labels not preserved but field count lines up.
-    if (prefills.length === 0 && fields.length >= wanted.length) {
-      prefills = wanted
-        .map((w, i) => ({ name: fields[i]?.name, value: w.value }))
-        .filter((x): x is { name: string; value: string } => typeof x.name === "string" && x.name.length > 0 && typeof x.value === "string" && x.value.trim().length > 0);
-      console.log("[referrer_agreement] using positional prefill fallback");
-    }
-    if (prefills.length) await prefillTextFields(documentId, prefills);
+    await prefillTextFields(documentId, byName);
   } catch (err) {
-    console.warn("[referrer_agreement] prefill failed (non-fatal)", err instanceof Error ? err.message : String(err));
+    console.warn("[referrer_agreement] named prefill failed, trying field discovery", err instanceof Error ? err.message : String(err));
+    try {
+      const fields = await getDocumentTextFields(documentId);
+      console.log("[referrer_agreement] doc text fields", JSON.stringify(fields));
+      const byLabel = new Map(fields.map((f) => [f.label.toLowerCase(), f.name]));
+      let prefills = byName
+        .map((w) => ({ name: byLabel.get((labelFor[w.name] ?? "").toLowerCase()), value: w.value }))
+        .filter((x): x is { name: string; value: string } => typeof x.name === "string" && x.name.length > 0 && typeof x.value === "string" && x.value.trim().length > 0);
+      if (prefills.length === 0 && fields.length >= byName.length) {
+        prefills = byName
+          .map((w, i) => ({ name: fields[i]?.name, value: w.value }))
+          .filter((x): x is { name: string; value: string } => typeof x.name === "string" && x.name.length > 0 && typeof x.value === "string" && x.value.trim().length > 0);
+        console.log("[referrer_agreement] using positional prefill fallback");
+      }
+      if (prefills.length) await prefillTextFields(documentId, prefills);
+    } catch (e2) {
+      console.warn("[referrer_agreement] prefill fallback failed (non-fatal)", e2 instanceof Error ? e2.message : String(e2));
+    }
   }
   const { groupId } = await createDocumentGroup([documentId], `Referral Agreement ${params.referrerId}`);
   const { inviteId } = await createEmbeddedGroupInvite(groupId, [documentId], [
