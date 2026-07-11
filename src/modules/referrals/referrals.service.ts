@@ -14,6 +14,7 @@ export type ReferralPayload = {
   silos?: string[];
   message?: string | null;
   referrerName?: string | null;
+  startup?: boolean; // BF_SERVER_STARTUP_WAITLIST_v1 - add to the Startup Capital waitlist
 };
 
 export type ReferralResult = {
@@ -56,6 +57,11 @@ export async function submitReferral(
       client,
     });
 
+    // BF_SERVER_STARTUP_WAITLIST_v1 - "Start-up funding" is a waitlist, not a silo: it sends
+    // no intro now; the contact is tagged and messaged only when a Startup Capital lender
+    // product is created. Real silos (BF/BI) still send their intros immediately.
+    const realSilos = payload.silos ?? [];
+    const effectiveSilos = realSilos.length ? realSilos : (payload.startup ? [] : ["BF"]);
     await client.query(
       `UPDATE contacts
           SET ref_code = $2,
@@ -64,17 +70,26 @@ export async function submitReferral(
               referral_invited_at = COALESCE(referral_invited_at, now()),
               silo = COALESCE(silo, 'BF')
         WHERE id = $1`,
-      [contactId, refCode, payload.silos ?? ["BF"], payload.message ?? null],
+      [contactId, refCode, effectiveSilos, payload.message ?? null],
     );
+    if (payload.startup) {
+      await client.query(
+        `UPDATE contacts SET tags = coalesce(tags, '{}') || ARRAY['startup_capital']::text[]
+          WHERE id = $1 AND NOT ('startup_capital' = ANY(coalesce(tags, '{}')))`,
+        [contactId],
+      );
+    }
 
     await client.query("commit");
-    await sendReferralInviteSms({
-      to: payload.phone,
-      refCode,
-      silos: payload.silos ?? ["BF"],
-      message: payload.message ?? null,
-      referrerName: payload.referrerName ?? null,
-    }).catch(() => undefined);
+    if (effectiveSilos.length > 0) {
+      await sendReferralInviteSms({
+        to: payload.phone,
+        refCode,
+        silos: effectiveSilos,
+        message: payload.message ?? null,
+        referrerName: payload.referrerName ?? null,
+      }).catch(() => undefined);
+    }
     return { companyId, contactId, refCode };
   } catch (error) {
     await client.query("rollback");

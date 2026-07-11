@@ -292,7 +292,10 @@ router.post(
     const companyName = str(body.company_name) ?? str(body.companyName) ?? str(body.business_name);
     const email = str(body.email);
     const requestedSilos = normalizeReferralSilos(body.silos);
-    const silos = requestedSilos.length > 0 ? requestedSilos : ["BF"];
+    // BF_SERVER_STARTUP_WAITLIST_v1 - "Start-up funding" is a separate flag, not a silo.
+    const startup = body.startup === true
+      || (Array.isArray(body.silos) && body.silos.some((v) => String(v).trim().toUpperCase() === "STARTUP"));
+    const silos = requestedSilos.length > 0 ? requestedSilos : (startup ? [] : ["BF"]);
     const message = str(body.message);
     const referrerName = str(body.referrer_name) ?? str(body.referrerName);
 
@@ -309,6 +312,7 @@ router.post(
       silos,
       message,
       referrerName,
+      startup,
     });
     res.status(201).json({ status: "ok", data: { id: result.contactId, companyId: result.companyId, refCode: result.refCode, silos } });
   }),
