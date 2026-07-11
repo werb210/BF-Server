@@ -43,6 +43,10 @@ export async function createDocumentFromTemplate(templateId: string, documentNam
 // BF_SERVER_REFERRER_PREFILL_BY_NAME_v1 - fetch a document's TEXT fields with
 // their real SignNow name + label. prefill-texts matches on `name` (auto-
 // generated), not the l:"..." label, so callers must map label -> name.
+// BF_SERVER_SIGNNOW_FIELD_DUMP_v1 - raw GET for diagnostics (see where SignNow keeps field names).
+export async function signnowGetRaw(path: string): Promise<unknown> {
+  return signnowFetch(path, { method: "GET" });
+}
 export async function getDocumentTextFields(documentId: string): Promise<{ name: string; label: string }[]> {
   const body = (await signnowFetch(`/document/${encodeURIComponent(documentId)}`, { method: "GET" })) as { fields?: unknown };
   const raw = Array.isArray((body as { fields?: unknown })?.fields) ? ((body as { fields: unknown[] }).fields) : [];
