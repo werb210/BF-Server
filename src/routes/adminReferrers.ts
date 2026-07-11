@@ -46,6 +46,8 @@ router.get("/", async (_req, res) => {
             WHERE rcv.referrer_id = u.id
          ) conv ON true
         WHERE u.role = 'Referrer'
+          -- BF_SERVER_REFERRER_CRM_CONTACT_v1 - exclude the canonical client-submission system user.
+          AND u.id <> '00000000-0000-0000-0000-000000000001'::uuid
         ORDER BY u.created_at DESC NULLS LAST`,
     )
     .catch(() => ({ rows: [] as any[] }));

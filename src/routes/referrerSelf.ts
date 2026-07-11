@@ -130,6 +130,18 @@ router.post(
       }
     }
 
+    // BF_SERVER_REFERRER_CRM_CONTACT_v1 - a referrer should also be a CRM record so
+    // staff can find/track them (they previously existed only in the users table).
+    // Idempotent by email within the BF silo; never blocks signup.
+    await pool.query(
+      `INSERT INTO contacts (id, name, email, phone, status, silo, created_at, updated_at)
+       SELECT $1, $2, $3, $4, 'prospect', 'BF', now(), now()
+        WHERE $3 <> '' AND NOT EXISTS (
+          SELECT 1 FROM contacts WHERE silo = 'BF' AND lower(email) = lower($3)
+        )`,
+      [randomUUID(), fullName, email, phone],
+    ).catch(() => undefined);
+
     if (!referrerAgreementConfigured()) {
       res.status(200).json({ status: "ok", data: { referrerId, agreementConfigured: false } });
       return;
