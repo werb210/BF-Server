@@ -2,19 +2,22 @@
 // messaged once, when a Startup Capital lender product is first created.
 import { pool } from "../../db.js";
 import { sendSms } from "../notifications/sms.service.js";
+import { referralLandingUrl } from "./referralInvite.js";
 
-// DRAFT copy - adjust freely. Intentionally no apply link until the destination is set.
-function startupSms(name: string | null): string {
+// DRAFT copy - adjust freely. Start-up funding becomes regular funding once open, so the
+// link is the BF-Website funding landing (/r/f/<code>).
+function startupSms(name: string | null, refCode: string | null): string {
   const first = (name ?? "").trim().split(/\s+/)[0];
   const hi = first ? `${first}, ` : "";
-  return `${hi}good news - Boreal's start-up funding is now open. You were on our start-up capital list, so we wanted you to hear first. Reply YES and we'll help you get started.`;
+  const link = refCode ? `\n${referralLandingUrl(["BF"], refCode)}` : "";
+  return `${hi}good news - Boreal's start-up funding is now open. You were on our start-up capital list, so we wanted you to hear first. Apply here:${link}`;
 }
 
 export async function notifyStartupWaitlistOnce(): Promise<{ notified: number }> {
   let notified = 0;
   try {
-    const { rows } = await pool.query<{ id: string; phone: string; name: string | null }>(
-      `SELECT id::text AS id, phone, name
+    const { rows } = await pool.query<{ id: string; phone: string; name: string | null; ref_code: string | null }>(
+      `SELECT id::text AS id, phone, name, ref_code
          FROM contacts
         WHERE silo = 'BF'
           AND 'startup_capital' = ANY(coalesce(tags, '{}'))
@@ -23,7 +26,7 @@ export async function notifyStartupWaitlistOnce(): Promise<{ notified: number }>
     );
     for (const c of rows) {
       try {
-        await sendSms({ to: c.phone, message: startupSms(c.name) });
+        await sendSms({ to: c.phone, message: startupSms(c.name, c.ref_code) });
         await pool.query(
           `UPDATE contacts
               SET tags = coalesce(tags, '{}') || ARRAY['startup_notified']::text[], updated_at = now()
