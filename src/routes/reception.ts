@@ -177,15 +177,13 @@ router.post("/intent", twilioWebhookValidation, async (req: Request, res: Respon
   // BF_SERVER_PHONE_HOTFIX_v1 - forward the ORIGINAL caller's number so staff see who
   // is calling (Twilio allows the inbound caller's number as callerId when forwarding).
   const callerId = String((req.body?.From ?? "")).trim() || config.twilio.callerId || config.twilio.from || config.twilio.number || undefined;
-  if (t.clientReady || t.cell) {
+  // BF_SERVER_RECEPTION_NO_CELL_v1 - reception rings the browser softphone ONLY; never the
+  // cell. A parallel cell dial let voicemail answer ("enter your PIN") and hijack the call.
+  // Not available at the browser -> straight to voicemail.
+  if (t.clientReady && t.identity) {
     emit(v, `connect_${lkey(target)}`, `One moment, connecting you to ${name}.`);
     const dial = v.dial({ answerOnBridge: true, timeout: 25, action: `${BASE}/unavailable?target=${target}`, method: "POST", callerId });
-    // BF_SERVER_RECEPTION_NO_VM_HIJACK_v1 - ring the browser client when the staffer is
-    // available there; only fall back to their cell when they're NOT. Ringing both in
-    // parallel let the cell's voicemail ("enter your PIN") answer first and hijack the
-    // call, cancelling the browser leg.
-    if (t.clientReady && t.identity) dial.client(t.identity);
-    else if (t.cell) dial.number(t.cell);
+    dial.client(t.identity);
     return send(res, v);
   }
   const reasonKey = t.onCall ? `reason_${lkey(target)}_oncall` : `reason_${lkey(target)}_unavail`;
