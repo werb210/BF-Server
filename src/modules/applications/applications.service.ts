@@ -57,29 +57,10 @@ import {
   createDocumentProcessingJob,
 } from "../processing/processing.service.js";
 import { logCrmEvent } from "../crm/crmTimeline.service.js";
-import { creditReferralConversion } from "../referrals/referralConversions.service.js";
+import { creditReferralConversion, attributeReferralFromRef } from "../referrals/referralConversions.service.js";
 // BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const BANK_STATEMENT_CATEGORY = "bank_statements_6_months";
-
-async function triggerCommission(applicationId: string): Promise<void> {
-  const referralResult = await runQuery<{ id: string; referrer_id: string; deal_amount: number | null }>(
-    `select r.id, r.referrer_id, a.requested_amount as deal_amount
-     from referrals r
-     join applications a on a.id = r.application_id
-     where r.application_id = $1 and r.status != 'paid' limit 1`,
-    [applicationId]
-  );
-
-  const referral = referralResult.rows[0];
-  if (referral && referral.deal_amount) {
-    const commission = Number(referral.deal_amount) * 0.1;
-    await runQuery(
-      `update referrals set commission_amount = $1, status = 'earned', updated_at = now() where id::text = ($2)::text`,
-      [commission, referral.id]
-    );
-  }
-}
 
 function assertValidStage(stage: string): asserts stage is ApplicationStage {
   if (!PIPELINE_STATES.includes(stage as ApplicationStage)) {
@@ -1294,9 +1275,13 @@ export async function changePipelineState(params: {
 
   assertValidStage(stage);
 
-  // Commission should trigger only when the deal is marked accepted.
+  // BF_SERVER_REFERRAL_ATTRIBUTION_v1 - tag the contact from the attribution ref on
+  // every stage move so a link-apply shows under its referrer as soon as it enters
+  // the pipeline (not only at accept).
+  await attributeReferralFromRef(params.applicationId).catch(() => undefined);
+
+  // Referral conversion (flat 20%) is credited only when the deal is accepted.
   if (stage === ApplicationStage.ACCEPTED) {
-    await triggerCommission(params.applicationId);
     await creditReferralConversion({ applicationId: params.applicationId, sourceSilo: "BF" });
   }
 }

@@ -2,12 +2,47 @@ import { pool, runQuery } from "../../db.js";
 
 export const REFERRAL_CONVERSION_RATE = 20;
 
+// BF_SERVER_REFERRAL_ATTRIBUTION_v1 - a cold link-apply carries the referral code in
+// metadata.attribution.ref, but nothing tagged the applicant's contact, so it never
+// showed under the referrer or earned the conversion credit. Resolve the ref code to
+// its referrer (contacts.ref_code is unique) and stamp the application's contact with
+// referrer_id + ref_code when it is not already tagged. Idempotent.
+export async function attributeReferralFromRef(applicationId: string): Promise<void> {
+  await runQuery(
+    `WITH app AS (
+       SELECT a.contact_id::text AS contact_id,
+              NULLIF(trim(a.metadata->'attribution'->>'ref'), '') AS ref
+         FROM applications a
+        WHERE a.id::text = $1
+        LIMIT 1
+     ),
+     resolved AS (
+       SELECT app.contact_id, app.ref, rc.referrer_id
+         FROM app
+         JOIN contacts rc ON rc.ref_code = app.ref
+        WHERE app.ref IS NOT NULL AND app.contact_id IS NOT NULL
+        LIMIT 1
+     )
+     UPDATE contacts c
+        SET referrer_id = resolved.referrer_id,
+            ref_code = COALESCE(c.ref_code, resolved.ref),
+            updated_at = now()
+       FROM resolved
+      WHERE c.id::text = resolved.contact_id
+        AND resolved.referrer_id IS NOT NULL
+        AND c.referrer_id IS NULL`,
+    [applicationId],
+  );
+}
+
 export async function creditReferralConversion(params: {
   applicationId: string;
   sourceSilo?: string | null;
   externalApplicationId?: string | null;
   dealAmount?: number | null;
 }): Promise<{ id: string } | null> {
+  // BF_SERVER_REFERRAL_ATTRIBUTION_v1 - tag the contact from the ref before crediting.
+  await attributeReferralFromRef(params.applicationId).catch(() => undefined);
   const result = await runQuery<{ id: string }>(
     `WITH app AS (
        SELECT a.id::text AS application_id,
