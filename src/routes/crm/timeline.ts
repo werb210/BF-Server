@@ -93,7 +93,13 @@ router.get("/", safeHandler(async (req: any, res: any) => {
         UNION ALL
         -- BF_SERVER_VOICEMAIL_TIMELINE_v1 — saved voicemails on the contact
         -- timeline. kind 'call' so the existing UI renders it; title "Voicemail".
-        SELECT 'call' AS kind, id::text, created_at AS ts,
+        -- BF_SERVER_TIMELINE_KINDS_v1 - was kind 'call'. The portal's UnifiedTimeline
+        -- only maps note/task/meeting from this endpoint and pulls calls from a
+        -- separate /calls endpoint (conferences), so every voicemail emitted as
+        -- 'call' was silently DISCARDED client-side and never reached a contact
+        -- record. Give voicemails their own kind so the client can render them
+        -- without duplicating dialer calls.
+        SELECT 'voicemail' AS kind, id::text, created_at AS ts,
                'Voicemail' AS title,
                NULL::text AS body,
                from_number AS extra
@@ -149,7 +155,9 @@ router.get("/", safeHandler(async (req: any, res: any) => {
         -- already renders with body + a URL in extra, so no new UI plumbing.
         -- body prefers the Maya summary once that layer lands, falling back to
         -- the raw VTT (truncated - the full text stays in teams_meetings).
-        SELECT 'recording' AS kind, tm.id::text, COALESCE(tm.ended_at, tm.scheduled_end_at, tm.created_at) AS ts,
+        -- BF_SERVER_TIMELINE_KINDS_v1 - was 'recording', which the portal does not
+        -- render at all (blank card). 'meeting' already renders title/body/extra.
+        SELECT 'meeting' AS kind, tm.id::text, COALESCE(tm.ended_at, tm.scheduled_end_at, tm.created_at) AS ts,
                ('Teams meeting: ' || COALESCE(tm.subject, '(no subject)')) AS title,
                COALESCE(tm.maya_summary, left(tm.transcript_text, 2000)) AS body,
                COALESCE(tm.recording_url, tm.join_url) AS extra
@@ -201,7 +209,9 @@ router.get("/", safeHandler(async (req: any, res: any) => {
         -- already renders with body + a URL in extra, so no new UI plumbing.
         -- body prefers the Maya summary once that layer lands, falling back to
         -- the raw VTT (truncated - the full text stays in teams_meetings).
-        SELECT 'recording' AS kind, tm.id::text, COALESCE(tm.ended_at, tm.scheduled_end_at, tm.created_at) AS ts,
+        -- BF_SERVER_TIMELINE_KINDS_v1 - was 'recording', which the portal does not
+        -- render at all (blank card). 'meeting' already renders title/body/extra.
+        SELECT 'meeting' AS kind, tm.id::text, COALESCE(tm.ended_at, tm.scheduled_end_at, tm.created_at) AS ts,
                ('Teams meeting: ' || COALESCE(tm.subject, '(no subject)')) AS title,
                COALESCE(tm.maya_summary, left(tm.transcript_text, 2000)) AS body,
                COALESCE(tm.recording_url, tm.join_url) AS extra
