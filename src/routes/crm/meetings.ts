@@ -39,6 +39,12 @@ router.post("/", safeHandler(async (req: any, res: any) => {
   let organizerUpn: string | null = null; // BF_SERVER_TEAMS_MEETING_LINK_v1
   const wantsOnline = b.online === true || b.meeting_type === "teams";
   const graph = await getGraphForUser(pool, userId);
+  // BF_SERVER_TEAMS_MEETING_GRAPH_DIAG_v1 - a null graph client means the user
+  // has no usable o365 delegated token. Previously this silently produced a
+  // local-only meeting with no Teams link and no teams_meetings row.
+  if (!graph && wantsOnline) {
+    console.error("teams_meeting_no_graph_client", { user_id: userId });
+  }
   if (graph) {
     try {
       const create = await graph.fetch("/me/events", {
@@ -61,8 +67,26 @@ router.post("/", safeHandler(async (req: any, res: any) => {
         const j: any = await create.json();
         graphId = j.id ?? null;
         joinUrl = j.onlineMeeting?.joinUrl ?? null;
+        // BF_SERVER_TEAMS_MEETING_GRAPH_DIAG_v1 - the event can be created while
+        // Teams declines to attach an online meeting (licensing / policy). The
+        // event id alone is useless without a joinWebUrl to resolve later.
+        if (wantsOnline && !joinUrl) {
+          console.error("teams_meeting_no_join_url", { graph_event_id: graphId });
+        }
+      } else {
+        // BF_SERVER_TEAMS_MEETING_GRAPH_DIAG_v1 - there was no else branch here.
+        // A 4xx from Graph left graphId null and the request carried on as if
+        // nothing had happened, so nothing was registered in teams_meetings and
+        // no trace was left in the logs.
+        const detail = await create.text().catch(() => "");
+        console.error("teams_meeting_event_create_failed", {
+          status: create.status,
+          detail: detail.slice(0, 600),
+        });
       }
-    } catch {
+    } catch (e: any) {
+      // BF_SERVER_TEAMS_MEETING_GRAPH_DIAG_v1 - was a bare `catch {}`.
+      console.error("teams_meeting_event_create_threw", { message: e?.message });
       graphId = null;
     }
     // BF_SERVER_TEAMS_MEETING_LINK_v1 - the Graph transcript + recording
