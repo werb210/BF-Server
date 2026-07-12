@@ -25,17 +25,38 @@ const BATCH = 10;
 type PendingRow = {
   id: string;
   organizer_upn: string;
+  organizer_aad_id: string | null;
   join_url: string | null;
   graph_meeting_id: string | null;
   transcript_attempts: number;
 };
 
-async function resolveMeetingId(upn: string, joinUrl: string): Promise<string | null> {
+// BF_SERVER_TEAMS_ORGANIZER_AAD_ID_v1
+// The onlineMeetings endpoints reject a UPN under application permissions
+// ("The userId in request URL is not a GUID"), so every call below must be
+// addressed with the organizer's Entra object id. Resolved once, then cached in
+// teams_meetings.organizer_aad_id. This endpoint DOES accept a UPN.
+async function resolveAadId(upn: string): Promise<string | null> {
+  const resp = await graphAppFetch(`/users/${encodeURIComponent(upn)}?$select=id`);
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => "");
+    console.error("[teams-transcript] resolve_aad_id_failed", {
+      upn,
+      status: resp.status,
+      detail: txt.slice(0, 300),
+    });
+    return null;
+  }
+  const json = (await resp.json()) as { id?: string };
+  return json.id ?? null;
+}
+
+async function resolveMeetingId(userId: string, joinUrl: string): Promise<string | null> {
   // Graph matches onlineMeetings on the exact joinWebUrl. Single quotes inside an
   // OData string literal are escaped by doubling them.
   const literal = joinUrl.replace(/'/g, "''");
   const path =
-    `/users/${encodeURIComponent(upn)}/onlineMeetings` +
+    `/users/${encodeURIComponent(userId)}/onlineMeetings` +
     `?$filter=joinWebUrl eq '${encodeURIComponent(literal)}'`;
   const resp = await graphAppFetch(path);
   if (!resp.ok) {
@@ -50,9 +71,9 @@ async function resolveMeetingId(upn: string, joinUrl: string): Promise<string | 
   return json.value?.[0]?.id ?? null;
 }
 
-async function fetchTranscript(upn: string, meetingId: string): Promise<string | null> {
+async function fetchTranscript(userId: string, meetingId: string): Promise<string | null> {
   const listPath =
-    `/users/${encodeURIComponent(upn)}/onlineMeetings/${encodeURIComponent(meetingId)}/transcripts`;
+    `/users/${encodeURIComponent(userId)}/onlineMeetings/${encodeURIComponent(meetingId)}/transcripts`;
   const listResp = await graphAppFetch(listPath);
   if (!listResp.ok) {
     const txt = await listResp.text().catch(() => "");
@@ -93,9 +114,9 @@ async function fetchTranscript(upn: string, meetingId: string): Promise<string |
   return vtt.trim() ? vtt : null;
 }
 
-async function fetchRecordingUrl(upn: string, meetingId: string): Promise<string | null> {
+async function fetchRecordingUrl(userId: string, meetingId: string): Promise<string | null> {
   const path =
-    `/users/${encodeURIComponent(upn)}/onlineMeetings/${encodeURIComponent(meetingId)}/recordings`;
+    `/users/${encodeURIComponent(userId)}/onlineMeetings/${encodeURIComponent(meetingId)}/recordings`;
   const resp = await graphAppFetch(path);
   if (!resp.ok) return null;
   const json = (await resp.json()) as {
@@ -112,9 +133,33 @@ async function fetchRecordingUrl(upn: string, meetingId: string): Promise<string
 }
 
 async function processRow(pool: Pool, row: PendingRow): Promise<void> {
-  // Graph is case-insensitive on the UPN in the path, but users.o365_user_email
-  // stores whatever casing the user typed, so normalise rather than rely on it.
+  // users.o365_user_email stores whatever casing the user typed; normalise it.
   const upn = row.organizer_upn.toLowerCase();
+
+  // BF_SERVER_TEAMS_ORGANIZER_AAD_ID_v1 - onlineMeetings needs the Entra object
+  // id, not the UPN. Resolve once and cache it on the row.
+  let userId = row.organizer_aad_id;
+  if (!userId) {
+    userId = await resolveAadId(upn);
+    if (!userId) {
+      const bumped = row.transcript_attempts + 1;
+      await pool.query(
+        `UPDATE teams_meetings
+            SET transcript_attempts = $2,
+                status = CASE WHEN $3::boolean THEN 'no_transcript' ELSE status END,
+                updated_at = now()
+          WHERE id = $1`,
+        [row.id, bumped, bumped >= MAX_ATTEMPTS],
+      );
+      return;
+    }
+    await pool.query(
+      `UPDATE teams_meetings
+          SET organizer_aad_id = $2, updated_at = now()
+        WHERE id = $1`,
+      [row.id, userId],
+    );
+  }
 
   let meetingId = row.graph_meeting_id;
   if (!meetingId) {
@@ -127,7 +172,7 @@ async function processRow(pool: Pool, row: PendingRow): Promise<void> {
       );
       return;
     }
-    meetingId = await resolveMeetingId(upn, row.join_url);
+    meetingId = await resolveMeetingId(userId, row.join_url);
     if (meetingId) {
       await pool.query(
         `UPDATE teams_meetings
@@ -141,8 +186,8 @@ async function processRow(pool: Pool, row: PendingRow): Promise<void> {
   let transcript: string | null = null;
   let recordingUrl: string | null = null;
   if (meetingId) {
-    transcript = await fetchTranscript(upn, meetingId);
-    recordingUrl = await fetchRecordingUrl(upn, meetingId);
+    transcript = await fetchTranscript(userId, meetingId);
+    recordingUrl = await fetchRecordingUrl(userId, meetingId);
   }
 
   if (transcript) {
@@ -186,7 +231,7 @@ export function startTeamsTranscriptWorker(pool: Pool): { stop: () => void } {
     running = true;
     try {
       const { rows } = await pool.query<PendingRow>(
-        `SELECT id, organizer_upn, join_url, graph_meeting_id, transcript_attempts
+        `SELECT id, organizer_upn, organizer_aad_id, join_url, graph_meeting_id, transcript_attempts
            FROM teams_meetings
           WHERE status = 'scheduled'
             AND organizer_upn IS NOT NULL
