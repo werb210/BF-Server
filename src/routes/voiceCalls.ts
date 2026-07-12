@@ -102,7 +102,13 @@ router.get("/recent-calls", auth, async (req: any, res) => {
               c.name AS contact_name
          FROM call_logs cl
          LEFT JOIN contacts c ON c.id = cl.crm_contact_id
-        WHERE cl.staff_user_id = $1
+        -- BF_SERVER_INBOUND_RECENTS_v1 - inbound PSTN calls are logged with
+        -- staff_user_id = NULL (nobody owns a call to the main line until it is
+        -- answered), so this filter silently hid EVERY incoming call and the
+        -- Recents "Incoming" column was permanently empty. Inbound calls to the
+        -- shared line are visible to all staff.
+        WHERE (cl.staff_user_id = $1
+               OR (cl.direction = 'inbound' AND cl.staff_user_id IS NULL))
         ORDER BY cl.created_at DESC
         LIMIT 50`,
       [userId],
