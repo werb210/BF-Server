@@ -6,6 +6,7 @@ import { getGraphForUser } from "../../modules/o365/graphClient.js";
 // BF_SERVER_BLOCK_BI_ROUND5_CRM_SILO_RESOLVE_v1
 import { resolveSiloFromRequest } from "../../middleware/silo.js";
 import { bumpBiOutreachToDemoBooked } from "../../services/biOutreach.js"; // BF_SERVER_BLOCK_v744
+import { enableAutoRecording } from "../../services/teams/autoRecord.js"; // BF_SERVER_TEAMS_AUTO_RECORD_v1
 
 const router = express.Router({ mergeParams: true });
 
@@ -173,6 +174,14 @@ router.post("/", safeHandler(async (req: any, res: any) => {
         graph_event_id: graphId,
       });
     }
+  }
+
+  // BF_SERVER_TEAMS_AUTO_RECORD_v1 - turn on "record and transcribe automatically" on
+  // the meeting itself, so a transcript exists without anyone remembering to press
+  // Record. Fire-and-forget: Teams needs a moment to provision the onlineMeeting, and
+  // scheduling must not wait on it or fail because of it.
+  if (wantsOnline && graphId && organizerUpn && joinUrl) {
+    void enableAutoRecording(pool, graphId, organizerUpn, joinUrl);
   }
 
   if (contactId) void bumpBiOutreachToDemoBooked(String(contactId)); // BF_SERVER_BLOCK_v744
