@@ -138,7 +138,17 @@ router.post("/", safeHandler(async (req: any, res: any) => {
           b.end_at,
         ],
       );
-    } catch { /* never break the meeting create */ }
+    } catch (e: any) {
+      // BF_SERVER_TEAMS_MEETINGS_UPSERT_FIX_v1 - this used to be a bare
+      // `catch {}`. The upsert was failing on every call (partial-index
+      // inference) and the silent catch meant teams_meetings stayed empty with
+      // no trace in the logs. Scheduling still must not break, but the failure
+      // has to be VISIBLE.
+      console.error("teams_meeting_register_failed", {
+        message: e?.message,
+        graph_event_id: graphId,
+      });
+    }
   }
 
   if (contactId) void bumpBiOutreachToDemoBooked(String(contactId)); // BF_SERVER_BLOCK_v744
