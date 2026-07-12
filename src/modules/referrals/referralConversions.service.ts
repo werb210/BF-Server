@@ -25,7 +25,17 @@ export async function attributeReferralFromRef(applicationId: string): Promise<v
      )
      UPDATE contacts c
         SET referrer_id = resolved.referrer_id,
-            ref_code = COALESCE(c.ref_code, resolved.ref),
+            -- BF_SERVER_REFERRAL_TAGGING_v1 - this used to copy the RESOLVED contact's
+            -- ref_code onto the applicant. contacts.ref_code carries a UNIQUE index and
+            -- is that contact's OWN code, so whenever the applicant was a different
+            -- contact than the one whose link was used, this UPDATE raised a duplicate
+            -- key error and attribution failed outright. Record the provenance in
+            -- referred_via_code (no unique index) and leave ref_code alone.
+            referred_via_code = COALESCE(c.referred_via_code, resolved.ref),
+            tags = CASE
+                     WHEN 'referral' = ANY(coalesce(c.tags, '{}')) THEN c.tags
+                     ELSE coalesce(c.tags, '{}') || ARRAY['referral']::text[]
+                   END,
             updated_at = now()
        FROM resolved
       WHERE c.id::text = resolved.contact_id

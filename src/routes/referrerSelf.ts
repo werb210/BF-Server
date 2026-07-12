@@ -133,14 +133,32 @@ router.post(
     // BF_SERVER_REFERRER_CRM_CONTACT_v1 - a referrer should also be a CRM record so
     // staff can find/track them (they previously existed only in the users table).
     // Idempotent by email within the BF silo; never blocks signup.
-    await pool.query(
-      `INSERT INTO contacts (id, name, email, phone, status, silo, created_at, updated_at)
-       SELECT $1, $2, $3, $4, 'prospect', 'BF', now(), now()
-        WHERE $3 <> '' AND NOT EXISTS (
-          SELECT 1 FROM contacts WHERE silo = 'BF' AND lower(email) = lower($3)
-        )`,
-      [randomUUID(), fullName, email, phone],
-    ).catch(() => undefined);
+    // BF_SERVER_REFERRAL_TAGGING_v1 - also tag the contact 'referrer'. The CRM shows
+    // relationships through tags, so an untagged referrer is invisible to staff. Tag
+    // on the existing row too, for someone who was already a contact before signing up.
+    try {
+      await pool.query(
+        `INSERT INTO contacts (id, name, email, phone, status, silo, tags, created_at, updated_at)
+         SELECT $1, $2, $3, $4, 'prospect', 'BF', ARRAY['referrer']::text[], now(), now()
+          WHERE $3 <> '' AND NOT EXISTS (
+            SELECT 1 FROM contacts WHERE silo = 'BF' AND lower(email) = lower($3)
+          )`,
+        [randomUUID(), fullName, email, phone],
+      );
+      await pool.query(
+        `UPDATE contacts
+            SET tags = coalesce(tags, '{}') || ARRAY['referrer']::text[],
+                updated_at = now()
+          WHERE silo = 'BF' AND lower(email) = lower($1)
+            AND NOT ('referrer' = ANY(coalesce(tags, '{}')))`,
+        [email],
+      );
+    } catch (err: any) {
+      // BF_SERVER_REFERRAL_TAGGING_v1 - was a bare `.catch(() => undefined)`, so a
+      // referrer could silently end up with no CRM record at all. Still non-fatal
+      // (signup must not break), but no longer invisible.
+      console.error("referrer_crm_contact_failed", { email, message: err?.message });
+    }
 
     if (!referrerAgreementConfigured()) {
       res.status(200).json({ status: "ok", data: { referrerId, agreementConfigured: false } });

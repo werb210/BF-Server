@@ -79,6 +79,15 @@ export async function submitReferral(
         [contactId],
       );
     }
+    // BF_SERVER_REFERRAL_TAGGING_v1 - a referred contact was linked by referrer_id but
+    // never tagged, so it was indistinguishable from any other prospect in the CRM.
+    if (payload.referrerId) {
+      await client.query(
+        `UPDATE contacts SET tags = coalesce(tags, '{}') || ARRAY['referral']::text[]
+          WHERE id = $1 AND NOT ('referral' = ANY(coalesce(tags, '{}')))`,
+        [contactId],
+      );
+    }
 
     await client.query("commit");
     if (effectiveSilos.length > 0) {
