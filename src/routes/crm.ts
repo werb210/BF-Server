@@ -323,9 +323,11 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
     if (hasLeadStatus) {
       searchParts.push(`coalesce(c.lead_status, 'New') ILIKE $${values.length}`);
     }
-    if (hasOwnerId) {
-      searchParts.push(`coalesce(u.first_name || ' ' || u.last_name, '') ILIKE $${values.length}`);
-    }
+    // BF_SERVER_CRM_SEARCH_NOT_OWNER_v1 - the free-text search used to OR in the
+    // OWNER's name, so typing "todd wer" returned every contact owned by Todd
+    // Werboweski rather than contacts named Todd. Owner is already filterable via
+    // the "All owners" dropdown (owner_id), so searching it here is both redundant
+    // and actively wrong. Search now matches the CONTACT only.
     where.push(`(${searchParts.join(" OR ")})`);
   }
   if (hasActiveApplications) {
@@ -933,8 +935,9 @@ router.get("/companies", safeHandler(async (req: any, res: any) => {
       ` OR array_to_string(coalesce(co.tags, '{}'::text[]), ' ') ILIKE $${params.length}` +
       ` OR array_to_string(coalesce(co.types_of_financing, '{}'::text[]), ' ') ILIKE $${params.length}` +
       ` OR coalesce(co.city, '') ILIKE $${params.length}` +
-      ` OR coalesce(co.region, '') ILIKE $${params.length}` +
-      ` OR coalesce(u.first_name || ' ' || u.last_name, '') ILIKE $${params.length})`;
+      // BF_SERVER_CRM_SEARCH_NOT_OWNER_v1 - same fix as contacts: do not match the
+      // owner's name in free-text search; that is what the owner_id filter is for.
+      ` OR coalesce(co.region, '') ILIKE $${params.length})`;
   }
   // BF_SERVER_CRM_COMPANY_OWNER_FILTER — owner dropdown parity with contacts.
   const ownerId = String(req.query.owner_id ?? "").trim();
