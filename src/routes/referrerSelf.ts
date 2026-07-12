@@ -323,10 +323,19 @@ router.post(
   "/profile",
   requireReferrer,
   safeHandler(async (req: ReferrerRequest, res: Response) => {
+    // BF_SERVER_REFERRER_PROFILE_FULL_v1 - signup writes 9 fields; this route
+    // used to persist only 4, so a referrer could never correct their address
+    // or their e-Transfer payout email. Accept and persist the full set.
     const body = (req.body ?? {}) as Record<string, unknown>;
     const fullName = str(body.full_name) ?? str(body.fullName);
     const companyName = str(body.company_name) ?? str(body.companyName);
     const email = str(body.email);
+    const phone = str(body.phone);
+    const street = str(body.street) ?? str(body.address);
+    const city = str(body.city);
+    const province = str(body.province) ?? str(body.state);
+    const postal = str(body.postal_code) ?? str(body.postalCode) ?? str(body.zip);
+    const etransfer = str(body.etransfer_email) ?? str(body.etransferEmail);
     const first = fullName ? fullName.split(/\s+/)[0] ?? null : null;
     const last = fullName ? fullName.split(/\s+/).slice(1).join(" ") || null : null;
 
@@ -336,10 +345,16 @@ router.post(
               last_name = COALESCE($3, last_name),
               company_name = COALESCE($4, company_name),
               email = COALESCE($5, email),
+              phone_number = COALESCE($6, phone_number),
+              street = COALESCE($7, street),
+              city = COALESCE($8, city),
+              province = COALESCE($9, province),
+              postal_code = COALESCE($10, postal_code),
+              etransfer_email = COALESCE($11, etransfer_email),
               profile_complete = true,
               updated_at = now()
         WHERE id::text = $1`,
-      [req.referrerId, first, last, companyName, email],
+      [req.referrerId, first, last, companyName, email, phone, street, city, province, postal, etransfer],
     );
     res.json({ status: "ok" });
   }),
@@ -351,7 +366,10 @@ router.get(
   requireReferrer,
   safeHandler(async (req: ReferrerRequest, res: Response) => {
     const result = await pool.query(
+      // BF_SERVER_REFERRER_PROFILE_FULL_v1 - return the full signup field set so
+      // the portal's "Edit my info" form can be a 1:1 mirror of signup.
       `SELECT id::text AS id, first_name, last_name, company_name, email, phone_number AS phone,
+              street, city, province, postal_code, etransfer_email,
               COALESCE(profile_complete, false) AS profile_complete
          FROM users
         WHERE id::text = $1
@@ -372,6 +390,11 @@ router.get(
         company_name: row.company_name ?? null,
         email: row.email ?? null,
         phone: row.phone ?? null,
+        street: row.street ?? null,
+        city: row.city ?? null,
+        province: row.province ?? null,
+        postal_code: row.postal_code ?? null,
+        etransfer_email: row.etransfer_email ?? null,
         profileComplete: row.profile_complete === true,
       },
     });
