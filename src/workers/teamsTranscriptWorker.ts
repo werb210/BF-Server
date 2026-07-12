@@ -15,6 +15,8 @@
 // nobody recorded is not retried forever.
 import type { Pool } from "pg";
 import { graphAppFetch, isAppGraphConfigured } from "../services/teams/graphAppClient.js";
+// BF_SERVER_MAYA_MEETING_INTEL_v1
+import { runMeetingIntel } from "../services/teams/meetingIntel.js";
 
 const INTERVAL_MS = 10 * 60 * 1000;
 const KICKOFF_MS = 25 * 1000;
@@ -252,6 +254,10 @@ export function startTeamsTranscriptWorker(pool: Pool): { stop: () => void } {
           });
         }
       }
+      // BF_SERVER_MAYA_MEETING_INTEL_v1 - once a transcript exists, turn it into a
+      // summary + real tasks. Separate pass so a Maya/OpenAI outage can never stop
+      // transcripts being captured; the row keeps its transcript and retries later.
+      await runMeetingIntel(pool);
     } catch (err) {
       console.error(
         "[teams-transcript] tick failed:",
