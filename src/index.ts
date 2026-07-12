@@ -183,6 +183,11 @@ export async function start(): Promise<void> {
     try { const w = startMarketingKnowledgeWorker(pool); workerStops.push(w.stop); console.log("[startup] marketing-knowledge worker started"); }
     catch (err) { console.error("[startup] marketing-knowledge worker failed to start:", err); }
 
+    // BF_SERVER_TEAMS_TRANSCRIPT_POLLER_v1 - pull Teams transcripts + recording links onto the CRM timeline.
+    const { startTeamsTranscriptWorker } = await import("./workers/teamsTranscriptWorker.js");
+    try { const w = startTeamsTranscriptWorker(pool); workerStops.push(w.stop); console.log("[startup] teams-transcript worker started"); }
+    catch (err) { console.error("[startup] teams-transcript worker failed to start:", err); }
+
     // BF_SERVER_BLOCK_v744 — advance BI leads to Engaged on an email reply.
     const { startBiOutreachEmailReplyWorker } = await import("./workers/biOutreachEmailReplyWorker.js");
     try { const w = startBiOutreachEmailReplyWorker(pool); workerStops.push(w.stop); console.log("[startup] BI outreach email-reply worker started"); }
