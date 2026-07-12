@@ -21,6 +21,110 @@ function renderMergeTokens(template: string, ctx: Record<string, string>): strin
 const router = Router();
 router.use(requireAuth);
 
+// BF_SERVER_TEAMS_MEETING_SCHEDULE_v1 - book a Teams meeting against a CRM
+// contact. The signed-in staff member is the ORGANIZER: we create the event on
+// their calendar with their delegated token (the same o365 connection the
+// mailbox uses, which already carries Calendars.ReadWrite). That matters for
+// two reasons: the Teams transcript API only exposes artifacts for meetings
+// tied to a real calendar event, and the tenant's application access policy is
+// granted per-organizer. We persist the Graph event id + the onlineMeeting id
+// against contact_id + silo so the transcript/recording poller knows whose
+// timeline to write to when the artifacts land.
+router.post("/meetings/schedule", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const contactId = typeof body.contact_id === "string" ? body.contact_id : null;
+  const subject = typeof body.subject === "string" && body.subject.trim() ? body.subject.trim() : "Boreal meeting";
+  const startIso = typeof body.start === "string" ? body.start : null;
+  const endIso = typeof body.end === "string" ? body.end : null;
+  const attendees = Array.isArray(body.attendees)
+    ? (body.attendees as unknown[]).map((a) => String(a)).filter((a) => a.includes("@"))
+    : [];
+
+  if (!contactId) return res.status(400).json({ error: "contact_id_required" });
+  if (!startIso || !endIso) return res.status(400).json({ error: "start_and_end_required" });
+
+  const silo = resolveSiloFromRequest(req);
+
+  // The event MUST be a real calendar event with isOnlineMeeting=true. A bare
+  // onlineMeeting object is not addressable by the transcript API.
+  const eventBody = {
+    subject,
+    start: { dateTime: startIso, timeZone: "UTC" },
+    end: { dateTime: endIso, timeZone: "UTC" },
+    isOnlineMeeting: true,
+    onlineMeetingProvider: "teamsForBusiness",
+    attendees: attendees.map((address) => ({
+      emailAddress: { address },
+      type: "required",
+    })),
+  };
+
+  const created = await graph.fetch("/me/events", {
+    method: "POST",
+    body: JSON.stringify(eventBody),
+  });
+  if (!created.ok) {
+    return res.status(502).json({
+      error: "graph_event_create_failed",
+      detail: (await created.text()).slice(0, 500),
+    });
+  }
+  const ev: any = await created.json().catch(() => ({}));
+
+  // Graph returns the join url on the event; the onlineMeeting id is derived
+  // from it and is what the transcript endpoints key on.
+  const joinUrl: string | null = ev?.onlineMeeting?.joinUrl ?? null;
+  const graphEventId: string | null = ev?.id ?? null;
+
+  const me = await graph.fetch("/me?$select=userPrincipalName");
+  const meJson: any = me.ok ? await me.json().catch(() => ({})) : {};
+  const organizerUpn: string | null = meJson?.userPrincipalName ?? null;
+
+  const row = await pool.query(
+    `INSERT INTO teams_meetings
+       (silo, contact_id, organizer_user_id, organizer_upn, subject,
+        graph_event_id, join_url, scheduled_at, scheduled_end_at, status)
+     VALUES ($1, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, 'scheduled')
+     ON CONFLICT (graph_event_id) WHERE graph_event_id IS NOT NULL DO UPDATE
+       SET subject = EXCLUDED.subject,
+           scheduled_at = EXCLUDED.scheduled_at,
+           scheduled_end_at = EXCLUDED.scheduled_end_at,
+           updated_at = now()
+     RETURNING id::text AS id`,
+    [silo, contactId, userId, organizerUpn, subject, graphEventId, joinUrl, startIso, endIso],
+  );
+
+  res.json({
+    success: true,
+    data: {
+      id: row.rows[0]?.id ?? null,
+      graph_event_id: graphEventId,
+      join_url: joinUrl,
+      organizer: organizerUpn,
+    },
+  });
+}));
+
+// List the Teams meetings booked against a contact (for the CRM record panel).
+router.get("/meetings/by-contact/:contactId", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const r = await pool.query(
+    `SELECT id::text AS id, subject, join_url, scheduled_at, scheduled_end_at,
+            recording_url, transcript_fetched_at, maya_summary, status
+       FROM teams_meetings
+      WHERE contact_id = $1::uuid AND silo = $2
+      ORDER BY scheduled_at DESC NULLS LAST
+      LIMIT 100`,
+    [req.params.contactId, silo],
+  );
+  res.json({ success: true, data: r.rows });
+}));
+
 router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId;
   if (!userId) return res.status(401).json({ error: "unauthenticated" });
