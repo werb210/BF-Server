@@ -36,6 +36,7 @@ router.post("/", safeHandler(async (req: any, res: any) => {
   let graphId: string | null = null;
   // BF_SERVER_BLOCK_v336_TEAMS_MEETING_v1 — create a real Teams online meeting + capture link
   let joinUrl: string | null = null;
+  let organizerUpn: string | null = null; // BF_SERVER_TEAMS_MEETING_LINK_v1
   const wantsOnline = b.online === true || b.meeting_type === "teams";
   const graph = await getGraphForUser(pool, userId);
   if (graph) {
@@ -64,6 +65,22 @@ router.post("/", safeHandler(async (req: any, res: any) => {
     } catch {
       graphId = null;
     }
+    // BF_SERVER_TEAMS_MEETING_LINK_v1 - the Graph transcript + recording
+    // endpoints are addressed as /users/{organizerId}/onlineMeetings/... , so
+    // knowing the event id alone is not enough: we must also know WHO organised
+    // it. crm_meetings stores neither pairing, so capture the organiser's UPN
+    // here while we still hold their delegated Graph client.
+    if (wantsOnline && graphId) {
+      try {
+        const meRes = await graph.fetch("/me?$select=userPrincipalName");
+        if (meRes.ok) {
+          const meJson: any = await meRes.json();
+          organizerUpn = meJson?.userPrincipalName ?? null;
+        }
+      } catch {
+        organizerUpn = null;
+      }
+    }
   }
 
   const silo = resolveSiloFromRequest(req);
@@ -89,6 +106,41 @@ router.post("/", safeHandler(async (req: any, res: any) => {
       silo,
     ],
   );
+  // BF_SERVER_TEAMS_MEETING_LINK_v1 - register the online meeting so the
+  // transcript/recording poller can find it after it ends and attach the
+  // artifacts (recording link, transcript, Maya summary) to this contact's CRM
+  // timeline. Best-effort: a failure here must never break scheduling.
+  if (wantsOnline && graphId) {
+    try {
+      await pool.query(
+        `INSERT INTO teams_meetings
+           (silo, contact_id, company_id, crm_meeting_id, organizer_user_id, organizer_upn,
+            subject, graph_event_id, join_url, scheduled_at, scheduled_end_at, status)
+         VALUES ($1, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, $8, $9, $10, $11, 'scheduled')
+         ON CONFLICT (graph_event_id) DO UPDATE
+           SET subject = EXCLUDED.subject,
+               join_url = EXCLUDED.join_url,
+               scheduled_at = EXCLUDED.scheduled_at,
+               scheduled_end_at = EXCLUDED.scheduled_end_at,
+               organizer_upn = COALESCE(EXCLUDED.organizer_upn, teams_meetings.organizer_upn),
+               updated_at = now()`,
+        [
+          silo,
+          contactId,
+          companyId,
+          rows[0]?.id ?? null,
+          userId,
+          organizerUpn,
+          title,
+          graphId,
+          joinUrl,
+          b.start_at,
+          b.end_at,
+        ],
+      );
+    } catch { /* never break the meeting create */ }
+  }
+
   if (contactId) void bumpBiOutreachToDemoBooked(String(contactId)); // BF_SERVER_BLOCK_v744
   res.status(201).json({ ok: true, data: rows[0] });
 }));
