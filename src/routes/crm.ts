@@ -337,6 +337,18 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
     )`);
   }
 
+  // BF_SERVER_CRM_LIST_TOTALS_v1 - the list endpoints returned rows + {page,pageSize}
+  // but no total, so the portal could only guess whether a next page existed
+  // ("a full page came back"). Count over the SAME filters, before pageSize/offset
+  // are appended to `values`, so the parameter indexes still line up.
+  const countSql = `SELECT count(*)::int AS total
+    FROM contacts c
+    LEFT JOIN companies co ON ${hasCompanyId ? "c.company_id = co.id" : "false"}
+    LEFT JOIN users u ON ${hasOwnerId ? "c.owner_id = u.id" : "false"}
+    WHERE ${where.join(" AND ")}`;
+  const countRes = await pool.query(countSql, values);
+  const total = Number(countRes.rows[0]?.total ?? 0);
+
   values.push(pageSize, offset);
 
   const sql = `SELECT
@@ -362,7 +374,7 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
     LIMIT $${values.length - 1} OFFSET $${values.length}`;
 
   const { rows } = await pool.query(sql, values);
-  respondOk(res, rows, { page, pageSize });
+  respondOk(res, rows, { page, pageSize, total }); // BF_SERVER_CRM_LIST_TOTALS_v1
 }));
 
 router.post("/contacts", requireCrmWrite, safeHandler(async (req: any, res: any) => {
@@ -936,16 +948,33 @@ router.get("/companies", safeHandler(async (req: any, res: any) => {
     params.push(tagFilter);
     where += ` AND EXISTS (SELECT 1 FROM unnest(coalesce(co.tags, '{}'::text[])) t WHERE lower(t) = $${params.length})`;
   }
+  // BF_SERVER_CRM_LIST_TOTALS_v1 - companies had NO paging at all: a hardcoded
+  // LIMIT 500 and no page/pageSize/total. Contacts has always paged; this brings
+  // companies to parity so the portal can render the same pager on both.
+  const countRes = await pool.query(
+    `SELECT count(*)::int AS total
+       FROM companies co
+       LEFT JOIN users u ON u.id = co.owner_id
+      WHERE ${where}`,
+    params,
+  );
+  const total = Number(countRes.rows[0]?.total ?? 0);
+
+  const page = Math.max(Number(req.query.page) || 1, 1);
+  const pageSize = Math.min(Number(req.query.pageSize) || 200, 500);
+  const offset = (page - 1) * pageSize;
+  const pagedParams = [...params, pageSize, offset];
+
   const { rows } = await pool.query(
     `SELECT co.*, (u.first_name || ' ' || u.last_name) AS owner_name
      FROM companies co
      LEFT JOIN users u ON u.id = co.owner_id
      WHERE ${where}
      ORDER BY ${sortCol === "owner_name" ? "owner_name" : "co." + sortCol} ${sortDir}
-     LIMIT 500`,
-    params,
+     LIMIT $${pagedParams.length - 1} OFFSET $${pagedParams.length}`,
+    pagedParams,
   );
-  res.json({ data: rows });
+  respondOk(res, rows, { page, pageSize, total }); // BF_SERVER_CRM_LIST_TOTALS_v1
 }));
 
 router.get("/companies/:id", safeHandler(async (req: any, res: any) => {
