@@ -143,6 +143,18 @@ router.get("/", safeHandler(async (req: any, res: any) => {
           FROM crm_timeline_events
          WHERE contact_id = $1
            AND event_type IN ('sequence_step_sent','email_open','email_click','email_bounce','email_dropped','email_spamreport','email_unsubscribe','email_group_unsubscribe','sms_link_clicked','attribution')
+        UNION ALL
+        -- BF_SERVER_TEAMS_TRANSCRIPT_POLLER_v1 - Teams meetings with their
+        -- recording link + transcript. Reuses kind 'recording', which the portal
+        -- already renders with body + a URL in extra, so no new UI plumbing.
+        -- body prefers the Maya summary once that layer lands, falling back to
+        -- the raw VTT (truncated - the full text stays in teams_meetings).
+        SELECT 'recording' AS kind, tm.id::text, COALESCE(tm.ended_at, tm.scheduled_end_at, tm.created_at) AS ts,
+               ('Teams meeting: ' || COALESCE(tm.subject, '(no subject)')) AS title,
+               COALESCE(tm.maya_summary, left(tm.transcript_text, 2000)) AS body,
+               COALESCE(tm.recording_url, tm.join_url) AS extra
+          FROM teams_meetings tm
+         WHERE tm.contact_id = $1 AND tm.silo = $2
         ORDER BY ts DESC LIMIT 500`
     : `
         SELECT 'note' AS kind, id::text, created_at AS ts,
@@ -183,6 +195,18 @@ router.get("/", safeHandler(async (req: any, res: any) => {
         SELECT 'meeting' AS kind, id::text, created_at AS ts,
                title, attendee_description AS body, location AS extra
           FROM crm_meetings WHERE ${col} = $1 AND silo = $2
+        UNION ALL
+        -- BF_SERVER_TEAMS_TRANSCRIPT_POLLER_v1 - Teams meetings with their
+        -- recording link + transcript. Reuses kind 'recording', which the portal
+        -- already renders with body + a URL in extra, so no new UI plumbing.
+        -- body prefers the Maya summary once that layer lands, falling back to
+        -- the raw VTT (truncated - the full text stays in teams_meetings).
+        SELECT 'recording' AS kind, tm.id::text, COALESCE(tm.ended_at, tm.scheduled_end_at, tm.created_at) AS ts,
+               ('Teams meeting: ' || COALESCE(tm.subject, '(no subject)')) AS title,
+               COALESCE(tm.maya_summary, left(tm.transcript_text, 2000)) AS body,
+               COALESCE(tm.recording_url, tm.join_url) AS extra
+          FROM teams_meetings tm
+         WHERE tm.company_id = $1 AND tm.silo = $2
         ORDER BY ts DESC LIMIT 500`;
 
   const { rows } = await pool.query(sql, [id, silo]);
