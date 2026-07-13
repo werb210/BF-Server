@@ -36,7 +36,9 @@ export async function auth(req: Request, res: Response, next: NextFunction) {
       return res.status(500).json({ status: "error", message: "Auth not configured" });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    // BF_SERVER_JWT_HARDENING_v1 - pin the algorithm; otherwise the library trusts the
+    // `alg` the token itself claims, which is the classic algorithm-confusion foothold.
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
     const userId = (decoded as any).id ?? (decoded as any).sub ?? null;
 
     let dbUser: { id: string; email: string | null; role: string | null; silo: string | null; silos: string[] | null } | null = null;
