@@ -7,6 +7,7 @@ import { signAccessToken } from "../auth/jwt.js";
 import { ROLES, normalizeRole } from "../auth/roles.js";
 import { isTest } from "../config/runtime.js";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { otpStartLimiter, otpVerifyLimiter } from "../middleware/authRateLimit.js"; // BF_SERVER_AUTH_RATE_LIMIT_v1
 import { authMeHandler } from "./auth/me.js";
 import { findAuthUserByPhone } from "../modules/auth/auth.repo.js";
 // BF_SERVER_v68_OTP_HAS_SUBMISSION - server-authoritative submission lookup
@@ -41,7 +42,7 @@ const getTwilioClient = (): TwilioVerifyClient => {
 };
 
 // START OTP
-router.post("/otp/start", async (req, res) => {
+router.post("/otp/start", otpStartLimiter, async (req, res) => {
   try {
     const { phone } = req.body;
 
@@ -121,7 +122,7 @@ router.post("/otp/start", async (req, res) => {
 });
 
 // VERIFY OTP
-router.post("/otp/verify", async (req, res) => {
+router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
   const { phone, code } = req.body;
 
   // Test mode - use in-memory store
