@@ -10,10 +10,18 @@ describe("contact merge", () => {
     expect(crm).toContain('router.use("/contacts", contactMergeRoutes)');
   });
 
-  it("finds duplicates by fuzzy NAME, not just exact email/phone", () => {
+  it("finds duplicates by NAME, not just exact email/phone", () => {
     // Mike Cotic, Juergen Zischler and Wayne Beamish all differ on BOTH email and phone.
     // Without a name match the tool cannot see a single real duplicate in this database.
-    expect(src).toContain("similarity(lower(c.name), lower(me.name)) >= 0.6");
+    expect(src).toContain("bf_same_person_name(c.name, me.name)");
+  });
+
+  it("does NOT depend on pg_trgm, which Azure Postgres refuses to allow-list", () => {
+    // Creating that extension threw, and the fatal migration runner crash-looped the app.
+    const mig = readFileSync(path.join(process.cwd(), "migrations/2026_07_13_contact_merge.sql"), "utf8");
+    expect(mig).not.toContain("CREATE EXTENSION");
+    expect(mig).toContain("bf_same_person_name");
+    expect(src).not.toContain("similarity(lower(");
   });
 
   it("repoints EVERY table with a contact_id, discovered at runtime", () => {
