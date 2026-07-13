@@ -1274,7 +1274,8 @@ router.get(
     if (!contactId) return res.json({ ok: true, data: null });
 
     const { rows } = await pool.query(
-      `SELECT rs.id, rs.readiness_score, rs.readiness_tier, rs.company_name, rs.full_name,
+      `SELECT rs.id, rs.readiness_score, rs.readiness_tier, rs.readiness_over_ask,
+              rs.company_name, rs.full_name,
               rs.industry, rs.business_location, rs.funding_type, rs.requested_amount,
               rs.purpose_of_funds, rs.sales_history_years, rs.annual_revenue_range,
               rs.avg_monthly_revenue_range, rs.accounts_receivable_range,
