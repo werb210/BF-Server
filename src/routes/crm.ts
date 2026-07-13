@@ -1264,6 +1264,37 @@ router.use("/contacts/:id/notes", notesRoutes);
 router.use("/contacts/:id/emails", emailsRoutes);
 router.use("/contacts/:id/meetings", meetingsRoutes);
 router.use("/contacts/:id/calls", callsActivityRoutes);
+// BF_SERVER_READINESS_SCORE_v1
+// Latest credit-readiness submission for a contact, for the right rail of the CRM record.
+// BF only: readiness is a Boreal Financial funnel and does not exist for BI.
+router.get(
+  "/contacts/:id/credit-readiness",
+  safeHandler(async (req: any, res: any) => {
+    const contactId = String(req.params.id ?? "").trim();
+    if (!contactId) return res.json({ ok: true, data: null });
+
+    const { rows } = await pool.query(
+      `SELECT rs.id, rs.readiness_score, rs.readiness_tier, rs.company_name, rs.full_name,
+              rs.industry, rs.business_location, rs.funding_type, rs.requested_amount,
+              rs.purpose_of_funds, rs.sales_history_years, rs.annual_revenue_range,
+              rs.avg_monthly_revenue_range, rs.accounts_receivable_range,
+              rs.fixed_assets_value_range, rs.created_at
+         FROM readiness_sessions rs
+         JOIN contacts c ON c.id = $1::uuid
+        WHERE rs.crm_lead_id = c.id
+           -- crm_lead_id is set on every live row, but fall back to the identity fields
+           -- so a contact created some other way still matches its own submission.
+           OR (rs.email IS NOT NULL AND c.email IS NOT NULL
+               AND lower(rs.email) = lower(c.email))
+        ORDER BY rs.created_at DESC
+        LIMIT 1`,
+      [contactId],
+    );
+
+    return res.json({ ok: true, data: rows[0] ?? null });
+  }),
+);
+
 router.use("/contacts/:id/timeline", timelineRoutes);
 
 router.use("/companies/:id/notes", notesRoutes);
