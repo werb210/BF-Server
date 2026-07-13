@@ -30,7 +30,7 @@ async function contactRefTables(): Promise<string[]> {
   return r.rows.map((x) => x.table_name);
 }
 
-// Candidates for ONE contact. Exact email / exact last-10 phone, plus a fuzzy name match,
+// Candidates for ONE contact. Exact email / exact last-10 phone, plus a pure-SQL name match,
 // which is the only thing that finds a person who used a different address and a different
 // number on two occasions.
 router.get(
@@ -54,7 +54,9 @@ router.get(
               (CASE WHEN c.phone IS NOT NULL AND me.phone IS NOT NULL
                      AND right(regexp_replace(c.phone,'[^0-9]','','g'),10)
                        = right(regexp_replace(me.phone,'[^0-9]','','g'),10) THEN 'phone' END) AS match_phone,
-              similarity(lower(coalesce(c.name,'')), lower(coalesce(me.name,''))) AS name_similarity,
+              -- Trigram similarity is NOT available: Azure Postgres does not allow-list
+              -- that extension. bf_same_person_name() is pure SQL (see the migration).
+              bf_same_person_name(c.name, me.name) AS match_name,
               (SELECT count(*)::int FROM applications a WHERE a.contact_id = c.id) AS applications,
               (SELECT count(*)::int FROM call_logs cl WHERE cl.crm_contact_id = c.id) AS calls,
               (SELECT count(*)::int FROM communications_messages m WHERE m.contact_id = c.id) AS messages
@@ -72,11 +74,12 @@ router.get(
               AND length(regexp_replace(me.phone,'[^0-9]','','g')) >= 10
               AND right(regexp_replace(c.phone,'[^0-9]','','g'),10)
                 = right(regexp_replace(me.phone,'[^0-9]','','g'),10))
-            -- the case the old preview is blind to: same human, different everything
-            OR (me.name IS NOT NULL AND c.name IS NOT NULL
-              AND similarity(lower(c.name), lower(me.name)) >= 0.6)
+            -- the case the old preview is blind to: same human, different everything.
+            -- Anchored on an exact surname match, so "Mike Cotic" finds "MICHAEL COTIC"
+            -- but not "Mike Jones".
+            OR bf_same_person_name(c.name, me.name)
           )
-        ORDER BY name_similarity DESC NULLS LAST, c.created_at ASC
+        ORDER BY (c.email IS NOT NULL) DESC, c.created_at ASC
         LIMIT 25`,
       [id, silo],
     );
