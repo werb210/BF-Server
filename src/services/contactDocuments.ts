@@ -73,24 +73,57 @@ export async function fileInboundAttachments(opts: {
   const contactId = await resolveSenderContactId(pool, silo, fromEmail, fromName, ownerId);
   if (!contactId) return { filed: 0, contactId: null };
 
+  // BF_SERVER_INBOX_ATTACHMENT_BYTES_v1
+  // This used to $select contentBytes. contentBytes belongs to the fileAttachment DERIVED
+  // type, not the base attachment type, so Graph silently OMITS it from a $select on the
+  // collection - every attachment then hit the `if (!bytesB64) continue` below and
+  // "Save to CRM" filed ZERO documents while reporting success. Fetch the full objects.
   const ar = await graph.fetch(
-    `${base}/messages/${encodeURIComponent(messageId)}/attachments`
-      + `?$select=id,name,contentType,size,isInline,contentBytes`,
+    `${base}/messages/${encodeURIComponent(messageId)}/attachments`,
   );
-  if (!ar.ok) return { filed: 0, contactId };
+  if (!ar.ok) {
+    console.error("[file-to-crm] attachments fetch failed", { status: ar.status, messageId });
+    return { filed: 0, contactId };
+  }
   const aj: any = await ar.json();
   const atts: any[] = Array.isArray(aj?.value) ? aj.value : [];
+  console.log("[file-to-crm] attachments found", { messageId, count: atts.length });
 
   const storage = getStorage();
   let filed = 0;
   for (const att of atts) {
     if (!att || att.isInline === true) continue;
     if (onlyAttachmentId && String(att.id ?? "") !== onlyAttachmentId) continue; // BF_SERVER_INBOX_FILE_ONE_TO_CRM_v1
-    const bytesB64: string | undefined = att.contentBytes;
-    if (!bytesB64) continue; // itemAttachment / reference attachment -> no bytes, skip
-    if (Number(att.size ?? 0) > MAX_ATTACHMENT_BYTES) continue;
+    // BF_SERVER_INBOX_ATTACHMENT_BYTES_v1 - if the collection did not carry the bytes
+    // (large attachments, or Graph simply omitting them), fetch the single attachment by
+    // id, which always returns the full fileAttachment including contentBytes.
+    let bytesB64: string | undefined = att.contentBytes;
+    if (!bytesB64 && att.id) {
+      const one = await graph.fetch(
+        `${base}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(String(att.id))}`,
+      );
+      if (one.ok) {
+        const oj: any = await one.json();
+        bytesB64 = oj?.contentBytes;
+      }
+    }
+    if (!bytesB64) {
+      // itemAttachment / reference attachment -> genuinely has no bytes. Say so, loudly:
+      // a silent `continue` here is exactly what made this bug invisible.
+      console.error("[file-to-crm] attachment has no bytes, skipping", {
+        messageId, name: att.name, odataType: att["@odata.type"],
+      });
+      continue;
+    }
+    if (Number(att.size ?? 0) > MAX_ATTACHMENT_BYTES) {
+      console.error("[file-to-crm] attachment too large, skipping", { name: att.name, size: att.size });
+      continue;
+    }
     const buffer = Buffer.from(bytesB64, "base64");
-    if (buffer.length > MAX_ATTACHMENT_BYTES) continue;
+    if (buffer.length > MAX_ATTACHMENT_BYTES) {
+      console.error("[file-to-crm] attachment too large after decode, skipping", { name: att.name });
+      continue;
+    }
     const filename = String(att.name ?? "attachment");
     const contentType = String(att.contentType ?? "application/octet-stream");
 
