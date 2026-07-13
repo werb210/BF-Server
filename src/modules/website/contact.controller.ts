@@ -115,7 +115,11 @@ export async function submitContactForm(req: Request, res: Response) {
       refId: lead.id,
       // BF_SERVER_CONTACT_FORM_AUTOMATION_v1 - deep-link to the contact record so
       // the bell notification opens the person, not the CRM list.
-      contextUrl: contactId ? `/crm/contacts/${encodeURIComponent(contactId)}` : `/crm/leads/${encodeURIComponent(lead.id)}`,
+      // BF_SERVER_NOTIF_DEEPLINK_v1 - the old fallback was `/crm/leads/<id>`, which is NOT
+      // a route in the portal: React Router could not match it, so clicking the bell
+      // dumped staff on the CRM list with no idea who to call. If we have no contact,
+      // send them somewhere that at least exists.
+      contextUrl: contactId ? `/crm/contacts/${encodeURIComponent(contactId)}` : `/crm/contacts`,
       silo: "BF",
     }).catch((err) => {
       console.warn("[website_contact] notifyAllStaff failed", err);
