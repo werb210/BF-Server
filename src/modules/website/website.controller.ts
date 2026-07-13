@@ -74,14 +74,21 @@ export async function submitCreditReadiness(req: Request, res: Response) {
          business_location, funding_type, requested_amount, purpose_of_funds,
          sales_history_years, annual_revenue_range, avg_monthly_revenue_range,
          accounts_receivable_range, fixed_assets_value_range,
-         crm_lead_id, expires_at, is_active
+         crm_lead_id, expires_at, is_active,
+         readiness_score, readiness_tier
        )
        VALUES (
          gen_random_uuid(), gen_random_uuid()::text, $1, $2, $3, $4, $5,
          $6, $7, $8, $9,
          $10, $11, $12,
          $13, $14,
-         $15, now() + interval '30 days', true
+         $15, now() + interval '30 days', true,
+         -- BF_SERVER_READINESS_SCORE_v1 - score server-side from the answers we just
+         -- stored. The browser already computes this for the prospect's results page,
+         -- but it never posts it; recomputing here means the score cannot be tampered
+         -- with in the request, and old rows can be backfilled with identical logic.
+         bf_readiness_score($10, $11, $14, $13, $8),
+         bf_readiness_tier(bf_readiness_score($10, $11, $14, $13, $8))
        )
        ON CONFLICT (lower(email)) WHERE is_active = true
        DO UPDATE SET
@@ -99,6 +106,8 @@ export async function submitCreditReadiness(req: Request, res: Response) {
          accounts_receivable_range = EXCLUDED.accounts_receivable_range,
          fixed_assets_value_range = EXCLUDED.fixed_assets_value_range,
          crm_lead_id = EXCLUDED.crm_lead_id,
+         readiness_score = EXCLUDED.readiness_score, -- BF_SERVER_READINESS_SCORE_v1
+         readiness_tier = EXCLUDED.readiness_tier,
          updated_at = now()`,
       [
         String(email).toLowerCase(),
