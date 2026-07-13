@@ -143,6 +143,68 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
         conferenceId: conf.id,
         participantId: pid,
       }));
+      // BF_SERVER_OUTBOUND_CALL_LOG_v1
+      // Every staff outbound call from the browser dialer lands HERE, in the conference
+      // branch - and this branch returns without writing a call_logs row. The only code
+      // that logs an outbound call is the isSdkOutbound branch further down, which this
+      // early return skips entirely. Result: outbound call logging silently died the day
+      // the dialer moved to conference calling (last outbound row: 2026-05-21), while
+      // inbound kept working. Seven weeks of calls exist in Twilio and in the recordings,
+      // and are absent from Recents and from every contact timeline.
+      //
+      // Log it here, attached to the contact so it reaches the timeline. Non-fatal: a
+      // logging failure must never drop a live call.
+      try {
+        const dialed = String(params.To ?? params.to ?? "").trim();
+        if (/^\+?\d{8,15}$/.test(dialed)) {
+          const { startCall } = await import("../modules/calls/calls.service.js");
+          const siloParam = String(params.silo ?? params.Silo ?? "").trim().toUpperCase() || "BF";
+          const appIdParam = String(params.applicationId ?? params.applicationid ?? "").trim() || null;
+
+          // Resolve the contact by last-10-digits, the same rule the voicemail and
+          // timeline resolvers use, so the call appears on the person's record.
+          const cm = await pool.query<{ id: string }>(
+            `SELECT id FROM contacts
+              WHERE silo = $2
+                AND right(regexp_replace(coalesce(phone,''), '[^0-9]', '', 'g'), 10)
+                  = right(regexp_replace($1, '[^0-9]', '', 'g'), 10)
+              ORDER BY created_at ASC
+              LIMIT 1`,
+            [dialed, siloParam],
+          ).catch(() => ({ rows: [] as { id: string }[] }));
+
+          // callerId is declared further down (in the isSdkOutbound branch we never
+          // reach), so resolve the same env chain here rather than reordering that code.
+          const outboundFrom =
+            process.env.TWILIO_CALLER_ID
+            || process.env.TWILIO_FROM_NUMBER
+            || process.env.TWILIO_PHONE_NUMBER
+            || process.env.TWILIO_FROM
+            || process.env.TWILIO_PHONE
+            || null;
+
+          await startCall({
+            phoneNumber: dialed,
+            fromNumber: outboundFrom,
+            toNumber: dialed,
+            direction: "outbound",
+            status: "initiated",
+            staffUserId: identity,
+            twilioCallSid: callSid,
+            crmContactId: cm.rows[0]?.id ?? null,
+            applicationId: appIdParam,
+            silo: siloParam,
+          });
+          console.log("[voice] outbound conference call logged", {
+            callSid, to: dialed, contact_id: cm.rows[0]?.id ?? null,
+          });
+        }
+      } catch (err: any) {
+        console.error("voice_conference_call_log_failed", {
+          callSid, message: err?.message ?? String(err),
+        });
+      }
+
       vrs.redirect({ method: "POST" }, `${base}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(sdkConfFriendly)}&pid=${encodeURIComponent(pid)}`);
       return res.send(vrs.toString());
     }
