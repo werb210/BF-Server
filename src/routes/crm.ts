@@ -14,6 +14,7 @@ import { getSilo, resolveSiloFromRequest } from "../middleware/silo.js";
 import { createContact } from "../services/contacts.js";
 import { getStorage } from "../lib/storage/index.js"; // BF_SERVER_CONTACT_DOCUMENTS_v1
 import notesRoutes from "./crm/notes.js";
+import contactMergeRoutes from "./crm/contactMerge.js"; // BF_SERVER_CONTACT_MERGE_v1
 import emailsRoutes from "./crm/emails.js";
 import meetingsRoutes from "./crm/meetings.js";
 import callsActivityRoutes from "./crm/calls.js";
@@ -1259,6 +1260,11 @@ router.get("/contacts/:id/calls", safeHandler(async (req: any, res: any) => {
   );
   return res.json({ items: rows });
 }));
+
+// BF_SERVER_CONTACT_MERGE_v1 - serves GET /contacts/:id/duplicate-candidates and
+// POST /contacts/merge. Safe to mount here: GET "/contacts/:id" cannot match the deeper
+// candidates path, and there is no POST "/contacts/:id" to swallow "merge".
+router.use("/contacts", contactMergeRoutes);
 
 router.use("/contacts/:id/notes", notesRoutes);
 router.use("/contacts/:id/emails", emailsRoutes);
