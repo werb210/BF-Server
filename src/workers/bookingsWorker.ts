@@ -25,13 +25,21 @@ type GraphEvent = {
 };
 
 async function staffUpns(pool: Pool): Promise<string[]> {
-  const { rows } = await pool.query<{ email: string }>(
-    `SELECT DISTINCT lower(email) AS email
+  // BF_SERVER_BOOKINGS_UPN_v2 - users.email is a LOGIN identifier, not a mailbox, and
+  // filtering it by domain is not enough. Andrew logs in as andrew@boreal.financial - which
+  // passes a domain filter but DOES NOT EXIST in the tenant (404 on every tick) - while his
+  // real mailbox, andrew.p@boreal.financial, was never polled at all, so every booking he
+  // took was missed. users.o365_user_email is the actual mailbox, and it is NULL for anyone
+  // who has not connected O365 (Caden, the client-submission system user), which is exactly
+  // the set that must never be polled.
+  const { rows } = await pool.query<{ upn: string }>(
+    `SELECT DISTINCT lower(o365_user_email) AS upn
        FROM users
-      WHERE email IS NOT NULL AND email <> ''
+      WHERE o365_user_email IS NOT NULL AND o365_user_email <> ''
+        AND coalesce(active, true) = true
         AND role IN ('Admin','Staff','Ops','Marketing')`,
   );
-  return rows.map((r) => r.email).filter(Boolean);
+  return rows.map((r) => r.upn).filter(Boolean);
 }
 
 async function fetchBookings(upn: string): Promise<GraphEvent[]> {
@@ -115,8 +123,12 @@ async function ingest(pool: Pool, upn: string, ev: GraphEvent): Promise<void> {
       );
     }
 
+    // BF_SERVER_BOOKINGS_UPN_v2 - resolve the owner by the SAME column we polled with, or
+    // Andrew's bookings would create contacts and tasks assigned to nobody.
     const owner = await pool.query<{ id: string }>(
-      `SELECT id FROM users WHERE lower(email) = lower($1) LIMIT 1`, [upn],
+      `SELECT id FROM users
+        WHERE lower(o365_user_email) = lower($1) OR lower(email) = lower($1)
+        LIMIT 1`, [upn],
     );
     const ownerId = owner.rows[0]?.id ?? null;
 
