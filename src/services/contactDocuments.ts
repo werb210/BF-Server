@@ -48,8 +48,14 @@ async function resolveSenderContactId(
 }
 
 export interface FileInboundResult {
+  // BF_SERVER_FILE_TO_CRM_TRUTH_v1 - filed:0 alone cannot tell staff whether the email had
+  // no attachments, whether the sender matched no contact, or whether everything was
+  // already filed. The portal was reporting all three as "No attachments on this email",
+  // which is simply false when the email plainly has three PDFs attached.
   filed: number;
+  duplicates?: number;
   contactId: string | null;
+  reason?: "no_attachments" | "no_message_id" | "no_contact" | "graph_error" | "all_duplicates";
 }
 
 export async function fileInboundAttachments(opts: {
@@ -64,14 +70,14 @@ export async function fileInboundAttachments(opts: {
   const { pool, graph, base, message, silo } = opts;
   const ownerId = opts.ownerId ?? null;
   const onlyAttachmentId = opts.attachmentId ?? null; // BF_SERVER_INBOX_FILE_ONE_TO_CRM_v1
-  if (!message?.hasAttachments) return { filed: 0, contactId: null };
+  if (!message?.hasAttachments) return { filed: 0, contactId: null, reason: "no_attachments" };
   const messageId = String(message.id ?? "");
-  if (!messageId) return { filed: 0, contactId: null };
+  if (!messageId) return { filed: 0, contactId: null, reason: "no_message_id" };
 
   const fromEmail = message?.from?.emailAddress?.address ?? "";
   const fromName = message?.from?.emailAddress?.name ?? "";
   const contactId = await resolveSenderContactId(pool, silo, fromEmail, fromName, ownerId);
-  if (!contactId) return { filed: 0, contactId: null };
+  if (!contactId) return { filed: 0, contactId: null, reason: "no_contact" };
 
   // BF_SERVER_INBOX_ATTACHMENT_BYTES_v1
   // This used to $select contentBytes. contentBytes belongs to the fileAttachment DERIVED
@@ -83,7 +89,7 @@ export async function fileInboundAttachments(opts: {
   );
   if (!ar.ok) {
     console.error("[file-to-crm] attachments fetch failed", { status: ar.status, messageId });
-    return { filed: 0, contactId };
+    return { filed: 0, contactId, reason: "graph_error" };
   }
   const aj: any = await ar.json();
   const atts: any[] = Array.isArray(aj?.value) ? aj.value : [];
@@ -91,8 +97,11 @@ export async function fileInboundAttachments(opts: {
 
   const storage = getStorage();
   let filed = 0;
+  let duplicates = 0;
+  let inlineSkipped = 0;
   for (const att of atts) {
-    if (!att || att.isInline === true) continue;
+    if (!att) continue;
+    if (att.isInline === true) { inlineSkipped++; continue; }
     if (onlyAttachmentId && String(att.id ?? "") !== onlyAttachmentId) continue; // BF_SERVER_INBOX_FILE_ONE_TO_CRM_v1
     // BF_SERVER_INBOX_ATTACHMENT_BYTES_v1 - if the collection did not carry the bytes
     // (large attachments, or Graph simply omitting them), fetch the single attachment by
@@ -143,17 +152,21 @@ export async function fileInboundAttachments(opts: {
     }
 
     try {
-      await pool.query(
+      const ins = await pool.query(
         `INSERT INTO contact_documents
            (contact_id, silo, filename, content_type, size_bytes, blob_name, blob_url, source, source_message_id)
          VALUES ($1,$2,$3,$4,$5,$6,$7,'email',$8)
          ON CONFLICT (silo, source_message_id, filename) WHERE source_message_id IS NOT NULL DO NOTHING`,
         [contactId, silo, filename, contentType, buffer.length, blobName, url, messageId],
       );
-      filed++;
+      // BF_SERVER_FILE_TO_CRM_TRUTH_v1 - ON CONFLICT DO NOTHING does not throw, so the old
+      // `filed++` counted duplicates as newly-filed. rowCount tells us which actually
+      // inserted, so staff can be told "already in CRM" instead of a bare zero.
+      if ((ins.rowCount ?? 0) > 0) filed++; else duplicates++;
     } catch {
       /* skip individual insert failures */
     }
   }
-  return { filed, contactId };
+  console.log("[file-to-crm] done", { messageId, contactId, filed, duplicates, inlineSkipped });
+  return { filed, duplicates, contactId, reason: filed === 0 && duplicates > 0 ? "all_duplicates" : undefined };
 }
