@@ -30,6 +30,35 @@ async function contactRefTables(): Promise<string[]> {
   return r.rows.map((x) => x.table_name);
 }
 
+// BF_SERVER_CONTACT_MERGE_UNIQUE_v1
+// A blind `UPDATE t SET contact_id = survivor WHERE contact_id = loser` explodes the moment
+// BOTH contacts have a row in a table with a UNIQUE constraint that includes contact_id.
+// Live failure: merging the two Amir Ghanem records returned
+//   duplicate key value violates unique constraint "marketing_sequence_enrollments_..."
+// because both were enrolled in the SAME marketing sequence, and that table is
+// UNIQUE (sequence_id, contact_id). ad_attribution is UNIQUE (contact_id, gclid) and is the
+// same landmine. Discovered at runtime from pg_index rather than hardcoded, so a new table
+// with a new unique constraint cannot silently reintroduce this.
+async function uniqueColumnSets(table: string): Promise<string[][]> {
+  const r = await pool.query<{ cols: string[] }>(
+    `SELECT array_agg(a.attname ORDER BY k.ord) AS cols
+       FROM pg_index i
+       JOIN pg_class t ON t.oid = i.indrelid
+       JOIN pg_namespace n ON n.oid = t.relnamespace
+       CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
+       JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+      WHERE i.indisunique
+        AND i.indpred IS NULL
+        AND i.indexprs IS NULL
+        AND n.nspname = 'public'
+        AND t.relname = $1
+      GROUP BY i.indexrelid
+     HAVING 'contact_id' = ANY(array_agg(a.attname))`,
+    [table],
+  );
+  return r.rows.map((x) => x.cols);
+}
+
 // Candidates for ONE contact. Exact email / exact last-10 phone, plus a pure-SQL name match,
 // which is the only thing that finds a person who used a different address and a different
 // number on two occasions.
@@ -110,6 +139,7 @@ router.post(
     const tables = await contactRefTables();
     const client = await pool.connect();
     const summary: Record<string, number> = {};
+    const dropped: Record<string, any[]> = {};
 
     try {
       await client.query("BEGIN");
@@ -128,8 +158,29 @@ router.post(
         if (lo.rowCount === 0) throw new Error(`contact ${loserId} not found in this silo`);
         const loser = lo.rows[0];
 
-        // Repoint every table that references the loser.
+        // Repoint every table that references the loser. Before each repoint, drop the loser
+        // rows that would collide with a survivor row on a UNIQUE constraint containing
+        // contact_id -- otherwise the whole merge 500s (see uniqueColumnSets above). Dropped
+        // rows are snapshotted into contact_merges so the merge stays reversible.
         for (const t of tables) {
+          for (const cols of await uniqueColumnSets(t)) {
+            const others = cols.filter((c) => c !== "contact_id");
+            const sameOthers = others.length
+              ? " AND " + others.map((c) => `s.${quoteIdent(c)} IS NOT DISTINCT FROM l.${quoteIdent(c)}`).join(" AND ")
+              : "";
+            const d = await client.query(
+              `DELETE FROM ${quoteIdent(t)} l
+                WHERE l.contact_id = $2::uuid
+                  AND EXISTS (SELECT 1 FROM ${quoteIdent(t)} s
+                               WHERE s.contact_id = $1::uuid${sameOthers})
+              RETURNING *`,
+              [survivorId, loserId],
+            );
+            if ((d.rowCount ?? 0) > 0) {
+              dropped[t] = (dropped[t] ?? []).concat(d.rows);
+              summary[`${t}:deduped`] = (summary[`${t}:deduped`] ?? 0) + (d.rowCount ?? 0);
+            }
+          }
           const r = await client.query(
             `UPDATE ${quoteIdent(t)} SET contact_id = $1::uuid WHERE contact_id = $2::uuid`,
             [survivorId, loserId],
@@ -182,7 +233,8 @@ router.post(
         await client.query(
           `INSERT INTO contact_merges (silo, survivor_id, loser_id, moved, loser_snapshot, merged_by)
            VALUES ($1, $2::uuid, $3::uuid, $4::jsonb, $5::jsonb, $6::uuid)`,
-          [silo, survivorId, loserId, JSON.stringify(summary), JSON.stringify(loser),
+          [silo, survivorId, loserId, JSON.stringify(summary),
+           JSON.stringify({ contact: loser, dropped }),
            req.user?.id ?? req.user?.userId ?? null],
         );
       }
