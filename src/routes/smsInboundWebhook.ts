@@ -73,15 +73,18 @@ router.post("/webhooks/twilio/sms-inbound", async (req: any, res) => {
       const last10 = digits.length >= 10 ? digits.slice(-10) : digits;
       try {
         if (last10) {
+          // BF_SERVER_SMS_STOP_ALL_SILOS_v1 - this was scoped to silo = 'BF', so a BI
+          // contact who texted STOP was never opted out and kept receiving messages.
+          // A person saying STOP means stop, from every silo.
           await pool.query(
             `UPDATE contacts SET sms_opt_out = $2, updated_at = now()
-              WHERE silo = 'BF' AND phone IS NOT NULL
+              WHERE phone IS NOT NULL
                 AND length(regexp_replace(phone, '[^0-9]', '', 'g')) >= 10
                 AND right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = $1`,
             [last10, optOut],
           );
         }
-        console.log("[sms-inbound] opt_" + (optOut ? "out" : "in"), { from, silo: "BF" });
+        console.log("[sms-inbound] opt_" + (optOut ? "out" : "in"), { from, silo: "ALL" });
       } catch (err: unknown) {
         console.warn("[sms-inbound] opt-out update failed", err instanceof Error ? err.message : String(err));
       }

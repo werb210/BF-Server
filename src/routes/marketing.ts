@@ -8,6 +8,7 @@ import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { createLandingPage, createLandingPageFromHtml, withViewInBrowser } from "../services/landingPage.service.js"; // BF_SERVER_BLOCK_v780_PUBLIC_LANDING
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js";
 import { smsMarketingConfigured, sendMarketingSms } from "../services/marketingSms.js";
+import { SMS_ELIGIBLE_SQL } from "../services/smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1
 import { countEmailRecipients, runEmailSend, countSmsRecipients, runSmsSend } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1 BF_SERVER_SEND_QUEUE_SMS_v1
 import { enrollSequence } from "../services/sequenceEngine.js"; // BF_SERVER_BLOCK_v785_SEQUENCES
 import { suggestionsConfigured, buildSuggestions, applySuggestion } from "../services/googleAdsSuggestions.js";
@@ -383,17 +384,33 @@ router.post("/send-jobs/:id/cancel", safeHandler(async (req: any, res: any) => {
 }));
 
 // BF_SERVER_MARKETING_SMS_v1 - bulk SMS + 36h fallback-email cascade (BF silo).
+// BF_SERVER_SMS_AUDIENCE_INCL_EXCL_v1 - tag segments for SMS, parity with email, and the
+// counts now reflect CASL eligibility. `all` is who we may lawfully text today;
+// `ineligible` is the gap, so the portal shows why the audience shrank instead of
+// silently shipping a smaller number.
 router.get("/sms/segments", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const tags = await pool.query(
     `SELECT tag, count(*)::int AS n FROM (
-       SELECT unnest(tags) AS tag FROM contacts
-        WHERE silo = $1 AND COALESCE(phone,'') <> '' AND COALESCE(sms_opt_out,false) = false AND (line_type IS NULL OR line_type = 'mobile')
+       SELECT unnest(c.tags) AS tag FROM contacts c
+        WHERE c.silo = $1 AND ${SMS_ELIGIBLE_SQL}
      ) t GROUP BY tag ORDER BY n DESC`,
     [silo],
   );
-  const all = await pool.query(`SELECT count(*)::int AS n FROM contacts WHERE silo = $1 AND COALESCE(phone,'') <> '' AND COALESCE(sms_opt_out,false) = false AND (line_type IS NULL OR line_type = 'mobile')`, [silo]);
-  respondOk(res, { configured: smsMarketingConfigured(), all: all.rows[0]?.n ?? 0, segments: tags.rows });
+  const all = await pool.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM contacts c WHERE c.silo = $1 AND ${SMS_ELIGIBLE_SQL}`, [silo]);
+  const withMobile = await pool.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM contacts c
+      WHERE c.silo = $1 AND COALESCE(c.phone,'') <> '' AND (c.line_type IS NULL OR c.line_type = 'mobile')`, [silo]);
+  const eligible = all.rows[0]?.n ?? 0;
+  const mobiles = withMobile.rows[0]?.n ?? 0;
+  respondOk(res, {
+    configured: smsMarketingConfigured(),
+    all: eligible,
+    segments: tags.rows,
+    mobiles,
+    ineligible: Math.max(0, mobiles - eligible),
+  });
 }));
 
 router.post("/sms/send", safeHandler(async (req: any, res: any) => {
@@ -412,19 +429,21 @@ router.post("/sms/send", safeHandler(async (req: any, res: any) => {
   const linkUrl = b.linkUrl ? String(b.linkUrl) : null;
   const fbSubject = b.fallbackSubject ? String(b.fallbackSubject) : null;
   const fbHtml = b.fallbackHtml ? String(b.fallbackHtml) : null;
+  const includeTags = tagArr(b.tags);       // BF_SERVER_SMS_AUDIENCE_INCL_EXCL_v1
+  const excludeTags = tagArr(b.excludeTags);
   // BF_SERVER_SEND_QUEUE_SMS_v1 - small blasts inline; large ones queue (no cap, no blocking).
-  const total = await countSmsRecipients(pool, silo, tag);
+  const total = await countSmsRecipients(pool, silo, tag, includeTags, excludeTags);
   if (total === 0) { respondOk(res, { configured: true, recipients: 0, smsSent: 0, emailSent: 0, failed: 0 }); return; }
   if (total > 1000) {
     const job = await pool.query<{ id: string; not_before: string }>(
       `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by, not_before)
        VALUES ('sms', $1, $2, $3, $4, $5, now() + ($6 || ' minutes')::interval) RETURNING id, not_before`,
-      [silo, tag, JSON.stringify({ body, linkUrl, fbSubject, fbHtml, templateId }), total, req.user?.userId ?? null, String(SEND_HOLD_MINUTES)],
+      [silo, tag, JSON.stringify({ body, linkUrl, fbSubject, fbHtml, templateId, tags: includeTags, excludeTags }), total, req.user?.userId ?? null, String(SEND_HOLD_MINUTES)],
     );
     respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total, notBefore: job.rows[0].not_before, holdMinutes: SEND_HOLD_MINUTES });
     return;
   }
-  const out = await runSmsSend(pool, { silo, tag, body, linkUrl, fbSubject, fbHtml, createdBy: req.user?.userId ?? null, templateId });
+  const out = await runSmsSend(pool, { silo, tag, body, linkUrl, fbSubject, fbHtml, createdBy: req.user?.userId ?? null, templateId, tags: includeTags, excludeTags });
   respondOk(res, { configured: true, recipients: out.total, smsSent: out.smsSent, emailSent: out.emailSent, failed: out.failed });
 }));
 
