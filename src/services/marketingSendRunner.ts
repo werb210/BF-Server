@@ -6,7 +6,8 @@
 // exactly (same recipient filter, merge vars, and timeline event).
 import type { Pool } from "pg";
 import { sendOne, mergeFields } from "./sendgridService.js";
-import { sendMarketingSms, trackedLink, lookupLineType } from "./marketingSms.js"; // BF_SERVER_SEND_QUEUE_SMS_v1 BF_SERVER_BLOCK_v784_LINE_TYPE_IMPORT
+import { sendMarketingSms, trackedLink, lookupLineType } from "./marketingSms.js";
+import { isCanadianMobile, SMS_ELIGIBLE_SQL } from "./smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1 // BF_SERVER_SEND_QUEUE_SMS_v1 BF_SERVER_BLOCK_v784_LINE_TYPE_IMPORT
 
 // BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1 - include/exclude tag arrays. Include
 // empty/null = all contacts; otherwise a contact must carry AT LEAST ONE include
@@ -97,17 +98,24 @@ export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendP
 // identically (and the 36h cascade worker can find the campaign). Mirrors the
 // original inline loop exactly: tracked link, per-send row, opt-out capture, and
 // the no-mobile immediate fallback email.
-export type SmsJob = { silo: string; tag: string | null; body: string; linkUrl: string | null; fbSubject: string | null; fbHtml: string | null; createdBy: string | null; templateId?: string | null }; // BF_SERVER_TEMPLATE_ANALYTICS_v1
+export type SmsJob = { silo: string; tag: string | null; body: string; linkUrl: string | null; fbSubject: string | null; fbHtml: string | null; createdBy: string | null; templateId?: string | null; tags?: string[] | null; excludeTags?: string[] | null }; // BF_SERVER_TEMPLATE_ANALYTICS_v1
 
-export async function countSmsRecipients(pool: Pool, silo: string, tag: string | null): Promise<number> {
-  const r = await pool.query<{ n: number }>(
-    `SELECT count(*)::int AS n
+// BF_SERVER_SMS_CONSENT_v1 + BF_SERVER_SMS_AUDIENCE_INCL_EXCL_v1
+// The count now matches what actually gets sent: consent-eligible, not opted out of SMS
+// OR marketing, mobile, and Canadian. Previously it counted anyone with a phone OR an
+// email, so the portal's number bore no relation to the real audience.
+export async function countSmsRecipients(pool: Pool, silo: string, tag: string | null, tags?: string[] | null, excludeTags?: string[] | null): Promise<number> {
+  const r = await pool.query<{ phone: string | null }>(
+    `SELECT c.phone
        FROM contacts c
-      WHERE c.silo = $1 AND ($2::text IS NULL OR $2 = ANY(c.tags))
-        AND ( (COALESCE(c.phone,'') <> '' AND (c.line_type IS NULL OR c.line_type = 'mobile')) OR COALESCE(c.email,'') <> '' )`,
-    [silo, tag],
+      WHERE c.silo = $1
+        AND ($2::text IS NULL OR $2 = ANY(c.tags))
+        AND ($3::text[] IS NULL OR c.tags && $3::text[])
+        AND ($4::text[] IS NULL OR NOT (c.tags && $4::text[]))
+        AND ${SMS_ELIGIBLE_SQL}`,
+    [silo, tag, tags ?? null, excludeTags ?? null],
   );
-  return r.rows[0]?.n ?? 0;
+  return r.rows.filter((x) => isCanadianMobile(x.phone)).length;
 }
 
 export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgress, shouldAbort?: ShouldAbort): Promise<{ total: number; smsSent: number; emailSent: number; failed: number; campaignId: string; aborted?: boolean }> { // BF_SERVER_SEND_KILL_SWITCH_v1
@@ -120,9 +128,12 @@ export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgr
   const recips = await pool.query<{ id: string; email: string | null; phone: string | null; name: string | null; company: string | null; sms_opt_out: boolean; marketing_opt_out: boolean; line_type: string | null }>(
     `SELECT c.id, c.email, c.phone, c.name, co.name AS company, COALESCE(c.sms_opt_out,false) AS sms_opt_out, COALESCE(c.marketing_opt_out,false) AS marketing_opt_out, c.line_type
        FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
-      WHERE c.silo = $1 AND ($2::text IS NULL OR $2 = ANY(c.tags))
-        AND (COALESCE(c.phone,'') <> '' OR COALESCE(c.email,'') <> '')`,
-    [job.silo, job.tag],
+      WHERE c.silo = $1
+        AND ($2::text IS NULL OR $2 = ANY(c.tags))
+        AND ($3::text[] IS NULL OR c.tags && $3::text[])
+        AND ($4::text[] IS NULL OR NOT (c.tags && $4::text[]))
+        AND ${SMS_ELIGIBLE_SQL}`,
+    [job.silo, job.tag, job.tags ?? null, job.excludeTags ?? null],
   );
   let smsSent = 0, emailSent = 0, failed = 0, i = 0;
   let aborted = false; // BF_SERVER_SEND_KILL_SWITCH_v1
@@ -130,7 +141,10 @@ export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgr
     const first = (c.name || "").trim().split(/\s+/)[0] || "there";
     const vars = { first_name: first, name: c.name || "there", email: c.email || "", company: c.company || "" };
     // BF_SERVER_BLOCK_v784_LINE_TYPE_LOOP - lazily verify line type; skip non-mobile, cache result.
-    let hasPhone = Boolean(c.phone) && !c.sms_opt_out;
+    // BF_SERVER_SMS_CONSENT_v1 - marketing_opt_out was NEVER checked here (only the email
+    // fallback below honoured it), so a contact who opted out of all marketing still got
+    // texted. Canada-only: nothing in this path ever looked at country.
+    let hasPhone = Boolean(c.phone) && !c.sms_opt_out && !c.marketing_opt_out && isCanadianMobile(c.phone);
     if (hasPhone && c.line_type == null) {
       const lt = await lookupLineType(String(c.phone));
       if (lt) await pool.query(`UPDATE contacts SET line_type = $2, line_type_checked_at = now() WHERE id = $1`, [c.id, lt]);
