@@ -157,7 +157,11 @@ export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgr
       const sendId = send.rows[0].id;
       // BF_SERVER_SMS_CASL_FOOTER_v1 - CASL identification + opt-out on every marketing SMS.
       const baseText = job.linkUrl ? `${job.body} ${trackedLink(sendId, job.linkUrl)}` : job.body;
-      const text = `${baseText} Reply STOP to opt out. Info: boreal.financial/sms`;
+      // BF_SERVER_SMS_FOOTER_WWW_v1 - the apex boreal.financial is NOT mapped to the
+      // Static Web App (its Custom domains blade lists only www.boreal.financial), so
+      // boreal.financial/sms returns a hard 404 while the apex root still renders. Every
+      // marketing SMS was pointing its CASL identification link at a dead URL.
+      const text = `${baseText} Reply STOP to opt out. Info: www.boreal.financial/sms`;
       const r = await sendMarketingSms(String(c.phone), text);
       if (r.ok) {
         smsSent++;

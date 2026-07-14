@@ -14,6 +14,6 @@ describe("SMS CASL compliance", () => {
   });
 
   it("marketing SMS auto-appends opt-out + Info", () => {
-    expect(runner).toContain("Reply STOP to opt out. Info: boreal.financial/sms");
+    expect(runner).toContain("Reply STOP to opt out. Info: www.boreal.financial/sms");
   });
 });
