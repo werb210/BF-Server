@@ -39,9 +39,23 @@ async function contactRefTables(): Promise<string[]> {
 // UNIQUE (sequence_id, contact_id). ad_attribution is UNIQUE (contact_id, gclid) and is the
 // same landmine. Discovered at runtime from pg_index rather than hardcoded, so a new table
 // with a new unique constraint cannot silently reintroduce this.
+// BF_SERVER_CONTACT_MERGE_COLS_FIX_v1
+// pg_attribute.attname is Postgres type `name`, so array_agg(attname) yields name[]
+// (OID 1003). node-pg registers NO array parser for that OID, so it returns the raw
+// literal "{contact_id,sequence_id}" as a STRING, not a JS array -- and .filter() on it
+// threw `cols.filter is not a function`, 500ing every merge. Cast to text[] (OID 1009),
+// which node-pg does parse, and defensively parse the literal if a driver ever regresses.
+function toColumnArray(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map(String);
+  if (typeof v === "string") {
+    return v.replace(/^\{|\}$/g, "").split(",").map((c) => c.replace(/^"|"$/g, "").trim()).filter(Boolean);
+  }
+  return [];
+}
+
 async function uniqueColumnSets(table: string): Promise<string[][]> {
-  const r = await pool.query<{ cols: string[] }>(
-    `SELECT array_agg(a.attname ORDER BY k.ord) AS cols
+  const r = await pool.query<{ cols: unknown }>(
+    `SELECT array_agg(a.attname::text ORDER BY k.ord) AS cols
        FROM pg_index i
        JOIN pg_class t ON t.oid = i.indrelid
        JOIN pg_namespace n ON n.oid = t.relnamespace
@@ -53,10 +67,10 @@ async function uniqueColumnSets(table: string): Promise<string[][]> {
         AND n.nspname = 'public'
         AND t.relname = $1
       GROUP BY i.indexrelid
-     HAVING 'contact_id' = ANY(array_agg(a.attname))`,
+     HAVING 'contact_id' = ANY(array_agg(a.attname::text))`,
     [table],
   );
-  return r.rows.map((x) => x.cols);
+  return r.rows.map((x) => toColumnArray(x.cols)).filter((c) => c.length > 0);
 }
 
 // Candidates for ONE contact. Exact email / exact last-10 phone, plus a pure-SQL name match,
