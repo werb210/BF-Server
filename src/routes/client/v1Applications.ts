@@ -85,6 +85,9 @@ function bfBuildWizardMetadata(input: Record<string, any> | null | undefined): R
       input.coApplicantSignature !== undefined) {
     out.signature = {
       termsAccepted: input.termsAccepted ?? null,
+      // BF_SERVER_EXPRESS_CONSENT_v1
+      shareAuthorization: input.shareAuthorization ?? input.share_authorization ?? null,
+      communicationConsent: input.communicationConsent ?? input.communication_consent ?? input.infoConfirmed ?? null,
       typedSignature: input.typedSignature ?? null,
       coApplicantSignature: input.coApplicantSignature ?? null,
       signatureDate: input.signatureDate ?? null,
@@ -272,6 +275,14 @@ const patchSchema = z.object({
   requires_closing_cost_funding:    z.boolean().optional(),
   requiresClosingCostFunding:       z.boolean().optional(),
   termsAccepted:                    z.boolean().optional(),
+  // BF_SERVER_EXPRESS_CONSENT_v1 - Step 6 gates on THREE clauses; only the first was ever
+  // accepted here. Clause 3 ("Communication Consent (Email, SMS, Phone...)") is express
+  // CASL consent to marketing SMS, with no expiry -- and it was being discarded.
+  shareAuthorization:               z.boolean().optional(),
+  share_authorization:              z.boolean().optional(),
+  communicationConsent:             z.boolean().optional(),
+  communication_consent:            z.boolean().optional(),
+  infoConfirmed:                    z.boolean().optional(),
   typedSignature:                   z.string().optional(),
   coApplicantSignature:             z.string().optional(),
   signatureDate:                    z.string().optional(),
@@ -1377,6 +1388,37 @@ router.post(
       await linkContactToApplication(tx, application.id, applicant.id, "applicant");
       if (partner) {
         await linkContactToApplication(tx, application.id, partner.id, "partner");
+      }
+
+      // BF_SERVER_EXPRESS_CONSENT_v1 - Step 6 clause 3, "Communication Consent (Email, SMS,
+      // Phone, Portal, and Client Messaging)", is EXPRESS CASL consent: it expressly
+      // authorises marketing communications by SMS and does not expire. It gated the
+      // Submit button and was then discarded, so the SMS sender fell back to a 6-month
+      // implied-consent window for people who had actually given us the stronger thing.
+      // Stamp it onto the contact so the send can see it.
+      {
+        const sigBlock: any = (legacyApp && typeof legacyApp === "object" ? (legacyApp as any).signature : null) ?? {};
+        const commsConsent =
+          sigBlock.communication_consent ??
+          sigBlock.communicationConsent ??
+          (req.body as any)?.communication_consent ??
+          (req.body as any)?.infoConfirmed ??
+          null;
+        if (commsConsent === true) {
+          for (const c of [applicant, partner]) {
+            if (!c) continue;
+            await tx.query(
+              `UPDATE contacts
+                  SET sms_consent    = true,
+                      consent_basis  = 'express',
+                      consent_at     = now(),
+                      consent_source = 'application_step6',
+                      updated_at     = now()
+                WHERE id = $1`,
+              [c.id],
+            );
+          }
+        }
       }
 
       // Set the application's primary contact so downstream reads (conversation
