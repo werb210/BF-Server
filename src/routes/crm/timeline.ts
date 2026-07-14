@@ -116,6 +116,10 @@ router.get("/", safeHandler(async (req: any, res: any) => {
          WHERE contact_id = $1 AND silo = $2
         UNION ALL
         -- BF_SERVER_BLOCK_v790 — sequence + engagement events on the contact record.
+        -- BF_SERVER_MARKETING_ON_TIMELINE_v1 - marketing blasts wrote
+        -- email_marketing_sent / sms_marketing_sent / email_cascade_sent here from day one,
+        -- but the allowlist below excluded them, so a contact showed "Email opened" with no
+        -- email above it. 2,257 sends on 2026-07-14 were invisible on every timeline.
         SELECT (CASE WHEN event_type LIKE 'sms_%' THEN 'sms'
                      WHEN event_type = 'sequence_step_sent' THEN COALESCE(payload->>'channel','email')
                      WHEN event_type = 'attribution' THEN 'system'
@@ -131,6 +135,9 @@ router.get("/", safeHandler(async (req: any, res: any) => {
                   WHEN 'email_unsubscribe' THEN 'Unsubscribed'
                   WHEN 'email_group_unsubscribe' THEN 'Unsubscribed'
                   WHEN 'sms_link_clicked' THEN 'SMS link clicked'
+                  WHEN 'email_marketing_sent' THEN 'Marketing email sent'
+                  WHEN 'sms_marketing_sent' THEN 'Marketing SMS sent'
+                  WHEN 'email_cascade_sent' THEN 'Marketing email sent (no mobile)'
                   -- BF_SERVER_ATTRIBUTION_ON_TIMELINE_v1 - render the ad click
                   -- readably; the portal shows kind='system' rows as-is.
                   WHEN 'attribution' THEN 'Ad click attribution'
@@ -144,11 +151,15 @@ router.get("/", safeHandler(async (req: any, res: any) => {
                     NULLIF('ad: ' || COALESCE(payload->>'utm_content',''), 'ad: '),
                     NULLIF('gclid: ' || COALESCE(payload->>'gclid',''), 'gclid: ')
                   ), '')
+                     WHEN event_type IN ('email_marketing_sent','email_cascade_sent') THEN
+                       NULLIF(COALESCE(payload->>'subject',''), '')
+                     WHEN event_type = 'sms_marketing_sent' THEN
+                       NULLIF(COALESCE(payload->>'body',''), '')
                 ELSE NULLIF(payload->>'url','') END) AS body,
                NULL::text AS extra
           FROM crm_timeline_events
          WHERE contact_id = $1
-           AND event_type IN ('sequence_step_sent','email_open','email_click','email_bounce','email_dropped','email_spamreport','email_unsubscribe','email_group_unsubscribe','sms_link_clicked','attribution')
+           AND event_type IN ('sequence_step_sent','email_open','email_click','email_bounce','email_dropped','email_spamreport','email_unsubscribe','email_group_unsubscribe','sms_link_clicked','attribution','email_marketing_sent','sms_marketing_sent','email_cascade_sent')
         UNION ALL
         -- BF_SERVER_TEAMS_TRANSCRIPT_POLLER_v1 - Teams meetings with their
         -- recording link + transcript. Reuses kind 'recording', which the portal
