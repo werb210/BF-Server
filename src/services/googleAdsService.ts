@@ -39,7 +39,11 @@ async function getAccessToken(): Promise<string> {
     grant_type: "refresh_token",
   });
   const r = await fetch(TOKEN_URL, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
-  if (!r.ok) throw new Error(`google_ads_token_failed status=${r.status}`);
+  if (!r.ok) {
+    // BF_SERVER_GOOGLE_ADS_TOKEN_ERROR_v1 - surface Google's reason, not just the status.
+    const detail = await r.text().catch(() => "");
+    throw new Error(`google_ads_token_failed status=${r.status} ${detail.slice(0, 300)}`);
+  }
   const j = (await r.json()) as { access_token?: string; expires_in?: number };
   const token = String(j.access_token ?? "");
   if (!token) throw new Error("google_ads_token_empty");
