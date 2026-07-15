@@ -63,6 +63,7 @@ router.post(
     const lender = await createLender(pool, {
       name: body.name,
       country: body.country,
+      has_broker_agreement: body.hasBrokerAgreement ?? body.has_broker_agreement ?? false,
       submission_method: body.submissionMethod ?? body.submission_method ?? "EMAIL",
       active: body.active ?? true,
       status: body.status ?? "ACTIVE",
@@ -116,6 +117,7 @@ router.patch(
       status: body.status,
       country: body.country,
       email: body.email,
+      has_broker_agreement: body.hasBrokerAgreement ?? body.has_broker_agreement,
       submission_method: body.submissionMethod ?? body.submission_method,
       primary_contact_name: body.primaryContactName ?? body.primary_contact_name,
       primary_contact_email: body.primaryContactEmail ?? body.primary_contact_email,
