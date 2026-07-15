@@ -11,8 +11,16 @@ describe("mayaEscalate", () => {
   async function app() { const r = (await import("../mayaEscalate.js")).default; const a = express(); a.use(express.json({limit:"10mb"})); a.use("/api", r); return a; }
   it("talk_to_human creates conversation and message", async () => {
     queryMock.mockResolvedValueOnce({ rows:[{id:"c1"}] }).mockResolvedValueOnce({ rows:[] });
-    const res = await request(await app()).post("/api/maya/escalate").send({ kind:"talk_to_human", message:"help", contact:{ phone:"+1" }});
+    const res = await request(await app()).post("/api/maya/escalate").send({ kind:"talk_to_human", message:"help", contact:{ name:"Jane Doe", phone:"+1" }});
     expect(res.status).toBe(201); expect(res.body.conversation_id).toBe("c1"); expect(queryMock).toHaveBeenCalledTimes(2);
+  });
+  it("talk_to_human without name+channel returns need_identity and creates nothing", async () => {
+    const res = await request(await app()).post("/api/maya/escalate").send({ kind:"talk_to_human", message:"help", contact:{} });
+    expect(res.status).toBe(422); expect(res.body.need_identity).toBe(true); expect(queryMock).not.toHaveBeenCalled();
+  });
+  it("talk_to_human with name but no channel returns need_identity", async () => {
+    const res = await request(await app()).post("/api/maya/escalate").send({ kind:"talk_to_human", message:"help", contact:{ name:"Jane" }});
+    expect(res.status).toBe(422); expect(res.body.missing.channel).toBe(true);
   });
   it("report_issue uploads screenshot and inserts issue", async () => {
     uploadMock.mockResolvedValue({ url:"https://blob/u.png", blobName:"u.png" });
