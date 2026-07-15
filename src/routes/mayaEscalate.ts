@@ -95,6 +95,14 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
       const phone = (typeof contact.phone === "string" ? contact.phone.trim() : "") || null;
       const email = (typeof contact.email === "string" ? contact.email.trim() : "") || null;
       const nameIn = typeof contact.name === "string" ? contact.name.trim() : null;
+      // BF_SERVER_BLOCK_v_MAYA_ESCALATE_IDENTITY_GATE_v1 - never mint an anonymous
+      // "Website Visitor" lead. A talk-to-human handoff MUST carry a name AND a
+      // reachable channel (phone or email). Otherwise return need_identity so the
+      // caller (widget) collects it first. This also neutralizes the OpenAI-outage
+      // failover, which hits this same endpoint with an empty contact.
+      if (!nameIn || !(email || phone)) {
+        return res.status(422).json({ ok: false, need_identity: true, missing: { name: !nameIn, channel: !(email || phone) } });
+      }
       const contactName: string = nameIn || phone || email || "Anonymous visitor";
 
       // BF_SERVER_BLOCK_v763_MAYA_COMMS_SEPARATION — the Messages thread shows
