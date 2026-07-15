@@ -6,6 +6,7 @@ import { Buffer } from "node:buffer";
 import { getStorage } from "../../lib/storage/index.js";
 
 import { getSignedPnwPdf } from "../../signnow/pnwSigning.js";
+import { isCollateralFormDocType, buildCollateralFormPdfFromData } from "../../pdf/collateralFormPdf.js";
 
 export type PackageInputDocs = { category: string; files: { filename: string; content: Buffer }[] };
 export type PackageInputs = {
@@ -261,6 +262,11 @@ async function loadFormPdfs(ctx: LoadCtx): Promise<{ filename: string; content: 
         // lender package worker gate blocks dispatch until required PNW is signed, so
         // by the time the package builds for a gated dispatch this returns the signed copy.
         if (signed) out.push({ filename: spec.file, content: signed });
+      } else if (isCollateralFormDocType(String(row.doc_type))) {
+        // BF_SERVER_BLOCK_v_COLLATERAL_FORM_PDFS_v1 - branded template (matches the
+        // copy attached to the staff Documents list), replacing the text dump.
+        const bytes = await buildCollateralFormPdfFromData(String(row.doc_type), row.data ?? {});
+        out.push({ filename: spec.file, content: Buffer.from(bytes) });
       } else {
         const header = [spec.title, `Application: ${ctx.applicationId}`,
           row.submitted_at ? `Submitted: ${row.submitted_at}` : "", ""];

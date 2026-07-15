@@ -9,6 +9,8 @@ import { pool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { findOrCreateCompanyByNameAndSilo } from "../services/companies.js";
 import { findOrCreateContactByEmailAndCompany } from "../services/contacts.js";
+import { isCollateralFormDocType, buildCollateralFormPdfFromData } from "../pdf/collateralFormPdf.js";
+import { attachRenderedFormDocument } from "../pdf/attachRenderedFormDocument.js";
 
 const router: Router = Router();
 
@@ -184,6 +186,18 @@ router.post("/applications/:id/form-responses/:doc_type/submit", requireAuth, as
       }
     } catch (mirrorErr: any) {
       console.warn("[form_responses.crm_mirror] failed", { appId, docType, message: mirrorErr?.message });
+    }
+    // BF_SERVER_BLOCK_v_COLLATERAL_FORM_PDFS_v1 - render the filled CMP collateral
+    // form to a branded PDF and attach it to the Documents list (supersede prior
+    // system copy). No SignNow. Best-effort: never fails the submit.
+    try {
+      if (isCollateralFormDocType(docType)) {
+        const formData = (r.rows[0] as any)?.data ?? data ?? {};
+        const pdf = await buildCollateralFormPdfFromData(docType, formData);
+        await attachRenderedFormDocument(appId, docType, pdf);
+      }
+    } catch (attachErr: any) {
+      console.warn("[form_responses.attach_pdf] failed", { appId, docType, message: attachErr?.message });
     }
     return res.json({ item: r.rows[0] });
   } catch (err) {
