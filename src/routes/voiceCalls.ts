@@ -97,19 +97,38 @@ router.get("/recent-calls", auth, async (req: any, res) => {
   if (!userId) return res.json({ ok: true, items: [] });
   const r = await pool
     .query(
-      `SELECT cl.id, cl.direction, cl.status, cl.duration_seconds, cl.created_at,
-              cl.phone_number, cl.crm_contact_id AS contact_id,
-              c.name AS contact_name
-         FROM call_logs cl
-         LEFT JOIN contacts c ON c.id = cl.crm_contact_id
-        -- BF_SERVER_INBOUND_RECENTS_v1 - inbound PSTN calls are logged with
-        -- staff_user_id = NULL (nobody owns a call to the main line until it is
-        -- answered), so this filter silently hid EVERY incoming call and the
-        -- Recents "Incoming" column was permanently empty. Inbound calls to the
-        -- shared line are visible to all staff.
-        WHERE (cl.staff_user_id = $1
-               OR (cl.direction = 'inbound' AND cl.staff_user_id IS NULL))
-        ORDER BY cl.created_at DESC
+      `SELECT id, direction, status, duration_seconds, created_at, phone_number, contact_id, contact_name
+         FROM (
+           SELECT cl.id::text AS id, cl.direction, cl.status, cl.duration_seconds, cl.created_at,
+                  cl.phone_number, cl.crm_contact_id AS contact_id, c.name AS contact_name,
+                  cl.twilio_call_sid AS sid
+             FROM call_logs cl
+             LEFT JOIN contacts c ON c.id = cl.crm_contact_id
+            -- BF_SERVER_INBOUND_RECENTS_v1 - inbound PSTN calls are logged with
+            -- staff_user_id = NULL (nobody owns a call to the main line until it is
+            -- answered), so this filter silently hid EVERY incoming call. Inbound
+            -- calls to the shared line are visible to all staff.
+            WHERE (cl.staff_user_id = $1
+                   OR (cl.direction = 'inbound' AND cl.staff_user_id IS NULL))
+           UNION ALL
+           -- BF_SERVER_BLOCK_v_OUTBOUND_RECENTS_UNION_v1 - outbound calls placed via
+           -- the web dialer are recorded in crm_call_log; the conference/status
+           -- webhook path that writes call_logs is unreliable, which left the Phone
+           -- "Outgoing" column empty after May 2026. Surface those outbound calls
+           -- here so Outgoing matches Incoming. Dedup against call_logs by call sid.
+           SELECT ccl.id::text AS id, ccl.direction, 'completed'::text AS status,
+                  ccl.duration_sec AS duration_seconds, ccl.created_at,
+                  ccl.to_number AS phone_number, ccl.contact_id, c2.name AS contact_name,
+                  ccl.twilio_call_sid AS sid
+             FROM crm_call_log ccl
+             LEFT JOIN contacts c2 ON c2.id = ccl.contact_id
+            WHERE ccl.owner_id = $1
+              AND ccl.direction = 'outbound'
+              AND (ccl.twilio_call_sid IS NULL
+                   OR ccl.twilio_call_sid NOT IN (
+                     SELECT twilio_call_sid FROM call_logs WHERE twilio_call_sid IS NOT NULL))
+         ) merged
+        ORDER BY created_at DESC
         LIMIT 50`,
       [userId],
     )
