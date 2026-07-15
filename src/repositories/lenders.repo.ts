@@ -26,6 +26,7 @@ export interface CreateLenderInput {
   postal_code?: string | null;
   phone?: string | null;
   description?: string | null; // BF_SERVER_LENDER_COMPANY_PARITY_v1
+  has_broker_agreement?: boolean; // BF_SERVER_BLOCK_v_LENDER_BROKER_AGREEMENT_v1
   silo?: string | null;
 }
 
@@ -195,6 +196,7 @@ function buildSelectColumns(existing: Set<string>): string {
     { name: "silo", fallback: "null::text" },
     { name: "created_at", fallback: "now()" },
     { name: "updated_at", fallback: "now()" },
+    { name: "has_broker_agreement", fallback: "false" },
   ];
 
   return columns
@@ -366,6 +368,8 @@ export async function createLender(
     { name: "created_at", value: "now()", raw: true },
     { name: "updated_at", value: "now()", raw: true },
     { name: "status", value: statusValue },
+    // BF_SERVER_BLOCK_v_LENDER_BROKER_AGREEMENT_v1
+    { name: "has_broker_agreement", value: input.has_broker_agreement ?? false },
   ];
 
   columns.push({
@@ -503,6 +507,7 @@ export async function updateLender(
     application_url?: string | null;
     announcement?: string | null;
     active?: boolean;
+    has_broker_agreement?: boolean; // BF_SERVER_BLOCK_v_LENDER_BROKER_AGREEMENT_v1
     silo?: string | null;
   }
 ) {
@@ -537,6 +542,10 @@ export async function updateLender(
 
   if (params.name !== undefined && existingColumns.has("name")) {
     updates.push({ name: "name", value: params.name });
+  }
+  // BF_SERVER_BLOCK_v_LENDER_BROKER_AGREEMENT_v1
+  if (params.has_broker_agreement !== undefined && existingColumns.has("has_broker_agreement")) {
+    updates.push({ name: "has_broker_agreement", value: params.has_broker_agreement });
   }
   if (resolvedStatus !== null && existingColumns.has("status")) {
     updates.push({ name: "status", value: resolvedStatus });
