@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { safeErr } from "../../lib/safeErr.js";
 import { sendSMS } from "../smsService.js";
 
 // BF_SERVER_BLOCK_1_24_NOTIFICATIONS_TITLE — fallback title when caller didn't pass one.
@@ -61,7 +62,7 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx): Promise<{
           if (r && (r as { success?: boolean }).success) smsSent += 1;
           else if (!r) smsSent += 1;
         } catch (err) {
-          console.warn(`[notifyAllStaff] sms failed for user=${user.id}`, err);
+          console.warn(`[notifyAllStaff] sms failed for user=${user.id}`, safeErr(err));
         }
       }
 
@@ -85,7 +86,7 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx): Promise<{
         );
         notifsCreated += 1;
       } catch (err) {
-        console.warn(`[notifyAllStaff] notification insert failed for user=${user.id}`, err);
+        console.warn(`[notifyAllStaff] notification insert failed for user=${user.id}`, safeErr(err));
       }
     }),
   );

@@ -1,9 +1,20 @@
+// BF_SERVER_BLOCK_v_SAFE_ERROR_LOGGING_v1 - never console.error the raw error
+// object: pg errors reference the live Connection (TLSSocket, processID,
+// secretKey, query queue), so logging the object leaked DB credentials into the
+// Azure log stream and flooded it. Log message + code + stack only.
+function logFatal(tag: string, err: unknown): void {
+  const e = err as { message?: unknown; code?: unknown; stack?: string } | null | undefined;
+  const code = e && e.code != null ? ` (${String(e.code)})` : "";
+  console.error(tag, String(e?.message ?? err) + code);
+  if (e?.stack) console.error(e.stack);
+}
+
 process.on("unhandledRejection", (err) => {
-  console.error("[UNHANDLED REJECTION]", err);
+  logFatal("[UNHANDLED REJECTION]", err);
 });
 
 process.on("uncaughtException", (err) => {
-  console.error("[UNCAUGHT EXCEPTION]", err);
+  logFatal("[UNCAUGHT EXCEPTION]", err);
 });
 
 import "./system/errors.js";

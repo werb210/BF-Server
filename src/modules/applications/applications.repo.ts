@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { safeErr } from "../../lib/safeErr.js";
 import { pool, runQuery } from "../../db.js";
 import { ApplicationStage, statusFromPipeline } from "./pipelineState.js";
 import { type PoolClient } from "pg";
@@ -22,7 +23,7 @@ function ensureDraftFlag(params: any): void {
     params.metadata[DRAFT_METADATA_KEY] = true;
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error("[ensureDraftFlag] swallowed error:", err);
+    console.error("[ensureDraftFlag] swallowed error:", safeErr(err));
   }
 }
 

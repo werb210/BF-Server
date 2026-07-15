@@ -6,6 +6,7 @@
 // /uploads pair (lender_documents + Maya ingest), mirroring the staff pipeline in
 // portalLenders.ts.
 import { Router, type NextFunction, type Request, type Response } from "express";
+import { safeErr } from "../lib/safeErr.js";
 import fs from "fs";
 import path from "path";
 import multer from "multer";
@@ -197,7 +198,7 @@ function notifyStaffOfProductChange(lenderId: string, productId: string, product
       contextUrl: "/lenders?editProduct=" + encodeURIComponent(productId),
       silo: "BF",
     });
-  })().catch((err) => console.error("[lender-self] product notify failed:", err));
+  })().catch((err) => console.error("[lender-self] product notify failed:", safeErr(err)));
 }
 
 function validateProduct(body: Record<string, unknown>): { error?: string; value?: Record<string, unknown> } {
