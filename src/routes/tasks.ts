@@ -3,6 +3,7 @@
 // (BF/BI/SLF); views computed server-side; complete stamps completed_at
 // (first-class, unlike HubSpot); delete is soft (deleted_at).
 import { Router } from "express";
+import { mirrorTaskToTodo } from "../modules/o365/todoSync.js"; // BF_SERVER_BLOCK_v_TASKS_TODO_SYNC_v1
 import { pool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
@@ -340,6 +341,8 @@ router.post("/", safeHandler(async (req: any, res: any) => {
      RETURNING id`,
     [silo, title, s(b.body), type, priority, b.due_at || null, b.reminder_at || null, s(b.queue_id), assignee, s(b.contact_id), s(b.company_id), req.user.userId, repeatInterval, repeatUnit, !!(repeatInterval && repeatUnit)]
   );
+  // BF_SERVER_BLOCK_v_TASKS_TODO_SYNC_v1 - mirror to the assignee's Microsoft To Do (fire-and-forget)
+  void mirrorTaskToTodo(pool, { id: r.rows[0].id, userId: assignee, graphId: null, title, body: s(b.body) ?? null, dueAt: b.due_at || null, reminderAt: b.reminder_at || null, priority, status: "open" });
   respondOk(res, { id: r.rows[0].id });
 }));
 
