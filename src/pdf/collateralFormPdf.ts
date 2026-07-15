@@ -160,22 +160,24 @@ export async function buildEquipmentCollateralPdfFromData(payload: EquipmentPayl
   c.cellGrid(24, [{ l: "Business Name", v: sv(payload.business_name), f: 1 }]);
   c.gap(8);
   c.bar("Equipment Schedule");
+  // BF_SERVER_BLOCK_v_EQUIP_PAYMENT_COL_v1 - added Payment column (fracs rebalanced to sum 1.0)
   const cols: Col[] = [
-    { label: "Year", frac: 0.06 }, { label: "Make", frac: 0.10 }, { label: "Model", frac: 0.11 },
-    { label: "Description", frac: 0.17 }, { label: "Serial / VIN", frac: 0.13 }, { label: "Condition", frac: 0.09 },
-    { label: "Est. Value", frac: 0.11, align: "r" }, { label: "Lienholder", frac: 0.12 }, { label: "Balance", frac: 0.11, align: "r" },
+    { label: "Year", frac: 0.06 }, { label: "Make", frac: 0.09 }, { label: "Model", frac: 0.10 },
+    { label: "Description", frac: 0.14 }, { label: "Serial / VIN", frac: 0.11 }, { label: "Condition", frac: 0.08 },
+    { label: "Est. Value", frac: 0.10, align: "r" }, { label: "Lienholder", frac: 0.11 }, { label: "Balance", frac: 0.10, align: "r" },
+    { label: "Payment", frac: 0.11, align: "r" },
   ];
   c.tableHead(cols);
   const rows = Array.isArray(payload.rows) ? payload.rows : [];
-  let totVal = 0, totBal = 0;
+  let totVal = 0, totBal = 0, totPay = 0;
   rows.forEach((r, i) => {
-    totVal += num(r.value); totBal += num(r.balance);
+    totVal += num(r.value); totBal += num(r.balance); totPay += num(r.payment);
     c.tableRow(cols, [
       sv(r.year), sv(r.make), sv(r.model), sv(r.description), sv(r.serial), sv(r.condition),
-      money(r.value), sv(r.lienholder), money(r.balance),
+      money(r.value), sv(r.lienholder), money(r.balance), money(r.payment),
     ], { zebra: i % 2 === 1 });
   });
-  c.tableRow(cols, ["TOTAL", "", "", "", "", "", money(totVal), "", money(totBal)], { bold: true });
+  c.tableRow(cols, ["TOTAL", "", "", "", "", "", money(totVal), "", money(totBal), money(totPay)], { bold: true });
   if (sv(payload.notes)) { c.gap(8); c.bar("Notes"); c.cellGrid(40, [{ l: "Notes", v: sv(payload.notes), f: 1, o: { bold: false, size: 8.5 } }]); }
   return c.doc.save();
 }
