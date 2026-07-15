@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { safeErr } from "../../lib/safeErr.js";
 import { createCrmLead } from "../crm/crm.service.js";
 import { createContinuation } from "../continuation/continuation.service.js";
 import { stripUndefined } from "../../utils/clean.js";
@@ -217,7 +218,7 @@ export async function submitCreditReadiness(req: Request, res: Response) {
     } catch (err) {
       // Do NOT fail the readiness submit if the draft insert hiccups.
       // The CRM lead + readiness_session are the primary persistence.
-      console.warn("[website_readiness] draft application insert failed", err);
+      console.warn("[website_readiness] draft application insert failed", safeErr(err));
     }
 
     const token = await createContinuation(req.body as any, lead.id);
@@ -250,7 +251,7 @@ export async function submitCreditReadiness(req: Request, res: Response) {
       redirect: `https://client.boreal.financial/apply?continue=${token}`,
     });
   } catch (err) {
-    console.error("[website_credit_readiness] error:", err);
+    console.error("[website_credit_readiness] error:", safeErr(err));
     return res.status(500).json({ error: "Server error" });
   }
 }

@@ -1,6 +1,7 @@
 // BF_SERVER_v74_BLOCK_1_7 — pick the right submission adapter per lender
 // and record the result in application_packages.
 import type { Pool } from "pg";
+import { safeErr } from "../../lib/safeErr.js";
 import { sendLenderEmail } from "../../modules/lenderSubmissions/adapters/EmailAdapter.js";
 import { resolveOwnerSignatureHtml } from "../email/resolveSignature.js"; // v693
 import { buildApplicationPackage } from "./buildApplicationPackage.js";
@@ -277,7 +278,7 @@ export async function dispatchToSelected(
           });
         }
       })
-      .catch((e) => { console.error("[dispatch] failed to record application_packages row", e); });
+      .catch((e) => { console.error("[dispatch] failed to record application_packages row", safeErr(e)); });
 
     if (ok) sent.push(l.lender_id);
   }
