@@ -746,4 +746,45 @@ router.get("/presence", safeHandler(async (req: any, res: any) => {
   }
 }));
 
+// BF_SERVER_BLOCK_v_FILES_v1 - OneDrive/SharePoint files (needs Files.ReadWrite).
+function mapDriveItem(i: any) {
+  return { id: i.id, name: i.name, webUrl: i.webUrl, size: i.size ?? null,
+    lastModified: i.lastModifiedDateTime ?? null, isFolder: !!i.folder };
+}
+router.get("/files/recent", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const r = await graph.fetch("/me/drive/recent?$top=25");
+  if (!r.ok) { const d=(await r.text()).slice(0,400); if(r.status===401||r.status===403) return res.status(412).json({error:"o365_insufficient_scope",detail:d}); return res.status(502).json({error:"graph_files_failed",detail:d}); }
+  const j: any = await r.json();
+  res.json({ files: (j.value ?? []).map(mapDriveItem) });
+}));
+router.get("/files/search", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const q = String(req.query.q ?? "").trim();
+  if (!q) return res.status(400).json({ error: "q required" });
+  const r = await graph.fetch(`/me/drive/root/search(q='${encodeURIComponent(q)}')?$top=25`);
+  if (!r.ok) { const d=(await r.text()).slice(0,400); if(r.status===401||r.status===403) return res.status(412).json({error:"o365_insufficient_scope",detail:d}); return res.status(502).json({error:"graph_files_failed",detail:d}); }
+  const j: any = await r.json();
+  res.json({ files: (j.value ?? []).map(mapDriveItem) });
+}));
+router.post("/files/:id/link", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const r = await graph.fetch(`/me/drive/items/${encodeURIComponent(req.params.id)}/createLink`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "view", scope: "organization" }),
+  });
+  if (!r.ok) { const d=(await r.text()).slice(0,400); if(r.status===401||r.status===403) return res.status(412).json({error:"o365_insufficient_scope",detail:d}); return res.status(502).json({error:"graph_link_failed",detail:d}); }
+  const j: any = await r.json();
+  res.json({ link: j.link?.webUrl ?? null });
+}));
+
 export default router;
