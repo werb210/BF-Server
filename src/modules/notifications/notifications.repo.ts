@@ -1,4 +1,5 @@
 import { type PoolClient } from "pg";
+import { pushToUser } from "../../services/notifications/pushToUser.js"; // BF_SERVER_BLOCK_v_NOTIF_PUSH_v1
 import { pool, runQuery } from "../../db.js";
 
 export type NotificationRecord = {
@@ -42,6 +43,8 @@ export async function createNotification(params: {
     ]
   );
   const record = result.rows[0];
+  // BF_SERVER_BLOCK_v_NOTIF_PUSH_v1 - fire an OS system notification for this event
+  if (record?.user_id) void pushToUser(record.user_id, record.title ?? "", record.body ?? "");
   if (!record) {
     throw new Error("Failed to create notification.");
   }
