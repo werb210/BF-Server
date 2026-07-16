@@ -1,5 +1,6 @@
 // BF_SERVER_BLOCK_v122a_SILO_SOURCE_FIXES_v1 — silo from getSilo(res) at every read site
 import { Router } from "express";
+import { pushContactToOutlook } from "../modules/o365/contactSync.js"; // BF_SERVER_BLOCK_v_CONTACTS_OUTLOOK_SYNC_v1
 import { requireAuth, requireCapability } from "../middleware/auth.js";
 import { CAPABILITIES } from "../auth/capabilities.js";
 import { safeHandler } from "../middleware/safeHandler.js";
@@ -456,6 +457,7 @@ router.post("/contacts", requireCrmWrite, safeHandler(async (req: any, res: any)
     owner_id: ownerId,
   });
 
+  if (row?.id) void pushContactToOutlook(pool, String(row.id)); // BF_SERVER_BLOCK_v_CONTACTS_OUTLOOK_SYNC_v1
   return res.status(201).json({ ok: true, data: row });
 }));
 
@@ -922,6 +924,7 @@ router.patch("/contacts/:id", requireCrmWrite, safeHandler(async (req: any, res:
      WHERE id = $${i} RETURNING *`,
     params,
   );
+  void pushContactToOutlook(pool, id); // BF_SERVER_BLOCK_v_CONTACTS_OUTLOOK_SYNC_v1
   res.json({ data: rows[0] ?? null });
 }));
 
