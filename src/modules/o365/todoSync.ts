@@ -25,9 +25,9 @@ function importanceFor(priority?: string | null): "low" | "normal" | "high" {
 
 export interface TodoTaskInput {
   id: string;
-  userId: string;
+  userId?: string | null;
   graphId?: string | null;
-  title: string;
+  title?: string | null;
   body?: string | null;
   dueAt?: string | null;
   reminderAt?: string | null;
@@ -37,12 +37,13 @@ export interface TodoTaskInput {
 
 export async function mirrorTaskToTodo(pool: Pool, t: TodoTaskInput): Promise<string | null> {
   try {
+    if (!t.userId) return null;
     const graph = await getGraphForUser(pool, t.userId);
     if (!graph) return null;
     const listId = await defaultListId(graph);
     if (!listId) return null;
     const payload: Record<string, unknown> = {
-      title: t.title,
+      title: t.title ?? "Task",
       body: t.body ? { content: String(t.body), contentType: "text" } : undefined,
       dueDateTime: t.dueAt ? { dateTime: new Date(t.dueAt).toISOString(), timeZone: "UTC" } : undefined,
       importance: importanceFor(t.priority),
@@ -71,8 +72,8 @@ export async function mirrorTaskToTodo(pool: Pool, t: TodoTaskInput): Promise<st
   }
 }
 
-export async function deleteTodoTask(pool: Pool, userId: string, graphId: string | null | undefined): Promise<void> {
-  if (!graphId) return;
+export async function deleteTodoTask(pool: Pool, userId: string | null | undefined, graphId: string | null | undefined): Promise<void> {
+  if (!graphId || !userId) return;
   try {
     const graph = await getGraphForUser(pool, userId);
     if (!graph) return;
