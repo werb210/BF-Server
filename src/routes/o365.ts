@@ -728,4 +728,22 @@ router.patch("/mail/out-of-office", safeHandler(async (req: any, res: any) => {
   res.json({ ok: true, status });
 }));
 
+// BF_SERVER_BLOCK_v_PRESENCE_v1 - the signed-in user's Teams presence (needs Presence.Read).
+router.get("/presence", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(200).json({ connected: false });
+  try {
+    const r = await graph.fetch("/me/presence");
+    if (!r.ok) {
+      return res.status(200).json({ connected: true, error: r.status === 401 || r.status === 403 ? "insufficient_scope" : "graph_failed" });
+    }
+    const j: any = await r.json();
+    res.status(200).json({ connected: true, availability: j.availability ?? null, activity: j.activity ?? null });
+  } catch {
+    res.status(200).json({ connected: true, error: "graph_failed" });
+  }
+}));
+
 export default router;
