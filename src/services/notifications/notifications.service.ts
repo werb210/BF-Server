@@ -1,5 +1,6 @@
 // BF_NOTIFICATIONS_v50 — in-app notification fan-out.
 import { runQuery } from "../../lib/db.js";
+import { pushToUser } from "./pushToUser.js"; // BF_SERVER_BLOCK_v_NOTIF_PUSH_v1
 
 export interface NotifyMentionsParams {
   newMentions: string[];          // resolved user ids
@@ -39,6 +40,7 @@ export async function notifyMentions(p: NotifyMentionsParams): Promise<{ inserte
         [userId, p.refTable, p.refId, snippet, p.contextUrl ?? null]
       );
       if (r.rows[0]) inserted += 1;
+      if (r.rows[0]) void pushToUser(userId, "New mention", snippet, p.contextUrl ?? "/"); // BF_SERVER_BLOCK_v_NOTIF_PUSH_v1
     } catch {
       // swallow — notifications are advisory
     }

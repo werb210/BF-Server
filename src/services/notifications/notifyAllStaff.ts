@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { pushToUser } from "./pushToUser.js"; // BF_SERVER_BLOCK_v_NOTIF_PUSH_v1
 import { safeErr } from "../../lib/safeErr.js";
 import { sendSMS } from "../smsService.js";
 
@@ -85,6 +86,7 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx): Promise<{
           ],
         );
         notifsCreated += 1;
+        void pushToUser(user.id, ctx.title ?? humanizeType(ctx.notificationType), ctx.body ?? "", ctx.contextUrl ?? "/"); // BF_SERVER_BLOCK_v_NOTIF_PUSH_v1
       } catch (err) {
         console.warn(`[notifyAllStaff] notification insert failed for user=${user.id}`, safeErr(err));
       }
