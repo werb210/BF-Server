@@ -12,7 +12,7 @@ import { pool } from "../db.js";
 
 const router = Router();
 const AUTH_BASE = "https://login.microsoftonline.com";
-const SCOPE = "User.Read Mail.ReadWrite Mail.Read.Shared Mail.Send Mail.Send.Shared Calendars.ReadWrite Tasks.ReadWrite offline_access";
+const SCOPE = "User.Read Mail.ReadWrite Mail.Read.Shared Mail.Send Mail.Send.Shared Calendars.ReadWrite Calendars.Read.Shared Tasks.ReadWrite Contacts.ReadWrite MailboxSettings.ReadWrite People.Read Presence.Read Files.ReadWrite offline_access"; // BF_SERVER_BLOCK_v_O365_SCOPES_WAVE2_v1
 
 function redirectUri(): string {
   return (process.env.O365_OAUTH_REDIRECT_URI || "https://server.boreal.financial/api/o365-oauth/callback").trim();
