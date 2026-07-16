@@ -310,19 +310,28 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
   }
   if (search) {
     values.push(`%${search}%`);
+    const like = values.length;
     const searchParts = [
-      `c.name ILIKE $${values.length}`,
-      `c.email ILIKE $${values.length}`,
-      `c.phone ILIKE $${values.length}`,
+      `c.name ILIKE $${like}`,
+      `c.email ILIKE $${like}`,
+      `c.phone ILIKE $${like}`,
     ];
+    // BF_SERVER_BLOCK_v_CRM_PHONE_SEARCH_v1 - match phone regardless of formatting
+    // (dashes/spaces/parens/+1): when the term has >=7 digits, compare digits-only
+    // so "587-888-1837" finds a "+15878881837" contact.
+    const phoneDigits = search.replace(/[^0-9]/g, "");
+    if (phoneDigits.length >= 7) {
+      values.push(`%${phoneDigits}%`);
+      searchParts.push(`regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g') ILIKE $${values.length}`);
+    }
     if (hasCompanyName) {
-      searchParts.push(`coalesce(c.company_name, '') ILIKE $${values.length}`);
+      searchParts.push(`coalesce(c.company_name, '') ILIKE $${like}`);
     }
     if (hasTags) {
-      searchParts.push(`array_to_string(coalesce(c.tags, '{}'::text[]), ' ') ILIKE $${values.length}`);
+      searchParts.push(`array_to_string(coalesce(c.tags, '{}'::text[]), ' ') ILIKE $${like}`);
     }
     if (hasLeadStatus) {
-      searchParts.push(`coalesce(c.lead_status, 'New') ILIKE $${values.length}`);
+      searchParts.push(`coalesce(c.lead_status, 'New') ILIKE $${like}`);
     }
     // BF_SERVER_CRM_SEARCH_NOT_OWNER_v1 - the free-text search used to OR in the
     // OWNER's name, so typing "todd wer" returned every contact owned by Todd
