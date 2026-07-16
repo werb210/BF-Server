@@ -4,6 +4,7 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { pool } from "../db.js";
 import { bumpBiOutreachToContacted } from "../services/biOutreach.js"; // BF_SERVER_BLOCK_v344_BI_OUTREACH_AUTOADVANCE_v1
 import { getGraphForUser } from "../modules/o365/graphClient.js";
+import { pullOutlookContactsForUser } from "../modules/o365/contactPull.js"; // BF_SERVER_CONTACTS_PULL_v1
 import { getStorage } from "../lib/storage/index.js"; // v693
 import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { randomUUID } from "node:crypto";
@@ -786,5 +787,12 @@ router.post("/files/:id/link", safeHandler(async (req: any, res: any) => {
   const j: any = await r.json();
   res.json({ link: j.link?.webUrl ?? null });
 }));
+
+router.post("/contacts/pull", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const result = await pullOutlookContactsForUser(pool, userId);
+  res.json({ ok: true, ...result });
+})); // BF_SERVER_CONTACTS_PULL_v1
 
 export default router;
