@@ -631,4 +631,56 @@ router.put("/shared-mailbox-signatures", safeHandler(async (req: any, res: any) 
   res.json({ ok: true });
 }));
 
+// BF_SERVER_BLOCK_v_MAIL_CATEGORIES_v1 - Outlook category (color-label) support.
+// Setting a message's categories needs Mail.ReadWrite (already granted). Listing
+// the mailbox master categories needs MailboxSettings.Read; when that scope is not
+// present we fall back to the standard Outlook preset colours so tagging still works.
+const PRESET_MAIL_CATEGORIES = [
+  { displayName: "Red category", color: "preset0" },
+  { displayName: "Orange category", color: "preset1" },
+  { displayName: "Yellow category", color: "preset3" },
+  { displayName: "Green category", color: "preset4" },
+  { displayName: "Blue category", color: "preset7" },
+  { displayName: "Purple category", color: "preset9" },
+];
+
+router.get("/mail/categories", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const mb = typeof req.query.mailbox === "string" && req.query.mailbox
+    ? `/users/${encodeURIComponent(req.query.mailbox)}` : "/me";
+  try {
+    const r = await graph.fetch(`${mb}/outlook/masterCategories`);
+    if (r.ok) {
+      const j = await r.json();
+      const cats = (j.value ?? []).map((c: any) => ({ displayName: c.displayName, color: c.color }));
+      return res.json({ categories: cats.length ? cats : PRESET_MAIL_CATEGORIES, source: "graph" });
+    }
+  } catch { /* fall through to presets */ }
+  res.json({ categories: PRESET_MAIL_CATEGORIES, source: "preset" });
+}));
+
+router.patch("/mail/messages/:id/categories", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const cats: string[] = Array.isArray(req.body?.categories)
+    ? req.body.categories.filter((c: any) => typeof c === "string").slice(0, 25) : [];
+  const mb = typeof req.body?.mailbox === "string" && req.body.mailbox
+    ? `/users/${encodeURIComponent(req.body.mailbox)}` : "/me";
+  const r = await graph.fetch(`${mb}/messages/${encodeURIComponent(req.params.id)}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ categories: cats }),
+  });
+  if (!r.ok) {
+    const detail = (await r.text()).slice(0, 500);
+    if (r.status === 401 || r.status === 403) return res.status(412).json({ error: "o365_insufficient_scope", detail });
+    return res.status(502).json({ error: "graph_set_categories_failed", detail });
+  }
+  res.json({ ok: true, categories: cats });
+}));
+
 export default router;
