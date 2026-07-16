@@ -547,4 +547,44 @@ router.delete("/tasks/:id", safeHandler(async (req: any, res: any) => {
   return res.status(200).json({ ok: true });
 }));
 
+// BF_SERVER_BLOCK_v_SHARED_CALENDAR_v1 - free/busy across staff (getSchedule) and
+// view a teammate's calendar (needs Calendars.Read.Shared).
+router.get("/schedule", safeHandler(async (req: any, res: any) => {
+  const graph = await getGraphForUser(pool, req.user?.userId).catch(() => null);
+  if (!graph) return res.status(200).json({ status: "ok", data: { schedules: [], connected: false } });
+  const emails = String(req.query.emails ?? "").split(",").map((e: string) => e.trim()).filter(Boolean).slice(0, 20);
+  if (!emails.length) return res.status(400).json({ status: "error", error: "emails required" });
+  const { start, end } = calendarWindow(req);
+  try {
+    const data = await graphCall(graph, "/me/calendar/getSchedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        schedules: emails,
+        startTime: { dateTime: start, timeZone: "UTC" },
+        endTime: { dateTime: end, timeZone: "UTC" },
+        availabilityViewInterval: 30,
+      }),
+    });
+    res.status(200).json({ status: "ok", data: { schedules: (data as any).value ?? [], connected: true } });
+  } catch {
+    res.status(200).json({ status: "ok", data: { schedules: [], connected: true, error: "graph_fetch_failed" } });
+  }
+}));
+
+router.get("/teammate", safeHandler(async (req: any, res: any) => {
+  const graph = await getGraphForUser(pool, req.user?.userId).catch(() => null);
+  if (!graph) return res.status(200).json({ status: "ok", data: [] });
+  const email = String(req.query.email ?? "").trim();
+  if (!email) return res.status(400).json({ status: "error", error: "email required" });
+  const { start, end } = calendarWindow(req);
+  try {
+    const data = await graphCall(graph, `/users/${encodeURIComponent(email)}/calendarView?startDateTime=${start}&endDateTime=${end}&$top=200&$orderby=start/dateTime`);
+    const raw: any[] = Array.isArray((data as any)?.value) ? (data as any).value : [];
+    res.status(200).json({ status: "ok", data: raw.map(normalizeGraphEvent) });
+  } catch {
+    res.status(200).json({ status: "ok", data: [] });
+  }
+}));
+
 export default router;
