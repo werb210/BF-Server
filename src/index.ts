@@ -210,6 +210,11 @@ export async function start(): Promise<void> {
     try { const w = startBiOutreachEmailReplyWorker(pool); workerStops.push(w.stop); console.log("[startup] BI outreach email-reply worker started"); }
     catch (err) { console.error("[startup] BI outreach email-reply worker failed to start:", err); }
 
+    // BF_SERVER_GRAPH_WEBHOOKS_v1 - keep Graph mail subscriptions alive.
+    const { startGraphSubscriptionWorker } = await import("./workers/graphSubscriptionWorker.js");
+    try { const gt = startGraphSubscriptionWorker(); workerStops.push(() => clearInterval(gt)); console.log("[startup] graph-subscription worker started"); }
+    catch (err) { console.error("[startup] graph-subscription worker failed to start:", err); }
+
     const { startScheduledEmailWorker } = await import("./workers/scheduledEmailWorker.js");
     try { const w = startScheduledEmailWorker(pool); workerStops.push(w.stop); console.log("[startup] scheduled-email worker started"); }
     catch (err) { console.error("[startup] scheduled-email worker failed to start:", err); }

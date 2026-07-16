@@ -33,6 +33,7 @@ export interface TodoTaskInput {
   reminderAt?: string | null;
   priority?: string | null;
   status?: string | null;
+  contactId?: string | null;
 }
 
 export async function mirrorTaskToTodo(pool: Pool, t: TodoTaskInput): Promise<string | null> {
@@ -52,6 +53,13 @@ export async function mirrorTaskToTodo(pool: Pool, t: TodoTaskInput): Promise<st
     if (t.reminderAt) {
       payload.isReminderOn = true;
       payload.reminderDateTime = { dateTime: new Date(t.reminderAt).toISOString(), timeZone: "UTC" };
+    }
+    if (t.contactId && !t.graphId) {
+      payload.linkedResources = [{
+        webUrl: `https://staff.boreal.financial/crm/contacts/${t.contactId}`,
+        applicationName: "Boreal CRM",
+        displayName: t.title ?? "Contact",
+      }];
     }
     const path = t.graphId
       ? `/me/todo/lists/${listId}/tasks/${t.graphId}`

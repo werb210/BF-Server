@@ -71,6 +71,7 @@ import pipelineRoutes from "./pipeline.js";
 import telephonyRoutes from "../telephony/routes/telephonyRoutes.js";
 import realtimeRoutes from "../voice/realtimeRoutes.js";
 import webhooksRoutes from "./webhooks.js";
+import graphWebhooksRoutes from "./graphWebhooks.js"; // BF_SERVER_GRAPH_WEBHOOKS_v1
 import webauthnRoutes from "./webauthn.js"; // BF_SERVER_WEBAUTHN_v1
 import receptionRoutes from "./reception.js"; // BF_SERVER_RECEPTION_v1
 import emailPixelRoutes from "./emailPixel.js"; // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING
@@ -230,6 +231,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/referrals-ext", router: referralsExtRoutes }, // BF_SERVER_REFERRALS_EXT_MOUNT_v1 - own path (was colliding with /referrals)
   { path: "/pipeline", router: pipelineRoutes },
   { path: "/webhooks", router: webhooksRoutes },
+  { path: "/webhooks/graph", router: graphWebhooksRoutes }, // BF_SERVER_GRAPH_WEBHOOKS_v1
   { path: "/track", router: emailPixelRoutes }, // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING (public)
   { path: "/voice", router: voiceCallsRoutes },
   { path: "/webhooks/twilio/reception", router: receptionRoutes }, // BF_SERVER_RECEPTION_v1
@@ -304,6 +306,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET",  path: "/api/realtime/stream", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET",  path: "/api/realtime/diag",   roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "POST", path: "/api/webhooks/twilio/voice/twiml", roles: [] },
+  { method: "POST", path: "/api/webhooks/graph", roles: [] }, // BF_SERVER_GRAPH_WEBHOOKS_v1
   { method: "GET", path: "/api/webhooks/twilio/reception/voice", roles: [] }, // NOVA_VOICE_v1
   { method: "POST", path: "/api/webhooks/twilio/reception/greeting", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/reception/company", roles: [] },
