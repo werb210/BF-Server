@@ -683,4 +683,49 @@ router.patch("/mail/messages/:id/categories", safeHandler(async (req: any, res: 
   res.json({ ok: true, categories: cats });
 }));
 
+// BF_SERVER_BLOCK_v_MAILBOX_SETTINGS_v1 - read mailbox settings + set out-of-office
+// auto-reply (needs MailboxSettings.ReadWrite).
+router.get("/mail/mailbox-settings", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const r = await graph.fetch("/me/mailboxSettings");
+  if (!r.ok) {
+    const detail = (await r.text()).slice(0, 500);
+    if (r.status === 401 || r.status === 403) return res.status(412).json({ error: "o365_insufficient_scope", detail });
+    return res.status(502).json({ error: "graph_mailbox_settings_failed", detail });
+  }
+  res.json(await r.json());
+}));
+
+router.patch("/mail/out-of-office", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const b = req.body ?? {};
+  const status = ["disabled", "alwaysEnabled", "scheduled"].includes(b.status) ? b.status : "disabled";
+  const auto: Record<string, unknown> = {
+    status,
+    externalAudience: b.externalAudience === "none" || b.externalAudience === "contactsOnly" ? b.externalAudience : "all",
+    internalReplyMessage: typeof b.internalReplyMessage === "string" ? b.internalReplyMessage : "",
+    externalReplyMessage: typeof b.externalReplyMessage === "string" ? b.externalReplyMessage : "",
+  };
+  if (status === "scheduled" && b.start && b.end) {
+    auto.scheduledStartDateTime = { dateTime: String(b.start), timeZone: "UTC" };
+    auto.scheduledEndDateTime = { dateTime: String(b.end), timeZone: "UTC" };
+  }
+  const r = await graph.fetch("/me/mailboxSettings", {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ automaticRepliesSetting: auto }),
+  });
+  if (!r.ok) {
+    const detail = (await r.text()).slice(0, 500);
+    if (r.status === 401 || r.status === 403) return res.status(412).json({ error: "o365_insufficient_scope", detail });
+    return res.status(502).json({ error: "graph_set_oof_failed", detail });
+  }
+  res.json({ ok: true, status });
+}));
+
 export default router;
