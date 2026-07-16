@@ -294,6 +294,8 @@ router.get(
             c.name, 'Unnamed application') AS business_name,
           ct.name                                               AS contact_name,
           ct.email                                              AS contact_email,
+          COALESCE(ct.phone, u.phone_number)                    AS phone, -- BF_SERVER_BLOCK_v_PIPELINE_CARD_PHONE_v1
+
           ct.id AS contact_id,
           pt.name                                               AS partner_name,
           pt.id                                                 AS partner_contact_id,
