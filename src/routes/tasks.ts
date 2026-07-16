@@ -367,13 +367,14 @@ router.patch("/:id", safeHandler(async (req: any, res: any) => {
                             ELSE completed_at END,
         updated_at = now()
       WHERE id::text = $1 AND silo = $2 AND deleted_at IS NULL
-      RETURNING id, status, source, source_ref_id`,
+      RETURNING id, status, source, source_ref_id, graph_id, title, body, priority, due_at, reminder_at, assignee_user_id`,
     [req.params.id, silo, s(b.title), s(b.body), TYPES.includes(b.type) ? b.type : null,
      PRIORITIES.includes(b.priority) ? b.priority : null, b.due_at || null, b.reminder_at || null,
      b.queue_id === null ? "__clear__" : s(b.queue_id), s(b.assignee_user_id), status]
   );
   if (!r.rowCount) { respondError(res, 404, "task_not_found"); return; }
   if (status === "COMPLETED") resumeIfSequenceTask(r.rows); // BF_SERVER_SEQ_TASK_STEP_v1
+  { const t = r.rows[0]; void mirrorTaskToTodo(pool, { id: t.id, userId: t.assignee_user_id, graphId: t.graph_id, title: t.title, body: t.body, dueAt: t.due_at, reminderAt: t.reminder_at, priority: t.priority, status: t.status === "COMPLETED" ? "done" : "open" }); }
   respondOk(res, { ok: true });
 }));
 
@@ -384,12 +385,13 @@ router.post("/:id/complete", safeHandler(async (req: any, res: any) => {
       WHERE id::text = $1 AND silo = $2 AND deleted_at IS NULL AND status <> 'COMPLETED'
       RETURNING id, source, source_ref_id, silo, title, body, type, priority, due_at,
                 queue_id, assignee_user_id, contact_id, company_id, created_by,
-                repeat_active, repeat_interval, repeat_unit`,
+                repeat_active, repeat_interval, repeat_unit, graph_id, reminder_at`,
     [req.params.id, silo]
   );
   if (!r.rowCount) { respondError(res, 404, "task_not_found"); return; }
   resumeIfSequenceTask(r.rows); // BF_SERVER_SEQ_TASK_STEP_v1
   await regenerateRecurrence(r.rows[0]); // BF_SERVER_TASKS_M6_v1
+  { const t = r.rows[0]; void mirrorTaskToTodo(pool, { id: t.id, userId: t.assignee_user_id, graphId: t.graph_id, title: t.title, body: t.body, dueAt: t.due_at, reminderAt: t.reminder_at, priority: t.priority, status: "done" }); }
   respondOk(res, { ok: true });
 }));
 
