@@ -15,7 +15,7 @@ async function refreshMicrosoftAccessToken(refresh: string): Promise<{ accessTok
     client_secret: secret,
     refresh_token: refresh,
     grant_type: "refresh_token",
-    scope: "User.Read Mail.Send Mail.ReadWrite Mail.ReadWrite.Shared Mail.Send.Shared Calendars.ReadWrite Tasks.ReadWrite offline_access",
+    scope: "User.Read Mail.Send Mail.ReadWrite Mail.ReadWrite.Shared Mail.Send.Shared Calendars.ReadWrite Tasks.ReadWrite Contacts.ReadWrite offline_access",
   });
   const r = await fetch(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`, {
     method: "POST",
