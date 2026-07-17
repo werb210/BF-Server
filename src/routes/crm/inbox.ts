@@ -416,8 +416,9 @@ router.delete("/:messageId", safeHandler(async (req: any, res: any) => {
 router.post("/:messageId/move", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId;
   if (!userId) return res.status(401).json({ error: "unauthenticated" });
-  const destinationId = String(req.body?.destinationId ?? "").trim();
-  if (!destinationId) return res.status(400).json({ error: "destinationId_required" });
+  let destinationId = String(req.body?.destinationId ?? "").trim();
+  const destinationName = String(req.body?.destinationName ?? "").trim();
+  if (!destinationId && !destinationName) return res.status(400).json({ error: "destination_required" });
   const graph = await getGraphForUser(pool, userId);
   if (!graph) return res.status(412).json({ error: "o365_not_connected" });
   const mailbox = (req.query.mailbox ?? "").toString().trim();
@@ -435,6 +436,32 @@ router.post("/:messageId/move", safeHandler(async (req: any, res: any) => {
     }
   }
   const base = mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
+  // BF_SERVER_INBOX_MOVE_BYNAME_v1 - a folder id pre-fetched from another mailbox context is
+  // invalid in the message's actual mailbox (that is why "Move to" failed in All-Mailboxes view).
+  // Resolve the destination by name inside THIS mailbox: well-known names map directly, custom
+  // folders are looked up by displayName so the id is always correct for the target mailbox.
+  if (destinationName) {
+    const wk: Record<string, string> = {
+      "inbox": "inbox", "archive": "archive", "drafts": "drafts", "outbox": "outbox",
+      "sent": "sentitems", "sent items": "sentitems",
+      "deleted": "deleteditems", "deleted items": "deleteditems",
+      "junk": "junkemail", "junk email": "junkemail", "clutter": "clutter",
+    };
+    const known = wk[destinationName.toLowerCase()];
+    if (known) {
+      destinationId = known;
+    } else {
+      const fr = await graph.fetch(`${base}/mailFolders?$top=200&$select=id,displayName`);
+      if (fr.ok) {
+        const fj: any = await fr.json();
+        const match = (Array.isArray(fj?.value) ? fj.value : []).find(
+          (f: any) => String(f?.displayName ?? "").toLowerCase() === destinationName.toLowerCase(),
+        );
+        if (match?.id) destinationId = match.id;
+      }
+    }
+    if (!destinationId) return res.status(404).json({ error: "folder_not_found", detail: destinationName });
+  }
   const r = await graph.fetch(`${base}/messages/${encodeURIComponent(req.params.messageId)}/move`, {
     method: "POST",
     body: JSON.stringify({ destinationId }),
