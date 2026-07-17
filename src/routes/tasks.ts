@@ -131,7 +131,8 @@ router.delete("/queues/:id", safeHandler(async (req: any, res: any) => {
 
 router.get("/staff", safeHandler(async (_req: any, res: any) => {
   const r = await pool.query(
-    `SELECT id, COALESCE(NULLIF(TRIM(first_name || ' ' || last_name), ''), email) AS name
+    /* BF_SERVER_STAFF_EMAIL_v1 - also return email so the portal can autocomplete teammates by name/email. */
+    `SELECT id, COALESCE(NULLIF(TRIM(first_name || ' ' || last_name), ''), email) AS name, email
        FROM users WHERE active = true ORDER BY 2`
   );
   respondOk(res, { staff: r.rows });
