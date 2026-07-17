@@ -740,4 +740,41 @@ router.post(
   },
 );
 
+// BF_SERVER_ADMIN_NAV_ENDPOINTS_v1 - back the previously-dead admin nav pages with real data.
+router.get("/issue-reports", async (_req: any, res: any) => {
+  const pool = (await import("../db.js")).pool;
+  const r = await pool.query(`SELECT id, description FROM issues WHERE status = 'open' ORDER BY created_at DESC LIMIT 200`);
+  res.json(r.rows);
+});
+router.get("/website-leads", async (_req: any, res: any) => {
+  const pool = (await import("../db.js")).pool;
+  const r = await pool.query(`SELECT id, company_name AS company, full_name AS name, email, phone FROM crm_leads ORDER BY created_at DESC LIMIT 200`);
+  res.json(r.rows);
+});
+router.get("/live-chat-queue", async (_req: any, res: any) => {
+  const pool = (await import("../db.js")).pool;
+  const r = await pool.query(`SELECT id, status, source FROM chat_sessions WHERE status IN ('queued','open','active') LIMIT 200`);
+  res.json(r.rows);
+});
+router.get("/conversion-stats", async (_req: any, res: any) => {
+  const pool = (await import("../db.js")).pool;
+  const leadsQ = await pool.query(`SELECT COUNT(*)::int AS n FROM crm_leads`);
+  const appsQ = await pool.query(`SELECT COUNT(*)::int AS n FROM applications`);
+  const leads = Number(leadsQ.rows[0]?.n ?? 0);
+  const applications = Number(appsQ.rows[0]?.n ?? 0);
+  const visitors = leads + applications;
+  const rate = visitors > 0 ? Math.round((applications / visitors) * 1000) / 10 : 0;
+  res.json({ visitors, leads, applications, rate });
+});
+router.get("/ai-documents", async (_req: any, res: any) => {
+  const pool = (await import("../db.js")).pool;
+  const r = await pool.query(`SELECT id, COALESCE(source_id, LEFT(content, 60)) AS name FROM ai_knowledge ORDER BY created_at DESC LIMIT 500`);
+  res.json(r.rows);
+});
+router.delete("/ai-documents/:id", async (req: any, res: any) => {
+  const pool = (await import("../db.js")).pool;
+  await pool.query(`DELETE FROM ai_knowledge WHERE id = $1`, [req.params.id]);
+  res.json({ ok: true });
+});
+
 export default router;
