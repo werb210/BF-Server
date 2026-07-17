@@ -63,7 +63,10 @@ router.get("/", safeHandler(async (req: any, res: any) => {
           ) oc ON true
          WHERE e.${col} = $1 AND e.silo = $2 AND e.opened_at IS NOT NULL
         UNION ALL
-        SELECT 'meeting' AS kind, id::text, created_at AS ts,
+        -- BF_SERVER_MEETING_TS_STARTAT_v1 - order by the meeting's actual time (start_at),
+        -- not when the booking row was created, so a meeting booked yesterday for today
+        -- shows at today's meeting time instead of yesterday's booking time.
+        SELECT 'meeting' AS kind, id::text, start_at AS ts,
                title, attendee_description AS body, location AS extra
           FROM crm_meetings WHERE ${col} = $1 AND silo = $2
         UNION ALL
@@ -211,7 +214,10 @@ router.get("/", safeHandler(async (req: any, res: any) => {
           ) oc ON true
          WHERE e.${col} = $1 AND e.silo = $2 AND e.opened_at IS NOT NULL
         UNION ALL
-        SELECT 'meeting' AS kind, id::text, created_at AS ts,
+        -- BF_SERVER_MEETING_TS_STARTAT_v1 - order by the meeting's actual time (start_at),
+        -- not when the booking row was created, so a meeting booked yesterday for today
+        -- shows at today's meeting time instead of yesterday's booking time.
+        SELECT 'meeting' AS kind, id::text, start_at AS ts,
                title, attendee_description AS body, location AS extra
           FROM crm_meetings WHERE ${col} = $1 AND silo = $2
         UNION ALL
