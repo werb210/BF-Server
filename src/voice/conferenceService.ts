@@ -213,6 +213,22 @@ export async function broadcastIncomingRing(conferenceIdOrRow: any, fromLabel?: 
     __pubMany(staffIds, "incoming.call", legacy);
     __pubMany(staffIds, "conference.incoming", toast);
   }
+
+  // BF_SERVER_INCOMING_CALL_PUSH_v1 - also fire a web push so staff get an OS-level notification
+  // for an incoming call even when the portal is minimized or closed. Best-effort and after the
+  // live ring so it never delays the ring. Pushes to everyone subscribed (shared inbound line).
+  try {
+    const { pushToUser } = await import("../services/notifications/pushToUser.js");
+    const { listPwaSubscriptions } = await import("../repositories/pwa.repo.js");
+    const subs = await listPwaSubscriptions();
+    const userIds = Array.from(new Set(subs.map((sub) => sub.user_id).filter(Boolean)));
+    const pushBody = caller && caller !== "unknown" ? ("Call from " + caller) : "Incoming call";
+    await Promise.allSettled(
+      userIds.map((uid) => pushToUser(uid as string, "Incoming call", pushBody, "/communications")),
+    );
+  } catch (e) {
+    console.error("[incoming-call-push] failed", { error: String(e).slice(0, 200) });
+  }
 }
 
 export async function broadcastIncomingAnswered(conferenceIdOrRow: any, ..._rest: any[]): Promise<void> {
