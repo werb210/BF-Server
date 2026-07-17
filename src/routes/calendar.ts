@@ -567,8 +567,12 @@ router.get("/schedule", safeHandler(async (req: any, res: any) => {
       }),
     });
     res.status(200).json({ status: "ok", data: { schedules: (data as any).value ?? [], connected: true } });
-  } catch {
-    res.status(200).json({ status: "ok", data: { schedules: [], connected: true, error: "graph_fetch_failed" } });
+  } catch (e: any) {
+    // BF_SERVER_SCHEDULE_ERR_v1 - surface the real Graph error (GraphError carries status + bodyText)
+    // so the free/busy panel can show why it failed instead of a blank "no availability".
+    const status = e?.status ?? "";
+    const detail = (e?.bodyText || e?.message || "graph_fetch_failed").toString().slice(0, 300);
+    res.status(200).json({ status: "ok", data: { schedules: [], connected: true, error: status ? (status + ": " + detail) : detail } });
   }
 }));
 
