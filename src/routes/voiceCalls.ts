@@ -122,11 +122,32 @@ router.get("/recent-calls", auth, async (req: any, res) => {
                   ccl.twilio_call_sid AS sid
              FROM crm_call_log ccl
              LEFT JOIN contacts c2 ON c2.id = ccl.contact_id
-            WHERE ccl.owner_id = $1
+            -- BF_SERVER_OUTBOUND_SEEDED_OWNER_v1 - the browser dialer stamps outbound calls
+            -- with the seeded-admin id (00..099) instead of the real caller, so a per-user
+            -- filter hid them. Surface those too (mirrors the shared inbound line).
+            WHERE (ccl.owner_id = $1 OR ccl.owner_id = '00000000-0000-0000-0000-000000000099')
               AND ccl.direction = 'outbound'
               AND (ccl.twilio_call_sid IS NULL
                    OR ccl.twilio_call_sid NOT IN (
                      SELECT twilio_call_sid FROM call_logs WHERE twilio_call_sid IS NOT NULL))
+           UNION ALL
+           -- BF_SERVER_OUTBOUND_SEEDED_OWNER_v1 - browser-dialer outbound calls are logged to
+           -- call_events (event_type='call.ended') owned by the seeded-admin id (00..099).
+           -- PR #2753 dropped this branch, which left the Phone "Outgoing" column empty.
+           -- Restore it, surface the seeded-owner rows, and dedup by call sid.
+           SELECT ce.id::text AS id, ce.direction, 'completed'::text AS status,
+                  ce.duration_seconds AS duration_seconds, ce.occurred_at AS created_at,
+                  ce.to_number AS phone_number, ce.contact_id, c3.name AS contact_name,
+                  ce.twilio_call_sid AS sid
+             FROM call_events ce
+             LEFT JOIN contacts c3 ON c3.id = ce.contact_id
+            WHERE (ce.user_id = $1 OR ce.user_id = '00000000-0000-0000-0000-000000000099')
+              AND ce.direction = 'outbound'
+              AND ce.event_type = 'call.ended'
+              AND (ce.twilio_call_sid IS NULL
+                   OR ce.twilio_call_sid NOT IN (
+                     SELECT twilio_call_sid FROM call_logs WHERE twilio_call_sid IS NOT NULL
+                     UNION SELECT twilio_call_sid FROM crm_call_log WHERE twilio_call_sid IS NOT NULL))
          ) merged
         ORDER BY created_at DESC
         LIMIT 50`,
