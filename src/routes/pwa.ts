@@ -64,6 +64,12 @@ const unsubscribeSchema = z.object({
   scope: z.enum(["legacy", "owned"]).optional(),
 });
 
+// BF_SERVER_VAPID_PUBLIC_KEY_v1 - expose the VAPID public key so the portal can subscribe to
+// push at runtime (avoids baking VITE_VAPID_PUBLIC_KEY into the static build; only server env needed).
+router.get("/vapid-public-key", requireAuth, safeHandler(async (_req: any, res: any) => {
+  res.json({ publicKey: config.security.vapidPublicKey || null });
+}));
+
 router.post(
   "/subscribe",
   requireAuth,
