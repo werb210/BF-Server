@@ -470,6 +470,9 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
   const silo = resolveSiloFromRequest(req);
   const ownerId = req.user?.id ?? req.user?.userId ?? null;
   const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  // BF_SERVER_IMPORT_CONSENT_v1 - when the importer marks the file as express-consented
+  // (application terms), stamp the CASL consent fields so contacts are SMS-marketable.
+  const smsConsentExpress = req.body?.smsConsentExpress === true;
   if (!Array.isArray(req.body?.rows)) {
     return res.status(400).json({ error: { field: "rows", message: "rows[] is required" } });
   }
@@ -536,6 +539,14 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
         overwrite("lead_status", leadStatus);
         if (has("owner_id") && ownerId) { sets.push(`owner_id = COALESCE(owner_id, $${i})`); vals.push(ownerId); i++; }
         if (has("updated_at")) { sets.push("updated_at = now()"); }
+        if (smsConsentExpress) {
+          if (has("sms_consent")) { sets.push(`sms_consent = $${i}`); vals.push(true); i++; }
+          if (has("consent_basis")) { sets.push(`consent_basis = $${i}`); vals.push("express"); i++; }
+          if (has("consent_source")) { sets.push(`consent_source = $${i}`); vals.push("CBF application terms"); i++; }
+          if (has("consent_at")) { sets.push("consent_at = COALESCE(consent_at, now())"); }
+          if (has("marketing_opt_out")) { sets.push(`marketing_opt_out = $${i}`); vals.push(false); i++; }
+          if (has("sms_opt_out")) { sets.push(`sms_opt_out = $${i}`); vals.push(false); i++; }
+        }
         if (!sets.length) { skipped++; continue; }
         vals.push(existingId);
         await client.query(`UPDATE contacts SET ${sets.join(", ")} WHERE id = $${i}`, vals);
@@ -558,6 +569,14 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
         add("lead_status", leadStatus || "New");
         add("silo", silo);
         add("owner_id", ownerId);
+        if (smsConsentExpress) {
+          add("sms_consent", true);
+          add("consent_basis", "express");
+          add("consent_source", "CBF application terms");
+          add("consent_at", new Date().toISOString());
+          add("marketing_opt_out", false);
+          add("sms_opt_out", false);
+        }
         await client.query(
           `INSERT INTO contacts (${insCols.join(", ")}) VALUES (${ph.join(", ")})`,
           vals,
