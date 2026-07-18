@@ -116,16 +116,31 @@ export async function proxyMayaToAgent(
         // persist when the session id is a real uuid; otherwise skip quietly.
         const isUuidSession = typeof sessionId === "string" &&
           /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionId);
-        if (sessionId && userMsg && isUuidSession) {
+        // BF_SERVER_MAYA_LOG_ALL_v1 - persist EVERY Maya conversation (website/client/staff) so
+        // staff can review Maya's answers. Non-uuid session ids (e.g. "client-...") are mapped to
+        // a stable uuid v5 so the same conversation stays threaded without the uuid cast error.
+        if (sessionId && userMsg) {
+          const { createHash } = await import("node:crypto");
+          const MAYA_NS = "6f4d2c8a-1b3e-5a7c-9d0f-2e4b6a8c0d1e";
+          const toStableUuid = (name: string): string => {
+            const ns = Buffer.from(MAYA_NS.replace(/-/g, ""), "hex");
+            const h = createHash("sha1").update(Buffer.concat([ns, Buffer.from(name, "utf8")])).digest();
+            const b = Buffer.from(h.subarray(0, 16));
+            b[6] = (b[6] & 0x0f) | 0x50;
+            b[8] = (b[8] & 0x3f) | 0x80;
+            const x = b.toString("hex");
+            return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20, 32)}`;
+          };
+          const persistId = isUuidSession ? sessionId : toStableUuid(sessionId);
           const chan = audience ? String(audience) : "web";
           await pool.query(
             `insert into chat_sessions (id, source, channel, status)
              values ($1, 'maya', $2, 'ai')
              on conflict (id) do nothing`,
-            [sessionId, chan],
+            [persistId, chan],
           );
-          await addMessage({ sessionId, role: "user", message: userMsg });
-          if (reply) await addMessage({ sessionId, role: "ai", message: reply });
+          await addMessage({ sessionId: persistId, role: "user", message: userMsg });
+          if (reply) await addMessage({ sessionId: persistId, role: "ai", message: reply });
         }
       } catch (e: any) {
         logError("maya_transcript_persist_failed", { code: "maya_transcript_persist_failed", error: e?.message ?? "unknown" });
