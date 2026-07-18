@@ -16,6 +16,8 @@ function humanizeType(type: string): string {
 
 export type NotifyAllStaffCtx = {
   pool: Pool;
+  // BF_SERVER_NOTIFY_SKIP_SMS_v1 - when true, create the in-app bell + push only, no staff SMS.
+  skipSms?: boolean;
   // Type tag for notification record (e.g. "website_contact" | "website_readiness").
   notificationType: string;
   // Plain-text body used for both SMS and in-app notification.
@@ -57,7 +59,7 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx): Promise<{
   await Promise.all(
     recipients.rows.map(async (user) => {
       // SMS via Twilio.
-      if (user.phone_number && user.phone_number.trim().length > 0) {
+      if (!ctx.skipSms && user.phone_number && user.phone_number.trim().length > 0) {
         try {
           const r = await sendSMS(user.phone_number, ctx.body);
           if (r && (r as { success?: boolean }).success) smsSent += 1;

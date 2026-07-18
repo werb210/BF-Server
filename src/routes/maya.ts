@@ -217,6 +217,12 @@ router.post(
       [id, sessionId, applicationId, reason, surface, silo, JSON.stringify(payload)]
     );
 
+    // BF_SERVER_MAYA_ESCALATION_NOTIFY_v1 - notify all staff (bell + push, no staff SMS).
+    try {
+      const { notifyAllStaff } = await import("../services/notifications/notifyAllStaff.js");
+      await notifyAllStaff({ pool, silo: silo ?? "BF", skipSms: true, notificationType: "maya_escalation", title: "Maya escalation", body: `A client asked for a human. Reason: ${reason}`, refTable: "maya_escalations", refId: id, contextUrl: applicationId ? `/applications/${applicationId}` : "/communications" });
+    } catch (e) { console.error("[notify] maya_escalation failed", String(e).slice(0, 150)); }
+
     // BF_SERVER_BLOCK_53_v1 -- also write the escalation into
     // communications_messages so staff sees "Client requested human
     // help via Maya" in their normal Communications panel without

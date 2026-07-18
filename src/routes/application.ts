@@ -103,6 +103,12 @@ async function handleApplicationSubmit(req: any, res: any) {
       [readiness.id, created.id]
     );
 
+    // BF_SERVER_APP_SUBMIT_NOTIFY_v1 - notify all staff (bell + push, no staff SMS) of a new application.
+    try {
+      const { pool } = await import("../db.js");
+      const { notifyAllStaff } = await import("../services/notifications/notifyAllStaff.js");
+      await notifyAllStaff({ pool, skipSms: true, notificationType: "application_submitted", title: "New application", body: `New application from ${readiness.company_name || readiness.full_name || "a client"}.`, refTable: "applications", refId: created.id, contextUrl: `/applications/${created.id}` });
+    } catch (e) { console.error("[notify] application_submitted failed", String(e).slice(0, 150)); }
     return ok({ applicationId: created.id, leadId: readiness.crm_lead_id, reused: false });
 }
 
