@@ -612,6 +612,13 @@ async function persistInboundSms(req: any): Promise<void> {
     body,
     sid,
   });
+
+  // BF_SERVER_SMS_NOTIFY_v1 - notify all staff (bell + push, no staff SMS) of an inbound SMS.
+  try {
+    const { notifyAllStaff } = await import("../services/notifications/notifyAllStaff.js");
+    const preview = body.length > 120 ? body.slice(0, 120) + "..." : body;
+    await notifyAllStaff({ pool, silo: resolvedSilo, skipSms: true, notificationType: "sms_inbound", title: "New SMS", body: `${fromNum}: ${preview}`, contextUrl: "/communications" });
+  } catch (e) { console.error("[notify] sms_inbound failed", String(e).slice(0, 150)); }
   console.log(JSON.stringify({
     event: "sms_inbound_persisted",
     contact_id: contact?.id ?? null,
