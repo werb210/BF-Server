@@ -235,6 +235,14 @@ router.post(
           ],
         );
 
+        // BF_SERVER_MERGE_MSGS_REPOINT_v1 - explicitly re-point SMS/messages to the survivor so
+        // the SMS tab (which threads by a live contact_id) shows the merged conversation. Belt-and-
+        // suspenders in case the generic contact_id sweep skips this table.
+        await client.query(
+          `UPDATE communications_messages SET contact_id = $1::uuid WHERE contact_id = $2::uuid`,
+          [survivorId, loserId],
+        );
+
         // Archive the loser with a pointer, and snapshot it so a bad merge is recoverable.
         await client.query(
           `UPDATE contacts
