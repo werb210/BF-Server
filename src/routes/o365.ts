@@ -788,6 +788,66 @@ router.post("/files/:id/link", safeHandler(async (req: any, res: any) => {
   res.json({ link: j.link?.webUrl ?? null });
 }));
 
+// BF_SERVER_CONTACT_ONEDRIVE_v1 - create/open a per-contact OneDrive folder (BF only) and list
+// its files. The folder lives in the acting user's OneDrive under "Boreal CRM"; an organization
+// edit link is stored so any staff member (e.g. Andrew) can open it and list its files.
+router.post("/contacts/:id/folder", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const contactId = String(req.params.id ?? "").trim();
+  const cr = await pool.query(
+    `SELECT id, name, onedrive_folder_url FROM contacts WHERE id = $1::uuid AND silo = 'BF'`,
+    [contactId],
+  );
+  if (cr.rowCount === 0) return res.status(404).json({ error: "contact_not_found" });
+  const contact: any = cr.rows[0];
+  if (contact.onedrive_folder_url) return res.json({ ok: true, url: contact.onedrive_folder_url, created: false });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const safeName = String(contact.name || "Contact").replace(/[<>:"/\\|?*]/g, "-").slice(0, 80);
+  const folderName = `${safeName} (${contactId.slice(0, 8)})`;
+  await graph.fetch("/me/drive/root/children", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Boreal CRM", folder: {}, "@microsoft.graph.conflictBehavior": "fail" }),
+  }).catch(() => undefined);
+  const r = await graph.fetch("/me/drive/root:/Boreal CRM:/children", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: folderName, folder: {}, "@microsoft.graph.conflictBehavior": "rename" }),
+  });
+  if (!r.ok) { const d = (await r.text()).slice(0, 400); if (r.status === 401 || r.status === 403) return res.status(412).json({ error: "o365_insufficient_scope", detail: d }); return res.status(502).json({ error: "graph_folder_failed", detail: d }); }
+  const item: any = await r.json();
+  const lr = await graph.fetch(`/me/drive/items/${encodeURIComponent(item.id)}/createLink`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "edit", scope: "organization" }),
+  });
+  const linkJson: any = lr.ok ? await lr.json() : {};
+  const shareUrl = linkJson?.link?.webUrl ?? item.webUrl ?? null;
+  await pool.query(
+    `UPDATE contacts SET onedrive_folder_id = $2, onedrive_drive_id = $3, onedrive_folder_url = $4 WHERE id = $1::uuid`,
+    [contactId, item.id, item.parentReference?.driveId ?? null, shareUrl],
+  );
+  res.json({ ok: true, url: shareUrl, created: true });
+}));
+
+router.get("/contacts/:id/folder/files", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const contactId = String(req.params.id ?? "").trim();
+  const cr = await pool.query(
+    `SELECT onedrive_folder_url FROM contacts WHERE id = $1::uuid AND silo = 'BF'`,
+    [contactId],
+  );
+  const shareUrl: string | null = cr.rows[0]?.onedrive_folder_url ?? null;
+  if (!shareUrl) return res.json({ hasFolder: false, files: [] });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const b64 = Buffer.from(shareUrl).toString("base64").replace(/=+$/, "").replace(/\//g, "_").replace(/\+/g, "-");
+  const r = await graph.fetch(`/shares/u!${b64}/driveItem/children?$top=100`);
+  if (!r.ok) { const d = (await r.text()).slice(0, 400); if (r.status === 401 || r.status === 403) return res.status(412).json({ error: "o365_insufficient_scope", detail: d }); return res.status(502).json({ error: "graph_files_failed", detail: d }); }
+  const j: any = await r.json();
+  res.json({ hasFolder: true, url: shareUrl, files: (j.value ?? []).map(mapDriveItem) });
+}));
+
 router.post("/contacts/pull", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId;
   if (!userId) return res.status(401).json({ error: "unauthenticated" });
