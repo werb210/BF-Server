@@ -926,6 +926,7 @@ router.patch("/contacts/:id", requireCrmWrite, safeHandler(async (req: any, res:
   const ALLOWED = [
     "first_name", "last_name", "name", "email", "phone", "job_title",
     "lead_status", "lifecycle_stage", "owner_id", "company_id", "notes",
+    "secondary_email", "secondary_phone", // BF_SERVER_CONTACT_SECONDARY_v1
   ];
   const updates: string[] = [];
   const params: unknown[] = [];
