@@ -554,11 +554,18 @@ async function persistInboundSms(req: any): Promise<void> {
 
   // BF_SERVER_BLOCK_v637_MOBILE_PHONE_AND_BACKFILL_v1 — contacts.mobile_phone does not exist.
   const contact = await pool.query<{ id: string; silo: string | null }>(
-    `SELECT id, silo FROM contacts
-            WHERE right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10)
-                = right(regexp_replace($1::text,            '[^0-9]', '', 'g'), 10)
-            ORDER BY created_at ASC NULLS LAST, id ASC
-            LIMIT 1`,
+    /* BF_SERVER_SECONDARY_MATCH_v1 - also match the contact's secondary_phone so a text from a
+       person's second number threads to the same contact; prefer a primary-phone match. */
+    `SELECT id, silo,
+            (right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10)
+               = right(regexp_replace($1::text, '[^0-9]', '', 'g'), 10)) AS primary_match
+       FROM contacts
+      WHERE right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10)
+              = right(regexp_replace($1::text, '[^0-9]', '', 'g'), 10)
+         OR right(regexp_replace(coalesce(secondary_phone, ''), '[^0-9]', '', 'g'), 10)
+              = right(regexp_replace($1::text, '[^0-9]', '', 'g'), 10)
+      ORDER BY primary_match DESC, created_at ASC NULLS LAST, id ASC
+      LIMIT 1`,
     [fromNum]
   ).then((r) => r.rows[0] ?? null).catch(() => null);
 
