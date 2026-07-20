@@ -97,10 +97,24 @@ export async function submitGoogleSheetsApplication(
     };
   }
   const now = new Date().toISOString();
-  const { clientId, clientSecret, redirectUri, refreshToken } = assertGoogleEnv();
-  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-  oauth2Client.setCredentials({ refresh_token: refreshToken });
-  const sheets = google.sheets({ version: "v4", auth: oauth2Client });
+  // BF_SERVER_GSHEET_SERVICE_ACCOUNT_v1 - prefer a service account (far simpler to set up: download
+  // a key JSON and share the target sheet with its email). Fall back to the OAuth refresh-token path.
+  const saEmail = config.google.serviceAccountEmail?.trim();
+  const saKey = config.google.serviceAccountPrivateKey?.trim();
+  let auth: any;
+  if (saEmail && saKey) {
+    auth = new google.auth.JWT({
+      email: saEmail,
+      key: saKey.replace(/\\n/g, "\n"),
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    });
+  } else {
+    const { clientId, clientSecret, redirectUri, refreshToken } = assertGoogleEnv();
+    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
+    auth = oauth2Client;
+  }
+  const sheets = google.sheets({ version: "v4", auth });
 
   logInfo("google_sheets_submission_attempt", {
     applicationId: params.payload.application.id,
