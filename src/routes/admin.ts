@@ -457,9 +457,12 @@ router.post(
     const roleName = (process.env.SIGNNOW_REFERRER_ROLE_NAME ?? "Referrer").trim();
     const out: Record<string, unknown> = {
       apiKeySet,
+      // BF_SERVER_REFERRER_DIAG_BAKE_v1 - each agreement is baked per-referrer and uploaded
+      // directly, so only the API key is required; the template id is legacy/optional.
       templateIdSet: templateId.length > 0,
+      templateIdRequired: false,
       roleName,
-      configured: apiKeySet && templateId.length > 0,
+      configured: apiKeySet,
     };
     if (!apiKeySet) {
       out.diagnosis = "signnow_api_key_missing";
@@ -471,54 +474,32 @@ router.post(
       out.apiKeyValid = true;
     } catch (e: any) {
       out.apiKeyValid = false;
+      out.configured = false;
       out.diagnosis = "signnow_api_key_invalid_or_expired";
       out.error = e instanceof Error ? e.message : String(e);
       return res.json(out);
     }
-    if (!templateId) {
-      out.diagnosis = "template_id_missing_set_SIGNNOW_REFERRER_TEMPLATE_ID";
-      return res.json(out);
-    }
+    // BF_SERVER_REFERRER_DIAG_BAKE_v1 - api key is valid, so the bake-per-referrer flow is ready.
+    // The optional probe proves the REAL runtime path (build the agreement PDF + upload it to
+    // SignNow with field-extract), not a legacy template copy.
     if (req.body?.probe === true) {
       try {
-        const { createDocumentFromTemplate } = await import("../signnow/signnowClient.js");
-        const { documentId } = await createDocumentFromTemplate(templateId, "Boreal referrer-agreement diagnostics probe");
-        out.templateResolves = true;
+        const { uploadDocumentWithFieldExtract } = await import("../signnow/signnowClient.js");
+        const { buildReferrerAgreementPdf } = await import("../signnow/referrerAgreementPdfBuilder.js");
+        const pdf = await buildReferrerAgreementPdf();
+        const { documentId } = await uploadDocumentWithFieldExtract(pdf, "Boreal referrer-agreement diagnostics probe.pdf");
+        out.bakeProbeOk = true;
         out.probeDocumentId = documentId;
-        // BF_SERVER_SIGNNOW_FIELD_DUMP_v1 - reveal where SignNow stores the text-field
-        // names (getDocumentTextFields returned [] against the legacy /document view).
-        try {
-          const { signnowGetRaw } = await import("../signnow/signnowClient.js");
-          const legacy: any = await signnowGetRaw(`/document/${documentId}`);
-          const v2: any = await signnowGetRaw(`/v2/documents/${documentId}`);
-          const trim = (arr: any) => Array.isArray(arr) ? arr.slice(0, 12).map((f: any) => ({
-            keys: Object.keys(f ?? {}),
-            type: f?.type ?? f?.json_attributes?.type,
-            name: f?.name ?? f?.json_attributes?.name ?? f?.field_name,
-            label: f?.label ?? f?.json_attributes?.label ?? f?.tooltip,
-          })) : (arr ?? null);
-          out.fieldDump = {
-            legacyKeys: legacy && typeof legacy === "object" ? Object.keys(legacy) : typeof legacy,
-            legacyFields: trim(legacy?.fields),
-            legacyTexts: trim(legacy?.texts),
-            v2Keys: v2 && typeof v2 === "object" ? Object.keys(v2) : typeof v2,
-            v2Fields: trim(v2?.fields ?? v2?.document?.fields),
-            v2FieldInvites: trim(v2?.field_invites),
-            v2First: (Array.isArray(v2?.fields) ? v2.fields[0] : (Array.isArray(v2?.document?.fields) ? v2.document.fields[0] : null)),
-          };
-        } catch (eDump: any) {
-          out.fieldDumpError = eDump instanceof Error ? eDump.message : String(eDump);
-        }
         out.diagnosis = "ok";
-        out.note = "A throwaway document was created from the template; delete it in SignNow if you wish.";
+        out.note = "A throwaway agreement PDF was built and uploaded to SignNow; delete it there if you wish.";
       } catch (e: any) {
-        out.templateResolves = false;
-        out.diagnosis = "template_id_not_found_or_not_a_template";
+        out.bakeProbeOk = false;
+        out.diagnosis = "bake_probe_failed";
         out.error = e instanceof Error ? e.message : String(e);
       }
       return res.json(out);
     }
-    out.diagnosis = "configured_send_probe_true_to_verify_template";
+    out.diagnosis = "ready_send_probe_true_to_verify_a_real_agreement_upload";
     return res.json(out);
   },
 );
