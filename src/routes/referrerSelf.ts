@@ -320,6 +320,18 @@ router.post(
     // Reuse the canonical referral service (company + contact, transactional,
     // referrer_id tagged) so we write through the same repos the rest of BF
     // uses instead of hand-rolling INSERTs against the live schema.
+    // BF_SERVER_REFERRAL_NAME_FROM_PROFILE_v1 - version A embeds the referrer's name, but the
+    // portal doesn't post it, so resolve it from the authenticated referrer's own record. Without
+    // this, version A fell back to its no-name variant and looked like the generic "B" message.
+    let resolvedReferrerName = referrerName;
+    if (!resolvedReferrerName && req.referrerId) {
+      const rn = await pool.query<{ first_name: string | null; last_name: string | null }>(
+        `SELECT first_name, last_name FROM users WHERE id = $1::uuid LIMIT 1`,
+        [req.referrerId],
+      );
+      const rrow = rn.rows[0];
+      if (rrow) resolvedReferrerName = [rrow.first_name, rrow.last_name].filter(Boolean).join(" ").trim() || null;
+    }
     const result = await submitReferral({
       businessName: companyName ?? fullName,
       contactName: fullName,
@@ -329,7 +341,7 @@ router.post(
       referrerId: req.referrerId ?? null,
       silos,
       message,
-      referrerName,
+      referrerName: resolvedReferrerName,
       startup,
     });
     res.status(201).json({ status: "ok", data: { id: result.contactId, companyId: result.companyId, refCode: result.refCode, silos } });
