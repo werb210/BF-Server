@@ -332,7 +332,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
           .map((a: any) => String(a || "").trim().toLowerCase()).filter(Boolean)));
         if (_recips.length) {
           const _m = await pool.query(
-            `SELECT id FROM contacts WHERE silo = $1 AND lower(email) = ANY($2::text[])`,
+            `SELECT id FROM contacts WHERE silo = $1 AND (lower(email) = ANY($2::text[]) OR lower(secondary_email) = ANY($2::text[]))`, // BF_SERVER_SECONDARY_MATCH_v1
             [_scheduleSilo, _recips],
           );
           for (const _row of _m.rows) {
@@ -401,10 +401,12 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
         .map((a: any) => String(a || "").trim().toLowerCase()).filter(Boolean)));
       if (_recips.length) {
         const _m = await pool.query(
-          `SELECT id, lower(email) AS email FROM contacts WHERE silo = $1 AND lower(email) = ANY($2::text[])`,
+          // BF_SERVER_SECONDARY_MATCH_v1 - match secondary_email too, and treat both addresses as
+          // "matched" so a secondary-address recipient does not get auto-created as a duplicate.
+          `SELECT id, lower(email) AS email, lower(secondary_email) AS secondary_email FROM contacts WHERE silo = $1 AND (lower(email) = ANY($2::text[]) OR lower(secondary_email) = ANY($2::text[]))`,
           [_silo, _recips],
         );
-        const _matched = new Set(_m.rows.map((r: any) => String(r.email)));
+        const _matched = new Set(_m.rows.flatMap((r: any) => [String(r.email ?? ""), String(r.secondary_email ?? "")]).filter(Boolean));
         for (const _row of _m.rows) {
           await logEmail(_row.id, null, _silo);
         }
