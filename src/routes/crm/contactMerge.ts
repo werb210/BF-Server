@@ -163,6 +163,13 @@ router.post(
         [survivorId, silo],
       );
       if (sv.rowCount === 0) throw new Error("survivor not found in this silo");
+      const survivor: any = sv.rows[0];
+      // BF_SERVER_MERGE_GUARD_v1 - never merge INTO an archived / already-merged contact. Allowing
+      // it is what produced circular merges (A merged into B AND B merged into A, both archived,
+      // leaving no live survivor and stranding the conversation out of the SMS tab).
+      if (String(survivor.status ?? "") === "archived" || survivor.merged_into_id) {
+        throw new Error("cannot merge into an archived or already-merged contact - restore it first");
+      }
 
       for (const loserId of loserIds) {
         const lo = await client.query(

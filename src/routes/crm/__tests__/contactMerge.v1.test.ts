@@ -38,6 +38,12 @@ describe("contact merge", () => {
     expect(src).toContain("array_agg(DISTINCT x)"); // tags are unioned, not replaced
   });
 
+  it("refuses to merge INTO an archived or already-merged contact (prevents circular A<->B merges)", () => {
+    expect(src).toContain("BF_SERVER_MERGE_GUARD_v1");
+    expect(src).toContain("survivor.merged_into_id");
+    expect(src).toContain("cannot merge into an archived or already-merged contact");
+  });
+
   it("is transactional and reversible", () => {
     expect(src).toContain('await client.query("BEGIN")');
     expect(src).toContain('await client.query("ROLLBACK")');
