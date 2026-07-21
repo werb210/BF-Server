@@ -25,7 +25,7 @@ export function generateVoiceToken(identity: string): string {
     requireTokenConfig(config.twilio.apiSecret, "TWILIO_API_SECRET"),
     {
       identity: resolvedIdentity,
-      ttl: 3600,
+      ttl: 14400, // BF_SERVER_VOICE_TOKEN_TTL_v1 4h; reduces AccessTokenExpired(20104) mid-session
     }
   );
 
