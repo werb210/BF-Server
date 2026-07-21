@@ -85,14 +85,15 @@ export function reconcileSubmissionPayload(input: {
   }
 
   if (method === "GOOGLE_SHEET") {
-    if (!hasSubmissionConfig) {
-      return { method: null, email: null, apiConfig: null, submissionConfig: null };
-    }
+    // BF_SERVER_GSHEET_KEEP_METHOD_v1 - sheet config lives in the lenders google_sheet_id /
+    // google_sheet_tab columns, NOT submission_config. Keep the method even when
+    // submission_config is absent, or a portal save nulls submission_method and
+    // breaks Google Sheet dispatch.
     return {
       method,
       email: null,
       apiConfig: null,
-      submissionConfig: input.submissionConfig,
+      submissionConfig: input.submissionConfig ?? null,
     };
   }
 
