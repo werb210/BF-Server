@@ -261,23 +261,7 @@ router.post(
            WHERE s.id = $1::uuid`,
           [survivorId, loser.email, loser.phone],
         );
-        await client.query(
-          `UPDATE contacts s SET
-             notes = coalesce(nullif(s.notes,''),'')
-                     || CASE WHEN coalesce(s.notes,'')='' THEN '' ELSE E'\n' END
-                     || '[merge] extra contact info:'
-                     || CASE WHEN nullif(trim($2),'') IS NOT NULL
-                              AND lower(trim($2)) NOT IN (lower(coalesce(s.email,'')), lower(coalesce(s.secondary_email,'')))
-                             THEN ' '||trim($2) ELSE '' END
-                     || CASE WHEN nullif(trim($3),'') IS NOT NULL
-                              AND regexp_replace(trim($3),'\D','','g') NOT IN (regexp_replace(coalesce(s.phone,''),'\D','','g'), regexp_replace(coalesce(s.secondary_phone,''),'\D','','g'))
-                             THEN ' '||trim($3) ELSE '' END,
-             updated_at = now()
-           WHERE s.id = $1::uuid
-             AND ( (nullif(trim($2),'') IS NOT NULL AND lower(trim($2)) NOT IN (lower(coalesce(s.email,'')), lower(coalesce(s.secondary_email,''))))
-                OR (nullif(trim($3),'') IS NOT NULL AND regexp_replace(trim($3),'\D','','g') NOT IN (regexp_replace(coalesce(s.phone,''),'\D','','g'), regexp_replace(coalesce(s.secondary_phone,''),'\D','','g'))) )`,
-          [survivorId, loser.email, loser.phone],
-        );
+        // BF_SERVER_MERGE_NOTES_COLUMN_FIX_v1 - removed overflow-note UPDATE; contacts has no notes column (aborted merge tx -> 500).
 
         // BF_SERVER_MERGE_MSGS_REPOINT_v1 - explicitly re-point SMS/messages to the survivor so
         // the SMS tab (which threads by a live contact_id) shows the merged conversation. Belt-and-
