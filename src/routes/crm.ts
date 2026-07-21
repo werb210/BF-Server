@@ -248,7 +248,7 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
      WHERE table_schema = 'public'
        AND table_name = 'contacts'
        AND column_name = ANY($1::text[])`,
-    [["company_name", "company_id", "lead_status", "tags", "owner_id"]]
+    [["company_name", "company_id", "lead_status", "tags", "owner_id", "status"]]
   ).catch(() => ({ rows: [] as Array<{ column_name: string }> }));
   const availableColumns = new Set(contactsColumnCheck.rows.map((row) => row.column_name));
   const hasCompanyName = availableColumns.has("company_name");
@@ -256,6 +256,7 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
   const hasLeadStatus = availableColumns.has("lead_status");
   const hasTags = availableColumns.has("tags");
   const hasOwnerId = availableColumns.has("owner_id");
+  const hasStatus = availableColumns.has("status"); // BF_SERVER_CONTACTS_HIDE_ARCHIVED_v1
   // BF_SERVER_BLOCK_v81_CONTACTS_SORT — accept ?sort=col:dir from the portal.
   // Whitelist columns; unknown sort falls back to created_at desc.
   const SORT_COLS = new Set(["name", "company_name", "lead_status", "owner_name", "created_at"]);
@@ -271,6 +272,8 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
 
   const values: unknown[] = [silo];
   const where: string[] = ["c.silo = $1"];
+  // BF_SERVER_CONTACTS_HIDE_ARCHIVED_v1 - merged/archived contacts must not appear in the CRM list.
+  if (hasStatus) where.push("coalesce(c.status, 'active') <> 'archived'");
 
   // BF_SERVER_CONTACTS_COMPANY_FILTER_v1 — the portal company page requests a single company's
   // people via ?companyId=<uuid>. Without this filter the endpoint ignored companyId and returned
