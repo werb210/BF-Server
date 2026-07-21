@@ -64,8 +64,14 @@ router.get("/token", auth, async (req: any, res: Response) => {
     ).catch(() => {}); // non-fatal
     await recomputePresence(identity).catch(() => {});
     return res.status(200).json({ success: true, data: { token, identity, outbound_caller_id: outboundCallerId, missing_outbound_caller_id: missingOutboundCallerId } });
-  } catch {
-    return res.status(500).json({ success: false, error: "token_generation_failed" });
+  } catch (err) {
+    // BF_SERVER_TELEPHONY_TOKEN_DIAG_v1 - surface the swallowed generation error
+    console.error("[telephony/token] generation failed:", err);
+    return res.status(500).json({
+      success: false,
+      error: "token_generation_failed",
+      message: err instanceof Error ? err.message : String(err),
+    });
   }
 });
 
