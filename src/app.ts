@@ -36,8 +36,21 @@ export function createApp() {
   const allowedOrigins = typeof envOrigins === "string" && envOrigins.length > 0
     ? envOrigins.split(",").map((origin) => origin.trim()).filter(Boolean)
     : defaultOrigins;
+  // BF_SERVER_CORS_LOCAL_PREVIEW_v1 - allow the native app (capacitor://localhost)
+  // and local dev preview (localhost / 127.0.0.1 / RFC1918 LAN on any port) in
+  // addition to the configured allowlist. Non-browser and same-origin requests
+  // (no Origin header) are allowed. Public origins still require the allowlist.
+  const isLocalPreviewOrigin = (origin: string): boolean =>
+    origin === "capacitor://localhost" ||
+    origin === "http://localhost" ||
+    /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(origin);
   const corsOptions: cors.CorsOptions = {
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (isLocalPreviewOrigin(origin)) return callback(null, true);
+      return callback(null, false);
+    },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     // BF_SERVER_BLOCK_v639_CORS_MAYA_AUDIENCE_v1 — portal sends X-Maya-Audience
     // (staff|client|visitor) on every Maya call. Without it in the allowlist the
