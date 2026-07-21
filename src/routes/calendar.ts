@@ -554,7 +554,14 @@ router.get("/schedule", safeHandler(async (req: any, res: any) => {
   if (!graph) return res.status(200).json({ status: "ok", data: { schedules: [], connected: false } });
   const emails = String(req.query.emails ?? "").split(",").map((e: string) => e.trim()).filter(Boolean).slice(0, 20);
   if (!emails.length) return res.status(400).json({ status: "error", error: "emails required" });
-  const { start, end } = calendarWindow(req);
+  // BF_SERVER_SCHEDULE_TODAY_WINDOW_v1 - getSchedule cannot span the wide
+  // calendarWindow (approx 67 days) at 30-min intervals; Graph returns nothing.
+  const nowD = new Date();
+  const dayStart = new Date(Date.UTC(nowD.getUTCFullYear(), nowD.getUTCMonth(), nowD.getUTCDate(), 0, 0, 0));
+  const qStart = typeof req.query.start === "string" ? req.query.start : null;
+  const qEnd = typeof req.query.end === "string" ? req.query.end : null;
+  const start = qStart ?? dayStart.toISOString();
+  const end = qEnd ?? new Date(dayStart.getTime() + 24 * 60 * 60 * 1000).toISOString();
   try {
     const data = await graphCall(graph, "/me/calendar/getSchedule", {
       method: "POST",
