@@ -123,28 +123,45 @@ export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promis
   // lender). Atomic claim via UPDATE...WHERE IS NULL RETURNING id mirrors
   // the stageA v179 pattern. If RETURNING is empty, another caller has
   // already started the dispatch — bail without firing a second send.
+  // BF_SERVER_INCREMENTAL_LENDER_SEND_v1
+  // Pre-fix, submission_packages_started_at was a PERMANENT one-shot flag on the
+  // application: the first successful dispatch set it and nothing ever cleared it,
+  // so every later Send returned "already_sent" and silently did nothing. Staff
+  // could not send to additional lenders after the first batch without a manual
+  // DB edit.
+  //
+  // It is now a short-lived CONCURRENCY LOCK. Duplicate protection lives where it
+  // belongs - per lender - via the selection filter below plus the unique index on
+  // application_packages(application_id, lender_id) and the lender_sheet_dispatches
+  // primary key. The stale window lets a crashed dispatch recover on its own instead
+  // of wedging the application forever.
+  const LOCK_STALE_MINUTES = 10;
   const claim = await ctx.pool
     .query<{ id: string }>(
       `UPDATE applications
           SET submission_packages_started_at = NOW()
         WHERE id::text = $1
-          AND submission_packages_started_at IS NULL
+          AND (submission_packages_started_at IS NULL
+               OR submission_packages_started_at < NOW() - ($2 || ' minutes')::interval)
         RETURNING id`,
-      [ctx.applicationId]
+      [ctx.applicationId, String(LOCK_STALE_MINUTES)]
     )
     .catch(() => ({ rows: [] as Array<{ id: string }> }));
   if (!claim.rows.length) {
-    // Either someone else is mid-dispatch OR a prior successful dispatch
-    // already finished. Check application_packages to distinguish for the
-    // returned reason, but either way we MUST NOT re-dispatch.
-    const existing = await ctx.pool.query<{ id: string }>(`SELECT id FROM application_packages WHERE application_id::text = $1 LIMIT 1`, [ctx.applicationId]).catch(() => ({ rows: [] as Array<{ id: string }> }));
-    return { fired: false, reason: existing.rows.length > 0 ? "already_sent" : "dispatch_in_progress" };
+    // Another caller holds the lock right now. Never a permanent state.
+    return { fired: false, reason: "dispatch_in_progress" };
   }
-  const sel = await ctx.pool.query<{ lender_id: string; name: string; submission_method: string | null; submission_email: string | null; api_endpoint: string | null; api_key_encrypted: string | null; google_sheet_id: string | null; google_sheet_tab?: string | null; }>(`SELECT s.lender_id, l.name, l.submission_method, l.submission_email, l.api_endpoint, l.api_key_encrypted, l.google_sheet_id, l.google_sheet_tab FROM application_lender_selections s JOIN lenders l ON l.id::text = s.lender_id::text WHERE s.application_id::text = $1 ORDER BY s.position NULLS LAST, s.created_at`, [ctx.applicationId]);
+  const sel = await ctx.pool.query<{ lender_id: string; name: string; submission_method: string | null; submission_email: string | null; api_endpoint: string | null; api_key_encrypted: string | null; google_sheet_id: string | null; google_sheet_tab?: string | null; }>(`SELECT s.lender_id, l.name, l.submission_method, l.submission_email, l.api_endpoint, l.api_key_encrypted, l.google_sheet_id, l.google_sheet_tab FROM application_lender_selections s JOIN lenders l ON l.id::text = s.lender_id::text WHERE s.application_id::text = $1 AND NOT EXISTS (SELECT 1 FROM application_packages p WHERE p.application_id::text = s.application_id::text AND p.lender_id::text = s.lender_id::text AND p.status = 'sent') ORDER BY s.position NULLS LAST, s.created_at`, [ctx.applicationId]);
   if (sel.rows.length === 0) {
-    // Nothing to dispatch — release the claim so a future re-select can retry.
+    // BF_SERVER_INCREMENTAL_LENDER_SEND_v1 - release the lock, then distinguish
+    // "never had any selections" from "every selected lender already received the
+    // package". The latter is the normal no-op when staff re-press Send without
+    // adding anyone new.
     await ctx.pool.query(`UPDATE applications SET submission_packages_started_at = NULL WHERE id::text = $1`, [ctx.applicationId]).catch(() => {});
-    return { fired: false, reason: "no_selected_lenders" };
+    const anySel = await ctx.pool
+      .query<{ id: string }>(`SELECT id FROM application_lender_selections WHERE application_id::text = $1 LIMIT 1`, [ctx.applicationId])
+      .catch(() => ({ rows: [] as Array<{ id: string }> }));
+    return { fired: false, reason: anySel.rows.length > 0 ? "already_sent" : "no_selected_lenders" };
   }
   let sentTo: string[] = [];
   let dispatchErr: unknown = null;
@@ -153,17 +170,14 @@ export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promis
   // If dispatch produced zero application_packages rows (total failure or
   // exception before any INSERT ran), release the claim so a manual retry
   // is possible. The NOT EXISTS guard avoids releasing on partial success.
-  if (sentTo.length === 0 || dispatchErr) {
-    await ctx.pool.query(
-      `UPDATE applications SET submission_packages_started_at = NULL
-        WHERE id::text = $1
-          AND NOT EXISTS (
-            SELECT 1 FROM application_packages WHERE application_id::text = $1
-          )`,
-      [ctx.applicationId]
-    ).catch(() => {});
-    if (dispatchErr) return { fired: false, reason: "dispatch_failed" };
-  }
+  // BF_SERVER_INCREMENTAL_LENDER_SEND_v1 - the lock is released on EVERY exit path,
+  // success or failure. Leaving it set was what blocked all later sends. Re-dispatch
+  // to an already-sent lender is prevented by the selection filter above, not by
+  // this flag.
+  await ctx.pool
+    .query(`UPDATE applications SET submission_packages_started_at = NULL WHERE id::text = $1`, [ctx.applicationId])
+    .catch(() => {});
+  if (dispatchErr) return { fired: false, reason: "dispatch_failed" };
   // BF_SERVER_BLOCK_v722_OFF_TO_LENDER_FIX — package actually dispatched to the
   // selected lender(s): now advance to "Off to Lender".
   await ctx.pool.query(
