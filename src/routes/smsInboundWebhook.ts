@@ -16,13 +16,37 @@ async function resolveInboundSmsContact(from: string): Promise<string | null> {
 
   try {
     if (last10) {
+      // BF_SERVER_INBOUND_SMS_MERGED_CONTACT_v1 - never resolve to an archived /
+      // already-merged contact; follow merged_into_id to the live survivor instead.
+      // See the long note in src/routes/webhooks.ts for why this mattered.
       const r = await pool.query<{ id: string }>(
-        `SELECT id FROM contacts
-           WHERE silo = 'BF' AND phone IS NOT NULL
-             AND length(regexp_replace(phone, '[^0-9]', '', 'g')) >= 10
-             AND right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = $1
-           ORDER BY created_at ASC
-           LIMIT 1`,
+        `WITH matched AS (
+           SELECT id, status, merged_into_id, created_at, updated_at
+             FROM contacts
+            WHERE silo = 'BF'
+              AND ((phone IS NOT NULL
+                    AND length(regexp_replace(phone, '[^0-9]', '', 'g')) >= 10
+                    AND right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = $1)
+                OR (secondary_phone IS NOT NULL
+                    AND length(regexp_replace(secondary_phone, '[^0-9]', '', 'g')) >= 10
+                    AND right(regexp_replace(secondary_phone, '[^0-9]', '', 'g'), 10) = $1))
+         ),
+         resolved AS (
+           SELECT coalesce(surv.id, m.id)                 AS id,
+                  coalesce(surv.status, m.status)         AS status,
+                  coalesce(surv.updated_at, m.updated_at) AS updated_at,
+                  coalesce(surv.created_at, m.created_at) AS created_at
+             FROM matched m
+             LEFT JOIN contacts surv
+               ON surv.id = m.merged_into_id
+              AND coalesce(surv.status, '') <> 'archived'
+              AND surv.merged_into_id IS NULL
+         )
+         SELECT DISTINCT ON (id) id
+           FROM resolved
+          WHERE coalesce(status, '') <> 'archived'
+          ORDER BY id, updated_at DESC NULLS LAST, created_at ASC NULLS LAST
+          LIMIT 1`,
         [last10],
       );
       if (r.rows[0]) return r.rows[0].id;

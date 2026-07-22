@@ -558,16 +558,47 @@ async function persistInboundSms(req: any): Promise<void> {
        person's second number threads to the same contact; prefer a primary-phone match. */
     /* BF_SERVER_SMS_NOTIFY_CONTACT_NAME_v1 - also select name so the staff
        notification can say who texted instead of a bare phone number. */
-    `SELECT id, silo, name,
-            (right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10)
-               = right(regexp_replace($1::text, '[^0-9]', '', 'g'), 10)) AS primary_match
-       FROM contacts
-      WHERE right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10)
-              = right(regexp_replace($1::text, '[^0-9]', '', 'g'), 10)
-         OR right(regexp_replace(coalesce(secondary_phone, ''), '[^0-9]', '', 'g'), 10)
-              = right(regexp_replace($1::text, '[^0-9]', '', 'g'), 10)
-      ORDER BY primary_match DESC, created_at ASC NULLS LAST, id ASC
-      LIMIT 1`,
+    /* BF_SERVER_INBOUND_SMS_MERGED_CONTACT_v1
+        A contact merge ARCHIVES the loser (status='archived', merged_into_id set) rather
+        than deleting it, and copies the loser's phone onto the survivor's secondary_phone.
+        Both records therefore match the sender's number, and the old tiebreak
+        `created_at ASC` picked the OLDER row - the archived loser - every time. The inbound
+        SMS then attached to a dead contact: invisible on the live contact's timeline and
+        split into its own ghost thread in the SMS tab, while the bell notification still
+        named the client correctly. Every merged contact was a permanent black hole for
+        replies.
+
+        Now: resolve the merge chain to its live survivor, never return an archived or
+        already-merged contact, and break ties toward the most recently updated record. */
+      `WITH matched AS (
+         SELECT id, silo, name, status, merged_into_id, created_at, updated_at,
+                (right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10)
+                   = right(regexp_replace($1::text, '[^0-9]', '', 'g'), 10)) AS primary_match
+           FROM contacts
+          WHERE right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10)
+                  = right(regexp_replace($1::text, '[^0-9]', '', 'g'), 10)
+             OR right(regexp_replace(coalesce(secondary_phone, ''), '[^0-9]', '', 'g'), 10)
+                  = right(regexp_replace($1::text, '[^0-9]', '', 'g'), 10)
+       ),
+       resolved AS (
+         SELECT m.primary_match,
+                coalesce(surv.id, m.id)                 AS id,
+                coalesce(surv.silo, m.silo)             AS silo,
+                coalesce(surv.name, m.name)             AS name,
+                coalesce(surv.status, m.status)         AS status,
+                coalesce(surv.updated_at, m.updated_at) AS updated_at,
+                coalesce(surv.created_at, m.created_at) AS created_at
+           FROM matched m
+           LEFT JOIN contacts surv
+             ON surv.id = m.merged_into_id
+            AND coalesce(surv.status, '') <> 'archived'
+            AND surv.merged_into_id IS NULL
+       )
+       SELECT DISTINCT ON (id) id, silo, name, primary_match
+         FROM resolved
+        WHERE coalesce(status, '') <> 'archived'
+        ORDER BY id, primary_match DESC, updated_at DESC NULLS LAST, created_at ASC NULLS LAST
+        LIMIT 1`,
     [fromNum]
   ).then((r) => r.rows[0] ?? null).catch(() => null);
 
