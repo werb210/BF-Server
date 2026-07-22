@@ -266,13 +266,24 @@ export async function dispatchToSelected(
          (id, application_id, lender_id, status, failure_reason, size_bytes, built_at, sent_at, created_at)
        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NOW(),
                CASE WHEN $3 = 'sent' THEN NOW() ELSE NULL END, NOW())
-       ON CONFLICT (application_id, lender_id) DO NOTHING
+       ON CONFLICT (application_id, lender_id) DO UPDATE
+         SET status = EXCLUDED.status,
+             failure_reason = EXCLUDED.failure_reason,
+             size_bytes = EXCLUDED.size_bytes,
+             built_at = EXCLUDED.built_at,
+             sent_at = COALESCE(application_packages.sent_at, EXCLUDED.sent_at)
+       WHERE application_packages.status <> 'sent'
        RETURNING id`,
       [ctx.applicationId, l.lender_id, ok ? "sent" : "failed", error, pkg.zipBuffer.length]
     )
       .then((rs) => {
+        // BF_SERVER_INCREMENTAL_LENDER_SEND_v1 - DO NOTHING meant a lender whose
+        // first attempt FAILED could never have a later success recorded, so the
+        // row stayed 'failed' forever and the orchestrator's sent-filter would keep
+        // retrying it. DO UPDATE ... WHERE status <> 'sent' lets a retry overwrite a
+        // failed row while an already-sent row stays untouched (rowCount 0).
         if (!rs.rowCount) {
-          console.warn("[dispatch] application_packages duplicate suppressed", {
+          console.warn("[dispatch] application_packages already sent, update suppressed", {
             applicationId: ctx.applicationId,
             lenderId: l.lender_id,
           });
