@@ -1131,7 +1131,13 @@ router.post(
           md?.applicant ?? md?.borrower ?? nrm?.applicant ??
           (Array.isArray(md?.applicants) ? md.applicants[0] : null) ??
           (Array.isArray(nrm?.applicants) ? nrm.applicants[0] : null) ?? null;
-        void mirrorApplicationToCrm({
+        // BF_SERVER_SUBMIT_DUP_CONTACT_v1 - this ran fire-and-forget on its own
+        // connection while the submit transaction below also created the contact.
+        // Neither could see the other's uncommitted row, so every submit inserted
+        // the applicant twice (observed: two identical contacts, same second, one
+        // tagged 'applicant'). Await it so its contact is committed first and the
+        // transaction's findOrCreate matches it instead of inserting a second.
+        await mirrorApplicationToCrm({
           applicationId: application.id,
           silo: (silo || "BF").toUpperCase(),
           // BF_SERVER_ATTRIBUTION_TO_CONTACT_v1 - forward the ad-click data.
@@ -1369,10 +1375,36 @@ router.post(
         ? await findOrCreateContactByEmailAndCompany(tx, applicantInput.email ?? "", company.id, silo, applicantInput)
         : { row: await createContact(tx, applicantInput) };
 
+      // BF_SERVER_SUBMIT_FLAT_PARTNER_v1 - the wizard emits FLAT partner keys on
+      // the applicant (partnerFirstName/partnerLastName/...), never a nested
+      // normalized.partner. This gate therefore never fired and no partner contact
+      // or application_contacts(role='partner') row was ever written.
+      const flatPartnerSrc: any =
+        (normalized as any)?.applicant ?? (normalized as any)?.applicantDetails ?? {};
+      const pget = (k: string) => flatPartnerSrc?.[k] ?? (normalized as any)?.[k];
+      const flatPartnerFirst = String(pget("partnerFirstName") ?? "").trim();
+      const flatPartnerLast = String(pget("partnerLastName") ?? "").trim();
+      const normalizedPartner: any =
+        (normalized as any)?.partner && (normalized as any).partner.first_name && (normalized as any).partner.last_name
+          ? (normalized as any).partner
+          : (flatPartnerFirst && flatPartnerLast
+              ? {
+                  first_name: flatPartnerFirst,
+                  last_name: flatPartnerLast,
+                  email: String(pget("partnerEmail") ?? "").trim() || null,
+                  phone: String(pget("partnerPhone") ?? "").trim() || null,
+                  ownership_percent: pget("partnerOwnership") ?? pget("partnerOwnershipPercent") ?? null,
+                  address_street: pget("partnerAddress") ?? pget("partnerStreet") ?? null,
+                  address_city: pget("partnerCity") ?? null,
+                  address_state: pget("partnerState") ?? pget("partnerProvince") ?? null,
+                  address_zip: pget("partnerZip") ?? pget("partnerPostalCode") ?? null,
+                }
+              : null);
+
       let partner: { id: string } | null = null;
-      if (normalized.partner && normalized.partner.first_name && normalized.partner.last_name) {
+      if (normalizedPartner && normalizedPartner.first_name && normalizedPartner.last_name) {
         const partnerInput = {
-          ...normalized.partner,
+          ...normalizedPartner,
           role: "partner" as const,
           is_primary_applicant: false,
           company_id: company.id,

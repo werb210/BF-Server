@@ -1196,14 +1196,23 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
   const normalizedTo = normalizedToDigits.length === 10 ? `+1${normalizedToDigits}` : String(to);
   let resolvedContactId: string | null = contactId ?? null;
   if (!resolvedContactId) {
+    // BF_SERVER_SMS_CONTACT_MATCH_v1 - this matched on phone across EVERY silo and
+    // took the oldest row, so with a duplicated contact the SMS was filed against
+    // the wrong copy and never appeared on the record staff were looking at (the
+    // timeline reads WHERE contact_id = $1 AND silo = $2). Scope to the active silo
+    // and prefer the contact that is actually linked to an application.
     const canonicalContact = await pool.query<{ id: string }>(
-      `SELECT id
-         FROM contacts
-        WHERE right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10) =
-              right(regexp_replace($1::text,           '[^0-9]', '', 'g'), 10)
-        ORDER BY created_at ASC NULLS LAST, id ASC
+      `SELECT c.id
+         FROM contacts c
+        WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) =
+              right(regexp_replace($1::text,             '[^0-9]', '', 'g'), 10)
+          AND (c.silo = $2 OR c.silo IS NULL)
+        ORDER BY (EXISTS (SELECT 1 FROM application_contacts ac WHERE ac.contact_id = c.id)) DESC,
+                 c.updated_at DESC NULLS LAST,
+                 c.created_at ASC NULLS LAST,
+                 c.id ASC
         LIMIT 1`,
-      [normalizedTo]
+      [normalizedTo, silo]
     ).then((r) => r.rows[0] ?? null).catch(() => null);
     resolvedContactId = canonicalContact?.id ?? null;
     if (!resolvedContactId) {
