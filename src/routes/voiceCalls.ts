@@ -5,6 +5,7 @@
 
 import { Router } from "express";
 import { auth } from "../middleware/auth.js";
+import { generateVoiceToken } from "../telephony/services/tokenService.js"; // BF_SERVER_VOICE_TOKEN_ROUTE_v1
 import { pool } from "../db.js";
 
 // BF_SERVER_BLOCK_CALL_CONTACT_RESOLVE_v1 — resolve the CRM contact for a dialed
@@ -52,6 +53,23 @@ import { getCallerId } from "../voice/twilioClient.js";
 import voiceMidCallRoutes from "./voiceMidCall.js";
 
 const router = Router();
+
+// BF_SERVER_VOICE_TOKEN_ROUTE_v1 - native iOS dialer POSTs /api/voice/token
+// (body {lineId}, X-Silo header) and decodes {token}; that route did not
+// exist (only GET /api/telephony/token), so every iOS call 404'd at token
+// fetch. Identity-scoped token, same generator the portal/dialer-web use.
+router.post("/token", auth, async (req: any, res) => {
+  const identity: string = req.user?.userId || req.user?.id || req.user?.sub || "";
+  if (!identity) return res.status(401).json({ error: "unauthorized" });
+  try {
+    const token = generateVoiceToken(identity);
+    return res.status(200).json({ token, identity });
+  } catch (err: any) {
+    console.error("[voice/token] generation failed:", err?.message || err);
+    return res.status(500).json({ error: "token_generation_failed", message: String(err?.message || err) });
+  }
+});
+
 
 function normalizeE164(raw: string): string {
   const s = (raw ?? "").trim();
