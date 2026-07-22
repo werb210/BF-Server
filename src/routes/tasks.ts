@@ -132,8 +132,16 @@ router.delete("/queues/:id", safeHandler(async (req: any, res: any) => {
 router.get("/staff", safeHandler(async (_req: any, res: any) => {
   const r = await pool.query(
     /* BF_SERVER_STAFF_EMAIL_v1 - also return email so the portal can autocomplete teammates by name/email. */
+    /* BF_SERVER_STAFF_ONLY_v1 - this list feeds the teammate pickers (task
+       assignee, Find-a-Time free/busy). It returned EVERY active user, so
+       lenders, referrers and personal test accounts appeared as "staff" and
+       their addresses failed to resolve in Graph. Staff = Admin, Marketing, Staff. */
     `SELECT id, COALESCE(NULLIF(TRIM(first_name || ' ' || last_name), ''), email) AS name, email
-       FROM users WHERE active = true ORDER BY 2`
+       FROM users
+      WHERE active = true
+        AND email IS NOT NULL AND TRIM(email) <> ''
+        AND lower(COALESCE(role, '')) IN ('admin', 'marketing', 'staff')
+      ORDER BY 2`
   );
   respondOk(res, { staff: r.rows });
 }));
