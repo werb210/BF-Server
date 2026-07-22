@@ -55,6 +55,28 @@ export function toTenDigits(v: unknown): string {
   return digits.length > 10 ? digits.slice(-10) : digits;
 }
 
+// BF_SERVER_MG_SHEET_STEP3_SOURCES_v1
+// Merchant Growth's Mobile/Phone columns are validated as 10-digit NANP numbers.
+// A stored value that reduces to an invalid number (e.g. a leading country-code 1
+// kept while a trailing digit was lost) must NOT be shipped into their sheet - it
+// fails their validation and lands a wrong number in Salesforce. Validate, and fall
+// through to the next candidate source instead.
+export function isValidTenDigits(v: unknown): boolean {
+  const d = toTenDigits(v);
+  if (d.length !== 10) return false;
+  const area = d.charCodeAt(0) - 48;
+  const exchange = d.charCodeAt(3) - 48;
+  // NANP: area code and exchange code both start 2-9.
+  return area >= 2 && area <= 9 && exchange >= 2 && exchange <= 9;
+}
+
+export function firstValidTenDigits(...candidates: unknown[]): string {
+  for (const candidate of candidates) {
+    if (isValidTenDigits(candidate)) return toTenDigits(candidate);
+  }
+  return "";
+}
+
 // Their column is an integer. We hold a business start date (Step 3), so derive it.
 export function yearsSince(startDate: unknown, now: Date = new Date()): string {
   const raw = s(startDate);
@@ -193,20 +215,25 @@ export async function loadSheetRowData(pool: Pool, applicationId: string): Promi
     lastName: s(applicant.lastName) || s(row?.last_name),
     company: s(business.legalName) || s(business.companyName) || s(row?.business_name) || s(row?.company_name),
     email: s(applicant.email) || s(row?.email),
-    mobile: toTenDigits(s(applicant.phone) || s(row?.phone)),
-    phone: toTenDigits(s(business.phone) || s(applicant.phone) || s(row?.phone)),
+    // BF_SERVER_MG_SHEET_STEP3_SOURCES_v1 - take the first candidate that is a valid
+    // 10-digit NANP number rather than the first non-empty one.
+    mobile: firstValidTenDigits(applicant.phone, row?.phone, business.phone),
+    phone: firstValidTenDigits(business.phone, applicant.phone, row?.phone),
     dob: s(applicant.dob) || s(row?.dob),
     // Default English. We never ask, so do not pretend to know.
     language: "English",
-    requestedAmount: toNumber(row?.requested_amount ?? kyc.fundingAmount ?? kyc.requestedAmount),
-    // Step 3 "Estimated Yearly Revenue" is an exact figure, unlike the readiness ranges.
-    annualRevenue: toNumber(business.estimatedRevenue ?? kyc.annualRevenue),
-    // They want a monthly figure; Step 3 only gives an annual one, so derive it rather
-    // than sending a revenue RANGE string into a Currency column.
+    // BF_SERVER_MG_SHEET_STEP3_SOURCES_v1
+    // Step 1 / Step 2 hold credit-readiness answers, several of which are RANGES
+    // ("$50,000 - $100,000"). toNumber() strips the punctuation out of a range and
+    // yields a concatenation ("50000100000"), which shipped a nonsense figure into
+    // their Currency column. Nothing from Step 1 or Step 2 is used for these columns:
+    // the requested amount comes from the submitted application, and both revenue
+    // columns come from Step 3 "Estimated Yearly Revenue", an exact figure.
+    requestedAmount: toNumber(row?.requested_amount),
+    annualRevenue: toNumber(business.estimatedRevenue),
+    // Their column is monthly; Step 3 only gives an annual figure, so always derive.
     monthlySales: (() => {
-      const monthly = toNumber(kyc.monthlyRevenue);
-      if (monthly) return monthly;
-      const annual = Number(toNumber(business.estimatedRevenue ?? kyc.annualRevenue));
+      const annual = Number(toNumber(business.estimatedRevenue));
       return Number.isFinite(annual) && annual > 0 ? String(Math.round(annual / 12)) : "";
     })(),
     street: s(business.address),

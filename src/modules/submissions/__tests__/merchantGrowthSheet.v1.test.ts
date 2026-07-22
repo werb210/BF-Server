@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   buildSheetRow, toTenDigits, yearsSince, toNumber,
   mapEntityType, mapIndustry, mapProvince, type SheetRowData,
+  isValidTenDigits, firstValidTenDigits,
 } from "../merchantGrowthSheet.js";
 const r = (p: string) => readFileSync(path.join(process.cwd(), p), "utf8");
 
@@ -88,6 +89,31 @@ describe("merchant growth sheet row", () => {
   it("only emits valid 2-letter provinces", () => {
     expect(mapProvince("AB")).toBe("AB");
     expect(mapProvince("Alberta")).toBe("");
+  });
+
+  // BF_SERVER_MG_SHEET_STEP3_SOURCES_v1
+  it("rejects phone values that are not valid 10-digit NANP numbers", () => {
+    expect(isValidTenDigits("+15878881837")).toBe(true);
+    expect(isValidTenDigits("(705) 930-0053")).toBe(true);
+    // observed in production: leading country code kept, trailing digit lost
+    expect(isValidTenDigits("1705930005")).toBe(false);
+    expect(isValidTenDigits("705930005")).toBe(false);
+    expect(isValidTenDigits("")).toBe(false);
+  });
+
+  it("falls through to the next candidate when a phone source is invalid", () => {
+    expect(firstValidTenDigits("1705930005", "+17059300053")).toBe("7059300053");
+    expect(firstValidTenDigits("", null, "5878881837")).toBe("5878881837");
+    expect(firstValidTenDigits("1705930005", "")).toBe("");
+  });
+
+  it("never lets a Step 1-2 revenue RANGE reach a Currency column", () => {
+    // "$50,000 - $100,000" -> toNumber -> "50000100000". Guarded by sourcing both
+    // revenue columns from Step 3 only; monthly is always annual / 12.
+    const src = r("src/modules/submissions/merchantGrowthSheet.ts");
+    expect(src).not.toContain("kyc.monthlyRevenue");
+    expect(src).not.toContain("kyc.annualRevenue");
+    expect(src).not.toContain("kyc.fundingAmount");
   });
 
   it("adapter appends a column-ordered row to the configured tab", () => {
