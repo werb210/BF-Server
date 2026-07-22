@@ -118,10 +118,30 @@ router.get("/recent-calls", auth, async (req: any, res) => {
       `SELECT id, direction, status, duration_seconds, created_at, phone_number, contact_id, contact_name
          FROM (
            SELECT cl.id::text AS id, cl.direction, cl.status, cl.duration_seconds, cl.created_at,
-                  cl.phone_number, cl.crm_contact_id AS contact_id, c.name AS contact_name,
+                  cl.phone_number, cl.crm_contact_id AS contact_id,
+                  COALESCE(c.name, pc.name) AS contact_name,
                   cl.twilio_call_sid AS sid
              FROM call_logs cl
              LEFT JOIN contacts c ON c.id = cl.crm_contact_id
+             -- BF_SERVER_INBOUND_CONTACT_NAME_v1 - inbound calls carry no
+             -- crm_contact_id (nobody links a ringing number to a contact), so
+             -- the Phone tab showed raw numbers for Incoming while Outgoing
+             -- showed names. Fall back to matching the caller's number against
+             -- CRM contacts on the last 10 digits, format-insensitively.
+             LEFT JOIN LATERAL (
+               SELECT c9.name
+                 FROM contacts c9
+                WHERE length(regexp_replace(COALESCE(cl.phone_number, ''), '[^0-9]', '', 'g')) >= 10
+                  AND (
+                    right(regexp_replace(COALESCE(c9.phone, ''), '[^0-9]', '', 'g'), 10)
+                      = right(regexp_replace(cl.phone_number, '[^0-9]', '', 'g'), 10)
+                    OR right(regexp_replace(COALESCE(c9.secondary_phone, ''), '[^0-9]', '', 'g'), 10)
+                      = right(regexp_replace(cl.phone_number, '[^0-9]', '', 'g'), 10)
+                  )
+                  AND length(regexp_replace(COALESCE(c9.phone, c9.secondary_phone, ''), '[^0-9]', '', 'g')) >= 10
+                ORDER BY c9.updated_at DESC NULLS LAST, c9.id
+                LIMIT 1
+             ) pc ON true
             -- BF_SERVER_INBOUND_RECENTS_v1 - inbound PSTN calls are logged with
             -- staff_user_id = NULL (nobody owns a call to the main line until it is
             -- answered), so this filter silently hid EVERY incoming call. Inbound
