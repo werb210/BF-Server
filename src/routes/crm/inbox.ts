@@ -97,11 +97,24 @@ async function inlineEmailImages(graph: GraphClient, base: string, messageId: st
       let cm: RegExpExecArray | null;
       while ((cm = cidRe.exec(html)) !== null) cidRefs.add(cm[1]);
 
+      // BF_SERVER_INBOX_CID_NOSELECT_v1 - do NOT $select here. contentId and
+      // contentBytes are fileAttachment-derived properties; $select-ing them on
+      // the polymorphic /attachments collection makes Graph return an empty set
+      // (observed: attachmentContentIds: [] while the un-selected list works).
+      // The unfiltered response carries contentId AND contentBytes inline.
       const ar = await graph.fetch(
-        `${base}/messages/${encodeURIComponent(messageId)}/attachments`
-          + `?$select=id,name,contentType,contentId,isInline`,
+        `${base}/messages/${encodeURIComponent(messageId)}/attachments`,
       );
-      const atts: any[] = ar.ok ? (((await ar.json()) as any).value ?? []) : [];
+      let atts: any[] = [];
+      if (ar.ok) {
+        atts = ((await ar.json()) as any).value ?? [];
+      } else {
+        console.warn("[inbox.inlineImages] attachments list failed", {
+          messageId,
+          status: ar.status,
+          body: (await ar.text().catch(() => "")).slice(0, 300),
+        });
+      }
       const norm = (v: unknown) => String(v ?? "").replace(/^<|>$/g, "");
       const unresolved: string[] = [];
       for (const ref of cidRefs) {
