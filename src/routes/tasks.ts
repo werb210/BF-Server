@@ -138,7 +138,13 @@ router.get("/staff", safeHandler(async (_req: any, res: any) => {
        their addresses failed to resolve in Graph. Staff = Admin, Marketing, Staff. */
     `SELECT id, COALESCE(NULLIF(TRIM(first_name || ' ' || last_name), ''), email) AS name, email
        FROM users
-      WHERE active = true
+      -- BF_SERVER_STAFF_ACTIVE_PARITY_v1: match the User Management list
+      -- (/api/admin/users) exactly. This filtered on the legacy active column
+      -- and never checked is_active/deleted_at/disabled, so removed and
+      -- soft-deleted accounts still showed up in the teammate picker.
+      WHERE COALESCE(is_active, active, true) = true
+        AND deleted_at IS NULL
+        AND COALESCE(disabled, false) = false
         AND email IS NOT NULL AND TRIM(email) <> ''
         AND lower(COALESCE(role, '')) IN ('admin', 'marketing', 'staff')
       ORDER BY 2`
