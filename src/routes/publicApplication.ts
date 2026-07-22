@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { dbQuery } from "../db.js";
+import { dbQuery, pool } from "../db.js";
 import { createApplication } from "../modules/applications/applications.repo.js";
 import { config } from "../config/index.js";
 import { fail, ok } from "../lib/apiResponse.js";
 import { wrap } from "../lib/routeWrap.js";
 import { getSilo } from "../middleware/silo.js";
+import { findOrCreateContactByEmailAndCompany } from "../services/contacts.js";
 
 const router = Router();
 
@@ -239,16 +240,69 @@ router.post(
       }
 
       // No readiness session — just mint a blank application the wizard can PATCH.
+      // BF_SERVER_DRAFT_PHONE_CAPTURE_v1 - the wizard sends the OTP-verified phone
+      // as readiness_phone, but the blank draft persisted neither the number nor a
+      // contact_id. Every abandoned start was therefore unreachable: the draft row
+      // carried metadata {"isDraft": true} and nothing else, so a verified lead
+      // could not be called. Stamp the phone on the draft and link a CRM contact
+      // (deduped on phone within the silo, so a later real submit reuses it).
       setPhase("create_blank_application");
+      const startPhoneRaw = (parsed.data as any).readiness_phone as string | undefined;
+      const startPhoneDigits = String(startPhoneRaw ?? "").replace(/\D/g, "");
+      const startPhone = startPhoneDigits.length >= 10
+        ? (startPhoneDigits.length === 11 && startPhoneDigits.startsWith("1")
+            ? `+${startPhoneDigits}`
+            : `+1${startPhoneDigits.slice(-10)}`)
+        : null;
+
+      let startContactId: string | null = null;
+      if (startPhone) {
+        try {
+          const res2 = await findOrCreateContactByEmailAndCompany(
+            pool as any,
+            "",
+            null as any,
+            silo,
+            {
+              first_name: "Unknown",
+              last_name: "(application started)",
+              email: null,
+              phone: startPhone,
+              silo,
+            } as any
+          );
+          startContactId = res2?.row?.id ?? null;
+          if (startContactId) {
+            await dbQuery(
+              `UPDATE contacts
+                  SET tags = (SELECT ARRAY(SELECT DISTINCT unnest(COALESCE(tags,'{}') || ARRAY['application_started'])))
+                WHERE id = $1`,
+              [startContactId]
+            );
+          }
+        } catch (e) {
+          console.warn("[start] draft contact capture failed", String(e).slice(0, 200));
+        }
+      }
+
+      const baseMeta: Record<string, unknown> =
+        (attribution && Object.keys(attribution).length ? { attribution } : {});
+      if (startPhone) baseMeta.applicant_phone = startPhone;
+
       const created = await createApplication({
         ownerUserId: (config.client.submissionOwnerUserId || "00000000-0000-0000-0000-000000000001"),
         name: "Draft application",
-        metadata: (attribution && Object.keys(attribution).length ? { attribution } : {}),
+        metadata: baseMeta,
         productType: "standard",
         productCategory: "standard",
         source: source ?? "client_direct",
         silo,
       } as any);
+
+      if (startContactId) {
+        await dbQuery(`UPDATE applications SET contact_id = $2 WHERE id = $1`, [created.id, startContactId])
+          .catch((e) => console.warn("[start] draft contact link failed", String(e).slice(0, 200)));
+      }
       setPhase("done");
       res.status(200).json(ok({ applicationId: created.id, reused: false })); return;
     } finally {
