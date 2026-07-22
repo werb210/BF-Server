@@ -553,10 +553,12 @@ async function persistInboundSms(req: any): Promise<void> {
   const sid = typeof MessageSid === "string" ? MessageSid : null;
 
   // BF_SERVER_BLOCK_v637_MOBILE_PHONE_AND_BACKFILL_v1 — contacts.mobile_phone does not exist.
-  const contact = await pool.query<{ id: string; silo: string | null }>(
+  const contact = await pool.query<{ id: string; silo: string | null; name: string | null }>(
     /* BF_SERVER_SECONDARY_MATCH_v1 - also match the contact's secondary_phone so a text from a
        person's second number threads to the same contact; prefer a primary-phone match. */
-    `SELECT id, silo,
+    /* BF_SERVER_SMS_NOTIFY_CONTACT_NAME_v1 - also select name so the staff
+       notification can say who texted instead of a bare phone number. */
+    `SELECT id, silo, name,
             (right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10)
                = right(regexp_replace($1::text, '[^0-9]', '', 'g'), 10)) AS primary_match
        FROM contacts
@@ -624,7 +626,12 @@ async function persistInboundSms(req: any): Promise<void> {
   try {
     const { notifyAllStaff } = await import("../services/notifications/notifyAllStaff.js");
     const preview = body.length > 120 ? body.slice(0, 120) + "..." : body;
-    await notifyAllStaff({ pool, silo: resolvedSilo, skipSms: true, notificationType: "sms_inbound", title: "New SMS", body: `${fromNum}: ${preview}`, contextUrl: "/communications" });
+    // BF_SERVER_SMS_NOTIFY_CONTACT_NAME_v1 - the contact is already resolved above
+    // for contact_id; use their CRM name in the alert (falling back to the number
+    // for unknown senders) so the bell matches what the SMS list shows.
+    const senderLabel = contact?.name && contact.name.trim() ? contact.name.trim() : fromNum;
+    const notifTitle = contact?.name && contact.name.trim() ? `New SMS from ${contact.name.trim()}` : "New SMS";
+    await notifyAllStaff({ pool, silo: resolvedSilo, skipSms: true, notificationType: "sms_inbound", title: notifTitle, body: `${senderLabel}: ${preview}`, contextUrl: "/communications" });
   } catch (e) { console.error("[notify] sms_inbound failed", String(e).slice(0, 150)); }
   console.log(JSON.stringify({
     event: "sms_inbound_persisted",
