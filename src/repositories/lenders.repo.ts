@@ -507,6 +507,11 @@ export async function updateLender(
     description?: string | null; // BF_SERVER_LENDER_COMPANY_PARITY_v1
     application_url?: string | null;
     announcement?: string | null;
+    // BF_SERVER_LENDER_SHEET_ID_SAVE_v1 - the portal sends the Google Sheet ID but
+    // nothing persisted it, so it vanished on every save while dispatch kept
+    // reading lenders.google_sheet_id (a column no write path ever set).
+    google_sheet_id?: string | null;
+    google_sheet_tab?: string | null;
     active?: boolean;
     has_broker_agreement?: boolean; // BF_SERVER_BLOCK_v_LENDER_BROKER_AGREEMENT_v1
     silo?: string | null;
@@ -601,6 +606,16 @@ export async function updateLender(
     if (existingColumns.has("submission_config")) {
       updates.push({ name: "submission_config", value: reconciledSubmission.submissionConfig });
     }
+  }
+  // BF_SERVER_LENDER_SHEET_ID_SAVE_v1 - persist the Google Sheet target on the
+  // lenders columns that dispatchToSelected/orchestrator actually read.
+  if (params.google_sheet_id !== undefined && existingColumns.has("google_sheet_id")) {
+    const gsid = typeof params.google_sheet_id === "string" ? params.google_sheet_id.trim() : null;
+    updates.push({ name: "google_sheet_id", value: gsid && gsid.length ? gsid : null });
+  }
+  if (params.google_sheet_tab !== undefined && existingColumns.has("google_sheet_tab")) {
+    const tab = typeof params.google_sheet_tab === "string" ? params.google_sheet_tab.trim() : null;
+    updates.push({ name: "google_sheet_tab", value: tab && tab.length ? tab : null });
   }
   // BF_SERVER_LENDER_EDIT_ADDRESS_v1 - write-through for address + main phone.
   if (params.street !== undefined && existingColumns.has("street")) {

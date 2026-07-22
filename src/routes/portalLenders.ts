@@ -138,6 +138,22 @@ router.patch(
       postal_code: body.postalCode ?? body.postal_code ?? body.address?.postalCode,
       phone: body.phone,
       description: body.description, // BF_SERVER_LENDER_COMPANY_PARITY_v1
+      // BF_SERVER_LENDER_SHEET_ID_SAVE_v1 - the staff edit modal posts the Google
+      // Sheet ID as `sheetId`; it was never forwarded, so every save dropped it.
+      // Persist to lenders.google_sheet_id (the column dispatch reads), and treat
+      // a blank box as "no change" so a plain Save cannot wipe a working target.
+      google_sheet_id: ((): string | undefined => {
+        const raw = body.sheetId ?? body.google_sheet_id ?? body.googleSheetId ?? body.submissionConfig?.sheetId;
+        if (raw === undefined || raw === null) return undefined;
+        const trimmed = String(raw).trim();
+        return trimmed.length ? trimmed : undefined;
+      })(),
+      google_sheet_tab: ((): string | undefined => {
+        const raw = body.sheetTab ?? body.google_sheet_tab ?? body.googleSheetTab;
+        if (raw === undefined || raw === null) return undefined;
+        const trimmed = String(raw).trim();
+        return trimmed.length ? trimmed : undefined;
+      })(),
       silo: body.silo ?? existing.silo ?? silo,
     });
       // BF_LENDER_TO_CRM_v38 — fire-and-forget CRM mirror on update
