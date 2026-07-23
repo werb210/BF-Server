@@ -25,5 +25,15 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Skip tests (no test suite yet)
-        run: echo "Skipping tests"
+      # BF_SERVER_SPLIT_INTEGRATION_TESTS_v1
+      # This step used to be a no-op that echoed a skip message, under the
+      # heading "no test suite yet". There are 885 tests. Nothing had run them
+      # in CI for a long time, so no regression could ever be caught here -
+      # every block had to carry its own gate. Tests needing live
+      # infrastructure are excluded by vitest.config.ts and run separately
+      # via `npm run test:integration`.
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm run test:ci

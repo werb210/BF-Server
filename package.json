@@ -10,6 +10,7 @@
     "test": "vitest",
     "typecheck": "tsc --noEmit",
     "test:ci": "vitest run",
+    "test:integration": "VITEST_INTEGRATION=true vitest run",
     "postbuild": "node scripts/write-build-info.mjs"
   },
   "engines": {
