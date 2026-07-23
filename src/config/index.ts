@@ -16,7 +16,14 @@ if (!safeEnv.success && !isTestMode) {
 
 const parsed = {
   ...(safeEnv.success ? safeEnv.data : process.env),
-  DATABASE_URL: process.env.DATABASE_URL ?? (isTestMode ? "test" : ""),
+  // BF_SERVER_SPLIT_INTEGRATION_TESTS_v1 - the old fallback was the bare
+  // string "test", which is not a connection string. pg-connection-string
+  // parses it as { host: "base", database: "test" }, so every DB-dependent
+  // test reported "getaddrinfo ENOTFOUND base" - an error naming a host that
+  // appears nowhere in this codebase, pointing at nothing, and impossible to
+  // search for. A real localhost URL makes a missing database say
+  // ECONNREFUSED 127.0.0.1:5432, which reads as exactly what it is.
+  DATABASE_URL: process.env.DATABASE_URL ?? (isTestMode ? "postgres://test:test@127.0.0.1:5432/bf_test" : ""),
   JWT_SECRET: process.env.JWT_SECRET ?? "",
 } as Record<string, string | undefined>;
 
