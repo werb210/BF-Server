@@ -18,6 +18,38 @@ import { notifyAllStaff } from "../services/notifications/notifyAllStaff.js"; //
 
 const router = Router();
 
+// BF_SERVER_LENDER_SELF_NOTNULL_GUARD_v1
+// Several lenders columns are NOT NULL: name, country, active, status,
+// has_broker_agreement, created_at, updated_at, id. str() below maps an empty
+// string to null, so a form field that arrives blank became `SET name = NULL`
+// and Postgres rejected the whole UPDATE with 23502. safeHandler turned that
+// into a bare 500 and the lender portal rendered "API_ERROR" with no clue which
+// field was at fault - a lender could not save their own record at all.
+//
+// A blank value in this form means "I did not supply this", never "erase the
+// company name". For a NOT NULL column we therefore skip the field entirely and
+// keep whatever is already stored. Discovered at runtime rather than hardcoded,
+// so a future NOT NULL constraint cannot silently reintroduce this.
+let notNullColumnsCache: Set<string> | null = null;
+async function fetchNotNullLenderColumns(): Promise<Set<string>> {
+  if (notNullColumnsCache) return notNullColumnsCache;
+  try {
+    const r = await pool.query<{ column_name: string }>(
+      `SELECT column_name
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'lenders'
+          AND is_nullable = 'NO'`,
+    );
+    notNullColumnsCache = new Set(r.rows.map((row) => String(row.column_name)));
+  } catch {
+    // If the lookup fails, fall back to the columns known to be NOT NULL today.
+    // Guessing wrong here only costs a skipped field, never a 500.
+    notNullColumnsCache = new Set(["name", "country", "active", "status", "has_broker_agreement"]);
+  }
+  return notNullColumnsCache;
+}
+
 interface LenderRequest extends Request {
   lenderId?: string;
 }
@@ -125,9 +157,38 @@ router.patch(
       submission_method: body.submission_method !== undefined && body.submission_method !== null && String(body.submission_method).trim() !== "" ? String(body.submission_method).trim().toUpperCase() : null,
       submission_email: str(body.submission_email),
     };
-    const keys = Object.keys(fields).filter((key) => body[key] !== undefined);
+    // BF_SERVER_LENDER_SELF_NOTNULL_GUARD_v1 - drop blank values destined for a
+    // NOT NULL column instead of writing NULL and 500ing the whole save.
+    const notNullColumns = await fetchNotNullLenderColumns();
+    const supplied = Object.keys(fields).filter((key) => body[key] !== undefined);
+    const skipped = supplied.filter((key) => fields[key] === null && notNullColumns.has(key));
+    const keys = supplied.filter((key) => !skipped.includes(key));
 
-    if (keys.length === 0) return res.status(400).json({ status: "error", message: "no_fields" });
+    if (skipped.length > 0) {
+      console.warn(
+        `[lender-self] lender=${req.lenderId} sent blank values for NOT NULL columns; keeping existing values: ${skipped.join(", ")}`,
+      );
+    }
+
+    if (keys.length === 0) {
+      // Every supplied field was a blank NOT NULL column. Nothing to write, but
+      // this is not an error the lender can act on - report success with the
+      // untouched record so the portal does not show a red API_ERROR banner.
+      const current = await pool.query(
+        `SELECT id, name, phone, website, description,
+                COALESCE(NULLIF(primary_contact_name, ''), contact_name) AS contact_name,
+                COALESCE(NULLIF(primary_contact_email, ''), contact_email) AS contact_email,
+                COALESCE(NULLIF(primary_contact_phone, ''), contact_phone) AS contact_phone,
+                street, city, region, postal_code, country, silo, active,
+                application_url, announcement, submission_method, submission_email
+           FROM lenders
+          WHERE id::text = $1
+          LIMIT 1`,
+        [req.lenderId],
+      );
+      if (!current.rows[0]) return res.status(404).json({ status: "error", message: "lender_not_found" });
+      return res.json({ status: "ok", data: current.rows[0], skipped });
+    }
 
     const sets = keys.map((key, index) => `${key} = $${index + 2}`).join(", ");
     const values = keys.map((key) => fields[key]);
