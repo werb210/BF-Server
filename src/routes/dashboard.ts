@@ -304,13 +304,28 @@ router.get("/funnel", requireAuth, safeHandler(async (req: any, res: any) => {
   const days = windowDays(req);
   const r = await pool.query<Record<string, string>>(
     `WITH stepped AS (
-       SELECT COALESCE(NULLIF(metadata->>'current_step','')::int, current_step, 1) AS step,
+       -- BF_SERVER_FUNNEL_STEP_KEY_v1
+       -- The wizard step lives at metadata->>'currentStep' (camelCase).
+       -- bfBuildWizardMetadata in src/routes/client/v1Applications.ts accepts
+       -- both spellings from the client but normalises them to a single
+       -- camelCase key, so metadata->>'current_step' is NEVER populated. Reading
+       -- only the snake_case name meant every row fell through to the
+       -- current_step column (null) and defaulted to 1 - the funnel reported
+       -- every application, including submitted ones, as stuck on step 1.
+       -- Read camelCase first, keep the other two as fallbacks.
+       SELECT COALESCE(
+                NULLIF(metadata->>'currentStep','')::int,
+                NULLIF(metadata->>'current_step','')::int,
+                current_step, 1) AS step,
               submitted_at
          FROM applications
         WHERE UPPER(silo) = UPPER($1)
           AND created_at >= now() - ($2 || ' days')::interval
           AND NOT (submitted_at IS NULL
-                   AND COALESCE(NULLIF(metadata->>'current_step','')::int, current_step, 1) <= 1)
+                   AND COALESCE(
+                         NULLIF(metadata->>'currentStep','')::int,
+                         NULLIF(metadata->>'current_step','')::int,
+                         current_step, 1) <= 1)
      )
      SELECT COUNT(*)::text AS started,
             COUNT(*) FILTER (WHERE step >= 2 OR submitted_at IS NOT NULL)::text AS step2,
