@@ -190,6 +190,42 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
       console.log(`[signnow] Owner 2 invite deferred until Owner 1 signs for app=${applicationId}`);
     }
 
+    // BF_SERVER_OWNER1_SIGNING_SMS_v1
+    // In the EMBEDDED flow Owner 1's link is returned to the caller for the client
+    // mini-portal - it is never emailed. Owner 2 gets an email; Owner 1 got nothing
+    // at all. Live consequence: an applicant sat waiting most of a day for an email
+    // that does not exist in this flow, while staff had no way to know he was
+    // waiting. Text Owner 1 the PORTAL address rather than the signing link itself,
+    // because embedded links are hard-capped at 45 minutes by SignNow (19019003) and
+    // the portal re-mints a fresh one on every load.
+    try {
+      const o1phone = (inputs.owners[0]?.phone ?? "").trim();
+      const o1digits = o1phone.replace(/\D/g, "");
+      if (o1digits.length >= 10) {
+        const to = o1phone.startsWith("+") ? o1phone : `+1${o1digits.slice(-10)}`;
+        const who = (inputs.applicantName ?? "").trim();
+        const greeting = who ? `Hi ${who.split(/\s+/)[0]},` : "Hi,";
+        const { sendSms } = await import("../modules/notifications/sms.service.js");
+        await sendSms({
+          to,
+          message: `${greeting} your Boreal Financial application is ready for your signature. Sign in at client.boreal.financial with this phone number to review and sign. Reply STOP to opt out.`,
+        });
+        await dbQuery(
+          `update applications set metadata = coalesce(metadata,'{}'::jsonb)
+             || jsonb_build_object('owner1_signing_sms_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))
+           where id::text = ($1)::text`,
+          [applicationId]
+        ).catch(() => {});
+        console.log(`[signnow] Owner 1 signing SMS sent for app=${applicationId}`);
+      } else {
+        console.warn(`[signnow] Owner 1 has no usable phone for app=${applicationId}; no signing SMS sent`);
+      }
+    } catch (e) {
+      // Never block envelope creation on a notification failure - the envelope is
+      // valid and staff can still direct the client manually.
+      console.warn(`[signnow] Owner 1 signing SMS failed for app=${applicationId}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
     await dbQuery(
       `UPDATE applications
           SET signnow_document_id = $2,
