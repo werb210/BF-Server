@@ -11,12 +11,21 @@ describe("referrer agreement prefill", () => {
     expect(c).toContain("/prefill-texts");
     expect(c).toContain("prefilled_text");
   });
-  it("agreement session pre-fills every field label from signup", () => {
-    const s = r("src/modules/referrals/referrerAgreement.service.ts");
-    for (const label of ["Full name", "Company", "Email", "Phone", "Street address", "City Province Postal", "Payout email", "Date"]) {
-      expect(s).toContain(`"${label}"`);
+  // BF_SERVER_REPAIR_STALE_TESTS_v1 - the labels moved from the service (which used
+  // to prefill them onto a template) into the PDF builder, which now prints them.
+  // The behaviour under test is unchanged - every signup field must reach the
+  // agreement - so assert it where it now lives.
+  it("the generated PDF carries every field captured at signup", () => {
+    const b = r("src/signnow/referrerAgreementPdfBuilder.ts");
+    for (const label of ["Full name", "Company", "Email", "Phone", "Street address", "Payout (e-Transfer) email"]) {
+      expect(b).toContain(`"${label}"`);
     }
-    expect(s).toContain("prefillTextFields(documentId");
+  });
+  it("the service passes every signup value into the builder", () => {
+    const s = r("src/modules/referrals/referrerAgreement.service.ts");
+    for (const field of ["fullName:", "company:", "email:", "phone:", "street:", "cityProvincePostal:", "payoutEmail:"]) {
+      expect(s).toContain(field);
+    }
   });
   it("signup passes profile data to the session", () => {
     const s = r("src/routes/referrerSelf.ts");

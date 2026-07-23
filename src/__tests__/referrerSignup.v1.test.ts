@@ -46,12 +46,26 @@ describe("agreement completion is server-verified", () => {
 });
 
 describe("agreement service", () => {
-  it("is env-gated on API key + template id", () => {
+  // BF_SERVER_REPAIR_STALE_TESTS_v1
+  // The agreement no longer uses a shared SignNow TEMPLATE. Under
+  // BF_SERVER_REFERRER_AGREEMENT_BAKE_v1 the PDF is generated per referrer with
+  // their details already printed in, then uploaded directly - so the referrer
+  // only supplies a signature. Consequence worth stating plainly: there is
+  // nothing left to configure, and SIGNNOW_REFERRER_TEMPLATE_ID is DEAD - it is
+  // read nowhere in the codebase and does not need to be set in Azure.
+  it("is env-gated on the API key alone, with no template id", () => {
     expect(agreement).toContain("referrerAgreementConfigured");
-    expect(agreement).toContain("SIGNNOW_REFERRER_TEMPLATE_ID");
+    expect(agreement).toContain("isApiKeyConfigured()");
+    expect(agreement).not.toContain("SIGNNOW_REFERRER_TEMPLATE_ID");
   });
-  it("uses the template -> group -> embedded invite -> link pattern", () => {
-    expect(agreement).toContain("createDocumentFromTemplate");
+  it("bakes the referrer's details into the PDF instead of prefilling a template", () => {
+    expect(agreement).toContain("buildReferrerAgreementPdf");
+    expect(agreement).toContain("payoutEmail: params.etransfer");
+    expect(agreement).not.toContain("createDocumentFromTemplate");
+  });
+  it("uploads -> group -> embedded invite -> link", () => {
+    expect(agreement).toContain("uploadDocumentWithFieldExtract");
+    expect(agreement).toContain("createDocumentGroup");
     expect(agreement).toContain("createEmbeddedGroupInvite");
     expect(agreement).toContain("createEmbeddedGroupLink");
   });

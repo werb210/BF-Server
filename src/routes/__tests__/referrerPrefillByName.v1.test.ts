@@ -10,12 +10,14 @@ describe("referrer prefill maps labels to real field names", () => {
     expect(c).toContain("export async function getDocumentTextFields");
     expect(c).toContain("json_attributes");
   });
-  it("service maps by label then prefills by real name, with positional fallback", () => {
+  // BF_SERVER_REPAIR_STALE_TESTS_v1 - label->name mapping and the positional fallback
+  // were scaffolding for template prefill. The bake approach removed the need for
+  // both. getDocumentTextFields is KEPT on the client as a diagnostic, so the first
+  // assertion above still stands; only the service-side mapping is gone.
+  it("the service no longer maps or prefills fields at all", () => {
     const s = r("src/modules/referrals/referrerAgreement.service.ts");
-    expect(s).toContain("getDocumentTextFields(documentId)");
-    expect(s).toContain("byLabel.get(w.label.toLowerCase())");
-    expect(s).toContain("positional prefill fallback");
-    // no longer prefills by raw label as the name
-    expect(s).not.toContain('{ name: "Full name", value: params.fullName }');
+    expect(s).not.toContain("byLabel.get(");
+    expect(s).not.toContain("positional prefill fallback");
+    expect(s).toContain("BF_SERVER_REFERRER_AGREEMENT_BAKE_v1");
   });
 });

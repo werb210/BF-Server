@@ -7,10 +7,12 @@ describe("signnow field dump diagnostic", () => {
   it("client exposes a raw GET helper", () => {
     expect(r("src/signnow/signnowClient.ts")).toContain("export async function signnowGetRaw");
   });
-  it("diagnostics probe dumps legacy + v2 field structures", () => {
+  // BF_SERVER_REPAIR_STALE_TESTS_v1 - the admin fieldDump probe existed to inspect a
+  // template's field structure while debugging prefill. Prefill is gone, and so is the
+  // probe. signnowGetRaw is retained (asserted above) because it is a general-purpose
+  // escape hatch, so keep guarding that and stop asserting for the deleted probe.
+  it("the removed prefill-debug probe is not silently reintroduced", () => {
     const s = r("src/routes/admin.ts");
-    expect(s).toContain("out.fieldDump");
-    expect(s).toContain("/v2/documents/${documentId}");
-    expect(s).toContain("v2First");
+    expect(s).not.toContain("out.fieldDump");
   });
 });
