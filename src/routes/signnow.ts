@@ -8,6 +8,8 @@ import { attachSignedTermSheet } from "../services/signnow/sendOfferTermSheet.js
 import { transitionPipelineState } from "../modules/applications/applications.service.js"; // BF_SERVER_OFFER_TERMSHEET_SIGNING_v1
 import { notifyAllStaff } from "../services/notifications/notifyAllStaff.js"; // BF_SERVER_OFFER_TERMSHEET_SIGNING_v1
 import { pool } from "../db.js"; // BF_SERVER_OFFER_TERMSHEET_SIGNING_v1
+import { createEmbeddedGroupLink } from "../signnow/signnowClient.js";
+import { sendViaGraph } from "../services/email/graphSendService.js";
 
 // BF_SERVER_BLOCK_v141_SIGNNOW_WEBHOOK_REPAIR_v1
 // HMAC-SHA256 verify against SIGNNOW_WEBHOOK_SECRET. SignNow sends the
@@ -196,6 +198,62 @@ router.post(
       } catch { groupComplete = true; }
     }
     if (!groupComplete) {
+      // BF_SERVER_DEFER_OWNER2_INVITE_v1
+      // Owner 1 has signed their step, so Owner 2's step is now reachable and SignNow
+      // will mint their link. This is the earliest moment it can succeed - attempting
+      // it at envelope creation always returned 400 19019002. Best effort: a failure
+      // here must not break the webhook ack, and the pending flag stays set so a retry
+      // (or a later signer event) can send it.
+      try {
+        const pend = await dbQuery<{ email: string | null; name: string | null; gid: string | null; iid: string | null }>(
+          `select metadata->>'owner2_invite_email' as email,
+                  metadata->>'owner2_invite_name'  as name,
+                  metadata->'signnow_embedded'->>'group_id'  as gid,
+                  metadata->'signnow_embedded'->>'invite_id' as iid
+             from applications
+            where id::text = ($1)::text
+              and coalesce((metadata->>'owner2_invite_pending')::boolean, false) = true
+            limit 1`,
+          [app.id]
+        );
+        const p = pend.rows[0];
+        if (p?.email && p.gid && p.iid) {
+          const o2link = await createEmbeddedGroupLink(String(p.gid), String(p.iid), String(p.email));
+          const greeting = p.name ? `Hi ${p.name},` : "Hello,";
+          const sent = await sendViaGraph({
+            to: String(p.email),
+            subject: "Your Boreal application is ready to sign",
+            bodyHtml: `<p>${greeting}</p><p>An application you are listed on as an owner is ready for your signature. Please review and sign using your secure link below:</p><p><a href="${o2link.url}">Review &amp; sign your application</a></p><p>This link is unique to you. If you weren't expecting this, you can safely ignore this email.</p>`,
+            bodyText: `${greeting}
+
+An application you are listed on as an owner is ready for your signature. Please review and sign using your secure link:
+${o2link.url}
+
+This link is unique to you.`,
+          });
+          if (sent.ok) {
+            await dbQuery(
+              `update applications set metadata = (coalesce(metadata,'{}'::jsonb) - 'owner2_invite_pending' - 'partner_invite_error' - 'partner_invite_error_at')
+                 || jsonb_build_object('owner2_invite_sent_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))
+               where id::text = ($1)::text`,
+              [app.id]
+            ).catch(() => {});
+            console.log(`[signnow-webhook] app=${app.id} Owner 2 signing link emailed`);
+          } else {
+            console.error(`[signnow-webhook] app=${app.id} Owner 2 invite email failed: ${sent.error}`);
+            await dbQuery(
+              `update applications set metadata = coalesce(metadata,'{}'::jsonb)
+                 || jsonb_build_object('partner_invite_error', $2::text,
+                                       'partner_invite_error_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))
+               where id::text = ($1)::text`,
+              [app.id, String(sent.error).slice(0, 400)]
+            ).catch(() => {});
+          }
+        }
+      } catch (e) {
+        console.warn(`[signnow-webhook] app=${app.id} deferred Owner 2 invite failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+
       console.log(`[signnow-webhook] app=${app.id} signer signed but group not complete - waiting for other signers`);
       res.status(200).json({ received: true, waiting_for_other_signers: true });
       return;
