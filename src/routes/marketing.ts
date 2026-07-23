@@ -124,8 +124,12 @@ router.get("/funnel", safeHandler(async (req: any, res: any) => {
     { key: "step3", label: "Step 3 \u00b7 Business", count: Number(r.step3) },
     { key: "step4", label: "Step 4 \u00b7 Applicant", count: Number(r.step4) },
     { key: "step5", label: "Step 5 \u00b7 Documents", count: Number(r.step5) },
-    { key: "step6", label: "Step 6 \u00b7 Review", count: Number(r.step6) },
-    { key: "submitted", label: "Submitted", count: Number(r.submitted) },
+    // BF_SERVER_MARKETING_SOURCE_HYGIENE_v1 - "Step 6 - Review" and "Submitted"
+    // are the same event: step 6 IS the review page, and submitting is the only
+    // thing you do on it. They therefore always rendered an identical count and
+    // identical percentage, which reads as a broken chart rather than a funnel.
+    // Keep the outcome row, drop the duplicate.
+    { key: "submitted", label: "Step 6 \u00b7 Review \u0026 submit", count: Number(r.submitted) },
   ];
   const top = raw[0]?.count ?? 0;
   let prev = top;
@@ -146,10 +150,32 @@ router.get("/sources", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const days = Math.min(Math.max(Number(req.query.days) || 90, 1), 365);
   const { rows } = await pool.query<{ source: string; started: number; submitted: number }>(
+    // BF_SERVER_MARKETING_SOURCE_HYGIENE_v1
+    // When no utm_source is present this falls back to the referrer host. That
+    // meant our OWN domains showed up as acquisition sources: an applicant who
+    // navigated from boreal.financial to client.boreal.financial was reported as
+    // having been "referred by client.boreal.financial", sitting in the channel
+    // list next to Google and organic. Self-referral is not acquisition - it is
+    // internal navigation - and it both invents a channel and steals volume from
+    // the real one.
+    //
+    // Internal hosts now fall through to 'direct', which is what an untagged
+    // visit actually is. Matching is on the registrable domain so any subdomain
+    // (www, client, staff, server) is covered without listing each.
     `SELECT
        COALESCE(
          NULLIF(metadata->'attribution'->>'utm_source', ''),
-         NULLIF(regexp_replace(COALESCE(metadata->'attribution'->>'referrer',''), '^https?://([^/]+).*$', '\\1'), ''),
+         NULLIF(
+           CASE
+             WHEN split_part(
+                    split_part(COALESCE(metadata->'attribution'->>'referrer',''), '//', 2),
+                    '/', 1)
+                  ILIKE ANY (ARRAY['%boreal.financial', '%boreal.insure', '%canadianbusinessfinancing.com'])
+               THEN ''
+             ELSE split_part(
+                    split_part(COALESCE(metadata->'attribution'->>'referrer',''), '//', 2),
+                    '/', 1)
+           END, '') ,
          'direct'
        ) AS source,
        count(*)::int AS started,
