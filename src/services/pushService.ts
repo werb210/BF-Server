@@ -150,8 +150,20 @@ function fetchAuditEntry(payload: PushPayload): {
   };
 }
 
+// BF_SERVER_PUSH_PURGE_403_v1
+// 403 was missing here, and that is why the Azure log stream fills with
+// push_failed. A 403 from a Web Push endpoint means the VAPID signature is not
+// accepted for that subscription - in practice it was created against a
+// different key pair than the server signs with now, and can never recover.
+// Because 403 was not terminal the row was kept and retried on every
+// notification, indefinitely.
 function shouldDeleteSubscription(statusCode: number | undefined): boolean {
-  return statusCode === 404 || statusCode === 410 || statusCode === 400;
+  return (
+    statusCode === 400 ||
+    statusCode === 403 ||
+    statusCode === 404 ||
+    statusCode === 410
+  );
 }
 
 function isPushEnabled(): boolean {
@@ -318,7 +330,8 @@ export async function sendNotification(
     } catch (error: any) {
       failed += 1;
       const statusCode = error?.statusCode;
-      if (shouldDeleteSubscription(statusCode)) {
+      const dropped = shouldDeleteSubscription(statusCode);
+      if (dropped) {
         await deletePwaSubscriptionByEndpoint({
           userId: target.userId,
           endpoint: subscription.endpoint,
@@ -342,6 +355,7 @@ export async function sendNotification(
         endpoint: subscription.endpoint,
         payloadType: payload.type,
         statusCode: statusCode ?? "unknown",
+        subscriptionDropped: dropped,
         message: error instanceof Error ? error.message : "unknown_error",
       });
     }
