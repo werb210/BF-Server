@@ -169,7 +169,10 @@ router.get("/actions", requireAuth, safeHandler(async (_req: any, res: any) => {
 // drives them all consistently.
 
 function windowDays(req: any): number {
-  const raw = Number(req?.query?.days);
+  // BF_SERVER_DASHBOARD_RANGE_PARAM_v1 - the dashboard sends ?range; every other panel sends
+  // ?days. Reading only days meant range was ignored and every request
+  // silently fell back to 30 days.
+  const raw = Number(req?.query?.days ?? req?.query?.range);
   if (!Number.isFinite(raw)) return 30;
   return Math.min(Math.max(Math.round(raw), 1), 365);
 }
