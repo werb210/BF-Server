@@ -501,6 +501,163 @@ router.get("/acquisition", requireAuth, safeHandler(async (req: any, res: any) =
   });
 }));
 
+
+// BF_SERVER_DASHBOARD_ANALYTICS_AGGREGATE_v1
+// Aggregate endpoint consumed by the staff DashboardAnalytics page. Keep the
+// split endpoints below intact for existing callers, but return the field names
+// that the aggregate component reads: acquisition.applications,
+// marketing.revenue, funding.funded, documents.issueRate and
+// lenders.approvalRate.
+router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = getSilo(res);
+  const days = windowDays(req);
+
+  const [acquisitionResult, marketingResult, fundingResult, documentsResult, lendersResult] = await Promise.all([
+    pool.query<{ channel: string; applications: string }>(
+      `SELECT COALESCE(
+                NULLIF(a.metadata->'attribution'->>'utm_source', ''),
+                NULLIF(split_part(
+                  split_part(COALESCE(a.metadata->'attribution'->>'referrer',''), '//', 2),
+                  '/', 1), ''),
+                'Direct'
+              ) AS channel,
+              COUNT(DISTINCT a.id)::text AS applications
+         FROM applications a
+        WHERE UPPER(a.silo) = UPPER($1)
+          AND a.created_at >= now() - ($2 || ' days')::interval
+          AND COALESCE(a.pipeline_state, '') NOT IN ('draft','Draft','')
+        GROUP BY 1
+        ORDER BY COUNT(DISTINCT a.id) DESC
+        LIMIT 12`,
+      [silo, String(days)],
+    ).catch(() => ({ rows: [] as any[] })),
+    pool.query<{ source: string; leads: string; revenue: string }>(
+      `SELECT COALESCE(
+                NULLIF(a.metadata->'attribution'->>'utm_source', ''),
+                'Direct'
+              ) AS source,
+              COUNT(DISTINCT a.id)::text AS leads,
+              COALESCE(SUM(COALESCE(a.funded_amount, off.amount, 0)), 0)::text AS revenue
+         FROM applications a
+         LEFT JOIN LATERAL (
+           SELECT o.amount FROM offers o
+            WHERE o.application_id = a.id AND o.status IN ('accepted','funded')
+            ORDER BY o.updated_at DESC NULLS LAST
+            LIMIT 1
+         ) off ON TRUE
+        WHERE UPPER(a.silo) = UPPER($1)
+          AND a.created_at >= now() - ($2 || ' days')::interval
+          AND COALESCE(a.pipeline_state, '') NOT IN ('draft','Draft','')
+        GROUP BY 1
+        ORDER BY COUNT(DISTINCT a.id) DESC
+        LIMIT 12`,
+      [silo, String(days)],
+    ).catch(() => ({ rows: [] as any[] })),
+    pool.query<{ product: string; total: string; funded: string }>(
+      `SELECT COALESCE(NULLIF(product_category, ''), 'Unspecified') AS product,
+              COUNT(*)::text AS total,
+              COUNT(*) FILTER (
+                WHERE pipeline_state = $3 OR funded_amount IS NOT NULL
+              )::text AS funded
+         FROM applications
+        WHERE UPPER(silo) = UPPER($1)
+          AND created_at >= now() - ($2 || ' days')::interval
+          AND COALESCE(pipeline_state, '') NOT IN ('draft','Draft','')
+        GROUP BY 1
+        ORDER BY COUNT(*) DESC
+        LIMIT 10`,
+      [silo, String(days), ApplicationStage.ACCEPTED],
+    ).catch(() => ({ rows: [] as any[] })),
+    pool.query<{ category: string; total: string; issues: string }>(
+      `SELECT COALESCE(NULLIF(d.category, ''), 'Uncategorized') AS category,
+              COUNT(*)::text AS total,
+              COUNT(*) FILTER (
+                WHERE d.status = 'rejected'
+                   OR d.ocr_status = 'failed'
+                   OR d.status NOT IN ('accepted','rejected')
+                   OR d.status IS NULL
+              )::text AS issues
+         FROM documents d
+         JOIN applications a ON a.id = d.application_id
+        WHERE UPPER(a.silo) = UPPER($1)
+          AND d.created_at >= now() - ($2 || ' days')::interval
+        GROUP BY 1
+        ORDER BY COUNT(*) FILTER (
+          WHERE d.status = 'rejected' OR d.ocr_status = 'failed'
+             OR d.status NOT IN ('accepted','rejected') OR d.status IS NULL
+        ) DESC, COUNT(*) DESC
+        LIMIT 12`,
+      [silo, String(days)],
+    ).catch(() => ({ rows: [] as any[] })),
+    pool.query<{ lender_id: string; lender_name: string; sent: string; approved: string }>(
+      `WITH sent AS (
+         SELECT p.lender_id::text AS lender_id, p.application_id
+           FROM application_packages p
+           JOIN applications a ON a.id::text = p.application_id::text
+          WHERE UPPER(a.silo) = UPPER($1)
+            AND p.status = 'sent'
+            AND p.created_at >= now() - ($2 || ' days')::interval
+       ), offered AS (
+         SELECT DISTINCT o.lender_id::text AS lender_id, o.application_id::text AS application_id
+           FROM offers o
+          WHERE COALESCE(o.is_archived, false) = false
+       )
+       SELECT s.lender_id,
+              COALESCE(l.name, 'Unknown lender') AS lender_name,
+              COUNT(DISTINCT s.application_id)::text AS sent,
+              COUNT(DISTINCT o.application_id)::text AS approved
+         FROM sent s
+         LEFT JOIN lenders l ON l.id::text = s.lender_id
+         LEFT JOIN offered o ON o.lender_id = s.lender_id AND o.application_id = s.application_id::text
+        GROUP BY s.lender_id, l.name
+        ORDER BY COUNT(DISTINCT s.application_id) DESC
+        LIMIT 12`,
+      [silo, String(days)],
+    ).catch(() => ({ rows: [] as any[] })),
+  ]);
+
+  const acquisition = acquisitionResult.rows.map((x) => ({
+    channel: x.channel,
+    applications: parseInt(x.applications, 10) || 0,
+  }));
+  const marketing = marketingResult.rows.map((x) => ({
+    source: x.source,
+    leads: parseInt(x.leads, 10) || 0,
+    revenue: Math.round((Number(x.revenue) || 0) * 100) / 100,
+  }));
+  const funding = fundingResult.rows.map((x) => ({
+    product: x.product,
+    total: parseInt(x.total, 10) || 0,
+    funded: parseInt(x.funded, 10) || 0,
+  }));
+  const documents = documentsResult.rows.map((x) => {
+    const total = parseInt(x.total, 10) || 0;
+    const issues = parseInt(x.issues, 10) || 0;
+    return {
+      category: x.category,
+      total,
+      issues,
+      issueRate: total > 0 ? Math.round((issues / total) * 1000) / 10 : 0,
+    };
+  });
+  const lenders = lendersResult.rows.map((x) => {
+    const sent = parseInt(x.sent, 10) || 0;
+    const approved = parseInt(x.approved, 10) || 0;
+    return {
+      lenderId: x.lender_id,
+      lenderName: x.lender_name,
+      sent,
+      approved,
+      approvalRate: sent > 0 ? Math.round((approved / sent) * 1000) / 10 : 0,
+    };
+  });
+
+  res.json({
+    status: "ok",
+    data: { days, acquisition, marketing, funding, documents, lenders },
+  });
+}));
+
 // BF_SERVER_BLOCK_v822_DASHBOARD_PIPELINE_ACTIONS — real silo-scoped pipeline counts.
 router.get("/pipeline", requireAuth, safeHandler(async (_req: any, res: any) => {
   const silo = getSilo(res);
