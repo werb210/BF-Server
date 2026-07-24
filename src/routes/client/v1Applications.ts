@@ -337,16 +337,20 @@ router.post(
       if (parentAmt > 0) {
         effectiveAmount = Math.min(Math.round(parentAmt * 0.15), 250000);
       }
-      closingCostRouting = Number(effectiveAmount ?? 0) >= 50000 ? "term_and_loc" : "term";
+      // BF_SERVER_CLOSING_COST_LOC_OVER_50K_v1 - locked business rule: the companion is 15% of the
+      // parent equipment total; under $50k it is a TERM application, $50k and
+      // over it is a LOC application. It is NOT "both" - the previous
+      // term_and_loc routing matched Term AND LOC lenders on one companion.
+      closingCostRouting = Number(effectiveAmount ?? 0) >= 50000 ? "loc" : "term";
     }
     const metadata: Record<string, unknown> = {
       ...(data.kyc_responses ? { kyc_responses: data.kyc_responses } : {}),
       // BF_SERVER_CLOSING_COST_CATEGORY_v1 - a closing-cost companion is a Term
       // Loan application (base case), NOT the bogus "Closing-Costs Financing"
-      // category that matches no lender. Routing to LOC as well when >= $50k is
-      // handled by closing_cost_routing on the match side.
+      // category that matches no lender. The category now follows the locked
+      // under-$50k TERM / $50k+ LOC routing decision.
       ...(isClosingCostsCompanion
-        ? { product_category: "Term Loan" }
+        ? { product_category: closingCostRouting === "loc" ? "LOC" : "Term Loan" }
         : (product_category ? { product_category } : {})),
       ...wizardMeta,
       ...(isClosingCostsCompanion
@@ -361,9 +365,9 @@ router.post(
             // metadata.match_categories to match MORE THAN ONE product category. The step-2
             // companion previously set only closing_cost_routing (an intent string the
             // matcher ignores), so the Lenders tab matched Term-only. Set the array the
-            // matcher actually consumes so a >= $50k companion surfaces BOTH Term and LOC
-            // lenders (still filtered by country/amount); < $50k stays Term-only.
-            match_categories: closingCostRouting === "term_and_loc" ? ["TERM", "LOC"] : ["TERM"],
+            // matcher actually consumes so a >= $50k companion surfaces LOC lenders
+            // only (still filtered by country/amount); < $50k stays Term-only.
+            match_categories: closingCostRouting === "loc" ? ["LOC"] : ["TERM"],
           }
         : {}),
     };
@@ -932,7 +936,7 @@ router.post(
             // BF_SERVER_CLOSING_COST_FIX_v1 - pure-Equipment parents store the
             // amount in the equipment field, not requested_amount, so derive it
             // from the same fallback chain the equipment leg uses (else the
-            // companion got a null amount). Closing cost is 20% of equipment.
+            // companion got a null amount). Closing cost is 15% of equipment.
             const primaryAmount =
               Number(wizardCols.requestedAmount ?? 0) ||
               Number(bfParseAmount((legacyApp as any)?.equipment_amount) ?? 0) ||
@@ -940,18 +944,14 @@ router.post(
               Number(bfParseAmount((legacyApp as any)?.kyc?.equipmentAmount) ?? 0) ||
               Number(bfParseAmount((legacyApp as any)?.requestedAmount) ?? 0) ||
               0;
-            const companionAmount = Math.round(primaryAmount * 0.2);
-            const companionCategory = companionAmount <= 50_000 ? "TERM" : "LOC";
-            // Locked rule: <=$50k TERM only; $50,001-$250k matches BOTH TERM and
-            // LOC products (one app); above that, LOC. product_category is
-            // CHECK-constrained to one value, so "both" rides in metadata and is
-            // applied by the lender-match query.
+            // BF_SERVER_CLOSING_COST_LOC_OVER_50K_v1 - was 0.2; the rule is 15%, matching the
+            // normalizer below and the create path above.
+            const companionAmount = Math.round(primaryAmount * 0.15);
+            const companionCategory = companionAmount < 50_000 ? "TERM" : "LOC";
+            // Locked rule: under $50k TERM, $50k and over LOC. One category,
+            // never both.
             const companionMatchCategories =
-              companionAmount <= 50_000
-                ? ["TERM"]
-                : companionAmount <= 250_000
-                  ? ["TERM", "LOC"]
-                  : ["LOC"];
+              companionAmount < 50_000 ? ["TERM"] : ["LOC"];
             const companionId = randomUUID();
             // BF_SERVER_BLOCK_v125a_CLOSING_COSTS_END_TO_END_v1 - copy parent
             // wizard payload into companion metadata so the companion's
@@ -1072,9 +1072,9 @@ router.post(
       // BF_SERVER_CLOSING_COST_NORMALIZE_v1 - single source of truth for the
       // closing-cost companion, run unconditionally at submit so it is correct
       // no matter which branch created the companion. Amount = 15% of the parent
-      // equipment total (capped $250k); category TERM; routing term_and_loc when
-      // >= $50k (matches BOTH term + LOC products via metadata.match_categories),
-      // else term-only. Without a non-null amount the lender matcher hard-fails.
+      // equipment total (capped $250k). Category: under $50k TERM, $50k and over
+      // LOC - one category, never both (BF_SERVER_CLOSING_COST_LOC_OVER_50K_v1).
+      // Without a non-null amount the lender matcher hard-fails.
       try {
         await pool.query(
           `WITH parent AS (
@@ -1091,13 +1091,15 @@ router.post(
            calc AS (SELECT LEAST(ROUND(amt * 0.15), 250000)::numeric AS cc FROM parent)
            UPDATE applications c
               SET requested_amount = (SELECT cc FROM calc),
-                  product_category = 'TERM',
+                  product_category = CASE WHEN (SELECT cc FROM calc) >= 50000
+                    THEN 'LOC' ELSE 'TERM' END,
                   metadata = COALESCE(c.metadata, '{}'::jsonb) || jsonb_build_object(
                     'match_categories', CASE WHEN (SELECT cc FROM calc) >= 50000
-                      THEN '["TERM","LOC"]'::jsonb ELSE '["TERM"]'::jsonb END,
-                    'companion_category', 'TERM',
+                      THEN '["LOC"]'::jsonb ELSE '["TERM"]'::jsonb END,
+                    'companion_category', CASE WHEN (SELECT cc FROM calc) >= 50000
+                      THEN 'LOC' ELSE 'TERM' END,
                     'closing_cost_routing', CASE WHEN (SELECT cc FROM calc) >= 50000
-                      THEN 'term_and_loc' ELSE 'term' END,
+                      THEN 'loc' ELSE 'term' END,
                     'closing_cost_normalized_v1', 'true'
                   ),
                   updated_at = now()
