@@ -1,9 +1,6 @@
 import { createHash } from "node:crypto";
+import webpush from "web-push";
 import { config, isTest } from "../config/index.js";
-import { safeImport } from "../utils/safeImport.js";
-
-let webpush: any = null;
-webpush = await safeImport("web-push");
 
 import {
   createPwaNotificationAudit,

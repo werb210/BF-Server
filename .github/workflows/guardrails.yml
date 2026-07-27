@@ -13,6 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: No top-level await reachable from routes
+        run: node scripts/assert-no-tla-in-routes.mjs
+
       - name: No SQL in src/db/migrations (dead directory)
         shell: bash
         run: |
