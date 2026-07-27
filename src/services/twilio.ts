@@ -1,8 +1,6 @@
 import process from "node:process"
+import twilioFactory from "twilio";
 import { config } from "../config/index.js";
-import { safeImport } from "../utils/safeImport.js";
-
-const twilioFactory: any = await safeImport("twilio");
 
 let client: any | null = null
 
