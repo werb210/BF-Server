@@ -1,8 +1,26 @@
 import process from "node:process"
-import twilioFactory from "twilio";
+import { createRequire } from "node:module";
 import { config } from "../config/index.js";
 
+const require = createRequire(import.meta.url);
+
 let client: any | null = null
+let twilioFactory: any | null | undefined;
+
+function fetchTwilioFactory(): any | null {
+  if (twilioFactory !== undefined) {
+    return twilioFactory;
+  }
+
+  try {
+    const loaded = require("twilio");
+    twilioFactory = loaded.default ?? loaded;
+  } catch {
+    twilioFactory = null;
+  }
+
+  return twilioFactory;
+}
 
 function isConfigured() {
   return !!(
@@ -18,6 +36,7 @@ function fetchClient() {
   }
 
   if (!client) {
+    const twilioFactory = fetchTwilioFactory();
     if (!twilioFactory) {
       throw new Error("Twilio SDK unavailable");
     }

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import webpush from "web-push";
+import { createRequire } from "node:module";
 import { config, isTest } from "../config/index.js";
 
 import {
@@ -12,6 +12,25 @@ import { trackEvent } from "../observability/appInsights.js";
 import { fetchRequestContext } from "../observability/requestContext.js";
 import { type Role } from "../auth/roles.js";
 import { stripUndefined } from "../utils/clean.js";
+
+const require = createRequire(import.meta.url);
+
+let webpush: any | null | undefined;
+
+function fetchWebPush(): any | null {
+  if (webpush !== undefined) {
+    return webpush;
+  }
+
+  try {
+    const loaded = require("web-push");
+    webpush = loaded.default ?? loaded;
+  } catch {
+    webpush = null;
+  }
+
+  return webpush;
+}
 
 export type PushLevel = "normal" | "high" | "critical";
 
@@ -188,6 +207,7 @@ export function initializePushService(): PushStatus {
     return cachedStatus;
   }
 
+  const webpush = fetchWebPush();
   if (!webpush) {
     cachedStatus = { configured: false, enabled, error: "webpush_unavailable" };
     logWarn("push_webpush_unavailable", {});
