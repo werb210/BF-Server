@@ -14,6 +14,8 @@ import { findAuthUserByPhone } from "../modules/auth/auth.repo.js";
 // during OTP verify so the client can route to /portal even when localStorage
 // is empty (logout, different browser, cleared cache).
 import { runQuery as dbQuery_v68 } from "../lib/db.js";
+import { pool } from "../db.js";
+import { notifyAllStaff } from "../services/notifications/notifyAllStaff.js";
 import microsoftRoutes from "./authMicrosoft.js";
 
 const router = Router();
@@ -237,6 +239,27 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
         phone,
         lenderId: String(lender.id),
       });
+      // BF_SERVER_LENDER_LOGIN_NOTIFY_v1 - OTP verification is the lender
+      // portal's successful-login boundary. Notify staff once here rather than
+      // from /lender/me, which is requested repeatedly while the portal is in
+      // use. This deliberately remains detached from the login response: a
+      // notification outage must never prevent or delay lender access.
+      void (async () => {
+        try {
+          await notifyAllStaff({
+            pool,
+            skipSms: true,
+            notificationType: "lender_portal_login",
+            title: "Lender portal login",
+            body: `${lender.name || "A lender"} signed into the lender portal.`,
+            refTable: "lenders",
+            refId: String(lender.id),
+            contextUrl: `/lenders/${lender.id}`,
+          });
+        } catch (err) {
+          console.warn("[otp_verify] lender login notification failed", { err: String(err) });
+        }
+      })();
       return res.status(200).json({
         status: "ok",
         data: {
