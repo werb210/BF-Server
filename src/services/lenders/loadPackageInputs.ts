@@ -17,7 +17,12 @@ export type PackageInputs = {
   additionalSignedDocs: { filename: string; content: Buffer }[];
   fields: Array<{ label: string; value: string | number | boolean | null }>;
 };
-export type LoadCtx = { pool: Pool; applicationId: string };
+export type LoadCtx = {
+  pool: Pool;
+  applicationId: string;
+  recipientLenderId?: string;
+  recipientLenderName?: string;
+};
 
 function renderTextPdf(lines: string[]): Buffer {
   const pdfEscape = (s: string) => s.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
@@ -157,6 +162,13 @@ async function loadFields(ctx: LoadCtx): Promise<FlatField[]> {
 // Download every signed group doc beyond doc_ids[0] and add it to the package as
 // its own document group so it ships in BOTH the email zip and the API payload.
 async function loadAdditionalSignedDocs(ctx: LoadCtx): Promise<{ filename: string; content: Buffer }[]> {
+  // Supplemental signing-group documents currently belong to Accord. Default
+  // closed when recipient identity is absent: an omitted form can be retried,
+  // whereas disclosure to the wrong lender cannot be undone.
+  const recipientIsAccord = Boolean(
+    ctx.recipientLenderId && /^accord\b/i.test((ctx.recipientLenderName ?? "").trim()),
+  );
+  if (!recipientIsAccord) return [];
   const r = await ctx.pool.query<{ signed_at: string | null; doc_ids: unknown; date_anchors: unknown }>(
     `SELECT signnow_app_signed_at AS signed_at,
             (metadata->'signnow_embedded'->'doc_ids') AS doc_ids,
@@ -181,6 +193,7 @@ async function loadAdditionalSignedDocs(ctx: LoadCtx): Promise<{ filename: strin
     [ctx.applicationId]
   ).catch(() => ({ rows: [{ n: "0" }] }));
   const isAccord = Number(acc.rows[0]?.n ?? 0) > 0;
+  if (!isAccord) return [];
   const files: { filename: string; content: Buffer }[] = [];
   const { downloadDocument } = await import("../../signnow/signnowClient.js");
   for (let i = 0; i < extra.length; i++) {

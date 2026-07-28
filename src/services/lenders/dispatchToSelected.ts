@@ -52,7 +52,7 @@ export async function dispatchToSelected(
   let signedApp: Buffer | null = null;
   let creditSummary: Buffer | null = null;
   let docs: { category: string; files: { filename: string; content: Buffer }[] }[] = [];
-  let additionalSignedDocs: { filename: string; content: Buffer }[] = []; // v_ACCORD_PACKAGE_ROOT_v1
+  let applicationSignedDocs: { filename: string; content: Buffer }[] = [];
   type FieldRow = { label: string; value: string | number | boolean | null };
   let fields: FieldRow[] = [];
 
@@ -62,7 +62,7 @@ export async function dispatchToSelected(
     signedApp = inp.signedApplicationPdf ?? null;
     creditSummary = inp.creditSummaryPdf ?? null;
     docs = inp.documents ?? [];
-    additionalSignedDocs = inp.additionalSignedDocs ?? [];
+    applicationSignedDocs = inp.additionalSignedDocs ?? [];
     fields = inp.fields ?? [];
   } catch (e) {
     // best-effort: leave fallbacks (null/[]) in place; do not block dispatch
@@ -74,7 +74,7 @@ export async function dispatchToSelected(
   try {
     const { buildFinalizedQaExports } = await import("./qaExport.js");
     const qaPdfs = await buildFinalizedQaExports(ctx.applicationId);
-    if (qaPdfs.length) additionalSignedDocs = [...additionalSignedDocs, ...qaPdfs];
+    if (qaPdfs.length) applicationSignedDocs = [...applicationSignedDocs, ...qaPdfs];
   } catch (e) {
     console.warn("[dispatch] qa export attach failed", e instanceof Error ? e.message : String(e));
   }
@@ -86,18 +86,6 @@ export async function dispatchToSelected(
     throw new Error("signed_application_pdf_missing");
   }
 
-  const pkg = await buildApplicationPackage({
-    applicationId: ctx.applicationId,
-    signedApplicationPdf: signedApp,
-    additionalSignedDocs,
-    creditSummaryPdf: creditSummary,
-    fields,
-    documents: docs.map((g) => ({
-      category: g.category,
-      files: g.files.map((f) => ({ filename: f.filename, content: f.content })),
-    })),
-  });
-
   const sent: string[] = [];
   for (const l of lenders) {
     const method = (l.submission_method ?? "email").toLowerCase();
@@ -105,13 +93,44 @@ export async function dispatchToSelected(
     let error: string | null = null;
     let deliveredTo: string | null = null;
 
+    // Rebuild the recipient-sensitive portion for every lender. The initial
+    // application-wide load deliberately had no recipient and therefore could
+    // not include Accord's form.
+    let lenderAdditionalSignedDocs = applicationSignedDocs;
+    try {
+      const lenderInputs = await loadPackageInputs({
+        ...ctx,
+        recipientLenderId: l.lender_id,
+        recipientLenderName: l.name,
+      });
+      lenderAdditionalSignedDocs = lenderInputs.additionalSignedDocs ?? [];
+      // Q&A exports are application-wide and were loaded only once.
+      const qaOnly = applicationSignedDocs.filter(
+        (d) => !lenderAdditionalSignedDocs.some((candidate) => candidate.filename === d.filename),
+      );
+      lenderAdditionalSignedDocs = [...lenderAdditionalSignedDocs, ...qaOnly];
+    } catch (e) {
+      console.warn("[dispatch] recipient package inputs failed", e);
+    }
+    const lenderPkg = await buildApplicationPackage({
+      applicationId: ctx.applicationId,
+      signedApplicationPdf: signedApp,
+      additionalSignedDocs: lenderAdditionalSignedDocs,
+      creditSummaryPdf: creditSummary,
+      fields,
+      documents: docs.map((g) => ({
+        category: g.category,
+        files: g.files.map((f) => ({ filename: f.filename, content: f.content })),
+      })),
+    });
+
     if (method === "email") {
       const __ownerSigHtml = await resolveOwnerSignatureHtml(ctx.pool, ctx.applicationId); // v693
       const r = await sendLenderEmail({
         lender: { id: l.lender_id, name: l.name, submission_email: l.submission_email },
         subject: `Application package — ${l.name}`,
         bodyText: `Application ${ctx.applicationId} package attached.`,
-        attachments: [{ filename: `application-${ctx.applicationId}.zip`, contentType: "application/zip", content: pkg.zipBuffer }],
+        attachments: [{ filename: `application-${ctx.applicationId}.zip`, contentType: "application/zip", content: lenderPkg.zipBuffer }],
         signatureHtml: __ownerSigHtml,
       });
       ok = r.ok;
@@ -142,7 +161,7 @@ export async function dispatchToSelected(
           fields: fields.reduce<Record<string, unknown>>((acc, f) => { acc[f.label] = f.value; return acc; }, {}),
           attachments: [
             ...(signedApp ? [{ filename: `application-${ctx.applicationId}.pdf`, contentType: "application/pdf", contentBase64: signedApp.toString("base64") }] : []),
-            ...additionalSignedDocs.map((d) => ({ filename: d.filename, contentType: "application/pdf", contentBase64: d.content.toString("base64") })),
+            ...lenderAdditionalSignedDocs.map((d) => ({ filename: d.filename, contentType: "application/pdf", contentBase64: d.content.toString("base64") })),
             ...(creditSummary ? [{ filename: `credit-summary-${ctx.applicationId}.pdf`, contentType: "application/pdf", contentBase64: creditSummary.toString("base64") }] : []),
             ...docs.flatMap((g) => g.files.map((f) => ({ filename: f.filename, contentType: "application/octet-stream", category: g.category, contentBase64: f.content.toString("base64") }))),
           ],
@@ -272,22 +291,11 @@ export async function dispatchToSelected(
              size_bytes = EXCLUDED.size_bytes,
              built_at = EXCLUDED.built_at,
              sent_at = COALESCE(application_packages.sent_at, EXCLUDED.sent_at)
-       WHERE application_packages.status <> 'sent'
        RETURNING id`,
-      [ctx.applicationId, l.lender_id, ok ? "sent" : "failed", error, pkg.zipBuffer.length]
+      [ctx.applicationId, l.lender_id, ok ? "sent" : "failed", error, lenderPkg.zipBuffer.length]
     )
       .then((rs) => {
-        // BF_SERVER_INCREMENTAL_LENDER_SEND_v1 - DO NOTHING meant a lender whose
-        // first attempt FAILED could never have a later success recorded, so the
-        // row stayed 'failed' forever and the orchestrator's sent-filter would keep
-        // retrying it. DO UPDATE ... WHERE status <> 'sent' lets a retry overwrite a
-        // failed row while an already-sent row stays untouched (rowCount 0).
-        if (!rs.rowCount) {
-          console.warn("[dispatch] application_packages already sent, update suppressed", {
-            applicationId: ctx.applicationId,
-            lenderId: l.lender_id,
-          });
-        }
+        void rs;
       })
       .catch((e) => { console.error("[dispatch] failed to record application_packages row", safeErr(e)); });
 
