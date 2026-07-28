@@ -515,6 +515,61 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
   const silo = getSilo(res);
   const days = windowDays(req);
 
+  // Visits intentionally remain zero until this endpoint has GA4 Data API
+  // credentials. The remaining values are real, silo/window-scoped database
+  // counts; do not infer traffic from application volume.
+  let revenueFunnel = {
+    visits: 0,
+    applications: 0,
+    submitted: 0,
+    funded: 0,
+  };
+  try {
+    const result = await pool["query"]<{
+      applications: string;
+      submitted: string;
+      funded: string;
+    }>(
+      `SELECT COUNT(*)::text AS applications,
+              COUNT(*) FILTER (WHERE a.submitted_at IS NOT NULL)::text AS submitted,
+              COUNT(*) FILTER (
+                WHERE a.pipeline_state = $3 OR a.funded_amount IS NOT NULL
+              )::text AS funded
+         FROM applications a
+        WHERE UPPER(a.silo) = UPPER($1)
+          AND a.created_at >= now() - ($2 || ' days')::interval
+          AND COALESCE(a.pipeline_state, '') NOT IN ('draft','Draft','')`,
+      [silo, String(days), ApplicationStage.ACCEPTED],
+    );
+    const row = result.rows[0];
+    revenueFunnel = {
+      visits: 0,
+      applications: parseInt(row?.applications ?? "0", 10) || 0,
+      submitted: parseInt(row?.submitted ?? "0", 10) || 0,
+      funded: parseInt(row?.funded ?? "0", 10) || 0,
+    };
+  } catch (error) {
+    console.error("[dashboard.analytics] revenue funnel failed", error);
+  }
+
+  const applicationFunnel: Record<string, number> = {};
+  try {
+    const result = await pool["query"]<{ stage: string; count: string }>(
+      `SELECT a.pipeline_state AS stage, COUNT(*)::text AS count
+         FROM applications a
+        WHERE UPPER(a.silo) = UPPER($1)
+          AND a.created_at >= now() - ($2 || ' days')::interval
+          AND COALESCE(a.pipeline_state, '') NOT IN ('draft','Draft','')
+        GROUP BY a.pipeline_state`,
+      [silo, String(days)],
+    );
+    for (const r of result.rows) {
+      applicationFunnel[r.stage] = parseInt(r.count, 10) || 0;
+    }
+  } catch (error) {
+    console.error("[dashboard.analytics] application funnel failed", error);
+  }
+
   const [acquisitionResult, marketingResult, fundingResult, documentsResult, lendersResult] = await Promise.all([
     pool.query<{ channel: string; applications: string }>(
       `SELECT COALESCE(
@@ -657,7 +712,7 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
 
   res.json({
     status: "ok",
-    data: { days, acquisition, marketing, funding, documents, lenders },
+    data: { days, revenueFunnel, applicationFunnel, acquisition, marketing, funding, documents, lenders },
   });
 }));
 
