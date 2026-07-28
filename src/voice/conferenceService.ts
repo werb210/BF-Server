@@ -204,8 +204,12 @@ export async function broadcastIncomingRing(conferenceIdOrRow: any, fromLabel?: 
   // "conference.incoming" with { conferenceFriendly, fromDisplay }. Emit that
   // (carrying the real caller number) plus the legacy "incoming.call".
   const caller = fromLabel ?? "unknown";
+  // BF_SERVER_INCOMING_RING_FRIENDLY_v1 — clients join conferences by their
+  // friendly name, not by the database UUID carried in conferenceId.
+  const confRow = await getConference(conferenceId);
+  const friendly = confRow?.friendly_name || conferenceId;
   const legacy = { conferenceId, from: caller };
-  const toast = { conferenceId, conferenceFriendly: conferenceId, fromDisplay: caller };
+  const toast = { conferenceId, conferenceFriendly: friendly, fromDisplay: caller };
   if (staffIds.length === 0) {
     __pubAll("incoming.call", legacy);
     __pubAll("conference.incoming", toast);

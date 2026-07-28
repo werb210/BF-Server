@@ -81,13 +81,50 @@ function normalizeE164(raw: string): string {
   return "";
 }
 
+// BF_SERVER_INTERNAL_RING_CALLER_v1 — internal Twilio invites carry our own
+// caller ID, so resolve their caller from the live conference instead.
 // BF_SERVER_CALLER_RESOLVE_v1 — resolve an inbound caller's number to a CRM
 // contact (name + id + most-recent application) so the incoming-call toast
 // shows who is calling and staff can open the contact mid-call. Read-only.
 router.post("/resolve-caller", auth, async (req: any, res) => {
   const raw = typeof req.body?.phone === "string" ? req.body.phone : "";
   const phone10 = raw.replace(/[^0-9]/g, "").slice(-10);
+
+  const conferenceFriendly = typeof req.body?.conferenceFriendly === "string"
+    ? req.body.conferenceFriendly.trim()
+    : "";
+  if (conferenceFriendly) {
+    try {
+      const internal = await pool.query(
+        `SELECT u.id::text AS user_id, u.first_name, u.last_name, u.email
+           FROM conferences c
+           JOIN conference_participants cp
+             ON cp.conference_id = c.id
+            AND cp.kind = 'staff'
+            AND cp.identity = c.created_by_user_id::text
+           JOIN users u ON u.id::text = cp.identity
+          WHERE c.friendly_name = $1
+            AND c.direction = 'internal'
+          ORDER BY c.created_at DESC
+          LIMIT 1`,
+        [conferenceFriendly],
+      );
+      const staff = internal.rows[0];
+      if (staff) {
+        const fullName = [staff.first_name, staff.last_name]
+          .map((part: unknown) => String(part ?? "").trim())
+          .filter(Boolean)
+          .join(" ");
+        const display = fullName || (staff.email && String(staff.email).trim()) || null;
+        return res.json({ ok: true, matched: true, isStaff: true, name: display, userId: staff.user_id });
+      }
+    } catch (err: any) {
+      console.error("resolve_caller_internal_failed", { message: err?.message || String(err) });
+    }
+  }
+
   if (phone10.length < 10) return res.json({ ok: true, matched: false, isStaff: false, name: null });
+
   try {
     const { rows } = await pool.query(
       `SELECT c.id::text AS contact_id, c.name,
@@ -104,10 +141,14 @@ router.post("/resolve-caller", auth, async (req: any, res) => {
       const display = (r.name && String(r.name).trim()) || (r.company && String(r.company).trim()) || null;
       return res.json({ ok: true, matched: true, isStaff: false, name: display, contactId: r.contact_id, companyName: r.company || null, applicationId: r.application_id || null, applicationName: r.application_name || null });
     }
+  } catch (err: any) {
+    console.error("resolve_caller_contact_failed", { message: err?.message || String(err) });
+  }
 
-    // BF_SERVER_STAFF_CALLER_RESOLVE_v1 — internal callers live in users, not
-    // contacts. Fall back to the staff directory only after contact lookup so
-    // existing client resolution and recording-consent behaviour stay intact.
+  // BF_SERVER_STAFF_CALLER_RESOLVE_v1 — internal callers live in users, not
+  // contacts. This lookup remains independent so contact SQL failures cannot
+  // suppress the staff-directory fallback.
+  try {
     const staffResult = await pool.query(
       `SELECT id::text AS user_id, first_name, last_name, email
          FROM users
@@ -124,9 +165,10 @@ router.post("/resolve-caller", auth, async (req: any, res) => {
       .join(" ");
     const display = fullName || (staff.email && String(staff.email).trim()) || null;
     return res.json({ ok: true, matched: true, isStaff: true, name: display, userId: staff.user_id });
-  } catch {
-    return res.json({ ok: true, matched: false, isStaff: false, name: null });
+  } catch (err: any) {
+    console.error("resolve_caller_staff_failed", { message: err?.message || String(err) });
   }
+  return res.json({ ok: true, matched: false, isStaff: false, name: null });
 });
 
 // BF_SERVER_RECENT_CALLS_v1 - recent calls for the logged-in staff member, newest
