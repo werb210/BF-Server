@@ -13,10 +13,9 @@ describe("analytics returns the funnels the portal renders", () => {
     expect(seg).toContain("UPPER(a.silo) = UPPER($1)");
     expect(seg).toContain("a.created_at >= now() - ($2 || ' days')::interval");
   });
-  it("reports GA4 visits as 0 rather than fabricating them", () => {
-    // GA4 needs the Data API and its own credentials; inventing a number here
-    // would be worse than showing zero.
-    expect(src).toContain("visits: 0,");
+  it("takes GA4 visits from the report already fetched for acquisition", () => {
+    expect(src).toContain("ga4Visits = Number(rep?.summary?.sessions ?? 0)");
+    expect(src).toContain("visits: ga4Visits,");
   });
   it("excludes drafts from the drop-off funnel, matching /pipeline", () => {
     expect(src).toContain("NOT IN ('draft','Draft','')");

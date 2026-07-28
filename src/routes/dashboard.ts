@@ -674,6 +674,68 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
     ).catch(() => ({ rows: [] as any[] })),
   ]);
 
+  // BF_SERVER_ANALYTICS_FUNNELS_v1 — these are intentionally isolated from
+  // both the aggregate queries above and one another. An unavailable analytics
+  // integration or a single database query must not blank the other panels.
+  let ga4Visits = 0;
+  try {
+    const mod = await import("../services/ga4Service.js");
+    if (typeof (mod as any).ga4Configured === "function" && (mod as any).ga4Configured()) {
+      const rep: any = await (mod as any).runGa4Report(days);
+      ga4Visits = Number(rep?.summary?.sessions ?? 0);
+    }
+  } catch (error) {
+    console.error("[dashboard.analytics] GA4 revenue funnel failed", error);
+  }
+
+  let revenueFunnel = {
+    visits: ga4Visits,
+    applications: 0,
+    submitted: 0,
+    funded: 0,
+  };
+  try {
+    const result = await pool["query"]<{ applications: string; submitted: string; funded: string }>(
+      `SELECT COUNT(DISTINCT a.id)::text AS applications,
+              COUNT(DISTINCT a.id) FILTER (WHERE a.submitted_at IS NOT NULL)::text AS submitted,
+              COUNT(DISTINCT a.id) FILTER (
+                WHERE a.pipeline_state = $3 OR a.funded_amount IS NOT NULL
+              )::text AS funded
+         FROM applications a
+        WHERE UPPER(a.silo) = UPPER($1)
+          AND a.created_at >= now() - ($2 || ' days')::interval
+          AND COALESCE(a.pipeline_state, '') NOT IN ('draft','Draft','')`,
+      [silo, String(days), ApplicationStage.ACCEPTED],
+    );
+    const row = result.rows[0];
+    revenueFunnel = {
+      visits: ga4Visits,
+      applications: parseInt(row?.applications ?? "0", 10) || 0,
+      submitted: parseInt(row?.submitted ?? "0", 10) || 0,
+      funded: parseInt(row?.funded ?? "0", 10) || 0,
+    };
+  } catch (error) {
+    console.error("[dashboard.analytics] revenue funnel failed", error);
+  }
+
+  const applicationFunnel: Record<string, number> = {};
+  try {
+    const result = await pool["query"]<{ stage: string; count: string }>(
+      `SELECT a.pipeline_state AS stage, COUNT(*)::text AS count
+         FROM applications a
+        WHERE UPPER(a.silo) = UPPER($1)
+          AND a.created_at >= now() - ($2 || ' days')::interval
+          AND COALESCE(a.pipeline_state, '') NOT IN ('draft','Draft','')
+        GROUP BY a.pipeline_state`,
+      [silo, String(days)],
+    );
+    for (const r of result.rows) {
+      applicationFunnel[r.stage] = parseInt(r.count, 10) || 0;
+    }
+  } catch (error) {
+    console.error("[dashboard.analytics] application funnel failed", error);
+  }
+
   const acquisition = acquisitionResult.rows.map((x) => ({
     channel: x.channel,
     applications: parseInt(x.applications, 10) || 0,
