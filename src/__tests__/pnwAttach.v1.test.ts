@@ -23,9 +23,13 @@ describe("PNW document attachment helper", () => {
     expect(pnw).toContain("getStorage().put");
   });
 
-  it("is idempotent by content hash", () => {
+  it("is idempotent by system document identity before downloading", () => {
     expect(pnw).toContain("createHash");
-    expect(pnw).toContain("AND hash = $2");
+    expect(pnw).toContain("AND document_type = 'personal_net_worth'");
+    expect(pnw).toContain("AND uploaded_by = 'system'");
+    expect(pnw).not.toContain("AND hash = $2");
+    const identityCheck = pnw.indexOf("AND document_type = 'personal_net_worth'");
+    expect(identityCheck).toBeLessThan(pnw.indexOf("downloadDocument(docId)", identityCheck));
     expect(pnw).toContain("already_attached");
   });
 

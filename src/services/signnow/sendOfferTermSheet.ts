@@ -118,11 +118,25 @@ export async function sendOfferTermSheet(params: { pool: Pool; offerId: string }
 }
 
 // Attach the SIGNED term sheet to the application Documents list. Mirrors
-// attachSignedPnwDocument: idempotent by content hash, best-effort, never throws.
+// attachSignedPnwDocument: idempotent by document identity, best-effort, never throws.
 export async function attachSignedTermSheet(pool: Pool, applicationId: string): Promise<{ attached: boolean; reason?: string }> {
   if (!applicationId) return { attached: false, reason: "missing_application_id" };
   if (!isApiKeyConfigured()) return { attached: false, reason: "signnow_not_configured" };
   try {
+    // A signed term sheet has one system-owned identity per application. Check
+    // it before downloading because SignNow produces different bytes each time.
+    const existing = await pool
+      .query<{ id: string }>(
+        `SELECT id::text AS id FROM documents
+          WHERE application_id::text = $1
+            AND document_type = 'signed_term_sheet'
+            AND uploaded_by = 'system'
+          LIMIT 1`,
+        [applicationId],
+      )
+      .catch(() => ({ rows: [] as { id: string }[] }));
+    if (existing.rows.length > 0) return { attached: true, reason: "already_attached" };
+
     const r = await pool.query<{ group_id: string | null; doc_id: string | null }>(
       `SELECT metadata->'offer_signnow'->>'group_id' AS group_id,
               metadata->'offer_signnow'->>'doc_id'   AS doc_id
@@ -139,11 +153,8 @@ export async function attachSignedTermSheet(pool: Pool, applicationId: string): 
     const pdf = await downloadDocument(docId);
     if (!pdf || pdf.length === 0) return { attached: false, reason: "download_failed" };
 
+    // Retain the content hash for integrity/tamper detection, not identity.
     const hash = createHash("sha256").update(pdf).digest("hex");
-    const dup = await pool
-      .query<{ id: string }>(`SELECT id::text AS id FROM documents WHERE application_id::text = $1 AND hash = $2 LIMIT 1`, [applicationId, hash])
-      .catch(() => ({ rows: [] as { id: string }[] }));
-    if (dup.rows.length > 0) return { attached: true, reason: "already_attached" };
 
     const filename = `Signed-Term-Sheet-${applicationId}.pdf`;
     const put = await getStorage().put({ buffer: pdf, filename, contentType: "application/pdf", pathPrefix: `applications/${applicationId}` });

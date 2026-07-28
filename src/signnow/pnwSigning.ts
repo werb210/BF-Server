@@ -90,13 +90,26 @@ export async function getSignedPnwPdf(applicationId: string): Promise<Buffer | n
 // BF_SERVER_PNW_ATTACH_v1 — attach the SIGNED Personal Net Worth PDF to the
 // application's Documents list. The PNW is signed in its own SignNow envelope
 // and was previously only fetched for the lender package, so no `documents`
-// row existed for staff to view. Best-effort and idempotent by content hash:
+// row existed for staff to view. Best-effort and idempotent by document identity:
 // repeated webhook delivery or backfill calls no-op and never throw.
 export async function attachSignedPnwDocument(applicationId: string): Promise<{ attached: boolean; reason?: string }> {
   if (!applicationId) return { attached: false, reason: "missing_application_id" };
   if (!isApiKeyConfigured()) return { attached: false, reason: "signnow_not_configured" };
 
   try {
+    // SignNow regenerates PDF metadata on each download, so byte hashes are not
+    // stable identifiers. There is only one system-generated signed PNW per
+    // application; check that identity before any SignNow or storage work.
+    const existing = await dbQuery<{ id: string }>(
+      `SELECT id::text AS id FROM documents
+        WHERE application_id::text = ($1)::text
+          AND document_type = 'personal_net_worth'
+          AND uploaded_by = 'system'
+        LIMIT 1`,
+      [applicationId],
+    ).catch(() => ({ rows: [] as { id: string }[] }));
+    if (existing.rows.length > 0) return { attached: true, reason: "already_attached" };
+
     const r = await dbQuery<{ group_id: string | null; doc_id: string | null }>(
       `SELECT metadata->'pnw_signnow'->>'group_id' AS group_id,
               metadata->'pnw_signnow'->>'doc_id'   AS doc_id
@@ -113,14 +126,8 @@ export async function attachSignedPnwDocument(applicationId: string): Promise<{ 
     const pdf = await downloadDocument(docId);
     if (!pdf || pdf.length === 0) return { attached: false, reason: "download_failed" };
 
+    // Retain the content hash for integrity/tamper detection, not identity.
     const hash = createHash("sha256").update(pdf).digest("hex");
-    const dup = await dbQuery<{ id: string }>(
-      `SELECT id::text AS id FROM documents
-        WHERE application_id::text = ($1)::text AND hash = $2
-        LIMIT 1`,
-      [applicationId, hash],
-    ).catch(() => ({ rows: [] as { id: string }[] }));
-    if (dup.rows.length > 0) return { attached: true, reason: "already_attached" };
 
     const filename = `Personal-Net-Worth-Signed-${applicationId}.pdf`;
     const put = await getStorage().put({
