@@ -273,7 +273,7 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
         });
       } catch (e: any) { console.warn("ring_all_dial_failed", { identity: row.twilio_identity, message: e?.message }); }
     }));
-    void broadcastIncomingRing(staffIds, conf.friendly_name, "Client mini-portal");
+    void broadcastIncomingRing(conf.id, "Client mini-portal"); // BF_SERVER_INCOMING_RING_ARGS_v1
     const base = getPublicBaseUrl();
     vrc.redirect({ method: "POST" }, `${base}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(conf.friendly_name)}&pid=${encodeURIComponent(callerPid)}`);
     return res.send(vrc.toString());
@@ -347,7 +347,7 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
         });
       } catch (e: any) { console.warn("ring_all_dial_failed", { identity: row.twilio_identity, message: e?.message }); }
     }));
-    void broadcastIncomingRing(staffIds, conf.friendly_name, from);
+    void broadcastIncomingRing(conf.id, from); // BF_SERVER_INCOMING_RING_ARGS_v1
     const base = getPublicBaseUrl();
     vrp.redirect({ method: "POST" }, `${base}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(conf.friendly_name)}&pid=${encodeURIComponent(callerPid)}`);
     return res.send(vrp.toString());
