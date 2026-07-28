@@ -87,7 +87,7 @@ function normalizeE164(raw: string): string {
 router.post("/resolve-caller", auth, async (req: any, res) => {
   const raw = typeof req.body?.phone === "string" ? req.body.phone : "";
   const phone10 = raw.replace(/[^0-9]/g, "").slice(-10);
-  if (phone10.length < 10) return res.json({ ok: true, matched: false, name: null });
+  if (phone10.length < 10) return res.json({ ok: true, matched: false, isStaff: false, name: null });
   try {
     const { rows } = await pool.query(
       `SELECT c.id::text AS contact_id, c.name,
@@ -100,11 +100,32 @@ router.post("/resolve-caller", auth, async (req: any, res) => {
       [phone10],
     );
     const r = rows[0];
-    if (!r) return res.json({ ok: true, matched: false, name: null });
-    const display = (r.name && String(r.name).trim()) || (r.company && String(r.company).trim()) || null;
-    return res.json({ ok: true, matched: true, name: display, contactId: r.contact_id, companyName: r.company || null, applicationId: r.application_id || null, applicationName: r.application_name || null });
+    if (r) {
+      const display = (r.name && String(r.name).trim()) || (r.company && String(r.company).trim()) || null;
+      return res.json({ ok: true, matched: true, isStaff: false, name: display, contactId: r.contact_id, companyName: r.company || null, applicationId: r.application_id || null, applicationName: r.application_name || null });
+    }
+
+    // BF_SERVER_STAFF_CALLER_RESOLVE_v1 — internal callers live in users, not
+    // contacts. Fall back to the staff directory only after contact lookup so
+    // existing client resolution and recording-consent behaviour stay intact.
+    const staffResult = await pool.query(
+      `SELECT id::text AS user_id, first_name, last_name, email
+         FROM users
+        WHERE active = true
+          AND right(regexp_replace(coalesce(phone_number, phone, ''), '[^0-9]', '', 'g'), 10) = $1
+        ORDER BY first_name ASC NULLS LAST, last_name ASC NULLS LAST LIMIT 1`,
+      [phone10],
+    );
+    const staff = staffResult.rows[0];
+    if (!staff) return res.json({ ok: true, matched: false, isStaff: false, name: null });
+    const fullName = [staff.first_name, staff.last_name]
+      .map((part: unknown) => String(part ?? "").trim())
+      .filter(Boolean)
+      .join(" ");
+    const display = fullName || (staff.email && String(staff.email).trim()) || null;
+    return res.json({ ok: true, matched: true, isStaff: true, name: display, userId: staff.user_id });
   } catch {
-    return res.json({ ok: true, matched: false, name: null });
+    return res.json({ ok: true, matched: false, isStaff: false, name: null });
   }
 });
 
