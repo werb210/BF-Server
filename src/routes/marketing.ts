@@ -707,6 +707,28 @@ router.get("/templates/analytics", requireAuth, safeHandler(async (req: any, res
   respondOk(res, { items: r.rows });
 }));
 
+// BF_SERVER_SEQUENCE_SEGMENTS_v1 — sequence steps may send email or SMS, so the
+// audience includes every contact reachable through either channel. Keep this
+// separate from /sms/segments, whose stricter eligibility is correct for blasts.
+router.get("/segments", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const reachable = `(COALESCE(c.email,'') <> '' OR COALESCE(c.phone,'') <> '')
+                     AND COALESCE(c.marketing_opt_out,false) = false`;
+  const tags = await pool.query(
+    `SELECT tag, count(*)::int AS n FROM (
+       SELECT unnest(c.tags) AS tag FROM contacts c
+        WHERE c.silo = $1 AND ${reachable}
+     ) t GROUP BY tag ORDER BY n DESC`,
+    [silo],
+  );
+  const total = await pool.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM contacts c
+      WHERE c.silo = $1 AND ${reachable}`,
+    [silo],
+  );
+  respondOk(res, { all: total.rows[0]?.n ?? 0, segments: tags.rows });
+}));
+
 // BF_SERVER_BLOCK_v785_SEQUENCES — drip sequence CRUD + activate/pause.
 router.get("/sequences", requireAuth, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
