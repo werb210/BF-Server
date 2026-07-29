@@ -6,7 +6,7 @@
 // exactly (same recipient filter, merge vars, and timeline event).
 import type { Pool } from "pg";
 import { sendOne, mergeFields } from "./sendgridService.js";
-import { sendMarketingSms, trackedLink, lookupLineType } from "./marketingSms.js";
+import { renderMarketingSms, sendMarketingSms, trackedLink, lookupLineType } from "./marketingSms.js";
 import { isCanadianMobile, SMS_ELIGIBLE_SQL } from "./smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1 // BF_SERVER_SEND_QUEUE_SMS_v1 BF_SERVER_BLOCK_v784_LINE_TYPE_IMPORT
 
 // BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1 - include/exclude tag arrays. Include
@@ -155,13 +155,11 @@ export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgr
     if (hasPhone) {
       const send = await pool.query<{ id: string }>(`INSERT INTO sms_campaign_sends (campaign_id, contact_id, silo, phone) VALUES ($1,$2,$3,$4) RETURNING id`, [campaignId, c.id, job.silo, c.phone]);
       const sendId = send.rows[0].id;
-      // BF_SERVER_SMS_CASL_FOOTER_v1 - CASL identification + opt-out on every marketing SMS.
-      const baseText = job.linkUrl ? `${job.body} ${trackedLink(sendId, job.linkUrl)}` : job.body;
-      // BF_SERVER_SMS_FOOTER_WWW_v1 - the apex boreal.financial is NOT mapped to the
-      // Static Web App (its Custom domains blade lists only www.boreal.financial), so
-      // boreal.financial/sms returns a hard 404 while the apex root still renders. Every
-      // marketing SMS was pointing its CASL identification link at a dead URL.
-      const text = `${baseText} Reply STOP to opt out. Info: www.boreal.financial/sms`;
+      const text = renderMarketingSms({
+        body: job.body,
+        vars,
+        link: job.linkUrl ? trackedLink(sendId, job.linkUrl) : null,
+      });
       const r = await sendMarketingSms(String(c.phone), text);
       if (r.ok) {
         smsSent++;
