@@ -9,7 +9,10 @@ describe("sequence send-failure handling", () => {
   it("retries instead of advancing on email failure", () => {
     expect(src).toContain("SEQ_NO_ADVANCE_ON_SEND_FAIL_v1");
     expect(src).toContain('console.error("[sequence] email send failed; will retry"');
-    expect(src).toContain("await bump(pool, en.id, 60);");
+    expect(src).toContain("await bump(pool, en.id, 60, en.quiet_start, en.quiet_end);");
+    const failure = src.slice(src.indexOf('console.error("[sequence] email send failed'));
+    expect(failure.indexOf("await bump(")).toBeGreaterThan(-1);
+    expect(failure.indexOf("await bump(")).toBeLessThan(failure.indexOf("await advance("));
   });
   it("removes the pre-inserted attempt row on failure", () => {
     expect(src).toContain("DELETE FROM sequence_sends WHERE id=$1");
