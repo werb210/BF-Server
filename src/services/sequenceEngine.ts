@@ -4,7 +4,7 @@
 import type { Pool } from "pg";
 import { randomUUID } from "crypto";
 import { sendOne, mergeFields } from "./sendgridService.js";
-import { sendMarketingSms, trackedLink } from "./marketingSms.js";
+import { renderMarketingSms, sendMarketingSms, trackedLink } from "./marketingSms.js";
 import { renderBrandedEmail } from "./emailTemplateRender.js";
 
 function smsHourLocal(): number {
@@ -140,7 +140,11 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
         // BF_SERVER_BLOCK_v786_SEQ_CLICKS - track this send so a link click attributes back.
         const ss = await pool.query<{ id: string }>(`INSERT INTO sequence_sends (sequence_id, contact_id, silo, channel) VALUES ($1,$2,$3,'sms') RETURNING id`, [en.sequence_id, c.id, c.silo || "BF"]);
         const sendId = ss.rows[0]?.id || randomUUID();
-        const text = effLink ? `${effBody || ""} ${trackedLink(sendId, String(effLink))}` : String(effBody || "");
+        const text = renderMarketingSms({
+          body: String(effBody || ""),
+          vars,
+          link: effLink ? trackedLink(sendId, String(effLink)) : null,
+        });
         const r = await sendMarketingSms(String(c.phone), text);
         if (r.ok) { await logStep(pool, c.id, en.sequence_id, idx, "sms"); await pool.query(`UPDATE sequence_sends SET message_sid=$2 WHERE id=$1`, [sendId, r.sid ?? null]).catch(() => {}); }
         else if (r.optedOut) await pool.query(`UPDATE contacts SET sms_opt_out=true, updated_at=now() WHERE id=$1`, [c.id]).catch(() => {});

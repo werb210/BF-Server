@@ -6,6 +6,17 @@ import { fetchTwilioClient } from "./twilio.js";
 import { config } from "../config/index.js";
 
 const PUBLIC_URL = (process.env.PUBLIC_SERVER_URL || "https://server.boreal.financial").replace(/\/+$/, "");
+const CASL_FOOTER = "Reply STOP to opt out. Info: www.boreal.financial/sms";
+
+export function mergeSmsFields(text: string, vars: Record<string, string>): string {
+  return text.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_match, key) => vars[String(key).toLowerCase()] ?? "");
+}
+
+/** Build the exact recipient-facing marketing SMS in one consistent order. */
+export function renderMarketingSms(opts: { body: string; vars: Record<string, string>; link?: string | null }): string {
+  const mergedBody = mergeSmsFields(opts.body, opts.vars).trim();
+  return [mergedBody, opts.link?.trim(), CASL_FOOTER].filter(Boolean).join(" ");
+}
 
 function fromNumber(): string {
   return String(process.env.TWILIO_SMS_FROM || config.twilio.number || config.twilio.phone || "");

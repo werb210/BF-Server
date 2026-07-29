@@ -9,7 +9,7 @@ import { pool } from "../db.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { logError } from "../observability/logger.js";
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js"; // BF_SERVER_MAYA_MKT_TOOLS_v1
-import { smsMarketingConfigured, sendMarketingSms } from "../services/marketingSms.js"; // BF_SERVER_MAYA_MKT_TOOLS_v1
+import { smsMarketingConfigured, sendMarketingSms, renderMarketingSms } from "../services/marketingSms.js"; // BF_SERVER_MAYA_MKT_TOOLS_v1
 import { countEmailRecipients, runEmailSend, countSmsRecipients, runSmsSend } from "../services/marketingSendRunner.js"; // BF_SERVER_MAYA_MKT_TOOLS_v1
 import { createLandingPageFromHtml, withViewInBrowser } from "../services/landingPage.service.js"; // BF_SERVER_MAYA_MKT_TOOLS_v1
 import { runPipelineQuery } from "../services/mayaPipelineQuery.js";
@@ -1323,7 +1323,11 @@ router.post(
         const body = biStr(req.body?.body);
         if (!body) return res.status(400).json({ ok: false, error: "body_required" });
         if (test) {
-          const r = await sendMarketingSms(test, body);
+          const r = await sendMarketingSms(test, renderMarketingSms({
+            body,
+            vars: { first_name: "there", name: "there", email: test, company: "" },
+            link: biStr(req.body?.linkUrl) ?? null,
+          }));
           await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, test: true }, ok: true, summary: "Sent SMS test.", sessionId: sid });
           return res.json({ ...r, ok: true, test: true });
         }

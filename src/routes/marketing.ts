@@ -7,7 +7,7 @@ import { pool } from "../db.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { createLandingPage, createLandingPageFromHtml, withViewInBrowser } from "../services/landingPage.service.js"; // BF_SERVER_BLOCK_v780_PUBLIC_LANDING
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js";
-import { smsMarketingConfigured, sendMarketingSms } from "../services/marketingSms.js";
+import { smsMarketingConfigured, sendMarketingSms, renderMarketingSms } from "../services/marketingSms.js";
 import { SMS_ELIGIBLE_SQL } from "../services/smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1
 import { countEmailRecipients, runEmailSend, countSmsRecipients, runSmsSend } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1 BF_SERVER_SEND_QUEUE_SMS_v1
 import { enrollSequence } from "../services/sequenceEngine.js"; // BF_SERVER_BLOCK_v785_SEQUENCES
@@ -446,8 +446,13 @@ router.post("/sms/send", safeHandler(async (req: any, res: any) => {
   const body = String(b.body || "").trim();
   if (!body) { respondOk(res, { error: "message body required" }); return; }
   if (b.test && typeof b.test === "string") {
-    const r = await sendMarketingSms(b.test, body);
-    respondOk(res, { test: true, ...r });
+    const text = renderMarketingSms({
+      body,
+      vars: { first_name: "there", name: "there", email: String(b.test), company: "" },
+      link: b.linkUrl ? String(b.linkUrl) : null,
+    });
+    const r = await sendMarketingSms(b.test, text);
+    respondOk(res, { test: true, preview: text, ...r });
     return;
   }
   const tag = b.tag ? String(b.tag) : null;
