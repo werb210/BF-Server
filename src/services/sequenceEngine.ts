@@ -4,13 +4,10 @@
 import type { Pool } from "pg";
 import { randomUUID } from "crypto";
 import { sendOne, mergeFields } from "./sendgridService.js";
-import { renderMarketingSms, sendMarketingSms, trackedLink } from "./marketingSms.js";
+import { renderMarketingSms, sendMarketingSms, trackedLink, lookupLineType } from "./marketingSms.js";
 import { renderBrandedEmail } from "./emailTemplateRender.js";
-
-function smsHourLocal(): number {
-  const h = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/Edmonton", hour: "numeric", hour12: false }).format(new Date()));
-  return h % 24;
-}
+import { isCanadianMobile } from "./smsConsent.js";
+import { scheduleAfter } from "./sequenceSchedule.js";
 async function repliedSince(pool: Pool, contactId: string, since: any): Promise<boolean> {
   try { const r = await pool.query(`SELECT 1 FROM communications_messages WHERE contact_id=$1 AND direction='inbound' AND created_at > $2 LIMIT 1`, [contactId, since]); return (r.rowCount ?? 0) > 0; }
   catch { return false; }
@@ -35,18 +32,18 @@ async function logStep(pool: Pool, contactId: string, seqId: string, stepIdx: nu
 }
 async function complete(pool: Pool, id: string): Promise<void> { await pool.query(`UPDATE marketing_sequence_enrollments SET status='completed', last_step_at=now(), updated_at=now() WHERE id=$1`, [id]); }
 async function stop(pool: Pool, id: string, status: string): Promise<void> { await pool.query(`UPDATE marketing_sequence_enrollments SET status=$2, updated_at=now() WHERE id=$1`, [id, status]); }
-async function bump(pool: Pool, id: string, minutes: number): Promise<void> { await pool.query(`UPDATE marketing_sequence_enrollments SET status='active', next_run_at=now()+($2||' minutes')::interval, updated_at=now() WHERE id=$1`, [id, String(minutes)]); }
-async function advance(pool: Pool, id: string, nextIdx: number, steps: any[]): Promise<void> {
+async function bump(pool: Pool, id: string, minutes: number, quietStart: number, quietEnd: number): Promise<void> { await pool.query(`UPDATE marketing_sequence_enrollments SET status='active', next_run_at=$2, updated_at=now() WHERE id=$1`, [id, scheduleAfter(minutes, quietStart, quietEnd)]); }
+async function advance(pool: Pool, id: string, nextIdx: number, steps: any[], quietStart: number, quietEnd: number): Promise<void> {
   if (nextIdx >= steps.length) { await complete(pool, id); return; }
   const wait = steps[nextIdx]?.wait_minutes ?? 0;
-  await pool.query(`UPDATE marketing_sequence_enrollments SET status='active', current_step=$2, last_step_at=now(), next_run_at=now()+($3||' minutes')::interval, updated_at=now() WHERE id=$1`, [id, nextIdx, String(wait)]);
+  await pool.query(`UPDATE marketing_sequence_enrollments SET status='active', current_step=$2, last_step_at=now(), next_run_at=$3, updated_at=now() WHERE id=$1`, [id, nextIdx, scheduleAfter(wait, quietStart, quietEnd)]);
 }
 
 // BF_SERVER_SEQ_TASK_STEP_v1 - called by the tasks routes when a
 // SEQUENCE-sourced task completes: un-parks the enrollment and advances.
 export async function resumeSequenceTask(pool: Pool, enrollmentId: string): Promise<void> {
   const en = (await pool.query(
-    `SELECT id, sequence_id, current_step FROM marketing_sequence_enrollments WHERE id=$1 AND status='waiting_task'`,
+    `SELECT e.id, e.sequence_id, e.current_step, s.quiet_start, s.quiet_end FROM marketing_sequence_enrollments e JOIN marketing_sequences s ON s.id=e.sequence_id WHERE e.id=$1 AND e.status='waiting_task'`,
     [enrollmentId]
   )).rows[0];
   if (!en) return;
@@ -54,25 +51,43 @@ export async function resumeSequenceTask(pool: Pool, enrollmentId: string): Prom
     `SELECT channel, wait_minutes FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC`,
     [en.sequence_id]
   )).rows;
-  await advance(pool, en.id, Number(en.current_step) + 1, steps);
+  await advance(pool, en.id, Number(en.current_step) + 1, steps, en.quiet_start, en.quiet_end);
 }
 
 export async function enrollSequence(pool: Pool, sequenceId: string): Promise<number> {
-  const seq = await pool.query(`SELECT silo, audience_tag FROM marketing_sequences WHERE id=$1`, [sequenceId]);
+  const seq = await pool.query(`SELECT silo, audience_tag, quiet_start, quiet_end FROM marketing_sequences WHERE id=$1`, [sequenceId]);
   if (seq.rowCount === 0) return 0;
   const silo = seq.rows[0].silo; const tag = seq.rows[0].audience_tag;
   const fw = await pool.query(`SELECT wait_minutes FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC LIMIT 1`, [sequenceId]);
   const wait = fw.rows[0]?.wait_minutes ?? 0;
   const ins = await pool.query(
     `INSERT INTO marketing_sequence_enrollments (sequence_id, contact_id, silo, current_step, status, next_run_at, enrolled_at)
-       SELECT $1, c.id, $2, 0, 'active', now()+($3||' minutes')::interval, now()
+       SELECT $1, c.id, $2, 0, 'active', $3, now()
          FROM contacts c
         WHERE c.silo=$2 AND ($4::text IS NULL OR $4 = ANY(c.tags))
           AND (COALESCE(c.email,'')<>'' OR COALESCE(c.phone,'')<>'')
      ON CONFLICT (sequence_id, contact_id) DO NOTHING`,
-    [sequenceId, silo, String(wait), tag],
+    [sequenceId, silo, scheduleAfter(wait, seq.rows[0].quiet_start, seq.rows[0].quiet_end), tag],
   );
   return ins.rowCount ?? 0;
+}
+
+
+// BF_SERVER_SEQ_ENROLL_CONTACTS_v1 - explicit, idempotent list-view enrollment.
+export async function enrollContacts(pool: Pool, sequenceId: string, contactIds: string[]): Promise<number> {
+  if (!contactIds.length) return 0;
+  const seq = await pool.query(`SELECT silo, quiet_start, quiet_end FROM marketing_sequences WHERE id=$1`, [sequenceId]);
+  if (!seq.rows[0]) return 0;
+  const first = await pool.query(`SELECT wait_minutes FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC LIMIT 1`, [sequenceId]);
+  const nextRun = scheduleAfter(first.rows[0]?.wait_minutes ?? 0, seq.rows[0].quiet_start, seq.rows[0].quiet_end);
+  const inserted = await pool.query(
+    `INSERT INTO marketing_sequence_enrollments (sequence_id, contact_id, silo, current_step, status, next_run_at, enrolled_at)
+       SELECT $1, c.id, $2, 0, 'active', $3, now() FROM contacts c
+        WHERE c.id = ANY($4::uuid[]) AND c.silo=$2 AND (COALESCE(c.email,'')<>'' OR COALESCE(c.phone,'')<>'')
+     ON CONFLICT (sequence_id, contact_id) DO NOTHING`,
+    [sequenceId, seq.rows[0].silo, nextRun, contactIds],
+  );
+  return inserted.rowCount ?? 0;
 }
 
 async function processClaimed(pool: Pool, en: any): Promise<void> {
@@ -128,15 +143,22 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
         await pool.query(`UPDATE marketing_sequence_enrollments SET status='waiting_task', updated_at=now() WHERE id=$1`, [en.id]);
         return;
       }
-      await advance(pool, en.id, idx + 1, steps);
+      await advance(pool, en.id, idx + 1, steps, en.quiet_start, en.quiet_end);
       return;
     }
 
-    if (step.channel === "sms") {
-      const blocked = !c.phone || c.sms_opt_out || (c.line_type && c.line_type !== "mobile");
+    // BF_SERVER_SEQ_AUTO_CHANNEL_v1 - exactly the blast runner's textability
+    // rule. Auto selects one branch only, preferring SMS when both are present.
+    let textable = Boolean(c.phone) && !c.sms_opt_out && !c.marketing_opt_out && isCanadianMobile(c.phone);
+    if (textable && c.line_type == null) {
+      const lineType = await lookupLineType(String(c.phone));
+      if (lineType) await pool.query(`UPDATE contacts SET line_type=$2, line_type_checked_at=now() WHERE id=$1`, [c.id, lineType]);
+      if (lineType && lineType !== "mobile") textable = false;
+    } else if (textable && c.line_type !== "mobile") textable = false;
+    const channel = step.channel === "auto" ? (textable ? "sms" : "email") : step.channel;
+    if (channel === "sms") {
+      const blocked = !textable;
       if (!blocked) {
-        const h = smsHourLocal();
-        if (h < en.quiet_start || h >= en.quiet_end) { await bump(pool, en.id, 60); return; }
         // BF_SERVER_BLOCK_v786_SEQ_CLICKS - track this send so a link click attributes back.
         const ss = await pool.query<{ id: string }>(`INSERT INTO sequence_sends (sequence_id, contact_id, silo, channel) VALUES ($1,$2,$3,'sms') RETURNING id`, [en.sequence_id, c.id, c.silo || "BF"]);
         const sendId = ss.rows[0]?.id || randomUUID();
@@ -152,7 +174,7 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
           // BF_SERVER_SEQ_NO_ADVANCE_ON_SEND_FAIL_v1 - see email branch.
           await pool.query(`DELETE FROM sequence_sends WHERE id=$1`, [sendId]).catch(() => {});
           console.error("[sequence] sms send failed; will retry", { enrollmentId: en.id });
-          await bump(pool, en.id, 60);
+          await bump(pool, en.id, 60, en.quiet_start, en.quiet_end);
           return;
         }
       }
@@ -176,13 +198,13 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
           // Remove the attempt row and retry this step in 60 minutes.
           if (esId) await pool.query(`DELETE FROM sequence_sends WHERE id=$1`, [esId]).catch(() => {});
           console.error("[sequence] email send failed; will retry", { enrollmentId: en.id, status: r.status, error: r.error });
-          await bump(pool, en.id, 60);
+          await bump(pool, en.id, 60, en.quiet_start, en.quiet_end);
           return;
         }
       }
     }
   }
-  await advance(pool, en.id, idx + 1, steps);
+  await advance(pool, en.id, idx + 1, steps, en.quiet_start, en.quiet_end);
 }
 
 export async function tickSequences(pool: Pool): Promise<void> {
@@ -204,6 +226,6 @@ export async function tickSequences(pool: Pool): Promise<void> {
     const en = claim.rows[0];
     if (!en) break;
     try { await processClaimed(pool, en); }
-    catch { await pool.query(`UPDATE marketing_sequence_enrollments SET status='active', next_run_at=now()+interval '15 minutes', updated_at=now() WHERE id=$1`, [en.id]).catch(() => {}); }
+    catch { await pool.query(`UPDATE marketing_sequence_enrollments SET status='active', next_run_at=$2, updated_at=now() WHERE id=$1`, [en.id, scheduleAfter(15, en.quiet_start, en.quiet_end)]).catch(() => {}); }
   }
 }

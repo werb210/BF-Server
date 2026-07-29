@@ -10,7 +10,7 @@ import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridSe
 import { smsMarketingConfigured, sendMarketingSms, renderMarketingSms } from "../services/marketingSms.js";
 import { SMS_ELIGIBLE_SQL } from "../services/smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1
 import { countEmailRecipients, runEmailSend, countSmsRecipients, runSmsSend } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1 BF_SERVER_SEND_QUEUE_SMS_v1
-import { enrollSequence } from "../services/sequenceEngine.js"; // BF_SERVER_BLOCK_v785_SEQUENCES
+import { enrollContacts, enrollSequence } from "../services/sequenceEngine.js"; // BF_SERVER_BLOCK_v785_SEQUENCES
 import { suggestionsConfigured, buildSuggestions, applySuggestion } from "../services/googleAdsSuggestions.js";
 import { linkedInSuggestionsConfigured, buildLinkedInSuggestions, applyLinkedInSuggestion } from "../services/linkedInAdsSuggestions.js"; // BF_SERVER_LINKEDIN_SUGGESTIONS_v1
 import { previewIcp, buildHashedList, buildLinkedInAudienceCsv } from "../services/googleAdsCustomerMatch.js";
@@ -780,6 +780,20 @@ router.post("/sequences/:id/activate", requireAuth, safeHandler(async (req: any,
   if (upd.rowCount === 0) { respondOk(res, { error: "not found" }); return; }
   const enrolled = await enrollSequence(pool, id);
   respondOk(res, { activated: true, enrolled });
+}));
+
+// BF_SERVER_SEQ_ENROLL_CONTACTS_v1 - enroll contacts picked in the CRM list view.
+// This intentionally works while paused; activation controls processing, not enrollment.
+router.post("/sequences/:id/enroll", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const id = String(req.params.id);
+  const owns = await pool.query(`SELECT 1 FROM marketing_sequences WHERE id=$1 AND silo=$2`, [id, silo]);
+  if (owns.rowCount === 0) { respondOk(res, { error: "not found" }); return; }
+  const raw = Array.isArray(req.body?.contactIds) ? req.body.contactIds : [];
+  const ids = [...new Set(raw.map((value: unknown) => String(value).trim()).filter((value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)))] as string[];
+  if (!ids.length) { respondOk(res, { error: "contactIds required" }); return; }
+  const enrolled = await enrollContacts(pool, id, ids);
+  respondOk(res, { enrolled, requested: ids.length, skipped: ids.length - enrolled });
 }));
 
 router.post("/sequences/:id/pause", requireAuth, safeHandler(async (req: any, res: any) => {
