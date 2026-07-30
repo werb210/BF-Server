@@ -55,19 +55,28 @@ export async function resumeSequenceTask(pool: Pool, enrollmentId: string): Prom
 }
 
 export async function enrollSequence(pool: Pool, sequenceId: string): Promise<number> {
-  const seq = await pool.query(`SELECT silo, audience_tag, quiet_start, quiet_end FROM marketing_sequences WHERE id=$1`, [sequenceId]);
+  const seq = await pool.query(`SELECT silo, audience_tag, audience_include_tags, audience_exclude_tags, quiet_start, quiet_end FROM marketing_sequences WHERE id=$1`, [sequenceId]);
   if (seq.rowCount === 0) return 0;
-  const silo = seq.rows[0].silo; const tag = seq.rows[0].audience_tag;
+  const silo = seq.rows[0].silo;
+  // BF_SERVER_SEQ_AUDIENCE_TAGS_v1 — legacy audience_tag remains an include.
+  // Include is ANY/union; exclude is absolute. Empty arrays disable that filter.
+  const includeTags = [...new Set([
+    ...(Array.isArray(seq.rows[0].audience_include_tags) ? seq.rows[0].audience_include_tags : []),
+    ...(seq.rows[0].audience_tag ? [seq.rows[0].audience_tag] : []),
+  ])];
+  const excludeTags = Array.isArray(seq.rows[0].audience_exclude_tags) ? seq.rows[0].audience_exclude_tags : [];
   const fw = await pool.query(`SELECT wait_minutes FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC LIMIT 1`, [sequenceId]);
   const wait = fw.rows[0]?.wait_minutes ?? 0;
   const ins = await pool.query(
     `INSERT INTO marketing_sequence_enrollments (sequence_id, contact_id, silo, current_step, status, next_run_at, enrolled_at)
        SELECT $1, c.id, $2, 0, 'active', $3, now()
          FROM contacts c
-        WHERE c.silo=$2 AND ($4::text IS NULL OR $4 = ANY(c.tags))
+        WHERE c.silo=$2
+          AND (cardinality($4::text[]) = 0 OR COALESCE(c.tags, '{}') && $4::text[])
+          AND NOT (COALESCE(c.tags, '{}') && $5::text[])
           AND (COALESCE(c.email,'')<>'' OR COALESCE(c.phone,'')<>'')
      ON CONFLICT (sequence_id, contact_id) DO NOTHING`,
-    [sequenceId, silo, scheduleAfter(wait, seq.rows[0].quiet_start, seq.rows[0].quiet_end), tag],
+    [sequenceId, silo, scheduleAfter(wait, seq.rows[0].quiet_start, seq.rows[0].quiet_end), includeTags, excludeTags],
   );
   return ins.rowCount ?? 0;
 }

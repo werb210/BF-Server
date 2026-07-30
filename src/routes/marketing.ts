@@ -733,7 +733,7 @@ router.get("/segments", requireAuth, safeHandler(async (req: any, res: any) => {
 router.get("/sequences", requireAuth, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const r = await pool.query(
-    `SELECT s.id, s.name, s.audience_tag, s.status, s.stop_on_reply, s.created_at,
+    `SELECT s.id, s.name, s.audience_tag, s.audience_include_tags, s.audience_exclude_tags, s.status, s.stop_on_reply, s.created_at,
             (SELECT count(*)::int FROM marketing_sequence_steps st WHERE st.sequence_id=s.id) AS steps,
             (SELECT count(*)::int FROM marketing_sequence_enrollments e WHERE e.sequence_id=s.id) AS enrolled,
             (SELECT count(*)::int FROM marketing_sequence_enrollments e WHERE e.sequence_id=s.id AND e.status='active') AS active,
@@ -766,7 +766,7 @@ router.get("/sequences", requireAuth, safeHandler(async (req: any, res: any) => 
 
 router.get("/sequences/:id", requireAuth, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
-  const s = await pool.query(`SELECT id, name, audience_tag, status, stop_on_reply, quiet_start, quiet_end FROM marketing_sequences WHERE id=$1 AND silo=$2`, [String(req.params.id), silo]);
+  const s = await pool.query(`SELECT id, name, audience_tag, audience_include_tags, audience_exclude_tags, status, stop_on_reply, quiet_start, quiet_end FROM marketing_sequences WHERE id=$1 AND silo=$2`, [String(req.params.id), silo]);
   if (s.rowCount === 0) { respondOk(res, { item: null }); return; }
   const steps = await pool.query(`SELECT step_order, channel, wait_minutes, condition, subject, body, html, link_url, template_id, sms_template_id, email_template_id, task_type, task_priority, task_queue_id, task_pause FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC`, [String(req.params.id)]);
   respondOk(res, { item: s.rows[0], steps: steps.rows });
@@ -776,6 +776,10 @@ router.get("/sequences/:id", requireAuth, safeHandler(async (req: any, res: any)
 const uuidOrNull = (v: unknown): string | null =>
   typeof v === "string" && /^[0-9a-fA-F-]{36}$/.test(v.trim()) ? v.trim() : null;
 
+// BF_SERVER_SEQ_AUDIENCE_TAGS_v1 — normalize API input to unique, non-empty tags.
+const tagList = (value: unknown): string[] =>
+  Array.isArray(value) ? [...new Set(value.map((tag) => String(tag).trim()).filter(Boolean))] : [];
+
 router.post("/sequences", requireAuth, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const b = req.body || {};
@@ -783,9 +787,11 @@ router.post("/sequences", requireAuth, safeHandler(async (req: any, res: any) =>
   const steps = Array.isArray(b.steps) ? b.steps : [];
   if (!name || steps.length === 0) { respondOk(res, { error: "name and at least one step required" }); return; }
   const seq = await pool.query(
-    `INSERT INTO marketing_sequences (silo, name, audience_tag, stop_on_reply, quiet_start, quiet_end, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-    [silo, name, b.audienceTag ? String(b.audienceTag) : null, b.stopOnReply !== false, Number(b.quietStart ?? 9), Number(b.quietEnd ?? 21), req.user?.userId ?? null]);
+    `INSERT INTO marketing_sequences (silo, name, audience_tag, audience_include_tags, audience_exclude_tags, stop_on_reply, quiet_start, quiet_end, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+    [silo, name, b.audienceTag ? String(b.audienceTag) : null,
+     tagList(b.includeTags ?? b.audienceIncludeTags), tagList(b.excludeTags ?? b.audienceExcludeTags),
+     b.stopOnReply !== false, Number(b.quietStart ?? 9), Number(b.quietEnd ?? 21), req.user?.userId ?? null]);
   const seqId = seq.rows[0].id;
   for (let i = 0; i < steps.length; i++) {
     const st = steps[i] || {};
