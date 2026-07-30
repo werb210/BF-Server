@@ -74,6 +74,25 @@ router.post("/applications/:id/document-waivers", requireAuth, requireAdmin, saf
   );
   res.status(201).json({ ok: true, application_id: appId, document_type: documentType });
 }));
+// BF_SERVER_WAIVER_REMOVE_BODY_v1
+// Re-requiring a waived document 404'd for any document type containing a
+// slash — "A/P" and "A/R". The portal sent
+//   DELETE /applications/:id/document-waivers/A%2FP
+// and Azure App Service rejects %2F inside a path segment BEFORE Express sees
+// the request, so the route never ran and the checkbox silently reverted. The
+// screen showed "Route not found" while the network tab logged repeated 404s
+// against .../document-waivers/A%2FP.
+//
+// The document type is data, not a path. It goes in the body, where a slash is
+// just a character. The old DELETE route stays for any caller still using it —
+// it works fine for types without a slash.
+router.post("/applications/:id/document-waivers/remove", requireAuth, requireAdmin, safeHandler(async (req: any, res: any) => {
+  const appId = String(req.params.id ?? "").trim();
+  const documentType = String(req.body?.document_type ?? req.body?.documentType ?? "").trim();
+  if (!appId || !documentType) throw new AppError("validation_error", "application id and document_type are required.", 400);
+  await runQuery(`DELETE FROM application_document_waivers WHERE application_id::text = ($1)::text AND document_type = $2`, [appId, documentType]);
+  res.json({ ok: true, application_id: appId, document_type: documentType });
+}));
 router.delete("/applications/:id/document-waivers/:documentType", requireAuth, requireAdmin, safeHandler(async (req: any, res: any) => {
   const appId = String(req.params.id ?? "").trim();
   const documentType = decodeURIComponent(String(req.params.documentType ?? "")).trim();
