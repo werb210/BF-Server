@@ -48,6 +48,7 @@ import templatesRoutes from "./templates.js"; // v693
 import staffRoutes from "./staff.js";
 import supportRoutes from "./support.js";
 import tasksRoutes from "./tasks.js";
+import serviceBridgeRoutes from "./serviceBridge.js"; // BF_SERVER_SERVICE_BRIDGE_v1
 import usersRoutes from "./users.js";
 import o365TokensRoutes from "./o365Tokens.js";
 import o365OAuthRoutes from "./o365OAuth.js";
@@ -223,6 +224,9 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/staff", router: staffRoutes },
   { path: "/support", router: supportRoutes },
   { path: "/tasks", router: tasksRoutes },
+  // BF_SERVER_SERVICE_BRIDGE_v1 - backend-to-backend only, guarded by the
+  // service token inside the router. Not reachable with a staff JWT alone.
+  { path: "/service", router: serviceBridgeRoutes },
   { path: "/users/me", router: o365TokensRoutes },
   { path: "/users", router: usersRoutes },
   { path: "/portal", router: combinedPortalRoutes },
