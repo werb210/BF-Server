@@ -47,8 +47,13 @@ export function renderBrandedEmail(f: BrandedEmailFields): string {
   const image2 = img(f.image2Url, f.image2Link);
   const secondHeadline = f.headline2 ?? f.secondHeadline ?? f.rightHeadline ?? "";
   const secondBody = f.body2 ?? f.secondBody ?? f.rightBody ?? "";
-  const secondImageUrl = f.rightImageUrl ?? f.image2Url;
-  const secondImageLink = f.rightImageLink ?? f.image2Link;
+  // BF_EMAIL_SECOND_IMAGE_v1 - the composer sends two independent image controls:
+  // the right-column picture and the standalone picture below the frame. They are
+  // always present as empty strings, so a nullish fallback between them resolved
+  // to the empty string and the right column silently lost its picture. Each
+  // control now feeds exactly one slot and neither borrows from the other.
+  const secondImageUrl = f.rightImageUrl || "";
+  const secondImageLink = f.rightImageLink || "";
   const hasSecondColumn = Boolean(secondHeadline || secondBody || f.rightImageUrl);
   const columns = hasSecondColumn ? `<tr><td style="padding:28px 28px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
 <td class="email-column" width="264" valign="top" style="width:264px;">${column(f.headline, f.body, f.heroUrl, f.heroLink)}</td>
@@ -61,7 +66,7 @@ export function renderBrandedEmail(f: BrandedEmailFields): string {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f7;"><tr><td align="center" style="padding:24px 12px;">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:8px;overflow:hidden;">
 <tr><td style="background:${BRAND};padding:22px;text-align:center;"><img src="${logo}" alt="Boreal Financial" width="300" style="display:inline-block;width:300px;max-width:80%;height:auto;border:0;"></td></tr>
-${hasSecondColumn ? columns : `${headline}${hero}${body}`}${cta}${hasSecondColumn ? "" : image2}
+${hasSecondColumn ? columns : `${headline}${hero}${body}`}${cta}${image2}
 <tr><td style="padding:30px 28px 28px;"><hr style="border:none;border-top:1px solid #e5e7eb;margin:0 0 16px;"><p style="margin:0 0 6px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:#6b7280;"><strong>Boreal Financial</strong><br>${ADDRESS}</p><p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:#9ca3af;">You received this email because you connected with Boreal Financial.</p></td></tr>
 </table></td></tr></table></body></html>`;
 }
