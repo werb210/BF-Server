@@ -526,12 +526,16 @@ function templateFieldsFromBody(b: any): BrandedEmailFields {
 
 router.get("/email/template", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
-  const r = await pool.query(`SELECT headline, hero_url, hero_link, body, cta_label, cta_url, image2_url, image2_link FROM marketing_email_template WHERE silo = $1`, [silo]);
+  const r = await pool.query(`SELECT headline, hero_url, hero_link, body, cta_label, cta_url, image2_url, image2_link, headline2, body2, right_image_url, right_image_link FROM marketing_email_template WHERE silo = $1`, [silo]);
   const row: any = r.rows[0] || {};
+  // BF_EMAIL_TEMPLATE_SECOND_COLUMN_v1 - a one-column template stores these
+  // empty and reloads as one column; a two-column template reloads with both.
   respondOk(res, { template: {
     headline: row.headline ?? "", heroUrl: row.hero_url ?? "", heroLink: row.hero_link ?? "",
     body: row.body ?? "", ctaLabel: row.cta_label ?? "", ctaUrl: row.cta_url ?? "",
     image2Url: row.image2_url ?? "", image2Link: row.image2_link ?? "",
+    headline2: row.headline2 ?? "", body2: row.body2 ?? "",
+    rightImageUrl: row.right_image_url ?? "", rightImageLink: row.right_image_link ?? "",
   } });
 }));
 
@@ -539,10 +543,11 @@ router.post("/email/template", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const f = templateFieldsFromBody(req.body || {});
   await pool.query(
-    `INSERT INTO marketing_email_template (silo, headline, hero_url, hero_link, body, cta_label, cta_url, image2_url, image2_link, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
-     ON CONFLICT (silo) DO UPDATE SET headline=$2, hero_url=$3, hero_link=$4, body=$5, cta_label=$6, cta_url=$7, image2_url=$8, image2_link=$9, updated_at=now()`,
-    [silo, f.headline, f.heroUrl, f.heroLink, f.body, f.ctaLabel, f.ctaUrl, f.image2Url, f.image2Link],
+    `INSERT INTO marketing_email_template (silo, headline, hero_url, hero_link, body, cta_label, cta_url, image2_url, image2_link, headline2, body2, right_image_url, right_image_link, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now())
+     ON CONFLICT (silo) DO UPDATE SET headline=$2, hero_url=$3, hero_link=$4, body=$5, cta_label=$6, cta_url=$7, image2_url=$8, image2_link=$9, headline2=$10, body2=$11, right_image_url=$12, right_image_link=$13, updated_at=now()`,
+    [silo, f.headline, f.heroUrl, f.heroLink, f.body, f.ctaLabel, f.ctaUrl, f.image2Url, f.image2Link,
+     f.headline2 ?? "", f.body2 ?? "", f.rightImageUrl ?? "", f.rightImageLink ?? ""],
   );
   respondOk(res, { saved: true });
 }));

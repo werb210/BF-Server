@@ -553,10 +553,23 @@ router.get(
     // v636: include `direction` + `cta_label` + `cta_action` so MiniPortalPage
     // maps inbound→self / outbound→other correctly and MessageThread renders
     // the inline CTA bubble (screenshot 2 — "Complete Personal Net Worth").
+    // BF_CLIENT_THREAD_CONTACT_SCOPE_v1 - staff threads are contact-keyed, so a
+    // reply carries whichever application the portal resolved as "most recent"
+    // for that contact, or none at all. Filtering on application_id alone meant
+    // any client holding more than one application read a thread the reply was
+    // never stamped with. Match on the contact behind this application so the
+    // client sees the same single conversation staff do.
     const rows = await dbQuery(
-      `SELECT id, direction, body, staff_name, cta_label, cta_action, attachments, created_at
+      `WITH thread AS (
+         SELECT contact_id FROM applications WHERE id = $1 LIMIT 1
+       )
+       SELECT id, direction, body, staff_name, cta_label, cta_action, attachments, created_at
        FROM communications_messages
        WHERE application_id = $1
+          OR (
+               (SELECT contact_id FROM thread) IS NOT NULL
+           AND contact_id = (SELECT contact_id FROM thread)
+             )
        ORDER BY created_at ASC
        LIMIT 200`,
       [applicationId]
