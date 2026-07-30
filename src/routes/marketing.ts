@@ -510,6 +510,17 @@ function templateFieldsFromBody(b: any): BrandedEmailFields {
     ctaUrl: String(b.ctaUrl || ""),
     image2Url: String(b.image2Url || ""),
     image2Link: String(b.image2Link || ""),
+    // BF_EMAIL_TWO_COLUMN_FIELDS_v1 - templateFieldsFromBody is the ONLY path
+    // from composer payload to renderBrandedEmail. The renderer accepts the
+    // second column under three alias sets (headline2/body2, secondHeadline/
+    // secondBody, rightHeadline/rightBody) but this mapper forwarded NONE of
+    // them, so a second column typed in the composer was silently dropped from
+    // both the preview and the send. Forward the canonical pair plus the
+    // right-hand image, and accept any alias the caller sends.
+    headline2: String(b.headline2 || b.secondHeadline || b.rightHeadline || b.column2Headline || ""),
+    body2: String(b.body2 || b.secondBody || b.rightBody || b.column2Body || ""),
+    rightImageUrl: String(b.rightImageUrl || b.column2ImageUrl || ""),
+    rightImageLink: String(b.rightImageLink || b.column2ImageLink || ""),
   };
 }
 
