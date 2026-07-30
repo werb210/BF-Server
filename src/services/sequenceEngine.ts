@@ -100,7 +100,7 @@ export async function enrollContacts(pool: Pool, sequenceId: string, contactIds:
 }
 
 async function processClaimed(pool: Pool, en: any): Promise<void> {
-  const steps = (await pool.query(`SELECT channel, wait_minutes, condition, subject, body, html, link_url, template_id, sms_template_id, email_template_id, task_type, task_priority, task_queue_id, task_pause FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC`, [en.sequence_id])).rows;
+  const steps = (await pool.query(`SELECT channel, wait_minutes, condition, subject, body, html, link_url, template_id, sms_template_id, email_template_id, assignee_user_id, task_type, task_priority, task_queue_id, task_pause FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC`, [en.sequence_id])).rows;
   const idx: number = en.current_step;
   if (idx >= steps.length) { await complete(pool, en.id); return; }
   const step = steps[idx];
@@ -151,7 +151,10 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
                    (SELECT id FROM task_queues WHERE id = $6::uuid AND silo = $1),
                    COALESCE($7::uuid, (SELECT id FROM users WHERE active = true ORDER BY (role = 'Admin') DESC, created_at ASC LIMIT 1)),
                    $8, 'SEQUENCE', $9::uuid)`,
-          [siloVal, title, notes, tt, tp, step.task_queue_id ?? null, c.owner_id ?? null, c.id, en.id]
+          // BF_SERVER_SEQ_STEP_ASSIGNEE_v1 - an explicit assignee on the step wins;
+          // with none set this falls back to the contact's owner exactly as before,
+          // then to the first active Admin. Order matters: chosen > owner > admin.
+          [siloVal, title, notes, tt, tp, step.task_queue_id ?? null, step.assignee_user_id ?? c.owner_id ?? null, c.id, en.id]
         );
         await logStep(pool, c.id, en.sequence_id, idx, "task");
       }

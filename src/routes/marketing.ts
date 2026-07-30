@@ -768,7 +768,7 @@ router.get("/sequences/:id", requireAuth, safeHandler(async (req: any, res: any)
   const silo = resolveSiloFromRequest(req);
   const s = await pool.query(`SELECT id, name, audience_tag, audience_include_tags, audience_exclude_tags, status, stop_on_reply, quiet_start, quiet_end FROM marketing_sequences WHERE id=$1 AND silo=$2`, [String(req.params.id), silo]);
   if (s.rowCount === 0) { respondOk(res, { item: null }); return; }
-  const steps = await pool.query(`SELECT step_order, channel, wait_minutes, condition, subject, body, html, link_url, template_id, sms_template_id, email_template_id, task_type, task_priority, task_queue_id, task_pause FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC`, [String(req.params.id)]);
+  const steps = await pool.query(`SELECT step_order, channel, wait_minutes, condition, subject, body, html, link_url, template_id, sms_template_id, email_template_id, assignee_user_id, task_type, task_priority, task_queue_id, task_pause FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC`, [String(req.params.id)]);
   respondOk(res, { item: s.rows[0], steps: steps.rows });
 }));
 
@@ -800,10 +800,13 @@ router.post("/sequences", requireAuth, safeHandler(async (req: any, res: any) =>
       // BF_SERVER_SEQ_AUTO_TEMPLATES_v1 - an auto step carries a template per
       // channel. Accepts camelCase or snake_case so the shared canvas can send
       // either. uuid-guarded so a stray value cannot 500 the whole save on the cast.
-      `INSERT INTO marketing_sequence_steps (sequence_id, step_order, channel, wait_minutes, condition, subject, body, html, link_url, template_id, sms_template_id, email_template_id, task_type, task_priority, task_queue_id, task_pause)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+      // BF_SERVER_SEQ_STEP_ASSIGNEE_v1 - who a task step is for. uuid-guarded so a
+      // stray value cannot 500 the whole save on the cast.
+      `INSERT INTO marketing_sequence_steps (sequence_id, step_order, channel, wait_minutes, condition, subject, body, html, link_url, template_id, sms_template_id, email_template_id, assignee_user_id, task_type, task_priority, task_queue_id, task_pause)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
       [seqId, i, String(st.channel || "email"), Number(st.waitMinutes ?? 0), String(st.condition || "always"), st.subject ?? null, st.body ?? null, st.html ?? null, st.linkUrl ?? null, st.templateId ?? null,
        uuidOrNull(st.smsTemplateId ?? st.sms_template_id), uuidOrNull(st.emailTemplateId ?? st.email_template_id),
+       uuidOrNull(st.assigneeUserId ?? st.assignee_user_id),
        st.taskType ?? null, st.taskPriority ?? null, st.taskQueueId ?? null, st.taskPause !== false]);
   }
   respondOk(res, { id: seqId, saved: true });
