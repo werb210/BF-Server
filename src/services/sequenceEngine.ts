@@ -91,17 +91,24 @@ export async function enrollContacts(pool: Pool, sequenceId: string, contactIds:
 }
 
 async function processClaimed(pool: Pool, en: any): Promise<void> {
-  const steps = (await pool.query(`SELECT channel, wait_minutes, condition, subject, body, html, link_url, template_id, task_type, task_priority, task_queue_id, task_pause FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC`, [en.sequence_id])).rows;
+  const steps = (await pool.query(`SELECT channel, wait_minutes, condition, subject, body, html, link_url, template_id, sms_template_id, email_template_id, task_type, task_priority, task_queue_id, task_pause FROM marketing_sequence_steps WHERE sequence_id=$1 ORDER BY step_order ASC`, [en.sequence_id])).rows;
   const idx: number = en.current_step;
   if (idx >= steps.length) { await complete(pool, en.id); return; }
   const step = steps[idx];
   const since = en.last_step_at || en.enrolled_at;
   // BF_SERVER_BLOCK_v788_SEQ_TEMPLATES - resolve step content from a saved template.
   let effSubject = step.subject, effBody = step.body, effHtml = step.html, effLink = step.link_url;
-  if (step.template_id) {
-    const t = await pool.query(`SELECT subject, body, html, link_url FROM marketing_template WHERE id=$1`, [step.template_id]);
+  // BF_SERVER_SEQ_AUTO_TEMPLATES_v1 - template resolution is deferred for an
+  // auto step: which template applies depends on the branch this contact takes,
+  // and that is not known until textability has been evaluated below. A single
+  // template_id could never serve both - an email template texted as SMS ships
+  // raw HTML, an SMS template emailed ships a subject-less one-liner.
+  const applyTemplate = async (templateId: string | null | undefined): Promise<void> => {
+    if (!templateId) return;
+    const t = await pool.query(`SELECT subject, body, html, link_url FROM marketing_template WHERE id=$1`, [templateId]);
     if (t.rows[0]) { effSubject = t.rows[0].subject; effBody = t.rows[0].body; effHtml = t.rows[0].html; effLink = t.rows[0].link_url; }
-  }
+  };
+  if (step.channel !== "auto") await applyTemplate(step.template_id);
 
   if (en.stop_on_reply && (await repliedSince(pool, en.contact_id, en.enrolled_at))) { await stop(pool, en.id, "replied"); return; }
 
@@ -156,6 +163,11 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
       if (lineType && lineType !== "mobile") textable = false;
     } else if (textable && c.line_type !== "mobile") textable = false;
     const channel = step.channel === "auto" ? (textable ? "sms" : "email") : step.channel;
+    // BF_SERVER_SEQ_AUTO_TEMPLATES_v1 - now that the branch is known, load the
+    // template written for THAT channel.
+    if (step.channel === "auto") {
+      await applyTemplate(channel === "sms" ? step.sms_template_id : step.email_template_id);
+    }
     if (channel === "sms") {
       const blocked = !textable;
       if (!blocked) {
