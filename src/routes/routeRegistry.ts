@@ -21,6 +21,7 @@ import creditRoutes from "./credit.js";
 import creditSummaryRoutes from "./creditSummary.js";
 import dashboardRoutes from "./dashboard.js";
 import documentsRoutes from "./documents.js";
+import accountantRoutes from "./accountant.js"; // BF_SERVER_ACCOUNTANT_UPLOAD_v1
 import internalRoutes from "./_int.js";
 import internalProcessingRoutes from "./internal/processing.js";
 // BF_SERVER_BLOCK_v335_AUTH_HARDENING_AND_DEAD_CODE_v1 -- Edit 4
@@ -208,6 +209,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/notifications", router: notificationsRoutes },
   { path: "/team", router: teamRoutes }, // BF_SERVER_BLOCK_v750_TEAM_CHAT
   { path: "/documents", router: documentsRoutes },
+  { path: "/accountant", router: accountantRoutes }, // BF_SERVER_ACCOUNTANT_UPLOAD_v1
   // BF_SERVER_BLOCK_v335_AUTH_HARDENING_AND_DEAD_CODE_v1 -- Edit 5
   // Mount removed: dead "/lender-submissions" stub route entry.
   // See Edit 4 above.
@@ -394,6 +396,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET", path: "/api/client/messages", roles: [] },
   { method: "POST", path: "/api/client/messages", roles: [] },
   { method: "POST", path: "/api/client/accountant", roles: [] },
+  { method: "POST", path: "/api/accountant/applications/:id/upload", roles: [] }, // BF_SERVER_ACCOUNTANT_UPLOAD_v1
   // BF_SERVER_BLOCK_53_v1
   { method: "GET", path: "/api/client/voice/token", roles: [] },
   { method: "GET", path: "/api/client/documents-needed/needed", roles: [] },

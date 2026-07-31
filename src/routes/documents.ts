@@ -121,7 +121,7 @@ async function mirrorDocToSiblingLegs(args: {
   }
 }
 
-async function persistAndEnqueue(opts: {
+export async function persistAndEnqueue(opts: {
   applicationId: string;
   category: string;
   file: Express.Multer.File;
