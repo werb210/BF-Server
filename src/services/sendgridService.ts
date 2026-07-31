@@ -12,6 +12,30 @@ export function mergeFields(text: string, vars: Record<string, string>): string 
   return text.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_m, k) => (vars[String(k).toLowerCase()] ?? ""));
 }
 
+// BF_SERVER_TRANSACTIONAL_SENDER_v1 - operational email: no unsubscribe group,
+// no link rewriting, no tracking pixel. Anything a recipient must be able to
+// act on goes through here, not through sendOne.
+export async function sendTransactional(opts: { to: string; subject: string; html: string; contactId?: string | null; customArgs?: Record<string, string> }): Promise<{ ok: boolean; status: number; error?: string }> {
+  const body = {
+    personalizations: [{ to: [{ email: opts.to }], ...((opts.contactId || opts.customArgs) ? { custom_args: { ...(opts.contactId ? { contact_id: String(opts.contactId) } : {}), ...(opts.customArgs ?? {}) } } : {}) }],
+    from: { email: String(process.env.SENDGRID_FROM), name: process.env.SENDGRID_FROM_NAME || "Boreal Financial" },
+    ...(process.env.SENDGRID_REPLY_TO ? { reply_to: { email: String(process.env.SENDGRID_REPLY_TO) } } : {}),
+    subject: opts.subject,
+    content: [{ type: "text/html", value: opts.html }],
+    tracking_settings: { click_tracking: { enable: false, enable_text: false }, open_tracking: { enable: false }, subscription_tracking: { enable: false } },
+  };
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 30_000);
+  try {
+    const resp = await fetch(SEND_URL, { method: "POST", headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctl.signal });
+    if (resp.status === 202) return { ok: true, status: 202 };
+    const text = await resp.text().catch(() => "");
+    return { ok: false, status: resp.status, error: text.slice(0, 200) };
+  } catch (e) {
+    return { ok: false, status: 0, error: e instanceof Error ? e.message : String(e) };
+  } finally { clearTimeout(timer); }
+}
+
 export async function sendOne(opts: { to: string; subject: string; html: string; contactId?: string | null; customArgs?: Record<string, string> }): Promise<{ ok: boolean; status: number; error?: string }> {
   const asm = process.env.SENDGRID_UNSUBSCRIBE_GROUP_ID ? { asm: { group_id: Number(process.env.SENDGRID_UNSUBSCRIBE_GROUP_ID) } } : {};
   const body = {

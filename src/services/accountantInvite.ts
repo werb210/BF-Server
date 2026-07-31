@@ -2,7 +2,7 @@
 // applicant names their firm at Step 5. Copy approved by Todd; the only
 // conditional part is the support-phone line.
 import { pool } from "../db.js";
-import { sendgridConfigured, sendOne } from "./sendgridService.js";
+import { sendgridConfigured, sendTransactional } from "./sendgridService.js";
 
 const BOREAL_ADDRESS = "450 Sparling Crt SW, Edmonton, AB T6X 1G9";
 
@@ -91,7 +91,7 @@ export async function sendAccountantInvite(opts: {
     supportPhone: process.env.BOREAL_SUPPORT_PHONE ?? null,
   });
 
-  const result = await sendOne({
+  const result = await sendTransactional({
     to: opts.accountantEmail,
     subject,
     html,

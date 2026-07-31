@@ -1,0 +1,37 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+
+const service = readFileSync(fileURLToPath(new URL("../services/sendgridService.ts", import.meta.url)), "utf-8");
+const invite = readFileSync(fileURLToPath(new URL("../services/accountantInvite.ts", import.meta.url)), "utf-8");
+
+describe("transactional SendGrid sender v1", () => {
+  it("disables click, open, and subscription tracking without an unsubscribe group", () => {
+    const start = service.indexOf("export async function sendTransactional");
+    const end = service.indexOf("export async function sendOne", start);
+    const implementation = service.slice(start, end);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    expect(implementation).toContain("click_tracking: { enable: false, enable_text: false }");
+    expect(implementation).toContain("open_tracking: { enable: false }");
+    expect(implementation).toContain("subscription_tracking: { enable: false }");
+    expect(implementation).not.toContain("SENDGRID_UNSUBSCRIBE_GROUP_ID");
+    expect(implementation).not.toMatch(/\basm\b/);
+  });
+
+  it("leaves the marketing sender tracking and unsubscribe behavior intact", () => {
+    const start = service.indexOf("export async function sendOne");
+    const implementation = service.slice(start);
+
+    expect(implementation).toContain("SENDGRID_UNSUBSCRIBE_GROUP_ID");
+    expect(implementation).toContain("click_tracking: { enable: true }");
+    expect(implementation).toContain("open_tracking: { enable: true }");
+  });
+
+  it("routes accountant invitations through the transactional sender", () => {
+    expect(invite).toContain("sendgridConfigured, sendTransactional");
+    expect(invite).toContain("await sendTransactional({");
+    expect(invite).not.toContain("await sendOne({");
+  });
+});
