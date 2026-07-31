@@ -1652,4 +1652,81 @@ router.get('/:id/sent-lenders', safeHandler(async (req: any, res: any) => {
   res.json({ status: 'ok', data: { sent: r.rows.map((x: any) => ({ lenderId: String(x.lender_id), sentAt: x.sent_at })) } });
 }));
 
+// BF_SERVER_LENDER_PASS_REASON_v1 - read the recorded lender outcomes for the
+// Lenders tab. Returns the frozen ordinal so staff see the same "Lender N"
+// label the client was shown.
+router.get('/:id/lender-responses', requireAuth, safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id ?? '').trim();
+  if (!id) throw new AppError('validation_error', 'Application id required.', 400);
+  const r = await pool.query(
+    `SELECT lender_id::text AS lender_id, ordinal, outcome, reason, created_at
+       FROM application_lender_responses
+      WHERE application_id::text = ($1)::text
+      ORDER BY ordinal ASC`,
+    [id]
+  ).catch(() => ({ rows: [] as any[] }));
+  res.json({ status: 'ok', data: { responses: r.rows } });
+}));
+
+// BF_SERVER_LENDER_PASS_REASON_v1 - record a pass and tell the client, without
+// naming the lender. Refuses if no package was ever sent to that lender, since
+// the ordinal is meaningless otherwise and the client would be told about a
+// lender who never saw the file.
+router.post('/:id/lender-response', requireAuth, safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id ?? '').trim();
+  const lenderId = String(req.body?.lenderId ?? '').trim();
+  const reason = String(req.body?.reason ?? '').trim().slice(0, 2000);
+  if (!id) throw new AppError('validation_error', 'Application id required.', 400);
+  if (!lenderId) throw new AppError('validation_error', 'lenderId required.', 400);
+  if (!reason) throw new AppError('validation_error', 'A reason is required.', 400);
+
+  const ordering = await pool.query<{ lender_id: string; ordinal: string }>(
+    `SELECT lender_id::text AS lender_id,
+            row_number() OVER (ORDER BY MIN(sent_at) ASC, lender_id::text ASC) AS ordinal
+       FROM application_packages
+      WHERE application_id::text = ($1)::text AND sent_at IS NOT NULL
+      GROUP BY lender_id`,
+    [id]
+  );
+  const match = ordering.rows.find((x) => String(x.lender_id) === lenderId);
+  if (!match) throw new AppError('validation_error', 'No package was sent to that lender.', 400);
+  const ordinal = Number(match.ordinal);
+
+  const existing = await pool.query<{ ordinal: number }>(
+    `SELECT ordinal FROM application_lender_responses
+      WHERE application_id::text = ($1)::text AND lender_id::text = ($2)::text`,
+    [id, lenderId]
+  );
+  const frozenOrdinal = existing.rows[0]?.ordinal ?? ordinal;
+
+  const staffName = String(req.user?.name ?? req.user?.email ?? 'Boreal Financial');
+  await pool.query(
+    `INSERT INTO application_lender_responses
+       (application_id, lender_id, ordinal, outcome, reason, created_by, updated_at)
+     VALUES ($1, $2, $3, 'declined', $4, $5, NOW())
+     ON CONFLICT (application_id, lender_id) DO UPDATE
+       SET reason = $4, outcome = 'declined', updated_at = NOW()`,
+    [id, lenderId, frozenOrdinal, reason, staffName]
+  );
+
+  // The client bubble. Deliberately no lender name anywhere in the body.
+  const contactRes = await pool.query<{ contact_id: string | null }>(
+    `SELECT contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+    [id]
+  ).catch(() => ({ rows: [] as Array<{ contact_id: string | null }> }));
+  const contactId = contactRes.rows[0]?.contact_id ?? null;
+  const body = `Lender ${frozenOrdinal} passed on your file for the following reasons: ${reason}`;
+
+  await pool.query(
+    `INSERT INTO communications_messages
+       (id, type, direction, status, application_id, contact_id, silo,
+        body, staff_name, created_at)
+     VALUES ($1, 'message', 'outbound', 'sent',
+             NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, 'BF', $4, $5, NOW())`,
+    [randomUUID(), id, contactId ?? '', body, staffName]
+  );
+
+  res.json({ status: 'ok', data: { ordinal: frozenOrdinal, reason } });
+}));
+
 export default router;
