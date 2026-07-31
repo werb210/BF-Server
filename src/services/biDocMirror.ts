@@ -80,6 +80,20 @@ export async function mirrorDocToBi(input: MirrorInput): Promise<MirrorResult> {
     clearTimeout(timeout);
     if (!r.ok) {
       const text = await r.text().catch(() => "");
+      // BF_SERVER_OCR_RATE_LIMIT_v1 - bi-server answers 500 with a unique-index
+      // violation when the document is already mirrored. The document IS in BI,
+      // so this is not an incident: log it as such rather than as an error, and
+      // return a distinct code so callers can tell "already there" from a real
+      // mirror failure. The success shape carries a bi_document_id we do not
+      // have here, which is why this stays on the failure branch.
+      if (text.includes("idx_bi_documents_app_doctype_unique") || text.includes("duplicate key value")) {
+        logInfo("bi_doc_mirror_already_present", {
+          bfApplicationId: input.bfApplicationId,
+          bfDocumentId: input.bfDocumentId,
+          documentType: input.documentType,
+        });
+        return { ok: false, error: "bi_already_mirrored" };
+      }
       logError("bi_doc_mirror_http_error", {
         code: "bi_doc_mirror_http_error",
         status: r.status,
