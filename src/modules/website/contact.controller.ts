@@ -7,8 +7,10 @@ import { pool } from "../../db.js";
 import { findOrCreateContactByEmailAndCompany } from "../../services/contacts.js";
 import { findOrCreateCompanyByNameAndSilo } from "../../services/companies.js";
 import { notifyAllStaff } from "../../services/notifications/notifyAllStaff.js";
-// BF_SERVER_CONTACT_FORM_AUTOMATION_v1 - tag + auto-send template email on contact-form submit.
-import { sendOne, mergeFields, sendgridConfigured } from "../../services/sendgridService.js";
+// BF_SERVER_ACCOUNTANT_SURFACE_v2 - an acknowledgement is a reply, not a
+// campaign; its links must not be rewritten through sendgrid.net on a
+// stranger's first contact with us.
+import { sendTransactional, mergeFields, sendgridConfigured } from "../../services/sendgridService.js";
 
 export async function submitContactForm(req: Request, res: Response) {
   try {
@@ -84,7 +86,7 @@ export async function submitContactForm(req: Request, res: Response) {
         if (t) {
           const vars = { first_name: firstName || fullName, name: fullName, email: String(email), company: companyName ?? "" };
           const htmlSource = t.html || t.body || "";
-          await sendOne({
+          await sendTransactional({
             to: String(email),
             subject: mergeFields(t.subject || "Thanks for reaching out", vars),
             html: mergeFields(htmlSource, vars),

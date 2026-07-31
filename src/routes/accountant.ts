@@ -4,12 +4,56 @@ import { pool } from "../db.js";
 import requireAccountant from "../middleware/requireAccountant.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { persistAndEnqueue } from "./documents.js";
+import { computeOutstandingDocs } from "./clientDocumentsNeeded.js"; // BF_SERVER_ACCOUNTANT_SURFACE_v2
 
 const router: Router = Router();
 
-// Categories that are useful to an accountant but might not be a product's
-// outstanding requirement are deliberately kept narrow.
-export const ACCOUNTANT_ALWAYS_AVAILABLE = ["Other"];
+// BF_SERVER_ACCOUNTANT_SURFACE_v2 - the fifteen categories an accountant may
+// see when a lender product has asked for them. This is an allow-list on
+// purpose: a deny-list means any category added later is exposed to every
+// accountant by default, silently.
+export const ACCOUNTANT_DOC_CATEGORIES: string[] = [
+  "6 months business banking statements",
+  "3 years accountant prepared financials",
+  "3 years business tax returns",
+  "PnL - Interim financials",
+  "Balance Sheet - Interim financials",
+  "A/R",
+  "A/P",
+  "VOID cheque or PAD",
+  "Corporate structure / org chart",
+  "Business plan / projections",
+  "Debt stack",
+  "Banking connection (Flinks view-only)",
+  "CRA view-only access",
+  "Equipment collateral",
+  "Professional advisors (CPA / lawyer / insurance)",
+];
+
+// Offered whether or not a lender asked, because no lender product lists them.
+// Without these, three of Todd's allow-list entries could never appear at all.
+export const ACCOUNTANT_ALWAYS_AVAILABLE: string[] = [
+  "2 years personal tax returns (T1 generals)",
+  "Lease agreement",
+  "Real estate collateral",
+];
+
+// Em dash, en dash and hyphen collapse to one form; case and repeated
+// whitespace are dropped. The database stores "PnL - Interim financials" with
+// an EM dash and hand-written lists use an en dash, so a literal comparison
+// silently drops both interim statements - the two documents this whole
+// feature exists to collect.
+export function normaliseCategory(value: unknown): string {
+  return String(value ?? "")
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+const ACCOUNTANT_ALLOWED_CATEGORIES = new Set(
+  [...ACCOUNTANT_DOC_CATEGORIES, ...ACCOUNTANT_ALWAYS_AVAILABLE].map(normaliseCategory)
+);
 
 // Keep applicant-only forms (in particular personal net worth) out of both the
 // accountant read surface and its upload front door.
@@ -18,7 +62,9 @@ const ACCOUNTANT_HIDDEN_CATEGORY =
 
 export function isAccountantVisible(category: unknown): boolean {
   const value = String(category ?? "").trim();
-  return Boolean(value) && !ACCOUNTANT_HIDDEN_CATEGORY.test(value);
+  if (!value) return false;
+  if (ACCOUNTANT_HIDDEN_CATEGORY.test(value)) return false;
+  return ACCOUNTANT_ALLOWED_CATEGORIES.has(normaliseCategory(value));
 }
 
 // BF_SERVER_ACCOUNTANT_UPLOAD_v1 - same 25MB ceiling as the applicant upload.
@@ -67,6 +113,100 @@ const FORM_ALLOWED = new Set(ACCOUNTANT_FORM_DOC_TYPES);
 export function isAccountantForm(docType: unknown): boolean {
   return FORM_ALLOWED.has(String(docType ?? "").trim());
 }
+
+// BF_SERVER_ACCOUNTANT_SURFACE_v2 - who am I, and which of my client's
+// applications am I here for. Scoped by the contact on the token, never by
+// anything in the request.
+router.get(
+  "/me",
+  requireAccountant,
+  safeHandler(async (req: any, res: any) => {
+    const { contactId } = req.accountant;
+    const who = await pool.query(
+      `SELECT id::text AS id, first_name, last_name, email, phone
+         FROM contacts WHERE id::text = ($1)::text LIMIT 1`,
+      [contactId]
+    );
+    if (who.rowCount === 0) {
+      res.status(403).json({ error: "accountant_contact_missing" });
+      return;
+    }
+    const apps = await pool.query(
+      `SELECT a.id::text AS id, a.name AS business_name, a.created_at
+         FROM applications a
+        WHERE a.contact_id::text = ($1)::text
+        ORDER BY a.created_at DESC`,
+      [contactId]
+    ).catch(() => ({ rows: [] as any[] }));
+    const c: any = who.rows[0];
+    res.json({
+      status: "ok",
+      data: {
+        accountant: {
+          id: c.id,
+          name: [c.first_name, c.last_name].filter(Boolean).join(" ") || null,
+          email: c.email ?? null,
+          phone: c.phone ?? null,
+        },
+        applications: apps.rows,
+      },
+    });
+  })
+);
+
+// BF_SERVER_ACCOUNTANT_SURFACE_v2 - the filtered document list for one
+// application: what a lender asked for, cut down to the allow-list, plus the
+// always-available slots and the CMP forms.
+router.get(
+  "/applications/:id",
+  requireAccountant,
+  safeHandler(async (req: any, res: any) => {
+    const { contactId } = req.accountant;
+    const id = String(req.params.id ?? "").trim();
+    if (!id) {
+      res.status(400).json({ error: "application_id_required" });
+      return;
+    }
+    const owned = await pool.query(
+      `SELECT id::text AS id, name AS business_name
+         FROM applications
+        WHERE id::text = ($1)::text AND contact_id::text = ($2)::text
+        LIMIT 1`,
+      [id, contactId]
+    );
+    if (owned.rowCount === 0) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    const outstanding = await computeOutstandingDocs(id).catch(() => ({
+      stillNeeded: [] as any[],
+      rejected: [] as any[],
+      required: [] as any[],
+    }));
+
+    const requested = (outstanding.required ?? [])
+      .map((d: any) => String(d?.document_type ?? ""))
+      .filter((d: string) => d && isAccountantVisible(d));
+    const seen = new Set(requested.map(normaliseCategory));
+    const extras = ACCOUNTANT_ALWAYS_AVAILABLE.filter((x) => !seen.has(normaliseCategory(x)));
+    const stillNeeded = new Set(
+      (outstanding.stillNeeded ?? []).map((d: any) => normaliseCategory(d?.document_type))
+    );
+
+    res.json({
+      status: "ok",
+      data: {
+        application: owned.rows[0],
+        uploads: [...requested, ...extras].map((category) => ({
+          category,
+          outstanding: stillNeeded.has(normaliseCategory(category)),
+        })),
+        forms: ACCOUNTANT_FORM_DOC_TYPES,
+      },
+    });
+  })
+);
 
 // BF_SERVER_ACCOUNTANT_UPLOAD_v1
 router.post(
