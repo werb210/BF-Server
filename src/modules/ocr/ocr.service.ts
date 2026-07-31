@@ -79,6 +79,36 @@ function parseMetadata(metadata: unknown): { mimeType: string; fileName?: string
   return result;
 }
 
+// BF_SERVER_OCR_RATE_LIMIT_v1 - a TPM ceiling is a property of the minute, not
+// of the document, so it must never count against the job's attempt budget and
+// must never be retried inside the same window.
+const OCR_RATE_LIMIT_FLOOR_MS = 60_000;
+const OCR_RATE_LIMIT_MAX_MS = 10 * 60 * 1000;
+
+export function isRateLimitError(message: string): boolean {
+  const m = String(message || "").toLowerCase();
+  return m.includes("429")
+    || m.includes("rate_limit_exceeded")
+    || m.includes("rate limit reached")
+    || m.includes("tokens per min");
+}
+
+// OpenAI reports "Please try again in 1.836s" (or 2m1s). Honour it, but never
+// sooner than a full minute - the bucket it refers to is per-minute, and the
+// suggested wait assumes nothing else is competing for the same budget.
+export function rateLimitDelayMs(message: string): number {
+  const text = String(message || "");
+  let suggested = 0;
+  const minSec = text.match(/try again in\s+(?:(\d+)m)?\s*([\d.]+)s/i);
+  if (minSec) {
+    suggested = (Number(minSec[1] || 0) * 60 + Number(minSec[2] || 0)) * 1000;
+  } else {
+    const ms = text.match(/try again in\s+([\d.]+)ms/i);
+    if (ms) suggested = Number(ms[1]);
+  }
+  return Math.min(Math.max(suggested, OCR_RATE_LIMIT_FLOOR_MS), OCR_RATE_LIMIT_MAX_MS);
+}
+
 function computeNextAttempt(attemptCount: number, maxAttempts: number): Date | null {
   const nextAttempt = attemptCount + 1;
   if (nextAttempt >= maxAttempts) {
@@ -532,10 +562,23 @@ export async function processOcrJob(
         });
       }
     }
-    const attemptCount = job.attempt_count + 1;
-    const status = attemptCount >= maxAttempts ? "canceled" : "failed";
-    const nextAttemptAt =
-      status === "canceled" ? null : computeNextAttempt(job.attempt_count, maxAttempts);
+    // BF_SERVER_OCR_RATE_LIMIT_v1 - hold the attempt count still on a 429 and
+    // wait out the window, so a busy minute defers the job rather than killing
+    // it three retries later.
+    const rateLimited = isRateLimitError(message);
+    const attemptCount = rateLimited ? job.attempt_count : job.attempt_count + 1;
+    const status = !rateLimited && attemptCount >= maxAttempts ? "canceled" : "failed";
+    const nextAttemptAt = rateLimited
+      ? new Date(Date.now() + rateLimitDelayMs(message))
+      : status === "canceled" ? null : computeNextAttempt(job.attempt_count, maxAttempts);
+    if (rateLimited) {
+      logInfo("ocr_job_rate_limited", {
+        jobId: job.id,
+        documentId: job.document_id,
+        applicationId: job.application_id,
+        retryInMs: rateLimitDelayMs(message),
+      });
+    }
     await markOcrJobFailure({
       jobId: job.id,
       attemptCount,

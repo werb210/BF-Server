@@ -234,7 +234,9 @@ export const config = {
     timeoutMs: toNumber(parsed.OCR_TIMEOUT_MS, 120_000),
     maxAttempts: toNumber(parsed.OCR_MAX_ATTEMPTS, 3),
     pollIntervalMs: toNumber(parsed.OCR_POLL_INTERVAL_MS, 5_000),
-    workerConcurrency: toNumber(parsed.OCR_WORKER_CONCURRENCY, 2),
+    // BF_SERVER_OCR_RATE_LIMIT_v1 - one at a time. Two workers race the same
+    // per-minute token bucket and halve the chance either one finishes.
+    workerConcurrency: toNumber(parsed.OCR_WORKER_CONCURRENCY, 1),
     lockTimeoutMinutes: toNumber(parsed.OCR_LOCK_TIMEOUT_MINUTES, 30),
   },
   features: {
