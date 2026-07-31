@@ -7,6 +7,7 @@ import { pool } from "../../db.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { findOrCreateCompanyByNameAndSilo } from "../../services/companies.js";
 import { findOrCreateContactByEmailAndCompany } from "../../services/contacts.js";
+import { sendAccountantInvite } from "../../services/accountantInvite.js"; // BF_SERVER_ACCOUNTANT_INVITE_v1
 
 const router: Router = Router();
 
@@ -92,6 +93,29 @@ router.post(
         applicationId,
         message: err?.message,
       });
+    }
+
+    // BF_SERVER_ACCOUNTANT_INVITE_v1 - detached on purpose. The applicant is
+    // waiting on this response to reach Step 6; email delivery is not their
+    // problem and must never hold the wizard open.
+    if (contactId) {
+      const inviteContactId = contactId;
+      void (async () => {
+        try {
+          const outcome = await sendAccountantInvite({
+            applicationId,
+            contactId: inviteContactId,
+            accountantName: contact,
+            accountantEmail: email,
+            accountantPhone: phone,
+          });
+          if (!outcome.sent) {
+            console.warn("[client.accountant] invite not sent", { applicationId, reason: outcome.reason });
+          }
+        } catch (err: any) {
+          console.warn("[client.accountant] invite threw", { applicationId, message: err?.message });
+        }
+      })();
     }
 
     res.json({ ok: true, contactId });
