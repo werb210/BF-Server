@@ -1,0 +1,4 @@
+-- BF_EMAIL_SECOND_COLUMN_CTA_v1
+ALTER TABLE marketing_email_template
+  ADD COLUMN IF NOT EXISTS cta2_label text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS cta2_url   text NOT NULL DEFAULT '';
