@@ -50,6 +50,24 @@ export function isAllowedAccountantMime(mimetype: unknown): boolean {
 
 const TERMINAL_STATES = new Set(["Accepted", "Rejected", "Funded", "Closed"]);
 
+// BF_SERVER_ACCOUNTANT_FORMS_v2 - allow-list entries that are CMP forms rather
+// than uploads. These keys must match the client's FORM_RENDERERS map exactly;
+// a near-miss renders nothing and reports no error.
+export const ACCOUNTANT_FORM_DOC_TYPES: string[] = [
+  "debt_stack",
+  "equipment_collateral",
+  "real_estate_collateral_disclosure",
+  "professional_advisors",
+  "cra_view_only_authorization",
+  "flinks_banking",
+];
+
+const FORM_ALLOWED = new Set(ACCOUNTANT_FORM_DOC_TYPES);
+
+export function isAccountantForm(docType: unknown): boolean {
+  return FORM_ALLOWED.has(String(docType ?? "").trim());
+}
+
 // BF_SERVER_ACCOUNTANT_UPLOAD_v1
 router.post(
   "/applications/:id/upload",
@@ -124,6 +142,134 @@ router.post(
       console.error("[accountant] upload failed", { id, category, message: err?.message });
       res.status(500).json({ error: "UPLOAD_FAILED" });
     }
+  })
+);
+
+// BF_SERVER_ACCOUNTANT_FORMS_v2 - form-response access for a signed-in
+// accountant, mirroring the client handlers but scoped to the token's contact.
+async function ownsApplication(contactId: string, applicationId: string): Promise<boolean> {
+  const r = await pool.query(
+    `SELECT 1 FROM applications
+      WHERE id::text = ($1)::text AND contact_id::text = ($2)::text
+      LIMIT 1`,
+    [applicationId, contactId]
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
+// Ownership and the form allow-list, in that order. A doc_type outside the list
+// is refused on read as well as write: letting an accountant read the personal
+// net worth statement would defeat the point of leaving it off.
+async function guardForm(req: any, res: any): Promise<{ appId: string; docType: string } | null> {
+  const { contactId } = req.accountant;
+  const appId = String(req.params.id ?? "").trim();
+  const docType = String(req.params.doc_type ?? "").trim();
+  if (!appId) {
+    res.status(400).json({ error: "applicationId_required" });
+    return null;
+  }
+  if (!(await ownsApplication(contactId, appId))) {
+    res.status(404).json({ error: "not_found" });
+    return null;
+  }
+  if (docType && !isAccountantForm(docType)) {
+    res.status(403).json({ error: "FORM_NOT_PERMITTED" });
+    return null;
+  }
+  return { appId, docType };
+}
+
+router.get(
+  "/applications/:id/form-responses",
+  requireAccountant,
+  safeHandler(async (req: any, res: any) => {
+    const guard = await guardForm(req, res);
+    if (!guard) return;
+    const result = await pool.query(
+      `SELECT id, doc_type, data, submitted_at, created_at, updated_at
+         FROM application_form_responses
+        WHERE application_id::text = ($1)::text
+          AND doc_type = ANY($2::text[])
+        ORDER BY updated_at DESC`,
+      [guard.appId, ACCOUNTANT_FORM_DOC_TYPES]
+    );
+    res.json({ items: result.rows });
+  })
+);
+
+router.get(
+  "/applications/:id/form-responses/:doc_type",
+  requireAccountant,
+  safeHandler(async (req: any, res: any) => {
+    const guard = await guardForm(req, res);
+    if (!guard) return;
+    const result = await pool.query(
+      `SELECT id, doc_type, data, submitted_at, created_at, updated_at
+         FROM application_form_responses
+        WHERE application_id::text = ($1)::text AND doc_type = $2
+        LIMIT 1`,
+      [guard.appId, guard.docType]
+    );
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    res.json({ item: result.rows[0] });
+  })
+);
+
+router.put(
+  "/applications/:id/form-responses/:doc_type",
+  requireAccountant,
+  safeHandler(async (req: any, res: any) => {
+    const guard = await guardForm(req, res);
+    if (!guard) return;
+    const data = req.body?.data;
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      res.status(400).json({ error: "data_required" });
+      return;
+    }
+    const result = await pool.query(
+      `INSERT INTO application_form_responses (application_id, doc_type, data, updated_at)
+            VALUES ($1, $2, $3::jsonb, NOW())
+            ON CONFLICT (application_id, doc_type)
+            DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
+         RETURNING id, doc_type, data, submitted_at, created_at, updated_at`,
+      [guard.appId, guard.docType, JSON.stringify(data)]
+    );
+    res.json({ item: result.rows[0] });
+  })
+);
+
+router.post(
+  "/applications/:id/form-responses/:doc_type/submit",
+  requireAccountant,
+  safeHandler(async (req: any, res: any) => {
+    const guard = await guardForm(req, res);
+    if (!guard) return;
+    const data = req.body?.data;
+    const hasData = data && typeof data === "object" && !Array.isArray(data);
+    const result = hasData
+      ? await pool.query(
+          `INSERT INTO application_form_responses (application_id, doc_type, data, submitted_at, updated_at)
+                VALUES ($1, $2, $3::jsonb, NOW(), NOW())
+                ON CONFLICT (application_id, doc_type)
+                DO UPDATE SET data = EXCLUDED.data, submitted_at = NOW(), updated_at = NOW()
+             RETURNING id, doc_type, data, submitted_at, created_at, updated_at`,
+          [guard.appId, guard.docType, JSON.stringify(data)]
+        )
+      : await pool.query(
+          `UPDATE application_form_responses
+              SET submitted_at = NOW(), updated_at = NOW()
+            WHERE application_id::text = ($1)::text AND doc_type = $2
+            RETURNING id, doc_type, data, submitted_at, created_at, updated_at`,
+          [guard.appId, guard.docType]
+        );
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    res.json({ item: result.rows[0] });
   })
 );
 
