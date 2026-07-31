@@ -81,12 +81,19 @@ router.post(
         }
       );
       contactId = String(crmContact.id);
+      // BF_SERVER_ACCOUNTANT_CONTACT_PHONE_v1 - write the phone and email as
+      // well as the tag. find-or-create returns an existing contact untouched,
+      // so without this an accountant we already knew keeps whatever number was
+      // on file and can never sign in with the one the invitation quotes.
+      // COALESCE(NULLIF(...)) so a blank capture cannot erase a good number.
       await pool.query(
         `UPDATE contacts
             SET tags = (SELECT array(SELECT DISTINCT unnest(COALESCE(tags, '{}'::text[]) || $2::text[]))),
+                phone = COALESCE(NULLIF($3, ''), phone),
+                email = COALESCE(NULLIF($4, ''), email),
                 updated_at = NOW()
           WHERE id = $1`,
-        [crmContact.id, [ROLE_TAG]]
+        [crmContact.id, [ROLE_TAG], phone, email]
       );
     } catch (err: any) {
       console.warn("[client.accountant] crm mirror failed", {
