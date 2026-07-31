@@ -9,6 +9,7 @@ import applicationsRouter from "./applications.js";
 import lendersRouter from "./lenders.js";
 import lenderProductsRouter from "./lenderProducts.js";
 import clientSubmissionRoutes from "../../modules/clientSubmission/clientSubmission.routes.js";
+import accountantRouter from "./accountant.js"; // BF_SERVER_STEP5_ACCOUNTANT_v1
 import sessionRouter from "./session.js";
 import submitAttemptsRouter from "./submitAttempts.js";
 import {
@@ -101,6 +102,7 @@ router.use("/lenders", lendersRouter);
 router.use("/", lenderProductsRouter);
 router.use("/", clientSubmissionRoutes);
 router.use("/", sessionRouter);
+router.use("/", accountantRouter); // BF_SERVER_STEP5_ACCOUNTANT_v1
 
 // BF_SERVER_BLOCK_v_CLIENT_ACCOUNT_DELETE_v1 — store-required (Apple 5.1.1(v) +
 // Google) account/data deletion. The CMP "Delete account" button POSTs here with
