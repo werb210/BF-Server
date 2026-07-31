@@ -322,6 +322,62 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
       });
     }
 
+    // BF_SERVER_ACCOUNTANT_OTP_v1 - accountant login for the document surface.
+    // Matches a BF contact carrying the "Accountant/advisor" tag, which is what
+    // the Step 5 modal and the Stage-2 Advisors form both write. Scoped to the
+    // contact, so one login covers every application that client holds.
+    const wantsAccountant = String((req.body ?? {}).userType ?? "") === "accountant";
+    if (wantsAccountant) {
+      const accountantResult = await dbQuery_v68<{ id: string; first_name: string | null; last_name: string | null }>(
+        `SELECT id, first_name, last_name
+           FROM contacts
+          WHERE silo = 'BF'
+            AND 'Accountant/advisor' = ANY(COALESCE(tags, '{}'::text[]))
+            AND right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10)
+              = right(regexp_replace($1, '[^0-9]', '', 'g'), 10)
+            AND length(regexp_replace($1, '[^0-9]', '', 'g')) >= 10
+          ORDER BY updated_at DESC NULLS LAST`,
+        [phone]
+      );
+      // One phone answering for two accountants would silently hand one firm
+      // the other firm's clients. Refuse and make the collision visible.
+      if (accountantResult.rows.length > 1) {
+        console.log("[otp_verify] accountant_login_ambiguous_phone", { phone, matches: accountantResult.rows.length });
+        return res.status(409).json({
+          error: "ambiguous_accountant_phone",
+          message: "This phone number is recorded for more than one accountant. Contact Boreal to correct it.",
+        });
+      }
+      const accountant = accountantResult.rows[0];
+      if (!accountant) {
+        console.log("[otp_verify] accountant_login_no_match", { phone });
+        return res.status(403).json({ error: "no_accountant_for_phone" });
+      }
+      if (!process.env.JWT_SECRET) {
+        return res.status(500).json({ error: "auth not configured" });
+      }
+      const accountantToken = jwt.sign(
+        {
+          sub: `accountant:${accountant.id}`,
+          role: "accountant",
+          phone,
+          tokenVersion: 0,
+          isAccountant: true,
+          contactId: String(accountant.id),
+        },
+        process.env.JWT_SECRET as string,
+        { expiresIn: "7d" }
+      );
+      const accountantName = [accountant.first_name, accountant.last_name].filter(Boolean).join(" ") || null;
+      return res.status(200).json({
+        status: "ok",
+        data: {
+          token: accountantToken,
+          user: { id: String(accountant.id), name: accountantName, phone, userType: "accountant" },
+        },
+      });
+    }
+
     const user = await findAuthUserByPhone(phone);
     const isActiveStaff = Boolean(
       user && user.role && !user.disabled && user.active
