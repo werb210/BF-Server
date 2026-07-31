@@ -393,6 +393,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET", path: "/api/client/readiness-prefill", roles: [] },
   { method: "GET", path: "/api/client/messages", roles: [] },
   { method: "POST", path: "/api/client/messages", roles: [] },
+  { method: "POST", path: "/api/client/accountant", roles: [] },
   // BF_SERVER_BLOCK_53_v1
   { method: "GET", path: "/api/client/voice/token", roles: [] },
   { method: "GET", path: "/api/client/documents-needed/needed", roles: [] },
