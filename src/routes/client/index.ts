@@ -562,15 +562,21 @@ router.get(
     // never stamped with. Match on the contact behind this application so the
     // client sees the same single conversation staff do.
     const rows = await dbQuery(
+      // BF_CLIENT_THREAD_TYPES_v2 - $1 is compared against applications.id AND
+      // communications_messages.application_id in the same statement. Those
+      // columns are not the same type, so without an explicit cast Postgres
+      // cannot deduce one type for the parameter and the statement fails,
+      // which the caller's catch turns into an empty thread. Casting both
+      // sides to text is what every other query in this file does.
       `WITH thread AS (
-         SELECT contact_id FROM applications WHERE id = $1 LIMIT 1
+         SELECT contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1
        )
        SELECT id, direction, body, staff_name, cta_label, cta_action, attachments, created_at
        FROM communications_messages
-       WHERE application_id = $1
+       WHERE application_id::text = ($1)::text
           OR (
                (SELECT contact_id FROM thread) IS NOT NULL
-           AND contact_id = (SELECT contact_id FROM thread)
+           AND contact_id::text = (SELECT contact_id::text FROM thread)
              )
        ORDER BY created_at ASC
        LIMIT 200`,

@@ -13,11 +13,11 @@ describe("BF_CLIENT_THREAD_CONTACT_SCOPE_v1", () => {
   it("widens the client thread beyond a single application", () => {
     expect(client).toContain("BF_CLIENT_THREAD_CONTACT_SCOPE_v1");
     expect(client).toContain("WITH thread AS (");
-    expect(client).toContain("contact_id = (SELECT contact_id FROM thread)");
+    expect(client).toContain("contact_id::text = (SELECT contact_id::text FROM thread)");
   });
 
   it("still anchors the thread on the requested application", () => {
-    expect(client).toContain("WHERE application_id = $1");
+    expect(client).toContain("WHERE application_id::text = ($1)::text");
   });
 });
 
