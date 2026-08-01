@@ -30,8 +30,11 @@ export const ACCOUNTANT_DOC_CATEGORIES: string[] = [
   "Professional advisors (CPA / lawyer / insurance)",
 ];
 
-// Offered whether or not a lender asked, because no lender product lists them.
-// Without these, three of Todd's allow-list entries could never appear at all.
+// BF_SERVER_ACCOUNTANT_SURFACE_TRUTH_v3 - these are NO LONGER appended to every
+// application. They stay on the allow-list so the upload endpoint accepts them
+// if a staff member adds one as a requirement, but an accountant is never asked
+// for a personal tax return nobody requested. The list an accountant sees is
+// exactly what the file needs.
 export const ACCOUNTANT_ALWAYS_AVAILABLE: string[] = [
   "2 years personal tax returns (T1 generals)",
   "Lease agreement",
@@ -185,22 +188,32 @@ router.get(
       required: [] as any[],
     }));
 
+    // Only what this application actually requires. Appending the
+    // always-available categories here was padding a one-document request into
+    // a four-document chore.
     const requested = (outstanding.required ?? [])
       .map((d: any) => String(d?.document_type ?? ""))
       .filter((d: string) => d && isAccountantVisible(d));
-    const seen = new Set(requested.map(normaliseCategory));
-    const extras = ACCOUNTANT_ALWAYS_AVAILABLE.filter((x) => !seen.has(normaliseCategory(x)));
-    const stillNeeded = new Set(
-      (outstanding.stillNeeded ?? []).map((d: any) => normaliseCategory(d?.document_type))
-    );
+
+    // "Received" has to mean a file exists, not "no lender happened to ask for
+    // this". Rejected documents do not count - the accountant needs to send
+    // that one again.
+    const held = await pool.query<{ category: string }>(
+      `SELECT DISTINCT d.category
+         FROM documents d
+        WHERE d.application_id::text = ($1)::text
+          AND COALESCE(d.status, '') <> 'rejected'`,
+      [id]
+    ).catch(() => ({ rows: [] as Array<{ category: string }> }));
+    const receivedCategories = new Set(held.rows.map((r) => normaliseCategory(r.category)));
 
     res.json({
       status: "ok",
       data: {
         application: owned.rows[0],
-        uploads: [...requested, ...extras].map((category) => ({
+        uploads: requested.map((category) => ({
           category,
-          outstanding: stillNeeded.has(normaliseCategory(category)),
+          outstanding: !receivedCategories.has(normaliseCategory(category)),
         })),
         forms: ACCOUNTANT_FORM_DOC_TYPES,
       },
