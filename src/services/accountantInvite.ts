@@ -2,7 +2,11 @@
 // applicant names their firm at Step 5. Copy approved by Todd; the only
 // conditional part is the support-phone line.
 import { pool } from "../db.js";
-import { sendgridConfigured, sendTransactional } from "./sendgridService.js";
+// BF_SERVER_ACCOUNTANT_INVITE_GRAPH_v2 - operational one-to-one mail goes
+// through the tenant mailbox, not the bulk ESP. Replies then reach a human,
+// and delivery does not depend on a marketing sender's reputation or on a
+// SendGrid key that a slot swap can silently replace.
+import { sendViaGraph } from "./email/graphSendService.js";
 
 const BOREAL_ADDRESS = "450 Sparling Crt SW, Edmonton, AB T6X 1G9";
 
@@ -59,14 +63,6 @@ export async function sendAccountantInvite(opts: {
   );
   if (claim.rowCount === 0) return { sent: false, reason: "already_invited" };
 
-  if (!sendgridConfigured()) {
-    await pool.query(
-      "UPDATE accountant_invites SET error = $2 WHERE application_id = $1 AND contact_id = $3",
-      [opts.applicationId, "sendgrid_not_configured", opts.contactId]
-    );
-    return { sent: false, reason: "sendgrid_not_configured" };
-  }
-
   const appRes = await pool
     .query<{ business_name: string | null; first_name: string | null; last_name: string | null }>(
       `SELECT a.name AS business_name, c.first_name, c.last_name
@@ -91,12 +87,28 @@ export async function sendAccountantInvite(opts: {
     supportPhone: process.env.BOREAL_SUPPORT_PHONE ?? null,
   });
 
-  const result = await sendTransactional({
+  const bodyText = [
+    `Hello ${opts.accountantName || "there"},`,
+    "",
+    `${applicantName} at ${businessName} has applied for business financing through Boreal Financial and asked us to contact you directly for the financial documents supporting the application.`,
+    "",
+    `Before we proceed, please confirm with ${applicantName} that you are authorised to release these documents to us. You can forward this email to them for that confirmation.`,
+    "",
+    `Once confirmed, you can upload everything through our secure client portal. Sign in with this phone number - ${opts.accountantPhone} - and we'll text you a one-time code. No password to set up.`,
+    "",
+    `${portalBase}/accountant`,
+    "",
+    "You'll see only the documents we need from you, nothing else on the file.",
+    "",
+    "Thank you,",
+    "Boreal Financial",
+  ].join("\n");
+
+  const result = await sendViaGraph({
     to: opts.accountantEmail,
+    bodyText,
     subject,
-    html,
-    contactId: opts.contactId,
-    customArgs: { message_kind: "accountant_invite", application_id: opts.applicationId },
+    bodyHtml: html,
   });
 
   if (result.ok) {
@@ -112,5 +124,5 @@ export async function sendAccountantInvite(opts: {
     "DELETE FROM accountant_invites WHERE application_id = $1 AND contact_id = $2 AND sent_at IS NULL",
     [opts.applicationId, opts.contactId]
   );
-  return { sent: false, reason: result.error || `sendgrid_${result.status}` };
+  return { sent: false, reason: result.ok ? "unknown" : result.error };
 }

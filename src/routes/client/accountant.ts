@@ -116,7 +116,9 @@ router.post(
             accountantEmail: email,
             accountantPhone: phone,
           });
-          if (!outcome.sent) {
+          if (outcome.sent) {
+            console.log("[client.accountant] invite sent", { applicationId, to: email });
+          } else {
             console.warn("[client.accountant] invite not sent", { applicationId, reason: outcome.reason });
           }
         } catch (err: any) {
@@ -125,6 +127,12 @@ router.post(
       })();
     }
 
+    console.log("[client.accountant] captured", {
+      applicationId,
+      contactId,
+      firm,
+      inviteQueued: Boolean(contactId),
+    });
     res.json({ ok: true, contactId });
   })
 );
