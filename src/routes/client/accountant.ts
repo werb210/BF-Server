@@ -28,6 +28,8 @@ router.post(
     const contact = clean(req.body?.contact);
     const email = clean(req.body?.email);
     const phone = clean(req.body?.phone, 40);
+    // BF_SERVER_ACCOUNTANT_INVITE_SCOPE_v1 - optional: older clients omit it.
+    const businessName = clean(req.body?.businessName);
 
     if (!applicationId) {
       res.status(400).json({ error: "applicationId_required" });
@@ -115,6 +117,7 @@ router.post(
             accountantName: contact,
             accountantEmail: email,
             accountantPhone: phone,
+            businessName,
           });
           if (outcome.sent) {
             console.log("[client.accountant] invite sent", { applicationId, to: email });

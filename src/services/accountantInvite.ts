@@ -53,13 +53,17 @@ export async function sendAccountantInvite(opts: {
   accountantName: string;
   accountantEmail: string;
   accountantPhone: string;
+  // BF_SERVER_ACCOUNTANT_INVITE_SCOPE_v1 - supplied by the wizard, which is the
+  // only place the business name exists at Step 5.
+  businessName?: string | null;
 }): Promise<{ sent: boolean; reason?: string }> {
+  const suppliedBusinessName = String(opts.businessName ?? "").trim() || null;
   const claim = await pool.query(
-    `INSERT INTO accountant_invites (application_id, contact_id, email)
-     VALUES ($1, $2, $3)
+    `INSERT INTO accountant_invites (application_id, contact_id, email, business_name)
+     VALUES ($1, $2, $3, $4)
      ON CONFLICT (application_id, contact_id) DO NOTHING
      RETURNING id`,
-    [opts.applicationId, opts.contactId, opts.accountantEmail]
+    [opts.applicationId, opts.contactId, opts.accountantEmail, suppliedBusinessName]
   );
   if (claim.rowCount === 0) return { sent: false, reason: "already_invited" };
 
@@ -74,7 +78,14 @@ export async function sendAccountantInvite(opts: {
     )
     .catch(() => ({ rows: [] as any[] }));
   const row: any = appRes.rows[0] ?? {};
-  const businessName = String(row.business_name ?? "").trim() || "your client";
+  // BF_SERVER_ACCOUNTANT_INVITE_SCOPE_v1 - applications.name is written only by
+  // the Step 6 submit handler, so at Step 5 it is still "Draft application" or
+  // whatever the readiness session carried. The client-supplied name wins; the
+  // column is the fallback for an invite resent after submit.
+  const businessName =
+    suppliedBusinessName ||
+    String(row.business_name ?? "").trim() ||
+    "your client";
   const applicantName = [row.first_name, row.last_name].filter(Boolean).join(" ").trim() || "your client";
 
   const portalBase = (process.env.CLIENT_PORTAL_URL || "https://client.boreal.financial").replace(/\/+$/, "");
@@ -104,11 +115,16 @@ export async function sendAccountantInvite(opts: {
     "Boreal Financial",
   ].join("\n");
 
+  // BF_SERVER_ACCOUNTANT_INVITE_SCOPE_v1 - lender submissions depend on
+  // MS_GRAPH_SEND_AS, so this overrides the sender for this one message only.
+  // Unset, behaviour is unchanged.
+  const inviteSendAs = String(process.env.ACCOUNTANT_INVITE_SEND_AS ?? "").trim();
   const result = await sendViaGraph({
     to: opts.accountantEmail,
     bodyText,
     subject,
     bodyHtml: html,
+    ...(inviteSendAs ? { sendAs: inviteSendAs } : {}),
   });
 
   if (result.ok) {
