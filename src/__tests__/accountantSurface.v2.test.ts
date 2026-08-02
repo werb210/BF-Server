@@ -20,9 +20,9 @@ describe("BF_SERVER_ACCOUNTANT_SURFACE_v2 routes", () => {
     expect(route).toContain('\"/applications/:id\",');
   });
 
-  it("scopes both to the contact on the token", () => {
-    expect(route).toContain("AND contact_id::text = ($2)::text");
-    expect(route).toContain("WHERE a.contact_id::text = ($1)::text");
+  it("scopes both to invitations for the contact on the token", () => {
+    expect(route).toContain("AND ai.contact_id::text = ($2)::text");
+    expect(route).toContain("WHERE ai.contact_id::text = ($1)::text");
   });
 });
 

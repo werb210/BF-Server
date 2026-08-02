@@ -134,10 +134,17 @@ router.get(
       res.status(403).json({ error: "accountant_contact_missing" });
       return;
     }
+    // BF_SERVER_ACCOUNTANT_INVITE_SCOPE_v1 - join through the invitation.
+    // Amount and date come back so two applications for the same business are
+    // told apart in the picker.
     const apps = await pool.query(
-      `SELECT a.id::text AS id, a.name AS business_name, a.created_at
-         FROM applications a
-        WHERE a.contact_id::text = ($1)::text
+      `SELECT a.id::text AS id,
+              COALESCE(NULLIF(ai.business_name, ''), a.name) AS business_name,
+              a.requested_amount,
+              a.created_at
+         FROM accountant_invites ai
+         JOIN applications a ON a.id::text = ai.application_id::text
+        WHERE ai.contact_id::text = ($1)::text
         ORDER BY a.created_at DESC`,
       [contactId]
     ).catch(() => ({ rows: [] as any[] }));
@@ -170,10 +177,13 @@ router.get(
       res.status(400).json({ error: "application_id_required" });
       return;
     }
+    // BF_SERVER_ACCOUNTANT_INVITE_SCOPE_v1
     const owned = await pool.query(
-      `SELECT id::text AS id, name AS business_name
-         FROM applications
-        WHERE id::text = ($1)::text AND contact_id::text = ($2)::text
+      `SELECT a.id::text AS id,
+              COALESCE(NULLIF(ai.business_name, ''), a.name) AS business_name
+         FROM applications a
+         JOIN accountant_invites ai ON ai.application_id::text = a.id::text
+        WHERE a.id::text = ($1)::text AND ai.contact_id::text = ($2)::text
         LIMIT 1`,
       [id, contactId]
     );
@@ -244,10 +254,12 @@ router.post(
     // Scope the application exclusively with the contact identity from the
     // verified token. A 404 covers both "no such application" and "not yours"
     // so this endpoint cannot be used to probe for real application ids.
+    // BF_SERVER_ACCOUNTANT_INVITE_SCOPE_v1
     const owned = await pool.query<{ pipeline_state: string | null }>(
-      `SELECT pipeline_state
-         FROM applications
-        WHERE id::text = ($1)::text AND contact_id::text = ($2)::text
+      `SELECT a.pipeline_state
+         FROM applications a
+         JOIN accountant_invites ai ON ai.application_id::text = a.id::text
+        WHERE a.id::text = ($1)::text AND ai.contact_id::text = ($2)::text
         LIMIT 1`,
       [id, contactId]
     );
@@ -301,9 +313,12 @@ router.post(
 // BF_SERVER_ACCOUNTANT_FORMS_v2 - form-response access for a signed-in
 // accountant, mirroring the client handlers but scoped to the token's contact.
 async function ownsApplication(contactId: string, applicationId: string): Promise<boolean> {
+  // BF_SERVER_ACCOUNTANT_INVITE_SCOPE_v1
   const r = await pool.query(
-    `SELECT 1 FROM applications
-      WHERE id::text = ($1)::text AND contact_id::text = ($2)::text
+    `SELECT 1
+       FROM applications a
+       JOIN accountant_invites ai ON ai.application_id::text = a.id::text
+      WHERE a.id::text = ($1)::text AND ai.contact_id::text = ($2)::text
       LIMIT 1`,
     [applicationId, contactId]
   );
