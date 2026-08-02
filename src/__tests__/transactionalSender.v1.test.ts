@@ -29,9 +29,13 @@ describe("transactional SendGrid sender v1", () => {
     expect(implementation).toContain("open_tracking: { enable: true }");
   });
 
-  it("routes accountant invitations through the transactional sender", () => {
-    expect(invite).toContain("sendgridConfigured, sendTransactional");
-    expect(invite).toContain("await sendTransactional({");
+  // BF_SERVER_EMAIL_CHANNEL_TESTS_v2 - one-to-one operational mail goes through
+  // the tenant mailbox, not the ESP. Assert the channel that is actually in use;
+  // asserting the retired one turned a correct migration into a red build.
+  it("routes accountant invitations through Microsoft Graph, not SendGrid", () => {
+    expect(invite).toContain("sendViaGraph");
+    expect(invite).toContain("await sendViaGraph({");
+    expect(invite).not.toContain("await sendTransactional({");
     expect(invite).not.toContain("await sendOne({");
   });
 });
