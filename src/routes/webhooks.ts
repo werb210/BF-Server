@@ -7,6 +7,8 @@ import MessagingResponse from "twilio/lib/twiml/MessagingResponse.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { handleVoiceStatusWebhook } from "../modules/voice/voice.service.js";
 import { pool } from "../db.js";
+// BF_SERVER_VOICEMAIL_ENRICH_v8
+import { enrichAndDistributeVoicemail } from "../modules/voice/voicemailEnrich.service.js";
 import { eventBus } from "../events/eventBus.js";
 // BF_SERVER_BLOCK_v305_TWILIO_WEBHOOK_SIGNATURES_v1 — reuse the canonical
 // signature validation middleware (with full diag logging, see
@@ -507,6 +509,17 @@ router.post("/twilio/voicemail", twilioWebhookValidation, safeHandler(async (req
         vmStaffUserId,
       ]
     ).catch((e: any) => console.error("voicemail_insert_failed", e?.message));
+
+    // BF_SERVER_VOICEMAIL_ENRICH_v8 - transcript, blob storage, contact
+    // resolution, conversation and timeline. Deliberately not awaited: Twilio
+    // needs the TwiML response promptly and Whisper takes seconds.
+    void enrichAndDistributeVoicemail({
+      callSid: String(CallSid),
+      recordingSid: String(RecordingSid ?? CallSid),
+      recordingUrl: String(RecordingUrl),
+      durationSeconds: parseInt(String(RecordingDuration ?? "0"), 10) || 0,
+      clientId: contact?.id ?? null,
+    }).catch((e: any) => console.error("voicemail_enrich_failed", e?.message));
   }
 
   vr.say({ voice: "Polly.Joanna" }, "Thank you. We will be in touch shortly. Goodbye.");
