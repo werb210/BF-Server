@@ -99,6 +99,11 @@ export function isAllowedAccountantMime(mimetype: unknown): boolean {
 
 const TERMINAL_STATES = new Set(["Accepted", "Rejected", "Funded", "Closed"]);
 
+// BF_SERVER_SIGNED_TERM_SHEET_v7 - the client returns their signed copy of the
+// lender's term sheet under this category. Not accountant-visible: signing a
+// financing agreement is the applicant's act, not their accountant's.
+export const SIGNED_TERM_SHEET_CATEGORY = "signed_term_sheet";
+
 // BF_SERVER_ACCOUNTANT_FORMS_v2 - allow-list entries that are CMP forms rather
 // than uploads. These keys must match the client's FORM_RENDERERS map exactly;
 // a near-miss renders nothing and reports no error.

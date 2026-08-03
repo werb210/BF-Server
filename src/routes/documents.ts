@@ -126,6 +126,7 @@ export async function persistAndEnqueue(opts: {
   category: string;
   file: Express.Multer.File;
   uploadedBy?: string | null;
+  offerId?: string | null;
 }) {
   const store = getStorage();
   const put = await store.put({
@@ -163,8 +164,8 @@ export async function persistAndEnqueue(opts: {
       `INSERT INTO documents
          (id, application_id, filename, hash, category,
           storage_path, blob_name, blob_url, size_bytes,
-          status, ocr_status, uploaded_by, document_type, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'uploaded',$11,$10,$5,now(),now())`, // BF_SERVER_BLOCK_v818_OTHER_SKIP_OCR
+          status, ocr_status, uploaded_by, document_type, offer_id, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'uploaded',$11,$10,$5,$12,now(),now())`, // BF_SERVER_BLOCK_v818_OTHER_SKIP_OCR
       [
         documentId,
         opts.applicationId,
@@ -183,6 +184,7 @@ export async function persistAndEnqueue(opts: {
         // public upload with a 500.
         opts.uploadedBy ?? 'client',
         isOtherDoc ? 'skipped' : 'pending', // BF_SERVER_BLOCK_v818_OTHER_SKIP_OCR — $11
+        opts.offerId ?? null,
       ]
     );
 
@@ -281,6 +283,11 @@ export async function persistAndEnqueue(opts: {
 router.post("/public-upload", upload.single("file"), async (req: Request, res: Response) => {
   const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
   const category      = resolveUploadCategory(req.body) ?? ""; // BF_SERVER_BLOCK_v843 — accept category | document_type | documentType
+  // BF_SERVER_SIGNED_TERM_SHEET_v7 - the offer this signature belongs to,
+  // so a second lender's term sheet cannot be confused with the first.
+  const offerId = typeof req.body?.offerId === "string" && /^[0-9a-f-]{36}$/i.test(req.body.offerId)
+    ? req.body.offerId
+    : null;
   if (!applicationId || !category) return fail(res, 400, "MISSING_FIELDS");
   const file = (req as Request & { file?: Express.Multer.File }).file;
   if (!file) return fail(res, 400, "NO_FILE");
@@ -358,7 +365,7 @@ router.post("/public-upload", upload.single("file"), async (req: Request, res: R
   }
 
   try {
-    const r = await persistAndEnqueue({ applicationId, category, file, uploadedBy: null });
+    const r = await persistAndEnqueue({ applicationId, category, file, uploadedBy: null, offerId });
     return ok(res, {
       id: r.id,
       versionId: r.versionId,
