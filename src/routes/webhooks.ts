@@ -467,64 +467,41 @@ router.post("/twilio/voice/no-answer", twilioWebhookValidation, safeHandler(asyn
   res.send(vr.toString());
 }));
 
-// ── Voicemail recording ───────────────────────────────────────────────────────
+// BF_SERVER_VOICEMAIL_UNIFY_v9
+// Reception and dialer recordings share the same durable enrichment pipeline.
+// Reply before starting the slow download/transcription work so Twilio does not
+// time out and retry the recording callback.
 router.post("/twilio/voicemail", twilioWebhookValidation, safeHandler(async (req: any, res: any) => {
   res.setHeader("Content-Type", "text/xml");
   const vr = new VoiceResponse();
-
-  const { RecordingUrl, RecordingDuration, RecordingSid, CallSid, From } = req.body ?? {};
-  if (RecordingUrl && CallSid) {
-    const fromNum = typeof From === "string" ? From : null;
-    // Look up contact by phone
-    const contact = fromNum
-      ? await pool.query<{ id: string }>(
-          // BF_SERVER_BLOCK_v637_MOBILE_PHONE_AND_BACKFILL_v1 — contacts.mobile_phone does not exist.
-          `SELECT id FROM contacts
-            WHERE right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10)
-                = right(regexp_replace($1::text,            '[^0-9]', '', 'g'), 10)
-            LIMIT 1`,
-          [fromNum]
-        ).then((r) => r.rows[0] ?? null).catch(() => null)
-      : null;
-
-    // BF_SERVER_VOICEMAIL_PER_STAFF_v1 - stamp the staff member the call was for
-    // so the voicemail is private to them (Todd sees only Todd's, etc.).
-    // BF_SERVER_PHONE_HOTFIX_v1 - the reception IVR passes the resolved target staff as
-    // ?staff=<userId>; prefer it, else fall back to the call_log lookup.
-    const staffHint = typeof req.query?.staff === "string" && req.query.staff.trim() ? String(req.query.staff).trim() : null;
-    const vmStaffUserId = staffHint ?? await findCallLogByTwilioSid(String(CallSid))
-      .then((cl) => cl?.staff_user_id ?? null)
-      .catch(() => null);
-    await pool.query(
-      `INSERT INTO voicemails (id, call_sid, recording_sid, recording_url, duration, from_number, contact_id, staff_user_id, created_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, now())
-       ON CONFLICT DO NOTHING`,
-      [
-        String(CallSid),
-        String(RecordingSid ?? CallSid),
-        String(RecordingUrl),
-        parseInt(String(RecordingDuration ?? "0"), 10) || 0,
-        fromNum,
-        contact?.id ?? null,
-        vmStaffUserId,
-      ]
-    ).catch((e: any) => console.error("voicemail_insert_failed", e?.message));
-
-    // BF_SERVER_VOICEMAIL_ENRICH_v8 - transcript, blob storage, contact
-    // resolution, conversation and timeline. Deliberately not awaited: Twilio
-    // needs the TwiML response promptly and Whisper takes seconds.
-    void enrichAndDistributeVoicemail({
-      callSid: String(CallSid),
-      recordingSid: String(RecordingSid ?? CallSid),
-      recordingUrl: String(RecordingUrl),
-      durationSeconds: parseInt(String(RecordingDuration ?? "0"), 10) || 0,
-      clientId: contact?.id ?? null,
-    }).catch((e: any) => console.error("voicemail_enrich_failed", e?.message));
-  }
-
   vr.say({ voice: "Polly.Joanna" }, "Thank you. We will be in touch shortly. Goodbye.");
   vr.hangup();
   res.send(vr.toString());
+
+  const { RecordingUrl, RecordingDuration, RecordingSid, CallSid, From } = req.body ?? {};
+  if (!RecordingUrl || !CallSid) return;
+
+  // Preserve the reception IVR ownership hint; IVR calls may have no call log.
+  const staffHint = typeof req.query?.staff === "string" && req.query.staff.trim()
+    ? String(req.query.staff).trim()
+    : null;
+  const callSid = String(CallSid);
+
+  void (async () => {
+    const staffUserId = staffHint ?? await findCallLogByTwilioSid(callSid)
+      .then((cl) => cl?.staff_user_id ?? null)
+      .catch(() => null);
+    await enrichAndDistributeVoicemail({
+      callSid,
+      recordingSid: String(RecordingSid ?? CallSid),
+      recordingUrl: String(RecordingUrl),
+      durationSeconds: parseInt(String(RecordingDuration ?? "0"), 10) || null,
+      fromNumber: typeof From === "string" ? From : null,
+      staffUserId,
+    });
+  })().catch((e: any) =>
+    console.error("voicemail_enrich_failed", { call_sid: callSid, error: e?.message ?? String(e) }),
+  );
 }));
 
 // ── Voice status webhook ─────────────────────────────────────────────────────

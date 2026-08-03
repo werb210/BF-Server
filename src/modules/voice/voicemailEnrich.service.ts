@@ -84,14 +84,19 @@ export async function enrichAndDistributeVoicemail(params: {
   recordingUrl: string;
   durationSeconds?: number | null;
   clientId?: string | null;
+  // BF_SERVER_VOICEMAIL_UNIFY_v9 - IVR calls have no call_logs row, so these
+  // values must be carried over from the reception webhook.
+  fromNumber?: string | null;
+  staffUserId?: string | null;
 }): Promise<void> {
   const { callSid, recordingSid, recordingUrl } = params;
   const initialClientId = params.clientId ?? null;
   const callLog = await findCallLogByTwilioSid(callSid).catch(() => null);
   const silo = callLog?.silo || "BF";
-  const fromNumber = callLog?.from_number || callLog?.phone_number || "";
+  const fromNumber = params.fromNumber || callLog?.from_number || callLog?.phone_number || "";
   const applicationId = callLog?.application_id ?? null;
   const durationSeconds = params.durationSeconds ?? callLog?.recording_duration_seconds ?? null;
+  const staffUserId = params.staffUserId ?? callLog?.staff_user_id ?? null;
 
   let mediaUrl = recordingUrl;
   const buf = await downloadRecording(recordingUrl);
@@ -164,11 +169,29 @@ export async function enrichAndDistributeVoicemail(params: {
     await pool.query(
       `INSERT INTO voicemails
         (id, client_id, call_sid, recording_sid, recording_url, blob_url, transcript, duration_seconds, contact_id, application_id, silo, from_number, conversation_id, message_id, staff_user_id, created_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, now())`,
-      [initialClientId ?? contactId, callSid, recordingSid, recordingUrl, mediaUrl, transcript || null, durationSeconds, contactId, applicationId, silo, fromNumber, convId, messageId, callLog?.staff_user_id ?? null],
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, now())
+       ON CONFLICT (recording_sid) DO UPDATE SET
+         client_id        = COALESCE(voicemails.client_id, EXCLUDED.client_id),
+         call_sid         = COALESCE(voicemails.call_sid, EXCLUDED.call_sid),
+         recording_url    = COALESCE(voicemails.recording_url, EXCLUDED.recording_url),
+         blob_url         = COALESCE(EXCLUDED.blob_url, voicemails.blob_url),
+         transcript       = COALESCE(EXCLUDED.transcript, voicemails.transcript),
+         duration_seconds = COALESCE(EXCLUDED.duration_seconds, voicemails.duration_seconds),
+         contact_id       = COALESCE(EXCLUDED.contact_id, voicemails.contact_id),
+         application_id   = COALESCE(EXCLUDED.application_id, voicemails.application_id),
+         silo             = COALESCE(EXCLUDED.silo, voicemails.silo),
+         from_number      = COALESCE(EXCLUDED.from_number, voicemails.from_number),
+         conversation_id  = COALESCE(EXCLUDED.conversation_id, voicemails.conversation_id),
+         message_id       = COALESCE(EXCLUDED.message_id, voicemails.message_id),
+         staff_user_id    = COALESCE(EXCLUDED.staff_user_id, voicemails.staff_user_id)`,
+      [initialClientId ?? contactId, callSid, recordingSid, recordingUrl, mediaUrl, transcript || null, durationSeconds, contactId, applicationId, silo, fromNumber, convId, messageId, staffUserId],
     );
-  } catch {
-    // Voicemail enrichment is best effort; do not fail the Twilio callback.
+  } catch (e: any) {
+    console.error("voicemail_row_upsert_failed", {
+      call_sid: callSid,
+      recording_sid: recordingSid,
+      error: e?.message ?? String(e),
+    });
   }
 
   if (contactId) {
@@ -182,10 +205,10 @@ export async function enrichAndDistributeVoicemail(params: {
 
   try {
     let notify = process.env.VOICEMAIL_NOTIFY_NUMBER || "";
-    if (callLog?.staff_user_id) {
+    if (staffUserId) {
       const u = await pool.query<{ phone: string | null }>(
         `SELECT COALESCE(phone, phone_number) AS phone FROM users WHERE id = $1`,
-        [callLog.staff_user_id],
+        [staffUserId],
       );
       if (u.rows[0]?.phone) notify = u.rows[0].phone;
     }
