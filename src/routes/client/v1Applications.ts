@@ -1659,6 +1659,50 @@ router.get(
 );
 
 // v615: phone-keyed lookup so post-OTP can route to the mini-portal.
+// BF_SERVER_CLIENT_LENDER_RESPONSES_v4
+router.get(
+  "/application/:id/lender-responses",
+  requireAuth,
+  safeHandler(async (req: any, res: any) => {
+    const applicationId = String(req.params.id ?? "").trim();
+    if (!applicationId) {
+      throw new AppError("validation_error", "Application id is required.", 400);
+    }
+
+    const phone10 = String(req.user?.phone ?? "").replace(/[^0-9]/g, "").slice(-10);
+    if (!phone10) {
+      return res.status(401).json({ status: "error", error: "no_phone_claim" });
+    }
+
+    // Ownership check before anything is read, so a valid token for one
+    // applicant cannot read another applicant's outcomes by guessing an id.
+    const owns = await pool.query(
+      `SELECT 1
+         FROM applications a
+         JOIN contacts c ON c.id = COALESCE(a.contact_id,
+                (SELECT p.contact_id FROM applications p
+                  WHERE p.id::text = a.parent_application_id::text))
+        WHERE a.id::text = ($1)::text
+          AND right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $2
+        LIMIT 1`,
+      [applicationId, phone10],
+    );
+    if (!owns.rows.length) {
+      throw new AppError("not_found", "Application not found.", 404);
+    }
+
+    const r = await pool.query(
+      `SELECT ordinal, outcome, reason, created_at
+         FROM application_lender_responses
+        WHERE application_id::text = ($1)::text
+        ORDER BY ordinal ASC`,
+      [applicationId],
+    ).catch(() => ({ rows: [] as any[] }));
+
+    res.json({ status: "ok", data: { responses: r.rows } });
+  }),
+);
+
 router.get(
   "/applications/by-phone",
   requireAuth,
