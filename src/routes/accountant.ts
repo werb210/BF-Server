@@ -205,6 +205,13 @@ router.get(
       .map((d: any) => String(d?.document_type ?? ""))
       .filter((d: string) => d && isAccountantVisible(d));
 
+    // BF_SERVER_ACCOUNTANT_FORMS_REQUESTED_v5 - same treatment for forms.
+    // computeOutstandingDocs returns every requested item; the form keys are the
+    // subset that render as CMP forms rather than uploads.
+    const requestedForms = (outstanding.required ?? [])
+      .map((d: any) => String(d?.document_type ?? ""))
+      .filter((d: string) => d && isAccountantForm(d));
+
     // "Received" has to mean a file exists, not "no lender happened to ask for
     // this". Rejected documents do not count - the accountant needs to send
     // that one again.
@@ -225,7 +232,9 @@ router.get(
           category,
           outstanding: !receivedCategories.has(normaliseCategory(category)),
         })),
-        forms: ACCOUNTANT_FORM_DOC_TYPES,
+        // BF_SERVER_ACCOUNTANT_FORMS_REQUESTED_v5 - only forms this application
+        // actually requires, intersected with the allow-list.
+        forms: requestedForms,
       },
     });
   })
@@ -235,12 +244,18 @@ router.get(
 router.post(
   "/applications/:id/upload",
   requireAccountant,
-  upload.single("file"),
+  // BF_SERVER_ACCOUNTANT_FORMS_REQUESTED_v5 - accept up to twenty files.
+  upload.array("files", 20),
   safeHandler(async (req: any, res: any) => {
     const { contactId } = req.accountant;
     const id = String(req.params.id ?? "").trim();
     const category = String(req.body?.category ?? "").trim();
-    const file = req.file;
+    // Accept both shapes so an older client that posts a single "file" still
+    // works while the new one posts "files".
+    const files: any[] = Array.isArray(req.files) && req.files.length
+      ? req.files
+      : (req.file ? [req.file] : []);
+    const file = files[0];
 
     if (!id || !category) {
       res.status(400).json({ error: "MISSING_FIELDS" });
@@ -293,9 +308,34 @@ router.post(
         file,
         uploadedBy: `accountant:${contactId}`,
       });
+
+      // BF_SERVER_ACCOUNTANT_FORMS_REQUESTED_v5 - every additional file goes
+      // through the same path as the first. A failure on file 3 must not lose
+      // files 1 and 2, so each is persisted independently and the outcome is
+      // reported per file.
+      const extraResults: any[] = [];
+      for (const extra of files.slice(1)) {
+        if (!isAllowedAccountantMime(extra?.mimetype)) {
+          extraResults.push({ name: extra?.originalname ?? null, ok: false, error: "MIME_NOT_PERMITTED" });
+          continue;
+        }
+        try {
+          const extraResult = await persistAndEnqueue({
+            applicationId: id,
+            category,
+            file: extra,
+            uploadedBy: `accountant:${contactId}`,
+          });
+          extraResults.push({ name: extra.originalname, ok: true, id: extraResult.id });
+        } catch (e: any) {
+          extraResults.push({ name: extra?.originalname ?? null, ok: false, error: String(e?.message ?? "upload_failed") });
+        }
+      }
+
       res.json({
         status: "ok",
         data: {
+          additional: extraResults,
           id: result.id,
           versionId: result.versionId,
           applicationId: id,
