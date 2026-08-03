@@ -30,6 +30,7 @@ export async function findPendingConversions(limit = 200): Promise<PendingConver
     `SELECT id,
             metadata->'attribution'->>'gclid' AS gclid,
             COALESCE(funded_amount, requested_amount) AS value, -- BF_SERVER_FUNDED_AMOUNT_v1
+            COALESCE(funded_currency, 'CAD') AS currency, -- BF_SERVER_FUNDED_CURRENCY_v6
             COALESCE(updated_at, now())::text AS funded_at
        FROM applications
       WHERE silo = 'BF'
