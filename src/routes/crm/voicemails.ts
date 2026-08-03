@@ -15,10 +15,14 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   // the call was for. Each user sees only their own (Todd sees Todd's, etc.).
   const userId = req.user?.userId ?? req.user?.id ?? null;
   const r = await pool.query(
+    // BF_SERVER_VOICEMAIL_DURATION_v3
     `SELECT v.id, v.recording_url, v.call_sid, v.created_at,
             v.contact_id,
+            COALESCE(v.duration, v.duration_seconds) AS duration_seconds,
+            COALESCE(v.transcript, v.transcription)  AS transcript,
+            v.from_number,
             c.name  AS contact_name,
-            c.phone AS contact_phone
+            COALESCE(c.phone, v.from_number) AS contact_phone
        FROM voicemails v
        LEFT JOIN contacts c ON c.id = v.contact_id
       WHERE (c.silo = $1 OR c.silo IS NULL)
