@@ -67,7 +67,9 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
                  ('Received','In Review','Documents Required','Additional Steps Required','Off to Lender','Offer','Accepted','Rejected')
                THEN a.pipeline_state ELSE 'Received' END) AS stage,
               COALESCE(SUM(
-                COALESCE(a.funded_amount, off.amount, a.requested_amount, 0)
+                -- BF_SERVER_FUNDED_CURRENCY_v6 - in CAD, not raw.
+                (COALESCE(a.funded_amount, off.amount, a.requested_amount, 0)
+                   * COALESCE((SELECT to_cad FROM fx_rates WHERE currency = a.funded_currency), 1))
                 * (COALESCE(lp.commission, 2) / 100.0)
               ), 0)::text AS commission
        FROM applications a
@@ -540,7 +542,9 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
                 'Direct'
               ) AS source,
               COUNT(DISTINCT a.id)::text AS leads,
-              COALESCE(SUM(COALESCE(a.funded_amount, off.amount, 0)), 0)::text AS revenue
+              -- BF_SERVER_FUNDED_CURRENCY_v6
+              COALESCE(SUM(COALESCE(a.funded_amount, off.amount, 0)
+                * COALESCE((SELECT to_cad FROM fx_rates WHERE currency = a.funded_currency), 1)), 0)::text AS revenue
          FROM applications a
          LEFT JOIN LATERAL (
            SELECT o.amount FROM offers o

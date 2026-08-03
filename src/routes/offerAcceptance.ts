@@ -88,18 +88,30 @@ router.post("/:id/confirm-acceptance", requireAuth, requireAuthorization({ roles
   // BF_SERVER_FUNDED_AMOUNT_v1 - staff enter the ACTUAL amount the lender advanced. Commission
   // and ad-conversion value are computed from this, not from the requested or quoted amount.
   // Falls back to the offer amount when staff do not supply one.
+  // BF_SERVER_FUNDED_CURRENCY_v6 - mandatory. This is the reporting number;
+  // leaving it optional meant revenue quietly fell back to the quoted offer.
   const rawFunded = (req.body ?? {}).fundedAmount ?? (req.body ?? {}).funded_amount;
+  if (rawFunded === undefined || rawFunded === null || String(rawFunded).trim() === "") {
+    return res.status(400).json({ error: "funded_amount_required" });
+  }
+  const rawCurrency = String(
+    (req.body ?? {}).fundedCurrency ?? (req.body ?? {}).funded_currency ?? "CAD"
+  ).trim().toUpperCase();
+  if (rawCurrency !== "CAD" && rawCurrency !== "USD") {
+    return res.status(400).json({ error: "invalid_funded_currency" });
+  }
   const fundedAmount = rawFunded === undefined || rawFunded === null || rawFunded === "" ? null : Number(rawFunded);
   if (fundedAmount !== null && (!Number.isFinite(fundedAmount) || fundedAmount < 0)) {
     return res.status(400).json({ error: "invalid_funded_amount" });
   }
   await pool.query(
     `UPDATE applications
-        SET funded_amount = COALESCE($2::numeric, (SELECT o.amount FROM offers o WHERE o.id::text = $3)),
+        SET funded_currency = $4,
+            funded_amount = COALESCE($2::numeric, (SELECT o.amount FROM offers o WHERE o.id::text = $3)),
             funded_at = COALESCE(funded_at, now()),
             updated_at = now()
       WHERE id::text = $1`,
-    [row.application_id, fundedAmount, id],
+    [row.application_id, fundedAmount, id, rawCurrency],
   ).catch((e) => console.warn("[offer_accept] funded_amount write failed", e instanceof Error ? e.message : String(e)));
 
   // Fire SignNow envelope on the lender's term sheet (best-effort).
