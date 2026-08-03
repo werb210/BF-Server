@@ -295,7 +295,9 @@ router.post(
     }
 
     const durationSeconds = Number(req.body?.RecordingDuration ?? 0) || null;
-    await enrichAndDistributeVoicemail({
+    // BF_SERVER_VOICEMAIL_UNIFY_v9 - do not hold the Twilio callback open
+    // while the recording is downloaded and transcribed.
+    void enrichAndDistributeVoicemail({
       callSid,
       recordingSid,
       recordingUrl,
