@@ -22,6 +22,21 @@ const router = Router();
 
 const isValidPhone = (phone: unknown): phone is string => typeof phone === "string" && phone.trim().length > 0;
 
+// BF_SERVER_OTP_E164_v1
+// Twilio Verify requires E.164. Ten digits are treated as North American, and
+// eleven beginning with 1 get the plus. Anything already E.164 is returned
+// unchanged. Returns "" when the input cannot be interpreted, so the caller
+// can reject it rather than handing Twilio something it will refuse.
+function toE164(raw: string): string {
+  const trimmed = raw.trim();
+  if (/^\+[1-9]\d{7,14}$/.test(trimmed)) return trimmed;
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  if (digits.length >= 8 && digits.length <= 15) return `+${digits}`;
+  return "";
+}
+
 type TwilioVerifyClient = {
   verify: {
     v2: {
@@ -46,10 +61,16 @@ const getTwilioClient = (): TwilioVerifyClient => {
 // START OTP
 router.post("/otp/start", otpStartLimiter, async (req, res) => {
   try {
-    const { phone } = req.body;
+    const { phone: rawPhone } = req.body;
 
-    if (!isValidPhone(phone)) {
+    if (!isValidPhone(rawPhone)) {
       return res.status(400).json({ error: "Phone is required" });
+    }
+
+    // BF_SERVER_OTP_E164_v1
+    const phone = toE164(rawPhone);
+    if (!phone) {
+      return res.status(400).json({ error: "Phone is not a valid number" });
     }
 
     if (isTest) {
@@ -125,7 +146,12 @@ router.post("/otp/start", otpStartLimiter, async (req, res) => {
 
 // VERIFY OTP
 router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
-  const { phone, code } = req.body;
+  const { phone: rawPhone, code } = req.body;
+  // BF_SERVER_OTP_E164_v1 - must match the string otp/start used.
+  const phone = typeof rawPhone === "string" ? toE164(rawPhone) : "";
+  if (!phone) {
+    return res.status(400).json({ error: "Phone is not a valid number" });
+  }
 
   // Test mode - use in-memory store
   if (isTest) {

@@ -46,6 +46,20 @@ describe("OTP flows", () => {
     expect(typeof res.body.data?.token).toBe("string");
   });
 
+  it("normalizes national phone numbers consistently across start and verify", async () => {
+    await request(app)
+      .post("/api/auth/otp/start")
+      .send({ phone: "(555) 555-0100" });
+
+    const res = await request(app)
+      .post("/api/auth/otp/verify")
+      .send({ phone: "555-555-0100", code: "000000" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("ok");
+    expect(typeof res.body.data?.token).toBe("string");
+  });
+
   it("rejects wrong OTP code", async () => {
     await request(app)
       .post("/api/auth/otp/start")
@@ -64,8 +78,8 @@ describe("OTP flows", () => {
       .post("/api/auth/otp/verify")
       .send({ phone: "bad-phone", code: "abc" });
 
-    expect(res.status).toBe(401);
-    expect(res.body.error).toBe("Invalid code");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Phone is not a valid number");
   });
 
   it("returns auth error when JWT secret is unavailable", async () => {
