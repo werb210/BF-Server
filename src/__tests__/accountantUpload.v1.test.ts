@@ -36,8 +36,14 @@ describe("BF_SERVER_ACCOUNTANT_UPLOAD_v1", () => {
     expect(route).toContain("!isAccountantVisible(category) && !ACCOUNTANT_ALWAYS_AVAILABLE.includes(category)");
   });
 
-  it("scopes ownership to the token's contact", () => {
-    expect(route).toContain("AND contact_id::text = ($2)::text");
+  // BF_SERVER_ACCOUNTANT_UPLOAD_SCOPE_TEST_v2
+  it("scopes ownership to the token's contact via the invitation", () => {
+    expect(route).toContain("JOIN accountant_invites ai ON ai.application_id::text = a.id::text");
+    expect(route).toContain("ai.contact_id::text = ($2)::text");
+  });
+
+  it("never scopes on applications.contact_id, which is the applicant", () => {
+    expect(route).not.toContain("AND contact_id::text = ($2)::text");
   });
 
   it("refuses uploads onto a closed file", () => {
