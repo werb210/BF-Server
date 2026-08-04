@@ -5,7 +5,17 @@ import jwt from "jsonwebtoken";
 import { fetchTwilioClient } from "./twilio.js";
 import { config } from "../config/index.js";
 
-const PUBLIC_URL = (process.env.PUBLIC_SERVER_URL || "https://server.boreal.financial").replace(/\/+$/, "");
+// BF_SERVER_SMS_CASCADE_COMPLETE_v12 - PUBLIC_SERVER_URL is not a setting that
+// exists on the App Service; the deployed names are PUBLIC_BASE_URL and
+// SERVER_URL. This only ever worked because of the hardcoded default, which
+// would have been silently wrong the moment the host changed. Read the names
+// that are actually configured, keeping the old one first for compatibility.
+const PUBLIC_URL = (
+  process.env.PUBLIC_SERVER_URL ||
+  process.env.PUBLIC_BASE_URL ||
+  process.env.SERVER_URL ||
+  "https://server.boreal.financial"
+).replace(/\/+$/, "");
 const CASL_FOOTER = "Reply STOP to opt out. Info: www.boreal.financial/sms";
 
 export function mergeSmsFields(text: string, vars: Record<string, string>): string {

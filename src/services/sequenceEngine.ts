@@ -180,7 +180,16 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
     if (step.channel === "auto") {
       await applyTemplate(channel === "sms" ? step.sms_template_id : step.email_template_id);
     }
-    if (channel === "sms") {
+    // BF_SERVER_SMS_CASCADE_COMPLETE_v12 - an EXPLICIT sms step used to do
+    // nothing at all for a non-textable contact and then advance as though it
+    // had sent, so those people silently fell out of the sequence. Only
+    // channel:'auto' cascaded. An explicit step now falls back to email too
+    // when the step carries email content; if it does not, the step is skipped
+    // as before rather than inventing a message.
+    const smsFallsBackToEmail =
+      step.channel === "sms" && !textable && Boolean(c.email) && !c.marketing_opt_out
+      && Boolean(String(effSubject || "").trim() || String(effHtml || "").trim() || String(effBody || "").trim());
+    if (channel === "sms" && !smsFallsBackToEmail) {
       const blocked = !textable;
       if (!blocked) {
         // BF_SERVER_BLOCK_v786_SEQ_CLICKS - track this send so a link click attributes back.
