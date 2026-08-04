@@ -3,8 +3,22 @@
 import { pool } from "../db.js";
 import { renderBrandedEmail, type BrandedEmailFields } from "./emailTemplateRender.js";
 
+// BF_SERVER_LANDING_BASE_HOST_v14
+// LANDING_BASE_URL is not set on the App Service, so this fell back to the
+// hardcoded apex - and the apex is NOT the Static Web App. Verified 2026-08-04:
+//
+//   https://www.boreal.financial/e/zzzz  -> 200, SPA renders
+//   https://boreal.financial/e/zzzz      -> "Not Found" (405 on HEAD)
+//
+// The apex is fronted by something that serves the pages it knows and 404s
+// everything else; only www runs the SWA with the navigationFallback that lets
+// the /e/:slug route resolve. So every short link ever minted pointed at a host
+// that cannot serve it.
+//
+// The default is now www, which is the host that actually works. Set
+// LANDING_BASE_URL to override if the apex is ever pointed at the SWA.
 function landingBase(): string {
-  return (process.env.LANDING_BASE_URL || "https://boreal.financial").replace(/\/+$/, "");
+  return (process.env.LANDING_BASE_URL || "https://www.boreal.financial").replace(/\/+$/, "");
 }
 
 function slugify(): string {
