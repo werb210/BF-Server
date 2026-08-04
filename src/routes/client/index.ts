@@ -81,12 +81,36 @@ router.use(async (req: any, res: any, next: any) => {
        )
        SELECT
          (SELECT COUNT(*)::int FROM applications WHERE id::text = ($1)::text) AS total,
-         (SELECT COUNT(*)::int FROM app_phones WHERE p10 = $2)               AS mine`,
+         (SELECT COUNT(*)::int FROM app_phones WHERE p10 = $2)               AS mine,
+         -- BF_SERVER_UNCLAIMED_APP_OWNERSHIP_v10 - how many contacts on this
+         -- application have a usable phone at all. Blank phones are excluded
+         -- because right(regexp_replace(...)) yields '' for them, and '' can
+         -- never match a caller's ten digits.
+         (SELECT COUNT(*)::int FROM app_phones WHERE p10 <> '')              AS known`,
       [aid, phone10],
     );
     const total = Number(r.rows?.[0]?.total ?? 0);
     const mine = Number(r.rows?.[0]?.mine ?? 0);
-    if (total > 0 && mine === 0) {
+    // BF_SERVER_UNCLAIMED_APP_OWNERSHIP_v10
+    // This used to 403 on `total > 0 && mine === 0`, which reads as "the
+    // application exists and is not yours". Mid-wizard that is wrong: the
+    // bf-client wizard is local-first, contacts are only created by the Step 6
+    // submit handler, so between create_blank_application and submit an
+    // application has ZERO linked contacts. app_phones came back empty, mine
+    // was 0, and the guard rejected the person who had just created it.
+    //
+    // It bit Step 5's "have my accountant upload the documents" - POST
+    // /api/client/accountant carries applicationId in the body, so it hit this
+    // guard, returned 403, and the applicant was told we could not reach their
+    // accountant. It applies to every POST client route that names an
+    // applicationId before submit, not just that one.
+    //
+    // An application nobody has claimed cannot be pivoted TO, because there is
+    // no other owner to pivot away from - so it falls back to the capability
+    // model the rest of this middleware already relies on. The moment any
+    // contact with a phone is linked, the check is exactly as strict as before.
+    const known = Number(r.rows?.[0]?.known ?? 0);
+    if (total > 0 && known > 0 && mine === 0) {
       res.status(403).json({ error: "forbidden" });
       return;
     }
