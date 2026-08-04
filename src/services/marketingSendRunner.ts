@@ -13,7 +13,8 @@ import { isCanadianMobile, SMS_ELIGIBLE_SQL, CAMPAIGN_ELIGIBLE_SQL } from "./sms
 // empty/null = all contacts; otherwise a contact must carry AT LEAST ONE include
 // tag. A contact carrying ANY exclude tag is removed; exclude wins over include.
 // Single `tag` kept for back-compat (raw email panel, SMS, Maya tools, old jobs).
-export type EmailJob = { silo: string; tag: string | null; subject: string; html: string; tags?: string[] | null; excludeTags?: string[] | null; templateId?: string | null }; // BF_SERVER_TEMPLATE_ANALYTICS_v1
+// BF_SERVER_EMAIL_TWO_COLUMN_ONLY_v15 - `resend` bypasses the 24h dedupe.
+export type EmailJob = { silo: string; tag: string | null; subject: string; html: string; resend?: boolean; tags?: string[] | null; excludeTags?: string[] | null; templateId?: string | null }; // BF_SERVER_TEMPLATE_ANALYTICS_v1
 export type SendProgress = (sent: number, failed: number) => Promise<void>;
 // BF_SERVER_SEND_KILL_SWITCH_v1 - worker callback checked between recipient batches.
 export type ShouldAbort = () => Promise<boolean>;
@@ -47,7 +48,11 @@ export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendP
   let rejectStatus: number | undefined;
   let rejectError: string | undefined;
   for (const c of recips.rows) {
-    const alreadySent = await pool.query<{ id: string }>(
+    // BF_SERVER_EMAIL_TWO_COLUMN_ONLY_v15 - `resend` skips the 24-hour dedupe.
+    // The guard exists so a resumed job cannot double-send, which is right for
+    // a real blast; but it also silently swallowed every repeat test send and
+    // reported "sent 0 of 0" as though the send had simply produced nothing.
+    const alreadySent = job.resend ? { rowCount: 0, rows: [] as { id: string }[] } : await pool.query<{ id: string }>(
       `SELECT id FROM crm_timeline_events
         WHERE contact_id = $1 AND event_type = 'email_marketing_sent'
           AND created_at > now() - interval '24 hours'

@@ -355,12 +355,14 @@ router.post("/email/send", safeHandler(async (req: any, res: any) => {
     const job = await pool.query<{ id: string; not_before: string }>(
       `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by, not_before)
        VALUES ('email', $1, $2, $3, $4, $5, now() + ($6 || ' minutes')::interval) RETURNING id, not_before`,
-      [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId }), total, req.user?.userId ?? null, String(SEND_HOLD_MINUTES)],
+      // BF_SERVER_EMAIL_TWO_COLUMN_ONLY_v15 - `resend` rides along in the payload
+      // so the worker that picks this job up honours it too.
+      [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId, resend: b.resend === true }), total, req.user?.userId ?? null, String(SEND_HOLD_MINUTES)],
     );
     respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total, notBefore: job.rows[0].not_before, holdMinutes: SEND_HOLD_MINUTES });
     return;
   }
-  const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut, tags: includeTags, excludeTags, templateId });
+  const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut, resend: b.resend === true, tags: includeTags, excludeTags, templateId });
   respondOk(res, { configured: true, recipients: out.total, sent: out.sent, failed: out.failed, rejected: out.failed, rejectStatus: out.rejectStatus, rejectError: out.rejectError, capped: false });
 }));
 
@@ -623,12 +625,14 @@ router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
   if (total > 0) { // BF_SERVER_ALWAYS_QUEUE_v1 - always use the durable queue; inline sends cannot resume
     const job = await pool.query<{ id: string; not_before: string }>(
       `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by, not_before) VALUES ('email', $1, $2, $3, $4, $5, now() + ($6 || ' minutes')::interval) RETURNING id, not_before`,
-      [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId }), total, req.user?.userId ?? null, String(SEND_HOLD_MINUTES)],
+      // BF_SERVER_EMAIL_TWO_COLUMN_ONLY_v15 - `resend` rides along in the payload
+      // so the worker that picks this job up honours it too.
+      [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId, resend: b.resend === true }), total, req.user?.userId ?? null, String(SEND_HOLD_MINUTES)],
     );
     respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total, notBefore: job.rows[0].not_before, holdMinutes: SEND_HOLD_MINUTES });
     return;
   }
-  const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut, tags: includeTags, excludeTags, templateId }); // BF_SERVER_TEMPLATE_ANALYTICS_SENDTPL_v1
+  const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut, resend: b.resend === true, tags: includeTags, excludeTags, templateId }); // BF_SERVER_TEMPLATE_ANALYTICS_SENDTPL_v1
   respondOk(res, { configured: true, recipients: out.total, sent: out.sent, failed: out.failed, rejected: out.failed, rejectStatus: out.rejectStatus, rejectError: out.rejectError });
 }));
 
