@@ -42,3 +42,26 @@ export const SMS_ELIGIBLE_SQL = `
   AND (c.line_type IS NULL OR c.line_type = 'mobile')
   AND ${CONSENT_SQL}
 `;
+
+// BF_SERVER_SMS_CASCADE_COMPLETE_v12
+// A contact we can reach by marketing EMAIL. Deliberately narrower than SMS:
+// email needs no CASL express/implied timer here because the fallback email is
+// only ever sent as part of a campaign the contact is already in scope for, and
+// marketing_opt_out is honoured. Mirrors the predicate the cascade worker and
+// the inline fallback both already use.
+export const EMAIL_FALLBACK_ELIGIBLE_SQL = `(
+      COALESCE(c.email,'') <> ''
+  AND COALESCE(c.marketing_opt_out, false) = false
+)`;
+
+// Who a campaign WITH a fallback email can actually reach, by either channel.
+//
+// The blast previously selected on SMS_ELIGIBLE_SQL alone, so a contact with no
+// phone at all - or one who opted out of SMS but not email - was excluded from
+// the query entirely and received nothing. The email fallback in runSmsSend
+// could only ever fire for contacts already inside the SMS-eligible set who
+// then failed the Canadian-mobile or line-type test at send time.
+export const CAMPAIGN_ELIGIBLE_SQL = `(
+     (${SMS_ELIGIBLE_SQL})
+  OR ${EMAIL_FALLBACK_ELIGIBLE_SQL}
+)`;

@@ -463,7 +463,9 @@ router.post("/sms/send", safeHandler(async (req: any, res: any) => {
   const includeTags = tagArr(b.tags);       // BF_SERVER_SMS_AUDIENCE_INCL_EXCL_v1
   const excludeTags = tagArr(b.excludeTags);
   // BF_SERVER_SEND_QUEUE_SMS_v1 - small blasts inline; large ones queue (no cap, no blocking).
-  const total = await countSmsRecipients(pool, silo, tag, includeTags, excludeTags);
+  // BF_SERVER_SMS_CASCADE_COMPLETE_v12 - the audience is wider when a fallback
+  // email exists, so the number shown must be computed the same way.
+  const total = await countSmsRecipients(pool, silo, tag, includeTags, excludeTags, Boolean(fbHtml));
   if (total === 0) { respondOk(res, { configured: true, recipients: 0, smsSent: 0, emailSent: 0, failed: 0 }); return; }
   if (total > 1000) {
     const job = await pool.query<{ id: string; not_before: string }>(

@@ -7,7 +7,7 @@
 import type { Pool } from "pg";
 import { sendOne, mergeFields } from "./sendgridService.js";
 import { renderMarketingSms, sendMarketingSms, trackedLink, lookupLineType } from "./marketingSms.js";
-import { isCanadianMobile, SMS_ELIGIBLE_SQL } from "./smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1 // BF_SERVER_SEND_QUEUE_SMS_v1 BF_SERVER_BLOCK_v784_LINE_TYPE_IMPORT
+import { isCanadianMobile, SMS_ELIGIBLE_SQL, CAMPAIGN_ELIGIBLE_SQL } from "./smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1 // BF_SERVER_SEND_QUEUE_SMS_v1 BF_SERVER_BLOCK_v784_LINE_TYPE_IMPORT BF_SERVER_SMS_CASCADE_COMPLETE_v12
 
 // BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1 - include/exclude tag arrays. Include
 // empty/null = all contacts; otherwise a contact must carry AT LEAST ONE include
@@ -104,18 +104,28 @@ export type SmsJob = { silo: string; tag: string | null; body: string; linkUrl: 
 // The count now matches what actually gets sent: consent-eligible, not opted out of SMS
 // OR marketing, mobile, and Canadian. Previously it counted anyone with a phone OR an
 // email, so the portal's number bore no relation to the real audience.
-export async function countSmsRecipients(pool: Pool, silo: string, tag: string | null, tags?: string[] | null, excludeTags?: string[] | null): Promise<number> {
-  const r = await pool.query<{ phone: string | null }>(
-    `SELECT c.phone
+// BF_SERVER_SMS_CASCADE_COMPLETE_v12 - `hasFallback` widens the count to match
+// the widened send. Without a fallback email the audience is SMS-only and the
+// number is unchanged; with one, the count includes the people who will receive
+// the email instead, because that is who the campaign actually reaches.
+export async function countSmsRecipients(pool: Pool, silo: string, tag: string | null, tags?: string[] | null, excludeTags?: string[] | null, hasFallback = false): Promise<number> {
+  const r = await pool.query<{ phone: string | null; email: string | null; sms_ok: boolean }>(
+    `SELECT c.phone, c.email, (${SMS_ELIGIBLE_SQL}) AS sms_ok
        FROM contacts c
       WHERE c.silo = $1
         AND ($2::text IS NULL OR $2 = ANY(c.tags))
         AND ($3::text[] IS NULL OR c.tags && $3::text[])
         AND ($4::text[] IS NULL OR NOT (c.tags && $4::text[]))
-        AND ${SMS_ELIGIBLE_SQL}`,
+        AND ${hasFallback ? CAMPAIGN_ELIGIBLE_SQL : SMS_ELIGIBLE_SQL}`,
     [silo, tag, tags ?? null, excludeTags ?? null],
   );
-  return r.rows.filter((x) => isCanadianMobile(x.phone)).length;
+  // isCanadianMobile is JS-side, so it cannot live in the SQL predicate. A row
+  // that is SMS-eligible but not a Canadian mobile still counts when there is a
+  // fallback, because it will be emailed.
+  return r.rows.filter((x) => {
+    const textable = x.sms_ok && isCanadianMobile(x.phone);
+    return textable || (hasFallback && Boolean(x.email));
+  }).length;
 }
 
 export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgress, shouldAbort?: ShouldAbort): Promise<{ total: number; smsSent: number; emailSent: number; failed: number; campaignId: string; aborted?: boolean }> { // BF_SERVER_SEND_KILL_SWITCH_v1
@@ -132,7 +142,7 @@ export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgr
         AND ($2::text IS NULL OR $2 = ANY(c.tags))
         AND ($3::text[] IS NULL OR c.tags && $3::text[])
         AND ($4::text[] IS NULL OR NOT (c.tags && $4::text[]))
-        AND ${SMS_ELIGIBLE_SQL}`,
+        AND ${job.fbHtml ? CAMPAIGN_ELIGIBLE_SQL : SMS_ELIGIBLE_SQL}`,
     [job.silo, job.tag, job.tags ?? null, job.excludeTags ?? null],
   );
   let smsSent = 0, emailSent = 0, failed = 0, i = 0;
@@ -168,8 +178,23 @@ export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgr
         // BF_SERVER_TEMPLATE_ANALYTICS_v1 - SMS send ledger (sends + replies; SMS click tracking is a follow-up).
         if (job.templateId) { try { await pool.query(`INSERT INTO template_send_events (template_id, contact_id, channel, silo) VALUES ($1,$2,'sms',$3)`, [job.templateId, c.id, job.silo]); } catch { /* ledger best-effort */ } }
       } else {
+        // BF_SERVER_SMS_CASCADE_COMPLETE_v12 - a Twilio rejection used to be
+        // counted and forgotten. The 36h cascade worker only revisits rows in
+        // sms_campaign_sends that were actually sent, so a failed send meant
+        // the contact heard nothing at all. Fall through to the email instead,
+        // and drop the useless send row so the worker does not later chase it.
         failed++;
         if (r.optedOut) await pool.query(`UPDATE contacts SET sms_opt_out = true, updated_at = now() WHERE id = $1`, [c.id]);
+        await pool.query(`DELETE FROM sms_campaign_sends WHERE id = $1`, [sendId]).catch(() => {});
+        if (c.email && !c.marketing_opt_out && job.fbHtml) {
+          const fb = await sendOne({ to: c.email, subject: mergeFields(job.fbSubject || "Following up", vars), html: mergeFields(job.fbHtml, vars), contactId: c.id });
+          if (fb.ok) {
+            emailSent++;
+            failed--;
+            await pool.query(`INSERT INTO sms_campaign_sends (campaign_id, contact_id, silo, fallback_sent, fallback_at) VALUES ($1,$2,$3,true,now())`, [campaignId, c.id, job.silo]);
+            await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [c.id, "email_cascade_sent", JSON.stringify({ campaignId, reason: "sms_send_failed" })]);
+          }
+        }
       }
     } else if (c.email && !c.marketing_opt_out && job.fbHtml) {
       const r = await sendOne({ to: c.email, subject: mergeFields(job.fbSubject || "Following up", vars), html: mergeFields(job.fbHtml, vars), contactId: c.id });
