@@ -472,34 +472,70 @@ router.post("/twilio/voice/no-answer", twilioWebhookValidation, safeHandler(asyn
 // Reply before starting the slow download/transcription work so Twilio does not
 // time out and retry the recording callback.
 router.post("/twilio/voicemail", twilioWebhookValidation, safeHandler(async (req: any, res: any) => {
+  const { RecordingUrl, RecordingDuration, RecordingSid, CallSid, From } = req.body ?? {};
+
+  // Preserve the reception IVR ownership hint; IVR calls may have no call log.
+  const staffHint = typeof req.query?.staff === "string" && req.query.staff.trim()
+    ? String(req.query.staff).trim()
+    : null;
+  const callSid = String(CallSid ?? "");
+  const recordingSid = String(RecordingSid ?? CallSid ?? "");
+  const fromNum = typeof From === "string" ? From : null;
+  const durationSeconds = parseInt(String(RecordingDuration ?? "0"), 10) || null;
+
+  // BF_SERVER_VOICEMAIL_BARE_ROW_v11
+  // v9 removed the bare insert that used to live here, on the grounds that two
+  // inserts produced duplicate voicemails. That was only true because the table
+  // had no unique key. BF_SERVER_VOICEMAIL_UNIFY_v9's migration added
+  // voicemails_recording_sid_uq, so the bare row and the enrichment upsert now
+  // converge on one row instead of racing - and the reason the bare row existed
+  // is still valid: enrichment downloads from Twilio and calls Whisper, and if
+  // either is down it can throw BEFORE its own insert. Without this write there
+  // would be no voicemail at all, only a log line.
+  //
+  // Written before the TwiML because it is two indexed statements; Twilio's
+  // timeout is about the Whisper call further down, which stays detached.
+  const vmStaffUserId = staffHint ?? (RecordingUrl && callSid
+    ? await findCallLogByTwilioSid(callSid)
+      .then((cl) => cl?.staff_user_id ?? null)
+      .catch(() => null)
+    : null);
+  if (RecordingUrl && callSid) {
+    await pool.query(
+      `INSERT INTO voicemails (id, call_sid, recording_sid, recording_url, duration, from_number, staff_user_id, created_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, now())
+       ON CONFLICT (recording_sid) DO NOTHING`,
+      [
+        callSid,
+        recordingSid,
+        String(RecordingUrl),
+        durationSeconds ?? 0,
+        fromNum,
+        vmStaffUserId,
+      ],
+    ).catch((e: any) =>
+      console.error("voicemail_insert_failed", { call_sid: callSid, error: e?.message ?? String(e) }),
+    );
+  }
+
   res.setHeader("Content-Type", "text/xml");
   const vr = new VoiceResponse();
   vr.say({ voice: "Polly.Joanna" }, "Thank you. We will be in touch shortly. Goodbye.");
   vr.hangup();
   res.send(vr.toString());
 
-  const { RecordingUrl, RecordingDuration, RecordingSid, CallSid, From } = req.body ?? {};
-  if (!RecordingUrl || !CallSid) return;
+  if (!RecordingUrl || !callSid) return;
 
-  // Preserve the reception IVR ownership hint; IVR calls may have no call log.
-  const staffHint = typeof req.query?.staff === "string" && req.query.staff.trim()
-    ? String(req.query.staff).trim()
-    : null;
-  const callSid = String(CallSid);
-
-  void (async () => {
-    const staffUserId = staffHint ?? await findCallLogByTwilioSid(callSid)
-      .then((cl) => cl?.staff_user_id ?? null)
-      .catch(() => null);
-    await enrichAndDistributeVoicemail({
-      callSid,
-      recordingSid: String(RecordingSid ?? CallSid),
-      recordingUrl: String(RecordingUrl),
-      durationSeconds: parseInt(String(RecordingDuration ?? "0"), 10) || null,
-      fromNumber: typeof From === "string" ? From : null,
-      staffUserId,
-    });
-  })().catch((e: any) =>
+  // Detached: transcription and blob copy take far longer than Twilio waits.
+  // The row above already exists, so this upserts the enrichment onto it.
+  void enrichAndDistributeVoicemail({
+    callSid,
+    recordingSid,
+    recordingUrl: String(RecordingUrl),
+    durationSeconds,
+    fromNumber: fromNum,
+    staffUserId: vmStaffUserId,
+  }).catch((e: any) =>
     console.error("voicemail_enrich_failed", { call_sid: callSid, error: e?.message ?? String(e) }),
   );
 }));
