@@ -25,11 +25,13 @@ describe("voicemail unification", () => {
     expect(enrich).toContain("staffUserId?: string | null;");
     expect(enrich).toContain("if (staffUserId) {");
     expect(webhooks).toContain('req.query?.staff === "string"');
-    expect(webhooks).toContain('fromNumber: typeof From === "string" ? From : null,');
+    expect(webhooks).toContain('const fromNum = typeof From === "string" ? From : null;');
+    expect(webhooks).toContain("fromNumber: fromNum,");
   });
-  it("uses one enrichment path and responds before invoking it", () => {
-    expect(webhooks).not.toContain("INSERT INTO voicemails");
+  it("persists a bare row and responds before invoking the enrichment path", () => {
     const handler = webhooks.slice(webhooks.indexOf('router.post("/twilio/voicemail"'));
+    expect(handler).toContain("INSERT INTO voicemails");
+    expect(handler).toContain("ON CONFLICT (recording_sid) DO NOTHING");
     expect(handler.indexOf("res.send(vr.toString())")).toBeLessThan(handler.indexOf("enrichAndDistributeVoicemail({"));
     expect(twilioRoutes).toContain("void enrichAndDistributeVoicemail({");
     expect(twilioRoutes).not.toContain("await enrichAndDistributeVoicemail({");
