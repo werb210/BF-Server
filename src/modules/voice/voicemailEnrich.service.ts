@@ -64,8 +64,15 @@ async function resolveContactByPhone(from: string, silo: string): Promise<string
       );
       if (r.rows[0]) return r.rows[0].id;
     }
+    // BF_SERVER_VM_UNKNOWN_CALLER_v13
+    // first_name was the raw caller ID, so an unrecognised number produced a
+    // CRM contact literally named "4164632028" - one of those is in the live
+    // contacts table now. The number is already stored in `phone`; putting it
+    // in the name as well makes the CRM unsearchable and looks like a data
+    // error to staff. Name it for what it is and let whoever works the
+    // voicemail rename it.
     const created = await createContact(pool, {
-      first_name: from || "Unknown",
+      first_name: "Unknown caller",
       last_name: "",
       phone: from || null,
       role: "other",
