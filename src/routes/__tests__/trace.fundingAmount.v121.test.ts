@@ -131,7 +131,11 @@ describe("v121 E2E trace: $1,000,000 in Step 1 ➜ pipeline card", () => {
     if (!portalPageSrc) return;
     expect(portalPageSrc).toMatch(/card\.requested_amount/);
     expect(portalPageSrc).toMatch(/Number\(card\.requested_amount\)\.toLocaleString\(\)/);
-    expect(portalPageSrc).toMatch(/\{amount\}/);
+    // BF_SERVER_STALE_EMAIL_IMAGE_TESTS_v16 - PipelinePage now renders
+    // `{amount ?? "—"}`; the old literal `{amount}` regex only ever matched when
+    // BF-portal happened to be checked out beside BF-Server, so the drift went
+    // unnoticed in CI (the hop self-skips when the sibling path is absent).
+    expect(portalPageSrc).toMatch(/\{amount\s*(\?\?[^}]*)?\}/);
     expect((1_000_000).toLocaleString()).toBe("1,000,000");
     expect(`$${(1_000_000).toLocaleString()}`).toBe("$1,000,000");
   });
