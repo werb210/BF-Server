@@ -10,7 +10,7 @@ const src = readFileSync(
 
 describe("GET /templates returns what the composer needs to restore a template", () => {
   it("selects html alongside body/subject", () => {
-    expect(src).toContain("SELECT id, channel, name, body, link_url, subject, html, updated_at");
+    expect(src).toContain("SELECT id, channel, name, body, link_url, subject, html, fields, updated_at");
   });
 
   it("exposes link_url as landingUrl so the composer can show it on pick", () => {

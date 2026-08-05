@@ -647,7 +647,7 @@ router.get("/templates", requireAuth, safeHandler(async (req: any, res: any) => 
   // full template (headline/hero/CTA live inside html) and show the landing URL
   // on pick. Previously only body+subject came back.
   const r = await pool.query(
-    `SELECT id, channel, name, body, link_url, subject, html, updated_at
+    `SELECT id, channel, name, body, link_url, subject, html, fields, updated_at
        FROM marketing_template WHERE ${where} ORDER BY updated_at DESC LIMIT 200`,
     params,
   );
@@ -671,10 +671,15 @@ router.post("/templates", requireAuth, safeHandler(async (req: any, res: any) =>
       console.error("email_template_landing_failed", { error: e instanceof Error ? e.message : String(e) });
     }
   }
+  // BF_SERVER_TEMPLATE_FIELDS_ROUNDTRIP_v17 - persist the whole composer state.
+  // Without this only subject/body/html survived, so loading a saved template
+  // left the previous template's headline, images and buttons in the form and
+  // the right column empty.
+  const fields = b.fields && typeof b.fields === "object" ? JSON.stringify(b.fields) : null;
   const r = await pool.query(
-    `INSERT INTO marketing_template (silo, channel, name, body, link_url, subject, html, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-    [silo, channel, name, b.body ?? null, landingUrl, b.subject ?? null, b.html ?? null, req.user?.userId ?? null],
+    `INSERT INTO marketing_template (silo, channel, name, body, link_url, subject, html, fields, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+    [silo, channel, name, b.body ?? null, landingUrl, b.subject ?? null, b.html ?? null, fields, req.user?.userId ?? null],
   );
   respondOk(res, { id: r.rows[0].id, saved: true, landingUrl });
 }));
