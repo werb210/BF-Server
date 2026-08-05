@@ -21,9 +21,17 @@ function isSuppressEvent(event: string, ev: any): boolean {
   return false;
 }
 
+// BF_SERVER_SENDGRID_WEBHOOK_VISIBILITY_v20 - this endpoint had no logging of
+// any kind, and BF-Server mounts no HTTP request logger, so a rejected webhook
+// produced literally nothing in the log stream. SendGrid's "Test Integration"
+// button was therefore unverifiable from our side: pass and fail looked
+// identical. Nothing secret is logged - not the key, not the signature.
 function verify(rawBody: Buffer, signature: string, timestamp: string): boolean {
   const key = process.env.SENDGRID_WEBHOOK_PUBLIC_KEY;
-  if (!key) return true; // not configured -> accept (configure to enforce)
+  if (!key) {
+    console.warn("[sendgrid-webhook] SENDGRID_WEBHOOK_PUBLIC_KEY is not set - accepting unsigned posts");
+    return true; // not configured -> accept (configure to enforce)
+  }
   try {
     const pubPem = `-----BEGIN PUBLIC KEY-----\n${key}\n-----END PUBLIC KEY-----\n`;
     const v = crypto.createVerify("sha256");
@@ -42,13 +50,31 @@ router.post("/", async (req: any, res: any) => {
   const raw: Buffer = Buffer.isBuffer((req as any).rawBody) ? (req as any).rawBody : Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body ?? []));
   const sig = String(req.header("X-Twilio-Email-Event-Webhook-Signature") || "");
   const ts = String(req.header("X-Twilio-Email-Event-Webhook-Timestamp") || "");
-  if (!verify(raw, sig, ts)) { res.status(403).json({ ok: false }); return; }
+  if (!verify(raw, sig, ts)) {
+    // BF_SERVER_SENDGRID_WEBHOOK_VISIBILITY_v20 - say WHY, in terms that
+    // separate the three real causes: a wrong key, a missing header, or a body
+    // that never reached us as raw bytes.
+    console.error("[sendgrid-webhook] REJECTED 403 signature verification failed", {
+      keyConfigured: Boolean(process.env.SENDGRID_WEBHOOK_PUBLIC_KEY),
+      keyLength: String(process.env.SENDGRID_WEBHOOK_PUBLIC_KEY ?? "").length,
+      signatureHeaderPresent: sig.length > 0,
+      timestampHeaderPresent: ts.length > 0,
+      rawBodyBytes: raw.length,
+      rawBodyFromVerifyHook: Buffer.isBuffer((req as any).rawBody),
+    });
+    res.status(403).json({ ok: false });
+    return;
+  }
   let events: any[] = [];
   try { events = JSON.parse(raw.toString("utf8")); } catch { res.status(200).json({ ok: true }); return; }
+  // BF_SERVER_SENDGRID_WEBHOOK_VISIBILITY_v20
+  let resolved = 0;
+  const seenTypes = new Set<string>();
   for (const ev of Array.isArray(events) ? events : []) {
     try {
       const email = String(ev?.email || "").toLowerCase();
       const event = String(ev?.event || "");
+      if (event) seenTypes.add(event);
       const contactId = ev?.contact_id ? String(ev.contact_id) : null;
       let cid = contactId;
       if (!cid && email) {
@@ -56,6 +82,7 @@ router.post("/", async (req: any, res: any) => {
         cid = r.rows[0]?.id ?? null;
       }
       if (!cid) continue;
+      resolved += 1;
       // BF_SERVER_EMAIL_LINK_CLICKS_v19 - carry the clicked URL. The timeline
       // query already renders payload->>'url' as the row body for email_click,
       // so it stayed blank purely because nothing ever wrote it.
@@ -99,6 +126,15 @@ router.post("/", async (req: any, res: any) => {
       }
     } catch { /* skip bad event */ }
   }
+  // BF_SERVER_SENDGRID_WEBHOOK_VISIBILITY_v20 - one line per accepted batch, so
+  // a successful Test Integration is visible too. `contactsResolved` separates
+  // "signature is fine" from "these were synthetic addresses we could not map",
+  // which is what SendGrid's test events always are.
+  console.log("[sendgrid-webhook] accepted", {
+    events: Array.isArray(events) ? events.length : 0,
+    contactsResolved: resolved,
+    types: Array.from(seenTypes).join(",") || "none",
+  });
   res.status(200).json({ ok: true });
 });
 
