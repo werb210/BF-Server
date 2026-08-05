@@ -56,9 +56,16 @@ router.post("/", async (req: any, res: any) => {
         cid = r.rows[0]?.id ?? null;
       }
       if (!cid) continue;
+      // BF_SERVER_EMAIL_LINK_CLICKS_v19 - carry the clicked URL. The timeline
+      // query already renders payload->>'url' as the row body for email_click,
+      // so it stayed blank purely because nothing ever wrote it.
+      const clickedUrl = typeof ev?.url === "string" && ev.url ? String(ev.url) : null;
       await pool.query(
         `INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1, $2, $3)`,
-        [cid, "email_" + (event || "event"), JSON.stringify({ sg_event_id: ev?.sg_event_id ?? null, email, event, ts: ev?.timestamp ?? null })],
+        [cid, "email_" + (event || "event"), JSON.stringify({
+          sg_event_id: ev?.sg_event_id ?? null, email, event, ts: ev?.timestamp ?? null,
+          url: clickedUrl, url_offset: ev?.url_offset ?? null,
+        })],
       );
       if (isSuppressEvent(event, ev)) {
         await pool.query(`UPDATE contacts SET marketing_opt_out = true, updated_at = now() WHERE id = $1`, [cid]);
@@ -71,6 +78,25 @@ router.post("/", async (req: any, res: any) => {
       const tseId = ev?.tse_id ? String(ev.tse_id) : null;
       if (tseId && event === "open") await pool.query(`UPDATE template_send_events SET opened_at = COALESCE(opened_at, now()) WHERE id = $1`, [tseId]).catch(() => {});
       else if (tseId && event === "click") await pool.query(`UPDATE template_send_events SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [tseId]).catch(() => {});
+      // BF_SERVER_EMAIL_LINK_CLICKS_v19 - per-URL ledger. template_id and silo are
+      // looked up from the send ledger when the tse_id custom arg is present; a
+      // click with no template still records, it just cannot be rolled up by template.
+      if (event === "click" && clickedUrl) {
+        try {
+          let templateId: string | null = null;
+          let silo = "BF";
+          if (tseId) {
+            const t = await pool.query<{ template_id: string; silo: string }>(
+              `SELECT template_id, silo FROM template_send_events WHERE id = $1`, [tseId]);
+            templateId = t.rows[0]?.template_id ?? null;
+            silo = t.rows[0]?.silo ?? "BF";
+          }
+          await pool.query(
+            `INSERT INTO email_link_clicks (contact_id, template_id, tse_id, silo, url) VALUES ($1,$2,$3,$4,$5)`,
+            [cid, templateId, tseId, silo, clickedUrl],
+          );
+        } catch { /* click tracking must never break event ingestion */ }
+      }
     } catch { /* skip bad event */ }
   }
   res.status(200).json({ ok: true });

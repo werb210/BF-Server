@@ -719,6 +719,54 @@ router.post("/templates", requireAuth, safeHandler(async (req: any, res: any) =>
   respondOk(res, { id, saved: true, landingUrl, replaced });
 }));
 
+// BF_SERVER_EMAIL_LINK_CLICKS_v19 - which links people actually clicked.
+// GET /api/marketing/link-clicks            -> every link, last 90 days
+// GET /api/marketing/link-clicks?templateId= -> one template
+// GET /api/marketing/link-clicks?days=30
+router.get("/link-clicks", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const templateId = String(req.query.templateId || "").trim();
+  const days = Math.min(365, Math.max(1, Number(req.query.days) || 90));
+  const params: any[] = [silo, days];
+  let where = "silo = $1 AND clicked_at > now() - ($2 || ' days')::interval";
+  if (templateId) { params.push(templateId); where += ` AND template_id = $${params.length}`; }
+  const r = await pool.query(
+    `SELECT url,
+            count(*)::int AS clicks,
+            count(DISTINCT contact_id)::int AS contacts,
+            max(clicked_at) AS last_clicked
+       FROM email_link_clicks
+      WHERE ${where}
+      GROUP BY url
+      ORDER BY clicks DESC, last_clicked DESC
+      LIMIT 200`,
+    params,
+  );
+  respondOk(res, { items: r.rows, days, templateId: templateId || null });
+}));
+
+// BF_SERVER_EMAIL_LINK_CLICKS_v19 - who clicked one specific link.
+router.get("/link-clicks/contacts", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const url = String(req.query.url || "").trim();
+  if (!url) { respondOk(res, { items: [] }); return; }
+  const days = Math.min(365, Math.max(1, Number(req.query.days) || 90));
+  const r = await pool.query(
+    `SELECT c.id, c.first_name, c.last_name, c.email,
+            count(*)::int AS clicks,
+            max(e.clicked_at) AS last_clicked
+       FROM email_link_clicks e
+       JOIN contacts c ON c.id::text = e.contact_id
+      WHERE e.silo = $1 AND e.url = $2
+        AND e.clicked_at > now() - ($3 || ' days')::interval
+      GROUP BY c.id, c.first_name, c.last_name, c.email
+      ORDER BY last_clicked DESC
+      LIMIT 500`,
+    [silo, url, days],
+  );
+  respondOk(res, { items: r.rows, url, days });
+}));
+
 router.delete("/templates/:id", requireAuth, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   await pool.query("DELETE FROM marketing_template WHERE id = $1 AND silo = $2", [String(req.params.id), silo]);
