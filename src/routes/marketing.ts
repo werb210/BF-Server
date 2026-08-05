@@ -5,7 +5,7 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { respondOk } from "../utils/respondOk.js";
 import { pool } from "../db.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
-import { createLandingPage, createLandingPageFromHtml, withViewInBrowser } from "../services/landingPage.service.js"; // BF_SERVER_BLOCK_v780_PUBLIC_LANDING
+import { createLandingPage, createLandingPageFromHtml, updateLandingPageHtml, slugFromLandingUrl, withViewInBrowser } from "../services/landingPage.service.js"; // BF_SERVER_BLOCK_v780_PUBLIC_LANDING
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js";
 import { smsMarketingConfigured, sendMarketingSms, renderMarketingSms } from "../services/marketingSms.js";
 import { SMS_ELIGIBLE_SQL } from "../services/smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1
@@ -662,11 +662,32 @@ router.post("/templates", requireAuth, safeHandler(async (req: any, res: any) =>
   if (!channel || !name) { respondOk(res, { error: "channel and name required" }); return; }
   // BF_SERVER_EMAIL_TEMPLATE_LANDING_v1 - an email template also hosts a public landing-page copy
   // and returns its URL, so the operator can paste it into an SMS template for a sequence.
+  // BF_SERVER_TEMPLATE_SAVE_BY_NAME_v18 - saving under an existing name UPDATES
+  // that template instead of inserting a second one. There is no unique index on
+  // (silo, channel, name) and none is added here: a UNIQUE migration would fail
+  // outright on any duplicates already in the table and a failed migration
+  // crash-loops the App Service. Resolving by lookup is safe on dirty data.
+  const prior = await pool.query(
+    `SELECT id, link_url FROM marketing_template
+      WHERE silo = $1 AND channel = $2 AND name = $3
+      ORDER BY updated_at DESC LIMIT 1`,
+    [silo, channel, name],
+  );
+  const priorRow = prior.rows[0] ?? null;
+
   let landingUrl: string | null = b.linkUrl ?? null;
   if (channel === "email" && b.html) {
     try {
-      const lp = await createLandingPageFromHtml(String(b.html), silo, String(b.subject || name || "Boreal"), req.user?.userId ?? null);
-      landingUrl = lp.url;
+      const priorSlug = slugFromLandingUrl(priorRow?.link_url);
+      const title = String(b.subject || name || "Boreal");
+      // Rewrite the existing page in place so links already sent stay live and
+      // show the current copy. Fall through to a new page if the slug is gone.
+      if (priorSlug && await updateLandingPageHtml(priorSlug, String(b.html), title)) {
+        landingUrl = priorRow.link_url;
+      } else {
+        const lp = await createLandingPageFromHtml(String(b.html), silo, title, req.user?.userId ?? null);
+        landingUrl = lp.url;
+      }
     } catch (e) {
       console.error("email_template_landing_failed", { error: e instanceof Error ? e.message : String(e) });
     }
@@ -676,12 +697,26 @@ router.post("/templates", requireAuth, safeHandler(async (req: any, res: any) =>
   // left the previous template's headline, images and buttons in the form and
   // the right column empty.
   const fields = b.fields && typeof b.fields === "object" ? JSON.stringify(b.fields) : null;
-  const r = await pool.query(
-    `INSERT INTO marketing_template (silo, channel, name, body, link_url, subject, html, fields, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-    [silo, channel, name, b.body ?? null, landingUrl, b.subject ?? null, b.html ?? null, fields, req.user?.userId ?? null],
-  );
-  respondOk(res, { id: r.rows[0].id, saved: true, landingUrl });
+  let id: string;
+  let replaced = false;
+  if (priorRow) {
+    await pool.query(
+      `UPDATE marketing_template
+          SET body = $2, link_url = $3, subject = $4, html = $5, fields = $6, updated_at = now()
+        WHERE id = $1`,
+      [priorRow.id, b.body ?? null, landingUrl, b.subject ?? null, b.html ?? null, fields],
+    );
+    id = priorRow.id;
+    replaced = true;
+  } else {
+    const r = await pool.query(
+      `INSERT INTO marketing_template (silo, channel, name, body, link_url, subject, html, fields, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+      [silo, channel, name, b.body ?? null, landingUrl, b.subject ?? null, b.html ?? null, fields, req.user?.userId ?? null],
+    );
+    id = r.rows[0].id;
+  }
+  respondOk(res, { id, saved: true, landingUrl, replaced });
 }));
 
 router.delete("/templates/:id", requireAuth, safeHandler(async (req: any, res: any) => {

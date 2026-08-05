@@ -73,6 +73,22 @@ export async function createLandingPageFromHtml(
 
 // Inject a small "View in browser" link into a branded email. Anchors on the
 // outer gray cell; if the template shape is unknown, returns html unchanged.
+// BF_SERVER_TEMPLATE_SAVE_BY_NAME_v18 - re-saving a template under the same name
+// rewrites the landing page IN PLACE, keeping the slug. Minting a new slug would
+// leave every /e/ link already sent by SMS pointing at the superseded copy.
+export async function updateLandingPageHtml(slug: string, html: string, title?: string | null): Promise<boolean> {
+  const r = await pool.query(
+    "UPDATE marketing_landing_pages SET html = $2, title = COALESCE($3, title) WHERE slug = $1",
+    [slug, html, title ?? null],
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
+export function slugFromLandingUrl(url: string | null | undefined): string | null {
+  const m = /\/e\/([A-Za-z0-9_-]+)\s*$/.exec(String(url ?? "").trim());
+  return m ? m[1] : null;
+}
+
 export function withViewInBrowser(html: string, url: string): string {
   const bar = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#9ca3af;margin:0 0 12px;text-align:center;">Trouble viewing this email? <a href="${url}" style="color:#6b7280;">View it in your browser</a></div>`;
   const anchor = '<td align="center" style="padding:24px 12px;">';
