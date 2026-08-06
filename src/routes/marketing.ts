@@ -319,6 +319,43 @@ router.get("/email/segments", safeHandler(async (req: any, res: any) => {
   respondOk(res, { configured: sendgridConfigured(), all: total.rows[0]?.n ?? 0, segments: tags.rows });
 }));
 
+// BF_SERVER_TEST_SEND_REAL_CONTACT_v26 - test sends hardcoded
+// { first_name: "there" }, so staff could never see what a real recipient would
+// get and reasonably read it as the CRM lookup being broken. It was not: real
+// campaign sends merge correctly. Resolve the test recipient against contacts in
+// the same silo - by email for email tests, by phone digits for SMS - and fall
+// back to the old literal only when nothing matches.
+async function testSendVars(silo: string, target: string, channel: "email" | "sms") {
+  const fallback = { first_name: "there", name: "there", email: channel === "email" ? target : "", company: "" };
+  try {
+    const digits = target.replace(/\D/g, "");
+    const r = channel === "email"
+      ? await pool.query(
+          `SELECT c.first_name, c.last_name, c.email, co.name AS company
+             FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
+            WHERE c.silo = $1 AND lower(c.email) = lower($2) LIMIT 1`,
+          [silo, target])
+      : await pool.query(
+          `SELECT c.first_name, c.last_name, c.email, co.name AS company
+             FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
+            WHERE c.silo = $1
+              AND right(regexp_replace(COALESCE(c.phone,''), '[^0-9]', '', 'g'), 10) = right($2, 10)
+            LIMIT 1`,
+          [silo, digits]);
+    const row = r.rows[0];
+    if (!row) return fallback;
+    const full = [row.first_name, row.last_name].filter(Boolean).join(" ").trim();
+    return {
+      first_name: String(row.first_name || "").trim() || full.split(/\s+/)[0] || "there",
+      name: full || "there",
+      email: String(row.email || (channel === "email" ? target : "")),
+      company: String(row.company || ""),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 router.post("/email/send", safeHandler(async (req: any, res: any) => {
   if (!sendgridConfigured()) { respondOk(res, { configured: false, error: "sendgrid_not_configured", message: "SendGrid is not configured; no email was sent." }); return; }
   const silo = resolveSiloFromRequest(req);
@@ -327,7 +364,8 @@ router.post("/email/send", safeHandler(async (req: any, res: any) => {
   const html = String(b.html || "").trim();
   if (!subject || !html) { respondOk(res, { error: "subject and html required" }); return; }
   if (b.test && typeof b.test === "string") {
-    const r = await sendOne({ to: b.test, subject: mergeFields(subject, { first_name: "there", name: "there", email: b.test, company: "" }), html: mergeFields(html, { first_name: "there", name: "there", email: b.test, company: "" }) });
+    const vars = await testSendVars(silo, String(b.test), "email"); // BF_SERVER_TEST_SEND_REAL_CONTACT_v26
+    const r = await sendOne({ to: b.test, subject: mergeFields(subject, vars), html: mergeFields(html, vars) });
     if (!r.ok) console.error("sendgrid_test_failed", { to: b.test, status: r.status, error: r.error });
     respondOk(res, { test: true, ...r });
     return;
@@ -450,7 +488,7 @@ router.post("/sms/send", safeHandler(async (req: any, res: any) => {
   if (b.test && typeof b.test === "string") {
     const text = renderMarketingSms({
       body,
-      vars: { first_name: "there", name: "there", email: String(b.test), company: "" },
+      vars: await testSendVars(silo, String(b.test), "sms"), // BF_SERVER_TEST_SEND_REAL_CONTACT_v26
       link: b.linkUrl ? String(b.linkUrl) : null,
     });
     const r = await sendMarketingSms(b.test, text);
@@ -603,7 +641,7 @@ router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
   if (!subject) { respondOk(res, { error: "subject required" }); return; }
   const html = renderBrandedEmail(templateFieldsFromBody(b));
   if (b.test && typeof b.test === "string") {
-    const vars = { first_name: "there", name: "there", email: b.test, company: "" };
+    const vars = await testSendVars(silo, String(b.test), "email"); // BF_SERVER_TEST_SEND_REAL_CONTACT_v26
     const r = await sendOne({ to: b.test, subject: mergeFields(subject, vars), html: mergeFields(html, vars) });
     respondOk(res, { test: true, ...r });
     return;
