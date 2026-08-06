@@ -689,7 +689,16 @@ router.get("/templates", requireAuth, safeHandler(async (req: any, res: any) => 
        FROM marketing_template WHERE ${where} ORDER BY updated_at DESC LIMIT 200`,
     params,
   );
-  respondOk(res, { items: r.rows.map((row: any) => ({ ...row, landingUrl: row.link_url ?? null })) });
+  // BF_SERVER_TEMPLATE_LANDING_BACKFILL_v28 - v25 rebuilt the URL on save only,
+  // so a row written while LANDING_BASE_URL was wrong kept displaying the broken
+  // string every time the template was loaded. Rebuild on read as well: the slug
+  // is the only durable part, the host is always derived from current config.
+  respondOk(res, {
+    items: r.rows.map((row: any) => {
+      const slug = slugFromLandingUrl(row.link_url);
+      return { ...row, landingUrl: slug ? landingUrlForSlug(slug) : (row.link_url ?? null) };
+    }),
+  });
 }));
 
 router.post("/templates", requireAuth, safeHandler(async (req: any, res: any) => {
