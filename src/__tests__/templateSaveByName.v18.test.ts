@@ -18,7 +18,7 @@ describe("saving a template under an existing name", () => {
 
   it("keeps the existing landing page slug so sent links stay live", () => {
     expect(routes).toContain("updateLandingPageHtml(priorSlug");
-    expect(routes).toContain("landingUrl = priorRow.link_url");
+    expect(routes).toContain("landingUrl = landingUrlForSlug(priorSlug)");
   });
 
   it("adds no UNIQUE constraint, which would crash-loop on existing duplicates", () => {

@@ -5,7 +5,7 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { respondOk } from "../utils/respondOk.js";
 import { pool } from "../db.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
-import { createLandingPage, createLandingPageFromHtml, updateLandingPageHtml, slugFromLandingUrl, withViewInBrowser } from "../services/landingPage.service.js"; // BF_SERVER_BLOCK_v780_PUBLIC_LANDING
+import { createLandingPage, createLandingPageFromHtml, updateLandingPageHtml, slugFromLandingUrl, landingUrlForSlug, withViewInBrowser } from "../services/landingPage.service.js"; // BF_SERVER_BLOCK_v780_PUBLIC_LANDING
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js";
 import { smsMarketingConfigured, sendMarketingSms, renderMarketingSms } from "../services/marketingSms.js";
 import { SMS_ELIGIBLE_SQL } from "../services/smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1
@@ -683,7 +683,11 @@ router.post("/templates", requireAuth, safeHandler(async (req: any, res: any) =>
       // Rewrite the existing page in place so links already sent stay live and
       // show the current copy. Fall through to a new page if the slug is gone.
       if (priorSlug && await updateLandingPageHtml(priorSlug, String(b.html), title)) {
-        landingUrl = priorRow.link_url;
+        // BF_SERVER_LANDING_URL_REBUILD_v25 - rebuild from the current base
+        // instead of trusting the stored string. Keeping the slug means links
+        // already sent stay live; rebuilding the host means a value written
+        // while LANDING_BASE_URL was wrong self-heals on the next save.
+        landingUrl = landingUrlForSlug(priorSlug);
       } else {
         const lp = await createLandingPageFromHtml(String(b.html), silo, title, req.user?.userId ?? null);
         landingUrl = lp.url;
