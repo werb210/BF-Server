@@ -94,6 +94,15 @@ export async function updateLandingPageHtml(slug: string, html: string, title?: 
   return (r.rowCount ?? 0) > 0;
 }
 
+// BF_SERVER_LANDING_URL_REBUILD_v25 - always derive the public URL from the
+// CURRENT base plus the slug. v18 reused the stored link_url on re-save, so a
+// row written while LANDING_BASE_URL was misconfigured kept its broken URL
+// forever - re-saving updated the page content but handed back the same bad
+// string, which is exactly what it looked like from the composer.
+export function landingUrlForSlug(slug: string): string {
+  return `${landingBase()}/e/${slug}`;
+}
+
 export function slugFromLandingUrl(url: string | null | undefined): string | null {
   const m = /\/e\/([A-Za-z0-9_-]+)\s*$/.exec(String(url ?? "").trim());
   return m ? m[1] : null;
