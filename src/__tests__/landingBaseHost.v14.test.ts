@@ -10,7 +10,7 @@ const src = readFileSync(
 
 describe("landing page base host", () => {
   it("defaults to the host that actually serves /e/:slug", () => {
-    expect(src).toContain('process.env.LANDING_BASE_URL || "https://www.boreal.financial"');
+    expect(src).toContain('return "https://www.boreal.financial";');
     // The apex returns Not Found for /e/* - it is not the Static Web App.
     expect(src).not.toContain('|| "https://boreal.financial"');
   });

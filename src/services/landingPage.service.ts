@@ -17,8 +17,18 @@ import { renderBrandedEmail, type BrandedEmailFields } from "./emailTemplateRend
 //
 // The default is now www, which is the host that actually works. Set
 // LANDING_BASE_URL to override if the apex is ever pointed at the SWA.
+// BF_SERVER_LANDING_BASE_GUARD_v24 - `|| fallback` only catches empty. The App
+// Service was set with the SETTING NAME pasted into the value field, so
+// LANDING_BASE_URL held the literal string "LANDING_BASE_URL" - truthy, so the
+// fallback never fired and every minted link read "LANDING_BASE_URL/e/<slug>".
+// A base that is not an absolute http(s) URL is garbage, not an override.
 function landingBase(): string {
-  return (process.env.LANDING_BASE_URL || "https://www.boreal.financial").replace(/\/+$/, "");
+  const raw = String(process.env.LANDING_BASE_URL ?? "").trim();
+  if (raw && /^https?:\/\/[^\s/]+/i.test(raw)) return raw.replace(/\/+$/, "");
+  if (raw) {
+    console.warn("[landing] ignoring invalid LANDING_BASE_URL", { value: raw });
+  }
+  return "https://www.boreal.financial";
 }
 
 function slugify(): string {
