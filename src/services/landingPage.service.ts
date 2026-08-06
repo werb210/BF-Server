@@ -64,6 +64,22 @@ export async function getLandingBySlug(slug: string): Promise<{ title: string | 
 
 // BF_SERVER_BLOCK_v782_VIEW_IN_BROWSER — host an already-rendered email body as
 // a landing page (the clean copy, no view-in-browser link on the page itself).
+// BF_SERVER_LANDING_MERGE_STRIP_v27 - a landing page has no recipient, so merge
+// tokens can never resolve there. They were stored raw and served raw, so the
+// public page rendered a literal "{{first_name}}, your file may fit...".
+// Tokens are removed rather than replaced with a placeholder: "there, your file"
+// reads worse than no salutation at all. Removing a leading token leaves a
+// dangling comma, so that is cleaned up and the next letter re-capitalised.
+export function stripMergeFields(html: string): string {
+  let out = html.replace(/\{\{\s*[a-z_]+\s*\}\}/gi, "");
+  // ">, your file" -> ">Your file"
+  out = out.replace(/>(\s*),\s*([a-z])/g, (_m, ws, ch) => ">" + ws + ch.toUpperCase());
+  out = out.replace(/>(\s*),\s*/g, ">$1");
+  // Mid-sentence removal leaves a double space ("Hi  and welcome").
+  out = out.replace(/([^\s>])[ \t]{2,}(?=\S)/g, "$1 ");
+  return out;
+}
+
 export async function createLandingPageFromHtml(
   html: string, silo: string, title?: string | null, createdBy?: string | null,
 ): Promise<{ slug: string; url: string }> {
@@ -76,7 +92,7 @@ export async function createLandingPageFromHtml(
   await pool.query(
     `INSERT INTO marketing_landing_pages (slug, silo, title, html, fields, created_by)
      VALUES ($1,$2,$3,$4,'{}'::jsonb,$5)`,
-    [slug, silo, title ?? null, html, createdBy ?? null],
+    [slug, silo, title ?? null, stripMergeFields(html), createdBy ?? null], // BF_SERVER_LANDING_MERGE_STRIP_v27
   );
   return { slug, url: `${landingBase()}/e/${slug}` };
 }
@@ -89,7 +105,7 @@ export async function createLandingPageFromHtml(
 export async function updateLandingPageHtml(slug: string, html: string, title?: string | null): Promise<boolean> {
   const r = await pool.query(
     "UPDATE marketing_landing_pages SET html = $2, title = COALESCE($3, title) WHERE slug = $1",
-    [slug, html, title ?? null],
+    [slug, stripMergeFields(html), title ?? null], // BF_SERVER_LANDING_MERGE_STRIP_v27
   );
   return (r.rowCount ?? 0) > 0;
 }
