@@ -64,6 +64,21 @@ export async function start(): Promise<void> {
       process.exit(1);
     }
   }
+  // BF_SERVER_TEMPLATE_LANDING_BACKFILL_v28 - repair marketing template landing
+  // pages (bad host from a misconfigured LANDING_BASE_URL, or seeded rows that
+  // never had html and so never had a page). Deliberately not fatal.
+  try {
+    const { pool } = await import("./db.js");
+    const { backfillTemplateLandingPages } = await import("./startup/templateLandingBackfill.js");
+    const out = await backfillTemplateLandingPages(pool);
+    console.log(JSON.stringify({ event: "template_landing_backfill", ...out }));
+  } catch (err) {
+    console.error(JSON.stringify({
+      event: "template_landing_backfill_error",
+      error: err instanceof Error ? err.message : String(err),
+    }));
+  }
+
   await verifyRequiredTables([
     "users",
     "applications",
@@ -269,4 +284,3 @@ export async function start(): Promise<void> {
 if (process.env.NODE_ENV !== "test") {
   start().catch(console.error);
 }
-
