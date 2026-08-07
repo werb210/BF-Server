@@ -28,8 +28,18 @@ describe("sequence audience include and exclude tags", () => {
     expect(engine).toContain("NOT (COALESCE(c.tags, '{}') && $5::text[])");
   });
 
-  it("treats an empty include list as no filter and folds in audience_tag", () => {
-    expect(engine).toContain("cardinality($4::text[]) = 0");
+  // BF_SERVER_SEQ_AUDIENCE_FAIL_CLOSED_TEST_v32 - inverted from the original.
+  // "Empty include list means no filter" is how a sequence with nothing ticked
+  // enrolled the whole silo. No tags selected now means no audience selected.
+  it("treats an empty include list as no audience, and still folds in audience_tag", () => {
+    expect(engine).toContain("cardinality($4::text[]) > 0");
+    expect(engine).not.toContain("cardinality($4::text[]) = 0 OR");
     expect(engine).toContain("seq.rows[0].audience_tag ? [seq.rows[0].audience_tag] : []");
+  });
+
+  it("gates SMS on consent, not merely on the absence of an opt-out", () => {
+    expect(engine).toContain("&& hasSmsConsent(c)");
+    expect(engine).toContain("implied_transaction");
+    expect(engine).toContain("implied_inquiry");
   });
 });
