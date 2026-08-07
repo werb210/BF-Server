@@ -11,8 +11,8 @@ describe("testSendVars", () => {
     expect(selects.length).toBe(2);
   });
 
-  it("falls back to name when first_name and last_name are both null", () => {
-    expect(seg).toContain('const full = split || String(row.name || "").trim();');
+  it("prefers name and falls back to first_name and last_name when it is blank", () => {
+    expect(seg).toContain('const full = String(row.name || "").trim() || split;');
   });
 
   it("still falls back to the literal when nothing matches at all", () => {
@@ -21,6 +21,19 @@ describe("testSendVars", () => {
 
   it("keeps the silo filter on both lookups", () => {
     expect((seg.match(/c\.silo = \$1/g) || []).length).toBe(2);
+  });
+});
+
+// BF_SERVER_CI_GREEN_AND_NAME_PRECEDENCE_v30
+describe("name precedence", () => {
+  it("prefers contacts.name outright, matching the live send", () => {
+    const src = readFileSync("src/routes/marketing.ts", "utf8");
+    expect(src).toContain('const full = String(row.name || "").trim() || split;');
+  });
+
+  it("still derives first_name from the resolved full name", () => {
+    const src = readFileSync("src/routes/marketing.ts", "utf8");
+    expect(src).toContain("first_name: full.split(/\\s+/)[0]");
   });
 });
 

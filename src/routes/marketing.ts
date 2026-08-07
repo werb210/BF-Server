@@ -348,10 +348,13 @@ async function testSendVars(silo: string, target: string, channel: "email" | "sm
     // uses. first_name/last_name are NULL on rows created after the v303
     // backfill, so reading them alone silently produced the "there" fallback for
     // contacts that merge perfectly well in a live campaign.
+    // BF_SERVER_CI_GREEN_AND_NAME_PRECEDENCE_v30 - contacts.name is what the live
+    // send merges from, so it must win outright. first_name/last_name are the
+    // fallback for rows where name is blank, not the other way round.
     const split = [row.first_name, row.last_name].filter(Boolean).join(" ").trim();
-    const full = split || String(row.name || "").trim();
+    const full = String(row.name || "").trim() || split;
     return {
-      first_name: String(row.first_name || "").trim() || full.split(/\s+/)[0] || "there",
+      first_name: full.split(/\s+/)[0] || String(row.first_name || "").trim() || "there",
       name: full || "there",
       email: String(row.email || (channel === "email" ? target : "")),
       company: String(row.company || ""),

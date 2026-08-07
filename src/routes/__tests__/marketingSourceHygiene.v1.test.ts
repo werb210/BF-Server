@@ -36,7 +36,15 @@ describe("marketing funnel and sources hygiene", () => {
   it("extracts the host without a regex backreference", () => {
     // A backreference has to survive both TS template-literal and SQL escaping;
     // getting it wrong returns a literal backslash-1 and fails silently.
-    const seg = src.slice(src.indexOf("BF_SERVER_MARKETING_SOURCE_HYGIENE_v1"));
+    // BF_SERVER_CI_GREEN_AND_NAME_PRECEDENCE_v30 - scope to the source CASE
+    // expression. The old slice ran to end of file and caught an unrelated
+    // regexp_replace in the v26 phone lookup, failing on behaviour it does not
+    // guard.
+    const marker = src.lastIndexOf("BF_SERVER_MARKETING_SOURCE_HYGIENE_v1");
+    const end = src.indexOf("AS source", marker);
+    expect(marker).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(marker);
+    const seg = src.slice(marker, end);
     expect(seg).not.toContain("regexp_replace");
     expect(seg).toContain("split_part(");
   });
