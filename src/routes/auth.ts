@@ -27,14 +27,39 @@ const isValidPhone = (phone: unknown): phone is string => typeof phone === "stri
 // eleven beginning with 1 get the plus. Anything already E.164 is returned
 // unchanged. Returns "" when the input cannot be interpreted, so the caller
 // can reject it rather than handing Twilio something it will refuse.
+// BF_SERVER_OTP_NANP_VALIDATION_v33
+// A NANP number is NPA-NXX-XXXX. Both NPA and NXX must start 2-9, and neither
+// may be an N11 service code (211/311/.../911). NPA also may not end in "11".
+// This rejects the structurally impossible before a Twilio round trip; it does
+// NOT claim the number is assigned, only that it is well formed.
+export function isValidNanp(e164: string): boolean {
+  const match = /^\+1(\d{10})$/.exec(e164);
+  if (!match) return true; // Leave international validation to Twilio.
+
+  const nationalNumber = match[1];
+  const npa = nationalNumber.slice(0, 3);
+  const nxx = nationalNumber.slice(3, 6);
+  if (!/^[2-9]/.test(npa) || !/^[2-9]/.test(nxx)) return false;
+  if (npa.endsWith("11") || nxx.endsWith("11")) return false;
+  return true;
+}
+
 function toE164(raw: string): string {
   const trimmed = raw.trim();
-  if (/^\+[1-9]\d{7,14}$/.test(trimmed)) return trimmed;
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  if (digits.length >= 8 && digits.length <= 15) return `+${digits}`;
-  return "";
+  let out = "";
+  if (/^\+[1-9]\d{7,14}$/.test(trimmed)) {
+    out = trimmed;
+  } else {
+    const digits = trimmed.replace(/\D/g, "");
+    if (digits.length === 10) out = `+1${digits}`;
+    else if (digits.length === 11 && digits.startsWith("1")) out = `+${digits}`;
+    else if (digits.length >= 8 && digits.length <= 15) out = `+${digits}`;
+  }
+  if (!out) return "";
+  // BF_SERVER_OTP_NANP_VALIDATION_v33 - reject here so the caller's existing
+  // "not a valid number" 400 fires instead of a 500 from Twilio.
+  if (!isValidNanp(out)) return "";
+  return out;
 }
 
 type TwilioVerifyClient = {
@@ -135,6 +160,17 @@ router.post("/otp/start", otpStartLimiter, async (req, res) => {
       return res.status(429).json({
         error: "otp_rate_limited",
         detail: "Too many OTP requests for this phone. Please wait 10 minutes and try again.",
+      });
+    }
+
+    // BF_SERVER_OTP_NANP_VALIDATION_v33 - Twilio rejects a malformed or
+    // unroutable destination with "Invalid parameter To". That is the
+    // caller's input being wrong, not our server failing, and a 500 sends the
+    // client a "server down" spinner when it should say "check your number".
+    if (/invalid parameter .?to.?|not a valid phone number|is not a mobile number/i.test(message)) {
+      return res.status(400).json({
+        error: "invalid_phone",
+        detail: "That phone number could not be reached. Please check it and try again.",
       });
     }
 
