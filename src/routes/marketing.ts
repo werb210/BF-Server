@@ -331,12 +331,12 @@ async function testSendVars(silo: string, target: string, channel: "email" | "sm
     const digits = target.replace(/\D/g, "");
     const r = channel === "email"
       ? await pool.query(
-          `SELECT c.first_name, c.last_name, c.email, co.name AS company
+          `SELECT c.name, c.first_name, c.last_name, c.email, co.name AS company
              FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
             WHERE c.silo = $1 AND lower(c.email) = lower($2) LIMIT 1`,
           [silo, target])
       : await pool.query(
-          `SELECT c.first_name, c.last_name, c.email, co.name AS company
+          `SELECT c.name, c.first_name, c.last_name, c.email, co.name AS company
              FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
             WHERE c.silo = $1
               AND right(regexp_replace(COALESCE(c.phone,''), '[^0-9]', '', 'g'), 10) = right($2, 10)
@@ -344,7 +344,12 @@ async function testSendVars(silo: string, target: string, channel: "email" | "sm
           [silo, digits]);
     const row = r.rows[0];
     if (!row) return fallback;
-    const full = [row.first_name, row.last_name].filter(Boolean).join(" ").trim();
+    // BF_SERVER_TEST_SEND_NAME_COLUMN_v29 - prefer the same source the real send
+    // uses. first_name/last_name are NULL on rows created after the v303
+    // backfill, so reading them alone silently produced the "there" fallback for
+    // contacts that merge perfectly well in a live campaign.
+    const split = [row.first_name, row.last_name].filter(Boolean).join(" ").trim();
+    const full = split || String(row.name || "").trim();
     return {
       first_name: String(row.first_name || "").trim() || full.split(/\s+/)[0] || "there",
       name: full || "there",
