@@ -8,6 +8,30 @@ import { renderMarketingSms, sendMarketingSms, trackedLink, lookupLineType } fro
 import { renderBrandedEmail } from "./emailTemplateRender.js";
 import { isCanadianMobile } from "./smsConsent.js";
 import { scheduleAfter } from "./sequenceSchedule.js";
+
+// BF_SERVER_SEQUENCE_CONSENT_GATE_v31 - JS mirror of CONSENT_SQL in
+// smsConsent.ts. The engine walks one enrollment at a time in JS, so it cannot
+// reuse the SQL fragment directly; keep the two in step.
+//   express consent             -> always
+//   implied_transaction         -> 2 years from consent_at
+//   implied_inquiry             -> 6 months from consent_at
+// Anything else, including a NULL basis, is NOT consent.
+export function hasSmsConsent(c: {
+  sms_consent?: boolean | null;
+  consent_basis?: string | null;
+  consent_at?: Date | string | null;
+}): boolean {
+  if (c.sms_consent === true) return true;
+  if (!c.consent_at) return false;
+  const at = c.consent_at instanceof Date ? c.consent_at : new Date(String(c.consent_at));
+  if (Number.isNaN(at.getTime())) return false;
+  const ageMs = Date.now() - at.getTime();
+  const DAY = 86_400_000;
+  if (c.consent_basis === "implied_transaction") return ageMs <= 730 * DAY;
+  if (c.consent_basis === "implied_inquiry") return ageMs <= 183 * DAY;
+  return false;
+}
+
 async function repliedSince(pool: Pool, contactId: string, since: any): Promise<boolean> {
   try { const r = await pool.query(`SELECT 1 FROM communications_messages WHERE contact_id=$1 AND direction='inbound' AND created_at > $2 LIMIT 1`, [contactId, since]); return (r.rowCount ?? 0) > 0; }
   catch { return false; }
@@ -59,7 +83,7 @@ export async function enrollSequence(pool: Pool, sequenceId: string): Promise<nu
   if (seq.rowCount === 0) return 0;
   const silo = seq.rows[0].silo;
   // BF_SERVER_SEQ_AUDIENCE_TAGS_v1 — legacy audience_tag remains an include.
-  // Include is ANY/union; exclude is absolute. Empty arrays disable that filter.
+  // Include is ANY/union; exclude is absolute. An empty include list selects nobody.
   const includeTags = [...new Set([
     ...(Array.isArray(seq.rows[0].audience_include_tags) ? seq.rows[0].audience_include_tags : []),
     ...(seq.rows[0].audience_tag ? [seq.rows[0].audience_tag] : []),
@@ -72,7 +96,11 @@ export async function enrollSequence(pool: Pool, sequenceId: string): Promise<nu
        SELECT $1, c.id, $2, 0, 'active', $3, now()
          FROM contacts c
         WHERE c.silo=$2
-          AND (cardinality($4::text[]) = 0 OR COALESCE(c.tags, '{}') && $4::text[])
+          -- BF_SERVER_SEQUENCE_CONSENT_GATE_v31 - an empty include list used to
+          -- DISABLE this filter and enroll the entire silo. Fail closed: no
+          -- tags selected means no audience selected.
+          AND cardinality($4::text[]) > 0
+          AND COALESCE(c.tags, '{}') && $4::text[]
           AND NOT (COALESCE(c.tags, '{}') && $5::text[])
           AND (COALESCE(c.email,'')<>'' OR COALESCE(c.phone,'')<>'')
      ON CONFLICT (sequence_id, contact_id) DO NOTHING`,
@@ -121,7 +149,9 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
 
   if (en.stop_on_reply && (await repliedSince(pool, en.contact_id, en.enrolled_at))) { await stop(pool, en.id, "replied"); return; }
 
-  const cq = await pool.query(`SELECT id, silo, owner_id, email, phone, name, COALESCE(sms_opt_out,false) AS sms_opt_out, COALESCE(marketing_opt_out,false) AS marketing_opt_out, line_type, (SELECT name FROM companies WHERE id=contacts.company_id) AS company FROM contacts WHERE id=$1`, [en.contact_id]);
+  // BF_SERVER_SEQUENCE_CONSENT_GATE_v31 - sms_consent / consent_basis / consent_at
+  // were never selected, so the CASL test below could not be applied.
+  const cq = await pool.query(`SELECT id, silo, owner_id, email, phone, name, COALESCE(sms_opt_out,false) AS sms_opt_out, COALESCE(marketing_opt_out,false) AS marketing_opt_out, COALESCE(sms_consent,false) AS sms_consent, consent_basis, consent_at, line_type, (SELECT name FROM companies WHERE id=contacts.company_id) AS company FROM contacts WHERE id=$1`, [en.contact_id]);
   const c = cq.rows[0];
   if (!c) { await complete(pool, en.id); return; }
 
@@ -168,7 +198,16 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
 
     // BF_SERVER_SEQ_AUTO_CHANNEL_v1 - exactly the blast runner's textability
     // rule. Auto selects one branch only, preferring SMS when both are present.
-    let textable = Boolean(c.phone) && !c.sms_opt_out && !c.marketing_opt_out && isCanadianMobile(c.phone);
+    // BF_SERVER_SEQUENCE_CONSENT_GATE_v31 - was opt-out only. Now mirrors
+    // CONSENT_SQL / SMS_ELIGIBLE_SQL in smsConsent.ts, which is what
+    // marketingSendRunner uses, so a sequence can never reach anyone the
+    // composer would refuse to send to.
+    let textable =
+      Boolean(c.phone)
+      && !c.sms_opt_out
+      && !c.marketing_opt_out
+      && hasSmsConsent(c)
+      && isCanadianMobile(c.phone);
     if (textable && c.line_type == null) {
       const lineType = await lookupLineType(String(c.phone));
       if (lineType) await pool.query(`UPDATE contacts SET line_type=$2, line_type_checked_at=now() WHERE id=$1`, [c.id, lineType]);
