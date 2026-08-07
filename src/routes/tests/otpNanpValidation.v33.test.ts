@@ -44,3 +44,16 @@ describe("otp error mapping", () => {
     expect(src).toContain('error: "OTP failed"');
   });
 });
+
+// BF_SERVER_OTP_TEST_FIXTURES_VALID_NANP_v34
+describe("fictional test numbers", () => {
+  it("accepts the NANPA-reserved 555-01xx range used by the OTP tests", () => {
+    expect(isValidNanp("+15555550123")).toBe(true);
+    expect(isValidNanp("+15555550188")).toBe(true);
+    expect(isValidNanp("+15555550199")).toBe(true);
+  });
+
+  it("still rejects the 555-000-xxxx shape those fixtures used to carry", () => {
+    expect(isValidNanp("+15550001234")).toBe(false);
+  });
+});
