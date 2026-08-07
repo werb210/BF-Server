@@ -14,6 +14,10 @@ describe("GET /templates returns what the composer needs to restore a template",
   });
 
   it("exposes link_url as landingUrl so the composer can show it on pick", () => {
-    expect(src).toContain("landingUrl: row.link_url ?? null");
+    // BF_SERVER_CI_GREEN_AND_NAME_PRECEDENCE_v30 - was asserting the literal
+    // `landingUrl: row.link_url ?? null`, which v28 replaced. The composer still
+    // gets landingUrl; it is now rebuilt from the slug against the current host.
+    expect(src).toContain("landingUrl: slug ? landingUrlForSlug(slug)");
+    expect(src).toContain("slugFromLandingUrl(row.link_url)");
   });
 });
