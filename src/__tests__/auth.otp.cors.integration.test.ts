@@ -1,3 +1,6 @@
+// BF_SERVER_OTP_TEST_FIXTURES_VALID_NANP_v34 - 555-000-xxxx has an NXX of
+// 000 and is not a structurally valid NANP number. Moved to the 555-01xx range
+// NANPA reserves for fictional use so these survive the v33 validation.
 import { describe, expect, it } from "vitest";
 import request from "supertest";
 
@@ -29,7 +32,7 @@ describe("OTP CORS flow", () => {
     const res = await request(app)
       .post("/api/auth/otp/start")
       .set("Origin", STAFF_ORIGIN)
-      .send({ phone: "+15550009999" });
+      .send({ phone: "+15555550199" });
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("ok");
@@ -41,13 +44,13 @@ describe("OTP CORS flow", () => {
     await request(app)
       .post("/api/auth/otp/start")
       .set("Origin", STAFF_ORIGIN)
-      .send({ phone: "+15550008888" })
+      .send({ phone: "+15555550188" })
       .expect(200);
 
     const verifyRes = await request(app)
       .post("/api/auth/otp/verify")
       .set("Origin", STAFF_ORIGIN)
-      .send({ phone: "+15550008888", code: "000000" });
+      .send({ phone: "+15555550188", code: "000000" });
 
     expect(verifyRes.status).toBe(200);
     expect(verifyRes.body.status).toBe("ok");
