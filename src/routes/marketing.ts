@@ -427,8 +427,12 @@ router.post("/email/send", safeHandler(async (req: any, res: any) => {
 // BF_SERVER_SEND_QUEUE_v1 - background blast job status (for the portal progress UI).
 router.get("/send-jobs", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
+  // BF_SERVER_SEND_JOBS_SUBJECT_v36 - the portal renders the campaign name from
+  // `subject`. BF never selected it, so every BF row fell back to `tag` (empty on
+  // a whole-silo blast) and rendered "(untitled)". The subject lives in payload.
   const r = await pool.query(
-    `SELECT id, channel, tag, status, total, sent, failed, error, created_at, started_at, finished_at, not_before
+    `SELECT id, channel, tag, status, total, sent, failed, error, created_at, started_at, finished_at, not_before,
+            cancel_requested, payload->>'subject' AS subject, payload->>'templateId' AS template_id
        FROM marketing_send_jobs WHERE silo = $1 ORDER BY created_at DESC LIMIT 50`,
     [silo],
   );
@@ -437,7 +441,8 @@ router.get("/send-jobs", safeHandler(async (req: any, res: any) => {
 router.get("/send-jobs/:id", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const r = await pool.query(
-    `SELECT id, channel, tag, status, total, sent, failed, error, created_at, started_at, finished_at, not_before
+    `SELECT id, channel, tag, status, total, sent, failed, error, created_at, started_at, finished_at, not_before,
+            cancel_requested, payload->>'subject' AS subject, payload->>'templateId' AS template_id
        FROM marketing_send_jobs WHERE id = $1 AND silo = $2`,
     [req.params.id, silo],
   );
@@ -466,7 +471,15 @@ router.post("/send-jobs/:id/cancel", safeHandler(async (req: any, res: any) => {
     [req.params.id, silo],
   );
   if (run.rows[0]) { respondOk(res, { canceled: true, id: run.rows[0].id, phase: "stopping" }); return; }
-  respondOk(res, { canceled: false, reason: "already finished" });
+  // BF_SERVER_CANCEL_REASON_v36 - a 200 with canceled:false and no status left
+  // the portal unable to explain why the row would not go away. Report the
+  // terminal status so the UI can say what actually happened.
+  const cur = await pool.query<{ status: string }>(
+    `SELECT status FROM marketing_send_jobs WHERE id = $1 AND silo = $2`,
+    [req.params.id, silo],
+  );
+  const status = cur.rows[0]?.status ?? null;
+  respondOk(res, { canceled: false, status, reason: status ? "already finished" : "not found" });
 }));
 
 // BF_SERVER_MARKETING_SMS_v1 - bulk SMS + 36h fallback-email cascade (BF silo).
