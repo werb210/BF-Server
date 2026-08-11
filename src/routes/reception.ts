@@ -48,13 +48,28 @@ function novaOn(): boolean { return process.env.RECEPTION_NOVA_VOICE === "true";
 
 async function renderNova(text: string): Promise<Buffer | null> {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) {
+    // BF_SERVER_RECEPTION_VOICE_FALLBACK_v40
+    // eslint-disable-next-line no-console
+    console.warn("reception_voice_render_failed", { reason: "no_openai_api_key" });
+    return null;
+  }
   try {
     const OpenAI = (await import("openai")).default;
     const client = new OpenAI({ apiKey });
     const speech = await client.audio.speech.create({ model: "tts-1", voice: "nova", input: text });
     return Buffer.from(await speech.arrayBuffer());
-  } catch { return null; }
+  } catch (error) {
+    // BF_SERVER_RECEPTION_VOICE_FALLBACK_v40 - this catch swallowed everything.
+    // A missing entitlement, a retired model, an expired key and a network blip
+    // were indistinguishable and silent, which is why a dead phone line took a
+    // caller to discover.
+    // eslint-disable-next-line no-console
+    console.warn("reception_voice_render_failed", {
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 export async function warmReceptionVoice(): Promise<void> {
@@ -63,10 +78,48 @@ export async function warmReceptionVoice(): Promise<void> {
     const buf = await renderNova(text);
     if (buf) audioCache.set(key, buf);
   }
+  // BF_SERVER_RECEPTION_VOICE_FALLBACK_v40 - state plainly how many lines are
+  // playable. A silent partial warm made a cold cache look like a healthy boot.
+  if (novaOn()) {
+    // eslint-disable-next-line no-console
+    console.log("reception_voice_warm", {
+      rendered: audioCache.size,
+      total: Object.keys(PHRASES).length,
+      degradedToPolly: Object.keys(PHRASES).length - audioCache.size,
+    });
+  }
+}
+
+// Test seam: the cache is module-local, and the fallback only means anything if
+// a test can put the module into the cold and warm states deliberately.
+export function __receptionVoiceCacheForTests() {
+  return {
+    set: (key: string, buf: Buffer) => { audioCache.set(key, buf); },
+    clear: () => { audioCache.clear(); },
+    size: () => audioCache.size,
+  };
+}
+
+// BF_SERVER_RECEPTION_VOICE_FALLBACK_v40
+// Confirmed in production 2026-08-11: GET /reception/voice?key=greeting returns
+// 503, and a <Play> pointing at a 503 is an application error. Callers heard
+// "an application error has occurred" and the call dropped, while this server
+// logged a clean 200 for the greeting - because the greeting TwiML was valid.
+// The failure was one hop later, inside Twilio's fetch of the audio.
+//
+// The cache is in-memory and per instance, warmed only at boot. Any restart
+// while OpenAI is unreachable, or a swap onto a slot without a working key,
+// leaves every prompt cold and every inbound call broken.
+//
+// So: only ever play audio that is already rendered. Everything else falls back
+// to Polly, which fetches nothing. A less pleasant voice is not a defect. A
+// phone line that answers with an error is.
+export function shouldPlayAudio(key: string): boolean {
+  return novaOn() && audioCache.has(key);
 }
 
 function emit(node: any, key: string, text: string): void {
-  if (novaOn()) node.play(`${BASE}/voice?key=${key}`);
+  if (shouldPlayAudio(key)) node.play(`${BASE}/voice?key=${key}`);
   else node.say({ voice: VOICE }, text);
 }
 
@@ -127,6 +180,8 @@ router.get("/voice", async (req: Request, res: Response) => {
   if (!text) return res.status(404).end();
   let buf = audioCache.get(key);
   if (!buf) {
+    // BF_SERVER_RECEPTION_VOICE_FALLBACK_v40 - emit() no longer points a live
+    // call at an unrendered key, so a 503 here can no longer reach a caller.
     const rendered = await renderNova(text);
     if (!rendered) return res.status(503).end();
     audioCache.set(key, rendered);
