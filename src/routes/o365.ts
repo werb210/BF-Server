@@ -4,6 +4,7 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { pool } from "../db.js";
 import { bumpBiOutreachToContacted } from "../services/biOutreach.js"; // BF_SERVER_BLOCK_v344_BI_OUTREACH_AUTOADVANCE_v1
 import { getGraphForUser } from "../modules/o365/graphClient.js";
+import { SENT_LOGGED_HEADER } from "../modules/o365/sentItemsLog.js"; // BF_SERVER_SENT_ITEMS_v39
 import { draftErrorResponse } from "../modules/o365/draftErrors.js"; // BF_SERVER_DRAFT_NOT_FOUND_v1
 import { pullOutlookContactsForUser } from "../modules/o365/contactPull.js"; // BF_SERVER_CONTACTS_PULL_v1
 import { getStorage } from "../lib/storage/index.js"; // v693
@@ -299,6 +300,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
       [from || "", Array.isArray(to) ? to : [], Array.isArray(cc) ? cc : [], Array.isArray(bcc) ? bcc : [], mergedSubject, bodyWithSig, userId, cid, coid, siloVal, pixelToken],
     );
   const message: any = {
+    internetMessageHeaders: [{ name: SENT_LOGGED_HEADER, value: "1" }],
     subject: mergedSubject,
     body: { contentType: "HTML", content: bodyWithSig },
     importance,

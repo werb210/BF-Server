@@ -5,8 +5,11 @@ import crypto from "node:crypto";
 import type { Pool } from "pg";
 import { getGraphForUser, type GraphClient } from "./graphClient.js";
 import { createNotification } from "../notifications/notifications.repo.js";
+import { logSentMessage, type SentMessage } from "./sentItemsLog.js"; // BF_SERVER_SENT_ITEMS_v39
 
 const RESOURCE = "me/mailFolders('inbox')/messages";
+// BF_SERVER_SENT_ITEMS_v39
+const SENT_RESOURCE = "me/mailFolders('sentitems')/messages";
 // Graph caps message subscriptions near ~70h; use 60h and renew early.
 const LIFETIME_MS = 60 * 60 * 60 * 1000;
 const RENEW_BEFORE_MS = 12 * 60 * 60 * 1000;
@@ -23,11 +26,11 @@ async function graphJson(graph: GraphClient, path: string, init?: RequestInit): 
   return t ? JSON.parse(t) : null;
 }
 
-export async function ensureMailSubscription(pool: Pool, userId: string): Promise<void> {
+export async function ensureMailSubscription(pool: Pool, userId: string, resource: string = RESOURCE): Promise<void> {
   try {
     const existing = await pool.query<{ expiration_datetime: string }>(
-      `SELECT expiration_datetime FROM graph_mail_subscriptions WHERE user_id = $1 ORDER BY expiration_datetime DESC LIMIT 1`,
-      [userId]
+      `SELECT expiration_datetime FROM graph_mail_subscriptions WHERE user_id = $1 AND resource = $2 ORDER BY expiration_datetime DESC LIMIT 1`,
+      [userId, resource]
     );
     const row = existing.rows[0];
     if (row && new Date(row.expiration_datetime).getTime() - Date.now() > RENEW_BEFORE_MS) return;
@@ -41,7 +44,7 @@ export async function ensureMailSubscription(pool: Pool, userId: string): Promis
       body: JSON.stringify({
         changeType: "created",
         notificationUrl: notificationUrl(),
-        resource: RESOURCE,
+        resource,
         expirationDateTime: expiration,
         clientState,
       }),
@@ -52,7 +55,7 @@ export async function ensureMailSubscription(pool: Pool, userId: string): Promis
       `INSERT INTO graph_mail_subscriptions (id, user_id, subscription_id, resource, client_state, expiration_datetime, created_at, updated_at)
        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, now(), now())
        ON CONFLICT (subscription_id) DO UPDATE SET expiration_datetime = EXCLUDED.expiration_datetime, updated_at = now()`,
-      [userId, subId, RESOURCE, clientState, created?.expirationDateTime ?? expiration]
+      [userId, subId, resource, clientState, created?.expirationDateTime ?? expiration]
     );
   } catch {
     /* best-effort */
@@ -87,19 +90,38 @@ export async function renewDueSubscriptions(pool: Pool): Promise<void> {
 interface GraphNotification {
   subscriptionId?: string;
   clientState?: string;
+  resourceData?: { id?: string };
+}
+
+const SENT_SELECT = "id,subject,body,from,toRecipients,ccRecipients,internetMessageHeaders";
+
+async function fetchSentMessage(graph: GraphClient, messageId: string): Promise<SentMessage | null> {
+  const r = await graph.fetch(`/me/messages/${encodeURIComponent(messageId)}?$select=${SENT_SELECT}`);
+  if (!r.ok) return null;
+  const text = await r.text();
+  return text ? (JSON.parse(text) as SentMessage) : null;
 }
 
 export async function handleGraphNotifications(pool: Pool, values: GraphNotification[]): Promise<void> {
   for (const n of values) {
     try {
       if (!n.subscriptionId) continue;
-      const r = await pool.query<{ user_id: string; client_state: string }>(
-        `SELECT user_id, client_state FROM graph_mail_subscriptions WHERE subscription_id = $1 LIMIT 1`,
+      const r = await pool.query<{ user_id: string; client_state: string; resource: string }>(
+        `SELECT user_id, client_state, resource FROM graph_mail_subscriptions WHERE subscription_id = $1 LIMIT 1`,
         [n.subscriptionId]
       );
       const sub = r.rows[0];
       if (!sub) continue;
       if (n.clientState && sub.client_state && n.clientState !== sub.client_state) continue;
+      if (sub.resource === SENT_RESOURCE) {
+        const messageId = n.resourceData?.id;
+        if (!messageId) continue;
+        const graph = await getGraphForUser(pool, sub.user_id);
+        if (!graph) continue;
+        const message = await fetchSentMessage(graph, messageId);
+        if (message) await logSentMessage(pool, sub.user_id, message);
+        continue;
+      }
       await createNotification({
         notificationId: crypto.randomUUID(),
         userId: sub.user_id,
@@ -119,5 +141,6 @@ export async function ensureSubscriptionsForConnectedUsers(pool: Pool): Promise<
   const users = await pool.query<{ id: string }>(`SELECT id FROM users WHERE o365_refresh_token IS NOT NULL`);
   for (const u of users.rows) {
     await ensureMailSubscription(pool, u.id);
+    await ensureMailSubscription(pool, u.id, SENT_RESOURCE); // BF_SERVER_SENT_ITEMS_v39
   }
 }
