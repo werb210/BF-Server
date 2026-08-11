@@ -4,6 +4,7 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { pool } from "../db.js";
 import { bumpBiOutreachToContacted } from "../services/biOutreach.js"; // BF_SERVER_BLOCK_v344_BI_OUTREACH_AUTOADVANCE_v1
 import { getGraphForUser } from "../modules/o365/graphClient.js";
+import { draftErrorResponse } from "../modules/o365/draftErrors.js"; // BF_SERVER_DRAFT_NOT_FOUND_v1
 import { pullOutlookContactsForUser } from "../modules/o365/contactPull.js"; // BF_SERVER_CONTACTS_PULL_v1
 import { getStorage } from "../lib/storage/index.js"; // v693
 import { resolveSiloFromRequest } from "../middleware/silo.js";
@@ -473,8 +474,8 @@ router.post("/mail/draft", safeHandler(async (req: any, res: any) => {
     const detail = (await r.text()).slice(0, 500);
     // eslint-disable-next-line no-console
     console.error("o365_draft_failed", { status: r.status, detail });
-    if (r.status === 401 || r.status === 403) return res.status(412).json({ error: "o365_insufficient_scope", detail });
-    return res.status(502).json({ error: "graph_draft_failed", detail });
+    const mapped = draftErrorResponse(r.status, detail); // BF_SERVER_DRAFT_NOT_FOUND_v1
+    return res.status(mapped.httpStatus).json(mapped.body);
   }
   const j = await r.json();
   res.json({ id: j.id ?? draftId });
@@ -514,8 +515,8 @@ router.get("/mail/draft/:id", safeHandler(async (req: any, res: any) => {
     const detail = (await r.text()).slice(0, 500);
     // eslint-disable-next-line no-console
     console.error("o365_draft_failed", { status: r.status, detail });
-    if (r.status === 401 || r.status === 403) return res.status(412).json({ error: "o365_insufficient_scope", detail });
-    return res.status(502).json({ error: "graph_draft_failed", detail });
+    const mapped = draftErrorResponse(r.status, detail); // BF_SERVER_DRAFT_NOT_FOUND_v1
+    return res.status(mapped.httpStatus).json(mapped.body);
   }
   const m = await r.json();
   const addrs = (xs: any) => (xs ?? []).map((x: any) => x?.emailAddress?.address).filter(Boolean);
