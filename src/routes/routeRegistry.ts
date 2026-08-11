@@ -20,6 +20,7 @@ import crmRoutes from "./crm.js";
 import creditRoutes from "./credit.js";
 import creditSummaryRoutes from "./creditSummary.js";
 import dashboardRoutes from "./dashboard.js";
+import widgetSummaryRoutes from "./widgetSummary.js"; // BF_SERVER_WIDGET_SUMMARY_v41
 import documentsRoutes from "./documents.js";
 import accountantRoutes from "./accountant.js"; // BF_SERVER_ACCOUNTANT_UPLOAD_v1
 import internalRoutes from "./_int.js";
@@ -202,6 +203,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/credit", router: creditRoutes },
   { path: "/crm", router: crmRoutes },
   { path: "/dashboard", router: dashboardRoutes },
+  { path: "/widget", router: widgetSummaryRoutes }, // BF_SERVER_WIDGET_SUMMARY_v41
   { path: "/credit-summary", router: creditSummaryRoutes },
   // BF_MINI_PORTAL_NOTES_v47 - mounted at /api/applications/:id/notes
   { path: "/applications/:id/notes", router: applicationNotesRoutes },
@@ -383,6 +385,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/lenders/:lenderId/users", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/staff/overview", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/dashboard", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { method: "GET", path: "/api/widget/summary", roles: [ROLES.ADMIN, ROLES.STAFF] }, // BF_SERVER_WIDGET_SUMMARY_v41
   { method: "POST", path: "/api/referrals", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.REFERRER] },
   { method: "POST", path: "/api/website/credit-readiness", roles: [] },
   { method: "POST", path: "/api/website/contact", roles: [] },
