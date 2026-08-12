@@ -7,6 +7,8 @@ import { respondOk } from "../../utils/respondOk.js";
 import { getGraphForUser, type GraphClient } from "../../modules/o365/graphClient.js";
 import { resolveSiloFromRequest } from "../../middleware/silo.js";
 import { fileInboundAttachments } from "../../services/contactDocuments.js"; // BF_SERVER_INBOX_FILE_TO_CRM_v1
+// BF_SERVER_INBOX_CID_REGEX_v43
+import { extractCidRefs, matchCidAttachment, soleUnusedInlineImage, type CidAttachment } from "../../services/o365/inlineCid.js";
 
 // BF_SERVER_BLOCK_BI_ROUND5_CRM_SILO_RESOLVE_v1
 
@@ -88,44 +90,50 @@ async function inlineEmailImages(graph: GraphClient, base: string, messageId: st
     let html: string = body.content;
 
     if (html.includes("cid:")) {
-      // BF_SERVER_INBOX_CID_HTMLDRIVEN_v1 - drive off the cid: refs the HTML
-      // actually needs, matching an attachment by contentId OR name (forwarded
-      // mail often has a contentId/name mismatch the old contentId-only match
-      // skipped, leaving broken cid: images blocked by CSP).
-      const cidRefs = new Set<string>();
-      const cidRe = /cid:([^"'\\s)>]+)/gi;
-      let cm: RegExpExecArray | null;
-      while ((cm = cidRe.exec(html)) !== null) cidRefs.add(cm[1]);
+      // BF_SERVER_INBOX_CID_REGEX_v43 - extraction and matching now live in
+      // services/o365/inlineCid.ts so the rules are unit tested. The previous
+      // inline regex cut every Gmail content-id at the first letter s.
+      const cidRefs = extractCidRefs(html);
 
       // BF_SERVER_INBOX_CID_NOSELECT_v1 - do NOT $select here. contentId and
       // contentBytes are fileAttachment-derived properties; $select-ing them on
-      // the polymorphic /attachments collection makes Graph return an empty set
-      // (observed: attachmentContentIds: [] while the un-selected list works).
-      // The unfiltered response carries contentId AND contentBytes inline.
-      const ar = await graph.fetch(
-        `${base}/messages/${encodeURIComponent(messageId)}/attachments`,
-      );
-      let atts: any[] = [];
-      if (ar.ok) {
-        atts = ((await ar.json()) as any).value ?? [];
-      } else {
-        console.warn("[inbox.inlineImages] attachments list failed", {
-          messageId,
-          status: ar.status,
-          body: (await ar.text().catch(() => "")).slice(0, 300),
-        });
+      // the polymorphic /attachments collection makes Graph return an empty set.
+      // BF_SERVER_INBOX_CID_REGEX_v43 - the collection has also been observed
+      // answering 200 with an empty value while the message fetch (which passes
+      // the id unencoded) succeeds, so try encoded, then raw, then $expand, and
+      // record which one produced the list.
+      let atts: CidAttachment[] = [];
+      let attSource = "none";
+      const attempts: Array<{ label: string; path: string; pick: (j: any) => any }> = [
+        { label: "encoded", path: `${base}/messages/${encodeURIComponent(messageId)}/attachments`, pick: (j) => j?.value },
+        { label: "raw", path: `${base}/messages/${messageId}/attachments`, pick: (j) => j?.value },
+        { label: "expand", path: `${base}/messages/${encodeURIComponent(messageId)}?$expand=attachments`, pick: (j) => j?.attachments },
+      ];
+      for (const attempt of attempts) {
+        const ar = await graph.fetch(attempt.path);
+        if (!ar.ok) {
+          console.warn("[inbox.inlineImages] attachments list failed", {
+            messageId, strategy: attempt.label, status: ar.status,
+            body: (await ar.text().catch(() => "")).slice(0, 300),
+          });
+          continue;
+        }
+        const picked = attempt.pick((await ar.json()) as any);
+        if (Array.isArray(picked) && picked.length > 0) {
+          atts = picked as CidAttachment[];
+          attSource = attempt.label;
+          break;
+        }
       }
+
       const norm = (v: unknown) => String(v ?? "").replace(/^<|>$/g, "");
       const unresolved: string[] = [];
+      const usedIds = new Set<string>();
       for (const ref of cidRefs) {
-        const head = ref.split("@")[0];
-        const att = atts.find((a) => {
-          const cid = norm(a?.contentId);
-          return cid === ref || a?.name === ref || cid === head || a?.name === head;
-        });
+        const att = matchCidAttachment(ref, atts) ?? soleUnusedInlineImage(atts, usedIds);
         if (!att) { unresolved.push(ref); continue; }
         const ctype: string = att.contentType || "image/png";
-        let bytes: string | undefined = att.contentBytes;
+        let bytes: string | undefined = att.contentBytes ?? undefined;
         if (!bytes && att.id) {
           const one = await graph.fetch(
             `${base}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(att.id)}`,
@@ -133,17 +141,16 @@ async function inlineEmailImages(graph: GraphClient, base: string, messageId: st
           if (one.ok) bytes = ((await one.json()) as any)?.contentBytes;
         }
         if (bytes) {
+          if (att.id) usedIds.add(String(att.id));
           html = html.split(`cid:${ref}`).join(`data:${ctype};base64,${bytes}`);
-        } else {
-          unresolved.push(ref);
-        }
+        } else unresolved.push(ref);
       }
       if (unresolved.length > 0) {
         console.warn("[inbox.inlineImages] unresolved cid refs", {
-          messageId,
-          unresolved,
+          messageId, unresolved, attachmentSource: attSource, attachmentCount: atts.length,
           attachmentContentIds: atts.map((a) => norm(a?.contentId)),
           attachmentNames: atts.map((a) => a?.name),
+          attachmentInline: atts.map((a) => a?.isInline === true),
         });
       }
     }
