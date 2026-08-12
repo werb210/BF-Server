@@ -1,11 +1,6 @@
-import { Pool } from "pg";
-import { config } from "../config/index.js";
+// BF_SERVER_ONE_POOL_v45 - was a separate Pool with no ssl and no keepAlive.
+import { pool } from "../db.prod.js";
 
-export const dbClient = new Pool({
-  connectionString: config.db.url,
-  max: 10,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 5_000,
-});
+export const dbClient = pool;
 
 export default dbClient;

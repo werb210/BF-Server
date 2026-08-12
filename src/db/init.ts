@@ -1,4 +1,5 @@
-import { Pool } from "pg";
+// BF_SERVER_ONE_POOL_v45
+import { pool as sharedPool } from "../db.prod.js";
 
 import { deps } from "../system/deps.js";
 
@@ -15,9 +16,7 @@ export async function initDb() {
     throw new Error("DATABASE_URL missing");
   }
 
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-  });
+  const pool = sharedPool;
 
   let connected = false;
 
