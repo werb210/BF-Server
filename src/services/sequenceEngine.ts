@@ -2,6 +2,8 @@
 // claim pattern (atomic status flip, safe across instances). Stop-on-reply,
 // suppression, SMS quiet-hours, and per-step conditions all enforced here.
 import type { Pool } from "pg";
+// BF_SERVER_FRAUD_ENFORCE_v50
+import { contactHasFraudApplication } from "./fraud/fraudGuard.js";
 import { randomUUID } from "crypto";
 import { sendOne, mergeFields } from "./sendgridService.js";
 import { renderMarketingSms, sendMarketingSms, trackedLink, lookupLineType } from "./marketingSms.js";
@@ -297,6 +299,15 @@ export async function tickSequences(pool: Pool): Promise<void> {
     );
     const en = claim.rows[0];
     if (!en) break;
+    // BF_SERVER_FRAUD_ENFORCE_v50 - never drip-market to a contact attached to a
+    // fraud file. Cancelled, not paused, so the check does not run every tick.
+    if (await contactHasFraudApplication(pool, en.contact_id)) {
+      await pool.query(
+        `UPDATE marketing_sequence_enrollments SET status='cancelled', updated_at=now() WHERE id=$1`,
+        [en.id],
+      ).catch(() => {});
+      continue;
+    }
     try { await processClaimed(pool, en); }
     catch { await pool.query(`UPDATE marketing_sequence_enrollments SET status='active', next_run_at=$2, updated_at=now() WHERE id=$1`, [en.id, scheduleAfter(15, en.quiet_start, en.quiet_end)]).catch(() => {}); }
   }

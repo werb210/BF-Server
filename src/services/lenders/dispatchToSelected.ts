@@ -1,6 +1,8 @@
 // BF_SERVER_v74_BLOCK_1_7 — pick the right submission adapter per lender
 // and record the result in application_packages.
 import type { Pool } from "pg";
+// BF_SERVER_FRAUD_ENFORCE_v50
+import { assertApplicationNotFraud } from "../fraud/fraudGuard.js";
 import { safeErr } from "../../lib/safeErr.js";
 import { sendLenderEmail } from "../../modules/lenderSubmissions/adapters/EmailAdapter.js";
 import { resolveOwnerSignatureHtml } from "../email/resolveSignature.js"; // v693
@@ -49,6 +51,10 @@ export async function dispatchToSelected(
   // not interceptable by module mocks). Production callers pass two args.
   deps: { loadGoogleAdapter?: () => Promise<any> } = {}
 ): Promise<string[]> {
+  // BF_SERVER_FRAUD_ENFORCE_v50 - refuse before any package is built or sent.
+  // This is the single choke point every submission path funnels through.
+  await assertApplicationNotFraud(ctx.pool, ctx.applicationId);
+
   let signedApp: Buffer | null = null;
   let creditSummary: Buffer | null = null;
   let docs: { category: string; files: { filename: string; content: Buffer }[] }[] = [];
