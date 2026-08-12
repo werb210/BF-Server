@@ -8,6 +8,8 @@ import {
   type BankTransaction,
 } from "./bankingFromOcr.js";
 import OpenAI from "openai";
+// BF_SERVER_TX_INSIGHTS_v51
+import { detectUnusualTransactions, aggregateVendors } from "./transactionInsights.js";
 // BF_SERVER_OCR_QUOTA_v47
 import { classifyOcrFailure, isInfrastructureFailure, anyInfrastructureFailure, describeOcrFailure } from "./ocrFailure.js";
 import { averageDailyBalance } from "./balanceMetrics.js";
@@ -335,7 +337,7 @@ export async function runBankingAnalysis(
   if (allTransactions.length > 0) await insertTransactions(applicationId, allTransactions);
   const adb = averageDailyBalance(allTransactions.flatMap((tx) => tx.date && tx.balance !== undefined ? [{ date: tx.date, balance: tx.balance, amount: tx.amount, accountKey: tx.account_key }] : []));
   const aggregates = await aggregateMonthlySummaries(applicationId, adb);
-  const llmFlags = openai ? await flagWithOpenAI(applicationId, allTransactions.slice(0, 200)) : { unusualTransactions: [], topVendors: [] };
+  const llmFlags = flagTransactions(allTransactions);
   await persistAnalysis(applicationId, aggregates, llmFlags, allTransactions.length, country, documentStatuses.find((status) => status.transaction_count > 0)?.model_used ?? modelChain[0], documentStatuses, integrityReport);
 
   if (allTransactions.length === 0) {
@@ -431,7 +433,13 @@ export async function runBankingAnalysis(
 function rowifyTableCells(table: any): Array<Array<{ text: string }>> { if (!table || !Array.isArray(table.cells)) return []; const rows: Array<Array<{ text: string }>> = []; for (const cell of table.cells) { const r = cell.rowIndex ?? 0; const c = cell.columnIndex ?? 0; rows[r] = rows[r] ?? []; rows[r][c] = { text: String(cell.content ?? "") }; } return rows.map((r) => r ?? []); }
 async function insertTransactions(applicationId: string, transactions: Array<BankTransaction & { document_id: string; currency_code: CurrencyCode; account_key: string }>) { const rows: string[] = []; const params: any[] = []; let i = 0; for (const tx of transactions) { rows.push(`($${++i}, $${++i}, $${++i}::date, $${++i}, $${++i}::numeric, $${++i}::numeric, $${++i}, $${++i}, $${++i})`); params.push(applicationId, tx.document_id, tx.date, tx.description ?? null, tx.amount ?? 0, tx.balance ?? null, isNsfDescription(tx.description), tx.currency_code, tx.account_key); } await pool.query(`INSERT INTO banking_transactions (application_id, document_id, transaction_date, description, amount, balance_after, is_nsf, currency_code, account_key) VALUES ` + rows.join(","), params); }
 async function aggregateMonthlySummaries(applicationId: string, dayWeightedBalance: number | null) { await pool.query(`WITH month_buckets AS (SELECT date_trunc('month', transaction_date)::date AS month_start, COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS total_deposits, COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS total_withdrawals, COALESCE(SUM(amount), 0) AS net_cash_flow, COUNT(*) FILTER (WHERE is_nsf) AS nsf_count FROM banking_transactions WHERE application_id::text = ($1)::text GROUP BY date_trunc('month', transaction_date)), endings AS (SELECT DISTINCT ON (date_trunc('month', transaction_date)::date) date_trunc('month', transaction_date)::date AS month_start, balance_after AS ending_balance FROM banking_transactions WHERE application_id::text = ($1)::text AND balance_after IS NOT NULL ORDER BY date_trunc('month', transaction_date)::date, transaction_date DESC, created_at DESC) INSERT INTO banking_monthly_summaries (application_id, month_start, total_deposits, total_withdrawals, net_cash_flow, ending_balance, nsf_count) SELECT $1::uuid, m.month_start, m.total_deposits, m.total_withdrawals, m.net_cash_flow, e.ending_balance, m.nsf_count FROM month_buckets m LEFT JOIN endings e ON e.month_start = m.month_start ON CONFLICT (application_id, month_start) DO UPDATE SET total_deposits = EXCLUDED.total_deposits, total_withdrawals = EXCLUDED.total_withdrawals, net_cash_flow = EXCLUDED.net_cash_flow, ending_balance = EXCLUDED.ending_balance, nsf_count = EXCLUDED.nsf_count`, [applicationId]); const sumRes = await pool.query<any>(`SELECT COUNT(*)::text AS months, COALESCE(SUM(total_deposits), 0)::text AS total_deposits, COALESCE(SUM(total_withdrawals), 0)::text AS total_withdrawals, (SELECT AVG(bt2.balance_after)::text FROM banking_transactions bt2 WHERE bt2.application_id::text = ($1)::text AND bt2.balance_after IS NOT NULL) AS avg_balance, MIN(month_start)::text AS period_start, MAX(month_start)::text AS period_end, COALESCE(SUM(nsf_count), 0)::text AS nsf_total, COALESCE(SUM(CASE WHEN net_cash_flow > 0 THEN 1 ELSE 0 END), 0)::text AS months_profitable FROM banking_monthly_summaries WHERE application_id::text = ($1)::text`, [applicationId]); const r=sumRes.rows[0]; const months=Number(r?.months??0); return {months,totalDeposits:Number(r?.total_deposits??0),totalWithdrawals:Number(r?.total_withdrawals??0),averageDailyBalance:dayWeightedBalance,avgMonthlyDeposits:months>0?Number(r?.total_deposits??0)/months:0,periodStart:r?.period_start??null,periodEnd:r?.period_end??null,nsfTotal:Number(r?.nsf_total??0),monthsProfitable:Number(r?.months_profitable??0),averageMonthlyNsfs:months>0?Number(r?.nsf_total??0)/months:0}; }
-async function flagWithOpenAI(_applicationId: string, transactions: Array<BankTransaction & { document_id: string }>) { if (!openai || transactions.length===0) return { unusualTransactions: [], topVendors: [] }; return { unusualTransactions: [], topVendors: [] }; }
+function flagTransactions(transactions: Array<BankTransaction & { document_id: string }>) {
+  if (transactions.length === 0) return { unusualTransactions: [], topVendors: [] };
+  return {
+    unusualTransactions: detectUnusualTransactions(transactions),
+    topVendors: aggregateVendors(transactions),
+  };
+}
 // v_BANK_TRAILING_MINUS: parse a money string allowing parentheses, leading, or
 // trailing minus (Canadian/TD statements write overdrawn balances as "1,234.00-").
 function numSigned(str: string): number | null {
