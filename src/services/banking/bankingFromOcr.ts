@@ -196,8 +196,8 @@ function headerIndices(header: string[]): {
   const descIdx = header.findIndex((h) =>
     /\b(desc|detail|details|description|memo|payee|narrative|activity|type)\b/.test(h)
   );
-  const debitIdx = header.findIndex((h) => /\b(debit|withdrawal|withdrawn|paid out)\b/.test(h));
-  const creditIdx = header.findIndex((h) => /\b(credit|deposit|paid in)\b/.test(h));
+  const debitIdx = header.findIndex((h) => /\b(debit(?:ed|s)?|withdrawal|withdrawn|paid out)\b/.test(h));
+  const creditIdx = header.findIndex((h) => /\b(credit(?:ed|s)?|deposit|paid in)\b/.test(h));
   const amtIdx = header.findIndex((h) => /\b(amount|amt)\b/.test(h));
   const balIdx = header.findIndex((h) => /\b(balance|running balance)\b/.test(h));
   const detected = dateIdx >= 0 || descIdx >= 0 || amtIdx >= 0 || debitIdx >= 0 || creditIdx >= 0;
