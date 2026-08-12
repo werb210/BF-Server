@@ -8,6 +8,8 @@ import {
   type BankTransaction,
 } from "./bankingFromOcr.js";
 import OpenAI from "openai";
+// BF_SERVER_OCR_QUOTA_v47
+import { classifyOcrFailure, isInfrastructureFailure, anyInfrastructureFailure, describeOcrFailure } from "./ocrFailure.js";
 import { averageDailyBalance } from "./balanceMetrics.js";
 import { detectStatementCurrency, isNsfDescription, sanitizeTransactions, statementBodyFingerprint, type CurrencyCode } from "./statementIntegrity.js";
 
@@ -186,11 +188,12 @@ export async function runBankingAnalysis(
         result = await analyzeWithDocIntel(buffer, model);
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
-        // Distinguish env-var misconfiguration from a true OCR failure
-        const isEnvMissing = /AZURE_DOC_INTEL_(ENDPOINT|KEY)\s+not set/.test(errMsg) || /not configured/i.test(errMsg);
-        logError("banking_pipeline_di_failed", { applicationId, documentId: doc.documentId, model, error: errMsg, envMissing: isEnvMissing });
-        docError = isEnvMissing
-          ? "Azure Document Intelligence not configured. Set AZURE_DOC_INTEL_ENDPOINT and AZURE_DOC_INTEL_KEY on the BF-Server App Service."
+        // BF_SERVER_OCR_QUOTA_v47 - classify so a vendor outage is not reported
+        // to staff as a bad upload, and does not count toward auto-skip.
+        const failureKind = classifyOcrFailure(errMsg);
+        logError("banking_pipeline_di_failed", { applicationId, documentId: doc.documentId, model, error: errMsg, failureKind });
+        docError = isInfrastructureFailure(failureKind)
+          ? describeOcrFailure(failureKind, errMsg)
           : `OCR model ${model} failed: ${errMsg}`;
         continue;
       }
@@ -356,6 +359,20 @@ export async function runBankingAnalysis(
         WHERE application_id::text = ($1)::text`,
       [applicationId, lastError]
     );
+    // BF_SERVER_OCR_QUOTA_v47 - the counter below cannot tell a bad upload from
+    // an OCR outage. On 2026-08-12 Doc Intel exhausted its F0 quota and returned
+    // 403 for every call; five such runs would have set banking_auto_skip and
+    // permanently disabled banking analysis on every application touched, and it
+    // would have stayed disabled after the quota reset.
+    const infraFailure = anyInfrastructureFailure(documentStatuses.map((d) => d.error));
+    if (infraFailure) {
+      logInfo("banking_pipeline_infra_failure_not_counted", {
+        applicationId,
+        documents: documentStatuses.length,
+        lastError,
+      });
+      return { application_id: applicationId, transaction_count: 0, documents: documentStatuses };
+    }
     // v629: cap consecutive zero-tx failures. After 5 attempts with 0 docs,
     // mark application as banking_auto_skip=true so the worker stops retrying.
     // Cleared automatically on the next document upload (see documents route).
