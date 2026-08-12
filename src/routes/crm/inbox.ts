@@ -9,6 +9,9 @@ import { resolveSiloFromRequest } from "../../middleware/silo.js";
 import { fileInboundAttachments } from "../../services/contactDocuments.js"; // BF_SERVER_INBOX_FILE_TO_CRM_v1
 // BF_SERVER_INBOX_CID_REGEX_v43
 import { extractCidRefs, matchCidAttachment, soleUnusedInlineImage, type CidAttachment } from "../../services/o365/inlineCid.js";
+import { isOwnTrackingPixel } from "../openTruth.js";
+
+export { isOwnTrackingPixel } from "../openTruth.js";
 
 // BF_SERVER_BLOCK_BI_ROUND5_CRM_SILO_RESOLVE_v1
 
@@ -42,6 +45,7 @@ function isBlockedRemoteImageHost(hostname: string): boolean {
 async function isAllowedRemoteImageUrl(rawUrl: string): Promise<boolean> {
   const u = new URL(rawUrl);
   if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+  if (isOwnTrackingPixel(rawUrl)) return false;
   if (isBlockedRemoteImageHost(u.hostname)) return false;
 
   const records = await lookup(u.hostname, { all: true, verbatim: false });

@@ -54,12 +54,24 @@ router.get("/", safeHandler(async (req: any, res: any) => {
         -- BF_SERVER_BLOCK_v706_READ_RECEIPTS — read receipts as a separate
         -- "Opened:" entry (reuses the 'email' kind, so no UI change).
         SELECT 'email' AS kind, ('opened-' || e.id::text) AS id, e.opened_at AS ts,
+               -- BF_SERVER_OPEN_TRUTH_v52 - people and machines counted apart.
                ('Opened: ' || e.subject ||
-                 CASE WHEN oc.n > 1 THEN ' (' || oc.n || ' opens)' ELSE '' END) AS title,
+                 CASE
+                   WHEN oc.unverified > 0 AND oc.human = 0 AND oc.machine = 0
+                     THEN ' (' || oc.unverified || ' opens, unverified)'
+                   WHEN oc.machine > 0
+                     THEN ' (' || oc.human || ' opens, ' || oc.machine || ' machine)'
+                   WHEN oc.human > 1 THEN ' (' || oc.human || ' opens)'
+                   ELSE ''
+                 END) AS title,
                NULL::text AS body, e.from_address AS extra
           FROM crm_email_log e
           LEFT JOIN LATERAL (
-            SELECT count(*)::int AS n FROM email_open_events ev WHERE ev.email_log_id = e.id
+            SELECT
+              count(*) FILTER (WHERE ev.source IN ('human_likely', 'unknown'))::int AS human,
+              count(*) FILTER (WHERE ev.source IN ('proxy_gmail', 'proxy_apple', 'scanner', 'bot'))::int AS machine,
+              count(*) FILTER (WHERE ev.source = 'unverified')::int AS unverified
+              FROM email_open_events ev WHERE ev.email_log_id = e.id
           ) oc ON true
          WHERE e.${col} = $1 AND e.silo = $2 AND e.opened_at IS NOT NULL
         UNION ALL
@@ -205,12 +217,24 @@ router.get("/", safeHandler(async (req: any, res: any) => {
         -- BF_SERVER_BLOCK_v706_READ_RECEIPTS — read receipts as a separate
         -- "Opened:" entry (reuses the 'email' kind, so no UI change).
         SELECT 'email' AS kind, ('opened-' || e.id::text) AS id, e.opened_at AS ts,
+               -- BF_SERVER_OPEN_TRUTH_v52 - people and machines counted apart.
                ('Opened: ' || e.subject ||
-                 CASE WHEN oc.n > 1 THEN ' (' || oc.n || ' opens)' ELSE '' END) AS title,
+                 CASE
+                   WHEN oc.unverified > 0 AND oc.human = 0 AND oc.machine = 0
+                     THEN ' (' || oc.unverified || ' opens, unverified)'
+                   WHEN oc.machine > 0
+                     THEN ' (' || oc.human || ' opens, ' || oc.machine || ' machine)'
+                   WHEN oc.human > 1 THEN ' (' || oc.human || ' opens)'
+                   ELSE ''
+                 END) AS title,
                NULL::text AS body, e.from_address AS extra
           FROM crm_email_log e
           LEFT JOIN LATERAL (
-            SELECT count(*)::int AS n FROM email_open_events ev WHERE ev.email_log_id = e.id
+            SELECT
+              count(*) FILTER (WHERE ev.source IN ('human_likely', 'unknown'))::int AS human,
+              count(*) FILTER (WHERE ev.source IN ('proxy_gmail', 'proxy_apple', 'scanner', 'bot'))::int AS machine,
+              count(*) FILTER (WHERE ev.source = 'unverified')::int AS unverified
+              FROM email_open_events ev WHERE ev.email_log_id = e.id
           ) oc ON true
          WHERE e.${col} = $1 AND e.silo = $2 AND e.opened_at IS NOT NULL
         UNION ALL

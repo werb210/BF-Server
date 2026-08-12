@@ -6,6 +6,9 @@
 // recording an open. Never blocks the image response on a DB hiccup.
 import { Router } from "express";
 import { pool } from "../db.js";
+import { classifyOpenSource } from "./openTruth.js";
+
+export { classifyOpenSource, MACHINE_SOURCES } from "./openTruth.js";
 
 const router = Router();
 
@@ -24,11 +27,22 @@ router.get("/email/:token.gif", async (req, res) => {
         `UPDATE crm_email_log SET opened_at = now() WHERE pixel_token = $1 AND opened_at IS NULL`,
         [token],
       );
-      // ... plus one event row per open (#48 Option B): every open, each timestamped.
+      const ua = String(req.get("user-agent") ?? "").slice(0, 500);
+      const ip = String((req.headers["x-forwarded-for"] as string | undefined) ?? req.ip ?? "")
+        .split(",")[0]?.trim().slice(0, 64) ?? "";
+      const source = classifyOpenSource(ua);
       await pool.query(
-        `INSERT INTO email_open_events (email_log_id, opened_at)
-         SELECT id, now() FROM crm_email_log WHERE pixel_token = $1 LIMIT 1`,
-        [token],
+        `INSERT INTO email_open_events (email_log_id, opened_at, user_agent, ip, source)
+         SELECT id, now(), $2, NULLIF($3, ''), $4 FROM crm_email_log e
+          WHERE e.pixel_token = $1
+            AND NOT EXISTS (
+              SELECT 1 FROM email_open_events ev
+               WHERE ev.email_log_id = e.id
+                 AND ev.source = $4
+                 AND ev.opened_at > now() - interval '1 minute'
+            )
+          LIMIT 1`,
+        [token, ua, ip, source],
       );
     } catch {
       /* never block the pixel on a DB error */
