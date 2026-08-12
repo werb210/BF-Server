@@ -40,7 +40,9 @@ export function startBankingAutoWorker(pool: Pool): { stop: () => void } {
               SELECT 1 FROM banking_analyses ba
                WHERE ba.application_id = d.application_id
                  AND (
-                      ba.status IN ('in_progress', 'analysis_complete')
+                      -- BF_SERVER_BANKING_RERUN_v46 - needs_review is terminal until
+                      -- staff explicitly retry the analysis by returning it to pending.
+                      ba.status IN ('in_progress', 'analysis_complete', 'needs_review')
                    OR (ba.status = 'failed' AND ba.next_attempt_at > NOW())
                    OR (ba.status = 'failed' AND ba.attempt_count >= COALESCE(ba.max_attempts, 3))
                  )
