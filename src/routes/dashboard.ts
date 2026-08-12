@@ -3,6 +3,8 @@ import { pool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { getSilo } from "../middleware/silo.js";
+// BF_SERVER_FRAUD_HOLD_v48
+import { liveStageFilter } from "../modules/applications/reportingScope.js";
 import { ApplicationStage } from "../modules/applications/pipelineState.js";
 
 const router = Router();
@@ -26,7 +28,8 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
          AND parent_application_id IS NULL  -- v829: count DEALS, not companion legs
          AND COALESCE(pipeline_state, '') NOT IN ('draft', 'Draft', '')
          AND COALESCE(NULLIF(TRIM(name), ''), NULLIF(TRIM(business_legal_name), '')) IS NOT NULL
-         AND LOWER(TRIM(COALESCE(name, business_legal_name, ''))) NOT IN ('draft', 'draft application') -- BF_SERVER_BLOCK_v844_DASHBOARD_EXCLUDE_DRAFT_NAMES`,
+         AND LOWER(TRIM(COALESCE(name, business_legal_name, ''))) NOT IN ('draft', 'draft application') -- BF_SERVER_BLOCK_v844_DASHBOARD_EXCLUDE_DRAFT_NAMES
+         ${liveStageFilter()}`,
       [silo]
     ),
     pool.query<{ count: string }>(
@@ -34,7 +37,8 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
        WHERE UPPER(silo) = UPPER($2)
          AND parent_application_id IS NULL  -- v829: count DEALS, not companion legs
          AND pipeline_state = $1
-         AND updated_at >= date_trunc('month', now())`,
+         AND updated_at >= date_trunc('month', now())
+         ${liveStageFilter()}`,
       [ApplicationStage.ACCEPTED, silo]
     ),
     pool.query<{ stage: string; count: string }>(
@@ -50,6 +54,7 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
          AND COALESCE(pipeline_state, '') NOT IN ('draft', 'Draft', '')
          AND COALESCE(NULLIF(TRIM(name), ''), NULLIF(TRIM(business_legal_name), '')) IS NOT NULL
          AND LOWER(TRIM(COALESCE(name, business_legal_name, ''))) NOT IN ('draft', 'draft application') -- BF_SERVER_BLOCK_v844_DASHBOARD_EXCLUDE_DRAFT_NAMES  -- BF_SERVER_BLOCK_v838_DASHBOARD_EXCLUDE_NAMELESS
+         ${liveStageFilter()}
        GROUP BY 1`,
       [silo]
     ),
@@ -85,6 +90,7 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
          AND COALESCE(a.pipeline_state, '') NOT IN ('draft', 'Draft', '')
          AND COALESCE(NULLIF(TRIM(a.name), ''), NULLIF(TRIM(a.business_legal_name), '')) IS NOT NULL
          AND LOWER(TRIM(COALESCE(a.name, a.business_legal_name, ''))) NOT IN ('draft', 'draft application')
+         ${liveStageFilter("a.pipeline_state")}
        GROUP BY 1`,
       [silo]
     ),

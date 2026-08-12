@@ -122,7 +122,8 @@ export async function computeDailyMetricsForDate(params: {
     lender_submissions: number;
   }>(
     `select
-       (select count(*)::int from applications where created_at >= $1 and created_at < $2) as applications_created,
+       (select count(*)::int from applications where created_at >= $1 and created_at < $2
+          and coalesce(pipeline_state, '') <> 'Fraud') as applications_created, /* BF_SERVER_FRAUD_HOLD_v48 */
        (select count(*)::int from applications where pipeline_state = 'Off to Lender' and updated_at >= $1 and updated_at < $2) as applications_submitted,
        (select count(*)::int from applications where pipeline_state = 'Accepted' and updated_at >= $1 and updated_at < $2) as applications_approved,
        (select count(*)::int from applications where pipeline_state = 'Rejected' and updated_at >= $1 and updated_at < $2) as applications_declined,

@@ -64,7 +64,10 @@ export async function upsertDailyMetricsWindow(params: {
      select
        'daily:' || $1::text,
        $1::date,
-       count(*) filter (where created_at >= $1 and created_at < $2)::int as applications_created,
+       -- BF_SERVER_FRAUD_HOLD_v48 - fraud is removed retroactively; held files
+       -- retain the history they already had.
+       count(*) filter (where created_at >= $1 and created_at < $2
+                          and coalesce(pipeline_state, '') <> 'Fraud')::int as applications_created,
        count(*) filter (where pipeline_state = 'Off to Lender' and updated_at >= $1 and updated_at < $2)::int as applications_submitted,
        count(*) filter (where pipeline_state = 'Accepted' and updated_at >= $1 and updated_at < $2)::int as applications_approved,
        count(*) filter (where pipeline_state = 'Rejected' and updated_at >= $1 and updated_at < $2)::int as applications_declined,
