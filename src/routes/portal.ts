@@ -37,6 +37,12 @@ import {
 import { config } from "../config/index.js";
 import { listLenders } from "../repositories/lenders.repo.js";
 import { eventBus } from "../events/eventBus.js";
+import {
+  resolveDocumentFilename,
+  resolveDocumentMimeType,
+  resolveDocumentSizeBytes,
+  resolveDocumentStorageKey,
+} from "../services/documents/documentVersionMeta.js";
 import { attachSignedPnwDocument } from "../signnow/pnwSigning.js";
 // BF_AZURE_OCR_TERMSHEET_v44 — term sheet upload deps
 import multer from "multer";
@@ -502,24 +508,15 @@ router.get(
     const documentsWithVersions = await Promise.all(
       documents.map(async (doc) => {
         const version = await findActiveDocumentVersion({ documentId: doc.id });
-        const metadata =
-          version && version.metadata && typeof version.metadata === "object"
-            ? (version.metadata as {
-                fileName?: string;
-                mimeType?: string;
-                size?: number;
-                storageKey?: string;
-              })
-            : {};
         return {
           documentId: doc.id,
           applicationId: doc.application_id,
           category: doc.document_type,
           title: doc.title,
-          filename: metadata.fileName ?? doc.title,
-          mimeType: metadata.mimeType ?? null,
-          size: metadata.size ?? null,
-          storageKey: metadata.storageKey ?? null,
+          filename: resolveDocumentFilename(version?.metadata, doc),
+          mimeType: resolveDocumentMimeType(version?.metadata),
+          size: resolveDocumentSizeBytes(version?.metadata, doc),
+          storageKey: resolveDocumentStorageKey(version?.metadata, doc),
           version: version?.version ?? null,
           createdAt: doc.created_at,
           // BF_SERVER_BLOCK_v199_DOC_STATUS_ON_PORTAL_DETAIL_v1

@@ -85,6 +85,8 @@ export type DocumentRecord = {
   rejection_reason: string | null;
   // BF_SERVER_BLOCK_v199_DOC_STATUS_ON_PORTAL_DETAIL_v1
   ocr_status: string | null;
+  // BF_SERVER_DOC_META_SIZE_v42: optional for compatibility with existing literals.
+  size_bytes?: number | string | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -655,7 +657,7 @@ export async function listDocumentsByApplicationId(
 ): Promise<DocumentRecord[]> {
   const runner = client ?? pool;
   const res = await runner.query<DocumentRecord>(
-    `select id, application_id, owner_user_id, title, document_type, status, filename, storage_key, uploaded_by, rejection_reason, ocr_status, created_at, updated_at
+    `select id, application_id, owner_user_id, title, document_type, status, filename, storage_key, size_bytes, uploaded_by, rejection_reason, ocr_status, created_at, updated_at
      from documents
      where application_id = $1
      order by created_at asc`,
