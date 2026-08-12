@@ -7,6 +7,10 @@ export const ApplicationStage = {
   OFFER:                     "Offer",
   ACCEPTED:                  "Accepted",
   REJECTED:                  "Rejected",
+  // BF_SERVER_FRAUD_HOLD_v48 - parking stages. Neither deletes anything; both
+  // take the file out of the numbers. See reportingScope.ts for which counts.
+  FRAUD:                     "Fraud",
+  HOLD:                      "Hold",
 } as const;
 
 export type ApplicationStage = (typeof ApplicationStage)[keyof typeof ApplicationStage];
@@ -20,7 +24,20 @@ export const PIPELINE_STATES: ApplicationStage[] = [
   ApplicationStage.OFFER,
   ApplicationStage.ACCEPTED,
   ApplicationStage.REJECTED,
+  ApplicationStage.FRAUD,
+  ApplicationStage.HOLD,
 ];
+
+// BF_SERVER_FRAUD_HOLD_v48 - stages a file can be parked in and brought back
+// from. Kept separate from the board's working stages.
+export const PARKED_STATES: ApplicationStage[] = [
+  ApplicationStage.FRAUD,
+  ApplicationStage.HOLD,
+];
+
+export function isParkedState(value: string | null | undefined): boolean {
+  return (PARKED_STATES as readonly string[]).includes(String(value ?? ""));
+}
 
 export type PipelineState = ApplicationStage;
 
@@ -59,7 +76,24 @@ export const LEGAL_TRANSITIONS: Record<PipelineState, readonly PipelineState[]> 
   ],
   [ApplicationStage.ACCEPTED]: [],
   [ApplicationStage.REJECTED]: [],
+  [ApplicationStage.FRAUD]: [],
+  [ApplicationStage.HOLD]: [],
 };
+
+// BF_SERVER_FRAUD_HOLD_v48 - every working stage can be parked, and a parked
+// file can be restored to any working stage (in practice, the one it left).
+const WORKING_STATES: ApplicationStage[] = PIPELINE_STATES.filter((stage) => !isParkedState(stage));
+
+for (const working of WORKING_STATES) {
+  (LEGAL_TRANSITIONS as Record<PipelineState, PipelineState[]>)[working] = [
+    ...(LEGAL_TRANSITIONS[working] ?? []),
+    ApplicationStage.FRAUD,
+    ApplicationStage.HOLD,
+  ];
+}
+for (const parked of PARKED_STATES) {
+  (LEGAL_TRANSITIONS as Record<PipelineState, PipelineState[]>)[parked] = [...WORKING_STATES];
+}
 
 export function canTransition(
   current: PipelineState,
@@ -86,6 +120,11 @@ export const STATUS_FROM_PIPELINE: Record<string, string> = {
   [ApplicationStage.OFFER]:                     "OFF_TO_LENDER",
   [ApplicationStage.ACCEPTED]:                  "ACCEPTED",
   [ApplicationStage.REJECTED]:                  "DECLINED",
+  // BF_SERVER_FRAUD_HOLD_v48 - applications_status_check does not allow a
+  // Fraud/Hold key, so map to the nearest permitted value. The real stage lives
+  // in pipeline_state, and parked_previous_stage carries what to restore.
+  [ApplicationStage.FRAUD]:                     "DECLINED",
+  [ApplicationStage.HOLD]:                      "IN_REVIEW",
 };
 
 export function statusFromPipeline(pipeline: ApplicationStage | string): string {
