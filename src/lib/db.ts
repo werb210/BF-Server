@@ -1,5 +1,7 @@
-import { Pool } from "pg";
+// BF_SERVER_ONE_POOL_v45
+import type { Pool } from "pg";
 import type { QueryResult, QueryResultRow } from "pg";
+import { pool as sharedPool } from "../db.prod.js";
 
 let pool: Pool | null = null;
 
@@ -32,7 +34,7 @@ function initPool(): void {
     throw new Error("DB_POOL_NOT_INITIALIZED");
   }
 
-  pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  pool = sharedPool;
 }
 
 export async function runQuery<T extends QueryResultRow = QueryResultRow>(
