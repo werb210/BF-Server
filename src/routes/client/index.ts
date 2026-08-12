@@ -3,6 +3,8 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import jwt from "jsonwebtoken";
 import { createPnwSigningSession, isPnwDocType } from "../../signnow/pnwSigning.js";
+// BF_SERVER_FRAUD_ENFORCE_v50
+import { isApplicationFraud, FRAUD_LOCK_MESSAGE } from "../../services/fraud/fraudGuard.js";
 import continuationRouter from "./continuation.js";
 import documentsRouter from "./documents.js";
 import applicationsRouter from "./applications.js";
@@ -39,6 +41,25 @@ router.use((req: any, res: any, next: any) => {
 // a valid OTP session token AND targets a specific applicationId, verify the app
 // belongs to that phone. No token / no app id / unverifiable token -> allowed (this
 // preserves SMS deep-links and the capability model). Never breaks a request on error.
+// BF_SERVER_FRAUD_ENFORCE_v50 - an application parked in Fraud is read-only to
+// the applicant: no uploads, no edits, no resubmission. Documents and history
+// are kept; reactivating the file lifts this immediately.
+router.use(async (req: any, res: any, next: any) => {
+  try {
+    const aid =
+      (typeof req.query?.applicationId === "string" && req.query.applicationId.trim()) ||
+      (typeof req.body?.applicationId === "string" && req.body.applicationId.trim()) ||
+      "";
+    if (!aid) return next();
+    if (await isApplicationFraud({ query: (t: string, p?: any[]) => dbQuery(t, p) } as any, aid)) {
+      return res.status(423).json({ error: "application_locked", message: FRAUD_LOCK_MESSAGE });
+    }
+    return next();
+  } catch {
+    return next();
+  }
+});
+
 router.use(async (req: any, res: any, next: any) => {
   try {
     const aid =
