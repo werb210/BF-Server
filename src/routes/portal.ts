@@ -43,6 +43,8 @@ import {
   resolveDocumentSizeBytes,
   resolveDocumentStorageKey,
 } from "../services/documents/documentVersionMeta.js";
+// BF_SERVER_PARK_RESTORE_v49
+import { isParkedState, PARKED_STATES } from "../modules/applications/pipelineState.js";
 import { attachSignedPnwDocument } from "../signnow/pnwSigning.js";
 // BF_AZURE_OCR_TERMSHEET_v44 — term sheet upload deps
 import multer from "multer";
@@ -306,6 +308,9 @@ router.get(
         SELECT
           a.id,
           a.pipeline_state                                      AS stage,
+          a.parked_previous_stage                               AS parked_previous_stage, -- BF_SERVER_PARK_RESTORE_v49
+          a.parked_at                                           AS parked_at,
+          a.parked_reason                                       AS parked_reason,
           a.requested_amount                                    AS requested_amount,
           a.product_category                                    AS product_category,
           a.parent_application_id                               AS parent_application_id,
@@ -1335,6 +1340,14 @@ router.patch(
       ApplicationStage.ADDITIONAL_STEPS_REQUIRED,
       ApplicationStage.ACCEPTED,
       ApplicationStage.REJECTED,
+      // BF_SERVER_PARK_RESTORE_v49 - Fraud and Hold are reachable from any
+      // stage, and any working stage is reachable back out of them.
+      ...PARKED_STATES,
+      ApplicationStage.RECEIVED,
+      ApplicationStage.IN_REVIEW,
+      ApplicationStage.DOCUMENTS_REQUIRED,
+      ApplicationStage.OFF_TO_LENDER,
+      ApplicationStage.OFFER,
     ]);
     if (!status || !isPipelineState(status) || !allowedManualStatuses.has(status)) {
       throw new AppError("validation_error", "status is invalid.", 400);
@@ -1356,6 +1369,50 @@ router.patch(
       const recordSilo = ownerRow.rows[0].silo;
       if (recordSilo && callerSilo && recordSilo !== callerSilo) {
         throw new AppError("not_found", "Application not found.", 404);
+      }
+    }
+    // BF_SERVER_PARK_RESTORE_v49 - remember the stage a file was parked from so
+    // reactivating returns it to where it was, not to the top of the board. A
+    // reason is required for Fraud: it is the record that justifies removing the
+    // deal from commission, and the basis of any later lender disclosure.
+    const parkReason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+    {
+      const current = await runQuery<{ pipeline_state: string | null; parked_previous_stage: string | null }>(
+        `SELECT pipeline_state, parked_previous_stage FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+        [applicationId],
+      );
+      const from = current.rows[0]?.pipeline_state ?? null;
+      const parkingNow = isParkedState(status) && !isParkedState(from);
+      const leavingPark = !isParkedState(status) && isParkedState(from);
+
+      if (status === ApplicationStage.FRAUD && parkReason.length < 3) {
+        throw new AppError("validation_error", "A reason is required when marking an application as fraud.", 400);
+      }
+
+      if (parkingNow) {
+        await runQuery(
+          `UPDATE applications
+              SET parked_previous_stage = $2,
+                  parked_at = now(),
+                  parked_by = $3,
+                  parked_reason = NULLIF($4, ''),
+                  fraud_confirmed_at = CASE WHEN $5 THEN now() ELSE fraud_confirmed_at END,
+                  fraud_confirmed_by = CASE WHEN $5 THEN $3 ELSE fraud_confirmed_by END,
+                  updated_at = now()
+            WHERE id::text = ($1)::text`,
+          [applicationId, from, String(req.user.userId ?? ""), parkReason, status === ApplicationStage.FRAUD],
+        );
+      } else if (leavingPark) {
+        await runQuery(
+          `UPDATE applications
+              SET parked_previous_stage = NULL,
+                  parked_at = NULL,
+                  parked_by = NULL,
+                  parked_reason = NULL,
+                  updated_at = now()
+            WHERE id::text = ($1)::text`,
+          [applicationId],
+        );
       }
     }
     const statusMeta = {
