@@ -23,12 +23,16 @@ export async function isApplicationFraud(
   const id = String(applicationId ?? "").trim();
   if (!id) return false;
   try {
+    // BF_SERVER_FRAUD_GUARD_ROWS_v53 - read the stage back and compare it, rather
+    // than inferring fraud from rowCount. A stubbed pool returning a canned
+    // result would otherwise mark every application fraudulent.
     const r = await pool.query(
-      `SELECT 1 FROM applications
-        WHERE id::text = ($1)::text AND pipeline_state = $2 LIMIT 1`,
-      [id, ApplicationStage.FRAUD],
+      `SELECT pipeline_state FROM applications
+        WHERE id::text = ($1)::text LIMIT 1`,
+      [id],
     );
-    return (r.rowCount ?? 0) > 0;
+    const stage = (r.rows ?? [])[0]?.pipeline_state;
+    return String(stage ?? "") === ApplicationStage.FRAUD;
   } catch {
     return false;
   }
@@ -42,7 +46,7 @@ export async function contactHasFraudApplication(
   if (!id) return false;
   try {
     const r = await pool.query(
-      `SELECT 1
+      `SELECT a.id AS fraud_application_id
          FROM applications a
         WHERE a.pipeline_state = $2
           AND (
@@ -55,7 +59,8 @@ export async function contactHasFraudApplication(
         LIMIT 1`,
       [id, ApplicationStage.FRAUD],
     );
-    return (r.rowCount ?? 0) > 0;
+    // BF_SERVER_FRAUD_GUARD_ROWS_v53 - as above: prove it with a value.
+    return Boolean((r.rows ?? [])[0]?.fraud_application_id);
   } catch {
     return false;
   }
