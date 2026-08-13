@@ -88,7 +88,36 @@ function normalizeE164(raw: string): string {
 // shows who is calling and staff can open the contact mid-call. Read-only.
 router.post("/resolve-caller", auth, async (req: any, res) => {
   const raw = typeof req.body?.phone === "string" ? req.body.phone : "";
-  const phone10 = raw.replace(/[^0-9]/g, "").slice(-10);
+
+  // BF_SERVER_INTERNAL_CALLER_v54 - a portal-to-portal ring arrives as
+  // "client:<user uuid>". Resolve the user directly; never treat a UUID as a
+  // phone number, which is what produced "Unknown caller".
+  const clientIdentity = /^client:(.+)$/i.exec(raw.trim())?.[1]?.trim() ?? "";
+  if (clientIdentity) {
+    try {
+      const { rows } = await pool.query(
+        `SELECT id::text AS user_id, first_name, last_name, email
+           FROM users WHERE id::text = ($1)::text LIMIT 1`,
+        [clientIdentity],
+      );
+      const staff = rows[0];
+      if (staff) {
+        const fullName = [staff.first_name, staff.last_name]
+          .map((part: unknown) => String(part ?? "").trim())
+          .filter(Boolean)
+          .join(" ");
+        const display = fullName || (staff.email && String(staff.email).trim()) || null;
+        if (display) {
+          return res.json({ ok: true, matched: true, isStaff: true, name: display, userId: staff.user_id });
+        }
+      }
+    } catch (err: any) {
+      console.error("resolve_caller_identity_failed", { message: err?.message || String(err) });
+    }
+  }
+
+  // Digits only mean a phone number when the caller is not an internal identity.
+  const phone10 = clientIdentity ? "" : raw.replace(/[^0-9]/g, "").slice(-10);
 
   const conferenceFriendly = typeof req.body?.conferenceFriendly === "string"
     ? req.body.conferenceFriendly.trim()
