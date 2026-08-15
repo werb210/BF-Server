@@ -11,7 +11,7 @@ import { smsMarketingConfigured, sendMarketingSms, renderMarketingSms } from "..
 import { SMS_ELIGIBLE_SQL } from "../services/smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1
 import { countEmailRecipients, runEmailSend, countSmsRecipients, runSmsSend } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1 BF_SERVER_SEND_QUEUE_SMS_v1
 import { enrollContacts, enrollSequence } from "../services/sequenceEngine.js"; // BF_SERVER_BLOCK_v785_SEQUENCES
-import { suggestionsConfigured, buildSuggestions, applySuggestion } from "../services/googleAdsSuggestions.js";
+import { suggestionsConfigured, buildSuggestions, applySuggestion, adsMutateAllowed, ADS_MUTATE_BLOCKED_REASON } from "../services/googleAdsSuggestions.js"; // BF_SERVER_ADS_WRITE_GATE_v56
 import { linkedInSuggestionsConfigured, buildLinkedInSuggestions, applyLinkedInSuggestion } from "../services/linkedInAdsSuggestions.js"; // BF_SERVER_LINKEDIN_SUGGESTIONS_v1
 import { previewIcp, buildHashedList, buildLinkedInAudienceCsv } from "../services/googleAdsCustomerMatch.js";
 import { ga4Configured, runGa4Report } from "../services/ga4Service.js";
@@ -286,6 +286,12 @@ router.get("/google-ads/suggestions", safeHandler(async (req: any, res: any) => 
   respondOk(res, await buildSuggestions(days));
 }));
 router.post("/google-ads/suggestions/apply", safeHandler(async (req: any, res: any) => {
+  // BF_SERVER_ADS_WRITE_GATE_v56 - a 403, not a 200 with ok:false, so a blocked
+  // attempt is visible rather than looking like an ordinary failed apply.
+  if (!adsMutateAllowed()) {
+    res.status(403).json({ ok: false, error: "ads_mutate_disabled", message: ADS_MUTATE_BLOCKED_REASON });
+    return;
+  }
   const action = req.body && req.body.action;
   if (!action || typeof action.type !== "string") { respondOk(res, { ok: false, error: "missing action" }); return; }
   respondOk(res, await applySuggestion(action));

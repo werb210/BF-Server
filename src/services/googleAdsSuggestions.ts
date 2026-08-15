@@ -137,8 +137,28 @@ async function mutate(path: string, operation: any): Promise<{ ok: boolean; erro
   return { ok: true };
 }
 
+// BF_SERVER_ADS_WRITE_GATE_v56
+// Google granted Basic Access for an "internal reporting and Offline
+// conversion" tool, with the explicit condition that it "does not allow users
+// to create or manage campaigns". Everything else in this stack - reporting
+// reads, the ads warehouse, offline conversion upload - sits inside that.
+// applySuggestion does not: it pauses campaigns, pauses keywords and changes
+// budgets. Using the token beyond the declared tool type risks the token, and
+// the token is what makes the conversion uploads possible.
+// So the mutate path is off unless GOOGLE_ADS_ALLOW_MUTATE is explicitly true.
+// Read paths are unaffected.
+export function adsMutateAllowed(): boolean {
+  return String(process.env.GOOGLE_ADS_ALLOW_MUTATE ?? "").trim().toLowerCase() === "true";
+}
+
+export const ADS_MUTATE_BLOCKED_REASON =
+  "Campaign changes are disabled. This Google Ads API token is approved for internal reporting and offline conversions only, not for creating or managing campaigns. Set GOOGLE_ADS_ALLOW_MUTATE=true only if the tool type has been widened with Google.";
+
 // Apply ONE approved action. Each is a single, scoped mutate.
 export async function applySuggestion(action: AdAction): Promise<{ ok: boolean; error?: string }> {
+  // BF_SERVER_ADS_WRITE_GATE_v56 - checked before configuration, so the refusal
+  // reads the same whether or not credentials happen to be present.
+  if (!adsMutateAllowed()) return { ok: false, error: ADS_MUTATE_BLOCKED_REASON };
   if (!suggestionsConfigured()) return { ok: false, error: "not configured" };
   try {
     if (action.type === "pause_campaign") {
