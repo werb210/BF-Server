@@ -538,6 +538,10 @@ router.get(
         name: record.name,
         productType: record.product_type,
         pipelineState: record.pipeline_state,
+        // BF_SERVER_PARKED_DETAIL_v55 - lets a tab offer Reactivate and name the
+        // stage the file will return to.
+        parkedPreviousStage: record.parked_previous_stage ?? null,
+        parkedReason: record.parked_reason ?? null,
         createdAt: record.created_at,
         updatedAt: record.updated_at,
         metadata: record.metadata ?? null,
