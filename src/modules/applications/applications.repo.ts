@@ -48,6 +48,10 @@ export type ApplicationRecord = {
   product_type: string;
   product_category: string | null;
   pipeline_state: string;
+  // BF_SERVER_PARKED_DETAIL_v55 - which stage a Fraud/Hold file came from, so a
+  // Reactivate control can send it back rather than guessing.
+  parked_previous_stage?: string | null;
+  parked_reason?: string | null;
   current_stage: string | null;
   processing_stage: string;
   lender_id: string | null;
@@ -280,6 +284,7 @@ export async function findApplicationById(
     `select id, name, pipeline_state, status, requested_amount,
             lender_id, lender_product_id, owner_user_id, source,
             product_type, metadata,
+            parked_previous_stage, parked_reason, -- BF_SERVER_PARKED_DETAIL_v55
             created_at, updated_at
      from applications
      where id = $1
