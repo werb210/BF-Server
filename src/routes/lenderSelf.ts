@@ -392,7 +392,7 @@ router.patch(
 
 // BF_SERVER_LENDER_SELF_UPLOADS_v1 / BF_SERVER_LENDER_SELF_V2 - lender uploads (product sheets / marketing -> trains Maya).
 // Mirrors the staff pipeline in portalLenders.ts: multer disk file -> lender_documents
-// row -> best-effort POST to MAYA_URL /api/knowledge/ingest. uploaded_by is NULL because
+// row -> extract text -> embedAndStore into ai_knowledge. uploaded_by is NULL because
 // lender tokens carry no users.id (FK references users).
 const uploadDir = "/tmp/lender-documents";
 if (!fs.existsSync(uploadDir)) {
@@ -429,6 +429,11 @@ router.post(
     const file = (req as unknown as { file?: Express.Multer.File }).file;
     if (!file) return res.status(400).json({ status: "error", message: "file_required" });
 
+    // BF_SERVER_LENDER_INGEST_v57 - NOTE: uploadDir is /tmp on the App Service,
+    // which is per-instance and wiped on restart or scale-out. The text is
+    // extracted and embedded below while the file is still on disk, so knowledge
+    // survives, but the file itself does not. Moving this to Azure Blob
+    // (borealstorageprod), as the staff document path does, is a separate change.
     const blobUrl = `file://${path.join(uploadDir, file.filename)}`;
     const result = await pool.query(
       `INSERT INTO lender_documents (id, lender_id, filename, mime_type, blob_url, uploaded_by, created_at)
@@ -437,21 +442,46 @@ router.post(
       [req.lenderId, file.originalname, file.mimetype || "application/octet-stream", blobUrl]
     );
 
-    const mayaUrl = process.env.MAYA_URL;
-    if (mayaUrl) {
-      await fetch(`${mayaUrl}/api/knowledge/ingest`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          lenderId: req.lenderId,
-          filename: file.originalname,
-          blobUrl,
-          mimeType: file.mimetype || "application/octet-stream",
-        }),
-      }).catch(() => undefined);
+    // BF_SERVER_LENDER_INGEST_v57 - index the document into ai_knowledge using the
+    // same extraction and embedding path as the staff upload in
+    // modules/ai/knowledge.controller.ts. The previous cross-service POST targeted
+    // an endpoint that does not exist, and its .catch hid that fact for months.
+    let indexed = false;
+    let indexError: string | null = null;
+    try {
+      const buffer = await fs.promises.readFile(path.join(uploadDir, file.filename));
+      const { extractTextFromBuffer } = await import("../ai/embeddingService.js");
+      const { embedAndStore } = await import("../modules/ai/knowledge.service.js");
+
+      const raw = await extractTextFromBuffer(buffer, file.mimetype || "");
+      const extractedText = (raw || "").slice(0, 200_000).trim();
+
+      if (extractedText.length > 0) {
+        // sourceType "lender_document" so lender-supplied material is
+        // distinguishable from staff uploads in the knowledge list.
+        await embedAndStore(
+          pool,
+          extractedText,
+          "lender_document",
+          result.rows[0].id,
+          file.originalname,
+        );
+        indexed = true;
+      } else {
+        indexError = "no_text_extracted";
+      }
+    } catch (e: any) {
+      // Never fail the upload because indexing failed - the document is already
+      // stored. But surface it, do not swallow it.
+      indexError = e?.code || e?.message || "index_failed";
+      console.error("[LENDER_UPLOAD][INGEST] failed", {
+        lenderId: req.lenderId,
+        filename: file.originalname,
+        error: indexError,
+      });
     }
 
-    return res.status(201).json({ status: "ok", data: result.rows[0] });
+    return res.status(201).json({ status: "ok", data: { ...result.rows[0], indexed, indexError } });
   })
 );
 
