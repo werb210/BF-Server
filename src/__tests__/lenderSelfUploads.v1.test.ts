@@ -9,6 +9,11 @@ describe("lender self uploads", () => {
     expect(src).toContain("BF_SERVER_LENDER_SELF_UPLOADS_v1");
     expect(src).toContain("INSERT INTO lender_documents");
     expect(src).toContain("lender_id::text = $1");
-    expect(src).toContain("/api/knowledge/ingest");
+    // BF_SERVER_LENDER_TESTS_v58 - v57 replaced the POST to the agent's
+    // /api/knowledge/ingest (which did not exist, and whose failure was
+    // swallowed) with a direct embedAndStore call. Same guarantee, real path.
+    expect(src).toContain("embedAndStore");
+    expect(src).toContain('"lender_document"');
+    expect(src).not.toContain("/api/knowledge/ingest");
   });
 });
