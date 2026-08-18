@@ -279,6 +279,23 @@ export async function sendNotification(
   const subscriptions = await listPwaSubscriptionsByUser(target.userId);
   const requestId = fetchRequestContext()?.requestId ?? "unknown";
 
+  // BF_SERVER_PUSH_v59 - bail BEFORE writing the audit row. This used to
+  // record deliveredAt for a notification that was then never sent, because
+  // the user has no browser registered. An audit trail that reports deliveries
+  // which did not happen is worse than no audit trail.
+  if (subscriptions.length === 0) {
+    // Not a fault: this is the normal state for any user who has not opted in
+    // to browser notifications, and notifyAllStaff targets every staff user on
+    // every notification. Info, not warn: the platform logger has no debug
+    // level, and adding one is more surface than a log tweak deserves.
+    logInfo("push_no_subscriptions", {
+      userId: target.userId,
+      role: target.role,
+      requestId,
+    });
+    return { sent: 0, failed: 0 };
+  }
+
   const messagePayload = buildWebPushPayload(payload, target);
   const payloadHash = hashPayload(messagePayload);
   const auditEntry = fetchAuditEntry(payload);
@@ -290,15 +307,6 @@ export async function sendNotification(
     deliveredAt: new Date(),
     payloadHash,
   });
-
-  if (subscriptions.length === 0) {
-    logWarn("push_no_subscriptions", {
-      userId: target.userId,
-      role: target.role,
-      requestId,
-    });
-    return { sent: 0, failed: 0 };
-  }
 
   let sent = 0;
   let failed = 0;
