@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { SEEDED_ADMIN_ID } from "../../db/seed.js"; // BF_SERVER_SEED_NOTIF_v60
 import { pushToUser } from "./pushToUser.js"; // BF_SERVER_BLOCK_v_NOTIF_PUSH_v1
 import { safeErr } from "../../lib/safeErr.js";
 import { sendSMS } from "../smsService.js";
@@ -44,12 +45,19 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx): Promise<{
   // "All staff" per V1 spec: Admin + Staff + Marketing roles, BF silo, active.
   const recipients = await ctx.pool
     .query<{ id: string; phone_number: string | null; email: string | null }>(
+      // BF_SERVER_SEED_NOTIF_v60 - the seeded admin is active, has role Admin
+      // and sits in the BF silo, so it matched every fan-out. It is not a
+      // person: no one signs in as it, so every notification addressed to it
+      // was unread by construction, and every push attempt logged a warning.
+      // It is kept in the users table because the browser dialer stamps
+      // outbound calls with its id (see voiceCalls.ts).
       `SELECT id::text AS id, phone_number, email
          FROM users
         WHERE active = true
           AND role IN ('Admin', 'Staff', 'Marketing')
+          AND id::text <> $2
           AND coalesce(silo, 'BF') = $1`,
-      [silo],
+      [silo, SEEDED_ADMIN_ID],
     )
     .catch(() => ({ rows: [] as Array<{ id: string; phone_number: string | null; email: string | null }> }));
 
