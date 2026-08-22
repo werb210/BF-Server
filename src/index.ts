@@ -190,6 +190,12 @@ export async function start(): Promise<void> {
     catch (err) { console.error("[startup] inbound-attachment worker failed to start:", err); }
 
     // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING — alert the sender if a 1:1 email goes unopened for 24 business hours.
+    // BF_SERVER_ABANDONED_NUDGE_v61 - 4h SMS then a 2-day call task for anyone
+    // who starts an application and does not finish.
+    const { startAbandonedApplicationWorker } = await import("./workers/abandonedApplicationWorker.js");
+    try { const w = startAbandonedApplicationWorker(pool); workerStops.push(w.stop); console.log("[startup] abandoned-application worker started"); }
+    catch (err) { console.warn("[startup] abandoned-application worker failed", err); }
+
     const { startEmailFollowupWorker } = await import("./workers/emailFollowupWorker.js");
     try { const w = startEmailFollowupWorker(pool); workerStops.push(w.stop); console.log("[startup] email follow-up worker started"); }
     catch (err) { console.error("[startup] email follow-up worker failed to start:", err); }
