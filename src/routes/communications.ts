@@ -35,19 +35,21 @@ function renderMergeTokensComm(t: string, ctx: Record<string, string>): string {
   });
 }
 async function mergeCtxForContact(opts: { contactId?: string | null; phone?: string | null }): Promise<Record<string, string>> {
-  const ctx: Record<string, string> = { first_name: "there", last_name: "", full_name: "", name: "" };
+  // BF_SERVER_MERGE_TRUTH_v69 - email was already in the o365 context but not
+  // this one, so {{email}} worked in an email and silently blanked in an SMS.
+  const ctx: Record<string, string> = { first_name: "there", last_name: "", full_name: "", name: "", email: "" };
   try {
     let row: { first_name: string | null; last_name: string | null; name: string | null } | undefined;
     if (opts.contactId) {
       const r = await pool.query<{ first_name: string | null; last_name: string | null; name: string | null }>(
-        `SELECT first_name, last_name, name FROM contacts WHERE id::text = $1 LIMIT 1`, [opts.contactId]);
+        `SELECT first_name, last_name, name, email FROM contacts WHERE id::text = $1 LIMIT 1`, [opts.contactId]);
       row = r.rows[0];
     }
     if (!row && opts.phone) {
       const last10 = String(opts.phone).replace(/[^0-9]/g, "").slice(-10);
       if (last10) {
         const r = await pool.query<{ first_name: string | null; last_name: string | null; name: string | null }>(
-          `SELECT first_name, last_name, name FROM contacts
+          `SELECT first_name, last_name, name, email FROM contacts
             WHERE right(regexp_replace(coalesce(phone,''), '[^0-9]', '', 'g'), 10) = $1
             ORDER BY updated_at DESC LIMIT 1`, [last10]);
         row = r.rows[0];
@@ -59,6 +61,8 @@ async function mergeCtxForContact(opts: { contactId?: string | null; phone?: str
       ctx.last_name = (row.last_name ?? "").trim();
       ctx.name = (row.name ?? "").trim();
       ctx.full_name = (row.name ?? "").trim() || `${fn} ${ctx.last_name}`.trim();
+      // BF_SERVER_MERGE_TRUTH_v69
+      ctx.email = ((row as { email?: string | null }).email ?? "").trim();
     }
   } catch { /* best-effort */ }
   return ctx;
