@@ -56,8 +56,13 @@ describe("the task", () => {
     expect(SRC).toContain("id::text <> '00000000-0000-0000-0000-000000000099'");
   });
 
-  it("is tagged so these are findable as a group", () => {
-    expect(SRC).toContain("'ABANDONED_APPLICATION'");
+  it("is findable as a group", () => {
+    // BF_SERVER_ABANDON_TEST_v66 - v64 moved source to 'WORKFLOW' because
+    // tasks.source only permits MANUAL|SEQUENCE|WORKFLOW|IMPORT|API. These
+    // tasks are identified by their title instead.
+    expect(SRC).toContain("'WORKFLOW', NULL)");
+    expect(SRC).toContain("Call: started an application, did not finish");
+    expect(SRC).not.toContain("'ABANDONED_APPLICATION'");
   });
 });
 
