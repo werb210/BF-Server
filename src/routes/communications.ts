@@ -1095,10 +1095,43 @@ router.get("/timeline", safeHandler(async (req: any, res: any) => {
 
 // POST /api/communications/sms - send outbound + persist to DB
 router.post("/sms", safeHandler(async (req: any, res: any) => {
-  const { contactId, to, body } = req.body ?? {};
+  const { contactId, to } = req.body ?? {};
+  let body = req.body?.body;
   let applicationId = req.body?.applicationId ?? null;
   if (!body || !to) {
     return res.status(400).json({ error: { message: "to and body are required", code: "validation_error" } });
+  }
+
+  // BF_SERVER_MERGE_ON_SEND_v67 - a snippet may carry {{contact.first_name}}.
+  // The composer holds only a contact id, so the browser cannot fill it; this
+  // is the last point before Twilio where the record is reachable.
+  try {
+    const { hasMergeFields, renderMergeFields } = await import("../services/mergeFields.js");
+    if (hasMergeFields(String(body))) {
+      const ctx: Record<string, unknown> = {};
+      if (contactId) {
+        const c = await pool.query(
+          `SELECT c.name, c.first_name, c.email, c.phone, co.name AS company_name
+             FROM contacts c
+             LEFT JOIN companies co ON co.id = c.company_id
+            WHERE c.id = $1 LIMIT 1`,
+          [contactId],
+        );
+        const row = c.rows[0];
+        if (row) {
+          ctx.contact = { name: row.name, first_name: row.first_name, email: row.email, phone: row.phone };
+          ctx.company = { name: row.company_name };
+        }
+      }
+      const u = (req as any).user ?? {};
+      ctx.user = { name: u.name ?? null, email: u.email ?? null, phone: u.phone_number ?? null };
+      body = renderMergeFields(String(body), ctx as any);
+    }
+  } catch (err) {
+    // A merge field must never be why a message fails to send. The original
+    // body goes out with its tokens visible, which is recoverable; a swallowed
+    // send is not.
+    console.warn("[sms] merge-field render failed", String(err));
   }
   // BF_SERVER_BLOCK_53_v1 -- if staff didn't pass applicationId,
   // resolve it from contactId. Otherwise the row has NULL app_id

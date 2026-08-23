@@ -53,6 +53,12 @@ export function renderMergeFields(text: string, ctx: MergeContext): string {
 }
 
 // Which fields a given text uses - lets the composer warn before sending.
+// BF_SERVER_MERGE_ON_SEND_v67
+// Cheap test before paying for a lookup. Most messages contain no tokens.
+export function hasMergeFields(text: string): boolean {
+  return /\{\{\s*[a-z_]+\.[a-z_]+\s*\}\}/i.test(String(text ?? ""));
+}
+
 export function usedMergeFields(text: string): string[] {
   const out = new Set<string>();
   for (const m of String(text ?? "").matchAll(TOKEN)) {
