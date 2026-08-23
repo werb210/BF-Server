@@ -164,7 +164,29 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   // fields never reach the client raw. Recipient name is resolved from the
   // contacts table by the primary recipient email (silo-scoped). first_name
   // falls back to "there" so we never emit a bare leading comma.
-  const mergeCtx: Record<string, string> = { first_name: "there", last_name: "", full_name: "", name: "", email: String(to[0] ?? "") };
+  const mergeCtx: Record<string, string> = { first_name: "there", last_name: "", full_name: "", name: "", email: String(to[0] ?? ""), meeting_link: "" };
+
+  // BF_SERVER_MEETING_LINK_v70 - the sender's own booking link, as a button.
+  // Same markup the composer's "Insert booking button" produces, so a template
+  // and a hand-inserted button look identical in the recipient's inbox.
+  // Navy is the brand ink (#0B1F3A); the composer still hardcodes the old
+  // indigo and should be brought into line separately.
+  try {
+    const bk = await pool.query<{ booking_url: string | null }>(
+      `SELECT booking_url FROM user_settings WHERE user_id = $1 LIMIT 1`,
+      [(req as any).user?.id ?? null],
+    );
+    const url = (bk.rows[0]?.booking_url ?? "").trim();
+    if (url) {
+      mergeCtx.meeting_link =
+        `<a href="${url}" style="display:inline-block;margin:4px 0;padding:10px 18px;`
+        + `background:#0B1F3A;color:#ffffff;text-decoration:none;border-radius:6px;`
+        + `font-weight:600;font-family:Segoe UI,Arial,sans-serif">Book a meeting</a>`;
+    }
+  } catch {
+    // No booking link set, or the lookup failed. The token resolves to empty
+    // rather than leaving braces in an email that is about to reach a client.
+  }
   try {
     const mergeSilo = resolveSiloFromRequest(req);
     const cr = await pool.query<{ first_name: string | null; last_name: string | null; name: string | null; email: string | null }>(

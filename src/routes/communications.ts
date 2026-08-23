@@ -34,10 +34,23 @@ function renderMergeTokensComm(t: string, ctx: Record<string, string>): string {
     return v != null ? String(v) : "";
   });
 }
-async function mergeCtxForContact(opts: { contactId?: string | null; phone?: string | null }): Promise<Record<string, string>> {
+async function mergeCtxForContact(opts: { contactId?: string | null; phone?: string | null; userId?: string | null }): Promise<Record<string, string>> {
   // BF_SERVER_MERGE_TRUTH_v69 - email was already in the o365 context but not
   // this one, so {{email}} worked in an email and silently blanked in an SMS.
-  const ctx: Record<string, string> = { first_name: "there", last_name: "", full_name: "", name: "", email: "" };
+  const ctx: Record<string, string> = { first_name: "there", last_name: "", full_name: "", name: "", email: "", meeting_link: "" };
+  // BF_SERVER_MEETING_LINK_v70 - the bare URL here, not a button: an anchor
+  // tag in an SMS shows as raw markup. opts.userId is passed by callers that
+  // have it; without it the token resolves to empty rather than leaving braces.
+  if (opts.userId) {
+    try {
+      const bk = await pool.query<{ booking_url: string | null }>(
+        `SELECT booking_url FROM user_settings WHERE user_id = $1 LIMIT 1`,
+        [opts.userId],
+      );
+      ctx.meeting_link = (bk.rows[0]?.booking_url ?? "").trim();
+    } catch { /* leave empty */ }
+  }
+
   try {
     let row: { first_name: string | null; last_name: string | null; name: string | null } | undefined;
     if (opts.contactId) {
@@ -1191,7 +1204,7 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
   let message: any;
   let mergedBody: string = String(body);
   try {
-    const __smsCtx = await mergeCtxForContact({ contactId, phone: to });
+    const __smsCtx = await mergeCtxForContact({ contactId, phone: to, userId: (req as any).user?.id ?? null });
     mergedBody = renderMergeTokensComm(String(body), __smsCtx);
     message = await client.messages.create({ body: String(mergedBody), from, to: String(to) });
   } catch (err: any) {
@@ -1815,7 +1828,7 @@ router.post("/broadcast", safeHandler(async (req: any, res: any) => {
         `SELECT id FROM applications WHERE contact_id = $1 ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST LIMIT 1`, [c.id],
       ).catch(() => ({ rows: [] as any[] }));
       const applicationId = appRow.rows[0]?.id ?? null;
-      const ctx = await mergeCtxForContact({ contactId: c.id, phone: c.phone });
+      const ctx = await mergeCtxForContact({ contactId: c.id, phone: c.phone, userId: (req as any).user?.id ?? null });
       const mergedBody = renderMergeTokensComm(String(body), ctx);
 
       if (ch === "sms") {
