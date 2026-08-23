@@ -69,7 +69,9 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
       }
 
       // ---- 2-day call task ---------------------------------------------
-      // tasks.type and tasks.priority are both CHECK-constrained to UPPER
+      // BF_SERVER_ABANDON_FIX_v64 - source must be one of the five allowed
+      // values; these tasks are WORKFLOW. They stay findable by title.
+      // tasks.type, tasks.priority AND tasks.source are all CHECK-constrained to UPPER
       // case: type IN ('CALL','EMAIL','SMS','TODO'),
       // priority IN ('NONE','LOW','MEDIUM','HIGH'). See 2026_07_04_tasks_v1.sql.
       const callDue = await pool.query<{ id: string; contact_id: string; silo: string | null; phone: string | null }>(
@@ -97,7 +99,7 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
                                   AND id::text <> '00000000-0000-0000-0000-000000000099'
                                 ORDER BY (role = 'Admin') DESC, created_at ASC
                                 LIMIT 1)),
-                     $4, 'ABANDONED_APPLICATION', NULL)`,
+                     $4, 'WORKFLOW', NULL)`,
             [
               row.silo || "BF",
               "Call: started an application, did not finish",
