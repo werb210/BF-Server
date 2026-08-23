@@ -23,6 +23,8 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   const silo = getSilo(res);
   const userId = req.user?.id ?? req.user?.userId ?? null;
   const channel = req.query.channel ? String(req.query.channel) : null;
+  // BF_SERVER_SNIPPETS_v65 - ?snippets=1 for the composer's inserter,
+  // ?snippets=0 for the template manager, absent for everything.
   const snippetOnly = req.query.snippets == null ? null : String(req.query.snippets) === "1";
   const { rows } = await pool.query(
     `SELECT id, channel, name, subject, body_html, body_text, shared, owner_user_id,
@@ -50,8 +52,10 @@ router.post("/", safeHandler(async (req: any, res: any) => {
   const bodyText = req.body?.body_text != null ? String(req.body.body_text).slice(0, 50000) : null;
   const shared = req.body?.shared === false ? false : true;
   const isSnippet = req.body?.is_snippet === true;
+  // A shortcut is typed, so it is normalised: lower case, no spaces, no
+  // leading hash. "#PNW " and "pnw" are the same shortcut.
   const rawShortcut = req.body?.shortcut != null ? String(req.body.shortcut) : "";
-  const shortcut = rawShortcut.trim().replace(/^\/+/, "").toLowerCase().slice(0, 40) || null;
+  const shortcut = rawShortcut.trim().replace(/^#+/, "").toLowerCase().slice(0, 40) || null;
   const { rows } = await pool.query(
     `INSERT INTO message_templates (channel, name, subject, body_html, body_text, shared, owner_user_id, silo, created_by, is_snippet, shortcut)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$7,$9,$10)
