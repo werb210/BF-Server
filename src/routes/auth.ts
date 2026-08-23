@@ -478,25 +478,40 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
 
     // BF_SERVER_v68_OTP_HAS_SUBMISSION - best-effort phone -> submitted
     // application lookup. Errors here MUST NOT block a successful verify;
-    // we degrade silently to hasSubmittedApplication=false on any failure.
+    // we degrade to hasSubmittedApplication=false on any failure.
+    // BF_SERVER_OTP_LOOKUP_v71 - but no longer SILENTLY. A thrown query and a
+    // genuine "no application" produced identical behaviour, so a returning
+    // client being bounced to Step 1 left no trace at all.
     let hasSubmittedApplication = false;
     let submittedApplicationId: string | null = null;
     try {
       const r = await dbQuery_v68<{ id: string }>(
+        // BF_SERVER_OTP_LOOKUP_v71 - was an INNER JOIN through application_contacts
+        // alone. A single wrong row in that join table sent a returning client
+        // back to Step 1, silently. applications.contact_id is written on submit
+        // and is the more reliable of the two, so both are consulted and either
+        // may match.
         `SELECT a.id
            FROM applications a
-           INNER JOIN application_contacts ac ON ac.application_id = a.id
-           INNER JOIN contacts c              ON c.id             = ac.contact_id
+           LEFT JOIN application_contacts ac
+             ON ac.application_id = a.id AND ac.role = 'applicant'
+           LEFT JOIN contacts c   ON c.id = ac.contact_id
+           LEFT JOIN contacts ac2 ON ac2.id = a.contact_id
           WHERE a.submitted_at IS NOT NULL
-            AND ac.role = 'applicant'
             -- BF_SERVER_BLOCK_v_OTP_PHONE_NORMALIZED_MATCH_v1 - login sends E.164
             -- (+1NXXNXXXXXX) but contacts.phone is stored as typed ("(780) 264-8467"),
             -- so an exact c.phone = $1 never matched and returning clients were
             -- routed back to Step 1. Match the last 10 digits of each (country-code
             -- and punctuation agnostic), mirroring the digit-normalized contact dedup.
-            AND right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10)
-              = right(regexp_replace($1, '[^0-9]', '', 'g'), 10)
             AND length(regexp_replace($1, '[^0-9]', '', 'g')) >= 10
+            AND (
+              -- either the contact reached through the join table...
+              right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10)
+                = right(regexp_replace($1, '[^0-9]', '', 'g'), 10)
+              -- ...or the one recorded on the application itself.
+              OR right(regexp_replace(coalesce(ac2.phone, ''), '[^0-9]', '', 'g'), 10)
+                = right(regexp_replace($1, '[^0-9]', '', 'g'), 10)
+            )
           ORDER BY a.submitted_at DESC
           LIMIT 1`,
         [phone]
@@ -506,8 +521,8 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
         submittedApplicationId = r.rows[0].id;
       }
     } catch (err) {
-      // Don't fail OTP verify on a lookup hiccup. Log and continue.
-      console.warn("[v68 OTP] submission lookup failed", { err: String(err) });
+      // BF_SERVER_OTP_LOOKUP_v71 - visible, so this cannot rot unnoticed again.
+      console.warn("[otp] submitted-application lookup failed", String(err));
     }
 
     return res.status(200).json({
