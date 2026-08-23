@@ -129,6 +129,21 @@ router.post("/:id/confirm-acceptance", requireAuth, requireAuthorization({ roles
     console.warn("[offer] signnow fire failed", e);
   }
 
+  // BF_SERVER_BI_CARRIER_v74 - the insurance side goes to the carrier here.
+  // Fire and forget: a carrier submission must never be the reason an
+  // acceptance fails to record. bi-server is idempotent on resubmission
+  // (submitApplicationToPGI returns alreadySubmitted), so a retry is safe.
+  if (row.application_id) {
+    void (async () => {
+      try {
+        const { submitBiToCarrier } = await import("../services/biCarrierSubmit.js");
+        await submitBiToCarrier(String(row.application_id));
+      } catch (err) {
+        console.warn("[offer] BI carrier submit failed", String(err));
+      }
+    })();
+  }
+
   return res.json({ ok: true, offer: row });
 });
 
