@@ -89,10 +89,17 @@ async function findExistingContactId(params: {
   phone: string;
 }): Promise<string | null> {
   const result = await dbQuery<{ id: string }>(
+    // BF_SERVER_CONTACT_DEDUPE_v73 - was `phone = $2`, an exact string compare.
+    // contacts.phone is stored as the client typed it, so an E.164 login number
+    // never matched a hyphenated stored one and the same person became two
+    // records. Last ten digits, matching every other dedupe in the codebase.
     `select id
      from contacts
-     where lower(email) = lower($1)
-        or phone = $2
+     where ($1::text is not null and $1 <> '' and lower(email) = lower($1))
+        or ($2::text is not null
+            and length(regexp_replace($2, '[^0-9]', '', 'g')) >= 10
+            and right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10)
+              = right(regexp_replace($2, '[^0-9]', '', 'g'), 10))
      order by created_at asc
      limit 1`,
     [params.email, params.phone]
