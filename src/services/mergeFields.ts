@@ -36,7 +36,28 @@ export const MERGE_FIELDS: Record<string, (c: MergeContext) => string | null> = 
     c.application?.requested_amount != null ? String(c.application.requested_amount) : null,
 };
 
-export const MERGE_FIELD_NAMES = Object.keys(MERGE_FIELDS);
+// BF_SERVER_MERGE_TRUTH_v69
+// The tokens the LIVE renderers understand, taken from mergeCtxForContact in
+// communications.ts and the mergeCtx in o365.ts. Flat, not dotted.
+//
+// Do not add a name here without adding it to those context builders first.
+// A picker that offers a token nothing resolves is worse than no picker: the
+// text goes out to a client with the braces still in it.
+export const LIVE_MERGE_FIELDS = [
+  "first_name",
+  "last_name",
+  "full_name",
+  "name",
+  "email",
+] as const;
+
+// What the Snippets picker offers. Deliberately the live set, not the dotted
+// catalogue below, which no send path currently reads.
+export const MERGE_FIELD_NAMES: string[] = [...LIVE_MERGE_FIELDS];
+
+// Retained for callers that use the dotted form directly. Nothing in the send
+// path does today.
+export const DOTTED_MERGE_FIELD_NAMES = Object.keys(MERGE_FIELDS);
 
 const TOKEN = /\{\{\s*([a-z_]+\.[a-z_]+)\s*\}\}/gi;
 
