@@ -30,7 +30,39 @@ export async function submitReferral(
   try {
     await client.query("begin");
     const companyId = randomUUID();
-    const contactId = randomUUID();
+    // BF_SERVER_CONTACT_DEDUPE_v73 - was always a fresh UUID, so referring
+    // somebody already in the CRM created a second contact and split their
+    // history. Look first; only mint an id if this is genuinely new.
+    let contactId = randomUUID();
+    let contactIsNew = true;
+    const refEmail = (payload.email ?? "").trim();
+    const refPhone = (payload.phone ?? "").trim();
+    if (refEmail || refPhone) {
+      try {
+        const found = await client.query<{ id: string }>(
+          `select id
+             from contacts
+            where ($1::text is not null and $1 <> '' and lower(email) = lower($1))
+               or ($2::text is not null
+                   and length(regexp_replace($2, '[^0-9]', '', 'g')) >= 10
+                   and right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10)
+                     = right(regexp_replace($2, '[^0-9]', '', 'g'), 10))
+            order by created_at asc
+            limit 1`,
+          [refEmail || null, refPhone || null],
+        );
+        if (found.rows[0]?.id) {
+          // randomUUID() is typed as a UUID template literal; a value read back
+          // from the database is a plain string and needs the cast.
+          contactId = found.rows[0].id as `${string}-${string}-${string}-${string}-${string}`;
+          contactIsNew = false;
+        }
+      } catch (err) {
+        // A dedupe failure must not lose a referral. Fall through and create -
+        // a duplicate is recoverable, a dropped referral is not.
+        console.warn("[referrals] contact dedupe failed, creating new", String(err));
+      }
+    }
     const refCode = mintReferralCode();
 
     await createCompany({
@@ -45,7 +77,18 @@ export async function submitReferral(
       client,
     });
 
-    await createContact({
+    // BF_SERVER_CONTACT_DEDUPE_v73 - an existing contact is tagged rather than
+    // duplicated. The referrer link still lands on the right record because
+    // contactId above is the existing one.
+    if (!contactIsNew) {
+      await client.query(
+        `update contacts
+            set tags = (select array(select distinct unnest(coalesce(tags,'{}') || array['referral'])))
+          where id = $1`,
+        [contactId],
+      );
+    }
+    if (contactIsNew) await createContact({
       id: contactId,
       name: payload.contactName,
       email: payload.email,
