@@ -35,8 +35,15 @@ describe("merge fields resolve", () => {
     expect(renderMergeFields("from {{company.name}}", ctx)).toBe("from Boreal Financial");
   });
 
-  it("leaves unresolved fields visible", () => {
+  it("derives a first name from a full name", () => {
+    expect(renderMergeFields("{{contact.first_name}}", ctx)).toBe("Todd");
+  });
+
+  it("leaves an UNKNOWN field visible rather than blanking it", () => {
     expect(renderMergeFields("Hi {{contact.nickname}}", ctx)).toBe("Hi {{contact.nickname}}");
+  });
+
+  it("leaves a known field with no value visible too", () => {
     expect(renderMergeFields("{{user.phone}}", ctx)).toBe("{{user.phone}}");
   });
 
@@ -46,16 +53,20 @@ describe("merge fields resolve", () => {
 });
 
 describe("the composer can warn before sending", () => {
-  it("lists fields and reports unresolved values", () => {
+  it("lists the fields a snippet uses", () => {
     expect(usedMergeFields("{{contact.name}} at {{company.name}}"))
       .toEqual(["contact.name", "company.name"]);
-    expect(unresolvedMergeFields("{{contact.name}} {{company.name}}", { contact: { name: "Todd" } }))
+  });
+
+  it("reports which ones will not resolve", () => {
+    const ctx = { contact: { name: "Todd" } };
+    expect(unresolvedMergeFields("{{contact.name}} {{company.name}}", ctx))
       .toEqual(["company.name"]);
   });
 });
 
 describe("shortcuts are normalised", () => {
-  it("strips the slash and lower-cases", () => {
-    expect(ROUTE).toContain('replace(/^\\/+/, "").toLowerCase()');
+  it("strips the hash and lower-cases", () => {
+    expect(ROUTE).toContain('replace(/^#+/, "").toLowerCase()');
   });
 });

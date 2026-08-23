@@ -15,8 +15,8 @@ ALTER TABLE message_templates
 -- Same table because they share every other column and the same permissions.
 ALTER TABLE message_templates
   ADD COLUMN IF NOT EXISTS is_snippet boolean NOT NULL DEFAULT false,
-  -- Typing "/thanks" beats scrolling a list. Unique per silo per owner so two
-  -- people can each have their own /thanks.
+  -- Typing "#pnw" beats scrolling a list. Unique per silo per owner so two
+  -- people can each have their own #pnw.
   ADD COLUMN IF NOT EXISTS shortcut text;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_templates_shortcut

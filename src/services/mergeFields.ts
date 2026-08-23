@@ -44,12 +44,15 @@ export function renderMergeFields(text: string, ctx: MergeContext): string {
   if (!text) return text;
   return text.replace(TOKEN, (whole, name: string) => {
     const resolver = MERGE_FIELDS[String(name).toLowerCase()];
-    if (!resolver) return whole;
+    if (!resolver) return whole; // unknown field: leave it visible
     const value = resolver(ctx);
+    // A known field with no value also stays as written, so the sender sees
+    // that the contact has no company rather than sending "Hi from ".
     return value != null && String(value).trim() !== "" ? String(value) : whole;
   });
 }
 
+// Which fields a given text uses - lets the composer warn before sending.
 export function usedMergeFields(text: string): string[] {
   const out = new Set<string>();
   for (const m of String(text ?? "").matchAll(TOKEN)) {
