@@ -44,6 +44,76 @@ export interface CrmLeadRecord {
 }
 
 export async function createCrmLead(input: CreateLeadInput): Promise<{ id: string }> {
+  // BF_SERVER_LEAD_DEDUPE_v72 - was an unconditional INSERT. If this person is
+  // already a lead, update that row rather than making a second one.
+  //
+  // Matching is by email OR phone, which is what upsertCrmLead does and what
+  // the application mirror does. A person who fills the credit-readiness form
+  // and later the contact form is one lead, not two.
+  //
+  // Deliberately NOT delegating wholesale to upsertCrmLead: that function takes
+  // a narrower input shape and would silently drop the dozen financial fields
+  // this one carries. The lookup is borrowed; the write stays here.
+  const dedupeEmail = (input.email ?? "").trim().toLowerCase() || null;
+  const dedupePhone = (input.phone ?? "").replace(/\D/g, "") || null;
+
+  if (dedupeEmail || dedupePhone) {
+    try {
+      const found = await dbQuery<{ id: string }>(
+        `select id
+           from crm_leads
+          where ($1::text is not null and lower(email) = $1)
+             or ($2::text is not null
+                 and length($2) >= 10
+                 and right(regexp_replace(coalesce(phone, ''), '\\D', '', 'g'), 10) = right($2, 10))
+          order by created_at asc
+          limit 1`,
+        [dedupeEmail, dedupePhone],
+      );
+      const existingId = found.rows?.[0]?.id;
+      if (existingId) {
+        // COALESCE(NULLIF(...)) so a later submission that omits a field cannot
+        // erase what an earlier one supplied. Tags accumulate rather than
+        // replace, which is how the readiness and contact tags coexist.
+        await dbQuery(
+          `update crm_leads set
+             company_name      = coalesce(nullif($2,''), company_name),
+             full_name         = coalesce(nullif($3,''), full_name),
+             phone             = coalesce(nullif($4,''), phone),
+             email             = coalesce(nullif($5,''), email),
+             industry          = coalesce(nullif($6,''), industry),
+             product_interest  = coalesce(nullif($7,''), product_interest),
+             notes             = coalesce(nullif($8,''), notes),
+             tags              = (
+               select to_jsonb(array(
+                 select distinct e from unnest(
+                   coalesce(array(select jsonb_array_elements_text(coalesce(tags,'[]'::jsonb))), '{}')
+                   || coalesce($9::text[], '{}')
+                 ) e
+               ))
+             )
+           where id = $1`,
+          [
+            existingId,
+            input.companyName ?? "",
+            input.fullName ?? "",
+            input.phone ?? "",
+            input.email ?? "",
+            input.industry ?? "",
+            input.productInterest ?? "",
+            input.notes ?? "",
+            input.tags ?? [],
+          ],
+        );
+        return { id: existingId };
+      }
+    } catch (err) {
+      // A dedupe failure must not lose the lead. Fall through and insert - a
+      // duplicate is recoverable, a dropped enquiry is not.
+      console.warn("[crm] lead dedupe lookup failed, inserting new", String(err));
+    }
+  }
+
   const id = randomUUID();
   await dbQuery(
     `insert into crm_leads (
