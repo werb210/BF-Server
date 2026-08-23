@@ -28,8 +28,12 @@ describe("BF_SERVER_v68_OTP_HAS_SUBMISSION", () => {
 
   it("submission lookup joins applications + application_contacts + contacts", () => {
     expect(src).toMatch(/FROM applications a/);
-    expect(src).toMatch(/INNER JOIN application_contacts ac/);
-    expect(src).toMatch(/INNER JOIN contacts c/);
+    // BF_SERVER_OTP_LOOKUP_v71 - the INNER JOINs became LEFT JOINs plus a
+    // second path through applications.contact_id, because one bad row in
+    // application_contacts was enough to bounce a returning client to Step 1.
+    expect(src).toMatch(/LEFT JOIN application_contacts ac/);
+    expect(src).toMatch(/LEFT JOIN contacts c /);
+    expect(src).toMatch(/LEFT JOIN contacts ac2 ON ac2\.id = a\.contact_id/);
     expect(src).toMatch(/a\.submitted_at IS NOT NULL/);
     expect(src).toMatch(/ac\.role = 'applicant'/);
     // BF_SERVER_BLOCK_v_OTP_PHONE_NORMALIZED_MATCH_v1 — the lookup now matches the
