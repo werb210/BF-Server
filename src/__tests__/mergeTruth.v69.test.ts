@@ -16,7 +16,8 @@ describe("the catalogue matches what actually renders", () => {
   });
 
   it("offers exactly the live set", () => {
-    expect(MERGE_FIELD_NAMES).toEqual(["first_name", "last_name", "full_name", "name", "email"]);
+    // BF_SERVER_MEETING_LINK_v70 - meeting_link became real, so it joins the set.
+    expect(MERGE_FIELD_NAMES).toEqual(["first_name", "last_name", "full_name", "name", "email", "meeting_link"]);
   });
 
   it("every offered token is built by the SMS context", () => {

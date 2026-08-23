@@ -49,6 +49,9 @@ export const LIVE_MERGE_FIELDS = [
   "full_name",
   "name",
   "email",
+  // BF_SERVER_MEETING_LINK_v70 - the sender's booking link. A button in email,
+  // the bare URL in SMS and messenger.
+  "meeting_link",
 ] as const;
 
 // What the Snippets picker offers. Deliberately the live set, not the dotted
