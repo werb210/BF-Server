@@ -69,6 +69,9 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
       }
 
       // ---- 2-day call task ---------------------------------------------
+      // tasks.type and tasks.priority are both CHECK-constrained to UPPER
+      // case: type IN ('CALL','EMAIL','SMS','TODO'),
+      // priority IN ('NONE','LOW','MEDIUM','HIGH'). See 2026_07_04_tasks_v1.sql.
       const callDue = await pool.query<{ id: string; contact_id: string; silo: string | null; phone: string | null }>(
         `SELECT a.id, a.contact_id, a.silo, c.phone
            FROM applications a
@@ -87,7 +90,7 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
         try {
           await pool.query(
             `INSERT INTO tasks (silo, title, body, type, priority, due_at, assignee_user_id, contact_id, source, source_ref_id)
-             VALUES ($1, $2, $3, 'CALL', 'high', now(),
+             VALUES ($1, $2, $3, 'CALL', 'HIGH', now(),
                      COALESCE((SELECT owner_id FROM contacts WHERE id = $4),
                               (SELECT id FROM users
                                 WHERE active = true
