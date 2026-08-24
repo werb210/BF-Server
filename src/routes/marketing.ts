@@ -94,18 +94,16 @@ router.get("/funnel", safeHandler(async (req: any, res: any) => {
          FROM applications
         WHERE silo = $1
           AND created_at >= now() - ($2 || ' days')::interval
-          -- BF_SERVER_FUNNEL_EXCLUDE_BLANKS_v1 - do not count empty-shell drafts:
-          -- a "Draft application" that never progressed past step 1 and was never
-          -- submitted is a wizard load that never became a real application, and
-          -- was inflating "started" (12 shown vs ~5 real form_starts in GA4).
-          AND NOT (
-            name = 'Draft application'
-            AND submitted_at IS NULL
-            AND COALESCE(
-                  NULLIF(metadata->>'currentStep','')::int,
-                  NULLIF(metadata->>'current_step','')::int,
-                  current_step, 1) <= 1
-          )
+          -- BF_SERVER_FUNNEL_COUNT_STEP1_v79
+          -- v1 of this filter excluded every "Draft application" still sitting on
+          -- step 1, to make "started" agree with GA4's form_start count. But a blank
+          -- draft is not a phantom: /api/public/application/start only creates one
+          -- AFTER the applicant has passed phone OTP. Each row is a verified human
+          -- who reached step 1 and stopped. Excluding them made the chart tidier and
+          -- hid the single most callable cohort in the business - the funnel showed
+          -- 10 starts against 15 phone-verified contacts tagged application_started.
+          -- They are counted. The step 1 -> step 2 drop is where they now show up,
+          -- which is exactly where the problem actually is.
      )
      SELECT
        count(*)::int AS started,
@@ -147,6 +145,61 @@ router.get("/funnel", safeHandler(async (req: any, res: any) => {
 // internal funnel to apply-start attribution (utm_source, else referrer host,
 // else 'direct'): how many applications each source STARTED vs SUBMITTED, and the
 // conversion rate. Silo-aware.
+// BF_SERVER_ABANDONED_LIST_v79
+// Every applicant who passed phone OTP, started, and never submitted - with how far
+// they got and how to reach them. This is a work queue, not a report: the whole point
+// is that these people are contactable and nobody has contacted them.
+// ?days=90&maxStep=6
+router.get("/abandoned", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const days = Math.min(Math.max(Number(req.query.days) || 90, 1), 365);
+  const { rows } = await pool.query(
+    `SELECT a.id,
+            COALESCE(
+              NULLIF(a.metadata->>'currentStep','')::int,
+              NULLIF(a.metadata->>'current_step','')::int,
+              a.current_step, 1) AS step,
+            a.created_at,
+            a.updated_at,
+            a.requested_amount,
+            a.product_category,
+            a.contact_id,
+            c.name  AS contact_name,
+            c.phone AS contact_phone,
+            c.email AS contact_email,
+            NULLIF(a.metadata->'attribution'->>'gclid','')      AS gclid,
+            NULLIF(a.metadata->'attribution'->>'utm_source','') AS utm_source,
+            NULLIF(a.metadata->'attribution'->>'utm_campaign','') AS utm_campaign,
+            a.abandon_sms_sent_at
+       FROM applications a
+       LEFT JOIN contacts c ON c.id = a.contact_id
+      WHERE a.silo = $1
+        AND a.submitted_at IS NULL
+        AND a.created_at >= now() - ($2 || ' days')::interval
+      ORDER BY a.updated_at DESC
+      LIMIT 200`,
+    [silo, String(days)],
+  );
+  const items = rows.map((r: any) => ({
+    applicationId: r.id,
+    step: Number(r.step) || 1,
+    contactId: r.contact_id,
+    name: r.contact_name,
+    phone: r.contact_phone,
+    email: r.contact_email,
+    amount: r.requested_amount,
+    product: r.product_category,
+    source: r.gclid ? "google / cpc" : (r.utm_source || "direct"),
+    campaign: r.utm_campaign,
+    startedAt: r.created_at,
+    lastActivityAt: r.updated_at,
+    nudgedAt: r.abandon_sms_sent_at,
+  }));
+  const byStep: Record<string, number> = {};
+  for (const i of items) byStep[String(i.step)] = (byStep[String(i.step)] || 0) + 1;
+  respondOk(res, { days, count: items.length, byStep, items });
+}));
+
 router.get("/sources", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const days = Math.min(Math.max(Number(req.query.days) || 90, 1), 365);
