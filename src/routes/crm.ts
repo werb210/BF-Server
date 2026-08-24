@@ -1524,7 +1524,38 @@ router.get("/contacts/:id/journey", requireAuth, safeHandler(async (req: any, re
        FROM visitor_sessions WHERE contact_id = $1 ORDER BY first_seen_at ASC`,
     [contactId],
   );
-  if (!sess.rows.length) return respondOk(res, { sessions: [], events: [] });
+  // BF_SERVER_JOURNEY_APP_STEPS_v77
+  // Beacon data only exists for visitors whose session was stitched. The wizard step is
+  // ALSO recorded on the application itself, at metadata->>'currentStep', and that is
+  // populated for every applicant regardless of tracking. Returning it means a contact
+  // card can always answer "how far did they get", even with zero journey events - which
+  // is the case for everyone who landed directly on client.boreal.financial.
+  //
+  // The current_step COLUMN is dead data, stuck at 1. metadata->>'currentStep' is live.
+  const apps = await pool.query(
+    `SELECT id,
+            NULLIF(metadata->>'currentStep','')::int AS current_step,
+            submitted_at,
+            created_at,
+            updated_at,
+            pipeline_state
+       FROM applications
+      WHERE contact_id = $1
+      ORDER BY created_at DESC
+      LIMIT 20`,
+    [contactId],
+  );
+  const applications = apps.rows.map((r: any) => ({
+    id: r.id,
+    currentStep: r.current_step ?? null,
+    submitted: Boolean(r.submitted_at),
+    submittedAt: r.submitted_at ?? null,
+    createdAt: r.created_at,
+    lastActivityAt: r.updated_at,
+    pipelineState: r.pipeline_state ?? null,
+  }));
+
+  if (!sess.rows.length) return respondOk(res, { sessions: [], events: [], applications });
   const ids = sess.rows.map((r: any) => r.session_id);
   const ev = await pool.query(
     `SELECT session_id, event_type, path, title, step, dwell_ms, occurred_at
@@ -1539,6 +1570,7 @@ router.get("/contacts/:id/journey", requireAuth, safeHandler(async (req: any, re
   respondOk(res, {
     sessions: sess.rows,
     events: ev.rows,
+    applications, // BF_SERVER_JOURNEY_APP_STEPS_v77
     summary: {
       pageviewCount: pageviews.length,
       totalDwellMs: totalDwell,
