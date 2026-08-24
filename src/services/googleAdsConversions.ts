@@ -107,6 +107,94 @@ async function uploadOne(p: PendingConversion): Promise<boolean> {
   return true;
 }
 
+// BF_SERVER_ADS_SUBMIT_CONVERSION_v1
+// Submitted applications provide the volume signal needed for campaign optimization,
+// while funded conversions remain the separate value signal.
+export function submitConversionsConfigured(): boolean {
+  return Boolean(
+    process.env.GOOGLE_ADS_DEVELOPER_TOKEN &&
+    process.env.GOOGLE_ADS_CLIENT_ID &&
+    process.env.GOOGLE_ADS_CLIENT_SECRET &&
+    process.env.GOOGLE_ADS_REFRESH_TOKEN &&
+    process.env.GOOGLE_ADS_CUSTOMER_ID &&
+    process.env.GOOGLE_ADS_SUBMIT_CONVERSION_ACTION_ID,
+  );
+}
+
+export async function findPendingSubmitConversions(limit = 200): Promise<PendingConversion[]> {
+  const { rows } = await pool.query<{ id: string; gclid: string; value: string | null; submitted_at: string }>(
+    `SELECT id,
+            metadata->'attribution'->>'gclid' AS gclid,
+            requested_amount AS value,
+            COALESCE(submitted_at, created_at, now())::text AS submitted_at
+       FROM applications
+      WHERE silo = 'BF'
+        AND submitted_at IS NOT NULL
+        AND COALESCE(metadata->'attribution'->>'gclid', '') <> ''
+        AND (metadata->'ad_submit_conversion_uploaded_at') IS NULL
+      ORDER BY submitted_at DESC
+      LIMIT $1`,
+    [limit],
+  );
+  return rows.map((r) => ({ applicationId: r.id, gclid: String(r.gclid), value: Number(r.value ?? 0), fundedAt: r.submitted_at }));
+}
+
+async function uploadOneSubmit(p: PendingConversion): Promise<boolean> {
+  const token = await accessToken();
+  const customerId = cid();
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    "developer-token": String(process.env.GOOGLE_ADS_DEVELOPER_TOKEN),
+    "Content-Type": "application/json",
+  };
+  const lc = String(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? "").replace(/[^0-9]/g, "");
+  if (lc) headers["login-customer-id"] = lc;
+  const action = String(process.env.GOOGLE_ADS_SUBMIT_CONVERSION_ACTION_ID).replace(/[^0-9]/g, "");
+  const payload = {
+    conversions: [{
+      gclid: p.gclid,
+      conversionAction: `customers/${customerId}/conversionActions/${action}`,
+      conversionDateTime: fmtDateTime(p.fundedAt),
+      ...(p.value > 0 ? { conversionValue: p.value, currencyCode: process.env.GOOGLE_ADS_CURRENCY || "CAD" } : {}),
+      orderId: `${p.applicationId}-submit`,
+      consent: { adUserData: "GRANTED", adPersonalization: "GRANTED" },
+    }],
+    partialFailure: true,
+  };
+  const resp = await fetch(`https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}:uploadClickConversions`, {
+    method: "POST", headers, body: JSON.stringify(payload),
+  });
+  const text = await resp.text().catch(() => "");
+  if (!resp.ok) { logError("google_ads_submit_conversion_http_failed"); console.warn("[ads_submit_conversion] http", resp.status, text.slice(0, 300)); return false; }
+  let body: any = {}; try { body = JSON.parse(text); } catch { /* ignore */ }
+  if (body?.partialFailureError) { console.warn("[ads_submit_conversion] partial_failure", JSON.stringify(body.partialFailureError).slice(0, 300)); return false; }
+  return true;
+}
+
+export async function uploadSubmitConversions(): Promise<{ configured: boolean; uploaded: number; failed: number; pending: number }> {
+  if (!submitConversionsConfigured()) return { configured: false, uploaded: 0, failed: 0, pending: 0 };
+  const pendingList = await findPendingSubmitConversions();
+  let uploaded = 0, failed = 0;
+  for (const p of pendingList) {
+    try {
+      const ok = await uploadOneSubmit(p);
+      if (!ok) { failed++; continue; }
+      await pool.query(
+        `UPDATE applications
+            SET metadata = COALESCE(metadata,'{}'::jsonb) || jsonb_build_object(
+                  'ad_submit_conversion_uploaded_at', now()::text),
+                updated_at = now()
+          WHERE id = $1`,
+        [p.applicationId],
+      );
+      uploaded++;
+    } catch {
+      failed++; logError("google_ads_submit_conversion_upload_failed");
+    }
+  }
+  return { configured: true, uploaded, failed, pending: Math.max(0, pendingList.length - uploaded - failed) };
+}
+
 export async function uploadFundedConversions(): Promise<{ configured: boolean; uploaded: number; failed: number; pending: number }> {
   if (!conversionsConfigured()) return { configured: false, uploaded: 0, failed: 0, pending: 0 };
   const pendingList = await findPendingConversions();

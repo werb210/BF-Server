@@ -285,6 +285,24 @@ router.post(
         }
       }
 
+      // BF_SERVER_JOURNEY_STITCH_AT_START_v1
+      // Link the visitor journey as soon as the draft contact exists so abandoned
+      // applications retain their browsing history instead of waiting for submit.
+      if (startContactId) {
+        try {
+          const sid = String((attribution as any)?.sessionId ?? "").trim();
+          if (sid) {
+            await dbQuery(
+              `UPDATE visitor_sessions SET contact_id = $2, stitched_at = now()
+                WHERE session_id = $1 AND contact_id IS NULL`,
+              [sid, startContactId]
+            );
+          }
+        } catch (e) {
+          console.warn("[start] journey stitch failed", String(e).slice(0, 200));
+        }
+      }
+
       const baseMeta: Record<string, unknown> =
         (attribution && Object.keys(attribution).length ? { attribution } : {});
       if (startPhone) baseMeta.applicant_phone = startPhone;
