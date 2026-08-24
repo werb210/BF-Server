@@ -163,8 +163,21 @@ router.get("/sources", safeHandler(async (req: any, res: any) => {
     // Internal hosts now fall through to 'direct', which is what an untagged
     // visit actually is. Matching is on the registrable domain so any subdomain
     // (www, client, staff, server) is covered without listing each.
+    // BF_SERVER_GCLID_IS_A_SOURCE_v78
+    // This resolved a source from utm_source, then the referrer host, then gave up
+    // and said 'direct'. Google auto-tagging appends gclid and does NOT append
+    // utm_source, so every single paid click - correctly captured, correctly
+    // forwarded across the domain hop, correctly stored on the application - was
+    // reported as direct. The Conversion by Source panel showed one row, 'direct',
+    // against real ad spend, and there was no way to tell a paid application from
+    // a typed-in-the-URL one. gclid/gbraid/wbraid now resolve first.
     `SELECT
        COALESCE(
+         CASE WHEN COALESCE(metadata->'attribution'->>'gclid','')  <> '' THEN 'google / cpc'
+              WHEN COALESCE(metadata->'attribution'->>'gbraid','') <> '' THEN 'google / cpc'
+              WHEN COALESCE(metadata->'attribution'->>'wbraid','') <> '' THEN 'google / cpc'
+              WHEN COALESCE(metadata->'attribution'->>'li_fat_id','') <> '' THEN 'linkedin / cpc'
+         END,
          NULLIF(metadata->'attribution'->>'utm_source', ''),
          NULLIF(
            CASE
@@ -194,6 +207,44 @@ router.get("/sources", safeHandler(async (req: any, res: any) => {
     return { source: r.source, started, submitted, conversion: started ? Math.round((submitted / started) * 1000) / 10 : 0 };
   });
   respondOk(res, { days, sources });
+}));
+
+// BF_SERVER_ATTRIBUTION_HEALTH_v78
+// Every attribution question so far has been answered by inference. This answers it
+// with counts: of the applications created in the window, how many actually carry a
+// gclid, a utm_source, and a journey session id - and how many are queued for or
+// already uploaded to Google Ads as conversions. If gclidCount is 0 the capture chain
+// is broken upstream; if it is non-zero the chain works and only reporting was wrong.
+router.get("/attribution-health", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const days = Math.min(Math.max(Number(req.query.days) || 90, 1), 365);
+  const { rows } = await pool.query(
+    `SELECT
+       count(*)::int AS total,
+       count(*) FILTER (WHERE submitted_at IS NOT NULL)::int AS submitted,
+       count(*) FILTER (WHERE COALESCE(metadata->'attribution'->>'gclid','') <> '')::int AS with_gclid,
+       count(*) FILTER (WHERE COALESCE(metadata->'attribution'->>'gbraid','') <> ''
+                           OR COALESCE(metadata->'attribution'->>'wbraid','') <> '')::int AS with_braid,
+       count(*) FILTER (WHERE COALESCE(metadata->'attribution'->>'utm_source','') <> '')::int AS with_utm,
+       count(*) FILTER (WHERE COALESCE(metadata->'attribution'->>'sessionId','') <> '')::int AS with_journey,
+       count(*) FILTER (WHERE metadata->'attribution' IS NULL)::int AS no_attribution_at_all,
+       count(*) FILTER (WHERE submitted_at IS NOT NULL
+                          AND COALESCE(metadata->'attribution'->>'gclid','') <> ''
+                          AND metadata->'ad_submit_conversion_uploaded_at' IS NULL)::int AS submit_conversions_pending,
+       count(*) FILTER (WHERE metadata->'ad_submit_conversion_uploaded_at' IS NOT NULL)::int AS submit_conversions_uploaded
+     FROM applications
+     WHERE silo = $1
+       AND created_at >= now() - ($2 || ' days')::interval`,
+    [silo, String(days)],
+  );
+  const stitched = await pool.query(
+    `SELECT count(*)::int AS sessions,
+            count(*) FILTER (WHERE contact_id IS NOT NULL)::int AS stitched
+       FROM visitor_sessions
+      WHERE first_seen_at >= now() - ($1 || ' days')::interval`,
+    [String(days)],
+  );
+  respondOk(res, { days, applications: rows[0], journey: stitched.rows[0] });
 }));
 
 // BF_SERVER_MARKETING_GA4_v1 - GA4 traffic/sources/devices via the Analytics Data API.
