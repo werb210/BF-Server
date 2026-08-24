@@ -99,7 +99,11 @@ router.get(
                        = right(regexp_replace(me.phone,'[^0-9]','','g'),10) THEN 'phone' END) AS match_phone,
               -- Trigram similarity is NOT available: Azure Postgres does not allow-list
               -- that extension. bf_same_person_name() is pure SQL (see the migration).
-              bf_same_person_name(c.name, me.name) AS match_name,
+              (bf_same_person_name(c.name, me.name)
+                AND COALESCE(c.name,'')  NOT ILIKE '%(application started)%'
+                AND COALESCE(me.name,'') NOT ILIKE '%(application started)%'
+                AND lower(btrim(COALESCE(c.name,'')))  <> 'unknown'
+                AND lower(btrim(COALESCE(me.name,''))) <> 'unknown') AS match_name,
               (SELECT count(*)::int FROM applications a WHERE a.contact_id = c.id) AS applications,
               (SELECT count(*)::int FROM call_logs cl WHERE cl.crm_contact_id = c.id) AS calls,
               (SELECT count(*)::int FROM communications_messages m WHERE m.contact_id = c.id) AS messages
@@ -120,7 +124,14 @@ router.get(
             -- the case the old preview is blind to: same human, different everything.
             -- Anchored on an exact surname match, so "Mike Cotic" finds "MICHAEL COTIC"
             -- but not "Mike Jones".
-            OR bf_same_person_name(c.name, me.name)
+            -- BF_SERVER_DUP_PLACEHOLDER_GUARD_v1
+            -- Placeholder names never participate in name matching; email and phone
+            -- matching remain unaffected.
+            OR (bf_same_person_name(c.name, me.name)
+                AND COALESCE(c.name,'')  NOT ILIKE '%(application started)%'
+                AND COALESCE(me.name,'') NOT ILIKE '%(application started)%'
+                AND lower(btrim(COALESCE(c.name,'')))  <> 'unknown'
+                AND lower(btrim(COALESCE(me.name,''))) <> 'unknown')
           )
         ORDER BY (c.email IS NOT NULL) DESC, c.created_at ASC
         LIMIT 25`,

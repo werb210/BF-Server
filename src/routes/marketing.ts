@@ -16,7 +16,7 @@ import { linkedInSuggestionsConfigured, buildLinkedInSuggestions, applyLinkedInS
 import { previewIcp, buildHashedList, buildLinkedInAudienceCsv } from "../services/googleAdsCustomerMatch.js";
 import { ga4Configured, runGa4Report } from "../services/ga4Service.js";
 import { clarityConfigured, runClarityReport } from "../services/clarityService.js";
-import { conversionsConfigured, findPendingConversions, uploadFundedConversions } from "../services/googleAdsConversions.js";
+import { conversionsConfigured, findPendingConversions, uploadFundedConversions, submitConversionsConfigured, findPendingSubmitConversions, uploadSubmitConversions } from "../services/googleAdsConversions.js";
 import { linkedInConversionsConfigured, findPendingLinkedInConversions, uploadFundedLinkedInConversions } from "../services/linkedInAdsConversions.js"; // BF_SERVER_LINKEDIN_CONVERSIONS_v1
 import { googleAdsConfigured, runGoogleAdsReport } from "../services/googleAdsService.js";
 import { linkedInAdsConfigured, runLinkedInAdsReport } from "../services/linkedInAdsService.js"; // BF_SERVER_LINKEDIN_ADS_v1
@@ -229,6 +229,18 @@ router.get("/google-ads/conversions/pending", safeHandler(async (_req: any, res:
 }));
 router.post("/google-ads/conversions/upload", safeHandler(async (_req: any, res: any) => {
   const result = await uploadFundedConversions();
+  respondOk(res, result);
+}));
+
+// BF_SERVER_ADS_SUBMIT_ROUTES_v1 - submitted-application conversions use a
+// separate action from funded uploads so both can apply to one application.
+router.get("/google-ads/conversions/submit-pending", safeHandler(async (_req: any, res: any) => {
+  if (!submitConversionsConfigured()) { respondOk(res, { configured: false, pending: [] }); return; }
+  const pending = await findPendingSubmitConversions();
+  respondOk(res, { configured: true, count: pending.length, pending });
+}));
+router.post("/google-ads/conversions/submit-upload", safeHandler(async (_req: any, res: any) => {
+  const result = await uploadSubmitConversions();
   respondOk(res, result);
 }));
 

@@ -258,6 +258,11 @@ export async function start(): Promise<void> {
     try { const w = startMailReplyWorker(pool); workerStops.push(w.stop); console.log("[startup] mail-reply worker started"); }
     catch (err) { console.error("[startup] mail-reply worker failed to start:", err); }
 
+    // BF_SERVER_AD_CONVERSION_WORKER_v1 - upload offline conversions to Google Ads.
+    const { startAdConversionWorker } = await import("./workers/adConversionWorker.js");
+    try { const w = startAdConversionWorker(pool); workerStops.push(w.stop); console.log("[startup] ad-conversion worker started"); }
+    catch (err) { console.error("[startup] ad-conversion worker failed to start:", err); }
+
     // BF_SERVER_TASKS_M6_v1 - task reminders + recurrence catch-up + daily digest.
     const { startTaskRemindersWorker } = await import("./workers/taskRemindersWorker.js");
     try { const w = startTaskRemindersWorker(pool); workerStops.push(w.stop); console.log("[startup] task-reminders worker started"); }
