@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import { SEEDED_ADMIN_ID } from "../../db/seed.js"; // BF_SERVER_SEED_NOTIF_v60
+import { SEEDED_ADMIN_ID, SEEDED_ADMIN2_ID } from "../../db/seed.js"; // BF_SERVER_SEED_NOTIF_v60
 import { pushToUser } from "./pushToUser.js"; // BF_SERVER_BLOCK_v_NOTIF_PUSH_v1
 import { safeErr } from "../../lib/safeErr.js";
 import { sendSMS } from "../smsService.js";
@@ -55,9 +55,12 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx): Promise<{
          FROM users
         WHERE active = true
           AND role IN ('Admin', 'Staff', 'Marketing')
-          AND id::text <> $2
+          -- BF_SERVER_SEEDED_NOTIFY_GUARD_v80 - this excluded SEEDED_ADMIN_ID only.
+          -- seed.ts defines TWO seeded admins and the second was never added, so
+          -- every inbound-SMS fan-out went to ...100. Both are excluded now.
+          AND id::text <> ALL($2::text[])
           AND coalesce(silo, 'BF') = $1`,
-      [silo, SEEDED_ADMIN_ID],
+      [silo, [SEEDED_ADMIN_ID, SEEDED_ADMIN2_ID]],
     )
     .catch(() => ({ rows: [] as Array<{ id: string; phone_number: string | null; email: string | null }> }));
 
