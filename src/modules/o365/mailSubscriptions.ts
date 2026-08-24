@@ -6,6 +6,10 @@ import type { Pool } from "pg";
 import { getGraphForUser, type GraphClient } from "./graphClient.js";
 import { createNotification } from "../notifications/notifications.repo.js";
 import { logSentMessage, type SentMessage } from "./sentItemsLog.js"; // BF_SERVER_SENT_ITEMS_v39
+// BF_SERVER_SHARED_MAILBOX_NOTIFY_v81
+import { isNonPersonUser } from "../notifications/notifications.repo.js";
+import { notifyAllStaff } from "../../services/notifications/notifyAllStaff.js";
+import { pool as defaultPool } from "../../db.js";
 
 const RESOURCE = "me/mailFolders('inbox')/messages";
 // BF_SERVER_SENT_ITEMS_v39
@@ -122,6 +126,34 @@ export async function handleGraphNotifications(pool: Pool, values: GraphNotifica
         if (message) await logSentMessage(pool, sub.user_id, message);
         continue;
       }
+      // BF_SERVER_SHARED_MAILBOX_NOTIFY_v81
+      // The shared mailboxes (submissions@, accounting@, info@) have their Graph
+      // subscriptions registered under the seeded admin accounts, which are not
+      // people. Every inbound email therefore raised a notification addressed to a
+      // ghost - 18 of them in six hours on one day, all unread by construction.
+      // v80 stops those rows being written; on its own that would leave shared
+      // mailbox mail notifying nobody at all, which is worse than noisy.
+      //
+      // A mailbox nobody owns is by definition everybody's, so it fans out to all
+      // staff. skipSms is on: shared inboxes receive far too much volume to justify
+      // a text message per email, and the in-app notification plus browser push is
+      // the right weight for "something landed in a shared inbox".
+      if (isNonPersonUser(sub.user_id)) {
+        const mailbox = mailboxLabel(sub.resource);
+        await notifyAllStaff({
+          pool: pool ?? defaultPool,
+          silo: "BF",
+          skipSms: true,
+          notificationType: "email_received",
+          title: "New shared inbox email",
+          body: mailbox
+            ? `New message in the ${mailbox} shared inbox.`
+            : "New message in a shared inbox.",
+          contextUrl: "/communications",
+        }).catch(() => { /* best-effort: never break the webhook */ });
+        continue;
+      }
+
       await createNotification({
         notificationId: crypto.randomUUID(),
         userId: sub.user_id,
@@ -143,4 +175,18 @@ export async function ensureSubscriptionsForConnectedUsers(pool: Pool): Promise<
     await ensureMailSubscription(pool, u.id);
     await ensureMailSubscription(pool, u.id, SENT_RESOURCE); // BF_SERVER_SENT_ITEMS_v39
   }
+}
+
+// BF_SERVER_SHARED_MAILBOX_NOTIFY_v81
+// Graph resources are usually "me/mailFolders('inbox')/messages", which names no
+// mailbox. Delegated/shared registrations can carry "users/<upn>/..." instead.
+// Return the local part when there is one, else null - a generic message is fine,
+// a wrong mailbox name is not.
+function mailboxLabel(resource: string | null | undefined): string | null {
+  const r = String(resource ?? "");
+  const m = r.match(/users\/([^/]+)/i);
+  if (!m) return null;
+  const upn = decodeURIComponent(m[1] ?? "");
+  if (!upn.includes("@")) return null;
+  return upn.split("@")[0] ?? null;
 }
