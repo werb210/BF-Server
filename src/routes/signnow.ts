@@ -4,6 +4,7 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { dbQuery } from "../db.js";
 import { finalizeSignedApplication } from "../signnow/finalizeSignedApplication.js";
 import { attachSignedPnwDocument } from "../signnow/pnwSigning.js";
+import { attachSignedSbaDocuments } from "../signnow/sba/sbaSigning.js"; // BF_SERVER_SBA_WEBHOOK_ATTACH_v98
 import { attachSignedTermSheet } from "../services/signnow/sendOfferTermSheet.js"; // BF_SERVER_OFFER_TERMSHEET_SIGNING_v1
 import { transitionPipelineState } from "../modules/applications/applications.service.js"; // BF_SERVER_OFFER_TERMSHEET_SIGNING_v1
 import { notifyAllStaff } from "../services/notifications/notifyAllStaff.js"; // BF_SERVER_OFFER_TERMSHEET_SIGNING_v1
@@ -125,6 +126,38 @@ router.post(
         const result = await attachSignedPnwDocument(pnwMatch.rows[0].id);
         console.log("[signnow-webhook] pnw_signed_attach", { applicationId: pnwMatch.rows[0].id, ...result });
         res.status(200).json({ received: true, match: "pnw", attached: result.attached });
+        return;
+      }
+    }
+
+    // BF_SERVER_SBA_WEBHOOK_ATTACH_v98
+    // SBA forms signed. Unlike the PNW there are SEVERAL envelopes per
+    // application - one per owner, because Form 413 is a personal balance sheet
+    // and putting two owners' 413s in one group would show each owner the
+    // other's finances. So the match looks inside the sba_signnow ARRAY rather
+    // than at a single group_id.
+    //
+    // Attaching is a convenience for the staff Documents list, not a
+    // prerequisite: the lender package pulls the signed copies fresh from
+    // SignNow at build time, and the dispatch gate holds until every envelope
+    // is signed. attachSignedSbaDocuments returns 0 attached while any envelope
+    // is still outstanding, so an early webhook from owner 1 does nothing and
+    // the last one files the lot.
+    if (documentGroupId || documentId) {
+      const sbaIds = [documentGroupId, documentId].filter(Boolean) as string[];
+      const sbaMatch = await dbQuery<{ id: string }>(
+        `select a.id::text as id
+           from applications a,
+                jsonb_array_elements(COALESCE(a.metadata->'sba_signnow', '[]'::jsonb)) e
+          where e->>'group_id' = any($1::text[])
+             or e->'docIds' ?| $1::text[]
+          limit 1`,
+        [sbaIds],
+      ).catch(() => ({ rows: [] as Array<{ id: string }> }));
+      if (sbaMatch.rows[0]) {
+        const result = await attachSignedSbaDocuments(sbaMatch.rows[0].id);
+        console.log("[signnow-webhook] sba_signed_attach", { applicationId: sbaMatch.rows[0].id, ...result });
+        res.status(200).json({ received: true, match: "sba", attached: result.attached });
         return;
       }
     }
