@@ -9,6 +9,7 @@ import {
   type DispatchLender,
 } from "../services/lenders/dispatchToSelected.js";
 import { pnwSigningSatisfiedForDispatch } from "../signnow/pnwSigning.js";
+import { sbaSigningSatisfiedForDispatch } from "../signnow/sba/sbaSigning.js"; // BF_SERVER_SBA_DISPATCH_GATE_v96
 
 const POLL_MS = Number(process.env.LENDER_PACKAGE_POLL_MS || 15000);
 const BATCH = Math.max(1, Number(process.env.LENDER_PACKAGE_BATCH || 3));
@@ -83,6 +84,16 @@ export function startLenderPackageWorker(pool: Pool): { stop: () => void } {
               [job.id]
             );
             console.warn("[lender_package_worker] pnw not signed yet — requeued", { applicationId, jobId: job.id });
+            continue;
+          }
+
+          // BF_SERVER_SBA_DISPATCH_GATE_v96: requeue rather than dispatching unsigned SBA forms.
+          if (!(await sbaSigningSatisfiedForDispatch(applicationId))) {
+            await pool.query(
+              `UPDATE job_queue SET status = 'pending', updated_at = now() WHERE id = $1`,
+              [job.id]
+            );
+            console.warn("[lender_package_worker] sba forms not signed yet — requeued", { applicationId, jobId: job.id });
             continue;
           }
 
