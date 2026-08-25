@@ -86,6 +86,39 @@ router.put("/applications/:id/form-responses/:doc_type", requireAuth, async (req
   }
 });
 
+// BF_SERVER_SBA_ROUTES_v97
+router.get("/applications/:id/sba-signing", requireAuth, async (req: Request, res: Response) => {
+  const appId = String(req.params.id);
+  try {
+    const { isSbaApplication, sbaFormsComplete } = await import("../signnow/sba/sbaTrigger.js");
+    const { sbaSigningSatisfiedForDispatch } = await import("../signnow/sba/sbaSigning.js");
+    const isSba = await isSbaApplication(appId);
+    if (!isSba) return res.json({ status: "ok", data: { isSba: false } });
+    const forms = await sbaFormsComplete(appId);
+    const signed = await sbaSigningSatisfiedForDispatch(appId);
+    const r = await pool.query(
+      `SELECT COALESCE(metadata->'sba_signnow', '[]'::jsonb) AS envelopes
+         FROM applications WHERE id::text = ($1)::text LIMIT 1`, [appId]);
+    return res.json({ status: "ok", data: { isSba: true, formsComplete: forms.complete,
+      missingForms: forms.missing, envelopes: r.rows[0]?.envelopes ?? [], allSigned: signed } });
+  } catch (e) {
+    return res.status(500).json({ error: "sba_status_failed", message: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+router.post("/applications/:id/sba-signing/resend", requireAuth, async (req: Request, res: Response) => {
+  const appId = String(req.params.id);
+  try {
+    const { restartSbaSigning, sbaFormsComplete } = await import("../signnow/sba/sbaTrigger.js");
+    const forms = await sbaFormsComplete(appId);
+    if (!forms.complete) return res.status(409).json({ error: "forms_incomplete", missing: forms.missing });
+    const links = await restartSbaSigning(appId);
+    return res.json({ status: "ok", data: { links } });
+  } catch (e) {
+    return res.status(500).json({ error: "sba_resend_failed", message: e instanceof Error ? e.message : String(e) });
+  }
+});
+
 // POST /applications/:id/form-responses/:doc_type/submit
 // Finalize. Sets submitted_at = NOW(). Idempotent: re-submit just
 // updates the timestamp. data, if provided, overwrites the current
@@ -114,6 +147,18 @@ router.post("/applications/:id/form-responses/:doc_type/submit", requireAuth, as
         );
     if (r.rowCount === 0) {
       return res.status(404).json({ error: "not_found" });
+    }
+    // BF_SERVER_SBA_TRIGGER_v97
+    if (String(docType).startsWith("sba_form_")) {
+      void (async () => {
+        try {
+          const { maybeStartSbaSigning } = await import("../signnow/sba/sbaTrigger.js");
+          const out = await maybeStartSbaSigning(appId);
+          console.log("[sba_trigger]", appId, out.started ? "started" : out.reason);
+        } catch (e) {
+          console.warn("[sba_trigger] failed", appId, e instanceof Error ? e.message : String(e));
+        }
+      })();
     }
     // BF_SERVER_BLOCK_v726_FORM_TO_CRM_v1 — mirror contact/company details collected
     // in Stage-2 forms into the CRM (BF silo). professional_advisors -> one company
