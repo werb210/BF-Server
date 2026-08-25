@@ -16,6 +16,7 @@ import { linkedInSuggestionsConfigured, buildLinkedInSuggestions, applyLinkedInS
 import { previewIcp, buildHashedList, buildLinkedInAudienceCsv } from "../services/googleAdsCustomerMatch.js";
 import { ga4Configured, runGa4Report } from "../services/ga4Service.js";
 import { clarityConfigured, runClarityReport } from "../services/clarityService.js";
+import { countryFromPhone } from "../services/nanpCountry.js"; // BF_SERVER_ABANDONED_AREA_CODE_v92
 import { conversionsConfigured, findPendingConversions, uploadFundedConversions, submitConversionsConfigured, findPendingSubmitConversions, uploadSubmitConversions } from "../services/googleAdsConversions.js";
 import { linkedInConversionsConfigured, findPendingLinkedInConversions, uploadFundedLinkedInConversions } from "../services/linkedInAdsConversions.js"; // BF_SERVER_LINKEDIN_CONVERSIONS_v1
 import { googleAdsConfigured, runGoogleAdsReport } from "../services/googleAdsService.js";
@@ -236,7 +237,14 @@ router.get("/abandoned", requireAuth, safeHandler(async (req: any, res: any) => 
     product: r.product_category,
     source: r.gclid ? "google / cpc" : (r.utm_source || "direct"),
     campaign: r.utm_campaign,
-    country: resolveCountry(r.kyc_location, r.business_state), // BF_SERVER_ABANDONED_COUNTRY_v86
+    // BF_SERVER_ABANDONED_AREA_CODE_v92
+    // v86 read businessLocation, which is the FIRST question on Step 1 - and
+    // every row in this list stopped on Step 1, most of them before answering
+    // it. The column was empty for exactly the people it was meant to describe.
+    // The area code is the only signal we have for someone who typed nothing,
+    // and we always have it: they passed phone OTP to get here.
+    country: resolveCountry(r.kyc_location, r.business_state) ?? countryFromPhone(r.contact_phone),
+    countryInferred: !resolveCountry(r.kyc_location, r.business_state),
     startedAt: r.created_at,
     lastActivityAt: r.updated_at,
     nudgedAt: r.abandon_sms_sent_at,
