@@ -1,5 +1,4 @@
 import type { Pool } from "pg";
-import { SEEDED_ADMIN_ID, SEEDED_ADMIN2_ID } from "../../db/seed.js"; // BF_SERVER_SEED_NOTIF_v60
 import { pushToUser } from "./pushToUser.js"; // BF_SERVER_BLOCK_v_NOTIF_PUSH_v1
 import { safeErr } from "../../lib/safeErr.js";
 import { sendSMS } from "../smsService.js";
@@ -45,22 +44,27 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx): Promise<{
   // "All staff" per V1 spec: Admin + Staff + Marketing roles, BF silo, active.
   const recipients = await ctx.pool
     .query<{ id: string; phone_number: string | null; email: string | null }>(
-      // BF_SERVER_SEED_NOTIF_v60 - the seeded admin is active, has role Admin
-      // and sits in the BF silo, so it matched every fan-out. It is not a
-      // person: no one signs in as it, so every notification addressed to it
-      // was unread by construction, and every push attempt logged a warning.
-      // It is kept in the users table because the browser dialer stamps
-      // outbound calls with its id (see voiceCalls.ts).
+      // BF_SERVER_RESTORE_ADMIN_NOTIFY_v91
+      // v60 and v80 both excluded these two ids on the belief that they were
+      // synthetic. They are not. The users table shows:
+      //   00000000-...-099  todd.w@boreal.financial     Admin
+      //   00000000-...-100  andrew.p@boreal.financial   Admin
+      // They are the real admin logins, seeded with fixed UUIDs at setup. The
+      // "unread by construction" reasoning came from push_no_subscriptions in
+      // the logs, which only means neither has registered a BROWSER for push -
+      // not that nobody reads them.
+      //
+      // With both excluded, "all staff" resolved to one Marketing user. Inbound
+      // client SMS and shared-mailbox email stopped reaching either owner of the
+      // business. No exclusion list here: if an account should not be notified,
+      // that belongs on the account (active = false), not in a hardcoded id list
+      // that outlives whoever understood why it was written.
       `SELECT id::text AS id, phone_number, email
          FROM users
         WHERE active = true
           AND role IN ('Admin', 'Staff', 'Marketing')
-          -- BF_SERVER_SEEDED_NOTIFY_GUARD_v80 - this excluded SEEDED_ADMIN_ID only.
-          -- seed.ts defines TWO seeded admins and the second was never added, so
-          -- every inbound-SMS fan-out went to ...100. Both are excluded now.
-          AND id::text <> ALL($2::text[])
           AND coalesce(silo, 'BF') = $1`,
-      [silo, [SEEDED_ADMIN_ID, SEEDED_ADMIN2_ID]],
+      [silo],
     )
     .catch(() => ({ rows: [] as Array<{ id: string; phone_number: string | null; email: string | null }> }));
 
