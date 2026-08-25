@@ -15,10 +15,15 @@ import { pool, runQuery } from "../../db.js";
 // it. Seeded accounts stay in the users table because the browser dialer stamps
 // outbound calls with ...099 (see voiceCalls.ts) - they must exist, but they must
 // never be a notification target.
-import { SEEDED_ADMIN_ID, SEEDED_ADMIN2_ID } from "../../db/seed.js";
 import { logInfo } from "../../observability/logger.js";
 
-const NON_PERSON_USER_IDS = new Set<string>([SEEDED_ADMIN_ID, SEEDED_ADMIN2_ID]);
+// BF_SERVER_RESTORE_ADMIN_NOTIFY_v91
+// Emptied, not deleted: isNonPersonUser is imported by mailSubscriptions.ts
+// (v81) and removing the export would break the build. Both ids in the original
+// set turned out to be the real admin accounts - todd.w@ and andrew.p@ - so the
+// guard was suppressing every notification either of them should have received.
+// The set stays as the seam for a genuine service account, if one ever exists.
+const NON_PERSON_USER_IDS = new Set<string>([]);
 
 export function isNonPersonUser(userId: string | null | undefined): boolean {
   return Boolean(userId && NON_PERSON_USER_IDS.has(String(userId)));
