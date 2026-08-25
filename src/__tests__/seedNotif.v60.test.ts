@@ -8,14 +8,24 @@ const SRC = fs.readFileSync("src/services/notifications/notifyAllStaff.ts", "utf
 const VOICE = fs.readFileSync("src/routes/voiceCalls.ts", "utf8");
 
 describe("the seeded admin is not a notification recipient", () => {
+  // BF_SERVER_SEEDNOTIF_BOTH_ADMINS_v84
+  // v60 excluded SEEDED_ADMIN_ID with a single-parameter comparison. seed.ts
+  // defines TWO seeded admins and the second was never added, so every inbound
+  // SMS fan-out went to ...100 instead. Measured on the live table: 1,842 of
+  // 2,204 notifications - 84% of everything the system has ever raised - were
+  // addressed to accounts nobody signs in as, including client replies on live
+  // seven-figure applications. v80 widened the exclusion to an array, which is
+  // what these assertions now pin.
   it("is excluded from the staff query", () => {
-    expect(SRC).toContain("AND id::text <> $2");
-    expect(SRC).toContain("[silo, SEEDED_ADMIN_ID]");
+    expect(SRC).toContain("AND id::text <> ALL($2::text[])");
+    expect(SRC).toContain("[silo, [SEEDED_ADMIN_ID, SEEDED_ADMIN2_ID]]");
   });
 
-  it("uses the shared constant, not a repeated literal", () => {
-    expect(SRC).toContain('import { SEEDED_ADMIN_ID }');
+  it("uses the shared constants, not repeated literals", () => {
+    expect(SRC).toContain("SEEDED_ADMIN_ID");
+    expect(SRC).toContain("SEEDED_ADMIN2_ID");
     expect(SRC).not.toContain('"00000000-0000-0000-0000-000000000099"');
+    expect(SRC).not.toContain('"00000000-0000-0000-0000-000000000100"');
   });
 });
 
