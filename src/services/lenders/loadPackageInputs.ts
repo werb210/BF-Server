@@ -250,6 +250,17 @@ function flattenForPdf(value: unknown, prefix = ""): string[] {
   return out;
 }
 
+// BF_SERVER_SBA_IN_PACKAGE_v96: returns no partial set if any SBA envelope is unsigned.
+async function loadSbaPdfs(ctx: LoadCtx): Promise<{ filename: string; content: Buffer }[]> {
+  try {
+    const { getSignedSbaPdfs } = await import("../../signnow/sba/sbaSigning.js");
+    return await getSignedSbaPdfs(ctx.applicationId);
+  } catch (error) {
+    console.warn("[loadPackageInputs] sba pdfs failed", error instanceof Error ? error.message : String(error));
+    return [];
+  }
+}
+
 async function loadFormPdfs(ctx: LoadCtx): Promise<{ filename: string; content: Buffer }[]> {
   const r = await ctx.pool.query<{ doc_type: string; data: any; submitted_at: string | null }>(
     `SELECT doc_type, data, submitted_at FROM application_form_responses
@@ -295,7 +306,7 @@ async function loadFormPdfs(ctx: LoadCtx): Promise<{ filename: string; content: 
 
 export async function loadPackageInputs(ctx: LoadCtx): Promise<PackageInputs> {
   const fields = await loadFields(ctx);
-  const [signedApplicationPdf, creditSummaryPdf, documents, additionalSignedDocs, formPdfs] = await Promise.all([loadSignedApplicationPdf(ctx, fields), loadCreditSummaryPdf(ctx), loadAcceptedDocuments(ctx), loadAdditionalSignedDocs(ctx), loadFormPdfs(ctx)]);
+  const [signedApplicationPdf, creditSummaryPdf, documents, additionalSignedDocs, formPdfs, sbaPdfs] = await Promise.all([loadSignedApplicationPdf(ctx, fields), loadCreditSummaryPdf(ctx), loadAcceptedDocuments(ctx), loadAdditionalSignedDocs(ctx), loadFormPdfs(ctx), loadSbaPdfs(ctx)]); // BF_SERVER_SBA_IN_PACKAGE_v96
   // BF_SERVER_BLOCK_v_FORM_PDFS_v1 — generated CMP form PDFs ride in at package root.
-  return { signedApplicationPdf, creditSummaryPdf, documents, additionalSignedDocs: [...additionalSignedDocs, ...formPdfs], fields };
+  return { signedApplicationPdf, creditSummaryPdf, documents, additionalSignedDocs: [...additionalSignedDocs, ...formPdfs, ...sbaPdfs], fields };
 }
