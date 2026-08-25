@@ -69,6 +69,7 @@ import pwaRoutes from "./pwa.js";
 import publicApplicationRoutes from "./publicApplication.js";
 import visitorTrackRoutes from "./visitorTrack.js"; // BF_SERVER_VISITOR_JOURNEY_v1 (public)
 import naicsRoutes from "./naics.js"; // BF_SERVER_NAICS_v83 (public)
+import recipientSuggestRoutes from "./recipientSuggest.js"; // BF_SERVER_RECIPIENT_SUGGEST_v100
 import referralsRoutes from "./referrals.js";
 import referralsExtRoutes from "./referralsExt.js";
 import pipelineRoutes from "./pipeline.js";
@@ -265,6 +266,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   // POST /api/track/journey.
   { path: "/track/journey", router: visitorTrackRoutes }, // BF_SERVER_VISITOR_JOURNEY_v1 (public)
   { path: "/naics", router: naicsRoutes }, // BF_SERVER_NAICS_v83 (public)
+  { path: "/recipients/suggest", router: recipientSuggestRoutes }, // BF_SERVER_RECIPIENT_SUGGEST_v100
   { path: "/", router: rootRoutes },
   { path: "/slf", router: slfRoutes },
   { path: "/applications", router: applicationsRoutes },
