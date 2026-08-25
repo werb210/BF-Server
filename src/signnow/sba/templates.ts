@@ -23,6 +23,11 @@ export const TEMPLATE_EDITIONS: Record<SbaFormKey, string> = {
 
 export async function loadSbaTemplate(key: SbaFormKey): Promise<Uint8Array | null> {
   try {
+    // BF_SERVER_SBA_TEMPLATE_IMPORT_FIX_v94
+    // v89 guessed at services/blobStorage.downloadBlob. The real helper is
+    // downloadBlobAsset in signnow/blobStorage.ts - the same one the Accord
+    // blank form is loaded through, reading from borealstorageprod under the
+    // container that already holds accord_revolving_credit_blank.pdf.
     const { downloadBlobAsset } = await import("../blobStorage.js");
     const buf = await downloadBlobAsset(BLOB_NAMES[key]);
     return buf ? new Uint8Array(buf) : null;
