@@ -68,6 +68,7 @@ import documentTypesRouter from "./documentTypes.js";
 import pwaRoutes from "./pwa.js";
 import publicApplicationRoutes from "./publicApplication.js";
 import visitorTrackRoutes from "./visitorTrack.js"; // BF_SERVER_VISITOR_JOURNEY_v1 (public)
+import naicsRoutes from "./naics.js"; // BF_SERVER_NAICS_v83 (public)
 import referralsRoutes from "./referrals.js";
 import referralsExtRoutes from "./referralsExt.js";
 import pipelineRoutes from "./pipeline.js";
@@ -263,6 +264,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   // (keeping the first), which silently unmounted this collector. Public URL is unchanged:
   // POST /api/track/journey.
   { path: "/track/journey", router: visitorTrackRoutes }, // BF_SERVER_VISITOR_JOURNEY_v1 (public)
+  { path: "/naics", router: naicsRoutes }, // BF_SERVER_NAICS_v83 (public)
   { path: "/", router: rootRoutes },
   { path: "/slf", router: slfRoutes },
   { path: "/applications", router: applicationsRoutes },
