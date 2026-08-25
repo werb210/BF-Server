@@ -150,6 +150,18 @@ router.get("/funnel", safeHandler(async (req: any, res: any) => {
 // they got and how to reach them. This is a work queue, not a report: the whole point
 // is that these people are contactable and nobody has contacted them.
 // ?days=90&maxStep=6
+// BF_SERVER_ABANDONED_EXCLUDE_v85
+// Staff numbers that appear in the abandoned list only because they were used to
+// test the wizard. Set ABANDONED_EXCLUDE_PHONES to a comma-separated list to add
+// more without a deploy; the default covers Todd's mobile, which accounted for
+// roughly half the rows. Stored as bare last-10 digits to match the SQL.
+const EXCLUDED_ABANDONED_PHONES: string[] = String(
+  process.env.ABANDONED_EXCLUDE_PHONES ?? "5878881837",
+)
+  .split(",")
+  .map((v) => v.replace(/[^0-9]/g, "").slice(-10))
+  .filter((v) => v.length === 10);
+
 router.get("/abandoned", requireAuth, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const days = Math.min(Math.max(Number(req.query.days) || 90, 1), 365);
@@ -176,9 +188,20 @@ router.get("/abandoned", requireAuth, safeHandler(async (req: any, res: any) => 
       WHERE a.silo = $1
         AND a.submitted_at IS NULL
         AND a.created_at >= now() - ($2 || ' days')::interval
+        -- BF_SERVER_ABANDONED_EXCLUDE_v85
+        -- This is a call list, so a row nobody can be called on is noise. Two
+        -- classes were burying the real leads: applications with no contact or a
+        -- blank phone (wizard loads that never reached OTP - 63 rows, most of them
+        -- unreachable), and staff test runs. Both are dropped in SQL rather than
+        -- in the UI so the count in the header is the count you can actually work.
+        AND c.phone IS NOT NULL
+        AND btrim(c.phone) <> ''
+        -- Compare on the last 10 digits: the column holds a mix of E.164 and
+        -- national formats, so a literal string match would miss half of them.
+        AND right(regexp_replace(c.phone, '[^0-9]', '', 'g'), 10) <> ALL($3::text[])
       ORDER BY a.updated_at DESC
       LIMIT 200`,
-    [silo, String(days)],
+    [silo, String(days), EXCLUDED_ABANDONED_PHONES],
   );
   const items = rows.map((r: any) => ({
     applicationId: r.id,
