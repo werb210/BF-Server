@@ -182,6 +182,14 @@ router.get("/abandoned", requireAuth, safeHandler(async (req: any, res: any) => 
             NULLIF(a.metadata->'attribution'->>'gclid','')      AS gclid,
             NULLIF(a.metadata->'attribution'->>'utm_source','') AS utm_source,
             NULLIF(a.metadata->'attribution'->>'utm_campaign','') AS utm_campaign,
+            -- BF_SERVER_ABANDONED_COUNTRY_v86
+            -- Whether to call this person is a different question in each country:
+            -- the Canadian panel cannot fund under $10K/month, the US has SBA. The
+            -- phone is useless for this - +1 covers both - so it comes from what
+            -- they told us. businessLocation is asked on Step 1, and the business
+            -- state is the fallback for anyone who got further before stopping.
+            NULLIF(a.metadata->'kyc'->>'businessLocation','')  AS kyc_location,
+            NULLIF(a.metadata->'business'->>'state','')        AS business_state,
             a.abandon_sms_sent_at
        FROM applications a
        LEFT JOIN contacts c ON c.id = a.contact_id
@@ -203,6 +211,20 @@ router.get("/abandoned", requireAuth, safeHandler(async (req: any, res: any) => 
       LIMIT 200`,
     [silo, String(days), EXCLUDED_ABANDONED_PHONES],
   );
+  // BF_SERVER_ABANDONED_COUNTRY_v86
+  // Most rows stop on Step 1 and only started persisting their answers recently,
+  // so an unknown country is the normal case, not a bug. Return null and let the
+  // portal show a dash rather than guessing US and having staff act on it.
+  const CA_REGIONS = new Set(["AB","BC","MB","NB","NL","NS","NT","NU","ON","PE","QC","SK","YT"]);
+  const resolveCountry = (location: string | null, state: string | null): "CA" | "US" | null => {
+    const loc = String(location ?? "").trim().toLowerCase();
+    if (loc.startsWith("canada")) return "CA";
+    if (loc.startsWith("united states") || loc === "usa" || loc === "us") return "US";
+    const st = String(state ?? "").trim().toUpperCase();
+    if (st.length === 2) return CA_REGIONS.has(st) ? "CA" : "US";
+    return null;
+  };
+
   const items = rows.map((r: any) => ({
     applicationId: r.id,
     step: Number(r.step) || 1,
@@ -214,6 +236,7 @@ router.get("/abandoned", requireAuth, safeHandler(async (req: any, res: any) => 
     product: r.product_category,
     source: r.gclid ? "google / cpc" : (r.utm_source || "direct"),
     campaign: r.utm_campaign,
+    country: resolveCountry(r.kyc_location, r.business_state), // BF_SERVER_ABANDONED_COUNTRY_v86
     startedAt: r.created_at,
     lastActivityAt: r.updated_at,
     nudgedAt: r.abandon_sms_sent_at,
