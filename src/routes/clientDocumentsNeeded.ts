@@ -18,7 +18,42 @@ function humanize(category: string): string {
 const CMP_FORM =
   /net worth|flinks|banking connection|connect bank|\bcra\b|debt stack|real estate collateral|equipment collateral|professional advisor|\badvisor/i; // BF_SERVER_CMP_FORM_FIX_v1
 
-type NeededDoc = { document_type: string; label: string };
+// BF_SERVER_SBA_DOC_LIST_v113
+// Forms Boreal BUILDS and the applicant SIGNS in SignNow. They must never appear
+// in an upload list: there is nothing for the applicant to upload, and offering
+// an Upload button next to "sba_form_413" asks them to produce a document we
+// generate from answers they already gave.
+//
+// Separate from CMP_FORM because that regex matches on human label text and
+// these match on exact key. sba_form_413 also covers the per-owner variants
+// (sba_form_413_owner_2 and up).
+const SBA_GENERATED_FORM = /^sba_form_(413|1919)(_owner_\d+)?$/i;
+
+// BF_SERVER_SBA_DOC_LIST_v113
+// The client was shown raw keys - "business_plan", "debt_schedule",
+// "owner_photo_id" - because the label was set to the key itself. These are the
+// labels the SBA migrations and the portal pack use, so an applicant reads what
+// the document actually is.
+const SBA_DOC_LABELS: Readonly<Record<string, string>> = {
+  sba_form_413: "SBA Form 413 - Personal Financial Statement",
+  sba_form_1919: "SBA Form 1919 - Borrower Information",
+  owner_photo_id: "Government photo ID - each 20%+ owner",
+  formation_documents: "Articles of incorporation, operating agreement or DBA",
+  personal_tax_returns: "Personal tax returns - last 3 years, each 20%+ owner",
+  business_plan: "Business plan with financial projections",
+  sba_1919_attachments: "Supporting detail for any Yes answer on Form 1919",
+  debt_schedule: "Debt schedule - existing business debt",
+  lease_or_loi: "Lease or letter of intent for premises",
+};
+
+function labelFor(docType: string): string {
+  return SBA_DOC_LABELS[docType.trim().toLowerCase()] ?? humanize(docType);
+}
+
+// BF_SERVER_SBA_DOC_LIST_v113 - `required` added so the client can distinguish
+// "we cannot proceed without this" from "send it if you have it". Optional so
+// existing callers compile unchanged; absent means required.
+type NeededDoc = { document_type: string; label: string; required?: boolean };
 type UploadedDocRow = { category: string | null; status: string | null };
 
 function docTypeFromRequirement(raw: any): string {
@@ -42,11 +77,17 @@ function appendRequiredDocAll(
 ): void {
   const docType = docTypeFromRequirement(raw);
   if (!docType) return;
-  if (raw && typeof raw === "object" && raw.required === false) return;
+  // BF_SERVER_SBA_DOC_LIST_v113
+  // An optional document was DROPPED here entirely, so the three optional SBA
+  // items were absent from one path and present-but-unmarked on another. Keep
+  // them and carry the flag, so the client can label them rather than guess.
+  const isRequired = !(raw && typeof raw === "object" && raw.required === false);
   if (CMP_FORM.test(docType)) return;
+  // BF_SERVER_SBA_DOC_LIST_v113 - generated-and-signed, never uploaded.
+  if (SBA_GENERATED_FORM.test(docType)) return;
   if (seen.has(docType)) return;
   seen.add(docType);
-  out.push({ document_type: docType, label: docType });
+  out.push({ document_type: docType, label: labelFor(docType), required: isRequired });
 }
 
 function productRequirementItems(metadata: any): any[] {
@@ -117,7 +158,8 @@ async function computeOutstandingDocsRaw(
   for (const r of reqRes.rows) {
     if (r.category && !seen.has(r.category)) {
       seen.add(r.category);
-      required.push({ document_type: r.category, label: humanize(r.category) });
+      // BF_SERVER_SBA_DOC_LIST_v113
+      required.push({ document_type: r.category, label: labelFor(r.category), required: true });
     }
   }
 
@@ -170,7 +212,8 @@ async function computeOutstandingDocsRaw(
     })
     .map((r: UploadedDocRow) => ({
       document_type: r.category as string,
-      label: humanize(r.category as string),
+      // BF_SERVER_SBA_DOC_LIST_v113
+      label: labelFor(r.category as string),
     }));
 
   return { stillNeeded, rejected, required };
