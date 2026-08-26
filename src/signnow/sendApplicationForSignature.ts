@@ -46,12 +46,47 @@ export async function loadApplicationForPdf(applicationId: string): Promise<Appl
   const applicant = obj(md.applicant) ?? {};
   const kyc = obj(md.kyc) ?? obj(md.financial) ?? {};
 
-  const owners: PdfOwner[] = [ownerFrom(applicant, "Owner 1") ];
+  // BF_SERVER_ACCORD_ALL_OWNERS_v106
+  // This list built applicant + partner and stopped. accordPdfBuilder builds a
+  // DIFFERENT list that also includes applicant.additionalShareholders, so a
+  // third owner was PRINTED on the agreement as an owner and personal guarantor
+  // and was never made a signer - the executed document named guarantors who had
+  // not signed it. The locked rule is signers = every owner at 25% or more, and
+  // this is the list the signing path reads, so it is built that way here.
+  //
+  // Threshold is applied to everyone including the partner: a 10% partner is
+  // disclosed but does not guarantee, and previously signed purely because they
+  // occupied slot 2. Unstated ownership counts as significant - a blank is not
+  // evidence of a small stake, and the alternative is silently dropping a signer.
+  const SIGNER_THRESHOLD = 25;
+  const significant = (o: PdfOwner): boolean => o.ownership === null || (o.ownership ?? 0) >= SIGNER_THRESHOLD;
+
+  const allOwners: PdfOwner[] = [ownerFrom(applicant, "Owner 1")];
   const nestedPartner = obj(applicant.partner) ?? obj(md.partner);
   const hasPartner = applicant.hasMultipleOwners || applicant.partnerFirstName || nestedPartner?.firstName;
   if (hasPartner) {
-    owners.push(nestedPartner ? ownerFrom(nestedPartner, "Owner 2") : ownerFrom(applicant, "Owner 2", "partner"));
+    allOwners.push(nestedPartner ? ownerFrom(nestedPartner, "Owner 2") : ownerFrom(applicant, "Owner 2", "partner"));
   }
+  const shareholders = Array.isArray(applicant.additionalShareholders) ? applicant.additionalShareholders : [];
+  for (const r of shareholders) {
+    const row = obj(r) ?? {};
+    const nameParts = String(row.name ?? "").trim().split(/\s+/);
+    allOwners.push({
+      label: "",
+      firstName: nameParts.length > 1 ? nameParts.slice(0, -1).join(" ") : (nameParts[0] || null),
+      lastName: nameParts.length > 1 ? nameParts[nameParts.length - 1] : null,
+      ownership: num(row.ownership),
+      email: str(row.email), phone: str(row.mobile) ?? str(row.office),
+      street: str(row.address), city: null, province: null, postal: null,
+      dob: null, sin: null, creditScore: null,
+    } as PdfOwner);
+  }
+
+  // The applicant always signs: they are the authorized representative, whatever
+  // their percentage. Everyone else must clear the threshold.
+  const owners: PdfOwner[] = allOwners
+    .filter((o, i) => i === 0 || significant(o))
+    .map((o, i) => ({ ...o, label: `Owner ${i + 1}` }));
 
   return {
     applicationId,

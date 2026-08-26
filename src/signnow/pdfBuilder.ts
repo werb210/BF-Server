@@ -112,10 +112,23 @@ export async function buildApplicationPdf(inputs: ApplicationPdfInputs, out?: { 
     text("DATE SIGNED", dateX, y - 9, 6, F, GREY);
     out?.dateAnchors.push({ role, page: doc.getPages().indexOf(page), x: dateX, y: y - 26 });
   };
-  ensure(44);
-  sigRow("Owner 1", M);
-  if (inputs.owners[1]?.email) sigRow("Owner 2", M + CW / 2 + 4);
-  y -= 40;
+  // BF_SERVER_ACCORD_ALL_OWNERS_v106
+  // Two hard-coded rows became a row per signer. Accord's own carrier PDF is a
+  // fixed form with exactly two signature lines at fixed coordinates and cannot
+  // hold a third, so owners 3+ execute on THIS document - the one carrying the
+  // personal guarantee, and the one we control. Both documents sit in the same
+  // envelope, so every 25%+ owner still signs the package.
+  //
+  // A signer with no signature field anywhere in the envelope makes SignNow
+  // reject the invite outright ("Role Owner N was not specified"), so this loop
+  // and the signers array in embeddedSigningSession must stay in step.
+  const signerOwners = inputs.owners.filter((o, i) => i === 0 || (o?.email ?? "").trim().length > 0);
+  for (let i = 0; i < signerOwners.length; i += 2) {
+    ensure(44);
+    sigRow(`Owner ${i + 1}`, M);
+    if (signerOwners[i + 1]) sigRow(`Owner ${i + 2}`, M + CW / 2 + 4);
+    y -= 40;
+  }
 
   return doc.save();
 }
