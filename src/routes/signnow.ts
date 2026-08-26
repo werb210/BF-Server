@@ -287,6 +287,81 @@ This link is unique to you.`,
         console.warn(`[signnow-webhook] app=${app.id} deferred Owner 2 invite failed: ${e instanceof Error ? e.message : String(e)}`);
       }
 
+      // BF_SERVER_OWNER_INVITE_QUEUE_WALK_v107
+      // The block above mints exactly one link, for Owner 2. With three or more
+      // 25%+ owners (v106) the rest sat in owner_invite_queue and were never
+      // emailed: Owner 3 was a signer on the envelope, was named as a guarantor
+      // on the documents, and was never told. The group could not complete, and
+      // nothing said why.
+      //
+      // Walk the queue instead. SignNow places each signer in their own
+      // SEQUENTIAL step and refuses to mint a link for a step not yet reached
+      // (400 / 19019002), which is what broke the original envelope-time attempt.
+      // So this sends to the EARLIEST owner who has not yet been sent one, once
+      // per signer event, and each completed step advances it by one. Owner 2 is
+      // already handled above, so it starts from Owner 3.
+      try {
+        const q = await dbQuery<{ queue: any; gid: string | null; iid: string | null; sent: any }>(
+          `select metadata->'owner_invite_queue' as queue,
+                  metadata->'signnow_embedded'->>'group_id'  as gid,
+                  metadata->'signnow_embedded'->>'invite_id' as iid,
+                  coalesce(metadata->'owner_invite_sent', '[]'::jsonb) as sent
+             from applications where id::text = ($1)::text limit 1`,
+          [app.id]
+        );
+        const row = q.rows[0];
+        const queue: Array<{ index: number; email: string; name?: string }> =
+          Array.isArray(row?.queue) ? row!.queue : [];
+        const alreadySent = new Set<number>(
+          (Array.isArray(row?.sent) ? row!.sent : []).map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n))
+        );
+
+        // Owner 2 is sent by the block above; do not double-send.
+        const pending = queue
+          .filter((o) => Number(o?.index) >= 3 && !alreadySent.has(Number(o.index)) && String(o?.email ?? "").trim())
+          .sort((a, b) => Number(a.index) - Number(b.index));
+
+        const nextOwner = pending[0];
+        if (nextOwner && row?.gid && row?.iid) {
+          try {
+            const link = await createEmbeddedGroupLink(String(row.gid), String(row.iid), String(nextOwner.email));
+            const greeting = nextOwner.name ? `Hi ${nextOwner.name},` : "Hello,";
+            const sent = await sendViaGraph({
+              to: String(nextOwner.email),
+              subject: "Your Boreal application is ready to sign",
+              bodyHtml: `<p>${greeting}</p><p>An application you are listed on as an owner is ready for your signature. Please review and sign using your secure link below:</p><p><a href="${link.url}">Review &amp; sign your application</a></p><p>This link is unique to you. If you weren't expecting this, you can safely ignore this email.</p>`,
+              bodyText: `${greeting}\n\nAn application you are listed on as an owner is ready for your signature. Please review and sign using your secure link:\n${link.url}\n\nThis link is unique to you.`,
+            });
+            if (sent.ok) {
+              await dbQuery(
+                `update applications set metadata = coalesce(metadata,'{}'::jsonb)
+                   || jsonb_build_object('owner_invite_sent',
+                        coalesce(metadata->'owner_invite_sent','[]'::jsonb) || to_jsonb($2::int))
+                 where id::text = ($1)::text`,
+                [app.id, Number(nextOwner.index)]
+              ).catch(() => {});
+              console.log(`[signnow-webhook] app=${app.id} Owner ${nextOwner.index} signing link emailed`);
+            } else {
+              // NOT marked sent, so the next signer event retries it.
+              console.error(`[signnow-webhook] app=${app.id} Owner ${nextOwner.index} invite email failed: ${sent.error}`);
+              await dbQuery(
+                `update applications set metadata = coalesce(metadata,'{}'::jsonb)
+                   || jsonb_build_object('owner_invite_error', $2::text,
+                                         'owner_invite_error_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))
+                 where id::text = ($1)::text`,
+                [app.id, `Owner ${nextOwner.index}: ${String(sent.error).slice(0, 360)}`]
+              ).catch(() => {});
+            }
+          } catch (inner) {
+            // 19019002 here means this owner's step is not reachable yet, which is
+            // expected and self-correcting: an earlier signer still has to finish.
+            console.log(`[signnow-webhook] app=${app.id} Owner ${nextOwner.index} step not reachable yet: ${inner instanceof Error ? inner.message : String(inner)}`);
+          }
+        }
+      } catch (e) {
+        console.warn(`[signnow-webhook] app=${app.id} owner invite queue walk failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+
       console.log(`[signnow-webhook] app=${app.id} signer signed but group not complete - waiting for other signers`);
       res.status(200).json({ received: true, waiting_for_other_signers: true });
       return;
