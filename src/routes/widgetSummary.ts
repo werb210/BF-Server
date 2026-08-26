@@ -14,6 +14,8 @@ import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { getSilo } from "../middleware/silo.js";
 import { ApplicationStage } from "../modules/applications/pipelineState.js";
+// BF_SERVER_WIDGET_PARKED_v109
+import { liveStageFilter } from "../modules/applications/reportingScope.js";
 
 const router = Router();
 
@@ -24,7 +26,14 @@ const REAL_DEAL = `
   a.parent_application_id IS NULL
   AND COALESCE(a.pipeline_state, '') NOT IN ('draft', 'Draft', '')
   AND COALESCE(NULLIF(TRIM(a.name), ''), NULLIF(TRIM(a.business_legal_name), '')) IS NOT NULL
-  AND LOWER(TRIM(COALESCE(a.name, a.business_legal_name, ''))) NOT IN ('draft', 'draft application')`;
+  AND LOWER(TRIM(COALESCE(a.name, a.business_legal_name, ''))) NOT IN ('draft', 'draft application')
+  -- BF_SERVER_WIDGET_PARKED_v109
+  -- This excluded drafts and said nothing about parked states, so Fraud- and
+  -- Hold-marked files counted in the widget's pipeline total and its commission
+  -- figure. dashboard.ts has always applied reportingScope; this surface never
+  -- adopted it, so the two disagreed - and the Hold dialog tells staff in writing
+  -- that a held file "drops out of live pipeline and commission figures".
+  ${liveStageFilter("a.pipeline_state")}`;
 
 router.get("/summary", requireAuth, safeHandler(async (req: any, res: any) => {
   const silo = getSilo(res);
@@ -79,6 +88,13 @@ router.get("/summary", requireAuth, safeHandler(async (req: any, res: any) => {
             LIMIT 1
          ) off ON TRUE
         WHERE UPPER(a.silo) = UPPER($1)
+          -- BF_SERVER_WIDGET_PARKED_v109
+          -- The funded_amount arm of this OR bypassed every stage test: a deal
+          -- marked Fraud AFTER funding still carried its funded_amount, so it
+          -- kept earning commission in this figure forever. The Fraud dialog
+          -- promises removal "from commission and every report, in every
+          -- period". REAL_DEAL now carries the parked exclusion, but this arm
+          -- has to be constrained too or it re-admits exactly those rows.
           AND (a.pipeline_state = $2 OR a.funded_amount IS NOT NULL)
           AND ${REAL_DEAL}`,
       [silo, ApplicationStage.ACCEPTED],
