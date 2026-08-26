@@ -157,12 +157,28 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
     // in SEPARATE invite steps, which createEmbeddedGroupInvite now enforces (one signer per
     // sequential step). Keeping both signers also keeps the PDF's Owner 2 role filled, so the
     // invite no longer fails with "Role Owner 2 was not specified".
-    const o2 = inputs.owners[1];
-    const o2email = (o2?.email ?? "").trim();
-    const o2present = o2email.length > 0;
-    const o2name = o2present ? ([o2!.firstName, o2!.lastName].filter(Boolean).join(" ").trim() || undefined) : undefined;
+    // BF_SERVER_ACCORD_ALL_OWNERS_v106
+    // Was owners[0] and owners[1] only. Every owner at or above the threshold is
+    // now a signer; sendApplicationForSignature has already applied that filter
+    // and relabelled them Owner 1..N, and pdfBuilder emits a signature field for
+    // each, which is what SignNow requires before it will accept the role.
+    const rest = inputs.owners
+      .slice(1)
+      .map((o, i) => ({
+        index: i + 2,
+        email: (o?.email ?? "").trim(),
+        name: [o?.firstName, o?.lastName].filter(Boolean).join(" ").trim() || undefined,
+      }))
+      .filter((o) => o.email.length > 0);
+
     const signers: signnow.EmbeddedSigner[] = [{ email, name: inputs.applicantName ?? undefined, roleName: ROLE_OWNER1 }];
-    if (o2present) signers.push({ email: o2email, name: o2name, roleName: ROLE_OWNER2 });
+    for (const o of rest) signers.push({ email: o.email, name: o.name, roleName: `Owner ${o.index}` });
+
+    // Retained for the two-owner case, which is the overwhelming majority and
+    // whose deferral path is already proven in the webhook.
+    const o2present = rest.length > 0;
+    const o2email = rest[0]?.email ?? "";
+    const o2name = rest[0]?.name;
 
     const invite = await signnow.createEmbeddedGroupInvite(group.groupId, docIds, signers);
     const link = await signnow.createEmbeddedGroupLink(group.groupId, invite.inviteId, email);
@@ -183,9 +199,14 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
         `update applications set metadata = coalesce(metadata,'{}'::jsonb)
            || jsonb_build_object('owner2_invite_pending', true,
                                  'owner2_invite_email', $2::text,
-                                 'owner2_invite_name', $3::text)
+                                 'owner2_invite_name', $3::text,
+                                 -- BF_SERVER_ACCORD_ALL_OWNERS_v106 - the full
+                                 -- signer roster beyond Owner 1, so the webhook
+                                 -- can walk it as each step completes instead of
+                                 -- knowing only about Owner 2.
+                                 'owner_invite_queue', $4::jsonb)
          where id::text = ($1)::text`,
-        [applicationId, o2email, o2name ?? null]
+        [applicationId, o2email, o2name ?? null, JSON.stringify(rest)]
       ).catch(() => {});
       console.log(`[signnow] Owner 2 invite deferred until Owner 1 signs for app=${applicationId}`);
     }
