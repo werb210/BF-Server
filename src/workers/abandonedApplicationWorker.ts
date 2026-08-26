@@ -38,16 +38,49 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
     try {
       // ---- 4-hour SMS --------------------------------------------------
       const due = await pool.query<{ id: string; contact_id: string | null; phone: string | null; silo: string | null }>(
-        `SELECT a.id, a.contact_id, c.phone, a.silo
+        // BF_SERVER_ABANDON_SMS_TARGET_v120
+        // Two faults here sent 264,397 billed messages to a fake number.
+        //
+        // 1. WRONG RECIPIENT. This joined a.contact_id, which is the business
+        //    contact - the wizard writes Step 3's BUSINESS PHONE there. An SMS
+        //    nudge belongs on the applicant's mobile, collected on Step 4. Now
+        //    joined through application_contacts role='applicant', the same way
+        //    portal.ts and auth.ts resolve the person, so the nudge reaches a
+        //    handset instead of a switchboard. Landlines cannot receive SMS, so
+        //    every send to one is billed and lost even without a placeholder.
+        //
+        // 2. NO SANITY CHECK ON THE NUMBER. (555) 555-5555 is a reserved
+        //    fictional number that can never receive a message. It went to
+        //    Twilio 264,397 times. The guards below drop numbers that are
+        //    structurally incapable of receiving SMS BEFORE they cost anything:
+        //      - NANP 555-01xx and 555-5555, reserved for fiction
+        //      - fewer than 10 digits
+        //      - all-identical digits (0000000000, 1111111111)
+        //    A number that fails these is stamped as sent, so it is never
+        //    retried, rather than being left eligible forever.
+        `SELECT a.id, ac.contact_id, c.phone, a.silo
            FROM applications a
-           JOIN contacts c ON c.id = a.contact_id
+           JOIN LATERAL (
+             SELECT contact_id
+               FROM application_contacts
+              WHERE application_id = a.id AND role = 'applicant'
+              ORDER BY created_at ASC
+              LIMIT 1
+           ) ac ON true
+           JOIN contacts c ON c.id = ac.contact_id
           WHERE a.submitted_at IS NULL
             AND a.abandon_sms_sent_at IS NULL
-            AND a.updated_at < now() - ($1 || ' hours')::interval
+            AND a.updated_at < ($1 || ' hours')::interval * -1 + now()
             AND a.updated_at > now() - ($2 || ' months')::interval
             AND c.phone IS NOT NULL
             AND btrim(c.phone) <> ''
             AND COALESCE(c.sms_opt_out, false) = false
+            -- Reserved fictional ranges: never deliverable, always billed.
+            AND regexp_replace(c.phone, '[^0-9]', '', 'g') NOT LIKE '%5555555'
+            AND regexp_replace(c.phone, '[^0-9]', '', 'g') NOT LIKE '%55501__'
+            -- Structurally impossible.
+            AND length(regexp_replace(c.phone, '[^0-9]', '', 'g')) >= 10
+            AND regexp_replace(c.phone, '[^0-9]', '', 'g') !~ '^(.)\\1+$'
           ORDER BY a.updated_at ASC
           LIMIT 25`,
         [String(SMS_AFTER_HOURS), String(CONSENT_WINDOW_MONTHS)],
@@ -122,7 +155,7 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
       const callDue = await pool.query<{ id: string; contact_id: string; silo: string | null; phone: string | null }>(
         `SELECT a.id, a.contact_id, a.silo, c.phone
            FROM applications a
-           JOIN contacts c ON c.id = a.contact_id
+            JOIN contacts AS c ON c.id = a.contact_id
           WHERE a.submitted_at IS NULL
             AND a.abandon_task_created_at IS NULL
             AND a.updated_at < now() - ($1 || ' days')::interval
