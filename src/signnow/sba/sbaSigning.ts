@@ -103,9 +103,37 @@ export async function createSbaSigningSessions(applicationId: string): Promise<
 /** Fail closed while any SBA envelope is unsigned or its status cannot be read. */
 export async function sbaSigningSatisfiedForDispatch(applicationId: string): Promise<boolean> {
   if (!isApiKeyConfigured()) return true;
+
+  // BF_SERVER_SBA_DISPATCH_GATE_HONEST_v102
+  // createSbaSigningSessions() skips any owner with no email address - it logs
+  // sba_signing_owner_skipped_no_email and moves on. This gate then checked only
+  // the envelopes that WERE created, so a skipped owner read as satisfied, and
+  // "no envelopes at all" read as satisfied outright. Either way the package
+  // shipped to the lender missing a signed Form 413 from a 20%+ owner, which SBA
+  // requires, with nothing raised anywhere.
+  //
+  // The set of owners is the authority, not the set of envelopes. Every owner
+  // resolved for this application must have an envelope AND that envelope must
+  // be signed. An SBA application with no resolvable owners is not dispatchable
+  // either - there is no such thing as a 7(a) file with no principals.
+  let owners: Array<{ index: number }> = [];
+  try {
+    owners = await resolveSbaOwners(applicationId);
+  } catch {
+    // Cannot establish who must sign, so cannot assert that they did.
+    return false;
+  }
+  if (owners.length === 0) return false;
+
   const envelopes = await sbaEnvelopes(applicationId);
-  if (envelopes.length === 0) return true;
-  for (const envelope of envelopes) {
+  const byOwner = new Map(envelopes.map((e) => [e.ownerIndex, e]));
+
+  for (const owner of owners) {
+    const envelope = byOwner.get(owner.index);
+    if (!envelope) {
+      logInfo("sba_dispatch_blocked_missing_envelope", { applicationId, ownerIndex: owner.index });
+      return false;
+    }
     try {
       if ((await getDocumentGroupStatus(envelope.groupId)).signed !== true) return false;
     } catch {
@@ -119,7 +147,14 @@ export async function sbaSigningSatisfiedForDispatch(applicationId: string): Pro
 export async function getSignedSbaPdfs(applicationId: string): Promise<Array<{ filename: string; content: Buffer }>> {
   if (!isApiKeyConfigured()) return [];
   const envelopes = await sbaEnvelopes(applicationId);
-  if (envelopes.length === 0) return [];
+  // BF_SERVER_SBA_DISPATCH_GATE_HONEST_v102 - an empty envelope list is not
+  // "nothing to attach", it is "signing never happened". The dispatch gate above
+  // now refuses that case, so reaching here with none is a logic error worth a log
+  // line rather than a silently thin package.
+  if (envelopes.length === 0) {
+    logInfo("sba_signed_pdfs_none_available", { applicationId });
+    return [];
+  }
   const out: Array<{ filename: string; content: Buffer }> = [];
   for (const envelope of envelopes) {
     try {
