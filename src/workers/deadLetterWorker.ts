@@ -1,13 +1,14 @@
 import { pool } from "../db.js";
-import { withRetry } from "../lib/retry.js";
 import { sendSms } from "../modules/notifications/sms.service.js";
 import { pushLeadToCRM } from "../services/crmWebhook.js";
 import { sendSlackAlert } from "../observability/alerts.js";
+import { isPermanentSmsFailure, isUndeliverableNumber } from "../lib/smsDeliverability.js";
 
 async function processJob(job: { type: string; data: any }): Promise<void> {
   switch (job.type) {
     case "sms":
-      await sendSms(job.data);
+      // Do not enqueue another dead letter while processing a dead letter.
+      await sendSms({ to: job.data?.to, message: job.data?.body ?? job.data?.message }, { enqueueOnFailure: false });
       return;
     case "partner_webhook":
       await pushLeadToCRM(job.data);
@@ -39,16 +40,22 @@ export async function processDeadLetters(): Promise<void> {
       continue;
     }
 
-    try {
-      await withRetry(async () => {
-        await processJob(job);
-      });
+    // BF_SERVER_SMS_LOOP_KILL_v121 - retire invalid destinations without Twilio.
+    if (job.type === "sms" && isUndeliverableNumber(job.data?.to)) {
+      await pool.query(`UPDATE failed_jobs SET retry_count = $2 WHERE id = $1`, [job.id, MAX_RETRIES]).catch(() => {});
+      continue;
+    }
 
+    try {
+      await processJob(job);
       await pool.query(`DELETE FROM failed_jobs WHERE id = $1`, [job.id]);
-    } catch {
+    } catch (err) {
+      const retire = job.type === "sms" && isPermanentSmsFailure(err);
       await pool.query(
-        `UPDATE failed_jobs SET retry_count = retry_count + 1 WHERE id = $1`,
-        [job.id]
+        retire
+          ? `UPDATE failed_jobs SET retry_count = $2 WHERE id = $1`
+          : `UPDATE failed_jobs SET retry_count = retry_count + 1 WHERE id = $1`,
+        retire ? [job.id, MAX_RETRIES] : [job.id],
       );
     }
   }
