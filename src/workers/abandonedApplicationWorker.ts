@@ -64,7 +64,52 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
             [row.id],
           );
         } catch (err) {
-          console.warn("[abandonedApplication] sms failed", { applicationId: row.id, err: String(err) });
+          // BF_SERVER_ABANDON_PERMANENT_FAIL_v119
+          // Retry-until-success is right for a transient outage and catastrophic
+          // for a permanent rejection. An invalid number - (555) 555-5555 from a
+          // test application - is rejected by Twilio every single time, so the
+          // stamp never landed, the row stayed eligible, and the worker resent it
+          // on every tick. That produced 264,397 billed failures against 5,427
+          // real sends before anyone noticed, because a rejected message still
+          // costs money.
+          //
+          // These codes mean the message will NEVER succeed no matter how often
+          // it is tried, so the row is stamped and retired:
+          //   21211 invalid To number      21614 not a mobile number
+          //   21610 recipient unsubscribed 21612 unreachable via this route
+          //   21408 permission denied for that region
+          //   30003 handset unreachable    30005 unknown or inactive handset
+          //   30006 landline or unreachable carrier
+          // Anything else - network blips, rate limits, auth - still retries.
+          const code = Number((err as any)?.code ?? (err as any)?.status ?? 0);
+          const permanent = [21211, 21610, 21612, 21614, 21408, 30003, 30005, 30006].includes(code);
+
+          const bumped = await pool.query<{ abandon_sms_attempts: number }>(
+            `UPDATE applications SET abandon_sms_attempts = abandon_sms_attempts + 1
+              WHERE id = $1 RETURNING abandon_sms_attempts`,
+            [row.id],
+          ).catch(() => ({ rows: [] as Array<{ abandon_sms_attempts: number }> }));
+          const attempts = bumped.rows[0]?.abandon_sms_attempts ?? 0;
+
+          // Backstop: even a failure that looks transient stops after 3 tries.
+          // Without a cap, any error Twilio reports that is not on the list above
+          // reproduces exactly the loop this block exists to prevent.
+          if (permanent || attempts >= 3) {
+            await pool.query(
+              `UPDATE applications SET abandon_sms_sent_at = now() WHERE id = $1`,
+              [row.id],
+            ).catch(() => {});
+            console.warn("[abandonedApplication] sms retired", {
+              applicationId: row.id,
+              code,
+              attempts,
+              reason: permanent ? "permanent_rejection" : "attempt_cap",
+            });
+          } else {
+            console.warn("[abandonedApplication] sms failed, will retry", {
+              applicationId: row.id, code, attempts,
+            });
+          }
         }
       }
 
