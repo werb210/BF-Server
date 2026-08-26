@@ -10,7 +10,7 @@
 //                  to review the answers before a federal form goes out
 import { dbQuery } from "../../db.js";
 import { createSbaSigningSessions } from "./sbaSigning.js";
-import { resolveSbaOwners } from "./sbaOwners.js";
+import { resolveSbaOwners, ownerFingerprint } from "./sbaOwners.js";
 import { logInfo } from "../../observability/logger.js";
 
 /** Is this an SBA deal at all? Non-SBA applications must not be gated. */
@@ -40,12 +40,34 @@ export async function isSbaApplication(applicationId: string): Promise<boolean> 
 export async function sbaFormsComplete(applicationId: string): Promise<{ complete: boolean; missing: string[] }> {
   const owners = await resolveSbaOwners(applicationId);
   const required = ["sba_form_1919", ...owners.map((o) => (o.index <= 1 ? "sba_form_413" : `sba_form_413_owner_${o.index}`))];
-  const r = await dbQuery<{ doc_type: string }>(
-    `SELECT doc_type FROM application_form_responses
+  const r = await dbQuery<{ doc_type: string; owner_fingerprint: string | null }>(
+    `SELECT doc_type, owner_fingerprint FROM application_form_responses
       WHERE application_id::text = ($1)::text AND submitted_at IS NOT NULL`,
     [applicationId],
-  ).catch(() => ({ rows: [] as Array<{ doc_type: string }> }));
-  const have = new Set(r.rows.map((x) => String(x.doc_type)));
+  ).catch(() => ({ rows: [] as Array<{ doc_type: string; owner_fingerprint: string | null }> }));
+
+  // BF_SERVER_SBA_OWNER_IDENTITY_v104
+  // A submitted 413 counts only if it was filled for the owner who currently
+  // holds that position. Owner indices are positional, so a shareholder added or
+  // removed mid-flow shifts everyone below and would otherwise hand one owner's
+  // personal financial statement to another. A response with no fingerprint
+  // predates this and is accepted as-is rather than forcing a re-ask.
+  const expected = new Map<string, string>();
+  for (const o of owners) {
+    expected.set(o.index <= 1 ? "sba_form_413" : `sba_form_413_owner_${o.index}`, ownerFingerprint(o));
+  }
+
+  const have = new Set<string>();
+  for (const row of r.rows) {
+    const key = String(row.doc_type);
+    const want = expected.get(key);
+    const got = row.owner_fingerprint ? String(row.owner_fingerprint) : null;
+    if (want && got && want !== got) {
+      logInfo("sba_form_owner_changed", { applicationId, docType: key });
+      continue;
+    }
+    have.add(key);
+  }
   const missing = required.filter((k) => !have.has(k));
   return { complete: missing.length === 0, missing };
 }
