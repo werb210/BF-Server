@@ -27,7 +27,7 @@ describe("undeliverable SMS numbers", () => {
 });
 
 describe("permanent SMS failures", () => {
-  it.each([21211, 21214, 21408, 21610, 21612, 21614, 30003, 30005, 30006])("recognizes code %i", (code) => {
+  it.each([21602, 21211, 21214, 21408, 21610, 21612, 21614, 30003, 30005, 30006])("recognizes code %i", (code) => {
     expect(isPermanentSmsFailure({ code })).toBe(true);
   });
 
@@ -38,6 +38,16 @@ describe("permanent SMS failures", () => {
   it("reads either code or status", () => {
     expect(twilioErrorCode({ status: 21211 })).toBe(21211);
     expect(twilioErrorCode(new Error("boom"))).toBe(0);
+  });
+});
+
+describe("the payload shape mismatch that caused it", () => {
+  it("the worker maps the stored `body` onto sendSms's `message`", () => {
+    expect(worker).toContain("message: job.data?.body ?? job.data?.message");
+  });
+
+  it("does not pass the raw payload through, which sent an empty body", () => {
+    expect(worker).not.toContain("await sendSms(job.data)");
   });
 });
 
