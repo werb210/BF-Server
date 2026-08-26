@@ -13,7 +13,7 @@ import {
 } from "../signnowClient.js";
 import { getStorage } from "../../lib/storage/index.js";
 import { resolveSbaOwners, loadSbaContext } from "./sbaOwners.js";
-import { buildSba1919, buildSba912, buildSba413 } from "./sbaFormBuilder.js";
+import { buildSba1919, buildSba912, buildSba413, buildSba4506c } from "./sbaFormBuilder.js";
 import { logInfo, logError } from "../../observability/logger.js";
 
 const SBA_DOC_CATEGORY = "SBA Forms";
@@ -61,6 +61,19 @@ export async function createSbaSigningSessions(applicationId: string): Promise<
     }
     const form912 = await buildSba912({ business: ctx.business, owner });
     if (form912) docs.push({ bytes: form912, filename: `sba-912-owner${owner.index}-${applicationId}.pdf` });
+    // BF_SERVER_SBA_4506C_ENVELOPE_v117
+    // IRS 4506-C, one per 20%+ owner: the tax transcript authorization is
+    // personal, like the 413, so each owner signs their own.
+    //
+    // Returns null while the field map is empty (v116), and null is already the
+    // signal this loop uses for "no document" - so this is inert until the
+    // template is uploaded and mapped, then starts riding along with no further
+    // change. Placed BEFORE the 413 so the signing order reads
+    // 1919, 912, 4506-C, 413: authorizations first, then the financial
+    // statement, which is the order a lender reads them in.
+    const form4506c = await buildSba4506c({ business: ctx.business, owner });
+    if (form4506c) docs.push({ bytes: form4506c, filename: `irs-4506c-owner${owner.index}-${applicationId}.pdf` });
+
     const data413 = ctx.form413ByOwner.get(String(owner.index)) ?? {};
     const form413 = await buildSba413({ business: ctx.business, owner, data: data413 });
     if (form413) docs.push({ bytes: form413, filename: `sba-413-owner${owner.index}-${applicationId}.pdf` });
