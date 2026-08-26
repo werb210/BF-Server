@@ -248,6 +248,20 @@ export async function start(): Promise<void> {
     try { const w = startSendQueueWorker(pool); workerStops.push(w.stop); console.log("[startup] send-queue worker started"); }
     catch (err) { console.error("[startup] send-queue worker failed to start:", err); }
 
+    // BF_SERVER_DEAD_LETTER_WORKER_v110
+    // failed_jobs has four live producers - sms.service, ocr.provider, aiService
+    // and crmWebhook all pushDeadLetter() on failure - and nothing has ever
+    // drained it. Every failed SMS, OCR job, AI call and CRM lead push since the
+    // table was created has been sitting there unretried, which is invisible:
+    // the producer already returned successfully to its caller.
+    //
+    // Takes no pool argument, unlike the workers around it: it imports the pool
+    // directly. Kept as-is rather than changed, so this block only starts the
+    // worker and does not also alter how it reaches the database.
+    const { startDeadLetterWorker } = await import("./workers/deadLetterWorker.js");
+    try { const w = startDeadLetterWorker(); workerStops.push(w.stop); console.log("[startup] dead-letter worker started"); }
+    catch (err) { console.error("[startup] dead-letter worker failed to start:", err); }
+
     // BF_SERVER_BLOCK_v785_SEQUENCES
     const { startSequenceWorker } = await import("./workers/sequenceWorker.js");
     try { const w = startSequenceWorker(pool); workerStops.push(w.stop); console.log("[startup] sequence worker started"); }
