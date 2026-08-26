@@ -1393,6 +1393,13 @@ router.patch(
         throw new AppError("validation_error", "A reason is required when marking an application as fraud.", 400);
       }
 
+      // BF_SERVER_HOLD_CLIENT_EMAIL_v108 - the client is now emailed the reason
+      // a file was put on hold, so the reason can no longer be blank: an empty
+      // one would send an applicant a notice listing no reasons at all.
+      if (status === ApplicationStage.HOLD && parkingNow && parkReason.length < 3) {
+        throw new AppError("validation_error", "A reason is required when putting an application on hold. The client is emailed this reason.", 400);
+      }
+
       if (parkingNow) {
         await runQuery(
           `UPDATE applications
@@ -1406,6 +1413,25 @@ router.patch(
             WHERE id::text = ($1)::text`,
           [applicationId, from, String(req.user.userId ?? ""), parkReason, status === ApplicationStage.FRAUD],
         );
+
+        // BF_SERVER_HOLD_CLIENT_EMAIL_v108
+        // Hold only. Fraud is deliberately silent: telling someone their file was
+        // flagged as fraud is a decision with legal weight and is not made by a
+        // status change on a pipeline board.
+        //
+        // Fired after the hold is committed and not awaited into the response, so
+        // a slow or failing mailbox cannot make the action appear to have failed
+        // when it has already succeeded.
+        if (status === ApplicationStage.HOLD) {
+          void (async () => {
+            try {
+              const { sendHoldNoticeToClient } = await import("../services/holdNotice.js");
+              await sendHoldNoticeToClient(applicationId, parkReason);
+            } catch (e) {
+              console.warn("[hold_notice] failed", applicationId, e instanceof Error ? e.message : String(e));
+            }
+          })();
+        }
       } else if (leavingPark) {
         await runQuery(
           `UPDATE applications
