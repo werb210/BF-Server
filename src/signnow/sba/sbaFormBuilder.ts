@@ -133,5 +133,69 @@ export async function buildSba413(args: { business: any; owner: SbaOwner; data: 
     [F413.contFederalTax]: money(d?.cont_federal_tax), [F413.contOtherSpecial]: money(d?.cont_other_special),
     [F413.section7OtherLiab]: s(d?.notes),
   };
+
+  // BF_SERVER_SBA_413_SCHEDULES_v115
+  // Everything above is the front-page balance sheet. SBA Form 413 also carries
+  // six detail schedules, and each is MANDATORY when its summary line is
+  // non-zero: report a mortgage and Section 4 must list the property; report
+  // notes payable and Section 2 must list the noteholders. Filing the summary
+  // alone produces a form the lender returns as incomplete, which is what would
+  // have happened on the first real 7(a) file.
+  //
+  // The field names were mapped in v90 but never written. Capacity is fixed by
+  // the paper form - 5 noteholder rows, 3 properties - and beyond that SBA
+  // expects a continuation sheet, so overflow is recorded rather than dropped
+  // silently.
+  const rows = (key: string): any[] => (Array.isArray(d?.[key]) ? d[key] : []);
+
+  // Section 2 - Notes Payable to Banks and Others.
+  const noteholders = rows("noteholders");
+  noteholders.slice(0, F413.MAX_NOTEHOLDER_ROWS).forEach((n: any, idx: number) => {
+    const i = idx + 1;
+    values[F413.noteholderName(i)] = s(n?.name);
+    values[F413.noteholderOriginalBalance(i)] = money(n?.original_balance);
+    values[F413.noteholderCurrentBalance(i)] = money(n?.current_balance);
+    values[F413.noteholderPayment(i)] = money(n?.payment);
+    values[F413.noteholderFrequency(i)] = s(n?.frequency);
+    values[F413.noteholderCollateral(i)] = s(n?.collateral);
+  });
+
+  // Section 4 - Real Estate Owned. Lettered A/B/C on the form, not numbered.
+  const properties = rows("properties");
+  (["A", "B", "C"] as const).forEach((letter, idx) => {
+    const prop = properties[idx];
+    if (!prop) return;
+    values[F413.propertyType(letter)] = s(prop?.type);
+    values[F413.propertyAddress(letter)] = s(prop?.address);
+    values[F413.propertyMarketValue(letter)] = money(prop?.market_value);
+    values[F413.propertyMortgageBalance(letter)] = money(prop?.mortgage_balance);
+  });
+
+  // Sections 3, 5, 6 and 8, plus the Other Income description. Each is a single
+  // free-text row on the form; the client collects them as text for that reason.
+  values[F413.otherIncomeDescription] = s(d?.other_income_description);
+  values[F413.section5OtherProperty] = s(d?.section5_other_property);
+  values[F413.section6UnpaidTaxes] = s(d?.section6_unpaid_taxes);
+  values[F413.section8LifeInsurance] = s(d?.section8_life_insurance);
+
+  // Second signature block. 413 holds two, and a jointly-held statement needs
+  // the spouse or co-owner named even though SignNow owns the /Sig field.
+  if (s(d?.joint_name)) {
+    values[F413.printName2] = s(d.joint_name);
+    values[F413.ssn2] = s(d?.joint_ssn);
+    values[F413.date2] = today;
+  }
+
+  // Over capacity: the form physically cannot hold more. Recorded so a file that
+  // needs a continuation sheet is visible rather than quietly truncated.
+  if (noteholders.length > F413.MAX_NOTEHOLDER_ROWS || properties.length > 3) {
+    logInfo("sba_413_schedule_overflow", {
+      noteholders: noteholders.length,
+      noteholderCapacity: F413.MAX_NOTEHOLDER_ROWS,
+      properties: properties.length,
+      propertyCapacity: 3,
+    });
+  }
+
   return fillAcroForm(tpl, values);
 }
