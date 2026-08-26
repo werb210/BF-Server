@@ -39,7 +39,36 @@ export async function isSbaApplication(applicationId: string): Promise<boolean> 
 /** Which SBA forms must be in before signing can open. */
 export async function sbaFormsComplete(applicationId: string): Promise<{ complete: boolean; missing: string[] }> {
   const owners = await resolveSbaOwners(applicationId);
-  const required = ["sba_form_1919", ...owners.map((o) => (o.index <= 1 ? "sba_form_413" : `sba_form_413_owner_${o.index}`))];
+
+  // BF_SERVER_SBA_OWNER_CAPACITY_v105
+  // Form 1919 has five owner blocks and sbaFormBuilder truncates to that with
+  // owners.slice(0, MAX_OWNERS); the client registers Form 413 renderers up to
+  // sba_form_413_owner_5. A sixth 20%+ owner was therefore dropped from the 1919
+  // - a false statement on a federal form - while this gate still demanded their
+  // 413, which had no renderer and could never be submitted. Truncated document,
+  // permanent stall, nothing logged anywhere.
+  //
+  // The paper form is the hard constraint and cannot be widened from here, so
+  // the overflow is surfaced instead of swallowed: SBA_OVERFLOW is reported as a
+  // missing item, which holds the file and shows staff exactly why. Six-owner
+  // deals need a paper addendum and a human.
+  const OWNER_CAPACITY = 5;
+  const overflow = owners.filter((o) => o.index > OWNER_CAPACITY);
+  if (overflow.length > 0) {
+    logInfo("sba_owner_capacity_exceeded", {
+      applicationId,
+      owners: owners.length,
+      capacity: OWNER_CAPACITY,
+      overflowIndexes: overflow.map((o) => o.index),
+    });
+  }
+
+  const within = owners.filter((o) => o.index <= OWNER_CAPACITY);
+  const required = [
+    "sba_form_1919",
+    ...within.map((o) => (o.index <= 1 ? "sba_form_413" : `sba_form_413_owner_${o.index}`)),
+    ...(overflow.length > 0 ? [`SBA_OVERFLOW:${overflow.length}_owners_over_capacity_${OWNER_CAPACITY}`] : []),
+  ];
   const r = await dbQuery<{ doc_type: string; owner_fingerprint: string | null }>(
     `SELECT doc_type, owner_fingerprint FROM application_form_responses
       WHERE application_id::text = ($1)::text AND submitted_at IS NOT NULL`,

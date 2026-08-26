@@ -1,4 +1,5 @@
 // BF_SERVER_SBA_FORM_BUILDER_v95
+import { logInfo } from "../../observability/logger.js";
 import { fillAcroForm, type FieldMap } from "./fillAcroForm.js";
 import { loadSbaTemplate } from "./templates.js";
 import { SBA_1919_FIELDS as F19, SBA_912_FIELDS as F12, SBA_413_FIELDS as F413, SBA_912_RADIO_STATES } from "./fieldMaps.js";
@@ -43,6 +44,17 @@ export async function buildSba1919(args: { applicationId: string; business: any;
     [F19.purposeOther1]: !!money(f.purpose_other), [F19.purposeOther1Amt]: money(f.purpose_other),
     [F19.exportSalesTotal]: s(f.q5_exports_detail), [F19.repName]: owners[0]?.fullName ?? "", [F19.repTitle]: owners[0]?.title ?? "",
   };
+  // BF_SERVER_SBA_OWNER_CAPACITY_v105 - the form physically holds five. Dropping
+  // a sixth owner without a word produces a 1919 that understates ownership, so
+  // record it. sbaFormsComplete holds the file in this case; this line is what
+  // explains it in the log.
+  if (owners.length > F19.MAX_OWNERS) {
+    logInfo("sba_1919_owners_truncated", {
+      total: owners.length,
+      rendered: F19.MAX_OWNERS,
+      dropped: owners.length - F19.MAX_OWNERS,
+    });
+  }
   owners.slice(0, F19.MAX_OWNERS).forEach((owner, index) => {
     const n = index + 1;
     values[F19.ownerName(n)] = owner.fullName; values[F19.ownerTitle(n)] = owner.title;
