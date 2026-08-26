@@ -104,7 +104,7 @@ export async function createSbaSigningSessions(applicationId: string): Promise<
 export async function sbaSigningSatisfiedForDispatch(applicationId: string): Promise<boolean> {
   if (!isApiKeyConfigured()) return true;
 
-  // BF_SERVER_SBA_DISPATCH_GATE_HONEST_v102
+  // BF_SERVER_SBA_V103
   // createSbaSigningSessions() skips any owner with no email address - it logs
   // sba_signing_owner_skipped_no_email and moves on. This gate then checked only
   // the envelopes that WERE created, so a skipped owner read as satisfied, and
@@ -147,7 +147,7 @@ export async function sbaSigningSatisfiedForDispatch(applicationId: string): Pro
 export async function getSignedSbaPdfs(applicationId: string): Promise<Array<{ filename: string; content: Buffer }>> {
   if (!isApiKeyConfigured()) return [];
   const envelopes = await sbaEnvelopes(applicationId);
-  // BF_SERVER_SBA_DISPATCH_GATE_HONEST_v102 - an empty envelope list is not
+  // BF_SERVER_SBA_V103 - an empty envelope list is not
   // "nothing to attach", it is "signing never happened". The dispatch gate above
   // now refuses that case, so reaching here with none is a logic error worth a log
   // line rather than a silently thin package.

@@ -18,7 +18,7 @@
 
 import { Router } from "express";
 import { pool } from "../db.js";
-// BF_SERVER_SBA_STAGE2_REACHABLE_v101
+// BF_SERVER_SBA_V103
 import { resolveSbaOwners } from "../signnow/sba/sbaOwners.js";
 import { isSbaApplication } from "../signnow/sba/sbaTrigger.js";
 
@@ -189,6 +189,7 @@ router.get("/lender-products/required-docs", async (req, res) => {
 
   let items = Array.from(map.values());
 
+  // BF_SERVER_SBA_V103
   // Form 413 is personal, so expose one form for every 20%+ SBA owner.
   const applicationId = String(req.query.application_id ?? "").trim();
   if (applicationId && items.some((i) => i.document_type === "sba_form_413")) {
