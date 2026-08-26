@@ -1,5 +1,11 @@
 // BF_SERVER_SMS_LOOP_KILL_v121
 export const PERMANENT_SMS_ERROR_CODES = [
+  21602, // message body is required - what the dead-letter loop actually hit.
+         // pushDeadLetter stores the Twilio payload as { body, from, to }, and
+         // sendSms destructures { to, message }. processJob passed the payload
+         // straight through, so `message` was undefined on every retry and every
+         // send went out empty. 400,145 of them. Permanent by definition: an
+         // empty body is empty however many times it is sent.
   21211, 21214, 21408, 21610, 21612, 21614, 30003, 30005, 30006,
 ] as const;
 
