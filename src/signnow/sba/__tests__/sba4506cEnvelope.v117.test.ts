@@ -8,7 +8,7 @@ const signing = readFileSync(resolve(__dirname, "..", "sbaSigning.ts"), "utf-8")
 describe("4506-C in the envelope", () => {
   it("is built per owner, inside the owner loop", () => {
     const loopStart = signing.indexOf("for (const owner of owners)");
-    const call = signing.indexOf("buildSba4506c({ business: ctx.business, owner })");
+    const call = signing.indexOf("buildSba4506c({ business: ctx.business, owner, kyc: ctx.kyc })");
     expect(loopStart).toBeGreaterThan(-1);
     expect(call).toBeGreaterThan(loopStart);
   });

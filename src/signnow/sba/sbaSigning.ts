@@ -71,7 +71,7 @@ export async function createSbaSigningSessions(applicationId: string): Promise<
     // change. Placed BEFORE the 413 so the signing order reads
     // 1919, 912, 4506-C, 413: authorizations first, then the financial
     // statement, which is the order a lender reads them in.
-    const form4506c = await buildSba4506c({ business: ctx.business, owner });
+    const form4506c = await buildSba4506c({ business: ctx.business, owner, kyc: ctx.kyc });
     if (form4506c) docs.push({ bytes: form4506c, filename: `irs-4506c-owner${owner.index}-${applicationId}.pdf` });
 
     const data413 = ctx.form413ByOwner.get(String(owner.index)) ?? {};

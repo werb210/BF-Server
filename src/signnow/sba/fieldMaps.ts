@@ -182,24 +182,40 @@ export const SBA_413_FIELDS = {
 } as const;
 
 
-// BF_SERVER_SBA_4506C_v116
-// IRS Form 4506-C - Request for Transcript of Tax Return.
+// BF_SERVER_SBA_4506C_MAP_v118
+// IRS Form 4506-C (Rev. 10-2022), 84 fields, read with pypdf get_fields from the
+// official f4506c.pdf. XFA-style hierarchical names, unlike the other three
+// forms - the full dotted path is the field name and must be used verbatim.
 //
-// EMPTY ON PURPOSE. Every other map in this file was read from the live template
-// with pypdf get_fields, never guessed, because a wrong name fails silently: the
-// PDF fills, the field stays blank, and nobody notices until a lender rejects it.
+// Four things that will bite whoever edits this:
 //
-// To populate:
-//   1. Upload the current IRS revision to borealstorageprod/signed-applications.
-//   2. Set SBA_4506C_BLOB if the filename differs from the default.
-//   3. python3 -c "from pypdf import PdfReader; print(PdfReader('4506-C.pdf').get_fields().keys())"
-//   4. Fill the keys below, then update TEMPLATE_EDITIONS in templates.ts.
+// 1. attestCheckbox is MANDATORY. The IRS instructions say the form "will not be
+//    processed if unchecked". It is a checkbox next to the signature that is easy
+//    to overlook because it reads like boilerplate.
 //
-// buildSba4506c returns null while this is empty, so the package is short the
-// authorization rather than carrying a blank one that looks signed.
-export const SBA_4506C_FIELDS: Record<string, string> = {
-  // name: "",
-  // ssn: "",
-  // address: "",
-  // businessName: "",
-} as any;
+// 2. electronicSignatureCheckbox must be ticked too, because we sign through
+//    SignNow. IRS: "If the Form 4506-C is signed electronically, the Electronic
+//    Signature check box must be marked."
+//
+// 3. The signature fields are /Tx, NOT /Sig. On the other three forms SignNow
+//    owns a real signature field; here it must place its own tag over a text box.
+//    Do not type a name into signature[0] - a typed signature is not a signature.
+//
+// 4. Line 8 is twelve separate boxes: four date slots of mm / dd / yyyy, named
+//    f1_15 through f1_26 in order. They are positional, not labelled.
+const P = "form1[0].page_1[0]";
+
+export const SBA_4506C_FIELDS = {
+  firstName: `${P}.name_shown[0].first_name[0]`, middleInitial: `${P}.name_shown[0].middle_initial[0]`, lastName: `${P}.name_shown[0].last_name[0]`, taxpayerId: `${P}.name_shown[0].first_ssn[0]`,
+  prevFirstName: `${P}.name_shown[0].previous_first_name[0]`, prevMiddleInitial: `${P}.name_shown[0].previous_middle_initial[0]`, prevLastName: `${P}.name_shown[0].previous_last_name[0]`,
+  spouseFirstName: `${P}.if_a_joint[0].first_name[0]`, spouseMiddleInit: `${P}.if_a_joint[0].middle_initial[0]`, spouseLastName: `${P}.if_a_joint[0].last_name[0]`, spouseTaxpayerId: `${P}.if_a_joint[0].second_ssn[0]`,
+  addressStreet: `${P}.current_name_address[0].street_address[0]`, addressCity: `${P}.current_name_address[0].city[0]`, addressState: `${P}.current_name_address[0].state[0]`, addressZip: `${P}.current_name_address[0].zip_code[0]`,
+  prevAddressStreet: `${P}.previous_address_shown[0].street_address[0]`, prevAddressCity: `${P}.previous_address_shown[0].city[0]`, prevAddressState: `${P}.previous_address_shown[0].state[0]`, prevAddressZip: `${P}.previous_address_shown[0].zip_code[0]`,
+  ivesName: `${P}.ives_participant_name[0].ives_participant_name[0]`, ivesId: `${P}.ives_participant_name[0].ives_participant_id[0]`, ivesMailboxId: `${P}.ives_participant_name[0].sor_mailbox_id[0]`, ivesStreet: `${P}.ives_participant_name[0].street_address[0]`, ivesCity: `${P}.ives_participant_name[0].city[0]`, ivesState: `${P}.ives_participant_name[0].state[0]`, ivesZip: `${P}.ives_participant_name[0].zip_code[0]`,
+  customerFileNumber: `${P}.customer_file_number[0]`, uniqueIdentifier: `${P}.unique_identifer[0]`,
+  clientName: `${P}.client_info[0].first_name[0]`, clientPhone: `${P}.client_info[0].telephone_number[0]`, clientStreet: `${P}.client_info[0].street_address[0]`, clientCity: `${P}.client_info[0].city[0]`, clientState: `${P}.client_info[0].state[0]`, clientZip: `${P}.client_info[0].zip_code[0]`,
+  transcriptFormNumber: `${P}.transcript_reqeust[0]`, returnTranscript: `${P}.transcript_type[0].return_transcript[0]`, accountTranscript: `${P}.transcript_type[0].account_transcript[0]`, recordOfAccount: `${P}.transcript_type[0].record_of_account[0]`,
+  wageIncome: `${P}.question_7[0]`, wageFormNumber: (i: 1 | 2 | 3) => `${P}.#subform[9].form_number${i}[0]`, wageForLine1a: `${P}.taxpayer_requesting[0].line_1a[0]`, wageForLine2a: `${P}.taxpayer_requesting[0].line_2a[0]`,
+  periodBox: (i: number) => `${P}.question_8[0].f1_${14 + i}[0]`, PERIOD_BOXES: 12,
+  attestCheckbox: `${P}.signature_attests[0]`, signature: `${P}.signature[0]`, signatureDate: `${P}.date[0]`, taxpayerPhone: `${P}.phone_number[0]`, authorizedRepCheckbox: `${P}.form_4506c[0]`, electronicSignatureCheckbox: `${P}.signatory_confirms[0]`, printName: `${P}.print_type_name[0]`, title: `${P}.title[0]`, spouseSignature: `${P}.spouses_signature[0]`, spouseAuthorizedRep: `${P}.spouses_form_4506c[0]`, spouseElectronicSignature: `${P}.spouses_signatory_confirms[0]`, spouseSignatureDate: `${P}.date[1]`, spousePrintName: `${P}.print_type_name[1]`,
+} as const;
