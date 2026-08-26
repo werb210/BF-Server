@@ -148,6 +148,30 @@ router.post("/applications/:id/form-responses/:doc_type/submit", requireAuth, as
     if (r.rowCount === 0) {
       return res.status(404).json({ error: "not_found" });
     }
+    // BF_SERVER_SBA_OWNER_IDENTITY_v104 - record WHICH owner this 413 was filled
+    // for, so a later change to the shareholder list cannot silently reassign it.
+    if (String(docType).startsWith("sba_form_413")) {
+      try {
+        const { resolveSbaOwners, ownerFingerprint } = await import("../signnow/sba/sbaOwners.js");
+        const owners = await resolveSbaOwners(appId);
+        const idx = docType === "sba_form_413"
+          ? 1
+          : Number(String(docType).replace("sba_form_413_owner_", "")) || 0;
+        const owner = owners.find((o) => o.index === idx);
+        const fp = owner ? ownerFingerprint(owner) : "";
+        if (fp) {
+          await pool.query(
+            `UPDATE application_form_responses SET owner_fingerprint = $3
+              WHERE application_id = $1 AND doc_type = $2`,
+            [appId, docType, fp],
+          );
+        }
+      } catch (e) {
+        // Never block a submission on stamping; an unstamped row is accepted.
+        console.warn("[sba_owner_fingerprint] failed", appId, docType, e instanceof Error ? e.message : String(e));
+      }
+    }
+
     // BF_SERVER_SBA_TRIGGER_v97
     if (String(docType).startsWith("sba_form_")) {
       void (async () => {

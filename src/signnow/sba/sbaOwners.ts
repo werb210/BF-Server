@@ -1,4 +1,5 @@
 // BF_SERVER_SBA_OWNERS_v95
+import { createHash } from "node:crypto";
 import { dbQuery } from "../../db.js";
 
 export type SbaOwner = {
@@ -29,6 +30,19 @@ function shape(raw: any, index: number): SbaOwner {
     q8: s(raw?.sba912Q8), q9: s(raw?.sba912Q9), q10: s(raw?.sba912Q10),
     veteranStatus: s(raw?.veteranStatus), sex: s(raw?.sex), race: s(raw?.race), ethnicity: s(raw?.ethnicity),
   };
+}
+
+// BF_SERVER_SBA_OWNER_IDENTITY_v104
+// Identity of an owner, independent of their position in the array. Email is the
+// stronger signal - it is what SignNow addresses and what the mini-portal logs in
+// with - and name is the fallback for an owner recorded without one. Whitespace
+// and case are normalised so a cosmetic edit does not read as a different person.
+export function ownerFingerprint(owner: { fullName?: string; email?: string }): string {
+  const email = String(owner?.email ?? "").trim().toLowerCase();
+  const name = String(owner?.fullName ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const basis = email || name;
+  if (!basis) return "";
+  return createHash("sha1").update(basis).digest("hex").slice(0, 16);
 }
 
 /** Resolve every owner at or above the SBA threshold, retaining unstated percentages. */

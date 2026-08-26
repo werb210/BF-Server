@@ -213,12 +213,26 @@ router.get('/:id/task-status', safeHandler(async (req: any, res: any) => {
 
   const formKey = (dt: any): string | null => {
     const x = String(dt ?? "").toLowerCase();
+    if (/^sba_form_/.test(x)) {
+      // BF_SERVER_SBA_CHECKLIST_v104 - short-circuit ahead of the loose
+      // substring tests below, which would otherwise mis-bucket SBA doc types.
+      if (/^sba_form_1919/.test(x)) return "sba1919";
+      if (/^sba_form_413/.test(x)) return "sba413";
+      return null;
+    }
     if (/cra/.test(x)) return "cra";
     if (/net.?worth/.test(x)) return "networth";
     if (/advisor/.test(x)) return "advisors";
     if (/debt/.test(x)) return "debt";
     if (/equipment/.test(x)) return "equipment";
     if (/real.?estate/.test(x)) return "realestate";
+    // BF_SERVER_SBA_CHECKLIST_v104 - the SBA forms had no branch here, so
+    // sba_form_1919 and sba_form_413 returned null and never reached the
+    // completed set. Staff watched an SBA file sit with no visible progress
+    // while the applicant was steadily filling forms. Tested before the
+    // /debt/ branch would otherwise claim debt_schedule.
+    if (/^sba_form_1919/.test(x)) return "sba1919";
+    if (/^sba_form_413/.test(x)) return "sba413";
     if (/flinks|bank/.test(x)) return "flinks";
     return null;
   };
@@ -240,6 +254,8 @@ router.get('/:id/task-status', safeHandler(async (req: any, res: any) => {
     networth: "Personal Net Worth", flinks: "Connect Bank (View-Only)", cra: "CRA Authorization",
     debt: "Debt Stack", realestate: "Real Estate Collateral", equipment: "Equipment Collateral",
     advisors: "Professional Advisors", upload: "Upload Government ID", upload_docs: "Upload Documents",
+    // BF_SERVER_SBA_CHECKLIST_v104
+    sba1919: "SBA Form 1919", sba413: "SBA Form 413",
   };
   const isDone = (cta: any): boolean => {
     let k = String(cta ?? ""); if (k.startsWith("form:")) k = k.slice(5);
@@ -280,6 +296,9 @@ router.post('/:id/request-steps', requireCapability([CAPABILITIES.CRM_WRITE]), s
     networth: 'Personal Net Worth', flinks: 'Connect Bank (View-Only)', cra: 'CRA Authorization',
     debt: 'Debt Stack', realestate: 'Real Estate Collateral', equipment: 'Equipment Collateral',
     advisors: 'Professional Advisors', upload: 'Upload Government ID',
+    // BF_SERVER_SBA_CHECKLIST_v104 - staff can now request the SBA forms from
+    // the same Request Items panel as every other stage-2 form.
+    sba1919: 'SBA Form 1919', sba413: 'SBA Form 413',
   };
   const b = req.body ?? {};
   const reqForms: string[] = Array.isArray(b.forms)
