@@ -98,39 +98,33 @@ export async function buildSba912(args: { business: any; owner: SbaOwner }): Pro
   return fillAcroForm(tpl, values);
 }
 
-// BF_SERVER_SBA_4506C_v116
-// Returns null until two things are true: the template is in blob storage, and
-// SBA_4506C_FIELDS has been populated from the real PDF.
-//
-// It would be easy to write plausible field names here - "Name", "SSN",
-// "Signature" - and they would silently fail to fill, producing a blank
-// authorization that looks signed. On a form whose whole purpose is letting the
-// IRS release someone's tax records, a blank that appears complete is worse than
-// an absent one, so this refuses instead.
-//
-// To finish it: upload the current 4506-C to borealstorageprod/signed-applications,
-// run pypdf get_fields against it, and put the names in SBA_4506C_FIELDS.
-export async function buildSba4506c(args: { business: any; owner: SbaOwner }): Promise<Uint8Array | null> {
-  const mapped = Object.keys(SBA_4506C_FIELDS).length;
-  if (mapped === 0) {
-    logInfo("sba_4506c_not_mapped", {
-      detail: "IRS 4506-C is registered but its fields are not mapped. The form is " +
-              "skipped; the SBA package will be short the tax transcript authorization.",
-    });
+// BF_SERVER_SBA_4506C_MAP_v118
+// IRS 4506-C, one per 20%+ owner. Field names come from the real template.
+export async function buildSba4506c(args: { business: any; owner: SbaOwner; kyc?: any }): Promise<Uint8Array | null> {
+  const ivesName = s(process.env.SBA_IVES_PARTICIPANT_NAME);
+  const ivesId = s(process.env.SBA_IVES_PARTICIPANT_ID);
+  const ivesMailbox = s(process.env.SBA_IVES_SOR_MAILBOX_ID);
+  if (!ivesName || !ivesId || !ivesMailbox) {
+    logInfo("sba_4506c_ives_not_configured", { detail: "SBA_IVES_PARTICIPANT_NAME, SBA_IVES_PARTICIPANT_ID and SBA_IVES_SOR_MAILBOX_ID must be set from the lender's IVES registration. Line 5a cannot be blank or the IRS rejects the form." });
     return null;
   }
   const tpl = await loadSbaTemplate("form_4506c");
-  if (!tpl) {
-    logInfo("sba_4506c_template_missing", { blob: process.env.SBA_4506C_BLOB || "irs-form-4506-c-10-2022.pdf" });
-    return null;
-  }
-  const { business: b, owner: o } = args;
+  if (!tpl) { logInfo("sba_4506c_template_missing", { blob: process.env.SBA_4506C_BLOB || "irs-form-4506-c-10-2022.pdf" }); return null; }
+  const { business: b, owner: o } = args; const F = SBA_4506C_FIELDS;
+  const parts = s(o.fullName).trim().split(/\s+/); const first = parts.length > 1 ? parts[0] : s(o.fullName); const last = parts.length > 1 ? parts[parts.length - 1] : ""; const middle = parts.length > 2 ? parts[1].slice(0, 1) : "";
   const values: FieldMap = {
-    [SBA_4506C_FIELDS.name]: o.fullName,
-    [SBA_4506C_FIELDS.ssn]: o.ssn,
-    [SBA_4506C_FIELDS.address]: o.homeAddress,
-    [SBA_4506C_FIELDS.businessName]: s(b?.legalName) || s(b?.businessName),
+    [F.firstName]: first, [F.middleInitial]: middle, [F.lastName]: last, [F.taxpayerId]: s(o.ssn),
+    [F.addressStreet]: s(o.homeAddress), [F.addressCity]: s((o as any).city), [F.addressState]: s((o as any).state), [F.addressZip]: s((o as any).zip),
+    [F.ivesName]: ivesName, [F.ivesId]: ivesId, [F.ivesMailboxId]: ivesMailbox, [F.ivesStreet]: s(process.env.SBA_IVES_STREET), [F.ivesCity]: s(process.env.SBA_IVES_CITY), [F.ivesState]: s(process.env.SBA_IVES_STATE), [F.ivesZip]: s(process.env.SBA_IVES_ZIP),
+    [F.clientName]: s(process.env.SBA_IVES_CLIENT_NAME) || ivesName, [F.clientPhone]: s(process.env.SBA_IVES_CLIENT_PHONE), [F.clientStreet]: s(process.env.SBA_IVES_CLIENT_STREET) || s(process.env.SBA_IVES_STREET), [F.clientCity]: s(process.env.SBA_IVES_CLIENT_CITY) || s(process.env.SBA_IVES_CITY), [F.clientState]: s(process.env.SBA_IVES_CLIENT_STATE) || s(process.env.SBA_IVES_STATE), [F.clientZip]: s(process.env.SBA_IVES_CLIENT_ZIP) || s(process.env.SBA_IVES_ZIP),
+    [F.transcriptFormNumber]: "1040", [F.recordOfAccount]: true,
+    [F.attestCheckbox]: true, [F.electronicSignatureCheckbox]: true,
+    [F.printName]: s(o.fullName), [F.taxpayerPhone]: s(o.homePhone) || s(b?.phone),
   };
+  if (s((o as any).formerNames)) values[F.prevLastName] = s((o as any).formerNames);
+  if (s((o as any).priorAddress)) values[F.prevAddressStreet] = s((o as any).priorAddress);
+  const year = new Date().getFullYear() - 1;
+  [0, 1, 2].forEach((offset) => { const base = offset * 3; values[F.periodBox(base + 1)] = "12"; values[F.periodBox(base + 2)] = "31"; values[F.periodBox(base + 3)] = String(year - offset); });
   return fillAcroForm(tpl, values);
 }
 
