@@ -66,6 +66,27 @@ const PORTAL_FORM_DOC_LABELS: ReadonlySet<string> = new Set([
   "Tax credit status",
   "Production schedule",
   "Minimum guarantees / presales",
+  // BF_SERVER_SBA_DOC_KEYS_v111 — the SBA Stage 2 pack (BF-portal sbaTypes,
+  // BF_PORTAL_SBA_DOC_PACK_v202). Saving an SBA product failed validation on
+  // every one of these: the set above holds human LABELS and accepts their
+  // slugified form as an alias, and these nine are neither.
+  //
+  // Entered as KEYS, not labels, on purpose. Everything else here is a label
+  // because the portal derives its key by slugifying it. The SBA keys are
+  // written out longhand at both ends precisely so they cannot drift, and the
+  // stored value must stay byte-identical to the document_type written by
+  // migrations v88 / v99 / v103 and registered in the client's FORM_RENDERERS.
+  // Turning them into labels here would store a different string and break the
+  // join in three places at once.
+  "sba_form_413",
+  "sba_form_1919",
+  "owner_photo_id",
+  "formation_documents",
+  "personal_tax_returns",
+  "business_plan",
+  "sba_1919_attachments",
+  "debt_schedule",
+  "lease_or_loi",
 ]);
 
 // BF_SERVER_BLOCK_TWO_STAGE_v1 -- "stage" added (1 or 2). Default
