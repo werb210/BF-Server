@@ -182,6 +182,59 @@ function shouldDeleteSubscription(statusCode: number | undefined): boolean {
   );
 }
 
+// BF_SERVER_VAPID_PAIR_GUARD_v112
+// A VAPID keypair is EC P-256: the public key is derivable from the private
+// key. If VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY come from DIFFERENT keypairs,
+// everything downstream looks healthy - the portal fetches the advertised
+// public key, mints a subscription against it, stores it - and then every send
+// returns 403 forever. That is indistinguishable in the logs from a stale
+// subscription, which is exactly how it went unnoticed: the 403 handler above
+// deletes the row, the client re-subscribes, and the cycle repeats.
+//
+// Checked once at boot rather than per send. web-push cannot detect this: it
+// signs happily with whatever pair it is given, and only the push service
+// rejects it.
+function assertVapidPairMatches(publicKey: string, privateKey: string): void {
+  try {
+    const { createPrivateKey, createPublicKey } = require("node:crypto") as typeof import("node:crypto");
+    const b64urlToBuf = (v: string) => Buffer.from(v.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+    const d = b64urlToBuf(privateKey);
+    if (d.length !== 32) {
+      logWarn("push_vapid_private_key_malformed", { bytes: d.length });
+      return;
+    }
+    // Wrap the raw scalar as a PKCS#8 P-256 key so node can derive the point.
+    const pkcs8 = Buffer.concat([
+      Buffer.from("308141020100301306072a8648ce3d020106082a8648ce3d030107042730250201010420", "hex"),
+      d,
+    ]);
+    const privateKeyObject = createPrivateKey({
+      key: pkcs8,
+      format: "der",
+      type: "pkcs8",
+    });
+    const derived = createPublicKey(privateKeyObject)
+      .export({ format: "der", type: "spki" })
+      .subarray(-65);
+    const expected = b64urlToBuf(publicKey);
+    if (!derived.equals(expected)) {
+      logError("push_vapid_pair_mismatch", {
+        detail:
+          "VAPID_PUBLIC_KEY does not belong to VAPID_PRIVATE_KEY. Every push will " +
+          "return 403 regardless of how many times a device re-subscribes. Generate " +
+          "a matched pair (npx web-push generate-vapid-keys) and set BOTH.",
+      });
+      return;
+    }
+    logInfo("push_vapid_pair_ok", {});
+  } catch (err) {
+    // Never let a diagnostic stop push from starting.
+    logWarn("push_vapid_pair_check_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 function isPushEnabled(): boolean {
   const raw = config.pwa.pushEnabled;
   if (raw === undefined) {
@@ -227,11 +280,14 @@ export function initializePushService(): PushStatus {
       subject,
     });
     logWarn("push_vapid_missing", { subject: subject ?? null, publicKey: Boolean(publicKey) });
+    // BF_SERVER_VAPID_PAIR_GUARD_v112 - only reachable when a key is absent;
+    // the pair check itself runs below, once both are present.
     return cachedStatus;
   }
 
   try {
     webpush.setVapidDetails(subject, publicKey, privateKey);
+    assertVapidPairMatches(publicKey, privateKey);
     pushConfigured = true;
     cachedStatus = {
       configured: true,
