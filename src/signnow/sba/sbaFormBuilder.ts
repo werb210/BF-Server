@@ -2,7 +2,7 @@
 import { logInfo } from "../../observability/logger.js";
 import { fillAcroForm, type FieldMap } from "./fillAcroForm.js";
 import { loadSbaTemplate } from "./templates.js";
-import { SBA_1919_FIELDS as F19, SBA_912_FIELDS as F12, SBA_413_FIELDS as F413, SBA_912_RADIO_STATES } from "./fieldMaps.js";
+import { SBA_1919_FIELDS as F19, SBA_912_FIELDS as F12, SBA_413_FIELDS as F413, SBA_912_RADIO_STATES, SBA_4506C_FIELDS } from "./fieldMaps.js";
 import type { SbaOwner } from "./sbaOwners.js";
 
 const s = (v: unknown) => v == null ? "" : String(v).trim();
@@ -95,6 +95,42 @@ export async function buildSba912(args: { business: any; owner: SbaOwner }): Pro
     if (yes(answer)) values[field] = R.plain.yes; else if (no(answer)) values[field] = R.plain.no;
   };
   question(o.q8, F12.q8Radio); question(o.q9, F12.q9Radio); question(o.q10, F12.q10Radio);
+  return fillAcroForm(tpl, values);
+}
+
+// BF_SERVER_SBA_4506C_v116
+// Returns null until two things are true: the template is in blob storage, and
+// SBA_4506C_FIELDS has been populated from the real PDF.
+//
+// It would be easy to write plausible field names here - "Name", "SSN",
+// "Signature" - and they would silently fail to fill, producing a blank
+// authorization that looks signed. On a form whose whole purpose is letting the
+// IRS release someone's tax records, a blank that appears complete is worse than
+// an absent one, so this refuses instead.
+//
+// To finish it: upload the current 4506-C to borealstorageprod/signed-applications,
+// run pypdf get_fields against it, and put the names in SBA_4506C_FIELDS.
+export async function buildSba4506c(args: { business: any; owner: SbaOwner }): Promise<Uint8Array | null> {
+  const mapped = Object.keys(SBA_4506C_FIELDS).length;
+  if (mapped === 0) {
+    logInfo("sba_4506c_not_mapped", {
+      detail: "IRS 4506-C is registered but its fields are not mapped. The form is " +
+              "skipped; the SBA package will be short the tax transcript authorization.",
+    });
+    return null;
+  }
+  const tpl = await loadSbaTemplate("form_4506c");
+  if (!tpl) {
+    logInfo("sba_4506c_template_missing", { blob: process.env.SBA_4506C_BLOB || "irs-form-4506-c-10-2022.pdf" });
+    return null;
+  }
+  const { business: b, owner: o } = args;
+  const values: FieldMap = {
+    [SBA_4506C_FIELDS.name]: o.fullName,
+    [SBA_4506C_FIELDS.ssn]: o.ssn,
+    [SBA_4506C_FIELDS.address]: o.homeAddress,
+    [SBA_4506C_FIELDS.businessName]: s(b?.legalName) || s(b?.businessName),
+  };
   return fillAcroForm(tpl, values);
 }
 

@@ -180,3 +180,26 @@ export const SBA_413_FIELDS = {
   printName2: "Print Name_2", ssn2: "Social Security No_2", date2: "Date2",
   // Signature and Signature_2 are /Sig - SignNow owns them.
 } as const;
+
+
+// BF_SERVER_SBA_4506C_v116
+// IRS Form 4506-C - Request for Transcript of Tax Return.
+//
+// EMPTY ON PURPOSE. Every other map in this file was read from the live template
+// with pypdf get_fields, never guessed, because a wrong name fails silently: the
+// PDF fills, the field stays blank, and nobody notices until a lender rejects it.
+//
+// To populate:
+//   1. Upload the current IRS revision to borealstorageprod/signed-applications.
+//   2. Set SBA_4506C_BLOB if the filename differs from the default.
+//   3. python3 -c "from pypdf import PdfReader; print(PdfReader('4506-C.pdf').get_fields().keys())"
+//   4. Fill the keys below, then update TEMPLATE_EDITIONS in templates.ts.
+//
+// buildSba4506c returns null while this is empty, so the package is short the
+// authorization rather than carrying a blank one that looks signed.
+export const SBA_4506C_FIELDS: Record<string, string> = {
+  // name: "",
+  // ssn: "",
+  // address: "",
+  // businessName: "",
+} as any;
