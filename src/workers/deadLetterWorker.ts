@@ -63,6 +63,16 @@ async function safeProcess(): Promise<void> {
   }
 }
 
-export function startDeadLetterWorker(): NodeJS.Timeout {
-  return setInterval(safeProcess, 15000);
+// BF_SERVER_DEAD_LETTER_WORKER_v110
+// Returned a bare NodeJS.Timeout. index.ts registers workers as { stop } so it
+// can shut them down cleanly, so this could not be added to that list without
+// changing shape - which is part of why it was never wired up at all.
+//
+// 15s was the original interval and is kept. The queue is small and bounded
+// (LIMIT 20 per tick, jobs pruned after 7 days), so the tick is cheap.
+export function startDeadLetterWorker(): { stop: () => void } {
+  const timer = setInterval(safeProcess, 15000);
+  // Do not hold the process open on shutdown.
+  if (typeof timer.unref === "function") timer.unref();
+  return { stop: () => clearInterval(timer) };
 }
