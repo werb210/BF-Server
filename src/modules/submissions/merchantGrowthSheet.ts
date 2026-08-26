@@ -217,7 +217,8 @@ export async function loadSheetRowData(pool: Pool, applicationId: string): Promi
     email: s(applicant.email) || s(row?.email),
     // BF_SERVER_MG_SHEET_STEP3_SOURCES_v1 - take the first candidate that is a valid
     // 10-digit NANP number rather than the first non-empty one.
-    mobile: firstValidTenDigits(applicant.phone, row?.phone, business.phone),
+    // BF_SERVER_SMS_LOOP_KILL_v121 - do not label a business landline as mobile.
+    mobile: firstValidTenDigits(applicant.phone, row?.phone),
     phone: firstValidTenDigits(business.phone, applicant.phone, row?.phone),
     dob: s(applicant.dob) || s(row?.dob),
     // Default English. We never ask, so do not pretend to know.

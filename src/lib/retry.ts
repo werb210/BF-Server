@@ -4,9 +4,11 @@ export async function withRetry<T>(
     retries?: number;
     baseDelayMs?: number;
     maxDelayMs?: number;
+    // BF_SERVER_SMS_LOOP_KILL_v121 - permanent failures can stop immediately.
+    shouldRetry?: (error: unknown) => boolean;
   } = {}
 ): Promise<T> {
-  const { retries = 3, baseDelayMs = 500, maxDelayMs = 5000 } = options;
+  const { retries = 3, baseDelayMs = 500, maxDelayMs = 5000, shouldRetry } = options;
 
   let lastError: unknown;
 
@@ -17,6 +19,10 @@ export async function withRetry<T>(
       lastError = error;
 
       if (attempt === retries) {
+        break;
+      }
+
+      if (shouldRetry && !shouldRetry(error)) {
         break;
       }
 
