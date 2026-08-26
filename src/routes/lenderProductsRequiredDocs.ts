@@ -18,6 +18,9 @@
 
 import { Router } from "express";
 import { pool } from "../db.js";
+// BF_SERVER_SBA_STAGE2_REACHABLE_v101
+import { resolveSbaOwners } from "../signnow/sba/sbaOwners.js";
+import { isSbaApplication } from "../signnow/sba/sbaTrigger.js";
 
 // BF_SERVER_BLOCK_v115_REQUIRED_DOCS_CATEGORY_NORMALIZE_v1
 // The wizard sends long-form category codes (TERM_LOAN, LINE_OF_CREDIT,
@@ -184,10 +187,31 @@ router.get("/lender-products/required-docs", async (req, res) => {
     }
   }
 
+  let items = Array.from(map.values());
+
+  // Form 413 is personal, so expose one form for every 20%+ SBA owner.
+  const applicationId = String(req.query.application_id ?? "").trim();
+  if (applicationId && items.some((i) => i.document_type === "sba_form_413")) {
+    try {
+      if (await isSbaApplication(applicationId)) {
+        const owners = await resolveSbaOwners(applicationId);
+        if (owners.length > 1) {
+          const base = items.find((i) => i.document_type === "sba_form_413")!;
+          for (const o of owners) {
+            if (o.index <= 1) continue;
+            const key = `sba_form_413_owner_${o.index}`;
+            if (items.some((i) => i.document_type === key)) continue;
+            items.push({ ...base, id: `req:${key}`, document_type: key });
+          }
+        }
+      }
+    } catch {
+      // Owner resolution must not blank the Stage 2 requirements list.
+    }
+  }
+
   res.status(200).json({
-    items: Array.from(map.values()).sort((a, b) =>
-      a.document_type.localeCompare(b.document_type)
-    ),
+    items: items.sort((a, b) => a.document_type.localeCompare(b.document_type)),
   });
 });
 
