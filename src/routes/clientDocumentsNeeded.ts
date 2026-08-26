@@ -37,13 +37,20 @@ const SBA_GENERATED_FORM = /^sba_form_(413|1919)(_owner_\d+)?$/i;
 const SBA_DOC_LABELS: Readonly<Record<string, string>> = {
   sba_form_413: "SBA Form 413 - Personal Financial Statement",
   sba_form_1919: "SBA Form 1919 - Borrower Information",
-  owner_photo_id: "Government photo ID - each 20%+ owner",
+  // BF_SERVER_SBA_DOC_SET_v114 - the old label did not say what counts, so an
+  // applicant had to guess whether a health card or a work badge would do.
+  owner_photo_id: "Government photo ID - driver's licence, passport or state ID, for each 20%+ owner",
   formation_documents: "Articles of incorporation, operating agreement or DBA",
   personal_tax_returns: "Personal tax returns - last 3 years, each 20%+ owner",
   business_plan: "Business plan with financial projections",
   sba_1919_attachments: "Supporting detail for any Yes answer on Form 1919",
+  // BF_SERVER_SBA_DOC_SET_v114 - debt_schedule removed from the SBA set: the
+  // Debt Stack CMP form already collects it. Label kept so any historical row
+  // still renders with a name rather than a raw key.
   debt_schedule: "Debt schedule - existing business debt",
-  lease_or_loi: "Lease or letter of intent for premises",
+  // BF_SERVER_SBA_DOC_SET_v114 - now optional, and the label says when it
+  // applies. Only send it if the loan involves premises.
+  lease_or_loi: "Lease or letter of intent - only if the loan involves premises",
 };
 
 function labelFor(docType: string): string {
