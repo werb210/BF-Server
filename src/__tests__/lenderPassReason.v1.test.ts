@@ -30,8 +30,16 @@ describe("BF_SERVER_LENDER_PASS_REASON_v1", () => {
   });
 
   it("tells the client the ordinal and never the lender", () => {
-    expect(routes).toContain("passed on your file for the following reasons");
+    // BF_SERVER_PASS_ORDINAL_v127 - wording changed in v124, the contract did not.
+    expect(routes).toContain("will pass, due to");
     expect(routes).toContain("Lender ${frozenOrdinal}");
+  });
+
+  it("still never names the lender in the client bubble", () => {
+    const i = routes.indexOf("will pass, due to");
+    const bubble = routes.slice(Math.max(0, i - 200), i + 600);
+    expect(bubble).not.toContain("lender_name");
+    expect(bubble).not.toContain("lenderName");
   });
 
   it("both routes require staff auth", () => {

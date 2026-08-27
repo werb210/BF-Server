@@ -1763,7 +1763,8 @@ router.post('/:id/lender-response', requireAuth, safeHandler(async (req: any, re
     [id]
   ).catch(() => ({ rows: [] as Array<{ contact_id: string | null }> }));
   const contactId = contactRes.rows[0]?.contact_id ?? null;
-  const body = `The lender will pass, due to ${reasonSummary}`;
+  // BF_SERVER_PASS_ORDINAL_v127
+  const body = `Lender ${frozenOrdinal} will pass, due to ${reasonSummary}`;
 
   await pool.query(
     `INSERT INTO communications_messages
