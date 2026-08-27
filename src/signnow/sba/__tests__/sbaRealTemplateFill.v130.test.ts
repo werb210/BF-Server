@@ -4,13 +4,19 @@
 // with four blank mandatory answers passed all of them for months.
 import { describe, it, expect, vi, beforeAll } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { PDFDocument } from "pdf-lib";
 
-const TEMPLATES: Record<string, string> = {
-  "sba-form-1919-02-2025.pdf": "/mnt/user-data/uploads/sba-form-1919-02-2025.pdf",
-  "sba-form-413-05-2024.pdf": "/mnt/user-data/uploads/sba-form-413-05-2024.pdf",
-  "sba-form-912-12-2028.pdf": "/mnt/user-data/uploads/sba-form-912-12-2028.pdf",
-};
+// BF_SERVER_SBA_FIXTURE_PATH_v132 - committed fixtures, so this runs in CI.
+const FIXTURES = resolve(__dirname, "..", "..", "..", "..", "test-fixtures", "sba");
+const NAMES = [
+  "sba-form-1919-02-2025.pdf",
+  "sba-form-413-05-2024.pdf",
+  "sba-form-912-12-2028.pdf",
+] as const;
+const TEMPLATES: Record<string, string> = Object.fromEntries(
+  NAMES.map((n) => [n, resolve(FIXTURES, n)]),
+);
 const available = Object.values(TEMPLATES).every((p) => existsSync(p));
 
 vi.mock("../../blobStorage.js", () => ({
@@ -42,6 +48,13 @@ async function readFields(bytes: Uint8Array) {
   }
   return out;
 }
+
+describe("fixtures", () => {
+  it("the SBA templates are committed, or none of the checks below ran", () => {
+    const missing = Object.entries(TEMPLATES).filter(([, p]) => !existsSync(p)).map(([n]) => n);
+    expect(missing).toEqual([]);
+  });
+});
 
 describe.skipIf(!available)("912 against the real template", () => {
   let f: Record<string, string | null>;
