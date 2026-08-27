@@ -18,7 +18,13 @@ import { logInfo, logError } from "../../observability/logger.js";
 
 const SBA_DOC_CATEGORY = "SBA Forms";
 
-type Envelope = { ownerIndex: number; email: string; groupId: string; inviteId: string; docIds: string[] };
+type Envelope = {
+  ownerIndex: number; email: string; groupId: string; inviteId: string; docIds: string[];
+  // BF_SERVER_SBA_GATE_SCOPE_v135 - parallel to docIds, so a signed file can be
+  // named for the form it is rather than for its SignNow id. Optional: envelopes
+  // created before v135 do not have it and fall back to the old name.
+  docNames?: string[];
+};
 
 async function sbaEnvelopes(applicationId: string): Promise<Envelope[]> {
   const result = await dbQuery<{ metadata: any }>(
@@ -85,16 +91,18 @@ export async function createSbaSigningSessions(applicationId: string): Promise<
 
     try {
       const docIds: string[] = [];
+      const docNames: string[] = [];
       for (const doc of docs) {
         const { documentId } = await uploadDocumentWithFieldExtract(doc.bytes, doc.filename);
         docIds.push(documentId);
+        docNames.push(doc.filename);
       }
       const { groupId } = await createDocumentGroup(docIds, `SBA Forms ${applicationId} owner ${owner.index}`);
       const { inviteId } = await createEmbeddedGroupInvite(groupId, docIds, [
         { email: owner.email, name: owner.fullName || undefined, roleName: `Owner ${owner.index}` },
       ]);
       const { url } = await createEmbeddedGroupLink(groupId, inviteId, owner.email);
-      envelopes.push({ ownerIndex: owner.index, email: owner.email, groupId, inviteId, docIds });
+      envelopes.push({ ownerIndex: owner.index, email: owner.email, groupId, inviteId, docIds, docNames });
       out.push({ ownerIndex: owner.index, name: owner.fullName, email: owner.email, url });
     } catch (error) {
       logError("sba_signing_session_failed");
@@ -116,6 +124,17 @@ export async function createSbaSigningSessions(applicationId: string): Promise<
 /** Fail closed while any SBA envelope is unsigned or its status cannot be read. */
 export async function sbaSigningSatisfiedForDispatch(applicationId: string): Promise<boolean> {
   if (!isApiKeyConfigured()) return true;
+
+  // BF_SERVER_SBA_GATE_SCOPE_v135 - only SBA deals are gated on SBA forms.
+  // Imported lazily: sbaTrigger imports this module, and a static import would
+  // close the cycle.
+  try {
+    const { isSbaApplication } = await import("./sbaTrigger.js");
+    if (!(await isSbaApplication(applicationId))) return true;
+  } catch {
+    // If we cannot tell whether this is an SBA deal, fall through to the checks
+    // below rather than waving the package through.
+  }
 
   // BF_SERVER_SBA_V103
   // createSbaSigningSessions() skips any owner with no email address - it logs
@@ -172,10 +191,17 @@ export async function getSignedSbaPdfs(applicationId: string): Promise<Array<{ f
   for (const envelope of envelopes) {
     try {
       if ((await getDocumentGroupStatus(envelope.groupId)).signed !== true) return [];
-      for (const docId of envelope.docIds) {
+      for (let i = 0; i < envelope.docIds.length; i++) {
+        const docId = envelope.docIds[i];
         const content = await downloadDocument(docId);
         if (!content) return [];
-        out.push({ filename: `sba-owner${envelope.ownerIndex}-${docId}.pdf`, content });
+        // Prefer the name the form was built under. Falls back to the id for
+        // envelopes created before v135 started recording names.
+        const named = envelope.docNames?.[i];
+        out.push({
+          filename: named ? `signed-${named}` : `sba-owner${envelope.ownerIndex}-${docId}.pdf`,
+          content,
+        });
       }
     } catch {
       return [];
