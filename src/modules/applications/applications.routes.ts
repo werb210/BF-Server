@@ -4,6 +4,7 @@ import { CAPABILITIES } from '../../auth/capabilities.js';
 import { pool } from '../../db.js';
 import { isPipelineState } from './pipelineState.js';
 import { transitionPipelineState } from './applications.service.js';
+import { sendRejectionNoticeToClient, allSentLendersPassed } from '../../services/rejectionNotice.js';
 import { AppError } from '../../middleware/errors.js';
 import { safeHandler } from '../../middleware/safeHandler.js';
 import { prettyDocLabel } from '../../lib/docDisplay.js'; // BF_SERVER_PNL_DISPLAY_v1
@@ -1718,6 +1719,19 @@ router.post('/:id/lender-response', requireAuth, safeHandler(async (req: any, re
   );
   const frozenOrdinal = existing.rows[0]?.ordinal ?? ordinal;
 
+  // BF_SERVER_REJECTION_REASONS_v124 - reasonCodes are the checkbox selection.
+  const reasonCodes: string[] = Array.isArray(req.body?.reasonCodes)
+    ? req.body.reasonCodes.map((x: any) => String(x).trim()).filter(Boolean).slice(0, 20)
+    : [];
+  let reasonSummary = reason;
+  if (reasonCodes.length > 0) {
+    const labels = await pool.query<{ label: string }>(
+      `SELECT label FROM rejection_reasons WHERE code = ANY($1::text[]) AND active ORDER BY sort_order ASC`,
+      [reasonCodes],
+    ).catch(() => ({ rows: [] as Array<{ label: string }> }));
+    if (labels.rows.length > 0) reasonSummary = labels.rows.map((x) => x.label.toLowerCase()).join('; ');
+  }
+
   const staffName = String(req.user?.name ?? req.user?.email ?? 'Boreal Financial');
   await pool.query(
     `INSERT INTO application_lender_responses
@@ -1734,7 +1748,7 @@ router.post('/:id/lender-response', requireAuth, safeHandler(async (req: any, re
     [id]
   ).catch(() => ({ rows: [] as Array<{ contact_id: string | null }> }));
   const contactId = contactRes.rows[0]?.contact_id ?? null;
-  const body = `Lender ${frozenOrdinal} passed on your file for the following reasons: ${reason}`;
+  const body = `The lender will pass, due to ${reasonSummary}`;
 
   await pool.query(
     `INSERT INTO communications_messages
@@ -1745,7 +1759,57 @@ router.post('/:id/lender-response', requireAuth, safeHandler(async (req: any, re
     [randomUUID(), id, contactId ?? '', body, staffName]
   );
 
-  res.json({ status: 'ok', data: { ordinal: frozenOrdinal, reason } });
+  for (const code of reasonCodes) {
+    await pool.query(
+      `INSERT INTO application_rejection_reasons (application_id, lender_id, reason_code, created_by)
+       VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+      [id, lenderId, code, staffName],
+    ).catch(() => {});
+  }
+
+  let closed = false;
+  if (await allSentLendersPassed(id)) {
+    await pool.query(
+      `UPDATE applications SET pipeline_state = 'Rejected', updated_at = NOW()
+        WHERE id::text = ($1)::text AND pipeline_state <> 'Rejected'`, [id],
+    ).catch(() => {});
+    await sendRejectionNoticeToClient(id).catch(() => {});
+    closed = true;
+  }
+
+  res.json({ status: 'ok', data: { ordinal: frozenOrdinal, reason: reasonSummary, closed } });
+}));
+
+// BF_SERVER_REJECTION_REASONS_v124 - the catalogue, for the staff modal.
+router.get('/rejection-reasons', requireAuth, safeHandler(async (_req: any, res: any) => {
+  const r = await pool.query(
+    `SELECT code, label, why_it_matters, what_helps FROM rejection_reasons
+      WHERE active ORDER BY sort_order ASC`,
+  ).catch(() => ({ rows: [] as any[] }));
+  res.json({ status: 'ok', data: { reasons: r.rows } });
+}));
+
+router.post('/:id/reject', requireAuth, safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id ?? '').trim();
+  if (!id) throw new AppError('validation_error', 'Application id required.', 400);
+  const codes: string[] = Array.isArray(req.body?.reasonCodes)
+    ? req.body.reasonCodes.map((x: any) => String(x).trim()).filter(Boolean).slice(0, 20)
+    : [];
+  if (codes.length === 0) throw new AppError('validation_error', 'At least one reason is required.', 400);
+  const note = String(req.body?.note ?? '').trim().slice(0, 2000);
+  const staffName = String(req.user?.name ?? req.user?.email ?? 'Boreal Financial');
+
+  for (const code of codes) {
+    await pool.query(
+      `INSERT INTO application_rejection_reasons (application_id, lender_id, reason_code, created_by)
+       VALUES ($1, NULL, $2, $3) ON CONFLICT DO NOTHING`, [id, code, staffName],
+    ).catch(() => {});
+  }
+  await pool.query(
+    `UPDATE applications SET pipeline_state = 'Rejected', updated_at = NOW() WHERE id::text = ($1)::text`, [id],
+  );
+  const mail = await sendRejectionNoticeToClient(id, note);
+  res.json({ status: 'ok', data: { rejected: true, emailed: mail.sent, error: mail.error } });
 }));
 
 export default router;
