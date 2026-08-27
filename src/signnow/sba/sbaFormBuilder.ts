@@ -2,6 +2,7 @@
 import { logInfo } from "../../observability/logger.js";
 import { fillAcroForm, type FieldMap } from "./fillAcroForm.js";
 import { loadSbaTemplate } from "./templates.js";
+import { applyDemographics } from "./sbaDemographics.js"; // BF_SERVER_SBA_DEMOGRAPHICS_v128
 import { SBA_1919_FIELDS as F19, SBA_912_FIELDS as F12, SBA_413_FIELDS as F413, SBA_912_RADIO_STATES, SBA_4506C_FIELDS } from "./fieldMaps.js";
 import type { SbaOwner } from "./sbaOwners.js";
 
@@ -63,6 +64,10 @@ export async function buildSba1919(args: { applicationId: string; business: any;
     values[F19.ownerPercent(n)] = owner.ownershipPercent ? String(owner.ownershipPercent) : "";
     values[F19.ownerTin(n)] = owner.ssn; values[F19.ownerHome(n)] = owner.homeAddress;
   });
+  // BF_SERVER_SBA_DEMOGRAPHICS_v128 - optional block, owner one only. See
+  // sbaDemographics.ts for why blank ticks Not Disclosed rather than nothing.
+  applyDemographics(values, owners[0]);
+
   const printed: Record<number, unknown> = {
     1: f.q1_debarred, 2: f.q2_federal_default, 3: f.q3_other_business,
     4: b?.sbaQ4Criminal ?? kyc?.sbaQ4Criminal, 5: f.q5_exports, 6: f.q6_broker_fee, 7: f.q7_restricted_revenue,
