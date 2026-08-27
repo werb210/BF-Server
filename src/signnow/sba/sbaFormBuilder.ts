@@ -30,6 +30,10 @@ export async function buildSba1919(args: { applicationId: string; business: any;
   const { business: b, kyc, form1919: f, owners } = args;
   const values: FieldMap = {
     [F19.applicantLegalName]: s(b.legalName) || s(b.businessName), [F19.isOperatingCompany]: true,
+    // BF_SERVER_SBA_FIELD_GAPS_v134 - OC is ticked above, so the operating
+    // company name belongs here. Same entity unless an EPC/OC split exists,
+    // which we do not currently model.
+    [F19.operatingBusName]: s(b.legalName) || s(b.businessName),
     [F19.dba]: s(b.businessName), [F19.businessTin]: s(b.ein), [F19.naicsCode]: s(b.naicsCode),
     [F19.businessPhone]: s(b.phone), [F19.yearBeganOperations]: s(b.startDate).slice(0, 4),
     ...entityBoxes(b.businessStructure),
@@ -84,8 +88,17 @@ export async function buildSba1919(args: { applicationId: string; business: any;
     const map = F19.printedQuestion[Number(number)];
     if (yes(answer)) values[map.yes] = true; else if (no(answer)) values[map.no] = true;
   }
-  if (yes(f.q5_exports)) s(f.q5_exports_detail).split(",").map((x) => x.trim()).filter(Boolean)
-    .slice(0, 3).forEach((country, index) => { values[F19.exportCountry(index + 1)] = country; });
+  if (yes(f.q5_exports)) {
+    const countries = s(f.q5_exports_detail).split(",").map((x) => x.trim()).filter(Boolean);
+    countries.slice(0, 3).forEach((country, index) => { values[F19.exportCountry(index + 1)] = country; });
+    // BF_SERVER_SBA_FIELD_GAPS_v134 - the form holds three. A fourth used to
+    // disappear in silence; say so, because the applicant told us about it.
+    if (countries.length > 3) {
+      logInfo("sba_1919_export_countries_truncated", {
+        applicationId: args.applicationId, provided: countries.length, dropped: countries.slice(3),
+      });
+    }
+  }
   return fillAcroForm(tpl, values);
 }
 
@@ -99,6 +112,12 @@ export async function buildSba912(args: { business: any; owner: SbaOwner }): Pro
     [F12.ownershipPercent]: o.ownershipPercent ? String(o.ownershipPercent) : "", [F12.ssn]: o.ssn,
     [F12.dateOfBirth]: o.dob, [F12.placeOfBirth]: o.placeOfBirth, [F12.alienRegNumber]: o.alienRegistrationNumber,
     [F12.presentAddress]: o.homeAddress, [F12.homePhone]: o.homePhone, [F12.businessPhone]: s(b.phone),
+    // BF_SERVER_SBA_FIELD_GAPS_v134 - "From:/To:" on the residence lines. The
+    // client has collected addressSince since the wizard was built; nothing
+    // carried it. Present address runs to today by definition; the prior one
+    // ran up to the month the present one started.
+    [F12.presentAddressDates]: o.addressSince ? `${o.addressSince} to present` : "",
+    [F12.priorAddressDates]: o.priorAddress && o.addressSince ? `to ${o.addressSince}` : "",
     [F12.priorAddress]: o.priorAddress, [F12.title]: o.title,
   };
   if (yes(o.usCitizen)) values[F12.citizenRadio] = R.citizen.yes;
@@ -153,7 +172,12 @@ export async function buildSba413(args: { business: any; owner: SbaOwner; data: 
   const t = s(b.businessStructure).toLowerCase(), today = new Date().toLocaleDateString("en-US");
   const values: FieldMap = {
     [F413.purpose7a]: true, [F413.name]: o.fullName, [F413.businessPhone]: s(b.phone),
-    [F413.homeAddress]: o.homeAddress, [F413.homePhone]: o.homePhone,
+    // BF_SERVER_SBA_FIELD_GAPS_v134 - the form splits these across two lines.
+    // Fall back to the joined string when the parts are not available, so an
+    // older record still produces an address rather than nothing.
+    [F413.homeAddress]: o.homeStreet || o.homeAddress,
+    [F413.cityStateZip]: o.homeCityStateZip,
+    [F413.homePhone]: o.homePhone,
     [F413.businessName]: s(b.legalName) || s(b.businessName),
     [F413.businessAddress]: [s(b.address), s(b.city), s(b.state), s(b.zip)].filter(Boolean).join(", "),
     [F413.typeCorporation]: t === "corporation" || t.includes("c-corp"), [F413.typeSCorp]: t.includes("s-corp") || t.includes("s corp"),

@@ -8,6 +8,10 @@ export type SbaOwner = {
   ownershipPercent: number; ssn: string; dob: string; homeAddress: string; homePhone: string;
   placeOfBirth: string; usCitizen: string; alienRegistrationNumber: string;
   formerNames: string; priorAddress: string; q8: string; q9: string; q10: string;
+  // BF_SERVER_SBA_FIELD_GAPS_v134 - the parts, kept alongside the joined string.
+  // Forms ask for them separately and a joined string cannot be split back
+  // reliably once a city contains a comma.
+  homeStreet: string; homeCityStateZip: string; addressSince: string;
   veteranStatus: string; sex: string; race: string; ethnicity: string;
 };
 
@@ -24,6 +28,9 @@ function shape(raw: any, index: number): SbaOwner {
     email: s(raw?.email), title: s(raw?.title), ownershipPercent: pct(raw?.ownership),
     ssn: s(raw?.ssn), dob: s(raw?.dob),
     homeAddress: [s(raw?.street), s(raw?.city), s(raw?.state), s(raw?.zip)].filter(Boolean).join(", "),
+    homeStreet: s(raw?.street),
+    homeCityStateZip: [s(raw?.city), s(raw?.state), s(raw?.zip)].filter(Boolean).join(", "),
+    addressSince: s(raw?.addressSince),
     homePhone: s(raw?.homePhone) || s(raw?.phone), placeOfBirth: s(raw?.placeOfBirth),
     usCitizen: s(raw?.usCitizen), alienRegistrationNumber: s(raw?.alienRegistrationNumber),
     formerNames: s(raw?.formerNames), priorAddress: s(raw?.priorAddress),
