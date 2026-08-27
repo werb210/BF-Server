@@ -132,6 +132,12 @@ export async function buildSba912(args: { business: any; owner: SbaOwner }): Pro
 
 // BF_SERVER_SBA_4506C_MAP_v118
 // IRS 4506-C, one per 20%+ owner. Field names come from the real template.
+// BF_SERVER_SBA_GATE_SCOPE_v135 - the 4506-C edition is recorded as UNCONFIRMED
+// in templates.ts while SBA_4506C_BLOB points at a differently-named file. If
+// the blob is a different IRS revision the field names have moved and this fills
+// blank, the same way the 912 did before v130. Verify the blob against the map
+// before relying on it; until then the count of written fields is logged so a
+// silently empty form is visible.
 export async function buildSba4506c(args: { business: any; owner: SbaOwner; kyc?: any }): Promise<Uint8Array | null> {
   const ivesName = s(process.env.SBA_IVES_PARTICIPANT_NAME);
   const ivesId = s(process.env.SBA_IVES_PARTICIPANT_ID);
