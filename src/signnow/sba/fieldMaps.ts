@@ -4,14 +4,20 @@
 //
 // Three things worth knowing before editing any of this:
 //
-// 1. 1919's INTERNAL field numbers do not match its PRINTED question numbers.
-//    q5Yes/q5No carry the tooltip "paid or committed to pay a fee to the
-//    Lender/CDC", which is PRINTED question 6. Printed question 5 (exports) has
-//    no yes/no pair at all - it is captured by expSalesTot and expCtry1-3.
-//    Our CMP form (v199) keys answers by PRINTED number, so the mapping below
-//    shifts deliberately. Getting this wrong would put an export answer on the
-//    broker-fee question of a federal form that carries criminal penalties for
-//    a false statement.
+// 1. BF_SERVER_SBA_FIELD_PARITY_v120 - 1919 internal numbers DO match printed
+//    numbers, 1:1, for all thirteen questions. An earlier revision of this file
+//    claimed a deliberate shift from printed 6 upward, on the strength of the
+//    q5Yes tooltip, which reads "fee to the Lender/CDC". That tooltip is stale
+//    text SBA carried over from a prior edition; q6Yes carries the printed Q6
+//    wording verbatim and the two tooltips are near-duplicates.
+//
+//    Widget geometry on page 2 settles it. Reading down by y-coordinate:
+//    q4 (y=391), q4Init (365), q5 (337), expSalesTot (312), expCtry1 (269),
+//    q6 (241), q7 (204) ... q11 (57); q12 and q13 on page 3. q5Yes/q5No sit
+//    directly above the export sales box, on the printed Q5 row - printed Q5
+//    does have a yes/no pair. Under the old shifted map an export answer was
+//    written onto the broker-fee question and q13 was never written at all, on
+//    a federal form carrying criminal penalties for a false statement.
 //
 // 2. 1919 and 413 use SEPARATE checkboxes per answer (q4Yes and q4No are two
 //    distinct fields). 912 uses RADIO GROUPS - one field, with the answer
@@ -50,6 +56,15 @@ export const SBA_912_FIELDS = {
   q10Radio: "10. Are you currently more than 60 days late on paying any child support obligations?",
   title: "Title",
   date:  "Date_af_date",
+  // Lender-completed, left blank by us.
+  sbaOffice: "SBA Office", loanNumber: "Loan Number",
+  // The three per-question initials. /Tx, not /Sig - we COULD type into these
+  // and must not; SignNow places its own initials tag over each. The field name
+  // carries the whole question text, and the Initial20/21/22 numbering does not
+  // follow the question order: 20 -> Q8, 22 -> Q9, 21 -> Q10.
+  q8Initials:  "Initial20_es_:signer:initials Initials for 8. Are you currently incarcerated, serving a sentence of imprisonment imposed upon adjudication of guilty or under indictment for a felony or any crime involving or relating to financial misconduct or a false statement?",
+  q9Initials:  "Initial22_es_:signer:initials - 9. In the past year, have you been convicted of a criminal offense committed during and in connection with a riot or civil disorder or other declared disaster?",
+  q10Initials: "Initial21_es_:signer:initials - 10. Are you currently more than 60 days late on paying any child support obligations?",
   // Signature and the three per-question initials are /Sig fields. SignNow owns
   // them - SBA requires "an acceptable electronic signature, and not typed", so
   // a value written here would be exactly what the form refuses.
@@ -88,28 +103,47 @@ export const SBA_1919_FIELDS = {
   purposeAcquisition:"busAcq",      purposeAcquisitionAmt:"busAcqAmt",
   purposeDebtRefi:   "debtRef",     purposeDebtRefiAmt:   "debtAmt",
   purposeOther1:     "purpOther1",  purposeOther1Amt:     "otherAmt1", purposeOther1Text: "other1spec",
+  purposeOther2:     "purpOther2",  purposeOther2Amt:     "otherAmt2", purposeOther2Text: "other2spec",
   ownerName:  (i: number) => `ownName${i}`,
   ownerTitle: (i: number) => `ownTitle${i}`,
   ownerPercent: (i: number) => `ownPerc${i}`,
   ownerTin:   (i: number) => `ownTin${i}`,
   ownerHome:  (i: number) => `ownHome${i}`,
   MAX_OWNERS: 5,
-  // PRINTED question -> internal field. Printed Q5 (exports) has no yes/no pair;
-  // see the note at the top of this file. Printed Q4 is the disqualifying one.
+  // PRINTED question -> internal field, identity for 1..13. Printed Q4 is the
+  // disqualifying one; printed Q5 is exports and also carries a yes/no pair.
   printedQuestion: {
     1:  { yes: "q1Yes",  no: "q1No"  },
     2:  { yes: "q2Yes",  no: "q2No"  },
     3:  { yes: "q3Yes",  no: "q3No"  },
     4:  { yes: "q4Yes",  no: "q4No"  },
-    6:  { yes: "q5Yes",  no: "q5No"  },
-    7:  { yes: "q6Yes",  no: "q6No"  },
-    8:  { yes: "q7Yes",  no: "q7No"  },
-    9:  { yes: "q8Yes",  no: "q8No"  },
-    10: { yes: "q9Yes",  no: "q9No"  },
-    11: { yes: "q10Yes", no: "q10No" },
-    12: { yes: "q11Yes", no: "q11No" },
-    13: { yes: "q12Yes", no: "q12No" },
+    5:  { yes: "q5Yes",  no: "q5No"  },
+    6:  { yes: "q6Yes",  no: "q6No"  },
+    7:  { yes: "q7Yes",  no: "q7No"  },
+    8:  { yes: "q8Yes",  no: "q8No"  },
+    9:  { yes: "q9Yes",  no: "q9No"  },
+    10: { yes: "q10Yes", no: "q10No" },
+    11: { yes: "q11Yes", no: "q11No" },
+    12: { yes: "q12Yes", no: "q12No" },
+    13: { yes: "q13Yes", no: "q13No" },
   } as Record<number, { yes: string; no: string }>,
+  // Read from the template but not written by any builder yet - no upstream
+  // field feeds them. Named here so a future wiring does not have to re-derive.
+  specialOwnEsop: "ownESOP", specialOwn401k: "own401k", specialOwnCooperative: "ownCooperative",
+  specialOwnTribal: "ownNATribe", specialOwnOther: "ownOther", specialOwnOtherText: "specOwnTypeOther",
+  // Optional demographic block, page 2. demoOwnerName is the single field in
+  // that block - distinct from ownName1-5 in the ownership table above.
+  demoOwnerName: "ownName", demoOwnerPosition: "ownPos",
+  demoVetNon: "statNonVet", demoVet: "statVet", demoVetDisabled: "statVetD",
+  demoVetSpouse: "statVetSp", demoVetNotDisclosed: "statND",
+  demoSexMale: "male", demoSexFemale: "female",
+  demoRaceAiAn: "raceAIAN", demoRaceAsian: "raceAsian", demoRaceBlack: "raceBAA",
+  demoRaceNhPi: "raceNHPI", demoRaceWhite: "raceWhite", demoRaceNotDisclosed: "raceND",
+  demoEthHispanic: "ethHisp", demoEthNotHispanic: "ethNot", demoEthNotDisclosed: "ethND",
+  // Signature and the Q4 initials are /Sig. SignNow owns them - SBA requires an
+  // acceptable electronic signature and not typed, so a value written here is
+  // exactly what the form refuses.
+  q4Initials: "q4Init", repSignature: "repSig",
   exportSalesTotal: "expSalesTot",
   exportCountry: (i: number) => `expCtry${i}`,
   repName: "repName", repTitle: "repTitle", sigDate: "sigDate",
@@ -117,6 +151,13 @@ export const SBA_1919_FIELDS = {
 
 export const SBA_413_FIELDS = {
   purpose7a: "7(a) loan/04 loan/Surety Bonds",
+  // The other three purpose boxes. We always file 7(a); named so the box is
+  // never guessed at if that changes. SBA's own typo in "Appliction" is real.
+  purposeDisaster: "Disaster Business Loan Appliction (Excluding Sole Proprietorships)",
+  purposeWosb: "Women Owned Small Business (WOSB) Federal Contracting Program",
+  purpose8a: "8(a) Business Development Program",
+  // Two independent checkboxes, both /Off|/Yes - NOT a radio pair.
+  wosbMarriedYes: "WOSB Applicant Married Yes", wosbMarriedNo: "WOSB Applicant Married No",
   name: "Name", businessPhone: "Business Phone xxx-xxx-xxxx",
   homeAddress: "Home Address", homePhone: "Home Phone xxx-xxx-xxxx",
   cityStateZip: "City, State, & Zip Code",
@@ -176,6 +217,22 @@ export const SBA_413_FIELDS = {
   propertyAddress:     (p: "A" | "B" | "C") => `Property ${p}Address`,
   propertyMarketValue: (p: "A" | "B" | "C") => `Property ${p}Present Market Value`,
   propertyMortgageBalance: (p: "A" | "B" | "C") => `Property ${p}Mortgage Balance`,
+  propertyDatePurchased:   (p: "A" | "B" | "C") => `Property ${p}Date Purchased_es_:date`,
+  propertyOriginalCost:    (p: "A" | "B" | "C") => `Property ${p}Original Cost`,
+  // Two spaces between "Name" and "Address" - that is the field name on the PDF.
+  propertyMortgageHolder:  (p: "A" | "B" | "C") => `Property ${p}Name  Address of Mortgage Holder`,
+  propertyMortgageAccount: (p: "A" | "B" | "C") => `Property ${p}Mortgage Account Number`,
+  propertyPayment:         (p: "A" | "B" | "C") => `Property ${p}Amount of Payment per MonthYear`,
+  propertyMortgageStatus:  (p: "A" | "B" | "C") => `Property ${p}Status of Mortgage`,
+  // Section 3, Stocks and Bonds. Mandatory whenever assetStocksBonds is non-zero,
+  // same rule as Sections 2 and 4. Four rows on the paper form.
+  stockShares:      (i: number) => `Number of SharesRow${i}`,
+  stockName:        (i: number) => `Name of SecuritiesRow${i}`,
+  stockCost:        (i: number) => `CostRow${i}`,
+  stockMarketValue: (i: number) => `Market Value QuotationExchangeRow${i}`,
+  stockQuoteDate:   (i: number) => `Date of QuotationExchangeRow${i}`,
+  stockTotalValue:  (i: number) => `Total ValueRow${i}`,
+  MAX_STOCK_ROWS: 4,
   printName: "Print Name", ssn: "Social Security No", date: "Date",
   printName2: "Print Name_2", ssn2: "Social Security No_2", date2: "Date2",
   // Signature and Signature_2 are /Sig - SignNow owns them.
