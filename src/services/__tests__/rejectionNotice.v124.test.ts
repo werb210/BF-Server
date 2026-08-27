@@ -40,6 +40,21 @@ describe("decline email", () => {
   });
 });
 
+describe("route ordering", () => {
+  // v124 shipped this route below /:id, where Express could never reach it.
+  it("declares /rejection-reasons before /:id, or it is unreachable", () => {
+    const cat = routes.indexOf("router.get('/rejection-reasons'");
+    const wild = routes.indexOf("router.get('/:id',");
+    expect(cat).toBeGreaterThan(-1);
+    expect(wild).toBeGreaterThan(-1);
+    expect(cat).toBeLessThan(wild);
+  });
+
+  it("registers the catalogue exactly once", () => {
+    expect(routes.split("router.get('/rejection-reasons'").length - 1).toBe(1);
+  });
+});
+
 describe("application-level reject", () => {
   it("requires and stores reasons without a lender", () => {
     expect(routes).toContain("At least one reason is required.");
