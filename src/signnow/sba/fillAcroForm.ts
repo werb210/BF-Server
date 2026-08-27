@@ -26,6 +26,7 @@ export async function fillAcroForm(templateBytes: Uint8Array, values: FieldMap):
   const doc = await PDFDocument.load(templateBytes);
   const form = doc.getForm();
   const missing: string[] = [];
+  const unmatchedOptions: Array<{ field: string; wanted: string; options: string[] }> = [];
 
   for (const [name, raw] of Object.entries(values)) {
     if (raw === undefined || raw === null || raw === "") continue;
@@ -34,7 +35,29 @@ export async function fillAcroForm(templateBytes: Uint8Array, values: FieldMap):
         const box = form.getCheckBox(name);
         if (raw) box.check(); else box.uncheck();
       } else {
-        form.getTextField(name).setText(String(raw));
+        // BF_SERVER_SBA_RADIO_FIX_v130 - dispatch on what the field actually is
+        // rather than assuming every string target is a text field. A radio
+        // group used to throw here and be swallowed as "unknown".
+        const field = form.getField(name);
+        const kind = field.constructor.name;
+        if (kind === "PDFRadioGroup") {
+          const group = form.getRadioGroup(name);
+          const wanted = String(raw).replace(/^\//, "");
+          const options = group.getOptions();
+          const match = options.find((o) => o === wanted)
+            ?? options.find((o) => o.toLowerCase() === wanted.toLowerCase());
+          if (!match) {
+            // Selecting a state the widget does not define silently does
+            // nothing, so an unmatched option is reported, not guessed at.
+            unmatchedOptions.push({ field: name, wanted, options });
+          } else {
+            group.select(match);
+          }
+        } else if (kind === "PDFDropdown") {
+          form.getDropdown(name).select(String(raw));
+        } else {
+          form.getTextField(name).setText(String(raw));
+        }
       }
     } catch {
       missing.push(name);
@@ -44,11 +67,16 @@ export async function fillAcroForm(templateBytes: Uint8Array, values: FieldMap):
   if (missing.length) {
     logInfo("sba_form_fill_unknown_fields", { count: missing.length, fields: missing.slice(0, 20) });
   }
+  if (unmatchedOptions.length) {
+    logInfo("sba_form_fill_unmatched_options", { count: unmatchedOptions.length, detail: unmatchedOptions.slice(0, 10) });
+  }
 
   // Flatten so the values are part of the page content. Without this the fields
   // stay editable, and SignNow's own field extraction would fight the AcroForm
   // layer - the signer would see two overlapping sets of inputs.
-  form.flatten();
+  // BF_SERVER_SBA_RADIO_FIX_v130 - tests set SBA_NO_FLATTEN so the filled values
+  // can be read back off the PDF. Never set in any deployed environment.
+  if (!process.env.SBA_NO_FLATTEN) form.flatten();
   return doc.save();
 }
 

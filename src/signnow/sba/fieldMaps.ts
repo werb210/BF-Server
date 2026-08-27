@@ -29,9 +29,12 @@
 //    rows, 4 stock rows, 3 properties and 2 signature blocks. Beyond that SBA
 //    expects a separate attachment sheet, not more fields.
 
+// BF_SERVER_SBA_RADIO_FIX_v130 - exactly what pdf-lib getOptions() reports for
+// these widgets. No leading slash: that is the PDF name-object prefix, not part
+// of the export value.
 export const SBA_912_RADIO_STATES = {
-  citizen: { yes: "/Yes, I'm a United States Citizen", no: "/No, I'm not a United States Citizen" },
-  plain:   { yes: "/Yes", no: "/No" },
+  citizen: { yes: "Yes, I'm a United States Citizen", no: "No, I'm not a United States Citizen" },
+  plain:   { yes: "Yes", no: "No" },
 } as const;
 
 export const SBA_912_FIELDS = {

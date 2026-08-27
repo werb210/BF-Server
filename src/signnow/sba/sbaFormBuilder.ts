@@ -43,9 +43,15 @@ export async function buildSba1919(args: { applicationId: string; business: any;
     [F19.purposeAcquisition]: !!money(f.purpose_acquisition), [F19.purposeAcquisitionAmt]: money(f.purpose_acquisition),
     [F19.purposeDebtRefi]: !!money(f.purpose_debt_refi), [F19.purposeDebtRefiAmt]: money(f.purpose_debt_refi),
     [F19.purposeOther1]: !!money(f.purpose_other), [F19.purposeOther1Amt]: money(f.purpose_other),
+    // BF_SERVER_SBA_RADIO_FIX_v130 - was never written. An amount with no
+    // description is a question SBA will come back and ask.
+    [F19.purposeOther1Text]: money(f.purpose_other) ? s(f.purpose_other_label) : "",
     [F19.purposeOther2]: !!money(f.purpose_other_2), [F19.purposeOther2Amt]: money(f.purpose_other_2),
     [F19.purposeOther2Text]: money(f.purpose_other_2) ? s(f.purpose_other_2_label) : "",
-    [F19.exportSalesTotal]: s(f.q5_exports_detail), [F19.repName]: owners[0]?.fullName ?? "", [F19.repTitle]: owners[0]?.title ?? "",
+    // BF_SERVER_SBA_RADIO_FIX_v130 - 5.a is a dollar amount, not the country
+    // list. It was being given q5_exports_detail, so the money box read
+    // "United States, Mexico".
+    [F19.exportSalesTotal]: money(f.q5_export_sales), [F19.repName]: owners[0]?.fullName ?? "", [F19.repTitle]: owners[0]?.title ?? "",
   };
   // BF_SERVER_SBA_OWNER_CAPACITY_v105 - the form physically holds five. Dropping
   // a sixth owner without a word produces a 1919 that understates ownership, so
