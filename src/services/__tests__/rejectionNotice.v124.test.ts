@@ -17,8 +17,12 @@ describe("rejection reason catalogue", () => {
 });
 
 describe("lender pass and auto-close", () => {
-  it("uses anonymous pass phrasing and counts only sent lenders", () => {
-    expect(routes).toContain("The lender will pass, due to ${reasonSummary}");
+  it("keeps the ordinal, so repeat passes are distinguishable", () => {
+    expect(routes).toContain("Lender ${frozenOrdinal} will pass");
+  });
+
+  it("uses the agreed pass phrasing and counts only sent lenders", () => {
+    expect(routes).toContain("will pass, due to ${reasonSummary}");
     expect(svc).toContain("sent_at IS NOT NULL");
     expect(svc).toContain("return sent > 0 && passed >= sent;");
   });
