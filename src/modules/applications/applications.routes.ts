@@ -449,6 +449,21 @@ router.get('/phone-debug', safeHandler(async (req: any, res: any) => {
 }));
 
 // GET /api/applications/:id — single application with documents
+// BF_SERVER_REJECT_ROUTE_ORDER_v126
+// v124 registered this AFTER router.get('/:id'), so Express never reached it -
+// every request matched the wildcard first and looked up an application whose id
+// was the literal string "rejection-reasons". The staff reject modal got a 404
+// and rendered an empty checkbox list. Any literal GET path on this router has
+// to be declared above the wildcard or it is dead on arrival.
+// BF_SERVER_REJECTION_REASONS_v124 - the catalogue, for the staff modal.
+router.get('/rejection-reasons', requireAuth, safeHandler(async (_req: any, res: any) => {
+  const r = await pool.query(
+    `SELECT code, label, why_it_matters, what_helps FROM rejection_reasons
+      WHERE active ORDER BY sort_order ASC`,
+  ).catch(() => ({ rows: [] as any[] }));
+  res.json({ status: 'ok', data: { reasons: r.rows } });
+}));
+
 router.get('/:id', safeHandler(async (req: any, res: any) => {
   // BF_SERVER_BLOCK_v216_APPLICATION_DETAIL_BI_FIELDS_v1
   // Surface BI handoff columns (added in v213) so client surfaces
@@ -1778,15 +1793,6 @@ router.post('/:id/lender-response', requireAuth, safeHandler(async (req: any, re
   }
 
   res.json({ status: 'ok', data: { ordinal: frozenOrdinal, reason: reasonSummary, closed } });
-}));
-
-// BF_SERVER_REJECTION_REASONS_v124 - the catalogue, for the staff modal.
-router.get('/rejection-reasons', requireAuth, safeHandler(async (_req: any, res: any) => {
-  const r = await pool.query(
-    `SELECT code, label, why_it_matters, what_helps FROM rejection_reasons
-      WHERE active ORDER BY sort_order ASC`,
-  ).catch(() => ({ rows: [] as any[] }));
-  res.json({ status: 'ok', data: { reasons: r.rows } });
 }));
 
 router.post('/:id/reject', requireAuth, safeHandler(async (req: any, res: any) => {
