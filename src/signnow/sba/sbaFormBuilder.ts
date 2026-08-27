@@ -42,6 +42,8 @@ export async function buildSba1919(args: { applicationId: string; business: any;
     [F19.purposeAcquisition]: !!money(f.purpose_acquisition), [F19.purposeAcquisitionAmt]: money(f.purpose_acquisition),
     [F19.purposeDebtRefi]: !!money(f.purpose_debt_refi), [F19.purposeDebtRefiAmt]: money(f.purpose_debt_refi),
     [F19.purposeOther1]: !!money(f.purpose_other), [F19.purposeOther1Amt]: money(f.purpose_other),
+    [F19.purposeOther2]: !!money(f.purpose_other_2), [F19.purposeOther2Amt]: money(f.purpose_other_2),
+    [F19.purposeOther2Text]: money(f.purpose_other_2) ? s(f.purpose_other_2_label) : "",
     [F19.exportSalesTotal]: s(f.q5_exports_detail), [F19.repName]: owners[0]?.fullName ?? "", [F19.repTitle]: owners[0]?.title ?? "",
   };
   // BF_SERVER_SBA_OWNER_CAPACITY_v105 - the form physically holds five. Dropping
@@ -63,7 +65,7 @@ export async function buildSba1919(args: { applicationId: string; business: any;
   });
   const printed: Record<number, unknown> = {
     1: f.q1_debarred, 2: f.q2_federal_default, 3: f.q3_other_business,
-    4: b?.sbaQ4Criminal ?? kyc?.sbaQ4Criminal, 6: f.q6_broker_fee, 7: f.q7_restricted_revenue,
+    4: b?.sbaQ4Criminal ?? kyc?.sbaQ4Criminal, 5: f.q5_exports, 6: f.q6_broker_fee, 7: f.q7_restricted_revenue,
     8: f.q8_sba_employee, 9: f.q9_former_sba, 10: f.q10_congress, 11: f.q11_federal_employee,
     12: f.q12_advisory_council, 13: f.q13_legal_action,
   };
@@ -199,6 +201,24 @@ export async function buildSba413(args: { business: any; owner: SbaOwner; data: 
     values[F413.propertyAddress(letter)] = s(prop?.address);
     values[F413.propertyMarketValue(letter)] = money(prop?.market_value);
     values[F413.propertyMortgageBalance(letter)] = money(prop?.mortgage_balance);
+    values[F413.propertyDatePurchased(letter)] = s(prop?.date_purchased);
+    values[F413.propertyOriginalCost(letter)] = money(prop?.original_cost);
+    values[F413.propertyMortgageHolder(letter)] = s(prop?.mortgage_holder);
+    values[F413.propertyMortgageAccount(letter)] = s(prop?.mortgage_account);
+    values[F413.propertyPayment(letter)] = money(prop?.payment);
+    values[F413.propertyMortgageStatus(letter)] = s(prop?.mortgage_status);
+  });
+
+  // Section 3 - Stocks and Bonds. Mapped in v90, never written until v120.
+  const securities = rows("securities");
+  securities.slice(0, F413.MAX_STOCK_ROWS).forEach((sec: any, idx: number) => {
+    const i = idx + 1;
+    values[F413.stockShares(i)] = s(sec?.shares);
+    values[F413.stockName(i)] = s(sec?.name);
+    values[F413.stockCost(i)] = money(sec?.cost);
+    values[F413.stockMarketValue(i)] = money(sec?.market_value);
+    values[F413.stockQuoteDate(i)] = s(sec?.quote_date);
+    values[F413.stockTotalValue(i)] = money(sec?.total_value);
   });
 
   // Sections 3, 5, 6 and 8, plus the Other Income description. Each is a single
@@ -218,12 +238,14 @@ export async function buildSba413(args: { business: any; owner: SbaOwner; data: 
 
   // Over capacity: the form physically cannot hold more. Recorded so a file that
   // needs a continuation sheet is visible rather than quietly truncated.
-  if (noteholders.length > F413.MAX_NOTEHOLDER_ROWS || properties.length > 3) {
+  if (noteholders.length > F413.MAX_NOTEHOLDER_ROWS || properties.length > 3 || securities.length > F413.MAX_STOCK_ROWS) {
     logInfo("sba_413_schedule_overflow", {
       noteholders: noteholders.length,
       noteholderCapacity: F413.MAX_NOTEHOLDER_ROWS,
       properties: properties.length,
       propertyCapacity: 3,
+      securities: securities.length,
+      securityCapacity: F413.MAX_STOCK_ROWS,
     });
   }
 
