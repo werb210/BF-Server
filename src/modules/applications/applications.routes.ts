@@ -301,12 +301,37 @@ router.post('/:id/request-steps', requireCapability([CAPABILITIES.CRM_WRITE]), s
     // the same Request Items panel as every other stage-2 form.
     sba1919: 'SBA Form 1919', sba413: 'SBA Form 413',
   };
+
+  // BF_SERVER_SBA_FORM_REQUEST_v141
+  // Every spelling of the SBA forms maps to one prompt. All of them - the 1919
+  // and a 413 per owner - live on the Stage 2 page, which already lists what is
+  // outstanding with per-form status, so one entry point is better than one
+  // prompt per owner that can drift out of step with the owner list.
+  const SBA_FORM_ALIASES: Record<string, string> = {
+    sba1919: 'sba_forms', sba413: 'sba_forms',
+    sba_form_1919: 'sba_forms', sba_form_413: 'sba_forms',
+    sba_forms: 'sba_forms',
+  };
+  const normalizeFormId = (raw: string): string | null => {
+    const x = String(raw ?? '').trim().toLowerCase();
+    if (SBA_FORM_ALIASES[x]) return SBA_FORM_ALIASES[x];
+    // sba_form_413_owner_3 and friends resolve to the same page.
+    if (/^sba_form_413_owner_\d+$/.test(x)) return 'sba_forms';
+    return x in FORM_LABELS ? x : null;
+  };
+  FORM_LABELS.sba_forms = 'SBA Forms';
+
   const b = req.body ?? {};
   const reqForms: string[] = Array.isArray(b.forms)
-    ? b.forms.map((x: any) => String(x).trim().toLowerCase()).filter((x: string) => x in FORM_LABELS) : [];
-  const reqDocs: string[] = Array.isArray(b.documents)
+    ? b.forms.map((x: any) => normalizeFormId(x)).filter((x: any): x is string => Boolean(x)) : [];
+  // BF_SERVER_SBA_FORM_REQUEST_v141 - an SBA form sent through the documents
+  // field is still a form. Route it rather than asking for an upload that
+  // cannot exist.
+  const rawDocs: string[] = Array.isArray(b.documents)
     ? b.documents.map((x: any) => String(x).trim()).filter(Boolean) : [];
-  const uniqForms = Array.from(new Set(reqForms));
+  const sbaFromDocs = rawDocs.filter((x) => normalizeFormId(x) === 'sba_forms');
+  const reqDocs: string[] = rawDocs.filter((x) => normalizeFormId(x) !== 'sba_forms');
+  const uniqForms = Array.from(new Set([...reqForms, ...(sbaFromDocs.length ? ['sba_forms'] : [])]));
   const uniqDocs = Array.from(new Set(reqDocs));
   if (!uniqForms.length && !uniqDocs.length) {
     return res.status(400).json({ error: 'no_steps', message: 'Pick at least one form or document.' });
