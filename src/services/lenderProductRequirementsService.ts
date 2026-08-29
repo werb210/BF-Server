@@ -5,6 +5,7 @@ import { pool, runQuery } from "../db.js";
 import { randomUUID } from "node:crypto";
 import {
   ALWAYS_REQUIRED_DOCUMENTS,
+  alwaysRequiredFor, // BF_SERVER_SBA_NO_BANK_STATEMENTS_v140
   normalizeRequiredDocumentKey,
 } from "../db/schema/requiredDocuments.js";
 
@@ -141,11 +142,15 @@ function dedupeRequirements(requirements: LenderProductRequirement[]): LenderPro
   return Array.from(map.values());
 }
 
+// BF_SERVER_SBA_NO_BANK_STATEMENTS_v140 - category decides which always-required
+// documents apply. Callers that genuinely cannot know the category pass nothing
+// and get the full list, which is the safe direction to fail.
 function ensureAlwaysRequired(
-  requirements: LenderProductRequirement[]
+  requirements: LenderProductRequirement[],
+  category?: string | null
 ): LenderProductRequirement[] {
   const existing = new Set(requirements.map((req) => req.documentType));
-  const additions = ALWAYS_REQUIRED_DOCUMENTS.filter(
+  const additions = alwaysRequiredFor(category).filter(
     (doc) => !existing.has(doc)
   ).map((doc) => ({
     id: randomUUID(),
@@ -243,7 +248,7 @@ export async function listRequirementsForFilters(params: {
       .map((entry) => normalizeRequirementEntry(entry))
       .filter((entry): entry is LenderProductRequirement => Boolean(entry));
   });
-  const normalized = ensureAlwaysRequired(dedupeRequirements(requirements));
+  const normalized = ensureAlwaysRequired(dedupeRequirements(requirements), category);
   return normalized;
 }
 
@@ -271,7 +276,7 @@ export async function resolveLenderProductRequirements(params: {
     }
     return true;
   });
-  const normalized = ensureAlwaysRequired(dedupeRequirements(filtered));
+  const normalized = ensureAlwaysRequired(dedupeRequirements(filtered), product.category);
   logInfo("lender_product_requirements_resolved", {
     lenderProductId: params.lenderProductId,
     requestedAmount: params.requestedAmount ?? null,
@@ -296,7 +301,7 @@ export async function resolveRequirementsForProductType(params: {
   if (products.length === 0) {
     logWarn("lender_product_type_missing", { productType: params.productType });
     if (config.env === "test") {
-      const requirements = ensureAlwaysRequired([]);
+      const requirements = ensureAlwaysRequired([], category);
       return { requirements, lenderProductId: null };
     }
     throw new AppError("invalid_product", "Unsupported product type.", 400);
@@ -307,7 +312,7 @@ export async function resolveRequirementsForProductType(params: {
       .map((entry) => normalizeRequirementEntry(entry))
       .filter((entry): entry is LenderProductRequirement => Boolean(entry));
   });
-  const normalized = ensureAlwaysRequired(dedupeRequirements(requirements));
+  const normalized = ensureAlwaysRequired(dedupeRequirements(requirements), category);
   return { requirements: normalized, lenderProductId: products[0]?.id ?? null };
 }
 
