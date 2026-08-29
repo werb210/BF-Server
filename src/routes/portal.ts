@@ -58,6 +58,7 @@ import twilio from "twilio";
 import { progressSubmission } from "../services/submission/orchestrator.js";
 // BF_SERVER_BLOCK_v198_LENDER_MATCH_GATE_AND_CACHE_v1
 import { computeAndCacheLenderMatches, markLenderMatchesStale, getOutstandingRequiredDocs } from "../services/lenderMatchCache.js";
+import { isUndeliverableNumber } from "../lib/smsDeliverability.js"; // BF_SERVER_GUARD_EVERYWHERE_v136
 // BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const router = Router();
@@ -213,6 +214,9 @@ async function sendDocumentRejectionSms(params: {
   const body =
     `Your document "${params.documentType}" has been rejected.${reason} ` +
     "Please log in to re-upload: https://client.boreal.financial";
+
+  // BF_SERVER_GUARD_EVERYWHERE_v136
+  if (isUndeliverableNumber(to)) return;
 
   const client: any = twilio(accountSid, authToken);
   const msg = await client.messages.create({ body, from, to }).catch(() => null);

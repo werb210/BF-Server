@@ -4,6 +4,7 @@
 import jwt from "jsonwebtoken";
 import { fetchTwilioClient } from "./twilio.js";
 import { config } from "../config/index.js";
+import { isUndeliverableNumber } from "../lib/smsDeliverability.js"; // BF_SERVER_GUARD_EVERYWHERE_v136
 
 // BF_SERVER_SMS_CASCADE_COMPLETE_v12 - PUBLIC_SERVER_URL is not a setting that
 // exists on the App Service; the deployed names are PUBLIC_BASE_URL and
@@ -44,6 +45,8 @@ export function trackedLink(sendId: string, url: string): string {
 export async function sendMarketingSms(to: string, body: string): Promise<{ ok: boolean; sid?: string; optedOut?: boolean; error?: string }> {
   const from = fromNumber();
   if (!from || !to) return { ok: false, error: "no_from_or_to" };
+  // BF_SERVER_GUARD_EVERYWHERE_v136 - count junk imported numbers as failures.
+  if (isUndeliverableNumber(to)) return { ok: false, error: "undeliverable_number" };
   try {
     const client = fetchTwilioClient();
     const msg = await client.messages.create({ to, from, body, statusCallback: `${PUBLIC_URL}/api/r/status` });
