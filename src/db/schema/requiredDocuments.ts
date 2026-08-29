@@ -30,6 +30,27 @@ export const ALWAYS_REQUIRED_DOCUMENTS: RequiredDocumentKey[] = [
   "bank_statements_6_months",
 ];
 
+// BF_SERVER_SBA_NO_BANK_STATEMENTS_v140
+// Product categories that opt out of an otherwise always-required document.
+// SBA 7(a) is underwritten from the 1919, the 413, tax returns and the business
+// plan; six months of statements are not part of what goes to the lender, so
+// demanding them stalls the file at Documents Required for a document nobody
+// reads.
+//
+// A map rather than a flag on the document, because the exemption belongs to
+// the product: the same statements are genuinely mandatory on an LOC or a
+// factoring facility and must stay that way.
+export const ALWAYS_REQUIRED_EXEMPTIONS: Readonly<Record<string, RequiredDocumentKey[]>> = {
+  SBA: ["bank_statements_6_months"],
+};
+
+/** Always-required documents for a category, minus anything that category exempts. */
+export function alwaysRequiredFor(category?: string | null): RequiredDocumentKey[] {
+  const key = String(category ?? "").trim().toUpperCase();
+  const exempt = new Set(ALWAYS_REQUIRED_EXEMPTIONS[key] ?? []);
+  return ALWAYS_REQUIRED_DOCUMENTS.filter((doc) => !exempt.has(doc));
+}
+
 const LEGACY_DOCUMENT_KEY_MAP: Record<string, RequiredDocumentKey> = {
   bank_statement: "bank_statements_6_months",
   bank_statements: "bank_statements_6_months",
