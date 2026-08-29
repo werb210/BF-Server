@@ -165,7 +165,8 @@ async function computeOutstandingDocsRaw(
   for (const r of reqRes.rows) {
     if (r.category && !seen.has(r.category)) {
       seen.add(r.category);
-      // BF_SERVER_SBA_DOC_LIST_v113
+      // BF_SERVER_OPTIONAL_DOCS_v138 - this query already filters required = true,
+      // so everything it returns is blocking by construction.
       required.push({ document_type: r.category, label: labelFor(r.category), required: true });
     }
   }
@@ -198,12 +199,19 @@ async function computeOutstandingDocsRaw(
     for (const item of items) appendRequiredDocAll(item, seen, required);
   }
 
-  // stillNeeded = full required set minus categories already uploaded (non-rejected).
+  // BF_SERVER_OPTIONAL_DOCS_v138 - stillNeeded is the BLOCKING set: what the
+  // applicant must produce before the file can move. An optional document is by
+  // definition not that, and one the applicant has nothing to upload for can
+  // never clear, so including it stalls the application permanently.
+  //
+  // `required` below still carries every item including the optional ones, so
+  // the staff Request Items surface is unchanged and staff can still ask for a
+  // lease when a deal actually involves premises.
   const satisfiedNorm = new Set(
     Array.from(satisfied).map((c) => c.trim().toLowerCase())
   );
   const stillNeeded = required.filter(
-    (d) => !satisfiedNorm.has(d.document_type.trim().toLowerCase())
+    (d) => d.required !== false && !satisfiedNorm.has(d.document_type.trim().toLowerCase())
   );
 
   // Rejected docs (client must re-upload), deduped and not already re-satisfied.
