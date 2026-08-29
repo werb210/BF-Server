@@ -48,13 +48,26 @@ describe("every resolver passes its category through", () => {
 });
 
 describe("files already stuck are cleared", () => {
-  it("only touches SBA products", () => {
-    expect(mig).toContain("upper(COALESCE(lp.category, '')) = 'SBA'");
+  // BF_SERVER_V140_MIGRATION_FIX_v143 - the first cut of this migration took the
+  // server down: it referenced a table no migration creates. Application code
+  // swallows that with .catch(); startup migrations fail closed.
+  it("does not reference document_requirements", () => {
+    expect(mig).not.toContain("DELETE FROM document_requirements");
   });
 
-  it("keeps the row when statements were actually uploaded", () => {
-    expect(mig).toContain("NOT EXISTS");
-    expect(mig).toContain("FROM documents d");
+  it("touches only relations that migrations actually create", () => {
+    const targets = [...mig.matchAll(/^\s*(?:UPDATE|DELETE FROM|INSERT INTO)\s+(\w+)/gim)].map((m) => m[1]);
+    expect(targets).toEqual(["lender_products"]);
+  });
+
+  it("uses no plpgsql, so the suite can execute it", () => {
+    expect(mig).not.toContain("DO $$");
+  });
+
+  it("only touches SBA products", () => {
+    // BF_SERVER_V140_MIGRATION_FIX_v143 - the aliased form belonged to the
+    // DELETE that has been removed; the UPDATE has no alias.
+    expect(mig).toContain("upper(COALESCE(category, '')) = 'SBA'");
   });
 
   it("also strips it from the product JSON so the fallback cannot re-add it", () => {
