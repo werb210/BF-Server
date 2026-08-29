@@ -7,6 +7,7 @@ import { pool } from "../db.js";
 import { verifyAccessToken } from "../auth/jwt.js"; // BF_SERVER_SMS_MEDIA_v1
 import { fetchTwilioMedia, persistTwilioMediaToBlob } from "../services/mmsMedia.js"; // BF_SERVER_MMS_BLOB_PROXY_v1
 import twilio from "twilio";
+import { isUndeliverableNumber } from "../lib/smsDeliverability.js"; // BF_SERVER_GUARD_EVERYWHERE_v136
 
 const router = Router();
 
@@ -1206,6 +1207,10 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
   try {
     const __smsCtx = await mergeCtxForContact({ contactId, phone: to, userId: (req as any).user?.id ?? null });
     mergedBody = renderMergeTokensComm(String(body), __smsCtx);
+    // BF_SERVER_GUARD_EVERYWHERE_v136 - tell staff so they can fix the number.
+    if (isUndeliverableNumber(to)) {
+      return res.status(400).json({ error: "undeliverable_number", message: "That number cannot receive SMS." });
+    }
     message = await client.messages.create({ body: String(mergedBody), from, to: String(to) });
   } catch (err: any) {
     // eslint-disable-next-line no-console
@@ -1835,6 +1840,7 @@ router.post("/broadcast", safeHandler(async (req: any, res: any) => {
         if (!c.phone) { results.push({ contactId: c.id, ok: false, error: "no_phone" }); continue; }
         const digits = String(c.phone).replace(/\D/g, "");
         const to = digits.length === 10 ? `+1${digits}` : String(c.phone);
+        if (isUndeliverableNumber(to)) { results.push({ contactId: c.id, ok: false, error: "undeliverable_number" }); continue; }
         const msg = await client.messages.create({ body: String(mergedBody), from, to });
         await pool.query(
           `INSERT INTO communications_messages

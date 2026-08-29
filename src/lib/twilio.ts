@@ -1,4 +1,5 @@
 import { safeImport } from "../utils/safeImport.js";
+import { isUndeliverableNumber } from "./smsDeliverability.js"; // BF_SERVER_GUARD_EVERYWHERE_v136
 
 export async function sendSMS(to: string, body: string) {
   if (process.env.NODE_ENV === "test") {
@@ -22,6 +23,11 @@ export async function sendSMS(to: string, body: string) {
     process.env.TWILIO_ACCOUNT_SID,
     process.env.TWILIO_AUTH_TOKEN,
   );
+
+  // BF_SERVER_GUARD_EVERYWHERE_v136 - last line of defence for helper callers.
+  if (isUndeliverableNumber(to)) {
+    throw new Error(`undeliverable_number:${String(to).slice(0, 6)}`);
+  }
 
   return client.messages.create({
     to,

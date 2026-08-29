@@ -2,6 +2,7 @@ import { fetchTwilioClient } from "./twilio.js";
 import { config } from "../config/index.js";
 import { withRetry } from "../lib/retry.js";
 import { pushDeadLetter } from "../lib/deadLetter.js";
+import { isUndeliverableNumber } from "../lib/smsDeliverability.js"; // BF_SERVER_GUARD_EVERYWHERE_v136
 
 export async function sendSMS(to: string, body: string): Promise<{ success: boolean } | void> {
   if (config.app.testMode === "true") {
@@ -11,6 +12,12 @@ export async function sendSMS(to: string, body: string): Promise<{ success: bool
 
   const from = config.twilio.number || config.twilio.phone;
   if (!from || !to) {
+    return;
+  }
+
+  // BF_SERVER_GUARD_EVERYWHERE_v136
+  if (isUndeliverableNumber(to)) {
+    console.warn("[sms] skipped undeliverable number", String(to).slice(0, 6));
     return;
   }
 

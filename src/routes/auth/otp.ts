@@ -5,6 +5,7 @@ import { safeImport } from "../../utils/safeImport.js";
 
 import { getRedis } from "../../lib/redis.js";
 import { findAuthUserByPhone } from "../../modules/auth/auth.repo.js";
+import { isUndeliverableNumber } from "../../lib/smsDeliverability.js"; // BF_SERVER_GUARD_EVERYWHERE_v136
 
 const router = express.Router();
 
@@ -21,6 +22,13 @@ router.post("/start", async (req: Request, res: Response) => {
 
   if (!isPhone(phone)) {
     return res.status(400).json({ error: "invalid_payload" });
+  }
+
+  // BF_SERVER_GUARD_EVERYWHERE_v136 - isPhone only checks the shape. A number
+  // can be perfectly shaped and still unroutable. Reject it before the billed
+  // API call and tell the caller that their number needs correction.
+  if (isUndeliverableNumber(phone)) {
+    return res.status(400).json({ error: "unroutable_phone_number" });
   }
 
   if (
@@ -60,6 +68,12 @@ router.post("/start", async (req: Request, res: Response) => {
 
     return res.status(200).json({ status: "ok", data: { sent: true } });
   } catch (err) {
+    // BF_SERVER_GUARD_EVERYWHERE_v136 - Twilio rejected the number itself.
+    const code = Number((err as { code?: unknown })?.code ?? 0);
+    if (code === 21211 || code === 21214) {
+      console.warn("[otp] twilio rejected number", code, String(phone).slice(0, 6));
+      return res.status(400).json({ error: "invalid_phone_number" });
+    }
     console.error("Twilio SMS failed:", err);
     return res.status(500).json({ error: "sms_failed" });
   }
