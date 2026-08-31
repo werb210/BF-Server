@@ -17,8 +17,15 @@ describe("4506-C in the envelope", () => {
     expect(signing).toContain("`irs-4506c-owner${owner.index}-${applicationId}.pdf`");
   });
 
+  // BF_SERVER_PER_LENDER_IVES_v144 - one push per lender now, but a null build
+  // still contributes nothing to the envelope.
   it("is skipped when the builder returns null", () => {
-    expect(signing).toContain("if (form4506c) docs.push(");
+    expect(signing).toContain("if (form4506c) {");
+    // Every push of a 4506-C sits inside a truthiness check on the build result.
+    const pushes = signing.split("docs.push({ bytes: form4506c").length - 1;
+    const guards = signing.split("if (form4506c) {").length - 1;
+    expect(pushes).toBe(guards);
+    expect(pushes).toBe(2);
   });
 
   it("signs before the 413", () => {

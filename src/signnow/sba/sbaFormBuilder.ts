@@ -138,12 +138,29 @@ export async function buildSba912(args: { business: any; owner: SbaOwner }): Pro
 // blank, the same way the 912 did before v130. Verify the blob against the map
 // before relying on it; until then the count of written fields is logged so a
 // silently empty form is visible.
-export async function buildSba4506c(args: { business: any; owner: SbaOwner; kyc?: any }): Promise<Uint8Array | null> {
-  const ivesName = s(process.env.SBA_IVES_PARTICIPANT_NAME);
-  const ivesId = s(process.env.SBA_IVES_PARTICIPANT_ID);
-  const ivesMailbox = s(process.env.SBA_IVES_SOR_MAILBOX_ID);
+// BF_SERVER_PER_LENDER_IVES_v144
+// Line 5a names the IVES participant who receives the transcript - the lender.
+// One set of env vars cannot serve a marketplace: a 4506-C naming lender A does
+// not authorise lender B to pull anything, and the IRS rejects a blank 5a.
+export type IvesParticipant = {
+  lenderId: string; lenderName: string;
+  participantName: string; participantId: string; sorMailboxId: string;
+  street?: string; city?: string; state?: string; zip?: string;
+};
+
+export async function buildSba4506c(args: {
+  business: any; owner: SbaOwner; kyc?: any; ives?: IvesParticipant;
+}): Promise<Uint8Array | null> {
+  // Env is the fallback for a single-lender setup; the lender record wins.
+  const ivesName = s(args.ives?.participantName) || s(process.env.SBA_IVES_PARTICIPANT_NAME);
+  const ivesId = s(args.ives?.participantId) || s(process.env.SBA_IVES_PARTICIPANT_ID);
+  const ivesMailbox = s(args.ives?.sorMailboxId) || s(process.env.SBA_IVES_SOR_MAILBOX_ID);
   if (!ivesName || !ivesId || !ivesMailbox) {
-    logInfo("sba_4506c_ives_not_configured", { detail: "SBA_IVES_PARTICIPANT_NAME, SBA_IVES_PARTICIPANT_ID and SBA_IVES_SOR_MAILBOX_ID must be set from the lender's IVES registration. Line 5a cannot be blank or the IRS rejects the form." });
+    logInfo("sba_4506c_ives_not_configured", {
+      lenderId: args.ives?.lenderId ?? null,
+      lenderName: args.ives?.lenderName ?? null,
+      detail: "No IVES participant for this lender. Set ives_participant_name, ives_participant_id and ives_sor_mailbox_id on the lender, or the SBA_IVES_* env vars for a single-lender setup. Line 5a cannot be blank or the IRS rejects the form.",
+    });
     return null;
   }
   const tpl = await loadSbaTemplate("form_4506c");
@@ -153,7 +170,11 @@ export async function buildSba4506c(args: { business: any; owner: SbaOwner; kyc?
   const values: FieldMap = {
     [F.firstName]: first, [F.middleInitial]: middle, [F.lastName]: last, [F.taxpayerId]: s(o.ssn),
     [F.addressStreet]: s(o.homeAddress), [F.addressCity]: s((o as any).city), [F.addressState]: s((o as any).state), [F.addressZip]: s((o as any).zip),
-    [F.ivesName]: ivesName, [F.ivesId]: ivesId, [F.ivesMailboxId]: ivesMailbox, [F.ivesStreet]: s(process.env.SBA_IVES_STREET), [F.ivesCity]: s(process.env.SBA_IVES_CITY), [F.ivesState]: s(process.env.SBA_IVES_STATE), [F.ivesZip]: s(process.env.SBA_IVES_ZIP),
+    [F.ivesName]: ivesName, [F.ivesId]: ivesId, [F.ivesMailboxId]: ivesMailbox,
+    [F.ivesStreet]: s(args.ives?.street) || s(process.env.SBA_IVES_STREET),
+    [F.ivesCity]: s(args.ives?.city) || s(process.env.SBA_IVES_CITY),
+    [F.ivesState]: s(args.ives?.state) || s(process.env.SBA_IVES_STATE),
+    [F.ivesZip]: s(args.ives?.zip) || s(process.env.SBA_IVES_ZIP),
     [F.clientName]: s(process.env.SBA_IVES_CLIENT_NAME) || ivesName, [F.clientPhone]: s(process.env.SBA_IVES_CLIENT_PHONE), [F.clientStreet]: s(process.env.SBA_IVES_CLIENT_STREET) || s(process.env.SBA_IVES_STREET), [F.clientCity]: s(process.env.SBA_IVES_CLIENT_CITY) || s(process.env.SBA_IVES_CITY), [F.clientState]: s(process.env.SBA_IVES_CLIENT_STATE) || s(process.env.SBA_IVES_STATE), [F.clientZip]: s(process.env.SBA_IVES_CLIENT_ZIP) || s(process.env.SBA_IVES_ZIP),
     [F.transcriptFormNumber]: "1040", [F.recordOfAccount]: true,
     [F.attestCheckbox]: true, [F.electronicSignatureCheckbox]: true,
