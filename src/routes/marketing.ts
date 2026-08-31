@@ -195,6 +195,10 @@ router.get("/abandoned", requireAuth, safeHandler(async (req: any, res: any) => 
             -- Step1_KYC saves this before returning early on the Canadian hard
             -- stop, so it is present for the very rows that stopped there.
             NULLIF(a.metadata->'kyc'->>'monthlyRevenue','')     AS kyc_monthly_revenue,
+            -- BF_SERVER_WIZARD_BLOCK_v153 - why they stopped, when we recorded it.
+            (SELECT w.reason FROM wizard_block_events w
+              WHERE w.application_id = a.id::text
+              ORDER BY w.created_at DESC LIMIT 1)              AS block_reason,
             a.abandon_sms_sent_at
        FROM applications a
        LEFT JOIN contacts c ON c.id = a.contact_id
@@ -260,6 +264,7 @@ router.get("/abandoned", requireAuth, safeHandler(async (req: any, res: any) => 
     // BF_SERVER_ABANDONED_REVENUE_v148 - what they told us, and whether that
     // answer is the reason they stopped.
     monthlyRevenue: r.kyc_monthly_revenue ?? null,
+    blockReason: r.block_reason ?? null, // BF_SERVER_WIZARD_BLOCK_v153
     belowCanadianFloor: isBelowCanadianFloor(
       r.kyc_monthly_revenue,
       resolveCountry(r.kyc_location, r.business_state) ?? countryFromPhone(r.contact_phone),
