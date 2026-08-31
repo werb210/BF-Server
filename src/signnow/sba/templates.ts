@@ -35,7 +35,10 @@ export const TEMPLATE_EDITIONS: Record<SbaFormKey, string> = {
   // BF_SERVER_SBA_4506C_v116 - unverified until the template is uploaded and its
   // fields are read. IRS revises 4506-C on its own schedule and the current
   // revision must match what the lender's IVES processor accepts.
-  form_4506c: "10/2022 (UNCONFIRMED - verify against the uploaded template)",
+  // BF_SERVER_4506C_VERIFIED_v152 - checked against f4506c.pdf in the
+  // signed-applications container on 2026-08-30: 84 fields, every mapped name
+  // present, line-8 boxes question_8[0].f1_15..f1_26 as expected.
+  form_4506c: "10/2022",
 };
 
 export async function loadSbaTemplate(key: SbaFormKey): Promise<Uint8Array | null> {

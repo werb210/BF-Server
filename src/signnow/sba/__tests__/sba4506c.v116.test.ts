@@ -21,8 +21,13 @@ const maps = readFileSync(resolve(__dirname, "..", "fieldMaps.ts"), "utf-8");
 
 describe("registration", () => {
   it("4506-C is a known form key", () => { expect(TEMPLATE_EDITIONS).toHaveProperty("form_4506c"); });
-  it("the edition is still flagged unconfirmed against the uploaded template", () => {
-    expect(TEMPLATE_EDITIONS.form_4506c).toContain("UNCONFIRMED");
+  // BF_SERVER_4506C_VERIFIED_v152 - it has now been verified against the blob.
+  it("records the edition the field map was read from", () => {
+    expect(TEMPLATE_EDITIONS.form_4506c).toBe("10/2022");
+  });
+
+  it("no longer claims to be unverified", () => {
+    expect(TEMPLATE_EDITIONS.form_4506c).not.toContain("UNCONFIRMED");
   });
   it("the blob name is overridable by env, like the others", () => {
     const t = readFileSync(resolve(__dirname, "..", "templates.ts"), "utf-8");
