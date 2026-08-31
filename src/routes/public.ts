@@ -75,6 +75,83 @@ async function createLead(payload: LeadPayload): Promise<{ leadId?: string }> {
 // res.status(N).json(envelope). `wrap()` only catches errors; `ok`/`fail`
 // only build envelope objects. Without an explicit res.json the response
 // is never sent and the client hangs until timeout.
+// BF_SERVER_WIZARD_BLOCK_v153
+// Records a wizard hard stop at the moment it happens, because the answers that
+// caused it are otherwise never sent: saveStepData writes to localStorage only,
+// and startApplication runs after the block returns.
+//
+// Unauthenticated by necessity - the applicant has not identified themselves at
+// this point. Everything written is either supplied by the client or a lookup on
+// what it supplied, and the unique index keeps a repeated selection to one row.
+router.post(
+  "/wizard-block",
+  wrap(async (req, res) => {
+    const b = req.body ?? {};
+    const reason = String(b.reason ?? "").trim().slice(0, 64);
+    if (!reason) return res.status(400).json(fail(res, "INVALID_INPUT"));
+
+    const applicationId = String(b.applicationToken ?? b.applicationId ?? "").trim() || null;
+    const phone = String(b.phone ?? "").trim().slice(0, 32) || null;
+
+    // Attach to a contact when we can, so the block shows on their CRM timeline.
+    // A cold visitor has no contact and the row is still worth keeping for the count.
+    let contactId: string | null = null;
+    if (phone) {
+      const c = await dbQuery<{ id: string }>(
+        `SELECT id::text AS id FROM contacts
+          WHERE regexp_replace(COALESCE(phone,''), '[^0-9]', '', 'g')
+              = regexp_replace(($1)::text, '[^0-9]', '', 'g')
+          LIMIT 1`,
+        [phone],
+      ).catch(() => ({ rows: [] as Array<{ id: string }> }));
+      contactId = c.rows[0]?.id ?? null;
+    }
+
+    await dbQuery(
+      `INSERT INTO wizard_block_events
+         (reason, step, country, monthly_revenue, application_id, contact_id, lead_id, phone, session_key)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT DO NOTHING`,
+      [
+        reason,
+        Number(b.step ?? 1) || 1,
+        String(b.country ?? "").trim().slice(0, 8) || null,
+        String(b.monthlyRevenue ?? "").trim().slice(0, 64) || null,
+        applicationId,
+        contactId,
+        String(b.leadId ?? "").trim() || null,
+        phone,
+        String(b.sessionKey ?? "").trim().slice(0, 80) || null,
+      ],
+    ).catch(() => {});
+
+    // The answers never reached the application row, so put them there too -
+    // that is what makes the Monthly revenue column on the abandoned list fill in.
+    if (applicationId) {
+      await dbQuery(
+        `UPDATE applications
+            SET metadata = jsonb_set(
+                  jsonb_set(COALESCE(metadata,'{}'::jsonb), '{kyc}', COALESCE(metadata->'kyc','{}'::jsonb), true),
+                  '{kyc,monthlyRevenue}', to_jsonb(($2)::text), true)
+          WHERE id::text = ($1)::text`,
+        [applicationId, String(b.monthlyRevenue ?? "")],
+      ).catch(() => {});
+    }
+
+    if (contactId) {
+      // crm_notes has no created_by, and contact_id is a UUID - cast rather
+      // than passing the text id straight in.
+      await dbQuery(
+        `INSERT INTO crm_notes (contact_id, body, silo)
+         VALUES (($1)::uuid, $2, 'BF')`,
+        [contactId, `Stopped at the application: ${reason}. Country ${String(b.country ?? "unknown")}, average monthly revenue ${String(b.monthlyRevenue ?? "not given")}.`],
+      ).catch(() => {});
+    }
+
+    return res.status(200).json(ok({ recorded: true }));
+  }),
+);
+
 router.post(
   "/lead",
   requireFields(["companyName", "email"]),
