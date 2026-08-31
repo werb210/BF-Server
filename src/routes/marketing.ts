@@ -191,6 +191,10 @@ router.get("/abandoned", requireAuth, safeHandler(async (req: any, res: any) => 
             -- state is the fallback for anyone who got further before stopping.
             NULLIF(a.metadata->'kyc'->>'businessLocation','')  AS kyc_location,
             NULLIF(a.metadata->'business'->>'state','')        AS business_state,
+            -- BF_SERVER_ABANDONED_REVENUE_v148
+            -- Step1_KYC saves this before returning early on the Canadian hard
+            -- stop, so it is present for the very rows that stopped there.
+            NULLIF(a.metadata->'kyc'->>'monthlyRevenue','')     AS kyc_monthly_revenue,
             a.abandon_sms_sent_at
        FROM applications a
        LEFT JOIN contacts c ON c.id = a.contact_id
@@ -226,6 +230,14 @@ router.get("/abandoned", requireAuth, safeHandler(async (req: any, res: any) => 
     return null;
   };
 
+  // BF_SERVER_ABANDONED_REVENUE_v148
+  // The Canadian panel has no product below $10K average monthly revenue, so
+  // these are not leads - calling them wastes the call and the applicant's time.
+  // Only true when we know BOTH facts: an inferred country is not enough to
+  // write someone off.
+  const isBelowCanadianFloor = (revenue: string | null, country: string | null): boolean =>
+    country === "CA" && String(revenue ?? "").trim() === "Under $10,000";
+
   const items = rows.map((r: any) => ({
     applicationId: r.id,
     step: Number(r.step) || 1,
@@ -245,13 +257,27 @@ router.get("/abandoned", requireAuth, safeHandler(async (req: any, res: any) => 
     // and we always have it: they passed phone OTP to get here.
     country: resolveCountry(r.kyc_location, r.business_state) ?? countryFromPhone(r.contact_phone),
     countryInferred: !resolveCountry(r.kyc_location, r.business_state),
+    // BF_SERVER_ABANDONED_REVENUE_v148 - what they told us, and whether that
+    // answer is the reason they stopped.
+    monthlyRevenue: r.kyc_monthly_revenue ?? null,
+    belowCanadianFloor: isBelowCanadianFloor(
+      r.kyc_monthly_revenue,
+      resolveCountry(r.kyc_location, r.business_state) ?? countryFromPhone(r.contact_phone),
+    ),
     startedAt: r.created_at,
     lastActivityAt: r.updated_at,
     nudgedAt: r.abandon_sms_sent_at,
   }));
   const byStep: Record<string, number> = {};
   for (const i of items) byStep[String(i.step)] = (byStep[String(i.step)] || 0) + 1;
-  respondOk(res, { days, count: items.length, byStep, items });
+  // BF_SERVER_ABANDONED_REVENUE_v148 - the callable count is the one that
+  // matters when deciding whether this list is worth working today.
+  const belowFloor = items.filter((i) => i.belowCanadianFloor).length;
+  respondOk(res, {
+    days, count: items.length, byStep, items,
+    belowCanadianFloor: belowFloor,
+    callable: items.length - belowFloor,
+  });
 }));
 
 router.get("/sources", safeHandler(async (req: any, res: any) => {
