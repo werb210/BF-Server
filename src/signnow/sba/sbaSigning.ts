@@ -13,10 +13,31 @@ import {
 } from "../signnowClient.js";
 import { getStorage } from "../../lib/storage/index.js";
 import { resolveSbaOwners, loadSbaContext } from "./sbaOwners.js";
-import { buildSba1919, buildSba912, buildSba413, buildSba4506c } from "./sbaFormBuilder.js";
+import { buildSba1919, buildSba912, buildSba413, buildSba4506c, type IvesParticipant } from "./sbaFormBuilder.js";
 import { logInfo, logError } from "../../observability/logger.js";
 
 const SBA_DOC_CATEGORY = "SBA Forms";
+
+// BF_SERVER_PER_LENDER_IVES_v144
+async function loadIvesLenders(applicationId: string): Promise<IvesParticipant[]> {
+  const r = await dbQuery<any>(
+    `SELECT l.id::text AS "lenderId", COALESCE(l.name,'') AS "lenderName",
+            COALESCE(l.ives_participant_name,'') AS "participantName",
+            COALESCE(l.ives_participant_id,'')   AS "participantId",
+            COALESCE(l.ives_sor_mailbox_id,'')   AS "sorMailboxId",
+            l.ives_street AS street, l.ives_city AS city,
+            l.ives_state AS state, l.ives_zip AS zip
+       FROM application_lender_selections s
+       JOIN lenders l ON l.id::text = s.lender_id::text
+      WHERE s.application_id::text = ($1)::text
+        AND COALESCE(l.ives_participant_name,'') <> ''
+        AND COALESCE(l.ives_participant_id,'')   <> ''
+        AND COALESCE(l.ives_sor_mailbox_id,'')   <> ''
+      ORDER BY l.name ASC`,
+    [applicationId],
+  ).catch(() => ({ rows: [] as any[] }));
+  return r.rows as IvesParticipant[];
+}
 
 type Envelope = {
   ownerIndex: number; email: string; groupId: string; inviteId: string; docIds: string[];
@@ -24,6 +45,9 @@ type Envelope = {
   // named for the form it is rather than for its SignNow id. Optional: envelopes
   // created before v135 do not have it and fall back to the old name.
   docNames?: string[];
+  // BF_SERVER_PER_LENDER_IVES_v144 - which lenders this owner's envelope carries
+  // a 4506-C for. "__env__" means the single-lender env fallback was used.
+  ives4506cLenderIds?: string[];
 };
 
 async function sbaEnvelopes(applicationId: string): Promise<Envelope[]> {
@@ -43,6 +67,12 @@ export async function createSbaSigningSessions(applicationId: string): Promise<
   const owners = await resolveSbaOwners(applicationId);
   if (owners.length === 0) return [];
   const ctx = await loadSbaContext(applicationId);
+
+  // BF_SERVER_PER_LENDER_IVES_v144 - the IVES participants for the lenders staff
+  // have already selected. Empty is normal when lenders are chosen after signing.
+  const ivesLenders = await loadIvesLenders(applicationId);
+  const lendersCovered = new Set<string>();
+
   const envelopes: Envelope[] = [];
   const out: Array<{ ownerIndex: number; name: string; email: string; url: string | null }> = [];
 
@@ -77,8 +107,26 @@ export async function createSbaSigningSessions(applicationId: string): Promise<
     // change. Placed BEFORE the 413 so the signing order reads
     // 1919, 912, 4506-C, 413: authorizations first, then the financial
     // statement, which is the order a lender reads them in.
-    const form4506c = await buildSba4506c({ business: ctx.business, owner, kyc: ctx.kyc });
-    if (form4506c) docs.push({ bytes: form4506c, filename: `irs-4506c-owner${owner.index}-${applicationId}.pdf` });
+    // BF_SERVER_PER_LENDER_IVES_v144 - one authorisation per lender, because
+    // 5a names the participant who may pull the transcript. With no IVES lender
+    // selected this falls back to the env vars and produces a single form, which
+    // is the single-lender case.
+    if (ivesLenders.length === 0) {
+      const form4506c = await buildSba4506c({ business: ctx.business, owner, kyc: ctx.kyc });
+      if (form4506c) {
+        docs.push({ bytes: form4506c, filename: `irs-4506c-owner${owner.index}-${applicationId}.pdf` });
+        lendersCovered.add("__env__");
+      }
+    } else {
+      for (const ives of ivesLenders) {
+        const form4506c = await buildSba4506c({ business: ctx.business, owner, kyc: ctx.kyc, ives });
+        if (form4506c) {
+          const slug = ives.lenderName.replace(/[^a-z0-9]+/gi, "-").toLowerCase().slice(0, 40);
+          docs.push({ bytes: form4506c, filename: `irs-4506c-owner${owner.index}-${slug}-${applicationId}.pdf` });
+          lendersCovered.add(ives.lenderId);
+        }
+      }
+    }
 
     const data413 = ctx.form413ByOwner.get(String(owner.index)) ?? {};
     const form413 = await buildSba413({ business: ctx.business, owner, data: data413 });
@@ -102,7 +150,10 @@ export async function createSbaSigningSessions(applicationId: string): Promise<
         { email: owner.email, name: owner.fullName || undefined, roleName: `Owner ${owner.index}` },
       ]);
       const { url } = await createEmbeddedGroupLink(groupId, inviteId, owner.email);
-      envelopes.push({ ownerIndex: owner.index, email: owner.email, groupId, inviteId, docIds, docNames });
+      envelopes.push({
+        ownerIndex: owner.index, email: owner.email, groupId, inviteId, docIds, docNames,
+        ives4506cLenderIds: Array.from(lendersCovered),
+      });
       out.push({ ownerIndex: owner.index, name: owner.fullName, email: owner.email, url });
     } catch (error) {
       logError("sba_signing_session_failed");
@@ -159,6 +210,18 @@ export async function sbaSigningSatisfiedForDispatch(applicationId: string): Pro
 
   const envelopes = await sbaEnvelopes(applicationId);
   const byOwner = new Map(envelopes.map((e) => [e.ownerIndex, e]));
+
+  // BF_SERVER_PER_LENDER_IVES_v144 - a package with no tax transcript
+  // authorisation is incomplete for 7(a), and it used to ship that way in
+  // silence: buildSba4506c returned null and the loop simply did not add it.
+  const anyAuthorisation = envelopes.some((e) => (e.ives4506cLenderIds?.length ?? 0) > 0);
+  if (envelopes.length > 0 && !anyAuthorisation) {
+    logInfo("sba_dispatch_blocked_no_4506c", {
+      applicationId,
+      detail: "No 4506-C in any envelope. Set the IVES participant fields on the selected lender, or the SBA_IVES_* env vars, then resend the SBA signing request.",
+    });
+    return false;
+  }
 
   for (const owner of owners) {
     const envelope = byOwner.get(owner.index);
