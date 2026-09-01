@@ -26,7 +26,9 @@ async function loadIvesLenders(applicationId: string): Promise<IvesParticipant[]
             COALESCE(l.ives_participant_id,'')   AS "participantId",
             COALESCE(l.ives_sor_mailbox_id,'')   AS "sorMailboxId",
             l.ives_street AS street, l.ives_city AS city,
-            l.ives_state AS state, l.ives_zip AS zip
+            l.ives_state AS state, l.ives_zip AS zip,
+            -- BF_SERVER_4506C_ADDRESS_v157 - 5d telephone number.
+            COALESCE(NULLIF(l.main_phone,''), NULLIF(l.contact_phone,'')) AS phone
        FROM application_lender_selections s
        JOIN lenders l ON l.id::text = s.lender_id::text
       WHERE s.application_id::text = ($1)::text

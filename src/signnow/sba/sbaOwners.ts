@@ -12,6 +12,10 @@ export type SbaOwner = {
   // Forms ask for them separately and a joined string cannot be split back
   // reliably once a city contains a comma.
   homeStreet: string; homeCityStateZip: string; addressSince: string;
+  // BF_SERVER_4506C_ADDRESS_v157 - IRS Form 4506-C line 3 has a box each for
+  // city, state and ZIP. A joined string cannot be split back reliably once a
+  // city contains a comma.
+  homeCity: string; homeState: string; homeZip: string;
   veteranStatus: string; sex: string; race: string; ethnicity: string;
 };
 
@@ -31,6 +35,7 @@ function shape(raw: any, index: number): SbaOwner {
     homeStreet: s(raw?.street),
     homeCityStateZip: [s(raw?.city), s(raw?.state), s(raw?.zip)].filter(Boolean).join(", "),
     addressSince: s(raw?.addressSince),
+    homeCity: s(raw?.city), homeState: s(raw?.state), homeZip: s(raw?.zip),
     homePhone: s(raw?.homePhone) || s(raw?.phone), placeOfBirth: s(raw?.placeOfBirth),
     usCitizen: s(raw?.usCitizen), alienRegistrationNumber: s(raw?.alienRegistrationNumber),
     formerNames: s(raw?.formerNames), priorAddress: s(raw?.priorAddress),

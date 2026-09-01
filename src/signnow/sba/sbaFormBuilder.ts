@@ -146,6 +146,9 @@ export type IvesParticipant = {
   lenderId: string; lenderName: string;
   participantName: string; participantId: string; sorMailboxId: string;
   street?: string; city?: string; state?: string; zip?: string;
+  // BF_SERVER_4506C_ADDRESS_v157 - line 5d needs a telephone number and the IRS
+  // does not accept the field blank.
+  phone?: string;
 };
 
 export async function buildSba4506c(args: {
@@ -166,16 +169,29 @@ export async function buildSba4506c(args: {
   const tpl = await loadSbaTemplate("form_4506c");
   if (!tpl) { logInfo("sba_4506c_template_missing", { blob: process.env.SBA_4506C_BLOB || "irs-form-4506-c-10-2022.pdf" }); return null; }
   const { business: b, owner: o } = args; const F = SBA_4506C_FIELDS;
+  // BF_SERVER_4506C_ADDRESS_v157 - resolved once; 5a and 5d share them.
+  const ivesStreet = s(args.ives?.street) || s(process.env.SBA_IVES_STREET);
+  const ivesCity = s(args.ives?.city) || s(process.env.SBA_IVES_CITY);
+  const ivesState = s(args.ives?.state) || s(process.env.SBA_IVES_STATE);
+  const ivesZip = s(args.ives?.zip) || s(process.env.SBA_IVES_ZIP);
   const parts = s(o.fullName).trim().split(/\s+/); const first = parts.length > 1 ? parts[0] : s(o.fullName); const last = parts.length > 1 ? parts[parts.length - 1] : ""; const middle = parts.length > 2 ? parts[1].slice(0, 1) : "";
   const values: FieldMap = {
     [F.firstName]: first, [F.middleInitial]: middle, [F.lastName]: last, [F.taxpayerId]: s(o.ssn),
-    [F.addressStreet]: s(o.homeAddress), [F.addressCity]: s((o as any).city), [F.addressState]: s((o as any).state), [F.addressZip]: s((o as any).zip),
+    // BF_SERVER_4506C_ADDRESS_v157 - the real fields, no `as any`. Falls back to
+    // the joined string for a record shaped before v157.
+    [F.addressStreet]: s(o.homeStreet) || s(o.homeAddress),
+    [F.addressCity]: s(o.homeCity),
+    [F.addressState]: s(o.homeState),
+    [F.addressZip]: s(o.homeZip),
     [F.ivesName]: ivesName, [F.ivesId]: ivesId, [F.ivesMailboxId]: ivesMailbox,
-    [F.ivesStreet]: s(args.ives?.street) || s(process.env.SBA_IVES_STREET),
-    [F.ivesCity]: s(args.ives?.city) || s(process.env.SBA_IVES_CITY),
-    [F.ivesState]: s(args.ives?.state) || s(process.env.SBA_IVES_STATE),
-    [F.ivesZip]: s(args.ives?.zip) || s(process.env.SBA_IVES_ZIP),
-    [F.clientName]: s(process.env.SBA_IVES_CLIENT_NAME) || ivesName, [F.clientPhone]: s(process.env.SBA_IVES_CLIENT_PHONE), [F.clientStreet]: s(process.env.SBA_IVES_CLIENT_STREET) || s(process.env.SBA_IVES_STREET), [F.clientCity]: s(process.env.SBA_IVES_CLIENT_CITY) || s(process.env.SBA_IVES_CITY), [F.clientState]: s(process.env.SBA_IVES_CLIENT_STATE) || s(process.env.SBA_IVES_STATE), [F.clientZip]: s(process.env.SBA_IVES_CLIENT_ZIP) || s(process.env.SBA_IVES_ZIP),
+    [F.ivesStreet]: ivesStreet, [F.ivesCity]: ivesCity,
+    [F.ivesState]: ivesState, [F.ivesZip]: ivesZip,
+    // BF_SERVER_4506C_ADDRESS_v157 - 5d mirrors 5a per the IRS instructions when
+    // the IVES participant is also the client, which is the case here.
+    [F.clientName]: s(process.env.SBA_IVES_CLIENT_NAME) || ivesName,
+    [F.clientPhone]: s(args.ives?.phone) || s(process.env.SBA_IVES_CLIENT_PHONE) || s(process.env.SBA_IVES_PHONE),
+    [F.clientStreet]: ivesStreet, [F.clientCity]: ivesCity,
+    [F.clientState]: ivesState, [F.clientZip]: ivesZip,
     [F.transcriptFormNumber]: "1040", [F.recordOfAccount]: true,
     [F.attestCheckbox]: true, [F.electronicSignatureCheckbox]: true,
     [F.printName]: s(o.fullName), [F.taxpayerPhone]: s(o.homePhone) || s(b?.phone),

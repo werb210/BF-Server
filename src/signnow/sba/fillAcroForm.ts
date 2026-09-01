@@ -27,6 +27,7 @@ export async function fillAcroForm(templateBytes: Uint8Array, values: FieldMap):
   const form = doc.getForm();
   const missing: string[] = [];
   const unmatchedOptions: Array<{ field: string; wanted: string; options: string[] }> = [];
+  const tooLong: Array<{ field: string; maxLength: number; value: string }> = [];
 
   for (const [name, raw] of Object.entries(values)) {
     if (raw === undefined || raw === null || raw === "") continue;
@@ -59,13 +60,24 @@ export async function fillAcroForm(templateBytes: Uint8Array, values: FieldMap):
           form.getTextField(name).setText(String(raw));
         }
       }
-    } catch {
-      missing.push(name);
+    } catch (err) {
+      // BF_SERVER_4506C_ADDRESS_v157 - distinguish "no such field" from "the
+      // value will not fit", which is a data problem someone can actually act on.
+      const msg = String((err as { message?: unknown })?.message ?? err);
+      const over = /maxLength=(\d+)/.exec(msg);
+      if (over) {
+        tooLong.push({ field: name, maxLength: Number(over[1]), value: String(values[name] ?? "").slice(0, 40) });
+      } else {
+        missing.push(name);
+      }
     }
   }
 
   if (missing.length) {
     logInfo("sba_form_fill_unknown_fields", { count: missing.length, fields: missing.slice(0, 20) });
+  }
+  if (tooLong.length) {
+    logInfo("sba_form_fill_value_too_long", { count: tooLong.length, detail: tooLong.slice(0, 10) });
   }
   if (unmatchedOptions.length) {
     logInfo("sba_form_fill_unmatched_options", { count: unmatchedOptions.length, detail: unmatchedOptions.slice(0, 10) });
