@@ -82,6 +82,11 @@ export async function runMigrations(pool: Pool): Promise<void> {
     .filter((f) => f.endsWith(".sql"))
     .sort();
 
+  // BF_SERVER_SCHEMA_BASELINE_v159 - kept out of `files` so it is never applied
+  // as an ordinary migration on a database that already has a schema.
+  const BASELINE_FILE = "000000_baseline.sql";
+  const ordinaryFiles = files.filter((f) => f !== BASELINE_FILE);
+
   const client = await pool.connect();
   try {
     const acquired = await tryAcquireMigrationLock(client);
@@ -91,9 +96,72 @@ export async function runMigrations(pool: Pool): Promise<void> {
     }
     try {
       await ensureTrackingTable(client);
-      const applied = await fetchApplied(client);
+      let applied = await fetchApplied(client);
 
-      for (const file of files) {
+      // BF_SERVER_SCHEMA_BASELINE_v159
+      // Only on a genuinely empty database: no recorded history AND no
+      // applications table. Both conditions, because a half-built database is
+      // not something to overwrite silently - it is something to look at.
+      if (applied.size === 0 && fs.existsSync(path.join(migrationsDir, BASELINE_FILE))) {
+        const hasSchema = await client.query<{ exists: boolean }>(
+          "SELECT to_regclass('public.applications') IS NOT NULL AS exists",
+        );
+        if (hasSchema.rows[0]?.exists) {
+          console.warn("[MIGRATIONS] tables exist but schema_migrations is empty - NOT applying the baseline. Check the database.");
+        } else {
+          console.log("[MIGRATIONS] empty database - applying schema baseline");
+          const raw = fs.readFileSync(path.join(migrationsDir, BASELINE_FILE), "utf8");
+          // pg_dump 17.6+ brackets its output with restrict / unrestrict psql
+          // meta-commands. The node pg client cannot parse them, so they are
+          // dropped. No backslash or escape sequence appears below on purpose:
+          // this file is generated through two layers of escaping and they were
+          // wrong twice. Char codes cannot be mangled that way.
+          const NL = String.fromCharCode(10);
+          const CR = String.fromCharCode(13);
+          const BACKSLASH = 92;
+          const baselineSql = raw
+            .split(NL)
+            .filter((line) => {
+              const t = line.trim().split(CR).join("");
+              if (t.charCodeAt(0) !== BACKSLASH) return true;
+              const rest = t.slice(1);
+              return !(rest.startsWith("restrict") || rest.startsWith("unrestrict"));
+            })
+            .join(NL);
+
+          // The dump contains schema_migrations, which ensureTrackingTable has
+          // just created. Drop it so the baseline restores its real definition,
+          // then the inserts below repopulate it - rather than teaching the
+          // baseline to be idempotent, which is not ours to edit.
+          await client.query("BEGIN");
+          await client.query("DROP TABLE IF EXISTS schema_migrations");
+          await client.query(baselineSql);
+          // pg_dump emits SET search_path = '' and qualifies every object, so
+          // anything unqualified after it fails with "no schema has been
+          // selected to create in". Put it back before touching the tracking
+          // table or inserting a single row.
+          await client.query("SET search_path TO public");
+          await ensureTrackingTable(client);
+          // Everything the baseline already contains is, by definition, applied.
+          // Recording every historical filename is what stops the 22 broken ones
+          // from running against a schema that already has their tables.
+          for (const f of ordinaryFiles) {
+            await client.query(
+              "INSERT INTO schema_migrations (id) VALUES ($1) ON CONFLICT (id) DO NOTHING",
+              [f],
+            );
+          }
+          await client.query(
+            "INSERT INTO schema_migrations (id) VALUES ($1) ON CONFLICT (id) DO NOTHING",
+            [BASELINE_FILE],
+          );
+          await client.query("COMMIT");
+          applied = await fetchApplied(client);
+          console.log(`[MIGRATIONS] baseline applied; ${ordinaryFiles.length} historical migrations recorded`);
+        }
+      }
+
+      for (const file of ordinaryFiles) {
         if (applied.has(file)) continue;
 
         const sqlPath = path.join(migrationsDir, file);
