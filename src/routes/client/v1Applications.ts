@@ -30,6 +30,14 @@ const router = Router();
 // /submit so the portal drawer reads the same shape regardless of which path
 // the wizard took.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// BF_SERVER_INTAKE_IDS_v158
+// Postgres accepts any 8-4-4-4-12 hex string as a uuid; it does not check the
+// version or variant nibbles. UUID_RE does, so an id Postgres would store fine
+// was being rejected here. This is the column's actual constraint.
+const PG_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function bfIsStorableUuid(v: unknown): v is string {
+  return typeof v === "string" && PG_UUID_RE.test(v);
+}
 function bfParseAmount(v: unknown): number | null {
   if (v == null) return null;
   if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
@@ -139,15 +147,29 @@ function bfExtractAppColumns(input: Record<string, any> | null | undefined): {
           bfParseAmount(input.financialProfile?.fundingAmount) ??
           null
         );
+  // BF_SERVER_INTAKE_IDS_v158 - accept anything the uuid column will take.
   const lenderId =
-    (bfIsUuid(input.lender_id) ? input.lender_id : null) ??
-    (bfIsUuid(sp?.lender_id) ? sp!.lender_id : null) ??
+    (bfIsStorableUuid(input.lender_id) ? input.lender_id : null) ??
+    (bfIsStorableUuid(sp?.lender_id) ? sp!.lender_id : null) ??
     null;
   const lenderProductId =
-    (bfIsUuid(input.lender_product_id) ? input.lender_product_id : null) ??
-    (bfIsUuid(input.selectedProductId) ? input.selectedProductId : null) ??
-    (bfIsUuid(sp?.id) ? sp!.id : null) ??
+    (bfIsStorableUuid(input.lender_product_id) ? input.lender_product_id : null) ??
+    (bfIsStorableUuid(input.selectedProductId) ? input.selectedProductId : null) ??
+    (bfIsStorableUuid(sp?.id) ? sp!.id : null) ??
     null;
+
+  // A product the applicant chose that cannot be linked is a data problem
+  // somebody has to fix - lender_products.id is TEXT and applications
+  // .lender_product_id is UUID, so a non-UUID product id can never link and the
+  // file silently loses its category. Say so rather than dropping it in silence.
+  const offeredProductId = sp?.id ?? input.lender_product_id ?? input.selectedProductId ?? null;
+  if (offeredProductId && !lenderProductId) {
+    logInfo("intake_product_id_not_linkable", {
+      offeredProductId: String(offeredProductId).slice(0, 64),
+      detail: "lender_products.id is TEXT but applications.lender_product_id is UUID. This product cannot be linked, so the application loses its category and any category-based rules.",
+    });
+  }
+
   return { requestedAmount, lenderId, lenderProductId };
 }
 // V1 contract: POST /api/client/applications
@@ -1347,6 +1369,17 @@ router.post(
     }
 
     if (!normalized) {
+      // BF_SERVER_INTAKE_IDS_v158 - with neither `app` nor `normalized` there was
+      // nothing to write, and ok:true said otherwise.
+      if (!legacyApp || typeof legacyApp !== "object") {
+        logInfo("client_submit_empty_payload", { applicationId: application.id });
+        return res.status(400).json({
+          error: {
+            message: "submit_payload_required",
+            detail: "Send { app } or { normalized }. Nothing was recorded.",
+          },
+        });
+      }
       return res.json({ ok: true, applicationId: application.id, mode: "legacy" });
     }
 
