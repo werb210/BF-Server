@@ -106,6 +106,9 @@ import diagnosticsRoutes from "./diagnostics.js";
 import { createMountTracker } from "./_canonicalMount.js";
 import { siloMiddleware } from "../middleware/silo.js";
 import { requireAuth } from "../middleware/auth.js";
+import watchAuthRoutes from "../watch/authRoutes.js";
+import watchDeviceRoutes from "../watch/deviceRoutes.js";
+import watchDataRoutes from "../watch/dataRoutes.js";
 
 export type ApiRoute = {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -154,6 +157,11 @@ rootRoutes.use(conversationsRoutes);
 rootRoutes.use(smsInboundWebhookRoutes);
 rootRoutes.use(applicationFormResponses); // BF_SERVER_FORMRESP_ROOT_v1
 
+const watchRoutes = Router();
+watchRoutes.use("/auth", watchAuthRoutes);
+watchRoutes.use("/devices", watchDeviceRoutes);
+watchRoutes.use(watchDataRoutes);
+
 const combinedMayaRoutes = Router();
 // BF_SERVER_BLOCK_v674 - website widget posts /api/maya/website-chat
 combinedMayaRoutes.post("/website-chat", async (req, res) => {
@@ -188,6 +196,7 @@ export function applySiloMiddleware(app: import("express").Application): void {
 }
 
 export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
+  { path: "/watch", router: watchRoutes },
   { path: "/_int", router: internalRoutes },
   { path: "/internal/processing", router: internalProcessingRoutes },
   { path: "/calendar", router: calendarRoutes },

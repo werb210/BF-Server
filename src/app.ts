@@ -57,7 +57,7 @@ export function createApp() {
     // browser blocks the preflight with "Request header field x-maya-audience
     // is not allowed by Access-Control-Allow-Headers" — visible in console of
     // shot_4_48_11 of Todd's BI silo. v638 also wires the proxy to forward it.
-    allowedHeaders: ["Content-Type", "Authorization", "x-silo", "X-Request-Id", "x-maya-audience"],
+    allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key", "x-silo", "X-Request-Id", "x-maya-audience"],
     credentials: true,
     // v758 — cache preflights for 24h so browsers stop re-preflighting every
     // cross-origin call (HAR showed ~1 OPTIONS per request, doubling traffic).

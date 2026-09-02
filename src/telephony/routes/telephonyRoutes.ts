@@ -4,8 +4,10 @@ import { auth } from "../../middleware/auth.js";
 import { generateVoiceToken } from "../services/tokenService.js";
 import { pool } from "../../db.js";
 import { recomputePresence, setManualBusy } from "../../modules/presence/presenceService.js";
+import watchCallRoutes from "../../watch/callRoutes.js";
 
 const router = express.Router();
+router.use("/watch", watchCallRoutes);
 const HEARTBEAT_MIN_INTERVAL_MS = 25_000;
 const lastPresenceHeartbeatByUser = new Map<string, number>();
 

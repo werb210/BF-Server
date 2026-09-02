@@ -145,22 +145,25 @@ function toE164(raw: string | null | undefined): string | null {
   return null;
 }
 
-async function resolveTarget(t: Target): Promise<{ identity: string | null; available: boolean; onCall: boolean; clientReady: boolean; cell: string | null; userId: string | null }> {
+async function resolveTarget(t: Target): Promise<{ identity: string | null; available: boolean; onCall: boolean; clientReady: boolean; cell: string | null; standaloneWatch: boolean; userId: string | null }> {
   const nameLike = t === "sales" ? "%todd%" : "%andrew%";
   try {
-    const { rows } = await pool.query<{ status: string; twilio_identity: string | null; on_call: boolean; fresh: boolean; phone: string | null; user_id: string | null }>(
+    const { rows } = await pool.query<{ status: string; twilio_identity: string | null; on_call: boolean; fresh: boolean; phone: string | null; standalone_watch: boolean; user_id: string | null }>(
       `SELECT sp.status, sp.twilio_identity, coalesce(sp.on_call, false) AS on_call, u.id AS user_id,
               (sp.last_heartbeat > now() - interval '90 seconds') AS fresh,
-              coalesce(u.phone_number, u.phone) AS phone
+              u.verified_callback_number AS phone,
+              (u.callback_verified_at IS NOT NULL AND EXISTS (
+                SELECT 1 FROM watch_devices wd WHERE wd.staff_user_id=u.id AND wd.revoked_at IS NULL
+                  AND wd.standalone_routing_enabled=true)) AS standalone_watch
          FROM users u JOIN staff_presence sp ON sp.user_id = u.id
         WHERE (u.first_name ILIKE $1 OR u.last_name ILIKE $1) ORDER BY sp.last_heartbeat DESC NULLS LAST LIMIT 1`,
       [nameLike],
     );
     const r = rows[0];
-    if (!r) return { identity: null, available: false, onCall: false, clientReady: false, cell: null, userId: null };
+    if (!r) return { identity: null, available: false, onCall: false, clientReady: false, cell: null, standaloneWatch: false, userId: null };
     const clientReady = r.status === "available" && !!r.twilio_identity && !!r.fresh;
-    return { identity: r.twilio_identity, available: r.status === "available" && !!r.twilio_identity, onCall: !!r.on_call, clientReady, cell: toE164(r.phone), userId: r.user_id ?? null };
-  } catch { return { identity: null, available: false, onCall: false, clientReady: false, cell: null, userId: null }; }
+    return { identity: r.twilio_identity, available: r.status === "available" && !!r.twilio_identity, onCall: !!r.on_call, clientReady, cell: toE164(r.phone), standaloneWatch: !!r.standalone_watch, userId: r.user_id ?? null };
+  } catch { return { identity: null, available: false, onCall: false, clientReady: false, cell: null, standaloneWatch: false, userId: null }; }
 }
 
 function offerMessageOrVoicemail(v: any, openerKey: string, openerText: string, staffUserId?: string | null): void {
@@ -232,13 +235,21 @@ router.post("/intent", twilioWebhookValidation, async (req: Request, res: Respon
   // BF_SERVER_PHONE_HOTFIX_v1 - forward the ORIGINAL caller's number so staff see who
   // is calling (Twilio allows the inbound caller's number as callerId when forwarding).
   const callerId = String((req.body?.From ?? "")).trim() || config.twilio.callerId || config.twilio.from || config.twilio.number || undefined;
-  // BF_SERVER_RECEPTION_NO_CELL_v1 - reception rings the browser softphone ONLY; never the
-  // cell. A parallel cell dial let voicemail answer ("enter your PIN") and hijack the call.
-  // Not available at the browser -> straight to voicemail.
+  // Never parallel-dial cellular: a reachable iPhone/portal remains authoritative.
+  // The explicitly enabled standalone Watch fallback below is sequential only.
   if (t.clientReady && t.identity) {
     emit(v, `connect_${lkey(target)}`, `One moment, connecting you to ${name}.`);
     const dial = v.dial({ answerOnBridge: true, timeout: 25, action: `${BASE}/unavailable?target=${target}`, method: "POST", callerId });
     dial.client(t.identity);
+    return send(res, v);
+  }
+  // The established, reachable Boreal VoIP client always wins. Cellular
+  // forwarding is only a fallback when an owned Watch explicitly opted in and
+  // the staff callback number is server-verified.
+  if (t.standaloneWatch && t.cell) {
+    emit(v, `connect_${lkey(target)}`, `One moment, connecting you to ${name}.`);
+    const dial = v.dial({ answerOnBridge: true, timeout: 25, action: `${BASE}/unavailable?target=${target}`, method: "POST", callerId });
+    dial.number(t.cell);
     return send(res, v);
   }
   const reasonKey = t.onCall ? `reason_${lkey(target)}_oncall` : `reason_${lkey(target)}_unavail`;
