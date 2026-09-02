@@ -58,18 +58,22 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
         //      - all-identical digits (0000000000, 1111111111)
         //    A number that fails these is stamped as sent, so it is never
         //    retried, rather than being left eligible forever.
-        `SELECT a.id, ac.contact_id, c.phone, a.silo
+        // BF_SERVER_ABANDON_NUDGE_OTP_TARGET_v162
+        // v120 keyed this off application_contacts(role='applicant'), but that row
+        // is written ONLY at submit (client/v1Applications). An abandoned app never
+        // submits, so the LATERAL matched nothing and EVERY abandoned application
+        // was skipped - the nudge went fully dark. Target instead the OTP-verified
+        // mobile stamped on a.contact_id at start (DRAFT_PHONE_CAPTURE_v1) and
+        // tagged 'application_started' - a tag written nowhere else, so it can never
+        // resolve to the Step-3 business switchboard that caused the v120 incident.
+        // contacts.phone is never overwritten mid-wizard, so this stays the mobile.
+        // Every v120 deliverability guard below is retained.
+        `SELECT a.id, a.contact_id, c.phone, a.silo
            FROM applications a
-           JOIN LATERAL (
-             SELECT contact_id
-               FROM application_contacts
-              WHERE application_id = a.id AND role = 'applicant'
-              ORDER BY created_at ASC
-              LIMIT 1
-           ) ac ON true
-           JOIN contacts c ON c.id = ac.contact_id
+           JOIN contacts c ON c.id = a.contact_id
           WHERE a.submitted_at IS NULL
             AND a.abandon_sms_sent_at IS NULL
+            AND 'application_started' = ANY(COALESCE(c.tags, '{}'))
             AND a.updated_at < ($1 || ' hours')::interval * -1 + now()
             AND a.updated_at > now() - ($2 || ' months')::interval
             AND c.phone IS NOT NULL
