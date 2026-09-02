@@ -8,8 +8,86 @@
 // requirements first, then the matched product's upload-type required_documents.
 import { Router, type Request, type Response } from "express";
 import { pool } from "../db.js";
+import { loadSbaContext } from "../signnow/sba/sbaOwners.js"; // BF_SERVER_SBA_1919_ATTACH_GATE_v162
+import { logInfo } from "../observability/logger.js"; // BF_SERVER_SBA_1919_ATTACH_GATE_v162
 
 const router = Router();
+
+// BF_SERVER_SBA_1919_ATTACH_GATE_v162
+// The "Supporting detail for any Yes answer on Form 1919" attachment
+// (sba_1919_attachments) only has anything to contain when the applicant
+// answered Yes to a Form 1919 question. It was previously carried as an
+// unconditional-but-optional item, which surfaced as a permanent "Still needed"
+// entry a clean-No applicant could never clear. Gate it on the actual answers.
+const SBA_1919_ATTACHMENTS = "sba_1919_attachments";
+
+function isYes(v: unknown): boolean {
+  return String(v ?? "").trim().toLowerCase() === "yes";
+}
+
+// Pure decision: true iff any Form 1919 Yes/No question is answered Yes. Sources
+// mirror the 1919 form builder exactly - q1..q3 and q5..q13 come from the
+// submitted sba_form_1919 response (`form1919`), and Q4 (criminal history) comes
+// from business or kyc metadata. Exported so the gating rule is unit-testable
+// without a database.
+export function any1919QuestionYes(
+  form1919: any,
+  business: any,
+  kyc: any
+): boolean {
+  const f = form1919 ?? {};
+  const b = business ?? {};
+  const k = kyc ?? {};
+  const answers: unknown[] = [
+    f.q1_debarred,
+    f.q2_federal_default,
+    f.q3_other_business,
+    b.sbaQ4Criminal ?? k.sbaQ4Criminal,
+    f.q5_exports,
+    f.q6_broker_fee,
+    f.q7_restricted_revenue,
+    f.q8_sba_employee,
+    f.q9_former_sba,
+    f.q10_congress,
+    f.q11_federal_employee,
+    f.q12_advisory_council,
+    f.q13_legal_action,
+  ];
+  return answers.some(isYes);
+}
+
+async function applicationHas1919Yes(applicationId: string): Promise<boolean> {
+  try {
+    const { form1919, business, kyc } = await loadSbaContext(applicationId);
+    return any1919QuestionYes(form1919, business, kyc);
+  } catch (err: any) {
+    // Fail open (treat as No): blocking a clean-No applicant on a metadata read
+    // error is the worse failure, and a genuinely missing attachment on a Yes
+    // file is still caught at staff review. Logged so the case is visible.
+    logInfo("sba_1919_attachment_gate_read_failed", {
+      applicationId,
+      error: err?.message ?? String(err),
+    });
+    return false;
+  }
+}
+
+// Pure application of the gate to a required-doc set. When the attachment is not
+// present (non-SBA files) this is a no-op. When present: keep it and mark it
+// blocking if any answer is Yes, drop it entirely otherwise. Exported so the
+// wiring is unit-testable without a database. Mutates and returns `required`.
+export function gate1919Attachment<T extends { document_type: string; required?: boolean }>(
+  required: T[],
+  anyYes: boolean
+): T[] {
+  const idx = required.findIndex(
+    (d) => d.document_type.trim().toLowerCase() === SBA_1919_ATTACHMENTS
+  );
+  if (idx === -1) return required;
+  if (anyYes) required[idx] = { ...required[idx], required: true };
+  else required.splice(idx, 1);
+  return required;
+}
 
 function humanize(category: string): string {
   return category.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
@@ -207,6 +285,19 @@ async function computeOutstandingDocsRaw(
   // `required` below still carries every item including the optional ones, so
   // the staff Request Items surface is unchanged and staff can still ask for a
   // lease when a deal actually involves premises.
+  // BF_SERVER_SBA_1919_ATTACH_GATE_v162 - condition the 1919 supporting-detail
+  // attachment on the answers. When any question is Yes, require it (blocking).
+  // When all are No/unanswered, remove it entirely so it never appears in the
+  // client "Still needed" list or the staff Request Items surface. Both surfaces
+  // read `required`, so gating here keeps them in agreement. The loadSbaContext
+  // read only runs when the attachment is actually in the set (SBA files).
+  const attachPresent = required.some(
+    (d) => d.document_type.trim().toLowerCase() === SBA_1919_ATTACHMENTS
+  );
+  if (attachPresent) {
+    gate1919Attachment(required, await applicationHas1919Yes(applicationId));
+  }
+
   const satisfiedNorm = new Set(
     Array.from(satisfied).map((c) => c.trim().toLowerCase())
   );
