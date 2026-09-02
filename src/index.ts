@@ -27,6 +27,7 @@ import { markReady } from "./startupState.js";
 import { startKeepWarm } from "./ops/keepWarm.js";
 import { initTeamWebSocket } from "./ws/teamSocket.js"; // BF_SERVER_BLOCK_v750_TEAM_CHAT
 import { logGraphConfigStatus } from "./services/email/graphSendService.js"; // BF_SERVER_v72_BLOCK_1_5
+import { initializeWatchPushProvider } from "./watch/initWatchPush.js";
 
 const PORT = Number(process.env.PORT) || 8080;
 
@@ -43,6 +44,7 @@ if (process.env.NODE_ENV === "production") {
 }
 
 export async function start(): Promise<void> {
+  initializeWatchPushProvider();
   await initDb();
 
   {

@@ -688,7 +688,8 @@ async function persistInboundSms(req: any): Promise<void> {
     // for unknown senders) so the bell matches what the SMS list shows.
     const senderLabel = contact?.name && contact.name.trim() ? contact.name.trim() : fromNum;
     const notifTitle = contact?.name && contact.name.trim() ? `New SMS from ${contact.name.trim()}` : "New SMS";
-    await notifyAllStaff({ pool, silo: resolvedSilo, skipSms: true, notificationType: "sms_inbound", title: notifTitle, body: `${senderLabel}: ${preview}`, contextUrl: "/communications" });
+    await notifyAllStaff({ pool, silo: resolvedSilo, skipSms: true, notificationType: "sms_inbound", title: notifTitle, body: `${senderLabel}: ${preview}`, contextUrl: "/communications",
+      watch: { category: "MESSAGE", eventType: "client_message", title: "New client message", body: "New client message" } });
   } catch (e) { console.error("[notify] sms_inbound failed", String(e).slice(0, 150)); }
   console.log(JSON.stringify({
     event: "sms_inbound_persisted",
