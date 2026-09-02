@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import { pushToUser } from "./pushToUser.js"; // BF_SERVER_BLOCK_v_NOTIF_PUSH_v1
 import { safeErr } from "../../lib/safeErr.js";
 import { sendSMS } from "../smsService.js";
+import { sendWatchNotification, type WatchEventType, type WatchNotificationCategory } from "../../watch/notifications.js";
 
 // BF_SERVER_BLOCK_1_24_NOTIFICATIONS_TITLE — fallback title when caller didn't pass one.
 function humanizeType(type: string): string {
@@ -32,13 +33,34 @@ export type NotifyAllStaffCtx = {
   contextUrl?: string;
   // Silo to limit the notify scope. Defaults to "BF".
   silo?: string;
+  watch?: {
+    category: WatchNotificationCategory;
+    eventType: WatchEventType;
+    resourceId?: string;
+    /** Optional privacy-safe Watch copy; defaults to the normal notification copy. */
+    title?: string;
+    body?: string;
+  };
 };
 
 export async function notifyAllStaff(ctx: NotifyAllStaffCtx): Promise<{
   smsSent: number;
   notifsCreated: number;
   recipientCount: number;
-}> {
+}>;
+export async function notifyAllStaff(ctx: NotifyAllStaffCtx, dependencies?: {
+  pushToUser?: typeof pushToUser;
+  sendSMS?: typeof sendSMS;
+  sendWatchNotification?: typeof sendWatchNotification;
+}): Promise<{ smsSent: number; notifsCreated: number; recipientCount: number }>;
+export async function notifyAllStaff(ctx: NotifyAllStaffCtx, dependencies: {
+  pushToUser?: typeof pushToUser;
+  sendSMS?: typeof sendSMS;
+  sendWatchNotification?: typeof sendWatchNotification;
+} = {}): Promise<{ smsSent: number; notifsCreated: number; recipientCount: number }> {
+  const pushBrowser = dependencies.pushToUser ?? pushToUser;
+  const sendText = dependencies.sendSMS ?? sendSMS;
+  const sendWatch = dependencies.sendWatchNotification ?? sendWatchNotification;
   const silo = ctx.silo ?? "BF";
 
   // "All staff" per V1 spec: Admin + Staff + Marketing roles, BF silo, active.
@@ -76,7 +98,7 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx): Promise<{
       // SMS via Twilio.
       if (!ctx.skipSms && user.phone_number && user.phone_number.trim().length > 0) {
         try {
-          const r = await sendSMS(user.phone_number, ctx.body);
+          const r = await sendText(user.phone_number, ctx.body);
           if (r && (r as { success?: boolean }).success) smsSent += 1;
           else if (!r) smsSent += 1;
         } catch (err) {
@@ -103,9 +125,24 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx): Promise<{
           ],
         );
         notifsCreated += 1;
-        void pushToUser(user.id, ctx.title ?? humanizeType(ctx.notificationType), ctx.body ?? "", ctx.contextUrl ?? "/"); // BF_SERVER_BLOCK_v_NOTIF_PUSH_v1
+        void pushBrowser(user.id, ctx.title ?? humanizeType(ctx.notificationType), ctx.body ?? "", ctx.contextUrl ?? "/"); // BF_SERVER_BLOCK_v_NOTIF_PUSH_v1
       } catch (err) {
         console.warn(`[notifyAllStaff] notification insert failed for user=${user.id}`, safeErr(err));
+      }
+
+      if (ctx.watch) {
+        try {
+          await sendWatch({
+            staffUserId: user.id,
+            category: ctx.watch.category,
+            eventType: ctx.watch.eventType,
+            title: ctx.watch.title ?? ctx.title ?? humanizeType(ctx.notificationType),
+            body: ctx.watch.body ?? ctx.body,
+            resourceId: ctx.watch.resourceId,
+          });
+        } catch {
+          console.warn(JSON.stringify({ event: "watch_push_failed", staffUserId: user.id }));
+        }
       }
     }),
   );

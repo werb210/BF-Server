@@ -107,7 +107,8 @@ async function handleApplicationSubmit(req: any, res: any) {
     try {
       const { pool } = await import("../db.js");
       const { notifyAllStaff } = await import("../services/notifications/notifyAllStaff.js");
-      await notifyAllStaff({ pool, skipSms: true, notificationType: "application_submitted", title: "New application", body: `New application from ${readiness.company_name || readiness.full_name || "a client"}.`, refTable: "applications", refId: created.id, contextUrl: `/applications/${created.id}` });
+      await notifyAllStaff({ pool, skipSms: true, notificationType: "application_submitted", title: "New application", body: `New application from ${readiness.company_name || readiness.full_name || "a client"}.`, refTable: "applications", refId: created.id, contextUrl: `/applications/${created.id}`,
+        watch: { category: "TASK", eventType: "stage_change", resourceId: created.id, title: "Application update", body: "An application was submitted" } });
     } catch (e) { console.error("[notify] application_submitted failed", String(e).slice(0, 150)); }
     return ok({ applicationId: created.id, leadId: readiness.crm_lead_id, reused: false });
 }

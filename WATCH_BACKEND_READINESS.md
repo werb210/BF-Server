@@ -51,9 +51,26 @@ minimal payloads rather than forwarding arbitrary CRM/application data.
 - `WATCH_JWT_SECRET` and `WATCH_PUSH_ENCRYPTION_KEY` in the production secret store
 - Twilio production credentials and public webhook URL
 - verified staff cellular callback numbers and verification timestamps
-- an APNs transport wired through `configureWatchPushProvider`
+- the four `WATCH_APNS_*` application settings documented below
 - physical cellular Apple Watch testing, including iPhone-unreachable scenarios
 
 No APNs key, certificate, Twilio secret, JWT secret, database credential, or
 other production credential belongs in this repository.
 
+
+## Standard Apple Watch APNs delivery (manual Azure configuration)
+
+BF-Server sends Apple Watch notifications directly through Apple's standard alert APNs HTTP/2 API. This is separate from the iPhone PushKit/Twilio Voice path and never uses the `voip` push type.
+
+Configure these **manual deployment settings** in the production Azure App Service:
+
+```text
+WATCH_APNS_TEAM_ID=<Apple Team ID>
+WATCH_APNS_KEY_ID=<APNs Key ID>
+WATCH_APNS_PRIVATE_KEY=<contents of the Apple APNs signing key>
+WATCH_APNS_BUNDLE_ID=financial.boreal.dialer.watchkitapp
+```
+
+`WATCH_APNS_PRIVATE_KEY` must be stored as an Azure App Service secret/application setting. Both literal newlines and Azure-style escaped `\n` newlines are supported. Do not commit an Apple `.p8` file or paste a real signing key into source code, documentation, logs, or health endpoints. The expected production APNs topic is `financial.boreal.dialer.watchkitapp`, while the environment variable remains authoritative so deployments can be validated and configured explicitly.
+
+If all four settings are absent, Watch delivery is disabled with a `watch_apns_not_configured` startup warning. A partial production configuration is fatal and reports only the names of missing settings.
