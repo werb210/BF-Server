@@ -22,7 +22,33 @@ const StartSchema = z.object({
   // BF_SERVER_BLOCK_v_ATTRIBUTION_v1 - marketing source attribution captured at
   // apply-start (utm_source/medium/campaign, referrer, landing_page).
   attribution: z.record(z.string()).optional(),
+  // BF_SERVER_ABANDONED_STEP1_PROFILE_v162 - the wizard now sends the Step 1
+  // financial profile at /start (the only server call before submit; per-step
+  // save is a no-op). Persisting it means an abandoned Step 1 shows what the
+  // applicant actually picked - country, monthly revenue, amount - instead of
+  // blanks, so staff can see the real drop-off. Loosely typed on purpose: the
+  // wizard's kyc shape evolves and we only read a few known keys from it.
+  financialProfile: z.record(z.any()).optional(),
 });
+
+// BF_SERVER_ABANDONED_STEP1_PROFILE_v162
+// Resolve the requested amount from the Step 1 profile. The wizard fills either
+// fundingAmount or (equipment-only flows) equipmentAmount, as currency strings.
+// Exported for unit testing without a database.
+export function deriveStartRequestedAmount(fp: any): number | null {
+  const parse = (v: unknown): number => {
+    const n = Number(String(v ?? "").replace(/[^0-9.]/g, ""));
+    return Number.isFinite(n) && n > 0 ? n : NaN;
+  };
+  const funding = parse(fp?.fundingAmount);
+  const equipment = parse(fp?.equipmentAmount);
+  const amount = !Number.isNaN(funding)
+    ? funding
+    : !Number.isNaN(equipment)
+      ? equipment
+      : NaN;
+  return Number.isNaN(amount) ? null : amount;
+}
 
 /**
  * POST /api/public/application/start
@@ -307,12 +333,26 @@ router.post(
         (attribution && Object.keys(attribution).length ? { attribution } : {});
       if (startPhone) baseMeta.applicant_phone = startPhone;
 
+      // BF_SERVER_ABANDONED_STEP1_PROFILE_v162 - persist the Step 1 picks onto the
+      // draft so an abandoned Step 1 shows country / monthly revenue / amount in
+      // the funnel and CRM instead of blanks. metadata.kyc is exactly where the
+      // marketing /abandoned query reads businessLocation and monthlyRevenue from.
+      const financialProfile = (parsed.data as any).financialProfile as
+        | Record<string, any>
+        | undefined;
+      let startRequestedAmount: number | null = null;
+      if (financialProfile && typeof financialProfile === "object" && !Array.isArray(financialProfile)) {
+        baseMeta.kyc = financialProfile;
+        startRequestedAmount = deriveStartRequestedAmount(financialProfile);
+      }
+
       const created = await createApplication({
         ownerUserId: (config.client.submissionOwnerUserId || "00000000-0000-0000-0000-000000000001"),
         name: "Draft application",
         metadata: baseMeta,
         productType: "standard",
         productCategory: "standard",
+        requestedAmount: startRequestedAmount,
         source: source ?? "client_direct",
         silo,
       } as any);
