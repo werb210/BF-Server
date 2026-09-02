@@ -50,7 +50,30 @@ type Envelope = {
   // BF_SERVER_PER_LENDER_IVES_v144 - which lenders this owner's envelope carries
   // a 4506-C for. "__env__" means the single-lender env fallback was used.
   ives4506cLenderIds?: string[];
+  // BF_SERVER_4506C_120_DAY_v163 - when this envelope was created. The IRS
+  // rejects a 4506-C received more than 120 days after signature, and signing
+  // follows envelope creation within minutes, so this is the clock that matters.
+  // Optional: envelopes made before v163 have no timestamp and are not aged out.
+  createdAt?: string;
 };
+
+// BF_SERVER_4506C_120_DAY_v163
+// The form's own instruction. Deliberately not configurable - it is an IRS rule,
+// not a policy of ours.
+export const IRS_4506C_VALID_DAYS = 120;
+
+export function daysSince(iso?: string | null): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  return Math.floor((Date.now() - t) / 86_400_000);
+}
+
+/** True when a signature this old would be rejected by the IRS on receipt. */
+export function is4506cExpired(createdAt?: string | null): boolean {
+  const age = daysSince(createdAt);
+  return age !== null && age > IRS_4506C_VALID_DAYS;
+}
 
 async function sbaEnvelopes(applicationId: string): Promise<Envelope[]> {
   const result = await dbQuery<{ metadata: any }>(
@@ -155,6 +178,7 @@ export async function createSbaSigningSessions(applicationId: string): Promise<
       envelopes.push({
         ownerIndex: owner.index, email: owner.email, groupId, inviteId, docIds, docNames,
         ives4506cLenderIds: Array.from(lendersCovered),
+        createdAt: new Date().toISOString(), // BF_SERVER_4506C_120_DAY_v163
       });
       out.push({ ownerIndex: owner.index, name: owner.fullName, email: owner.email, url });
     } catch (error) {
@@ -233,6 +257,19 @@ export async function sbaSigningSatisfiedForDispatch(applicationId: string): Pro
     }
     try {
       if ((await getDocumentGroupStatus(envelope.groupId)).signed !== true) return false;
+
+      // BF_SERVER_4506C_120_DAY_v163 - a signature the IRS will reject is worse
+      // than an unsigned one: the package looks complete, ships, and comes back
+      // weeks later. Only applies where a 4506-C is actually in the envelope.
+      if ((envelope.ives4506cLenderIds?.length ?? 0) > 0 && is4506cExpired(envelope.createdAt)) {
+        logInfo("sba_dispatch_blocked_4506c_expired", {
+          applicationId,
+          ownerIndex: envelope.ownerIndex,
+          ageDays: daysSince(envelope.createdAt),
+          detail: `The IRS rejects a 4506-C received more than ${IRS_4506C_VALID_DAYS} days after signature. Resend the SBA signing request from the SBA Signing tab so this owner signs a fresh one.`,
+        });
+        return false;
+      }
     } catch {
       return false;
     }
