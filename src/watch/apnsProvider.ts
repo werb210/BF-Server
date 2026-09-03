@@ -37,17 +37,34 @@ export class WatchApnsError extends Error {
   }
 }
 
+export class WatchApnsTimeoutError extends Error {
+  readonly invalidRegistration = false;
+
+  constructor(timeoutMs: number) {
+    super(`APNs request timed out after ${timeoutMs}ms`);
+    this.name = "WatchApnsTimeoutError";
+  }
+}
+
 /** A small reusable HTTP/2 transport. It contains no credentials and never logs requests. */
 export class NodeWatchApnsTransport implements WatchApnsTransport {
   private readonly clients = new Map<string, ClientHttp2Session>();
 
+  constructor(
+    private readonly requestTimeoutMs = 10_000,
+    private readonly connect: typeof http2.connect = http2.connect,
+  ) {}
+
   private client(origin: string): ClientHttp2Session {
     const existing = this.clients.get(origin);
     if (existing && !existing.closed && !existing.destroyed) return existing;
-    const created = http2.connect(origin);
-    created.on("close", () => this.clients.delete(origin));
+    const created = this.connect(origin);
+    const removeClient = () => {
+      if (this.clients.get(origin) === created) this.clients.delete(origin);
+    };
+    created.on("close", removeClient);
     // A session may emit an error without an active request listener.
-    created.on("error", () => this.clients.delete(origin));
+    created.on("error", removeClient);
     this.clients.set(origin, created);
     return created;
   }
@@ -57,11 +74,39 @@ export class NodeWatchApnsTransport implements WatchApnsTransport {
       const request = this.client(origin).request(headers);
       let statusCode = 0;
       let body = "";
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout>;
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        request.off("response", onResponse);
+        request.off("data", onData);
+        request.off("end", onEnd);
+        request.off("error", onError);
+      };
+      const settle = (result: { statusCode: number; body: string } | Error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (result instanceof Error) reject(result);
+        else resolve(result);
+      };
+      const onResponse = (responseHeaders: OutgoingHttpHeaders) => {
+        statusCode = Number(responseHeaders[":status"] ?? 0);
+      };
+      const onData = (chunk: string) => { if (body.length < 4096) body += chunk; };
+      const onEnd = () => settle({ statusCode, body });
+      const onError = (error: Error) => settle(error);
+
       request.setEncoding("utf8");
-      request.on("response", (responseHeaders) => { statusCode = Number(responseHeaders[":status"] ?? 0); });
-      request.on("data", (chunk: string) => { if (body.length < 4096) body += chunk; });
-      request.on("end", () => resolve({ statusCode, body }));
-      request.on("error", reject);
+      request.on("response", onResponse);
+      request.on("data", onData);
+      request.on("end", onEnd);
+      request.on("error", onError);
+      timer = setTimeout(() => {
+        settle(new WatchApnsTimeoutError(this.requestTimeoutMs));
+        request.close(http2.constants.NGHTTP2_CANCEL);
+      }, this.requestTimeoutMs);
       request.end(payload);
     });
   }
