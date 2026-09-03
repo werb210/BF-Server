@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const query = vi.fn();
 
-import { WatchApnsError } from "../apnsProvider.js";
+import { WatchApnsError, WatchApnsTimeoutError } from "../apnsProvider.js";
 import { configureWatchPushProvider, sendWatchNotification } from "../notifications.js";
 
 const input = { staffUserId: "staff-1", category: "MESSAGE" as const, eventType: "client_message" as const,
@@ -36,13 +36,13 @@ describe("sendWatchNotification", () => {
     expect(send.mock.calls[0][1]).not.toHaveProperty("resourceId");
   });
 
-  it("deletes only a terminal registration and continues to a valid registration", async () => {
+  it.each(["BadDeviceToken", "Unregistered"])("deletes a %s registration and continues to a valid registration", async (reason) => {
     query.mockResolvedValueOnce({ rows: [
       { id: "bad", token_ciphertext: "bad-cipher", environment: "sandbox" },
       { id: "good", token_ciphertext: "good-cipher", environment: "production" },
     ] }).mockResolvedValueOnce({ rows: [] });
     const send = vi.fn()
-      .mockRejectedValueOnce(new WatchApnsError(410, "Unregistered", true))
+      .mockRejectedValueOnce(new WatchApnsError(410, reason, true))
       .mockResolvedValueOnce(undefined);
     configureWatchPushProvider({ send });
     expect(await sendWatchNotification(input, deps())).toBe(1);
@@ -50,9 +50,13 @@ describe("sendWatchNotification", () => {
     expect(query).toHaveBeenNthCalledWith(2, "DELETE FROM watch_push_registrations WHERE id=$1", ["bad"]);
   });
 
-  it("does not delete a transient provider failure", async () => {
+  it.each([
+    ["timeout", new WatchApnsTimeoutError(10_000)],
+    ["HTTP 429", new WatchApnsError(429, "TooManyRequests")],
+    ["HTTP 500", new WatchApnsError(500, "InternalServerError")],
+  ])("does not delete a transient %s failure", async (_label, failure) => {
     query.mockResolvedValueOnce({ rows: [{ id: "r1", token_ciphertext: "cipher", environment: "production" }] });
-    configureWatchPushProvider({ send: vi.fn().mockRejectedValue(new WatchApnsError(500, "InternalServerError")) });
+    configureWatchPushProvider({ send: vi.fn().mockRejectedValue(failure) });
     expect(await sendWatchNotification(input, deps())).toBe(0);
     expect(query).toHaveBeenCalledTimes(1);
   });
