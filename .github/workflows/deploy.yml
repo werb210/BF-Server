@@ -22,9 +22,12 @@ jobs:
           node-version: '22.x'
 
       - name: Install deps
-        run: |
-          rm -rf node_modules package-lock.json
-          npm install --include=optional
+        # BF_SERVER_DEPLOY_NPM_CI_v163 - was: rm -rf node_modules package-lock.json
+        # && npm install. Deleting the committed lockfile forced a from-scratch
+        # resolve that crashes arborist ("Cannot read properties of null (reading
+        # 'edgesOut')") on the vitest 4.x peer graph. npm ci installs
+        # deterministically from the committed lock and never hits that path.
+        run: npm ci --include=optional
 
       - name: Clean build artifacts
         run: rm -rf dist
