@@ -29,6 +29,10 @@ const StartSchema = z.object({
   // blanks, so staff can see the real drop-off. Loosely typed on purpose: the
   // wizard's kyc shape evolves and we only read a few known keys from it.
   financialProfile: z.record(z.any()).optional(),
+  // BF_SERVER_CLARITY_PLAYBACK_v170 - the wizard reconstructs the Clarity session
+  // player URL client-side (from _clck/_clsk cookies) and sends it here so staff
+  // can open this applicant's recording directly from the CRM, no searching.
+  clarityPlaybackUrl: z.string().optional(),
 });
 
 // BF_SERVER_ABANDONED_STEP1_PROFILE_v162
@@ -344,6 +348,17 @@ router.post(
       if (financialProfile && typeof financialProfile === "object" && !Array.isArray(financialProfile)) {
         baseMeta.kyc = financialProfile;
         startRequestedAmount = deriveStartRequestedAmount(financialProfile);
+      }
+
+      // BF_SERVER_CLARITY_PLAYBACK_v170 - store the Clarity session player URL so
+      // the CRM can open this applicant's recording directly. Validate it points
+      // at the Clarity player and nowhere else (no open-redirect / junk).
+      const clarityPlaybackUrl = (parsed.data as any).clarityPlaybackUrl as string | undefined;
+      if (
+        typeof clarityPlaybackUrl === "string" &&
+        clarityPlaybackUrl.startsWith("https://clarity.microsoft.com/player/")
+      ) {
+        baseMeta.clarity_playback_url = clarityPlaybackUrl;
       }
 
       const created = await createApplication({

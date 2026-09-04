@@ -373,6 +373,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/crm/contacts/:id/meetings", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "GET", path: "/api/crm/contacts/:id/timeline", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "GET", path: "/api/crm/contacts/:id/ad-attribution", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
+  { method: "GET", path: "/api/crm/contacts/:id/clarity-recording", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] }, // BF_SERVER_CLARITY_PLAYBACK_v170
   { method: "GET", path: "/api/crm/companies/:id/notes", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "POST", path: "/api/crm/companies/:id/notes", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "GET", path: "/api/crm/companies/:id/calls", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
