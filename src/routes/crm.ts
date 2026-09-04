@@ -131,6 +131,26 @@ router.get("/contacts/:id/ad-attribution", safeHandler(async (req: any, res: any
   });
 }));
 
+// BF_SERVER_CLARITY_PLAYBACK_v170 - direct link to this contact's Clarity session
+// recording for the CRM "Clarity" button. Returns the most recent application's
+// stored player URL, scoped to the caller's silo; null when none has been
+// captured yet (older contacts, cookieless/ad-blocked sessions).
+router.get("/contacts/:id/clarity-recording", safeHandler(async (req: any, res: any) => {
+  const contactId = String(req.params.id ?? "");
+  const silo = resolveSiloFromRequest(req);
+  const { rows } = await pool.query(
+    `SELECT metadata->>'clarity_playback_url' AS url
+       FROM applications
+      WHERE contact_id::text = $1
+        AND silo = $2
+        AND metadata->>'clarity_playback_url' IS NOT NULL
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+    [contactId, silo],
+  ).catch(() => ({ rows: [] as any[] }));
+  return res.json({ ok: true, data: { url: rows[0]?.url ?? null } });
+}));
+
 router.get("/contacts/:id/companies", safeHandler(async (req: any, res: any) => {
   try {
     const { rows } = await pool.query(
