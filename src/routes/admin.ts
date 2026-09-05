@@ -82,11 +82,11 @@ router.post(
   async (_req: any, res: any) => {
     try {
       const { pool } = await import("../db.js");
-      const { ingestAllProducts } = await import("../modules/ai/productIngest.service.js");
+      const { ingestProductCategoryEnvelopes } = await import("../modules/ai/productIngest.service.js"); // BF_SERVER_MAYA_PRODUCT_ENVELOPE_v1
       const del = await pool.query(
         "DELETE FROM ai_knowledge WHERE source_type = 'product' OR source_type LIKE 'product:%'",
       );
-      await ingestAllProducts(pool);
+      await ingestProductCategoryEnvelopes(pool);
       const cnt = await pool.query("SELECT count(*)::int AS n FROM lender_products");
       res.json({ ok: true, deleted: del.rowCount ?? 0, ingested: cnt.rows[0]?.n ?? 0 });
     } catch (e: any) {

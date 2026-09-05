@@ -102,3 +102,61 @@ export async function reconcileProductKnowledge(
 
   return { ingested, pruned: prunedRes.rows.length };
 }
+
+// BF_SERVER_MAYA_PRODUCT_ENVELOPE_v1 - Maya answered product amounts/rates
+// inconsistently because ingestAllProducts wrote ONE knowledge row per
+// lender_product (~100 conflicting entries, and amount was never ingested).
+// This writes ONE consolidated envelope per category (min/max amount, rate and
+// term across all lenders in that category) so Maya has a single authoritative
+// fact to answer "how much / what rate" with, consistently.
+const CATEGORY_DISPLAY: Record<string, string> = {
+  LOC: "Line of Credit", TERM: "Term Loan", EQUIPMENT: "Equipment Financing",
+  FACTORING: "Invoice Factoring", MCA: "Merchant Cash Advance", PO: "Purchase Order Financing",
+  ABL: "Asset-Based Lending", SBA: "SBA Loan", MEDIA: "Media & Production Financing",
+  STARTUP: "Start-up Financing",
+};
+function money(n: number | null): string {
+  if (n == null || !Number.isFinite(n)) return "N/A";
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toString().replace(/\.0$/, "")}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toString().replace(/\.0$/, "")}K`;
+  return `$${n}`;
+}
+export async function ingestProductCategoryEnvelopes(db: Queryable): Promise<number> {
+  const rows = await db.query<{
+    category: string; amt_min: number | null; amt_max: number | null;
+    rate_min: string | number | null; rate_max: string | number | null;
+    term_min: number | null; term_max: number | null; countries: string | null;
+  }>(
+    `select category,
+            min(amount_min)                       as amt_min,
+            max(amount_max)                       as amt_max,
+            min(nullif(interest_min,'')::numeric) as rate_min,
+            max(nullif(interest_max,'')::numeric) as rate_max,
+            min(term_min)                         as term_min,
+            max(term_max)                         as term_max,
+            string_agg(distinct country, ', ')    as countries
+       from lender_products
+      where category is not null
+      group by category`
+  );
+  let count = 0;
+  for (const r of rows.rows) {
+    const display = CATEGORY_DISPLAY[r.category] ?? r.category;
+    const rate = r.rate_min != null && r.rate_max != null
+      ? `${Number(r.rate_min)}% to ${Number(r.rate_max)}% (illustrative; varies by lender)`
+      : "Varies by lender";
+    const term = r.term_min != null && r.term_max != null
+      ? `${r.term_min} to ${r.term_max} months` : "Varies by lender";
+    const content = [
+      `Product category: ${display} (${r.category})`,
+      `Funding amount range: ${money(r.amt_min)} to ${money(r.amt_max)}`,
+      `Interest / rate range: ${rate}`,
+      `Term range: ${term}`,
+      `Available in: ${r.countries ?? "N/A"}`,
+      `Boreal is a lending marketplace, not the lender; exact amount, rate and term depend on the lender and the business. Never quote a single guaranteed figure.`,
+    ].join("\n");
+    await embedAndStore(db, content, "product:category", r.category, `${display} (category envelope)`);
+    count += 1;
+  }
+  return count;
+}
