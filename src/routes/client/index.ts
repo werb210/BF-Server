@@ -618,9 +618,12 @@ router.get(
        )
        SELECT id, direction, body, staff_name, cta_label, cta_action, attachments, created_at
        FROM communications_messages
+       -- BF_SERVER_THREAD_PER_APP_v1: this application's own messages, plus only
+       -- contact-level messages not tied to any application.
        WHERE application_id::text = ($1)::text
           OR (
-               (SELECT contact_id FROM thread) IS NOT NULL
+               application_id IS NULL
+           AND (SELECT contact_id FROM thread) IS NOT NULL
            AND contact_id::text = (SELECT contact_id::text FROM thread)
              )
        ORDER BY created_at ASC
