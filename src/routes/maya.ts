@@ -131,13 +131,15 @@ export async function proxyMayaToAgent(
             const x = b.toString("hex");
             return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20, 32)}`;
           };
+          // BF_SERVER_MAYA_PERSIST_CHANNEL_FIX_v1 - chat_sessions has no "channel"
+          // column, so the old insert threw on every turn and the swallowing catch
+          // hid it, meaning NO Maya conversation ever persisted (empty Comms->Maya tab).
           const persistId = isUuidSession ? sessionId : toStableUuid(sessionId);
-          const chan = audience ? String(audience) : "web";
           await pool.query(
-            `insert into chat_sessions (id, source, channel, status)
-             values ($1, 'maya', $2, 'ai')
+            `insert into chat_sessions (id, source, status)
+             values ($1, 'maya', 'ai')
              on conflict (id) do nothing`,
-            [persistId, chan],
+            [persistId],
           );
           await addMessage({ sessionId: persistId, role: "user", message: userMsg });
           if (reply) await addMessage({ sessionId: persistId, role: "ai", message: reply });
