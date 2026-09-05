@@ -380,10 +380,19 @@ router.post('/:id/request-steps', requireCapability([CAPABILITIES.CRM_WRITE]), s
         [id, `To continue your application, please upload your supporting documents: ${list}.`],
       );
     } else {
+      // BF_SERVER_CHECKLIST_MSG_IDEMPOTENT_v1 - this plain checklist message has
+      // no cta_action, so unlike the CTA branches above it was not covered by the
+      // existingCta dedupe and duplicated once per call (triplicate on submit when
+      // the endpoint fired 3x). Insert only when an identical body is not already
+      // on this application's thread.
       await pool.query(
         `INSERT INTO communications_messages
            (id, type, direction, status, application_id, contact_id, silo, body, staff_name, created_at)
-         VALUES (gen_random_uuid(), 'message', 'outbound', 'sent', $1, ${contactSub}, ${siloSub}, $2, 'Boreal Financial', now())`,
+         SELECT gen_random_uuid(), 'message', 'outbound', 'sent', $1, ${contactSub}, ${siloSub}, $2, 'Boreal Financial', now()
+         WHERE NOT EXISTS (
+           SELECT 1 FROM communications_messages
+            WHERE application_id::text = ($1)::text AND body = $2
+         )`,
         [id, `We've added more documents to your checklist: ${list}. Please upload them using the Upload documents button.`],
       );
     }
