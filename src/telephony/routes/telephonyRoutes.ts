@@ -120,7 +120,10 @@ router.post("/presence/heartbeat", auth, async (req: any, res: Response) => {
   const now = Date.now();
   const lastHeartbeatAt = lastPresenceHeartbeatByUser.get(userId) ?? 0;
   if (now - lastHeartbeatAt < HEARTBEAT_MIN_INTERVAL_MS) {
-    return res.json({ ok: true, throttled: true });
+    {
+      const pr = await pool.query(`SELECT status, coalesce(on_call,false) AS on_call FROM staff_presence WHERE user_id = $1`, [userId]).catch(() => ({ rows: [] as any[] }));
+      return res.json({ ok: true, throttled: true, status: pr.rows[0]?.status ?? "available", onCall: !!pr.rows[0]?.on_call });
+    }
   }
   lastPresenceHeartbeatByUser.set(userId, now);
 
@@ -130,7 +133,8 @@ router.post("/presence/heartbeat", auth, async (req: any, res: Response) => {
     [userId]
   ).catch(() => {});
   await recomputePresence(userId).catch(() => {});
-  res.json({ ok: true });
+  const pr = await pool.query(`SELECT status, coalesce(on_call,false) AS on_call FROM staff_presence WHERE user_id = $1`, [userId]).catch(() => ({ rows: [] as any[] }));
+  res.json({ ok: true, status: pr.rows[0]?.status ?? "available", onCall: !!pr.rows[0]?.on_call });
 });
 
 // ── Call status / log ─────────────────────────────────────────────────────────

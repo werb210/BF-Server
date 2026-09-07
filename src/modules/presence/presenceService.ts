@@ -55,3 +55,26 @@ export function startPresenceCron(): void {
 }
 
 startPresenceCron();
+
+
+// BF_SERVER_PRESENCE_ONCALL_WIRE_v1 - reconcile every staff member's on_call flag
+// from live conference membership: on_call = has a joined staff leg in a
+// non-ended conference. Idempotent; call after each conference webhook event.
+export async function syncStaffOnCallFromConferences(): Promise<void> {
+  try {
+    await pool.query(`
+      UPDATE staff_presence sp
+         SET on_call = EXISTS (
+               SELECT 1 FROM conference_participants cp
+                 JOIN conferences c ON c.id = cp.conference_id
+                WHERE cp.kind = 'staff' AND cp.status = 'joined'
+                  AND cp.identity = sp.twilio_identity
+                  AND c.status <> 'ended'
+             ),
+             updated_at = now()
+       WHERE sp.twilio_identity IS NOT NULL`);
+    await recomputePresence();
+  } catch {
+    /* non-fatal */
+  }
+}

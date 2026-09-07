@@ -4,6 +4,7 @@
 import express, { Router } from "express";
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
 import { pool } from "../db.js";
+import { syncStaffOnCallFromConferences } from "../modules/presence/presenceService.js"; // BF_SERVER_PRESENCE_ONCALL_WIRE_v1
 import {
   getConferenceByFriendly,
   getParticipantBySid,
@@ -290,6 +291,7 @@ router.post("/conference/status", twilioWebhookValidation, async (req: any, res)
   }
 
   await notifyConferenceState(conf.id, "conference.update", { event });
+  await syncStaffOnCallFromConferences(); // BF_SERVER_PRESENCE_ONCALL_WIRE_v1
   return res.status(200).send("");
 });
 
