@@ -48,15 +48,32 @@ const CALL_DISPOSITIONS = new Set([
   "connected", "left_voicemail", "no_answer", "follow_up", "not_interested",
   "do_not_contact", "demo_booked", "documents_promised", "needs_lender_review",
 ]);
+// BF_SERVER_DISPOSITION_TASK_v1 - outcomes that should spawn a follow-up task.
+const DISPOSITION_FOLLOWUP: Record<string, { label: string; days: number }> = {
+  follow_up: { label: "Follow up on call", days: 2 },
+  documents_promised: { label: "Collect promised documents", days: 3 },
+  needs_lender_review: { label: "Send file for lender review", days: 1 },
+};
 router.post("/calls/:id/disposition", async (req: any, res) => {
   const id = String(req.params.id || "");
   if (!/^[0-9a-f-]{36}$/i.test(id)) return watchError(req, res, 400, "invalid_request", "Invalid call id");
   const disposition = String(req.body?.disposition || "");
   if (!CALL_DISPOSITIONS.has(disposition)) return watchError(req, res, 400, "invalid_request", "Unknown disposition");
   const updated = await pool.query(
-    `UPDATE call_logs SET disposition=$1 WHERE id=$2::uuid AND staff_user_id=$3 RETURNING id::text`,
+    `UPDATE call_logs SET disposition=$1 WHERE id=$2::uuid AND staff_user_id=$3 RETURNING id::text, COALESCE(contact_id, crm_contact_id) AS contact_id, silo`,
     [disposition, id, req.watch.staffUserId]);
   if (!updated.rowCount) return watchError(req, res, 404, "not_found", "Call not found");
+  // BF_SERVER_DISPOSITION_TASK_v1 - on actionable outcomes, auto-create a follow-up
+  // task for the contact (deduped by call id so re-dispositioning won't stack tasks).
+  const row: any = updated.rows[0];
+  const rule = DISPOSITION_FOLLOWUP[disposition];
+  if (rule && row?.contact_id) {
+    await pool.query(
+      `INSERT INTO tasks (silo, title, body, type, priority, due_at, assignee_user_id, contact_id, source, source_ref_id)
+       SELECT $1, $2, $3, 'TODO', 'MEDIUM', now() + ($4 || ' days')::interval, $5::uuid, $6::uuid, 'CALL_DISPOSITION', $7::uuid
+        WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE source = 'CALL_DISPOSITION' AND source_ref_id = $7::uuid)`,
+      [row.silo, rule.label, `Auto-created from call outcome: ${disposition}`, String(rule.days), req.watch.staffUserId, row.contact_id, id]);
+  }
   return res.json({ id, disposition });
 });
 
