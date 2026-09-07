@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { ROLES, type Role } from "../auth/roles.js";
 import adminRoutes from "./admin.js";
+import clientPushRoutes from "./clientPush.js"; // BF_SERVER_CLIENT_PUSH_TOKEN_v1
 import lenderSelfRoutes from "./lenderSelf.js"; // BF_SERVER_LENDER_SELF_v1
 import referrerSelfRoutes from "./referrerSelf.js"; // BF_SERVER_REFERRER_SELF_v1
 import adminReferrersRoutes from "./adminReferrers.js"; // BF_SERVER_ADMIN_REFERRERS_v1
@@ -432,6 +433,7 @@ export function registerApiRouteMounts(app: Router): void {
   const mount = createMountTracker();
 
   mount(app, "/ocr/admin", Router().use(requireAuth, ocrAdminRoutes));
+  mount(app, "/push", Router().use(requireAuth, clientPushRoutes)); // BF_SERVER_CLIENT_PUSH_TOKEN_v1
 
   API_ROUTE_MOUNTS.forEach((entry) => {
     if (entry.path === "/ocr/admin") return;
