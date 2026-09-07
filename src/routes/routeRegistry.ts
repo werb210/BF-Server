@@ -374,6 +374,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET", path: "/api/crm/contacts/:id/meetings", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "POST", path: "/api/crm/contacts/:id/meetings", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "GET", path: "/api/crm/contacts/:id/timeline", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
+  { method: "POST", path: "/api/crm/calls/:conferenceId/ai-summary", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "GET", path: "/api/automations", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "POST", path: "/api/automations", roles: [ROLES.ADMIN] },
   { method: "PATCH", path: "/api/automations/:id", roles: [ROLES.ADMIN] },
