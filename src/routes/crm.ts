@@ -1370,6 +1370,33 @@ router.get("/contacts/:id/emails", safeHandler(async (req: any, res: any) => {
   return res.json({ items: rows });
 }));
 
+// BF_SERVER_CALL_AI_SUMMARY_v1 - AI post-call summary from the transcript, saved to the timeline.
+router.post("/calls/:conferenceId/ai-summary", safeHandler(async (req: any, res: any) => {
+  const id = req.params.conferenceId;
+  const silo = resolveSiloFromRequest(req);
+  const { rows } = await pool.query(
+    `SELECT t.full_text AS transcript, cf.contact_id::text AS contact_id
+       FROM conferences cf LEFT JOIN call_transcripts t ON t.conference_id = cf.id
+      WHERE cf.id = $1::uuid`, [id]);
+  const transcript = rows[0]?.transcript;
+  const contactId = rows[0]?.contact_id ?? null;
+  if (!transcript || !String(transcript).trim()) {
+    return respondOk(res, { summary: "No transcript is available for this call yet." });
+  }
+  const summary = await askAI([
+    { role: "system", content: "You are a post-call assistant for a commercial-lending brokerage. Summarize this call transcript for the broker in 3-5 short bullet points, then a 'Follow-ups:' line listing concrete next actions and any commitments made. Be factual and concise; never invent details and never promise funding." },
+    { role: "user", content: `Call transcript:
+${String(transcript).slice(0, 6000)}` },
+  ]);
+  if (contactId) {
+    await pool.query(
+      `INSERT INTO crm_notes (body, contact_id, silo) VALUES ($1, $2::uuid, $3)`,
+      [`AI call summary
+${summary}`, contactId, silo]).catch(() => {});
+  }
+  return respondOk(res, { summary, savedToTimeline: !!contactId });
+}));
+
 // #49 — contact call feed: recording + transcript joined by conference.
 router.get("/contacts/:id/calls", safeHandler(async (req: any, res: any) => {
   const id = String(req.params.id);
