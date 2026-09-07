@@ -1065,6 +1065,39 @@ router.get("/companies", safeHandler(async (req: any, res: any) => {
   respondOk(res, rows, { page, pageSize, total }); // BF_SERVER_CRM_LIST_TOTALS_v1
 }));
 
+// BF_SERVER_CRM_COMPANY_AI_SUMMARY_v1 - AI summary of a company's recent activity
+// (company + its contacts' notes/messages).
+router.get("/companies/:id/ai-summary", safeHandler(async (req: any, res: any) => {
+  const id = req.params.id;
+  const silo = resolveSiloFromRequest(req);
+  const activity = await pool.query(
+    `SELECT kind, text, ts FROM (
+       SELECT 'note' AS kind, body AS text, created_at AS ts
+         FROM crm_notes
+        WHERE silo = $2 AND is_deleted = false
+          AND (company_id = $1 OR contact_id IN (SELECT id FROM contacts WHERE company_id = $1 AND silo = $2))
+       UNION ALL
+       SELECT 'message (' || direction || ')' AS kind, body AS text, created_at AS ts
+         FROM communications_messages
+        WHERE silo = $2
+          AND contact_id IN (SELECT id FROM contacts WHERE company_id = $1 AND silo = $2)
+     ) t
+     WHERE text IS NOT NULL AND btrim(text) <> ''
+     ORDER BY ts DESC LIMIT 40`,
+    [id, silo]);
+  if (activity.rows.length === 0) {
+    return respondOk(res, { summary: "No recent notes or messages to summarize for this company." });
+  }
+  const lines = activity.rows
+    .reverse()
+    .map((r: any) => `- [${r.kind}] ${new Date(r.ts).toISOString().slice(0, 10)}: ${String(r.text).replace(/\s+/g, " ").slice(0, 400)}`)
+    .join("\n");
+  const summary = await askAI([
+    { role: "system", content: "You are a CRM assistant for a commercial-lending brokerage. Summarize this company's recent activity across its contacts for a broker in 3-5 short bullet points: where things stand, what is outstanding, and one suggested next action. Be factual and concise; never invent details and never promise funding." },
+    { role: "user", content: `Recent activity for this company (oldest first):\n${lines}` },
+  ]);
+  return respondOk(res, { summary });
+}));
 router.get("/companies/:id", safeHandler(async (req: any, res: any) => {
   const id = String(req.params.id);
   if (!/^[0-9a-f-]{36}$/i.test(id)) {
