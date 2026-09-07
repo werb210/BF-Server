@@ -43,5 +43,22 @@ router.get("/calls/recent", async (req: any, res) => {
   return res.json({ items, nextCursor: more ? new Date(items.at(-1).occurredAt).toISOString() : null });
 });
 
+// BF_SERVER_WATCH_CALL_DISPOSITION_v1 - record a post-call outcome from the Watch.
+const CALL_DISPOSITIONS = new Set([
+  "connected", "left_voicemail", "no_answer", "follow_up", "not_interested",
+  "do_not_contact", "demo_booked", "documents_promised", "needs_lender_review",
+]);
+router.post("/calls/:id/disposition", async (req: any, res) => {
+  const id = String(req.params.id || "");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return watchError(req, res, 400, "invalid_request", "Invalid call id");
+  const disposition = String(req.body?.disposition || "");
+  if (!CALL_DISPOSITIONS.has(disposition)) return watchError(req, res, 400, "invalid_request", "Unknown disposition");
+  const updated = await pool.query(
+    `UPDATE call_logs SET disposition=$1 WHERE id=$2::uuid AND staff_user_id=$3 RETURNING id::text`,
+    [disposition, id, req.watch.staffUserId]);
+  if (!updated.rowCount) return watchError(req, res, 404, "not_found", "Call not found");
+  return res.json({ id, disposition });
+});
+
 export default router;
 
