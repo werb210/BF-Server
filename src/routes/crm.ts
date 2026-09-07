@@ -9,6 +9,7 @@ import { respondOk } from "../utils/respondOk.js";
 import { handleListCrmTimeline } from "../modules/crm/timeline.controller.js";
 import { SupportController } from "../modules/support/support.controller.js";
 import { pool } from "../db.js";
+import { askAI } from "../modules/ai/openai.service.js"; // BF_SERVER_CRM_AI_SUMMARY_v1
 import { normalizePhoneNumber } from "../modules/auth/phone.js";
 import { bumpBiOutreachToContacted } from "../services/biOutreach.js"; // BF_SERVER_BLOCK_v344_BI_OUTREACH_AUTOADVANCE_v1
 import { getSilo, resolveSiloFromRequest } from "../middleware/silo.js";
@@ -176,6 +177,34 @@ router.get("/contacts/:id/companies", safeHandler(async (req: any, res: any) => 
   }
 }));
 
+// BF_SERVER_CRM_AI_SUMMARY_v1 - AI summary of a contact's recent notes + messages.
+router.get("/contacts/:id/ai-summary", safeHandler(async (req: any, res: any) => {
+  const id = req.params.id;
+  const silo = resolveSiloFromRequest(req);
+  const activity = await pool.query(
+    `SELECT kind, text, ts FROM (
+       SELECT 'note' AS kind, body AS text, created_at AS ts
+         FROM crm_notes WHERE contact_id = $1 AND silo = $2 AND is_deleted = false
+       UNION ALL
+       SELECT 'message (' || direction || ')' AS kind, body AS text, created_at AS ts
+         FROM communications_messages WHERE contact_id = $1 AND silo = $2
+     ) t
+     WHERE text IS NOT NULL AND btrim(text) <> ''
+     ORDER BY ts DESC LIMIT 40`,
+    [id, silo]);
+  if (activity.rows.length === 0) {
+    return respondOk(res, { summary: "No recent notes or messages to summarize for this contact." });
+  }
+  const lines = activity.rows
+    .reverse()
+    .map((r: any) => `- [${r.kind}] ${new Date(r.ts).toISOString().slice(0, 10)}: ${String(r.text).replace(/\s+/g, " ").slice(0, 400)}`)
+    .join("\n");
+  const summary = await askAI([
+    { role: "system", content: "You are a CRM assistant for a commercial-lending brokerage. Summarize this contact's recent activity for a broker in 3-5 short bullet points: where things stand, what is outstanding, and one suggested next action. Be factual and concise; never invent details and never promise funding." },
+    { role: "user", content: `Recent activity for this contact (oldest first):\n${lines}` },
+  ]);
+  return respondOk(res, { summary });
+}));
 router.get("/contacts/:id/applications", safeHandler(async (req: any, res: any) => {
   // BF_SERVER_BLOCK_v302_CRM_CONTACT_APPLICATIONS_SCHEMA_FIX_v1
   // The CRM contact-drawer "Applications" sub-section consumes this
