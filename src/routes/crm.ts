@@ -81,6 +81,40 @@ router.get("/leads", safeHandler(async (_req: any, res: any) => {
 // for any mutating handler. The router-level CRM_READ stays for GET.
 const requireCrmWrite = requireCapability([CAPABILITIES.CRM_WRITE]);
 
+// BF_SERVER_CRM_SEGMENTS_v1 - saved contact filters (HubSpot-style segments/lists).
+// filters is opaque jsonb (the contacts-list filter params); the portal re-applies
+// it via the existing /api/crm/contacts endpoint, so there is no dynamic SQL here.
+router.get("/segments", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const { rows } = await pool.query(
+    `SELECT id::text, name, filters, created_at FROM crm_segments WHERE silo = $1 ORDER BY name ASC`, [silo]);
+  respondOk(res, rows);
+}));
+router.get("/segments/:id", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const { rows } = await pool.query(
+    `SELECT id::text, name, filters, created_at FROM crm_segments WHERE id = $1::uuid AND silo = $2`, [req.params.id, silo]);
+  if (!rows[0]) return res.status(404).json({ error: { code: "not_found" } });
+  respondOk(res, rows[0]);
+}));
+router.post("/segments", requireCrmWrite, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const name = String(req.body?.name ?? "").trim();
+  if (!name) return res.status(400).json({ error: { code: "name_required" } });
+  const filters = req.body?.filters && typeof req.body.filters === "object" ? req.body.filters : {};
+  const userId = req.user?.id ?? req.user?.userId ?? null;
+  const { rows } = await pool.query(
+    `INSERT INTO crm_segments (silo, name, filters, created_by)
+     VALUES ($1, $2, $3::jsonb, $4) RETURNING id::text, name, filters, created_at`,
+    [silo, name, JSON.stringify(filters), userId]);
+  respondOk(res, rows[0]);
+}));
+router.delete("/segments/:id", requireCrmWrite, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const r = await pool.query(`DELETE FROM crm_segments WHERE id = $1::uuid AND silo = $2`, [req.params.id, silo]);
+  respondOk(res, { deleted: r.rowCount ?? 0 });
+}));
+
 
 
 // BF_SERVER_AD_ATTRIBUTION_v1 - resolved Google Ads click details for the CRM Marketing Source card.
