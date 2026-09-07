@@ -15,8 +15,7 @@ import { listRoutes } from "./debug/printRoutes.js";
 
 export function createApp() {
   const app = express();
-  // Trust Azure App Service reverse proxy
-  app.set("trust proxy", 1);
+  app.set("trust proxy", 1); // BF_SERVER_RATELIMIT_TRUSTPROXY_v1 - Azure runs one proxy hop; lets express-rate-limit read the real client IP
   /**
    * CORS configuration
    *
