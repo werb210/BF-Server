@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { ROLES, type Role } from "../auth/roles.js";
 import adminRoutes from "./admin.js";
+import automationRoutes from "./automations.js"; // BF_SERVER_AUTOMATION_ENGINE_v1
 import clientPushRoutes from "./clientPush.js"; // BF_SERVER_CLIENT_PUSH_TOKEN_v1
 import lenderSelfRoutes from "./lenderSelf.js"; // BF_SERVER_LENDER_SELF_v1
 import referrerSelfRoutes from "./referrerSelf.js"; // BF_SERVER_REFERRER_SELF_v1
@@ -373,6 +374,10 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET", path: "/api/crm/contacts/:id/meetings", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "POST", path: "/api/crm/contacts/:id/meetings", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "GET", path: "/api/crm/contacts/:id/timeline", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
+  { method: "GET", path: "/api/automations", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { method: "POST", path: "/api/automations", roles: [ROLES.ADMIN] },
+  { method: "PATCH", path: "/api/automations/:id", roles: [ROLES.ADMIN] },
+  { method: "DELETE", path: "/api/automations/:id", roles: [ROLES.ADMIN] },
   { method: "GET", path: "/api/crm/segments", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "GET", path: "/api/crm/segments/:id", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "POST", path: "/api/crm/segments", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
@@ -433,6 +438,7 @@ export function registerApiRouteMounts(app: Router): void {
   const mount = createMountTracker();
 
   mount(app, "/ocr/admin", Router().use(requireAuth, ocrAdminRoutes));
+  mount(app, "/automations", Router().use(requireAuth, automationRoutes)); // BF_SERVER_AUTOMATION_ENGINE_v1
   mount(app, "/push", Router().use(requireAuth, clientPushRoutes)); // BF_SERVER_CLIENT_PUSH_TOKEN_v1
 
   API_ROUTE_MOUNTS.forEach((entry) => {

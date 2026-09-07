@@ -1,5 +1,6 @@
 import { AppError } from "../../middleware/errors.js";
 import { recordAuditEvent } from "../audit/audit.service.js";
+import { runAutomations } from "../automation/automationEngine.js"; // BF_SERVER_AUTOMATION_ENGINE_v1
 import {
   createApplication,
   createApplicationStageEvent,
@@ -419,6 +420,8 @@ export async function transitionPipelineState(params: {
     reason: params.reason ?? null,
     ...(params.client ? { client: params.client } : {}),
   });
+  // BF_SERVER_AUTOMATION_ENGINE_v1 - fire "stage changed" automations (best-effort).
+  await runAutomations({ trigger: "application.stage_changed", applicationId: params.applicationId, fromStage: currentStage, toStage: params.nextState }).catch(() => {});
   const auditSuccessPayload = {
     action: "pipeline_state_changed",
     actorUserId: params.actorUserId,
