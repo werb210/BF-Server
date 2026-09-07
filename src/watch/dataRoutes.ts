@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { pool } from "../db.js";
+import { sendSMS } from "../lib/twilio.js"; // BF_SERVER_WATCH_SMS_v1
 import { allowedLine, watchAuth, watchError } from "./security.js";
 
 const router = Router();
@@ -75,6 +76,33 @@ router.post("/calls/:id/disposition", async (req: any, res) => {
       [row.silo, rule.label, `Auto-created from call outcome: ${disposition}`, String(rule.days), req.watch.staffUserId, row.contact_id, id]);
   }
   return res.json({ id, disposition });
+});
+
+// BF_SERVER_WATCH_SMS_v1 - quick text from the wrist: list SMS templates/snippets + send.
+router.get("/sms-templates", async (req: any, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id::text, name, COALESCE(body_text, '') AS body
+         FROM message_templates
+        WHERE channel IN ('sms', 'message') AND (shared = true OR owner_user_id = $1)
+        ORDER BY name ASC LIMIT 50`,
+      [req.watch.staffUserId]);
+    return res.json({ templates: rows });
+  } catch {
+    return res.json({ templates: [] });
+  }
+});
+
+router.post("/sms", async (req: any, res) => {
+  const to = String(req.body?.to || "").trim();
+  const body = String(req.body?.body || "").trim();
+  if (!to || !body) return watchError(req, res, 400, "invalid_request", "to and body are required");
+  try {
+    await sendSMS(to, body);
+  } catch {
+    return watchError(req, res, 502, "send_failed", "Could not send the message");
+  }
+  return res.json({ ok: true });
 });
 
 export default router;
