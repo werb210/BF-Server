@@ -372,6 +372,10 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET", path: "/api/crm/contacts/:id/meetings", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "POST", path: "/api/crm/contacts/:id/meetings", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "GET", path: "/api/crm/contacts/:id/timeline", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
+  { method: "GET", path: "/api/crm/segments", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
+  { method: "GET", path: "/api/crm/segments/:id", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
+  { method: "POST", path: "/api/crm/segments", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
+  { method: "DELETE", path: "/api/crm/segments/:id", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/crm/contacts/:id/ai-summary", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "GET", path: "/api/crm/contacts/:id/ad-attribution", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "GET", path: "/api/crm/contacts/:id/clarity-recording", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] }, // BF_SERVER_CLARITY_PLAYBACK_v170
