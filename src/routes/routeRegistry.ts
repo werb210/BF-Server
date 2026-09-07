@@ -384,6 +384,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET", path: "/api/crm/companies/:id/meetings", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "POST", path: "/api/crm/companies/:id/meetings", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "GET", path: "/api/crm/companies/:id/timeline", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
+  { method: "GET", path: "/api/crm/companies/:id/ai-summary", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "POST", path: "/api/o365/mail/send", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "GET", path: "/api/communications", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/calendar", roles: [ROLES.ADMIN, ROLES.STAFF] },
