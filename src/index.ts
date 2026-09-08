@@ -45,7 +45,8 @@ if (process.env.NODE_ENV === "production") {
 }
 
 export async function start(): Promise<void> {
-  initializeWatchPushProvider();
+  // BF_SERVER_BLOCK_v335 -- push init moved after listen. Watch push is
+  // optional, so its configuration must not stop the API accepting traffic.
   initializeClientPushProvider();
   await initDb();
 
@@ -306,6 +307,12 @@ export async function start(): Promise<void> {
     console.log(`Server listening on ${PORT}`);
     markReady();
     startKeepWarm();
+    // Optional subsystems come up only once the port is serving.
+    try {
+      initializeWatchPushProvider();
+    } catch (err) {
+      console.error(JSON.stringify({ event: "watch_push_init_failed", error: String(err) }));
+    }
   });
   initTeamWebSocket(httpServer); // BF_SERVER_BLOCK_v750_TEAM_CHAT
 }
