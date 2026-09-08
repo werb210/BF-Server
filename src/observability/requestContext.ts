@@ -8,6 +8,10 @@ type RequestContextStore = {
   route?: string;
   idempotencyKeyHash?: string;
   dbProcessIds: string[];
+  // BF_SERVER_AUDIT_PRINCIPAL_CONTEXT_v1 - recordAuditEvent already reads
+  // requestId from this store. Carrying the principal the same way gives all
+  // 85 call sites the service attribution without editing any of them.
+  serviceName?: string;
 };
 
 const storage = new AsyncLocalStorage<RequestContextStore>();
@@ -47,12 +51,24 @@ export function fetchRequestDbProcessIds(): string[] {
   return storage.getStore()?.dbProcessIds ?? [];
 }
 
+/** Set once per request, after auth resolves the token's claims. */
+export function markRequestServicePrincipal(serviceName: string): void {
+  const store = storage.getStore();
+  if (store) store.serviceName = serviceName;
+}
+
+/** Null for human tokens, which carry no principal claim. */
+export function fetchRequestServiceName(): string | null {
+  return storage.getStore()?.serviceName ?? null;
+}
+
 export function runWithRequestContext<T>(fn: () => Promise<T>, context?: Partial<RequestContextStore>): Promise<T> {
   const base = stripUndefined({
     requestId: context?.requestId ?? randomUUID(),
     route: context?.route,
     idempotencyKeyHash: context?.idempotencyKeyHash,
     dbProcessIds: context?.dbProcessIds ?? [],
+    serviceName: context?.serviceName,
   }) as RequestContextStore;
   return storage.run(base, fn);
 }
