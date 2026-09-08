@@ -13,12 +13,18 @@ export type AuditEventRecord = {
   request_id: string | null;
   success: boolean;
   created_at: Date;
+  // BF_SERVER_AUDIT_METADATA_v1 - the column existed and was written to, but
+  // was never selected. Service attribution (principal/service) lives here, so
+  // every consumer saw agent actions as indistinguishable from human ones.
+  metadata: Record<string, unknown> | null;
 };
 
 export async function listAuditEvents(params: {
   actorUserId?: string | null;
   targetUserId?: string | null;
   action?: string | null;
+  /** "service" returns only agent/dialer actions; "human" excludes them. */
+  principal?: "service" | "human" | null;
   from?: Date | null;
   to?: Date | null;
   limit: number;
@@ -41,6 +47,11 @@ export async function listAuditEvents(params: {
   if (params.action) {
     clauses.push(`event_action = $${idx++}`);
     values.push(params.action);
+  }
+  if (params.principal === "service") {
+    clauses.push(`metadata->>'principal' = 'service'`);
+  } else if (params.principal === "human") {
+    clauses.push(`(metadata->>'principal' is distinct from 'service')`);
   }
   if (params.from) {
     clauses.push(`created_at >= $${idx++}`);
@@ -65,7 +76,8 @@ export async function listAuditEvents(params: {
             user_agent,
             request_id,
             success,
-            created_at
+            created_at,
+            metadata
      from audit_events
      ${where}
      order by created_at desc
