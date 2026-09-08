@@ -16,6 +16,8 @@ import clientRoutes from "./client.js";
 import clientVoiceRoutes from "./clientVoice.js";
 import clientDocumentsNeededRoutes from "./clientDocumentsNeeded.js";
 import clientIssuesRoutes from "./clientIssues.js";
+// BF_SERVER_PORTAL_ERRORS_v1
+import portalErrorsRoutes from "./portalErrors.js";
 import communicationsRoutes from "./communications.js";
 import companiesRoutes from "./companies.js";
 import crmRoutes from "./crm.js";
@@ -211,6 +213,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/banking", router: bankingRoutes },
   { path: "/client", router: clientRoutes },
   { path: "/client/issues", router: clientIssuesRoutes },
+  { path: "/portal/errors", router: portalErrorsRoutes },
   { path: "/communications", router: communicationsRoutes },
   { path: "/companies", router: companiesRoutes },
   { path: "/credit", router: creditRoutes },
