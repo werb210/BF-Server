@@ -12,9 +12,13 @@ describe("initializeWatchPushProvider", () => {
     expect(warning).toHaveBeenCalledWith(expect.stringContaining("watch_apns_not_configured"));
   });
 
-  it("fails production startup with missing variable names only", () => {
-    expect(() => initializeWatchPushProvider({ NODE_ENV: "production", WATCH_APNS_TEAM_ID: "secret-team" }))
-      .toThrow("WATCH_APNS_KEY_ID, WATCH_APNS_PRIVATE_KEY, WATCH_APNS_BUNDLE_ID");
+  it("reports partial production config and remains disabled", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(initializeWatchPushProvider({ NODE_ENV: "production", WATCH_APNS_TEAM_ID: "secret-team" }))
+      .toBe(false);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("WATCH_APNS_KEY_ID"));
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("WATCH_APNS_PRIVATE_KEY"));
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("WATCH_APNS_BUNDLE_ID"));
   });
 
   it("normalizes escaped key newlines and configures a complete provider", () => {

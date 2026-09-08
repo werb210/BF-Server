@@ -13,9 +13,20 @@ export function initializeWatchPushProvider(env: NodeJS.ProcessEnv = process.env
   }
   const missing = NAMES.filter((name) => !env[name]?.trim());
   if (missing.length) {
-    const message = `Incomplete Watch APNs configuration; missing: ${missing.join(", ")}`;
-    if (env.NODE_ENV === "production") throw new Error(message);
-    console.warn(JSON.stringify({ event: "watch_apns_not_configured", missing }));
+    // BF_SERVER_BLOCK_v335_PUSH_INIT_NON_FATAL_v1
+    // This threw in production and took the whole server down on the staging
+    // slot 2026-09-08: WATCH_APNS_BUNDLE_ID was set, the other three were not,
+    // and the throw landed on line 3 of start() -- before app.listen(). The
+    // global error handler swallowed it, so every background worker ran while
+    // no port was ever bound. Azure reported Degraded and recycled the
+    // container while the workers kept hitting the database.
+    // Push is an optional subsystem. Partial config disables push loudly; it
+    // does not prevent the API from serving.
+    console.error(JSON.stringify({
+      event: "watch_apns_misconfigured",
+      missing,
+      effect: "push disabled; server continues",
+    }));
     return false;
   }
   const privateKey = env.WATCH_APNS_PRIVATE_KEY!.replace(/\\n/g, "\n");
