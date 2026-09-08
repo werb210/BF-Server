@@ -20,6 +20,11 @@ export function isPermanentSmsFailure(err: unknown): boolean {
   return (PERMANENT_SMS_ERROR_CODES as readonly number[]).includes(twilioErrorCode(err));
 }
 
+/** True when an SMS body contains content that can be delivered. */
+export function isSendableBody(raw: unknown): boolean {
+  return typeof raw === "string" && raw.trim().length > 0;
+}
+
 /** True when the number is provably unable to receive SMS. */
 export function isUndeliverableNumber(raw: unknown): boolean {
   const digits = String(raw ?? "").replace(/[^0-9]/g, "");
