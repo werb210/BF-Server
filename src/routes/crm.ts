@@ -239,6 +239,18 @@ router.get("/contacts/:id/ai-summary", safeHandler(async (req: any, res: any) =>
   ]);
   return respondOk(res, { summary });
 }));
+// BF_SERVER_CONTACT_STAGE_HISTORY_v1 - stage-change audit trail across the contact's applications.
+router.get("/contacts/:id/stage-events", safeHandler(async (req: any, res: any) => {
+  const id = req.params.id;
+  const { rows } = await pool.query(
+    `SELECT e.id::text, e.application_id::text AS application_id, e.from_stage, e.to_stage,
+            e.trigger, e.triggered_by, e.reason, e.created_at
+       FROM application_stage_events e
+      WHERE e.application_id IN (SELECT id FROM applications WHERE contact_id = $1::uuid)
+      ORDER BY e.created_at DESC
+      LIMIT 100`, [id]);
+  respondOk(res, rows);
+}));
 router.get("/contacts/:id/applications", safeHandler(async (req: any, res: any) => {
   // BF_SERVER_BLOCK_v302_CRM_CONTACT_APPLICATIONS_SCHEMA_FIX_v1
   // The CRM contact-drawer "Applications" sub-section consumes this
