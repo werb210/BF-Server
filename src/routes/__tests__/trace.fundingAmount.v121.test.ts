@@ -49,13 +49,16 @@ describe("v121 E2E trace: $1,000,000 in Step 1 ➜ pipeline card", () => {
     return null;
   })();
 
-  it("HOP 1 — Step 1 stores the typed value at app.kyc.fundingAmount", () => {
-    if (!step1Src) return;
-    expect(step1Src).toMatch(/fundingAmount:\s*sanitizeCurrencyInput/);
+  it("HOP 1 — Step 1 stores the typed value at app.kyc.fundingAmount", (ctx) => {
+    if (!step1Src) return ctx.skip();
+    // BF_SERVER_BLOCK_v334: Step 1 moved to the format-on-keystroke helper in
+    // BF_CLIENT_BLOCK_v158. Accept either currency helper; the contract that
+    // matters is that the typed value lands on kyc.fundingAmount.
+    expect(step1Src).toMatch(/fundingAmount:\s*(sanitizeCurrencyInput|formatCurrencyOnInput)/);
     expect(step1Src).toMatch(/value=\{app\.kyc\.fundingAmount/);
   });
 
-  it("HOP 2 — buildSubmissionPayload writes kyc.fundingAmount AND application.capital_amount", () => {
+  it("HOP 2 — buildSubmissionPayload writes kyc.fundingAmount AND application.capital_amount", (ctx) => {
     const submissionTs = (() => {
       const candidates = [
         path.resolve(__dirname, "../../../../BF-client-main/client-app/src/wizard/submission.ts"),
@@ -64,7 +67,7 @@ describe("v121 E2E trace: $1,000,000 in Step 1 ➜ pipeline card", () => {
       for (const p of candidates) { try { return fs.readFileSync(p, "utf8"); } catch {} }
       return null;
     })();
-    if (!submissionTs) return;
+    if (!submissionTs) return ctx.skip();
     expect(submissionTs).toMatch(/kyc_answers:\s*app\.kyc/);
     expect(submissionTs).toMatch(
       /capital_amount:\s*\(app\.kyc as any\)\?\.capitalAmount\s*\?\?\s*\(app\.kyc as any\)\?\.fundingAmount/
@@ -119,7 +122,7 @@ describe("v121 E2E trace: $1,000,000 in Step 1 ➜ pipeline card", () => {
     expect(portalSrc).toMatch(/items:\s*cards/);
   });
 
-  it("HOP 7 — staff PipelinePage renders requested_amount as $1,000,000", () => {
+  it("HOP 7 — staff PipelinePage renders requested_amount as $1,000,000", (ctx) => {
     const portalPageSrc = (() => {
       const candidates = [
         path.resolve(__dirname, "../../../../BF-portal-main/src/pages/pipeline/PipelinePage.tsx"),
@@ -128,7 +131,7 @@ describe("v121 E2E trace: $1,000,000 in Step 1 ➜ pipeline card", () => {
       for (const p of candidates) { try { return fs.readFileSync(p, "utf8"); } catch {} }
       return null;
     })();
-    if (!portalPageSrc) return;
+    if (!portalPageSrc) return ctx.skip();
     expect(portalPageSrc).toMatch(/card\.requested_amount/);
     expect(portalPageSrc).toMatch(/Number\(card\.requested_amount\)\.toLocaleString\(\)/);
     // BF_SERVER_STALE_EMAIL_IMAGE_TESTS_v16 - PipelinePage now renders
