@@ -15,6 +15,8 @@ import clientRoutes from "./client.js";
 // BF_SERVER_BLOCK_53_v1 -- mini-portal voice + needed-docs endpoints
 import clientVoiceRoutes from "./clientVoice.js";
 import clientDocumentsNeededRoutes from "./clientDocumentsNeeded.js";
+// BF_SERVER_WATCH_SNAPSHOT_v1
+import watchSnapshotRoutes from "../watch/snapshotRoutes.js";
 import clientIssuesRoutes from "./clientIssues.js";
 // BF_SERVER_PORTAL_ERRORS_v1
 import portalErrorsRoutes from "./portalErrors.js";
@@ -165,6 +167,7 @@ const watchRoutes = Router();
 watchRoutes.use("/auth", watchAuthRoutes);
 watchRoutes.use("/devices", watchDeviceRoutes);
 watchRoutes.use(watchDataRoutes);
+watchRoutes.use(watchSnapshotRoutes);
 
 const combinedMayaRoutes = Router();
 // BF_SERVER_BLOCK_v674 - website widget posts /api/maya/website-chat
