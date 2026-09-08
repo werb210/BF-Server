@@ -18,6 +18,11 @@ export type AuditParams = {
   success: boolean;
   metadata?: Record<string, unknown> | null;
   client?: Queryable;
+  // BF_SERVER_SERVICE_PRINCIPAL_v1 - set from req.user for service tokens
+  // (Maya, dialer). Folded into metadata so the timeline can tell an agent
+  // action apart from a human one on the same Staff role, without a schema
+  // change or a second actor column.
+  serviceName?: string | null;
 };
 
 export async function recordAuditEvent(params: AuditParams): Promise<void> {
@@ -25,10 +30,13 @@ export async function recordAuditEvent(params: AuditParams): Promise<void> {
   const requestId = params.requestId ?? fetchRequestId() ?? null;
   const eventType = params.eventType ?? params.action;
   const eventAction = params.eventAction ?? params.action;
+  const enriched = params.serviceName
+    ? { ...(params.metadata ?? {}), principal: "service", service: params.serviceName }
+    : params.metadata;
   const metadata =
-    params.metadata === undefined || params.metadata === null
+    enriched === undefined || enriched === null
       ? null
-      : JSON.stringify(params.metadata);
+      : JSON.stringify(enriched);
   await runner.query(
     `insert into audit_events
      (actor_user_id, target_user_id, target_type, target_id, event_type, event_action, ip_address, user_agent, request_id, success, metadata)
