@@ -75,6 +75,12 @@ router.post("/calls/:id/disposition", async (req: any, res) => {
         WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE source = 'CALL_DISPOSITION' AND source_ref_id = $7::uuid)`,
       [row.silo, rule.label, `Auto-created from call outcome: ${disposition}`, String(rule.days), req.watch.staffUserId, row.contact_id, id]);
   }
+  // BF_SERVER_DISPOSITION_NOTE_v1 - record every outcome on the contact timeline (best-effort).
+  if (row?.contact_id) {
+    await pool.query(
+      `INSERT INTO crm_notes (body, contact_id, silo) VALUES ($1, $2::uuid, $3)`,
+      [`Call outcome: ${disposition.replace(/_/g, " ")}`, row.contact_id, row.silo]).catch(() => {});
+  }
   return res.json({ id, disposition });
 });
 
