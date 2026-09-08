@@ -1,6 +1,6 @@
 import { type PoolClient } from "pg";
 import { pool, runQuery } from "../../db.js";
-import { fetchRequestId } from "../../observability/requestContext.js";
+import { fetchRequestId, fetchRequestServiceName } from "../../observability/requestContext.js";
 
 type Queryable = Pick<PoolClient, "query" | "runQuery">;
 
@@ -30,8 +30,11 @@ export async function recordAuditEvent(params: AuditParams): Promise<void> {
   const requestId = params.requestId ?? fetchRequestId() ?? null;
   const eventType = params.eventType ?? params.action;
   const eventAction = params.eventAction ?? params.action;
-  const enriched = params.serviceName
-    ? { ...(params.metadata ?? {}), principal: "service", service: params.serviceName }
+  // BF_SERVER_AUDIT_PRINCIPAL_CONTEXT_v1 - explicit argument wins; otherwise
+  // fall back to the request store, so untouched call sites attribute too.
+  const serviceName = params.serviceName ?? fetchRequestServiceName();
+  const enriched = serviceName
+    ? { ...(params.metadata ?? {}), principal: "service", service: serviceName }
     : params.metadata;
   const metadata =
     enriched === undefined || enriched === null

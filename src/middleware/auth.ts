@@ -7,6 +7,8 @@ import { isRole, ROLES } from "../auth/roles.js";
 // BF_SERVER_BLOCK_BI_ROUND5_AUTH_SILO_REFRESH_v1 -- see comment by
 // the call site below.
 import { resolveSiloFromRequest } from "./silo.js";
+// BF_SERVER_AUDIT_PRINCIPAL_CONTEXT_v1
+import { markRequestServicePrincipal } from "../observability/requestContext.js";
 
 type AuthorizationOptions = {
   roles?: string[];
@@ -97,6 +99,10 @@ export async function auth(req: Request, res: Response, next: NextFunction) {
     // communications.ts, calls.ts, users.service.ts -- 46 call
     // sites total). Re-resolve here, now that req.user is set, so
     // every downstream getSilo(res) returns the correct value.
+    // Every recordAuditEvent below this point picks the principal up from
+    // the async store without the call site knowing about it.
+    if (isServicePrincipal) markRequestServicePrincipal(String(decodedAny.service ?? "unknown"));
+
     res.locals.silo = resolveSiloFromRequest(req);
 
     next();
