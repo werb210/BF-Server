@@ -24,9 +24,41 @@ describe("it cannot text the same person twice", () => {
   });
 
   it("stamps only AFTER a successful send, so an outage retries", () => {
+    // BF_SERVER_ABANDON_NUDGE_ASSERT_v2
+    // The invariant is that the SUCCESS stamp follows the send, so a Twilio
+    // outage retries instead of silently skipping the applicant. indexOf found
+    // the first occurrence of the stamp string, and v160 added an earlier one
+    // that retires a number the deliverability guard rejected -- different
+    // purpose, same text. Assert the behaviours, not their byte offsets.
     const send = SRC.indexOf("await sendSMS(");
-    const stamp = SRC.indexOf("abandon_sms_sent_at = now()");
-    expect(stamp).toBeGreaterThan(send);
+    expect(send).toBeGreaterThan(-1);
+
+    // A stamp exists after the send: success is recorded.
+    expect(SRC.indexOf("abandon_sms_sent_at = now()", send)).toBeGreaterThan(send);
+
+    // Every stamp before the send is inside the undeliverable guard, i.e. it
+    // retires a number we will never text, not a send we never made.
+    const beforeSend = SRC.slice(0, send);
+    const earlyStamps = beforeSend.split("abandon_sms_sent_at = now()").length - 1;
+    if (earlyStamps > 0) {
+      const guard = beforeSend.lastIndexOf("isUndeliverableNumber(");
+      const lastEarlyStamp = beforeSend.lastIndexOf("abandon_sms_sent_at = now()");
+      expect(guard).toBeGreaterThan(-1);
+      expect(lastEarlyStamp).toBeGreaterThan(guard);
+    }
+
+    // The stamp is never inside the catch: a failed send must stay eligible.
+    const catchIndex = SRC.indexOf("} catch (err)", send);
+    if (catchIndex > -1) {
+      const catchBody = SRC.slice(catchIndex);
+      const permanentOnly = catchBody.indexOf("isPermanentSmsFailure");
+      const stampInCatch = catchBody.indexOf("abandon_sms_sent_at = now()");
+      if (stampInCatch > -1) {
+        // Only a permanent rejection may stamp from the catch (v119).
+        expect(permanentOnly).toBeGreaterThan(-1);
+        expect(permanentOnly).toBeLessThan(stampInCatch);
+      }
+    }
   });
 
   it("does the same for the call task", () => {
