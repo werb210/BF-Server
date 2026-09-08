@@ -13,6 +13,12 @@
 // on the applications table staying small. Anyone who has replied STOP is
 // excluded via contacts.sms_opt_out, which smsInboundWebhook sets across all silos.
 import type { Pool } from "pg";
+// BF_SERVER_ABANDON_ATTEMPT_CAP_v1
+import {
+  isPermanentSmsFailure,
+  isSendableBody,
+  isUndeliverableNumber,
+} from "../lib/smsDeliverability.js";
 import { sendSMS } from "../services/smsService.js";
 
 const TICK_MS = 15 * 60_000;
@@ -73,6 +79,10 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
            JOIN contacts c ON c.id = a.contact_id
           WHERE a.submitted_at IS NULL
             AND a.abandon_sms_sent_at IS NULL
+            -- BF_SERVER_ABANDON_ATTEMPT_CAP_v1 - three transient failures and
+            -- the row stops being eligible. Retry is for an outage, not for a
+            -- number that will never accept a message.
+            AND COALESCE(a.abandon_sms_attempts, 0) < 3
             AND 'application_started' = ANY(COALESCE(c.tags, '{}'))
             AND a.updated_at < ($1 || ' hours')::interval * -1 + now()
             AND a.updated_at > now() - ($2 || ' months')::interval
@@ -93,6 +103,23 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
       for (const row of due.rows) {
         if (stopped) break;
         try {
+          // BF_SERVER_ABANDON_ATTEMPT_CAP_v1 - the SQL guards run at selection
+          // time; this runs at send time against the same shared helper the
+          // rest of the codebase uses, so a number that slipped past the LIKE
+          // patterns still never reaches Twilio.
+          if (isUndeliverableNumber(row.phone) || !isSendableBody(ABANDON_SMS_BODY)) {
+            await pool.query(
+              `UPDATE applications SET abandon_sms_sent_at = now() WHERE id = $1`,
+              [row.id],
+            );
+            continue;
+          }
+          // Count the attempt before the send: a crash mid-send must not buy a
+          // free retry.
+          await pool.query(
+            `UPDATE applications SET abandon_sms_attempts = COALESCE(abandon_sms_attempts, 0) + 1 WHERE id = $1`,
+            [row.id],
+          );
           await sendSMS(String(row.phone), ABANDON_SMS_BODY);
           // Stamped only after the send succeeds, so a Twilio outage retries on
           // the next tick instead of silently skipping the applicant.
@@ -119,7 +146,7 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
           //   30006 landline or unreachable carrier
           // Anything else - network blips, rate limits, auth - still retries.
           const code = Number((err as any)?.code ?? (err as any)?.status ?? 0);
-          const permanent = [21211, 21610, 21612, 21614, 21408, 30003, 30005, 30006].includes(code);
+          const permanent = isPermanentSmsFailure(err); // 21211, 21610, 21612, 21614, 21408, 30003, 30005, 30006
 
           const bumped = await pool.query<{ abandon_sms_attempts: number }>(
             `UPDATE applications SET abandon_sms_attempts = abandon_sms_attempts + 1
