@@ -64,12 +64,24 @@ export async function auth(req: Request, res: Response, next: NextFunction) {
     const hydratedCaps = explicitCaps
       ?? (effectiveRole && isRole(effectiveRole) ? fetchCapabilitiesForRole(effectiveRole) : []);
 
+    // BF_SERVER_SERVICE_PRINCIPAL_v1
+    // Maya and the dialer authenticate as role Staff with an id that matches
+    // no users row, so dbUser is null and every audit row they write carries a
+    // dangling actor_user_id. AGENT_SERVICE_TOKEN_v1 adds principal/service
+    // claims to the agent token; surface them here so downstream writers can
+    // record who actually acted. Absent claims mean a human token: unchanged.
+    const isServicePrincipal = decodedAny.principal === "service";
+
     (req as any).user = {
       ...(decoded as any),
       ...(dbUser ?? {}),
       userId,
       capabilities: hydratedCaps,
       silos: dbUser?.silos ?? (Array.isArray((decoded as any).silos) ? (decoded as any).silos : []),
+      isServicePrincipal,
+      serviceName: isServicePrincipal ? String(decodedAny.service ?? "unknown") : null,
+      // A service id that resolves to no users row is expected, not corruption.
+      actorResolved: Boolean(dbUser),
     };
 
     // BF_SERVER_BLOCK_BI_ROUND5_AUTH_SILO_REFRESH_v1
