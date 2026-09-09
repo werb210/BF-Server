@@ -196,7 +196,11 @@ export async function enrollContacts(pool: Pool, sequenceId: string, contactIds:
   const inserted = await pool.query(
     `INSERT INTO marketing_sequence_enrollments (sequence_id, contact_id, silo, current_step, status, next_run_at, enrolled_at)
        SELECT $1, c.id, $2, 0, 'active', $3, now() FROM contacts c
-        WHERE c.id = ANY($4::uuid[]) AND c.silo=$2 AND (COALESCE(c.email,'')<>'' OR COALESCE(c.phone,'')<>'')
+        -- BF_SERVER_ENROLL_CROSS_SILO_v1
+        -- Named enrollment is an explicit staff action: someone picked this
+        -- contact. The silo filter silently dropped them and the send never
+        -- happened. Bulk enrollment (enrollSequence) still filters by silo.
+        WHERE c.id = ANY($4::uuid[]) AND (COALESCE(c.email,'')<>'' OR COALESCE(c.phone,'')<>'')
      ON CONFLICT (sequence_id, contact_id) DO NOTHING`,
     [sequenceId, seq.rows[0].silo, nextRun, contactIds],
   );
