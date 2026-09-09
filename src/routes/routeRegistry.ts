@@ -17,6 +17,8 @@ import clientVoiceRoutes from "./clientVoice.js";
 import clientDocumentsNeededRoutes from "./clientDocumentsNeeded.js";
 // BF_SERVER_WATCH_SNAPSHOT_v1
 import watchSnapshotRoutes from "../watch/snapshotRoutes.js";
+// BF_SERVER_SUBMIT_FUNNEL_v1
+import submitFunnelRoutes from "./client/submitFunnel.js";
 import clientIssuesRoutes from "./clientIssues.js";
 // BF_SERVER_PORTAL_ERRORS_v1
 import portalErrorsRoutes from "./portalErrors.js";
@@ -196,6 +198,12 @@ const combinedOffersRoutes = Router();
 combinedOffersRoutes.use(offersRoutes);
 combinedOffersRoutes.use(offerAcceptanceRoutes);
 
+// BF_SERVER_SUBMIT_FUNNEL_v1 — keep the existing admin surface and the funnel
+// endpoints under one registry mount; duplicate paths are intentionally ignored.
+const combinedAdminRoutes = Router();
+combinedAdminRoutes.use(submitFunnelRoutes);
+combinedAdminRoutes.use(adminRoutes);
+
 // Register SMS inbound also at /api/sms/inbound for Twilio console config flexibility.
 // Apply silo middleware globally to all /api routes.
 export function applySiloMiddleware(app: import("express").Application): void {
@@ -216,6 +224,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/banking", router: bankingRoutes },
   { path: "/client", router: clientRoutes },
   { path: "/client/issues", router: clientIssuesRoutes },
+  { path: "/admin", router: combinedAdminRoutes },
   { path: "/portal/errors", router: portalErrorsRoutes },
   { path: "/communications", router: communicationsRoutes },
   { path: "/companies", router: companiesRoutes },
@@ -234,7 +243,6 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   // BF_SERVER_BLOCK_v335_AUTH_HARDENING_AND_DEAD_CODE_v1 -- Edit 5
   // Mount removed: dead "/lender-submissions" stub route entry.
   // See Edit 4 above.
-  { path: "/admin", router: adminRoutes },
   { path: "/marketing", router: marketingRoutes },
   { path: "/offers", router: combinedOffersRoutes },
   { path: "/messages", router: messagesRoutes },
