@@ -21,6 +21,7 @@ import { conversionsConfigured, findPendingConversions, uploadFundedConversions,
 import { linkedInConversionsConfigured, findPendingLinkedInConversions, uploadFundedLinkedInConversions } from "../services/linkedInAdsConversions.js"; // BF_SERVER_LINKEDIN_CONVERSIONS_v1
 import { googleAdsConfigured, runGoogleAdsReport } from "../services/googleAdsService.js";
 import { linkedInAdsConfigured, runLinkedInAdsReport } from "../services/linkedInAdsService.js"; // BF_SERVER_LINKEDIN_ADS_v1
+import adSpendAnalysisRoutes from "./marketing/adSpendAnalysis.js"; // BF_SERVER_AD_SPEND_ANALYSIS_v1
 // BF_EMAIL_TEMPLATE_IMPORTS_v1
 import multer from "multer";
 import path from "node:path";
@@ -34,6 +35,7 @@ const router = Router();
 
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.MARKETING_VIEW]));
+router.use(adSpendAnalysisRoutes);
 
 // BF_SERVER_BLOCK_v780_PUBLIC_LANDING — render+store a landing page from
 // branded-email fields; returns the public boreal.finance URL.
