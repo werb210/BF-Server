@@ -136,7 +136,44 @@ export function startLenderPackageWorker(pool: Pool): { stop: () => void } {
             continue;
           }
 
-          await dispatchToSelected({ pool, applicationId }, lenders.rows);
+          // BF_SERVER_DISPATCH_RESULT_v1
+          // dispatchToSelected returns the lenders that actually received the
+          // package and writes per-lender failure_reason to
+          // application_packages. That return value was discarded: an all-fail
+          // dispatch marked the job completed and moved the card to
+          // "Off to Lender", so a lender receiving nothing looked identical to
+          // a successful send.
+          const sent = await dispatchToSelected({ pool, applicationId }, lenders.rows);
+          const delivered = Array.isArray(sent) ? sent.length : 0;
+
+          if (delivered === 0) {
+            const reasons = await pool.query<{ failure_reason: string | null }>(
+              `SELECT failure_reason FROM application_packages
+                WHERE application_id::text = ($1)::text AND status = 'failed'`,
+              [applicationId],
+            ).catch(() => ({ rows: [] as { failure_reason: string | null }[] }));
+            const detail = reasons.rows
+              .map((r) => r.failure_reason ?? "unknown")
+              .slice(0, 5).join("; ") || "no_lender_accepted_package";
+
+            await pool.query(
+              `UPDATE job_queue SET status = 'failed', error = $2, updated_at = now() WHERE id = $1`,
+              [job.id, `dispatch_all_failed: ${detail}`.slice(0, 500)],
+            );
+            console.error("[lender_package_worker] every lender failed — not advancing stage", {
+              applicationId, jobId: job.id, lenderCount: lenders.rows.length, detail,
+            });
+            continue;
+          }
+
+          if (delivered < lenders.rows.length) {
+            // Partial delivery still advances -- some lender has the file -- but
+            // it must not be silent.
+            console.error("[lender_package_worker] partial delivery", {
+              applicationId, jobId: job.id,
+              delivered, expected: lenders.rows.length,
+            });
+          }
 
           // Advance the pipeline once the package is actually dispatched. The
           // worker is the delivery path for webhook/poller/admin-finalized apps
