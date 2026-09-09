@@ -12,6 +12,12 @@ import { pnwSigningSatisfiedForDispatch } from "../signnow/pnwSigning.js";
 import { sbaSigningSatisfiedForDispatch } from "../signnow/sba/sbaSigning.js"; // BF_SERVER_SBA_DISPATCH_GATE_v96
 
 const POLL_MS = Number(process.env.LENDER_PACKAGE_POLL_MS || 15000);
+// BF_SERVER_LENDER_PACKAGE_BACKOFF_v1
+// Signing can take days. Re-checking every 15s achieves nothing except holding
+// a batch slot; back off, and stop entirely after a fortnight so a job that
+// will never sign is visible rather than spinning.
+const UNSIGNED_RETRY_MS = Number(process.env.LENDER_PACKAGE_UNSIGNED_RETRY_MS || 5 * 60 * 1000);
+const MAX_UNSIGNED_ATTEMPTS = Number(process.env.LENDER_PACKAGE_MAX_UNSIGNED_ATTEMPTS || 4032);
 const BATCH = Math.max(1, Number(process.env.LENDER_PACKAGE_BATCH || 3));
 
 type JobRow = {
@@ -45,6 +51,31 @@ export function startLenderPackageWorker(pool: Pool): { stop: () => void } {
         [BATCH]
       );
 
+      // Yield the batch slot instead of re-claiming on the next tick.
+      const requeueUnsigned = async (jobId: string, reason: string, applicationId: string) => {
+        const bumped = await pool.query<{ attempts: number }>(
+          `UPDATE job_queue
+              SET status = 'pending',
+                  attempts = COALESCE(attempts, 0) + 1,
+                  next_attempt_at = now() + ($2 || ' milliseconds')::interval,
+                  error = $3,
+                  updated_at = now()
+            WHERE id = $1
+        RETURNING attempts`,
+          [jobId, UNSIGNED_RETRY_MS, reason],
+        );
+        const attempts = bumped.rows[0]?.attempts ?? 0;
+        if (attempts >= MAX_UNSIGNED_ATTEMPTS) {
+          await pool.query(
+            `UPDATE job_queue SET status = 'failed', error = $2, updated_at = now() WHERE id = $1`,
+            [jobId, `${reason}_after_${attempts}_attempts`],
+          );
+          console.error("[lender_package_worker] giving up — never signed", {
+            applicationId, jobId, reason, attempts,
+          });
+        }
+      };
+
       for (const job of claimed.rows) {
         const applicationId =
           job.payload && typeof job.payload.applicationId === "string"
@@ -68,32 +99,20 @@ export function startLenderPackageWorker(pool: Pool): { stop: () => void } {
             [applicationId]
           );
           if (!sg.rows[0]?.signed) {
-            await pool.query(
-              `UPDATE job_queue SET status = 'pending', updated_at = now() WHERE id = $1`,
-              [job.id]
-            );
-            console.warn("[lender_package_worker] not signed yet — requeued", { applicationId, jobId: job.id });
+            await requeueUnsigned(job.id, "not_signed_yet", applicationId);
             continue;
           }
 
           // BF_SERVER_BLOCK_PNW_ORDER_GATE_v2 — never dispatch while a PNW group
           // exists and is not confirmed-signed (defense-in-depth behind the signing gate).
           if (!(await pnwSigningSatisfiedForDispatch(applicationId))) {
-            await pool.query(
-              `UPDATE job_queue SET status = 'pending', updated_at = now() WHERE id = $1`,
-              [job.id]
-            );
-            console.warn("[lender_package_worker] pnw not signed yet — requeued", { applicationId, jobId: job.id });
+            await requeueUnsigned(job.id, "pnw_not_signed_yet", applicationId);
             continue;
           }
 
           // BF_SERVER_SBA_DISPATCH_GATE_v96: requeue rather than dispatching unsigned SBA forms.
           if (!(await sbaSigningSatisfiedForDispatch(applicationId))) {
-            await pool.query(
-              `UPDATE job_queue SET status = 'pending', updated_at = now() WHERE id = $1`,
-              [job.id]
-            );
-            console.warn("[lender_package_worker] sba forms not signed yet — requeued", { applicationId, jobId: job.id });
+            await requeueUnsigned(job.id, "sba_forms_not_signed_yet", applicationId);
             continue;
           }
 
