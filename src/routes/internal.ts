@@ -120,4 +120,46 @@ router.get("/failed-jobs", wrap(async () => {
     return ok(result.rows);
 }));
 
+// BF_SERVER_JOB_QUEUE_VISIBILITY_v1
+// job_queue drives lender package dispatch and nothing read it: /jobs returns
+// replay jobs and /failed-jobs reads the failed_jobs table. Diagnosing a
+// stalled dispatch meant opening psql.
+router.get("/job-queue", wrap(async () => {
+  const summary = await runQuery(
+    `SELECT type, status, COUNT(*)::text AS count,
+            MIN(created_at) AS oldest,
+            MAX(updated_at) AS last_touched,
+            MAX(COALESCE(attempts, 0))::text AS max_attempts
+       FROM job_queue
+      GROUP BY type, status
+      ORDER BY COUNT(*) DESC`
+  );
+
+  // A pending row whose next_attempt_at has passed is claimable right now.
+  // A large number here alongside an old "oldest" is a stalled queue.
+  const claimable = await runQuery(
+    `SELECT type, COUNT(*)::text AS count
+       FROM job_queue
+      WHERE status = 'pending'
+        AND COALESCE(next_attempt_at, created_at) <= now()
+      GROUP BY type ORDER BY COUNT(*) DESC`
+  );
+
+  const stuck = await runQuery(
+    `SELECT id, type, status, error, COALESCE(attempts, 0)::text AS attempts,
+            created_at, next_attempt_at, payload
+       FROM job_queue
+      WHERE status IN ('pending', 'running')
+        AND created_at < now() - interval '1 hour'
+      ORDER BY created_at ASC
+      LIMIT 50`
+  );
+
+  return ok({
+    summary: summary.rows,
+    claimableNow: claimable.rows,
+    stuckOverAnHour: stuck.rows,
+  });
+}));
+
 export default router;
