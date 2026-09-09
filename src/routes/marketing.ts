@@ -10,7 +10,7 @@ import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridSe
 import { smsMarketingConfigured, sendMarketingSms, renderMarketingSms } from "../services/marketingSms.js";
 import { SMS_ELIGIBLE_SQL } from "../services/smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1
 import { countEmailRecipients, runEmailSend, countSmsRecipients, runSmsSend } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1 BF_SERVER_SEND_QUEUE_SMS_v1
-import { enrollContacts, enrollSequence } from "../services/sequenceEngine.js"; // BF_SERVER_BLOCK_v785_SEQUENCES
+import { enrollContactsDetailed, enrollSequence } from "../services/sequenceEngine.js"; // BF_SERVER_BLOCK_v785_SEQUENCES
 import { suggestionsConfigured, buildSuggestions, applySuggestion, adsMutateAllowed, ADS_MUTATE_BLOCKED_REASON } from "../services/googleAdsSuggestions.js"; // BF_SERVER_ADS_WRITE_GATE_v56
 import { linkedInSuggestionsConfigured, buildLinkedInSuggestions, applyLinkedInSuggestion } from "../services/linkedInAdsSuggestions.js"; // BF_SERVER_LINKEDIN_SUGGESTIONS_v1
 import { previewIcp, buildHashedList, buildLinkedInAudienceCsv } from "../services/googleAdsCustomerMatch.js";
@@ -1258,8 +1258,10 @@ router.post("/sequences/:id/enroll", requireAuth, safeHandler(async (req: any, r
   const raw = Array.isArray(req.body?.contactIds) ? req.body.contactIds : [];
   const ids = [...new Set(raw.map((value: unknown) => String(value).trim()).filter((value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)))] as string[];
   if (!ids.length) { respondOk(res, { error: "contactIds required" }); return; }
-  const enrolled = await enrollContacts(pool, id, ids);
-  respondOk(res, { enrolled, requested: ids.length, skipped: ids.length - enrolled });
+  // BF_SERVER_ENROLL_SKIPS_v1 - report who was dropped and why.
+  const result = await enrollContactsDetailed(pool, id, ids);
+  const enrolled = result.enrolled;
+  respondOk(res, { enrolled, requested: ids.length, skipped: result.skipped });
 }));
 
 router.post("/sequences/:id/pause", requireAuth, safeHandler(async (req: any, res: any) => {

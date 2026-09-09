@@ -113,6 +113,80 @@ export async function enrollSequence(pool: Pool, sequenceId: string): Promise<nu
 
 
 // BF_SERVER_SEQ_ENROLL_CONTACTS_v1 - explicit, idempotent list-view enrollment.
+// BF_SERVER_ENROLL_SKIPS_v1
+export type EnrollmentSkip = {
+  contactId: string;
+  name: string | null;
+  reason: "wrong_silo" | "no_email_or_phone" | "already_enrolled" | "not_found";
+  detail: string;
+};
+
+export type EnrollmentResult = { enrolled: number; skipped: EnrollmentSkip[] };
+
+/**
+ * BF_SERVER_ENROLL_SKIPS_v1
+ * The INSERT below silently drops a contact in three ways: a silo that does not
+ * match the sequence, no email and no phone, or an existing enrollment hitting
+ * ON CONFLICT DO NOTHING. Callers previously received only a count, so adding
+ * someone to a sequence and enrolling nobody looked identical to success.
+ */
+export async function enrollContactsDetailed(
+  pool: Pool, sequenceId: string, contactIds: string[],
+): Promise<EnrollmentResult> {
+  if (!contactIds.length) return { enrolled: 0, skipped: [] };
+  const seq = await pool.query(`SELECT silo FROM marketing_sequences WHERE id=$1`, [sequenceId]);
+  if (!seq.rows[0]) return { enrolled: 0, skipped: [] };
+  const silo = seq.rows[0].silo;
+
+  const enrolled = await enrollContacts(pool, sequenceId, contactIds);
+
+  // Anything asked for that is not now enrolled was dropped; say why.
+  const rows = await pool.query<{
+    id: string; full_name: string | null; silo: string | null;
+    email: string | null; phone: string | null; already: boolean;
+  }>(
+    `SELECT c.id::text AS id, c.full_name, c.silo, c.email, c.phone,
+            EXISTS (SELECT 1 FROM marketing_sequence_enrollments e
+                     WHERE e.sequence_id = $1 AND e.contact_id = c.id) AS already
+       FROM contacts c WHERE c.id = ANY($2::uuid[])`,
+    [sequenceId, contactIds],
+  );
+
+  const found = new Map(rows.rows.map((r) => [r.id, r]));
+  const skipped: EnrollmentSkip[] = [];
+
+  for (const id of contactIds) {
+    const c = found.get(id);
+    if (!c) {
+      skipped.push({ contactId: id, name: null, reason: "not_found", detail: "No such contact." });
+      continue;
+    }
+    if (c.silo !== silo) {
+      skipped.push({
+        contactId: id, name: c.full_name, reason: "wrong_silo",
+        detail: `Contact is in ${c.silo ?? "no"} silo; this sequence is ${silo}.`,
+      });
+      continue;
+    }
+    if (!c.email && !c.phone) {
+      skipped.push({
+        contactId: id, name: c.full_name, reason: "no_email_or_phone",
+        detail: "Contact has neither an email address nor a phone number.",
+      });
+      continue;
+    }
+    // Enrolled by this call, or already there from a previous one.
+    if (c.already && enrolled === 0) {
+      skipped.push({
+        contactId: id, name: c.full_name, reason: "already_enrolled",
+        detail: "Already enrolled in this sequence.",
+      });
+    }
+  }
+
+  return { enrolled, skipped };
+}
+
 export async function enrollContacts(pool: Pool, sequenceId: string, contactIds: string[]): Promise<number> {
   if (!contactIds.length) return 0;
   const seq = await pool.query(`SELECT silo, quiet_start, quiet_end FROM marketing_sequences WHERE id=$1`, [sequenceId]);
