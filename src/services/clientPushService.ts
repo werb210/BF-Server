@@ -3,6 +3,7 @@
 // per team, not per app, so the same credentials serve the client bundle IDs.
 // Best-effort by design — a failed notification must never fail the operation
 // that triggered it.
+import { logInfo } from "../observability/logger.js";
 import { pool } from "../db.js";
 import { AppleWatchApnsProvider, WatchApnsError } from "../watch/apnsProvider.js";
 
@@ -54,14 +55,21 @@ async function dropToken(token: string): Promise<void> {
 
 export async function sendClientPush(input: {
   userId: string; title: string; body: string; silo?: Silo; data?: Record<string, unknown>;
-}): Promise<{ sent: number; skipped: number }> {
-  if (!provider) return { sent: 0, skipped: 0 };
+}): Promise<{ sent: number; skipped: number; unsupported: number }> {
+  if (!provider) return { sent: 0, skipped: 0, unsupported: 0 };
   const environment = process.env.CLIENT_APNS_ENVIRONMENT === "sandbox" ? "sandbox" : "production";
   const rows = await tokensForUser(input.userId);
-  let sent = 0, skipped = 0;
+  let sent = 0, skipped = 0, unsupported = 0;
   for (const row of rows) {
-    // Android tokens are FCM, not APNs — never hand them to Apple.
-    if (row.platform && row.platform.toLowerCase() !== "ios") { skipped += 1; continue; }
+    // BF_PUSH_PLATFORM_VISIBILITY_v1
+    // Android tokens are FCM, not APNs — never hand them to Apple. Counting
+    // them as generic "skipped" hid the fact that every Android install gets
+    // nothing: both clients ship real Android builds. Count them separately
+    // so the gap is measurable rather than invisible.
+    if (row.platform && row.platform.toLowerCase() !== "ios") {
+      unsupported += 1;
+      continue;
+    }
     try {
       await provider.send({ token: row.token, environment }, {
         aps: { alert: { title: input.title, body: input.body }, sound: "default" },
@@ -73,5 +81,13 @@ export async function sendClientPush(input: {
       skipped += 1;
     }
   }
-  return { sent, skipped };
+  if (unsupported > 0) {
+    logInfo("client_push_unsupported_platform", {
+      userId: input.userId,
+      unsupported,
+      // FCM is not implemented. Until it is, these users receive nothing.
+      reason: "fcm_not_implemented",
+    });
+  }
+  return { sent, skipped, unsupported };
 }
