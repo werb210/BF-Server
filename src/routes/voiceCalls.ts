@@ -93,6 +93,50 @@ router.post("/resolve-caller", auth, async (req: any, res) => {
   // "client:<user uuid>". Resolve the user directly; never treat a UUID as a
   // phone number, which is what produced "Unknown caller".
   const clientIdentity = /^client:(.+)$/i.exec(raw.trim())?.[1]?.trim() ?? "";
+
+  // BF_SERVER_CLIENT_APP_CALLER_v1
+  // The client mini-portal mints `client-<applicationId>` (clientVoice.ts), so
+  // it arrives here as "client:client-<uuid>". The v54 branch below looks the
+  // remainder up in `users` - correct for a staff ring, never a match for an
+  // applicant - and then blanks the phone, so the caller showed as Unknown
+  // even with an application open in front of them. Resolve through the
+  // application to its contact first.
+  const clientAppId = /^client-([0-9a-f-]{36})$/i.exec(clientIdentity)?.[1] ?? "";
+  if (clientAppId) {
+    try {
+      const { rows } = await pool.query(
+        `SELECT c.id::text          AS contact_id,
+                c.full_name,
+                c.phone,
+                a.id::text          AS application_id,
+                a.business_name
+           FROM applications a
+           LEFT JOIN contacts c ON c.id = a.contact_id
+          WHERE a.id::text = $1
+          LIMIT 1`,
+        [clientAppId],
+      );
+      const hit = rows[0];
+      if (hit) {
+        const display = String(hit.full_name ?? "").trim()
+          || String(hit.business_name ?? "").trim()
+          || null;
+        if (display) {
+          return res.json({
+            ok: true,
+            matched: true,
+            isStaff: false,
+            name: display,
+            contactId: hit.contact_id ?? null,
+            applicationId: hit.application_id,
+            phone: hit.phone ?? null,
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error("resolve_caller_client_app_failed", { message: err?.message || String(err) });
+    }
+  }
   if (clientIdentity) {
     try {
       const { rows } = await pool.query(
