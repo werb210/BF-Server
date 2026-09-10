@@ -11,6 +11,8 @@ import { pool } from "../db.js";
 import { loadSbaContext } from "../signnow/sba/sbaOwners.js"; // BF_SERVER_SBA_1919_ATTACH_GATE_v162
 import { logInfo } from "../observability/logger.js"; // BF_SERVER_SBA_1919_ATTACH_GATE_v162
 
+import { callerOwnsApplication } from "../auth/clientApplicationOwnership.js";
+
 const router = Router();
 
 // BF_SERVER_SBA_1919_ATTACH_GATE_v162
@@ -389,6 +391,15 @@ router.get("/needed", async (req: Request, res: Response) => {
   const applicationId =
     typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : "";
   if (!applicationId) return res.status(400).json({ error: "applicationId is required" });
+
+  // BF_SERVER_DOCS_NEEDED_OWNERSHIP_v1
+  // Mounted at routeRegistry.ts:251, outside src/routes/client/index.ts, so the
+  // cross-application guard there never sees this request. Any known UUID
+  // returned that application's checklist - what is outstanding, what was
+  // rejected - to anyone who asked.
+  if (!(await callerOwnsApplication(req, applicationId))) {
+    return res.status(403).json({ error: "not_your_application" });
+  }
   try {
     const result = await computeOutstandingDocs(applicationId);
     return res.status(200).json(result);
