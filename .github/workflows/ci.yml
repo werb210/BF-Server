@@ -37,3 +37,47 @@ jobs:
 
       - name: Unit tests
         run: npm run test:ci
+
+  # BF_SERVER_INTEGRATION_IN_CI_v1
+  # 44 files / 70 tests were excluded from the unit run because they need a
+  # reachable Postgres, and then nothing ever ran them. Separate job so a
+  # database flake cannot redden the unit gate.
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bf_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Use Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - name: Install deps
+        run: npm install --include=optional
+
+      - name: Integration tests
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/bf_test
+          JWT_SECRET: ci-integration-secret-min-10
+          NODE_ENV: test
+        # These have not run in a long time. Report the result without
+        # blocking merges until the standing failures are burned down; flip
+        # continue-on-error off once it is green.
+        continue-on-error: true
+        run: npm run test:integration
