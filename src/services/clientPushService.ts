@@ -6,6 +6,8 @@
 import { logInfo } from "../observability/logger.js";
 import { pool } from "../db.js";
 import { AppleWatchApnsProvider, WatchApnsError } from "../watch/apnsProvider.js";
+// BF_SERVER_FCM_DELIVERY_v1
+import { FcmError, getFcmProvider, initializeFcmProvider, isFcmConfigured } from "./fcmProvider.js";
 
 type Silo = "BF" | "BI" | "SLF";
 
@@ -20,6 +22,7 @@ const BUNDLE_IDS: Record<Silo, string | undefined> = {
 
 export function initializeClientPushProvider(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env.NODE_ENV === "test") return false;
+  initializeFcmProvider(env);
   const team = env.WATCH_APNS_TEAM_ID?.trim();
   const keyId = env.WATCH_APNS_KEY_ID?.trim();
   const key = env.WATCH_APNS_PRIVATE_KEY?.replace(/\\n/g, "\n");
@@ -35,6 +38,8 @@ export function initializeClientPushProvider(env: NodeJS.ProcessEnv = process.en
 }
 
 export function isClientPushConfigured(): boolean { return configured; }
+
+export function isAnyClientPushConfigured(): boolean { return configured || isFcmConfigured(); }
 
 /** Test seam. */
 export function __setClientPushProvider(p: AppleWatchApnsProvider | null): void {
@@ -56,7 +61,7 @@ async function dropToken(token: string): Promise<void> {
 export async function sendClientPush(input: {
   userId: string; title: string; body: string; silo?: Silo; data?: Record<string, unknown>;
 }): Promise<{ sent: number; skipped: number; unsupported: number }> {
-  if (!provider) return { sent: 0, skipped: 0, unsupported: 0 };
+  if (!provider && !isFcmConfigured()) return { sent: 0, skipped: 0, unsupported: 0 };
   const environment = process.env.CLIENT_APNS_ENVIRONMENT === "sandbox" ? "sandbox" : "production";
   const rows = await tokensForUser(input.userId);
   let sent = 0, skipped = 0, unsupported = 0;
@@ -67,9 +72,25 @@ export async function sendClientPush(input: {
     // nothing: both clients ship real Android builds. Count them separately
     // so the gap is measurable rather than invisible.
     if (row.platform && row.platform.toLowerCase() !== "ios") {
-      unsupported += 1;
+      const fcm = getFcmProvider();
+      if (!fcm) {
+        unsupported += 1;
+        continue;
+      }
+      try {
+        await fcm.send({ token: row.token }, {
+          title: input.title,
+          body: input.body,
+          data: { silo: String(input.silo ?? "BF"), ...(input.data ?? {}) },
+        });
+        sent += 1;
+      } catch (error) {
+        if (error instanceof FcmError && error.invalidRegistration) await dropToken(row.token);
+        skipped += 1;
+      }
       continue;
     }
+    if (!provider) { unsupported += 1; continue; }
     try {
       await provider.send({ token: row.token, environment }, {
         aps: { alert: { title: input.title, body: input.body }, sound: "default" },
@@ -85,8 +106,7 @@ export async function sendClientPush(input: {
     logInfo("client_push_unsupported_platform", {
       userId: input.userId,
       unsupported,
-      // FCM is not implemented. Until it is, these users receive nothing.
-      reason: "fcm_not_implemented",
+      reason: "push_transport_not_configured",
     });
   }
   return { sent, skipped, unsupported };
