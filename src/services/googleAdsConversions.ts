@@ -45,7 +45,8 @@ export async function findPendingConversions(limit = 200): Promise<PendingConver
 }
 
 let tokenCache: { token: string; expiresAt: number } | null = null;
-async function accessToken(): Promise<string> {
+// BF_SERVER_AD_NEGATIVES_v1 - shared with googleAdsNegatives.ts
+export async function accessToken(): Promise<string> {
   if (tokenCache && tokenCache.expiresAt > Date.now() + 60_000) return tokenCache.token;
   const body = new URLSearchParams({
     client_id: String(process.env.GOOGLE_ADS_CLIENT_ID),
