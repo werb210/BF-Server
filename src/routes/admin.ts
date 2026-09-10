@@ -2,6 +2,9 @@ import { Router } from "express";
 import { requireAuth, requireCapability } from "../middleware/auth.js";
 import { adminRateLimit } from "../middleware/rateLimit.js";
 import { CAPABILITIES } from "../auth/capabilities.js";
+import { runQuery } from "../db.js";
+import { ok } from "../lib/apiResponse.js";
+import { wrap } from "../lib/routeWrap.js";
 import auditRoutes from "../modules/audit/audit.routes.js";
 import lenderAdminRoutes from "../modules/lender/lender.admin.routes.js";
 import ocrAdminRoutes from "../modules/ocr/ocr.admin.routes.js";
@@ -720,6 +723,48 @@ router.post(
     }
   },
 );
+
+// BF_SERVER_ADMIN_JOB_QUEUE_v1
+// Same query as /api/_int/job-queue. That path is internal: the browser
+// gets no CORS header and net::ERR_FAILED, so the portal could never read
+// it. This is the staff-authenticated equivalent the portal can call.
+router.get("/job-queue", requireAuth, wrap(async () => {
+  const summary = await runQuery(
+    `SELECT type, status, COUNT(*)::text AS count,
+            MIN(created_at) AS oldest,
+            MAX(updated_at) AS last_touched,
+            MAX(COALESCE(attempts, 0))::text AS max_attempts
+       FROM job_queue
+      GROUP BY type, status
+      ORDER BY COUNT(*) DESC`
+  );
+
+  // A pending row whose next_attempt_at has passed is claimable right now.
+  // A large number here alongside an old "oldest" is a stalled queue.
+  const claimable = await runQuery(
+    `SELECT type, COUNT(*)::text AS count
+       FROM job_queue
+      WHERE status = 'pending'
+        AND COALESCE(next_attempt_at, created_at) <= now()
+      GROUP BY type ORDER BY COUNT(*) DESC`
+  );
+
+  const stuck = await runQuery(
+    `SELECT id, type, status, error, COALESCE(attempts, 0)::text AS attempts,
+            created_at, next_attempt_at, payload
+       FROM job_queue
+      WHERE status IN ('pending', 'running')
+        AND created_at < now() - interval '1 hour'
+      ORDER BY created_at ASC
+      LIMIT 50`
+  );
+
+  return ok({
+    summary: summary.rows,
+    claimableNow: claimable.rows,
+    stuckOverAnHour: stuck.rows,
+  });
+}));
 
 // BF_SERVER_ADMIN_NAV_ENDPOINTS_v1 - back the previously-dead admin nav pages with real data.
 router.get("/issue-reports", async (_req: any, res: any) => {
