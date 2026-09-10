@@ -52,6 +52,11 @@ function bestEffortNaics(industry: unknown): { code: string | null; confidence: 
 export type BiHandoffInput = {
   bfApplicationId: string;
   legacyApp: any; // the wizard payload sent on /submit
+  // BF_SERVER_BI_HANDOFF_SOURCES_v1 - optional pre-resolved sources from the
+  // caller, which already knows which shape this submission used.
+  normalized?: any;
+  businessSource?: any;
+  applicantSource?: any;
   // v330: when set, overrides the derived loan_amount in the BI payload.
   // Used so each funding app's PGI policy carries the right dollar value.
   loanAmountOverride?: number | null;
@@ -82,10 +87,22 @@ function concatAddress(o: any): string | null {
 }
 
 export function buildBiPayload(input: BiHandoffInput): Record<string, unknown> {
+  // BF_SERVER_BI_HANDOFF_SOURCES_v1
+  // The wizard submits under several shapes. v1Applications.ts already resolves
+  // them (business_info, applicants[0], the normalized payload) before calling
+  // us; when the caller supplies those, use them. The narrow fallbacks below
+  // are what produced BI applications with every field null but NAICS.
   const a = input.legacyApp ?? {};
-  const business = a.business ?? a.company ?? {};
-  const applicant = a.applicant ?? a.borrower ?? {};
-  const kyc = a.kyc ?? a.kyc_answers ?? {};
+  const n = input.normalized ?? {};
+  const business =
+    input.businessSource ??
+    a.business ?? a.company ?? a.business_info ?? n.company ?? n.business ?? {};
+  const applicant =
+    input.applicantSource ??
+    a.applicant ?? a.borrower ?? n.applicant ??
+    (Array.isArray(a.applicants) ? a.applicants[0] : null) ??
+    (Array.isArray(n.applicants) ? n.applicants[0] : null) ?? {};
+  const kyc = a.kyc ?? a.kyc_answers ?? n.kyc ?? n.kyc_answers ?? {};
   const naics = bestEffortNaics(kyc.industry);
   const derivedLoanAmount =
     num(kyc.fundingAmount) ??
