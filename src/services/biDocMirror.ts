@@ -47,6 +47,29 @@ export async function resolveBiPublicId(bfApplicationId: string): Promise<string
   return r.rows[0]?.bi_public_id ?? null;
 }
 
+
+// BF_SERVER_PGI_MIRROR_SCOPE_v1
+// Only documents the PGI catalog actually requires should cross. bi-server maps
+// anything it does not recognise to 'enforcement_notice', so an unfiltered
+// mirror fills the PGI file with BF paperwork the carrier never asked for.
+// The authority is bi_required_doc_catalog (active = TRUE) on bi-server; these
+// are the BF-side categories that map onto it. Keep this list aligned with
+// BF_TO_BI_DOC_TYPE in bi-server/src/routes/biDocumentsFromBfRoutes.ts.
+export const PGI_MIRRORED_CATEGORIES = new Set<string>([
+  "annual_financials_3yr",
+  "financial_statements",
+  "profit_loss",
+  "balance_sheet",
+  "accounts_receivable_aging",
+  "accounts_payable_aging",
+  "signed_term_sheet",
+]);
+
+export function shouldMirrorToPgi(category: string | null | undefined): boolean {
+  const c = String(category ?? "").trim().toLowerCase();
+  return c.length > 0 && PGI_MIRRORED_CATEGORIES.has(c);
+}
+
 export async function mirrorDocToBi(input: MirrorInput): Promise<MirrorResult> {
   const secret = getSecret();
   if (!secret) return { ok: false, error: "no_jwt_secret" };
@@ -130,6 +153,9 @@ export async function mirrorDocToBi(input: MirrorInput): Promise<MirrorResult> {
 // Fire-and-forget wrapper. Never throws. Use this from request
 // handlers so the user response is not delayed.
 export function mirrorDocToBiAsync(input: MirrorInput): void {
+  // BF_SERVER_PGI_MIRROR_SCOPE_v1 - scope enforced here, not at the call sites,
+  // so a future caller cannot forget it.
+  if (!shouldMirrorToPgi(input.documentType)) return;
   void mirrorDocToBi(input).catch((err) => {
     logError("bi_doc_mirror_unhandled", {
       code: "bi_doc_mirror_unhandled",
