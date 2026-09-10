@@ -9,7 +9,8 @@ const router = express.Router();
 router.post("/register-token", safeHandler(async (req: any, res: any) => {
   const userId = String(req.user?.id ?? req.user?.userId ?? "");
   const token = String(req.body?.token ?? "").trim();
-  const platform = req.body?.platform ? String(req.body.platform) : null;
+  // BF_SERVER_FCM_DELIVERY_v1: transport selection relies on a canonical value.
+  const platform = req.body?.platform ? String(req.body.platform).trim().toLowerCase() : null;
   if (!token) return res.status(400).json({ error: { code: "token_required" } });
   await pool.query(
     `INSERT INTO client_push_tokens (user_id, token, platform, updated_at)
