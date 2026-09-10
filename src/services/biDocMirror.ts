@@ -48,26 +48,33 @@ export async function resolveBiPublicId(bfApplicationId: string): Promise<string
 }
 
 
-// BF_SERVER_PGI_MIRROR_SCOPE_v1
-// Only documents the PGI catalog actually requires should cross. bi-server maps
-// anything it does not recognise to 'enforcement_notice', so an unfiltered
-// mirror fills the PGI file with BF paperwork the carrier never asked for.
-// The authority is bi_required_doc_catalog (active = TRUE) on bi-server; these
-// are the BF-side categories that map onto it. Keep this list aligned with
-// BF_TO_BI_DOC_TYPE in bi-server/src/routes/biDocumentsFromBfRoutes.ts.
-export const PGI_MIRRORED_CATEGORIES = new Set<string>([
-  "annual_financials_3yr",
-  "financial_statements",
-  "profit_loss",
-  "balance_sheet",
-  "accounts_receivable_aging",
-  "accounts_payable_aging",
-  "signed_term_sheet",
-]);
+// BF_SERVER_PGI_MIRROR_VOCAB_v1
+// Map BF upload categories onto active bi_required_doc_catalog vocabulary.
+export const BF_TO_PGI_DOC_TYPE: Record<string, string> = {
+  signed_term_sheet: "loan_agreement",
+  loan_agreement: "loan_agreement",
+  term_sheet: "loan_agreement",
+  pnl_interim: "profit_loss",
+  profit_loss: "profit_loss",
+  balance_sheet_interim: "balance_sheet",
+  balance_sheet: "balance_sheet",
+  ar: "ar_aging",
+  ar_aging: "ar_aging",
+  accounts_receivable_aging: "ar_aging",
+  ap: "ap_aging",
+  ap_aging: "ap_aging",
+  accounts_payable_aging: "ap_aging",
+  founder_cv: "founder_cv",
+  financial_forecast: "financial_forecast",
+};
+
+export function pgiDocTypeFor(category: string | null | undefined): string | null {
+  const c = String(category ?? "").trim().toLowerCase();
+  return c ? BF_TO_PGI_DOC_TYPE[c] ?? null : null;
+}
 
 export function shouldMirrorToPgi(category: string | null | undefined): boolean {
-  const c = String(category ?? "").trim().toLowerCase();
-  return c.length > 0 && PGI_MIRRORED_CATEGORIES.has(c);
+  return pgiDocTypeFor(category) !== null;
 }
 
 export async function mirrorDocToBi(input: MirrorInput): Promise<MirrorResult> {
@@ -91,7 +98,8 @@ export async function mirrorDocToBi(input: MirrorInput): Promise<MirrorResult> {
       body: JSON.stringify({
         bf_application_id: input.bfApplicationId,
         bf_document_id: input.bfDocumentId,
-        document_type: input.documentType,
+        document_type: pgiDocTypeFor(input.documentType) ?? input.documentType,
+        bf_document_type: input.documentType,
         file_name: input.fileName,
         mime_type: input.mimeType,
         file_size: input.fileSize,

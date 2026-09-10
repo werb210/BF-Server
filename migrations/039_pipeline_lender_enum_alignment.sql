@@ -9,12 +9,17 @@ BEGIN
     WHERE table_name = 'lenders'
       AND column_name = 'status'
   ) THEN
-    UPDATE lenders
-    SET status = CASE
-      WHEN status IS NULL THEN 'ACTIVE'
-      WHEN LOWER(status::text) = 'inactive' THEN 'INACTIVE'
-      ELSE 'ACTIVE'
-    END;
+    -- BF_SERVER_MIGRATION_039_ENUM_CAST_v1
+    EXECUTE format(
+      'UPDATE lenders SET status = (CASE
+         WHEN status IS NULL THEN ''ACTIVE''
+         WHEN LOWER(status::text) = ''inactive'' THEN ''INACTIVE''
+         ELSE ''ACTIVE''
+       END)::%s',
+      (SELECT atttypid::regtype FROM pg_attribute
+        WHERE attrelid = 'public.lenders'::regclass
+          AND attname = 'status' AND NOT attisdropped)
+    );
   END IF;
 END $$;
 

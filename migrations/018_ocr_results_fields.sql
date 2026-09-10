@@ -21,19 +21,23 @@ create index if not exists ocr_results_document_id_idx
 create index if not exists ocr_results_field_key_idx
   on ocr_results (field_key);
 
-insert into ocr_results
-  (id, application_id, document_id, field_key, value, confidence, source_document_type, created_at)
-select f.id,
-       f.application_id,
-       f.document_id,
-       f.field_key,
-       f.value,
-       f.confidence,
-       d.document_type,
-       f.created_at
-from document_ocr_fields f
-join documents d on d.id = f.document_id
-on conflict do nothing;
+-- BF_SERVER_MIGRATION_018_GUARD_v1
+-- 018b creates the source table after this migration on fresh databases.
+do $migration_018$
+begin
+  if to_regclass('public.document_ocr_fields') is not null then
+    execute $backfill$
+      insert into ocr_results
+        (id, application_id, document_id, field_key, value, confidence, source_document_type, created_at)
+      select f.id, f.application_id, f.document_id, f.field_key, f.value,
+             f.confidence, d.document_type, f.created_at
+      from document_ocr_fields f
+      join documents d on d.id = f.document_id
+      on conflict do nothing
+    $backfill$;
+  end if;
+end
+$migration_018$;
 
 alter table if exists ocr_document_results
   drop constraint if exists ocr_results_document_id_fkey,
