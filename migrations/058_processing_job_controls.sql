@@ -7,19 +7,20 @@ alter table if exists document_processing_jobs
   add column if not exists last_retry_at timestamptz,
   add column if not exists max_retries integer not null default 3;
 
-update document_processing_jobs
-set job_type = coalesce(job_type, 'ocr'),
-    updated_at = coalesce(updated_at, created_at);
-
-alter table if exists document_processing_jobs
-  drop constraint if exists document_processing_jobs_status_check;
-
-alter table if exists document_processing_jobs
-  add constraint document_processing_jobs_status_check
-    check (status in ('pending', 'processing', 'completed', 'failed'));
-
-create unique index if not exists document_processing_jobs_document_id_job_type_idx
-  on document_processing_jobs (document_id, job_type);
+-- BF_SERVER_MIGRATION_058_TABLE_GUARDS_v1
+do $document_processing_jobs_controls$
+begin
+  if to_regclass('public.document_processing_jobs') is null then return; end if;
+  execute $stmt$
+    update document_processing_jobs
+    set job_type = coalesce(job_type, 'ocr'), updated_at = coalesce(updated_at, created_at)
+  $stmt$;
+  execute 'alter table document_processing_jobs drop constraint if exists document_processing_jobs_status_check';
+  execute $stmt$ alter table document_processing_jobs add constraint document_processing_jobs_status_check
+    check (status in ('pending', 'processing', 'completed', 'failed')) $stmt$;
+  execute 'create unique index if not exists document_processing_jobs_document_id_job_type_idx on document_processing_jobs (document_id, job_type)';
+end
+$document_processing_jobs_controls$;
 
 alter table if exists banking_analysis_jobs
   add column if not exists started_at timestamptz,
@@ -29,15 +30,15 @@ alter table if exists banking_analysis_jobs
   add column if not exists last_retry_at timestamptz,
   add column if not exists max_retries integer not null default 2;
 
-update banking_analysis_jobs
-set updated_at = coalesce(updated_at, created_at);
-
-alter table if exists banking_analysis_jobs
-  drop constraint if exists banking_analysis_jobs_status_check;
-
-alter table if exists banking_analysis_jobs
-  add constraint banking_analysis_jobs_status_check
-    check (status in ('pending', 'processing', 'completed', 'failed'));
+do $banking_analysis_jobs_controls$
+begin
+  if to_regclass('public.banking_analysis_jobs') is null then return; end if;
+  execute 'update banking_analysis_jobs set updated_at = coalesce(updated_at, created_at)';
+  execute 'alter table banking_analysis_jobs drop constraint if exists banking_analysis_jobs_status_check';
+  execute $stmt$ alter table banking_analysis_jobs add constraint banking_analysis_jobs_status_check
+    check (status in ('pending', 'processing', 'completed', 'failed')) $stmt$;
+end
+$banking_analysis_jobs_controls$;
 
 create table if not exists credit_summary_jobs (
   id uuid primary key,
@@ -107,42 +108,52 @@ join document_versions dv on dv.id = r.document_version_id
 join documents d on d.id = dv.document_id
 left join users u on u.id = r.reviewed_by_user_id;
 
-create or replace view processing_job_history_view as
-select
-  id as job_id,
-  'ocr'::text as job_type,
-  application_id,
-  document_id,
-  null::text as previous_status,
-  status as next_status,
-  error_message,
-  retry_count,
-  last_retry_at,
-  coalesce(updated_at, created_at) as occurred_at
-from document_processing_jobs
-union all
-select
-  id as job_id,
-  'banking'::text as job_type,
-  application_id,
-  null::text as document_id,
-  null::text as previous_status,
-  status as next_status,
-  error_message,
-  retry_count,
-  last_retry_at,
-  coalesce(updated_at, created_at) as occurred_at
-from banking_analysis_jobs
-union all
-select
-  id as job_id,
-  'credit_summary'::text as job_type,
-  application_id,
-  null::text as document_id,
-  null::text as previous_status,
-  status as next_status,
-  error_message,
-  retry_count,
-  last_retry_at,
-  coalesce(updated_at, created_at) as occurred_at
-from credit_summary_jobs;
+-- BF_SERVER_MIGRATION_058_TABLE_GUARDS_v1 (view)
+do $processing_job_history_view$
+begin
+  if to_regclass('public.document_processing_jobs') is null
+     or to_regclass('public.banking_analysis_jobs') is null
+     or to_regclass('public.credit_summary_jobs') is null then return; end if;
+  execute $view$
+    create or replace view processing_job_history_view as
+    select
+      id as job_id,
+      'ocr'::text as job_type,
+      application_id,
+      document_id,
+      null::text as previous_status,
+      status as next_status,
+      error_message,
+      retry_count,
+      last_retry_at,
+      coalesce(updated_at, created_at) as occurred_at
+    from document_processing_jobs
+    union all
+    select
+      id as job_id,
+      'banking'::text as job_type,
+      application_id,
+      null::text as document_id,
+      null::text as previous_status,
+      status as next_status,
+      error_message,
+      retry_count,
+      last_retry_at,
+      coalesce(updated_at, created_at) as occurred_at
+    from banking_analysis_jobs
+    union all
+    select
+      id as job_id,
+      'credit_summary'::text as job_type,
+      application_id,
+      null::text as document_id,
+      null::text as previous_status,
+      status as next_status,
+      error_message,
+      retry_count,
+      last_retry_at,
+      coalesce(updated_at, created_at) as occurred_at
+    from credit_summary_jobs
+  $view$;
+end
+$processing_job_history_view$;

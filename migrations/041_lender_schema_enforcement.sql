@@ -65,7 +65,15 @@ BEGIN
   END IF;
 END $$;
 
-UPDATE users SET status = 'INACTIVE' WHERE status::text = 'disabled';
+-- BF_SERVER_MIGRATION_041_USERS_STATUS_GUARD_v1
+DO $users_status_backfill$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'status') THEN
+    UPDATE users SET status = 'INACTIVE' WHERE status::text = 'disabled';
+  END IF;
+END
+$users_status_backfill$;
 
 DO $$
 BEGIN
@@ -294,6 +302,36 @@ ALTER TABLE lender_products
   ALTER COLUMN rate_type DROP DEFAULT,
   ALTER COLUMN term_unit DROP DEFAULT;
 
+-- BF_SERVER_MIGRATION_041_REQS_FK_v1 (part 1 of 2)
+DO $reqs_fk_drop$
+DECLARE con record;
+BEGIN
+  IF to_regclass('public.lender_product_requirements') IS NULL THEN RETURN; END IF;
+  FOR con IN SELECT c.conname FROM pg_constraint c
+    WHERE c.conrelid = 'public.lender_product_requirements'::regclass
+      AND c.contype = 'f' AND c.confrelid = 'public.lender_products'::regclass
+  LOOP
+    EXECUTE format('ALTER TABLE lender_product_requirements DROP CONSTRAINT %I', con.conname);
+  END LOOP;
+END
+$reqs_fk_drop$;
+
+-- BF_SERVER_MIGRATION_041_DROP_TEXT_CHECKS_v1
+DO $drop_text_checks$
+DECLARE con record;
+BEGIN
+  FOR con IN SELECT c.conname FROM pg_constraint c
+    WHERE c.conrelid = 'public.lender_products'::regclass AND c.contype = 'c'
+      AND (pg_get_constraintdef(c.oid) ILIKE '%country%'
+        OR pg_get_constraintdef(c.oid) ILIKE '%rate_type%'
+        OR pg_get_constraintdef(c.oid) ILIKE '%category%'
+        OR pg_get_constraintdef(c.oid) ILIKE '%term_unit%')
+  LOOP
+    EXECUTE format('ALTER TABLE lender_products DROP CONSTRAINT %I', con.conname);
+  END LOOP;
+END
+$drop_text_checks$;
+
 ALTER TABLE lender_products
   ALTER COLUMN id TYPE uuid USING id::uuid,
   ALTER COLUMN lender_id TYPE uuid USING lender_id::uuid,
@@ -314,6 +352,25 @@ ALTER TABLE lender_products
 ALTER TABLE lender_products
   ALTER COLUMN category  SET DEFAULT 'LOC'::lender_product_category,
   ALTER COLUMN term_unit SET DEFAULT 'MONTHS'::lender_product_term_unit;
+
+-- BF_SERVER_MIGRATION_041_REQS_FK_v1 (part 2 of 2)
+DO $reqs_fk_restore$
+BEGIN
+  IF to_regclass('public.lender_product_requirements') IS NULL THEN RETURN; END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'lender_product_requirements'
+      AND column_name = 'lender_product_id' AND udt_name <> 'uuid') THEN
+    EXECUTE 'ALTER TABLE lender_product_requirements ALTER COLUMN lender_product_id TYPE uuid USING lender_product_id::uuid';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.lender_product_requirements'::regclass
+      AND confrelid = 'public.lender_products'::regclass AND contype = 'f') THEN
+    ALTER TABLE lender_product_requirements
+      ADD CONSTRAINT lender_product_requirements_lender_product_id_fkey
+      FOREIGN KEY (lender_product_id) REFERENCES lender_products(id) ON DELETE CASCADE;
+  END IF;
+END
+$reqs_fk_restore$;
 
 -- Re-add FK lender_products.lender_id -> lenders.id now that both are uuid.
 DO $$

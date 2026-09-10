@@ -41,12 +41,24 @@ alter table if exists lenders
   add constraint lenders_submission_method_check
   check (submission_method in ('email', 'api', 'google_sheet'));
 
-create table if not exists submission_events (
-  id uuid primary key,
-  application_id text not null references applications(id) on delete cascade,
-  lender_id text not null references lenders(id) on delete cascade,
-  method text not null,
-  status text not null,
-  internal_error text null,
-  created_at timestamp not null default now()
-);
+-- BF_SERVER_MIGRATION_050_LENDER_ID_TYPE_v1
+do $submission_events$
+declare app_id_type text; lender_id_type text;
+begin
+  select atttypid::regtype::text into app_id_type from pg_attribute
+    where attrelid = 'public.applications'::regclass and attname = 'id' and not attisdropped;
+  select atttypid::regtype::text into lender_id_type from pg_attribute
+    where attrelid = 'public.lenders'::regclass and attname = 'id' and not attisdropped;
+  execute format($ddl$
+    create table if not exists submission_events (
+      id uuid primary key,
+      application_id %s not null references applications(id) on delete cascade,
+      lender_id %s not null references lenders(id) on delete cascade,
+      method text not null,
+      status text not null,
+      internal_error text null,
+      created_at timestamp not null default now()
+    )
+  $ddl$, coalesce(app_id_type, 'text'), coalesce(lender_id_type, 'uuid'));
+end
+$submission_events$;
