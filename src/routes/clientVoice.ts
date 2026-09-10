@@ -3,16 +3,64 @@
 // webhook distinguish client-initiated calls from staff-initiated
 // calls and route the former to staff via <Dial><Client>...</Client>.
 //
-// Auth: matches the other /api/client/* endpoints (which are roles:[]
-// in routeRegistry, so accept the client OTP JWT or no JWT). We do
-// not require auth here for parity with /api/client/messages. The
-// identity is derived from the applicationId path parameter, which
-// the client already knows.
+// Auth: an applicationId identity REQUIRES a valid client OTP token whose
+// phone is on that application (BF_SERVER_CLIENT_VOICE_OWNERSHIP_v1). The
+// anonymous landing-page path below stays open - it asserts nothing about
+// who is calling.
 import crypto from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import { generateVoiceToken } from "../telephony/services/tokenService.js";
 
 const router = Router();
+
+// BF_SERVER_CLIENT_VOICE_OWNERSHIP_v1
+// Mirrors the ownership predicate in src/routes/client/index.ts: membership is
+// application_contacts (applicant + partner + guarantor) UNION the legacy
+// applications.contact_id, so a partner on a joint file is not locked out.
+// Unlike that guard, this one FAILS CLOSED - a voice identity is an assertion
+// of who you are to a human being, not a read of your own file.
+async function callerOwnsApplication(req: Request, applicationId: string): Promise<boolean> {
+  const auth = req.headers?.authorization;
+  if (!auth || typeof auth !== "string" || !auth.startsWith("Bearer ")) return false;
+  const secret = process.env.JWT_SECRET;
+  if (!secret) return false;
+
+  let phone10 = "";
+  try {
+    const jwt = (await import("jsonwebtoken")).default;
+    const decoded = jwt.verify(auth.slice(7), secret) as Record<string, unknown>;
+    phone10 = String(typeof decoded.phone === "string" ? decoded.phone : "")
+      .replace(/[^0-9]/g, "")
+      .slice(-10);
+  } catch {
+    return false;
+  }
+  if (!phone10) return false;
+
+  try {
+    const { pool } = await import("../db.js");
+    const r = await pool.query<{ n: string }>(
+      `WITH app_phones AS (
+         SELECT right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),10) AS p10
+           FROM application_contacts ac
+           JOIN contacts c ON c.id = ac.contact_id
+          WHERE ac.application_id::text = ($1)::text
+         UNION
+         SELECT right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),10) AS p10
+           FROM applications a
+           JOIN contacts c ON c.id = a.contact_id
+          WHERE a.id::text = ($1)::text
+       )
+       SELECT COUNT(*)::text AS n FROM app_phones WHERE p10 = $2`,
+      [applicationId, phone10],
+    );
+    return Number(r.rows[0]?.n ?? 0) > 0;
+  } catch (err: any) {
+    console.error("client_voice_ownership_check_failed", { message: err?.message || String(err) });
+    return false;
+  }
+}
+
 
 router.get("/token", async (req: Request, res: Response) => {
   // Optional applicationId; if missing, anonymous identity
@@ -21,6 +69,17 @@ router.get("/token", async (req: Request, res: Response) => {
   if (applicationIdRaw) {
     if (!/^[A-Za-z0-9._\-:]{6,128}$/.test(applicationIdRaw)) {
       return res.status(400).json({ error: "invalid applicationId" });
+    }
+    // BF_SERVER_CLIENT_VOICE_OWNERSHIP_v1
+    // This route is mounted outside src/routes/client/index.ts, so the guard
+    // there - written to stop a client pivoting to an application that is not
+    // theirs - never sees this request. Without the check below, any known or
+    // guessed application UUID mints a Twilio identity for that applicant, and
+    // BF_SERVER_CLIENT_APP_CALLER_v1 now renders that as their real name on
+    // the staff incoming-call toast.
+    const owns = await callerOwnsApplication(req, applicationIdRaw);
+    if (!owns) {
+      return res.status(403).json({ error: "not_your_application" });
     }
     identity = `client-${applicationIdRaw}`;
   } else {
