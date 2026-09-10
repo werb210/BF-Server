@@ -423,6 +423,32 @@ router.post("/google-ads/conversions/upload", safeHandler(async (_req: any, res:
   respondOk(res, result);
 }));
 
+// BF_SERVER_AD_NEGATIVES_v1
+// GET proposes terms that spent and converted nothing; POST writes only the
+// terms a marketer selected. Both inherit this router's auth/capability guard.
+router.get("/negative-candidates", safeHandler(async (req: any, res: any) => {
+  const days = Math.max(1, Math.min(90, Number(req.query.days ?? 7) || 7));
+  const minCost = Math.max(0, Number(req.query.minCost ?? 0) || 0);
+  const { findNegativeCandidates } = await import("../services/googleAdsNegatives.js");
+  const candidates = await findNegativeCandidates(days, minCost);
+  res.json({ windowDays: days, minCost, candidates });
+}));
+
+router.post("/negative-keywords", safeHandler(async (req: any, res: any) => {
+  const campaignId = String(req.body?.campaignId ?? "").trim();
+  const terms = Array.isArray(req.body?.terms) ? req.body.terms : [];
+  const matchType = req.body?.matchType === "EXACT" ? "EXACT" : "PHRASE";
+  if (!campaignId) { res.status(400).json({ error: "campaignId_required" }); return; }
+  if (terms.length === 0) { res.status(400).json({ error: "terms_required" }); return; }
+  try {
+    const { addCampaignNegatives } = await import("../services/googleAdsNegatives.js");
+    const result = await addCampaignNegatives(campaignId, terms, matchType);
+    res.json({ ok: true, matchType, ...result });
+  } catch (error: any) {
+    res.status(502).json({ error: "google_ads_mutate_failed", message: error?.message ?? "unknown" });
+  }
+}));
+
 // BF_SERVER_ADS_SUBMIT_ROUTES_v1 - submitted-application conversions use a
 // separate action from funded uploads so both can apply to one application.
 router.get("/google-ads/conversions/submit-pending", safeHandler(async (_req: any, res: any) => {
