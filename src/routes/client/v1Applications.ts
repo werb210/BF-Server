@@ -1147,14 +1147,14 @@ router.post(
       // absent, the mirror silently got nulls, and NO CRM contact or company
       // was created even though the detail page showed both (it reads
       // metadata/normalized). Map every payload shape into the mirror keys.
+      const md: any = (legacyApp && typeof legacyApp === "object") ? legacyApp : {};
+      const nrm: any = (normalized && typeof normalized === "object") ? normalized : {};
+      const bizSrc: any = md?.business ?? md?.company ?? md?.business_info ?? nrm?.company ?? null;
+      const appSrc: any =
+        md?.applicant ?? md?.borrower ?? nrm?.applicant ??
+        (Array.isArray(md?.applicants) ? md.applicants[0] : null) ??
+        (Array.isArray(nrm?.applicants) ? nrm.applicants[0] : null) ?? null;
       try {
-        const md: any = (legacyApp && typeof legacyApp === "object") ? legacyApp : {};
-        const nrm: any = (normalized && typeof normalized === "object") ? normalized : {};
-        const bizSrc: any = md?.business ?? md?.company ?? md?.business_info ?? nrm?.company ?? null;
-        const appSrc: any =
-          md?.applicant ?? md?.borrower ?? nrm?.applicant ??
-          (Array.isArray(md?.applicants) ? md.applicants[0] : null) ??
-          (Array.isArray(nrm?.applicants) ? nrm.applicants[0] : null) ?? null;
         // BF_SERVER_SUBMIT_DUP_CONTACT_v1 - this ran fire-and-forget on its own
         // connection while the submit transaction below also created the contact.
         // Neither could see the other's uncommitted row, so every submit inserted
@@ -1234,6 +1234,12 @@ router.post(
             const r = await postBiHandoff({
               bfApplicationId: v330_t.bfApplicationId,
               legacyApp,
+              // BF_SERVER_BI_HANDOFF_SOURCES_v1 - hand over the sources this
+              // route already resolved instead of making the payload builder
+              // guess the wizard's shape a second time.
+              normalized,
+              businessSource: bizSrc,
+              applicantSource: appSrc,
               loanAmountOverride: v330_t.loanAmountOverride,
             });
             if (r.ok) {
