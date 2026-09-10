@@ -95,6 +95,16 @@ jobs:
       - name: Install deps
         run: npm install --include=optional
 
+      # BF_SERVER_INTEGRATION_MIGRATIONS_v1
+      # The service container starts empty. src/startup/runMigrations.ts is what
+      # builds the schema on boot; run it here so the suite meets a real
+      # database rather than an empty one.
+      - name: Apply migrations to the test database
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/bf_test
+          NODE_ENV: test
+        run: npx tsx -e "import('./src/db.js').then(async ({ pool }) => { try { const { runMigrations } = await import('./src/startup/runMigrations.js'); await runMigrations(pool); console.log('migrations applied'); } finally { await pool.end(); } })"
+
       - name: Integration tests
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/bf_test
