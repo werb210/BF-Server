@@ -38,6 +38,26 @@ jobs:
       - name: Unit tests
         run: npm run test:ci
 
+      # BF_SERVER_SBA_TEMPLATES_IN_CI_v1
+      # The three official SBA PDFs are not in the repo and must not be. They
+      # arrive as a base64 tar in SBA_TEMPLATES_TARBALL_B64 so the only tests
+      # that verify a value reaches the page can run. Without the secret this
+      # step is a no-op and the tests skip exactly as they do today.
+      - name: SBA real-template fill
+        if: ${{ secrets.SBA_TEMPLATES_TARBALL_B64 != '' }}
+        env:
+          SBA_TEMPLATES_TARBALL_B64: ${{ secrets.SBA_TEMPLATES_TARBALL_B64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sba-templates"
+          echo "$SBA_TEMPLATES_TARBALL_B64" | base64 -d > "$RUNNER_TEMP/sba.tar.gz"
+          tar -xzf "$RUNNER_TEMP/sba.tar.gz" -C "$RUNNER_TEMP/sba-templates"
+          for f in sba-form-1919-02-2025.pdf sba-form-413-05-2024.pdf sba-form-912-12-2028.pdf; do
+            test -f "$RUNNER_TEMP/sba-templates/$f" || { echo "missing template: $f"; exit 1; }
+          done
+          SBA_TEMPLATE_DIR="$RUNNER_TEMP/sba-templates" \
+            npx vitest run src/signnow/sba/__tests__/sbaRealTemplateFill.v130.test.ts --reporter=verbose
+
   # BF_SERVER_INTEGRATION_IN_CI_v1
   # 44 files / 70 tests were excluded from the unit run because they need a
   # reachable Postgres, and then nothing ever ran them. Separate job so a
