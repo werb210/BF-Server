@@ -2,9 +2,26 @@
 // Propose negative-keyword candidates from the daily warehouse and write the
 // terms selected by a marketer back to Google Ads.
 import { pool } from "../db.js";
+import { loginCid } from "./googleAdsService.js";
 import { accessToken } from "./googleAdsConversions.js";
 
 const API_VERSION = "v18";
+
+// BF_SERVER_AD_NEGATIVES_LOGINCID_v1
+// login-customer-id must be the MANAGER id, and must be omitted entirely when
+// unset - sending the child id in its place is what a manager hierarchy
+// rejects. loginCid() already does this for the services that read the account
+// successfully today.
+function negativeHeaders(token: string): Record<string, string> {
+  const h: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    "developer-token": String(process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? ""),
+    "Content-Type": "application/json",
+  };
+  const lc = loginCid();
+  if (lc) h["login-customer-id"] = lc;
+  return h;
+}
 
 export type NegativeCandidate = {
   searchTerm: string;
@@ -78,12 +95,7 @@ export async function addCampaignNegatives(
     `https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/campaignCriteria:mutate`,
     {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "developer-token": String(process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? ""),
-        "login-customer-id": String(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? customerId).replace(/[^0-9]/g, ""),
-        "Content-Type": "application/json",
-      },
+      headers: negativeHeaders(token),
       body: JSON.stringify({
         operations: usable.map((term) => ({
           create: {
