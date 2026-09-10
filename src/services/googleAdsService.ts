@@ -52,7 +52,8 @@ async function getAccessToken(): Promise<string> {
 }
 
 function cid(): string { return String(process.env.GOOGLE_ADS_CUSTOMER_ID).replace(/[^0-9]/g, ""); }
-function loginCid(): string { return String(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? "").replace(/[^0-9]/g, ""); }
+// BF_SERVER_AD_NEGATIVES_LOGINCID_v1 - shared with googleAdsNegatives.ts
+export function loginCid(): string { return String(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? "").replace(/[^0-9]/g, ""); }
 const micros = (v: unknown): number => Number(v ?? 0) / 1_000_000;
 const num = (v: unknown): number => Number(v ?? 0);
 
