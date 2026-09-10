@@ -9,6 +9,10 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    env:
+      # BF_SERVER_SBA_TEMPLATES_IN_CI_v2 - `secrets` cannot be referenced from
+      # an `if:` expression; `env` can. Unset resolves to an empty string.
+      SBA_TEMPLATES_TARBALL_B64: ${{ secrets.SBA_TEMPLATES_TARBALL_B64 }}
 
     steps:
       - uses: actions/checkout@v5
@@ -44,7 +48,7 @@ jobs:
       # that verify a value reaches the page can run. Without the secret this
       # step is a no-op and the tests skip exactly as they do today.
       - name: SBA real-template fill
-        if: ${{ secrets.SBA_TEMPLATES_TARBALL_B64 != '' }}
+        if: env.SBA_TEMPLATES_TARBALL_B64 != ''
         env:
           SBA_TEMPLATES_TARBALL_B64: ${{ secrets.SBA_TEMPLATES_TARBALL_B64 }}
         run: |
