@@ -48,6 +48,15 @@ export async function start(): Promise<void> {
   // BF_SERVER_BLOCK_v335 -- push init moved after listen. Watch push is
   // optional, so its configuration must not stop the API accepting traffic.
   initializeClientPushProvider();
+  // BF_SERVER_PUSH_CONFIG_DIAG_v153 - the provider logs only that it is not
+  // configured; this says which variable names are absent, so a restart is
+  // enough to diagnose it.
+  try {
+    const { pushConfigSummary } = await import("./modules/diagnostics/pushConfig.js");
+    console.log(JSON.stringify({ event: "push_config", detail: pushConfigSummary() }));
+  } catch {
+    /* diagnostics must never block start */
+  }
   await initDb();
 
   {
