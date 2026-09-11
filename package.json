@@ -12,7 +12,6 @@
     "test:ci": "vitest run",
     "test:integration": "VITEST_INTEGRATION=true vitest run",
     "postbuild": "node scripts/write-build-info.mjs",
-    "test:ratchet": "node scripts/test-ratchet.mjs",
     "triage": "node scripts/triage.mjs"
   },
   "engines": {
