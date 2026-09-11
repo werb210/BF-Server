@@ -67,22 +67,13 @@ export class FirebaseFcmProvider {
   }): Promise<void> {
     const bearer = await this.accessToken();
     const url = `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(this.account.project_id)}/messages:send`;
-    const data: Record<string, string> = {};
-    for (const [key, value] of Object.entries(payload.data ?? {})) {
-      data[key] = typeof value === "string" ? value : JSON.stringify(value);
-    }
-
+    // BF_SERVER_FCM_DATA_ONLY_v157 - data-only, so the app renders the
+    // notification itself and can attach the category's action buttons.
+    const { buildFcmMessage } = await import("./push/fcmMessage.js");
     const response = await fetch(url, {
       method: "POST",
       headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        message: {
-          token: input.token,
-          notification: { title: payload.title, body: payload.body },
-          data,
-          android: { priority: "high", notification: { sound: "default" } },
-        },
-      }),
+      body: JSON.stringify(buildFcmMessage(input.token, payload)),
     });
     if (response.ok) return;
 
