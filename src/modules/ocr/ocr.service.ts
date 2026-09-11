@@ -26,7 +26,9 @@ import {
   isNumericOcrField,
   refreshOcrInsightsForApplication,
 } from "../applications/ocr/ocrAnalysis.service.js";
-import { notifyOcrWarnings } from "../notifications/ocrNotifications.service.js";
+import { notifyOcrWarnings, notifyDocumentMismatch } from "../notifications/ocrNotifications.service.js";
+// BF_SERVER_DOC_CLASSIFY_v140
+import { checkAgainstExpected } from "../../services/documents/classifyDocument.js";
 // BF_SERVER_BLOCK_v204_OCR_SUCCESS_MARK_LENDER_MATCHES_STALE_v1
 import { markLenderMatchesStale } from "../../services/lenderMatchCache.js";
 
@@ -470,6 +472,39 @@ export async function processOcrJob(
         documentId: job.document_id,
         applicationId: job.application_id,
         error: insertError instanceof Error ? insertError.message : "unknown_error",
+      });
+    }
+
+    // BF_SERVER_DOC_CLASSIFY_v140
+    // Compare what the document actually looks like against the requirement it
+    // was filed under. Advisory only: checkAgainstExpected stays silent unless
+    // it is confident, and a failure here must never fail the OCR job.
+    try {
+      const verdict = checkAgainstExpected(result.text, document.document_type ?? null);
+      logInfo("ocr_document_classified", {
+        documentId: job.document_id,
+        applicationId: job.application_id,
+        expected: verdict.expected,
+        detected: verdict.detected,
+        confidence: verdict.confidence,
+        mismatch: verdict.mismatch,
+      });
+      if (verdict.mismatch && verdict.detected) {
+        await notifyDocumentMismatch({
+          applicationId: job.application_id,
+          documentId: job.document_id,
+          expected: verdict.expected,
+          detected: verdict.detected,
+          confidence: verdict.confidence,
+          reason: verdict.message,
+        });
+      }
+    } catch (classifyError) {
+      logError("ocr_document_classify_failed", {
+        code: "ocr_document_classify_failed",
+        documentId: job.document_id,
+        applicationId: job.application_id,
+        error: classifyError instanceof Error ? classifyError.message : "unknown_error",
       });
     }
 
