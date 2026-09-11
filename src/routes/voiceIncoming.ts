@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { config } from "../config/index.js";
 import { safeImport } from "../utils/safeImport.js";
+// BF_SERVER_INCOMING_CALLER_NAME_v155
+import { resolveDisplayName } from "../modules/voice/callerDisplay.js";
 
 const router = Router();
 
@@ -15,7 +17,14 @@ type TwilioRuntime = {
         statusCallback: string;
         statusCallbackEvent: string[];
         statusCallbackMethod: "POST";
-      }) => { client: (identity: string) => void };
+      // BF_SERVER_INCOMING_CALLER_NAME_v155 - the noun form of <Client> is what
+      // allows a nested <Parameter>; the string form cannot carry one.
+      }) => {
+        client: (attrs: Record<string, never>) => {
+          identity: (value: string) => void;
+          parameter: (attrs: { name: string; value: string }) => void;
+        };
+      };
       toString: () => string;
     };
   };
@@ -23,7 +32,7 @@ type TwilioRuntime = {
 
 const twilioRuntime = (await safeImport("twilio")) as TwilioRuntime | null;
 
-router.post("/voice/incoming", async (_req: any, res: any) => {
+router.post("/voice/incoming", async (req: any, res: any) => {
   if (!twilioRuntime?.twiml?.VoiceResponse) {
     return res.status(503).json({ error: "twilio_unavailable" });
   }
@@ -55,8 +64,19 @@ router.post("/voice/incoming", async (_req: any, res: any) => {
         statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
         statusCallbackMethod: "POST",
       });
+      // BF_SERVER_INCOMING_CALLER_NAME_v155
+      // Staff saw the raw Twilio identity of the caller - "client-<appUUID>"
+      // for a mini-portal "Call Us" or "talk to a human", or a bare number for
+      // a PSTN call. v148 resolves a human name but only for conference
+      // participants, and this path creates none. A nested <Parameter> reaches
+      // the Voice SDK as a custom parameter the device can display.
+      const caller = String((req.body?.From ?? req.body?.Caller ?? "")).replace(/^client:/, "");
+      const callerName = await resolveDisplayName(pool, caller);
       for (const identity of identities) {
-        dial.client(identity);
+        const client = dial.client({});
+        client.identity(identity);
+        client.parameter({ name: "callerName", value: callerName });
+        if (caller) client.parameter({ name: "callerId", value: caller });
       }
     }
   } catch {
