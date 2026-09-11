@@ -37,6 +37,9 @@ describe("client push delivery", () => {
     expect(info).toHaveBeenCalledWith("client_push_unsupported_platform", {
       userId: "u1",
       unsupported: 1,
+      // The FCM transport exists as of the Firebase work; what is missing is
+      // its credential (FIREBASE_SERVICE_ACCOUNT_JSON), so the service reports
+      // "not configured" rather than "not implemented".
       reason: "push_transport_not_configured",
     });
   });
