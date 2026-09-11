@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test:ci": "vitest run",
     "test:integration": "VITEST_INTEGRATION=true vitest run",
-    "postbuild": "node scripts/write-build-info.mjs"
+    "postbuild": "node scripts/write-build-info.mjs",
+    "test:ratchet": "node scripts/test-ratchet.mjs"
   },
   "engines": {
     "node": ">=22.0.0 <23.0.0"
