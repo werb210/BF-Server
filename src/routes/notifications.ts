@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { AppError } from "../middleware/errors.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { deleteAllForUser, deleteForUser, listForUser, markAllRead, markRead, unreadCount } from "../services/notifications/notifications.service.js";
+import { categoryManifest } from '../services/push/pushCategories.js'; // v126-push-categories
 
 const router = Router();
 
@@ -75,3 +76,8 @@ router.delete(
 );
 
 export default router;
+
+// v126-push-categories
+router.get('/categories', (_req, res) => {
+  res.json({ ok: true, categories: categoryManifest() });
+});
