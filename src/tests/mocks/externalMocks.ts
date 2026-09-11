@@ -78,7 +78,7 @@ vi.mock("ioredis", () => {
 });
 
 const mockFetch = vi.fn(() => {
-  throw new Error("Real network call blocked in test");
+  throw new Error("NETWORK_CALL_BLOCKED: Real network call blocked in test");
 });
 
 const blockedFetch = new Proxy(mockFetch as unknown as typeof global.fetch, {
