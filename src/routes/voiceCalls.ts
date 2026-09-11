@@ -51,6 +51,8 @@ import {
 } from "../voice/conferenceService.js";
 import { getCallerId } from "../voice/twilioClient.js";
 import voiceMidCallRoutes from "./voiceMidCall.js";
+// BF_SERVER_CALLER_DISPLAY_v148
+import { resolveDisplayName } from "../modules/voice/callerDisplay.js";
 
 const router = Router();
 
@@ -374,7 +376,8 @@ router.post("/calls", auth, async (req: any, res) => {
       kind: "staff",
       identity: userId,
       role: "moderator",
-      displayName: req.user?.name || req.user?.email || userId,
+      // BF_SERVER_CALLER_DISPLAY_v148 - userId was the last resort here too.
+      displayName: req.user?.name || req.user?.email || await resolveDisplayName(pool, userId),
     });
 
     // Callee participant row + dial.
@@ -385,7 +388,9 @@ router.post("/calls", auth, async (req: any, res) => {
         conferenceId: conf.id,
         kind: "pstn",
         phoneNumber: toPstn,
-        displayName: target.contactName ?? toPstn,
+        // BF_SERVER_CALLER_DISPLAY_v148 - was `?? toPstn`, which put a bare
+        // E.164 string in the call UI whenever the caller did not supply a name.
+        displayName: await resolveDisplayName(pool, toPstn, target.contactName),
       });
       const calleeSid = await dialPstnIntoConference({
         conferenceId: conf.id,
@@ -407,7 +412,9 @@ router.post("/calls", auth, async (req: any, res) => {
         conferenceId: conf.id,
         kind: "staff",
         identity: staffIdentity,
-        displayName: target.contactName ?? staffIdentity,
+        // BF_SERVER_CALLER_DISPLAY_v148 - was `?? staffIdentity`, which is how
+        // a raw staff user UUID ended up displayed on quick calls.
+        displayName: await resolveDisplayName(pool, staffIdentity, target.contactName),
       });
       const calleeSid = await dialClientIntoConference({
         conferenceFriendly: conf.friendly_name,
