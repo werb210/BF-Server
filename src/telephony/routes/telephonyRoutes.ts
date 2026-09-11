@@ -9,6 +9,8 @@ import { explainTeam } from "../../modules/presence/explainPresence.js";
 import watchCallRoutes from "../../watch/callRoutes.js";
 // BF_SERVER_CALL_DISPOSITION_v145
 import { CALL_DISPOSITIONS, planForDisposition } from "../../modules/calls/callDisposition.js";
+// BF_SERVER_CALL_REF_v161
+import { parseCallRef, callRefPredicate } from "../../modules/calls/callRef.js";
 
 const router = express.Router();
 router.use("/watch", watchCallRoutes);
@@ -178,8 +180,11 @@ router.get("/dispositions", auth, (_req: Request, res: Response) => {
 });
 
 router.post("/calls/:id/disposition", auth, async (req: any, res: Response) => {
-  const id = String(req.params.id || "");
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ success: false, error: "invalid_call_id" });
+  // BF_SERVER_CALL_REF_v161 - the dialer only ever holds a Twilio CallSid, so
+  // accept either that or our own call id.
+  const ref = parseCallRef(req.params.id);
+  if (!ref) return res.status(400).json({ success: false, error: "invalid_call_id" });
+  const id = ref.value;
   const plan = planForDisposition(req.body?.disposition);
   if (!plan) return res.status(400).json({ success: false, error: "unknown_disposition" });
   const staffUserId = req.user?.userId || req.user?.id || req.user?.sub;
@@ -188,7 +193,7 @@ router.post("/calls/:id/disposition", auth, async (req: any, res: Response) => {
   try {
     const updated = await pool.query(
       `UPDATE call_logs SET disposition = $1
-        WHERE id = $2::uuid AND staff_user_id = $3
+        WHERE ${callRefPredicate(ref)} AND staff_user_id = $3
         RETURNING id::text, COALESCE(contact_id, crm_contact_id) AS contact_id, silo`,
       [plan.disposition, id, staffUserId],
     );
