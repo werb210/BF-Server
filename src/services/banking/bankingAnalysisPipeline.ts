@@ -17,9 +17,15 @@ import { detectStatementCurrency, isNsfDescription, sanitizeTransactions, statem
 
 // BF_SERVER_BANKING_INTEGRITY_v44
 
-const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
+// Construct the SDK only when the LLM fallback is actually needed. Besides
+// avoiding startup work for routes that merely import the banking pipeline,
+// this keeps unrelated route tests from having to provide a constructable
+// OpenAI mock.
+function getOpenAiClient(): OpenAI | null {
+  return process.env.OPENAI_API_KEY
+    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+    : null;
+}
 
 // BF_SERVER_BLOCK_v690_BANKING_LLM_FALLBACK_v1 — when Doc-Intel's table /
 // bankStatement extractors return nothing (common on real statements that are
@@ -67,6 +73,7 @@ export function parseLlmTransactions(raw: string): BankTransaction[] {
 }
 
 async function extractTransactionsWithLLM(text: string): Promise<BankTransaction[]> {
+  const openai = getOpenAiClient();
   if (!openai) return [];
   const MAX = 60000;
   const body = text.length > MAX ? text.slice(0, MAX) : text;
@@ -286,7 +293,7 @@ export async function runBankingAnalysis(
     // rows that get counted but whose date does not parse, so they were dropped at
     // aggregation and the fallback never fired.
     const usableCount = transactions.filter((tx) => tx.date && Number.isFinite(tx.amount)).length;
-    if (usableCount === 0 && openai) {
+    if (usableCount === 0 && process.env.OPENAI_API_KEY) {
       const ocrText = ocrTextFromResult(finalResult);
       if (ocrText.trim().length > 0) {
         const llmTx = await extractTransactionsWithLLM(ocrText).catch((e) => {

@@ -1509,7 +1509,7 @@ router.get("/web-leads", SupportController.fetchWebLeads);
 
 const ids = (v: any) => Array.isArray(v) ? v.map(String).filter(Boolean) : [];
 
-router.post('/contacts/bulk-delete', safeHandler(async (req: any, res: any) => {
+router.post('/contacts/bulk-delete', requireCrmWrite, safeHandler(async (req: any, res: any) => {
   const selected = ids(req.body?.ids); const silo = getSilo(res);
   if (!selected.length) return res.json({ deleted: 0, protectedIds: [] });
   // v692: protect contacts attached to an application (direct FK or join table).

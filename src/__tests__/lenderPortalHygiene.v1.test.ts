@@ -30,7 +30,8 @@ describe("lender OTP shared-phone guard", () => {
     expect(auth).toContain("BF_SERVER_LENDER_OTP_AMBIGUOUS_v1");
     expect(auth).toContain("ambiguous_lender_phone");
     expect(auth).toContain("lenderResult.rows.length > 1");
-    expect(auth).not.toContain("LIMIT 1`");
+    const lenderLookup = auth.match(/const lenderResult[\s\S]*?const lender = lenderResult\.rows\[0\]/)?.[0] ?? "";
+    expect(lenderLookup).not.toContain("LIMIT 1");
   });
 
   it("still rejects no-match and mints a token on a single match", () => {

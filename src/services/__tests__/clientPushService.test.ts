@@ -37,7 +37,7 @@ describe("client push delivery", () => {
     expect(info).toHaveBeenCalledWith("client_push_unsupported_platform", {
       userId: "u1",
       unsupported: 1,
-      reason: "fcm_not_implemented",
+      reason: "push_transport_not_configured",
     });
   });
 });

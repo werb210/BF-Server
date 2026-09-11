@@ -213,7 +213,10 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
         tokenVersion: 0,
         phone,
       });
-      return res.status(200).json({ status: "ok", data: { token } });
+      return res.status(200).json({
+        status: "ok",
+        data: { token, hasSubmittedApplication: false, submittedApplicationId: null },
+      });
     } catch {
       return res.status(500).json({ error: "auth not configured" });
     }
