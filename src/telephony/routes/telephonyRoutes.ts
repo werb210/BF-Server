@@ -4,6 +4,8 @@ import { auth } from "../../middleware/auth.js";
 import { generateVoiceToken } from "../services/tokenService.js";
 import { pool } from "../../db.js";
 import { recomputePresence, setManualBusy } from "../../modules/presence/presenceService.js";
+// BF_SERVER_PRESENCE_EXPLAIN_v142
+import { explainTeam } from "../../modules/presence/explainPresence.js";
 import watchCallRoutes from "../../watch/callRoutes.js";
 
 const router = express.Router();
@@ -138,6 +140,36 @@ router.post("/presence/heartbeat", auth, async (req: any, res: Response) => {
 });
 
 // ── Call status / log ─────────────────────────────────────────────────────────
+// BF_SERVER_PRESENCE_EXPLAIN_v142
+// Answers "the app was open, why did the call say nobody was available".
+// Returns the same rows inbound routing sees, plus the specific blocking
+// reason for each, so this never has to be guessed at again.
+router.get("/presence/diagnostics", auth, async (_req: Request, res: Response) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT user_id, twilio_identity, status, last_heartbeat,
+              manual_busy, on_call, in_meeting
+         FROM staff_presence
+        ORDER BY last_heartbeat DESC NULLS LAST
+        LIMIT 50`
+    );
+    const summary = explainTeam(rows as never[]);
+    return res.json({
+      success: true,
+      data: {
+        now: new Date().toISOString(),
+        ...summary,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: "presence_diagnostics_failed",
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
 router.get("/call-status", auth, async (_req, res) => {
   const result = await pool.query(
     `SELECT id, phone_number, direction, status, duration_seconds, created_at
