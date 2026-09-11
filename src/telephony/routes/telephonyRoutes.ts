@@ -7,6 +7,8 @@ import { recomputePresence, setManualBusy } from "../../modules/presence/presenc
 // BF_SERVER_PRESENCE_EXPLAIN_v142
 import { explainTeam } from "../../modules/presence/explainPresence.js";
 import watchCallRoutes from "../../watch/callRoutes.js";
+// BF_SERVER_CALL_DISPOSITION_v145
+import { CALL_DISPOSITIONS, planForDisposition } from "../../modules/calls/callDisposition.js";
 
 const router = express.Router();
 router.use("/watch", watchCallRoutes);
@@ -165,6 +167,64 @@ router.get("/presence/diagnostics", auth, async (_req: Request, res: Response) =
     return res.status(500).json({
       success: false,
       error: "presence_diagnostics_failed",
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
+// BF_SERVER_CALL_DISPOSITION_v145 - expose the shared workflow to dialer and portal.
+router.get("/dispositions", auth, (_req: Request, res: Response) => {
+  res.json({ success: true, data: { dispositions: CALL_DISPOSITIONS } });
+});
+
+router.post("/calls/:id/disposition", auth, async (req: any, res: Response) => {
+  const id = String(req.params.id || "");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ success: false, error: "invalid_call_id" });
+  const plan = planForDisposition(req.body?.disposition);
+  if (!plan) return res.status(400).json({ success: false, error: "unknown_disposition" });
+  const staffUserId = req.user?.userId || req.user?.id || req.user?.sub;
+  if (!staffUserId) return res.status(401).json({ success: false, error: "unauthenticated" });
+
+  try {
+    const updated = await pool.query(
+      `UPDATE call_logs SET disposition = $1
+        WHERE id = $2::uuid AND staff_user_id = $3
+        RETURNING id::text, COALESCE(contact_id, crm_contact_id) AS contact_id, silo`,
+      [plan.disposition, id, staffUserId],
+    );
+    if (!updated.rowCount) return res.status(404).json({ success: false, error: "call_not_found" });
+    const row: any = updated.rows[0];
+
+    if (plan.followUp && row?.contact_id) {
+      await pool.query(
+        `INSERT INTO tasks (silo, title, body, type, priority, due_at, assignee_user_id, contact_id, source, source_ref_id)
+         SELECT $1, $2, $3, 'TODO', 'MEDIUM', now() + ($4 || ' days')::interval, $5::uuid, $6::uuid, 'CALL_DISPOSITION', $7::uuid
+          WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE source = 'CALL_DISPOSITION' AND source_ref_id = $7::uuid)`,
+        [row.silo, plan.followUp.label, `Auto-created from call outcome: ${plan.disposition}`,
+          String(plan.followUp.days), staffUserId, row.contact_id, id],
+      ).catch(() => {});
+    }
+
+    if (row?.contact_id) {
+      await pool.query(
+        `INSERT INTO crm_notes (body, contact_id, silo) VALUES ($1, $2::uuid, $3)`,
+        [plan.timelineNote, row.contact_id, row.silo],
+      ).catch(() => {});
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        callId: id,
+        disposition: plan.disposition,
+        followUpCreated: Boolean(plan.followUp && row?.contact_id),
+        suppressOutreach: plan.suppressOutreach,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: "disposition_failed",
       message: err instanceof Error ? err.message : String(err),
     });
   }

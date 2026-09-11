@@ -2,6 +2,8 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { sendSMS } from "../lib/twilio.js"; // BF_SERVER_WATCH_SMS_v1
 import { allowedLine, watchAuth, watchError } from "./security.js";
+// BF_SERVER_CALL_DISPOSITION_v145
+import { CALL_DISPOSITIONS as SHARED_CALL_DISPOSITIONS, followUpFor } from "../modules/calls/callDisposition.js";
 
 const router = Router();
 router.use(watchAuth);
@@ -45,16 +47,8 @@ router.get("/calls/recent", async (req: any, res) => {
 });
 
 // BF_SERVER_WATCH_CALL_DISPOSITION_v1 - record a post-call outcome from the Watch.
-const CALL_DISPOSITIONS = new Set([
-  "connected", "left_voicemail", "no_answer", "follow_up", "not_interested",
-  "do_not_contact", "demo_booked", "documents_promised", "needs_lender_review",
-]);
-// BF_SERVER_DISPOSITION_TASK_v1 - outcomes that should spawn a follow-up task.
-const DISPOSITION_FOLLOWUP: Record<string, { label: string; days: number }> = {
-  follow_up: { label: "Follow up on call", days: 2 },
-  documents_promised: { label: "Collect promised documents", days: 3 },
-  needs_lender_review: { label: "Send file for lender review", days: 1 },
-};
+// BF_SERVER_CALL_DISPOSITION_v145 - shared with the dialer and staff portal.
+const CALL_DISPOSITIONS = new Set<string>(SHARED_CALL_DISPOSITIONS);
 router.post("/calls/:id/disposition", async (req: any, res) => {
   const id = String(req.params.id || "");
   if (!/^[0-9a-f-]{36}$/i.test(id)) return watchError(req, res, 400, "invalid_request", "Invalid call id");
@@ -67,7 +61,7 @@ router.post("/calls/:id/disposition", async (req: any, res) => {
   // BF_SERVER_DISPOSITION_TASK_v1 - on actionable outcomes, auto-create a follow-up
   // task for the contact (deduped by call id so re-dispositioning won't stack tasks).
   const row: any = updated.rows[0];
-  const rule = DISPOSITION_FOLLOWUP[disposition];
+  const rule = followUpFor(disposition);
   if (rule && row?.contact_id) {
     await pool.query(
       `INSERT INTO tasks (silo, title, body, type, priority, due_at, assignee_user_id, contact_id, source, source_ref_id)
@@ -112,4 +106,3 @@ router.post("/sms", async (req: any, res) => {
 });
 
 export default router;
-
