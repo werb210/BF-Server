@@ -1,8 +1,15 @@
 // BF_SERVER_PRESENCE_AUTO_BUSY_v1
 // Presence is computed, not set directly. 'available' only when: signed in
-// (recent heartbeat), inside 08:00–18:00 MST (fixed offset, no DST), and no
+// (recent heartbeat), inside 08:00-18:00 America/Edmonton, and no
 // busy reason active (manual / on a call / in a meeting). Else 'busy'; stale
-// heartbeat -> 'offline'. Postgres 'MST' is a fixed UTC-7 abbreviation.
+// heartbeat -> 'offline'.
+//
+// BF_SERVER_PRESENCE_EXPLAIN_v142 - this used to read AT TIME ZONE 'MST',
+// which Postgres treats as a fixed UTC-7 abbreviation with no DST. Alberta
+// observes DST, so for most of the year the window silently ran 09:00-19:00
+// local: staff with the app open were computed 'busy' before 9am and after
+// 7pm, and inbound calls answered "no agents are available". The named zone
+// tracks DST.
 import { pool } from "../../db.js";
 
 const RECOMPUTE_SQL = `
@@ -10,8 +17,8 @@ const RECOMPUTE_SQL = `
     status = CASE
       WHEN last_heartbeat < now() - interval '5 minutes' THEN 'offline'
       WHEN manual_busy OR on_call OR in_meeting THEN 'busy'
-      WHEN extract(hour from (now() AT TIME ZONE 'MST')) < 8
-        OR extract(hour from (now() AT TIME ZONE 'MST')) >= 18 THEN 'busy'
+      WHEN extract(hour from (now() AT TIME ZONE 'America/Edmonton')) < 8
+        OR extract(hour from (now() AT TIME ZONE 'America/Edmonton')) >= 18 THEN 'busy'
       ELSE 'available'
     END,
     updated_at = now()
