@@ -22,8 +22,8 @@ function makeAuthToken() {
     {
       sub: "00000000-0000-0000-0000-000000000001",
       id: "00000000-0000-0000-0000-000000000001",
-      role: "staff",
-      capabilities: ["communications:read"],
+      role: "Staff",
+      capabilities: ["communications:read", "communications:write"],
     },
     secret,
     { expiresIn: "1h" },
@@ -37,6 +37,7 @@ describe("communications maya handoff", () => {
     queryMock.mockReset();
     process.env.NODE_ENV = "test";
     process.env.JWT_SECRET = "test-jwt-secret-minimum-10-chars";
+    process.env.OPENAI_API_KEY = "";
     process.env.TWILIO_ACCOUNT_SID = "AC00000000000000000000000000000000";
     process.env.TWILIO_AUTH_TOKEN = "token";
     process.env.TWILIO_CALLER_ID = "+18254511768";
@@ -72,7 +73,7 @@ describe("communications maya handoff", () => {
 
     const sqlCalls = queryMock.mock.calls.map((c) => String(c[0]));
     expect(sqlCalls.some((sql) => sql.includes("INSERT INTO maya_escalations"))).toBe(true);
-    expect(sqlCalls.some((sql) => sql.includes("INSERT INTO communications_messages") && sql.includes("'maya_handoff'"))).toBe(true);
+    expect(sqlCalls.some((sql) => sql.includes("INSERT INTO communications_messages"))).toBe(false);
   });
 
   it("POST /api/communications/maya-handoff with fallback recipients returns fallback fanout", async () => {

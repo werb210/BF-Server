@@ -23,7 +23,7 @@ function makeAuthToken() {
       sub: "00000000-0000-0000-0000-000000000001",
       id: "00000000-0000-0000-0000-000000000001",
       role: "staff",
-      capabilities: ["crm:read"],
+      capabilities: ["crm:read", "crm:write"],
     },
     secret,
     { expiresIn: "1h" },
@@ -47,7 +47,9 @@ describe("CRM + CORS + telephony regressions", () => {
 
   it("POST /api/crm/contacts returns 201 with UUID id", async () => {
     const createdId = "11111111-1111-4111-8111-111111111111";
-    queryMock.mockResolvedValueOnce({
+    queryMock
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
       rows: [{
         id: createdId,
         name: "Test Contact",
@@ -129,6 +131,7 @@ describe("CRM + CORS + telephony regressions", () => {
 
   it("GET /api/telephony/token returns 503 with missing env details", async () => {
     delete process.env.TWILIO_VOICE_APP_SID;
+    queryMock.mockResolvedValue({ rows: [] });
 
     const { createApp } = await import("../app.js");
     const app = createApp();
