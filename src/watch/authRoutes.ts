@@ -4,9 +4,15 @@ import rateLimit from "express-rate-limit";
 import { pool } from "../db.js";
 import { auth } from "../middleware/auth.js";
 import { hashWatchSecret, issueWatchAccessToken, newWatchSecret, watchError } from "./security.js";
+import { rateLimitKeyFromRequest } from "../middleware/clientIp.js"; // BF_SERVER_AZURE_XFF_PORT_v183
 
 const router = Router();
+// BF_SERVER_AZURE_XFF_PORT_v183 - this was the only limiter in the repo with no
+// keyGenerator. The library default validates req.ip, Azure hands it
+// "199.119.235.200:52995", and it threw ERR_ERL_INVALID_IP_ADDRESS on the watch
+// enrollment and link routes.
 const limiter = rateLimit({ windowMs: 60_000, limit: 10, standardHeaders: true, legacyHeaders: false,
+  keyGenerator: rateLimitKeyFromRequest,
   handler: (req, res) => watchError(req, res, 429, "rate_limited", "Too many authentication attempts", true) });
 
 // The authenticated iPhone requests a short-lived, single-use enrollment code.
