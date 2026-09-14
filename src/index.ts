@@ -1,3 +1,11 @@
+// BF_SERVER_TRACE_DEPRECATION_v183
+// v155 added --trace-deprecation to package.json "start". Azure App Service
+// launches `node dist/index.js` directly and never runs npm start, so the flag
+// has never reached the process and the pg client.query deprecation still has
+// no stack. This property is the in-process equivalent and does not depend on
+// the startup command or on an app setting.
+process.traceDeprecation = true;
+
 // BF_SERVER_BLOCK_v_SAFE_ERROR_LOGGING_v1 - never console.error the raw error
 // object: pg errors reference the live Connection (TLSSocket, processID,
 // secretKey, query queue), so logging the object leaked DB credentials into the
