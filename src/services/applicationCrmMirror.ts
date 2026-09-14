@@ -179,9 +179,21 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
       const finalPhone = authoritativePhone ?? existingPhone ?? applicantPhone ?? null;
       if (existing.rows[0]) {
         contactId = existing.rows[0].id;
+        // BF_SERVER_PLACEHOLDER_NAME_v170
+        // COALESCE(NULLIF(name,''), ...) only wrote the new name when the
+        // stored one was EMPTY. The wizard's draft contact is named
+        // "Unknown (application started)", which is not empty, so the real
+        // applicant name never replaced it and the CRM showed "Unknown" for a
+        // record that held the name already.
         await pool.query(
           `UPDATE contacts SET
-             name       = COALESCE(NULLIF(name,''),  NULLIF($2,'')),
+             name       = CASE
+                            WHEN NULLIF($2,'') IS NULL THEN name
+                            WHEN COALESCE(name,'') = '' THEN $2
+                            WHEN name ILIKE '%(application started)%' THEN $2
+                            WHEN name ILIKE 'unknown' THEN $2
+                            ELSE name
+                          END,
              email      = COALESCE(NULLIF(email,''), NULLIF($3,'')),
              phone      = NULLIF($4,''),
              company_id = COALESCE($5, company_id),
