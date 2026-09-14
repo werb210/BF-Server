@@ -33,6 +33,7 @@ function buildPoolConfig(): PoolConfig {
       max: 10,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
+      statement_timeout: 10_000, // BF_SERVER_POOL_STATEMENT_TIMEOUT_v186
     };
   }
 
@@ -50,6 +51,17 @@ function buildPoolConfig(): PoolConfig {
     // hold idle connections open so they survive Azure's idle cull.
     keepAlive: true,
     keepAliveInitialDelayMillis: 10_000,
+    // BF_SERVER_POOL_STATEMENT_TIMEOUT_v186
+    // This was a connect-event hook firing an unawaited query to configure the
+    // session timeout. pg-pool emits the event inside
+    // _afterConnect and then hands the client straight to the waiting caller
+    // in _acquireClient, so the first real query on every new connection began
+    // while the unawaited SET was still in flight - which is exactly the
+    // "client.query() when the client is already executing a query"
+    // deprecation, and becomes a thrown error in pg@9. As a pool option, pg
+    // sends statement_timeout as a connection parameter, so it is in force
+    // before the client is ever handed out and no extra round trip is needed.
+    statement_timeout: 10_000,
   };
 }
 
@@ -123,14 +135,6 @@ export async function fetchInstrumentedClient(): Promise<PoolClient> {
 export function setDbTestPoolMetricsOverride(): void {}
 export function setDbTestFailureInjection(): void {}
 export function clearDbTestFailureInjection(): void {}
-
-pool.on("connect", (client) => {
-  void client
-    .query("SET statement_timeout = 10000")
-    .catch((err: any) => logWarn("db_statement_timeout_set_failed", { message: err.message }));
-  // BF_SERVER_BLOCK_v_LOG_NOISE_AND_NOTIF_DUPE_v1 — db_client_connected was logged on
-  // EVERY pool connection, flooding the log and burying real errors. Removed.
-});
 
 pool.on("error", (err: any) => {
   markNotReady("db_unavailable");
