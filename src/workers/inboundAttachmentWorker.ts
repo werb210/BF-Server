@@ -8,6 +8,44 @@ import type { Pool } from "pg";
 import { getGraphForUser, type GraphClient } from "../modules/o365/graphClient.js";
 import { fileInboundAttachments } from "../services/contactDocuments.js";
 
+// BF_INBOUND_ATTACHMENT_ATTEMPT_LEDGER_v189
+// A message that files nothing writes no contact_documents row, so the old
+// pre-check never matched it and the worker re-downloaded it every 5 minutes for
+// two days. Cap the attempts instead.
+const MAX_ATTEMPTS = 3;
+
+async function shouldSkipMessage(pool: Pool, silo: string, messageId: string): Promise<boolean> {
+  try {
+    const { rows } = await pool.query<{ attempts: number; last_outcome: string | null }>(
+      `SELECT attempts, last_outcome FROM inbound_attachment_attempts
+        WHERE silo = $1 AND message_id = $2`,
+      [silo, messageId],
+    );
+    const row = rows[0];
+    if (!row) return false;
+    if (row.last_outcome === "filed" || row.last_outcome === "terminal") return true;
+    return Number(row.attempts ?? 0) >= MAX_ATTEMPTS;
+  } catch {
+    return false; // ledger unavailable -> behave as before
+  }
+}
+
+async function recordAttempt(pool: Pool, silo: string, messageId: string, outcome: string): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO inbound_attachment_attempts (silo, message_id, attempts, last_outcome, last_attempt_at)
+       VALUES ($1, $2, 1, $3, now())
+       ON CONFLICT (silo, message_id) DO UPDATE
+         SET attempts = inbound_attachment_attempts.attempts + 1,
+             last_outcome = EXCLUDED.last_outcome,
+             last_attempt_at = now()`,
+      [silo, messageId, outcome],
+    );
+  } catch {
+    /* ledger write failure must never break the scan */
+  }
+}
+
 const INTERVAL_MS = 5 * 60 * 1000; // poll every 5 minutes
 const LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000; // only consider mail from the last 2 days
 const INITIAL_DELAY_MS = 30 * 1000; // let startup settle before the first pass
@@ -101,10 +139,14 @@ export function startInboundAttachmentWorker(pool: Pool): { stop: () => void } {
           } catch {
             /* if the pre-check fails, fall through; the insert still dedupes */
           }
+          // BF_INBOUND_ATTACHMENT_ATTEMPT_LEDGER_v189
+          if (await shouldSkipMessage(pool, silo, mid)) continue;
           try {
-            await fileInboundAttachments({ pool, graph, base: "/me", message: m, silo, ownerId: u.id });
+            const res = await fileInboundAttachments({ pool, graph, base: "/me", message: m, silo, ownerId: u.id });
+            const outcome = (res.filed ?? 0) > 0 ? "filed" : res.retryable ? "retryable" : "terminal";
+            await recordAttempt(pool, silo, mid, outcome);
           } catch {
-            /* never let one message break the loop */
+            await recordAttempt(pool, silo, mid, "retryable");
           }
         }
       }
@@ -151,10 +193,14 @@ export function startInboundAttachmentWorker(pool: Pool): { stop: () => void } {
                 } catch {
                   /* fall through; insert still dedupes */
                 }
+                // BF_INBOUND_ATTACHMENT_ATTEMPT_LEDGER_v189
+                if (await shouldSkipMessage(pool, silo, mid)) continue;
                 try {
-                  await fileInboundAttachments({ pool, graph, base: `/users/${encodeURIComponent(addr)}`, message: m, silo });
+                  const res = await fileInboundAttachments({ pool, graph, base: `/users/${encodeURIComponent(addr)}`, message: m, silo });
+                  const outcome = (res.filed ?? 0) > 0 ? "filed" : res.retryable ? "retryable" : "terminal";
+                  await recordAttempt(pool, silo, mid, outcome);
                 } catch {
-                  /* never let one message break the loop */
+                  await recordAttempt(pool, silo, mid, "retryable");
                 }
               }
             }
