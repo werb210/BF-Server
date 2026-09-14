@@ -19,7 +19,7 @@ import { clarityConfigured, runClarityReport } from "../services/clarityService.
 import { countryFromPhone } from "../services/nanpCountry.js"; // BF_SERVER_ABANDONED_AREA_CODE_v92
 import { conversionsConfigured, findPendingConversions, uploadFundedConversions, submitConversionsConfigured, findPendingSubmitConversions, uploadSubmitConversions } from "../services/googleAdsConversions.js";
 import { linkedInConversionsConfigured, findPendingLinkedInConversions, uploadFundedLinkedInConversions } from "../services/linkedInAdsConversions.js"; // BF_SERVER_LINKEDIN_CONVERSIONS_v1
-import { googleAdsConfigured, runGoogleAdsReport } from "../services/googleAdsService.js";
+import { googleAdsConfigured, runGoogleAdsReport, googleAdsSearch } from "../services/googleAdsService.js";
 import { linkedInAdsConfigured, runLinkedInAdsReport } from "../services/linkedInAdsService.js"; // BF_SERVER_LINKEDIN_ADS_v1
 import adSpendAnalysisRoutes from "./marketing/adSpendAnalysis.js"; // BF_SERVER_AD_SPEND_ANALYSIS_v1
 // BF_EMAIL_TEMPLATE_IMPORTS_v1
@@ -56,20 +56,45 @@ router.get("/", safeHandler((_req: any, res: any) => {
   respondOk(res, { status: "ok" });
 }));
 
-router.get("/campaigns", safeHandler((req: any, res: any) => {
+// BF_SERVER_ADS_CAMPAIGNS_v176
+// This returned a hardcoded empty array. The portal's Negatives panel needs a
+// campaign ID to attach a negative to, so staff had to copy a numeric ID out
+// of the Google Ads URL by hand and the Add button sat silently disabled until
+// they did. googleAdsSearch already exists and is already authenticated -
+// list the account's campaigns through it.
+router.get("/campaigns", safeHandler(async (req: any, res: any) => {
   const page = Number(req.query.page) || 1;
   const pageSize = Number(req.query.pageSize) || 25;
-  respondOk(
-    res,
-    {
-      campaigns: [],
-      total: 0,
-    },
-    {
-      page,
-      pageSize,
-    }
-  );
+  if (!googleAdsConfigured()) {
+    respondOk(res, { campaigns: [], total: 0, configured: false }, { page, pageSize });
+    return;
+  }
+  try {
+    const rows = await googleAdsSearch(
+      "SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type " +
+      "FROM campaign WHERE campaign.status != 'REMOVED' ORDER BY campaign.name"
+    );
+    const campaigns = rows
+      .map((r: any) => ({
+        id: String(r?.campaign?.id ?? ""),
+        name: String(r?.campaign?.name ?? "(unnamed)"),
+        status: String(r?.campaign?.status ?? ""),
+        channel: String(r?.campaign?.advertisingChannelType ?? ""),
+      }))
+      .filter((c: any) => c.id);
+    const start = (page - 1) * pageSize;
+    respondOk(
+      res,
+      { campaigns: campaigns.slice(start, start + pageSize), total: campaigns.length, configured: true },
+      { page, pageSize }
+    );
+  } catch (err) {
+    respondOk(
+      res,
+      { campaigns: [], total: 0, configured: true, error: (err as Error)?.message ?? "google_ads_search_failed" },
+      { page, pageSize }
+    );
+  }
 }));
 
 // BF_SERVER_MARKETING_FUNNEL_v1 - internal application funnel from our own DB (no external deps):
