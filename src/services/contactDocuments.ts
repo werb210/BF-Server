@@ -56,6 +56,10 @@ export interface FileInboundResult {
   duplicates?: number;
   contactId: string | null;
   reason?: "no_attachments" | "no_message_id" | "no_contact" | "graph_error" | "all_duplicates";
+  // BF_INBOUND_ATTACHMENT_ATTEMPT_LEDGER_v189
+  permanentSkips?: number;
+  transientSkips?: number;
+  retryable?: boolean;
 }
 
 export async function fileInboundAttachments(opts: {
@@ -99,6 +103,10 @@ export async function fileInboundAttachments(opts: {
   let filed = 0;
   let duplicates = 0;
   let inlineSkipped = 0;
+  // BF_INBOUND_ATTACHMENT_ATTEMPT_LEDGER_v189 - skips that will never succeed on a
+  // retry (no bytes, oversize) counted separately from transient ones (upload failed).
+  let permanentSkips = 0;
+  let transientSkips = 0;
   for (const att of atts) {
     if (!att) continue;
     if (att.isInline === true) { inlineSkipped++; continue; }
@@ -114,6 +122,13 @@ export async function fileInboundAttachments(opts: {
       if (one.ok) {
         const oj: any = await one.json();
         bytesB64 = oj?.contentBytes;
+      } else {
+        // BF_INBOUND_ATTACHMENT_ATTEMPT_LEDGER_v189 - a failed by-id fetch was
+        // indistinguishable from a genuine itemAttachment, so a 401/429/503 was
+        // reported as "no bytes" forever. Surface the status.
+        console.error("[file-to-crm] attachment fetch by id failed", {
+          messageId, name: att.name, status: one.status,
+        });
       }
     }
     if (!bytesB64) {
@@ -122,15 +137,18 @@ export async function fileInboundAttachments(opts: {
       console.error("[file-to-crm] attachment has no bytes, skipping", {
         messageId, name: att.name, odataType: att["@odata.type"],
       });
+      permanentSkips++;
       continue;
     }
     if (Number(att.size ?? 0) > MAX_ATTACHMENT_BYTES) {
       console.error("[file-to-crm] attachment too large, skipping", { name: att.name, size: att.size });
+      permanentSkips++;
       continue;
     }
     const buffer = Buffer.from(bytesB64, "base64");
     if (buffer.length > MAX_ATTACHMENT_BYTES) {
       console.error("[file-to-crm] attachment too large after decode, skipping", { name: att.name });
+      permanentSkips++;
       continue;
     }
     const filename = String(att.name ?? "attachment");
@@ -148,7 +166,8 @@ export async function fileInboundAttachments(opts: {
       blobName = put.blobName;
       url = put.url ?? null;
     } catch {
-      continue; // blob upload failed -> skip this attachment
+      transientSkips++; // blob upload failed -> worth retrying later
+      continue;
     }
 
     try {
@@ -167,6 +186,20 @@ export async function fileInboundAttachments(opts: {
       /* skip individual insert failures */
     }
   }
-  console.log("[file-to-crm] done", { messageId, contactId, filed, duplicates, inlineSkipped });
-  return { filed, duplicates, contactId, reason: filed === 0 && duplicates > 0 ? "all_duplicates" : undefined };
+  console.log("[file-to-crm] done", {
+    messageId, contactId, filed, duplicates, inlineSkipped, permanentSkips, transientSkips,
+  });
+  // BF_INBOUND_ATTACHMENT_ATTEMPT_LEDGER_v189 - `retryable` tells the worker whether
+  // another pass could plausibly change the result. Nothing filed, nothing transient
+  // and nothing left to try means this message is done, however it looks.
+  const retryable = filed === 0 && duplicates === 0 && transientSkips > 0;
+  return {
+    filed,
+    duplicates,
+    contactId,
+    permanentSkips,
+    transientSkips,
+    retryable,
+    reason: filed === 0 && duplicates > 0 ? "all_duplicates" : undefined,
+  };
 }
