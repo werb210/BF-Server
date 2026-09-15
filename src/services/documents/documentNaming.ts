@@ -77,6 +77,23 @@ export function uniqueDisplayName(name: string, existing: string[]): string {
   return name;
 }
 
+// BF_SERVER_NAME_PARTS_v265 - the pieces the portal Accept box rebuilds live as
+// staff type only the period ("July").
+export function suggestedNameParts(input: {
+  businessName: string | null;
+  category: string | null;
+  detectedType?: string | null;
+  filename: string | null;
+}): { businessName: string | null; documentType: string; period: string | null; extension: string } {
+  const documentType = documentTypeTitle(input.category, input.detectedType);
+  return {
+    businessName: input.businessName?.trim() || null,
+    documentType,
+    period: periodFromFilename(input.filename, documentType === "Bank Statement"),
+    extension: extensionOf(input.filename),
+  };
+}
+
 export function suggestDocumentName(input: {
   businessName: string | null;
   category: string | null;
@@ -112,7 +129,14 @@ export async function loadNamingContext(documentId: string, query: Query = defau
     [doc.application_id, documentId],
   );
   const confident = doc.detected_confidence !== null && Number(doc.detected_confidence) >= 0.6;
+  const namingInput = {
+    businessName: doc.business_name ?? null,
+    category: doc.category ?? null,
+    detectedType: confident ? doc.detected_type : null,
+    filename: doc.filename ?? null,
+  };
   return {
+    parts: suggestedNameParts(namingInput), // v265
     filename: doc.filename as string | null,
     displayName: doc.display_name as string | null,
     suggestedName: suggestDocumentName({
