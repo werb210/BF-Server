@@ -1,6 +1,8 @@
 // BF_SERVER_REJECTION_REASONS_v124
 import { dbQuery } from "../db.js";
 import { sendViaGraph } from "./email/graphSendService.js";
+// BF_SERVER_CLIENT_EMAIL_RESOLVER_v194
+import { resolveClientEmail } from "./clientEmail.js";
 import { logInfo, logError } from "../observability/logger.js";
 
 function esc(v: string): string {
@@ -42,15 +44,16 @@ export async function sendRejectionNoticeToClient(applicationId: string, note?: 
     logInfo("rejection_notice_attempt_released", { applicationId, reason });
   }
 
-  const c = await dbQuery<{ email: string | null; first_name: string | null; business_name: string | null }>(
-    `SELECT co.email, co.first_name, a.business_name FROM applications a
-       LEFT JOIN contacts co ON co.id = a.contact_id WHERE a.id::text = ($1)::text LIMIT 1`, [applicationId],
-  ).catch(() => ({ rows: [] as Array<{ email: string | null; first_name: string | null; business_name: string | null }> }));
-  const to = String(c.rows[0]?.email ?? "").trim();
+  const resolved = await resolveClientEmail(applicationId);
+  const to = resolved.email ?? "";
   if (!to) {
     await releaseAttempt("no_client_email");
     return { sent: false, error: "no_client_email" };
   }
+  const biz_q = await dbQuery<{ business_name: string | null }>(
+    `SELECT business_name FROM applications WHERE id::text = ($1)::text LIMIT 1`, [applicationId],
+  ).catch(() => ({ rows: [] as Array<{ business_name: string | null }> }));
+  const c = { rows: [{ first_name: resolved.firstName, business_name: biz_q.rows[0]?.business_name ?? null }] };
   const reasons = await collectRejectionReasons(applicationId);
   if (reasons.length === 0) {
     await releaseAttempt("no_reasons");
