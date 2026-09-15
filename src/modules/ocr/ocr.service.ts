@@ -1,4 +1,7 @@
 import { AppError } from "../../middleware/errors.js";
+// BF_SERVER_DOCUMENT_CLASSIFIER_v196
+import { classifyText } from "../../services/documentClassifier.js";
+import { dbQuery } from "../../db.js";
 import { recordAuditEvent } from "../audit/audit.service.js";
 import { config } from "../../config/index.js";
 import {
@@ -439,6 +442,50 @@ export async function processOcrJob(
       extractedJson: result.json,
       meta: result.meta,
     });
+
+    // BF_SERVER_DOCUMENT_CLASSIFIER_v196
+    // Classification cannot fail an otherwise successful OCR extraction.
+    try {
+      const current = await dbQuery<{ category: string | null }>(
+        `SELECT category FROM documents WHERE id::text = ($1)::text LIMIT 1`,
+        [job.document_id],
+      ).catch(() => ({ rows: [] as Array<{ category: string | null }> }));
+      const currentCategory = current.rows[0]?.category ?? null;
+      const verdict = classifyText(result.text, currentCategory);
+
+      if (verdict.type) {
+        if (verdict.shouldRetag) {
+          await dbQuery(
+            `UPDATE documents
+                SET detected_type = $2,
+                    detected_confidence = $3,
+                    detected_at = NOW(),
+                    category_before_retag = COALESCE(category_before_retag, category),
+                    category = $2
+              WHERE id::text = ($1)::text`,
+            [job.document_id, verdict.type, verdict.confidence],
+          );
+          logInfo("document_retagged", {
+            documentId: job.document_id,
+            from: currentCategory,
+            to: verdict.type,
+            confidence: verdict.confidence,
+          });
+        } else {
+          await dbQuery(
+            `UPDATE documents
+                SET detected_type = $2, detected_confidence = $3, detected_at = NOW()
+              WHERE id::text = ($1)::text`,
+            [job.document_id, verdict.type, verdict.confidence],
+          );
+        }
+      }
+    } catch (err: unknown) {
+      logError("document_classify_failed", {
+        documentId: job.document_id,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     // BF_SERVER_BLOCK_v196_OCR_PROMPT_AND_JSON_SCHEMA_v1
     // Pull model-extracted fields out of result.json (provider stores them
