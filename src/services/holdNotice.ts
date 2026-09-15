@@ -5,6 +5,8 @@
 import { dbQuery } from "../db.js";
 import { sendViaGraph } from "./email/graphSendService.js";
 import { logInfo, logError } from "../observability/logger.js";
+// BF_SERVER_CLIENT_EMAIL_RESOLVER_v194
+import { resolveClientEmail } from "./clientEmail.js";
 
 function escapeHtml(value: string): string {
   return value
@@ -37,7 +39,8 @@ export async function sendHoldNoticeToClient(
   ).catch(() => ({ rows: [] as Array<{ email: string | null; first_name: string | null; name: string | null }> }));
 
   const row = r.rows[0];
-  const to = String(row?.email ?? "").trim();
+  // BF_SERVER_CLIENT_EMAIL_RESOLVER_v194
+  const to = (await resolveClientEmail(applicationId)).email ?? "";
   if (!to) {
     logInfo("hold_notice_skipped_no_email", { applicationId });
     return { sent: false, error: "no_client_email" };
