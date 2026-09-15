@@ -1028,6 +1028,28 @@ router.post(
 );
 
 // 43. daily.briefing — what needs staff attention right now (silo-scoped).
+// BF_SERVER_SUGGESTED_NEXT_ACTIONS_v207
+// Sits beside daily-briefing and shares its auth. The briefing counts; this names
+// the file and the action.
+router.post(
+  "/staff/next-actions",
+  safeHandler(async (req: Request, res: Response) => {
+    if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
+    const silo = b2Str(req.body?.silo) ?? "BF";
+    const limit = Number(req.body?.limit ?? 25);
+    const { buildNextActions } = await import("../services/nextActions.js");
+    const actions = await buildNextActions(silo, Number.isFinite(limit) ? limit : 25);
+    await audit({
+      audience: "staff",
+      tool: "staff.next_actions",
+      args: { silo },
+      ok: true,
+      summary: `${actions.length} suggested action(s)`,
+    });
+    return res.json({ ok: true, silo, actions });
+  }),
+);
+
 router.post(
   "/staff/daily-briefing",
   safeHandler(async (req: Request, res: Response) => {
