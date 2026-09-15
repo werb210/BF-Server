@@ -349,6 +349,11 @@ router.post(
         },
       });
     } catch (err: any) {
+      // BF_SERVER_DOCUMENT_DUPLICATE_GUARD_v256
+      if (err?.name === "DuplicateDocumentError") {
+        res.status(409).json({ ok: false, error: "DUPLICATE_DOCUMENT", message: err.message, existing: err.existing });
+        return;
+      }
       console.error("[accountant] upload failed", { id, category, message: err?.message });
       res.status(500).json({ error: "UPLOAD_FAILED" });
     }

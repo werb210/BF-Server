@@ -12,6 +12,7 @@ import { toStringSafe } from "../utils/toStringSafe.js";
 import { pool } from "../db.js";
 import { resolveUploadCategory } from "./uploadCategory.js";
 import { getStorage } from "../lib/storage/index.js";
+import { assertNotDuplicate, duplicateGroupsForApplication, duplicateResponseBody, DuplicateDocumentError } from "../services/documents/duplicateDocuments.js"; // BF_SERVER_DOCUMENT_DUPLICATE_GUARD_v256
 import { enqueueOcrForDocument } from "../modules/ocr/ocr.service.js";
 import { computeOutstandingDocs } from "./clientDocumentsNeeded.js"; // BF_SERVER_SHARED_DOCS_GATE_v1
 import { requireAuthorization } from "../middleware/auth.js";
@@ -128,6 +129,8 @@ export async function persistAndEnqueue(opts: {
   uploadedBy?: string | null;
   offerId?: string | null;
 }) {
+  // BF_SERVER_DOCUMENT_DUPLICATE_GUARD_v256 - refuse before anything is stored.
+  await assertNotDuplicate(opts.applicationId, opts.file.buffer);
   const store = getStorage();
   const put = await store.put({
     buffer: opts.file.buffer,
@@ -376,6 +379,7 @@ router.post("/public-upload", upload.single("file"), async (req: Request, res: R
       status: "uploaded",
     });
   } catch (err) {
+    if (err instanceof DuplicateDocumentError) return res.status(409).json(duplicateResponseBody(err)); // v256
     console.error("[documents] public-upload failed", { applicationId, category, err: String(err) });
     return fail(res, 500, "UPLOAD_FAILED");
   }
@@ -418,6 +422,7 @@ router.post("/upload", requireAuth, upload.single("file"), async (req: Request, 
       status: "uploaded",
     });
   } catch (err) {
+    if (err instanceof DuplicateDocumentError) return res.status(409).json(duplicateResponseBody(err)); // v256
     console.error("[documents] upload failed", { applicationId, category, err: String(err) });
     return fail(res, 500, "UPLOAD_FAILED");
   }
@@ -507,6 +512,19 @@ router.delete(
 
     return res.status(200).json({ ok: true, id: documentId, applicationId });
   })
+);
+
+// BF_SERVER_DOCUMENT_DUPLICATE_GUARD_v256 - copies already on an application
+// (uploaded before this guard), for the portal's "Duplicate of" badges.
+router.get(
+  "/:applicationId/duplicates",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  safeHandler(async (req: Request, res: Response) => {
+    const applicationId = String(req.params.applicationId ?? "").trim();
+    if (!/^[0-9a-f-]{36}$/i.test(applicationId)) return fail(res, 400, "INVALID_ID");
+    return ok(res, { groups: await duplicateGroupsForApplication(applicationId) });
+  }),
 );
 
 export default router;
