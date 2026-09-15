@@ -21,20 +21,41 @@ router.get(
       [userId],
     ).catch(() => ({ rows: [] as { status: string }[] }));
 
-    // Missed since the start of today in the server's timezone: a complication
-    // showing a running all-time total would be useless.
+    // BF_SERVER_WATCH_SNAPSHOT_TASKS_v209
+    // This query was broken from the day it shipped and failed silently. It read
+    // call_logs.user_id, which does not exist - the column is staff_user_id - and
+    // matched the nonexistent 'missed' disposition, which is not one of the nine values in
+    // CALL_DISPOSITIONS. So it threw, hit the catch, and the complication has
+    // shown zero missed calls permanently.
+    //
+    // Missed calls are recorded as call_events rows with event_type 'call.missed',
+    // which is the source /staff/daily-briefing already uses correctly.
     const missed = await pool.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count
-         FROM call_logs
-        WHERE user_id = $1
-          AND disposition = 'missed'
+         FROM call_events
+        WHERE user_id = $1::uuid
+          AND event_type = 'call.missed'
           AND created_at >= date_trunc('day', now())`,
+      [userId],
+    ).catch(() => ({ rows: [{ count: "0" }] }));
+
+    // Tasks due today or already overdue, assigned to or owned by this user.
+    // Overdue is included deliberately: a count that drops something the moment
+    // it is late is worse than no count at all.
+    const tasksDue = await pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+         FROM crm_tasks
+        WHERE (assigned_to = $1::uuid OR owner_id = $1::uuid)
+          AND due_at IS NOT NULL
+          AND due_at < date_trunc('day', now()) + interval '1 day'
+          AND lower(COALESCE(status, '')) NOT IN ('done', 'completed', 'complete', 'closed', 'cancelled')`,
       [userId],
     ).catch(() => ({ rows: [{ count: "0" }] }));
 
     res.json({
       status: presence.rows[0]?.status ?? "away",
       missedCalls: Number(missed.rows[0]?.count ?? 0),
+      tasksDue: Number(tasksDue.rows[0]?.count ?? 0),
       asOf: new Date().toISOString(),
     });
   }),
