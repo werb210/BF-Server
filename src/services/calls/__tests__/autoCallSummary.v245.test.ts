@@ -46,7 +46,7 @@ describe("automatic call summary", () => {
 describe("summary lookup by CallSid", () => {
   const q = (rows: any[]) => vi.fn(async () => ({ rows }));
   it("reports ready, pending, or none", async () => {
-    expect(await summaryForCallSid("CA1", q([{ status: "completed", voice_intelligence_summary: "S", contact_id: "c1" }]))).toEqual({ status: "ready", summary: "S", contactId: "c1" });
+    expect(await summaryForCallSid("CA1", q([{ status: "completed", voice_intelligence_summary: "S", contact_id: "c1" }]))).toEqual({ status: "ready", summary: "S", contactId: "c1", suggestedTasks: [] }); // v253 adds suggestedTasks
     expect((await summaryForCallSid("CA1", q([{ status: "in-progress", voice_intelligence_summary: null, contact_id: "c1" }]))).status).toBe("pending");
     expect((await summaryForCallSid("CA1", q([]))).status).toBe("none");
     expect((await summaryForCallSid("CA1", q([{ status: "failed", voice_intelligence_summary: null, contact_id: null }]))).status).toBe("none");

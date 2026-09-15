@@ -6,20 +6,63 @@
 //
 // Dialer calls are conference legs, so a CallSid resolves to its conference via
 // conference_participants.twilio_call_sid.
+//
+// BF_SERVER_CALL_TASK_SUGGESTIONS_v253 - alongside the summary, up to three
+// follow-up task suggestions are extracted and stored. They are never created
+// automatically; the dialer offers each with an Add button.
 import { pool } from "../../db.js";
 import { askAI } from "../../modules/ai/openai.service.js";
 
 type Query = (sql: string, params: unknown[]) => Promise<{ rows: any[] }>;
-export type SummaryDeps = { query: Query; ask: (transcript: string) => Promise<string> };
+export type SummaryDeps = {
+  query: Query;
+  ask: (transcript: string) => Promise<string>;
+  suggest?: (transcript: string) => Promise<string>;
+};
+
+export type SuggestedTask = { title: string; type: "CALL" | "EMAIL" | "SMS" | "TODO"; dueInDays: number };
 
 export const SUMMARY_SYSTEM_PROMPT =
   "You are a post-call assistant for a commercial-lending brokerage. Summarize this call transcript for the broker in 3-5 short bullet points, then a 'Follow-ups:' line listing any commitments, promised documents or dates. Be factual; do not invent details.";
+
+export const SUGGEST_SYSTEM_PROMPT =
+  "From this commercial-lending call transcript, list follow-up tasks for the broker that are directly supported by something said on the call (a promise, a requested document, an agreed callback or date). Return ONLY a JSON array, no prose, at most 3 items, each {\"title\": string under 80 characters, \"type\": \"CALL\"|\"EMAIL\"|\"SMS\"|\"TODO\", \"dueInDays\": integer 0-30}. Return [] if nothing was committed.";
+
+const TYPES = new Set(["CALL", "EMAIL", "SMS", "TODO"]);
+
+/** Strict: anything malformed is dropped rather than guessed at. */
+export function parseSuggestedTasks(raw: unknown): SuggestedTask[] {
+  let value: unknown = raw;
+  if (typeof raw === "string") {
+    const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim();
+    try { value = JSON.parse(cleaned); } catch { return []; }
+  }
+  if (!Array.isArray(value)) return [];
+  const out: SuggestedTask[] = [];
+  for (const item of value) {
+    const title = String((item as any)?.title ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+    const type = String((item as any)?.type ?? "TODO").toUpperCase();
+    const days = Number((item as any)?.dueInDays);
+    if (!title) continue;
+    out.push({
+      title,
+      type: (TYPES.has(type) ? type : "TODO") as SuggestedTask["type"],
+      dueInDays: Number.isFinite(days) ? Math.min(30, Math.max(0, Math.round(days))) : 1,
+    });
+    if (out.length === 3) break;
+  }
+  return out;
+}
 
 function defaultDeps(): SummaryDeps {
   return {
     query: (sql, params) => pool.query(sql, params as any[]),
     ask: (transcript) => askAI([
       { role: "system", content: SUMMARY_SYSTEM_PROMPT },
+      { role: "user", content: `Call transcript:\n${transcript.slice(0, 6000)}` },
+    ]),
+    suggest: (transcript) => askAI([
+      { role: "system", content: SUGGEST_SYSTEM_PROMPT },
       { role: "user", content: `Call transcript:\n${transcript.slice(0, 6000)}` },
     ]),
   };
@@ -58,6 +101,23 @@ export async function summarizeCompletedTranscript(
         [`AI call summary\n${summary}`, row.contact_id, row.silo ?? "BF"],
       );
     }
+
+    // BF_SERVER_CALL_TASK_SUGGESTIONS_v253 - a failure here never undoes the summary.
+    if (deps.suggest) {
+      try {
+        const tasks = parseSuggestedTasks(await deps.suggest(String(row.full_text)));
+        await deps.query(
+          `UPDATE call_transcripts SET suggested_tasks = $2::jsonb WHERE id = $1`,
+          [row.transcript_id, JSON.stringify(tasks)],
+        );
+      } catch (err) {
+        console.error(JSON.stringify({
+          event: "call_task_suggestions_failed",
+          conferenceId,
+          message: err instanceof Error ? err.message : String(err),
+        }));
+      }
+    }
     return "saved";
   } catch (err) {
     console.error(JSON.stringify({
@@ -73,9 +133,9 @@ export async function summarizeCompletedTranscript(
 export async function summaryForCallSid(
   callSid: string,
   query: Query = (sql, params) => pool.query(sql, params as any[]),
-): Promise<{ status: "ready" | "pending" | "none"; summary: string | null; contactId: string | null }> {
+): Promise<{ status: "ready" | "pending" | "none"; summary: string | null; contactId: string | null; suggestedTasks: SuggestedTask[] }> {
   const { rows } = await query(
-    `SELECT t.status, t.voice_intelligence_summary, cf.contact_id::text AS contact_id
+    `SELECT t.status, t.voice_intelligence_summary, t.suggested_tasks, cf.contact_id::text AS contact_id
        FROM conference_participants p
        JOIN conferences cf ON cf.id = p.conference_id
        LEFT JOIN call_transcripts t ON t.conference_id = cf.id
@@ -85,9 +145,11 @@ export async function summaryForCallSid(
     [callSid],
   );
   const row = rows[0];
-  if (!row) return { status: "none", summary: null, contactId: null };
+  if (!row) return { status: "none", summary: null, contactId: null, suggestedTasks: [] };
+  const contactId = row.contact_id ?? null;
   const summary = String(row.voice_intelligence_summary ?? "").trim();
-  if (summary) return { status: "ready", summary, contactId: row.contact_id ?? null };
-  if (row.status === "failed") return { status: "none", summary: null, contactId: row.contact_id ?? null };
-  return { status: "pending", summary: null, contactId: row.contact_id ?? null };
+  const suggestedTasks = parseSuggestedTasks(row.suggested_tasks ?? []);
+  if (summary) return { status: "ready", summary, contactId, suggestedTasks };
+  if (row.status === "failed") return { status: "none", summary: null, contactId, suggestedTasks: [] };
+  return { status: "pending", summary: null, contactId, suggestedTasks: [] };
 }
