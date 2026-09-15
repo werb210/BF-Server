@@ -29,8 +29,8 @@ describe("the missed-call count that never worked", () => {
 });
 
 describe("tasks due", () => {
-  it("counts tasks assigned to or owned by the user", () => {
-    expect(snap).toContain("(assigned_to = $1::uuid OR owner_id = $1::uuid)");
+  it("counts tasks assigned to the user", () => {
+    expect(snap).toContain("assignee_user_id = $1::uuid");
   });
 
   it("includes overdue tasks, not just today's", () => {
@@ -39,8 +39,8 @@ describe("tasks due", () => {
     expect(snap).not.toMatch(/due_at >= date_trunc\('day', now\(\)\)/);
   });
 
-  it("excludes finished tasks under every spelling in use", () => {
-    for (const done of ["done", "completed", "complete", "closed", "cancelled"]) {
+  it("excludes non-open task statuses", () => {
+    for (const done of ["COMPLETED", "DEFERRED"]) {
       expect(snap).toContain(`'${done}'`);
     }
   });

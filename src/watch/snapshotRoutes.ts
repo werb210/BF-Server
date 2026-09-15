@@ -39,16 +39,21 @@ router.get(
       [userId],
     ).catch(() => ({ rows: [{ count: "0" }] }));
 
-    // Tasks due today or already overdue, assigned to or owned by this user.
+    // Tasks due today or already overdue and assigned to this user.
     // Overdue is included deliberately: a count that drops something the moment
     // it is late is worse than no count at all.
+    // BF_SERVER_TASKS_TABLE_FIX_v213
+    // `tasks`, not `crm_tasks`. The latter is retired (see
+    // src/__tests__/retireCrmTasks.v1.test.ts) and nothing writes to it, so the
+    // count would have been zero forever. Status values are the upper-case set
+    // the CHECK constraint on `tasks` defines.
     const tasksDue = await pool.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count
-         FROM crm_tasks
-        WHERE (assigned_to = $1::uuid OR owner_id = $1::uuid)
+         FROM tasks
+        WHERE assignee_user_id = $1::uuid
           AND due_at IS NOT NULL
           AND due_at < date_trunc('day', now()) + interval '1 day'
-          AND lower(COALESCE(status, '')) NOT IN ('done', 'completed', 'complete', 'closed', 'cancelled')`,
+          AND status NOT IN ('COMPLETED', 'DEFERRED')`,
       [userId],
     ).catch(() => ({ rows: [{ count: "0" }] }));
 
