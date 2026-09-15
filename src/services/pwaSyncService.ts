@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AppError } from "../middleware/errors.js";
 import { pool, runQuery } from "../db.js";
 import { findIdempotencyRecord, createIdempotencyRecord } from "../modules/idempotency/idempotency.repo.js";
+import { forwardReplayAction, isForwardableReplayPath, type ReplayForwardContext } from "./offlineReplayForward.js"; // BF_SERVER_OFFLINE_REPLAY_v250
 import { CAPABILITIES } from "../auth/capabilities.js";
 import { ROLES, normalizeRole } from "../auth/roles.js";
 import { createUserAccount } from "../modules/auth/auth.service.js";
@@ -308,8 +309,14 @@ function assertCapabilities(user: ReplayUserContext, required: string[]): void {
 
 async function executeReplayAction(
   action: ReplayAction,
-  user: ReplayUserContext
+  user: ReplayUserContext,
+  forward?: ReplayForwardContext
 ): Promise<{ statusCode: number; body: unknown }> {
+  // BF_SERVER_OFFLINE_REPLAY_v250 - staff offline actions go to the live route.
+  if (isForwardableReplayPath(action.path)) {
+    return forwardReplayAction(action, forward);
+  }
+
   if (action.path === "/api/lenders") {
     assertCapabilities(user, [CAPABILITIES.OPS_MANAGE]);
     const parsedResult = lenderSchema.safeParse(action.body);
@@ -423,6 +430,7 @@ export async function replaySyncBatch(params: {
   user: ReplayUserContext;
   payload: unknown;
   requestId: string;
+  forward?: ReplayForwardContext;
 }): Promise<{ batchId: string; results: ReplayResult[] }> {
   const parsedResult = replaySchema.safeParse(params.payload);
   if (!parsedResult.success) {
@@ -524,7 +532,8 @@ export async function replaySyncBatch(params: {
           body: sanitizedBody,
           idempotencyKey,
         },
-        params.user
+        params.user,
+        params.forward
       );
 
       await createIdempotencyRecord({
