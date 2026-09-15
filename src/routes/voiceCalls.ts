@@ -297,6 +297,7 @@ router.get("/recent-calls", auth, async (req: any, res) => {
            SELECT ccl.id::text AS id, ccl.direction, 'completed'::text AS status,
                   ccl.duration_sec AS duration_seconds, ccl.created_at,
                   ccl.to_number AS phone_number, ccl.contact_id, c2.name AS contact_name,
+                  NULL::text AS disposition,  -- BF_SERVER_RECENT_CALLS_UNION_v228
                   ccl.twilio_call_sid AS sid
              FROM crm_call_log ccl
              LEFT JOIN contacts c2 ON c2.id = ccl.contact_id
@@ -316,6 +317,7 @@ router.get("/recent-calls", auth, async (req: any, res) => {
            SELECT ce.id::text AS id, ce.direction, 'completed'::text AS status,
                   ce.duration_seconds AS duration_seconds, ce.occurred_at AS created_at,
                   ce.to_number AS phone_number, ce.contact_id, c3.name AS contact_name,
+                  NULL::text AS disposition,  -- BF_SERVER_RECENT_CALLS_UNION_v228
                   ce.twilio_call_sid AS sid
              FROM call_events ce
              LEFT JOIN contacts c3 ON c3.id = ce.contact_id
