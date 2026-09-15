@@ -60,6 +60,7 @@ import { progressSubmission } from "../services/submission/orchestrator.js";
 import { computeAndCacheLenderMatches, markLenderMatchesStale, getOutstandingRequiredDocs } from "../services/lenderMatchCache.js";
 import { isUndeliverableNumber } from "../lib/smsDeliverability.js"; // BF_SERVER_GUARD_EVERYWHERE_v136
 import { misfiledSignal, type ClassificationRow } from "../services/documents/misfiledDocuments.js"; // BF_SERVER_MISFILED_DOCS_v262
+import { loadNamingContext, sanitizeDisplayName, uniqueDisplayName } from "../services/documents/documentNaming.js"; // BF_SERVER_RENAME_ON_ACCEPT_v264
 // BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const router = Router();
@@ -519,7 +520,7 @@ router.get(
     const classificationById = new Map<string, ClassificationRow>();
     try {
       const cls = await pool.query<ClassificationRow & { id: string }>(
-        `SELECT id::text AS id, document_type, category, category_before_retag, detected_type, detected_confidence
+        `SELECT id::text AS id, document_type, category, category_before_retag, detected_type, detected_confidence, display_name
            FROM documents WHERE application_id::text = ($1)::text`,
         [record.id],
       );
@@ -547,6 +548,7 @@ router.get(
           rejectionReason: doc.rejection_reason ?? null,
           ocrStatus: doc.ocr_status ?? null,
           ...(classificationById.has(String(doc.id)) ? misfiledSignal(classificationById.get(String(doc.id))!) : {}), // v262
+          displayName: (classificationById.get(String(doc.id)) as { display_name?: string | null } | undefined)?.display_name ?? null, // v264
         };
       })
     );
@@ -1729,6 +1731,21 @@ function inferMimeFromFilename(name: string): string {
 }
 
 // ── Portal document reject with auto-SMS ──────────────────────────────────────
+// BF_SERVER_RENAME_ON_ACCEPT_v264 - the name the accept dialog pre-fills.
+router.get(
+  "/documents/:id/suggested-name",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  portalLimiter,
+  safeHandler(async (req: any, res: any) => {
+    const docId = typeof req.params.id === "string" ? req.params.id.trim() : "";
+    if (!docId) throw new AppError("validation_error", "Document id required.", 400);
+    const naming = await loadNamingContext(docId);
+    if (!naming) throw new AppError("not_found", "Document not found.", 404);
+    res.status(200).json({ suggestedName: naming.displayName ?? naming.suggestedName, originalFilename: naming.filename });
+  })
+);
+
 router.post(
   "/documents/:id/accept",
   requireAuth,
@@ -1766,6 +1783,16 @@ router.post(
           [docId]
         ).catch(() => {});
         throw new AppError("not_found", "Document not found.", 404);
+      }
+    }
+    // BF_SERVER_RENAME_ON_ACCEPT_v264 - optional staff-chosen name. Runs after the
+    // silo check so a cross-silo request never renames anything. Omitting
+    // displayName leaves the name unchanged, so other callers behave as before.
+    if (appId && typeof req.body?.displayName === "string") {
+      const naming = await loadNamingContext(docId);
+      const clean = sanitizeDisplayName(req.body.displayName, naming?.filename ?? null);
+      if (clean) {
+        await runQuery(`UPDATE documents SET display_name = $2, updated_at = now() WHERE id = $1`, [docId, uniqueDisplayName(clean, naming?.existingNames ?? [])]);
       }
     }
     // Restore prior stage when last rejected doc is resolved.
