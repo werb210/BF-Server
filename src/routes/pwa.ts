@@ -213,6 +213,11 @@ router.post(
       user: replayUser,
       payload: req.body ?? {},
       requestId,
+      // BF_SERVER_OFFLINE_REPLAY_v250 - forwarded actions run as the caller.
+      forward: {
+        authorization: String(req.headers?.authorization ?? ""),
+        silo: typeof req.headers?.["x-silo"] === "string" ? req.headers["x-silo"] : null,
+      },
     });
     res.status(200).json({
       ok: true,
