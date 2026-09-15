@@ -1747,7 +1747,20 @@ router.post('/:id/lender-response', requireAuth, safeHandler(async (req: any, re
   const reason = String(req.body?.reason ?? '').trim().slice(0, 2000);
   if (!id) throw new AppError('validation_error', 'Application id required.', 400);
   if (!lenderId) throw new AppError('validation_error', 'lenderId required.', 400);
-  if (!reason) throw new AppError('validation_error', 'A reason is required.', 400);
+  // BF_SERVER_PASS_REASON_OPTIONAL_v222
+  // Staff hit a 400 on "Record pass" whenever they left the note blank, which the
+  // modal explicitly calls optional. reasonCodes already carries the structured
+  // why and is what the summary is built from, so either satisfies the record.
+  const reasonCodes: string[] = Array.isArray(req.body?.reasonCodes)
+    ? req.body.reasonCodes.map((c: unknown) => String(c ?? '').trim()).filter(Boolean).slice(0, 20)
+    : [];
+  if (!reason && reasonCodes.length === 0) {
+    throw new AppError(
+      'validation_error',
+      'Select at least one reason code, or write a note.',
+      400,
+    );
+  }
 
   const ordering = await pool.query<{ lender_id: string; ordinal: string }>(
     `SELECT lender_id::text AS lender_id,
@@ -1769,9 +1782,6 @@ router.post('/:id/lender-response', requireAuth, safeHandler(async (req: any, re
   const frozenOrdinal = existing.rows[0]?.ordinal ?? ordinal;
 
   // BF_SERVER_REJECTION_REASONS_v124 - reasonCodes are the checkbox selection.
-  const reasonCodes: string[] = Array.isArray(req.body?.reasonCodes)
-    ? req.body.reasonCodes.map((x: any) => String(x).trim()).filter(Boolean).slice(0, 20)
-    : [];
   let reasonSummary = reason;
   if (reasonCodes.length > 0) {
     const labels = await pool.query<{ label: string }>(
