@@ -29,14 +29,33 @@ export async function sendRejectionNoticeToClient(applicationId: string, note?: 
     return { sent: false, error: "already_sent" };
   }
 
+  // BF_SERVER_REJECTION_EMAIL_GUARD_v193
+  // The stamp above reserves the attempt so two concurrent rejects cannot both
+  // email. It is only correct to KEEP that stamp if the mail actually goes out.
+  // Every early return below must clear it, or the application is permanently
+  // barred from ever being notified.
+  async function releaseAttempt(reason: string): Promise<void> {
+    await dbQuery(
+      `UPDATE applications SET rejection_email_sent_at = NULL
+        WHERE id::text = ($1)::text`, [applicationId],
+    ).catch(() => undefined);
+    logInfo("rejection_notice_attempt_released", { applicationId, reason });
+  }
+
   const c = await dbQuery<{ email: string | null; first_name: string | null; business_name: string | null }>(
     `SELECT co.email, co.first_name, a.business_name FROM applications a
        LEFT JOIN contacts co ON co.id = a.contact_id WHERE a.id::text = ($1)::text LIMIT 1`, [applicationId],
   ).catch(() => ({ rows: [] as Array<{ email: string | null; first_name: string | null; business_name: string | null }> }));
   const to = String(c.rows[0]?.email ?? "").trim();
-  if (!to) return { sent: false, error: "no_client_email" };
+  if (!to) {
+    await releaseAttempt("no_client_email");
+    return { sent: false, error: "no_client_email" };
+  }
   const reasons = await collectRejectionReasons(applicationId);
-  if (reasons.length === 0) return { sent: false, error: "no_reasons" };
+  if (reasons.length === 0) {
+    await releaseAttempt("no_reasons");
+    return { sent: false, error: "no_reasons" };
+  }
 
   const first = String(c.rows[0]?.first_name ?? "").trim();
   const biz = String(c.rows[0]?.business_name ?? "").trim();
@@ -61,7 +80,7 @@ export async function sendRejectionNoticeToClient(applicationId: string, note?: 
     logInfo("rejection_notice_sent", { applicationId, reasons: reasons.length });
     return { sent: true };
   } catch (err) {
-    await dbQuery(`UPDATE applications SET rejection_email_sent_at = NULL WHERE id::text = ($1)::text`, [applicationId]).catch(() => {});
+    await releaseAttempt("send_failed");
     logError("rejection_notice_failed", { applicationId, error: String(err) });
     return { sent: false, error: String(err) };
   }
