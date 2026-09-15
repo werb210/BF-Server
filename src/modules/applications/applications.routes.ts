@@ -1644,6 +1644,14 @@ router.post('/:id/lenders/:lenderId/files', lenderTermSheetUpload.single('file')
     console.warn('[lender-term-sheet] SMS notification failed', { appId, err: String(err) });
   }
 
+  // BF_SERVER_APPLICANT_PUSH_v235
+  void import('../../services/push/applicantPush.js').then((m) => m.notifyApplicant({
+    applicationId: appId,
+    categoryId: 'OFFER_READY',
+    title: 'Your offer is ready',
+    body: `${lenderName} sent a term sheet for you to review.`,
+    dedupeKey: String(offerId),
+  }));
   return res.status(201).json({ ok: true, offer_id: offerId, lender_id: resolvedLenderId, blob_name: put.blobName, stage });
 }));
 

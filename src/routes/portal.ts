@@ -1882,6 +1882,17 @@ router.post(
       applicationId: doc.application_id,
       rejectionReason: reason,
     });
+    // BF_SERVER_APPLICANT_PUSH_v235 - actionable push alongside the SMS.
+    if (doc.application_id) {
+      const prettyDoc = (doc.document_type ?? "document").replace(/_/g, " ");
+      void import("../services/push/applicantPush.js").then((m) => m.notifyApplicant({
+        applicationId: doc.application_id,
+        categoryId: "DOCUMENT_REQUEST",
+        title: "Document needed",
+        body: `Please upload a new ${prettyDoc}.${reason ? ` ${reason}` : ""}`,
+        dedupeKey: docId,
+      }));
+    }
 
     // BF_SERVER_BLOCK_43_v1 -- also insert an in-app chat message
     // with a CTA button. Client mini-portal renders cta_label as a
@@ -2050,6 +2061,14 @@ router.post(
     }
 
     eventBus.emit("term_sheet_uploaded", { applicationId: appId, offerId, blobName: put.blobName });
+    // BF_SERVER_APPLICANT_PUSH_v235
+    void import("../services/push/applicantPush.js").then((m) => m.notifyApplicant({
+      applicationId: appId,
+      categoryId: "OFFER_READY",
+      title: "Your offer is ready",
+      body: lenderName ? `${lenderName} sent a term sheet for you to review.` : "A term sheet is ready for you to review.",
+      dedupeKey: offerId,
+    }));
 
     try {
       const phoneRes = await runQuery<{ phone: string | null }>(

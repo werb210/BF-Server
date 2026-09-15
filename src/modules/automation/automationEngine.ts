@@ -3,7 +3,7 @@
 // event context (no dynamic SQL). Actions currently: create_task, add_note, send_push.
 import { pool } from "../../db.js";
 // BF_SERVER_BLOCK_v334_CLIENT_PUSH_DELIVERY_v1
-import { sendClientPush } from "../../services/clientPushService.js";
+import { notifyApplicant } from "../../services/push/applicantPush.js"; // BF_SERVER_APPLICANT_PUSH_v235
 
 export type AutomationEvent = {
   trigger: string;
@@ -36,20 +36,15 @@ async function runAction(action: Record<string, unknown>, ctx: { silo: string; c
       [ctx.silo, title, action.body ?? null, days, ctx.contactId, ctx.applicationId ?? null],
     );
   } else if (type === "send_push" && ctx.applicationId) {
-    // Resolve the applicant behind the application, then notify their devices.
-    const owner = await pool.query<{ user_id: string | null }>(
-      `SELECT user_id FROM applications WHERE id = $1`, [ctx.applicationId],
-    ).catch(() => ({ rows: [] as { user_id: string | null }[] }));
-    const userId = owner.rows[0]?.user_id;
-    if (userId) {
-      await sendClientPush({
-        userId,
-        title: String(action.title ?? "Application update"),
-        body: String(action.body ?? ""),
-        silo: ctx.silo as "BF" | "BI" | "SLF",
-        data: { applicationId: ctx.applicationId },
-      });
-    }
+    // BF_SERVER_APPLICANT_PUSH_v235 - applications has no user_id column, so the
+    // old owner lookup always failed and no automation push was ever sent.
+    await notifyApplicant({
+      applicationId: ctx.applicationId,
+      categoryId: "APPLICATION_UPDATE",
+      title: String(action.title ?? "Application update"),
+      body: String(action.body ?? ""),
+      dedupeKey: String(action.title ?? ""),
+    });
   } else if (type === "add_note" && ctx.contactId) {
     await pool.query(`INSERT INTO crm_notes (body, contact_id, silo) VALUES ($1, $2::uuid, $3)`, [String(action.body ?? ""), ctx.contactId, ctx.silo]);
   }

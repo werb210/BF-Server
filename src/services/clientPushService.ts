@@ -60,7 +60,13 @@ async function dropToken(token: string): Promise<void> {
 
 export async function sendClientPush(input: {
   userId: string; title: string; body: string; silo?: Silo; data?: Record<string, unknown>;
+  // BF_SERVER_APPLICANT_PUSH_v235 - categoryId drives the iOS action buttons
+  // (aps.category) and url is the borealclient:// link the app routes on.
+  categoryId?: string; url?: string;
 }): Promise<{ sent: number; skipped: number; unsupported: number }> {
+  const routing: Record<string, string> = {};
+  if (input.categoryId) routing.categoryId = input.categoryId;
+  if (input.url) routing.url = input.url;
   if (!provider && !isFcmConfigured()) return { sent: 0, skipped: 0, unsupported: 0 };
   const environment = process.env.CLIENT_APNS_ENVIRONMENT === "sandbox" ? "sandbox" : "production";
   const rows = await tokensForUser(input.userId);
@@ -81,7 +87,7 @@ export async function sendClientPush(input: {
         await fcm.send({ token: row.token }, {
           title: input.title,
           body: input.body,
-          data: { silo: String(input.silo ?? "BF"), ...(input.data ?? {}) },
+          data: { silo: String(input.silo ?? "BF"), ...(input.data ?? {}), ...routing },
         });
         sent += 1;
       } catch (error) {
@@ -93,8 +99,13 @@ export async function sendClientPush(input: {
     if (!provider) { unsupported += 1; continue; }
     try {
       await provider.send({ token: row.token, environment }, {
-        aps: { alert: { title: input.title, body: input.body }, sound: "default" },
+        aps: {
+          alert: { title: input.title, body: input.body },
+          sound: "default",
+          ...(input.categoryId ? { category: input.categoryId } : {}),
+        },
         ...(input.data ?? {}),
+        ...routing,
       });
       sent += 1;
     } catch (error) {
