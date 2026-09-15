@@ -52,6 +52,7 @@ import { getStorage } from "../lib/storage/index.js";
 // BF_SERVER_BLOCK_v_DOC_FRAUD_SIGNALS_v1
 import { extractPdfMeta, scoreFraudSignals, classifyDocKind } from "../services/documents/fraudSignals.js";
 import { hashBuffer } from "../services/documents/hashService.js";
+import { recordTamperResult } from "../services/documents/tamperScan.js"; // BF_SERVER_AUTO_TAMPER_SCAN_v269
 import { sendSMS } from "../services/smsService.js";
 import { toStringSafe } from "../utils/toStringSafe.js";
 import twilio from "twilio";
@@ -521,7 +522,7 @@ router.get(
     const classificationById = new Map<string, ClassificationRow>();
     try {
       const cls = await pool.query<ClassificationRow & { id: string }>(
-        `SELECT id::text AS id, document_type, category, category_before_retag, detected_type, detected_confidence, display_name
+        `SELECT id::text AS id, document_type, category, category_before_retag, detected_type, detected_confidence, display_name, tamper_level, tamper_signals
            FROM documents WHERE application_id::text = ($1)::text`,
         [record.id],
       );
@@ -550,6 +551,8 @@ router.get(
           ocrStatus: doc.ocr_status ?? null,
           ...(classificationById.has(String(doc.id)) ? misfiledSignal(classificationById.get(String(doc.id))!) : {}), // v262
           displayName: (classificationById.get(String(doc.id)) as { display_name?: string | null } | undefined)?.display_name ?? null, // v264
+          tamperLevel: (classificationById.get(String(doc.id)) as { tamper_level?: string | null } | undefined)?.tamper_level ?? null, // v269
+          tamperSignals: (classificationById.get(String(doc.id)) as { tamper_signals?: unknown } | undefined)?.tamper_signals ?? null, // v269
         };
       })
     );
@@ -1718,6 +1721,7 @@ router.post(
     const kind = classifyDocKind(doc.category);
     const result = scoreFraudSignals(meta, { kind, duplicateCount });
 
+    await recordTamperResult(doc.id, result.level, result.signals).catch((err) => console.error("[fraud-scan] could not store result", doc.id, err instanceof Error ? err.message : err)); // v269
     return res.json({ ok: true, documentId: doc.id, kind, duplicateCount, meta, ...result });
   })
 );

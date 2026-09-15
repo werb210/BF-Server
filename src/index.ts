@@ -205,6 +205,10 @@ export async function start(): Promise<void> {
     const { startReadReceiptWorker } = await import("./workers/readReceiptWorker.js");
     try { const w = startReadReceiptWorker(pool); workerStops.push(w.stop); console.log("[startup] read-receipt worker started"); }
     catch (err) { console.error("[startup] read-receipt worker failed to start:", err); }
+    // BF_SERVER_AUTO_TAMPER_SCAN_v269 - tamper scan every newly uploaded document.
+    const { startTamperScanWorker } = await import("./workers/tamperScanWorker.js");
+    try { const w = startTamperScanWorker(pool); workerStops.push(w.stop); console.log("[startup] tamper-scan worker started"); }
+    catch (err) { console.error("[startup] tamper-scan worker failed:", err); }
 
     // BF_INBOUND_ATTACHMENT_WORKER_v1 - auto-file inbound email attachments to the CRM.
     const { startInboundAttachmentWorker } = await import("./workers/inboundAttachmentWorker.js");
