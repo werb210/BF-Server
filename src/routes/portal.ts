@@ -60,6 +60,7 @@ import { progressSubmission } from "../services/submission/orchestrator.js";
 import { computeAndCacheLenderMatches, markLenderMatchesStale, getOutstandingRequiredDocs } from "../services/lenderMatchCache.js";
 import { isUndeliverableNumber } from "../lib/smsDeliverability.js"; // BF_SERVER_GUARD_EVERYWHERE_v136
 import { misfiledSignal, type ClassificationRow } from "../services/documents/misfiledDocuments.js"; // BF_SERVER_MISFILED_DOCS_v262
+import { bankCoverageForApplication, type Coverage } from "../services/documents/bankStatementCoverage.js"; // BF_SERVER_BANK_COVERAGE_v267
 import { loadNamingContext, sanitizeDisplayName, uniqueDisplayName } from "../services/documents/documentNaming.js"; // BF_SERVER_RENAME_ON_ACCEPT_v264
 // BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
@@ -552,7 +553,15 @@ router.get(
         };
       })
     );
+    // BF_SERVER_BANK_COVERAGE_v267 - advisory; a failure never blocks the page.
+    let bankCoverage: Coverage | null = null;
+    try {
+      bankCoverage = await bankCoverageForApplication(record.id);
+    } catch (err) {
+      console.error(JSON.stringify({ event: "bank_coverage_failed", applicationId: record.id, message: err instanceof Error ? err.message : String(err) }));
+    }
     res.status(200).json({
+      bankCoverage,
       application: {
         id: record.id,
         name: record.name,
