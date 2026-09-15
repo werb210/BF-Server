@@ -94,6 +94,11 @@ export function createApp() {
           "wss://voice-js.twilio.com",
           "wss://voice-js.roaming.twilio.com",
           "wss://eventgw.twilio.com",
+
+          // BF_SERVER_CSP_BRAND_FONTS_v229 - the service worker fetches the
+          // woff2 itself, which is a connect rather than a font load.
+          "https://fonts.gstatic.com",
+          "https://fonts.googleapis.com",
         ],
         mediaSrc: [
           "'self'",
@@ -102,8 +107,17 @@ export function createApp() {
         ],
 
         imgSrc: ["'self'", "data:"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        fontSrc: ["'self'", "data:"],
+        // BF_SERVER_CSP_BRAND_FONTS_v229
+        styleSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "https://fonts.googleapis.com",
+        ],
+        fontSrc: [
+          "'self'",
+          "data:",
+          "https://fonts.gstatic.com",
+        ],
         frameSrc: ["'self'"],
       },
     },
