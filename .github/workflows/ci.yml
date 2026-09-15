@@ -36,6 +36,9 @@ jobs:
       # every block had to carry its own gate. Tests needing live
       # infrastructure are excluded by vitest.config.ts and run separately
       # via `npm run test:integration`.
+      - name: No new silently-swallowed queries
+        run: python3 scripts/check-silent-queries.py
+
       - name: Typecheck
         run: npx tsc --noEmit
 
