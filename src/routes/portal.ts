@@ -59,6 +59,7 @@ import { progressSubmission } from "../services/submission/orchestrator.js";
 // BF_SERVER_BLOCK_v198_LENDER_MATCH_GATE_AND_CACHE_v1
 import { computeAndCacheLenderMatches, markLenderMatchesStale, getOutstandingRequiredDocs } from "../services/lenderMatchCache.js";
 import { isUndeliverableNumber } from "../lib/smsDeliverability.js"; // BF_SERVER_GUARD_EVERYWHERE_v136
+import { misfiledSignal, type ClassificationRow } from "../services/documents/misfiledDocuments.js"; // BF_SERVER_MISFILED_DOCS_v262
 // BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const router = Router();
@@ -514,6 +515,18 @@ router.get(
     await attachSignedPnwDocument(record.id).catch(() => undefined);
 
     const documents = await listDocumentsByApplicationId(record.id);
+    // BF_SERVER_MISFILED_DOCS_v262 - OCR's view of each document, for "filed as X, looks like Y".
+    const classificationById = new Map<string, ClassificationRow>();
+    try {
+      const cls = await pool.query<ClassificationRow & { id: string }>(
+        `SELECT id::text AS id, document_type, category, category_before_retag, detected_type, detected_confidence
+           FROM documents WHERE application_id::text = ($1)::text`,
+        [record.id],
+      );
+      for (const row of cls.rows) classificationById.set(row.id, row);
+    } catch (err) {
+      console.error(JSON.stringify({ event: "misfiled_signal_query_failed", applicationId: record.id, message: err instanceof Error ? err.message : String(err) }));
+    }
     const documentsWithVersions = await Promise.all(
       documents.map(async (doc) => {
         const version = await findActiveDocumentVersion({ documentId: doc.id });
@@ -533,6 +546,7 @@ router.get(
           status: doc.status ?? null,
           rejectionReason: doc.rejection_reason ?? null,
           ocrStatus: doc.ocr_status ?? null,
+          ...(classificationById.has(String(doc.id)) ? misfiledSignal(classificationById.get(String(doc.id))!) : {}), // v262
         };
       })
     );

@@ -7,6 +7,7 @@
 // is deliberate: emitting any other string would reintroduce the spelling drift
 // v195 just closed.
 import { REQUIRED_DOCUMENT_KEYS, type RequiredDocumentKey } from "../db/schema/requiredDocuments.js";
+import { resolveExpectedDocumentKey } from "./documents/classifyDocument.js"; // BF_SERVER_MISFILED_DOCS_v262
 
 // Above this the classifier will retag. Set high on purpose: moving a document
 // out of the slot a lender is waiting on is far more damaging than leaving a
@@ -107,7 +108,8 @@ export function classifyText(text: string, currentCategory?: string | null): Cla
 
   const margin = runnerUp ? Math.max(0, best.score - runnerUp.score) : best.score;
   const confidence = Math.min(1, best.score * (0.5 + 0.5 * (margin / Math.max(best.score, 0.0001))));
-  const sameAsCurrent = String(currentCategory ?? "") === best.key;
+  // BF_SERVER_MISFILED_DOCS_v262 - compare meaning, not text: "6 months business banking statements" IS bank_statements_6_months.
+  const sameAsCurrent = resolveExpectedDocumentKey(currentCategory) === best.key;
   const shouldRetag = !sameAsCurrent && confidence >= RETAG_CONFIDENCE && RETAGGABLE.includes(best.key);
 
   return { type: best.key, confidence: Number(confidence.toFixed(3)), shouldRetag };
