@@ -18,6 +18,8 @@ router.get("/contacts", async (req, res) => {
   if (q.length < 2) return watchError(req, res, 400, "invalid_request", "Search query must contain at least two characters");
   const limit = bounded(req.query.limit, 10, 25);
   const cursor = typeof req.query.cursor === "string" && /^[0-9a-f-]{36}$/i.test(req.query.cursor) ? req.query.cursor : null;
+  // Never silent: a wrong column here would look exactly like an empty
+  // callback list. See BF_SERVER_SILENT_QUERY_GUARDRAIL_v215.
   const found = await pool.query(
     `SELECT id::text,name,company_name AS company,phone AS "primaryPhone" FROM contacts
       WHERE silo=$1 AND ($2::uuid IS NULL OR id>$2::uuid)
@@ -44,6 +46,50 @@ router.get("/calls/recent", async (req: any, res) => {
   const more = found.rows.length > limit;
   const items = found.rows.slice(0, limit);
   return res.json({ items, nextCursor: more ? new Date(items.at(-1).occurredAt).toISOString() : null });
+});
+
+// BF_SERVER_WATCH_CALLBACKS_v216
+// The calls this person owes today, for the wrist.
+//
+// "Callback" is defined as a task that is due and that can actually be acted on
+// from a watch - which means it has a contact with a phone number. A task with
+// nobody to ring is a to-do, and putting it in a callback list makes the count
+// untrustworthy.
+//
+// Overdue is included on purpose. A list that drops a call the moment it is late
+// is worse than no list: the ones you have already missed are the ones that
+// matter most.
+router.get("/callbacks", async (req: any, res) => {
+  const requested = String(req.query.line || "").toUpperCase();
+  const line = allowedLine(req, requested);
+  if (!line) return watchError(req, res, ["BF", "BI", "SLF"].includes(requested) ? 403 : 400,
+    ["BF", "BI", "SLF"].includes(requested) ? "forbidden" : "invalid_request", "Line is invalid or not permitted");
+  const limit = bounded(req.query.limit, 20, 50);
+
+  const found = await pool.query(
+    `SELECT t.id::text        AS id,
+            t.title,
+            t.due_at          AS "dueAt",
+            (t.due_at < now()) AS overdue,
+            c.id::text        AS "contactId",
+            c.name            AS "contactName",
+            c.phone           AS number
+       FROM tasks t
+       JOIN contacts c ON c.id = t.contact_id
+      WHERE t.assignee_user_id = $1::uuid
+        AND t.silo = $2
+        AND t.status NOT IN ('COMPLETED', 'DEFERRED')
+        AND t.due_at IS NOT NULL
+        AND t.due_at < date_trunc('day', now()) + interval '1 day'
+        AND COALESCE(NULLIF(TRIM(c.phone), ''), NULL) IS NOT NULL
+      ORDER BY t.due_at ASC
+      LIMIT $3`,
+    [req.watch.staffUserId, line, limit],
+  ).catch((err: any) => { console.error("[watch] callbacks query failed", { message: err?.message });
+    return { rows: [] as any[] };
+  });
+
+  return res.json({ items: found.rows, count: found.rows.length });
 });
 
 // BF_SERVER_WATCH_CALL_DISPOSITION_v1 - record a post-call outcome from the Watch.
