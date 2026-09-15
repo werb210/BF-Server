@@ -1,0 +1,5 @@
+{
+  "_comment": "BF_SERVER_INTEGRATION_RATCHET_v221 - the standing integration failures as of 2026-09-15. This is a ceiling to drive down, never up. Lower it whenever you fix something; CI tells you the new number.",
+  "maxFailedFiles": 39,
+  "maxFailedTests": 60
+}

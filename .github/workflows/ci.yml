@@ -116,8 +116,15 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/bf_test
           JWT_SECRET: ci-integration-secret-min-10
           NODE_ENV: test
-        # These have not run in a long time. Report the result without
-        # blocking merges until the standing failures are burned down; flip
-        # continue-on-error off once it is green.
+        # BF_SERVER_INTEGRATION_RATCHET_v221
+        # continue-on-error stays on for the run itself so the standing failures
+        # do not block merges - but the result is no longer discarded. The
+        # ratchet step below reads the report and fails if the count got worse,
+        # which is what continue-on-error was quietly preventing.
         continue-on-error: true
-        run: npm run test:integration
+        run: npm run test:integration -- --reporter=json --outputFile=/tmp/integration-report.json
+
+      - name: Integration ratchet
+        # BF_SERVER_INTEGRATION_RATCHET_v221 - no continue-on-error here. A green
+        # badge on a suite with 39 failing files is worse than a red one.
+        run: python3 scripts/check-integration-ratchet.py /tmp/integration-report.json
