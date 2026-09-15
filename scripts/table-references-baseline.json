@@ -1,0 +1,16 @@
+{
+ "known": [
+  "src/jobs/otpCleanup.ts|otp_sessions",
+  "src/routes/auth.ts|through",
+  "src/routes/client/index.ts|document_requirements",
+  "src/routes/clientDocumentsNeeded.ts|document_requirements",
+  "src/routes/communications.ts|latest",
+  "src/routes/communications.ts|number",
+  "src/routes/offerAcceptance.ts|through",
+  "src/routes/slf.ts|application_notes",
+  "src/routes/tasks.ts|bi_contacts",
+  "src/services/applicantActions.ts|document_requirements",
+  "src/services/submission/orchestrator.ts|document_requirements",
+  "src/telephony/routes/telephonyRoutes.ts|number"
+ ]
+}
