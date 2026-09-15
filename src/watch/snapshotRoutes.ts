@@ -16,10 +16,15 @@ router.get(
   safeHandler(async (req: any, res: any) => {
     const userId = String(req.user?.userId ?? req.user?.id ?? "");
 
-    const presence = await pool.query<{ status: string }>(
-      `SELECT status FROM user_presence WHERE user_id = $1 LIMIT 1`,
+    // BF_SERVER_WATCH_PRESENCE_TABLE_v214
+    const presence = await pool.query<{ status: string; stale: boolean }>(
+      `SELECT status,
+              (last_heartbeat < now() - interval '5 minutes') AS stale
+         FROM staff_presence
+        WHERE user_id = $1::uuid
+        LIMIT 1`,
       [userId],
-    ).catch(() => ({ rows: [] as { status: string }[] }));
+    ).catch(() => ({ rows: [] as { status: string; stale: boolean }[] }));
 
     // BF_SERVER_WATCH_SNAPSHOT_TASKS_v209
     // This query was broken from the day it shipped and failed silently. It read
@@ -57,8 +62,14 @@ router.get(
       [userId],
     ).catch(() => ({ rows: [{ count: "0" }] }));
 
+    // A heartbeat older than five minutes means the client went away without
+    // saying so. Reporting the last known status as current would tell the
+    // watch someone is available when they are not.
+    const row = presence.rows[0];
+    const status = !row ? "offline" : row.stale ? "offline" : row.status;
+
     res.json({
-      status: presence.rows[0]?.status ?? "away",
+      status,
       missedCalls: Number(missed.rows[0]?.count ?? 0),
       tasksDue: Number(tasksDue.rows[0]?.count ?? 0),
       asOf: new Date().toISOString(),
