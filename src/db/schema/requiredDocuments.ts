@@ -92,6 +92,9 @@ const DOCUMENT_TYPE_ALIASES: Record<RequiredDocumentKey, string[]> = {
     "bank_statement",
     "bank_statements",
     "bank_statements_6_months",
+    // BF_SERVER_DOC_TYPE_ALIAS_GAPS_v195 - portal-side spellings.
+    "six_month_bank_statements",
+    "business_bank_statements",
   ],
   government_id: ["id_document", "government_id"],
   void_cheque: ["void_check", "void_cheque"],
