@@ -22,12 +22,26 @@ describe("watch complication snapshot", () => {
   });
 
   it("degrades to a usable default rather than erroring", () => {
-    // A complication that fails to refresh should show 'away', not break.
-    expect(route).toContain('presence.rows[0]?.status ?? "away"');
+    // BF_SERVER_WATCH_PRESENCE_TABLE_v214 - this used to pin the literal
+    // expression `presence.rows[0]?.status ?? "away"`. That fallback was not a
+    // graceful degradation: the query beside it read a user_presence table that
+    // does not exist, so "away" was the only value the endpoint ever returned.
+    // Assert the behaviour instead of the wording.
     expect(route).toContain('.catch(() =>');
+    expect(route).toMatch(/const status = !row \? "offline" : row\.stale \? "offline" : row\.status;/);
   });
 
-  it("scopes both queries to the calling user", () => {
-    expect(route.match(/WHERE user_id = \$1/g)?.length).toBe(2);
+  it("no longer defaults to a status the presence table cannot hold", () => {
+    // staff_presence.status is CHECK (available|busy|offline). "away" was never
+    // a real value - only the fallback of a query that always failed.
+    expect(route).not.toContain('"away"');
+  });
+
+  it("scopes every query to the calling user", () => {
+    // Was `.match(/WHERE user_id = $1/g)?.length === 2`, which kept passing
+    // through three separate rewrites because $1::uuid still contains $1 - it
+    // was counting substrings, not checking scope.
+    const scoped = route.match(/WHERE\s+(?:assignee_)?user_id = \$1::uuid/g) ?? [];
+    expect(scoped.length).toBe(3);
   });
 });
