@@ -270,4 +270,19 @@ router.get(
   })
 );
 
+// BF_SERVER_AUTO_CALL_SUMMARY_v245 - dialer polls this after a call ends.
+router.get(
+  "/summary",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  safeHandler(async (req: any, res: any) => {
+    const callSid = toStringSafe(req.query.callSid);
+    if (typeof callSid !== "string" || !/^CA[0-9a-f]{32}$/i.test(callSid)) {
+      throw new AppError("validation_error", "Invalid callSid.", 400);
+    }
+    const { summaryForCallSid } = await import("../services/calls/autoCallSummary.js");
+    res.status(200).json(ok(await summaryForCallSid(callSid), req.rid));
+  })
+);
+
 export default router;
