@@ -1,5 +1,6 @@
 {
-  "_comment": "BF_SERVER_INTEGRATION_RATCHET_v221 - the standing integration failures as of 2026-09-15. This is a ceiling to drive down, never up. Lower it whenever you fix something; CI tells you the new number.",
-  "maxFailedFiles": 39,
-  "maxFailedTests": 60
+  "_comment": "BF_SERVER_INTEGRATION_RATCHET_v221, recalibrated by v225. The first ceiling (39 files / 60 tests) was read off the default reporter's text summary, but the ratchet measures the JSON reporter's numFailedTestSuites, which also counts files that fail at import time with zero tests run. Different metric. These numbers come from an actual JSON run. Drive them down, never up.",
+  "maxFailedFiles": 77,
+  "maxFailedTests": 59,
+  "maxCollectionFailures": 38
 }
