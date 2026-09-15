@@ -1742,7 +1742,7 @@ router.get(
     if (!docId) throw new AppError("validation_error", "Document id required.", 400);
     const naming = await loadNamingContext(docId);
     if (!naming) throw new AppError("not_found", "Document not found.", 404);
-    res.status(200).json({ suggestedName: naming.displayName ?? naming.suggestedName, originalFilename: naming.filename });
+    res.status(200).json({ suggestedName: naming.displayName ?? naming.suggestedName, originalFilename: naming.filename, currentName: naming.displayName, parts: naming.parts }); // v265
   })
 );
 
