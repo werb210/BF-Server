@@ -1,5 +1,5 @@
 // BF_SERVER_DOC_CLASSIFY_v139
-import { REQUIRED_DOCUMENT_KEYS, type RequiredDocumentKey } from "../../db/schema/requiredDocuments.js";
+import { REQUIRED_DOCUMENT_KEYS, normalizeRequiredDocumentKey, type RequiredDocumentKey } from "../../db/schema/requiredDocuments.js";
 
 export type ClassificationResult = { documentType: RequiredDocumentKey | null; confidence: number; matched: string[]; alternative: RequiredDocumentKey | null; reason: string };
 type Rule = { type: RequiredDocumentKey; strong: string[]; weak?: string[]; veto?: string[] };
@@ -80,7 +80,7 @@ export function classifyDocumentText(text: string | null | undefined): Classific
 export type MismatchVerdict = { mismatch: boolean; expected: string; detected: RequiredDocumentKey | null; confidence: number; message: string };
 export function checkAgainstExpected(text: string | null | undefined, expected: string | null | undefined): MismatchVerdict {
   const result = classifyDocumentText(text);
-  const want = normalizeText(expected).replace(/[\s-]+/g, "_");
+  const want = resolveExpectedDocumentKey(expected); // BF_SERVER_OCR_LARGE_PDF_v260
   const base = { expected: String(expected ?? ""), detected: result.documentType, confidence: result.confidence };
   if (!want || !result.documentType || result.confidence < CONFIDENCE_FLOOR) return { ...base, mismatch: false, message: "not confident enough to question this upload" };
   if (result.documentType === want) return { ...base, mismatch: false, message: "document matches the requirement" };
@@ -89,4 +89,22 @@ export function checkAgainstExpected(text: string | null | undefined, expected: 
 
 export function classifiableTypes(): RequiredDocumentKey[] {
   return RULES.map((rule) => rule.type).filter((type) => (REQUIRED_DOCUMENT_KEYS as readonly string[]).includes(type));
+}
+
+// BF_SERVER_OCR_LARGE_PDF_v260
+/** Requirement labels as staff and applicants see them, resolved to canonical keys. */
+export function resolveExpectedDocumentKey(expected: string | null | undefined): string {
+  const raw = String(expected ?? "").trim().toLowerCase();
+  if (!raw) return "";
+  const underscored = raw.replace(/[\s\-/]+/g, "_");
+  const known = normalizeRequiredDocumentKey(underscored);
+  if (known) return known;
+  if (/bank/.test(raw) && /statement/.test(raw)) return "bank_statements_6_months";
+  if (/tax return|notice of assessment|\bt[12]\b/.test(raw)) return "tax_returns";
+  if (/a\/r|receivable/.test(raw)) return "accounts_receivable_aging";
+  if (/a\/p|payable/.test(raw)) return "accounts_payable_aging";
+  if (/financial|balance sheet|p&l|\bpnl\b|profit|income statement/.test(raw)) return "financial_statements";
+  if (/void|cheque|\bcheck\b/.test(raw)) return "void_cheque";
+  if (/licen[cs]e|government id|photo id|passport|driver/.test(raw)) return "government_id";
+  return underscored;
 }

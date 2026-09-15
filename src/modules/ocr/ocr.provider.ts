@@ -1,6 +1,7 @@
 import { config } from "../../config/index.js";
 import { logWarn } from "../../observability/logger.js";
 import { withRetry } from "../../lib/retry.js";
+import { extractPdfInChunks, isRetryableOcrError } from "./pdfChunking.js"; // BF_SERVER_OCR_LARGE_PDF_v260
 import { pushDeadLetter } from "../../lib/deadLetter.js";
 import {
   fetchOcrFieldRegistry,
@@ -130,74 +131,83 @@ export function createOpenAiOcrProvider(): OcrProvider {
       }
       const model = config.openai.ocrModel;
       const timeoutMs = config.ocr.timeoutMs;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const base64 = params.buffer.toString("base64");
-        const registry = fetchOcrFieldRegistry();
-        const schemaJson = buildFieldSchema(registry);
-        const promptText = buildExtractionPrompt(schemaJson);
-        const content: Array<Record<string, unknown>> = [
-          { type: "input_text", text: promptText },
-        ];
+      const registry = fetchOcrFieldRegistry();
+      const schemaJson = buildFieldSchema(registry);
+      const promptText = buildExtractionPrompt(schemaJson);
 
-        if (params.mimeType === "application/pdf") {
-          content.push({
-            type: "input_file",
-            filename: params.fileName ?? "document.pdf",
-            file_data: `data:${params.mimeType};base64,${base64}`,
-          });
-        } else if (params.mimeType.startsWith("image/")) {
-          content.push({
-            type: "input_image",
-            image_url: `data:${params.mimeType};base64,${base64}`,
-          });
-        } else {
-          throw new Error("unsupported_mime_type");
-        }
-
-        const requestBody = {
-          model,
-          input: [
-            {
-              role: "user",
-              content,
-            },
-          ],
-        };
-
-        const payload = await withRetry(async () => {
-          const response = await fetch("https://api.openai.com/v1/responses", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(requestBody),
-            signal: controller.signal,
-          });
-
-          if (!response.ok) {
-            const message = await response.text();
-            throw new Error(`openai_ocr_failed:${response.status}:${message}`);
+      // One model request. BF_SERVER_OCR_LARGE_PDF_v260 - each request gets its own
+      // timeout, and permanent 4xx errors (e.g. context_length_exceeded) are not retried.
+      const requestOnce = async (buffer: Buffer, mimeType: string, fileName: string | undefined) => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const base64 = buffer.toString("base64");
+          const content: Array<Record<string, unknown>> = [
+            { type: "input_text", text: promptText },
+          ];
+          if (mimeType === "application/pdf") {
+            content.push({
+              type: "input_file",
+              filename: fileName ?? "document.pdf",
+              file_data: `data:${mimeType};base64,${base64}`,
+            });
+          } else if (mimeType.startsWith("image/")) {
+            content.push({
+              type: "input_image",
+              image_url: `data:${mimeType};base64,${base64}`,
+            });
+          } else {
+            throw new Error("unsupported_mime_type");
           }
+          const requestBody = { model, input: [{ role: "user", content }] };
+          const payload = await withRetry(async () => {
+            const response = await fetch("https://api.openai.com/v1/responses", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(requestBody),
+              signal: controller.signal,
+            });
+            if (!response.ok) {
+              const message = await response.text();
+              throw new Error(`openai_ocr_failed:${response.status}:${message}`);
+            }
+            return (await response.json()) as Record<string, unknown>;
+          }, { shouldRetry: isRetryableOcrError });
+          const rawOutput = extractOutputText(payload);
+          const { rawText, fields } = parseModelJsonOutput(rawOutput);
+          return {
+            text: rawText ?? rawOutput,
+            fields: (fields ?? null) as Record<string, unknown> | null,
+            meta: { id: payload.id ?? null, json_parse_succeeded: rawText !== null || fields !== null },
+          };
+        } finally {
+          clearTimeout(timeout);
+        }
+      };
 
-          return (await response.json()) as Record<string, unknown>;
-        });
-
-        const rawOutput = extractOutputText(payload);
-        const { rawText, fields } = parseModelJsonOutput(rawOutput);
-        const finalText = rawText ?? rawOutput;
-        const modelFieldCount = fields ? Object.keys(fields).length : 0;
-
+      try {
+        if (params.mimeType === "application/pdf") {
+          const result = await extractPdfInChunks(params.buffer, (pdf) => requestOnce(pdf, params.mimeType, params.fileName));
+          return {
+            text: result.text,
+            json: { fields: result.fields },
+            meta: {
+              model_extracted_field_count: Object.keys(result.fields).length,
+              pdf_pages: result.pages,
+              ocr_requests: result.chunks,
+            },
+            model,
+            provider: "openai",
+          };
+        }
+        const single = await requestOnce(params.buffer, params.mimeType, params.fileName);
         return {
-          text: finalText,
-          json: { fields: fields ?? {} },
-          meta: {
-            id: payload.id ?? null,
-            model_extracted_field_count: modelFieldCount,
-            json_parse_succeeded: rawText !== null || fields !== null,
-          },
+          text: single.text,
+          json: { fields: single.fields ?? {} },
+          meta: { ...single.meta, model_extracted_field_count: single.fields ? Object.keys(single.fields).length : 0 },
           model,
           provider: "openai",
         };
@@ -207,13 +217,11 @@ export function createOpenAiOcrProvider(): OcrProvider {
           data: {
             mimeType: params.mimeType,
             fileName: params.fileName ?? null,
-            bufferBase64: params.buffer.toString("base64"),
+            sizeBytes: params.buffer.length,
           },
           error: String(error),
         });
         throw error;
-      } finally {
-        clearTimeout(timeout);
       }
     },
   };
