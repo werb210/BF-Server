@@ -253,11 +253,13 @@ router.get("/recent-calls", auth, async (req: any, res) => {
   if (!userId) return res.json({ ok: true, items: [] });
   const r = await pool
     .query(
-      `SELECT id, direction, status, duration_seconds, created_at, phone_number, contact_id, contact_name
+      `SELECT id, direction, status, duration_seconds, created_at, phone_number, contact_id, contact_name, disposition
          FROM (
            SELECT cl.id::text AS id, cl.direction, cl.status, cl.duration_seconds, cl.created_at,
                   cl.phone_number, cl.crm_contact_id AS contact_id,
                   COALESCE(c.name, pc.name) AS contact_name,
+                  -- BF_SERVER_RECENT_CALLS_DISPOSITION_v203
+                  cl.disposition,
                   cl.twilio_call_sid AS sid
              FROM call_logs cl
              LEFT JOIN contacts c ON c.id = cl.crm_contact_id
