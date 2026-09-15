@@ -15,6 +15,28 @@ import { callerOwnsApplication } from "../auth/clientApplicationOwnership.js";
 
 const router = Router();
 
+// BF_SERVER_APPLICANT_ACTION_CENTER_v197
+// GET /api/client/documents-needed/action-center?applicationId=...
+// The single outstanding-work list for the applicant home screen. Lives beside
+// the existing docs-needed route because it shares the same ownership check.
+router.get("/action-center", async (req: Request, res: Response) => {
+  const applicationId = String((req.query as any)?.applicationId ?? "").trim();
+  if (!/^[0-9a-f-]{36}$/i.test(applicationId)) {
+    return res.status(400).json({ error: "invalid_application_id" });
+  }
+  const owns = await callerOwnsApplication(req as any, applicationId).catch(() => false);
+  if (!owns) return res.status(403).json({ error: "forbidden" });
+
+  const { buildActionCenter } = await import("../services/applicantActions.js");
+  const data = await buildActionCenter(applicationId);
+  logInfo("action_center_built", {
+    applicationId,
+    outstanding: data.outstandingCount,
+    completed: data.completed.length,
+  });
+  return res.json(data);
+});
+
 // BF_SERVER_SBA_1919_ATTACH_GATE_v162
 // The "Supporting detail for any Yes answer on Form 1919" attachment
 // (sba_1919_attachments) only has anything to contain when the applicant
