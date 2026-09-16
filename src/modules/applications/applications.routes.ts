@@ -1166,6 +1166,36 @@ router.get('/:id/lenders/envelope', safeHandler(async (req: any, res: any) => {
   res.status(200).json(envelope);
 }));
 
+// BF_SERVER_CHANGE_PRODUCT_CATEGORY_v286 - correct the applicant's product choice and re-match lenders.
+router.get('/:id/product-category/options', safeHandler(async (_req: any, res: any) => {
+  const { PRODUCT_CATEGORIES } = await import('./productCategoryChange.js');
+  res.status(200).json({ options: PRODUCT_CATEGORIES });
+}));
+
+router.post('/:id/product-category', requireCapability([CAPABILITIES.CRM_WRITE]), safeHandler(async (req: any, res: any) => {
+  const appId = String(req.params.id ?? '').trim();
+  if (!appId) throw new AppError('validation_error', 'Application id required.', 400);
+  const { normalizeProductCategory, changeProductCategory } = await import('./productCategoryChange.js');
+  const category = normalizeProductCategory(req.body?.category);
+  if (!category) throw new AppError('validation_error', 'Choose a valid product category.', 400);
+  const appRes = await pool.query(
+    `select id, silo from applications where id::text = ($1)::text limit 1`,
+    [appId]
+  );
+  const app = appRes.rows[0];
+  if (!app) throw new AppError('not_found', 'Application not found.', 404);
+  const silo = getSilo(res);
+  if (app.silo && silo && app.silo !== silo) {
+    throw new AppError('not_found', 'Application not found.', 404);
+  }
+  const changedBy = req.user?.id ?? req.user?.userId ?? null;
+  const change = await changeProductCategory((sql, params) => pool.query(sql, params as any[]), appId, category, changedBy ? String(changedBy) : null);
+  console.info(JSON.stringify({ event: 'application_product_category_changed', applicationId: appId, ...change, by: changedBy }));
+  await computeAndCacheLenderMatches(appId);
+  const envelope = await readLenderMatchEnvelope(appId);
+  res.status(200).json({ ...envelope, product_category: category, previous_product_category: change.from });
+}));
+
 router.post('/:id/lenders/recalculate', safeHandler(async (req: any, res: any) => {
   const appId = String(req.params.id ?? '').trim();
   if (!appId) throw new AppError('validation_error', 'Application id required.', 400);
