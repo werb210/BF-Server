@@ -12,6 +12,7 @@ import lendersRouter from "./lenders.js";
 import lenderProductsRouter from "./lenderProducts.js";
 import clientSubmissionRoutes from "../../modules/clientSubmission/clientSubmission.routes.js";
 import accountantRouter from "./accountant.js"; // BF_SERVER_STEP5_ACCOUNTANT_v1
+import deviceSignInRouter from "./deviceSignIn.js"; // BF_SERVER_CLIENT_FACE_ID_v296
 import productQuestionsRouter from "./productQuestions.js"; // BF_SERVER_PRODUCT_QUESTIONS_v288
 import sessionRouter from "./session.js";
 import submitAttemptsRouter from "./submitAttempts.js";
@@ -26,6 +27,7 @@ import { AppError } from "../../middleware/errors.js";
 
 const router = Router();
 router.use(submitAttemptsRouter); // BF_SERVER_BLOCK_v842_SUBMIT_ATTEMPTS — frictionless beacon, before rate-limit/ownership middleware
+router.use(deviceSignInRouter); // BF_SERVER_CLIENT_FACE_ID_v296 - public sign-in must not need an app id
 const clientReadLimiter = clientReadRateLimit() as any;
 
 router.use((req: any, res: any, next: any) => {
