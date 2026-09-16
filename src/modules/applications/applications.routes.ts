@@ -1163,7 +1163,8 @@ router.get('/:id/lenders/envelope', safeHandler(async (req: any, res: any) => {
     throw new AppError('not_found', 'Application not found.', 404);
   }
   const envelope = await readLenderMatchEnvelope(appId);
-  res.status(200).json(envelope);
+  const { productQuestionsSummary } = await import('../../services/productQuestions/sendGate.js'); // v289
+  res.status(200).json({ ...envelope, product_questions: await productQuestionsSummary((sql, params) => pool.query(sql, params as any[]), appId) });
 }));
 
 // BF_SERVER_CHANGE_PRODUCT_CATEGORY_v286 - correct the applicant's product choice and re-match lenders.
@@ -1193,10 +1194,35 @@ router.post('/:id/product-category', requireCapability([CAPABILITIES.CRM_WRITE])
   console.info(JSON.stringify({ event: 'application_product_category_changed', applicationId: appId, ...change, by: changedBy }));
   await computeAndCacheLenderMatches(appId);
   const envelope = await readLenderMatchEnvelope(appId);
-  res.status(200).json({ ...envelope, product_category: category, previous_product_category: change.from });
+  // BF_SERVER_PRODUCT_QUESTIONS_GATE_v289 - message + push the client when the new category needs answers.
+  const { requestProductQuestions } = await import('../../services/productQuestions/sendGate.js');
+  const productQuestions = await requestProductQuestions((sql, params) => pool.query(sql, params as any[]), appId);
+  res.status(200).json({ ...envelope, product_category: category, previous_product_category: change.from, product_questions: productQuestions });
 }));
 
 // BF_SERVER_PRODUCT_QUESTIONS_v288 - staff view of missing product questions.
+// BF_SERVER_PRODUCT_QUESTIONS_GATE_v289 - staff correct answers the client gave. Staff cannot answer
+// a blank question: only the client's own submission can clear the send block.
+router.patch('/:id/product-questions', requireCapability([CAPABILITIES.CRM_WRITE]), safeHandler(async (req: any, res: any) => {
+  const appId = String(req.params.id ?? '').trim();
+  const appRes = await pool.query(`select id, silo from applications where id::text = ($1)::text limit 1`, [appId]);
+  const app = appRes.rows[0];
+  if (!app) throw new AppError('not_found', 'Application not found.', 404);
+  const silo = getSilo(res);
+  if (app.silo && silo && app.silo !== silo) throw new AppError('not_found', 'Application not found.', 404);
+  const answers = req.body?.answers && typeof req.body.answers === 'object' ? req.body.answers as Record<string, unknown> : {};
+  const q = (sql: string, params: unknown[]) => pool.query(sql, params as any[]);
+  const { loadGaps, saveAnswers } = await import('../../services/productQuestions/service.js');
+  const gaps = await loadGaps(q, appId);
+  const current = new Map((gaps?.questions ?? []).map((x: any) => [x.id, x.value]));
+  const blanks = Object.entries(answers).filter(([id, v]) => !current.get(id) || String(v ?? '').trim() === '').map(([id]) => id);
+  if (blanks.length) {
+    return res.status(409).json({ error: 'staff_cannot_answer', message: 'Staff can edit answers the client gave, but only the client can answer an unanswered question.', ids: blanks });
+  }
+  const result = await saveAnswers(q, appId, answers, { submit: false, by: 'staff', userId: req.user?.id ?? req.user?.userId ?? null });
+  res.status(200).json(result);
+}));
+
 router.get('/:id/product-questions', safeHandler(async (req: any, res: any) => {
   const appId = String(req.params.id ?? '').trim();
   const appRes = await pool.query(`select id, silo from applications where id::text = ($1)::text limit 1`, [appId]);
@@ -1224,7 +1250,8 @@ router.post('/:id/lenders/recalculate', safeHandler(async (req: any, res: any) =
   }
   await computeAndCacheLenderMatches(appId);
   const envelope = await readLenderMatchEnvelope(appId);
-  res.status(200).json(envelope);
+  const { productQuestionsSummary } = await import('../../services/productQuestions/sendGate.js'); // v289
+  res.status(200).json({ ...envelope, product_questions: await productQuestionsSummary((sql, params) => pool.query(sql, params as any[]), appId) });
 }));
 
 router.post('/:id/send', safeHandler(async (req: any, res: any) => {
@@ -1243,6 +1270,9 @@ router.post('/:id/send', safeHandler(async (req: any, res: any) => {
   if (appRow.rows[0].silo && silo && appRow.rows[0].silo !== silo) {
     throw new AppError('not_found', 'Application not found.', 404);
   }
+
+  // BF_SERVER_PRODUCT_QUESTIONS_GATE_v289
+  await (await import('../../services/productQuestions/sendGate.js')).assertProductQuestionsAnswered((sql, params) => pool.query(sql, params as any[]), String(id));
 
   const { sendApplicationToLenders } = await import(
     '../../modules/lender/lender.service.js'

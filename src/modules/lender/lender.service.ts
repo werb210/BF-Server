@@ -797,6 +797,9 @@ export async function submitApplication(params: {
   ip?: string;
   userAgent?: string;
 }): Promise<IdempotentResult<{ id: string; status: string; failureReason?: string | null }>> {
+  // BF_SERVER_PRODUCT_QUESTIONS_GATE_v289
+  await (await import("../../services/productQuestions/sendGate.js")).assertProductQuestionsAnswered(
+    (sql, params) => runQuery(sql, params as any[]) as any, params.applicationId);
   if (await isKillSwitchEnabled("lender_transmission")) {
     throw new AppError(
       "ops_kill_switch",

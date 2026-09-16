@@ -142,6 +142,8 @@ export async function dispatchToSelected(
   // BF_SERVER_FRAUD_ENFORCE_v50 - refuse before any package is built or sent.
   // This is the single choke point every submission path funnels through.
   await assertApplicationNotFraud(ctx.pool, ctx.applicationId);
+  // BF_SERVER_PRODUCT_QUESTIONS_GATE_v289 - never send with product questions unanswered.
+  await (await import("../productQuestions/sendGate.js")).assertProductQuestionsAnswered((sql, params) => ctx.pool.query(sql, params as any[]), ctx.applicationId);
 
   let signedApp: Buffer | null = null;
   let creditSummary: Buffer | null = null;

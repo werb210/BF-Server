@@ -25,6 +25,12 @@ router.post("/lenders/send", requireAuth, requireAuthorization({ roles: [ROLES.A
     : [];
   if (!applicationId) return res.status(400).json({ error: "missing_application_id" });
   if (lenderIds.length === 0) return res.status(400).json({ error: "no_lenders_selected" });
+  // BF_SERVER_PRODUCT_QUESTIONS_GATE_v289
+  {
+    const { productQuestionsSummary } = await import("../services/productQuestions/sendGate.js");
+    const pq = await productQuestionsSummary((sql, params) => pool.query(sql, params as any[]), applicationId);
+    if (pq.blocking) return res.status(409).json({ error: "product_questions_incomplete", message: pq.message, product_questions: pq });
+  }
 
   for (let i = 0; i < lenderIds.length; i++) {
     await pool.query(`INSERT INTO application_lender_selections (id, application_id, lender_id, position, finalized_at, created_at)
@@ -73,6 +79,12 @@ router.post("/applications/:id/lenders/send", requireAuth, requireAuthorization(
   const lenderIds: string[] = Array.isArray((req.body ?? {}).lenderIds) ? (req.body.lenderIds as unknown[]).map((x) => String(x)) : [];
   if (!id) return res.status(400).json({ error: "missing_application_id" });
   if (lenderIds.length === 0) return res.status(400).json({ error: "no_lenders_selected" });
+  // BF_SERVER_PRODUCT_QUESTIONS_GATE_v289
+  {
+    const { productQuestionsSummary } = await import("../services/productQuestions/sendGate.js");
+    const pq = await productQuestionsSummary((sql, params) => pool.query(sql, params as any[]), id);
+    if (pq.blocking) return res.status(409).json({ error: "product_questions_incomplete", message: pq.message, product_questions: pq });
+  }
 
   for (let i = 0; i < lenderIds.length; i++) {
     await pool.query(`INSERT INTO application_lender_selections (id, application_id, lender_id, position, finalized_at, created_at)
