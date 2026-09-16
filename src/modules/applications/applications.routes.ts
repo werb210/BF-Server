@@ -1196,6 +1196,19 @@ router.post('/:id/product-category', requireCapability([CAPABILITIES.CRM_WRITE])
   res.status(200).json({ ...envelope, product_category: category, previous_product_category: change.from });
 }));
 
+// BF_SERVER_PRODUCT_QUESTIONS_v288 - staff view of missing product questions.
+router.get('/:id/product-questions', safeHandler(async (req: any, res: any) => {
+  const appId = String(req.params.id ?? '').trim();
+  const appRes = await pool.query(`select id, silo from applications where id::text = ($1)::text limit 1`, [appId]);
+  const app = appRes.rows[0];
+  if (!app) throw new AppError('not_found', 'Application not found.', 404);
+  const silo = getSilo(res);
+  if (app.silo && silo && app.silo !== silo) throw new AppError('not_found', 'Application not found.', 404);
+  const { loadGaps } = await import('../../services/productQuestions/service.js');
+  const gaps = await loadGaps((sql, params) => pool.query(sql, params as any[]), appId);
+  res.status(200).json(gaps);
+}));
+
 router.post('/:id/lenders/recalculate', safeHandler(async (req: any, res: any) => {
   const appId = String(req.params.id ?? '').trim();
   if (!appId) throw new AppError('validation_error', 'Application id required.', 400);
