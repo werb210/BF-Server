@@ -537,6 +537,58 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
   }
 });
 
+// BF_SERVER_STAFF_FACE_ID_v298 - Face ID sign-in for the staff dialer app.
+router.post("/device-sign-in/enroll", requireAuth, async (req: any, res: any) => {
+  try {
+    const { findAuthUserById } = await import("../modules/auth/auth.repo.js");
+    const { enrollStaffDevice, isActiveStaff } = await import("../services/staffDeviceSignIn.js");
+    const user = await findAuthUserById(String(req.user?.id ?? ""));
+    if (!isActiveStaff(user as any)) return res.status(403).json({ error: "staff_account_required" });
+    const label = typeof req.body?.deviceLabel === "string" ? req.body.deviceLabel : null;
+    const q = (sql: string, params: unknown[]) => pool.query(sql, params as any[]);
+    return res.status(201).json(await enrollStaffDevice(q, user as any, label));
+  } catch (err) {
+    console.error("[device-sign-in] enroll failed", String(err));
+    return res.status(500).json({ error: "enroll_failed" });
+  }
+});
+
+router.post("/device-sign-in", otpVerifyLimiter, async (req: any, res: any) => {
+  try {
+    const { findAuthUserById } = await import("../modules/auth/auth.repo.js");
+    const { verifyStaffDevice } = await import("../services/staffDeviceSignIn.js");
+    const q = (sql: string, params: unknown[]) => pool.query(sql, params as any[]);
+    const result = await verifyStaffDevice(q, String(req.body?.credentialId ?? ""), String(req.body?.secret ?? ""), (id) => findAuthUserById(id) as any);
+    if (!result.ok) {
+      console.warn(JSON.stringify({ event: "staff_device_sign_in_rejected", reason: result.reason }));
+      return res.status(401).json({ error: result.reason === "expired" ? "device_sign_in_expired" : "device_sign_in_invalid" });
+    }
+    const user: any = await findAuthUserById(result.userId);
+    const role = normalizeRole(user.role ?? "") ?? ROLES.STAFF;
+    const userSilos = Array.isArray(user.silos) ? (user.silos as string[]) : [];
+    const token = signAccessToken({
+      sub: String(user.id),
+      role,
+      tokenVersion: user.tokenVersion ?? 0,
+      phone: user.phoneNumber ?? undefined,
+      capabilities: fetchCapabilitiesForRole(role),
+      ...(user.silo ? { silo: user.silo } : {}),
+      ...(userSilos.length ? { silos: userSilos } : {}),
+    } as any);
+    return res.status(200).json({ status: "ok", data: { token, secret: result.secret } });
+  } catch (err) {
+    console.error("[device-sign-in] failed", String(err));
+    return res.status(500).json({ error: "device_sign_in_failed" });
+  }
+});
+
+router.post("/device-sign-in/revoke", requireAuth, async (req: any, res: any) => {
+  const { revokeStaffDevices } = await import("../services/staffDeviceSignIn.js");
+  const q = (sql: string, params: unknown[]) => pool.query(sql, params as any[]);
+  const credentialId = typeof req.body?.credentialId === "string" ? req.body.credentialId : null;
+  return res.json({ revoked: await revokeStaffDevices(q, String(req.user?.id ?? ""), credentialId) });
+});
+
 router.get("/me", requireAuth, authMeHandler);
 router.use(microsoftRoutes);
 
