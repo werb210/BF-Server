@@ -4,6 +4,7 @@ import { sendSMS } from "../lib/twilio.js"; // BF_SERVER_WATCH_SMS_v1
 import { allowedLine, watchAuth, watchError } from "./security.js";
 // BF_SERVER_CALL_DISPOSITION_v145
 import { CALL_DISPOSITIONS as SHARED_CALL_DISPOSITIONS, followUpFor } from "../modules/calls/callDisposition.js";
+import { describeCrmUpdate, safeDispositionCrmUpdate } from "../modules/calls/dispositionCrmUpdate.js"; // BF_SERVER_CALL_OUTCOME_CRM_v273
 
 const router = Router();
 router.use(watchAuth);
@@ -115,13 +116,15 @@ router.post("/calls/:id/disposition", async (req: any, res) => {
         WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE source = 'CALL_DISPOSITION' AND source_ref_id = $7::uuid)`,
       [row.silo, rule.label, `Auto-created from call outcome: ${disposition}`, String(rule.days), req.watch.staffUserId, row.contact_id, id]);
   }
+  // BF_SERVER_CALL_OUTCOME_CRM_v273 - same contact update as the dialer and portal.
+  const crmUpdate = await safeDispositionCrmUpdate(row?.contact_id, disposition, (sql, params) => pool.query(sql, params as any[]));
   // BF_SERVER_DISPOSITION_NOTE_v1 - record every outcome on the contact timeline (best-effort).
   if (row?.contact_id) {
     await pool.query(
       `INSERT INTO crm_notes (body, contact_id, silo) VALUES ($1, $2::uuid, $3)`,
-      [`Call outcome: ${disposition.replace(/_/g, " ")}`, row.contact_id, row.silo]).catch(() => {});
+      [`Call outcome: ${disposition.replace(/_/g, " ")}` + (crmUpdate ? describeCrmUpdate(crmUpdate) : ""), row.contact_id, row.silo]).catch((err) => console.error("[watch] disposition note failed", err instanceof Error ? err.message : err));
   }
-  return res.json({ id, disposition });
+  return res.json({ id, disposition, crmUpdate });
 });
 
 // BF_SERVER_WATCH_SMS_v1 - quick text from the wrist: list SMS templates/snippets + send.
