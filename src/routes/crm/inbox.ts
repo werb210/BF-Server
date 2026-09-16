@@ -5,6 +5,7 @@ import { pool } from "../../db.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { respondOk } from "../../utils/respondOk.js";
 import { getGraphForUser, type GraphClient } from "../../modules/o365/graphClient.js";
+import { explainO365Failure, lastO365Failure, parseMicrosoftError, recordO365Failure } from "../../modules/o365/o365Health.js"; // BF_SERVER_O365_VISIBILITY_v274
 import { resolveSiloFromRequest } from "../../middleware/silo.js";
 import { fileInboundAttachments } from "../../services/contactDocuments.js"; // BF_SERVER_INBOX_FILE_TO_CRM_v1
 // BF_SERVER_INBOX_CID_REGEX_v43
@@ -215,12 +216,13 @@ router.get("/", safeHandler(async (req: any, res: any) => {
       ? `${base}/mailFolders/${encodeURIComponent(folderId)}/messages?$top=50&${select}&$search="${encodeURIComponent(q)}"`
       : `${base}/mailFolders/${encodeURIComponent(folderId)}/messages?$top=50&${select}&${orderby}`;
     const r = await client.fetch(url, q ? { headers: { ConsistencyLevel: "eventual" } } : undefined);
-    if (!r.ok) return [];
+    if (!r.ok) throw Object.assign(new Error("graph_inbox_failed"), { graphStatus: r.status, detail: await r.text().catch(() => "") }); // v274
     const data = await r.json();
     return Array.isArray(data?.value) ? data.value : [];
   }
 
   let messages: any[] = [];
+  try { // BF_SERVER_O365_VISIBILITY_v274
   if (folderId) {
     messages = await fetchFolder(graph, folderId);
   } else if (folder === "inbox") {
@@ -241,6 +243,15 @@ router.get("/", safeHandler(async (req: any, res: any) => {
       const tb = new Date(b.receivedDateTime ?? b.sentDateTime ?? 0).getTime();
       return sortDir === "asc" ? ta - tb : tb - ta;
     });
+  }
+  } catch (err: any) {
+    if (err?.graphStatus === undefined) throw err;
+    const status = Number(err.graphStatus);
+    const failure = recordO365Failure(String(userId), { stage: mailbox ? "graph_shared_mailbox" : "graph_inbox", status, ...parseMicrosoftError(String(err.detail ?? "")) });
+    const reason = explainO365Failure(failure ?? lastO365Failure(String(userId)));
+    if (status === 401) return res.status(401).json({ error: "o365_reauth_required", reason, mailbox: mailbox || null });
+    if (status === 403) return res.status(403).json({ error: "o365_permission_denied", reason, mailbox: mailbox || null });
+    return res.status(502).json({ error: "graph_inbox_failed", reason, mailbox: mailbox || null });
   }
 
   respondOk(res, messages);

@@ -2,6 +2,9 @@ import express from "express";
 import { pool } from "../db.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { requireAuth } from "../middleware/auth.js";
+import { clearO365Failure, explainO365Failure, lastO365Failure, parseMicrosoftError, recordO365Failure, type O365Failure } from "../modules/o365/o365Health.js"; // BF_SERVER_O365_VISIBILITY_v274
+
+let lastTokenEndpointFailure: Omit<O365Failure, "at"> | null = null;
 
 const router = express.Router();
 
@@ -9,7 +12,10 @@ async function refreshMicrosoftAccessToken(refresh: string): Promise<{ accessTok
   const tenant = process.env.MSAL_TENANT_ID;
   const client = process.env.MSAL_CLIENT_ID;
   const secret = process.env.MSAL_CLIENT_SECRET;
-  if (!tenant || !client || !secret) return null;
+  if (!tenant || !client || !secret) {
+    lastTokenEndpointFailure = { stage: "not_configured" };
+    return null;
+  }
   const body = new URLSearchParams({
     client_id: client,
     client_secret: secret,
@@ -22,7 +28,10 @@ async function refreshMicrosoftAccessToken(refresh: string): Promise<{ accessTok
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
-  if (!r.ok) return null;
+  if (!r.ok) {
+    lastTokenEndpointFailure = { stage: "refresh", status: r.status, ...parseMicrosoftError(await r.text().catch(() => "")) };
+    return null;
+  }
   const tok = await r.json();
   return {
     accessToken: tok.access_token,
@@ -147,10 +156,14 @@ router.post("/o365-refresh", requireAuth, safeHandler(async (req: any, res: any)
   const refresh = rows[0]?.o365_refresh_token;
   if (!refresh) return res.status(412).json({ error: "no_refresh_token" });
 
+  lastTokenEndpointFailure = null;
   const refreshed = await refreshMicrosoftAccessToken(refresh);
   if (!refreshed) {
-    return res.status(503).json({ error: "msal_not_configured" });
+    const failure = recordO365Failure(userId, lastTokenEndpointFailure ?? { stage: "refresh" });
+    if (failure.stage === "not_configured") return res.status(503).json({ error: "msal_not_configured", reason: explainO365Failure(failure) });
+    return res.status(401).json({ error: "o365_reauth_required", code: failure.code ?? null, reason: explainO365Failure(failure) });
   }
+  clearO365Failure(userId);
   await pool.query(
     `UPDATE users SET
        o365_access_token = $1,
@@ -160,6 +173,14 @@ router.post("/o365-refresh", requireAuth, safeHandler(async (req: any, res: any)
     [refreshed.accessToken, refreshed.refreshToken, refreshed.expiresAt, userId],
   );
   res.json({ ok: true, accessToken: refreshed.accessToken, expiresAt: refreshed.expiresAt });
+}));
+
+// BF_SERVER_O365_VISIBILITY_v274 - why Office 365 last failed for this user, in plain English.
+router.get("/o365-health", requireAuth, safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId ?? req.user?.sub;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const failure = lastO365Failure(String(userId));
+  res.json({ lastFailure: failure, explanation: failure ? explainO365Failure(failure) : null });
 }));
 
 export default router;

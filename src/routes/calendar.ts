@@ -8,6 +8,11 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { getSilo } from "../middleware/silo.js";
 import { pool } from "../db.js";
 import { getGraphForUser, type GraphClient } from "../modules/o365/graphClient.js";
+import { parseMicrosoftError, recordO365Failure } from "../modules/o365/o365Health.js"; // BF_SERVER_O365_VISIBILITY_v274
+function noteCalendarFailure(req: any, err: unknown): void {
+  const e = err as { status?: number; bodyText?: string; message?: string };
+  recordO365Failure(req.user?.userId ? String(req.user.userId) : null, { stage: "graph_calendar", status: e?.status ?? null, ...parseMicrosoftError(String(e?.bodyText ?? e?.message ?? "")) });
+}
 
 const router = Router();
 
@@ -178,7 +183,8 @@ router.get("/", safeHandler(async (req: any, res: any) => {
     const data = await graphCall(graph, `/me/calendarView?startDateTime=${start}&endDateTime=${end}&$top=200&$orderby=start/dateTime`);
     const items = (data as any).value ?? [];
     res.status(200).json({ status: "ok", data: { items, connected: true } });
-  } catch {
+  } catch (err) {
+    noteCalendarFailure(req, err);
     res.status(200).json({ status: "ok", data: { items: [], connected: true, error: "graph_fetch_failed" } });
   }
 }));
@@ -194,7 +200,8 @@ router.get("/events", safeHandler(async (req: any, res: any) => {
     const data = await graphCall(graph, `/me/calendarView?startDateTime=${start}&endDateTime=${end}&$top=200&$orderby=start/dateTime`);
     const raw: any[] = Array.isArray((data as any)?.value) ? (data as any).value : [];
     res.status(200).json({ status: "ok", data: raw.map(normalizeGraphEvent) });
-  } catch {
+  } catch (err) {
+    noteCalendarFailure(req, err); // v274 - the grid still renders; the reason is logged
     res.status(200).json({ status: "ok", data: [] });
   }
 }));

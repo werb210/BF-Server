@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { clearO365Failure, parseMicrosoftError, recordO365Failure } from "./o365Health.js"; // BF_SERVER_O365_VISIBILITY_v274
 
 // BF_SERVER_BLOCK_v337_GRAPH_AUTO_REFRESH_v1
 // Microsoft Graph delegated-flow scopes. Must match what the portal's
@@ -22,11 +23,14 @@ type RefreshResult = {
   expiresAt: Date;
 };
 
-async function refreshAccessToken(refreshToken: string): Promise<RefreshResult | null> {
+async function refreshAccessToken(refreshToken: string, userId: string | null = null): Promise<RefreshResult | null> {
   const tenant = process.env.MSAL_TENANT_ID;
   const client = process.env.MSAL_CLIENT_ID;
   const secret = process.env.MSAL_CLIENT_SECRET;
-  if (!tenant || !client || !secret) return null;
+  if (!tenant || !client || !secret) {
+    recordO365Failure(userId, { stage: "not_configured" });
+    return null;
+  }
   const body = new URLSearchParams({
     client_id: client,
     client_secret: secret,
@@ -42,7 +46,11 @@ async function refreshAccessToken(refreshToken: string): Promise<RefreshResult |
       body,
     },
   );
-  if (!r.ok) return null;
+  if (!r.ok) {
+    const detail = parseMicrosoftError(await r.text().catch(() => ""));
+    recordO365Failure(userId, { stage: "refresh", status: r.status, ...detail });
+    return null;
+  }
   const tok = (await r.json()) as {
     access_token?: string;
     refresh_token?: string;
@@ -100,8 +108,12 @@ async function refreshAndPersistOnce(
       [userId],
     );
     const rt = rows[0]?.o365_refresh_token;
-    if (!rt) return null;
-    const refreshed = await refreshAccessToken(rt);
+    if (!rt) {
+      recordO365Failure(userId, { stage: "no_refresh_token" });
+      return null;
+    }
+    const refreshed = await refreshAccessToken(rt, userId);
+    if (refreshed) clearO365Failure(userId);
     if (refreshed) {
       await persistRefreshedToken(
         db,
@@ -197,6 +209,10 @@ export async function getGraphForUser(
         currentToken = refreshed.accessToken;
         resp = await doFetch(currentToken);
       }
+    }
+    if (resp.status === 401 || resp.status === 403) {
+      const detail = parseMicrosoftError(await resp.clone().text().catch(() => ""));
+      recordO365Failure(userId, { stage: "graph", status: resp.status, ...detail });
     }
     return resp;
   };
