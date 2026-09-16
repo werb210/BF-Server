@@ -1203,6 +1203,23 @@ router.post('/:id/product-category', requireCapability([CAPABILITIES.CRM_WRITE])
 // BF_SERVER_PRODUCT_QUESTIONS_v288 - staff view of missing product questions.
 // BF_SERVER_PRODUCT_QUESTIONS_GATE_v289 - staff correct answers the client gave. Staff cannot answer
 // a blank question: only the client's own submission can clear the send block.
+// BF_SERVER_PRODUCT_SWITCH_RESIGN_v293 - after a switch to Line of Credit, ask the client to sign the updated application.
+router.post('/:id/product-questions/request-signature', requireCapability([CAPABILITIES.CRM_WRITE]), safeHandler(async (req: any, res: any) => {
+  const appId = String(req.params.id ?? '').trim();
+  const appRes = await pool.query(`select id, silo from applications where id::text = ($1)::text limit 1`, [appId]);
+  const app = appRes.rows[0];
+  if (!app) throw new AppError('not_found', 'Application not found.', 404);
+  const silo = getSilo(res);
+  if (app.silo && silo && app.silo !== silo) throw new AppError('not_found', 'Application not found.', 404);
+  const { requestResignature } = await import('../../services/productQuestions/sendGate.js');
+  const result = await requestResignature((sql, params) => pool.query(sql, params as any[]), appId, req.user?.id ?? req.user?.userId ?? null);
+  if (!result.ok) {
+    const message = result.reason === 'questions_incomplete' ? 'The client must answer the product questions first.' : 'This application does not need a new signature.';
+    return res.status(409).json({ error: result.reason, message });
+  }
+  res.status(200).json({ ok: true });
+}));
+
 router.patch('/:id/product-questions', requireCapability([CAPABILITIES.CRM_WRITE]), safeHandler(async (req: any, res: any) => {
   const appId = String(req.params.id ?? '').trim();
   const appRes = await pool.query(`select id, silo from applications where id::text = ($1)::text limit 1`, [appId]);
