@@ -522,7 +522,7 @@ router.get(
     const classificationById = new Map<string, ClassificationRow>();
     try {
       const cls = await pool.query<ClassificationRow & { id: string }>(
-        `SELECT id::text AS id, document_type, category, category_before_retag, detected_type, detected_confidence, display_name, tamper_level, tamper_signals
+        `SELECT id::text AS id, document_type, category, category_before_retag, detected_type, detected_confidence, display_name, tamper_level, tamper_signals, COALESCE(received_in_background, false) AS received_in_background
            FROM documents WHERE application_id::text = ($1)::text`,
         [record.id],
       );
@@ -553,6 +553,7 @@ router.get(
           displayName: (classificationById.get(String(doc.id)) as { display_name?: string | null } | undefined)?.display_name ?? null, // v264
           tamperLevel: (classificationById.get(String(doc.id)) as { tamper_level?: string | null } | undefined)?.tamper_level ?? null, // v269
           tamperSignals: (classificationById.get(String(doc.id)) as { tamper_signals?: unknown } | undefined)?.tamper_signals ?? null, // v269
+          receivedInBackground: Boolean((classificationById.get(String(doc.id)) as { received_in_background?: boolean } | undefined)?.received_in_background), // BF_SERVER_BACKGROUND_UPLOAD_TAB_v310
         };
       })
     );
