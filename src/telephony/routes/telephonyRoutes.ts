@@ -9,6 +9,7 @@ import { explainTeam } from "../../modules/presence/explainPresence.js";
 import watchCallRoutes from "../../watch/callRoutes.js";
 // BF_SERVER_CALL_DISPOSITION_v145
 import { CALL_DISPOSITIONS, planForDisposition } from "../../modules/calls/callDisposition.js";
+import { describeCrmUpdate, safeDispositionCrmUpdate } from "../../modules/calls/dispositionCrmUpdate.js"; // BF_SERVER_CALL_OUTCOME_CRM_v273
 // BF_SERVER_CALL_REF_v161
 import { parseCallRef, callRefPredicate } from "../../modules/calls/callRef.js";
 
@@ -210,10 +211,13 @@ router.post("/calls/:id/disposition", auth, async (req: any, res: Response) => {
       ).catch(() => {});
     }
 
+    // BF_SERVER_CALL_OUTCOME_CRM_v273 - update the contact itself, then note what changed.
+    const crmUpdate = await safeDispositionCrmUpdate(row?.contact_id, plan.disposition, (sql, params) => pool.query(sql, params as any[]));
+
     if (row?.contact_id) {
       await pool.query(
         `INSERT INTO crm_notes (body, contact_id, silo) VALUES ($1, $2::uuid, $3)`,
-        [plan.timelineNote, row.contact_id, row.silo],
+        [plan.timelineNote + (crmUpdate ? describeCrmUpdate(crmUpdate) : ""), row.contact_id, row.silo],
       ).catch(() => {});
     }
 
@@ -224,6 +228,7 @@ router.post("/calls/:id/disposition", auth, async (req: any, res: Response) => {
         disposition: plan.disposition,
         followUpCreated: Boolean(plan.followUp && row?.contact_id),
         suppressOutreach: plan.suppressOutreach,
+        crmUpdate, // v273
       },
     });
   } catch (err) {
