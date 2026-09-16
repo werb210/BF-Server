@@ -128,6 +128,7 @@ export async function persistAndEnqueue(opts: {
   file: Express.Multer.File;
   uploadedBy?: string | null;
   offerId?: string | null;
+  receivedInBackground?: boolean; // BF_SERVER_BACKGROUND_UPLOAD_v306
 }) {
   // BF_SERVER_DOCUMENT_DUPLICATE_GUARD_v256 - refuse before anything is stored.
   await assertNotDuplicate(opts.applicationId, opts.file.buffer);
@@ -167,8 +168,8 @@ export async function persistAndEnqueue(opts: {
       `INSERT INTO documents
          (id, application_id, filename, hash, category,
           storage_path, blob_name, blob_url, size_bytes,
-          status, ocr_status, uploaded_by, document_type, offer_id, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'uploaded',$11,$10,$5,$12,now(),now())`, // BF_SERVER_BLOCK_v818_OTHER_SKIP_OCR
+          status, ocr_status, uploaded_by, document_type, offer_id, received_in_background, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'uploaded',$11,$10,$5,$12,$13,now(),now())`, // BF_SERVER_BLOCK_v818_OTHER_SKIP_OCR
       [
         documentId,
         opts.applicationId,
@@ -188,6 +189,7 @@ export async function persistAndEnqueue(opts: {
         opts.uploadedBy ?? 'client',
         isOtherDoc ? 'skipped' : 'pending', // BF_SERVER_BLOCK_v818_OTHER_SKIP_OCR — $11
         opts.offerId ?? null,
+        opts.receivedInBackground === true, // $13 BF_SERVER_BACKGROUND_UPLOAD_v306
       ]
     );
 
@@ -368,7 +370,7 @@ router.post("/public-upload", upload.single("file"), async (req: Request, res: R
   }
 
   try {
-    const r = await persistAndEnqueue({ applicationId, category, file, uploadedBy: null, offerId });
+    const r = await persistAndEnqueue({ applicationId, category, file, uploadedBy: null, offerId, receivedInBackground: req.header("x-background-upload") === "1" });
     return ok(res, {
       id: r.id,
       versionId: r.versionId,
@@ -392,7 +394,7 @@ router.post("/upload", requireAuth, upload.single("file"), async (req: Request, 
   if (!applicationId || !category || !file) return fail(res, 400, "INVALID_DOCUMENT_UPLOAD_PAYLOAD");
   try {
     const userId = (req as any)?.user?.id ?? null;
-    const r = await persistAndEnqueue({ applicationId, category, file, uploadedBy: userId });
+    const r = await persistAndEnqueue({ applicationId, category, file, uploadedBy: userId, receivedInBackground: req.header("x-background-upload") === "1" });
     // #7 — a received document advances the stage into review (Option A: on received,
     // not only when every doc is accepted). Non-fatal; never block the upload response.
     try {

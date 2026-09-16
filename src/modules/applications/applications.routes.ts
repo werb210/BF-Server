@@ -1449,7 +1449,8 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
           NULL::text  AS ocr_text,
           FALSE       AS ocr_text_truncated,
           0           AS ocr_tables_count,
-          NULL::timestamp AS ocr_extracted_at
+          NULL::timestamp AS ocr_extracted_at,
+          COALESCE(d.received_in_background, false) AS received_in_background
        FROM documents d
        WHERE d.application_id::text = ($1)::text
        ORDER BY d.created_at ASC`,
@@ -1486,7 +1487,8 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
             NULL::text  AS ocr_text,
             FALSE       AS ocr_text_truncated,
             0           AS ocr_tables_count,
-            NULL::timestamp AS ocr_extracted_at
+            NULL::timestamp AS ocr_extracted_at,
+          COALESCE(d.received_in_background, false) AS received_in_background
          FROM documents d
          WHERE d.application_id::text = ($1)::text
          ORDER BY d.created_at ASC`,
@@ -1516,6 +1518,7 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
     filename: f.filename ?? '',
     size: f.size_bytes,
     uploadedAt: f.created_at ? new Date(f.created_at as any).toISOString() : null,
+    receivedInBackground: Boolean((f as { received_in_background?: boolean }).received_in_background), // BF_SERVER_BACKGROUND_UPLOAD_v306
     status: ((): 'accepted' | 'rejected' | 'pending_review' | 'required' => {
       const sv = String(f.status ?? '').toLowerCase();
       if (sv === 'accepted') return 'accepted';
