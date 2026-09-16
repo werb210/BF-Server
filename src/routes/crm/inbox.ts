@@ -5,6 +5,7 @@ import { pool } from "../../db.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { respondOk } from "../../utils/respondOk.js";
 import { getGraphForUser, type GraphClient } from "../../modules/o365/graphClient.js";
+import { sharedMailboxReason, shouldLogSharedFailure, tokenIdentity } from "../../modules/o365/tokenIdentity.js"; // BF_SERVER_SHARED_MAILBOX_DIAGNOSTIC_v291
 import { explainO365Failure, lastO365Failure, parseMicrosoftError, recordO365Failure } from "../../modules/o365/o365Health.js"; // BF_SERVER_O365_VISIBILITY_v274
 import { resolveSiloFromRequest } from "../../middleware/silo.js";
 import { fileInboundAttachments } from "../../services/contactDocuments.js"; // BF_SERVER_INBOX_FILE_TO_CRM_v1
@@ -247,7 +248,17 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   } catch (err: any) {
     if (err?.graphStatus === undefined) throw err;
     const status = Number(err.graphStatus);
-    const failure = recordO365Failure(String(userId), { stage: mailbox ? "graph_shared_mailbox" : "graph_inbox", status, ...parseMicrosoftError(String(err.detail ?? "")) });
+    // BF_SERVER_SHARED_MAILBOX_DIAGNOSTIC_v291 - for shared mailboxes, say which account and permissions
+    // the token really has, and log it once per 10 minutes instead of on every 20s poll.
+    if (mailbox) {
+      const identity = tokenIdentity(graph.accessToken);
+      if (shouldLogSharedFailure(String(userId), mailbox)) {
+        console.error(JSON.stringify({ event: "o365_shared_mailbox_failed", userId, mailbox, status, graphCode: parseMicrosoftError(String(err.detail ?? "")).code, signedInAs: identity.account, hasSharedMailboxScope: identity.hasSharedMailboxScope, scopes: identity.scopes }));
+      }
+      const reason = sharedMailboxReason(mailbox, identity);
+      return res.status(status === 401 ? 401 : 403).json({ error: status === 401 ? "o365_reauth_required" : "o365_permission_denied", reason, mailbox, signedInAs: identity.account });
+    }
+    const failure = recordO365Failure(String(userId), { stage: "graph_inbox", status, ...parseMicrosoftError(String(err.detail ?? "")) });
     const reason = explainO365Failure(failure ?? lastO365Failure(String(userId)));
     if (status === 401) return res.status(401).json({ error: "o365_reauth_required", reason, mailbox: mailbox || null });
     if (status === 403) return res.status(403).json({ error: "o365_permission_denied", reason, mailbox: mailbox || null });
