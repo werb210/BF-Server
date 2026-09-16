@@ -2192,6 +2192,10 @@ router.post(
       }
     }
 
+    // BF_SERVER_PRODUCT_QUESTIONS_GATE_v289
+    await (await import("../services/productQuestions/sendGate.js")).assertProductQuestionsAnswered(
+      (sql, params) => runQuery(sql, params as any[]) as any, applicationId);
+
     const submissions: any[] = [];
     for (const lenderId of selectedLenders) {
       const result = await runQuery(
