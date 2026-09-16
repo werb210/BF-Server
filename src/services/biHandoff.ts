@@ -41,8 +41,52 @@ const NAICS_MAP: Record<string, string> = {
   "healthcare":          "621000",
   "technology":          "541510",
   "software":            "541510",
+  // BF_SERVER_BI_HANDOFF_FIELDS_v281 - the industries BF-client's Step 1 actually offers.
+  "auto sales & repair":     "441000",
+  "education":               "611000",
+  "energy":                  "221000",
+  "hospitality & lodging":   "721000",
+  "logistics & trucking":    "484000",
+  "personal services":       "812000",
+  "restaurant/food service": "722500",
 };
-function bestEffortNaics(industry: unknown): { code: string | null; confidence: boolean } {
+
+// BF_SERVER_BI_HANDOFF_FIELDS_v281
+// What a real BF-client submission looked like versus what this mapper read:
+//   phone        "(780) 916-7413"  -> sent as-is. BI signs applicants in by E.164
+//                (+17809167413), so the applicant could never find or finish
+//                their BI application.
+//   revenue      "$500,001 to $1,000,000" and collateral "$100,001 to $250,000"
+//                are dropdown bands, which Number() turns into null.
+//   business no. stored as craBusinessNumber / ein, never businessNumber.
+//   NAICS        picked in Step 3 (business.naicsCode) but ignored; and most
+//                Step 1 industries were missing from the map.
+export function toE164(raw: unknown): string | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const hasPlus = raw.trim().startsWith("+");
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  if (hasPlus && digits.length >= 8 && digits.length <= 15) return `+${digits}`;
+  return null;
+}
+
+/** A dropdown band as one figure: midpoint of "X to Y", the floor of "Over X". The applicant confirms it on the BI form. */
+export function amountFromBand(raw: unknown): number | null {
+  if (typeof raw !== "string") return null;
+  const text = raw.toLowerCase().replace(/zero/g, "0");
+  const values = Array.from(text.matchAll(/\$?\s*(\d[\d,]*(?:\.\d+)?)\s*(million|m\b|k\b)?/g)).map((m) => {
+    const n = Number(m[1].replace(/,/g, ""));
+    const unit = m[2];
+    return unit === "million" || unit === "m" ? n * 1_000_000 : unit === "k" ? n * 1_000 : n;
+  }).filter((n) => Number.isFinite(n));
+  if (!values.length) return null;
+  if (/\bover\b|\+$/.test(text) || values.length === 1) return values[0] > 0 ? values[0] : null;
+  const mid = Math.round((values[0] + values[1]) / 2);
+  return mid > 0 ? mid : null;
+}
+function bestEffortNaics(industry: unknown, picked?: unknown): { code: string | null; confidence: boolean } {
+  if (typeof picked === "string" && /^\d{2,6}$/.test(picked.trim())) return { code: picked.trim(), confidence: true }; // v281
   if (typeof industry !== "string") return { code: null, confidence: false };
   const key = industry.trim().toLowerCase();
   if (key in NAICS_MAP) return { code: NAICS_MAP[key], confidence: true };
@@ -103,7 +147,7 @@ export function buildBiPayload(input: BiHandoffInput): Record<string, unknown> {
     (Array.isArray(a.applicants) ? a.applicants[0] : null) ??
     (Array.isArray(n.applicants) ? n.applicants[0] : null) ?? {};
   const kyc = a.kyc ?? a.kyc_answers ?? n.kyc ?? n.kyc_answers ?? {};
-  const naics = bestEffortNaics(kyc.industry);
+  const naics = bestEffortNaics(kyc.industry, business.naicsCode ?? business.naics_code ?? kyc.naicsCode);
   const derivedLoanAmount =
     num(kyc.fundingAmount) ??
     num(kyc.capitalAmount) ??
@@ -118,13 +162,13 @@ export function buildBiPayload(input: BiHandoffInput): Record<string, unknown> {
     bf_application_id: input.bfApplicationId,
     guarantor_name: s(applicant.fullName) ?? ([s(applicant.firstName), s(applicant.lastName)].filter(Boolean).join(" ") || null),
     guarantor_email: s(applicant.email),
-    guarantor_phone: s(applicant.phone),
+    guarantor_phone: toE164(s(applicant.phone)) ?? s(applicant.phone), // v281
     guarantor_dob: s(applicant.dob) ?? s(applicant.dateOfBirth) ?? s(applicant.date_of_birth) ?? s(applicant.birthdate), // BF_SERVER_BLOCK_v331_PGI_DOB_FALLBACKS_v1
     guarantor_address: concatAddress(applicant),
     business_name: s(business.businessName) ?? s(business.legalName) ?? s(business.companyName) ?? s(business.name),
     business_address: concatAddress(business),
     entity_type: s(business.businessStructure) ?? s(business.entityType),
-    business_number: s(business.businessNumber),
+    business_number: s(business.businessNumber) ?? s(business.craBusinessNumber) ?? s(business.ein) ?? s(business.businessNumberCra), // v281
     naics_code: naics.code,
     naics_confidence: naics.confidence,
     formation_date: s(business.startDate) ?? s(business.formationDate),
@@ -132,8 +176,8 @@ export function buildBiPayload(input: BiHandoffInput): Record<string, unknown> {
     pgi_limit: loanAmount != null ? Math.round(loanAmount * 0.8) : null,
     lender_name: s(a.selected_product?.lender_name) ?? s(a.selectedProduct?.lender_name) ?? null, // BF_SERVER_BLOCK_v331_PGI_NO_LENDER_UUID_v1 — never send the lender_id UUID; blank if no real name
     loan_purpose: s(kyc.purposeOfFunds) ?? s(kyc.lookingFor),
-    annual_revenue: num(kyc.annualRevenue) ?? num(kyc.revenueLast12Months),
-    collateral_value: num(kyc.availableCollateral) ?? num(kyc.fixedAssets),
+    annual_revenue: num(kyc.annualRevenue) ?? num(kyc.revenueLast12Months) ?? amountFromBand(kyc.annualRevenue) ?? amountFromBand(kyc.revenueLast12Months), // v281
+    collateral_value: num(kyc.availableCollateral) ?? num(kyc.fixedAssets) ?? amountFromBand(kyc.availableCollateral) ?? amountFromBand(kyc.fixedAssets), // v281
   };
 }
 
