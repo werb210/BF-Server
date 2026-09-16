@@ -1,13 +1,14 @@
 // BF_SERVER_CLIENT_FACE_ID_v296 - enroll / sign in / revoke for Face ID sign-in.
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
+import { safeKeyGenerator } from "../../middleware/rateLimit.js"; // BF_SERVER_DEVICE_SIGN_IN_KEYGEN_v304
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { dbQuery } from "../../db.js";
 import { clientPhoneFromAuth, enrollDevice, revokeDevices, signInWithDevice } from "../../services/clientDeviceSignIn.js";
 
 const router = Router();
 const query = (sql: string, params: unknown[]) => dbQuery(sql, params as any[]) as any;
-const signInLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: "RATE_LIMITED" }, validate: { xForwardedForHeader: false, trustProxy: false } });
+const signInLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: "RATE_LIMITED" }, keyGenerator: safeKeyGenerator, validate: { xForwardedForHeader: false, trustProxy: false } });
 
 router.post("/device-sign-in/enroll", safeHandler(async (req: any, res: any) => {
   const phone = clientPhoneFromAuth(req.headers?.authorization, process.env.JWT_SECRET);
