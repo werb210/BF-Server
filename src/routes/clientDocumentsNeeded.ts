@@ -199,6 +199,39 @@ function appendRequiredDocAll(
   out.push({ document_type: docType, label: labelFor(docType), required: isRequired });
 }
 
+// BF_SERVER_MEDIA_CATEGORY_DOCS_v328
+// A Media / Film Finance deal has five documents no other category asks for.
+// Until now they only reached the required set through a FINALIZED lender
+// product's required_documents, so a media file with no lender picked yet
+// showed the generic checklist and nothing else - staff had no way to see, or
+// track, the five documents the deal actually turns on.
+//
+// The strings below are the labels the staff Create Product modal writes into
+// lender_products.required_documents for MEDIA (LendersPage conditionalTypes).
+// They must stay byte-identical to those, NOT to the document_types table
+// labels, which carry parenthetical suffixes: the dedupe key here is the exact
+// document_type string, so "Tax credit status" and "Tax credit status
+// (applying / approved / certified)" would be counted as two documents, asked
+// for twice, and satisfied never.
+const MEDIA_CATEGORY_DOCS: string[] = [
+  "Budget",
+  "Finance plan",
+  "Tax credit status",
+  "Production schedule",
+  "Minimum guarantees / presales",
+];
+
+// The applicant wizard, the staff picker and older rows all spell this category
+// differently. Exported so the vocabulary is testable without a database.
+export function isMediaProductCategory(raw: unknown): boolean {
+  const upper = String(raw ?? "").trim().toUpperCase().replace(/[\s\-/]+/g, "_");
+  return upper === "MEDIA"
+    || upper === "MEDIA_FUNDING"
+    || upper === "MEDIA_FINANCE"
+    || upper === "MEDIA_FINANCING"
+    || upper === "MEDIA_FILM_FINANCE";
+}
+
 function productRequirementItems(metadata: any): any[] {
   const md = metadata && typeof metadata === "object" ? metadata : {};
   const fd = md.formData && typeof md.formData === "object" ? md.formData : md;
@@ -301,6 +334,25 @@ async function computeOutstandingDocsRaw(
     for (const item of items) appendRequiredDocAll(item, seen, required);
   }
 
+  // BF_SERVER_MEDIA_CATEGORY_DOCS_v328 - the deal's own product category is a
+  // required-document source in its own right, independent of any lender. The
+  // staff Create Product modal already forces every conditional media document
+  // to required for a MEDIA product (BF_MEDIA_FUNDING_v38); this applies the
+  // same rule at the application level so the set exists from the moment the
+  // category is set, and dedupes against a finalized product later because the
+  // labels are identical.
+  {
+    const catRes = await pool.query<{ product_category: string | null }>(
+      `SELECT product_category FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+      [applicationId]
+    ).catch(() => ({ rows: [] as Array<{ product_category: string | null }> }));
+    if (isMediaProductCategory(catRes.rows[0]?.product_category)) {
+      for (const label of MEDIA_CATEGORY_DOCS) {
+        appendRequiredDocAll({ category: label, required: true }, seen, required);
+      }
+    }
+  }
+
   // BF_SERVER_OPTIONAL_DOCS_v138 - stillNeeded is the BLOCKING set: what the
   // applicant must produce before the file can move. An optional document is by
   // definition not that, and one the applicant has nothing to upload for can
@@ -349,6 +401,27 @@ async function computeOutstandingDocsRaw(
   return { stillNeeded, rejected, required };
 }
 
+// BF_SERVER_MEDIA_CATEGORY_DOCS_v328 - the document types this deal already has
+// a live (non-rejected) upload for, family-aware in the same way the outstanding
+// computation is. Staff Request Items renders this as Uploaded / Missing so the
+// checklist can be tracked without opening the Documents tab and counting.
+export async function getSatisfiedDocTypes(applicationId: string): Promise<string[]> {
+  const res = await pool.query<{ category: string | null }>(
+    `WITH fam AS (
+       SELECT COALESCE(a.parent_application_id, a.id) AS root_id
+       FROM applications a WHERE a.id::text = ($1)::text
+     )
+     SELECT DISTINCT d.category FROM documents d
+     JOIN applications da ON da.id = d.application_id
+     WHERE (da.id::text IN (SELECT root_id::text FROM fam)
+        OR da.parent_application_id::text IN (SELECT root_id::text FROM fam))
+       AND d.category IS NOT NULL
+       AND (d.status IS NULL OR d.status <> 'rejected')`,
+    [applicationId]
+  ).catch(() => ({ rows: [] as Array<{ category: string | null }> }));
+  return res.rows.map((r) => String(r.category ?? "").trim()).filter(Boolean);
+}
+
 // BF_SERVER_DOC_WAIVERS_v1 - per-application admin waivers. A waived requirement is removed
 // from the outstanding set everywhere (client upload list, staff block, Send/SignNow gate).
 export async function getWaivedDocTypes(applicationId: string): Promise<Set<string>> {
@@ -394,7 +467,7 @@ export async function getRequestedFormIds(applicationId: string): Promise<string
 
 export async function getRequestItemsForApp(
   applicationId: string
-): Promise<{ required: NeededDoc[]; waived: string[]; forms: string[]; formsWaived: string[] }> {
+): Promise<{ required: NeededDoc[]; waived: string[]; forms: string[]; formsWaived: string[]; satisfied: string[] }> {
   const raw = await computeOutstandingDocsRaw(applicationId);
   const allWaived = await getWaivedDocTypes(applicationId);
   // Form waivers are stored in the same table with a "form:<id>" document_type,
@@ -406,7 +479,8 @@ export async function getRequestItemsForApp(
     else waived.push(w);
   }
   const forms = await getRequestedFormIds(applicationId);
-  return { required: raw.required, waived, forms, formsWaived };
+  const satisfied = await getSatisfiedDocTypes(applicationId);
+  return { required: raw.required, waived, forms, formsWaived, satisfied };
 }
 
 router.get("/needed", async (req: Request, res: Response) => {
