@@ -430,6 +430,23 @@ router.post("/upload", requireAuth, upload.single("file"), async (req: Request, 
   }
 });
 
+// BF_SERVER_MOVE_DOCUMENT_v315 - staff move a document to the right category.
+router.post("/:id/category", requireAuth, async (req: Request, res: Response) => {
+  const { canMoveDocuments, cleanCategory, moveDocument } = await import("../services/documents/moveDocument.js");
+  const user = (req as any)?.user ?? {};
+  if (!canMoveDocuments(user.role)) return fail(res, 403, "STAFF_ONLY");
+  const category = cleanCategory(req.body?.category);
+  if (!category) return fail(res, 400, "CATEGORY_REQUIRED");
+  try {
+    const result = await moveDocument((sql, params) => pool.query(sql, params as any[]), toStringSafe(req.params.id), category, user.id ?? null);
+    if (!result.ok) return fail(res, 404, "DOCUMENT_NOT_FOUND");
+    return ok(res, result);
+  } catch (err) {
+    console.error("[documents] move failed", { documentId: req.params.id, err: String(err) });
+    return fail(res, 500, "MOVE_FAILED");
+  }
+});
+
 router.post("/:id/accept", requireAuth, async (req: Request, res: Response) => {
   const id = toStringSafe(req.params.id);
   await pool.query(`UPDATE documents SET status='accepted', updated_at=now() WHERE id=$1`, [id]).catch(() => {});
