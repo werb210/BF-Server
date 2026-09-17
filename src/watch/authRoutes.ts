@@ -15,13 +15,31 @@ const limiter = rateLimit({ windowMs: 60_000, limit: 10, standardHeaders: true, 
   keyGenerator: rateLimitKeyFromRequest,
   handler: (req, res) => watchError(req, res, 429, "rate_limited", "Too many authentication attempts", true) });
 
-// The authenticated iPhone requests a short-lived, single-use enrollment code.
+// BF_SERVER_WATCH_CODE_TTL_v342
+// Five minutes was right when the only delivery was WCSession transferUserInfo:
+// a single fire-and-forget message, sent while both apps were awake, arriving in
+// seconds or never. boreal-dialer-ios v341 replaced that with a durable
+// application context, which the system holds and delivers whenever the Watch
+// NEXT becomes available - minutes or hours later, including after the Watch app
+// is installed for the first time. That is the case the old window could never
+// cover, and it is exactly the case that matters: the phone mints a code before
+// the Watch app exists, and the code has to survive until it does.
+//
+// Why 24 hours is safe here: the code is single-use (used_at is set inside the
+// same transaction that consumes it), stored only as a hash, mintable only with
+// a staff bearer token, and the link route is rate limited to 10 attempts a
+// minute against a 100,000,000 space. Lengthening the window does not widen a
+// guessing attack in any practical sense; it removes a race the client cannot
+// win on its own.
+const ENROLLMENT_CODE_TTL_MS = 24 * 60 * 60_000;
+
+// The authenticated iPhone requests a single-use enrollment code.
 router.post("/enrollment", auth, limiter, async (req: any, res) => {
   const staffUserId = req.user?.userId || req.user?.id || req.user?.sub;
   if (!staffUserId || String(req.user?.role || "").toLowerCase() === "client")
     return watchError(req, res, 403, "forbidden", "Staff authentication required");
   const code = crypto.randomInt(0, 100_000_000).toString().padStart(8, "0");
-  const expiresAt = new Date(Date.now() + 5 * 60_000);
+  const expiresAt = new Date(Date.now() + ENROLLMENT_CODE_TTL_MS); // BF_SERVER_WATCH_CODE_TTL_v342
   await pool.query(`INSERT INTO watch_link_codes(staff_user_id,code_hash,expires_at) VALUES($1,$2,$3)`,
     [staffUserId, hashWatchSecret(code), expiresAt]);
   return res.status(201).json({ oneTimeCode: code, expiresAt: expiresAt.toISOString() });
