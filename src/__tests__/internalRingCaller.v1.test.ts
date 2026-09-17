@@ -31,8 +31,15 @@ describe("internal incoming-ring caller resolution", () => {
     const webhooks = readSource("../routes/webhooks.ts");
     const service = readSource("../voice/conferenceService.ts");
 
-    expect(webhooks).toContain('broadcastIncomingRing(conf.id, "Client mini-portal")');
+    // BF_SERVER_GRAPH_THROTTLE_v332 - v326 replaced the hardcoded
+    // "Client mini-portal" label with the caller's own number, falling back to
+    // the client identity, because the literal matched no contact and every
+    // mini-portal caller therefore reached staff as "Unknown caller". What this
+    // test is actually guarding is that the ring is broadcast BY CONFERENCE ID
+    // and carries something resolvable - not that one particular string is used.
+    expect(webhooks).toContain("broadcastIncomingRing(conf.id, clientPhone || from)");
     expect(webhooks).toContain("broadcastIncomingRing(conf.id, from)");
+    expect(webhooks).not.toContain('broadcastIncomingRing(conf.id, "Client mini-portal")');
     expect(webhooks).not.toContain("broadcastIncomingRing(staffIds");
     expect(service).toContain("confRow?.friendly_name || conferenceId");
     expect(service).toContain("conferenceFriendly: friendly");
