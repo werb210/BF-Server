@@ -133,6 +133,53 @@ async function refreshAndPersistOnce(
   }
 }
 
+// BF_SERVER_GRAPH_THROTTLE_v332
+// Microsoft caps how many requests one application may have IN FLIGHT against a
+// single mailbox at once - four - and answers the overflow with 429
+// ApplicationThrottled, carrying a Retry-After header saying how long to wait.
+const GRAPH_MAX_CONCURRENT_PER_USER = 4;
+const GRAPH_MAX_RETRIES = 2;
+const GRAPH_MAX_RETRY_WAIT_MS = 20_000;
+
+type MailboxGate = { active: number; queue: Array<() => void> };
+const mailboxGates = new Map<string, MailboxGate>();
+
+async function withMailboxSlot<T>(userId: string, run: () => Promise<T>): Promise<T> {
+  let gate = mailboxGates.get(userId);
+  if (!gate) {
+    gate = { active: 0, queue: [] };
+    mailboxGates.set(userId, gate);
+  }
+  const held = gate;
+  if (held.active >= GRAPH_MAX_CONCURRENT_PER_USER) {
+    await new Promise<void>((resolve) => held.queue.push(resolve));
+  }
+  held.active += 1;
+  try {
+    return await run();
+  } finally {
+    held.active -= 1;
+    const next = held.queue.shift();
+    if (next) next();
+    else if (held.active === 0) mailboxGates.delete(userId);
+  }
+}
+
+export function retryAfterMs(header: string | null | undefined, attempt: number, now: number = Date.now()): number {
+  const raw = String(header ?? "").trim();
+  if (raw) {
+    const seconds = Number(raw);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, GRAPH_MAX_RETRY_WAIT_MS);
+    const when = Date.parse(raw);
+    if (Number.isFinite(when)) return Math.min(Math.max(when - now, 0), GRAPH_MAX_RETRY_WAIT_MS);
+  }
+  return Math.min(1000 * 2 ** attempt, GRAPH_MAX_RETRY_WAIT_MS);
+}
+
+export function isReplayableBody(body: unknown): boolean {
+  return body === undefined || body === null || typeof body === "string";
+}
+
 export type GraphClient = {
   fetch: (path: string, init?: RequestInit) => Promise<Response>;
   accessToken: string;
@@ -188,10 +235,12 @@ export async function getGraphForUser(
     }
   }
 
+  // BF_SERVER_GRAPH_THROTTLE_v332 - every Graph call for this user passes through
+  // the mailbox gate, so no more than four are ever outstanding at once.
   const graphFetch = async (
     path: string,
     init: RequestInit = {},
-  ): Promise<Response> => {
+  ): Promise<Response> => withMailboxSlot(userId, async () => {
     const doFetch = (token: string) =>
       fetch(`https://graph.microsoft.com/v1.0${path}`, {
         ...init,
@@ -210,12 +259,35 @@ export async function getGraphForUser(
         resp = await doFetch(currentToken);
       }
     }
+    for (
+      let attempt = 0;
+      attempt < GRAPH_MAX_RETRIES
+        && (resp.status === 429 || resp.status === 503)
+        && isReplayableBody(init.body);
+      attempt += 1
+    ) {
+      const waitMs = retryAfterMs(resp.headers.get("retry-after"), attempt);
+      console.warn(JSON.stringify({
+        event: "graph_throttled_retry",
+        userId,
+        path,
+        status: resp.status,
+        attempt: attempt + 1,
+        waitMs,
+      }));
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      resp = await doFetch(currentToken);
+    }
+    if (resp.status === 429 || resp.status === 503) {
+      const detail = parseMicrosoftError(await resp.clone().text().catch(() => ""));
+      recordO365Failure(userId, { stage: "graph_throttled", status: resp.status, ...detail });
+    }
     if (resp.status === 401 || resp.status === 403) {
       const detail = parseMicrosoftError(await resp.clone().text().catch(() => ""));
       recordO365Failure(userId, { stage: "graph", status: resp.status, ...detail });
     }
     return resp;
-  };
+  });
 
   return {
     get accessToken() {

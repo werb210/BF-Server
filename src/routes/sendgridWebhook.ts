@@ -69,6 +69,9 @@ router.post("/", async (req: any, res: any) => {
   try { events = JSON.parse(raw.toString("utf8")); } catch { res.status(200).json({ ok: true }); return; }
   // BF_SERVER_SENDGRID_WEBHOOK_VISIBILITY_v20
   let resolved = 0;
+  // BF_SERVER_SENDGRID_RESOLVE_v332 - retain a capped diagnostic sample for
+  // events that cannot be associated with a contact.
+  const unresolvedEmails = new Set<string>();
   const seenTypes = new Set<string>();
   for (const ev of Array.isArray(events) ? events : []) {
     try {
@@ -78,10 +81,20 @@ router.post("/", async (req: any, res: any) => {
       const contactId = ev?.contact_id ? String(ev.contact_id) : null;
       let cid = contactId;
       if (!cid && email) {
-        const r = await pool.query<{ id: string }>(`SELECT id FROM contacts WHERE lower(email) = $1 ORDER BY created_at LIMIT 1`, [email]);
+        const r = await pool.query<{ id: string }>(
+          `SELECT id FROM contacts
+            WHERE lower(trim(coalesce(email, ''))) = $1
+               OR lower(trim(coalesce(secondary_email, ''))) = $1
+            ORDER BY (lower(trim(coalesce(email, ''))) = $1) DESC, created_at
+            LIMIT 1`,
+          [email],
+        );
         cid = r.rows[0]?.id ?? null;
       }
-      if (!cid) continue;
+      if (!cid) {
+        if (email) unresolvedEmails.add(email);
+        continue;
+      }
       resolved += 1;
       // BF_SERVER_EMAIL_LINK_CLICKS_v19 - carry the clicked URL. The timeline
       // query already renders payload->>'url' as the row body for email_click,
@@ -99,12 +112,12 @@ router.post("/", async (req: any, res: any) => {
       }
       // BF_SERVER_BLOCK_v790 - attribute sequence email opens/clicks.
       const seqSendId = ev?.seq_send_id ? String(ev.seq_send_id) : null;
-      if (seqSendId && event === "open") await pool.query(`UPDATE sequence_sends SET opened_at = COALESCE(opened_at, now()) WHERE id = $1`, [seqSendId]).catch(() => {});
-      else if (seqSendId && event === "click") await pool.query(`UPDATE sequence_sends SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [seqSendId]).catch(() => {});
+      if (seqSendId && event === "open") await pool.query(`UPDATE sequence_sends SET opened_at = COALESCE(opened_at, now()) WHERE id = $1`, [seqSendId]).catch((err: any) => { console.warn("sendgrid_seq_open_failed", { seqSendId, message: err?.message }); });
+      else if (seqSendId && event === "click") await pool.query(`UPDATE sequence_sends SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [seqSendId]).catch((err: any) => { console.warn("sendgrid_seq_click_failed", { seqSendId, message: err?.message }); });
       // BF_SERVER_TEMPLATE_ANALYTICS_v1 - attribute per-template email opens/clicks via the tse_id custom arg.
       const tseId = ev?.tse_id ? String(ev.tse_id) : null;
-      if (tseId && event === "open") await pool.query(`UPDATE template_send_events SET opened_at = COALESCE(opened_at, now()) WHERE id = $1`, [tseId]).catch(() => {});
-      else if (tseId && event === "click") await pool.query(`UPDATE template_send_events SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [tseId]).catch(() => {});
+      if (tseId && event === "open") await pool.query(`UPDATE template_send_events SET opened_at = COALESCE(opened_at, now()) WHERE id = $1`, [tseId]).catch((err: any) => { console.warn("sendgrid_tse_open_failed", { tseId, message: err?.message }); });
+      else if (tseId && event === "click") await pool.query(`UPDATE template_send_events SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [tseId]).catch((err: any) => { console.warn("sendgrid_tse_click_failed", { tseId, message: err?.message }); });
       // BF_SERVER_EMAIL_LINK_CLICKS_v19 - per-URL ledger. template_id and silo are
       // looked up from the send ledger when the tse_id custom arg is present; a
       // click with no template still records, it just cannot be rolled up by template.
@@ -133,6 +146,8 @@ router.post("/", async (req: any, res: any) => {
   console.log("[sendgrid-webhook] accepted", {
     events: Array.isArray(events) ? events.length : 0,
     contactsResolved: resolved,
+    contactsUnresolved: unresolvedEmails.size,
+    unresolvedSample: Array.from(unresolvedEmails).slice(0, 5).join(",") || "none",
     types: Array.from(seenTypes).join(",") || "none",
   });
   res.status(200).json({ ok: true });
