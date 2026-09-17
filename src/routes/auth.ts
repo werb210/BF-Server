@@ -443,13 +443,30 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
       });
     }
 
+    // BF_SERVER_CLIENT_USERTYPE_v334
+    // The branch below mints a STAFF token whenever the phone belongs to an
+    // active staff user, and a CLIENT token otherwise. That is right for the
+    // portal and wrong for the client app: a staff member signing into
+    // BF-client got an Admin token, and every client-scoped route - Face ID
+    // enrollment, device sign-in, the client voice token - checks
+    // `role === "client"` and answered 401. Nothing said so; the client app
+    // simply behaved as though the feature were broken.
+    //
+    // The lender, referrer and accountant portals already declare themselves
+    // with userType on verify. The client app now does too, and saying
+    // userType:"client" means "issue a client token for this verified phone",
+    // whoever else that phone may also be. That is strictly LESS privilege than
+    // the staff token the same person would otherwise receive, for a number
+    // Twilio has just verified, so it grants nothing they did not already have.
+    const wantsClient = String((req.body ?? {}).userType ?? "") === "client";
+
     const user = await findAuthUserByPhone(phone);
     const isActiveStaff = Boolean(
       user && user.role && !user.disabled && user.active
     );
 
     let token: string;
-    if (isActiveStaff && user) {
+    if (isActiveStaff && user && !wantsClient) {
       const role = normalizeRole(user.role ?? "") ?? ROLES.STAFF;
       // v620: include silos[] + silo from user row so BF-portal can
       // render the silo selector without an extra round-trip.
@@ -465,7 +482,9 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
         ...(userSilos.length ? { silos: userSilos } : {}),
       });
     } else {
-      console.log("[otp_verify] client_fallthrough", { phone });
+      // BF_SERVER_CLIENT_USERTYPE_v334 - log which of the two reasons applied, so
+      // "why am I a client here" is answerable from the log stream alone.
+      console.log("[otp_verify] client_fallthrough", { phone, requestedClient: wantsClient, isActiveStaff });
       token = jwt.sign(
         {
           sub: `client:${phone}`,
