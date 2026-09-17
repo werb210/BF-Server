@@ -131,6 +131,8 @@ router.post("/resolve-caller", auth, async (req: any, res) => {
             name: display,
             contactId: hit.contact_id ?? null,
             applicationId: hit.application_id,
+            // BF_SERVER_CLIENT_CALL_CALLER_ID_v326
+            companyName: String(hit.business_name ?? "").trim() || null,
             phone: hit.phone ?? null,
           });
         }

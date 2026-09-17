@@ -233,6 +233,17 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
     return res.send(vrErr.toString());
   }
 
+  // BF_SERVER_CLIENT_CALL_CALLER_ID_v326
+  // Twilio takes From verbatim as the caller ID on a call placed TO a client
+  // identity. Do not send unusable numbers because Twilio rejects invalid From.
+  const callerNumberOrEmpty = (raw: unknown): string => {
+    const digits = String(raw ?? "").replace(/[^0-9]/g, "");
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+    if (digits.length >= 11 && digits.length <= 15) return `+${digits}`;
+    return "";
+  };
+
   // ── v503: mini-portal inbound (client:client-*) -> conference + ring-all
   if (from.startsWith("client:client-")) {
     const { default: VoiceResponse } = await import("twilio/lib/twiml/VoiceResponse.js");
@@ -255,9 +266,43 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
       silo: "BF", direction: "client_miniportal", createdByUserId: null,
       friendlyName: `mp_${callSid.slice(-12)}_${Date.now()}`,
     });
+    // BF_SERVER_CLIENT_CALL_CALLER_ID_v326
+    // Resolve the applicant once and give every staff surface the same caller.
+    const clientIdentity = from.slice("client:".length);
+    const clientAppId = /^client-([0-9a-f-]{36})$/i.exec(clientIdentity)?.[1] ?? "";
+    let clientDisplay = "Client mini-portal";
+    let clientPhone = "";
+    if (clientAppId) {
+      const who = await pool.query<{ full_name: string | null; business_name: string | null; phone: string | null }>( // swallow-ok: failure is logged; never drop a live call
+        `SELECT c.full_name, a.business_name, c.phone
+           FROM applications a
+           LEFT JOIN contacts c ON c.id = a.contact_id
+          WHERE a.id::text = $1
+          LIMIT 1`,
+        [clientAppId],
+      ).catch((err: any) => {
+        console.error("client_miniportal_caller_lookup_failed", { applicationId: clientAppId, message: err?.message });
+        return { rows: [] as Array<{ full_name: string | null; business_name: string | null; phone: string | null }> };
+      });
+      const hit = who.rows[0];
+      if (hit) {
+        const name = String(hit.full_name ?? "").trim();
+        const business = String(hit.business_name ?? "").trim();
+        const label = [name, business].filter(Boolean).join(" · ");
+        if (label) clientDisplay = label;
+        clientPhone = callerNumberOrEmpty(hit.phone);
+      }
+    }
+    console.log(JSON.stringify({
+      event: "client_miniportal_caller_resolved",
+      callSid: callSid || null,
+      applicationId: clientAppId || null,
+      hasPhone: !!clientPhone,
+      display: clientDisplay,
+    }));
     const callerPid = await addParticipantRow({
       conferenceId: conf.id, kind: "client_miniportal",
-      identity: from.slice("client:".length), displayName: "Client mini-portal",
+      identity: clientIdentity, displayName: clientDisplay,
     });
     if (callSid) await setParticipantCallSid(callerPid, callSid);
     // Ring all staff in parallel.
@@ -272,10 +317,11 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
         await dialClientIntoConference({
           conferenceFriendly: conf.friendly_name,
           identity: row.twilio_identity, participantId: pid,
+          fromNumber: clientPhone,
         });
       } catch (e: any) { console.warn("ring_all_dial_failed", { identity: row.twilio_identity, message: e?.message }); }
     }));
-    void broadcastIncomingRing(conf.id, "Client mini-portal"); // BF_SERVER_INCOMING_RING_ARGS_v1
+    void broadcastIncomingRing(conf.id, clientPhone || from); // BF_SERVER_INCOMING_RING_ARGS_v1
     const base = getPublicBaseUrl();
     vrc.redirect({ method: "POST" }, `${base}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(conf.friendly_name)}&pid=${encodeURIComponent(callerPid)}`);
     return res.send(vrc.toString());
