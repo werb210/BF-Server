@@ -25,6 +25,7 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
       // hides nameless "draft-like" rows client-side (isDraftLikeApplication).
       `SELECT COUNT(*)::text AS count FROM applications
        WHERE UPPER(silo) = UPPER($1)
+         AND COALESCE(pipeline_state, '') NOT IN ('Rejected', 'Accepted') -- BF_SERVER_ACTIVE_EXCLUDES_CLOSED_v355: active means still in progress
          -- BF_SERVER_DASHBOARD_LEGS_v351: equipment legs count, matching the Pipeline board.
          AND COALESCE(pipeline_state, '') NOT IN ('draft', 'Draft', '')
          AND COALESCE(NULLIF(TRIM(name), ''), NULLIF(TRIM(business_legal_name), '')) IS NOT NULL
@@ -127,6 +128,19 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
   });
   const commissionEarned = commissionByStage["Accepted"] ?? 0;
 
+  // BF_SERVER_FX_RATE_WORKER_v355 - the USD->CAD rate behind every CAD figure,
+  // so the dashboard can show which rate and which day it used.
+  let fx: { usdToCad: number; asOf: string | null } | null = null;
+  try {
+    const fr = await pool.query<{ to_cad: string; as_of: string | null }>(
+      `SELECT to_cad::text AS to_cad, to_char(updated_at, 'YYYY-MM-DD') AS as_of FROM fx_rates WHERE currency = 'USD' LIMIT 1`,
+    );
+    const row = fr?.rows?.[0];
+    if (row) fx = { usdToCad: Number(row.to_cad), asOf: row.as_of ?? null };
+  } catch (err: any) {
+    console.error("[dashboard.metrics] fx read failed", { message: err?.message });
+  }
+
   res.json({
     status: "ok",
     data: {
@@ -139,6 +153,7 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
       // BF_SERVER_DASHBOARD_LEGS_v351 - native amounts per currency.
       commissionByStageCurrency,
       commissionEarnedByCurrency: commissionByStageCurrency["Accepted"] ?? {},
+      fx,
     },
   });
 }));
