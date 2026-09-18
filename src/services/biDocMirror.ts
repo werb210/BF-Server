@@ -64,12 +64,24 @@ export const BF_TO_PGI_DOC_TYPE: Record<string, string> = {
   ap: "ap_aging",
   ap_aging: "ap_aging",
   accounts_payable_aging: "ap_aging",
+  // BF_SERVER_PGI_MIRROR_LABELS_v357 - the display labels documents are actually
+  // filed under ("A/P", "PnL – Interim financials"), normalized by pgiDocTypeFor.
+  // Only the snake_case codes above were listed, so real uploads never mirrored.
+  pnl_interim_financials: "profit_loss",
+  p_l_interim_financials: "profit_loss",
+  profit_and_loss: "profit_loss",
+  balance_sheet_interim_financials: "balance_sheet",
+  a_r: "ar_aging",
+  accounts_receivable: "ar_aging",
+  a_p: "ap_aging",
+  accounts_payable: "ap_aging",
   founder_cv: "founder_cv",
   financial_forecast: "financial_forecast",
 };
 
 export function pgiDocTypeFor(category: string | null | undefined): string | null {
-  const c = String(category ?? "").trim().toLowerCase();
+  // BF_SERVER_PGI_MIRROR_LABELS_v357 - "A/R" -> "a_r", "PnL – Interim financials" -> "pnl_interim_financials".
+  const c = String(category ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   return c ? BF_TO_PGI_DOC_TYPE[c] ?? null : null;
 }
 
@@ -164,10 +176,62 @@ export function mirrorDocToBiAsync(input: MirrorInput): void {
   // BF_SERVER_PGI_MIRROR_SCOPE_v1 - scope enforced here, not at the call sites,
   // so a future caller cannot forget it.
   if (!shouldMirrorToPgi(input.documentType)) return;
-  void mirrorDocToBi(input).catch((err) => {
+  void mirrorDocToBi(input).then((r) => {
+    // BF_SERVER_PGI_MIRROR_LABELS_v357 - a skipped mirror (no linked BI application,
+    // missing secret) was invisible. Say why, so a missing BI document can be traced.
+    if (!r.ok && r.error !== "bi_already_mirrored") {
+      logInfo("bi_doc_mirror_skipped", {
+        bfApplicationId: input.bfApplicationId,
+        bfDocumentId: input.bfDocumentId,
+        documentType: input.documentType,
+        reason: r.error,
+      });
+    }
+  }).catch((err) => {
     logError("bi_doc_mirror_unhandled", {
       code: "bi_doc_mirror_unhandled",
       error: err?.message ?? "unknown",
     });
   });
+}
+
+// BF_SERVER_PGI_MIRROR_LABELS_v357 - catch-up for documents uploaded before their
+// labels were recognised, or before the BF application was linked to BI. BI-Server
+// dedupes on the BF document, so re-running is harmless.
+export async function backfillPgiMirrors(days = 30): Promise<{ eligible: number; mirrored: number }> {
+  const r = await pool.query<{
+    id: string; application_id: string; category: string | null;
+    filename: string | null; size_bytes: number | null; blob_url: string | null;
+  }>(
+    `SELECT d.id::text AS id, d.application_id::text AS application_id,
+            COALESCE(d.category, d.document_type) AS category,
+            d.filename, d.size_bytes, d.blob_url
+       FROM documents d
+       JOIN applications a ON a.id::text = d.application_id::text
+      WHERE a.bi_public_id IS NOT NULL
+        AND COALESCE(d.status, '') <> 'rejected'
+        AND d.created_at >= now() - ($1 || ' days')::interval
+      ORDER BY d.created_at
+      LIMIT 500`,
+    [String(days)],
+  );
+  let eligible = 0;
+  let mirrored = 0;
+  for (const row of r.rows) {
+    if (!shouldMirrorToPgi(row.category)) continue;
+    eligible += 1;
+    const res = await mirrorDocToBi({
+      bfApplicationId: row.application_id,
+      bfDocumentId: row.id,
+      documentType: row.category,
+      fileName: row.filename,
+      mimeType: null,
+      fileSize: typeof row.size_bytes === "number" ? row.size_bytes : null,
+      storageUrl: row.blob_url,
+      uploadedByName: null,
+    });
+    if (res.ok) mirrored += 1;
+  }
+  logInfo("bi_doc_mirror_backfill", { eligible, mirrored });
+  return { eligible, mirrored };
 }

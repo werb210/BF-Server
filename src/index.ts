@@ -308,6 +308,14 @@ export async function start(): Promise<void> {
     try { const w = startTaskRemindersWorker(pool); workerStops.push(w.stop); console.log("[startup] task-reminders worker started"); }
     catch (err) { console.error("[startup] task-reminders worker failed to start:", err); }
 
+    // BF_SERVER_PGI_MIRROR_LABELS_v357 - one catch-up pass a minute after boot.
+    const pgiBackfill = setTimeout(() => {
+      void import("./services/biDocMirror.js")
+        .then((m) => m.backfillPgiMirrors(30))
+        .catch((err) => console.error("[startup] pgi mirror backfill failed:", err));
+    }, 60_000);
+    (pgiBackfill as any).unref?.();
+
     // BF_SERVER_FX_RATE_WORKER_v355 - daily Bank of Canada USD->CAD rate.
     const { startFxRateWorker } = await import("./workers/fxRateWorker.js");
     try { const w = startFxRateWorker(pool); workerStops.push(w.stop); console.log("[startup] fx-rate worker started"); }
