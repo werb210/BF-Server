@@ -51,7 +51,8 @@ export async function sendRejectionNoticeToClient(applicationId: string, note?: 
     return { sent: false, error: "no_client_email" };
   }
   const biz_q = await dbQuery<{ business_name: string | null }>(
-    `SELECT business_name FROM applications WHERE id::text = ($1)::text LIMIT 1`, [applicationId],
+    // BF_SERVER_CALLER_COLUMNS_v351 - applications has no business_name column.
+    `SELECT COALESCE(NULLIF(TRIM(name), ''), NULLIF(TRIM(business_legal_name), '')) AS business_name FROM applications WHERE id::text = ($1)::text LIMIT 1`, [applicationId],
   ).catch(() => ({ rows: [] as Array<{ business_name: string | null }> }));
   const c = { rows: [{ first_name: resolved.firstName, business_name: biz_q.rows[0]?.business_name ?? null }] };
   const reasons = await collectRejectionReasons(applicationId);

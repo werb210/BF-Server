@@ -353,6 +353,28 @@ async function computeOutstandingDocsRaw(
     }
   }
 
+  // BF_SERVER_REQUESTED_DOCS_v351 - documents staff requested from Request Items
+  // are required for this application, deduped against every source above by
+  // normalized type or label.
+  try {
+    const requestedRes = await pool.query<{ document_type: string }>(
+      `SELECT document_type FROM application_document_requests
+        WHERE application_id::text = ($1)::text
+        ORDER BY created_at`,
+      [applicationId]
+    );
+    const docKey = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const have = new Set(required.flatMap((r) => [docKey(r.document_type), docKey(r.label)]));
+    for (const row of requestedRes?.rows ?? []) {
+      const key = docKey(row.document_type);
+      if (!key || have.has(key)) continue;
+      have.add(key);
+      appendRequiredDocAll({ category: row.document_type, required: true }, seen, required);
+    }
+  } catch (err: any) {
+    console.error("requested_docs_read_failed", { applicationId, message: err?.message });
+  }
+
   // BF_SERVER_OPTIONAL_DOCS_v138 - stillNeeded is the BLOCKING set: what the
   // applicant must produce before the file can move. An optional document is by
   // definition not that, and one the applicant has nothing to upload for can

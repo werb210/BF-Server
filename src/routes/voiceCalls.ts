@@ -108,10 +108,12 @@ router.post("/resolve-caller", auth, async (req: any, res) => {
     try {
       const { rows } = await pool.query(
         `SELECT c.id::text          AS contact_id,
-                c.full_name,
+                -- BF_SERVER_CALLER_COLUMNS_v351 - contacts has no full_name and applications
+                -- has no business_name; the query threw and every Call Us! caller was Unknown.
+                CASE WHEN COALESCE(TRIM(c.name), '') = '' OR c.name ILIKE '%(application started)%' OR c.name ILIKE 'unknown' THEN NULLIF(TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')), '') ELSE TRIM(c.name) END AS full_name,
                 c.phone,
                 a.id::text          AS application_id,
-                a.business_name
+                COALESCE(NULLIF(TRIM(a.name), ''), NULLIF(TRIM(a.business_legal_name), '')) AS business_name
            FROM applications a
            LEFT JOIN contacts c ON c.id = a.contact_id
           WHERE a.id::text = $1
@@ -259,7 +261,17 @@ router.get("/recent-calls", auth, async (req: any, res) => {
          FROM (
            SELECT cl.id::text AS id, cl.direction, cl.status, cl.duration_seconds, cl.created_at,
                   cl.phone_number, cl.crm_contact_id AS contact_id,
-                  COALESCE(c.name, pc.name) AS contact_name,
+                  -- BF_SERVER_CALLER_COLUMNS_v351 - a placeholder contact name falls back to
+                  -- the person's own name, then the phone match, then the application's business.
+                  COALESCE(
+                    CASE WHEN COALESCE(TRIM(c.name), '') = '' OR c.name ILIKE '%(application started)%'
+                              OR c.name ILIKE 'unknown'
+                         THEN NULLIF(TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')), '')
+                         ELSE TRIM(c.name) END,
+                    CASE WHEN pc.name ILIKE '%(application started)%' OR pc.name ILIKE 'unknown%' THEN NULL ELSE pc.name END,
+                    (SELECT COALESCE(NULLIF(TRIM(ap.name), ''), NULLIF(TRIM(ap.business_legal_name), '')) FROM applications ap WHERE ap.id::text = cl.application_id::text LIMIT 1),
+                    c.name
+                  ) AS contact_name,
                   -- BF_SERVER_RECENT_CALLS_DISPOSITION_v203
                   cl.disposition,
                   cl.twilio_call_sid AS sid
