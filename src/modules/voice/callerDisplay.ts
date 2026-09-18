@@ -49,7 +49,8 @@ export async function resolveDisplayName(db: Queryable, identity: string | null 
       return name ?? parsed.fallback;
     }
     if (parsed.kind === "client_application" && parsed.ref) {
-      const { rows } = await db.query(`SELECT c.first_name, c.last_name, a.company_name
+      // BF_SERVER_CALLER_COLUMNS_v351 - applications has no company_name column.
+      const { rows } = await db.query(`SELECT c.first_name, c.last_name, COALESCE(NULLIF(TRIM(a.name), ''), NULLIF(TRIM(a.business_legal_name), '')) AS company_name
            FROM applications a LEFT JOIN contacts c ON c.id = a.contact_id
           WHERE a.id::text = $1 LIMIT 1`, [parsed.ref]);
       const name = rows[0] ? nameFromParts({ firstName: rows[0].first_name, lastName: rows[0].last_name, companyName: rows[0].company_name }) : null;

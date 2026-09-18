@@ -274,7 +274,8 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
     let clientPhone = "";
     if (clientAppId) {
       const who = await pool.query<{ full_name: string | null; business_name: string | null; phone: string | null }>( // swallow-ok: failure is logged; never drop a live call
-        `SELECT c.full_name, a.business_name, c.phone
+        // BF_SERVER_CALLER_COLUMNS_v351 - read columns that exist (see voiceCalls.ts).
+        `SELECT CASE WHEN COALESCE(TRIM(c.name), '') = '' OR c.name ILIKE '%(application started)%' OR c.name ILIKE 'unknown' THEN NULLIF(TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')), '') ELSE TRIM(c.name) END AS full_name, COALESCE(NULLIF(TRIM(a.name), ''), NULLIF(TRIM(a.business_legal_name), '')) AS business_name, c.phone
            FROM applications a
            LEFT JOIN contacts c ON c.id = a.contact_id
           WHERE a.id::text = $1

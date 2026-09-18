@@ -24,7 +24,7 @@ describe("funded currency v6", () => {
   });
 
   it("converts to CAD before summing, so a USD deal is not counted as CAD", () => {
-    const conversions = dash.match(/SELECT to_cad FROM fx_rates WHERE currency = a\.funded_currency/g) ?? [];
+    const conversions = dash.match(/SELECT to_cad FROM fx_rates WHERE currency = (a\.funded_currency|x\.currency)/g) ?? [];
     expect(conversions.length).toBeGreaterThanOrEqual(2);
   });
 });

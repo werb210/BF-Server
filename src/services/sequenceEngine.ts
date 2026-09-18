@@ -145,7 +145,8 @@ export async function enrollContactsDetailed(
     id: string; full_name: string | null; silo: string | null;
     email: string | null; phone: string | null; already: boolean;
   }>(
-    `SELECT c.id::text AS id, c.full_name, c.silo, c.email, c.phone,
+    // BF_SERVER_CALLER_COLUMNS_v351 - contacts has no full_name column.
+    `SELECT c.id::text AS id, c.name AS full_name, c.silo, c.email, c.phone,
             EXISTS (SELECT 1 FROM marketing_sequence_enrollments e
                      WHERE e.sequence_id = $1 AND e.contact_id = c.id) AS already
        FROM contacts c WHERE c.id = ANY($2::uuid[])`,

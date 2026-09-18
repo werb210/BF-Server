@@ -25,7 +25,7 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
       // hides nameless "draft-like" rows client-side (isDraftLikeApplication).
       `SELECT COUNT(*)::text AS count FROM applications
        WHERE UPPER(silo) = UPPER($1)
-         AND parent_application_id IS NULL  -- v829: count DEALS, not companion legs
+         -- BF_SERVER_DASHBOARD_LEGS_v351: equipment legs count, matching the Pipeline board.
          AND COALESCE(pipeline_state, '') NOT IN ('draft', 'Draft', '')
          AND COALESCE(NULLIF(TRIM(name), ''), NULLIF(TRIM(business_legal_name), '')) IS NOT NULL
          AND LOWER(TRIM(COALESCE(name, business_legal_name, ''))) NOT IN ('draft', 'draft application') -- BF_SERVER_BLOCK_v844_DASHBOARD_EXCLUDE_DRAFT_NAMES
@@ -35,7 +35,7 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
     pool.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM applications
        WHERE UPPER(silo) = UPPER($2)
-         AND parent_application_id IS NULL  -- v829: count DEALS, not companion legs
+         -- BF_SERVER_DASHBOARD_LEGS_v351: equipment legs count, matching the Pipeline board.
          AND pipeline_state = $1
          AND updated_at >= date_trunc('month', now())
          ${liveStageFilter()}`,
@@ -50,7 +50,7 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
               COUNT(*)::text AS count
        FROM applications
        WHERE UPPER(silo) = UPPER($1)
-         AND parent_application_id IS NULL  -- v829: count DEALS, not companion legs
+         -- BF_SERVER_DASHBOARD_LEGS_v351: equipment legs count, matching the Pipeline board.
          AND COALESCE(pipeline_state, '') NOT IN ('draft', 'Draft', '')
          AND COALESCE(NULLIF(TRIM(name), ''), NULLIF(TRIM(business_legal_name), '')) IS NOT NULL
          AND LOWER(TRIM(COALESCE(name, business_legal_name, ''))) NOT IN ('draft', 'draft application') -- BF_SERVER_BLOCK_v844_DASHBOARD_EXCLUDE_DRAFT_NAMES  -- BF_SERVER_BLOCK_v838_DASHBOARD_EXCLUDE_NAMELESS
@@ -67,31 +67,45 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
     // columns as the counts above so the dashboard can show a commission figure
     // sitting in every stage, not just earned. (lender_products.id is text;
     // applications.lender_product_id is uuid, so the join casts to text.)
-    pool.query<{ stage: string; commission: string }>(
-      `SELECT (CASE WHEN a.pipeline_state IN
-                 ('Received','In Review','Documents Required','Additional Steps Required','Off to Lender','Offer','Accepted','Rejected')
-               THEN a.pipeline_state ELSE 'Received' END) AS stage,
-              COALESCE(SUM(
-                -- BF_SERVER_FUNDED_CURRENCY_v6 - in CAD, not raw.
-                (COALESCE(a.funded_amount, off.amount, a.requested_amount, 0)
-                   * COALESCE((SELECT to_cad FROM fx_rates WHERE currency = a.funded_currency), 1))
-                * (COALESCE(lp.commission, 2) / 100.0)
-              ), 0)::text AS commission
-       FROM applications a
-       LEFT JOIN lender_products lp ON lp.id = a.lender_product_id::text
-       LEFT JOIN LATERAL (
-         SELECT o.amount FROM offers o
-          WHERE o.application_id = a.id AND o.status = 'accepted'
-          ORDER BY o.updated_at DESC NULLS LAST
-          LIMIT 1
-       ) off ON TRUE
-       WHERE UPPER(a.silo) = UPPER($1)
-         AND a.parent_application_id IS NULL
-         AND COALESCE(a.pipeline_state, '') NOT IN ('draft', 'Draft', '')
-         AND COALESCE(NULLIF(TRIM(a.name), ''), NULLIF(TRIM(a.business_legal_name), '')) IS NOT NULL
-         AND LOWER(TRIM(COALESCE(a.name, a.business_legal_name, ''))) NOT IN ('draft', 'draft application')
-         ${liveStageFilter("a.pipeline_state")}
-       GROUP BY 1`,
+    // BF_SERVER_DASHBOARD_LEGS_v351 - equipment legs are separate lender deals with
+    // their own commission, so they are included; a Rejected deal earns nothing.
+    // Each deal's currency: the funded currency once funded, else USD when the
+    // lender product or the business is in the US, else CAD. Native amounts are
+    // kept per currency; the CAD total converts each deal before summing.
+    pool.query<{ stage: string; currency: string; native: string; cad: string }>(
+      `SELECT x.stage, x.currency,
+              COALESCE(SUM(x.native), 0)::text AS native,
+              -- BF_SERVER_FUNDED_CURRENCY_v6 - in CAD, not raw.
+              COALESCE(SUM(x.native * COALESCE((SELECT to_cad FROM fx_rates WHERE currency = x.currency), 1)), 0)::text AS cad
+         FROM (
+           SELECT (CASE WHEN a.pipeline_state IN
+                     ('Received','In Review','Documents Required','Additional Steps Required','Off to Lender','Offer','Accepted','Rejected')
+                   THEN a.pipeline_state ELSE 'Received' END) AS stage,
+                  (CASE
+                     WHEN a.funded_amount IS NOT NULL THEN UPPER(COALESCE(NULLIF(TRIM(a.funded_currency), ''), 'CAD'))
+                     WHEN UPPER(COALESCE(lp.country::text, '')) IN ('US', 'USA', 'UNITED STATES') THEN 'USD'
+                     WHEN UPPER(TRIM(COALESCE(a.metadata->>'country', a.metadata->>'businessCountry',
+                            a.metadata->>'businessLocation', a.metadata->'kyc'->>'businessLocation',
+                            a.metadata->'kyc'->>'country', ''))) IN ('US', 'USA', 'UNITED STATES') THEN 'USD'
+                     ELSE 'CAD'
+                   END) AS currency,
+                  COALESCE(a.funded_amount, off.amount, a.requested_amount, 0)
+                    * (COALESCE(lp.commission, 2) / 100.0) AS native
+             FROM applications a
+             LEFT JOIN lender_products lp ON lp.id = a.lender_product_id::text
+             LEFT JOIN LATERAL (
+               SELECT o.amount FROM offers o
+                WHERE o.application_id = a.id AND o.status = 'accepted'
+                ORDER BY o.updated_at DESC NULLS LAST
+                LIMIT 1
+             ) off ON TRUE
+            WHERE UPPER(a.silo) = UPPER($1)
+              AND COALESCE(a.pipeline_state, '') NOT IN ('draft', 'Draft', '', 'Rejected')
+              AND COALESCE(NULLIF(TRIM(a.name), ''), NULLIF(TRIM(a.business_legal_name), '')) IS NOT NULL
+              AND LOWER(TRIM(COALESCE(a.name, a.business_legal_name, ''))) NOT IN ('draft', 'draft application')
+              ${liveStageFilter("a.pipeline_state")}
+         ) x
+        GROUP BY 1, 2`,
       [silo]
     ),
   ]);
@@ -104,8 +118,12 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
   // BF_SERVER_DASHBOARD_COMMISSION_v1 - projected commission per stage + the
   // earned figure (the Accepted bucket = commission on funded deals).
   const commissionByStage: Record<string, number> = {};
+  const commissionByStageCurrency: Record<string, Record<string, number>> = {};
   (commissionRows.rows ?? []).forEach((r: any) => {
-    commissionByStage[r.stage] = Math.round((Number(r.commission) || 0) * 100) / 100;
+    const cur = String(r.currency || "CAD").toUpperCase();
+    commissionByStage[r.stage] = Math.round(((commissionByStage[r.stage] ?? 0) + (Number(r.cad) || 0)) * 100) / 100;
+    const bucket = (commissionByStageCurrency[r.stage] ??= {});
+    bucket[cur] = Math.round(((bucket[cur] ?? 0) + (Number(r.native) || 0)) * 100) / 100;
   });
   const commissionEarned = commissionByStage["Accepted"] ?? 0;
 
@@ -118,6 +136,9 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
       newLeadsToday: 0,
       pipelineByStage,
       commissionByStage,
+      // BF_SERVER_DASHBOARD_LEGS_v351 - native amounts per currency.
+      commissionByStageCurrency,
+      commissionEarnedByCurrency: commissionByStageCurrency["Accepted"] ?? {},
     },
   });
 }));

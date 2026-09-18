@@ -340,6 +340,25 @@ router.post('/:id/request-steps', requireCapability([CAPABILITIES.CRM_WRITE]), s
   const appRow = await pool.query(`SELECT id FROM applications WHERE id::text = ($1)::text LIMIT 1`, [id]);
   if (!appRow.rows.length) return res.status(404).json({ error: 'not_found' });
 
+  // BF_SERVER_REQUESTED_DOCS_v351 - store what staff asked for. Previously only the
+  // chat message recorded it, so the checklist forgot the documents and the
+  // client's upload task read as complete with its button hidden. A re-request
+  // also lifts any earlier waiver for the same document.
+  for (const doc of uniqDocs) {
+    await pool.query(
+      `INSERT INTO application_document_requests (application_id, document_type, requested_by)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (application_id, document_type) DO NOTHING`,
+      [id, doc, req.user?.userId ?? null],
+    );
+    await pool.query(
+      `DELETE FROM application_document_waivers
+        WHERE application_id::text = ($1)::text
+          AND regexp_replace(lower(document_type), '[^a-z0-9]', '', 'g') = regexp_replace(lower($2), '[^a-z0-9]', '', 'g')`,
+      [id, doc],
+    );
+  }
+
   // Existing prompts → idempotency.
   const existing = await pool.query(
     `SELECT DISTINCT cta_action FROM communications_messages WHERE application_id::text = ($1)::text`, [id],
