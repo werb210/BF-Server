@@ -246,6 +246,15 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
 
   // ── v503: mini-portal inbound (client:client-*) -> conference + ring-all
   if (from.startsWith("client:client-")) {
+    // BF_SERVER_CLIENT_CALL_STATUS_GUARD_v353 - Twilio posts the end-of-call status
+    // callback (CallStatus=completed, CallbackSource present) to this same URL.
+    // It was handled as a brand-new call: a second conference was created and the
+    // reused CallSid then failed with a 409 constraint_violation, leaving an orphan
+    // conference behind on every Call Us! hang-up. A status callback is not a call.
+    const clientCallStatus = String(req.body?.CallStatus ?? "").toLowerCase();
+    if (req.body?.CallbackSource || ["completed", "canceled", "busy", "failed", "no-answer"].includes(clientCallStatus)) {
+      return res.send("<Response/>");
+    }
     const { default: VoiceResponse } = await import("twilio/lib/twiml/VoiceResponse.js");
     const { pool } = await import("../db.js");
     const { createConference, addParticipantRow, setParticipantCallSid, dialClientIntoConference, broadcastIncomingRing } = await import("../voice/conferenceService.js");
