@@ -30,7 +30,9 @@ if (!fs.existsSync(uploadDir)) {
 const upload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, uploadDir),
-    filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+    // BF_SERVER_STAFF_LENDER_INGEST_v347 - strip path characters so an upload name
+    // like ../../x can never write outside uploadDir (matches lenderSelf.ts).
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_")}`),
   }),
 });
 
@@ -197,21 +199,30 @@ router.post(
       ]
     );
 
-    const mayaUrl = process.env.MAYA_URL;
-    if (mayaUrl) {
-      await fetch(`${mayaUrl}/api/knowledge/ingest`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          lenderId,
-          filename: file.originalname,
-          blobUrl,
-          mimeType: file.mimetype || "application/octet-stream",
-        }),
-      }).catch(() => undefined);
+    // BF_SERVER_STAFF_LENDER_INGEST_v347 - index into ai_knowledge exactly as the
+    // lender self-upload does (lenderSelf.ts, v57). The previous POST targeted an
+    // agent route that does not exist and hid the failure behind .catch.
+    let indexed = false;
+    let indexError: string | null = null;
+    try {
+      const buffer = await fs.promises.readFile(path.join(uploadDir, file.filename));
+      const { extractTextFromBuffer } = await import("../ai/embeddingService.js");
+      const { embedAndStore } = await import("../modules/ai/knowledge.service.js");
+      const raw = await extractTextFromBuffer(buffer, file.mimetype || "");
+      const extractedText = (raw || "").slice(0, 200_000).trim();
+      if (extractedText.length > 0) {
+        await embedAndStore(pool, extractedText, "lender_document", rows[0].id, file.originalname);
+        indexed = true;
+      } else {
+        indexError = "no_text_extracted";
+      }
+    } catch (e: any) {
+      // The document is already stored; never fail the upload, but never hide it.
+      indexError = e?.code || e?.message || "index_failed";
+      console.error("[STAFF_LENDER_UPLOAD][INGEST] failed", { lenderId, filename: file.originalname, error: indexError });
     }
 
-    res.status(201).json({ ok: true, data: rows[0] });
+    res.status(201).json({ ok: true, data: { ...rows[0], indexed, indexError } });
   })
 );
 
