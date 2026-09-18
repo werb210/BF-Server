@@ -130,6 +130,16 @@ function concatAddress(o: any): string | null {
   return parts.length ? parts.join(", ") : null;
 }
 
+// BF_SERVER_BI_HANDOFF_COUNTRY_v360 - the handoff never said which country the
+// business is in, so BI defaulted every referral to Canada. A US applicant then
+// failed the form's Canadian postal-code check and could not submit.
+export function countryOf(raw: unknown): "CA" | "US" | null {
+  const v = String(raw ?? "").trim().toLowerCase();
+  if (v === "ca" || v === "canada") return "CA";
+  if (v === "us" || v === "usa" || v === "united states" || v === "united states of america") return "US";
+  return null;
+}
+
 export function buildBiPayload(input: BiHandoffInput): Record<string, unknown> {
   // BF_SERVER_BI_HANDOFF_SOURCES_v1
   // The wizard submits under several shapes. v1Applications.ts already resolves
@@ -178,6 +188,9 @@ export function buildBiPayload(input: BiHandoffInput): Record<string, unknown> {
     loan_purpose: s(kyc.purposeOfFunds) ?? s(kyc.lookingFor),
     annual_revenue: num(kyc.annualRevenue) ?? num(kyc.revenueLast12Months) ?? amountFromBand(kyc.annualRevenue) ?? amountFromBand(kyc.revenueLast12Months), // v281
     collateral_value: num(kyc.availableCollateral) ?? num(kyc.fixedAssets) ?? amountFromBand(kyc.availableCollateral) ?? amountFromBand(kyc.fixedAssets), // v281
+    // BF_SERVER_BI_HANDOFF_COUNTRY_v360
+    country: countryOf(kyc.businessLocation) ?? countryOf(business.country) ?? countryOf(n.company?.address_country),
+    business_website: s(business.website) ?? s(n.company?.website),
   };
 }
 
