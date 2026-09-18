@@ -43,7 +43,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
                title, body AS body, status AS extra
           FROM tasks WHERE ${col} = $1 AND silo = $2 AND deleted_at IS NULL
         UNION ALL
-        SELECT 'call' AS kind, id::text, created_at AS ts,
+        SELECT 'call_logged' AS kind, id::text, created_at AS ts, -- BF_SERVER_TIMELINE_EVERY_CHANNEL_v358
                direction AS title, notes AS body, twilio_call_sid AS extra
           FROM crm_call_log WHERE ${col} = $1 AND silo = $2
         UNION ALL
@@ -123,12 +123,17 @@ router.get("/", safeHandler(async (req: any, res: any) => {
         -- BF_SERVER_BLOCK_47_v1 -- SMS / chat messages from
         -- communications_messages. Title = "SMS in" / "SMS out".
         -- staff_name surfaces who sent outbound (NULL on inbound).
-        SELECT 'sms' AS kind, id::text, created_at AS ts,
-               CASE WHEN direction = 'inbound' THEN 'SMS in' ELSE 'SMS out' END AS title,
+        -- BF_SERVER_TIMELINE_EVERY_CHANNEL_v358 - label by channel/type, not all "SMS".
+        SELECT (CASE WHEN COALESCE(type, 'sms') IN ('sms', 'mms') THEN 'sms' ELSE 'message' END) AS kind,
+               id::text, created_at AS ts,
+               CASE WHEN channel = 'messenger' THEN 'Talk to a human'
+                    WHEN type = 'email' THEN (CASE WHEN direction = 'inbound' THEN 'Email reply in' ELSE 'Email out' END)
+                    WHEN COALESCE(type, 'sms') IN ('sms', 'mms') THEN (CASE WHEN direction = 'inbound' THEN 'SMS in' ELSE 'SMS out' END)
+                    ELSE (CASE WHEN direction = 'inbound' THEN 'Message in' ELSE 'Message out' END) END AS title,
                body AS body,
                COALESCE(staff_name, from_number, phone_number) AS extra
           FROM communications_messages
-         WHERE contact_id = $1 AND silo = $2
+         WHERE contact_id = $1 AND (silo = $2 OR silo IS NULL)
         UNION ALL
         -- BF_SERVER_BLOCK_v790 — sequence + engagement events on the contact record.
         -- BF_SERVER_MARKETING_ON_TIMELINE_v1 - marketing blasts wrote
@@ -136,9 +141,9 @@ router.get("/", safeHandler(async (req: any, res: any) => {
         -- but the allowlist below excluded them, so a contact showed "Email opened" with no
         -- email above it. 2,257 sends on 2026-07-14 were invisible on every timeline.
         SELECT (CASE WHEN event_type LIKE 'sms_%' THEN 'sms'
-                     WHEN event_type = 'sequence_step_sent' THEN COALESCE(payload->>'channel','email')
+                     WHEN event_type = 'sequence_step_sent' AND payload->>'channel' = 'sms' THEN 'sms'
                      WHEN event_type = 'attribution' THEN 'system'
-                     ELSE 'email' END) AS kind,
+                     ELSE 'email_activity' END) AS kind,
                id::text, created_at AS ts,
                (CASE event_type
                   WHEN 'sequence_step_sent' THEN 'Sequence ' || COALESCE(payload->>'channel','') || ' sent'
@@ -153,6 +158,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
                   WHEN 'email_marketing_sent' THEN 'Marketing email sent'
                   WHEN 'sms_marketing_sent' THEN 'Marketing SMS sent'
                   WHEN 'email_cascade_sent' THEN 'Marketing email sent (no mobile)'
+                  WHEN 'email_notice_sent' THEN 'Email sent'
                   -- BF_SERVER_ATTRIBUTION_ON_TIMELINE_v1 - render the ad click
                   -- readably; the portal shows kind='system' rows as-is.
                   WHEN 'attribution' THEN 'Ad click attribution'
@@ -166,7 +172,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
                     NULLIF('ad: ' || COALESCE(payload->>'utm_content',''), 'ad: '),
                     NULLIF('gclid: ' || COALESCE(payload->>'gclid',''), 'gclid: ')
                   ), '')
-                     WHEN event_type IN ('email_marketing_sent','email_cascade_sent') THEN
+                     WHEN event_type IN ('email_marketing_sent','email_cascade_sent','email_notice_sent') THEN
                        NULLIF(COALESCE(payload->>'subject',''), '')
                      WHEN event_type = 'sms_marketing_sent' THEN
                        NULLIF(COALESCE(payload->>'body',''), '')
@@ -174,7 +180,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
                NULL::text AS extra
           FROM crm_timeline_events
          WHERE contact_id = $1
-           AND event_type IN ('sequence_step_sent','email_open','email_click','email_bounce','email_dropped','email_spamreport','email_unsubscribe','email_group_unsubscribe','sms_link_clicked','attribution','email_marketing_sent','sms_marketing_sent','email_cascade_sent')
+           AND event_type IN ('sequence_step_sent','email_open','email_click','email_bounce','email_dropped','email_spamreport','email_unsubscribe','email_group_unsubscribe','sms_link_clicked','attribution','email_marketing_sent','sms_marketing_sent','email_cascade_sent','email_notice_sent')
         UNION ALL
         -- BF_SERVER_TEAMS_TRANSCRIPT_POLLER_v1 - Teams meetings with their
         -- recording link + transcript. Reuses kind 'recording', which the portal
@@ -206,7 +212,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
                title, body AS body, status AS extra
           FROM tasks WHERE ${col} = $1 AND silo = $2 AND deleted_at IS NULL
         UNION ALL
-        SELECT 'call' AS kind, id::text, created_at AS ts,
+        SELECT 'call_logged' AS kind, id::text, created_at AS ts, -- BF_SERVER_TIMELINE_EVERY_CHANNEL_v358
                direction AS title, notes AS body, twilio_call_sid AS extra
           FROM crm_call_log WHERE ${col} = $1 AND silo = $2
         UNION ALL

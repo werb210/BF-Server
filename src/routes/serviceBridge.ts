@@ -25,6 +25,7 @@ router.post("/sms", async (req, res) => {
   if (!to || !body) { res.status(400).json({ ok: false, error: "to_and_body_required" }); return; }
   try {
     await sendSMS(to, body);
+    await recordBridgeSmsOnTimeline(to, body);
     res.json({ ok: true });
   } catch (err) {
     res.status(502).json({ ok: false, error: err instanceof Error ? err.message : "sms_failed" });
@@ -93,3 +94,20 @@ router.get("/staff", async (_req, res) => {
 });
 
 export default router;
+
+// BF_SERVER_TIMELINE_EVERY_CHANNEL_v358 - BI sequence SMS on the contact timeline.
+async function recordBridgeSmsOnTimeline(to: string, body: string): Promise<void> {
+  try {
+    const digits = to.replace(/\D/g, "");
+    if (digits.length < 7) return;
+    const { pool } = await import("../db.js");
+    await pool.query(
+      `INSERT INTO crm_timeline_events (contact_id, event_type, payload)
+       SELECT c.id, 'sms_marketing_sent', $2::jsonb FROM contacts c
+        WHERE c.phone IS NOT NULL AND regexp_replace(c.phone, '\\D', '', 'g') = $1`,
+      [digits, JSON.stringify({ body, source: "bi_sequence" })],
+    );
+  } catch (err) {
+    console.warn("[service-bridge] timeline record failed", { error: err instanceof Error ? err.message : String(err) });
+  }
+}
