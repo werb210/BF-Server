@@ -58,7 +58,32 @@ async function responseError(response: Response, prefix: string): Promise<GraphS
   return { ok: false, status: response.status, error: `${prefix} status=${response.status} body=${text.slice(0, 300)}` };
 }
 
+// BF_SERVER_TIMELINE_EVERY_CHANNEL_v358 - Graph sends (document requests, rejection
+// notices, BI sequence emails) were recorded nowhere, so they never reached a contact.
 export async function sendViaGraph(input: GraphSendInput): Promise<GraphSendResult> {
+  const result = await sendViaGraphInner(input);
+  if (result.ok) await recordGraphSendOnTimeline(input);
+  return result;
+}
+
+async function recordGraphSendOnTimeline(input: GraphSendInput): Promise<void> {
+  if (process.env.NODE_ENV === "test") return;
+  try {
+    const emails = asArray(input.to).map((e) => String(e).trim().toLowerCase()).filter(Boolean);
+    if (emails.length === 0) return;
+    const { pool } = await import("../../db.js");
+    await pool.query(
+      `INSERT INTO crm_timeline_events (contact_id, event_type, payload)
+       SELECT c.id, 'email_notice_sent', $2::jsonb FROM contacts c
+        WHERE lower(c.email) = ANY($1::text[])`,
+      [emails, JSON.stringify({ subject: input.subject, to: emails })],
+    );
+  } catch (err) {
+    console.warn("[graph] timeline record failed", { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+async function sendViaGraphInner(input: GraphSendInput): Promise<GraphSendResult> {
   const config = isConfigured();
   if (!config.ok) return { ok: false, error: config.reason };
   const sendAs = (input.sendAs ?? envOrEmpty("MS_GRAPH_SEND_AS")).trim();
