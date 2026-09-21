@@ -1374,7 +1374,18 @@ router.get("/contacts/:id/emails", safeHandler(async (req: any, res: any) => {
            FROM email_open_events ev
           WHERE ev.email_log_id = e.id
        ) oc ON true
+      -- BF_SERVER_TIMELINE_ORPHANS_v383 - also emails logged with no contact whose
+      -- from/to/cc address matches this contact's email or secondary email, same silo.
       WHERE e.contact_id = $1
+         OR (e.contact_id IS NULL AND EXISTS (
+              SELECT 1 FROM contacts c
+                CROSS JOIN LATERAL (VALUES (c.email), (c.secondary_email)) AS ce(v)
+               WHERE c.id::text = $1::text
+                 AND e.silo = c.silo
+                 AND NULLIF(lower(trim(ce.v)), '') IS NOT NULL
+                 AND lower(trim(ce.v)) IN (
+                       SELECT lower(trim(coalesce(substring(u.a from '<([^>]+)>'), u.a)))
+                         FROM unnest(array_prepend(e.from_address, e.to_addresses || e.cc_addresses)) AS u(a))))
       ORDER BY e.created_at DESC
       LIMIT 200`,
     [id]
