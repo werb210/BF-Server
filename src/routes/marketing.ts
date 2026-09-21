@@ -115,7 +115,7 @@ router.get("/funnel", safeHandler(async (req: any, res: any) => {
     // submitted apps with the full path since submission implies all steps.
     `WITH a AS (
        SELECT COALESCE(
-                NULLIF(metadata->>'currentStep','')::int,
+                GREATEST(NULLIF(metadata->>'furthestStep','')::int, NULLIF(metadata->>'currentStep','')::int), -- v389
                 NULLIF(metadata->>'current_step','')::int,
                 current_step, 1) AS step,
               submitted_at
@@ -196,7 +196,7 @@ router.get("/abandoned", requireAuth, safeHandler(async (req: any, res: any) => 
   const { rows } = await pool.query(
     `SELECT a.id,
             COALESCE(
-              NULLIF(a.metadata->>'currentStep','')::int,
+              GREATEST(NULLIF(a.metadata->>'furthestStep','')::int, NULLIF(a.metadata->>'currentStep','')::int), -- v389
               NULLIF(a.metadata->>'current_step','')::int,
               a.current_step, 1) AS step,
             a.created_at,
