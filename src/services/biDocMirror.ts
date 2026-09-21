@@ -235,3 +235,42 @@ export async function backfillPgiMirrors(days = 30): Promise<{ eligible: number;
   logInfo("bi_doc_mirror_backfill", { eligible, mirrored });
   return { eligible, mirrored };
 }
+
+
+// BF_SERVER_MOVE_WITHDRAW_v395 - a document moved OUT of a category PGI uses
+// (an A/R report re-filed as "Other") leaves a wrong copy in BI. Ask BI to retire
+// it (BI-Server v394). BI keeps a copy its staff already accepted.
+export async function withdrawDocFromBi(bfApplicationId: string, bfDocumentId: string): Promise<{ ok: boolean; error?: string; withdrawn?: number; keptAccepted?: boolean }> {
+  const secret = getSecret();
+  if (!secret) return { ok: false, error: "no_jwt_secret" };
+  const publicId = await resolveBiPublicId(bfApplicationId);
+  if (!publicId) return { ok: false, error: "no_bi_link" };
+  const url = `${BI_SERVER_URL.replace(/\/+$/, "")}/api/v1/bi/applications/${encodeURIComponent(publicId)}/documents/from-bf/withdraw`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${mintServiceJwt()}` },
+      body: JSON.stringify({ bf_document_id: bfDocumentId }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!r.ok) return { ok: false, error: `bi_${r.status}` };
+    const j: any = await r.json().catch(() => ({}));
+    return { ok: Boolean(j?.ok), withdrawn: Number(j?.withdrawn ?? 0), keptAccepted: Boolean(j?.kept_accepted) };
+  } catch (err: any) {
+    clearTimeout(timeout);
+    return { ok: false, error: "bi_exception" };
+  }
+}
+
+/** Fire-and-forget: only when the document LEFT a PGI category for one that is not. */
+export function withdrawDocFromBiAsync(bfApplicationId: string, bfDocumentId: string, from: string | null, to: string | null): void {
+  if (!shouldMirrorToPgi(from) || shouldMirrorToPgi(to)) return;
+  void withdrawDocFromBi(bfApplicationId, bfDocumentId).then((r) => {
+    logInfo("bi_doc_withdraw", { bfApplicationId, bfDocumentId, from, to, ...r });
+  }).catch((err) => {
+    logError("bi_doc_withdraw_unhandled", { code: "bi_doc_withdraw_unhandled", error: err?.message ?? "unknown" });
+  });
+}
