@@ -987,6 +987,12 @@ export async function verifyOtpCode(params: {
       assertUserActive({ user: userRecord, requestId, phoneTail: meta.phoneTail });
 
       await db.query("update users set phone_verified = $1, updated_at = $2 where id = $3", [true, new Date(), userRecord.id]);
+      // BF_SERVER_WATCH_CALLBACK_FROM_OTP_v370 - the phone that just passed the
+      // SMS code is the staff member's verified cell; Watch calls ring it first.
+      await db.query(
+        "update users set verified_callback_number = $1, callback_verified_at = now() where id = $2 and verified_callback_number is distinct from $1",
+        [phoneE164, userRecord.id],
+      );
 
       if (latestVerification?.status === "pending") {
         await safeUpdateOtpVerificationStatus({ id: latestVerification.id, status: "approved", verifiedAt: new Date(), client: db, requestId });

@@ -9,12 +9,13 @@ import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 
 const router = Router();
-router.use(requireAuth);
+// BF_SERVER_WATCH_FACE_v370 - requireAuth is on the route, not router.use:
+// this router is mounted ahead of the Watch data routes, and a router-wide
+// requireAuth would reject every Watch-token request that passes through it.
+// Before v370 it sat behind dataRoutes' router-wide watchAuth, so staff tokens
+// were rejected with 401 and /watch/snapshot never answered anyone.
 
-router.get(
-  "/snapshot",
-  safeHandler(async (req: any, res: any) => {
-    const userId = String(req.user?.userId ?? req.user?.id ?? "");
+export async function buildWatchSnapshot(userId: string) {
 
     // BF_SERVER_WATCH_PRESENCE_TABLE_v214
     const presence = await pool.query<{ status: string; stale: boolean }>(
@@ -68,12 +69,19 @@ router.get(
     const row = presence.rows[0];
     const status = !row ? "offline" : row.stale ? "offline" : row.status;
 
-    res.json({
+    return {
       status,
       missedCalls: Number(missed.rows[0]?.count ?? 0),
       tasksDue: Number(tasksDue.rows[0]?.count ?? 0),
       asOf: new Date().toISOString(),
-    });
+    };
+}
+
+router.get(
+  "/snapshot",
+  requireAuth,
+  safeHandler(async (req: any, res: any) => {
+    res.json(await buildWatchSnapshot(String(req.user?.userId ?? req.user?.id ?? "")));
   }),
 );
 

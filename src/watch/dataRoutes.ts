@@ -2,12 +2,24 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { sendSMS } from "../lib/twilio.js"; // BF_SERVER_WATCH_SMS_v1
 import { allowedLine, watchAuth, watchError } from "./security.js";
+import { buildWatchSnapshot } from "./snapshotRoutes.js"; // BF_SERVER_WATCH_FACE_v370
 // BF_SERVER_CALL_DISPOSITION_v145
 import { CALL_DISPOSITIONS as SHARED_CALL_DISPOSITIONS, followUpFor } from "../modules/calls/callDisposition.js";
 import { describeCrmUpdate, safeDispositionCrmUpdate } from "../modules/calls/dispositionCrmUpdate.js"; // BF_SERVER_CALL_OUTCOME_CRM_v273
 
 const router = Router();
 router.use(watchAuth);
+// BF_SERVER_WATCH_FACE_v370 - what the Watch complications show, fetched by
+// the Watch itself. The iPhone's app group lives on the phone, so nothing it
+// wrote could ever reach a complication on the wrist.
+router.get("/face", async (req: any, res) => {
+  try {
+    return res.json(await buildWatchSnapshot(String(req.watch.staffUserId)));
+  } catch {
+    return watchError(req, res, 503, "unavailable", "Watch face data is unavailable", true);
+  }
+});
+
 const bounded = (value: unknown, fallback: number, max: number) => Math.max(1, Math.min(max, Number.parseInt(String(value || fallback), 10) || fallback));
 
 router.get("/contacts", async (req, res) => {
