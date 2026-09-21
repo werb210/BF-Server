@@ -86,7 +86,8 @@ router.post("/refresh", limiter, async (req, res) => {
   if (!oldToken) return watchError(req, res, 400, "invalid_request", "Refresh token is required");
   const nextToken = newWatchSecret();
   const rotated = await pool.query(
-    `UPDATE watch_sessions s SET refresh_token_hash=$2, rotated_at=now(), updated_at=now(), expires_at=now()+interval '15 minutes'
+    `UPDATE watch_sessions s SET refresh_token_hash=$2, rotated_at=now(), updated_at=now(), expires_at=now()+interval '15 minutes',
+           refresh_expires_at=now()+interval '30 days' -- BF_SERVER_WATCH_LINK_SLIDING_v366
        FROM watch_devices d WHERE s.device_id=d.id AND s.refresh_token_hash=$1 AND s.revoked_at IS NULL
        AND s.refresh_expires_at>now() AND d.revoked_at IS NULL
        RETURNING s.id,s.device_id,d.staff_user_id,s.expires_at`,
