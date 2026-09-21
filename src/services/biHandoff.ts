@@ -140,6 +140,39 @@ export function countryOf(raw: unknown): "CA" | "US" | null {
   return null;
 }
 
+// BF_SERVER_BI_HANDOFF_CO_APPLICANT_v390 - the BF co-applicant (Step 4 "partner")
+// was never sent, so BI referrals arrived with one guarantor and staff re-keyed
+// the second. Sent as a co-guarantor; the SIN/SSN is never sent.
+export type BiCoGuarantor = {
+  first_name: string | null; last_name: string | null; email: string | null; phone: string | null;
+  date_of_birth: string | null; address: string | null; city: string | null; province: string | null;
+  postal_code: string | null; ownership: number | null; relationship: string;
+};
+export function coGuarantorsOf(applicant: any, a: any, n: any): BiCoGuarantor[] {
+  const pick = (v: unknown) => (v && typeof v === "object" ? v as Record<string, unknown> : null);
+  const p =
+    pick(applicant?.partner) ?? pick(a?.partner) ?? pick(n?.partner) ??
+    (Array.isArray(a?.applicants) ? pick(a.applicants[1]) : null) ??
+    (Array.isArray(n?.applicants) ? pick(n.applicants[1]) : null);
+  if (!p) return [];
+  const first = s(p.firstName) ?? s(p.first_name);
+  const last = s(p.lastName) ?? s(p.last_name);
+  if (!first && !last) return [];
+  return [{
+    first_name: first,
+    last_name: last,
+    email: s(p.email),
+    phone: toE164(s(p.phone)) ?? s(p.phone),
+    date_of_birth: s(p.dob) ?? s(p.dateOfBirth) ?? s(p.date_of_birth),
+    address: s(p.street) ?? s(p.address),
+    city: s(p.city),
+    province: s(p.state) ?? s(p.province),
+    postal_code: s(p.zip) ?? s(p.postalCode) ?? s(p.postal_code),
+    ownership: num(p.ownership),
+    relationship: "Co-applicant",
+  }];
+}
+
 export function buildBiPayload(input: BiHandoffInput): Record<string, unknown> {
   // BF_SERVER_BI_HANDOFF_SOURCES_v1
   // The wizard submits under several shapes. v1Applications.ts already resolves
@@ -191,6 +224,7 @@ export function buildBiPayload(input: BiHandoffInput): Record<string, unknown> {
     // BF_SERVER_BI_HANDOFF_COUNTRY_v360
     country: countryOf(kyc.businessLocation) ?? countryOf(business.country) ?? countryOf(n.company?.address_country),
     business_website: s(business.website) ?? s(n.company?.website),
+    co_guarantors: coGuarantorsOf(applicant, a, n), // v390
   };
 }
 
