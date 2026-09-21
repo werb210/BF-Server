@@ -9,6 +9,19 @@ import { ApplicationStage } from "../modules/applications/pipelineState.js";
 
 const router = Router();
 
+// BF_SERVER_REPORT_CURRENCY_v387 - one definition of a deal's currency, shared by
+// the commission figures and the marketing revenue report: the funded currency
+// once funded, else USD when the lender product or the business is in the US,
+// else CAD. Expects applications as "a" and lender_products as "lp".
+const DEAL_CURRENCY_SQL = `(CASE
+                     WHEN a.funded_amount IS NOT NULL THEN UPPER(COALESCE(NULLIF(TRIM(a.funded_currency), ''), 'CAD'))
+                     WHEN UPPER(COALESCE(lp.country::text, '')) IN ('US', 'USA', 'UNITED STATES') THEN 'USD'
+                     WHEN UPPER(TRIM(COALESCE(a.metadata->>'country', a.metadata->>'businessCountry',
+                            a.metadata->>'businessLocation', a.metadata->'kyc'->>'businessLocation',
+                            a.metadata->'kyc'->>'country', ''))) IN ('US', 'USA', 'UNITED STATES') THEN 'USD'
+                     ELSE 'CAD'
+                   END)`;
+
 router.get("/", requireAuth, safeHandler(async (_req: any, res: any) => {
   res.json({ ok: true });
 }));
@@ -82,14 +95,7 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
            SELECT (CASE WHEN a.pipeline_state IN
                      ('Received','In Review','Documents Required','Additional Steps Required','Off to Lender','Offer','Accepted','Rejected')
                    THEN a.pipeline_state ELSE 'Received' END) AS stage,
-                  (CASE
-                     WHEN a.funded_amount IS NOT NULL THEN UPPER(COALESCE(NULLIF(TRIM(a.funded_currency), ''), 'CAD'))
-                     WHEN UPPER(COALESCE(lp.country::text, '')) IN ('US', 'USA', 'UNITED STATES') THEN 'USD'
-                     WHEN UPPER(TRIM(COALESCE(a.metadata->>'country', a.metadata->>'businessCountry',
-                            a.metadata->>'businessLocation', a.metadata->'kyc'->>'businessLocation',
-                            a.metadata->'kyc'->>'country', ''))) IN ('US', 'USA', 'UNITED STATES') THEN 'USD'
-                     ELSE 'CAD'
-                   END) AS currency,
+                  ${DEAL_CURRENCY_SQL} AS currency,
                   COALESCE(a.funded_amount, off.amount, a.requested_amount, 0)
                     * (COALESCE(lp.commission, 2) / 100.0) AS native
              FROM applications a
@@ -578,27 +584,35 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
         LIMIT 12`,
       [silo, String(days)],
     ).catch(() => ({ rows: [] as any[] })),
-    pool.query<{ source: string; leads: string; revenue: string }>(
-      `SELECT COALESCE(
-                NULLIF(a.metadata->'attribution'->>'utm_source', ''),
-                'Direct'
-              ) AS source,
-              COUNT(DISTINCT a.id)::text AS leads,
+    pool.query<{ source: string; leads: string; revenue: string; revenue_cad: string; revenue_usd: string }>(
+      // BF_SERVER_REPORT_CURRENCY_v387 - native CAD and USD kept apart as well as
+      // the CAD total; an unfunded USD deal's accepted offer is now converted too
+      // (it used the funded currency, which is empty until funding, so it counted 1:1).
+      `SELECT x.source,
+              COUNT(DISTINCT x.id)::text AS leads,
               -- BF_SERVER_FUNDED_CURRENCY_v6
-              COALESCE(SUM(COALESCE(a.funded_amount, off.amount, 0)
-                * COALESCE((SELECT to_cad FROM fx_rates WHERE currency = a.funded_currency), 1)), 0)::text AS revenue
-         FROM applications a
-         LEFT JOIN LATERAL (
-           SELECT o.amount FROM offers o
-            WHERE o.application_id = a.id AND o.status IN ('accepted','funded')
-            ORDER BY o.updated_at DESC NULLS LAST
-            LIMIT 1
-         ) off ON TRUE
-        WHERE UPPER(a.silo) = UPPER($1)
-          AND a.created_at >= now() - ($2 || ' days')::interval
-          AND COALESCE(a.pipeline_state, '') NOT IN ('draft','Draft','')
+              COALESCE(SUM(x.native * COALESCE((SELECT to_cad FROM fx_rates WHERE currency = x.currency), 1)), 0)::text AS revenue,
+              COALESCE(SUM(x.native) FILTER (WHERE x.currency = 'CAD'), 0)::text AS revenue_cad,
+              COALESCE(SUM(x.native) FILTER (WHERE x.currency = 'USD'), 0)::text AS revenue_usd
+         FROM (
+           SELECT a.id,
+                  COALESCE(NULLIF(a.metadata->'attribution'->>'utm_source', ''), 'Direct') AS source,
+                  ${DEAL_CURRENCY_SQL} AS currency,
+                  COALESCE(a.funded_amount, off.amount, 0) AS native
+             FROM applications a
+             LEFT JOIN lender_products lp ON lp.id = a.lender_product_id::text
+             LEFT JOIN LATERAL (
+               SELECT o.amount FROM offers o
+                WHERE o.application_id = a.id AND o.status IN ('accepted','funded')
+                ORDER BY o.updated_at DESC NULLS LAST
+                LIMIT 1
+             ) off ON TRUE
+            WHERE UPPER(a.silo) = UPPER($1)
+              AND a.created_at >= now() - ($2 || ' days')::interval
+              AND COALESCE(a.pipeline_state, '') NOT IN ('draft','Draft','')
+         ) x
         GROUP BY 1
-        ORDER BY COUNT(DISTINCT a.id) DESC
+        ORDER BY COUNT(DISTINCT x.id) DESC
         LIMIT 12`,
       [silo, String(days)],
     ).catch(() => ({ rows: [] as any[] })),
@@ -735,6 +749,12 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
     source: x.source,
     leads: parseInt(x.leads, 10) || 0,
     revenue: Math.round((Number(x.revenue) || 0) * 100) / 100,
+    // BF_SERVER_REPORT_CURRENCY_v387 - native amounts per currency (only non-zero ones).
+    revenueByCurrency: Object.fromEntries(
+      ([["CAD", x.revenue_cad], ["USD", x.revenue_usd]] as const)
+        .map(([code, v]) => [code, Math.round((Number(v) || 0) * 100) / 100] as const)
+        .filter(([, v]) => v > 0),
+    ),
   }));
   const funding = fundingResult.rows.map((x) => ({
     product: x.product,
