@@ -39,14 +39,26 @@ router.get("/calls/recent", async (req: any, res) => {
   const limit = bounded(req.query.limit, 25, 50);
   const cursor = typeof req.query.cursor === "string" ? req.query.cursor : null;
   const found = await pool.query(
-    `SELECT cl.id::text AS id,cl.phone_number AS number,c.name AS "contactName",cl.direction,
-            cl.created_at AS "occurredAt",cl.silo AS line,cl.status
+    // BF_SERVER_WATCH_RECENTS_SHAPE_v366 - rows in the exact shape the Watch decodes.
+    `SELECT cl.id::text AS id,
+            COALESCE(NULLIF(TRIM(cl.phone_number), ''),
+                     CASE WHEN cl.direction = 'inbound' THEN NULLIF(TRIM(cl.from_number), '')
+                          ELSE NULLIF(TRIM(cl.to_number), '') END) AS number,
+            c.name AS "contactName",
+            CASE WHEN cl.direction = 'inbound'
+                      AND LOWER(COALESCE(cl.status, '')) IN ('no-answer','busy','failed','canceled','missed') THEN 'missed'
+                 WHEN cl.direction = 'inbound' THEN 'incoming'
+                 ELSE 'outgoing' END AS direction,
+            to_char(cl.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "occurredAt",
+            cl.created_at AS "cursorAt",
+            UPPER(cl.silo) AS line, cl.status
        FROM call_logs cl LEFT JOIN contacts c ON c.id=cl.crm_contact_id AND c.silo=cl.silo
       WHERE cl.staff_user_id=$1 AND cl.silo=$2 AND ($3::timestamptz IS NULL OR cl.created_at<$3::timestamptz)
+        AND COALESCE(NULLIF(TRIM(cl.phone_number), ''), NULLIF(TRIM(cl.from_number), ''), NULLIF(TRIM(cl.to_number), '')) IS NOT NULL
       ORDER BY cl.created_at DESC,cl.id DESC LIMIT $4`, [req.watch.staffUserId, line, cursor, limit + 1]);
   const more = found.rows.length > limit;
   const items = found.rows.slice(0, limit);
-  return res.json({ items, nextCursor: more ? new Date(items.at(-1).occurredAt).toISOString() : null });
+  return res.json({ items, nextCursor: more ? new Date(items.at(-1).cursorAt).toISOString() : null });
 });
 
 // BF_SERVER_WATCH_CALLBACKS_v216
