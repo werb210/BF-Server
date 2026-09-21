@@ -19,6 +19,7 @@ import { findOrCreateCompanyByNameAndSilo } from "../../services/companies.js";
 import { linkContactToApplication } from "../../services/applicationContacts.js";
 import { logError, logInfo } from "../../observability/logger.js";
 import { mirrorApplicationToCrm } from "../../services/applicationCrmMirror.js"; // BF_APP_TO_CRM_v38
+import { fillDraftContact, furthestStep } from "../../services/draftProgress.js"; // BF_SERVER_DRAFT_PROGRESS_v389
 // BF_SERVER_BLOCK_v213_BF_TO_BI_HANDOFF_v1
 import { postBiHandoff } from "../../services/biHandoff.js";
 import { randomUUID as biRandomUUID } from "node:crypto";
@@ -1582,7 +1583,10 @@ router.patch(
       ? application.metadata as Record<string, unknown>
       : {};
     const incomingMeta = parsed.data.metadata ?? {};
-    const nextMetadata = { ...existingMeta, ...incomingMeta, ...wizardMeta };
+    const nextMetadata: Record<string, unknown> = { ...existingMeta, ...incomingMeta, ...wizardMeta };
+    // BF_SERVER_DRAFT_PROGRESS_v389 - remember the furthest step ever reached.
+    const reached = furthestStep(existingMeta, nextMetadata);
+    if (reached > 0) nextMetadata.furthestStep = reached;
 
     await runQuery(
       `update applications
@@ -1595,6 +1599,8 @@ router.patch(
        where id::text = ($1)::text`,
       [applicationId, nextName, nextRequestedAmount, nextMetadata, nextLenderId, nextLenderProductId]
     );
+    // BF_SERVER_DRAFT_PROGRESS_v389 - the OTP contact takes the applicant's name/email as soon as they are typed.
+    await fillDraftContact(applicationId, nextMetadata.applicant as any);
     const updated = await findApplicationById(applicationId);
     res.status(200).json({
       status: "ok",

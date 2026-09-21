@@ -367,7 +367,7 @@ router.get("/funnel", requireAuth, safeHandler(async (req: any, res: any) => {
        -- every application, including submitted ones, as stuck on step 1.
        -- Read camelCase first, keep the other two as fallbacks.
        SELECT COALESCE(
-                NULLIF(metadata->>'currentStep','')::int,
+                GREATEST(NULLIF(metadata->>'furthestStep','')::int, NULLIF(metadata->>'currentStep','')::int), -- v389
                 NULLIF(metadata->>'current_step','')::int,
                 current_step, 1) AS step,
               submitted_at
@@ -376,7 +376,7 @@ router.get("/funnel", requireAuth, safeHandler(async (req: any, res: any) => {
           AND created_at >= now() - ($2 || ' days')::interval
           AND NOT (submitted_at IS NULL
                    AND COALESCE(
-                         NULLIF(metadata->>'currentStep','')::int,
+                         GREATEST(NULLIF(metadata->>'furthestStep','')::int, NULLIF(metadata->>'currentStep','')::int), -- v389
                          NULLIF(metadata->>'current_step','')::int,
                          current_step, 1) <= 1)
      )
