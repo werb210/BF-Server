@@ -19,7 +19,7 @@ import { requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 // BF_SERVER_BLOCK_v215_BF_TO_BI_DOC_MIRROR_v1
-import { mirrorDocToBiAsync } from "../services/biDocMirror.js";
+import { mirrorDocToBiAsync, withdrawDocFromBiAsync } from "../services/biDocMirror.js"; // v395
 import { setProcessingStage } from "../modules/applications/processingStage.service.js";
 
 const router = express.Router();
@@ -446,6 +446,10 @@ router.post("/:id/category", requireAuth, async (req: Request, res: Response) =>
     // reached BI. Copy it now. BI keys on the BF document id and updates the type
     // of a copy it already has (BI v374), so moving twice cannot duplicate.
     if (result.changed) {
+      // BF_SERVER_MOVE_WITHDRAW_v395 - moved OUT of a PGI category: retire BI's copy.
+      if (result.applicationId) {
+        withdrawDocFromBiAsync(String(result.applicationId), toStringSafe(req.params.id), result.from ?? null, category);
+      }
       try {
         const doc = await pool.query<{ filename: string | null; size_bytes: number | null; blob_url: string | null }>(
           `SELECT filename, size_bytes, blob_url FROM documents WHERE id::text = ($1)::text LIMIT 1`,
