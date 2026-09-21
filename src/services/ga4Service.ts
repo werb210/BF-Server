@@ -16,6 +16,8 @@ export type Ga4Report = {
   events: Ga4Row[]; landingPages: Ga4Row[]; topPages: Ga4Row[]; newVsReturning: Ga4Row[];
   countries: Ga4Row[]; cities: Ga4Row[]; browsers: Ga4Row[]; operatingSystems: Ga4Row[];
   devices: Ga4Row[]; trend: Ga4Trend[];
+  /** BF_SERVER_GA4_QUOTA_v386 - true when GA4 refused a refresh and these are the last good figures. */
+  stale?: boolean;
 };
 export type Ga4Error = { configured: true; days: number; error: string };
 
@@ -58,10 +60,44 @@ function collapse(rows: Ga4Row[], topN = 10): Ga4Row[] {
   return Array.from(m.values()).sort((a, b) => b.sessions - a.sessions).slice(0, topN);
 }
 
-let cache: { key: string; at: number; report: Ga4Report } | null = null;
+// BF_SERVER_GA4_QUOTA_v386 - the dashboard showed a GA4 quota error because:
+//  * one report fired 14 runReport calls at once; the GA4 Data API allows 10
+//    concurrent requests per property, so every uncached load broke the limit;
+//  * the cache held ONE date range, so switching 7d/30d/90d/365d evicted it;
+//  * the dashboard's two panels asked at the same moment, doubling the burst;
+//  * a failure was not remembered, so every refresh retried straight away.
+// Now: one cached report per date range (30 min), one request in flight per
+// range, at most 4 GA4 calls at a time, and after a failure the last good
+// figures are served (marked stale) while GA4 is left alone for a while.
+const cache = new Map<string, { at: number; report: Ga4Report }>();
+const inflight = new Map<string, Promise<Ga4Report | Ga4Error>>();
+const failures = new Map<string, { at: number; error: Ga4Error; backoffMs: number }>();
+const MAX_CONCURRENT_REPORTS = 4;
+const QUOTA_BACKOFF_MS = 10 * 60_000;
+const ERROR_BACKOFF_MS = 2 * 60_000;
 function cacheMinutes(): number {
   const n = Number(process.env.GA4_CACHE_MINUTES);
-  return Number.isFinite(n) && n > 0 ? n : 10;
+  return Number.isFinite(n) && n > 0 ? n : 30;
+}
+export function isGa4QuotaError(message: string): boolean {
+  return /quota|exhausted|rate.?limit|too many requests|\b429\b/i.test(message);
+}
+async function inBatches<T>(tasks: Array<() => Promise<T>>, size: number): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < tasks.length; i += size) {
+    out.push(...(await Promise.all(tasks.slice(i, i + size).map((task) => task()))));
+  }
+  return out;
+}
+/** Test hooks. */
+let googleForTests: unknown = null;
+export function __setGa4GoogleForTests(google: unknown): void {
+  googleForTests = google;
+}
+export function __resetGa4StateForTests(): void {
+  cache.clear();
+  inflight.clear();
+  failures.clear();
 }
 
 export async function runGa4Report(days: number): Promise<Ga4Report | Ga4Error | null> {
@@ -71,12 +107,20 @@ export async function runGa4Report(days: number): Promise<Ga4Report | Ga4Error |
   if (!propertyId) return { configured: true, days, error: "GA4_PROPERTY_ID is not set." };
 
   const key = `${propertyId}:${days}`;
-  if (cache && cache.key === key && Date.now() - cache.at < cacheMinutes() * 60_000) {
-    return { ...cache.report, cached: true };
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < cacheMinutes() * 60_000) {
+    return { ...hit.report, cached: true };
   }
+  const failed = failures.get(key);
+  if (failed && Date.now() - failed.at < failed.backoffMs) {
+    return hit ? { ...hit.report, cached: true, stale: true } : failed.error;
+  }
+  const pending = inflight.get(key);
+  if (pending) return pending;
 
+  const run = (async (): Promise<Ga4Report | Ga4Error> => {
   try {
-    const mod: any = await safeImport("googleapis");
+    const mod: any = googleForTests ?? (await safeImport("googleapis"));
     const google: any = mod?.google ?? mod?.default?.google ?? mod;
     if (!google?.auth?.GoogleAuth || !google?.analyticsdata) {
       return { configured: true, days, error: "googleapis library is unavailable on the server." };
@@ -117,22 +161,23 @@ export async function runGa4Report(days: number): Promise<Ga4Report | Ga4Error |
       avgSessionSec: Math.round(num(4)), engagementRate: Math.round(num(5) * 1000) / 10, engagedSessions: num(6),
     };
 
-    const [ch, src, camp, adc, ev, lp, pg, nvr, ctry, city, br, os, dev, tr] = await Promise.all([
-      report(["sessionDefaultChannelGroup"], ["sessions", "activeUsers"], 10, "sessions"),
-      report(["sessionSourceMedium"], ["sessions", "activeUsers"], 10, "sessions"),
-      report(["sessionCampaignName"], ["sessions", "activeUsers"], 10, "sessions"),
-      report(["sessionManualAdContent"], ["sessions", "activeUsers"], 10, "sessions"),
-      report(["eventName"], ["eventCount", "totalUsers"], 15, "eventCount"),
-      report(["landingPage"], ["sessions", "activeUsers"], 50, "sessions"),
-      report(["pagePath"], ["screenPageViews", "totalUsers"], 50, "screenPageViews"),
-      report(["newVsReturning"], ["sessions", "activeUsers"], 5, "sessions"),
-      report(["country"], ["sessions", "activeUsers"], 10, "sessions"),
-      report(["city"], ["sessions", "activeUsers"], 10, "sessions"),
-      report(["browser"], ["sessions", "activeUsers"], 8, "sessions"),
-      report(["operatingSystem"], ["sessions", "activeUsers"], 8, "sessions"),
-      report(["deviceCategory"], ["sessions", "activeUsers"], 5, "sessions"),
-      report(["date"], ["sessions"]),
-    ]);
+    // BF_SERVER_GA4_QUOTA_v386 - at most MAX_CONCURRENT_REPORTS in flight (GA4 allows 10 per property).
+    const [ch, src, camp, adc, ev, lp, pg, nvr, ctry, city, br, os, dev, tr] = await inBatches([
+      () => report(["sessionDefaultChannelGroup"], ["sessions", "activeUsers"], 10, "sessions"),
+      () => report(["sessionSourceMedium"], ["sessions", "activeUsers"], 10, "sessions"),
+      () => report(["sessionCampaignName"], ["sessions", "activeUsers"], 10, "sessions"),
+      () => report(["sessionManualAdContent"], ["sessions", "activeUsers"], 10, "sessions"),
+      () => report(["eventName"], ["eventCount", "totalUsers"], 15, "eventCount"),
+      () => report(["landingPage"], ["sessions", "activeUsers"], 50, "sessions"),
+      () => report(["pagePath"], ["screenPageViews", "totalUsers"], 50, "screenPageViews"),
+      () => report(["newVsReturning"], ["sessions", "activeUsers"], 5, "sessions"),
+      () => report(["country"], ["sessions", "activeUsers"], 10, "sessions"),
+      () => report(["city"], ["sessions", "activeUsers"], 10, "sessions"),
+      () => report(["browser"], ["sessions", "activeUsers"], 8, "sessions"),
+      () => report(["operatingSystem"], ["sessions", "activeUsers"], 8, "sessions"),
+      () => report(["deviceCategory"], ["sessions", "activeUsers"], 5, "sessions"),
+      () => report(["date"], ["sessions"]),
+    ], MAX_CONCURRENT_REPORTS);
 
     const trend: Ga4Trend[] = toRows(tr)
       .map((r) => ({ date: r.dim, sessions: r.sessions }))
@@ -146,11 +191,25 @@ export async function runGa4Report(days: number): Promise<Ga4Report | Ga4Error |
       newVsReturning: toRows(nvr), countries: toRows(ctry), cities: toRows(city),
       browsers: toRows(br), operatingSystems: toRows(os), devices: toRows(dev), trend,
     };
-    cache = { key, at: Date.now(), report: report_ };
+    cache.set(key, { at: Date.now(), report: report_ });
+    failures.delete(key);
     return report_;
   } catch (e: any) {
     const msg = e?.response?.data?.error?.message || e?.errors?.[0]?.message || e?.message || String(e);
     logError("ga4_report_failed: " + msg);
-    return { configured: true, days, error: String(msg).slice(0, 400) };
+    const quota = isGa4QuotaError(String(msg));
+    const error: Ga4Error = {
+      configured: true,
+      days,
+      error: quota
+        ? "Google Analytics is over its request limit right now; it will refresh automatically in a few minutes."
+        : String(msg).slice(0, 400),
+    };
+    failures.set(key, { at: Date.now(), error, backoffMs: quota ? QUOTA_BACKOFF_MS : ERROR_BACKOFF_MS });
+    const last = cache.get(key);
+    return last ? { ...last.report, cached: true, stale: true } : error;
   }
+  })().finally(() => inflight.delete(key));
+  inflight.set(key, run);
+  return run;
 }
