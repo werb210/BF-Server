@@ -132,8 +132,20 @@ router.get("/", safeHandler(async (req: any, res: any) => {
                     ELSE (CASE WHEN direction = 'inbound' THEN 'Message in' ELSE 'Message out' END) END AS title,
                body AS body,
                COALESCE(staff_name, from_number, phone_number) AS extra
-          FROM communications_messages
-         WHERE contact_id = $1 AND (silo = $2 OR silo IS NULL)
+          FROM communications_messages m
+         -- BF_SERVER_TIMELINE_ORPHANS_v383 - also messages with no contact whose
+         -- number matches this contact's phone or secondary phone (last 10 digits),
+         -- the same recovery calls got in v770.
+         WHERE (m.contact_id = $1 OR (m.contact_id IS NULL AND EXISTS (
+                 SELECT 1 FROM contacts c
+                   CROSS JOIN LATERAL (VALUES (c.phone), (c.secondary_phone)) AS cp(v)
+                  WHERE c.id::text = $1::text
+                    AND length(regexp_replace(coalesce(cp.v, ''), '[^0-9]', '', 'g')) >= 10
+                    AND right(regexp_replace(cp.v, '[^0-9]', '', 'g'), 10) IN (
+                          right(regexp_replace(coalesce(m.phone_number, ''), '[^0-9]', '', 'g'), 10),
+                          right(regexp_replace(coalesce(m.from_number, ''), '[^0-9]', '', 'g'), 10),
+                          right(regexp_replace(coalesce(m.to_number, ''), '[^0-9]', '', 'g'), 10)))))
+           AND (m.silo = $2 OR m.silo IS NULL)
         UNION ALL
         -- BF_SERVER_BLOCK_v790 — sequence + engagement events on the contact record.
         -- BF_SERVER_MARKETING_ON_TIMELINE_v1 - marketing blasts wrote
