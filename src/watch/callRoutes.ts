@@ -52,9 +52,18 @@ router.post("/calls", watchAuth, async (req: any, res) => {
       `UPDATE watch_call_bridges SET provider_call_sid=$2,status='waitingForCallback',version=version+1,updated_at=now()
        WHERE id=$1 RETURNING *`, [call.id, providerSid]);
     return res.status(201).json(present(updated.rows[0]));
-  } catch {
-    await pool.query(`UPDATE watch_call_bridges SET status='failed',error_code='provider_unavailable',version=version+1,updated_at=now(),ended_at=now() WHERE id=$1`, [call.id]);
-    return watchError(req, res, 503, "provider_unavailable", "Calling provider is temporarily unavailable", true);
+  } catch (err) {
+    // BF_SERVER_WATCH_CALL_ERRORS_v370 - say which problem it is. "Temporarily
+    // unavailable" hid a missing caller ID and Twilio rejections alike.
+    const raw = err instanceof Error ? err.message : String(err);
+    const notConfigured = raw === "provider_not_configured";
+    const code = notConfigured ? "provider_not_configured" : "provider_unavailable";
+    const message = notConfigured
+      ? "No outbound caller ID is configured on the server (TWILIO_CALLER_ID)"
+      : `Calling provider rejected the call: ${raw.slice(0, 160)}`;
+    console.warn("[watch_call_failed]", { callId: call.id, code, raw: raw.slice(0, 300) });
+    await pool.query(`UPDATE watch_call_bridges SET status='failed',error_code=$2,version=version+1,updated_at=now(),ended_at=now() WHERE id=$1`, [call.id, code]);
+    return watchError(req, res, 503, code, message, !notConfigured);
   }
 });
 

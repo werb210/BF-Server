@@ -7,7 +7,8 @@ const route = fs.readFileSync(path.resolve(__dirname, "../snapshotRoutes.ts"), "
 
 describe("watch complication snapshot", () => {
   it("is authenticated", () => {
-    expect(route).toContain("router.use(requireAuth)");
+    // v370: route-level, so the router can sit ahead of the Watch data routes.
+    expect(route).toMatch(/router\.get\(\s*"\/snapshot",\s*requireAuth,/);
   });
 
   it("returns both values the widget provider reads", () => {

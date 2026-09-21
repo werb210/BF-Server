@@ -168,8 +168,8 @@ rootRoutes.use(applicationFormResponses); // BF_SERVER_FORMRESP_ROOT_v1
 const watchRoutes = Router();
 watchRoutes.use("/auth", watchAuthRoutes);
 watchRoutes.use("/devices", watchDeviceRoutes);
+watchRoutes.use(watchSnapshotRoutes); // BF_SERVER_WATCH_FACE_v370 - before data routes' router-wide watchAuth
 watchRoutes.use(watchDataRoutes);
-watchRoutes.use(watchSnapshotRoutes);
 
 const combinedMayaRoutes = Router();
 // BF_SERVER_BLOCK_v674 - website widget posts /api/maya/website-chat
