@@ -440,6 +440,34 @@ router.post("/:id/category", requireAuth, async (req: Request, res: Response) =>
   try {
     const result = await moveDocument((sql, params) => pool.query(sql, params as any[]), toStringSafe(req.params.id), category, user.id ?? null);
     if (!result.ok) return fail(res, 404, "DOCUMENT_NOT_FOUND");
+    // BF_SERVER_MOVE_MIRROR_v393 - a document moved INTO a category the PGI
+    // application needs (A/R, A/P, P&L, balance sheet, loan agreement...) was
+    // only copied to BI on upload, so a misfiled statement staff corrected never
+    // reached BI. Copy it now. BI keys on the BF document id and updates the type
+    // of a copy it already has (BI v374), so moving twice cannot duplicate.
+    if (result.changed) {
+      try {
+        const doc = await pool.query<{ filename: string | null; size_bytes: number | null; blob_url: string | null }>(
+          `SELECT filename, size_bytes, blob_url FROM documents WHERE id::text = ($1)::text LIMIT 1`,
+          [toStringSafe(req.params.id)],
+        );
+        const row = doc.rows[0];
+        if (row && result.applicationId) {
+          mirrorDocToBiAsync({
+            bfApplicationId: String(result.applicationId),
+            bfDocumentId: toStringSafe(req.params.id),
+            documentType: category,
+            fileName: row.filename ?? null,
+            mimeType: null,
+            fileSize: typeof row.size_bytes === "number" ? row.size_bytes : null,
+            storageUrl: row.blob_url ?? null,
+            uploadedByName: null,
+          });
+        }
+      } catch (err) {
+        console.warn("[documents] move mirror lookup failed", { documentId: req.params.id, err: String(err) });
+      }
+    }
     return ok(res, result);
   } catch (err) {
     console.error("[documents] move failed", { documentId: req.params.id, err: String(err) });
