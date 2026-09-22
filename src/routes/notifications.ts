@@ -36,7 +36,7 @@ router.post(
     const id = String(req.params.id ?? "").trim();
     if (!id) throw new AppError("validation_error", "id required.", 400);
     const ok = await markRead(userId, id);
-    if (!ok) throw new AppError("not_found", "Notification not found or already read.", 404);
+    if (!ok) throw new AppError("not_found", "Notification not found.", 404); // BF_SERVER_NOTIFICATION_READ_IDEMPOTENT_v407
     res.status(200).json({ ok: true, id });
   })
 );

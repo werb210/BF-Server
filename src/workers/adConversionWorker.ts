@@ -4,6 +4,11 @@
 // reported zero conversions against real applications. This runs both uploaders
 // on a timer. Both are env-gated and return {configured:false} when credentials
 // are absent, so this is inert until GOOGLE_ADS_* is set.
+//
+// BF_SERVER_ADS_WORKER_HEARTBEAT_v407 - the tick used to log only when an upload
+// actually moved something, so an empty log stream meant either "nothing pending"
+// or "worker not running" and there was no way to tell which. Every tick now
+// emits exactly one line carrying the result of all five stages.
 import type { Pool } from "pg";
 import { resolvePendingAdAttributions } from "../services/googleAdsAttribution.js";
 import { syncCustomerMatch } from "../services/googleAdsEnhanced.js"; // BF_SERVER_ADS_ENHANCED_v403
@@ -17,25 +22,23 @@ export function startAdConversionWorker(_pool: Pool): { stop: () => void } {
   const tick = async () => {
     if (stopped || running) return;
     running = true;
+    const startedAt = Date.now();
     try {
       const submit = await uploadSubmitConversions();
-      if (submit.configured && (submit.uploaded || submit.failed)) {
-        console.log("[ads_conversion] submit", JSON.stringify(submit));
-      }
       const qualified = await uploadQualifiedConversions();
-      if (qualified.configured && (qualified.uploaded || qualified.failed)) {
-        console.log("[ads_conversion] qualified", JSON.stringify(qualified));
-      }
       const retracted = await retractClosedSubmitConversions();
-      if (retracted.configured && (retracted.retracted || retracted.failed)) {
-        console.log("[ads_conversion] retracted", JSON.stringify(retracted));
-      }
-      await resolvePendingAdAttributions();
-      await syncCustomerMatch(); // weekly; no-op unless GOOGLE_ADS_CUSTOMER_MATCH_ENABLED=true
+      const attribution = await resolvePendingAdAttributions();
+      const customerMatch = await syncCustomerMatch(); // weekly; no-op unless GOOGLE_ADS_CUSTOMER_MATCH_ENABLED=true
       const funded = await uploadFundedConversions();
-      if (funded.configured && (funded.uploaded || funded.failed)) {
-        console.log("[ads_conversion] funded", JSON.stringify(funded));
-      }
+      console.log("[ads_conversion] tick", JSON.stringify({
+        ms: Date.now() - startedAt,
+        submit,
+        qualified,
+        retracted,
+        funded,
+        attribution,
+        customerMatch,
+      }));
     } catch (e) {
       console.warn("[ads_conversion] tick failed", e instanceof Error ? e.message : String(e));
     } finally { running = false; }

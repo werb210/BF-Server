@@ -98,11 +98,17 @@ export async function listForUser(userId: string, opts: { unreadOnly?: boolean; 
   return r.rows;
 }
 
+// BF_SERVER_NOTIFICATION_READ_IDEMPOTENT_v407 - the UPDATE required is_read =
+// false, so a second read of the same notification matched nothing and the route
+// answered 404. The portal fires read on notifications it has already read, so
+// production logged a repeating request_error for a no-op. Reading twice is now
+// a success; read_at keeps the first timestamp. A genuinely unknown id, or one
+// belonging to another user, still returns false and still 404s.
 export async function markRead(userId: string, id: string): Promise<boolean> {
   const r = await runQuery<{ id: string }>(
     `UPDATE notifications
-        SET is_read = true, read_at = now()
-      WHERE id = $1 AND user_id = $2 AND is_read = false
+        SET is_read = true, read_at = COALESCE(read_at, now())
+      WHERE id = $1 AND user_id = $2
       RETURNING id`,
     [id, userId]
   );
