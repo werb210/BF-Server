@@ -460,6 +460,42 @@ router.get("/negative-candidates", safeHandler(async (req: any, res: any) => {
   res.json({ windowDays: days, minCost, campaignId: campaignId || null, candidates });
 }));
 
+router.get("/negative-impact", safeHandler(async (req: any, res: any) => {
+  const terms = String(req.query.terms ?? "").split("\n").map((term) => term.trim()).filter(Boolean);
+  const matchType = req.query.matchType === "EXACT" ? "EXACT" : "PHRASE";
+  const campaignId = String(req.query.campaignId ?? "").trim();
+  if (terms.length === 0) { res.json({ impact: [] }); return; }
+  const { negativeBlastRadius } = await import("../services/googleAdsNegatives.js");
+  res.json({ impact: await negativeBlastRadius(terms, matchType, campaignId || undefined) });
+}));
+
+router.get("/negative-keywords/recent", safeHandler(async (_req: any, res: any) => {
+  const { rows } = await pool.query(
+    `SELECT id, campaign_id, term, match_type, resource_name, added_at
+       FROM ads_negatives_log WHERE removed_at IS NULL
+      ORDER BY added_at DESC LIMIT 50`,
+  );
+  res.json({ negatives: rows });
+}));
+
+router.post("/negative-keywords/:id/remove", safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id ?? "");
+  const { rows } = await pool.query(
+    `SELECT resource_name FROM ads_negatives_log WHERE id = $1 AND removed_at IS NULL`,
+    [id],
+  );
+  const resourceName = rows[0]?.resource_name;
+  if (!resourceName) { res.status(404).json({ error: "not_found_or_not_removable" }); return; }
+  try {
+    const { removeCampaignNegative } = await import("../services/googleAdsNegatives.js");
+    await removeCampaignNegative(String(resourceName));
+    await pool.query(`UPDATE ads_negatives_log SET removed_at = now() WHERE id = $1`, [id]);
+    res.json({ ok: true });
+  } catch (error: any) {
+    res.status(502).json({ error: "google_ads_remove_failed", message: error?.message ?? "unknown" });
+  }
+}));
+
 router.post("/negative-keywords", safeHandler(async (req: any, res: any) => {
   const campaignId = String(req.body?.campaignId ?? "").trim();
   const terms = Array.isArray(req.body?.terms) ? req.body.terms : [];
@@ -469,6 +505,14 @@ router.post("/negative-keywords", safeHandler(async (req: any, res: any) => {
   try {
     const { addCampaignNegatives } = await import("../services/googleAdsNegatives.js");
     const result = await addCampaignNegatives(campaignId, terms, matchType);
+    // BF_SERVER_NEGATIVES_SAFETY_v419 - record it so the portal can undo it.
+    for (const term of result.added) {
+      await pool.query(
+        `INSERT INTO ads_negatives_log (campaign_id, term, match_type, resource_name, added_by)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [campaignId, term, matchType, result.resourceNames?.[term] ?? null, req.user?.id ?? null],
+      ).catch(() => undefined);
+    }
     res.json({ ok: true, matchType, ...result });
   } catch (error: any) {
     res.status(502).json({ error: "google_ads_mutate_failed", message: error?.message ?? "unknown" });

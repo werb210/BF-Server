@@ -77,7 +77,11 @@ export async function findNegativeCandidates(days = 7, minCost = 0, campaignId?:
   }));
 }
 
-export type AddResult = { added: string[]; failed: Array<{ term: string; error: string }> };
+export type AddResult = {
+  added: string[];
+  failed: Array<{ term: string; error: string }>;
+  resourceNames?: Record<string, string>;
+};
 
 // PHRASE is deliberately the default. A single-word phrase would block every
 // query containing that word, so callers must explicitly choose EXACT for it.
@@ -131,5 +135,89 @@ export async function addCampaignNegatives(
     for (const term of usable) failed.push({ term, error: "see_partial_failure" });
     return { added: [], failed };
   }
-  return { added: usable, failed };
+  // BF_SERVER_NEGATIVES_SAFETY_v419 - Google returns a resourceName per created
+  // criterion. Discarding it made every negative permanent in practice.
+  const results = Array.isArray((body as any)?.results) ? (body as any).results : [];
+  const resourceNames: Record<string, string> = {};
+  usable.forEach((term, i) => {
+    const rn = results[i]?.resourceName;
+    if (typeof rn === "string" && rn) resourceNames[term] = rn;
+  });
+  return { added: usable, failed, resourceNames };
+}
+
+// v419 - what ELSE does this term block? Answered from our own 90 days of search
+// terms, so the warning is about real money and real conversions, not theory.
+export type BlastRadius = {
+  term: string;
+  matchType: "PHRASE" | "EXACT";
+  alsoBlocks: Array<{ searchTerm: string; cost: number; conversions: number }>;
+  totalCost: number;
+  convertingCount: number;
+};
+
+export async function negativeBlastRadius(
+  terms: string[],
+  matchType: "PHRASE" | "EXACT",
+  campaignId?: string,
+  days = 90,
+): Promise<BlastRadius[]> {
+  const out: BlastRadius[] = [];
+  for (const raw of terms) {
+    const term = String(raw ?? "").trim();
+    if (!term) continue;
+    // EXACT blocks only the literal query, so it can never surprise anyone.
+    if (matchType === "EXACT") {
+      out.push({ term, matchType, alsoBlocks: [], totalCost: 0, convertingCount: 0 });
+      continue;
+    }
+    const { rows } = await pool.query<{ name: string; cost: string; conversions: string }>(
+      `SELECT name,
+              SUM(cost)::numeric(12,2) AS cost,
+              SUM(conversions)::numeric(10,2) AS conversions
+         FROM google_ads_daily
+        WHERE level = 'search_term'
+          AND stat_date >= (CURRENT_DATE - ($2)::int)
+          AND ($3::text IS NULL OR campaign_id = $3::text)
+          AND name <> $1
+          AND name ILIKE ('%' || $1 || '%')
+        GROUP BY name
+        ORDER BY SUM(cost) DESC
+        LIMIT 50`,
+      [term, days, campaignId && campaignId.trim() ? campaignId.trim() : null],
+    );
+    const alsoBlocks = rows.map((row) => ({
+      searchTerm: row.name,
+      cost: Number(row.cost ?? 0),
+      conversions: Number(row.conversions ?? 0),
+    }));
+    out.push({
+      term,
+      matchType,
+      alsoBlocks,
+      totalCost: alsoBlocks.reduce((total, blocked) => total + blocked.cost, 0),
+      convertingCount: alsoBlocks.filter((blocked) => blocked.conversions > 0).length,
+    });
+  }
+  return out;
+}
+
+// v419 - undo. Google removes a criterion by resourceName.
+export async function removeCampaignNegative(resourceName: string): Promise<void> {
+  const customerId = String(process.env.GOOGLE_ADS_CUSTOMER_ID ?? "").replace(/[^0-9]/g, "");
+  if (!customerId) throw new Error("GOOGLE_ADS_CUSTOMER_ID is not set");
+  if (!resourceName) throw new Error("resourceName required");
+  const token = await accessToken();
+  const response = await fetch(
+    `https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/campaignCriteria:mutate`,
+    {
+      method: "POST",
+      headers: negativeHeaders(token),
+      body: JSON.stringify({ operations: [{ remove: resourceName }] }),
+    },
+  );
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`google_ads_remove_failed_${response.status}: ${body.slice(0, 300)}`);
+  }
 }
