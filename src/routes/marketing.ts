@@ -475,6 +475,12 @@ router.post("/negative-keywords", safeHandler(async (req: any, res: any) => {
 }));
 
 // Report configuration and queue counts for each Google Ads conversion signal.
+// BF_SERVER_ADS_ENHANCED_v403 - run the Customer Match refresh now (otherwise weekly).
+router.post("/google-ads/customer-match/sync", safeHandler(async (_req: any, res: any) => {
+  const { syncCustomerMatch } = await import("../services/googleAdsEnhanced.js");
+  respondOk(res, await syncCustomerMatch(true));
+}));
+
 router.get("/google-ads/conversions/status", safeHandler(async (_req: any, res: any) => {
   const { conversionStatus } = await import("../services/googleAdsLeadSignals.js");
   respondOk(res, await conversionStatus());
