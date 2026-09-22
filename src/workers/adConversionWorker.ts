@@ -5,7 +5,9 @@
 // on a timer. Both are env-gated and return {configured:false} when credentials
 // are absent, so this is inert until GOOGLE_ADS_* is set.
 import type { Pool } from "pg";
+import { resolvePendingAdAttributions } from "../services/googleAdsAttribution.js";
 import { uploadFundedConversions, uploadSubmitConversions } from "../services/googleAdsConversions.js";
+import { retractClosedSubmitConversions, uploadQualifiedConversions } from "../services/googleAdsLeadSignals.js";
 
 const TICK_MS = 60 * 60_000;
 
@@ -19,6 +21,15 @@ export function startAdConversionWorker(_pool: Pool): { stop: () => void } {
       if (submit.configured && (submit.uploaded || submit.failed)) {
         console.log("[ads_conversion] submit", JSON.stringify(submit));
       }
+      const qualified = await uploadQualifiedConversions();
+      if (qualified.configured && (qualified.uploaded || qualified.failed)) {
+        console.log("[ads_conversion] qualified", JSON.stringify(qualified));
+      }
+      const retracted = await retractClosedSubmitConversions();
+      if (retracted.configured && (retracted.retracted || retracted.failed)) {
+        console.log("[ads_conversion] retracted", JSON.stringify(retracted));
+      }
+      await resolvePendingAdAttributions();
       const funded = await uploadFundedConversions();
       if (funded.configured && (funded.uploaded || funded.failed)) {
         console.log("[ads_conversion] funded", JSON.stringify(funded));
