@@ -137,6 +137,25 @@ export async function mirrorDocToBi(input: MirrorInput): Promise<MirrorResult> {
         });
         return { ok: false, error: "bi_already_mirrored" };
       }
+      // BF_SERVER_BI_UNLINK_DELETED_v404 - BI answers 404 bi_application_not_found
+      // when the linked BI application was deleted there. BF kept pointing at it,
+      // so every upload and every startup backfill failed again (d8307038...).
+      // Remove the stale link once; BI deleted it deliberately, so the automatic
+      // handoff retry (v397) does not re-create it.
+      if (r.status === 404 && text.includes("bi_application_not_found")) {
+        await pool.query(
+          `UPDATE applications
+              SET bi_application_id = NULL, bi_public_id = NULL, bi_completion_url = NULL,
+                  metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+                    'bi_link_cleared_at', now()::text,
+                    'bi_link_cleared_reason', 'bi_application_not_found',
+                    'bi_link_cleared_public_id', $2::text)
+            WHERE id::text = $1`,
+          [input.bfApplicationId, publicId],
+        ).catch((e) => logError("bi_link_clear_failed", { message: e instanceof Error ? e.message : String(e) }));
+        logInfo("bi_link_cleared_deleted_in_bi", { bfApplicationId: input.bfApplicationId, biPublicId: publicId });
+        return { ok: false, error: "bi_application_deleted" };
+      }
       logError("bi_doc_mirror_http_error", {
         code: "bi_doc_mirror_http_error",
         status: r.status,

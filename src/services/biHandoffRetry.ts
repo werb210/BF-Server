@@ -24,6 +24,7 @@ async function findPending(limit: number): Promise<PendingHandoff[]> {
        FROM applications
       WHERE silo = 'BF'
         AND bi_application_id IS NULL
+        AND metadata->>'bi_link_cleared_at' IS NULL -- BF_SERVER_BI_UNLINK_DELETED_v404: deleted in BI on purpose
         AND metadata->>'submittedAt' IS NOT NULL
         AND jsonb_typeof(metadata->'formData') = 'object'
         AND lower(COALESCE(metadata->'formData'->>'pgi_opt_in', metadata->>'pgi_opt_in', '')) = 'yes'
