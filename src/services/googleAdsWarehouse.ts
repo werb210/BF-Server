@@ -23,16 +23,18 @@ async function upsert(
   name: string,
   status: string | null,
   m: any,
+  campaignId = "",
+  campaignName = "(unknown)",
 ): Promise<void> {
   if (!statDate || !name) return;
   await db.query(
-    `INSERT INTO google_ads_daily (stat_date, level, name, status, cost, impressions, clicks, conversions, conv_value, synced_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
-     ON CONFLICT (stat_date, level, name) DO UPDATE SET
+    `INSERT INTO google_ads_daily (stat_date, level, name, status, cost, impressions, clicks, conversions, conv_value, campaign_id, campaign_name, synced_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, now())
+     ON CONFLICT (stat_date, level, name, (COALESCE(campaign_id, ''))) DO UPDATE SET
        status = EXCLUDED.status, cost = EXCLUDED.cost, impressions = EXCLUDED.impressions,
        clicks = EXCLUDED.clicks, conversions = EXCLUDED.conversions,
-       conv_value = EXCLUDED.conv_value, synced_at = now()`,
-    [statDate, level, name, status, micros(m?.costMicros), num(m?.impressions), num(m?.clicks), num(m?.conversions), num(m?.conversionsValue)],
+       conv_value = EXCLUDED.conv_value, campaign_name = EXCLUDED.campaign_name, synced_at = now()`,
+    [statDate, level, name, status, micros(m?.costMicros), num(m?.impressions), num(m?.clicks), num(m?.conversions), num(m?.conversionsValue), campaignId, campaignName],
   );
 }
 
@@ -60,10 +62,12 @@ export async function snapshotGoogleAds(db: Queryable, days = 30): Promise<{ row
   }
 
   const st = await googleAdsSearch(
-    `SELECT segments.date, search_term_view.search_term, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value FROM search_term_view WHERE ${W}`,
+    // BF_SERVER_ADS_WAREHOUSE_CAMPAIGN_v414 - without campaign.id/name here the
+    // warehouse could not tell two campaigns apart and rows overwrote each other.
+    `SELECT segments.date, search_term_view.search_term, campaign.id, campaign.name, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value FROM search_term_view WHERE ${W}`,
   );
   for (const r of st) {
-    await upsert(db, String((r as any)?.segments?.date ?? ""), "search_term", String((r as any)?.searchTermView?.searchTerm ?? "(none)"), null, (r as any)?.metrics);
+    await upsert(db, String((r as any)?.segments?.date ?? ""), "search_term", String((r as any)?.searchTermView?.searchTerm ?? "(none)"), null, (r as any)?.metrics, String((r as any)?.campaign?.id ?? ""), String((r as any)?.campaign?.name ?? "(unknown)"));
     rows += 1;
   }
 
