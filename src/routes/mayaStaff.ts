@@ -1414,15 +1414,56 @@ router.post(
     try {
       const l = await pool.query(`SELECT count(*)::int AS n FROM lenders WHERE silo = $1 AND active = true`, [silo]);
       const p = await pool.query(`SELECT count(*)::int AS n FROM lender_products WHERE silo = $1 AND active = true`, [silo]);
+      // BF_SERVER_MAYA_CATALOG_AMOUNTS_v413 - counts alone left the model to invent
+      // every number it quoted. Return the real envelope per category: amount range,
+      // term range and rate range, aggregated so no single lender is identifiable.
       const byCat = await pool.query(
-        `SELECT category, count(*)::int AS n FROM lender_products
-          WHERE silo = $1 AND active = true GROUP BY category ORDER BY n DESC`, [silo]);
+        `SELECT category,
+                count(*)::int                     AS n,
+                min(NULLIF(min_amount, 0))::bigint AS min_amount,
+                max(NULLIF(max_amount, 0))::bigint AS max_amount,
+                min(NULLIF(min_term_months, 0))::int AS min_term_months,
+                max(NULLIF(max_term_months, 0))::int AS max_term_months,
+                min(NULLIF(min_rate, 0))::numeric  AS min_rate,
+                max(NULLIF(max_rate, 0))::numeric  AS max_rate
+           FROM lender_products
+          WHERE silo = $1 AND active = true
+          GROUP BY category
+          ORDER BY n DESC`, [silo]);
       const lenders = l.rows[0]?.n ?? 0;
       const products = p.rows[0]?.n ?? 0;
-      const catStr = byCat.rows.map((r: any) => `${r.category} (${r.n})`).join(", ");
-      const summary = `Boreal currently works with ${lenders} lender(s) offering ${products} financing product(s)${catStr ? ` across these categories: ${catStr}` : ""}.`;
+      const money = (v: unknown): string | null => {
+        const n = Number(v);
+        return Number.isFinite(n) && n > 0 ? `$${Math.round(n).toLocaleString("en-CA")}` : null;
+      };
+      const range = (lo: unknown, hi: unknown, fmt: (x: unknown) => string | null): string => {
+        const a = fmt(lo); const b = fmt(hi);
+        if (a && b) return a === b ? a : `${a} to ${b}`;
+        return a ?? b ?? "";
+      };
+      const catStr = byCat.rows
+        .map((r: any) => {
+          const amt = range(r.min_amount, r.max_amount, money);
+          return amt ? `${r.category} (${r.n}, ${amt})` : `${r.category} (${r.n})`;
+        })
+        .join(", ");
+      const categories = byCat.rows.map((r: any) => ({
+        category: r.category,
+        count: r.n,
+        min_amount: r.min_amount === null ? null : Number(r.min_amount),
+        max_amount: r.max_amount === null ? null : Number(r.max_amount),
+        min_term_months: r.min_term_months ?? null,
+        max_term_months: r.max_term_months ?? null,
+        min_rate: r.min_rate === null ? null : Number(r.min_rate),
+        max_rate: r.max_rate === null ? null : Number(r.max_rate),
+      }));
+      const summary =
+        `Boreal currently works with ${lenders} lender(s) offering ${products} financing product(s)` +
+        (catStr ? ` across these categories: ${catStr}.` : ".") +
+        " These amount, term and rate ranges are the real limits across our lending partners for each category." +
+        " Never quote an amount, term or rate that is not in this data - if a category has no range here, say the range depends on the lender and offer to have someone confirm it.";
       await audit({ audience: "client", tool: "catalog.summary", args: { silo }, ok: true, summary, sessionId: biStr(req.body?.session_id) });
-      return res.json({ ok: true, lenders, products, byCategory: byCat.rows, summary });
+      return res.json({ ok: true, lenders, products, byCategory: categories, categories, summary });
     } catch (e: any) {
       await audit({ audience: "client", tool: "catalog.summary", args: { silo }, ok: false, summary: e?.message ?? "error", errorCode: "catalog_summary_exception" });
       logError("maya_catalog_summary_failed", { code: "maya_catalog_summary_failed", error: e?.message ?? "unknown" });
