@@ -175,6 +175,28 @@ export async function updateSessionStatus(
   }
 }
 
+// BF_SERVER_CHAT_MESSAGES_COLUMNS_v411
+// Both previous branches hardcoded "role" in the column list, so a table without
+// it threw on EVERY Maya turn - and because the caller swallows persist errors,
+// the only symptom was an empty Communications -> Maya tab. The insert is now
+// assembled from the columns the table actually has: a missing column is skipped,
+// never referenced. Exported for test.
+export function buildMessageInsert(columns: Set<string>): { sql: string; fields: string[] } {
+  const fields: string[] = ["id", "session_id"];
+  const placeholders: string[] = ["$1", "$2"];
+  const add = (name: string, cast = ""): void => {
+    if (!columns.has(name)) return;
+    fields.push(name);
+    placeholders.push(`$${fields.length}${cast}`);
+  };
+  add("role");
+  add("message");
+  add("content");
+  add("metadata", "::jsonb");
+  const quoted = fields.map((f) => `"${f}"`).join(", ");
+  return { sql: `insert into chat_messages (${quoted}) values (${placeholders.join(", ")})`, fields };
+}
+
 export async function addMessage(params: {
   sessionId: string;
   role: "user" | "ai" | "staff" | "system";
@@ -183,21 +205,16 @@ export async function addMessage(params: {
 }): Promise<void> {
   const columns = await fetchTableColumns("chat_messages");
   const payload = params.metadata ? JSON.stringify(params.metadata) : null;
-
-  if (columns.has("content")) {
-    await runQuery(
-      `insert into chat_messages (id, session_id, role, message, content, metadata)
-       values ($1, $2, $3, $4, $4, $5::jsonb)`,
-      [randomUUID(), params.sessionId, params.role, params.message, payload]
-    );
-    return;
-  }
-
-  await runQuery(
-    `insert into chat_messages (id, session_id, role, message, metadata)
-     values ($1, $2, $3, $4, $5::jsonb)`,
-    [randomUUID(), params.sessionId, params.role, params.message, payload]
-  );
+  const { sql, fields } = buildMessageInsert(columns);
+  const byName: Record<string, unknown> = {
+    id: randomUUID(),
+    session_id: params.sessionId,
+    role: params.role,
+    message: params.message,
+    content: params.message,
+    metadata: payload,
+  };
+  await runQuery(sql, fields.map((f) => byName[f]));
 }
 
 export async function listMessagesBySession(sessionId: string): Promise<ChatMessageRecord[]> {
