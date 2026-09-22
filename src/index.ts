@@ -308,6 +308,16 @@ export async function start(): Promise<void> {
     try { const w = startTaskRemindersWorker(pool); workerStops.push(w.stop); console.log("[startup] task-reminders worker started"); }
     catch (err) { console.error("[startup] task-reminders worker failed to start:", err); }
 
+    // BF_SERVER_BI_HANDOFF_RETRY_v397 - retry PGI handoffs that failed at submit time.
+    try {
+      const { startBiHandoffRetryWorker } = await import("./services/biHandoffRetry.js");
+      const worker = startBiHandoffRetryWorker();
+      workerStops.push(worker.stop);
+      console.log("[startup] bi-handoff-retry worker started");
+    } catch (err) {
+      console.error("[startup] bi-handoff-retry worker failed to start:", err);
+    }
+
     // BF_SERVER_PGI_MIRROR_LABELS_v357 - one catch-up pass a minute after boot.
     const pgiBackfill = setTimeout(() => {
       void import("./services/biDocMirror.js")
