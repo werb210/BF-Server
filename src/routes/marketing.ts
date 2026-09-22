@@ -455,8 +455,9 @@ router.get("/negative-candidates", safeHandler(async (req: any, res: any) => {
   const days = Math.max(1, Math.min(90, Number(req.query.days ?? 7) || 7));
   const minCost = Math.max(0, Number(req.query.minCost ?? 0) || 0);
   const { findNegativeCandidates } = await import("../services/googleAdsNegatives.js");
-  const candidates = await findNegativeCandidates(days, minCost);
-  res.json({ windowDays: days, minCost, candidates });
+  const campaignId = String(req.query.campaignId ?? "").trim();
+  const candidates = await findNegativeCandidates(days, minCost, campaignId || undefined);
+  res.json({ windowDays: days, minCost, campaignId: campaignId || null, candidates });
 }));
 
 router.post("/negative-keywords", safeHandler(async (req: any, res: any) => {

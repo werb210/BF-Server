@@ -25,6 +25,8 @@ function negativeHeaders(token: string): Record<string, string> {
 
 export type NegativeCandidate = {
   searchTerm: string;
+  campaignId?: string | null;
+  campaignName?: string | null;
   cost: number;
   clicks: number;
   impressions: number;
@@ -33,27 +35,35 @@ export type NegativeCandidate = {
 
 // Terms that spent money and converted nothing, worst first. Once a negative
 // takes effect, matching queries stop appearing in the warehouse feed.
-export async function findNegativeCandidates(days = 7, minCost = 0): Promise<NegativeCandidate[]> {
+// BF_SERVER_ADS_WAREHOUSE_CAMPAIGN_v414 - the list is now scoped to one campaign,
+// because the panel asks staff to apply negatives to a campaign and previously
+// showed account-wide terms with no way to tell which campaign spent the money.
+export async function findNegativeCandidates(days = 7, minCost = 0, campaignId?: string): Promise<NegativeCandidate[]> {
   const { rows } = await pool.query<{
     search_term: string;
     cost: string;
     clicks: string;
     impressions: string;
     conversions: string;
+    campaign_name: string | null;
+    campaign_id: string | null;
   }>(
     `SELECT name AS search_term,
             SUM(cost)::numeric(12,2) AS cost,
             SUM(clicks)::int AS clicks,
             SUM(impressions)::int AS impressions,
-            SUM(conversions)::numeric(10,2) AS conversions
+            SUM(conversions)::numeric(10,2) AS conversions,
+            max(campaign_name) AS campaign_name,
+            max(campaign_id) AS campaign_id
        FROM google_ads_daily
       WHERE level = 'search_term'
         AND stat_date >= (CURRENT_DATE - ($1)::int)
-      GROUP BY name
+        AND ($3::text IS NULL OR campaign_id = $3::text)
+      GROUP BY name, campaign_id, campaign_name
      HAVING SUM(conversions) = 0 AND SUM(cost) > ($2)::numeric
       ORDER BY SUM(cost) DESC
       LIMIT 200`,
-    [days, minCost],
+    [days, minCost, campaignId && campaignId.trim() ? campaignId.trim() : null],
   );
 
   return rows.map((row) => ({
@@ -62,6 +72,8 @@ export async function findNegativeCandidates(days = 7, minCost = 0): Promise<Neg
     clicks: Number(row.clicks ?? 0),
     impressions: Number(row.impressions ?? 0),
     conversions: Number(row.conversions ?? 0),
+    campaignId: (row as any).campaign_id ?? null,
+    campaignName: (row as any).campaign_name ?? null,
   }));
 }
 
