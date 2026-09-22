@@ -53,24 +53,61 @@ function toColumnArray(v: unknown): string[] {
   return [];
 }
 
-async function uniqueColumnSets(table: string): Promise<string[][]> {
-  const r = await pool.query<{ cols: unknown }>(
-    `SELECT array_agg(a.attname::text ORDER BY k.ord) AS cols
+// BF_SERVER_MERGE_PARTIAL_UNIQUE_v409
+// The catalogue query threw away every PARTIAL unique index (it required
+// indpred IS NULL), so the collision pre-delete never ran for one and the whole
+// merge 500'd on the first it met:
+//   duplicate key value violates unique constraint "crm_email_log_graph_msg_contact_idx"
+// which is UNIQUE (graph_message_id, contact_id) WHERE graph_message_id IS NOT NULL.
+// Both Vit Kanesh records had the same Graph message filed against them, so
+// re-pointing the loser's row at the survivor hit that index and the whole
+// transaction rolled back.
+// Partial indexes are included now and the predicate travels with the column
+// set, so only rows the index actually covers are compared: a row with a NULL
+// graph_message_id cannot collide and must never be dropped.
+export type UniqueIndexSet = { cols: string[]; pred: string };
+
+// Exported for test. The predicate is applied inside each CTE, where exactly one
+// table is in scope, so its unqualified column names resolve unambiguously.
+export function buildUniqueCollisionSql(table: string, cols: string[], pred: string): string {
+  const t = quoteIdent(table);
+  const others = cols.filter((c) => c !== "contact_id");
+  const sameOthers = others
+    .map((c) => ` AND s.${quoteIdent(c)} IS NOT DISTINCT FROM lr.${quoteIdent(c)}`)
+    .join("");
+  const only = pred && pred.trim() && pred.trim() !== "true" ? ` AND (${pred})` : "";
+  return `WITH survivor_rows AS (
+      SELECT * FROM ${t} WHERE contact_id = $1::uuid${only}
+    ), loser_rows AS (
+      SELECT ctid AS bf_merge_ctid, * FROM ${t} WHERE contact_id = $2::uuid${only}
+    )
+    DELETE FROM ${t} l
+     USING loser_rows lr
+     WHERE l.ctid = lr.bf_merge_ctid
+       AND EXISTS (SELECT 1 FROM survivor_rows s WHERE true${sameOthers})
+    RETURNING l.*`;
+}
+
+async function uniqueColumnSets(table: string): Promise<UniqueIndexSet[]> {
+  const r = await pool.query<{ cols: unknown; pred: string | null }>(
+    `SELECT array_agg(a.attname::text ORDER BY k.ord) AS cols,
+            COALESCE(pg_get_expr(i.indpred, i.indrelid, true), 'true') AS pred
        FROM pg_index i
        JOIN pg_class t ON t.oid = i.indrelid
        JOIN pg_namespace n ON n.oid = t.relnamespace
        CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
       WHERE i.indisunique
-        AND i.indpred IS NULL
         AND i.indexprs IS NULL
         AND n.nspname = 'public'
         AND t.relname = $1
-      GROUP BY i.indexrelid
+      GROUP BY i.indexrelid, i.indpred, i.indrelid
      HAVING 'contact_id' = ANY(array_agg(a.attname::text))`,
     [table],
   );
-  return r.rows.map((x) => toColumnArray(x.cols)).filter((c) => c.length > 0);
+  return r.rows
+    .map((x) => ({ cols: toColumnArray(x.cols), pred: String(x.pred ?? "true") }))
+    .filter((x) => x.cols.length > 0);
 }
 
 // Candidates for ONE contact. Exact email / exact last-10 phone, plus a pure-SQL name match,
@@ -195,17 +232,9 @@ router.post(
         // contact_id -- otherwise the whole merge 500s (see uniqueColumnSets above). Dropped
         // rows are snapshotted into contact_merges so the merge stays reversible.
         for (const t of tables) {
-          for (const cols of await uniqueColumnSets(t)) {
-            const others = cols.filter((c) => c !== "contact_id");
-            const sameOthers = others.length
-              ? " AND " + others.map((c) => `s.${quoteIdent(c)} IS NOT DISTINCT FROM l.${quoteIdent(c)}`).join(" AND ")
-              : "";
+          for (const idx of await uniqueColumnSets(t)) {
             const d = await client.query(
-              `DELETE FROM ${quoteIdent(t)} l
-                WHERE l.contact_id = $2::uuid
-                  AND EXISTS (SELECT 1 FROM ${quoteIdent(t)} s
-                               WHERE s.contact_id = $1::uuid${sameOthers})
-              RETURNING *`,
+              buildUniqueCollisionSql(t, idx.cols, idx.pred),
               [survivorId, loserId],
             );
             if ((d.rowCount ?? 0) > 0) {
