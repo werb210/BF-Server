@@ -236,6 +236,42 @@ export async function backfillPgiMirrors(days = 30): Promise<{ eligible: number;
   return { eligible, mirrored };
 }
 
+// BF_SERVER_BI_HANDOFF_RETRY_v397 - copy documents already uploaded when an
+// application receives its BI link after an automatic handoff retry.
+export async function mirrorApplicationDocsToBi(bfApplicationId: string): Promise<{ eligible: number; mirrored: number }> {
+  const result = await pool.query<{
+    id: string; category: string | null; filename: string | null;
+    size_bytes: number | null; blob_url: string | null;
+  }>(
+    `SELECT d.id::text AS id, COALESCE(d.category, d.document_type) AS category,
+            d.filename, d.size_bytes, d.blob_url
+       FROM documents d
+      WHERE d.application_id::text = $1
+        AND COALESCE(d.status, '') <> 'rejected'
+      ORDER BY d.created_at`,
+    [bfApplicationId],
+  );
+  let eligible = 0;
+  let mirrored = 0;
+  for (const row of result.rows) {
+    if (!shouldMirrorToPgi(row.category)) continue;
+    eligible += 1;
+    const mirrorResult = await mirrorDocToBi({
+      bfApplicationId,
+      bfDocumentId: row.id,
+      documentType: row.category,
+      fileName: row.filename,
+      mimeType: null,
+      fileSize: typeof row.size_bytes === "number" ? row.size_bytes : null,
+      storageUrl: row.blob_url,
+      uploadedByName: null,
+    });
+    if (mirrorResult.ok) mirrored += 1;
+  }
+  logInfo("bi_doc_mirror_application", { bfApplicationId, eligible, mirrored });
+  return { eligible, mirrored };
+}
+
 
 // BF_SERVER_MOVE_WITHDRAW_v395 - a document moved OUT of a category PGI uses
 // (an A/R report re-filed as "Other") leaves a wrong copy in BI. Ask BI to retire
