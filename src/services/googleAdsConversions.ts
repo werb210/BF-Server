@@ -23,25 +23,32 @@ export function conversionsConfigured(): boolean {
   );
 }
 
-export type PendingConversion = { applicationId: string; gclid: string; value: number; fundedAt: string };
+export type PendingConversion = {
+  applicationId: string;
+  gclid: string;
+  value: number;
+  fundedAt: string;
+  clickField?: "gclid" | "gbraid" | "wbraid";
+};
 
 export async function findPendingConversions(limit = 200): Promise<PendingConversion[]> {
-  const { rows } = await pool.query<{ id: string; gclid: string; value: string | null; funded_at: string }>(
+  const { rows } = await pool.query<{ id: string; gclid: string; click_field: PendingConversion["clickField"]; value: string | null; funded_at: string }>(
     `SELECT id,
-            metadata->'attribution'->>'gclid' AS gclid,
+            COALESCE(NULLIF(metadata->'attribution'->>'gclid',''), NULLIF(metadata->'attribution'->>'gbraid',''), NULLIF(metadata->'attribution'->>'wbraid','')) AS gclid,
+            CASE WHEN COALESCE(metadata->'attribution'->>'gclid','') <> '' THEN 'gclid' WHEN COALESCE(metadata->'attribution'->>'gbraid','') <> '' THEN 'gbraid' ELSE 'wbraid' END AS click_field,
             COALESCE(funded_amount, requested_amount) AS value, -- BF_SERVER_FUNDED_AMOUNT_v1
             COALESCE(funded_currency, 'CAD') AS currency, -- BF_SERVER_FUNDED_CURRENCY_v6
             COALESCE(updated_at, now())::text AS funded_at
        FROM applications
       WHERE silo = 'BF'
         AND pipeline_state = ANY($1)
-        AND COALESCE(metadata->'attribution'->>'gclid', '') <> ''
+        AND COALESCE(NULLIF(metadata->'attribution'->>'gclid',''), NULLIF(metadata->'attribution'->>'gbraid',''), NULLIF(metadata->'attribution'->>'wbraid','')) IS NOT NULL
         AND (metadata->'ad_conversion_uploaded_at') IS NULL
       ORDER BY updated_at DESC
       LIMIT $2`,
     [FUNDED_STATES, limit],
   );
-  return rows.map((r) => ({ applicationId: r.id, gclid: String(r.gclid), value: Number(r.value ?? 0), fundedAt: r.funded_at }));
+  return rows.map((r) => ({ applicationId: r.id, gclid: String(r.gclid), value: Number(r.value ?? 0), fundedAt: r.funded_at, clickField: r.click_field ?? "gclid" }));
 }
 
 let tokenCache: { token: string; expiresAt: number } | null = null;
@@ -88,7 +95,7 @@ async function uploadOne(p: PendingConversion): Promise<boolean> {
   if (lc) headers["login-customer-id"] = lc;
   const payload = {
     conversions: [{
-      gclid: p.gclid,
+      [p.clickField ?? "gclid"]: p.gclid,
       conversionAction: `customers/${customerId}/conversionActions/${String(process.env.GOOGLE_ADS_CONVERSION_ACTION_ID).replace(/[^0-9]/g, "")}`,
       conversionDateTime: fmtDateTime(p.fundedAt),
       ...(p.value > 0 ? { conversionValue: p.value, currencyCode: process.env.GOOGLE_ADS_CURRENCY || "CAD" } : {}),
@@ -123,21 +130,22 @@ export function submitConversionsConfigured(): boolean {
 }
 
 export async function findPendingSubmitConversions(limit = 200): Promise<PendingConversion[]> {
-  const { rows } = await pool.query<{ id: string; gclid: string; value: string | null; submitted_at: string }>(
+  const { rows } = await pool.query<{ id: string; gclid: string; click_field: PendingConversion["clickField"]; value: string | null; submitted_at: string }>(
     `SELECT id,
-            metadata->'attribution'->>'gclid' AS gclid,
+            COALESCE(NULLIF(metadata->'attribution'->>'gclid',''), NULLIF(metadata->'attribution'->>'gbraid',''), NULLIF(metadata->'attribution'->>'wbraid','')) AS gclid,
+            CASE WHEN COALESCE(metadata->'attribution'->>'gclid','') <> '' THEN 'gclid' WHEN COALESCE(metadata->'attribution'->>'gbraid','') <> '' THEN 'gbraid' ELSE 'wbraid' END AS click_field,
             requested_amount AS value,
             COALESCE(submitted_at, created_at, now())::text AS submitted_at
        FROM applications
       WHERE silo = 'BF'
         AND submitted_at IS NOT NULL
-        AND COALESCE(metadata->'attribution'->>'gclid', '') <> ''
+        AND COALESCE(NULLIF(metadata->'attribution'->>'gclid',''), NULLIF(metadata->'attribution'->>'gbraid',''), NULLIF(metadata->'attribution'->>'wbraid','')) IS NOT NULL
         AND (metadata->'ad_submit_conversion_uploaded_at') IS NULL
       ORDER BY submitted_at DESC
       LIMIT $1`,
     [limit],
   );
-  return rows.map((r) => ({ applicationId: r.id, gclid: String(r.gclid), value: Number(r.value ?? 0), fundedAt: r.submitted_at }));
+  return rows.map((r) => ({ applicationId: r.id, gclid: String(r.gclid), value: Number(r.value ?? 0), fundedAt: r.submitted_at, clickField: r.click_field ?? "gclid" }));
 }
 
 async function uploadOneSubmit(p: PendingConversion): Promise<boolean> {
@@ -153,7 +161,7 @@ async function uploadOneSubmit(p: PendingConversion): Promise<boolean> {
   const action = String(process.env.GOOGLE_ADS_SUBMIT_CONVERSION_ACTION_ID).replace(/[^0-9]/g, "");
   const payload = {
     conversions: [{
-      gclid: p.gclid,
+      [p.clickField ?? "gclid"]: p.gclid,
       conversionAction: `customers/${customerId}/conversionActions/${action}`,
       conversionDateTime: fmtDateTime(p.fundedAt),
       ...(p.value > 0 ? { conversionValue: p.value, currencyCode: process.env.GOOGLE_ADS_CURRENCY || "CAD" } : {}),

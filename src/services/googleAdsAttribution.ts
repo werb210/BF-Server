@@ -14,7 +14,7 @@ type ClickRow = {
   adGroup?: { id?: string | number; name?: string };
   adGroupAd?: { resourceName?: string; ad?: { id?: string | number; resourceName?: string } };
   adGroupCriterion?: { keyword?: { text?: string; matchType?: string } };
-  clickView?: { gclid?: string; areaOfInterest?: unknown; locationOfPresence?: unknown };
+  clickView?: { gclid?: string; adGroupAd?: string; keywordInfo?: { text?: string; matchType?: string }; areaOfInterest?: unknown; locationOfPresence?: unknown };
   segments?: { date?: string };
 };
 
@@ -35,7 +35,7 @@ function candidateDates(occurredAt?: string | Date | null): string[] {
 function parseAdId(row: ClickRow): string | null {
   const direct = row.adGroupAd?.ad?.id;
   if (direct != null && String(direct)) return String(direct);
-  const resource = row.adGroupAd?.resourceName ?? row.adGroupAd?.ad?.resourceName ?? "";
+  const resource = row.clickView?.adGroupAd ?? row.adGroupAd?.resourceName ?? row.adGroupAd?.ad?.resourceName ?? "";
   const match = String(resource).match(/~(\d+)$|\/ads\/(\d+)$/);
   return match?.[1] ?? match?.[2] ?? null;
 }
@@ -50,10 +50,9 @@ async function queryClick(gclid: string, date: string): Promise<ClickRow | null>
       campaign.name,
       ad_group.id,
       ad_group.name,
-      ad_group_ad.resource_name,
-      ad_group_ad.ad.id,
-      ad_group_criterion.keyword.text,
-      ad_group_criterion.keyword.match_type
+      click_view.ad_group_ad,
+      click_view.keyword_info.text,
+      click_view.keyword_info.match_type
     FROM click_view
     WHERE click_view.gclid = '${escaped}'
       AND segments.date = '${date}'
@@ -69,7 +68,10 @@ export async function resolveAndStoreAdAttribution(input: AttributionInput): Pro
 
     let row: ClickRow | null = null;
     for (const date of candidateDates(input.occurredAt)) {
-      row = await queryClick(gclid, date).catch(() => null);
+      row = await queryClick(gclid, date).catch((err) => {
+        console.warn("[google_ads_attribution] click_view query failed", err instanceof Error ? err.message : String(err));
+        return null;
+      });
       if (row) break;
     }
     if (!row) return;
@@ -99,12 +101,51 @@ export async function resolveAndStoreAdAttribution(input: AttributionInput): Pro
         row.adGroup?.id == null ? null : String(row.adGroup.id),
         row.adGroup?.name ?? null,
         parseAdId(row),
-        row.adGroupCriterion?.keyword?.text ?? null,
-        row.adGroupCriterion?.keyword?.matchType ?? null,
+        row.clickView?.keywordInfo?.text ?? row.adGroupCriterion?.keyword?.text ?? null,
+        row.clickView?.keywordInfo?.matchType ?? row.adGroupCriterion?.keyword?.matchType ?? null,
         JSON.stringify({ applicationId: input.applicationId ?? null, ...row }),
       ],
     );
   } catch (err) {
     console.warn("[google_ads_attribution] resolve failed", err instanceof Error ? err.message : String(err));
   }
+}
+
+// Retry unresolved Google ad clicks hourly, including clicks on draft applications.
+export async function resolvePendingAdAttributions(limit = 100): Promise<{ tried: number; resolved: number }> {
+  if (!googleAdsConfigured()) return { tried: 0, resolved: 0 };
+  const { rows } = await pool.query<{ contact_id: string; application_id: string; gclid: string; at: string }>(
+    `SELECT DISTINCT ON (a.contact_id::text)
+            a.contact_id::text AS contact_id, a.id::text AS application_id,
+            a.metadata->'attribution'->>'gclid' AS gclid,
+            COALESCE(a.metadata->'attribution'->>'capturedAt', a.created_at::text) AS at
+       FROM applications a
+      WHERE a.silo = 'BF'
+        AND a.contact_id IS NOT NULL
+        AND COALESCE(a.metadata->'attribution'->>'gclid', '') <> ''
+        AND a.created_at > now() - interval '90 days'
+        AND NOT EXISTS (SELECT 1 FROM contact_ad_attribution x WHERE x.contact_id::text = a.contact_id::text)
+      ORDER BY a.contact_id::text, a.created_at DESC
+      LIMIT $1`,
+    [limit],
+  );
+  for (const row of rows) {
+    await resolveAndStoreAdAttribution({
+      contactId: row.contact_id,
+      gclid: row.gclid,
+      applicationId: row.application_id,
+      occurredAt: row.at,
+    });
+  }
+  const contactIds = rows.map((row) => row.contact_id);
+  const resolved = contactIds.length
+    ? Number((await pool.query<{ n: number }>(
+      `SELECT count(DISTINCT contact_id)::int AS n
+         FROM contact_ad_attribution
+        WHERE contact_id::text = ANY($1)`,
+      [contactIds],
+    )).rows[0]?.n ?? 0)
+    : 0;
+  if (rows.length) console.log("[google_ads_attribution] pending pass", JSON.stringify({ tried: rows.length, resolved }));
+  return { tried: rows.length, resolved };
 }

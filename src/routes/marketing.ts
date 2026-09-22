@@ -474,6 +474,12 @@ router.post("/negative-keywords", safeHandler(async (req: any, res: any) => {
   }
 }));
 
+// Report configuration and queue counts for each Google Ads conversion signal.
+router.get("/google-ads/conversions/status", safeHandler(async (_req: any, res: any) => {
+  const { conversionStatus } = await import("../services/googleAdsLeadSignals.js");
+  respondOk(res, await conversionStatus());
+}));
+
 // BF_SERVER_ADS_SUBMIT_ROUTES_v1 - submitted-application conversions use a
 // separate action from funded uploads so both can apply to one application.
 router.get("/google-ads/conversions/submit-pending", safeHandler(async (_req: any, res: any) => {

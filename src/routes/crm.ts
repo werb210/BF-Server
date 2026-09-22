@@ -117,53 +117,49 @@ router.delete("/segments/:id", requireCrmWrite, safeHandler(async (req: any, res
 
 
 
-// BF_SERVER_AD_ATTRIBUTION_v1 - resolved Google Ads click details for the CRM Marketing Source card.
 router.get("/contacts/:id/ad-attribution", safeHandler(async (req: any, res: any) => {
   const contactId = String(req.params.id ?? "");
-  const { rows } = await pool.query(
-    `SELECT contact_id::text AS "contactId",
-            gclid,
-            click_date AS "clickDate",
-            campaign_id AS "campaignId",
-            campaign_name AS "campaignName",
-            ad_group_id AS "adGroupId",
-            ad_group_name AS "adGroupName",
-            ad_id AS "adId",
-            keyword,
-            keyword_match_type AS "keywordMatchType",
-            raw_click AS "rawClick",
-            updated_at AS "updatedAt"
+  const resolved = await pool.query(
+    `SELECT campaign_name, ad_group_name, keyword AS keyword_text, keyword_match_type,
+            click_date::text AS click_date, gclid
        FROM contact_ad_attribution
       WHERE contact_id::text = $1
       ORDER BY updated_at DESC
       LIMIT 1`,
     [contactId],
-  ).catch(() => ({ rows: [] as any[] }));
-  if (rows[0]) return res.json({ ok: true, data: { source: "google_ads", ...rows[0] } });
+  ).catch((error) => {
+    console.warn("[crm] ad attribution read failed", String(error));
+    return { rows: [] as any[] };
+  });
 
-  const fallback = await pool.query(
-    `SELECT payload
-       FROM crm_timeline_events
-      WHERE contact_id::text = $1
-        AND event_type = 'attribution'
+  const raw = await pool.query(
+    `SELECT payload FROM (
+        SELECT event.payload, event.created_at
+          FROM crm_timeline_events event
+         WHERE event.contact_id::text = $1 AND event.event_type = 'attribution'
+        UNION ALL
+        SELECT application.metadata->'attribution' AS payload, application.created_at
+          FROM applications application
+         WHERE application.contact_id::text = $1
+           AND jsonb_typeof(application.metadata->'attribution') = 'object'
+      ) attribution
       ORDER BY created_at DESC
       LIMIT 1`,
     [contactId],
-  ).catch(() => ({ rows: [] as any[] }));
-  const payload = fallback.rows[0]?.payload ?? null;
-  return res.json({
-    ok: true,
-    data: payload ? {
-      source: payload.gclid ? "google_unresolved" : "utm",
-      gclid: payload.gclid ?? null,
-      utmSource: payload.utm_source ?? payload.utmSource ?? null,
-      utmMedium: payload.utm_medium ?? payload.utmMedium ?? null,
-      utmCampaign: payload.utm_campaign ?? payload.utmCampaign ?? null,
-      utmTerm: payload.utm_term ?? payload.utmTerm ?? null,
-      utmContent: payload.utm_content ?? payload.utmContent ?? null,
-      rawAttribution: payload,
-    } : null,
+  ).catch((error) => {
+    console.warn("[crm] attribution read failed", String(error));
+    return { rows: [] as any[] };
   });
+  const utm = raw.rows[0]?.payload ?? null;
+
+  if (resolved.rows[0]) {
+    return res.json({ ok: true, data: { ad: { source: "google_ads", resolved: true, ...resolved.rows[0] }, utm } });
+  }
+  const clickId = utm ? (utm.gclid ?? utm.gbraid ?? utm.wbraid ?? null) : null;
+  if (clickId) {
+    return res.json({ ok: true, data: { ad: { source: "google_ads", resolved: false, click_date: utm.capturedAt ?? null }, utm } });
+  }
+  return res.json({ ok: true, data: { ad: null, utm } });
 }));
 
 // BF_SERVER_CLARITY_PLAYBACK_v170 - direct link to this contact's Clarity session
