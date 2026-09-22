@@ -23,14 +23,18 @@ async function upsert(
   name: string,
   status: string | null,
   m: any,
+  // BF_SERVER_ADS_WAREHOUSE_UPSERT_v417 - v414 started passing these at the
+  // search-term call site but never widened the signature, so they were dropped.
   campaignId = "",
-  campaignName = "(unknown)",
+  campaignName: string | null = null,
 ): Promise<void> {
   if (!statDate || !name) return;
   await db.query(
     `INSERT INTO google_ads_daily (stat_date, level, name, status, cost, impressions, clicks, conversions, conv_value, campaign_id, campaign_name, synced_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, now())
-     ON CONFLICT (stat_date, level, name, (COALESCE(campaign_id, ''))) DO UPDATE SET
+     -- v417: the conflict target must match uq_google_ads_daily_v414 term for
+     -- term, COALESCE included, or Postgres rejects every row.
+     ON CONFLICT (stat_date, level, name, COALESCE(campaign_id, '')) DO UPDATE SET
        status = EXCLUDED.status, cost = EXCLUDED.cost, impressions = EXCLUDED.impressions,
        clicks = EXCLUDED.clicks, conversions = EXCLUDED.conversions,
        conv_value = EXCLUDED.conv_value, campaign_name = EXCLUDED.campaign_name, synced_at = now()`,
