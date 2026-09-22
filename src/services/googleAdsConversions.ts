@@ -7,6 +7,7 @@
 // Env-gated and failure-safe: an application is only marked uploaded on success.
 import { pool } from "../db.js";
 import { logError } from "../observability/logger.js";
+import { userIdentifiersFor, type UserIdentifier } from "./googleAdsEnhanced.js"; // BF_SERVER_ADS_ENHANCED_v403
 
 const API_VERSION = "v24";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -29,6 +30,7 @@ export type PendingConversion = {
   value: number;
   fundedAt: string;
   clickField?: "gclid" | "gbraid" | "wbraid";
+  userIdentifiers?: UserIdentifier[];
 };
 
 export async function findPendingConversions(limit = 200): Promise<PendingConversion[]> {
@@ -36,6 +38,9 @@ export async function findPendingConversions(limit = 200): Promise<PendingConver
     `SELECT id,
             COALESCE(NULLIF(metadata->'attribution'->>'gclid',''), NULLIF(metadata->'attribution'->>'gbraid',''), NULLIF(metadata->'attribution'->>'wbraid','')) AS gclid,
             CASE WHEN COALESCE(metadata->'attribution'->>'gclid','') <> '' THEN 'gclid' WHEN COALESCE(metadata->'attribution'->>'gbraid','') <> '' THEN 'gbraid' ELSE 'wbraid' END AS click_field,
+            (SELECT c.email FROM contacts c WHERE c.id::text = applications.contact_id::text) AS contact_email,
+            (SELECT c.phone FROM contacts c WHERE c.id::text = applications.contact_id::text) AS contact_phone,
+            COALESCE(metadata->'formData'->>'ad_measurement_consent', metadata->>'ad_measurement_consent') AS ad_consent,
             COALESCE(funded_amount, requested_amount) AS value, -- BF_SERVER_FUNDED_AMOUNT_v1
             COALESCE(funded_currency, 'CAD') AS currency, -- BF_SERVER_FUNDED_CURRENCY_v6
             COALESCE(updated_at, now())::text AS funded_at
@@ -48,7 +53,7 @@ export async function findPendingConversions(limit = 200): Promise<PendingConver
       LIMIT $2`,
     [FUNDED_STATES, limit],
   );
-  return rows.map((r) => ({ applicationId: r.id, gclid: String(r.gclid), value: Number(r.value ?? 0), fundedAt: r.funded_at, clickField: r.click_field ?? "gclid" }));
+  return rows.map((r) => ({ applicationId: r.id, gclid: String(r.gclid), value: Number(r.value ?? 0), fundedAt: r.funded_at, clickField: r.click_field ?? "gclid", userIdentifiers: userIdentifiersFor((r as any).contact_email, (r as any).contact_phone, (r as any).ad_consent) }));
 }
 
 let tokenCache: { token: string; expiresAt: number } | null = null;
@@ -96,6 +101,7 @@ async function uploadOne(p: PendingConversion): Promise<boolean> {
   const payload = {
     conversions: [{
       [p.clickField ?? "gclid"]: p.gclid,
+      ...(p.userIdentifiers?.length ? { userIdentifiers: p.userIdentifiers } : {}), // BF_SERVER_ADS_ENHANCED_v403
       conversionAction: `customers/${customerId}/conversionActions/${String(process.env.GOOGLE_ADS_CONVERSION_ACTION_ID).replace(/[^0-9]/g, "")}`,
       conversionDateTime: fmtDateTime(p.fundedAt),
       ...(p.value > 0 ? { conversionValue: p.value, currencyCode: process.env.GOOGLE_ADS_CURRENCY || "CAD" } : {}),
@@ -134,6 +140,9 @@ export async function findPendingSubmitConversions(limit = 200): Promise<Pending
     `SELECT id,
             COALESCE(NULLIF(metadata->'attribution'->>'gclid',''), NULLIF(metadata->'attribution'->>'gbraid',''), NULLIF(metadata->'attribution'->>'wbraid','')) AS gclid,
             CASE WHEN COALESCE(metadata->'attribution'->>'gclid','') <> '' THEN 'gclid' WHEN COALESCE(metadata->'attribution'->>'gbraid','') <> '' THEN 'gbraid' ELSE 'wbraid' END AS click_field,
+            (SELECT c.email FROM contacts c WHERE c.id::text = applications.contact_id::text) AS contact_email,
+            (SELECT c.phone FROM contacts c WHERE c.id::text = applications.contact_id::text) AS contact_phone,
+            COALESCE(metadata->'formData'->>'ad_measurement_consent', metadata->>'ad_measurement_consent') AS ad_consent,
             requested_amount AS value,
             COALESCE(submitted_at, created_at, now())::text AS submitted_at
        FROM applications
@@ -145,7 +154,7 @@ export async function findPendingSubmitConversions(limit = 200): Promise<Pending
       LIMIT $1`,
     [limit],
   );
-  return rows.map((r) => ({ applicationId: r.id, gclid: String(r.gclid), value: Number(r.value ?? 0), fundedAt: r.submitted_at, clickField: r.click_field ?? "gclid" }));
+  return rows.map((r) => ({ applicationId: r.id, gclid: String(r.gclid), value: Number(r.value ?? 0), fundedAt: r.submitted_at, clickField: r.click_field ?? "gclid", userIdentifiers: userIdentifiersFor((r as any).contact_email, (r as any).contact_phone, (r as any).ad_consent) }));
 }
 
 async function uploadOneSubmit(p: PendingConversion): Promise<boolean> {
@@ -162,6 +171,7 @@ async function uploadOneSubmit(p: PendingConversion): Promise<boolean> {
   const payload = {
     conversions: [{
       [p.clickField ?? "gclid"]: p.gclid,
+      ...(p.userIdentifiers?.length ? { userIdentifiers: p.userIdentifiers } : {}), // BF_SERVER_ADS_ENHANCED_v403
       conversionAction: `customers/${customerId}/conversionActions/${action}`,
       conversionDateTime: fmtDateTime(p.fundedAt),
       ...(p.value > 0 ? { conversionValue: p.value, currencyCode: process.env.GOOGLE_ADS_CURRENCY || "CAD" } : {}),

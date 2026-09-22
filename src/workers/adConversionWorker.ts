@@ -6,6 +6,7 @@
 // are absent, so this is inert until GOOGLE_ADS_* is set.
 import type { Pool } from "pg";
 import { resolvePendingAdAttributions } from "../services/googleAdsAttribution.js";
+import { syncCustomerMatch } from "../services/googleAdsEnhanced.js"; // BF_SERVER_ADS_ENHANCED_v403
 import { uploadFundedConversions, uploadSubmitConversions } from "../services/googleAdsConversions.js";
 import { retractClosedSubmitConversions, uploadQualifiedConversions } from "../services/googleAdsLeadSignals.js";
 
@@ -30,6 +31,7 @@ export function startAdConversionWorker(_pool: Pool): { stop: () => void } {
         console.log("[ads_conversion] retracted", JSON.stringify(retracted));
       }
       await resolvePendingAdAttributions();
+      await syncCustomerMatch(); // weekly; no-op unless GOOGLE_ADS_CUSTOMER_MATCH_ENABLED=true
       const funded = await uploadFundedConversions();
       if (funded.configured && (funded.uploaded || funded.failed)) {
         console.log("[ads_conversion] funded", JSON.stringify(funded));

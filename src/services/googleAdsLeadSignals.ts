@@ -2,6 +2,7 @@
 import { pool } from "../db.js";
 import { logError } from "../observability/logger.js";
 import { accessToken, conversionsConfigured, submitConversionsConfigured } from "./googleAdsConversions.js";
+import { userIdentifiersFor, type UserIdentifier } from "./googleAdsEnhanced.js"; // BF_SERVER_ADS_ENHANCED_v403
 
 const API_VERSION = "v24";
 export const QUALIFIED_STATES = ["off to lender", "offer", "accepted", "funded"];
@@ -32,12 +33,13 @@ const CLICK_FIELD_SQL = `CASE WHEN COALESCE(metadata->'attribution'->>'gclid',''
                               WHEN COALESCE(metadata->'attribution'->>'gbraid','') <> '' THEN 'gbraid' ELSE 'wbraid' END`;
 
 export type ClickField = "gclid" | "gbraid" | "wbraid";
-export type QualifiedLead = { applicationId: string; clickId: string; clickField: ClickField; value: number; at: string };
+export type QualifiedLead = { applicationId: string; clickId: string; clickField: ClickField; value: number; at: string; userIdentifiers?: UserIdentifier[] };
 
 export function qualifiedPayload(lead: QualifiedLead, cid: string, actionId: string, currency: string) {
   return {
     conversions: [{
       [lead.clickField]: lead.clickId,
+      ...(lead.userIdentifiers?.length ? { userIdentifiers: lead.userIdentifiers } : {}), // BF_SERVER_ADS_ENHANCED_v403
       conversionAction: `customers/${cid}/conversionActions/${actionId}`,
       conversionDateTime: fmtDateTime(lead.at),
       ...(lead.value > 0 ? { conversionValue: lead.value, currencyCode: currency } : {}),
@@ -86,8 +88,11 @@ async function post(path: string, body: unknown): Promise<{ ok: boolean; detail:
 }
 
 export async function findPendingQualified(limit = 200): Promise<QualifiedLead[]> {
-  const { rows } = await pool.query<{ id: string; click_id: string; click_field: ClickField; value: string | null; at: string }>(
+  const { rows } = await pool.query<{ id: string; click_id: string; click_field: ClickField; value: string | null; at: string; contact_email: string | null; contact_phone: string | null; ad_consent: string | null }>(
     `SELECT id::text AS id, ${CLICK_ID_SQL} AS click_id, ${CLICK_FIELD_SQL} AS click_field,
+            (SELECT c.email FROM contacts c WHERE c.id::text = applications.contact_id::text) AS contact_email,
+            (SELECT c.phone FROM contacts c WHERE c.id::text = applications.contact_id::text) AS contact_phone,
+            COALESCE(metadata->'formData'->>'ad_measurement_consent', metadata->>'ad_measurement_consent') AS ad_consent,
             requested_amount AS value, COALESCE(updated_at, now())::text AS at
        FROM applications
       WHERE silo = 'BF'
@@ -104,6 +109,7 @@ export async function findPendingQualified(limit = 200): Promise<QualifiedLead[]
     clickField: row.click_field,
     value: Number(row.value ?? 0),
     at: row.at,
+    userIdentifiers: userIdentifiersFor(row.contact_email, row.contact_phone, row.ad_consent),
   }));
 }
 
