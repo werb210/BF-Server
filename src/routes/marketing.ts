@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { logError } from "../observability/logger.js";
 import { requireAuth, requireCapability } from "../middleware/auth.js";
 import { CAPABILITIES } from "../auth/capabilities.js";
 import { safeHandler } from "../middleware/safeHandler.js";
@@ -511,7 +512,12 @@ router.post("/negative-keywords", safeHandler(async (req: any, res: any) => {
         `INSERT INTO ads_negatives_log (campaign_id, term, match_type, resource_name, added_by)
          VALUES ($1,$2,$3,$4,$5)`,
         [campaignId, term, matchType, result.resourceNames?.[term] ?? null, req.user?.id ?? null],
-      ).catch(() => undefined);
+      ).catch((err: any) => { logError("ads_negative_audit_insert_failed", {
+        // BF_SERVER_NEGATIVES_AUDIT_LOGGED_v432 - a dropped audit row means the
+        // negative is live in Google with no record and no undo. Never silent.
+          campaignId, term, matchType, message: err?.message ?? String(err),
+        });
+      });
     }
     res.json({ ok: true, matchType, ...result });
   } catch (error: any) {
