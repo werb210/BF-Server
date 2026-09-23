@@ -8,7 +8,8 @@ const src = readFileSync(path.join(process.cwd(), "src/routes/mayaStaff.ts"), "u
 describe("v413 catalog.summary carries real ranges, not just counts", () => {
   it("aggregates amount, term and rate per category", () => {
     expect(src).toContain("BF_SERVER_MAYA_CATALOG_AMOUNTS_v413");
-    for (const f of ["min_amount", "max_amount", "min_term_months", "max_term_months", "min_rate", "max_rate"]) {
+    for (const f of // v432 - v429 corrected these to the columns lender_products actually has.
+    ["min_amount", "max_amount", "term_min", "term_max", "rate_min_num", "rate_max_num"]) {
       expect(src).toContain(f);
     }
   });
