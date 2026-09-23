@@ -1246,6 +1246,9 @@ router.post(
     if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
     const contactId = biStr(req.body?.contact_id);
     const noteBody = biStr(req.body?.body);
+    // BF_SERVER_LENDER_SILO_v449 - coalesce(silo,'BF') below because a lender
+    // row inserted before anyone assigns a silo must still be counted. A NULL
+    // silently dropped every lender from the staff count for months.
     const silo = biStr(req.body?.silo) ?? "BF";
     if (!contactId || !noteBody) return res.status(400).json({ ok: false, error: "contact_id_and_body_required" });
     try {
@@ -1443,8 +1446,8 @@ router.post(
     if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
     const silo = biStr(req.body?.silo) ?? "BF";
     try {
-      const l = await pool.query(`SELECT count(*)::int AS n FROM lenders WHERE silo = $1 AND active = true`, [silo]);
-      const p = await pool.query(`SELECT count(*)::int AS n FROM lender_products WHERE silo = $1 AND active = true`, [silo]);
+      const l = await pool.query(`SELECT count(*)::int AS n FROM lenders WHERE coalesce(silo, 'BF') = $1 AND active = true`, [silo]);
+      const p = await pool.query(`SELECT count(*)::int AS n FROM lender_products WHERE coalesce(silo, 'BF') = $1 AND active = true`, [silo]);
       // BF_SERVER_CATALOG_COLUMNS_v429 - v413 invented column names. The real ones
       // are term_min/term_max (with term_unit) and rate_min_num/rate_max_num;
       // min_amount/max_amount were right. tsc cannot catch a wrong SQL identifier,
@@ -1463,7 +1466,7 @@ router.post(
                 min(NULLIF(rate_min_num, 0))::numeric AS rate_min_num,
                 max(NULLIF(rate_max_num, 0))::numeric AS rate_max_num
            FROM lender_products
-          WHERE silo = $1 AND active = true
+          WHERE coalesce(silo, 'BF') = $1 AND active = true
           GROUP BY category
           ORDER BY n DESC`, [silo]);
       const lenders = l.rows[0]?.n ?? 0;
