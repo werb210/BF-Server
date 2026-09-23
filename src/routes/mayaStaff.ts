@@ -1414,6 +1414,10 @@ router.post(
     try {
       const l = await pool.query(`SELECT count(*)::int AS n FROM lenders WHERE silo = $1 AND active = true`, [silo]);
       const p = await pool.query(`SELECT count(*)::int AS n FROM lender_products WHERE silo = $1 AND active = true`, [silo]);
+      // BF_SERVER_CATALOG_COLUMNS_v429 - v413 invented column names. The real ones
+      // are term_min/term_max (with term_unit) and rate_min_num/rate_max_num;
+      // min_amount/max_amount were right. tsc cannot catch a wrong SQL identifier,
+      // so this only surfaced as a runtime catalog_summary_failed in production.
       // BF_SERVER_MAYA_CATALOG_AMOUNTS_v413 - counts alone left the model to invent
       // every number it quoted. Return the real envelope per category: amount range,
       // term range and rate range, aggregated so no single lender is identifiable.
@@ -1422,10 +1426,11 @@ router.post(
                 count(*)::int                     AS n,
                 min(NULLIF(min_amount, 0))::bigint AS min_amount,
                 max(NULLIF(max_amount, 0))::bigint AS max_amount,
-                min(NULLIF(min_term_months, 0))::int AS min_term_months,
-                max(NULLIF(max_term_months, 0))::int AS max_term_months,
-                min(NULLIF(min_rate, 0))::numeric  AS min_rate,
-                max(NULLIF(max_rate, 0))::numeric  AS max_rate
+                min(NULLIF(term_min, 0))::int       AS term_min,
+                max(NULLIF(term_max, 0))::int       AS term_max,
+                max(term_unit)                      AS term_unit,
+                min(NULLIF(rate_min_num, 0))::numeric AS rate_min_num,
+                max(NULLIF(rate_max_num, 0))::numeric AS rate_max_num
            FROM lender_products
           WHERE silo = $1 AND active = true
           GROUP BY category
@@ -1452,10 +1457,11 @@ router.post(
         count: r.n,
         min_amount: r.min_amount === null ? null : Number(r.min_amount),
         max_amount: r.max_amount === null ? null : Number(r.max_amount),
-        min_term_months: r.min_term_months ?? null,
-        max_term_months: r.max_term_months ?? null,
-        min_rate: r.min_rate === null ? null : Number(r.min_rate),
-        max_rate: r.max_rate === null ? null : Number(r.max_rate),
+        term_min: r.term_min ?? null,
+        term_max: r.term_max ?? null,
+        term_unit: r.term_unit ?? null,
+        rate_min: r.rate_min_num === null ? null : Number(r.rate_min_num),
+        rate_max: r.rate_max_num === null ? null : Number(r.rate_max_num),
       }));
       const summary =
         `Boreal currently works with ${lenders} lender(s) offering ${products} financing product(s)` +
