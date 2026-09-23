@@ -9,19 +9,21 @@ describe("v441 GET /api/applications/:id returns the application", () => {
     expect(src).not.toContain('res.json({ status: "ok", data: { id: req.params.id } })');
   });
 
-  it("reads the row from the applications table", () => {
-    expect(src).toContain("FROM applications");
-    expect(src).toContain("pipeline_state");
-    expect(src).toContain("requested_amount");
+  it("uses the repo helper this file already imports", () => {
+    expect(src).toContain("await findApplicationById(id)");
+    expect(src).toContain('import { findApplicationById }');
+  });
+
+  it("adds no second database client", () => {
+    expect(src).not.toContain('import { pool }');
   });
 
   it("404s a missing application instead of returning an empty 200", () => {
-    expect(src).toContain('status(404)');
+    expect(src).toContain("status(404)");
     expect(src).toContain('"not_found"');
   });
 
   it("answers both shapes, so existing callers keep working", () => {
-    // BF-portal reads response fields directly; others read .data.
-    expect(src).toContain("data: row, ...row");
+    expect(src).toContain("data: application, ...application");
   });
 });
