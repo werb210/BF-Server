@@ -1129,9 +1129,11 @@ router.post(
                 -- BF_SERVER_FIND_MINE_PAYLOAD_v437 - phone and location were never
                 -- selected, so Maya truthfully said she could not retrieve them.
                 c.phone AS contact_phone,
-                COALESCE(c.city, a.metadata->>'city', a.metadata->'kyc'->>'city',
+                -- contacts stores these as address_city / address_state.
+                COALESCE(c.address_city, a.metadata->>'city',
+                         a.metadata->'kyc'->>'city',
                          a.metadata->'formData'->'kyc'->>'city') AS contact_city,
-                COALESCE(c.province, c.state, a.metadata->>'province',
+                COALESCE(c.address_state, a.metadata->>'province',
                          a.metadata->'kyc'->>'province',
                          a.metadata->'formData'->'kyc'->>'businessLocation') AS contact_region,
                 COALESCE(a.metadata->>'industry', a.metadata->'kyc'->>'industry',
@@ -1163,13 +1165,14 @@ router.post(
       // v437 - the duplicate-contact problem: an application attaches to ONE of
       // several contact rows sharing this phone, and only some carry the number.
       // When the joined query finds nothing, fall back to the contact itself so
-      // Maya says "I found you, no application yet" instead of denying the client.
+      // Maya says "I found you, no application yet" instead of denying a client
+      // who has a live application on a sibling contact row.
       let first = r.rows[0] as any | undefined;
       if (!first) {
         const cr = await pool.query(
           `SELECT name AS contact_name, first_name, company_name, dob, email,
-                  phone AS contact_phone, city AS contact_city,
-                  COALESCE(province, state) AS contact_region
+                  phone AS contact_phone, address_city AS contact_city,
+                  address_state AS contact_region
              FROM contacts
             WHERE right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10) = $1
             ORDER BY updated_at DESC NULLS LAST
