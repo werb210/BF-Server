@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { Router } from "express";
-import { pool, runQuery } from "../db.js";
+import { runQuery } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { ApplicationStage } from "../modules/applications/pipelineState.js";
 import { findApplicationById } from "../modules/applications/applications.repo.js";
@@ -98,25 +98,20 @@ router.get("/status", requireAuth, async (req, res) => {
   }
 });
 
+// BF_SERVER_APPLICATION_BY_ID_v441
+// This returned { status: "ok", data: { id } } and nothing else. Callers cast
+// the response to a real Application type, so tsc was satisfied and every field
+// read as undefined at runtime - a blank screen with no error anywhere, which
+// is harder to find than a 500. findApplicationById is the repo helper this
+// file already imports.
 router.get("/:id", requireAuth, async (req, res) => {
-  // BF_SERVER_APPLICATION_BY_ID_v441
-  // This returned { status: "ok", data: { id } } and nothing else. Callers cast
-  // the response to a real Application type, so tsc was happy and every field
-  // read as undefined at runtime - a blank screen with no error anywhere.
   const id = String(req.params.id ?? "").trim();
   if (!id) return res.status(400).json({ status: "error", error: "id_required" });
-  const r = await pool.query(
-    `SELECT id::text AS id, name, pipeline_state, status, requested_amount,
-            product_type, contact_id::text AS contact_id, silo,
-            created_at, updated_at
-       FROM applications
-      WHERE id::text = $1
-      LIMIT 1`,
-    [id],
-  );
-  const row = r.rows[0];
-  if (!row) return res.status(404).json({ status: "error", error: "not_found" });
-  return res.json({ status: "ok", data: row, ...row });
+  const application = await findApplicationById(id);
+  if (!application) return res.status(404).json({ status: "error", error: "not_found" });
+  // Both shapes: BF-portal reads fields off the top level, other callers read .data.
+  // @ts-expect-error The legacy top-level shape intentionally overwrites the envelope status.
+  return res.json({ status: "ok", data: application, ...application });
 });
 
 export default router;
