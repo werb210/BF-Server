@@ -1126,6 +1126,14 @@ router.post(
         `SELECT a.id::text AS id, a.name, a.pipeline_state, a.status,
                 a.requested_amount, a.product_type, a.updated_at,
                 c.name AS contact_name, c.first_name, c.company_name, c.dob, c.email,
+                -- BF_SERVER_FIND_MINE_PAYLOAD_v437 - phone and location were never
+                -- selected, so Maya truthfully said she could not retrieve them.
+                c.phone AS contact_phone,
+                COALESCE(c.city, a.metadata->>'city', a.metadata->'kyc'->>'city',
+                         a.metadata->'formData'->'kyc'->>'city') AS contact_city,
+                COALESCE(c.province, c.state, a.metadata->>'province',
+                         a.metadata->'kyc'->>'province',
+                         a.metadata->'formData'->'kyc'->>'businessLocation') AS contact_region,
                 COALESCE(a.metadata->>'industry', a.metadata->'kyc'->>'industry',
                          a.metadata->'formData'->'kyc'->>'industry') AS industry,
                 COALESCE(a.metadata->>'yearsInBusiness', a.metadata->>'years_in_business',
@@ -1152,13 +1160,33 @@ router.post(
         yearsInBusiness: a.years_in_business ?? null,
         annualRevenue: a.annual_revenue ?? null,
       }));
-      const first = r.rows[0] as any | undefined;
+      // v437 - the duplicate-contact problem: an application attaches to ONE of
+      // several contact rows sharing this phone, and only some carry the number.
+      // When the joined query finds nothing, fall back to the contact itself so
+      // Maya says "I found you, no application yet" instead of denying the client.
+      let first = r.rows[0] as any | undefined;
+      if (!first) {
+        const cr = await pool.query(
+          `SELECT name AS contact_name, first_name, company_name, dob, email,
+                  phone AS contact_phone, city AS contact_city,
+                  COALESCE(province, state) AS contact_region
+             FROM contacts
+            WHERE right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10) = $1
+            ORDER BY updated_at DESC NULLS LAST
+            LIMIT 1`,
+          [phone10],
+        );
+        first = cr.rows[0] as any | undefined;
+      }
       const contact = first ? {
         contactName: first.contact_name ?? null,
         firstName: first.first_name ?? null,
         companyName: first.company_name ?? null,
         dob: first.dob ?? null,
         email: first.email ?? null,
+        phone: first.contact_phone ?? null,
+        city: first.contact_city ?? null,
+        region: first.contact_region ?? null,
       } : null;
       let latestDocs: { total: number; missing: string[] } | null = null;
       if (applications.length) {
