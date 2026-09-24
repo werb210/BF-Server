@@ -59,6 +59,8 @@ describe("wiring", () => {
     const routes = fs.readFileSync("src/modules/applications/applications.routes.ts", "utf8");
     expect(routes).toContain("requestProductQuestions(");
     expect(routes.match(/product_questions: await productQuestionsSummary/g)?.length).toBe(2);
-    expect(routes).toContain("error: 'staff_cannot_answer'");
+    // BF_SERVER_BLOCK_v468_STAFF_ANSWERS - staff may answer blanks; only empty answers are refused.
+    expect(routes).not.toContain("error: 'staff_cannot_answer'");
+    expect(routes).toContain("error: 'empty_answer'");
   });
 });

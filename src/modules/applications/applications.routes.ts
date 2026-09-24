@@ -1250,10 +1250,13 @@ router.patch('/:id/product-questions', requireCapability([CAPABILITIES.CRM_WRITE
   const q = (sql: string, params: unknown[]) => pool.query(sql, params as any[]);
   const { loadGaps, saveAnswers } = await import('../../services/productQuestions/service.js');
   const gaps = await loadGaps(q, appId);
-  const current = new Map((gaps?.questions ?? []).map((x: any) => [x.id, x.value]));
-  const blanks = Object.entries(answers).filter(([id, v]) => !current.get(id) || String(v ?? '').trim() === '').map(([id]) => id);
-  if (blanks.length) {
-    return res.status(409).json({ error: 'staff_cannot_answer', message: 'Staff can edit answers the client gave, but only the client can answer an unanswered question.', ids: blanks });
+  // BF_SERVER_BLOCK_v468_STAFF_ANSWERS - staff can answer a question the client left
+  // blank (e.g. a yes/no they gave over the phone), not only correct one. An empty
+  // answer is still refused. Staff edits after signing still require a re-sign.
+  void gaps;
+  const empty = Object.entries(answers).filter(([, v]) => String(v ?? '').trim() === '').map(([id]) => id);
+  if (empty.length) {
+    return res.status(400).json({ error: 'empty_answer', message: 'Choose an answer before saving.', ids: empty });
   }
   const result = await saveAnswers(q, appId, answers, { submit: false, by: 'staff', userId: req.user?.id ?? req.user?.userId ?? null });
   res.status(200).json(result);

@@ -1851,11 +1851,18 @@ router.post(
       // to a lender; it only means docs are done. Move to In Review so staff can
       // pick lender(s) and send. "Off to Lender" is set only on real dispatch.
       if (cur && ["Documents Required", "Additional Steps Required"].includes(cur)) {
-        await runQuery(
-          `UPDATE applications SET pipeline_state = 'In Review', updated_at = now() WHERE id::text = ($1)::text`,
+        // BF_SERVER_BLOCK_v468_STAGE_AFTER_SEND - a file whose package already went to a
+        // lender returns to Off to Lender, not In Review, once its documents are done.
+        const sent = await runQuery<{ n: number }>(
+          `SELECT COUNT(*)::int AS n FROM application_packages WHERE application_id::text = ($1)::text AND sent_at IS NOT NULL`,
           [appId]
+        ).catch((err: unknown) => { console.warn("[docs-accepted] sent-package check failed", { appId, message: err instanceof Error ? err.message : String(err) }); return { rows: [] as Array<{ n: number }> }; });
+        const next = Number(sent.rows[0]?.n ?? 0) > 0 ? "Off to Lender" : "In Review";
+        await runQuery(
+          `UPDATE applications SET pipeline_state = $2, updated_at = now() WHERE id::text = ($1)::text`,
+          [appId, next]
         ).catch(() => {});
-        await recordTransition(appId, cur, "In Review", req.user?.userId ?? null, "All documents accepted");
+        await recordTransition(appId, cur, next, req.user?.userId ?? null, "All documents accepted");
       }
     }
     try {
