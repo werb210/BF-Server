@@ -1,0 +1,17 @@
+// BF_SERVER_BLOCK_v458_LENDER_EMAIL
+import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import { lenderEmail, lenderEmailSubject, formatAmount } from "../services/lenders/lenderEmail.js";
+
+const details = { lenderName: "Todd's lending company", applicationId: "b0461ec5-0b00-49f6-8dc5-cae91118c237", businessName: "Northern Gateway Films INC", requestedAmount: 4201020, productCategory: "Media Funding", contents: ["Signed application", "Credit summary", "6 months business banking statements", "Budget"] };
+const link = { mode: "link" as const, sizeBytes: 23.2 * 1024 * 1024, url: "https://server.boreal.financial/api/public/lender-package/abc", expiresAt: new Date("2026-10-24T12:00:00Z") };
+describe("v458 lender email", () => {
+  it("the subject names the applicant and amount", () => { expect(lenderEmailSubject(details)).toBe("Boreal Financial application package: Northern Gateway Films INC ($4,201,020)"); expect(lenderEmailSubject({ ...details, businessName: "", requestedAmount: null })).toBe("Boreal Financial application package: application b0461ec5"); });
+  it("says who is sending and what the package contains", () => { const e = lenderEmail(details, link); for (const s of ["Hello Todd's lending company team", "Northern Gateway Films INC", "$4,201,020", "Media Funding", "6 months business banking statements"]) expect(e.bodyText).toContain(s); expect(e.bodyHtml).toContain("Hello Todd's lending company team"); expect(e.bodyHtml).toContain("<li>Budget</li>"); });
+  it("explains why the link is safe", () => { const e = lenderEmail(details, link); expect(e.bodyText).toContain("It goes to server.boreal.financial, Boreal Financial's own secure server"); expect(e.bodyText).toContain("not a third-party file-sharing site"); expect(e.bodyText).toContain("one standard .zip file of the application documents. There is no login, no software to install"); expect(e.bodyText).toContain("stops working on October 24, 2026"); expect(e.bodyText).toContain("reply to it or call your Boreal Financial contact"); expect(e.bodyHtml).toContain(`href="${link.url}"`); expect(e.bodyHtml).toContain("Download application package (23.2 MB zip)"); });
+  it("an attached package gets the same email without the link section", () => { const e = lenderEmail(details, { mode: "attached", sizeBytes: 2 * 1024 * 1024 }); expect(e.bodyText).toContain("attached as one .zip file (2.0 MB)"); expect(e.bodyText).not.toContain("About this link"); });
+  it("escapes applicant data in the HTML", () => { const e = lenderEmail({ ...details, businessName: "<script>x</script>" }, link); expect(e.bodyHtml).not.toContain("<script>"); expect(e.bodyHtml).toContain("&lt;script&gt;"); });
+  it("formats amounts and ignores missing ones", () => { expect(formatAmount(4201020)).toBe("$4,201,020"); expect(formatAmount(null)).toBeNull(); expect(formatAmount(0)).toBeNull(); });
+  it("dispatch uses the new subject and passes the package details", () => { const src = fs.readFileSync("src/services/lenders/dispatchToSelected.ts", "utf8"); expect(src).toContain("subject: lenderEmailSubject("); expect(src).toContain("details: emailDetails,"); });
+  it("sent-lenders reports download activity", () => { const src = fs.readFileSync("src/modules/applications/applications.routes.ts", "utf8"); expect(src).toContain("downloadCount: Number(x.download_count ?? 0)"); expect(src).toContain("viaLink: Number(x.link_count ?? 0) > 0"); });
+});

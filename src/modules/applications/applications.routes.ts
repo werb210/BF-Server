@@ -1832,13 +1832,30 @@ router.get('/:id/sent-lenders', safeHandler(async (req: any, res: any) => {
   const id = String(req.params.id ?? '').trim();
   if (!id) throw new AppError('validation_error', 'Application id required.', 400);
   const r = await pool.query(
-    `SELECT lender_id::text AS lender_id, MAX(sent_at) AS sent_at
-       FROM application_packages
-      WHERE application_id::text = ($1)::text AND sent_at IS NOT NULL
-      GROUP BY lender_id`,
+    // BF_SERVER_BLOCK_v458_LENDER_EMAIL - include download activity for packages
+    // that went out as a link, so staff can see whether the lender opened it.
+    `SELECT p.lender_id::text AS lender_id, MAX(p.sent_at) AS sent_at,
+            MAX(k.link_count)::int AS link_count,
+            COALESCE(MAX(k.download_count), 0)::int AS download_count,
+            MAX(k.last_downloaded_at) AS last_downloaded_at
+       FROM application_packages p
+       LEFT JOIN (
+         SELECT application_id, lender_id, COUNT(*) AS link_count,
+                SUM(download_count) AS download_count, MAX(last_downloaded_at) AS last_downloaded_at
+           FROM lender_package_links
+          GROUP BY application_id, lender_id
+       ) k ON k.application_id = p.application_id::text AND k.lender_id = p.lender_id::text
+      WHERE p.application_id::text = ($1)::text AND p.sent_at IS NOT NULL
+      GROUP BY p.lender_id`,
     [id]
-  ).catch(() => ({ rows: [] as any[] }));
-  res.json({ status: 'ok', data: { sent: r.rows.map((x: any) => ({ lenderId: String(x.lender_id), sentAt: x.sent_at })) } });
+  ).catch((err: any) => { console.warn('[sent-lenders] query failed', { applicationId: id, message: err?.message ?? String(err) }); return { rows: [] as any[] }; });
+  res.json({ status: 'ok', data: { sent: r.rows.map((x: any) => ({
+    lenderId: String(x.lender_id),
+    sentAt: x.sent_at,
+    viaLink: Number(x.link_count ?? 0) > 0,
+    downloadCount: Number(x.download_count ?? 0),
+    lastDownloadedAt: x.last_downloaded_at ?? null,
+  })) } });
 }));
 
 // BF_SERVER_LENDER_PASS_REASON_v1 - read the recorded lender outcomes for the
