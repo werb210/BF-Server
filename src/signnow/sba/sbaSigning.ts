@@ -194,7 +194,10 @@ export async function createSbaSigningSessions(applicationId: string): Promise<
             updated_at = now()
       WHERE id::text = ($1)::text`,
     [applicationId, JSON.stringify(envelopes)],
-  ).catch(() => {});
+  ).catch((err: any) => {
+    // BF_SERVER_BLOCK_v481_NO_SILENT_SEND_FAILURES
+    console.error("[sba] envelope record NOT saved - signing status will not track", { applicationId, error: String(err?.message ?? err) });
+  });
   return out;
 }
 

@@ -60,12 +60,19 @@ router.post("/lenders/send", requireAuth, requireAuthorization({ roles: [ROLES.A
     if (pq.blocking) return res.status(409).json({ error: "product_questions_incomplete", message: pq.message, product_questions: pq });
   }
 
+  // BF_SERVER_BLOCK_v481_NO_SILENT_SEND_FAILURES - a lender whose selection did not save
+  // must not look selected. Stop and name the lenders instead of carrying on.
+  const selectionFailures: Array<{ lenderId: string; error: string }> = [];
   for (let i = 0; i < lenderIds.length; i++) {
     await pool.query(`INSERT INTO application_lender_selections (id, application_id, lender_id, position, finalized_at, created_at)
        VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NOW())
        ON CONFLICT (application_id, lender_id) DO UPDATE
          SET position = EXCLUDED.position, finalized_at = NOW()`,
-      [applicationId, lenderIds[i], i]).catch(() => {});
+      [applicationId, lenderIds[i], i]).catch((err: any) => { selectionFailures.push({ lenderId: lenderIds[i], error: String(err?.message ?? err).slice(0, 300) }); });
+  }
+  if (selectionFailures.length) {
+    console.error("[lender-send] selection save failed", { applicationId: applicationId, selectionFailures });
+    return res.status(500).json({ error: "lender_selection_save_failed", message: "Could not save the lender selection - nothing was sent. Try again.", failed: selectionFailures });
   }
 
   const orchestrator = await progressSubmission({ pool, applicationId });
@@ -108,11 +115,18 @@ router.post("/applications/:id/lenders/send", requireAuth, requireAuthorization(
     if (pq.blocking) return res.status(409).json({ error: "product_questions_incomplete", message: pq.message, product_questions: pq });
   }
 
+  // BF_SERVER_BLOCK_v481_NO_SILENT_SEND_FAILURES - a lender whose selection did not save
+  // must not look selected. Stop and name the lenders instead of carrying on.
+  const selectionFailures: Array<{ lenderId: string; error: string }> = [];
   for (let i = 0; i < lenderIds.length; i++) {
     await pool.query(`INSERT INTO application_lender_selections (id, application_id, lender_id, position, finalized_at, created_at)
        VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NOW())
        ON CONFLICT (application_id, lender_id) DO UPDATE
-         SET position = EXCLUDED.position, finalized_at = NOW()`, [id, lenderIds[i], i]).catch(() => {});
+         SET position = EXCLUDED.position, finalized_at = NOW()`, [id, lenderIds[i], i]).catch((err: any) => { selectionFailures.push({ lenderId: lenderIds[i], error: String(err?.message ?? err).slice(0, 300) }); });
+  }
+  if (selectionFailures.length) {
+    console.error("[lender-send] selection save failed", { applicationId: id, selectionFailures });
+    return res.status(500).json({ error: "lender_selection_save_failed", message: "Could not save the lender selection - nothing was sent. Try again.", failed: selectionFailures });
   }
 
   const orchestrator = await progressSubmission({ pool, applicationId: id });

@@ -207,7 +207,10 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
                                  'owner_invite_queue', $4::jsonb)
          where id::text = ($1)::text`,
         [applicationId, o2email, o2name ?? null, JSON.stringify(rest)]
-      ).catch(() => {});
+      ).catch((err: any) => {
+        // BF_SERVER_BLOCK_v481_NO_SILENT_SEND_FAILURES - without this row Owner 2+ are never invited.
+        console.error("[signnow] owner invite queue NOT saved - additional owners will not be invited", { applicationId, error: String(err?.message ?? err) });
+      });
       console.log(`[signnow] Owner 2 invite deferred until Owner 1 signs for app=${applicationId}`);
     }
 
