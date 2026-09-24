@@ -3,6 +3,44 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
+import jwt from "jsonwebtoken";
+
+// BF_SERVER_BLOCK_v476_OFFER_OWNER_v1 - /:id/accept and /:id/decline took the offer
+// id alone with no login at all. Now: Admin/Staff tokens pass; any other token
+// must carry a phone that belongs to a contact on the offer's application.
+// Returns 0 when allowed, otherwise the HTTP status to send.
+async function offerCallerStatus(req: any, offerId: string): Promise<number> {
+  const secret = process.env.JWT_SECRET;
+  const auth = req.headers?.authorization;
+  if (!secret || typeof auth !== "string" || !auth.startsWith("Bearer ")) return 401;
+  let decoded: Record<string, unknown>;
+  try { decoded = jwt.verify(auth.slice(7), secret) as Record<string, unknown>; } catch { return 401; }
+  const role = typeof decoded.role === "string" ? decoded.role : "";
+  if (role === ROLES.ADMIN || role === ROLES.STAFF) return 0;
+  const phone10 = String(typeof decoded.phone === "string" ? decoded.phone : "").replace(/[^0-9]/g, "").slice(-10);
+  if (phone10.length !== 10) return 401;
+  try {
+    const r = await pool.query<{ mine: number }>(
+      `WITH app AS (SELECT application_id::text AS id FROM offers WHERE id::text = $1),
+       app_phones AS (
+         SELECT right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),10) AS p10
+           FROM application_contacts ac
+           JOIN contacts c ON c.id = ac.contact_id
+          WHERE ac.application_id::text = (SELECT id FROM app)
+         UNION
+         SELECT right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),10) AS p10
+           FROM applications a
+           JOIN contacts c ON c.id = a.contact_id
+          WHERE a.id::text = (SELECT id FROM app)
+       )
+       SELECT COUNT(*)::int AS mine FROM app_phones WHERE p10 = $2`,
+      [offerId, phone10]
+    );
+    return Number(r.rows?.[0]?.mine ?? 0) > 0 ? 0 : 403;
+  } catch {
+    return 503;
+  }
+}
 
 const router = Router();
 
@@ -11,6 +49,10 @@ const router = Router();
 router.post("/:id/accept", async (req, res) => {
   const id = String(req.params.id ?? "").trim();
   if (!id) return res.status(400).json({ error: "missing_offer_id" });
+  { // BF_SERVER_BLOCK_v476_OFFER_OWNER_v1
+    const denied = await offerCallerStatus(req, id);
+    if (denied) return res.status(denied).json({ error: denied === 401 ? "sign_in_required" : denied === 403 ? "not_your_offer" : "ownership_check_failed" });
+  }
 
   const r = await pool.query<{ id: string; status: string; application_id: string | null }>(
     `UPDATE offers
@@ -151,6 +193,10 @@ router.post("/:id/confirm-acceptance", requireAuth, requireAuthorization({ roles
 router.post("/:id/decline", async (req, res) => {
   const id = String(req.params.id ?? "").trim();
   if (!id) return res.status(400).json({ error: "missing_offer_id" });
+  { // BF_SERVER_BLOCK_v476_OFFER_OWNER_v1
+    const denied = await offerCallerStatus(req, id);
+    if (denied) return res.status(denied).json({ error: denied === 401 ? "sign_in_required" : denied === 403 ? "not_your_offer" : "ownership_check_failed" });
+  }
   const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 1000) : null;
 
   const r = await pool.query<{ id: string; status: string }>(

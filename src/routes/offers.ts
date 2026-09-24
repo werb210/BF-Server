@@ -14,7 +14,8 @@ import { getStorage } from "../lib/storage/index.js";
 // Replace each offer's document_url (a raw, non-public blob URL the browser
 // cannot open) with a short-lived signed URL. Falls back to the stored value
 // when there is no term-sheet blob or the backend cannot sign (e.g. local dev).
-async function attachTermSheetUrls(rows: any[]): Promise<any[]> {
+// BF_SERVER_BLOCK_v476 - exported for GET /api/client/offers
+export async function attachTermSheetUrls(rows: any[]): Promise<any[]> {
   if (!rows.length) return rows;
   const ids = rows.map((r) => String(r.id));
   const blobById = new Map<string, string>();
