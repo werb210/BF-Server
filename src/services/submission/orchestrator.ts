@@ -56,7 +56,18 @@ export async function readReadinessSnapshot(ctx: OrchestratorContext): Promise<R
   const creditSummaryWaived = Number.isFinite(reqAmtNum) && reqAmtNum < 500000;
   return { allDocsAccepted: !docsBlocked, allTasksComplete: openTasks === 0, lenderSelectionsFinalized: finalizedAt !== null, creditSummarySubmitted: Boolean(appRow?.credit_summary_completed_at) || creditSummaryWaived, applicationSigned: Boolean(appRow?.signnow_app_signed_at), collateralRequired: Boolean(collateralReqRes.rows[0]?.accord ?? false) && Number.isFinite(reqAmtNum) && reqAmtNum > 250000 /* BF_SERVER_BLOCK_v_COLLATERAL_THRESHOLD_v1: Accord LOC needs collateral only above $250k */, collateralComplete: Boolean(collateralDoneRes.rows[0]?.complete ?? false) };
 }
-export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): Promise<{ fired: boolean; reason?: string }> {
+// BF_SERVER_BLOCK_v461_SIGNING_NOTICE - who was asked to sign travels with the result.
+export type StageAResult = { fired: boolean; reason?: string; notice?: import("../../signnow/ownerSigningNotice.js").SigningNotice };
+async function signingNoticeFor(applicationId: string, resend: boolean) {
+  try {
+    const mod = await import("../../signnow/ownerSigningNotice.js");
+    return resend ? await mod.remindOwner1ToSign(applicationId) : await mod.describeOwner1Notice(applicationId);
+  } catch (e) {
+    console.warn("[orchestrator] signing notice failed", { applicationId, message: e instanceof Error ? e.message : String(e) });
+    return undefined;
+  }
+}
+export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): Promise<StageAResult> {
   const snap = await readReadinessSnapshot(ctx);
   if (!snap.allDocsAccepted || !snap.allTasksComplete || !snap.lenderSelectionsFinalized) return { fired: false, reason: "preconditions_not_met" };
   // BF_SERVER_BLOCK_v697_COLLATERAL_GATE_v1 — Accord requires the Collateral &
@@ -77,7 +88,11 @@ export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): 
       [ctx.applicationId]
     )
     .catch(() => ({ rows: [] as Array<{ id: string }> }));
-  if (!claim.rows.length) return { fired: false, reason: "already_started" };
+  if (!claim.rows.length) {
+    // BF_SERVER_BLOCK_v461_SIGNING_NOTICE - Send again on an unsigned file resends the request.
+    const notice = snap.applicationSigned ? undefined : await signingNoticeFor(ctx.applicationId, true);
+    return { fired: false, reason: "already_started", ...(notice ? { notice } : {}) };
+  }
   try { const pth = "../notifications/notifyAdminsForCreditSummary.js"; const mod = await import(pth).catch(() => null as any); if (mod && typeof (mod as any).notifyAdminsForCreditSummary === "function") await (mod as any).notifyAdminsForCreditSummary(ctx); else console.log(`[orchestrator] would notify admins for app=${ctx.applicationId}`);} catch (e) { console.warn("[orchestrator] notify admins failed", e); }
   // BF_SERVER_SIGNNOW_GROUP_FIRE_v1 — fire the embedded document-GROUP signing path
   // (fieldextract signature fields; Boreal application + Accord form; Owner 1 / Owner 2 roles;
@@ -111,7 +126,8 @@ export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): 
     await ctx.pool.query(`UPDATE applications SET submission_chain_started_at = NULL WHERE id::text = $1`, [ctx.applicationId]).catch(() => {});
     return { fired: false, reason: signFailReason };
   }
-  return { fired: true };
+  const notice = await signingNoticeFor(ctx.applicationId, false);
+  return { fired: true, ...(notice ? { notice } : {}) };
 }
 export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promise<{ fired: boolean; reason?: string; sentTo?: string[] }> {
   const snap = await readReadinessSnapshot(ctx);
@@ -214,4 +230,4 @@ export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promis
   ).catch(() => {});
   return { fired: true, sentTo };
 }
-export async function progressSubmission(ctx: OrchestratorContext): Promise<{ stageA: { fired: boolean; reason?: string }; stageB: { fired: boolean; reason?: string; sentTo?: string[] } }> { const stageA = await maybeStartCreditSummaryAndSign(ctx); const stageB = await maybeBuildAndSendPackage(ctx); return { stageA, stageB }; }
+export async function progressSubmission(ctx: OrchestratorContext): Promise<{ stageA: StageAResult; stageB: { fired: boolean; reason?: string; sentTo?: string[] } }> { const stageA = await maybeStartCreditSummaryAndSign(ctx); const stageB = await maybeBuildAndSendPackage(ctx); return { stageA, stageB }; }
