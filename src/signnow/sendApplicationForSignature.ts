@@ -20,6 +20,23 @@ function fromEmail(): string { return process.env.SIGNNOW_FROM_EMAIL || "no-repl
 
 function obj(v: unknown): Record<string, any> | null { return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, any>) : null; }
 function num(v: unknown): number | null { if (v === null || v === undefined || v === "") return null; const n = Number(String(v).replace(/[^0-9.\-]/g, "")); return Number.isFinite(n) ? n : null; }
+// BF_SERVER_BLOCK_v466_RANGE_AMOUNTS - Step 1 stores accounts receivable, fixed
+// assets and collateral as ranges ("$250,000 to $500,000", "Over $500,000").
+// num() stripped every non-digit, so the signing form printed $250,000,500,000.
+// A range or worded answer is kept as text ("$250,000 - $500,000"); a plain
+// number is still returned as a number.
+export function amountOrRange(v: unknown): number | string | null {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const numbers = s.match(/\d[\d,]*(?:\.\d+)?/g) ?? [];
+  const worded = /[a-z]/i.test(s.replace(/\b(k|m)\b/gi, ""));
+  if (numbers.length >= 2 || worded) {
+    return s.replace(/\s+to\s+/gi, " - ").replace(/\s*[\u2013\u2014]\s*/g, " - ").replace(/\s+/g, " ");
+  }
+  return num(s);
+}
 function str(v: unknown): string | null { return typeof v === "string" && v.trim().length > 0 ? v : (typeof v === "number" ? String(v) : null); }
 function normLocation(v: unknown): string | null { const s = String(v ?? ""); if (/^ca$|canada/i.test(s)) return "Canada"; if (/^us$|united states|usa/i.test(s)) return "United States"; return s.trim().length ? s : null; }
 
@@ -103,9 +120,9 @@ export async function loadApplicationForPdf(applicationId: string): Promise<Appl
       yearsInBusiness: str(kyc.yearsInBusiness) ?? str(kyc.salesHistory),
       annualRevenue: str(kyc.annualRevenue) ?? str(kyc.revenueLast) ?? str(kyc.revenueLast12Months),
       monthlyRevenue: str(kyc.monthlyRevenue),
-      accountsReceivable: num(kyc.accountsReceivable) ?? num(kyc.arBalance),
-      fixedAssets: num(kyc.fixedAssets),
-      availableCollateral: num(kyc.availableCollateral),
+      accountsReceivable: amountOrRange(kyc.accountsReceivable) ?? amountOrRange(kyc.arBalance),
+      fixedAssets: amountOrRange(kyc.fixedAssets),
+      availableCollateral: amountOrRange(kyc.availableCollateral),
     },
     business: {
       legalName: str(business.legalName) ?? str(business.companyName) ?? str(row?.name),

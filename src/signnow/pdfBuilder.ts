@@ -16,7 +16,7 @@ export type PdfOwner = {
 export type ApplicationPdfInputs = {
   applicationId: string;
   product: { lookingFor?: string | null; category?: string | null; amountRequested?: number | null; equipmentValue?: number | null; location?: string | null };
-  funding: { purposeOfFunds?: string | null; industry?: string | null; yearsInBusiness?: string | null; annualRevenue?: string | null; monthlyRevenue?: string | null; accountsReceivable?: number | null; fixedAssets?: number | null; availableCollateral?: number | null };
+  funding: { purposeOfFunds?: string | null; industry?: string | null; yearsInBusiness?: string | null; annualRevenue?: string | null; monthlyRevenue?: string | null; accountsReceivable?: number | string | null; fixedAssets?: number | string | null; availableCollateral?: number | string | null };
   business: { legalName?: string | null; dba?: string | null; structure?: string | null; inBusinessSince?: string | null; employees?: number | string | null; estimatedRevenue?: number | null; phone?: string | null; website?: string | null; address?: string | null; city?: string | null; province?: string | null; postal?: string | null };
   owners: PdfOwner[];
   // convenience for the send path / embedded session (derived from owners[0])
@@ -29,6 +29,8 @@ const GREY = rgb(0.42, 0.45, 0.5), BLACK = rgb(0.1, 0.1, 0.1), LINE = rgb(0.79, 
 const PW = 612, PH = 792, M = 42, CW = PW - 2 * M;
 
 function money(n: number | null | undefined): string { return (n === null || n === undefined || !Number.isFinite(Number(n))) ? "" : "$" + Math.round(Number(n)).toLocaleString(); }
+// BF_SERVER_BLOCK_v466_RANGE_AMOUNTS - a range answer prints as written.
+function moneyOrRange(v: number | string | null | undefined): string { return typeof v === "string" ? v : money(v); }
 function val(s: unknown): string { return (s === null || s === undefined || s === "") ? "" : String(s); }
 
 type Cell = { label: string; value: unknown } | null;
@@ -74,7 +76,7 @@ export async function buildApplicationPdf(inputs: ApplicationPdfInputs, out?: { 
   row([{ label: "Amount Requested ($)", value: money(p.amountRequested) }, { label: "Equipment Value ($)", value: money(p.equipmentValue) }, { label: "Years in Business", value: fu.yearsInBusiness }]);
   row([{ label: "Purpose of Funds", value: fu.purposeOfFunds }]);
   row([{ label: "Industry", value: fu.industry }, { label: "Annual Revenue (last 12 mo)", value: fu.annualRevenue }, { label: "Monthly Revenue", value: fu.monthlyRevenue }]);
-  row([{ label: "Accounts Receivable ($)", value: money(fu.accountsReceivable) }, { label: "Fixed Assets ($)", value: money(fu.fixedAssets) }, { label: "Available Collateral ($)", value: money(fu.availableCollateral) }]);
+  row([{ label: "Accounts Receivable ($)", value: moneyOrRange(fu.accountsReceivable) }, { label: "Fixed Assets ($)", value: moneyOrRange(fu.fixedAssets) }, { label: "Available Collateral ($)", value: moneyOrRange(fu.availableCollateral) }]);
 
   y -= 6; bar("Business Details");
   row([{ label: "Legal Business Name", value: b.legalName }, { label: "Operating As (DBA)", value: b.dba }]);
