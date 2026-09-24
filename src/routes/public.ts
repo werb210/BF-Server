@@ -6,6 +6,7 @@ import { fail, ok } from "../lib/apiResponse.js";
 import { wrap } from "../lib/routeWrap.js";
 import { stripUndefined } from "../utils/clean.js";
 import { getLandingBySlug } from "../services/landingPage.service.js"; // BF_SERVER_BLOCK_v780_PUBLIC_LANDING_IMPORT
+import { getStorage } from "../lib/storage/index.js"; // BF_SERVER_BLOCK_v456_LENDER_PACKAGE_LINK
 
 const router = Router();
 
@@ -22,6 +23,35 @@ router.get("/email/logo.png", (_req, res) => {
   // can be embedded cross-origin in the portal email preview iframe.
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   res.end(buf);
+});
+
+// BF_SERVER_BLOCK_v456_LENDER_PACKAGE_LINK - private, expiring package download.
+router.get("/lender-package/:token", async (req, res) => {
+  const token = String(req.params.token ?? "");
+  res.setHeader("Cache-Control", "no-store");
+  if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) return res.status(404).type("text/plain").send("Package not found.");
+  try {
+    const found = await dbQuery<{ blob_name: string; filename: string; expires_at: string }>(
+      `SELECT blob_name, filename, expires_at FROM lender_package_links WHERE token = $1 LIMIT 1`, [token],
+    );
+    const row = found.rows[0];
+    if (!row) return res.status(404).type("text/plain").send("Package not found.");
+    if (new Date(row.expires_at).getTime() < Date.now()) return res.status(410).type("text/plain").send("This download link has expired. Reply to the email from Boreal Financial and we will resend it.");
+    const file = await getStorage().get(row.blob_name);
+    if (!file) return res.status(404).type("text/plain").send("Package not found.");
+    await dbQuery(`UPDATE lender_package_links SET download_count = download_count + 1, last_downloaded_at = now() WHERE token = $1`, [token]).catch((err) => {
+      console.warn("[lender-package] download count failed", { message: err instanceof Error ? err.message : String(err) });
+      return { rows: [] };
+    });
+    const safeName = String(row.filename).replace(/[^A-Za-z0-9._-]/g, "_");
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${safeName}"`);
+    res.setHeader("Content-Length", String(file.buffer.length));
+    return res.end(file.buffer);
+  } catch (err) {
+    console.warn("[lender-package] download failed", { message: err instanceof Error ? err.message : String(err) });
+    return res.status(500).type("text/plain").send("The package could not be loaded. Please try again shortly.");
+  }
 });
 
 // BF_SERVER_BLOCK_v780_PUBLIC_LANDING — hosted email page; bf-website /e/:slug

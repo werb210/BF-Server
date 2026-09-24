@@ -8,6 +8,7 @@ import { sendLenderEmail } from "../../modules/lenderSubmissions/adapters/EmailA
 import { resolveOwnerSignatureHtml } from "../email/resolveSignature.js"; // v693
 import { buildApplicationPackage } from "./buildApplicationPackage.js";
 import { loadPackageInputs } from "./loadPackageInputs.js"; // BF_SERVER_v76_BLOCK_1_9
+import { prepareEmailDelivery } from "./packageLink.js"; // BF_SERVER_BLOCK_v456_LENDER_PACKAGE_LINK
 
 // No shared decrypt helper exists yet in this codebase for lender API keys;
 // treat api_key_encrypted as plaintext fallback until encryption utility is added.
@@ -222,16 +223,29 @@ export async function dispatchToSelected(
 
     if (method === "email") {
       const __ownerSigHtml = await resolveOwnerSignatureHtml(ctx.pool, ctx.applicationId); // v693
-      const r = await sendLenderEmail({
-        lender: { id: l.lender_id, name: l.name, submission_email: l.submission_email },
-        subject: `Application package — ${l.name}`,
-        bodyText: `Application ${ctx.applicationId} package attached.`,
-        attachments: [{ filename: `application-${ctx.applicationId}.zip`, contentType: "application/zip", content: lenderPkg.zipBuffer }],
-        signatureHtml: __ownerSigHtml,
+      // BF_SERVER_BLOCK_v456_LENDER_PACKAGE_LINK - attach small packages, link large ones.
+      const delivery = await prepareEmailDelivery(ctx.pool, {
+        applicationId: ctx.applicationId,
+        lenderId: l.lender_id,
+        lenderName: l.name,
+        zip: lenderPkg.zipBuffer,
+        filename: `application-${ctx.applicationId}.zip`,
       });
-      ok = r.ok;
-      if (r.ok) deliveredTo = r.deliveredTo;
-      else error = r.error;
+      if (!delivery.ok) {
+        error = delivery.error;
+      } else {
+        const r = await sendLenderEmail({
+          lender: { id: l.lender_id, name: l.name, submission_email: l.submission_email },
+          subject: `Application package — ${l.name}`,
+          bodyText: delivery.bodyText,
+          bodyHtml: delivery.bodyHtml,
+          attachments: delivery.attachments,
+          signatureHtml: __ownerSigHtml,
+        });
+        ok = r.ok;
+        if (r.ok) deliveredTo = r.deliveredTo;
+        else error = r.error;
+      }
 
       // BF_SERVER_DUAL_DISPATCH_v1 - a lender configured for email that also has
       // a sheet id gets both. Merchant Growth asked for this. The dispatch only
