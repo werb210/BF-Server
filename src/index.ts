@@ -175,7 +175,12 @@ export async function start(): Promise<void> {
 
   // BF_AZURE_OCR_TERMSHEET_v44 — start OCR + banking auto-workers.
   // Both are no-ops if NODE_ENV=test.
-  if (process.env.NODE_ENV !== "test") {
+  // BF_SERVER_BLOCK_v479_BF_WORKERS_SWITCH - and off where BF_WORKERS_ENABLED=false (staging slot).
+  const { bfWorkersEnabled } = await import("./startup/workersSwitch.js");
+  if (process.env.NODE_ENV !== "test" && !bfWorkersEnabled()) {
+    console.warn("[startup] BF workers NOT started: BF_WORKERS_ENABLED=false (staging slot) - this instance sends no texts, emails or lender packages");
+  }
+  if (process.env.NODE_ENV !== "test" && bfWorkersEnabled()) {
     const { pool } = await import("./db.js");
     const { startOcrWorker } = await import("./modules/ocr/ocr.worker.js");
     const { startBankingAutoWorker } = await import("./workers/bankingAutoWorker.js");
