@@ -40,6 +40,19 @@ export async function owner1Contact(applicationId: string): Promise<Contact> {
   return { name, phone: usablePhone(row?.phone ?? null), lastSentAt: row?.sms_at ?? null };
 }
 
+// BF_SERVER_BLOCK_v464_SMS_DELIVERY - the latest signing text and what Twilio says
+// happened to it (queued, sent, delivered, undelivered, failed) plus the error code.
+export async function latestSigningSms(applicationId: string): Promise<{ to: string | null; status: string | null; errorCode: string | null; sentAt: string | null } | null> {
+  const r = await dbQuery<{ to_number: string | null; status: string | null; error_code: string | null; created_at: string | null }>(
+    `SELECT to_number, status, error_code, created_at FROM sms_deliveries
+      WHERE application_id = $1 AND kind = 'owner1_signing'
+      ORDER BY created_at DESC LIMIT 1`,
+    [applicationId],
+  );
+  const row = r.rows[0];
+  return row ? { to: row.to_number, status: row.status, errorCode: row.error_code, sentAt: row.created_at ? new Date(row.created_at).toISOString() : null } : null;
+}
+
 /** Who was texted to sign, as recorded - sends nothing. */
 export async function describeOwner1Notice(applicationId: string): Promise<SigningNotice> {
   const c = await owner1Contact(applicationId);
@@ -63,6 +76,7 @@ export async function remindOwner1ToSign(applicationId: string, now: Date = new 
     await sendSms({
       to: c.phone,
       message: `${first ? `Hi ${first},` : "Hi,"} your Boreal Financial application is ready for your signature. Sign in at ${PORTAL} with this phone number to review and sign. Reply STOP to opt out.`,
+      track: { kind: "owner1_signing", applicationId }, // BF_SERVER_BLOCK_v464_SMS_DELIVERY
     });
     await dbQuery(
       `UPDATE applications SET metadata = COALESCE(metadata,'{}'::jsonb)

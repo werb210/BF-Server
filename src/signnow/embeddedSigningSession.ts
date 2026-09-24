@@ -230,6 +230,7 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
         await sendSms({
           to,
           message: `${greeting} your Boreal Financial application is ready for your signature. Sign in at client.boreal.financial with this phone number to review and sign. Reply STOP to opt out.`,
+          track: { kind: "owner1_signing", applicationId }, // BF_SERVER_BLOCK_v464_SMS_DELIVERY
         });
         await dbQuery(
           `update applications set metadata = coalesce(metadata,'{}'::jsonb)
