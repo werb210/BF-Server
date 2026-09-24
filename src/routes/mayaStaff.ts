@@ -719,6 +719,43 @@ router.post(
           LIMIT 50`,
         [category, country, amount],
       );
+      // BF_SERVER_BLOCK_v473_MAYA_RANGES_v1 - the list above is capped at 50 rows and
+      // Maya was quoting min/max amounts and rates from that sample, so the limits
+      // changed between answers. These ranges are computed over EVERY matching
+      // active product, grouped by category and rate kind (APR, monthly and factor
+      // rates are never mixed).
+      const rr = await pool.query(
+        `SELECT upper(coalesce(lp.category, '')) AS category,
+                lower(coalesce(lp.rate_kind, '')) AS rate_kind,
+                COUNT(*)::int AS product_count,
+                MIN(lp.amount_min) AS amount_min,
+                MAX(lp.amount_max) AS amount_max,
+                MIN(CASE WHEN lp.interest_min ~ '^\\s*[0-9]+(\\.[0-9]+)?\\s*%?\\s*$'
+                         THEN regexp_replace(lp.interest_min, '[^0-9.]', '', 'g')::numeric END) AS interest_min,
+                MAX(CASE WHEN lp.interest_max ~ '^\\s*[0-9]+(\\.[0-9]+)?\\s*%?\\s*$'
+                         THEN regexp_replace(lp.interest_max, '[^0-9.]', '', 'g')::numeric END) AS interest_max
+           FROM lender_products lp
+           JOIN lenders l ON l.id = lp.lender_id
+          WHERE lp.active = true
+            AND ($1::text IS NULL OR upper(lp.category) = upper($1))
+            AND ($2::text IS NULL OR lp.country = $2)
+            AND ($3::numeric IS NULL OR (
+                  (lp.amount_min IS NULL OR lp.amount_min <= $3)
+              AND (lp.amount_max IS NULL OR lp.amount_max >= $3)))
+          GROUP BY 1, 2
+          ORDER BY 1, 2`,
+        [category, country, amount],
+      );
+      const ranges = rr.rows.map((g: any) => ({
+        category: g.category || null,
+        rateKind: g.rate_kind || null,
+        productCount: Number(g.product_count ?? 0),
+        amountMin: g.amount_min == null ? null : Number(g.amount_min),
+        amountMax: g.amount_max == null ? null : Number(g.amount_max),
+        interestMin: g.interest_min == null ? null : Number(g.interest_min),
+        interestMax: g.interest_max == null ? null : Number(g.interest_max),
+      }));
+      const totalMatching = ranges.reduce((n: number, g: any) => n + g.productCount, 0);
       const products = r.rows.map((p: any) => ({
         id: p.id,
         // Lender identity (name) is returned ONLY to staff. For visitor/client
@@ -737,9 +774,11 @@ router.post(
         rateKind: p.rate_kind ?? null,
         requiredDocuments: p.required_documents ?? null,
       }));
-      const summary = products.length ? `${products.length} matching lender product(s).` : "No active lender products match those filters.";
+      const summary = totalMatching
+        ? `${totalMatching} matching lender product(s)` + (totalMatching > products.length ? ` (listing ${products.length}).` : ".") + " Quote amount and rate limits from ranges, which cover every matching product - never from the listed sample."
+        : "No active lender products match those filters.";
       await audit({ audience: "staff", tool: "lender.products", args: { category, country, amount }, ok: true, summary, userId: biStr(req.body?.user_id), sessionId: biStr(req.body?.session_id) });
-      return res.json({ ok: true, products, summary });
+      return res.json({ ok: true, products, ranges, totalMatching, summary });
     } catch (e: any) {
       await audit({ audience: "staff", tool: "lender.products", args: { category, country, amount }, ok: false, summary: e?.message ?? "error", errorCode: "lender_products_exception" });
       logError("maya_lender_products_failed", { code: "maya_lender_products_failed", error: e?.message ?? "unknown" });
