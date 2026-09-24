@@ -1843,6 +1843,7 @@ router.get('/:id/sent-lenders', safeHandler(async (req: any, res: any) => {
     // BF_SERVER_BLOCK_v458_LENDER_EMAIL - include download activity for packages
     // that went out as a link, so staff can see whether the lender opened it.
     `SELECT p.lender_id::text AS lender_id, MAX(p.sent_at) AS sent_at,
+            BOOL_OR(COALESCE(p.sent_manually, FALSE)) AS sent_manually, -- BF_SERVER_BLOCK_v482
             MAX(k.link_count)::int AS link_count,
             COALESCE(MAX(k.download_count), 0)::int AS download_count,
             MAX(k.last_downloaded_at) AS last_downloaded_at
@@ -1863,7 +1864,66 @@ router.get('/:id/sent-lenders', safeHandler(async (req: any, res: any) => {
     viaLink: Number(x.link_count ?? 0) > 0,
     downloadCount: Number(x.download_count ?? 0),
     lastDownloadedAt: x.last_downloaded_at ?? null,
+    manual: Boolean(x.sent_manually), // BF_SERVER_BLOCK_v482
   })) } });
+}));
+
+// BF_SERVER_BLOCK_v482_MARK_SENT_TO_LENDER - a file sent to a lender outside the
+// portal (emailed by hand, uploaded to a lender portal) is recorded exactly like a
+// portal send: a 'sent' package row (flagged sent_manually), so it shows on the
+// Lenders tab, counts for pass reasons and offers, and the application moves to
+// Off to Lender. Later stages are never moved backwards.
+router.post('/:id/lenders/:lenderId/mark-sent', requireCapability([CAPABILITIES.CRM_WRITE]), safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id ?? '').trim();
+  const lenderId = String(req.params.lenderId ?? '').trim();
+  const note = typeof req.body?.note === 'string' && req.body.note.trim() ? req.body.note.trim().slice(0, 1000) : null;
+  if (!id) throw new AppError('validation_error', 'Application id required.', 400);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lenderId)) {
+    throw new AppError('validation_error', 'A valid lender id is required.', 400);
+  }
+  const app = await pool.query<{ pipeline_state: string | null }>(
+    `SELECT pipeline_state FROM applications WHERE id::text = ($1)::text LIMIT 1`, [id]);
+  if (!app.rows[0]) throw new AppError('not_found', 'Application not found.', 404);
+  const { isApplicationFraud } = await import('../../services/fraud/fraudGuard.js');
+  if (await isApplicationFraud({ query: (t: string, p?: any[]) => pool.query(t, p) } as any, id)) {
+    throw new AppError('application_locked', 'This application is marked as fraud and cannot be sent to a lender.', 423);
+  }
+  const lender = await pool.query<{ name: string | null }>(
+    `SELECT name FROM lenders WHERE id::text = $1 LIMIT 1`, [lenderId]);
+  if (!lender.rows[0]) throw new AppError('not_found', 'Lender not found.', 404);
+  const lenderName = lender.rows[0].name ?? 'the lender';
+  const actor = String(req.user?.userId ?? req.user?.id ?? '').trim() || null;
+
+  await pool.query(
+    `INSERT INTO application_packages (application_id, lender_id, status, sent_at, sent_manually, sent_by_user_id, sent_note, updated_at)
+          VALUES ($1, $2::uuid, 'sent', NOW(), TRUE, $3, $4, NOW())
+     ON CONFLICT (application_id, lender_id) DO UPDATE
+        SET status = 'sent',
+            failure_reason = NULL,
+            sent_manually = CASE WHEN application_packages.sent_at IS NULL THEN TRUE ELSE application_packages.sent_manually END,
+            sent_at = COALESCE(application_packages.sent_at, NOW()),
+            sent_by_user_id = COALESCE(application_packages.sent_by_user_id, EXCLUDED.sent_by_user_id),
+            sent_note = COALESCE(EXCLUDED.sent_note, application_packages.sent_note),
+            updated_at = NOW()`,
+    [id, lenderId, actor, note],
+  );
+
+  const prior = app.rows[0].pipeline_state ?? null;
+  const moved = await pool.query(
+    `UPDATE applications SET pipeline_state = 'Off to Lender', updated_at = NOW()
+      WHERE id::text = ($1)::text
+        AND COALESCE(pipeline_state, '') NOT IN ('Off to Lender','Additional Steps Required','Offer','Accepted','Rejected','Declined','Funded','Closed')
+      RETURNING id`,
+    [id],
+  );
+  if (moved.rowCount) {
+    await pool.query(
+      `INSERT INTO application_stage_history (id, application_id, from_stage, to_stage, reason, actor_user_id, created_at)
+       VALUES (gen_random_uuid(), $1, $2, 'Off to Lender', $3, $4, NOW())`,
+      [id, prior, `Marked as sent to ${lenderName} outside the portal`, actor],
+    ).catch((err: any) => console.warn('[mark-sent] stage history not recorded', { applicationId: id, error: err?.message ?? String(err) }));
+  }
+  res.json({ status: 'ok', data: { lenderId, lenderName, sentManually: true, stage: moved.rowCount ? 'Off to Lender' : prior } });
 }));
 
 // BF_SERVER_LENDER_PASS_REASON_v1 - read the recorded lender outcomes for the
