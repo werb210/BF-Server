@@ -2,10 +2,10 @@
 // Propose negative-keyword candidates from the daily warehouse and write the
 // terms selected by a marketer back to Google Ads.
 import { pool } from "../db.js";
-import { loginCid } from "./googleAdsService.js";
+import { GOOGLE_ADS_API_VERSION, loginCid } from "./googleAdsService.js";
 import { accessToken } from "./googleAdsConversions.js";
 
-const API_VERSION = "v18";
+const API_VERSION = GOOGLE_ADS_API_VERSION;
 
 // BF_SERVER_AD_NEGATIVES_LOGINCID_v1
 // login-customer-id must be the MANAGER id, and must be omitted entirely when
@@ -125,9 +125,12 @@ export async function addCampaignNegatives(
     },
   );
 
-  const body = await response.json().catch(() => ({} as any));
+  const raw = await response.text().catch(() => "");
+  let body: any = {};
+  try { body = raw ? JSON.parse(raw) : {}; } catch { body = { raw: raw.slice(0, 300) }; }
   if (!response.ok) {
-    throw new Error(`google_ads_mutate_failed_${response.status}: ${JSON.stringify(body).slice(0, 400)}`);
+    const detail = body?.error?.message ?? JSON.stringify(body);
+    throw new Error(`google_ads_mutate_failed_${response.status}: ${String(detail).slice(0, 400)}`);
   }
 
   const errors = (body as any)?.partialFailureError?.details ?? [];
