@@ -9,6 +9,20 @@ import { ROLES } from "../auth/roles.js";
 
 const router = Router();
 
+// BF_SERVER_BLOCK_v464_SMS_DELIVERY - what happened to the applicant's signing text.
+router.get("/applications/:id/signing-sms", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), async (req, res) => {
+  const id = String(req.params.id ?? "").trim();
+  if (!id) return res.status(400).json({ error: "missing_application_id" });
+  try {
+    const { latestSigningSms, owner1Contact } = await import("../signnow/ownerSigningNotice.js");
+    const [sms, contact] = await Promise.all([latestSigningSms(id), owner1Contact(id)]);
+    return res.json({ ok: true, name: contact.name, sms });
+  } catch (err) {
+    console.warn("[signing-sms] lookup failed", { applicationId: id, message: err instanceof Error ? err.message : String(err) });
+    return res.status(500).json({ error: "signing_sms_lookup_failed" });
+  }
+});
+
 // BF_SERVER_BLOCK_v452_SEND_BLOCKERS — keep both historical send endpoints on
 // the same truthful response contract.  Adapter failures are send blockers too,
 // even when every readiness flag is green.
