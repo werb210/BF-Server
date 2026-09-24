@@ -1771,7 +1771,13 @@ router.get(
 
     const r = await pool.query(
       `SELECT a.id, a.pipeline_state, a.submitted_at, a.name AS business_name,
-              a.product_category, a.requested_amount, a.updated_at
+              a.product_category, a.requested_amount, a.updated_at,
+              -- BF_SERVER_BLOCK_v466_SIGNATURE_NEEDED - lets the client portal flag the
+              -- application waiting for a signature, whichever one is selected.
+              (a.signnow_app_signed_at IS NULL AND EXISTS (
+                 SELECT 1 FROM application_lender_selections s
+                  WHERE s.application_id::text = a.id::text AND s.finalized_at IS NOT NULL
+              )) AS signature_needed
          FROM applications a
          -- BF_SERVER_CLOSING_COST_FIX_v1 - resolve the contact via the parent for
          -- linked legs created without their own contact_id, so every leg
