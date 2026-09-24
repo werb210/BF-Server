@@ -394,6 +394,48 @@ router.get(
   })
 );
 
+// BF_SERVER_BLOCK_v476_CLIENT_OFFERS_v1 - the client mini-portal read offers from
+// the staff-only GET /api/offers (Admin/Staff roles), so every client got 403 and
+// never saw an offer. Same columns, owner-guarded like the signing link.
+router.get(
+  "/offers",
+  makeSigningOwnerGuard((t: string, p?: unknown[]) => dbQuery(t, p as any[])),
+  safeHandler(async (req: any, res: any) => {
+    const applicationId = typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : "";
+    if (!applicationId) { res.status(400).json({ error: "applicationId_required" }); return; }
+    const r = await dbQuery(
+      `SELECT o.id, o.application_id, o.lender_name, o.amount::text AS amount, o.rate_factor, o.term,
+              o.payment_frequency, o.expiry_date, o.document_url, o.recommended, o.status, o.created_at, o.updated_at
+         FROM offers o
+        WHERE o.application_id::text = ($1)::text
+        ORDER BY o.updated_at DESC`,
+      [applicationId]
+    );
+    const { attachTermSheetUrls } = await import("../offers.js");
+    res.status(200).json({ items: await attachTermSheetUrls(r.rows) });
+  })
+);
+
+// BF_SERVER_BLOCK_v476_CLIENT_REJECTED_DOCS_v1 - the rejected-documents banner read
+// the staff-only GET /api/applications/:id/documents and always got 403.
+router.get(
+  "/rejected-documents",
+  makeSigningOwnerGuard((t: string, p?: unknown[]) => dbQuery(t, p as any[])),
+  safeHandler(async (req: any, res: any) => {
+    const applicationId = typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : "";
+    if (!applicationId) { res.status(400).json({ error: "applicationId_required" }); return; }
+    const r = await dbQuery(
+      `SELECT d.id::text AS id, d.category, d.filename, d.status, d.rejection_reason, d.updated_at
+         FROM documents d
+        WHERE d.application_id::text = ($1)::text
+          AND lower(coalesce(d.status, '')) = 'rejected'
+        ORDER BY d.updated_at DESC`,
+      [applicationId]
+    );
+    res.status(200).json({ items: r.rows });
+  })
+);
+
 // BF_SERVER_BLOCK_v_CLIENT_SIGNING_COMPLETE_v1 — the SignNow webhook does not
 // reliably fire, so the signed stamp + lender-package dispatch never happen.
 // The CMP calls this when the signing iframe completes / closes; we VERIFY with
