@@ -2,6 +2,7 @@
 import { randomBytes } from "node:crypto";
 import type { Pool } from "pg";
 import { getStorage } from "../../lib/storage/index.js";
+import { lenderEmail, type LenderEmailDetails } from "./lenderEmail.js"; // BF_SERVER_BLOCK_v458_LENDER_EMAIL
 
 type Attachment = { filename: string; contentType: string; content: Buffer };
 
@@ -71,19 +72,20 @@ export type EmailDelivery =
 
 export async function prepareEmailDelivery(
   pool: Pick<Pool, "query">,
-  p: { applicationId: string; lenderId: string; lenderName: string; zip: Buffer; filename: string },
+  p: { applicationId: string; lenderId: string; lenderName: string; zip: Buffer; filename: string; details?: Omit<LenderEmailDetails, "lenderName" | "applicationId"> },
 ): Promise<EmailDelivery> {
+  const details: LenderEmailDetails = { ...(p.details ?? {}), lenderName: p.lenderName, applicationId: p.applicationId };
   if (!shouldLinkPackage(p.zip.length)) {
     return {
       ok: true,
       mode: "attached",
-      bodyText: `Application ${p.applicationId} package attached.`,
+      ...lenderEmail(details, { mode: "attached", sizeBytes: p.zip.length }),
       attachments: [{ filename: p.filename, contentType: "application/zip", content: p.zip }],
     };
   }
   try {
     const link = await createPackageLink(pool, p);
-    return { ok: true, mode: "link", ...packageLinkEmail({ lenderName: p.lenderName, applicationId: p.applicationId, url: link.url, expiresAt: link.expiresAt, sizeBytes: p.zip.length }) };
+    return { ok: true, mode: "link", ...lenderEmail(details, { mode: "link", sizeBytes: p.zip.length, url: link.url, expiresAt: link.expiresAt }) };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn("[dispatch] package link failed", { applicationId: p.applicationId, lender: p.lenderName, message });

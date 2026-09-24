@@ -9,6 +9,7 @@ import { resolveOwnerSignatureHtml } from "../email/resolveSignature.js"; // v69
 import { buildApplicationPackage } from "./buildApplicationPackage.js";
 import { loadPackageInputs } from "./loadPackageInputs.js"; // BF_SERVER_v76_BLOCK_1_9
 import { prepareEmailDelivery } from "./packageLink.js"; // BF_SERVER_BLOCK_v456_LENDER_PACKAGE_LINK
+import { lenderEmailSubject } from "./lenderEmail.js"; // BF_SERVER_BLOCK_v458_LENDER_EMAIL
 
 // No shared decrypt helper exists yet in this codebase for lender API keys;
 // treat api_key_encrypted as plaintext fallback until encryption utility is added.
@@ -183,6 +184,15 @@ export async function dispatchToSelected(
     throw new Error("signed_application_pdf_missing");
   }
 
+  const fieldValue = (label: string) => fields.find((f) => f.label === label)?.value ?? null;
+  const amountValue = Number(fieldValue("Requested Amount"));
+  const emailDetails = {
+    businessName: fieldValue("Application Name") == null ? null : String(fieldValue("Application Name")),
+    requestedAmount: Number.isFinite(amountValue) && amountValue > 0 ? amountValue : null,
+    productCategory: fieldValue("Product Category") == null ? null : String(fieldValue("Product Category")),
+    contents: ["Signed application", ...(creditSummary ? ["Credit summary"] : []), ...docs.filter((g) => g.files.length > 0).map((g) => g.category)],
+  };
+
   const sent: string[] = [];
   for (const l of lenders) {
     const method = (l.submission_method ?? "email").toLowerCase();
@@ -230,13 +240,14 @@ export async function dispatchToSelected(
         lenderName: l.name,
         zip: lenderPkg.zipBuffer,
         filename: `application-${ctx.applicationId}.zip`,
+        details: emailDetails,
       });
       if (!delivery.ok) {
         error = delivery.error;
       } else {
         const r = await sendLenderEmail({
           lender: { id: l.lender_id, name: l.name, submission_email: l.submission_email },
-          subject: `Application package — ${l.name}`,
+          subject: lenderEmailSubject({ ...emailDetails, lenderName: l.name, applicationId: ctx.applicationId }),
           bodyText: delivery.bodyText,
           bodyHtml: delivery.bodyHtml,
           attachments: delivery.attachments,
