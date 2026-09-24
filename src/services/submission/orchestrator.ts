@@ -178,6 +178,32 @@ export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promis
     .query(`UPDATE applications SET submission_packages_started_at = NULL WHERE id::text = $1`, [ctx.applicationId])
     .catch(() => {});
   if (dispatchErr) return { fired: false, reason: "dispatch_failed" };
+  // BF_SERVER_BLOCK_v452_SEND_BLOCKERS — dispatchToSelected reports only the
+  // lenders that actually received a package.  Reaching the dispatch loop is
+  // not itself success: invalid lender configuration and adapter failures are
+  // recorded as failed application_packages rows and produce an empty result.
+  // Do not move the application to Off to Lender when nobody received it, and
+  // surface the recorded adapter reason so the caller can tell staff what to
+  // fix instead of returning a misleading 200.
+  if (sentTo.length === 0) {
+    const failures = await ctx.pool
+      .query<{ failure_reason: string | null }>(
+        `SELECT failure_reason
+           FROM application_packages
+          WHERE application_id::text = $1
+            AND status = 'failed'
+            AND lender_id::text = ANY($2::text[])
+          ORDER BY built_at DESC`,
+        [ctx.applicationId, sel.rows.map((row) => row.lender_id)],
+      )
+      .catch(() => ({ rows: [] as Array<{ failure_reason: string | null }> }));
+    const detail = failures.rows
+      .map((row) => row.failure_reason?.trim())
+      .filter((reason): reason is string => Boolean(reason))
+      .slice(0, 5)
+      .join("; ") || "no_lender_accepted_package";
+    return { fired: false, reason: `dispatch_all_failed: ${detail}` };
+  }
   // BF_SERVER_BLOCK_v722_OFF_TO_LENDER_FIX — package actually dispatched to the
   // selected lender(s): now advance to "Off to Lender".
   await ctx.pool.query(

@@ -3,12 +3,26 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { progressSubmission } from "../services/submission/orchestrator.js";
 import { readReadinessSnapshot } from "../services/submission/orchestrator.js";
-import { dispatchToSelected, type DispatchLender } from "../services/lenders/dispatchToSelected.js";
 // BF_SERVER_BLOCK_v138_E2E_FIX_BATCH_v1 — AUDIT-12 regression repair.
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 
 const router = Router();
+
+// BF_SERVER_BLOCK_v452_SEND_BLOCKERS — keep both historical send endpoints on
+// the same truthful response contract.  Adapter failures are send blockers too,
+// even when every readiness flag is green.
+async function sendBlockers(applicationId: string, reason?: string) {
+  const readiness = await readReadinessSnapshot({ pool, applicationId });
+  const blockers: string[] = [];
+  if (!readiness.allDocsAccepted) blockers.push("required_documents_not_accepted");
+  if (!readiness.allTasksComplete) blockers.push("open_tasks_remaining");
+  if (readiness.collateralRequired && !readiness.collateralComplete) blockers.push("collateral_not_complete");
+  if (!readiness.creditSummarySubmitted) blockers.push("credit_summary_not_submitted");
+  if (!readiness.applicationSigned) blockers.push("application_not_signed");
+  if (reason?.startsWith("dispatch_all_failed:")) blockers.push(reason);
+  return { blockers, readiness };
+}
 // BF_SERVER_BLOCK_55_GATE_AND_BANKING_TRIGGER_v1
 // Pre-fix: this route INSERTed selections, called progressSubmission
 // (which itself dispatches if ready), THEN ALSO called dispatchToSelected
@@ -47,22 +61,16 @@ router.post("/lenders/send", requireAuth, requireAuthorization({ roles: [ROLES.A
   // blocked dispatch. Return 409 with readable readiness reasons so the
   // UI can show the user what's missing instead of a silent no-op.
   if (orchestrator.stageB.fired !== true) {
-    const snap = await readReadinessSnapshot({ pool, applicationId });
-    const blockers: string[] = [];
-    if (!snap.allDocsAccepted) blockers.push("required_documents_not_accepted");
-    if (!snap.allTasksComplete) blockers.push("open_tasks_remaining");
-    if (snap.collateralRequired && !snap.collateralComplete) blockers.push("collateral_not_complete");
-    if (!snap.creditSummarySubmitted) blockers.push("credit_summary_not_submitted");
-    if (!snap.applicationSigned) blockers.push("application_not_signed");
     // already_sent / dispatch_in_progress / already_started are valid no-ops, not failures.
     const orchestratorReason = orchestrator.stageB.reason ?? orchestrator.stageA.reason ?? "preconditions_not_met";
     const validNoOp = orchestratorReason === "already_sent" || orchestratorReason === "dispatch_in_progress";
     if (!validNoOp) {
+      const { blockers, readiness } = await sendBlockers(applicationId, orchestratorReason);
       return res.status(409).json({
         error: "not_ready_to_send",
         reason: orchestratorReason,
         blockers,
-        readiness: snap,
+        readiness,
         finalized: lenderIds,
       });
     }
@@ -93,13 +101,22 @@ router.post("/applications/:id/lenders/send", requireAuth, requireAuthorization(
          SET position = EXCLUDED.position, finalized_at = NOW()`, [id, lenderIds[i], i]).catch(() => {});
   }
 
-  const result = await progressSubmission({ pool, applicationId: id });
-  const lenders = await pool.query<DispatchLender>(`SELECT id::text AS lender_id, name, submission_method, submission_email,
-            api_endpoint, api_key_encrypted, google_sheet_id, google_sheet_tab
-       FROM lenders
-      WHERE id::text = ANY($1::text[])`, [lenderIds]);
-  const sent = await dispatchToSelected({ pool, applicationId: id }, lenders.rows).catch((): string[] => []);
-  return res.json({ ok: true, finalized: lenderIds, sent, orchestrator: result });
+  const orchestrator = await progressSubmission({ pool, applicationId: id });
+  if (orchestrator.stageB.fired !== true) {
+    const reason = orchestrator.stageB.reason ?? orchestrator.stageA.reason ?? "preconditions_not_met";
+    const validNoOp = reason === "already_sent" || reason === "dispatch_in_progress";
+    if (!validNoOp) {
+      const { blockers, readiness } = await sendBlockers(id, reason);
+      return res.status(409).json({
+        error: "not_ready_to_send",
+        reason,
+        blockers,
+        readiness,
+        finalized: lenderIds,
+      });
+    }
+  }
+  return res.json({ ok: true, finalized: lenderIds, sent: orchestrator.stageB.sentTo ?? [], orchestrator });
 });
 
 router.post("/applications/:id/submit-trigger-check", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), async (req, res) => {
