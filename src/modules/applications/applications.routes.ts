@@ -435,8 +435,13 @@ router.post('/:id/request-steps', requireCapability([CAPABILITIES.CRM_WRITE]), s
       const base = (process.env.CLIENT_BASE_URL ?? 'https://client.boreal.financial').replace(/\/+$/, '');
       const url = `${base}/application/${id}`;
       const { sendSms } = await import('../notifications/sms.service.js');
-      await sendSms({ to: String(phone), message: `Boreal Financial: we need a few more items to continue your application. Please log in to complete them: ${url}` }).catch(() => {});
-      smsSent = true;
+      // BF_SERVER_BLOCK_v481_NO_SILENT_SEND_FAILURES - only report sent when Twilio accepted it.
+      try {
+        await sendSms({ to: String(phone), message: `Boreal Financial: we need a few more items to continue your application. Please log in to complete them: ${url}` });
+        smsSent = true;
+      } catch (err: any) {
+        console.error("[applications] additional-steps SMS failed", { applicationId: id, error: String(err?.message ?? err) });
+      }
     }
   } catch { /* non-fatal */ }
 
@@ -1973,7 +1978,10 @@ router.post('/:id/lender-response', requireAuth, safeHandler(async (req: any, re
       `UPDATE applications SET pipeline_state = 'Rejected', updated_at = NOW()
         WHERE id::text = ($1)::text AND pipeline_state <> 'Rejected'`, [id],
     ).catch(() => {});
-    await sendRejectionNoticeToClient(id).catch(() => {});
+    // BF_SERVER_BLOCK_v481_NO_SILENT_SEND_FAILURES
+    await sendRejectionNoticeToClient(id).catch((err: any) => {
+      console.error("[applications] rejection notice to client failed", { applicationId: id, error: String(err?.message ?? err) });
+    });
     closed = true;
   }
 
