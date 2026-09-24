@@ -59,6 +59,19 @@ export async function findNegativeCandidates(days = 7, minCost = 0, campaignId?:
       WHERE level = 'search_term'
         AND stat_date >= (CURRENT_DATE - ($1)::int)
         AND ($3::text IS NULL OR campaign_id = $3::text)
+        -- BF_SERVER_BLOCK_v457_HIDE_BLOCKED_TERMS - drop any search an active negative on
+        -- the same campaign already blocks. Its past spend stays inside the window,
+        -- so without this a blocked search kept reappearing for up to 90 days.
+        -- EXACT blocks that search; PHRASE blocks any search containing the phrase
+        -- as whole words. An undone negative (removed_at set) no longer hides it.
+        AND NOT EXISTS (
+          SELECT 1 FROM ads_negatives_log n
+           WHERE n.removed_at IS NULL
+             AND n.campaign_id = google_ads_daily.campaign_id
+             AND (lower(n.term) = lower(google_ads_daily.name)
+                  OR (n.match_type = 'PHRASE'
+                      AND strpos(' ' || lower(google_ads_daily.name) || ' ', ' ' || lower(n.term) || ' ') > 0))
+        )
       GROUP BY name, campaign_id, campaign_name
      HAVING SUM(conversions) = 0 AND SUM(cost) > ($2)::numeric
       ORDER BY SUM(cost) DESC
