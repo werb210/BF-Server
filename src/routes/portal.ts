@@ -2240,7 +2240,10 @@ router.post(
              ON CONFLICT (application_id, lender_id) DO UPDATE
                SET position = EXCLUDED.position, finalized_at = NOW()`,
           [applicationId, lid, position++]
-        ).catch(() => {});
+        ).catch((err: unknown) => {
+          // BF_SERVER_BLOCK_v455_SEND_FOLLOWUP - a failed finalize used to vanish.
+          console.warn("[lender-submissions] finalize selection failed", { applicationId, lenderId: lid, err: String(err) });
+        });
       }
       orchestrator = await progressSubmission({ pool, applicationId });
     } catch (e) {

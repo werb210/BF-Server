@@ -196,7 +196,7 @@ export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promis
           ORDER BY built_at DESC`,
         [ctx.applicationId, sel.rows.map((row) => row.lender_id)],
       )
-      .catch(() => ({ rows: [] as Array<{ failure_reason: string | null }> }));
+      .catch((err: unknown) => { /* BF_SERVER_BLOCK_v455_SEND_FOLLOWUP */ console.warn("[orchestrator] failure_reason lookup failed", { applicationId: ctx.applicationId, message: err instanceof Error ? err.message : String(err) }); return { rows: [] as Array<{ failure_reason: string | null }> }; });
     const detail = failures.rows
       .map((row) => row.failure_reason?.trim())
       .filter((reason): reason is string => Boolean(reason))

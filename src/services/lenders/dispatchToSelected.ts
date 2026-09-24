@@ -323,6 +323,8 @@ export async function dispatchToSelected(
     }
 
     void deliveredTo;
+    // BF_SERVER_BLOCK_v455_SEND_FOLLOWUP - a failed delivery used to leave no log line.
+    if (!ok) console.warn("[dispatch] lender delivery failed", { applicationId: ctx.applicationId, lender: l.name, method, error });
     await ctx.pool.query(
       `INSERT INTO application_packages
          (id, application_id, lender_id, status, failure_reason, size_bytes, built_at, sent_at, created_at)

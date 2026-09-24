@@ -14,11 +14,14 @@ import { resolveSbaOwners, ownerFingerprint } from "./sbaOwners.js";
 import { logInfo } from "../../observability/logger.js";
 
 /** Is this an SBA deal at all? Non-SBA applications must not be gated. */
+// BF_SERVER_BLOCK_v455_SEND_FOLLOWUP - application_lender_selections has no
+// lender_product_id column, so this always errored to 0. The selected product
+// id lives in lender_submissions.lender_id (see the portal Send).
 export async function isSbaApplication(applicationId: string): Promise<boolean> {
   const r = await dbQuery<{ n: string }>(
     `SELECT count(*)::text AS n
-       FROM application_lender_selections s
-       JOIN lender_products p ON p.id::text = s.lender_product_id::text
+       FROM lender_submissions s
+       JOIN lender_products p ON p.id::text = s.lender_id::text
       WHERE s.application_id::text = ($1)::text
         AND upper(COALESCE(p.type,'')) IN ('SBA','SBA_GOVERNMENT')`,
     [applicationId],
