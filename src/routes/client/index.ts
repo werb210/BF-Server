@@ -15,6 +15,7 @@ import accountantRouter from "./accountant.js"; // BF_SERVER_STEP5_ACCOUNTANT_v1
 import deviceSignInRouter from "./deviceSignIn.js"; // BF_SERVER_CLIENT_FACE_ID_v296
 import productQuestionsRouter from "./productQuestions.js"; // BF_SERVER_PRODUCT_QUESTIONS_v288
 import sessionRouter from "./session.js";
+import { makeSigningOwnerGuard } from "./signingOwner.js"; // BF_SERVER_BLOCK_v473_SIGNING_OWNER_v1
 import submitAttemptsRouter from "./submitAttempts.js";
 import {
   clientDocumentsRateLimit,
@@ -381,6 +382,8 @@ router.get(
 // signing session for the CMP iframe (our application + each finalized lender form).
 router.get(
   "/signing-session",
+  // BF_SERVER_BLOCK_v473_SIGNING_OWNER_v1 - signing links need the client login + phone match
+  makeSigningOwnerGuard((t: string, p?: unknown[]) => dbQuery(t, p as any[])),
   safeHandler(async (req: any, res: any) => {
     const applicationId =
       typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : null;
