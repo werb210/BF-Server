@@ -803,6 +803,14 @@ router.post(
        )`,
       [id, applicationId, body ?? "", JSON.stringify(attachments)]
     );
+    // BF_SERVER_BLOCK_v496_MESSAGE_ATTACHMENTS_TO_DOCUMENTS - a file sent in chat is a document.
+    if (attachments.length) {
+      void import("../../services/communications/attachmentsToDocuments.js")
+        .then(({ saveMessageAttachmentsAsDocuments }) => saveMessageAttachmentsAsDocuments({
+          messageId: id, applicationId, attachments, uploadedBy: "client",
+        }))
+        .catch((err: any) => console.error("[client/messages] attachments to documents failed", err?.message ?? String(err)));
+    }
 
     // v637: notify staff so client-to-staff messages aren't silent. Best-effort.
     try {
