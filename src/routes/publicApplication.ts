@@ -157,6 +157,22 @@ router.post(
       // draft eliminates pipeline pollution AND ensures the staff's
       // draft and the wizard's app are the same record.
       const readinessPhone = (parsed.data as any).readiness_phone as string | undefined;
+      // BF_SERVER_BLOCK_v521_BROKER_IMPORT - claim the pre-filled draft for this phone.
+      if (readinessPhone && readinessPhone.replace(/[^0-9]/g, "").length >= 10) {
+        setPhase("broker_import_claim");
+        const brokerDraft = await dbQuery<{ id: string; metadata: any }>(
+          `SELECT id, metadata FROM applications WHERE source = 'broker_import' AND pipeline_state = 'draft' AND right(regexp_replace(coalesce(metadata->>'readiness_phone', ''), '[^0-9]', '', 'g'), 10) = right(regexp_replace($1, '[^0-9]', '', 'g'), 10) AND silo = $2 ORDER BY created_at DESC LIMIT 1`,
+          [readinessPhone, silo]
+        );
+        const bd = brokerDraft.rows[0];
+        if (bd) {
+          await dbQuery(`UPDATE applications SET pipeline_state = NULL, current_stage = NULL, status = NULL, metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('broker_claimed_at', now()::text), updated_at = now() WHERE id::text = $1`, [bd.id]);
+          await dbQuery(`UPDATE broker_imports SET status = 'claimed', updated_at = now() WHERE application_id = $1`, [bd.id]).catch(() => {});
+          setPhase("done");
+          res.status(200).json(ok({ applicationId: bd.id, reused: true, brokerImport: true, brokerPrefill: bd.metadata?.broker_prefill ?? null, brokerName: bd.metadata?.broker_import?.broker_name ?? null }));
+          return;
+        }
+      }
       if (readinessPhone && typeof readinessPhone === "string" && readinessPhone.trim()) {
         setPhase("readiness_phone_lookup");
         const sessionRes = await dbQuery<any>(

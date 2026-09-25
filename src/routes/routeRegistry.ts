@@ -54,6 +54,7 @@ import reportingRoutes from "./reporting.js";
 import reportsRoutes from "./reports.js";
 import settingsRoutes from "./settings.js";
 import collateralRoutes from "./collateral.js"; // v693
+import brokerImportRoutes from "./brokerImports.js"; // BF_SERVER_BLOCK_v521_BROKER_IMPORT
 import templatesRoutes from "./templates.js"; // v693
 import staffRoutes from "./staff.js";
 import supportRoutes from "./support.js";
@@ -296,6 +297,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/slf", router: slfRoutes },
   { path: "/applications", router: applicationsRoutes },
   { path: "/collateral", router: collateralRoutes }, // v693
+  { path: "/broker-imports", router: brokerImportRoutes }, // BF_SERVER_BLOCK_v521_BROKER_IMPORT
   { path: "/templates", router: templatesRoutes }, // v693
 ];
 
