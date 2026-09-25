@@ -1504,6 +1504,14 @@ router.post(
        )`,
       [id, applicationId, resolvedContactId ?? "", silo, __msgMerged, staffName, ctaLabel, ctaAction, JSON.stringify(attachments), replyConversationId],
     );
+    // BF_SERVER_BLOCK_v496_MESSAGE_ATTACHMENTS_TO_DOCUMENTS - file it on the application too.
+    if (applicationId && attachments.length) {
+      void import("../services/communications/attachmentsToDocuments.js")
+        .then(({ saveMessageAttachmentsAsDocuments }) => saveMessageAttachmentsAsDocuments({
+          messageId: id, applicationId, attachments, uploadedBy: `staff:${staffName ?? "unknown"}`,
+        }))
+        .catch((err: any) => console.error("[messages/send] attachments to documents failed", err?.message ?? String(err)));
+    }
     // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 - bump the messenger thread preview
     // so it reorders in the staff list and the visitor sees fresh activity.
     if (replyConversationId) {
