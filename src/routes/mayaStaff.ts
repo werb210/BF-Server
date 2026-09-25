@@ -174,12 +174,15 @@ router.post(
     }
     try {
       const ar = await pool.query(
-        `SELECT id::text AS id, name, pipeline_state, status, requested_amount, product_type, updated_at
+        `SELECT id::text AS id, name, pipeline_state, status, requested_amount, product_type, updated_at,
+                bi_public_id, bi_completion_url -- BF_SERVER_BLOCK_v489
            FROM applications WHERE id::text = $1 LIMIT 1`,
         [appId],
       );
       const app = ar.rows[0];
       if (!app) {
+        // BF_SERVER_BLOCK_v489 - audit the miss too, so a failing staff summary can be diagnosed.
+        await audit({ audience: "staff", tool: "application.summary", args: { application_id: appId }, ok: false, summary: "application not found", errorCode: "not_found" });
         return res.status(404).json({ ok: false, error: "not_found" });
       }
       const cr = await pool.query(
@@ -219,7 +222,19 @@ router.post(
         nextAction,
       };
       await audit({ audience: "staff", tool: "application.summary", args: { application_id: appId }, ok: true, summary: `stage=${stage} missing=${missing.length}`, userId: typeof req.body?.user_id === "string" ? req.body.user_id : null, sessionId: typeof req.body?.session_id === "string" ? req.body.session_id : null });
-      return res.json({ ok: true, summary });
+      // BF_SERVER_BLOCK_v489_MAYA_ONE_STAGE - legacy top-level fields for the client tools.
+      return res.json({
+        ok: true,
+        summary,
+        id: app.id,
+        name: app.name,
+        pipeline_state: stage,
+        status: app.status,
+        requested_amount: app.requested_amount,
+        documents: dr.rows.map((d: any) => ({ document_category: d.document_category, status: d.status })),
+        bi_public_id: app.bi_public_id ?? null,
+        bi_completion_url: app.bi_completion_url ?? null,
+      });
     } catch (e: any) {
       await audit({ audience: "staff", tool: "application.summary", args: { application_id: appId }, ok: false, summary: e?.message ?? "error", errorCode: "application_summary_exception" });
       logError("maya_application_summary_failed", { code: "maya_application_summary_failed", error: e?.message ?? "unknown" });
@@ -1194,6 +1209,7 @@ router.post(
       // per-application business details so client Maya can answer identity questions.
       const applications = r.rows.map((a: any) => ({
         id: a.id, name: a.name ?? null,
+        businessName: a.name ?? null, // BF_SERVER_BLOCK_v489
         stage: a.pipeline_state ?? a.status ?? null, status: a.status ?? null,
         requestedAmount: a.requested_amount ?? null, productType: a.product_type ?? null,
         updatedAt: a.updated_at,
@@ -1223,7 +1239,10 @@ router.post(
       const contact = first ? {
         contactName: first.contact_name ?? null,
         firstName: first.first_name ?? null,
-        companyName: first.company_name ?? null,
+        // BF_SERVER_BLOCK_v489_MAYA_ONE_NAME - one business name: the most recent
+        // application's, falling back to the CRM contact's company only when the
+        // client has no application yet.
+        companyName: (applications[0]?.businessName ?? null) || (first.company_name ?? null),
         dob: first.dob ?? null,
         email: first.email ?? null,
         phone: first.contact_phone ?? null,
@@ -1240,7 +1259,7 @@ router.post(
         latestDocs = { total: dr.rows.length, missing };
       }
       const summary = applications.length
-        ? `Found ${applications.length} application(s). Most recent: "${applications[0].name ?? "your application"}" at stage "${applications[0].stage ?? "in progress"}".`
+        ? `Found ${applications.length} application(s). Most recent: "${applications[0].name ?? "your application"}" at stage "${applications[0].stage ?? "in progress"}". Refer to the business as "${applications[0].businessName ?? applications[0].name ?? "your business"}" and use this stage - do not describe the stage any other way.`
         : "No applications found for that phone number yet — they may be just getting started.";
       await audit({ audience: "client", tool: "application.find_mine", args: { phone10 }, ok: true, summary: `${applications.length} apps`, userId: myAppStr(req.body?.user_id), sessionId: myAppStr(req.body?.session_id) });
       return res.json({ ok: true, contactName: contact?.contactName ?? null, contact, applications, latestDocs, summary });
