@@ -11,6 +11,58 @@ import { getStorage } from "../lib/storage/index.js"; // v693
 import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { randomUUID } from "node:crypto";
 
+// BF_SERVER_BLOCK_v513_LARGE_EMAIL_ATTACHMENTS - Graph sendMail takes at most ~3 MB
+// of inline attachments per request. Bigger files go on a draft: small ones by
+// POST /attachments, large ones through an upload session in 3.2 MB chunks
+// (a multiple of 320 KiB, as Graph requires), then the draft is sent.
+export const INLINE_ATTACHMENT_LIMIT = 3 * 1024 * 1024;
+export const MAX_EMAIL_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const UPLOAD_CHUNK = 327680 * 10;
+type GraphLike = { fetch: (path: string, init?: RequestInit) => Promise<Response> };
+type FileAttachment = { name: string; contentType: string; contentBytes: string };
+export function base64Size(b64: string): number {
+  const clean = b64.replace(/\s/g, "");
+  const pad = clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((clean.length * 3) / 4) - pad);
+}
+export function needsUploadPath(atts: FileAttachment[]): boolean {
+  const encoded = atts.reduce((n, a) => n + a.contentBytes.length, 0);
+  return atts.some((a) => base64Size(a.contentBytes) > INLINE_ATTACHMENT_LIMIT) || encoded > INLINE_ATTACHMENT_LIMIT;
+}
+async function attachToDraft(graph: GraphLike, messagePath: string, atts: FileAttachment[]): Promise<string | null> {
+  for (const a of atts) {
+    const size = base64Size(a.contentBytes);
+    if (size <= INLINE_ATTACHMENT_LIMIT) {
+      const r = await graph.fetch(`${messagePath}/attachments`, {
+        method: "POST",
+        body: JSON.stringify({ "@odata.type": "#microsoft.graph.fileAttachment", name: a.name, contentType: a.contentType, contentBytes: a.contentBytes }),
+      });
+      if (!r.ok) return `attach ${a.name}: ${(await r.text()).slice(0, 300)}`;
+      continue;
+    }
+    const sr = await graph.fetch(`${messagePath}/attachments/createUploadSession`, {
+      method: "POST",
+      body: JSON.stringify({ AttachmentItem: { attachmentType: "file", name: a.name, size, contentType: a.contentType } }),
+    });
+    if (!sr.ok) return `upload session ${a.name}: ${(await sr.text()).slice(0, 300)}`;
+    const uploadUrl = ((await sr.json()) as { uploadUrl?: string })?.uploadUrl;
+    if (!uploadUrl) return `upload session ${a.name}: no uploadUrl`;
+    const buf = Buffer.from(a.contentBytes, "base64");
+    for (let start = 0; start < buf.length; start += UPLOAD_CHUNK) {
+      const end = Math.min(start + UPLOAD_CHUNK, buf.length) - 1;
+      const chunk = buf.subarray(start, end + 1);
+      // The upload URL is pre-authorised; it must NOT carry the Graph bearer token.
+      const pr = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Length": String(chunk.length), "Content-Range": `bytes ${start}-${end}/${buf.length}` },
+        body: Uint8Array.from(chunk),
+      });
+      if (!pr.ok) return `upload ${a.name}: HTTP ${pr.status} ${(await pr.text()).slice(0, 200)}`;
+    }
+  }
+  return null;
+}
+
 // BF_SERVER_BLOCK_v705_INBOX_MERGE_TOKENS_v1 — shared merge-token renderer.
 // Replaces {{token}} occurrences with values from ctx; unrecognized tokens -> ""
 // so a literal {{first_name}} can never reach a recipient.
@@ -304,6 +356,12 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
     } catch { /* collateral fetch is best-effort — never block the send */ }
   }
   const allAttachments = [...graphAttachments, ...collateralAttachments];
+  // BF_SERVER_BLOCK_v513 - size check, then choose inline send or draft + upload.
+  const totalAttachmentBytes = allAttachments.reduce((n: number, a: any) => n + base64Size(String(a.contentBytes ?? "")), 0);
+  if (totalAttachmentBytes > MAX_EMAIL_ATTACHMENT_BYTES) {
+    return res.status(413).json({ error: "attachments_too_large", detail: "Attachments can total at most 25 MB per email." });
+  }
+  const useUploadPath = needsUploadPath(allAttachments as FileAttachment[]);
 
   // BF_SERVER_EMAIL_PIXEL_O365_v1 - open tracking for composer-sent 1:1 email. The
   // CRM-card send path already injects a pixel + pixel_token; this main composer route
@@ -331,7 +389,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
     toRecipients: to.map((a: string) => ({ emailAddress: { address: a } })),
     ccRecipients: cc.map((a: string) => ({ emailAddress: { address: a } })),
     bccRecipients: bcc.map((a: string) => ({ emailAddress: { address: a } })),
-    ...(allAttachments.length ? { attachments: allAttachments } : {}),
+    ...(allAttachments.length && !useUploadPath ? { attachments: allAttachments } : {}), // BF_SERVER_BLOCK_v513
     ...(from ? { from: { emailAddress: { address: from } } } : {}),
   };
 
@@ -343,6 +401,14 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
     const dr = await graph.fetch(`/me/messages`, { method: "POST", body: JSON.stringify(message) });
     if (!dr.ok) return res.status(502).json({ error: "schedule_draft_failed", detail: (await dr.text()).slice(0, 500) });
     const dj = await dr.json();
+    if (useUploadPath) {
+      // BF_SERVER_BLOCK_v513 - large attachments go on the scheduled draft too.
+      const attErr = await attachToDraft(graph as GraphLike, `/me/messages/${encodeURIComponent(dj.id)}`, allAttachments as FileAttachment[]);
+      if (attErr) {
+        await graph.fetch(`/me/messages/${encodeURIComponent(dj.id)}`, { method: "DELETE" }).catch(() => undefined);
+        return res.status(502).json({ error: "attachment_upload_failed", detail: attErr });
+      }
+    }
     const _scheduleSilo = resolveSiloFromRequest(req);
     await pool.query(
       `INSERT INTO scheduled_emails (user_id, draft_id, silo, subject, to_preview, send_at, status)
@@ -376,12 +442,35 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
   // sendMail with ErrorItemNotFound ("The specified object was not found in the
   // store.") because of the saveToSentItems copy, not the delivery itself.
   // Retry once without the Sent Items copy so the mail still goes out.
-  let send = await graph.fetch(endpoint, {
+  // BF_SERVER_BLOCK_v513 - large attachments: draft in the sending mailbox, attach,
+  // then send the draft (Graph files it in Sent Items).
+  if (useUploadPath) {
+    const base = endpoint.replace(/\/sendMail$/, "");
+    const draftRes = await graph.fetch(`${base}/messages`, { method: "POST", body: JSON.stringify(message) });
+    if (!draftRes.ok) {
+      const d = (await draftRes.text()).slice(0, 500);
+      return res.status(502).json({
+        error: "graph_draft_failed",
+        detail: base === "/me" ? d : `Large attachments could not be staged in ${from}. Send from your own mailbox or use files under 3 MB. ${d}`,
+      });
+    }
+    const draftId = String(((await draftRes.json()) as { id?: string })?.id ?? "");
+    const msgPath = `${base}/messages/${encodeURIComponent(draftId)}`;
+    const attErr = await attachToDraft(graph as GraphLike, msgPath, allAttachments as FileAttachment[]);
+    if (attErr) {
+      await graph.fetch(msgPath, { method: "DELETE" }).catch(() => undefined);
+      return res.status(502).json({ error: "attachment_upload_failed", detail: attErr });
+    }
+    const sendRes = await graph.fetch(`${msgPath}/send`, { method: "POST" });
+    if (!sendRes.ok) return res.status(502).json({ error: "graph_send_failed", detail: (await sendRes.text()).slice(0, 500) });
+  }
+
+  let send: Response | null = useUploadPath ? null : await graph.fetch(endpoint, {
     method: "POST",
     body: JSON.stringify({ message, saveToSentItems: true }),
   });
 
-  if (!send.ok) {
+  if (send && !send.ok) {
     const firstDetail = (await send.text()).slice(0, 500);
     if (firstDetail.includes("ErrorItemNotFound")) {
       send = await graph.fetch(endpoint, {
