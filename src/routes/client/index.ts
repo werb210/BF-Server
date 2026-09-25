@@ -665,7 +665,7 @@ router.get(
       `WITH thread AS (
          SELECT contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1
        )
-       SELECT id, direction, body, staff_name, cta_label, cta_action, attachments, created_at
+       SELECT id, direction, body, staff_name, cta_label, cta_action, attachments, created_at, read_at /* BF_SERVER_BLOCK_v507 */
        FROM communications_messages
        -- BF_SERVER_THREAD_PER_APP_v1: this application's own messages, plus only
        -- contact-level messages not tied to any application.
@@ -744,6 +744,7 @@ router.get(
         cta_action: r.cta_action ?? null,
         attachments: Array.isArray(r.attachments) ? r.attachments : null,
         created_at: r.created_at,
+        read_at: r.read_at ?? null, // BF_SERVER_BLOCK_v507_READ_RECEIPTS
       })),
     });
   })
