@@ -42,6 +42,45 @@ function verifyMayaService(req: Request): { source: string } | null {
   }
 }
 
+// BF_SERVER_BLOCK_v492_MAYA_REAL_DOCUMENTS - every Maya document answer read
+// application_required_documents, which is EMPTY in production (0 rows while
+// documents holds 123). Maya therefore said "0 missing / documents complete" on
+// every file. Build the rows from computeOutstandingDocs (the portal's Request
+// Items and the client app's needed list) plus each document's real status.
+// mode "client": anything uploaded counts as done (never ask a client to
+// re-upload something waiting on staff review). mode "staff": uploaded but not
+// yet accepted is still outstanding, labelled "awaiting review".
+async function mayaDocRows(appId: string, mode: "staff" | "client"): Promise<{ rows: Array<{ document_category: string; status: string; is_required: boolean }> }> {
+  try {
+    const { computeOutstandingDocs } = await import("./clientDocumentsNeeded.js");
+    const out = await computeOutstandingDocs(appId);
+    const up = await pool.query<{ category: string | null; status: string | null }>(
+      `SELECT category, status FROM documents WHERE application_id::text = $1`, [appId]);
+    const byCat = new Map<string, Set<string>>();
+    for (const d of up.rows) {
+      if (!d.category) continue;
+      if (!byCat.has(d.category)) byCat.set(d.category, new Set());
+      byCat.get(d.category)!.add(String(d.status ?? "").toLowerCase());
+    }
+    const needed = new Set(out.stillNeeded.map((d) => d.document_type));
+    const rejected = new Set(out.rejected.map((d) => d.document_type));
+    const rows = out.required.map((d) => {
+      const statuses = byCat.get(d.document_type) ?? new Set<string>();
+      let status: string;
+      if (needed.has(d.document_type)) status = rejected.has(d.document_type) ? "rejected" : "missing";
+      else if (statuses.has("accepted")) status = "accepted";
+      else status = mode === "client" ? "accepted" : "uploaded";
+      const label = d.label || d.document_type;
+      const suffix = status === "uploaded" ? " (uploaded, awaiting review)" : status === "rejected" ? " (rejected - needs re-upload)" : "";
+      return { document_category: label + suffix, status, is_required: true };
+    });
+    return { rows };
+  } catch (e: any) {
+    logError("maya_doc_rows_failed", { code: "maya_doc_rows_failed", error: e?.message ?? "unknown" });
+    return { rows: [] };
+  }
+}
+
 async function audit(opts: {
   audience: "visitor" | "client" | "staff";
   tool: string;
@@ -194,10 +233,7 @@ router.post(
         [appId],
       );
       const applicant = cr.rows[0] ?? null;
-      const dr = await pool.query(
-        `SELECT status, document_category FROM application_required_documents WHERE application_id::text = $1`,
-        [appId],
-      );
+      const dr = await mayaDocRows(appId, "staff") /* BF_SERVER_BLOCK_v492 */;
       const docsTotal = dr.rows.length;
       const missing = dr.rows
         .filter((r: any) => String(r.status) !== "accepted")
@@ -459,10 +495,7 @@ router.post(
       );
       const applicant = cr.rows[0] ?? null;
 
-      const dr = await pool.query(
-        `SELECT status, document_category, is_required FROM application_required_documents WHERE application_id::text = $1`,
-        [appId],
-      );
+      const dr = await mayaDocRows(appId, "staff") /* BF_SERVER_BLOCK_v492 */;
       const required = dr.rows.filter((r: any) => r.is_required !== false);
       const missing = required
         .filter((r: any) => String(r.status) !== "accepted")
@@ -880,7 +913,7 @@ router.post(
       const ar = await pool.query(`SELECT id::text AS id, name, pipeline_state, status, requested_amount, product_type, updated_at FROM applications WHERE id::text = $1 LIMIT 1`, [appId]);
       const app = ar.rows[0];
       if (!app) return res.status(404).json({ ok: false, error: "not_found" });
-      const dr = await pool.query(`SELECT status, document_category FROM application_required_documents WHERE application_id::text = $1`, [appId]);
+      const dr = await mayaDocRows(appId, "staff") /* BF_SERVER_BLOCK_v492 */;
       const missing = dr.rows.filter((r: any) => String(r.status) !== "accepted").map((r: any) => r.document_category).filter(Boolean);
       const flags: string[] = [];
       const amount = biNum(app.requested_amount);
@@ -1060,11 +1093,7 @@ router.post(
       );
       if (ar.rowCount === 0) return res.status(404).json({ ok: false, error: "not_found" });
       const applicantName = b2Str(ar.rows[0].applicant_name) ?? "there";
-      const dr = await pool.query(
-        `SELECT document_category FROM application_required_documents
-          WHERE application_id::text = $1 AND status <> 'accepted'`,
-        [appId],
-      );
+      const dr = { rows: (await mayaDocRows(appId, "client")).rows.filter((r) => r.status !== "accepted") } /* BF_SERVER_BLOCK_v492 */;
       const missing = dr.rows.map((r: any) => r.document_category).filter(Boolean);
       if (!missing.length) {
         await audit({ audience: "staff", tool: "docs.request_draft", args: { application_id: appId }, ok: true, summary: "nothing_missing" });
@@ -1251,10 +1280,7 @@ router.post(
       } : null;
       let latestDocs: { total: number; missing: string[] } | null = null;
       if (applications.length) {
-        const dr = await pool.query(
-          `SELECT status, document_category FROM application_required_documents WHERE application_id::text = $1`,
-          [applications[0].id],
-        );
+        const dr = await mayaDocRows(String(applications[0].id), "client") /* BF_SERVER_BLOCK_v492 */;
         const missing = dr.rows.filter((x: any) => String(x.status) !== "accepted").map((x: any) => x.document_category).filter(Boolean);
         latestDocs = { total: dr.rows.length, missing };
       }
