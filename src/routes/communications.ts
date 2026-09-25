@@ -1116,7 +1116,36 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
   const { contactId, to } = req.body ?? {};
   let body = req.body?.body;
   let applicationId = req.body?.applicationId ?? null;
-  if (!body || !to) {
+  // BF_SERVER_BLOCK_v497_OUTBOUND_MMS - one picture or PDF per text, <= 5 MB
+  // (Twilio's MMS limit), US/Canadian numbers only. Uploaded to the public MMS
+  // blob container (random name) because Twilio must be able to fetch it.
+  const rawMedia = req.body?.media && typeof req.body.media === "object" ? req.body.media : null;
+  let mmsMediaUrl: string | null = null;
+  if (rawMedia) {
+    const allowed = new Set(["image/jpeg", "image/png", "image/gif", "application/pdf"]);
+    const ct = String(rawMedia.contentType ?? "").toLowerCase();
+    if (!allowed.has(ct)) {
+      return res.status(400).json({ error: { message: "Only JPG, PNG, GIF or PDF can be sent by text.", code: "mms_type_not_allowed" } });
+    }
+    if (!/^\+?1\d{10}$/.test(String(to ?? "").replace(/[^0-9+]/g, ""))) {
+      return res.status(400).json({ error: { message: "Pictures can only be texted to US or Canadian numbers.", code: "mms_country_not_supported" } });
+    }
+    const { decodeDataUrl } = await import("../services/communications/attachmentsToDocuments.js");
+    const buf = decodeDataUrl(String(rawMedia.dataUrl ?? ""));
+    if (!buf || buf.length === 0) {
+      return res.status(400).json({ error: { message: "The attached file could not be read.", code: "mms_bad_file" } });
+    }
+    if (buf.length > 5 * 1024 * 1024) {
+      return res.status(400).json({ error: { message: "Files sent by text must be 5 MB or smaller.", code: "mms_too_large" } });
+    }
+    const { uploadInboundMmsBlob } = await import("../services/mmsMedia.js");
+    mmsMediaUrl = await uploadInboundMmsBlob(buf, ct);
+    if (!mmsMediaUrl) {
+      return res.status(502).json({ error: { message: "Could not store the file for sending. Try again.", code: "mms_upload_failed" } });
+    }
+    if (!body) body = "";
+  }
+  if ((!body && !mmsMediaUrl) || !to) {
     return res.status(400).json({ error: { message: "to and body are required", code: "validation_error" } });
   }
 
@@ -1211,7 +1240,7 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
     if (isUndeliverableNumber(to)) {
       return res.status(400).json({ error: "undeliverable_number", message: "That number cannot receive SMS." });
     }
-    message = await client.messages.create({ body: String(mergedBody), from, to: String(to) });
+    message = await client.messages.create({ body: String(mergedBody), from, to: String(to), ...(mmsMediaUrl ? { mediaUrl: [mmsMediaUrl] } : {}) }); // BF_SERVER_BLOCK_v497
   } catch (err: any) {
     // eslint-disable-next-line no-console
     console.error("communications.sms.twilio_failed", {
@@ -1277,8 +1306,8 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
   await pool.query(
     `INSERT INTO communications_messages
        (id, type, direction, status, body, phone_number, from_number, to_number,
-        twilio_sid, contact_id, application_id, staff_name, silo, created_at)
-     VALUES (gen_random_uuid(), 'sms', 'outbound', $1, $2, $3, $4, $3, $5, $6, $7, $8, $9, now())`,
+        twilio_sid, contact_id, application_id, staff_name, silo, media_url, created_at)
+     VALUES (gen_random_uuid(), 'sms', 'outbound', $1, $2, $3, $4, $3, $5, $6, $7, $8, $9, $10, now())`, // BF_SERVER_BLOCK_v497 media_url
     [
       message.status,
       String(mergedBody),
@@ -1289,6 +1318,7 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
       applicationId ?? null,
       staffName,
       silo,
+      mmsMediaUrl,
     ]
   ).catch((err: any) => {
     // eslint-disable-next-line no-console
