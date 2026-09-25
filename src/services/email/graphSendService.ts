@@ -17,6 +17,10 @@ function isConfigured(): { ok: true } | { ok: false; reason: string } {
   return missing.length ? { ok: false, reason: `Missing env: ${missing.join(", ")}` } : { ok: true };
 }
 
+// BF_SERVER_BLOCK_v494 - app-only token + send-as mailbox, for the bounce reader.
+export async function graphAppToken(): Promise<string> { return getAccessToken(); }
+export function graphSendAsMailbox(): string { return envOrEmpty("MS_GRAPH_SEND_AS"); }
+
 export function logGraphConfigStatus(): void {
   const config = isConfigured();
   if (config.ok) console.log(`[graph] configured (send-as=${envOrEmpty("MS_GRAPH_SEND_AS")})`);
