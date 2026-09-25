@@ -1,0 +1,4 @@
+import { AppError } from "../../middleware/errors.js";
+type Query=(sql:string,params:unknown[])=>Promise<{rows?:any[]}>;
+export async function brokerDealStatus(query:Query,applicationId:string){const r=await query(`SELECT (a.metadata->'broker_import') IS NOT NULL AS is_broker, a.metadata->'broker_import'->>'broker_name' AS broker_name, EXISTS (SELECT 1 FROM broker_deal_confirmations d WHERE d.application_id = a.id::text) AS confirmed FROM applications a WHERE a.id::text = $1 LIMIT 1`,[applicationId]);const x=r.rows?.[0];return{isBroker:x?.is_broker===true,brokerName:x?.broker_name??null,confirmed:x?.confirmed===true}}
+export async function assertBrokerDealConfirmed(query:Query,applicationId:string){const s=await brokerDealStatus(query,applicationId);if(s.isBroker&&!s.confirmed)throw new AppError("broker_deal_unconfirmed",`This file came from ${s.brokerName??"a partner broker"}. Record the commission split (Deal Confirmation) before sending it to lenders.`,409)}

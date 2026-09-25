@@ -4,6 +4,7 @@
 // staff get a clear reason) and inside dispatchToSelected and submitApplication
 // (the choke points every automatic path runs through).
 import { AppError } from "../../middleware/errors.js";
+import { assertBrokerDealConfirmed } from "../brokerImport/dealGate.js"; // BF_SERVER_BLOCK_v521_BROKER_IMPORT
 import { loadGaps } from "./service.js";
 
 type Query = (sql: string, params: unknown[]) => Promise<{ rows?: any[]; rowCount?: number | null }>;
@@ -125,6 +126,7 @@ export class ProductQuestionsIncompleteError extends AppError {
 }
 
 export async function assertProductQuestionsAnswered(query: Query, applicationId: string): Promise<void> {
+  await assertBrokerDealConfirmed(query, applicationId);
   const summary = await productQuestionsSummary(query, applicationId);
   if (summary.blocking) throw new ProductQuestionsIncompleteError(summary);
 }
