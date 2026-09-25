@@ -38,6 +38,21 @@ function userIdOf(req: { user?: { id?: string | null; userId?: string | null; su
   return String(id);
 }
 
+// BF_SERVER_BLOCK_v504_TEAM_LINK_PREVIEWS - GET /api/team/link-preview?url=
+router.get(
+  "/link-preview",
+  requireAuth,
+  requireStaff,
+  safeHandler(async (req: any, res: any) => {
+    const raw = typeof req.query?.url === "string" ? req.query.url.trim() : "";
+    if (!/^https?:\/\//i.test(raw) || raw.length > 2000) {
+      return res.status(400).json({ ok: false, error: "valid_http_url_required" });
+    }
+    const { getLinkPreview } = await import("../services/linkPreview.js");
+    res.status(200).json({ ok: true, preview: await getLinkPreview(raw) });
+  }),
+);
+
 router.get(
   "/users",
   requireAuth,
