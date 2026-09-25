@@ -64,6 +64,10 @@ export type ApplicationRecord = {
   startup_flag: boolean | null;
   status: string | null;
   source: string | null;
+  // BF_SERVER_BLOCK_v524 - callers that load an application by id can check its
+  // silo and reach its CRM contact without a second query.
+  contact_id?: string | null;
+  silo?: string | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -285,6 +289,7 @@ export async function findApplicationById(
             lender_id, lender_product_id, owner_user_id, source,
             product_type, metadata,
             parked_previous_stage, parked_reason, -- BF_SERVER_PARKED_DETAIL_v55
+            contact_id, silo, -- BF_SERVER_BLOCK_v524
             created_at, updated_at
      from applications
      where id = $1
