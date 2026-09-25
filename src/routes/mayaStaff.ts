@@ -214,6 +214,7 @@ router.post(
     try {
       const ar = await pool.query(
         `SELECT id::text AS id, name, pipeline_state, status, requested_amount, product_type, updated_at,
+                created_at, submitted_at, owner_user_id::text AS owner_user_id, -- BF_SERVER_BLOCK_v493
                 bi_public_id, bi_completion_url -- BF_SERVER_BLOCK_v489
            FROM applications WHERE id::text = $1 LIMIT 1`,
         [appId],
@@ -233,6 +234,17 @@ router.post(
         [appId],
       );
       const applicant = cr.rows[0] ?? null;
+      // BF_SERVER_BLOCK_v493_MAYA_DATES_OWNER - Maya could not say when a file was
+      // started or who owns it; neither was in her summary.
+      let owner: { name: string | null; email: string | null } | null = null;
+      if (app.owner_user_id) {
+        const ou = await pool.query<{ name: string | null; email: string | null }>(
+          `SELECT NULLIF(TRIM(COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')), '') AS name, email
+             FROM users WHERE id::text = $1 LIMIT 1`,
+          [app.owner_user_id],
+        ).catch((err: any) => { logError("maya_owner_lookup_failed", { code: "maya_owner_lookup_failed", error: err?.message ?? "unknown" }); return { rows: [] as Array<{ name: string | null; email: string | null }> }; });
+        owner = ou.rows[0] ? { name: ou.rows[0].name ?? null, email: ou.rows[0].email ?? null } : null;
+      }
       const dr = await mayaDocRows(appId, "staff") /* BF_SERVER_BLOCK_v492 */;
       const docsTotal = dr.rows.length;
       const missing = dr.rows
@@ -254,6 +266,9 @@ router.post(
         productType: app.product_type,
         applicant,
         docs: { total: docsTotal, accepted, missing },
+        startedAt: app.created_at ?? null, // BF_SERVER_BLOCK_v493
+        submittedAt: app.submitted_at ?? null,
+        owner: owner ?? "unassigned",
         lastActivityAt: app.updated_at,
         nextAction,
       };
@@ -1149,7 +1164,13 @@ router.post(
       ] = await Promise.all([
         num(`SELECT COUNT(*)::int AS n FROM applications WHERE ($1::text IS NULL OR silo = $1) AND created_at >= date_trunc('day', now())`, sp),
         num(`SELECT COUNT(*)::int AS n FROM applications WHERE ($1::text IS NULL OR silo = $1) AND submitted_at >= date_trunc('day', now())`, sp),
-        num(`SELECT COUNT(DISTINCT a.id)::int AS n FROM applications a JOIN application_required_documents d ON d.application_id = a.id WHERE ($1::text IS NULL OR a.silo = $1) AND d.status <> 'accepted'`, sp),
+        // BF_SERVER_BLOCK_v493 - active deals in Documents Required, or with uploads awaiting review.
+        num(`SELECT COUNT(DISTINCT a.id)::int AS n FROM applications a
+              WHERE ($1::text IS NULL OR a.silo = $1)
+                AND COALESCE(a.pipeline_state, a.status, '') !~* 'funded|declined|closed|rejected|draft'
+                AND (a.pipeline_state = 'Documents Required'
+                     OR EXISTS (SELECT 1 FROM documents d WHERE d.application_id = a.id
+                                 AND lower(COALESCE(d.status, '')) NOT IN ('accepted', 'rejected')))`, sp),
         num(`SELECT COUNT(*)::int AS n FROM applications a WHERE ($1::text IS NULL OR a.silo = $1) AND a.updated_at < now() - interval '14 days' AND COALESCE(a.pipeline_state, a.status, '') !~* 'funded|declined|closed'`, sp),
         num(`SELECT COUNT(*)::int AS n FROM communications_messages WHERE ($1::text IS NULL OR silo = $1) AND lower(COALESCE(type, '')) = 'sms' AND lower(COALESCE(direction, '')) = 'inbound' AND created_at >= date_trunc('day', now())`, sp),
         num(`SELECT COUNT(*)::int AS n FROM communications_messages WHERE ($1::text IS NULL OR silo = $1) AND lower(COALESCE(type, '')) = 'email' AND lower(COALESCE(direction, '')) = 'inbound' AND created_at >= date_trunc('day', now())`, sp),
