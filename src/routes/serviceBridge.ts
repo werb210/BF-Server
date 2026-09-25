@@ -36,6 +36,13 @@ router.post("/mail", async (req, res) => {
   const to = str(req.body?.to);
   const subject = str(req.body?.subject);
   if (!to || !subject) { res.status(400).json({ ok: false, error: "to_and_subject_required" }); return; }
+  // BF_SERVER_BLOCK_v517_SERVICE_MAIL_AUDIT - BI sequence emails left no trace on
+  // this side: no log line, and the caller never learned which mailbox was used
+  // (an empty sendAs silently fell back to MS_GRAPH_SEND_AS, BF's submissions@).
+  // Log every send with the mailbox, the recipient's domain and Microsoft's answer.
+  const sentAs = (str(req.body?.sendAs) || String(process.env.MS_GRAPH_SEND_AS ?? "")).trim();
+  const toDomain = to.includes("@") ? to.split("@").pop() : "unknown";
+  const silo = String(req.get("X-Silo") ?? (req as any).user?.silo ?? "");
   const result = await sendViaGraph({
     to,
     subject,
@@ -45,8 +52,13 @@ router.post("/mail", async (req, res) => {
     bodyText: str(req.body?.text),
     sendAs: str(req.body?.sendAs) || undefined,
   });
-  if (!result.ok) { res.status(502).json({ ok: false, error: result.error }); return; }
-  res.json({ ok: true, messageId: result.messageId ?? null });
+  if (!result.ok) {
+    console.warn("[service-mail] send_failed", { silo, sentAs, toDomain, error: String(result.error).slice(0, 300) });
+    res.status(502).json({ ok: false, error: result.error, sentAs });
+    return;
+  }
+  console.info("[service-mail] accepted_by_microsoft", { silo, sentAs, toDomain });
+  res.json({ ok: true, messageId: result.messageId ?? null, sentAs });
 });
 
 // BI sequence task steps land in the assignee's BF task list. The silo comes
