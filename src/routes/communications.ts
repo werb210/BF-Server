@@ -564,7 +564,10 @@ router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
   try {
     const { rows } = await pool.query(
       `SELECT id, contact_id, from_number, to_number, direction, body,
-              media_url, created_at, read_at
+              media_url, created_at, read_at,
+              -- BF_SERVER_BLOCK_v499 - Twilio's delivery result for outbound texts
+              (SELECT d.status FROM sms_deliveries d WHERE d.message_sid = communications_messages.twilio_sid LIMIT 1) AS delivery_status,
+              (SELECT d.error_code FROM sms_deliveries d WHERE d.message_sid = communications_messages.twilio_sid LIMIT 1) AS delivery_error
        FROM communications_messages
        WHERE ${where}
          AND type = 'sms'
@@ -1240,7 +1243,9 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
     if (isUndeliverableNumber(to)) {
       return res.status(400).json({ error: "undeliverable_number", message: "That number cannot receive SMS." });
     }
-    message = await client.messages.create({ body: String(mergedBody), from, to: String(to), ...(mmsMediaUrl ? { mediaUrl: [mmsMediaUrl] } : {}) }); // BF_SERVER_BLOCK_v497
+    // BF_SERVER_BLOCK_v499_STAFF_SMS_DELIVERY_STATUS - ask Twilio for delivery updates.
+    const statusCallback = `${(process.env.PUBLIC_BASE_URL || "https://server.boreal.financial").replace(/\/+$/, "")}/api/r/status`;
+    message = await client.messages.create({ body: String(mergedBody), from, to: String(to), statusCallback, ...(mmsMediaUrl ? { mediaUrl: [mmsMediaUrl] } : {}) }); // BF_SERVER_BLOCK_v497
   } catch (err: any) {
     // eslint-disable-next-line no-console
     console.error("communications.sms.twilio_failed", {
@@ -1331,6 +1336,12 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
     });
   });
 
+  // BF_SERVER_BLOCK_v499 - record it so the status callback has a row to update.
+  await pool.query(
+    `INSERT INTO sms_deliveries (message_sid, to_number, kind, application_id, status)
+     VALUES ($1, $2, 'staff_sms', $3, $4) ON CONFLICT (message_sid) DO NOTHING`,
+    [message.sid, String(to), applicationId ?? null, message.status ?? "queued"],
+  ).catch((err: any) => console.warn("[sms] delivery record failed", { sid: message.sid, message: err?.message ?? String(err) }));
   res.json({ id: message.sid, status: message.status, contactId: resolvedContactId });
 }));
 
