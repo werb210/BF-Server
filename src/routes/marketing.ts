@@ -463,7 +463,7 @@ router.get("/negative-candidates", safeHandler(async (req: any, res: any) => {
 
 router.get("/negative-impact", safeHandler(async (req: any, res: any) => {
   const terms = String(req.query.terms ?? "").split("\n").map((term) => term.trim()).filter(Boolean);
-  const matchType = req.query.matchType === "EXACT" ? "EXACT" : "PHRASE";
+  const matchType = (await import("../services/googleAdsNegatives.js")).parseNegativeMatchType(req.query.matchType); // BF_SERVER_BLOCK_v527
   const campaignId = String(req.query.campaignId ?? "").trim();
   if (terms.length === 0) { res.json({ impact: [] }); return; }
   const { negativeBlastRadius } = await import("../services/googleAdsNegatives.js");
@@ -500,7 +500,7 @@ router.post("/negative-keywords/:id/remove", safeHandler(async (req: any, res: a
 router.post("/negative-keywords", safeHandler(async (req: any, res: any) => {
   const campaignId = String(req.body?.campaignId ?? "").trim();
   const terms = Array.isArray(req.body?.terms) ? req.body.terms : [];
-  const matchType = req.body?.matchType === "EXACT" ? "EXACT" : "PHRASE";
+  const matchType = (await import("../services/googleAdsNegatives.js")).parseNegativeMatchType(req.body?.matchType); // BF_SERVER_BLOCK_v527
   if (!campaignId) { res.status(400).json({ error: "campaignId_required" }); return; }
   if (terms.length === 0) { res.status(400).json({ error: "terms_required" }); return; }
   try {

@@ -70,7 +70,13 @@ export async function findNegativeCandidates(days = 7, minCost = 0, campaignId?:
              AND n.campaign_id = google_ads_daily.campaign_id
              AND (lower(n.term) = lower(google_ads_daily.name)
                   OR (n.match_type = 'PHRASE'
-                      AND strpos(' ' || lower(google_ads_daily.name) || ' ', ' ' || lower(n.term) || ' ') > 0))
+                      AND strpos(' ' || lower(google_ads_daily.name) || ' ', ' ' || lower(n.term) || ' ') > 0)
+                  -- BF_SERVER_BLOCK_v527 - BROAD blocks a search containing every word, in any order.
+                  OR (n.match_type = 'BROAD'
+                      AND NOT EXISTS (
+                        SELECT 1 FROM unnest(string_to_array(lower(n.term), ' ')) AS w(word)
+                         WHERE w.word <> ''
+                           AND strpos(' ' || lower(google_ads_daily.name) || ' ', ' ' || w.word || ' ') = 0)))
         )
       GROUP BY name, campaign_id, campaign_name
      HAVING SUM(conversions) = 0 AND SUM(cost) > ($2)::numeric
@@ -90,6 +96,12 @@ export async function findNegativeCandidates(days = 7, minCost = 0, campaignId?:
   }));
 }
 
+// BF_SERVER_BLOCK_v527 - Google's three negative match types.
+export type NegativeMatchType = "PHRASE" | "EXACT" | "BROAD";
+export function parseNegativeMatchType(v: unknown): NegativeMatchType {
+  return v === "EXACT" ? "EXACT" : v === "BROAD" ? "BROAD" : "PHRASE";
+}
+
 export type AddResult = {
   added: string[];
   failed: Array<{ term: string; error: string }>;
@@ -101,7 +113,7 @@ export type AddResult = {
 export async function addCampaignNegatives(
   campaignId: string,
   terms: string[],
-  matchType: "PHRASE" | "EXACT" = "PHRASE",
+  matchType: NegativeMatchType = "PHRASE",
 ): Promise<AddResult> {
   const customerId = String(process.env.GOOGLE_ADS_CUSTOMER_ID ?? "").replace(/[^0-9]/g, "");
   if (!customerId) throw new Error("GOOGLE_ADS_CUSTOMER_ID is not set");
@@ -113,6 +125,11 @@ export async function addCampaignNegatives(
   const usable = clean.filter((term) => {
     if (matchType === "PHRASE" && !term.includes(" ")) {
       failed.push({ term, error: "single_word_phrase_rejected_use_exact" });
+      return false;
+    }
+    // A one-word BROAD negative blocks every search with that word in it. Same rule as PHRASE.
+    if (matchType === "BROAD" && !term.includes(" ")) {
+      failed.push({ term, error: "single_word_broad_rejected_use_exact" });
       return false;
     }
     return true;
@@ -166,7 +183,7 @@ export async function addCampaignNegatives(
 // terms, so the warning is about real money and real conversions, not theory.
 export type BlastRadius = {
   term: string;
-  matchType: "PHRASE" | "EXACT";
+  matchType: NegativeMatchType;
   alsoBlocks: Array<{ searchTerm: string; cost: number; conversions: number }>;
   totalCost: number;
   convertingCount: number;
@@ -174,7 +191,7 @@ export type BlastRadius = {
 
 export async function negativeBlastRadius(
   terms: string[],
-  matchType: "PHRASE" | "EXACT",
+  matchType: NegativeMatchType,
   campaignId?: string,
   days = 90,
 ): Promise<BlastRadius[]> {
@@ -196,11 +213,16 @@ export async function negativeBlastRadius(
           AND stat_date >= (CURRENT_DATE - ($2)::int)
           AND ($3::text IS NULL OR campaign_id = $3::text)
           AND name <> $1
-          AND name ILIKE ('%' || $1 || '%')
+          AND (CASE WHEN $4::text = 'BROAD'
+                 THEN NOT EXISTS (
+                   SELECT 1 FROM unnest(string_to_array(lower($1), ' ')) AS w(word)
+                    WHERE w.word <> ''
+                      AND strpos(' ' || lower(name) || ' ', ' ' || w.word || ' ') = 0)
+                 ELSE name ILIKE ('%' || $1 || '%') END) -- BF_SERVER_BLOCK_v527
         GROUP BY name
         ORDER BY SUM(cost) DESC
         LIMIT 50`,
-      [term, days, campaignId && campaignId.trim() ? campaignId.trim() : null],
+      [term, days, campaignId && campaignId.trim() ? campaignId.trim() : null, matchType],
     );
     const alsoBlocks = rows.map((row) => ({
       searchTerm: row.name,
