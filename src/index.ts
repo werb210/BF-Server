@@ -336,6 +336,11 @@ export async function start(): Promise<void> {
     try { const w = startFxRateWorker(pool); workerStops.push(w.stop); console.log("[startup] fx-rate worker started"); }
     catch (err) { console.error("[startup] fx-rate worker failed to start:", err); }
 
+    // BF_SERVER_BLOCK_v494_LENDER_EMAIL_BOUNCES - read lender bounce notices.
+    const { startLenderBounceWorker } = await import("./workers/lenderBounceWorker.js");
+    try { const w = startLenderBounceWorker(pool); workerStops.push(w.stop); console.log("[startup] lender-bounce worker started"); }
+    catch (err) { console.error("[startup] lender-bounce worker failed to start:", err); }
+
     // BF_SERVER_BLOCK_v665 — graceful shutdown. On container recycle the workers'
     // poll loops must stop BEFORE the pool tears down, otherwise each tick queries
     // a dying pool and logs "Connection terminated due to connection timeout".

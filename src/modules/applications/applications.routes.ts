@@ -1846,7 +1846,8 @@ router.get('/:id/sent-lenders', safeHandler(async (req: any, res: any) => {
             BOOL_OR(COALESCE(p.sent_manually, FALSE)) AS sent_manually, -- BF_SERVER_BLOCK_v482
             MAX(k.link_count)::int AS link_count,
             COALESCE(MAX(k.download_count), 0)::int AS download_count,
-            MAX(k.last_downloaded_at) AS last_downloaded_at
+            MAX(k.last_downloaded_at) AS last_downloaded_at,
+            MAX(b.reason) AS bounce_reason, MAX(b.recipient) AS bounce_recipient, MAX(b.received_at) AS bounced_at -- BF_SERVER_BLOCK_v494
        FROM application_packages p
        LEFT JOIN (
          SELECT application_id, lender_id, COUNT(*) AS link_count,
@@ -1854,6 +1855,12 @@ router.get('/:id/sent-lenders', safeHandler(async (req: any, res: any) => {
            FROM lender_package_links
           GROUP BY application_id, lender_id
        ) k ON k.application_id = p.application_id::text AND k.lender_id = p.lender_id::text
+       LEFT JOIN LATERAL (
+         SELECT reason, recipient, received_at FROM lender_email_bounces x
+          WHERE x.application_id = p.application_id::text AND x.lender_id = p.lender_id
+            AND x.received_at >= p.sent_at
+          ORDER BY x.received_at DESC LIMIT 1
+       ) b ON TRUE
       WHERE p.application_id::text = ($1)::text AND p.sent_at IS NOT NULL
       GROUP BY p.lender_id`,
     [id]
@@ -1865,6 +1872,7 @@ router.get('/:id/sent-lenders', safeHandler(async (req: any, res: any) => {
     downloadCount: Number(x.download_count ?? 0),
     lastDownloadedAt: x.last_downloaded_at ?? null,
     manual: Boolean(x.sent_manually), // BF_SERVER_BLOCK_v482
+    bounce: x.bounce_reason ? { reason: String(x.bounce_reason), recipient: x.bounce_recipient ?? null, at: x.bounced_at } : null, // BF_SERVER_BLOCK_v494
   })) } });
 }));
 
