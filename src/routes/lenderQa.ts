@@ -54,10 +54,10 @@ async function notifyClient(appId: string, count: number): Promise<void> {
     );
     const phone = r.rows[0]?.phone;
     if (phone) {
-      await sendSMS(
-        String(phone),
-        "Boreal Financial: the lender has questions about your application. Please open your application to answer them.",
-      );
+      const { notifyClient } = await import("../services/notifications/notifyClient.js"); // BF_SERVER_BLOCK_v552
+      await notifyClient({ phone: String(phone), applicationId: appId, kind: "lender_questions", categoryId: "APPLICATION_UPDATE",
+        sms: "Boreal Financial: the lender has questions about your application. Please open your application to answer them.",
+        title: "The lender has a question", body: "Open your application to answer it." });
     }
   } catch (e) {
     console.warn("[qa] sms failed", e instanceof Error ? e.message : String(e));
