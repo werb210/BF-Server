@@ -23,9 +23,26 @@ router.put("/:applicationId/sections/:key", ...staff, safeHandler(async (req: an
   try { await saveSummaryV2(id, applyEdit(cur.doc, String(req.params.key), req.body ?? {})); } catch { return res.status(400).json({ error: "unknown_section" }); }
   res.json({ summary: await loadSummaryV2(id) });
 }));
+// BF_SERVER_BLOCK_v540 - export the summary in Boreal's Word or PDF format.
+router.get("/:applicationId/export.:format", ...staff, safeHandler(async (req: any, res: any) => {
+  const format = String(req.params.format);
+  if (format !== "docx" && format !== "pdf") return res.status(400).json({ error: "bad_format" });
+  const { loadExport, renderDocx, renderPdf } = await import("../services/credit/creditSummaryExport.js");
+  const value = await loadExport(String(req.params.applicationId), req.user?.id ? String(req.user.id) : null);
+  if (!value) return res.status(404).json({ error: "not_generated", message: "Generate the credit summary first." });
+  const name = String(value.doc.overview?.applicant_name ?? "").replace(/[^A-Za-z0-9 &.,-]+/g, "").trim() || "Application";
+  const body = format === "docx" ? renderDocx(value.doc, value.meta) : await renderPdf(value.doc, value.meta);
+  res.setHeader("Content-Type", format === "docx" ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="Credit Summary - ${name}.${format}"`);
+  res.send(body);
+}));
+
 router.post("/:applicationId/submit", ...staff, safeHandler(async (req: any, res: any) => {
   const id = String(req.params.applicationId); const { loadSummaryV2, submitSummaryV2 } = await svc(); const r = await submitSummaryV2(id, req.user?.id ? String(req.user.id) : null);
   if (!r) return res.status(404).json({ error: "not_generated", message: "Generate the credit summary first." });
+  // BF_SERVER_BLOCK_v540 - submitted summaries become eligible for lender packages.
+  const { markCreditSummaryCompleted } = await import("../modules/applications/applications.service.js");
+  await markCreditSummaryCompleted({ applicationId: id });
   console.info("[credit-summary-v2] submitted", { applicationId: id, by: r.name }); res.json({ summary: await loadSummaryV2(id) });
 }));
 export default router;

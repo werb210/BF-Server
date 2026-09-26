@@ -134,6 +134,15 @@ async function loadCreditSummaryPdf(ctx: LoadCtx): Promise<Buffer | null> {
   const amt = Number(g.rows[0]?.requested_amount ?? 0);
   const submitted = g.rows[0]?.credit_summary_completed_at != null;
   if ((Number.isFinite(amt) && amt < 500000) || !submitted) return null;
+  // BF_SERVER_BLOCK_v540 - submitted v2 summaries supersede legacy summaries; drafts are excluded.
+  const v2 = await ctx.pool.query<{ status: string }>(`SELECT status FROM credit_summaries_v2 WHERE application_id = $1`, [ctx.applicationId])
+    .catch((error: unknown) => { console.warn("[lender-package] credit_summary_v2_read_failed", (error as Error)?.message); return { rows: [] as { status: string }[] }; });
+  if (v2.rows[0]) {
+    if (v2.rows[0].status !== "submitted") return null;
+    const { loadExport, renderPdf } = await import("../credit/creditSummaryExport.js");
+    const value = await loadExport(ctx.applicationId, null);
+    return value ? renderPdf(value.doc, value.meta) : null;
+  }
   const r = await ctx.pool.query<{sections:unknown;status:string|null}>(`SELECT sections, status FROM credit_summaries WHERE application_id::text = $1 ORDER BY updated_at DESC LIMIT 1`, [ctx.applicationId]).catch(()=>({rows:[] as Array<{sections:unknown;status:string|null}>}));
   if (!r.rows.length) return null; const row = r.rows[0]!; const sections = (row.sections ?? {}) as Record<string, unknown>;
   const lines = [`Credit Summary — Application ${ctx.applicationId}`]; if (row.status) lines.push(`Status: ${row.status}`); lines.push("");
