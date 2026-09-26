@@ -2,10 +2,13 @@
 // urlencoded Twilio posts. Without router-level express.urlencoded, req.body
 // is {} and the signature is computed over an empty body -> 403. With a VALID
 // signature over the real params, the request must reach the handler (non-403).
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import express from "express";
 import request from "supertest";
 import twilio from "twilio";
+
+// BF_SERVER_BLOCK_v575 - the shared test setup mocks twilio; signing needs the real library.
+vi.mock("twilio", async () => await vi.importActual<typeof import("twilio")>("twilio"));
 
 const AUTH = "test-auth-token-vA-conf-urlencoded";
 
