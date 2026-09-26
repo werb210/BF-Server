@@ -2,9 +2,9 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
-import { getSilo } from "../middleware/silo.js";
+import { resolveSiloFromRequest } from "../middleware/silo.js";
 // BF_SERVER_FRAUD_HOLD_v48
-import { liveStageFilter } from "../modules/applications/reportingScope.js";
+import { historicalStageFilter, liveStageFilter } from "../modules/applications/reportingScope.js";
 import { ApplicationStage } from "../modules/applications/pipelineState.js";
 
 const router = Router();
@@ -22,12 +22,29 @@ const DEAL_CURRENCY_SQL = `(CASE
                      ELSE 'CAD'
                    END)`;
 
-router.get("/", requireAuth, safeHandler(async (_req: any, res: any) => {
+// BF_SERVER_BLOCK_v542_DASHBOARD_MATCHES_BOARD - one definition of "an application
+// on the Pipeline board", identical to GET /api/portal/applications plus the
+// board's isDraftLikeApplication: not a draft; a main application or an
+// equipment leg / closing-costs companion; and either it has a real name (its
+// own, ignoring wizard placeholders, else its company's) or it was submitted.
+// The old dashboard rule required applications.name/business_legal_name, so
+// submitted files named only through their company were missing from every
+// dashboard count (2 "Off to Lender" on the dashboard vs 5 on the board).
+export function boardScope(t = "a"): string {
+  return `COALESCE(${t}.pipeline_state, '') NOT IN ('draft', 'Draft', '')
+         AND (${t}.parent_application_id IS NULL OR ${t}.source IN ('closing_costs_companion', 'capital_and_equipment_leg'))
+         AND (LOWER(TRIM(COALESCE(NULLIF(NULLIF(NULLIF(TRIM(${t}.name), ''), 'Draft application'), 'Untitled Application'),
+                                  (SELECT NULLIF(TRIM(bc.name), '') FROM companies bc WHERE bc.id = ${t}.company_id), '')))
+                NOT IN ('', 'draft', 'draft application', 'unnamed application', 'untitled application')
+              OR ${t}.submitted_at IS NOT NULL)`;
+}
+
+router.get("/", requireAuth, safeHandler(async (req: any, res: any) => {
   res.json({ ok: true });
 }));
 
-router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => { // BF_SERVER_BLOCK_v829_DEALS_NOT_COMPANIONS
-  const silo = getSilo(res);
+router.get("/metrics", requireAuth, safeHandler(async (req: any, res: any) => { // BF_SERVER_BLOCK_v829_DEALS_NOT_COMPANIONS
+  const silo = resolveSiloFromRequest(req);
   const [active, won, stageRows, commissionRows] = await Promise.all([
     pool.query<{ count: string }>(
       // BF_SERVER_BLOCK_v786_DASHBOARD_MATCH_BOARD — count exactly what the
@@ -40,18 +57,22 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
        WHERE UPPER(silo) = UPPER($1)
          AND COALESCE(pipeline_state, '') NOT IN ('Rejected', 'Accepted') -- BF_SERVER_ACTIVE_EXCLUDES_CLOSED_v355: active means still in progress
          -- BF_SERVER_DASHBOARD_LEGS_v351: equipment legs count, matching the Pipeline board.
-         AND COALESCE(pipeline_state, '') NOT IN ('draft', 'Draft', '')
-         AND COALESCE(NULLIF(TRIM(name), ''), NULLIF(TRIM(business_legal_name), '')) IS NOT NULL
-         AND LOWER(TRIM(COALESCE(name, business_legal_name, ''))) NOT IN ('draft', 'draft application') -- BF_SERVER_BLOCK_v844_DASHBOARD_EXCLUDE_DRAFT_NAMES
+         AND ${boardScope("applications")} -- BF_SERVER_BLOCK_v542 (was the v838/v844 name rules)
          ${liveStageFilter()}`,
       [silo]
     ),
     pool.query<{ count: string }>(
+      // BF_SERVER_BLOCK_v542 - won this month = moved to Accepted this (Edmonton) month.
       `SELECT COUNT(*)::text AS count FROM applications
        WHERE UPPER(silo) = UPPER($2)
          -- BF_SERVER_DASHBOARD_LEGS_v351: equipment legs count, matching the Pipeline board.
          AND pipeline_state = $1
-         AND updated_at >= date_trunc('month', now())
+         AND ${boardScope("applications")}
+         AND COALESCE(
+               (SELECT MAX(h.created_at) FROM application_stage_history h
+                 WHERE h.application_id = applications.id AND h.to_stage = $1),
+               applications.updated_at)
+             >= (date_trunc('month', now() AT TIME ZONE 'America/Edmonton') AT TIME ZONE 'America/Edmonton')
          ${liveStageFilter()}`,
       [ApplicationStage.ACCEPTED, silo]
     ),
@@ -65,9 +86,7 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
        FROM applications
        WHERE UPPER(silo) = UPPER($1)
          -- BF_SERVER_DASHBOARD_LEGS_v351: equipment legs count, matching the Pipeline board.
-         AND COALESCE(pipeline_state, '') NOT IN ('draft', 'Draft', '')
-         AND COALESCE(NULLIF(TRIM(name), ''), NULLIF(TRIM(business_legal_name), '')) IS NOT NULL
-         AND LOWER(TRIM(COALESCE(name, business_legal_name, ''))) NOT IN ('draft', 'draft application') -- BF_SERVER_BLOCK_v844_DASHBOARD_EXCLUDE_DRAFT_NAMES  -- BF_SERVER_BLOCK_v838_DASHBOARD_EXCLUDE_NAMELESS
+         AND ${boardScope("applications")} -- BF_SERVER_BLOCK_v542 (was the v838/v844 name rules)
          ${liveStageFilter()}
        GROUP BY 1`,
       [silo]
@@ -108,8 +127,7 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
              ) off ON TRUE
             WHERE UPPER(a.silo) = UPPER($1)
               AND COALESCE(a.pipeline_state, '') NOT IN ('draft', 'Draft', '', 'Rejected')
-              AND COALESCE(NULLIF(TRIM(a.name), ''), NULLIF(TRIM(a.business_legal_name), '')) IS NOT NULL
-              AND LOWER(TRIM(COALESCE(a.name, a.business_legal_name, ''))) NOT IN ('draft', 'draft application')
+              AND ${boardScope("a")} -- BF_SERVER_BLOCK_v542
               ${liveStageFilter("a.pipeline_state")}
          ) x
         GROUP BY 1, 2`,
@@ -134,6 +152,20 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
   });
   const commissionEarned = commissionByStage["Accepted"] ?? 0;
 
+  // BF_SERVER_BLOCK_v542 - new CRM contacts created today (Edmonton day) in this silo.
+  let newLeadsToday = 0;
+  try {
+    const nl = await pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM contacts
+        WHERE UPPER(COALESCE(silo, 'BF')) = UPPER($1)
+          AND created_at >= (date_trunc('day', now() AT TIME ZONE 'America/Edmonton') AT TIME ZONE 'America/Edmonton')`,
+      [silo],
+    );
+    newLeadsToday = parseInt(nl.rows[0]?.count ?? "0", 10) || 0;
+  } catch (err: any) {
+    console.error("[dashboard.metrics] new leads count failed", { message: err?.message });
+  }
+
   // BF_SERVER_FX_RATE_WORKER_v355 - the USD->CAD rate behind every CAD figure,
   // so the dashboard can show which rate and which day it used.
   let fx: { usdToCad: number; asOf: string | null } | null = null;
@@ -153,7 +185,7 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
       activeApplications: parseInt(active.rows[0]?.count ?? "0", 10),
       dealsWonThisMonth: parseInt(won.rows[0]?.count ?? "0", 10),
       commissionEarned,
-      newLeadsToday: 0,
+      newLeadsToday, // BF_SERVER_BLOCK_v542 - was hard-coded 0
       pipelineByStage,
       commissionByStage,
       // BF_SERVER_DASHBOARD_LEGS_v351 - native amounts per currency.
@@ -165,8 +197,8 @@ router.get("/metrics", requireAuth, safeHandler(async (_req: any, res: any) => {
 }));
 
 // BF_SERVER_BLOCK_v822_DASHBOARD_PIPELINE_ACTIONS — real urgent-action counts.
-router.get("/actions", requireAuth, safeHandler(async (_req: any, res: any) => {
-  const silo = getSilo(res);
+router.get("/actions", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
   const [waiting, missing, expiring, awaiting] = await Promise.all([
     pool.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM applications
@@ -231,7 +263,7 @@ function windowDays(req: any): number {
 // rejections and stalled OCR per category so staff can see WHICH document is
 // costing them deals rather than just "N documents missing".
 router.get("/document-health", requireAuth, safeHandler(async (req: any, res: any) => {
-  const silo = getSilo(res);
+  const silo = resolveSiloFromRequest(req);
   const days = windowDays(req);
   const r = await pool.query<{
     category: string; total: string; rejected: string; pending: string; ocr_failed: string;
@@ -273,7 +305,7 @@ router.get("/document-health", requireAuth, safeHandler(async (req: any, res: an
 // than shown as 0% - a lender nobody submitted to has no approval rate, and
 // rendering 0% would defame them.
 router.get("/lender-activity", requireAuth, safeHandler(async (req: any, res: any) => {
-  const silo = getSilo(res);
+  const silo = resolveSiloFromRequest(req);
   const days = windowDays(req);
   const r = await pool.query<{
     lender_id: string; lender_name: string; sent: string; approved: string; funded: string;
@@ -326,7 +358,7 @@ router.get("/lender-activity", requireAuth, safeHandler(async (req: any, res: an
 }));
 
 router.get("/offers", requireAuth, safeHandler(async (req: any, res: any) => {
-  const silo = getSilo(res);
+  const silo = resolveSiloFromRequest(req);
   const days = windowDays(req);
   const r = await pool.query(
     `SELECT o.id::text AS id, o.application_id::text AS "applicationId",
@@ -353,7 +385,7 @@ router.get("/offers", requireAuth, safeHandler(async (req: any, res: any) => {
 // page-loads, not real applicants, and counting them makes step-1 drop-off look
 // catastrophic.
 router.get("/funnel", requireAuth, safeHandler(async (req: any, res: any) => {
-  const silo = getSilo(res);
+  const silo = resolveSiloFromRequest(req);
   const days = windowDays(req);
   const r = await pool.query<Record<string, string>>(
     `WITH stepped AS (
@@ -422,7 +454,7 @@ router.get("/funnel", requireAuth, safeHandler(async (req: any, res: any) => {
 // Funding rate by product type: of the applications requesting each product,
 // how many reached a funded state.
 router.get("/funding-by-product", requireAuth, safeHandler(async (req: any, res: any) => {
-  const silo = getSilo(res);
+  const silo = resolveSiloFromRequest(req);
   const days = windowDays(req);
   const r = await pool.query<{ product: string; total: string; funded: string }>(
     `SELECT COALESCE(NULLIF(product_category, ''), 'Unspecified') AS product,
@@ -462,7 +494,7 @@ router.get("/funding-by-product", requireAuth, safeHandler(async (req: any, res:
 // 500s because one integration is unset is worse than one that renders what it
 // has and says what is missing.
 router.get("/acquisition", requireAuth, safeHandler(async (req: any, res: any) => {
-  const silo = getSilo(res);
+  const silo = resolveSiloFromRequest(req);
   const days = windowDays(req);
 
   // Channel comes from the application's own attribution blob, the same source
@@ -562,7 +594,7 @@ router.get("/acquisition", requireAuth, safeHandler(async (req: any, res: any) =
 // marketing.revenue, funding.funded, documents.issueRate and
 // lenders.approvalRate.
 router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => {
-  const silo = getSilo(res);
+  const silo = resolveSiloFromRequest(req);
   const days = windowDays(req);
 
   const [acquisitionResult, marketingResult, fundingResult, documentsResult, lendersResult] = await Promise.all([
@@ -578,7 +610,7 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
          FROM applications a
         WHERE UPPER(a.silo) = UPPER($1)
           AND a.created_at >= now() - ($2 || ' days')::interval
-          AND COALESCE(a.pipeline_state, '') NOT IN ('draft','Draft','')
+          AND ${boardScope("a")} ${historicalStageFilter("a.pipeline_state")} -- BF_SERVER_BLOCK_v542
         GROUP BY 1
         ORDER BY COUNT(DISTINCT a.id) DESC
         LIMIT 12`,
@@ -609,7 +641,7 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
              ) off ON TRUE
             WHERE UPPER(a.silo) = UPPER($1)
               AND a.created_at >= now() - ($2 || ' days')::interval
-              AND COALESCE(a.pipeline_state, '') NOT IN ('draft','Draft','')
+              AND ${boardScope("a")} ${historicalStageFilter("a.pipeline_state")} -- BF_SERVER_BLOCK_v542
          ) x
         GROUP BY 1
         ORDER BY COUNT(DISTINCT x.id) DESC
@@ -625,7 +657,7 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
          FROM applications
         WHERE UPPER(silo) = UPPER($1)
           AND created_at >= now() - ($2 || ' days')::interval
-          AND COALESCE(pipeline_state, '') NOT IN ('draft','Draft','')
+          AND ${boardScope("applications")} ${historicalStageFilter()} -- BF_SERVER_BLOCK_v542
         GROUP BY 1
         ORDER BY COUNT(*) DESC
         LIMIT 10`,
@@ -634,21 +666,14 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
     pool.query<{ category: string; total: string; issues: string }>(
       `SELECT COALESCE(NULLIF(d.category, ''), 'Uncategorized') AS category,
               COUNT(*)::text AS total,
-              COUNT(*) FILTER (
-                WHERE d.status = 'rejected'
-                   OR d.ocr_status = 'failed'
-                   OR d.status NOT IN ('accepted','rejected')
-                   OR d.status IS NULL
-              )::text AS issues
+              -- BF_SERVER_BLOCK_v542 - pending documents are not issues.
+              COUNT(*) FILTER (WHERE d.status = 'rejected' OR d.ocr_status = 'failed')::text AS issues
          FROM documents d
          JOIN applications a ON a.id = d.application_id
         WHERE UPPER(a.silo) = UPPER($1)
           AND d.created_at >= now() - ($2 || ' days')::interval
         GROUP BY 1
-        ORDER BY COUNT(*) FILTER (
-          WHERE d.status = 'rejected' OR d.ocr_status = 'failed'
-             OR d.status NOT IN ('accepted','rejected') OR d.status IS NULL
-        ) DESC, COUNT(*) DESC
+        ORDER BY COUNT(*) FILTER (WHERE d.status = 'rejected' OR d.ocr_status = 'failed') DESC, COUNT(*) DESC
         LIMIT 12`,
       [silo, String(days)],
     ).catch(() => ({ rows: [] as any[] })),
@@ -709,7 +734,7 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
          FROM applications a
         WHERE UPPER(a.silo) = UPPER($1)
           AND a.created_at >= now() - ($2 || ' days')::interval
-          AND COALESCE(a.pipeline_state, '') NOT IN ('draft','Draft','')`,
+          AND ${boardScope("a")} ${historicalStageFilter("a.pipeline_state")} -- BF_SERVER_BLOCK_v542`,
       [silo, String(days), ApplicationStage.ACCEPTED],
     );
     const row = result.rows[0];
@@ -730,7 +755,7 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
          FROM applications a
         WHERE UPPER(a.silo) = UPPER($1)
           AND a.created_at >= now() - ($2 || ' days')::interval
-          AND COALESCE(a.pipeline_state, '') NOT IN ('draft','Draft','')
+          AND ${boardScope("a")} ${historicalStageFilter("a.pipeline_state")} -- BF_SERVER_BLOCK_v542
         GROUP BY a.pipeline_state`,
       [silo, String(days)],
     );
@@ -790,8 +815,8 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
 }));
 
 // BF_SERVER_BLOCK_v822_DASHBOARD_PIPELINE_ACTIONS — real silo-scoped pipeline counts.
-router.get("/pipeline", requireAuth, safeHandler(async (_req: any, res: any) => {
-  const silo = getSilo(res);
+router.get("/pipeline", requireAuth, safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
   const r = await pool.query<{ stage: string; count: string }>(
     `SELECT pipeline_state AS stage, COUNT(*)::text AS count
        FROM applications
