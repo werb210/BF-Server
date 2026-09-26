@@ -18,6 +18,6 @@ describe("maya lender-products live-schema fix", () => {
   });
   it("guards transcript persistence to valid uuid session ids", () => {
     expect(proxy).toContain("isUuidSession");
-    expect(proxy).toContain("if (sessionId && userMsg && isUuidSession)");
+    expect(proxy).toContain("isUuidSession ? sessionId : toStableUuid(sessionId)"); // BF_SERVER_BLOCK_v567
   });
 });
