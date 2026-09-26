@@ -726,7 +726,17 @@ router.get(
     if ([...v778_uploaded].some((c) => /gov|government|photo.?id|identification|\bid\b/.test(c))) v778_completed.add("upload");
     const v778_required: string[] = (v778_req.rows ?? []).map((r: any) => String(r.category || "")).filter(Boolean);
     const v778_stillNeeded = v778_required.filter((c) => !v778_uploaded.has(c));
-    if (v778_required.length > 0 && v778_stillNeeded.length === 0) v778_completed.add("upload_docs");
+    // BF_SERVER_BLOCK_v561 - "all documents in" is the client's live upload list
+    // (waiver-aware, same answer as the to-do panel), not document_requirements.
+    let v561_docsClear = v778_required.length > 0 && v778_stillNeeded.length === 0;
+    try {
+      const { computeOutstandingDocs } = await import("../clientDocumentsNeeded.js");
+      const o = await computeOutstandingDocs(applicationId);
+      v561_docsClear = o.stillNeeded.length === 0 && o.rejected.length === 0;
+    } catch (err: any) {
+      console.warn("[client/messages] outstanding_docs_failed", { applicationId, message: err?.message });
+    }
+    if (v561_docsClear) v778_completed.add("upload_docs");
     const V778_TASK_KEYS = new Set<string>(["cra", "networth", "advisors", "debt", "equipment", "realestate", "flinks", "upload", "upload_docs"]);
     const v778_isTask = (cta: any): boolean => { if (!cta) return false; let k = String(cta); if (k.startsWith("form:")) k = k.slice(5); return V778_TASK_KEYS.has(k) || k.startsWith("upload:"); };
     const v778_isDone = (cta: any): boolean => {
@@ -741,6 +751,19 @@ router.get(
       return v778_completed.has(k);
     };
     let v778_rows = (rows.rows ?? []).filter((r: any) => !v778_isDone(r.cta_action));
+    // BF_SERVER_BLOCK_v561 - with nothing left to upload, the automated checklist
+    // notes go too. With the PGI application done, its prompt goes. What remains is
+    // open work and the real conversation between the client and staff.
+    if (v561_docsClear) {
+      v778_rows = v778_rows.filter((r: any) => !(!r.cta_action && typeof r.body === "string"
+        && /^(We've added more documents to your checklist|To continue your application, please upload)/.test(r.body)));
+    }
+    if (v778_rows.some((r: any) => r.cta_label === "Complete PGI Application")) {
+      const { pgiDone, pgiStageFor } = await import("../../services/pgiStage.js");
+      if (pgiDone(await pgiStageFor(applicationId))) {
+        v778_rows = v778_rows.filter((r: any) => r.cta_label !== "Complete PGI Application");
+      }
+    }
     if (!v778_rows.some((r: any) => v778_isTask(r.cta_action))) {
       v778_rows = v778_rows.filter((r: any) => !(typeof r.body === "string" && /few quick steps to finish/i.test(r.body)));
     }
