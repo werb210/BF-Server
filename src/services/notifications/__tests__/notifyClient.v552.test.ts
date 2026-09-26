@@ -23,7 +23,7 @@ describe("v552 app first, SMS otherwise", () => {
   it("no app on this phone: SMS", async () => {
     const d = deps({ pushUsersForPhone: vi.fn(async () => []) });
     expect(await notifyClient(notice, d)).toEqual({ channel: "sms" });
-    expect(d.sms).toHaveBeenCalledWith(notice.phone, "SMS text");
+    expect(d.sms).toHaveBeenCalledWith(notice.phone, "SMS text", { kind: "term_sheet", applicationId: "a1" }); // v555 tracking
   });
   it("push not configured yet: SMS without looking for devices", async () => {
     const d = deps({ pushReady: vi.fn(async () => false) });

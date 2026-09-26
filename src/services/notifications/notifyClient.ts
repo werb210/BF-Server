@@ -15,6 +15,7 @@ export type ClientNotice = {
   body: string;
   categoryId?: ApplicantPushCategory;
   url?: string;
+  track?: { kind?: string; applicationId?: string | null }; // BF_SERVER_BLOCK_v555 - SMS delivery tracking
 };
 export type NoticeResult = { channel: "push" | "sms" | "none"; error?: string };
 
@@ -22,7 +23,7 @@ export type NotifyDeps = {
   pushReady: () => Promise<boolean>;
   pushUsersForPhone: (phone10: string) => Promise<string[]>;
   push: (userId: string, n: ClientNotice) => Promise<number>;
-  sms: (phone: string, text: string) => Promise<void>;
+  sms: (phone: string, text: string, track?: { kind?: string; applicationId?: string | null }) => Promise<void>;
   record: (n: ClientNotice, phone10: string, r: NoticeResult) => Promise<void>;
 };
 
@@ -42,7 +43,7 @@ export async function notifyClient(n: ClientNotice, deps: NotifyDeps = defaultDe
     if (pushed > 0) {
       result = { channel: "push" };
     } else {
-      await deps.sms(n.phone, n.sms);
+      await deps.sms(n.phone, n.sms, n.track ?? { kind: n.kind, applicationId: n.applicationId ?? null });
       result = { channel: "sms" };
     }
   } catch (err: any) {
@@ -78,9 +79,9 @@ const defaultDeps: NotifyDeps = {
     });
     return r.sent;
   },
-  async sms(phone, text) {
+  async sms(phone, text, track) {
     const { sendSms } = await import("../../modules/notifications/sms.service.js");
-    await sendSms({ to: phone, message: text });
+    await sendSms({ to: phone, message: text, ...(track ? { track } : {}) });
   },
   async record(n, phone10, r) {
     const { pool } = await import("../../db.js");

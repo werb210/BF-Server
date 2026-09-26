@@ -229,12 +229,15 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
         const to = o1phone.startsWith("+") ? o1phone : `+1${o1digits.slice(-10)}`;
         const who = (inputs.applicantName ?? "").trim();
         const greeting = who ? `Hi ${who.split(/\s+/)[0]},` : "Hi,";
-        const { sendSms } = await import("../modules/notifications/sms.service.js");
-        await sendSms({
-          to,
-          message: `${greeting} your Boreal Financial application is ready for your signature. Sign in at client.boreal.financial with this phone number to review and sign. Reply STOP to opt out.`,
+        // BF_SERVER_BLOCK_v555 - app first, else SMS (v552).
+        const { notifyClient } = await import("../services/notifications/notifyClient.js");
+        const sent = await notifyClient({
+          phone: to, applicationId, kind: "owner1_signing", categoryId: "APPLICATION_UPDATE",
+          sms: `${greeting} your Boreal Financial application is ready for your signature. Sign in at client.boreal.financial with this phone number to review and sign. Reply STOP to opt out.`,
+          title: "Ready for your signature", body: "Your application is ready to sign.",
           track: { kind: "owner1_signing", applicationId }, // BF_SERVER_BLOCK_v464_SMS_DELIVERY
         });
+        if (sent.channel === "none") throw new Error(sent.error ?? "not_sent");
         await dbQuery(
           `update applications set metadata = coalesce(metadata,'{}'::jsonb)
              || jsonb_build_object('owner1_signing_sms_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))
