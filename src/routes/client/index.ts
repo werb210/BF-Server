@@ -360,6 +360,18 @@ router.get(
       res.status(400).json({ error: "applicationId_required" });
       return;
     }
+    // BF_SERVER_BLOCK_v549_LOCK_APPLICATION_STAGE - this returns the file's stored
+    // metadata (applicant name, DOB, SIN for form prefill). It answered anyone
+    // holding the application id, with no sign-in. The mini-portal is behind OTP
+    // (RequireOTP), so only the signed-in owner of the file gets an answer; anyone
+    // else is told the file does not exist.
+    {
+      const { callerOwnsApplication } = await import("../../auth/clientApplicationOwnership.js");
+      if (!(await callerOwnsApplication(req, applicationId))) {
+        res.status(404).json({ found: false });
+        return;
+      }
+    }
     const result = await dbQuery(
       `select pipeline_state, status, metadata from applications where id::text = ($1)::text limit 1`,
       [applicationId]
