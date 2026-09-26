@@ -1,6 +1,6 @@
 {
   "_comment": "BF_SERVER_INTEGRATION_RATCHET_v221, recalibrated by v225. The first ceiling (39 files / 60 tests) was read off the default reporter's text summary, but the ratchet measures the JSON reporter's numFailedTestSuites, which also counts files that fail at import time with zero tests run. Different metric. These numbers come from an actual JSON run. Drive them down, never up. v564: lowered to the first run on the schema baseline (75 files / 55 tests / 0 import failures).",
-  "maxFailedFiles": 20,
-  "maxFailedTests": 16,
+  "maxFailedFiles": 16,
+  "maxFailedTests": 14,
   "maxCollectionFailures": 0
 }

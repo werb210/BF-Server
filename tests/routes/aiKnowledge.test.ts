@@ -78,6 +78,6 @@ describe("settings ai-knowledge routes", () => {
       .set("authorization", bearerToken());
 
     expect(res.status).toBe(200);
-    expect(pool.query).toHaveBeenCalledWith("DELETE FROM ai_knowledge WHERE id = $1", ["doc-1"]);
+    expect(pool.query).toHaveBeenCalledWith("DELETE FROM ai_knowledge WHERE id::text = $1", ["doc-1"]); // BF_SERVER_BLOCK_v577 - id compared as text
   });
 });
