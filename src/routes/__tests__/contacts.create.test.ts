@@ -23,7 +23,7 @@ describe("POST /api/crm/contacts", () => {
   });
 
   function token() {
-    return jwt.sign({ id: "00000000-0000-0000-0000-000000000001", role: "admin", capabilities: ["crm:read"] }, "test-secret-12345");
+    return jwt.sign({ id: "00000000-0000-0000-0000-000000000001", role: "admin", capabilities: ["crm:read", "crm:write"] } /* BF_SERVER_BLOCK_v572 */, "test-secret-12345");
   }
 
   async function app() {
