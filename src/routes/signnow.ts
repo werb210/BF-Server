@@ -181,6 +181,11 @@ router.post(
         try {
           await notifyAllStaff({ pool, notificationType: "offer_term_sheet_signed", title: "Term sheet signed", body: `A client signed their term sheet (application ${applicationId}).`, refTable: "applications", refId: applicationId, contextUrl: `/applications/${applicationId}` });
         } catch (e) { console.warn("[signnow-webhook] offer notify failed", e instanceof Error ? e.message : String(e)); }
+        // BF_SERVER_BLOCK_v563 - now the client can see and receive the PGI link.
+        try {
+          const { sendPgiLinkAfterTermSheet } = await import("../services/termSheetSigned.js");
+          await sendPgiLinkAfterTermSheet(applicationId);
+        } catch (e) { console.warn("[signnow-webhook] pgi link failed", e instanceof Error ? e.message : String(e)); }
         console.log("[signnow-webhook] offer_term_sheet_signed", { applicationId, ...attach });
         res.status(200).json({ received: true, match: "offer_term_sheet", attached: attach.attached });
         return;

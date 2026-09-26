@@ -751,6 +751,13 @@ router.get(
       return v778_completed.has(k);
     };
     let v778_rows = (rows.rows ?? []).filter((r: any) => !v778_isDone(r.cta_action));
+    // BF_SERVER_BLOCK_v563 - no PGI prompt until the client has signed a term sheet.
+    if (v778_rows.some((r: any) => r.cta_label === "Complete PGI Application")) {
+      const { termSheetSigned } = await import("../../services/termSheetSigned.js");
+      if (!(await termSheetSigned(applicationId))) {
+        v778_rows = v778_rows.filter((r: any) => r.cta_label !== "Complete PGI Application");
+      }
+    }
     // BF_SERVER_BLOCK_v561 - with nothing left to upload, the automated checklist
     // notes go too. With the PGI application done, its prompt goes. What remains is
     // open work and the real conversation between the client and staff.
