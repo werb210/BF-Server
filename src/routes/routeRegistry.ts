@@ -54,6 +54,7 @@ import reportingRoutes from "./reporting.js";
 import reportsRoutes from "./reports.js";
 import settingsRoutes from "./settings.js";
 import collateralRoutes from "./collateral.js"; // v693
+import creditSummaryV2Routes from "./creditSummaryV2.js"; // BF_SERVER_BLOCK_v538
 import creditResearchRoutes from "./creditResearch.js"; // BF_SERVER_BLOCK_v537
 import creditCollateralRoutes from "./creditCollateral.js"; // BF_SERVER_BLOCK_v536
 import creditFinancialsRoutes from "./creditFinancials.js"; // BF_SERVER_BLOCK_v535
@@ -300,6 +301,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/slf", router: slfRoutes },
   { path: "/applications", router: applicationsRoutes },
   { path: "/collateral", router: collateralRoutes }, // v693
+  { path: "/credit-summary-v2", router: creditSummaryV2Routes }, // BF_SERVER_BLOCK_v538
   { path: "/credit-research", router: creditResearchRoutes }, // BF_SERVER_BLOCK_v537
   { path: "/credit-collateral", router: creditCollateralRoutes }, // BF_SERVER_BLOCK_v536
   { path: "/credit-financials", router: creditFinancialsRoutes }, // BF_SERVER_BLOCK_v535
