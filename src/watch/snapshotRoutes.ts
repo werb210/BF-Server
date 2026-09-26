@@ -66,6 +66,10 @@ export async function buildWatchSnapshot(userId: string) {
     // A heartbeat older than five minutes means the client went away without
     // saying so. Reporting the last known status as current would tell the
     // watch someone is available when they are not.
+    // BF_SERVER_BLOCK_v557_WATCH_NEXT_MEETING
+    const { nextMeetingFor } = await import("./nextMeeting.js");
+    const nextMeeting = await nextMeetingFor(userId).catch(() => null);
+
     const row = presence.rows[0];
     const status = !row ? "offline" : row.stale ? "offline" : row.status;
 
@@ -74,6 +78,7 @@ export async function buildWatchSnapshot(userId: string) {
       missedCalls: Number(missed.rows[0]?.count ?? 0),
       tasksDue: Number(tasksDue.rows[0]?.count ?? 0),
       asOf: new Date().toISOString(),
+      nextMeeting, // BF_SERVER_BLOCK_v557 - { title, startsAt } or null
     };
 }
 
