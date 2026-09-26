@@ -28,7 +28,7 @@ describe("dashboard analytics aggregate endpoint", () => {
   });
 
   it("keeps aggregate queries silo-scoped and windowed", () => {
-    expect(aggregate).toContain("const silo = getSilo(res)");
+    expect(aggregate).toContain("const silo = resolveSiloFromRequest(req)");
     expect(aggregate).toContain("const days = windowDays(req)");
     const queries = aggregate.split("pool.query").slice(1);
     expect(queries.length).toBe(5);

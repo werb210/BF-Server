@@ -1,13 +1,11 @@
 // BF_SERVER_APPLICANT_ACTION_CENTER_v197
-// One answer to "what does this applicant still have to do".
-//
-// Before this there were two: the v778 block in routes/client/index.ts derived a
-// completed-task set to filter the message thread, and clientDocumentsNeeded.ts
-// derived a still-needed document list from document_requirements. They used
-// different sources and different matching, so the chat thread and the document
-// picker could disagree about whether the same task was done. Anything new that
-// asked the question a third way would make that worse, so both callers are meant
-// to converge here.
+// BF_SERVER_BLOCK_v544_ACTION_CENTER_MATCHES_REQUEST_ITEMS
+// One answer to "what does this applicant still have to do", and the SAME answer
+// staff see on the Request Items and Application tabs:
+//   forms     = forms staff requested (task prompts in the thread) minus forms
+//               staff unchecked on Request Items (form:<id> waivers). A draft
+//               form row the client happened to open does NOT make it required.
+//   documents = computeOutstandingDocs (the client's upload list, waiver-aware).
 import { dbQuery } from "../db.js";
 
 export type ActionItem = {
@@ -25,10 +23,10 @@ export type ActionCenter = {
   outstandingCount: number;
 };
 
-// The task keys the client wizard and mini-portal already use. Kept identical to
-// v778's vocabulary so the thread filter can adopt this without changing the CTAs
-// that are already stored on live messages.
-const FORM_TASKS: Array<{ key: string; label: string; match: RegExp }> = [
+type Doc = { document_type: string; label: string };
+
+// The task keys the client wizard and mini-portal already use (v778 vocabulary).
+export const FORM_TASKS: Array<{ key: string; label: string; match: RegExp }> = [
   { key: "cra", label: "CRA Authorization", match: /cra/i },
   { key: "networth", label: "Personal Net Worth", match: /net.?worth/i },
   { key: "advisors", label: "Professional Advisors", match: /advisor/i },
@@ -38,91 +36,51 @@ const FORM_TASKS: Array<{ key: string; label: string; match: RegExp }> = [
   { key: "flinks", label: "Connect Bank (View-Only)", match: /flinks|bank/i },
 ];
 
-function prettyCategory(raw: string): string {
-  const s = String(raw ?? "").trim();
-  if (!s) return "Document";
-  return s
-    .replace(/_/g, " ")
-    .replace(/\b6 months\b/i, "(6 months)")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
+const norm = (s: string): string => String(s ?? "").trim().toLowerCase();
 
-export async function buildActionCenter(applicationId: string): Promise<ActionCenter> {
-  // Every lookup degrades to empty rather than throwing. A half-rendered action
-  // list is recoverable; an exception on the applicant's home screen is not.
-  const [formsQ, docsQ, reqQ, rejectedQ] = await Promise.all([
-    dbQuery<{ doc_type: string }>(
-      `SELECT doc_type FROM application_form_responses
-        WHERE application_id::text = ($1)::text AND submitted_at IS NOT NULL`,
-      [applicationId],
-    ).catch(() => ({ rows: [] as Array<{ doc_type: string }> })),
-    dbQuery<{ category: string }>(
-      `SELECT DISTINCT lower(coalesce(category,'')) AS category FROM documents
-        WHERE application_id::text = ($1)::text
-          AND coalesce(status,'') <> 'rejected'
-          AND deleted_at IS NULL`,
-      [applicationId],
-    ).catch(() => ({ rows: [] as Array<{ category: string }> })),
-    dbQuery<{ category: string }>(
-      `SELECT lower(coalesce(category,'')) AS category FROM document_requirements
-        WHERE application_id::text = ($1)::text AND required = true AND category IS NOT NULL`,
-      [applicationId],
-    ).catch(() => ({ rows: [] as Array<{ category: string }> })),
-    dbQuery<{ category: string }>(
-      `SELECT DISTINCT lower(coalesce(category,'')) AS category FROM documents
-        WHERE application_id::text = ($1)::text AND coalesce(status,'') = 'rejected'
-          AND deleted_at IS NULL`,
-      [applicationId],
-    ).catch(() => ({ rows: [] as Array<{ category: string }> })),
-  ]);
-
-  const submittedForms = (formsQ.rows ?? []).map((r) => String(r.doc_type ?? ""));
-  const uploaded = new Set((docsQ.rows ?? []).map((r) => String(r.category ?? "")).filter(Boolean));
-  const required = (reqQ.rows ?? []).map((r) => String(r.category ?? "")).filter(Boolean);
-  const rejected = new Set((rejectedQ.rows ?? []).map((r) => String(r.category ?? "")).filter(Boolean));
-
+// Pure: everything the list shows is decided here, so it is testable without a
+// database.
+export function assembleActionCenter(input: {
+  requestedForms: string[];
+  waivedForms: string[];
+  submittedFormTypes: string[];
+  required: Doc[];
+  stillNeeded: Doc[];
+  rejected: Doc[];
+}): ActionCenter {
   const outstanding: ActionItem[] = [];
   const completed: ActionItem[] = [];
 
-  // Documents. Both upload lookups apply deleted_at IS NULL so neither the
-  // completed nor rejected counts can be affected by soft-deleted records.
-  // A rejected category counts as outstanding even if an older
-  // accepted upload exists for it - staff rejected the latest one for a reason.
-  for (const category of Array.from(new Set(required))) {
-    const item: ActionItem = {
-      key: `upload:${category}`,
-      kind: "document",
-      label: prettyCategory(category),
-      urgent: rejected.has(category),
-    };
-    if (rejected.has(category) || !uploaded.has(category)) outstanding.push(item);
+  const still = new Set(input.stillNeeded.map((d) => norm(d.document_type)));
+  const rejected = new Set(input.rejected.map((d) => norm(d.document_type)));
+  const seen = new Set<string>();
+
+  for (const d of input.rejected) {
+    const k = norm(d.document_type);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    outstanding.push({ key: `upload:${k}`, kind: "document", label: d.label || d.document_type, urgent: true });
+  }
+  for (const d of input.required) {
+    const k = norm(d.document_type);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    const item: ActionItem = { key: `upload:${k}`, kind: "document", label: d.label || d.document_type, urgent: false };
+    if (still.has(k) || rejected.has(k)) outstanding.push(item);
     else completed.push(item);
   }
-
-  // A rejected document whose category is no longer in the requirements list
-  // still needs re-uploading, or the applicant is never told about it.
-  for (const category of rejected) {
-    if (required.includes(category)) continue;
-    outstanding.push({
-      key: `upload:${category}`,
-      kind: "document",
-      label: prettyCategory(category),
-      urgent: true,
-    });
+  for (const d of input.stillNeeded) {
+    const k = norm(d.document_type);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    outstanding.push({ key: `upload:${k}`, kind: "document", label: d.label || d.document_type, urgent: false });
   }
 
-  // Forms. Only forms actually asked of this application appear; a form is asked
-  // for if a response row exists for it at all, submitted or not.
-  const askedQ = await dbQuery<{ doc_type: string }>(
-    `SELECT DISTINCT doc_type FROM application_form_responses
-      WHERE application_id::text = ($1)::text`,
-    [applicationId],
-  ).catch(() => ({ rows: [] as Array<{ doc_type: string }> }));
-  const asked = (askedQ.rows ?? []).map((r) => String(r.doc_type ?? ""));
-
+  const requested = new Set(input.requestedForms.map(norm));
+  const waived = new Set(input.waivedForms.map(norm));
   for (const task of FORM_TASKS) {
-    if (!asked.some((d) => task.match.test(d))) continue;
-    const done = submittedForms.some((d) => task.match.test(d));
+    if (!requested.has(task.key) || waived.has(task.key)) continue;
+    const done = input.submittedFormTypes.some((t) => task.match.test(t));
     const item: ActionItem = { key: `form:${task.key}`, kind: "form", label: task.label, urgent: false };
     if (done) completed.push(item);
     else outstanding.push(item);
@@ -130,6 +88,31 @@ export async function buildActionCenter(applicationId: string): Promise<ActionCe
 
   outstanding.sort((a, b) => Number(b.urgent) - Number(a.urgent) || a.label.localeCompare(b.label));
   completed.sort((a, b) => a.label.localeCompare(b.label));
-
   return { outstanding, completed, outstandingCount: outstanding.length };
+}
+
+export async function buildActionCenter(applicationId: string): Promise<ActionCenter> {
+  // Every lookup degrades to empty rather than throwing: a half-rendered list is
+  // recoverable, an exception on the applicant's home screen is not.
+  const docsMod = await import("../routes/clientDocumentsNeeded.js");
+  const empty = { stillNeeded: [] as Doc[], rejected: [] as Doc[], required: [] as Doc[] };
+  const [docs, requestedForms, waivedAll, formsQ] = await Promise.all([
+    docsMod.computeOutstandingDocs(applicationId).catch((err: any) => { console.warn("[action-center] docs_read_failed", { applicationId, message: err?.message }); return empty; }),
+    docsMod.getRequestedFormIds(applicationId).catch((err: any) => { console.warn("[action-center] forms_read_failed", { applicationId, message: err?.message }); return [] as string[]; }),
+    docsMod.getWaivedDocTypes(applicationId).catch((err: any) => { console.warn("[action-center] waivers_read_failed", { applicationId, message: err?.message }); return new Set<string>(); }),
+    dbQuery<{ doc_type: string }>(
+      `SELECT doc_type FROM application_form_responses
+        WHERE application_id::text = ($1)::text AND submitted_at IS NOT NULL`,
+      [applicationId],
+    ).catch((err: any) => { console.warn("[action-center] submitted_forms_read_failed", { applicationId, message: err?.message }); return { rows: [] as Array<{ doc_type: string }> }; }),
+  ]);
+  const waivedForms = Array.from(waivedAll).filter((w) => w.startsWith("form:")).map((w) => w.slice(5));
+  return assembleActionCenter({
+    requestedForms,
+    waivedForms,
+    submittedFormTypes: (formsQ.rows ?? []).map((r) => String(r.doc_type ?? "")),
+    required: docs.required,
+    stillNeeded: docs.stillNeeded,
+    rejected: docs.rejected,
+  });
 }
