@@ -31,9 +31,11 @@ describe("BF_SERVER_REFERRAL_CROSS_SILO_v1", () => {
     expect(conversions).toContain("ON CONFLICT (source_silo, external_application_id) WHERE external_application_id IS NOT NULL DO UPDATE");
   });
 
-  it("mounts service-JWT protected BI ingest under /api/referrals/from-bi", () => {
+  // BF_SERVER_BLOCK_v574 - moved to its own mount (REFERRALS_EXT_MOUNT_v1) because it collided
+  // with /referrals; BI-Server's notifyBfReferralConversion posts to /api/referrals-ext/from-bi.
+  it("mounts service-JWT protected BI ingest under /api/referrals-ext/from-bi", () => {
     expect(routeRegistry).toContain("referralsExtRoutes");
-    expect(routeRegistry).toContain('{ path: "/referrals", router: referralsExtRoutes }');
+    expect(routeRegistry).toContain('{ path: "/referrals-ext", router: referralsExtRoutes }');
     expect(readFileSync(join(process.cwd(), "src", "routes", "referralsExt.ts"), "utf8")).toContain('"/from-bi"');
   });
 });

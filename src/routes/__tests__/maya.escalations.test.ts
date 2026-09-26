@@ -15,6 +15,14 @@ vi.mock("../../db.js", async () => {
   };
 });
 
+// BF_SERVER_BLOCK_v574 - v317 put staff-only auth on this route (the agent calls it with a
+// service JWT). These tests exercise the handler behind that gate; the gate itself is
+// checked at the bottom of this file.
+vi.mock("../../middleware/auth.js", () => ({
+  requireAuth: (_req: any, _res: any, next: any) => next(),
+  requireAuthorization: () => (_req: any, _res: any, next: any) => next(),
+}));
+
 describe("POST /api/maya/escalations", () => {
   beforeEach(() => {
     queryMock.mockReset();
@@ -53,7 +61,8 @@ describe("POST /api/maya/escalations", () => {
     expect(res.body?.data?.id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     );
-    expect(queryMock).toHaveBeenCalledTimes(2);
+    // v574: staff are also notified (MAYA_ESCALATION_NOTIFY), so count the insert, not every query.
+    expect(queryMock.mock.calls.some((c: any[]) => /INSERT INTO maya_escalations/.test(String(c[0])))).toBe(true);
   });
 
   it("dedupes a repeat (sessionId + reason) within 60s and returns the existing id", async () => {
@@ -91,5 +100,14 @@ describe("POST /api/maya/escalations", () => {
     );
     expect(insertCall).toBeDefined();
     expect(insertCall![1][2]).toBeNull(); // application_id arg → null
+  });
+});
+
+describe("POST /api/maya/escalations auth (v317)", () => {
+  it("is staff-only", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync("src/routes/maya.ts", "utf8");
+    const at = src.indexOf('"/escalations",');
+    expect(src.slice(at, at + 1500)).toMatch(/requireAuth,\s*requireAuthorization\(\{ roles: \[ROLES\.ADMIN, ROLES\.STAFF\] \}\)/);
   });
 });
