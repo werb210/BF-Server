@@ -7,13 +7,14 @@ process.env.TWILIO_APP_SID = "test";
 import { afterEach, beforeEach, vi } from "vitest";
 import { resetRedisMock } from "../lib/redis.js";
 import { resetTestDb } from "../lib/dbTestUtils.js";
-import { resetOtpStateForTests } from "../app.js";
 import { resetRateLimitForTests } from "../system/rateLimit.js";
 
 beforeEach(async () => {
   await resetTestDb();
   resetRedisMock();
-  resetOtpStateForTests();
+  // BF_SERVER_BLOCK_v571 - was resetOtpStateForTests() from ../app.js, which loaded the
+  // whole route graph before each test file's vi.mock could apply. Same reset, no import.
+  (globalThis as any).__otpStore = {};
   resetRateLimitForTests();
 });
 
