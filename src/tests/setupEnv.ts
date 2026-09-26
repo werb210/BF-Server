@@ -6,7 +6,12 @@ import { afterAll } from "vitest";
 applyTestEnvDefaults();
 
 process.env.NODE_ENV = "test";
-process.env.DATABASE_URL = "postgresql://user:pass@127.0.0.1:5432/bf_test";
+// BF_SERVER_BLOCK_v577 - the integration job provides a real Postgres (built from the schema
+// baseline) in DATABASE_URL. Overwriting it with this placeholder meant no integration test ever
+// reached that database. Unit runs still get the placeholder.
+if (!(process.env.VITEST_INTEGRATION === "true" && process.env.DATABASE_URL)) {
+  process.env.DATABASE_URL = "postgresql://user:pass@127.0.0.1:5432/bf_test";
+}
 process.env.JWT_SECRET = "test-jwt-secret";
 process.env.OPENAI_API_KEY = "sk-test-key";
 process.env.TWILIO_ACCOUNT_SID = "AC00000000000000000000000000000000";
