@@ -1,7 +1,8 @@
 import { vi } from "vitest";
 
 vi.mock("openai", () => {
-  const OpenAI = vi.fn().mockImplementation(() => ({
+  // BF_SERVER_BLOCK_v571 - a function, not an arrow: modules call `new OpenAI(...)` at load.
+  const OpenAI = vi.fn().mockImplementation(function () { return ({
     models: { list: vi.fn().mockResolvedValue({ data: [] }) },
     chat: {
       completions: {
@@ -13,7 +14,7 @@ vi.mock("openai", () => {
     embeddings: {
       create: vi.fn().mockResolvedValue({ data: [{ embedding: [0.1, 0.2] }] }),
     },
-  }));
+  }); });
 
   return { default: OpenAI };
 });

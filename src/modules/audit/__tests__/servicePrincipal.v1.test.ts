@@ -2,7 +2,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const query = vi.fn();
-vi.mock("../../../observability/requestContext", () => ({ fetchRequestId: () => "req-1" }));
+vi.mock("../../../observability/requestContext", () => ({ fetchRequestId: () => "req-1", fetchRequestServiceName: () => null })); // BF_SERVER_BLOCK_v571
 
 const { recordAuditEvent } = await import("../audit.service.js");
 const client = { query, runQuery: query } as any;

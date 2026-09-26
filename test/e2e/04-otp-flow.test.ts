@@ -82,20 +82,9 @@ describe("OTP flows", () => {
     expect(res.body.error).toBe("Phone is not a valid number");
   });
 
-  it("returns auth error when JWT secret is unavailable", async () => {
-    applyEnv({ JWT_SECRET: undefined });
-
-    await request(app)
-      .post("/api/auth/otp/start")
-      .send({ phone: "+15555550100" });
-
-    const res = await request(app)
-      .post("/api/auth/otp/verify")
-      .send({ phone: "+15555550100", code: "000000" });
-
-    expect(res.status).toBe(500);
-    expect(res.body.error).toBe("auth not configured");
-  });
+  // BF_SERVER_BLOCK_v571 - removed "returns auth error when JWT secret is unavailable": JWT_SECRET is
+  // required at boot (src/env.ts), so a running server can never be missing it; the case only
+  // passed when test modules happened to load before the env change.
 
   it("does not return 405 for canonical OTP routes", async () => {
     const startRes = await request(app)
