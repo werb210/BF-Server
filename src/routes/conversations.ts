@@ -5,11 +5,12 @@
 import { Router } from "express";
 import { pool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_BLOCK_v578
 import { sendSms } from "../modules/notifications/sms.service.js";
 
 const router = Router();
 
-router.get("/conversations", requireAuth, async (req, res) => {
+router.get("/conversations", requireAuth, safeHandler(async (req: any, res: any) => {
   const channel = String(req.query.channel ?? "").trim();
   const silo: string = (res.locals?.silo as string | undefined) ?? "BF";
   const filters: string[] = ["cc.silo = $1"]; // BF_SERVER_BLOCK_v725_CONV_NAME_RESOLVE_v1
@@ -42,9 +43,9 @@ router.get("/conversations", requireAuth, async (req, res) => {
     values
   );
   res.json({ conversations: r.rows });
-});
+}));
 
-router.get("/conversations/:id/messages", requireAuth, async (req, res) => {
+router.get("/conversations/:id/messages", requireAuth, safeHandler(async (req: any, res: any) => {
   const since = req.query.since ? new Date(String(req.query.since)) : null;
   const params: string[] = [req.params.id];
   let sinceClause = "";
@@ -61,9 +62,9 @@ router.get("/conversations/:id/messages", requireAuth, async (req, res) => {
     params
   );
   res.json({ messages: r.rows });
-});
+}));
 
-router.post("/conversations/:id/messages", requireAuth, async (req, res) => {
+router.post("/conversations/:id/messages", requireAuth, safeHandler(async (req: any, res: any) => {
   const conv = await pool.query<{ contact_phone: string | null; channel: string }>(
     `SELECT contact_phone, channel FROM communications_conversations WHERE id = $1`,
     [req.params.id]
@@ -105,7 +106,7 @@ router.post("/conversations/:id/messages", requireAuth, async (req, res) => {
     body,
     created_at: ins.rows[0].created_at,
   });
-});
+}));
 
 router.get("/conversations/:id/stream", async (req, res) => {
   const jwt = await import("jsonwebtoken");
