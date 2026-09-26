@@ -347,9 +347,45 @@ router.get("/recent-calls", auth, async (req: any, res) => {
         LIMIT 50`,
       [userId],
     )
-    .catch(() => ({ rows: [] as any[] }));
-  return res.json({ ok: true, items: r.rows ?? [] });
+    .catch((e: unknown) => { console.error("[voice.recent-calls] query_failed", (e as Error)?.message); return { rows: [] as any[] }; });
+  // BF_SERVER_BLOCK_v542 - one row per outbound call (see collapseOutboundLegs).
+  return res.json({ ok: true, items: collapseOutboundLegs(r.rows ?? []) });
 });
+
+// BF_SERVER_BLOCK_v542_ONE_ROW_PER_CALL - an outbound call is written twice with
+// DIFFERENT Twilio SIDs (the dialer's own leg and the PSTN leg), so the sid dedup
+// above cannot catch it: one row is logged when the call starts (number, no
+// duration) and one when it ends (duration, often no number, stamped at the END
+// time). The Phone tab showed both. Pair a no-duration row with a timed row whose
+// START (end time minus duration) is within 2 minutes, keep one row: the timed
+// one, dated at the start, carrying the number so the Call button works.
+export function collapseOutboundLegs(rows: any[]): any[] {
+  const ms = (v: unknown) => new Date(String(v ?? "")).getTime();
+  const out = rows.map((r) => ({ ...r }));
+  const drop = new Set<number>();
+  const timed = out
+    .map((r, i) => ({ r, i, start: ms(r.created_at) - Number(r.duration_seconds ?? 0) * 1000 }))
+    .filter((x) => x.r.direction !== "inbound" && Number(x.r.duration_seconds) > 0 && Number.isFinite(x.start));
+  const used = new Set<number>();
+  out.forEach((r, i) => {
+    if (r.direction === "inbound" || Number(r.duration_seconds) > 0) return;
+    const t = ms(r.created_at);
+    if (!Number.isFinite(t)) return;
+    const match = timed
+      .filter((x) => !used.has(x.i) && Math.abs(x.start - t) <= 120_000)
+      .sort((x, y) => Math.abs(x.start - t) - Math.abs(y.start - t))[0];
+    if (!match) return;
+    used.add(match.i);
+    drop.add(i);
+    const keep = out[match.i];
+    keep.phone_number = keep.phone_number || r.phone_number;
+    keep.contact_id = keep.contact_id || r.contact_id;
+    keep.contact_name = keep.contact_name || r.contact_name;
+    keep.disposition = keep.disposition || r.disposition;
+    keep.created_at = r.created_at;
+  });
+  return out.filter((_, i) => !drop.has(i)).sort((x, y) => ms(y.created_at) - ms(x.created_at));
+}
 
 router.post("/calls", auth, async (req: any, res) => {
   const target = req.body ?? {};
