@@ -33,7 +33,7 @@ describe("POST /api/client/applications/:token/submit normalized", () => {
     state.appCompanyId = null;
     queryMock.mockReset();
     queryMock.mockImplementation(async (sql: string, params?: any[]) => {
-      if (sql.includes("FROM applications") && sql.includes("WHERE id = $1")) {
+      if (sql.includes("FROM applications") && (sql.includes("WHERE id = $1") || sql.includes("WHERE id::text = ($1)::text"))) { // BF_SERVER_BLOCK_v579 - lookup compares as text
         return { rows: [{ id: state.appId, silo: "BF", owner_user_id: "owner-1" }] };
       }
       if (sql.startsWith("BEGIN") || sql.startsWith("COMMIT") || sql.startsWith("ROLLBACK")) {
