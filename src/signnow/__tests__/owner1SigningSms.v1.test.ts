@@ -11,8 +11,9 @@ const session = readFileSync(
 describe("owner 1 is notified when a signing envelope is created", () => {
   it("sends an SMS to the applicant", () => {
     expect(session).toContain("BF_SERVER_OWNER1_SIGNING_SMS_v1");
-    expect(session).toContain("modules/notifications/sms.service.js");
-    expect(session).toContain("sendSms(");
+    // BF_SERVER_BLOCK_v555 - app first, else SMS, through notifyClient.
+    expect(session).toContain("services/notifications/notifyClient.js");
+    expect(session).toContain("notifyClient(");
   });
 
   it("points the applicant at the portal, not a 45-minute embedded link", () => {

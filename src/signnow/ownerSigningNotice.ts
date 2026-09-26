@@ -72,12 +72,15 @@ export async function remindOwner1ToSign(applicationId: string, now: Date = new 
   }
   try {
     const first = c.name ? c.name.split(/\s+/)[0] : null;
-    const { sendSms } = await import("../modules/notifications/sms.service.js");
-    await sendSms({
-      to: c.phone,
-      message: `${first ? `Hi ${first},` : "Hi,"} your Boreal Financial application is ready for your signature. Sign in at ${PORTAL} with this phone number to review and sign. Reply STOP to opt out.`,
+    // BF_SERVER_BLOCK_v555 - app first, else SMS (v552).
+    const { notifyClient } = await import("../services/notifications/notifyClient.js");
+    const sent = await notifyClient({
+      phone: c.phone, applicationId, kind: "owner1_signing", categoryId: "APPLICATION_UPDATE",
+      sms: `${first ? `Hi ${first},` : "Hi,"} your Boreal Financial application is ready for your signature. Sign in at ${PORTAL} with this phone number to review and sign. Reply STOP to opt out.`,
+      title: "Ready for your signature", body: "Your application is ready to sign.",
       track: { kind: "owner1_signing", applicationId }, // BF_SERVER_BLOCK_v464_SMS_DELIVERY
     });
+    if (sent.channel === "none") throw new Error(sent.error ?? "not_sent");
     await dbQuery(
       `UPDATE applications SET metadata = COALESCE(metadata,'{}'::jsonb)
           || jsonb_build_object('owner1_signing_sms_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))
