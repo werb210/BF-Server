@@ -14,7 +14,10 @@ import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 const DIR = resolve(process.cwd(), "migrations");
-const FILES = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();
+// BF_SERVER_BLOCK_v564 - 000000_baseline.sql is a pg_dump of the live schema that
+// runMigrations loads only on an empty database (v159). It is not a migration and
+// its "ALTER TABLE ONLY public.x" lines are not writes to a table named ONLY.
+const FILES = readdirSync(DIR).filter((f) => f.endsWith(".sql") && f !== "000000_baseline.sql").sort();
 const read = (f: string) => readFileSync(resolve(DIR, f), "utf8");
 
 // Comments describe history and often name tables that no longer exist.
