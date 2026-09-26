@@ -72,10 +72,11 @@ describe("v650 — missing-docs SMS on submit (B)", () => {
   });
 });
 
-describe("v650 — DocPicker resolves category-union when lender_product_id is NULL (K)", () => {
-  it("queries by product_category + amount window when no product is set", () => {
-    expect(dn).toMatch(/LOWER\(p\.category\) = \$1/);
-    expect(dn).toMatch(/p\.amount_min IS NULL OR p\.amount_min <= \$2/);
-    expect(dn).toMatch(/p\.amount_max IS NULL OR p\.amount_max >= \$2/);
+// BF_SERVER_BLOCK_v580 - v698 replaced the category + amount-window union: with no product on
+// the file, the documents come from the requirements the wizard stored on the application.
+describe("v650 — DocPicker still has documents when lender_product_id is NULL (K, now v698)", () => {
+  it("falls back to the wizard-stored product requirements", () => {
+    expect(dn).toContain("if (required.length === 0) {");
+    expect(dn).toContain("productRequirementItems(metaRes.rows[0]?.metadata)");
   });
 });
