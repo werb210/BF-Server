@@ -1,136 +1,111 @@
-import fs from "fs";
-import path from "path";
-import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+// BF_SERVER_BLOCK_v565 - rewritten for the current runner (per-file transactions on
+// a pooled client, advisory lock, v159 schema baseline). The old version tested an
+// applied_migrations runner that no longer exists.
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { Pool } from "pg";
-
 import { runMigrations } from "../startup/runMigrations.js";
 
-describe("startup runMigrations", () => {
-  const existsSyncSpy = vi.spyOn(fs, "existsSync");
-  const readdirSyncSpy = vi.spyOn(fs, "readdirSync");
-  const readFileSyncSpy = vi.spyOn(fs, "readFileSync");
-  const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-  const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
-  const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
-    throw new Error("process.exit called");
-  }) as never);
+let dir = "";
+const write = (name: string, sql: string) => fs.writeFileSync(path.join(dir, "migrations", name), sql);
 
-  beforeEach(() => {
-    existsSyncSpy.mockReset();
-    readdirSyncSpy.mockReset();
-    readFileSyncSpy.mockReset();
-    warnSpy.mockReset();
-    errorSpy.mockReset();
-    logSpy.mockReset();
-    exitSpy.mockReset();
+type Handler = (sql: string, params?: unknown[]) => { rows: any[] } | Promise<{ rows: any[] }>;
+function fakePool(handler: Handler) {
+  const calls: Array<{ sql: string; params?: unknown[] }> = [];
+  const client = {
+    query: vi.fn(async (sql: string, params?: unknown[]) => {
+      calls.push({ sql, params });
+      if (sql.includes("pg_try_advisory_lock")) return { rows: [{ locked: true }] };
+      if (sql.includes("information_schema.columns")) return { rows: [{ exists: true }] };
+      return handler(sql, params);
+    }),
+    release: vi.fn(),
+  };
+  return { pool: { connect: async () => client } as unknown as Pool, calls, client };
+}
 
-    warnSpy.mockImplementation(() => undefined);
-    errorSpy.mockImplementation(() => undefined);
-    logSpy.mockImplementation(() => undefined);
-    exitSpy.mockImplementation((() => {
-      throw new Error("process.exit called");
-    }) as never);
+beforeEach(() => {
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "mig-"));
+  fs.mkdirSync(path.join(dir, "migrations"));
+  write("001_a.sql", "create table a(id int);");
+  write("002_b.sql", "create table b(id int);");
+  vi.spyOn(process, "cwd").mockReturnValue(dir);
+  vi.spyOn(console, "log").mockImplementation(() => undefined);
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  vi.spyOn(console, "error").mockImplementation(() => undefined);
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
 
-    existsSyncSpy.mockReturnValue(true);
-    readdirSyncSpy.mockReturnValue(["001_init.sql", "002_add_index.sql"] as any);
-    readFileSyncSpy.mockImplementation((filePath: fs.PathOrFileDescriptor) => {
-      if (String(filePath).endsWith("001_init.sql")) {
-        return "create table t1(id int);";
-      }
-      return "create index idx_t1 on t1(id);";
-    });
-  });
-
-  afterEach(() => undefined);
-
-  it("skips already-applied migrations without executing SQL", async () => {
-    const query = vi.fn(async (sql: string) => {
-      if (sql.includes("to_regclass('public.applied_migrations')")) {
-        return { rows: [{ exists: "schema_migrations" }] };
-      }
-      if (sql === "select id from applied_migrations") {
-        return { rows: [{ id: "001_init.sql" }, { id: "002_add_index.sql" }] };
-      }
-      return { rows: [] };
-    });
-
-    const pool = { query } as unknown as Pool;
-
-    const start = Date.now();
+describe("runMigrations", () => {
+  it("skips migrations already recorded", async () => {
+    const { pool, calls, client } = fakePool((sql) =>
+      sql === "SELECT id FROM schema_migrations" ? { rows: [{ id: "001_a.sql" }, { id: "002_b.sql" }] } : { rows: [] });
     await runMigrations(pool);
-    const elapsedMs = Date.now() - start;
-
-    expect(elapsedMs).toBeLessThan(2000);
-    expect(readFileSyncSpy).not.toHaveBeenCalled();
-    expect(query).not.toHaveBeenCalledWith("create table t1(id int);");
-    expect(query).not.toHaveBeenCalledWith("begin");
-    expect(query).not.toHaveBeenCalledWith("commit");
+    expect(calls.some((c) => c.sql === "BEGIN")).toBe(false);
+    expect(client.release).toHaveBeenCalled();
   });
 
-  it("logs known duplicate-object failures as warnings and never as errors", async () => {
-    const query = vi.fn(async (sql: string, params?: unknown[]) => {
-      if (sql.includes("to_regclass('public.applied_migrations')")) {
-        return { rows: [{ exists: null }] };
-      }
-      if (sql.startsWith("create table if not exists schema_migrations")) {
-        return { rows: [] };
-      }
-      if (sql === "select id from schema_migrations") {
-        return { rows: [] };
-      }
-      if (sql === "create table t1(id int);") {
-        const err = new Error("duplicate relation");
-        (err as Error & { code?: string }).code = "42P07";
-        throw err;
-      }
-      if (sql.startsWith("insert into schema_migrations") && params?.[0] === "001_init.sql") {
-        return { rows: [] };
-      }
-      return { rows: [] };
-    });
-
-    const pool = { query } as unknown as Pool;
-
+  it("applies a new migration in its own transaction and records it", async () => {
+    const { pool, calls } = fakePool((sql) =>
+      sql === "SELECT id FROM schema_migrations" ? { rows: [{ id: "001_a.sql" }] } : { rows: [] });
     await runMigrations(pool);
-
-    expect(warnSpy).toHaveBeenCalledWith(
-      "migration_already_present: 001_init.sql (42P07)"
-    );
-    expect(errorSpy).not.toHaveBeenCalledWith(
-      expect.stringContaining("migration_failed: 001_init.sql"),
-      expect.anything()
-    );
-    expect(query).toHaveBeenCalledWith(
-      expect.stringContaining("insert into schema_migrations"),
-      ["001_init.sql"]
-    );
+    const i = calls.findIndex((c) => c.sql === "create table b(id int);");
+    expect(calls[i - 1].sql).toBe("BEGIN");
+    expect(calls[i + 1].params).toEqual(["002_b.sql"]);
+    expect(calls[i + 2].sql).toBe("COMMIT");
   });
 
-  it("fails fast when a migration fails with a non-idempotent error", async () => {
-    const query = vi.fn(async (sql: string) => {
-      if (sql.includes("to_regclass('public.applied_migrations')")) {
-        return { rows: [{ exists: "applied_migrations" }] };
-      }
-      if (sql === "select id from applied_migrations") {
-        return { rows: [] };
-      }
-      if (sql === "create table t1(id int);") {
-        const err = new Error("syntax error");
-        (err as Error & { code?: string }).code = "42601";
-        throw err;
-      }
+  it("records an already-present object (42P07) instead of failing", async () => {
+    const { pool, calls } = fakePool((sql) => {
+      if (sql === "SELECT id FROM schema_migrations") return { rows: [{ id: "001_a.sql" }] };
+      if (sql === "create table b(id int);") throw Object.assign(new Error("exists"), { code: "42P07" });
       return { rows: [] };
     });
+    await runMigrations(pool);
+    expect(calls.some((c) => c.sql === "ROLLBACK")).toBe(true);
+    expect(calls.some((c) => c.sql.startsWith("INSERT INTO schema_migrations") && (c.params ?? [])[0] === "002_b.sql")).toBe(true);
+  });
 
-    const pool = { query } as unknown as Pool;
-    await expect(runMigrations(pool)).rejects.toThrow("process.exit called");
-    expect(errorSpy).toHaveBeenCalledWith(
-      "FATAL MIGRATION FAILURE",
-      expect.objectContaining({
-        file: "001_init.sql",
-      })
-    );
-    expect(exitSpy).toHaveBeenCalledWith(1);
+  it("stops on any other error", async () => {
+    const { pool } = fakePool((sql) => {
+      if (sql === "SELECT id FROM schema_migrations") return { rows: [] };
+      if (sql === "create table a(id int);") throw Object.assign(new Error("syntax"), { code: "42601" });
+      return { rows: [] };
+    });
+    await expect(runMigrations(pool)).rejects.toThrow("syntax");
+  });
+
+  it("loads the schema baseline on an empty database and records every migration", async () => {
+    write("000000_baseline.sql", "\\restrict abc\nCREATE TABLE public.applications (id text);\n\\unrestrict abc\n");
+    let recorded = false;
+    const { pool, calls } = fakePool((sql) => {
+      if (sql === "SELECT id FROM schema_migrations") return { rows: recorded ? [{ id: "001_a.sql" }, { id: "002_b.sql" }] : [] };
+      if (sql.includes("to_regclass('public.applications')")) return { rows: [{ exists: false }] };
+      if (sql === "COMMIT") recorded = true;
+      return { rows: [] };
+    });
+    await runMigrations(pool);
+    const baseline = calls.find((c) => c.sql.includes("CREATE TABLE public.applications"));
+    expect(baseline?.sql).not.toContain("restrict");
+    expect(calls.some((c) => c.sql === "create table a(id int);")).toBe(false);
+    for (const f of ["001_a.sql", "002_b.sql", "000000_baseline.sql"]) {
+      expect(calls.some((c) => c.sql.startsWith("INSERT INTO schema_migrations") && (c.params ?? [])[0] === f)).toBe(true);
+    }
+  });
+
+  it("never loads the baseline over an existing schema", async () => {
+    write("000000_baseline.sql", "CREATE TABLE public.applications (id text);");
+    const { pool, calls } = fakePool((sql) => {
+      if (sql === "SELECT id FROM schema_migrations") return { rows: [] };
+      if (sql.includes("to_regclass('public.applications')")) return { rows: [{ exists: true }] };
+      return { rows: [] };
+    });
+    await runMigrations(pool);
+    expect(calls.some((c) => c.sql.includes("CREATE TABLE public.applications"))).toBe(false);
   });
 });
