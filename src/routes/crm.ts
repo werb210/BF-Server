@@ -209,30 +209,9 @@ router.get("/contacts/:id/companies", safeHandler(async (req: any, res: any) => 
 
 // BF_SERVER_CRM_AI_SUMMARY_v1 - AI summary of a contact's recent notes + messages.
 router.get("/contacts/:id/ai-summary", safeHandler(async (req: any, res: any) => {
-  const id = req.params.id;
-  const silo = resolveSiloFromRequest(req);
-  const activity = await pool.query(
-    `SELECT kind, text, ts FROM (
-       SELECT 'note' AS kind, body AS text, created_at AS ts
-         FROM crm_notes WHERE contact_id = $1 AND silo = $2 AND is_deleted = false
-       UNION ALL
-       SELECT 'message (' || direction || ')' AS kind, body AS text, created_at AS ts
-         FROM communications_messages WHERE contact_id = $1 AND silo = $2
-     ) t
-     WHERE text IS NOT NULL AND btrim(text) <> ''
-     ORDER BY ts DESC LIMIT 40`,
-    [id, silo]);
-  if (activity.rows.length === 0) {
-    return respondOk(res, { summary: "No recent notes or messages to summarize for this contact." });
-  }
-  const lines = activity.rows
-    .reverse()
-    .map((r: any) => `- [${r.kind}] ${new Date(r.ts).toISOString().slice(0, 10)}: ${String(r.text).replace(/\s+/g, " ").slice(0, 400)}`)
-    .join("\n");
-  const summary = await askAI([
-    { role: "system", content: "You are a CRM assistant for a commercial-lending brokerage. Summarize this contact's recent activity for a broker in 3-5 short bullet points: where things stand, what is outstanding, and one suggested next action. Be factual and concise; never invent details and never promise funding." },
-    { role: "user", content: `Recent activity for this contact (oldest first):\n${lines}` },
-  ]);
+  // BF_SERVER_BLOCK_v534 - every channel, applications, visits and company website.
+  const { contactBrief } = await import("../services/crm/contactBrief.js");
+  const summary = await contactBrief(String(req.params.id), resolveSiloFromRequest(req));
   return respondOk(res, { summary });
 }));
 // BF_SERVER_CONTACT_STAGE_HISTORY_v1 - stage-change audit trail across the contact's applications.
@@ -1110,34 +1089,9 @@ router.get("/companies", safeHandler(async (req: any, res: any) => {
 // BF_SERVER_CRM_COMPANY_AI_SUMMARY_v1 - AI summary of a company's recent activity
 // (company + its contacts' notes/messages).
 router.get("/companies/:id/ai-summary", safeHandler(async (req: any, res: any) => {
-  const id = req.params.id;
-  const silo = resolveSiloFromRequest(req);
-  const activity = await pool.query(
-    `SELECT kind, text, ts FROM (
-       SELECT 'note' AS kind, body AS text, created_at AS ts
-         FROM crm_notes
-        WHERE silo = $2 AND is_deleted = false
-          AND (company_id = $1 OR contact_id IN (SELECT id FROM contacts WHERE company_id = $1 AND silo = $2))
-       UNION ALL
-       SELECT 'message (' || direction || ')' AS kind, body AS text, created_at AS ts
-         FROM communications_messages
-        WHERE silo = $2
-          AND contact_id IN (SELECT id FROM contacts WHERE company_id = $1 AND silo = $2)
-     ) t
-     WHERE text IS NOT NULL AND btrim(text) <> ''
-     ORDER BY ts DESC LIMIT 40`,
-    [id, silo]);
-  if (activity.rows.length === 0) {
-    return respondOk(res, { summary: "No recent notes or messages to summarize for this company." });
-  }
-  const lines = activity.rows
-    .reverse()
-    .map((r: any) => `- [${r.kind}] ${new Date(r.ts).toISOString().slice(0, 10)}: ${String(r.text).replace(/\s+/g, " ").slice(0, 400)}`)
-    .join("\n");
-  const summary = await askAI([
-    { role: "system", content: "You are a CRM assistant for a commercial-lending brokerage. Summarize this company's recent activity across its contacts for a broker in 3-5 short bullet points: where things stand, what is outstanding, and one suggested next action. Be factual and concise; never invent details and never promise funding." },
-    { role: "user", content: `Recent activity for this company (oldest first):\n${lines}` },
-  ]);
+  // BF_SERVER_BLOCK_v534 - every channel, applications, visits and company website.
+  const { companyBrief } = await import("../services/crm/contactBrief.js");
+  const summary = await companyBrief(String(req.params.id), resolveSiloFromRequest(req));
   return respondOk(res, { summary });
 }));
 router.get("/companies/:id", safeHandler(async (req: any, res: any) => {
