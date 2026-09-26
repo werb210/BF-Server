@@ -12,16 +12,9 @@ import { resolveSiloFromRequest } from "../../middleware/silo.js"; // BF_SERVER_
 
 const router = express.Router({ mergeParams: true });
 
-router.get("/", safeHandler(async (req: any, res: any) => {
-  const isContact = req.baseUrl?.includes("/contacts/");
-  const id = req.params.id;
+// BF_SERVER_BLOCK_v534 - shared by the Timeline tab and the CRM AI brief.
+export async function loadCrmTimeline(isContact: boolean, id: string, silo: string): Promise<any[]> {
   const col = isContact ? "contact_id" : "company_id";
-  // BF_SERVER_BLOCK_v735 — read the SELECTED silo (X-Silo), not the user's
-  // primary. Every write stamps the selected silo, so a BI contact's timeline
-  // was empty for a BF-primary admin. This aligns the read so BOTH BF and BI
-  // contacts surface their own activity. (Per-tab lists already do this.)
-  const silo = resolveSiloFromRequest(req);
-
   // Notes / tasks / calls / emails / meetings come from CRM tables;
   // SMS and inbound/outbound messages come from communications_messages
   // (filtered by contact_id when isContact, ignored for companies
@@ -279,7 +272,13 @@ router.get("/", safeHandler(async (req: any, res: any) => {
         ORDER BY ts DESC LIMIT 500`;
 
   const { rows } = await pool.query(sql, [id, silo]);
-  respondOk(res, rows);
+  return rows;
+}
+
+router.get("/", safeHandler(async (req: any, res: any) => {
+  const isContact = req.baseUrl?.includes("/contacts/");
+  // BF_SERVER_BLOCK_v735 - read the SELECTED silo (X-Silo), not the user's primary.
+  respondOk(res, await loadCrmTimeline(isContact, req.params.id, resolveSiloFromRequest(req)));
 }));
 
 export default router;
