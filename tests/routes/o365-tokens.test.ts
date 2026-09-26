@@ -17,7 +17,9 @@ describe("O365 token endpoints", () => {
           rows: [{
             email: "u@example.com",
             o365_account_id: "acct-1",
-            o365_access_token_expires_at: new Date().toISOString(),
+            // BF_SERVER_BLOCK_v578 - a token that expires this instant counts as expired (and there is
+            // no refresh token here), so report a token valid for the next hour, as just stored.
+            o365_access_token_expires_at: new Date(Date.now() + 3_600_000).toISOString(),
             has_access: true,
             has_refresh: true,
           }],

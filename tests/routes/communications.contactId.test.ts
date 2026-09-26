@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../src/middleware/silo.js", () => ({
   getSilo: () => "BF",
+  resolveSiloFromRequest: () => "BF", // BF_SERVER_BLOCK_v578 - auth and routes now resolve silo this way
 }));
 
 import { pool } from "../../src/db.js";
@@ -20,9 +21,11 @@ describe("GET /api/communications/messages contactId aliases", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     process.env.JWT_SECRET = "test-secret";
-    vi.spyOn(pool, "query").mockResolvedValue({
-      rows: [{ id: "m1", body: "hello", contact_id: "c1", silo: "BF" }],
-    } as any);
+    // BF_SERVER_BLOCK_v578 - requireAuth looks the user up first; answer that separately.
+    vi.spyOn(pool, "query").mockImplementation(async (sql: string) => {
+      if (/FROM users/i.test(String(sql))) return { rows: [{ id: "user-1", email: "u@example.com", role: "Admin", silo: "BF", silos: ["BF"] }] } as any;
+      return { rows: [{ id: "m1", body: "hello", contact_id: "c1", silo: "BF" }] } as any;
+    });
   });
 
   function app() {
@@ -54,13 +57,15 @@ describe("GET /api/communications/messages contactId aliases", () => {
     expect(pool.query).toHaveBeenLastCalledWith(expect.stringContaining("FROM communications_messages"), ["c1", "BF"]);
   });
 
-  it("returns 400 when no contact id query param is provided", async () => {
+  // BF_SERVER_BLOCK_v578 - with no contact the thread is simply empty (the portal opens the
+  // panel before a contact is picked), and no message query runs.
+  it("returns an empty thread when no contact id is provided", async () => {
     const res = await request(app())
       .get("/api/communications/messages")
       .set("Authorization", `Bearer ${token}`);
 
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe("validation_error");
-    expect(pool.query).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ messages: [], total: 0 });
+    expect((pool.query as any).mock.calls.some((c: any[]) => /FROM communications_messages/.test(String(c[0])))).toBe(false);
   });
 });
