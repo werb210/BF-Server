@@ -1805,4 +1805,24 @@ router.get(
   }),
 );
 
+// BF_SERVER_BLOCK_v547_CLIENT_REACTIVATE - POST /api/client/applications/:id/reactivate
+// The signed-in client brings their own on-hold file back to In Review.
+router.post(
+  "/applications/:id/reactivate",
+  requireAuth,
+  safeHandler(async (req: any, res: any) => {
+    const applicationId = String(req.params.id ?? "").trim();
+    if (!/^[0-9a-f-]{36}$/i.test(applicationId)) return res.status(400).json({ error: "invalid_application_id" });
+    const { callerOwnsApplication } = await import("../../auth/clientApplicationOwnership.js");
+    if (!(await callerOwnsApplication(req, applicationId))) return res.status(404).json({ error: "not_found" });
+    const { reactivateHeldApplication } = await import("../../services/clientReactivation.js");
+    const result = await reactivateHeldApplication(applicationId);
+    if (!result.ok) {
+      return res.status(409).json({ error: result.error, message: "This file is not on hold." });
+    }
+    logInfo("client_reactivated_application", { applicationId });
+    return res.json({ ok: true, applicationId, pipeline_state: "In Review" });
+  }),
+);
+
 export default router;
