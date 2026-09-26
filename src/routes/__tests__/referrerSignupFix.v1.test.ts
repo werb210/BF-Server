@@ -10,7 +10,7 @@ const src = readFileSync(
 
 describe("referrer signup fix", () => {
   it("inserts status ACTIVE (uppercase) to satisfy users_status_check", () => {
-    expect(src).toContain("'ACTIVE', now(), now())");
+    expect(src).toContain("'ACTIVE', true, now(), now())"); // BF_SERVER_BLOCK_v567
     expect(src).not.toContain("'active', now(), now())");
   });
 

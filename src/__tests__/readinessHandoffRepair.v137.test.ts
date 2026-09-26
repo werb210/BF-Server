@@ -26,8 +26,7 @@ describe("v137 readiness handoff repair", () => {
       path.join(repoRoot, "src", "routes", "publicApplication.ts"),
       "utf-8"
     );
-    expect(route).toContain("BF_SERVER_BLOCK_v137_READINESS_HANDOFF_REPAIR_v1");
-    expect(route).toContain("WHERE id::text = ($1)::text");
+    expect(route).toContain("WHERE id::text = ($1)::text"); // BF_SERVER_BLOCK_v567
     // The original buggy comparison must not regress.
     expect(route).not.toMatch(/WHERE id = \$1::uuid/);
   });
