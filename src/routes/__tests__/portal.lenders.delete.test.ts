@@ -43,13 +43,14 @@ describe("portal lender delete logging", () => {
     errSpy.mockRestore();
   });
 
-  it("returns 204 and logs success", async () => {
+  it("returns 200 with a JSON body and logs success", async () => { // BF_SERVER_BLOCK_v574 - v55 moved 204 -> 200 + body for the portal
     const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
     runQueryMock.mockResolvedValue({ rowCount: 1 });
     const res = await request(await app())
       .delete("/api/portal/lenders/11111111-1111-4111-8111-111111111111")
       .set("Authorization", `Bearer ${token()}`);
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, deleted: true });
     expect(infoSpy).toHaveBeenCalled();
     infoSpy.mockRestore();
   });
