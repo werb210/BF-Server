@@ -2123,14 +2123,7 @@ router.post(
     }
 
     eventBus.emit("term_sheet_uploaded", { applicationId: appId, offerId, blobName: put.blobName });
-    // BF_SERVER_APPLICANT_PUSH_v235
-    void import("../services/push/applicantPush.js").then((m) => m.notifyApplicant({
-      applicationId: appId,
-      categoryId: "OFFER_READY",
-      title: "Your offer is ready",
-      body: lenderName ? `${lenderName} sent a term sheet for you to review.` : "A term sheet is ready for you to review.",
-      dedupeKey: offerId,
-    }));
+    // BF_SERVER_BLOCK_v552 - one notice below through notifyClient (app first, else SMS).
 
     try {
       const phoneRes = await runQuery<{ phone: string | null }>(
@@ -2143,7 +2136,11 @@ router.post(
       if (phone) {
         const portalBase = process.env.CLIENT_PORTAL_URL || "https://client.boreal.financial";
         const link = `${portalBase}/application/${appId}`;
-        await sendSMS(phone, `Your term sheet from ${lenderName} is ready to review: ${link}`);
+        const { notifyClient } = await import("../services/notifications/notifyClient.js"); // BF_SERVER_BLOCK_v552
+        await notifyClient({ phone, applicationId: appId, kind: "term_sheet", categoryId: "OFFER_READY",
+          sms: `Your term sheet from ${lenderName} is ready to review: ${link}`,
+          title: "Your offer is ready",
+          body: lenderName ? `${lenderName} sent a term sheet for you to review.` : "A term sheet is ready for you to review." });
       }
     } catch (err) {
       console.warn("[term-sheet] SMS notification failed", { appId, err: String(err) });

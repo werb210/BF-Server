@@ -434,10 +434,13 @@ router.post('/:id/request-steps', requireCapability([CAPABILITIES.CRM_WRITE]), s
     if (phone) {
       const base = (process.env.CLIENT_BASE_URL ?? 'https://client.boreal.financial').replace(/\/+$/, '');
       const url = `${base}/application/${id}`;
-      const { sendSms } = await import('../notifications/sms.service.js');
-      // BF_SERVER_BLOCK_v481_NO_SILENT_SEND_FAILURES - only report sent when Twilio accepted it.
+      const { notifyClient } = await import('../../services/notifications/notifyClient.js'); // BF_SERVER_BLOCK_v552
+      // BF_SERVER_BLOCK_v481_NO_SILENT_SEND_FAILURES - only report sent when it actually went out.
       try {
-        await sendSms({ to: String(phone), message: `Boreal Financial: we need a few more items to continue your application. Please log in to complete them: ${url}` });
+        const r = await notifyClient({ phone: String(phone), applicationId: id, kind: 'additional_steps', categoryId: 'DOCUMENT_REQUEST',
+          sms: `Boreal Financial: we need a few more items to continue your application. Please log in to complete them: ${url}`,
+          title: 'A few more items needed', body: 'Open your application to complete them.' });
+        if (r.channel === 'none') throw new Error(r.error ?? 'not_sent');
         smsSent = true;
       } catch (err: any) {
         console.error("[applications] additional-steps SMS failed", { applicationId: id, error: String(err?.message ?? err) });
@@ -1758,20 +1761,16 @@ router.post('/:id/lenders/:lenderId/files', lenderTermSheetUpload.single('file')
     const phone = phoneRes.rows[0]?.phone ?? null;
     if (phone) {
       const portalBase = process.env.CLIENT_PORTAL_URL || 'https://client.boreal.financial';
-      await sendSMS(phone, `Your term sheet from ${lenderName} is ready to review: ${portalBase}/application/${appId}`);
+      const { notifyClient } = await import('../../services/notifications/notifyClient.js'); // BF_SERVER_BLOCK_v552
+      await notifyClient({ phone, applicationId: appId, kind: 'term_sheet', categoryId: 'OFFER_READY',
+        sms: `Your term sheet from ${lenderName} is ready to review: ${portalBase}/application/${appId}`,
+        title: 'Your offer is ready', body: `${lenderName} sent a term sheet for you to review.` });
     }
   } catch (err) {
     console.warn('[lender-term-sheet] SMS notification failed', { appId, err: String(err) });
   }
 
-  // BF_SERVER_APPLICANT_PUSH_v235
-  void import('../../services/push/applicantPush.js').then((m) => m.notifyApplicant({
-    applicationId: appId,
-    categoryId: 'OFFER_READY',
-    title: 'Your offer is ready',
-    body: `${lenderName} sent a term sheet for you to review.`,
-    dedupeKey: String(offerId),
-  }));
+  // BF_SERVER_BLOCK_v552 - the push now goes out through notifyClient above (app first, else SMS).
   return res.status(201).json({ ok: true, offer_id: offerId, lender_id: resolvedLenderId, blob_name: put.blobName, stage });
 }));
 

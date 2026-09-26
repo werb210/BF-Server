@@ -637,11 +637,10 @@ router.post(
             if (v711_phone) {
               const v711_base = (process.env.CLIENT_BASE_URL ?? "https://client.boreal.financial").replace(/\/+$/, "");
               const v711_url = `${v711_base}/application/${application.id}`;
-              const { sendSms } = await import("../../modules/notifications/sms.service.js");
-              await sendSms({
-                to: String(v711_phone),
-                message: `Boreal Financial: your application was received. A few quick forms remain - log in to complete them: ${v711_url}`,
-              }).catch(() => {});
+              const { notifyClient } = await import("../../services/notifications/notifyClient.js"); // BF_SERVER_BLOCK_v552
+              await notifyClient({ phone: String(v711_phone), applicationId: String(application.id), kind: "forms_remaining", categoryId: "DOCUMENT_REQUEST",
+                sms: `Boreal Financial: your application was received. A few quick forms remain - log in to complete them: ${v711_url}`,
+                title: "Application received", body: "A few quick forms remain - tap to finish." });
             }
           }
           // BF_SERVER_BLOCK_v775_DOC_UPLOAD_PROMPT - document uploads are not
@@ -727,11 +726,12 @@ router.post(
           if (v650_phone) {
             const clientBase = process.env.CLIENT_BASE_URL ?? "https://client.boreal.financial";
             const portalUrl = `${clientBase.replace(/\/+$/, "")}/application/${application.id}`;
-            const { sendSms } = await import("../../modules/notifications/sms.service.js");
-            await sendSms({
-              to: String(v650_phone),
-              message: `Boreal Financial: your application was received. To finish, upload your remaining documents here: ${portalUrl}`,
-            }).catch((err) => {
+            const { notifyClient } = await import("../../services/notifications/notifyClient.js"); // BF_SERVER_BLOCK_v552
+            await notifyClient({ phone: String(v650_phone), applicationId: String(application.id), kind: "documents_remaining", categoryId: "DOCUMENT_REQUEST",
+              sms: `Boreal Financial: your application was received. To finish, upload your remaining documents here: ${portalUrl}`,
+              title: "Application received", body: "Upload your remaining documents to finish." })
+            .then((r) => { if (r.channel === "none") throw new Error(r.error ?? "not_sent"); })
+            .catch((err) => {
               logError("missing_docs_sms_failed_nonfatal", {
                 code: "missing_docs_sms_failed_nonfatal",
                 applicationId: application.id,
