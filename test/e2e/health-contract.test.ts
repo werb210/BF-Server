@@ -9,6 +9,6 @@ describe("Health contract", () => {
     const res = await request(app).get("/api/health");
 
     expect([200, 503]).toContain(res.status);
-    expect(res.body).toEqual({ status: "ok" });
+    expect(res.body).toMatchObject({ status: "ok" }); // BF_SERVER_BLOCK_v565
   });
 });

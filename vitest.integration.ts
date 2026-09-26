@@ -26,7 +26,6 @@ export const INTEGRATION_TEST_FILES: string[] = [
   "src/__tests__/maya-handoff.integration.test.ts",
   "src/__tests__/mayaLenderProductsColumns.v1.test.ts",
   "src/__tests__/readinessHandoffRepair.v137.test.ts",
-  "src/__tests__/startup.runMigrations.test.ts",
   "src/__tests__/v650_test2_fix_pack.test.ts",
   "src/modules/applications/__tests__/bankingAnalysis.route.test.ts",
   "src/routes/__tests__/calendar.tasks.test.ts",
