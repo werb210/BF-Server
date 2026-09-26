@@ -37,15 +37,15 @@ describe("calendar tasks routes", () => {
     const fetched = { ...created, assignee_name: "Alice Assignee", assignee_email: "alice@example.com" };
     queryMock.mockImplementation(async (sql: string, params?: unknown[]) => {
       if (sql.includes("FROM users WHERE id = $1") && sql.includes("silos")) return { rows: [{ id: "00000000-0000-0000-0000-000000000001", role: "staff", silo: "BF", silos: ["BF"] }] };
-      if (sql.includes("INSERT INTO calendar_tasks")) {
-        expect(sql).toContain("assignee_user_id");
+      if (sql.includes("INSERT INTO crm_tasks")) { // BF_SERVER_BLOCK_v575 - v332 unified tasks onto crm_tasks
+        expect(sql).toContain("assigned_to");
         expect(params?.[4]).toBeNull();
         expect(params?.[8]).toBe(assigneeId);
         return { rows: [created] };
       }
       if (sql.includes("ORDER BY COALESCE")) {
         expect(sql).toContain("concat_ws(' ', u.first_name, u.last_name)");
-        expect(sql).toContain("LEFT JOIN users u ON u.id = t.assignee_user_id");
+        expect(sql).toContain("LEFT JOIN users u ON u.id = t.assigned_to");
         return { rows: [fetched] };
       }
       if (sql.includes("SELECT o365_access_token")) return { rows: [{ o365_access_token: null, o365_token_expires_at: null }] };
@@ -67,7 +67,7 @@ describe("calendar tasks routes", () => {
     queryMock.mockImplementation(async (sql: string) => {
       if (sql.includes("FROM users WHERE id = $1") && sql.includes("silos")) return { rows: [{ id: "00000000-0000-0000-0000-000000000001", role: "staff", silo: "BF", silos: ["BF"] }] };
       if (sql.includes("LIMIT 1")) return { rows: [{ id: "1", title: "t", notes: null, due_at: null, priority: "normal", status: "open", assignee_user_id: null, o365_task_id: null, created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z", completed_at: null }] };
-      if (sql.includes("UPDATE calendar_tasks SET")) return { rows: [{ id: "1", title: "t2", notes: null, due_at: null, priority: "normal", status: "done", assignee_user_id: null, o365_task_id: null, created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:01.000Z", completed_at: "2026-01-01T00:00:01.000Z" }] };
+      if (sql.includes("UPDATE crm_tasks SET")) return { rows: [{ id: "1", title: "t2", notes: null, due_at: null, priority: "normal", status: "done", assignee_user_id: null, o365_task_id: null, created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:01.000Z", completed_at: "2026-01-01T00:00:01.000Z" }] };
       if (sql.includes("SELECT o365_access_token")) return { rows: [{ o365_access_token: null, o365_token_expires_at: null }] };
       return { rows: [] };
     });
@@ -80,7 +80,7 @@ describe("calendar tasks routes", () => {
   it("DELETE removes it and GET returns empty", async () => {
     queryMock.mockImplementation(async (sql: string) => {
       if (sql.includes("FROM users WHERE id = $1") && sql.includes("silos")) return { rows: [{ id: "00000000-0000-0000-0000-000000000001", role: "staff", silo: "BF", silos: ["BF"] }] };
-      if (sql.includes("DELETE FROM calendar_tasks")) return { rows: [{ o365_task_id: null }] };
+      if (sql.includes("DELETE FROM crm_tasks")) return { rows: [{ o365_task_id: null }] };
       if (sql.includes("ORDER BY COALESCE")) return { rows: [] };
       if (sql.includes("SELECT o365_access_token")) return { rows: [{ o365_access_token: null, o365_token_expires_at: null }] };
       return { rows: [] };
