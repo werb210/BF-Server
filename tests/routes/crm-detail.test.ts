@@ -9,7 +9,7 @@ import { errorHandler } from "../../src/middleware/errors.js";
 
 describe("CRM contact detail endpoints", () => {
   const token = jwt.sign(
-    { id: "user-1", capabilities: ["crm:read"], silo: "BF" },
+    { id: "user-1", capabilities: ["crm:read", "crm:write"], silo: "BF" } /* BF_SERVER_BLOCK_v566 */,
     "test-secret"
   );
   const contactId = "11111111-1111-1111-1111-111111111111";
