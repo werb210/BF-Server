@@ -54,6 +54,9 @@ describe("BF_BANKING_ANALYSIS_API_v52 GET /api/applications/:id/banking-analysis
     queryMock
       .mockResolvedValueOnce({ rows: [{ id: "app-1", banking_completed_at: new Date("2026-04-20T12:00:00Z") }] })
       .mockResolvedValueOnce({ rows: [{ bank_total: "3", bank_completed: "2", any_completed: "2" }] });
+    // BF_SERVER_BLOCK_v576 - the route now also reads banking_analyses and the monthly summaries;
+    // none stored yet, so the analysis is still in progress.
+    queryMock.mockResolvedValue({ rows: [] });
 
     const a = await buildApp();
     const res = await request(a)
