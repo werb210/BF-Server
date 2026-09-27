@@ -148,7 +148,7 @@ router.post("/", async (req: any, res: any, next: any) => {
       const nameParts = String(fullName ?? "").trim().split(/\s+/).filter(Boolean);
       const first = nameParts[0] ?? (companyName ?? "Lead");
       const last = nameParts.slice(1).join(" ");
-      const { row: rdContact } = await findOrCreateContactByEmailAndCompany(
+      const { row: rdContact, created: rdCreated } = await findOrCreateContactByEmailAndCompany(
         pool,
         email ?? "",
         SENTINEL,
@@ -163,6 +163,10 @@ router.post("/", async (req: any, res: any, next: any) => {
         [rdContact.id],
       );
       await pool.query(`UPDATE applications SET contact_id = $2 WHERE id = $1`, [applicationId, rdContact.id]);
+      if (rdCreated) {
+        // BF_SERVER_BLOCK_v619 - automation trigger.
+        void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent({ trigger: "contact.created", silo: "BF", contactId: rdContact.id, data: { source: "readiness_check" } })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
+      }
     }
   } catch (err) {
     logError("readiness_contact_link_failed", { error: String(err) });

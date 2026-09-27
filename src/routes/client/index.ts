@@ -848,6 +848,8 @@ router.post(
        )`,
       [id, applicationId, body ?? "", JSON.stringify(attachments)]
     );
+    // BF_SERVER_BLOCK_v619 - automation trigger.
+    void import("../../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent({ trigger: "message.inbound", applicationId, data: { channel: "message" } })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
     // BF_SERVER_BLOCK_v496_MESSAGE_ATTACHMENTS_TO_DOCUMENTS - a file sent in chat is a document.
     if (attachments.length) {
       void import("../../services/communications/attachmentsToDocuments.js")

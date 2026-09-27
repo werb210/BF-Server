@@ -1930,6 +1930,10 @@ router.post(
         throw new AppError("not_found", "Document not found.", 404);
       }
     }
+    if (doc.application_id) {
+      // BF_SERVER_BLOCK_v619 - automation trigger.
+      void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent({ trigger: "document.rejected", applicationId: doc.application_id, data: { document_type: doc.document_type ?? "document", reason: reason ?? null, document_id: docId } })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
+    }
     // BF_SERVER_BLOCK_v198_LENDER_MATCH_GATE_AND_CACHE_v1
     if (doc.application_id) {
       void markLenderMatchesStale(doc.application_id).catch((err) => {

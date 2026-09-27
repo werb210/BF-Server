@@ -504,6 +504,8 @@ router.post("/:id/reject", requireAuth, async (req: Request, res: Response) => {
   const applicationId = docRes.rows[0]?.application_id ?? null;
   if (applicationId) {
     await setProcessingStage({ applicationId, toStage: "documents_incomplete", reason: `document_rejected:${id}`, actorUserId: (req as any)?.user?.id ?? null }).catch(() => {});
+    // BF_SERVER_BLOCK_v619 - automation trigger.
+    void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent({ trigger: "document.rejected", applicationId, data: { document_id: id } })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
   }
   return ok(res, { id, status: "rejected" });
 });
