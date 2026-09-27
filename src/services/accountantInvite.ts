@@ -76,7 +76,7 @@ export async function sendAccountantInvite(opts: {
         LIMIT 1`,
       [opts.applicationId]
     )
-    .catch(() => ({ rows: [] as any[] }));
+    .catch((err: any) => { console.warn("[silent-query] services/accountantInvite.ts", { message: err?.message }); return { rows: [] as any[] }; });
   const row: any = appRes.rows[0] ?? {};
   // BF_SERVER_ACCOUNTANT_INVITE_SCOPE_v1 - applications.name is written only by
   // the Step 6 submit handler, so at Step 5 it is still "Draft application" or

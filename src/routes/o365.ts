@@ -498,11 +498,11 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
     let _safeContactId: string | null = logContactId;
     let _safeCompanyId: string | null = logCompanyId;
     if (_safeContactId) {
-      const _c = await pool.query(`SELECT 1 FROM contacts WHERE id = $1 LIMIT 1`, [_safeContactId]).catch(() => ({ rows: [] as any[] }));
+      const _c = await pool.query(`SELECT 1 FROM contacts WHERE id = $1 LIMIT 1`, [_safeContactId]).catch((err: any) => { console.warn("[silent-query] routes/o365.ts", { message: err?.message }); return { rows: [] as any[] }; });
       if (!_c.rows[0]) _safeContactId = null;
     }
     if (_safeCompanyId) {
-      const _co = await pool.query(`SELECT 1 FROM companies WHERE id = $1 LIMIT 1`, [_safeCompanyId]).catch(() => ({ rows: [] as any[] }));
+      const _co = await pool.query(`SELECT 1 FROM companies WHERE id = $1 LIMIT 1`, [_safeCompanyId]).catch((err: any) => { console.warn("[silent-query] routes/o365.ts", { message: err?.message }); return { rows: [] as any[] }; });
       if (!_co.rows[0]) _safeCompanyId = null;
     }
     if (_safeContactId || _safeCompanyId) {
@@ -681,7 +681,7 @@ router.get("/me/signature", safeHandler(async (req: any, res: any) => {
   if (!userId) return res.status(401).json({ error: "unauthenticated" });
   const r = await pool.query<{ email_signature_html: string | null }>(
     `SELECT email_signature_html FROM user_settings WHERE user_id = $1 LIMIT 1`, [userId]
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] routes/o365.ts", { message: err?.message }); return { rows: [] as any[] }; });
   res.json({ signatureHtml: r.rows[0]?.email_signature_html ?? "" });
 }));
 router.put("/me/signature", safeHandler(async (req: any, res: any) => {
@@ -704,7 +704,7 @@ router.get("/me/booking-url", safeHandler(async (req: any, res: any) => {
   if (!userId) return res.status(401).json({ error: "unauthenticated" });
   const r = await pool.query<{ booking_url: string | null }>(
     `SELECT booking_url FROM user_settings WHERE user_id = $1 LIMIT 1`, [userId]
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] routes/o365.ts", { message: err?.message }); return { rows: [] as any[] }; });
   res.json({ bookingUrl: r.rows[0]?.booking_url ?? "" });
 }));
 router.put("/me/booking-url", safeHandler(async (req: any, res: any) => {

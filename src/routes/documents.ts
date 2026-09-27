@@ -87,7 +87,7 @@ async function mirrorDocToSiblingLegs(args: {
     const dup = await pool.query(
       `SELECT 1 FROM documents WHERE application_id::text = ($1)::text AND hash = $2 LIMIT 1`,
       [sibId, args.hash],
-    ).catch(() => ({ rows: [] as any[] }));
+    ).catch((err: any) => { console.warn("[silent-query] routes/documents.ts", { message: err?.message }); return { rows: [] as any[] }; });
     if (dup.rows.length > 0) continue;
     const newDocId = randomUUID();
     const newVerId = randomUUID();
@@ -482,10 +482,10 @@ router.post("/:id/category", requireAuth, async (req: Request, res: Response) =>
 router.post("/:id/accept", requireAuth, async (req: Request, res: Response) => {
   const id = toStringSafe(req.params.id);
   await pool.query(`UPDATE documents SET status='accepted', updated_at=now() WHERE id=$1`, [id]).catch(() => {});
-  const docRes = await pool.query<{ application_id: string | null }>(`SELECT application_id FROM documents WHERE id=$1 LIMIT 1`, [id]).catch(() => ({ rows: [] as any[] }));
+  const docRes = await pool.query<{ application_id: string | null }>(`SELECT application_id FROM documents WHERE id=$1 LIMIT 1`, [id]).catch((err: any) => { console.warn("[silent-query] routes/documents.ts", { message: err?.message }); return { rows: [] as any[] }; });
   const applicationId = docRes.rows[0]?.application_id ?? null;
   if (applicationId) {
-    const appRes = await pool.query<{ processing_stage: string | null; previous_processing_stage: string | null }>(`SELECT processing_stage, previous_processing_stage FROM applications WHERE id::text = ($1)::text LIMIT 1`, [applicationId]).catch(() => ({ rows: [] as any[] }));
+    const appRes = await pool.query<{ processing_stage: string | null; previous_processing_stage: string | null }>(`SELECT processing_stage, previous_processing_stage FROM applications WHERE id::text = ($1)::text LIMIT 1`, [applicationId]).catch((err: any) => { console.warn("[silent-query] routes/documents.ts", { message: err?.message }); return { rows: [] as any[] }; });
     const app = appRes.rows[0];
     if (app?.processing_stage === "documents_incomplete") {
       const unresolved = await pool.query<{ count: number }>(`SELECT count(*)::int AS count FROM documents WHERE application_id::text = ($1)::text AND status='rejected'`, [applicationId]).catch(() => ({ rows: [{ count: 0 }] as any[] }));
@@ -500,7 +500,7 @@ router.post("/:id/accept", requireAuth, async (req: Request, res: Response) => {
 router.post("/:id/reject", requireAuth, async (req: Request, res: Response) => {
   const id = toStringSafe(req.params.id);
   await pool.query(`UPDATE documents SET status='rejected', updated_at=now() WHERE id=$1`, [id]).catch(() => {});
-  const docRes = await pool.query<{ application_id: string | null }>(`SELECT application_id FROM documents WHERE id=$1 LIMIT 1`, [id]).catch(() => ({ rows: [] as any[] }));
+  const docRes = await pool.query<{ application_id: string | null }>(`SELECT application_id FROM documents WHERE id=$1 LIMIT 1`, [id]).catch((err: any) => { console.warn("[silent-query] routes/documents.ts", { message: err?.message }); return { rows: [] as any[] }; });
   const applicationId = docRes.rows[0]?.application_id ?? null;
   if (applicationId) {
     await setProcessingStage({ applicationId, toStage: "documents_incomplete", reason: `document_rejected:${id}`, actorUserId: (req as any)?.user?.id ?? null }).catch(() => {});

@@ -56,7 +56,7 @@ router.get("/token", auth, async (req: any, res: Response) => {
   const identity: string = req.user?.userId || req.user?.id || req.user?.sub || uuid();
   try {
     const token = generateVoiceToken(identity);
-    const userResult = await pool.query<{ outbound_caller_id: string | null }>(`SELECT outbound_caller_id FROM users WHERE id = $1 LIMIT 1`, [identity]).catch(() => ({ rows: [] as any[] }));
+    const userResult = await pool.query<{ outbound_caller_id: string | null }>(`SELECT outbound_caller_id FROM users WHERE id = $1 LIMIT 1`, [identity]).catch((err: any) => { console.warn("[silent-query] telephony/routes/telephonyRoutes.ts", { message: err?.message }); return { rows: [] as any[] }; });
     const userOutbound = userResult.rows[0]?.outbound_caller_id ?? null;
     const envOutbound = process.env.TWILIO_DEFAULT_OUTBOUND_CALLER_ID ?? null;
     const outboundCallerId = userOutbound ?? envOutbound;
@@ -128,7 +128,7 @@ router.post("/presence/heartbeat", auth, async (req: any, res: Response) => {
   const lastHeartbeatAt = lastPresenceHeartbeatByUser.get(userId) ?? 0;
   if (now - lastHeartbeatAt < HEARTBEAT_MIN_INTERVAL_MS) {
     {
-      const pr = await pool.query(`SELECT status, coalesce(on_call,false) AS on_call FROM staff_presence WHERE user_id = $1`, [userId]).catch(() => ({ rows: [] as any[] }));
+      const pr = await pool.query(`SELECT status, coalesce(on_call,false) AS on_call FROM staff_presence WHERE user_id = $1`, [userId]).catch((err: any) => { console.warn("[silent-query] telephony/routes/telephonyRoutes.ts", { message: err?.message }); return { rows: [] as any[] }; });
       return res.json({ ok: true, throttled: true, status: pr.rows[0]?.status ?? "available", onCall: !!pr.rows[0]?.on_call });
     }
   }
@@ -140,7 +140,7 @@ router.post("/presence/heartbeat", auth, async (req: any, res: Response) => {
     [userId]
   ).catch(() => {});
   await recomputePresence(userId).catch(() => {});
-  const pr = await pool.query(`SELECT status, coalesce(on_call,false) AS on_call FROM staff_presence WHERE user_id = $1`, [userId]).catch(() => ({ rows: [] as any[] }));
+  const pr = await pool.query(`SELECT status, coalesce(on_call,false) AS on_call FROM staff_presence WHERE user_id = $1`, [userId]).catch((err: any) => { console.warn("[silent-query] telephony/routes/telephonyRoutes.ts", { message: err?.message }); return { rows: [] as any[] }; });
   res.json({ ok: true, status: pr.rows[0]?.status ?? "available", onCall: !!pr.rows[0]?.on_call });
 });
 

@@ -206,11 +206,11 @@ router.get('/:id/task-status', safeHandler(async (req: any, res: any) => {
       WHERE application_id::text = ($1)::text
         AND (cta_action LIKE 'form:%' OR cta_action LIKE 'upload:%'
              OR cta_action IN ('networth','flinks','cra','debt','realestate','equipment','advisors','upload','upload_docs'))
-      GROUP BY cta_action`, [id]).catch(() => ({ rows: [] as any[] }));
+      GROUP BY cta_action`, [id]).catch((err: any) => { console.warn("[silent-query] modules/applications/applications.routes.ts", { message: err?.message }); return { rows: [] as any[] }; });
   const forms = await pool.query(
-    `SELECT doc_type FROM application_form_responses WHERE application_id::text = ($1)::text AND submitted_at IS NOT NULL`, [id]).catch(() => ({ rows: [] as any[] }));
+    `SELECT doc_type FROM application_form_responses WHERE application_id::text = ($1)::text AND submitted_at IS NOT NULL`, [id]).catch((err: any) => { console.warn("[silent-query] modules/applications/applications.routes.ts", { message: err?.message }); return { rows: [] as any[] }; });
   const docs = await pool.query(
-    `SELECT DISTINCT lower(coalesce(category,'')) AS category FROM documents WHERE application_id::text = ($1)::text AND coalesce(status,'') <> 'rejected'`, [id]).catch(() => ({ rows: [] as any[] }));
+    `SELECT DISTINCT lower(coalesce(category,'')) AS category FROM documents WHERE application_id::text = ($1)::text AND coalesce(status,'') <> 'rejected'`, [id]).catch((err: any) => { console.warn("[silent-query] modules/applications/applications.routes.ts", { message: err?.message }); return { rows: [] as any[] }; });
 
   const formKey = (dt: any): string | null => {
     const x = String(dt ?? "").toLowerCase();
@@ -362,7 +362,7 @@ router.post('/:id/request-steps', requireCapability([CAPABILITIES.CRM_WRITE]), s
   // Existing prompts → idempotency.
   const existing = await pool.query(
     `SELECT DISTINCT cta_action FROM communications_messages WHERE application_id::text = ($1)::text`, [id],
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] modules/applications/applications.routes.ts", { message: err?.message }); return { rows: [] as any[] }; });
   const existingActions: string[] = (existing.rows ?? []).map((r: any) => String(r.cta_action ?? ''));
   const existingCta = new Set<string>(existingActions.flatMap((cta: string) => {
     const normalized = cta.startsWith('form:') ? cta.slice(5) : cta;
@@ -521,7 +521,7 @@ router.get('/rejection-reasons', requireAuth, safeHandler(async (_req: any, res:
   const r = await pool.query(
     `SELECT code, label, why_it_matters, what_helps FROM rejection_reasons
       WHERE active ORDER BY sort_order ASC`,
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] modules/applications/applications.routes.ts", { message: err?.message }); return { rows: [] as any[] }; });
   res.json({ status: 'ok', data: { reasons: r.rows } });
 }));
 
@@ -1797,7 +1797,7 @@ router.get('/:id/signing-readiness', safeHandler(async (req: any, res: any) => {
   const d = await pool.query(
     `SELECT signnow_app_signed_at, signnow_document_id, requested_amount, metadata->'signnow_embedded' AS embedded FROM applications WHERE id::text = ($1)::text`,
     [id]
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] modules/applications/applications.routes.ts", { message: err?.message }); return { rows: [] as any[] }; });
   const drow: any = d.rows[0] ?? {};
   // BF_SERVER_BLOCK_v_COLLATERAL_THRESHOLD_v1 — Accord LOC collateral applies only above $250k.
   const v_amt = drow?.requested_amount == null ? NaN : Number(drow.requested_amount);
@@ -1945,7 +1945,7 @@ router.get('/:id/lender-responses', requireAuth, safeHandler(async (req: any, re
       WHERE application_id::text = ($1)::text
       ORDER BY ordinal ASC`,
     [id]
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] modules/applications/applications.routes.ts", { message: err?.message }); return { rows: [] as any[] }; });
   res.json({ status: 'ok', data: { responses: r.rows } });
 }));
 

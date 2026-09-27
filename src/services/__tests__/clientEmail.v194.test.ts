@@ -30,7 +30,7 @@ describe("client email resolver", () => {
   });
 
   it("cannot throw and take a notice down with it", () => {
-    expect(resolver).toContain(".catch(() => ({ rows: [] as any[] }))");
+    expect(resolver).toContain("return { rows: [] as any[] }; })" /* BF_SERVER_BLOCK_v597 - degrades, and logs */);
   });
 });
 

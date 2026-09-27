@@ -208,7 +208,7 @@ async function sendDocumentRejectionSms(params: {
      LEFT JOIN contacts c ON c.id = a.contact_id
      WHERE a.id::text = ($1)::text LIMIT 1`,
     [params.applicationId]
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] routes/portal.ts", { message: err?.message }); return { rows: [] as any[] }; });
 
   const row = result.rows[0];
   const to = row?.phone ?? row?.phone_number;

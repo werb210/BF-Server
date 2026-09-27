@@ -22,7 +22,7 @@ export async function resolveCallContactId(
     const ar = await q(
       `SELECT crm_contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1`,
       [args.applicationId],
-    ).catch(() => ({ rows: [] as any[] }));
+    ).catch((err: any) => { console.warn("[silent-query] routes/voiceCalls.ts", { message: err?.message }); return { rows: [] as any[] }; });
     const cid = (ar.rows[0]?.crm_contact_id as string | null | undefined) ?? null;
     if (cid) return cid;
   }
@@ -37,7 +37,7 @@ export async function resolveCallContactId(
              AND right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = $1
            ORDER BY created_at ASC LIMIT 1`,
         [last10, args.silo],
-      ).catch(() => ({ rows: [] as any[] }));
+      ).catch((err: any) => { console.warn("[silent-query] routes/voiceCalls.ts", { message: err?.message }); return { rows: [] as any[] }; });
       return (cr.rows[0]?.id as string | undefined) ?? null;
     }
   }

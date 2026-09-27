@@ -97,7 +97,7 @@ export async function buildNextActions(
     action: string;
     reason: string;
     priority: number;
-  }>(SUGGESTION_SQL, [silo]).catch(() => ({ rows: [] as any[] }));
+  }>(SUGGESTION_SQL, [silo]).catch((err: any) => { console.warn("[silent-query] services/nextActions.ts", { message: err?.message }); return { rows: [] as any[] }; });
 
   const rows = r.rows ?? [];
 

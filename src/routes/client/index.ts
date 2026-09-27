@@ -700,15 +700,15 @@ router.get(
     const v778_forms = await dbQuery(
       `SELECT doc_type FROM application_form_responses WHERE application_id::text = ($1)::text AND submitted_at IS NOT NULL`,
       [applicationId]
-    ).catch(() => ({ rows: [] as any[] }));
+    ).catch((err: any) => { console.warn("[silent-query] routes/client/index.ts", { message: err?.message }); return { rows: [] as any[] }; });
     const v778_docs = await dbQuery(
       `SELECT DISTINCT lower(coalesce(category,'')) AS category FROM documents WHERE application_id::text = ($1)::text AND coalesce(status,'') <> 'rejected'`,
       [applicationId]
-    ).catch(() => ({ rows: [] as any[] }));
+    ).catch((err: any) => { console.warn("[silent-query] routes/client/index.ts", { message: err?.message }); return { rows: [] as any[] }; });
     const v778_req = await dbQuery(
       `SELECT lower(coalesce(category,'')) AS category FROM document_requirements WHERE application_id::text = ($1)::text AND required = true AND category IS NOT NULL`,
       [applicationId]
-    ).catch(() => ({ rows: [] as any[] }));
+    ).catch((err: any) => { console.warn("[silent-query] routes/client/index.ts", { message: err?.message }); return { rows: [] as any[] }; });
     const v778_formKey = (dt: any): string | null => {
       const s = String(dt ?? "").toLowerCase();
       if (/cra/.test(s)) return "cra";
@@ -905,7 +905,7 @@ router.get(
           AND mt.updated_at > NOW() - INTERVAL '5 seconds'
         LIMIT 1`,
       [applicationId]
-    ).catch(() => ({ rows: [] as any[] }));
+    ).catch((err: any) => { console.warn("[silent-query] routes/client/index.ts", { message: err?.message }); return { rows: [] as any[] }; });
     res.json({ typing: r.rows.length > 0, label: r.rows[0]?.actor_label ?? null });
   })
 );
