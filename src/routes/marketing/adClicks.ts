@@ -1,7 +1,7 @@
 // BF_SERVER_BLOCK_v614_AD_CLICKS
-// Marketing > Ads > Clicks: every Google Ads click that became a CRM contact, grouped
-// campaign > ad group > ad, all time. Source is contact_ad_attribution (the same data
-// the contact's Marketing Source card shows). Performance Max is left out.
+// BF_SERVER_BLOCK_v620_ALL_ADS - every live Google Ads search ad is listed, with 0 when
+// no click reached the CRM. Clicks still come only from the CRM (contact_ad_attribution);
+// Google is asked just for the list of ads (and their first headline). Performance Max is left out.
 import { Router } from "express";
 import { pool } from "../../db.js";
 import { requireAuth } from "../../middleware/auth.js";
@@ -12,19 +12,31 @@ export type ClickRow = { campaign: string; ad_group: string; ad_id: string; keyw
 export type AdNode = { adId: string; label: string; clicks: number; keywords: Array<{ keyword: string; clicks: number }> };
 export type AdGroupNode = { adGroup: string; clicks: number; ads: AdNode[] };
 export type CampaignNode = { campaign: string; clicks: number; adGroups: AdGroupNode[] };
+export type LiveAd = { campaign: string; adGroup: string; adId: string; headline: string; paused: boolean };
 
 const byClicks = <T extends { clicks: number }>(a: T, b: T) => b.clicks - a.clicks;
 
-export function buildClickTree(rows: ClickRow[]): { total: number; campaigns: CampaignNode[] } {
+export function adLabel(adId: string, live?: LiveAd): string {
+  if (!adId) return "Ad not recorded";
+  return `Ad ${adId}${live?.headline ? ` - ${live.headline}` : ""}${live?.paused ? " (paused)" : ""}`;
+}
+
+export function buildClickTree(rows: ClickRow[], liveAds: LiveAd[] = []): { total: number; campaigns: CampaignNode[] } {
+  const live = new Map(liveAds.map((a) => [a.adId, a]));
+  const seen = new Set(rows.map((r) => r.ad_id).filter(Boolean));
+  const all: ClickRow[] = [
+    ...rows,
+    ...liveAds.filter((a) => !seen.has(a.adId)).map((a) => ({ campaign: a.campaign, ad_group: a.adGroup, ad_id: a.adId, keyword: "", clicks: 0 })),
+  ];
   const campaigns = new Map<string, Map<string, Map<string, AdNode>>>();
-  for (const r of rows) {
+  for (const r of all) {
     const n = Number(r.clicks) || 0;
     if (!campaigns.has(r.campaign)) campaigns.set(r.campaign, new Map());
     const groups = campaigns.get(r.campaign)!;
     if (!groups.has(r.ad_group)) groups.set(r.ad_group, new Map());
     const ads = groups.get(r.ad_group)!;
     const key = r.ad_id || "";
-    if (!ads.has(key)) ads.set(key, { adId: key, label: key ? `Ad ${key}` : "Ad not recorded", clicks: 0, keywords: [] });
+    if (!ads.has(key)) ads.set(key, { adId: key, label: adLabel(key, live.get(key)), clicks: 0, keywords: [] });
     const ad = ads.get(key)!;
     ad.clicks += n;
     if (r.keyword) {
@@ -46,6 +58,28 @@ export function buildClickTree(rows: ClickRow[]): { total: number; campaigns: Ca
   return { total: out.reduce((s, c) => s + c.clicks, 0), campaigns: out };
 }
 
+/** Google rows (REST, camelCase) to LiveAd. Performance Max and removed items are left out. */
+export function toLiveAds(rows: any[]): LiveAd[] {
+  const out: LiveAd[] = [];
+  for (const r of rows) {
+    const campaign = String(r?.campaign?.name ?? "");
+    const channel = String(r?.campaign?.advertisingChannelType ?? "");
+    const adId = r?.adGroupAd?.ad?.id != null ? String(r.adGroupAd.ad.id) : "";
+    if (!campaign || !adId || channel === "PERFORMANCE_MAX" || /performance max/i.test(campaign)) continue;
+    const headlines = r?.adGroupAd?.ad?.responsiveSearchAd?.headlines;
+    const headline = Array.isArray(headlines) && headlines[0]?.text ? String(headlines[0].text) : String(r?.adGroupAd?.ad?.name ?? "");
+    const paused = [r?.campaign?.status, r?.adGroup?.status, r?.adGroupAd?.status].some((s) => String(s ?? "") === "PAUSED");
+    out.push({ campaign, adGroup: String(r?.adGroup?.name ?? "(ad group)"), adId, headline, paused });
+  }
+  return out;
+}
+
+const ADS_QUERY = `SELECT campaign.name, campaign.status, campaign.advertising_channel_type, ad_group.name, ad_group.status,
+  ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.status
+  FROM ad_group_ad
+  WHERE ad_group_ad.status != 'REMOVED' AND ad_group.status != 'REMOVED' AND campaign.status != 'REMOVED'
+    AND campaign.advertising_channel_type != 'PERFORMANCE_MAX'`;
+
 const router = Router();
 router.use(requireAuth);
 
@@ -64,7 +98,19 @@ router.get("/ad-clicks", safeHandler(async (req: any, res: any) => {
       GROUP BY 1, 2, 3, 4`,
     [silo],
   );
-  res.json(buildClickTree(rows));
+  let liveAds: LiveAd[] = [];
+  let adsListError: string | null = null;
+  if (silo === "BF") {
+    try {
+      const { googleAdsConfigured, googleAdsSearch } = await import("../../services/googleAdsService.js");
+      if (googleAdsConfigured()) liveAds = toLiveAds(await googleAdsSearch(ADS_QUERY));
+      else adsListError = "Google Ads is not connected, so ads with no clicks cannot be listed.";
+    } catch (err: any) {
+      console.warn("[ad-clicks] Google Ads ad list failed", { message: err?.message ?? String(err) });
+      adsListError = "Google Ads did not answer, so ads with no clicks are missing from this list.";
+    }
+  }
+  res.json({ ...buildClickTree(rows, liveAds), adsListError });
 }));
 
 export default router;
