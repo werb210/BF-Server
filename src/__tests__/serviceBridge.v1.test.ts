@@ -60,9 +60,9 @@ describe("service token", () => {
 });
 
 describe("the bridge stays narrow", () => {
-  it("exposes only sms, mail, tasks and the staff picker", () => {
+  it("exposes only applicant messages, sms, mail, tasks and the staff picker", () => {
     const routes = [...bridge.matchAll(/router\.(get|post)\("([^"]+)"/g)].map((m) => `${m[1]} ${m[2]}`);
-    expect(routes.sort()).toEqual(["get /staff", "post /mail", "post /sms", "post /tasks"]);
+    expect(routes.sort()).toEqual(["get /staff", "post /applicant-messages", "post /mail", "post /sms", "post /tasks"]);
   });
   it("guards every route with the service token", () => {
     expect(bridge).toContain("router.use(requireServiceToken)");
