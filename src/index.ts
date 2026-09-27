@@ -227,6 +227,11 @@ export async function start(): Promise<void> {
     try { const w = startAbandonedApplicationWorker(pool); workerStops.push(w.stop); console.log("[startup] abandoned-application worker started"); }
     catch (err) { console.warn("[startup] abandoned-application worker failed", err); }
 
+    // BF_SERVER_BLOCK_v618 - automation builder: runs steps that are due (after waits, quiet hours, retries).
+    const { startAutomationWorker } = await import("./workers/automationWorker.js");
+    try { const w = startAutomationWorker(pool); workerStops.push(w.stop); console.log("[startup] automation worker started"); }
+    catch (err) { console.error("[startup] automation worker failed to start:", err); }
+
     const { startEmailFollowupWorker } = await import("./workers/emailFollowupWorker.js");
     try { const w = startEmailFollowupWorker(pool); workerStops.push(w.stop); console.log("[startup] email follow-up worker started"); }
     catch (err) { console.error("[startup] email follow-up worker failed to start:", err); }
