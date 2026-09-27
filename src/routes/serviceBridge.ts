@@ -61,6 +61,38 @@ router.post("/mail", async (req, res) => {
   res.json({ ok: true, messageId: result.messageId ?? null, sentAs });
 });
 
+// BI-Server posts applicant-authored in-app messages here. The service token
+// middleware above is the trust boundary; contact_id is the shared CRM key.
+router.post("/applicant-messages", async (req, res) => {
+  const contactId = str(req.body?.contact_id ?? req.body?.contactId);
+  const body = str(req.body?.body ?? req.body?.message);
+  if (!contactId || !body) {
+    res.status(400).json({ ok: false, error: "contact_id_and_body_required" });
+    return;
+  }
+  try {
+    const contact = await pool.query<{ id: string }>(
+      `SELECT id::text AS id FROM contacts WHERE id::text = $1 AND (silo = 'BI' OR silo IS NULL) LIMIT 1`,
+      [contactId],
+    );
+    if (!contact.rows[0]) {
+      res.status(404).json({ ok: false, error: "contact_not_found" });
+      return;
+    }
+    const inserted = await pool.query<{ id: string }>(
+      `INSERT INTO communications_messages
+         (id, type, direction, status, contact_id, silo, body, created_at)
+       VALUES (gen_random_uuid(), 'message', 'inbound', 'received', $1::uuid, 'BI', $2, now())
+       RETURNING id::text AS id`,
+      [contactId, body],
+    );
+    res.status(201).json({ ok: true, message_id: inserted.rows[0]?.id ?? null });
+  } catch (err) {
+    console.warn("[service-bridge] BI applicant message failed", { error: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ ok: false, error: "message_insert_failed" });
+  }
+});
+
 // BI sequence task steps land in the assignee's BF task list. The silo comes
 // from the X-Silo header the service token already read, so a BI task is filed
 // as BI and shows in that silo's task views rather than leaking into BF's.

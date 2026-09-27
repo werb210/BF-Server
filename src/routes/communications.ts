@@ -1546,6 +1546,26 @@ router.post(
        )`,
       [id, applicationId, resolvedContactId ?? "", silo, __msgMerged, staffName, ctaLabel, ctaAction, JSON.stringify(attachments), replyConversationId],
     );
+    // Insurance applicants live in BI's app. Keep the local row as the staff
+    // audit record, then notify BI-Server so its applicant can see the reply.
+    if (silo === "BI" && resolvedContactId) {
+      const { notifyBiApplicant } = await import("../services/biApplicantMessages.js");
+      const delivered = await notifyBiApplicant({
+        contactId: resolvedContactId,
+        body: __msgMerged,
+        messageId: id,
+        staffName,
+        ctaLabel,
+        ctaAction,
+      });
+      if (!delivered.ok) {
+        console.warn("[communications] BI applicant notification failed", {
+          contactId: resolvedContactId,
+          messageId: id,
+          error: delivered.error,
+        });
+      }
+    }
     // BF_SERVER_BLOCK_v496_MESSAGE_ATTACHMENTS_TO_DOCUMENTS - file it on the application too.
     if (applicationId && attachments.length) {
       void import("../services/communications/attachmentsToDocuments.js")
