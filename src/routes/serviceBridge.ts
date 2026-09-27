@@ -61,32 +61,60 @@ router.post("/mail", async (req, res) => {
   res.json({ ok: true, messageId: result.messageId ?? null, sentAs });
 });
 
-// BI-Server posts applicant-authored in-app messages here. The service token
-// middleware above is the trust boundary; contact_id is the shared CRM key.
-router.post("/applicant-messages", async (req, res) => {
-  const contactId = str(req.body?.contact_id ?? req.body?.contactId);
-  const body = str(req.body?.body ?? req.body?.message);
-  if (!contactId || !body) {
-    res.status(400).json({ ok: false, error: "contact_id_and_body_required" });
-    return;
-  }
+// BF_SERVER_BLOCK_v610_BI_THREAD - BI applicant thread. BI-Server authenticates the
+// applicant and passes their phone in x-applicant-phone; the service token above is the
+// trust boundary. contact_id is still accepted for callers that already have it.
+const applicantPhone = (req: any) => str(req.header?.("x-applicant-phone") ?? req.body?.phone);
+const q = (sql: string, params: unknown[]) => pool.query(sql, params as any[]) as any;
+
+router.get("/applicant-messages", async (req, res) => {
+  const phone = applicantPhone(req);
+  if (!phone) { res.status(400).json({ ok: false, error: "applicant_phone_required" }); return; }
   try {
-    const contact = await pool.query<{ id: string }>(
-      `SELECT id::text AS id FROM contacts WHERE id::text = $1 AND (silo = 'BI' OR silo IS NULL) LIMIT 1`,
-      [contactId],
-    );
-    if (!contact.rows[0]) {
-      res.status(404).json({ ok: false, error: "contact_not_found" });
-      return;
-    }
-    const inserted = await pool.query<{ id: string }>(
-      `INSERT INTO communications_messages
-         (id, type, direction, status, contact_id, silo, body, created_at)
-       VALUES (gen_random_uuid(), 'message', 'inbound', 'received', $1::uuid, 'BI', $2, now())
-       RETURNING id::text AS id`,
-      [contactId, body],
-    );
-    res.status(201).json({ ok: true, message_id: inserted.rows[0]?.id ?? null });
+    const { biThreadForPhone } = await import("../services/biApplicantThread.js");
+    const thread = await biThreadForPhone(q, phone);
+    if (!thread) { res.status(400).json({ ok: false, error: "invalid_phone" }); return; }
+    res.json(thread);
+  } catch (err) {
+    console.warn("[service-bridge] BI thread failed", { error: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ ok: false, error: "thread_failed" });
+  }
+});
+
+router.get("/applicant-messages/unread", async (req, res) => {
+  const phone = applicantPhone(req);
+  if (!phone) { res.status(400).json({ ok: false, error: "applicant_phone_required" }); return; }
+  try {
+    const { biUnreadForPhone } = await import("../services/biApplicantThread.js");
+    res.json({ unreadCount: await biUnreadForPhone(q, phone) });
+  } catch (err) {
+    console.warn("[service-bridge] BI unread failed", { error: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ ok: false, error: "unread_failed" });
+  }
+});
+
+router.post("/applicant-messages/read", async (req, res) => {
+  const phone = applicantPhone(req);
+  if (!phone) { res.status(400).json({ ok: false, error: "applicant_phone_required" }); return; }
+  try {
+    const { biMarkReadForPhone } = await import("../services/biApplicantThread.js");
+    res.json({ ok: true, marked: await biMarkReadForPhone(q, phone) });
+  } catch (err) {
+    console.warn("[service-bridge] BI mark-read failed", { error: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ ok: false, error: "read_failed" });
+  }
+});
+
+router.post("/applicant-messages", async (req, res) => {
+  const phone = applicantPhone(req);
+  const body = str(req.body?.body ?? req.body?.message).slice(0, 4000);
+  try {
+    const { biSendForPhone, cleanAttachments } = await import("../services/biApplicantThread.js");
+    const attachments = cleanAttachments(req.body?.attachments);
+    if (!phone || (!body && attachments.length === 0)) { res.status(400).json({ ok: false, error: "phone_and_body_required" }); return; }
+    const message = await biSendForPhone(q, phone, body, attachments);
+    if (!message) { res.status(400).json({ ok: false, error: "invalid_phone" }); return; }
+    res.status(201).json({ ok: true, message_id: message.id, ...message });
   } catch (err) {
     console.warn("[service-bridge] BI applicant message failed", { error: err instanceof Error ? err.message : String(err) });
     res.status(500).json({ ok: false, error: "message_insert_failed" });

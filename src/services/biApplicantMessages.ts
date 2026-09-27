@@ -23,6 +23,15 @@ export async function notifyBiApplicant(message: BiApplicantMessage): Promise<Bi
   const base = (process.env.BI_SERVER_URL || DEFAULT_BI_SERVER_URL).replace(/\/+$/, "");
   const token = String(process.env.BACKEND_SERVICE_TOKEN ?? "").trim();
   if (!token) return { ok: false, error: "BACKEND_SERVICE_TOKEN is not configured" };
+  // BF_SERVER_BLOCK_v610_BI_THREAD - BI-Server addresses the applicant by phone.
+  let phone: string | null = null;
+  try {
+    const { pool } = await import("../db.js");
+    const r = await pool.query<{ phone: string | null }>(`SELECT phone FROM contacts WHERE id::text = $1 LIMIT 1`, [message.contactId]);
+    phone = r.rows[0]?.phone ?? null;
+  } catch (err) {
+    console.warn("[bi-applicant-messages] phone lookup failed", { error: err instanceof Error ? err.message : String(err) });
+  }
 
   try {
     const response = await fetch(`${base}/api/v1/bi/applicant-messages/from-bf`, {
@@ -35,6 +44,7 @@ export async function notifyBiApplicant(message: BiApplicantMessage): Promise<Bi
       },
       body: JSON.stringify({
         contact_id: message.contactId,
+        phone,
         body: message.body,
         message_id: message.messageId ?? null,
         staff_name: message.staffName ?? null,
