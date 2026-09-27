@@ -264,7 +264,7 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
         WHERE status = 'available'
           AND last_heartbeat > now() - interval '5 minutes'
           AND twilio_identity IS NOT NULL`,
-    ).catch(() => ({ rows: [] as any[] }));
+    ).catch((err: any) => { console.warn("[silent-query] routes/webhooks.ts", { message: err?.message }); return { rows: [] as any[] }; });
     const vrc = new VoiceResponse();
     if (available.rows.length === 0) {
       vrc.say({ voice: "Polly.Joanna" }, "No agents are available right now. Please leave a message after the tone.");
@@ -375,7 +375,7 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
         WHERE status = 'available'
           AND last_heartbeat > now() - interval '5 minutes'
           AND twilio_identity IS NOT NULL`,
-    ).catch(() => ({ rows: [] as any[] }));
+    ).catch((err: any) => { console.warn("[silent-query] routes/webhooks.ts", { message: err?.message }); return { rows: [] as any[] }; });
     const vrp = new VoiceResponse();
     if (available.rows.length === 0) {
       vrp.say({ voice: "Polly.Joanna" }, "Thanks for calling. No agents are available right now. Please leave a message after the tone.");

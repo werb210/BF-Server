@@ -1744,7 +1744,7 @@ router.get(
         WHERE application_id::text = ($1)::text
         ORDER BY ordinal ASC`,
       [applicationId],
-    ).catch(() => ({ rows: [] as any[] }));
+    ).catch((err: any) => { console.warn("[silent-query] routes/client/v1Applications.ts", { message: err?.message }); return { rows: [] as any[] }; });
 
     res.json({ status: "ok", data: { responses: r.rows } });
   }),

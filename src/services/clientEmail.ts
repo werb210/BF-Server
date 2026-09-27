@@ -42,7 +42,7 @@ export async function resolveClientEmail(applicationId: string): Promise<Resolve
       WHERE a.id::text = ($1)::text
       LIMIT 1`,
     [applicationId],
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] services/clientEmail.ts", { message: err?.message }); return { rows: [] as any[] }; });
 
   const row = r.rows[0];
   if (!row) return { email: null, firstName: null, source: null };

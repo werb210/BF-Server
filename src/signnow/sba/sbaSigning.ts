@@ -37,7 +37,7 @@ async function loadIvesLenders(applicationId: string): Promise<IvesParticipant[]
         AND COALESCE(l.ives_sor_mailbox_id,'')   <> ''
       ORDER BY l.name ASC`,
     [applicationId],
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] signnow/sba/sbaSigning.ts", { message: err?.message }); return { rows: [] as any[] }; });
   return r.rows as IvesParticipant[];
 }
 

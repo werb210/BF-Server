@@ -178,7 +178,7 @@ router.get("/contacts/:id/clarity-recording", safeHandler(async (req: any, res: 
       ORDER BY updated_at DESC
       LIMIT 1`,
     [contactId, silo],
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] routes/crm.ts", { message: err?.message }); return { rows: [] as any[] }; });
   return res.json({ ok: true, data: { url: rows[0]?.url ?? null } });
 }));
 

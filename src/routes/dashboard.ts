@@ -282,7 +282,7 @@ router.get("/document-health", requireAuth, safeHandler(async (req: any, res: an
       ORDER BY COUNT(*) FILTER (WHERE d.status = 'rejected') DESC, COUNT(*) DESC
       LIMIT 12`,
     [silo, String(days)],
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] routes/dashboard.ts", { message: err?.message }); return { rows: [] as any[] }; });
 
   const rows = r.rows.map((x) => {
     const total = parseInt(x.total, 10) || 0;
@@ -340,7 +340,7 @@ router.get("/lender-activity", requireAuth, safeHandler(async (req: any, res: an
       ORDER BY COUNT(DISTINCT s.application_id) DESC
       LIMIT 12`,
     [silo, String(days)],
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] routes/dashboard.ts", { message: err?.message }); return { rows: [] as any[] }; });
 
   const rows = r.rows.map((x) => {
     const sent = parseInt(x.sent, 10) || 0;
@@ -374,7 +374,7 @@ router.get("/offers", requireAuth, safeHandler(async (req: any, res: any) => {
       ORDER BY o.created_at DESC
       LIMIT 25`,
     [silo, String(days)],
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] routes/dashboard.ts", { message: err?.message }); return { rows: [] as any[] }; });
   res.json({ status: "ok", data: r.rows });
 }));
 
@@ -421,7 +421,7 @@ router.get("/funnel", requireAuth, safeHandler(async (req: any, res: any) => {
             COUNT(*) FILTER (WHERE submitted_at IS NOT NULL)::text AS submitted
        FROM stepped`,
     [silo, String(days)],
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] routes/dashboard.ts", { message: err?.message }); return { rows: [] as any[] }; });
 
   const n = (k: string) => parseInt(r.rows[0]?.[k] ?? "0", 10) || 0;
   const STEP_LABELS = [
@@ -470,7 +470,7 @@ router.get("/funding-by-product", requireAuth, safeHandler(async (req: any, res:
       ORDER BY COUNT(*) DESC
       LIMIT 10`,
     [silo, String(days), ApplicationStage.ACCEPTED],
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] routes/dashboard.ts", { message: err?.message }); return { rows: [] as any[] }; });
 
   const rows = r.rows.map((x) => {
     const total = parseInt(x.total, 10) || 0;
@@ -524,7 +524,7 @@ router.get("/acquisition", requireAuth, safeHandler(async (req: any, res: any) =
       GROUP BY 1
       ORDER BY COUNT(DISTINCT a.id) DESC`,
     [silo, String(days)],
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] routes/dashboard.ts", { message: err?.message }); return { rows: [] as any[] }; });
 
   let ga4: any = { configured: false };
   try {
@@ -615,7 +615,7 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
         ORDER BY COUNT(DISTINCT a.id) DESC
         LIMIT 12`,
       [silo, String(days)],
-    ).catch(() => ({ rows: [] as any[] })),
+    ).catch((err: any) => { console.warn("[silent-query] routes/dashboard.ts", { message: err?.message }); return { rows: [] as any[] }; }),
     pool.query<{ source: string; leads: string; revenue: string; revenue_cad: string; revenue_usd: string }>(
       // BF_SERVER_REPORT_CURRENCY_v387 - native CAD and USD kept apart as well as
       // the CAD total; an unfunded USD deal's accepted offer is now converted too
@@ -647,7 +647,7 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
         ORDER BY COUNT(DISTINCT x.id) DESC
         LIMIT 12`,
       [silo, String(days)],
-    ).catch(() => ({ rows: [] as any[] })),
+    ).catch((err: any) => { console.warn("[silent-query] routes/dashboard.ts", { message: err?.message }); return { rows: [] as any[] }; }),
     pool.query<{ product: string; total: string; funded: string }>(
       `SELECT COALESCE(NULLIF(product_category, ''), 'Unspecified') AS product,
               COUNT(*)::text AS total,
@@ -662,7 +662,7 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
         ORDER BY COUNT(*) DESC
         LIMIT 10`,
       [silo, String(days), ApplicationStage.ACCEPTED],
-    ).catch(() => ({ rows: [] as any[] })),
+    ).catch((err: any) => { console.warn("[silent-query] routes/dashboard.ts", { message: err?.message }); return { rows: [] as any[] }; }),
     pool.query<{ category: string; total: string; issues: string }>(
       `SELECT COALESCE(NULLIF(d.category, ''), 'Uncategorized') AS category,
               COUNT(*)::text AS total,
@@ -676,7 +676,7 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
         ORDER BY COUNT(*) FILTER (WHERE d.status = 'rejected' OR d.ocr_status = 'failed') DESC, COUNT(*) DESC
         LIMIT 12`,
       [silo, String(days)],
-    ).catch(() => ({ rows: [] as any[] })),
+    ).catch((err: any) => { console.warn("[silent-query] routes/dashboard.ts", { message: err?.message }); return { rows: [] as any[] }; }),
     pool.query<{ lender_id: string; lender_name: string; sent: string; approved: string }>(
       `WITH sent AS (
          SELECT p.lender_id::text AS lender_id, p.application_id
@@ -701,7 +701,7 @@ router.get("/analytics", requireAuth, safeHandler(async (req: any, res: any) => 
         ORDER BY COUNT(DISTINCT s.application_id) DESC
         LIMIT 12`,
       [silo, String(days)],
-    ).catch(() => ({ rows: [] as any[] })),
+    ).catch((err: any) => { console.warn("[silent-query] routes/dashboard.ts", { message: err?.message }); return { rows: [] as any[] }; }),
   ]);
 
   // BF_SERVER_ANALYTICS_FUNNELS_v1 — these are intentionally isolated from

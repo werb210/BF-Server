@@ -48,7 +48,7 @@ export async function auth(req: Request, res: Response, next: NextFunction) {
       const result = await pool.query<{ id: string; email: string | null; role: string | null; silo: string | null; silos: string[] | null }>(
         `SELECT id, email, role, silo, silos FROM users WHERE id = $1 LIMIT 1`,
         [userId]
-      ).catch(() => ({ rows: [] as any[] }));
+      ).catch((err: any) => { console.warn("[silent-query] middleware/auth.ts", { message: err?.message }); return { rows: [] as any[] }; });
       dbUser = result.rows[0] ?? null;
     }
 

@@ -92,7 +92,7 @@ router.get("/:id", safeHandler(async (req: any, res: any) => {
      ORDER BY created_at DESC
      LIMIT 100`,
     [id]
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] routes/companies.ts", { message: err?.message }); return { rows: [] as any[] }; });
 
   res.json({ ok: true, data: { ...company, contacts: contactsRes.rows, activity_timeline: timelineRes.rows } });
 }));

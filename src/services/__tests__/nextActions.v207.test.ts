@@ -56,7 +56,7 @@ describe("how it presents them", () => {
 
 describe("it cannot break the caller", () => {
   it("degrades to an empty list rather than throwing", () => {
-    expect(svc).toContain(".catch(() => ({ rows: [] as any[] }))");
+    expect(svc).toContain("return { rows: [] as any[] }; })" /* BF_SERVER_BLOCK_v597 - degrades, and logs */);
   });
 
   it("clamps the limit so a caller cannot ask for everything", () => {

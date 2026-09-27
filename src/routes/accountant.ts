@@ -152,7 +152,7 @@ router.get(
         WHERE ai.contact_id::text = ($1)::text
         ORDER BY a.created_at DESC`,
       [contactId]
-    ).catch(() => ({ rows: [] as any[] }));
+    ).catch((err: any) => { console.warn("[silent-query] routes/accountant.ts", { message: err?.message }); return { rows: [] as any[] }; });
     const c: any = who.rows[0];
     res.json({
       status: "ok",

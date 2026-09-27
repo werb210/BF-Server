@@ -54,7 +54,7 @@ async function resolveSigner(pool: Pool, applicationId: string): Promise<{ email
         WHERE a.id::text = $1 LIMIT 1`,
       [applicationId],
     )
-    .catch(() => ({ rows: [] as any[] }));
+    .catch((err: any) => { console.warn("[silent-query] services/signnow/sendOfferTermSheet.ts", { message: err?.message }); return { rows: [] as any[] }; });
   const row = c.rows[0];
   if (!row) return null;
   const email = String(row.email ?? "").trim();

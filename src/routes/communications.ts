@@ -1890,7 +1890,7 @@ router.post("/broadcast", safeHandler(async (req: any, res: any) => {
     try {
       const appRow = await pool.query<{ id: string }>(
         `SELECT id FROM applications WHERE contact_id = $1 ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST LIMIT 1`, [c.id],
-      ).catch(() => ({ rows: [] as any[] }));
+      ).catch((err: any) => { console.warn("[silent-query] routes/communications.ts", { message: err?.message }); return { rows: [] as any[] }; });
       const applicationId = appRow.rows[0]?.id ?? null;
       const ctx = await mergeCtxForContact({ contactId: c.id, phone: c.phone, userId: (req as any).user?.id ?? null });
       const mergedBody = renderMergeTokensComm(String(body), ctx);

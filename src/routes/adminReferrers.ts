@@ -50,7 +50,7 @@ router.get("/", async (_req, res) => {
           AND u.id <> '00000000-0000-0000-0000-000000000001'::uuid
         ORDER BY u.created_at DESC NULLS LAST`,
     )
-    .catch(() => ({ rows: [] as any[] }));
+    .catch((err: any) => { console.warn("[silent-query] routes/adminReferrers.ts", { message: err?.message }); return { rows: [] as any[] }; });
   res.json({ referrers: r.rows ?? [] });
 });
 
@@ -91,7 +91,7 @@ router.get("/:id/detail", async (req, res) => {
          FROM users u WHERE u.id::text = $1 AND u.role = 'Referrer' LIMIT 1`,
       [id],
     )
-    .catch(() => ({ rows: [] as any[] }));
+    .catch((err: any) => { console.warn("[silent-query] routes/adminReferrers.ts", { message: err?.message }); return { rows: [] as any[] }; });
   if (!ref.rows[0]) return res.status(404).json({ error: "not_found" });
 
   const referrals = await pool
@@ -105,7 +105,7 @@ router.get("/:id/detail", async (req, res) => {
         ORDER BY c.created_at DESC LIMIT 500`,
       [id],
     )
-    .catch(() => ({ rows: [] as any[] }));
+    .catch((err: any) => { console.warn("[silent-query] routes/adminReferrers.ts", { message: err?.message }); return { rows: [] as any[] }; });
 
   const applications = await pool
     .query(
@@ -117,7 +117,7 @@ router.get("/:id/detail", async (req, res) => {
         ORDER BY a.updated_at DESC NULLS LAST LIMIT 500`,
       [id],
     )
-    .catch(() => ({ rows: [] as any[] }));
+    .catch((err: any) => { console.warn("[silent-query] routes/adminReferrers.ts", { message: err?.message }); return { rows: [] as any[] }; });
 
   res.json({
     detail: {

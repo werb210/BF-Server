@@ -79,7 +79,7 @@ router.post("/conference/join", twilioWebhookValidation, async (req: any, res) =
   if (pid) {
     const kr = await pool.query<{ kind: string | null }>(
       `SELECT kind FROM conference_participants WHERE id = $1 LIMIT 1`, [pid],
-    ).catch(() => ({ rows: [] as any[] }));
+    ).catch((err: any) => { console.warn("[silent-query] routes/conferenceWebhooks.ts", { message: err?.message }); return { rows: [] as any[] }; });
     legKind = kr.rows[0]?.kind ?? null;
   }
   const isCallerLeg = legKind === "pstn" || legKind === "client_miniportal";

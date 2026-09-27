@@ -55,7 +55,7 @@ router.get("/", safeHandler(async (req: any, res: any) => {
       ORDER BY v.created_at DESC
       LIMIT 200`,
     [silo, userId],
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] routes/crm/voicemails.ts", { message: err?.message }); return { rows: [] as any[] }; });
   respondOk(res, r.rows ?? []);
 }));
 
@@ -67,7 +67,7 @@ router.get("/:id/audio", safeHandler(async (req: any, res: any) => {
   const r = await pool.query<{ recording_url: string }>(
     `SELECT recording_url FROM voicemails WHERE id = $1 LIMIT 1`,
     [id],
-  ).catch(() => ({ rows: [] as any[] }));
+  ).catch((err: any) => { console.warn("[silent-query] routes/crm/voicemails.ts", { message: err?.message }); return { rows: [] as any[] }; });
   const url = r.rows[0]?.recording_url;
   if (!url) return res.status(404).end();
   const sid = process.env.TWILIO_ACCOUNT_SID;

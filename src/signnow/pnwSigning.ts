@@ -35,7 +35,7 @@ async function resolveSigner(applicationId: string): Promise<{ email: string; na
     const c = await dbQuery<{ email: string | null; first_name: string | null; last_name: string | null }>(
       `SELECT c.email, c.first_name, c.last_name
          FROM applications a JOIN contacts c ON c.id = a.contact_id
-        WHERE a.id::text = ($1)::text LIMIT 1`, [applicationId]).catch(() => ({ rows: [] as any[] }));
+        WHERE a.id::text = ($1)::text LIMIT 1`, [applicationId]).catch((err: any) => { console.warn("[silent-query] signnow/pnwSigning.ts", { message: err?.message }); return { rows: [] as any[] }; });
     email = email || String(c.rows[0]?.email ?? "").trim();
     name = name || [c.rows[0]?.first_name, c.rows[0]?.last_name].filter(Boolean).join(" ").trim();
   }
