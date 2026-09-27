@@ -110,6 +110,10 @@ router.post("/call-events", safeHandler(async (req: any, res: any) => {
   const { rows } = await pool.query(`INSERT INTO call_events (user_id, contact_id, application_id, silo, event_type, direction, from_number, to_number, twilio_call_sid, duration_seconds, error_code, payload)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb) RETURNING id, occurred_at`,
     [userId, contactId, body.application_id ?? null, silo, eventType, body.direction ?? null, body.from_number ?? null, toNumber, body.twilio_call_sid ?? null, body.duration_seconds ?? null, body.error_code ?? null, JSON.stringify(body.payload ?? {})]);
+  if (eventType === "call.missed") {
+    // BF_SERVER_BLOCK_v619 - automation trigger.
+    void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent({ trigger: "call.missed", silo, contactId, applicationId: body.application_id ?? null })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
+  }
   // BF_SERVER_BLOCK_v822_BI_OUTBOUND_CONTACTED - a BI outbound call advances the contact to
   // "contacted" (matched by dialed number; only from an earlier stage, so it never downgrades
   // engaged/demo_booked/onboarding/active, and re-firing on later call events is a no-op).

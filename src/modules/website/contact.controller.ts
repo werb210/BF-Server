@@ -58,6 +58,10 @@ export async function submitContactForm(req: Request, res: Response) {
         silo: "BF",
       });
       contactId = (contactRes?.row as { id?: string } | undefined)?.id ?? null;
+      if (contactId && contactRes?.created) {
+        // BF_SERVER_BLOCK_v619 - automation trigger.
+        void import("../../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent({ trigger: "contact.created", silo: "BF", contactId, data: { source: "website" } })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
+      }
 
       // BF_SERVER_CONTACT_FORM_AUTOMATION_v1 - tag the CONTACT (not just the lead)
       // "Contact form" so it is filterable in CRM.

@@ -114,6 +114,10 @@ router.post("/applicant-messages", async (req, res) => {
     if (!phone || (!body && attachments.length === 0)) { res.status(400).json({ ok: false, error: "phone_and_body_required" }); return; }
     const message = await biSendForPhone(q, phone, body, attachments);
     if (!message) { res.status(400).json({ ok: false, error: "invalid_phone" }); return; }
+    void import("../services/biApplicantThread.js").then((t) => t.biContactForPhone(q, phone)).then((contactId) => {
+      // BF_SERVER_BLOCK_v619 - automation trigger.
+      if (contactId) void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent({ trigger: "message.inbound", silo: "BI", contactId, data: { channel: "app" } }));
+    }).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
     res.status(201).json({ ok: true, message_id: message.id, ...message });
   } catch (err) {
     console.warn("[service-bridge] BI applicant message failed", { error: err instanceof Error ? err.message : String(err) });

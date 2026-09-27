@@ -174,6 +174,11 @@ router.post("/webhooks/twilio/sms-inbound", async (req: any, res) => {
       })();
     }
 
+    if (contactId) {
+      // BF_SERVER_BLOCK_v619 - automation trigger.
+      void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent({ trigger: "message.inbound", silo: "BF", contactId, data: { channel: "sms" } })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
+    }
+
     return res.type("text/xml").send("<Response/>");
   } catch (err) {
     // #11 - an inbound message that fails to persist must not vanish silently.
