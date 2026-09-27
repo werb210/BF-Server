@@ -1585,6 +1585,8 @@ router.post(
       ).catch(() => undefined);
     }
 
+    // BF_SERVER_BLOCK_v610_BI_THREAD - Insurance applicants are notified by BI-Server above.
+    if (silo !== "BI")
     // BF_SERVER_BLOCK_v636_MESSAGES_TAB_FIXES_v1: offline-fallback SMS.
     // Mini-portal bumps applications.last_portal_seen_at on every poll (~20s).
     // No bump in 60s -> treat as offline -> SMS the contact with a deep-link.

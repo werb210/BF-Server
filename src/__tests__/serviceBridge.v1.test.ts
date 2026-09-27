@@ -62,7 +62,7 @@ describe("service token", () => {
 describe("the bridge stays narrow", () => {
   it("exposes only applicant messages, sms, mail, tasks and the staff picker", () => {
     const routes = [...bridge.matchAll(/router\.(get|post)\("([^"]+)"/g)].map((m) => `${m[1]} ${m[2]}`);
-    expect(routes.sort()).toEqual(["get /staff", "post /applicant-messages", "post /mail", "post /sms", "post /tasks"]);
+    expect(routes.sort()).toEqual(["get /applicant-messages", "get /applicant-messages/unread", "get /staff", "post /applicant-messages", "post /applicant-messages/read", "post /mail", "post /sms", "post /tasks"]); // BF_SERVER_BLOCK_v610_BI_THREAD
   });
   it("guards every route with the service token", () => {
     expect(bridge).toContain("router.use(requireServiceToken)");

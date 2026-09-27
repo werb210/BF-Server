@@ -8,6 +8,18 @@ import { clientPhoneFromAuth } from "../../services/clientDeviceSignIn.js";
 import { listPasskeys, loginOptions, loginWithPasskey, registerPasskey, registrationOptions, removePasskey } from "../../services/clientPasskeys.js";
 
 const router = Router();
+// BF_SERVER_BLOCK_v610_PASSKEY_ALIASES - the client app (bf-client v600) uses these names.
+const PASSKEY_ALIASES: Record<string, string> = {
+  "/passkeys/registration/options": "/passkeys/register/options",
+  "/passkeys/registration/verify": "/passkeys/register/verify",
+  "/passkeys/authentication/options": "/passkeys/login/options",
+  "/passkeys/authentication/verify": "/passkeys/login/verify",
+};
+router.use((req: any, _res: any, next: any) => {
+  const to = PASSKEY_ALIASES[req.path];
+  if (to && req.method === "POST") req.url = to + req.url.slice(req.path.length);
+  next();
+});
 const query = (sql: string, params: unknown[]) => dbQuery(sql, params as any[]) as any;
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: "RATE_LIMITED" }, keyGenerator: safeKeyGenerator, validate: { xForwardedForHeader: false, trustProxy: false } });
 const phoneOf = (req: any) => clientPhoneFromAuth(req.headers?.authorization, process.env.JWT_SECRET);
