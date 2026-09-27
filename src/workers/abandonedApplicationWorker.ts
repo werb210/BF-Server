@@ -120,7 +120,14 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
             `UPDATE applications SET abandon_sms_attempts = COALESCE(abandon_sms_attempts, 0) + 1 WHERE id = $1`,
             [row.id],
           );
-          await sendSMS(String(row.phone), ABANDON_SMS_BODY);
+          // BF_SERVER_BLOCK_v589_APP_FIRST
+          const { pushToClientApp } = await import("../services/notifications/notifyClient.js");
+          const viaApp = await pushToClientApp({
+            phone: String(row.phone), applicationId: row.id, kind: "abandoned_application",
+            title: "Finish your application", body: "You're almost done - pick up where you left off.",
+            sms: ABANDON_SMS_BODY, categoryId: "APPLICATION_UPDATE",
+          });
+          if (!viaApp) await sendSMS(String(row.phone), ABANDON_SMS_BODY);
           // Stamped only after the send succeeds, so a Twilio outage retries on
           // the next tick instead of silently skipping the applicant.
           await pool.query(

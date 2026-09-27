@@ -1587,7 +1587,16 @@ router.post(
       const row = presence.rows[0];
       const stale = !row || row.last_seen == null ||
                     (typeof row.seconds_since === "number" && row.seconds_since > 60);
-      if (stale && row?.phone) {
+      // BF_SERVER_BLOCK_v589_APP_FIRST - client not in the portal: the Boreal app first, SMS only
+      // when the app can't be reached.
+      const viaApp = stale && row?.phone
+        ? await (await import("../services/notifications/notifyClient.js")).pushToClientApp({
+            phone: row.phone, applicationId: applicationId || null, kind: "staff_message",
+            title: `New message from ${staffName ?? "Boreal"}`, body: body.length > 140 ? body.slice(0, 137) + "..." : body,
+            sms: "", categoryId: "APPLICATION_UPDATE",
+          })
+        : false;
+      if (stale && row?.phone && !viaApp) {
         const { sendSms } = await import("../modules/notifications/sms.service.js");
         const clientBase = String(process.env.CLIENT_URL ?? "https://client.boreal.financial").replace(/\/$/, "");
         const link = applicationId

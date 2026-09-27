@@ -54,6 +54,28 @@ export async function notifyClient(n: ClientNotice, deps: NotifyDeps = defaultDe
   return result;
 }
 
+// BF_SERVER_BLOCK_v589_APP_FIRST - try only the app. For senders that keep their own
+// SMS path (and its retry / permanent-failure handling): if this returns true the app took
+// it and the caller skips its SMS; if false the caller texts as before. Never throws.
+export async function pushToClientApp(n: ClientNotice, deps: NotifyDeps = defaultDeps): Promise<boolean> {
+  const phone10 = phone10Of(n.phone);
+  if (phone10.length < 10) return false;
+  try {
+    if (!(await deps.pushReady().catch(() => false))) return false;
+    let pushed = 0;
+    for (const userId of await deps.pushUsersForPhone(phone10).catch(() => [] as string[])) {
+      pushed += await deps.push(userId, n).catch(() => 0);
+    }
+    if (pushed > 0) {
+      await deps.record(n, phone10, { channel: "push" }).catch((err: any) => console.warn("[notify-client] record_failed", err?.message));
+      return true;
+    }
+  } catch (err: any) {
+    console.warn("[notify-client] app_attempt_failed", { kind: n.kind, error: String(err?.message ?? err) });
+  }
+  return false;
+}
+
 const defaultDeps: NotifyDeps = {
   async pushReady() {
     const { isAnyClientPushConfigured } = await import("../clientPushService.js");
