@@ -766,6 +766,14 @@ router.get(
       v778_rows = v778_rows.filter((r: any) => !(!r.cta_action && typeof r.body === "string"
         && /^(We've added more documents to your checklist|To continue your application, please upload)/.test(r.body)));
     }
+    // BF_SERVER_CHAT_IS_CHAT_v629 - every to-do (documents to upload, forms to fill) lives
+    // in the client's "What you need to do" panel, which is computed live. The task
+    // prompts posted into the thread froze their text when posted, so they asked for
+    // documents already sent and vanished all at once when the last item arrived. The
+    // thread is now conversation only: task buttons and automated checklist notes are
+    // left out. They stay in the database, so staff history is unchanged.
+    v778_rows = v778_rows.filter((r: any) => !v778_isTask(r.cta_action)
+      && !(typeof r.body === "string" && /^(We've added more documents to your checklist|To continue your application, please upload|Please complete the .+ step to continue your application)/.test(r.body)));
     if (v778_rows.some((r: any) => r.cta_label === "Complete PGI Application")) {
       const { pgiDone, pgiStageFor } = await import("../../services/pgiStage.js");
       if (pgiDone(await pgiStageFor(applicationId))) {

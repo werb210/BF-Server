@@ -112,7 +112,7 @@ export async function defaultDeps(): Promise<EngineDeps> {
       if (viaApp) return "app";
       const { sendSms } = await import("../notifications/sms.service.js");
       const base = String(process.env.CLIENT_URL ?? "https://client.boreal.financial").replace(/\/$/, "");
-      await sendSms({ to: phone, message: `Boreal: ${body}\n${applicationId ? `${base}/portal/${encodeURIComponent(applicationId)}` : `${base}/portal`}`, track: { kind: "automation", applicationId } });
+      await sendSms({ to: phone, message: `Boreal: ${body}\n${applicationId ? `${base}/application/${encodeURIComponent(applicationId)}` : `${base}/portal`}`, track: { kind: "automation", applicationId } });
       return "sms";
     },
   };

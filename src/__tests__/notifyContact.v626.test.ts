@@ -42,7 +42,7 @@ describe("notifyContact", () => {
     state.contact = { id: "c1", phone: "+17805550100", silo: "BF" };
     const r = await notifyContact({ contactId: "c1", title: "Hi", body: "Docs needed" });
     expect(r.channel).toBe("sms");
-    expect(state.smsSent[0].message).toContain("/portal/app-1");
+    expect(state.smsSent[0].message).toContain("/application/app-1");
   });
   it("sends Boreal Risk contacts through BI-Server", async () => {
     state.contact = { id: "c2", phone: "+17805550100", silo: "BI" };

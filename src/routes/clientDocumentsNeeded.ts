@@ -114,6 +114,9 @@ export function gate1919Attachment<T extends { document_type: string; required?:
 }
 
 function humanize(category: string): string {
+  // BF_SERVER_LIVE_UPLOAD_PROMPT_v629 - a label staff typed ("2 pieces of Government
+  // Issued ID") is shown as typed; only raw keys ("bank_statements") are turned into words.
+  if (!category.includes("_") && /\s/.test(category.trim())) return category.trim();
   return category.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
