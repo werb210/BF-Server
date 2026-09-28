@@ -459,8 +459,50 @@ router.get("/negative-candidates", safeHandler(async (req: any, res: any) => {
   const minCost = Math.max(0, Number(req.query.minCost ?? 0) || 0);
   const { findNegativeCandidates } = await import("../services/googleAdsNegatives.js");
   const campaignId = String(req.query.campaignId ?? "").trim();
-  const candidates = await findNegativeCandidates(days, minCost, campaignId || undefined);
-  res.json({ windowDays: days, minCost, campaignId: campaignId || null, candidates });
+  const all = await findNegativeCandidates(days, minCost, campaignId || undefined);
+  // BF_SERVER_NEGATIVE_GUARD_v623 - hide searches that are one of our own keywords,
+  // brought in a lead, or converted; require a minimum number of clicks; and tell
+  // the portal when Google Ads records no conversions at all ("converted nothing"
+  // is meaningless then).
+  const minClicks = Math.max(1, Math.min(50, Number(req.query.minClicks ?? 1) || 1));
+  const guard = await import("../services/googleAdsNegativeGuard.js");
+  let keywordCheck = "ok";
+  let protectedTerms: string[] = [];
+  let candidates = all.filter((c) => Number(c.clicks ?? 0) >= minClicks);
+  try {
+    const p = await guard.protectedSearches(campaignId || undefined);
+    protectedTerms = Array.from(new Set([...p.keywords, ...p.leadKeywords, ...p.convertedSearches]));
+    candidates = candidates.filter((c) => guard.protectionReason(c.searchTerm, "EXACT", p) === null);
+  } catch (err: any) {
+    keywordCheck = "unavailable";
+    logError("negative_candidates_keyword_check_failed", { message: err?.message });
+  }
+  const accountConversions = await guard.accountConversions(30);
+  res.json({ windowDays: days, minCost, minClicks, campaignId: campaignId || null, candidates, protectedTerms, accountConversions, keywordCheck });
+}));
+
+// BF_SERVER_NEGATIVE_GUARD_v623 - negatives already in Google Ads that block our own keywords.
+router.get("/negative-conflicts", safeHandler(async (req: any, res: any) => {
+  const campaignId = String(req.query.campaignId ?? "").trim();
+  try {
+    const { listConflicts } = await import("../services/googleAdsNegativeGuard.js");
+    res.json({ conflicts: await listConflicts(campaignId || undefined) });
+  } catch (error: any) {
+    logError("negative_conflicts_failed", { message: error?.message });
+    res.status(502).json({ error: "google_ads_read_failed", message: error?.message ?? "unknown" });
+  }
+}));
+
+router.post("/negative-conflicts/remove", safeHandler(async (req: any, res: any) => {
+  const resourceName = String(req.body?.resourceName ?? "").trim();
+  if (!resourceName) { res.status(400).json({ error: "resourceName_required" }); return; }
+  try {
+    const { removeNegativeCriterion } = await import("../services/googleAdsNegativeGuard.js");
+    await removeNegativeCriterion(resourceName);
+    res.json({ ok: true });
+  } catch (error: any) {
+    res.status(502).json({ error: "google_ads_remove_failed", message: error?.message ?? "unknown" });
+  }
 }));
 
 router.get("/negative-impact", safeHandler(async (req: any, res: any) => {
@@ -506,8 +548,26 @@ router.post("/negative-keywords", safeHandler(async (req: any, res: any) => {
   if (!campaignId) { res.status(400).json({ error: "campaignId_required" }); return; }
   if (terms.length === 0) { res.status(400).json({ error: "terms_required" }); return; }
   try {
+    // BF_SERVER_NEGATIVE_GUARD_v623 - refuse any negative that would block one of our
+    // keywords, a lead's keyword or a converting search. No keyword list, no negatives.
+    const guard = await import("../services/googleAdsNegativeGuard.js");
+    let guardData;
+    try { guardData = await guard.protectedSearches(campaignId); }
+    catch (err: any) {
+      logError("negative_add_keyword_check_failed", { campaignId, message: err?.message });
+      res.status(502).json({ error: "keyword_check_unavailable", message: "Could not read this campaign's keywords from Google Ads, so nothing was blocked." });
+      return;
+    }
+    const refused: Array<{ term: string; error: string }> = [];
+    const allowedTerms = terms.map((t: unknown) => String(t ?? "").trim()).filter(Boolean).filter((t: string) => {
+      const why = guard.protectionReason(t, matchType, guardData);
+      if (why) refused.push({ term: t, error: why });
+      return !why;
+    });
+    if (allowedTerms.length === 0) { res.json({ ok: true, matchType, added: [], failed: refused }); return; }
     const { addCampaignNegatives } = await import("../services/googleAdsNegatives.js");
-    const result = await addCampaignNegatives(campaignId, terms, matchType);
+    const result = await addCampaignNegatives(campaignId, allowedTerms, matchType);
+    result.failed = [...refused, ...result.failed];
     // BF_SERVER_NEGATIVES_SAFETY_v419 - record it so the portal can undo it.
     for (const term of result.added) {
       await pool.query(
