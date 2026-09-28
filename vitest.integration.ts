@@ -21,6 +21,7 @@ export const INTEGRATION_TEST_FILES: string[] = [
   "src/__tests__/applicationCrmMirror.dedup.v65.test.ts",
   "src/__tests__/auth.otp.client-fallthrough.test.ts",
   "src/__tests__/bi-workflows.smoke.test.ts",
+  "src/__tests__/chatIsChat.v629.integration.test.ts", // BF_SERVER_CHAT_IS_CHAT_v629 - needs Postgres
   "src/__tests__/crm-cors-telephony.integration.test.ts",
   "src/__tests__/lenderPortalHygiene.v1.test.ts",
   "src/__tests__/maya-handoff.integration.test.ts",

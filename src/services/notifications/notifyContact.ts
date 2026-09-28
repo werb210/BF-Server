@@ -48,7 +48,7 @@ export async function notifyContact(input: NotifyContactInput): Promise<NotifyCo
       try {
         const { sendSms } = await import("../../modules/notifications/sms.service.js");
         const base = String(process.env.CLIENT_URL ?? "https://client.boreal.financial").replace(/\/$/, "");
-        const link = applicationId ? base + "/portal/" + encodeURIComponent(applicationId) : base + "/portal";
+        const link = applicationId ? base + "/application/" + encodeURIComponent(applicationId) : base + "/portal";
         await sendSms({ to: contact.phone, message: "Boreal: " + input.body + "\n" + link, track: { kind: "staff_notice", applicationId } } as any);
         result = { ok: true, channel: "sms" };
       } catch (err: any) {

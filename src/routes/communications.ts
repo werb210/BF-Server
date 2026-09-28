@@ -1626,7 +1626,7 @@ router.post(
         const { sendSms } = await import("../modules/notifications/sms.service.js");
         const clientBase = String(process.env.CLIENT_URL ?? "https://client.boreal.financial").replace(/\/$/, "");
         const link = applicationId
-          ? `${clientBase}/portal/${encodeURIComponent(applicationId)}`
+          ? `${clientBase}/application/${encodeURIComponent(applicationId)}` /* BF_SERVER_LIVE_UPLOAD_PROMPT_v629 - /portal/:id is not a client route */
           : `${clientBase}/portal`;
         const preview = body.length > 120 ? body.slice(0, 117) + "..." : body;
         const smsBody = `Boreal: ${preview}
