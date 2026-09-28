@@ -44,7 +44,7 @@ export async function auth(req: Request, res: Response, next: NextFunction) {
     const userId = (decoded as any).id ?? (decoded as any).sub ?? null;
 
     let dbUser: { id: string; email: string | null; role: string | null; silo: string | null; silos: string[] | null } | null = null;
-    if (typeof userId === "string" && userId) {
+    if (typeof userId === "string" && userId && !userId.startsWith("client:")) { // BF_SERVER_CLIENT_TOKEN_SKIP_v623
       const result = await pool.query<{ id: string; email: string | null; role: string | null; silo: string | null; silos: string[] | null }>(
         `SELECT id, email, role, silo, silos FROM users WHERE id = $1 LIMIT 1`,
         [userId]

@@ -707,10 +707,9 @@ router.get(
       `SELECT DISTINCT lower(coalesce(category,'')) AS category FROM documents WHERE application_id::text = ($1)::text AND coalesce(status,'') <> 'rejected'`,
       [applicationId]
     ).catch((err: any) => { console.warn("[silent-query] routes/client/index.ts", { message: err?.message }); return { rows: [] as any[] }; });
-    const v778_req = await dbQuery(
-      `SELECT lower(coalesce(category,'')) AS category FROM document_requirements WHERE application_id::text = ($1)::text AND required = true AND category IS NOT NULL`,
-      [applicationId]
-    ).catch((err: any) => { console.warn("[silent-query] routes/client/index.ts", { message: err?.message }); return { rows: [] as any[] }; });
+    // BF_SERVER_CLIENT_NO_DOC_REQUIREMENTS_v623 - that table does not exist in the live
+    // database; the query failed every 30 s. v561 below is the real answer.
+    const v778_req = { rows: [] as Array<{ category?: string }> };
     const v778_formKey = (dt: any): string | null => {
       const s = String(dt ?? "").toLowerCase();
       if (/cra/.test(s)) return "cra";
