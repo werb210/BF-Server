@@ -10,8 +10,11 @@ import { dbQuery } from "../db.js";
 
 export type ActionItem = {
   key: string;
-  kind: "document" | "form";
+  kind: "document" | "form" | "action";
   label: string;
+  /** BF_SERVER_TODO_PROMPTS_v635 - what the button does, in the client's existing button vocabulary
+   * (a URL, "sba_forms", ...). Documents and plain forms leave it empty. */
+  action?: string;
   // rejected items come back to the top: the applicant already did the work once
   // and needs to know it was not accepted.
   urgent: boolean;
@@ -107,12 +110,57 @@ export async function buildActionCenter(applicationId: string): Promise<ActionCe
     ).catch((err: any) => { console.warn("[action-center] submitted_forms_read_failed", { applicationId, message: err?.message }); return { rows: [] as Array<{ doc_type: string }> }; }),
   ]);
   const waivedForms = Array.from(waivedAll).filter((w) => w.startsWith("form:")).map((w) => w.slice(5));
-  return assembleActionCenter({
+  const submittedFormTypes = (formsQ.rows ?? []).map((r) => String(r.doc_type ?? ""));
+  const center = assembleActionCenter({
     requestedForms,
     waivedForms,
-    submittedFormTypes: (formsQ.rows ?? []).map((r) => String(r.doc_type ?? "")),
+    submittedFormTypes,
     required: docs.required,
     stillNeeded: docs.stillNeeded,
     rejected: docs.rejected,
   });
+  // BF_SERVER_TODO_PROMPTS_v635 - PGI and SBA forms join the to-do list (they used to be chat prompts).
+  const prompts = await promptItems(applicationId, submittedFormTypes).catch((err: any) => {
+    console.warn("[action-center] prompt_items_failed", { applicationId, message: err?.message });
+    return { outstanding: [] as ActionItem[], completed: [] as ActionItem[] };
+  });
+  const outstanding = [...prompts.outstanding, ...center.outstanding];
+  return { outstanding, completed: [...center.completed, ...prompts.completed], outstandingCount: outstanding.length };
+}
+
+// BF_SERVER_TODO_PROMPTS_v635
+// PGI: only after the client signed a term sheet, and until the PGI application is done.
+// SBA forms: once staff asked for them, until the 1919 and a 413 for every 20%+ owner are submitted.
+export function sbaFormsMissing(ownerIndexes: number[], submittedFormTypes: string[]): string[] {
+  const have = new Set(submittedFormTypes.map((t) => String(t ?? "").trim().toLowerCase()));
+  const expected = ["sba_form_1919", ...ownerIndexes.map((i) => (i === 1 ? "sba_form_413" : "sba_form_413_owner_" + i))];
+  return expected.filter((t) => !have.has(t));
+}
+
+async function promptItems(applicationId: string, submittedFormTypes: string[]): Promise<{ outstanding: ActionItem[]; completed: ActionItem[] }> {
+  const outstanding: ActionItem[] = [];
+  const completed: ActionItem[] = [];
+  const { PGI_PROMPT_LABEL, termSheetSigned } = await import("./termSheetSigned.js");
+  const prompts = await dbQuery<{ cta_label: string | null; cta_action: string | null }>(
+    `SELECT cta_label, cta_action FROM communications_messages
+      WHERE application_id::text = ($1)::text
+        AND (cta_label = $2 OR cta_action IN ('sba_forms', 'form:sba_forms'))
+      ORDER BY created_at DESC`,
+    [applicationId, PGI_PROMPT_LABEL],
+  );
+  const rows = prompts.rows ?? [];
+  const pgiUrl = rows.find((r) => r.cta_label === PGI_PROMPT_LABEL && /^https?:\/\//i.test(String(r.cta_action ?? "")))?.cta_action ?? null;
+  if (pgiUrl && (await termSheetSigned(applicationId))) {
+    const { pgiDone, pgiStageFor } = await import("./pgiStage.js");
+    const item: ActionItem = { key: "pgi", kind: "action", label: "Complete your Personal Guarantee Insurance application", action: pgiUrl, urgent: true };
+    if (pgiDone(await pgiStageFor(applicationId))) completed.push(item); else outstanding.push(item);
+  }
+  if (rows.some((r) => r.cta_action === "sba_forms" || r.cta_action === "form:sba_forms")) {
+    const { resolveSbaOwners } = await import("../signnow/sba/sbaOwners.js");
+    const owners = await resolveSbaOwners(applicationId);
+    const missing = sbaFormsMissing(owners.map((o) => o.index), submittedFormTypes);
+    const item: ActionItem = { key: "form:sba_forms", kind: "form", label: "SBA forms", action: "sba_forms", urgent: false };
+    if (missing.length) outstanding.push(item); else completed.push(item);
+  }
+  return { outstanding, completed };
 }

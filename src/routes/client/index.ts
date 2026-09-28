@@ -772,6 +772,8 @@ router.get(
     // documents already sent and vanished all at once when the last item arrived. The
     // thread is now conversation only: task buttons and automated checklist notes are
     // left out. They stay in the database, so staff history is unchanged.
+    // BF_SERVER_TODO_PROMPTS_v635 - the PGI and SBA forms prompts live in "What you need to do" too.
+    v778_rows = v778_rows.filter((r: any) => r.cta_label !== "Complete PGI Application" && r.cta_action !== "sba_forms" && r.cta_action !== "form:sba_forms");
     v778_rows = v778_rows.filter((r: any) => !v778_isTask(r.cta_action)
       && !(typeof r.body === "string" && /^(We've added more documents to your checklist|To continue your application, please upload|Please complete the .+ step to continue your application)/.test(r.body)));
     if (v778_rows.some((r: any) => r.cta_label === "Complete PGI Application")) {
