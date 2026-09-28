@@ -25,6 +25,11 @@ export function broadcastToUsers(userIds: string[], payload: unknown): void {
   }
 }
 
+// BF_SERVER_TEAM_PREFS_v643 - has this person got the portal open (a live Team socket)?
+export function isConnected(userId: string): boolean {
+  return (sockets.get(userId)?.size ?? 0) > 0;
+}
+
 function register(userId: string, ws: WebSocket): void {
   let set = sockets.get(userId);
   if (!set) { set = new Set(); sockets.set(userId, set); }

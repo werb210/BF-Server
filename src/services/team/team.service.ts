@@ -66,6 +66,7 @@ export async function listChannelsForUser(userId: string): Promise<TeamChannelSu
   const r = await runQuery<TeamChannelSummary>(
     `SELECT c.id, c.kind, c.name, c.dm_key, c.created_by, c.created_at,
             m.last_read_at,
+            COALESCE((to_jsonb(m)->>'muted')::boolean, false) AS muted, -- BF_SERVER_TEAM_PREFS_v643
             COALESCE((SELECT json_agg(cm.user_id) FROM team_channel_members cm WHERE cm.channel_id = c.id), '[]'::json) AS member_ids,
             (SELECT row_to_json(x) FROM (
                SELECT tm.id, tm.channel_id, tm.sender_id, tm.body, tm.created_at

@@ -26,8 +26,10 @@ import {
   setPinned,
   listPins,
   searchMessages,
+  listStaffUsers as listStaffUsersForStatus, // BF_SERVER_TEAM_PREFS_v643
 } from "../services/team/team.service.js";
 import { broadcastToUsers } from "../ws/teamSocket.js";
+import { listStatuses, markUnread, pushTeamMessage, setMuted, setStatus } from "../services/team/teamPrefs.js"; // BF_SERVER_TEAM_PREFS_v643
 
 const router = Router();
 const requireStaff = requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING] });
@@ -145,7 +147,37 @@ router.post(
     const message = await postMessage(id, userId, body, attachments.length ? attachments : null, replyToId, mentions.length ? mentions : null);
     const members = await memberIdsOf(id);
     broadcastToUsers(members, { type: "message", channel_id: id, message });
+    void pushTeamMessage(id, message); // BF_SERVER_TEAM_PREFS_v643 - alerts for people without the portal open
     res.status(200).json({ ok: true, message });
+  }),
+);
+
+router.post("/channels/:id/mute", requireAuth, requireStaff, safeHandler(async (req: any, res: any) => {
+  const userId = userIdOf(req); const id = String(req.params.id);
+  if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
+  const muted = req.body?.muted !== false; await setMuted(id, userId, muted); res.status(200).json({ ok: true, muted });
+}));
+
+router.post("/channels/:id/unread", requireAuth, requireStaff, safeHandler(async (req: any, res: any) => {
+  const userId = userIdOf(req); const id = String(req.params.id);
+  if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
+  const ok = await markUnread(id, userId, String(req.body?.message_id ?? ""));
+  if (!ok) throw new AppError("not_found", "Message not found.", 404);
+  res.status(200).json({ ok: true });
+}));
+
+router.get("/statuses", requireAuth, requireStaff, safeHandler(async (_req: any, res: any) => {
+  res.status(200).json({ ok: true, statuses: await listStatuses() });
+}));
+
+router.put("/status", requireAuth, requireStaff, safeHandler(async (req: any, res: any) => {
+  const userId = userIdOf(req); const b = req.body ?? {}; const patch: Record<string, unknown> = {};
+  for (const k of ["status_text", "status_emoji", "status_until", "dnd_until"]) if (k in b) patch[k] = b[k] == null ? null : String(b[k]);
+  if ("away" in b) patch.away = Boolean(b.away);
+  for (const k of ["status_until", "dnd_until"]) if (patch[k] && Number.isNaN(Date.parse(String(patch[k])))) throw new AppError("validation_error", k + " must be a date/time.", 400);
+  const status = await setStatus(userId, patch as any);
+  broadcastToUsers((await listStaffUsersForStatus()).map((u) => u.id), { type: "status", status });
+  res.status(200).json({ ok: true, status });
   }),
 );
 
