@@ -462,11 +462,28 @@ export async function getWaivedDocTypes(applicationId: string): Promise<Set<stri
   return new Set(res.rows.map((r: { document_type: string }) => String(r.document_type ?? "").trim().toLowerCase()));
 }
 
+// BF_SERVER_DOC_SHARING_v635 - never throws: a sharing problem must not stop the checklist.
+async function shareMissing(applicationId: string, needed: NeededDoc[]): Promise<boolean> {
+  if (!needed.length) return false;
+  try {
+    const { shareFromOtherApplications } = await import("../services/documentSharing.js");
+    return (await shareFromOtherApplications(applicationId, needed)) > 0;
+  } catch (err: any) {
+    console.warn("[doc-sharing] share_failed", { applicationId, message: err?.message });
+    return false;
+  }
+}
+
 export async function computeOutstandingDocs(
   applicationId: string
 ): Promise<{ stillNeeded: NeededDoc[]; rejected: NeededDoc[]; required: NeededDoc[] }> {
-  const raw = await computeOutstandingDocsRaw(applicationId);
+  let raw = await computeOutstandingDocsRaw(applicationId);
   const waived = await getWaivedDocTypes(applicationId);
+  // BF_SERVER_DOC_SHARING_v635 - before asking the client, copy anything they already gave us
+  // on another application (personal docs: any application; business docs: same business).
+  if (await shareMissing(applicationId, raw.stillNeeded.filter((d) => !waived.has(String(d.document_type ?? "").trim().toLowerCase())))) {
+    raw = await computeOutstandingDocsRaw(applicationId);
+  }
   return {
     stillNeeded: raw.stillNeeded.filter((d) => !waived.has(String(d.document_type ?? "").trim().toLowerCase())),
     rejected: raw.rejected,
@@ -497,9 +514,13 @@ export async function getRequestedFormIds(applicationId: string): Promise<string
 
 export async function getRequestItemsForApp(
   applicationId: string
-): Promise<{ required: NeededDoc[]; waived: string[]; forms: string[]; formsWaived: string[]; satisfied: string[] }> {
-  const raw = await computeOutstandingDocsRaw(applicationId);
+): Promise<{ required: NeededDoc[]; waived: string[]; forms: string[]; formsWaived: string[]; satisfied: string[]; shared: Array<{ document_type: string; from_application_id: string; from_name: string | null }> }> {
+  let raw = await computeOutstandingDocsRaw(applicationId);
   const allWaived = await getWaivedDocTypes(applicationId);
+  // BF_SERVER_DOC_SHARING_v635 - staff see shared documents as uploaded, with where they came from.
+  if (await shareMissing(applicationId, raw.stillNeeded.filter((d) => !allWaived.has(String(d.document_type ?? "").trim().toLowerCase())))) {
+    raw = await computeOutstandingDocsRaw(applicationId);
+  }
   // Form waivers are stored in the same table with a "form:<id>" document_type,
   // so split them out from real document waivers.
   const waived: string[] = [];
@@ -513,7 +534,9 @@ export async function getRequestItemsForApp(
   // A required item counts as uploaded when a document of the same kind is on file.
   const uploadedKinds = new Set(uploadedTypes.map((c) => canonicalDocKey(c)));
   const satisfied = Array.from(new Set([...uploadedTypes, ...raw.required.filter((d) => uploadedKinds.has(canonicalDocKey(d.document_type))).map((d) => d.document_type)]));
-  return { required: raw.required, waived, forms, formsWaived, satisfied };
+  const { sharedDocumentsFor } = await import("../services/documentSharing.js");
+  const shared = await sharedDocumentsFor(applicationId);
+  return { required: raw.required, waived, forms, formsWaived, satisfied, shared };
 }
 
 router.get("/needed", async (req: Request, res: Response) => {
