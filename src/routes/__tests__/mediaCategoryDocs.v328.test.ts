@@ -53,7 +53,7 @@ describe("staff can see what is already in", () => {
   it("request-items reports the document types with a live upload", () => {
     // BF_SERVER_DOC_SHARING_v635 - still built from the live uploads, now also matching same-kind names.
     expect(docs).toContain("const uploadedTypes = await getSatisfiedDocTypes(applicationId);");
-    expect(docs).toContain("return { required: raw.required, waived, forms, formsWaived, satisfied };");
+    expect(docs).toContain("return { required: raw.required, waived, forms, formsWaived, satisfied, shared };");
   });
 
   it("a rejected upload does not count as satisfied", () => {
