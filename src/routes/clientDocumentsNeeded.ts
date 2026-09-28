@@ -7,6 +7,7 @@
 // submit-time table is empty, this falls back to the wizard's stored product
 // requirements first, then the matched product's upload-type required_documents.
 import { Router, type Request, type Response } from "express";
+import { canonicalDocKey } from "../services/documentKinds.js"; // BF_SERVER_DOC_SHARING_v635
 import { pool } from "../db.js";
 import { loadSbaContext } from "../signnow/sba/sbaOwners.js"; // BF_SERVER_SBA_1919_ATTACH_GATE_v162
 import { logInfo } from "../observability/logger.js"; // BF_SERVER_SBA_1919_ATTACH_GATE_v162
@@ -402,8 +403,12 @@ async function computeOutstandingDocsRaw(
   const satisfiedNorm = new Set(
     Array.from(satisfied).map((c) => c.trim().toLowerCase())
   );
+  // BF_SERVER_DOC_SHARING_v635 - also satisfied by the same kind of document under another
+  // name ("Government ID" satisfies "2 pieces of Government Issued ID").
+  const satisfiedKinds = new Set(Array.from(satisfied).map((c) => canonicalDocKey(c)));
   const stillNeeded = required.filter(
     (d) => d.required !== false && !satisfiedNorm.has(d.document_type.trim().toLowerCase())
+      && !satisfiedKinds.has(canonicalDocKey(d.document_type))
   );
 
   // Rejected docs (client must re-upload), deduped and not already re-satisfied.
@@ -412,7 +417,7 @@ async function computeOutstandingDocsRaw(
     .filter((r: UploadedDocRow) => {
       const cat = (r.category as string).trim();
       const key = cat.toLowerCase();
-      if (satisfiedNorm.has(key)) return false;
+      if (satisfiedNorm.has(key) || satisfiedKinds.has(canonicalDocKey(cat))) return false;
       if (seenRejected.has(key)) return false;
       seenRejected.add(key);
       return true;
@@ -504,7 +509,10 @@ export async function getRequestItemsForApp(
     else waived.push(w);
   }
   const forms = await getRequestedFormIds(applicationId);
-  const satisfied = await getSatisfiedDocTypes(applicationId);
+  const uploadedTypes = await getSatisfiedDocTypes(applicationId);
+  // A required item counts as uploaded when a document of the same kind is on file.
+  const uploadedKinds = new Set(uploadedTypes.map((c) => canonicalDocKey(c)));
+  const satisfied = Array.from(new Set([...uploadedTypes, ...raw.required.filter((d) => uploadedKinds.has(canonicalDocKey(d.document_type))).map((d) => d.document_type)]));
   return { required: raw.required, waived, forms, formsWaived, satisfied };
 }
 

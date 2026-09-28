@@ -51,7 +51,8 @@ describe("every spelling of the media category is recognised", () => {
 
 describe("staff can see what is already in", () => {
   it("request-items reports the document types with a live upload", () => {
-    expect(docs).toContain("const satisfied = await getSatisfiedDocTypes(applicationId);");
+    // BF_SERVER_DOC_SHARING_v635 - still built from the live uploads, now also matching same-kind names.
+    expect(docs).toContain("const uploadedTypes = await getSatisfiedDocTypes(applicationId);");
     expect(docs).toContain("return { required: raw.required, waived, forms, formsWaived, satisfied };");
   });
 
