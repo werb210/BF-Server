@@ -29,9 +29,13 @@ import {
   listStaffUsers as listStaffUsersForStatus, // BF_SERVER_TEAM_PREFS_v643
 } from "../services/team/team.service.js";
 import { broadcastToUsers } from "../ws/teamSocket.js";
+import { channelMeta, nameTaken, normalizeChannelName, updateChannel } from "../services/team/teamChannels.js"; // BF_SERVER_TEAM_PHASE_B_v658
+import teamPhaseBRoutes from "./teamPhaseB.js"; // BF_SERVER_TEAM_PHASE_B_v658
 import { listStatuses, markUnread, pushTeamMessage, setMuted, setStatus } from "../services/team/teamPrefs.js"; // BF_SERVER_TEAM_PREFS_v643
 
 const router = Router();
+// BF_SERVER_TEAM_PHASE_B_v658 - channels, threads and search (the route registry mounts one router per path).
+router.use(teamPhaseBRoutes);
 const requireStaff = requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING] });
 
 function userIdOf(req: { user?: { id?: string | null; userId?: string | null; sub?: string | null } | null }): string {
@@ -95,8 +99,12 @@ router.post(
       }
       channelId = await createGroup(name || null, userId, memberIds);
     } else {
-      if (!name) throw new AppError("validation_error", "Channel name required.", 400);
-      channelId = await createNamedChannel(name, userId, memberIds);
+      // BF_SERVER_TEAM_PHASE_B_v658 - #lowercase-names, unique, with an optional topic and privacy.
+      const clean = normalizeChannelName(name);
+      if (!clean) throw new AppError("validation_error", "Channel name required.", 400);
+      if (await nameTaken(clean, null)) throw new AppError("conflict", "A channel called #" + clean + " already exists.", 409);
+      channelId = await createNamedChannel(clean, userId, memberIds);
+      await updateChannel(channelId, { topic: typeof req.body?.topic === "string" ? req.body.topic : null, is_private: Boolean(req.body?.is_private) });
     }
 
     const members = await memberIdsOf(channelId);
@@ -144,6 +152,7 @@ router.post(
     const mentions: string[] = Array.isArray(req.body?.mentions) ? req.body.mentions.map(String).slice(0, 50) : [];
     if (!body && attachments.length === 0) throw new AppError("validation_error", "Message body or attachment required.", 400);
     if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
+    if ((await channelMeta(id))?.archived_at) throw new AppError("conflict", "This channel is archived.", 409); // BF_SERVER_TEAM_PHASE_B_v658
     const message = await postMessage(id, userId, body, attachments.length ? attachments : null, replyToId, mentions.length ? mentions : null);
     const members = await memberIdsOf(id);
     broadcastToUsers(members, { type: "message", channel_id: id, message });
