@@ -1455,6 +1455,22 @@ router.get(
 
 router.use("/contacts/:id/timeline", timelineRoutes);
 
+// BF_SERVER_NOTIFY_CONTACT_v626 - staff Notify button: app first, SMS fallback, logged on the timeline.
+router.post(
+  "/contacts/:id/notify",
+  safeHandler(async (req: any, res: any) => {
+    const { cleanNotice, notifyContact } = await import("../services/notifications/notifyContact.js");
+    const notice = cleanNotice(req.body?.title, req.body?.body);
+    if (!notice) return res.status(400).json({ ok: false, error: "message_required" });
+    const actor = String(req.user?.id ?? req.user?.userId ?? "");
+    const actorUserId = /^[0-9a-f-]{36}$/i.test(actor) ? actor : null;
+    const staffName = [req.user?.first_name, req.user?.last_name].filter(Boolean).join(" ") || null;
+    const result = await notifyContact({ contactId: String(req.params.id), ...notice, actorUserId, staffName });
+    if (!result.ok && result.error === "contact_not_found") return res.status(404).json(result);
+    return res.status(result.ok ? 200 : 502).json(result);
+  }),
+);
+
 router.use("/companies/:id/notes", notesRoutes);
 router.use("/companies/:id/emails", emailsRoutes);
 router.use("/companies/:id/meetings", meetingsRoutes);
