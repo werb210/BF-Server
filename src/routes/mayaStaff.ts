@@ -23,7 +23,8 @@ function getSecret(): string {
   return process.env.JWT_SECRET || "";
 }
 
-function verifyMayaService(req: Request): { source: string } | null {
+// BF_SERVER_MAYA_INSIGHTS_v655 - exported for mayaStaffInsights.ts.
+export function verifyMayaService(req: Request): { source: string } | null {
   const auth = req.header("authorization") || "";
   const m = auth.match(/^Bearer\s+(.+)$/i);
   if (!m) return null;
@@ -81,7 +82,7 @@ async function mayaDocRows(appId: string, mode: "staff" | "client"): Promise<{ r
   }
 }
 
-async function audit(opts: {
+export async function audit(opts: {
   audience: "visitor" | "client" | "staff";
   tool: string;
   args: unknown;
