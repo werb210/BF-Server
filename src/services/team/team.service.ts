@@ -1,5 +1,6 @@
 // BF_SERVER_BLOCK_v750_TEAM_CHAT — data access for the internal staff "Team" chat.
 import { runQuery } from "../../db.js";
+import { threadSummaries } from "./teamChannels.js"; // BF_SERVER_TEAM_PHASE_B_v658
 
 export type TeamChannelKind = "channel" | "dm" | "group";
 
@@ -65,16 +66,18 @@ function uniqueUserIds(userIds: string[]): string[] {
 export async function listChannelsForUser(userId: string): Promise<TeamChannelSummary[]> {
   const r = await runQuery<TeamChannelSummary>(
     `SELECT c.id, c.kind, c.name, c.dm_key, c.created_by, c.created_at,
+            to_jsonb(c)->>'topic' AS topic, COALESCE((to_jsonb(c)->>'is_private')::boolean, false) AS is_private, to_jsonb(c)->>'archived_at' AS archived_at, -- BF_SERVER_TEAM_PHASE_B_v658
             m.last_read_at,
             COALESCE((to_jsonb(m)->>'muted')::boolean, false) AS muted, -- BF_SERVER_TEAM_PREFS_v643
             COALESCE((SELECT json_agg(cm.user_id) FROM team_channel_members cm WHERE cm.channel_id = c.id), '[]'::json) AS member_ids,
             (SELECT row_to_json(x) FROM (
                SELECT tm.id, tm.channel_id, tm.sender_id, tm.body, tm.created_at
-                 FROM team_messages tm WHERE tm.channel_id = c.id
+                 FROM team_messages tm WHERE tm.channel_id = c.id AND (to_jsonb(tm)->>'thread_root_id') IS NULL
                 ORDER BY tm.created_at DESC LIMIT 1
              ) x) AS last_message,
             (SELECT COUNT(*)::int FROM team_messages tm
               WHERE tm.channel_id = c.id
+                AND (to_jsonb(tm)->>'thread_root_id') IS NULL
                 AND tm.sender_id IS DISTINCT FROM $1
                 AND (m.last_read_at IS NULL OR tm.created_at > m.last_read_at)) AS unread_count,
             (SELECT EXISTS(
@@ -171,7 +174,7 @@ export async function listMessages(channelId: string, opts: { before?: string; l
             created_at, edited_at, deleted_at, reply_to_id, mentions, pinned_at,
             CASE WHEN deleted_at IS NOT NULL THEN NULL ELSE attachments END AS attachments
        FROM team_messages
-      WHERE channel_id = $1 ${beforeClause}
+      WHERE channel_id = $1 AND (to_jsonb(team_messages)->>'thread_root_id') IS NULL ${beforeClause}
       ORDER BY created_at DESC
       LIMIT ${limit}`,
     params,
@@ -205,6 +208,9 @@ export async function listMessages(channelId: string, opts: { before?: string; l
     m.reactions = rxByMsg.get(m.id) ?? [];
     m.reply_to = m.reply_to_id ? (replyMap.get(m.reply_to_id) ?? null) : null;
   }
+  // BF_SERVER_TEAM_PHASE_B_v658 - reply count, last reply and participants for each thread root.
+  const threads = await threadSummaries(ids);
+  for (const m of rows) (m as any).thread = threads.get(m.id) ?? null;
   return rows;
 }
 
