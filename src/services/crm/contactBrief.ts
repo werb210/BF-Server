@@ -4,6 +4,7 @@ import net from "node:net";
 import { pool } from "../../db.js";
 import { askAI } from "../../modules/ai/openai.service.js";
 import { loadCrmTimeline } from "../../routes/crm/timeline.js";
+import { contactContextSections } from "./contactContext.js"; // BF_SERVER_CRM_CONTEXT_v653
 
 const FREE_EMAIL = new Set([
   "gmail.com", "googlemail.com", "yahoo.com", "yahoo.ca", "hotmail.com", "hotmail.ca", "outlook.com", "live.com", "live.ca",
@@ -120,11 +121,16 @@ export function timelineLines(rows: any[], max = 60): string[] {
 
 const SYSTEM = [
   "You are a CRM assistant for a commercial-lending brokerage. Write a brief for a broker about to contact this person or company.",
-  "Format: a line starting 'Background:' (one or two sentences from the profile and company website; skip the line if there is nothing), then 3-5 short bullet points: where things stand, what is outstanding, and one suggested next action.",
+  "Format: a line starting 'Background:' (one or two sentences from the profile and company website; skip the line if there is nothing), then 3-6 short bullet points: how they found us (ad, search, referral, readiness check), where things stand, what is outstanding (client to-dos, missing documents, lender decisions, offers, signing, PGI), and one suggested next action.",
   "Use only the facts given. Never invent details, never guess at people's personal lives, and never promise funding.",
 ].join(" ");
 
 const readFailed = (error: unknown) => console.warn("[crm-brief] read_failed", (error as Error)?.message);
+
+// BF_SERVER_CRM_CONTEXT_v653 - ads, journey, Maya chats, readiness, referral, application depth, insurance.
+async function contextFor(contact: any, apps: any[]): Promise<string[]> {
+  try { return await contactContextSections(contact, apps); } catch (error) { readFailed(error); return []; }
+}
 
 export async function contactBrief(contactId: string, silo: string): Promise<string> {
   // swallow-ok: this optional context logs failures and the brief degrades gracefully.
@@ -141,8 +147,9 @@ export async function contactBrief(contactId: string, silo: string): Promise<str
       FROM visitor_sessions WHERE contact_id::text = $1`, [contactId]).then((r) => r.rows[0]).catch((error) => { readFailed(error); return null; }),
     companyBackground(businessDomain(company.website ?? company.domain, contact.email)).catch((error) => { readFailed(error); return null; }),
   ]);
+  const extra = await contextFor(contact, apps);
   const lines = timelineLines(timeline);
-  if (!lines.length && !apps.length && !background && !visits?.sessions) return "No activity, applications or company background to summarize for this contact yet.";
+  if (!lines.length && !apps.length && !background && !visits?.sessions && !extra.length) return "No activity, applications or company background to summarize for this contact yet.";
   const appLines = apps.map((app: any) => `- ${pick(app, ["name", "pipeline_state", "current_stage", "product_category", "requested_amount"])}; updated ${day(app.updated_at)}`);
   const visitLine = visits?.sessions ? `${visits.sessions} website visit(s) from ${day(visits.first_seen)} to ${day(visits.last_seen)}; first landing page ${visits.first_landing ?? "unknown"}; referrer ${visits.first_referrer ?? "direct"}` : "none";
   return askAI([
@@ -151,7 +158,7 @@ export async function contactBrief(contactId: string, silo: string): Promise<str
       `Contact profile: ${pick(contact, ["name", "first_name", "last_name", "job_title", "role", "status", "lifecycle_stage", "lead_status", "tags", "company_name", "address_city", "address_state", "created_at"]) || "none"}`,
       `Company: ${pick(company, ["name", "industry", "website", "domain", "address_city", "address_state"]) || "none"}`,
       `Company website says: ${background ?? "not available"}`, `Applications:\n${appLines.join("\n") || "none"}`,
-      `Website visits: ${visitLine}`, `Activity (oldest first):\n${lines.join("\n") || "none"}`,
+      `Website visits: ${visitLine}`, ...extra, `Activity (oldest first):\n${lines.join("\n") || "none"}`,
     ].join("\n\n") },
   ]);
 }
@@ -167,15 +174,21 @@ export async function companyBrief(companyId: string, silo: string): Promise<str
     pool.query(`SELECT to_jsonb(a) AS a FROM applications a WHERE a.company_id::text = $1 ORDER BY a.updated_at DESC NULLS LAST LIMIT 5`, [companyId]).then((r) => r.rows.map((x: any) => x.a)).catch((error) => { readFailed(error); return []; }),
     companyBackground(businessDomain(company.website ?? company.domain, firstEmail)).catch((error) => { readFailed(error); return null; }),
   ]);
+  let primary: any = {};
+  try {
+    const found = await pool.query(`SELECT to_jsonb(c) AS c FROM contacts c WHERE c.company_id::text = $1 ORDER BY c.is_primary_applicant DESC NULLS LAST, c.created_at ASC LIMIT 1`, [companyId]);
+    primary = found.rows[0]?.c ?? {};
+  } catch (error) { readFailed(error); }
+  const extra = await contextFor(primary, apps);
   const lines = timelineLines(timeline);
-  if (!lines.length && !apps.length && !background) return "No activity, applications or background to summarize for this company yet.";
+  if (!lines.length && !apps.length && !background && !extra.length) return "No activity, applications or background to summarize for this company yet.";
   const appLines = apps.map((app: any) => `- ${pick(app, ["name", "pipeline_state", "current_stage", "product_category", "requested_amount"])}; updated ${day(app.updated_at)}`);
   return askAI([
     { role: "system", content: SYSTEM },
     { role: "user", content: [
       `Company: ${pick(company, ["name", "industry", "website", "domain", "address_city", "address_state", "tags"]) || "none"}`,
       `Company website says: ${background ?? "not available"}`, `Applications:\n${appLines.join("\n") || "none"}`,
-      `Activity across its contacts (oldest first):\n${lines.join("\n") || "none"}`,
+      ...extra, `Activity across its contacts (oldest first):\n${lines.join("\n") || "none"}`,
     ].join("\n\n") },
   ]);
 }
