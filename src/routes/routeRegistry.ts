@@ -113,6 +113,7 @@ import conversationsRoutes from "./conversations.js";
 import smsInboundWebhookRoutes from "./smsInboundWebhook.js";
 // BF_SERVER_BLOCK_v214_MAYA_STAFF_PIPELINE_QUERY_v1
 import mayaStaffRouter from "./mayaStaff.js";
+import mayaStaffInsightsRouter from "./mayaStaffInsights.js"; // BF_SERVER_MAYA_INSIGHTS_v655
 import aiRoutes from "./ai.v2.js";
 import o365Routes from "./o365.js";
 import diagnosticsRoutes from "./diagnostics.js";
@@ -195,6 +196,7 @@ combinedMayaRoutes.use(mayaRoutes);
 combinedMayaRoutes.use(mayaAdminStubs);
 // BF_SERVER_BLOCK_v214_MAYA_STAFF_PIPELINE_QUERY_v1
 combinedMayaRoutes.use(mayaStaffRouter);
+combinedMayaRoutes.use(mayaStaffInsightsRouter);
 
 // BF_SERVER_v77_BLOCK_1_11_OFFERS_COLLISION - single mount at /offers,
 // composed of the legacy offers router (list/create/status) plus the
