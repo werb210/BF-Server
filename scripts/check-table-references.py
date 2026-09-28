@@ -29,6 +29,8 @@ NOT_TABLES = {
     # Google Ads API resources, queried through GAQL rather than Postgres.
     "campaign", "customer", "keyword_view", "search_term_view", "click_view",
     "campaign_budget", "ad_group", "ad_group_ad", "conversion_action",
+    # BF_SERVER_NEGATIVE_GUARD_v623 - GAQL resources read by googleAdsNegativeGuard.ts.
+    "ad_group_criterion", "campaign_criterion", "campaign_shared_set", "shared_criterion",
 }
 
 
