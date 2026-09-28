@@ -334,6 +334,56 @@ router.get("/:messageId/attachments/:attachmentId", safeHandler(async (req: any,
   });
 }));
 
+// BF_SERVER_ONEDRIVE_ATTACHMENTS_v647 - save every (non-inline) attachment of a message to the
+// person's OneDrive, in Email Attachments / <sender> / <date> - <subject>. Needs the Microsoft
+// Files.ReadWrite permission; without it the answer says to reconnect Microsoft 365.
+router.post("/:messageId/attachments/save-to-onedrive", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const { attachmentFolder, drivePath } = await import("../../services/o365/oneDriveFolders.js");
+  const mailbox = (req.query.mailbox ?? "").toString().trim();
+  const base = mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
+  const msgId = encodeURIComponent(req.params.messageId);
+  const m = await graph.fetch(`${base}/messages/${msgId}?$select=subject,from,receivedDateTime`);
+  if (!m.ok) return res.status(m.status).json({ error: "graph_message_failed" });
+  const msg: any = await m.json();
+  const folder = attachmentFolder({
+    senderName: msg?.from?.emailAddress?.name, senderAddress: msg?.from?.emailAddress?.address,
+    receivedAt: msg?.receivedDateTime, subject: msg?.subject,
+  });
+  const l = await graph.fetch(`${base}/messages/${msgId}/attachments?$select=id,name,contentType,isInline`);
+  if (!l.ok) return res.status(l.status).json({ error: "graph_attachments_failed" });
+  const list: any[] = ((await l.json()) as any)?.value ?? [];
+  const files = list.filter((a) => a && a.isInline !== true);
+  const saved: Array<{ name: string; webUrl: string | null }> = [];
+  const failed: Array<{ name: string; reason: string }> = [];
+  for (const a of files) {
+    const name = String(a.name ?? "attachment");
+    const g = await graph.fetch(`${base}/messages/${msgId}/attachments/${encodeURIComponent(a.id)}`);
+    const full: any = g.ok ? await g.json() : null;
+    if (!full?.contentBytes) { failed.push({ name, reason: "not a file" }); continue; }
+    const put = await graph.fetch(`/me/drive/root:/${drivePath(folder, name)}:/content?@microsoft.graph.conflictBehavior=rename`, {
+      method: "PUT",
+      headers: { "Content-Type": String(full.contentType || "application/octet-stream") },
+      body: Buffer.from(String(full.contentBytes), "base64") as any,
+    });
+    if (put.status === 401 || put.status === 403) {
+      return res.status(412).json({ error: "onedrive_permission_needed", message: "Reconnect Microsoft 365 to allow saving to OneDrive." });
+    }
+    if (!put.ok) { failed.push({ name, reason: "OneDrive refused (" + put.status + ")" }); continue; }
+    const item: any = await put.json().catch(() => ({}));
+    saved.push({ name: String(item?.name ?? name), webUrl: item?.webUrl ?? null });
+  }
+  let folderUrl: string | null = null;
+  if (saved.length) {
+    const f = await graph.fetch(`/me/drive/root:/${drivePath(folder)}`);
+    if (f.ok) folderUrl = ((await f.json()) as any)?.webUrl ?? null;
+  }
+  respondOk(res, { folder, folderUrl, saved, failed });
+}));
+
 // BF_SERVER_BLOCK_v832_INBOX_FLAG
 // PATCH /api/crm/inbox/:messageId/flag  body: { flagged: boolean }
 router.patch("/:messageId/flag", safeHandler(async (req: any, res: any) => {
