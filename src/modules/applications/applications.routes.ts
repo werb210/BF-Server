@@ -19,6 +19,7 @@ import multer from 'multer';
 import { getStorage } from '../../lib/storage/index.js';
 import { sendSMS } from '../../services/smsService.js';
 import { randomUUID } from 'node:crypto';
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 // BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const router = Router();
@@ -268,7 +269,7 @@ router.get('/:id/task-status', safeHandler(async (req: any, res: any) => {
   const v_waivedFormsRes = await pool.query<{ document_type: string }>(
     `SELECT document_type FROM application_document_waivers
       WHERE application_id::text = ($1)::text AND lower(document_type) LIKE 'form:%'`, [id]
-  ).catch(() => ({ rows: [] as Array<{ document_type: string }> }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "modules/applications/applications.routes.ts:268", ({ rows: [] as Array<{ document_type: string }> })));
   const v_waivedForms = new Set(
     v_waivedFormsRes.rows.map((r: any) => String(r.document_type ?? "").trim().toLowerCase().slice(5)).filter(Boolean)
   );
@@ -422,7 +423,7 @@ router.post('/:id/request-steps', requireCapability([CAPABILITIES.CRM_WRITE]), s
     `UPDATE applications SET pipeline_state = 'Additional Steps Required', updated_at = now()
       WHERE id::text = ($1)::text AND COALESCE(pipeline_state, '') NOT IN ('Accepted','Rejected','Archived')`,
     [id],
-  ).catch(() => {});
+  ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "modules/applications/applications.routes.ts:421");});
 
   // ONE SMS to the client.
   let smsSent = false;
@@ -1394,7 +1395,7 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
   })();
   const colsRes = await pool.query<{ column_name: string }>(
     `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'lender_products'`
-  ).catch(() => ({ rows: [] as Array<{ column_name: string }> }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "modules/applications/applications.routes.ts:1395", ({ rows: [] as Array<{ column_name: string }> })));
   const cols = new Set(colsRes.rows.map((r: { column_name: string }) => r.column_name));
   let productRows: Array<{ required_documents: any; category: string | null }> = [];
   if (cols.has('required_documents')) {
@@ -1725,7 +1726,7 @@ router.post('/:id/lenders/:lenderId/files', lenderTermSheetUpload.single('file')
     `UPDATE offers SET is_archived = TRUE, archived_at = now(), updated_at = now()
       WHERE application_id::text = ($1)::text AND lender_id::text = ($2)::text AND is_archived = FALSE`,
     [appId, resolvedLenderId],
-  ).catch(() => {});
+  ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "modules/applications/applications.routes.ts:1724");});
 
   const offerId = randomUUID();
   await pool.query(
@@ -1749,7 +1750,7 @@ router.post('/:id/lenders/:lenderId/files', lenderTermSheetUpload.single('file')
     await pool.query(
       `UPDATE applications SET pipeline_state = 'Offer', updated_at = now() WHERE id::text = ($1)::text`,
       [appId],
-    ).catch(() => {});
+    ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "modules/applications/applications.routes.ts:1749");});
     stage = 'Offer';
   }
 
@@ -1999,7 +2000,7 @@ router.post('/:id/lender-response', requireAuth, safeHandler(async (req: any, re
     const labels = await pool.query<{ label: string }>(
       `SELECT label FROM rejection_reasons WHERE code = ANY($1::text[]) AND active ORDER BY sort_order ASC`,
       [reasonCodes],
-    ).catch(() => ({ rows: [] as Array<{ label: string }> }));
+    ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "modules/applications/applications.routes.ts:1999", ({ rows: [] as Array<{ label: string }> })));
     if (labels.rows.length > 0) reasonSummary = labels.rows.map((x) => x.label.toLowerCase()).join('; ');
   }
 
@@ -2017,7 +2018,7 @@ router.post('/:id/lender-response', requireAuth, safeHandler(async (req: any, re
   const contactRes = await pool.query<{ contact_id: string | null }>(
     `SELECT contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1`,
     [id]
-  ).catch(() => ({ rows: [] as Array<{ contact_id: string | null }> }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "modules/applications/applications.routes.ts:2017", ({ rows: [] as Array<{ contact_id: string | null }> })));
   const contactId = contactRes.rows[0]?.contact_id ?? null;
   // BF_SERVER_PASS_ORDINAL_v127
   const body = `Lender ${frozenOrdinal} will pass, due to ${reasonSummary}`;
@@ -2036,7 +2037,7 @@ router.post('/:id/lender-response', requireAuth, safeHandler(async (req: any, re
       `INSERT INTO application_rejection_reasons (application_id, lender_id, reason_code, created_by)
        VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
       [id, lenderId, code, staffName],
-    ).catch(() => {});
+    ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "modules/applications/applications.routes.ts:2035");});
   }
 
   let closed = false;
@@ -2044,7 +2045,7 @@ router.post('/:id/lender-response', requireAuth, safeHandler(async (req: any, re
     await pool.query(
       `UPDATE applications SET pipeline_state = 'Rejected', updated_at = NOW()
         WHERE id::text = ($1)::text AND pipeline_state <> 'Rejected'`, [id],
-    ).catch(() => {});
+    ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "modules/applications/applications.routes.ts:2044");});
     // BF_SERVER_BLOCK_v481_NO_SILENT_SEND_FAILURES
     await sendRejectionNoticeToClient(id).catch((err: any) => {
       console.error("[applications] rejection notice to client failed", { applicationId: id, error: String(err?.message ?? err) });
@@ -2069,7 +2070,7 @@ router.post('/:id/reject', requireAuth, safeHandler(async (req: any, res: any) =
     await pool.query(
       `INSERT INTO application_rejection_reasons (application_id, lender_id, reason_code, created_by)
        VALUES ($1, NULL, $2, $3) ON CONFLICT DO NOTHING`, [id, code, staffName],
-    ).catch(() => {});
+    ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "modules/applications/applications.routes.ts:2069");});
   }
   await pool.query(
     `UPDATE applications SET pipeline_state = 'Rejected', updated_at = NOW() WHERE id::text = ($1)::text`, [id],

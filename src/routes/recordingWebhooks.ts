@@ -5,6 +5,7 @@ import { pool } from "../db.js";
 import { persistTwilioMediaToBlob } from "../services/mmsMedia.js"; // BF_SERVER_RECORDING_BLOB_PERSIST_v1
 import { getConferenceByFriendly, notifyConferenceState } from "../voice/conferenceService.js";
 import { getTwilio } from "../voice/twilioClient.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 
@@ -40,10 +41,10 @@ router.post("/recording/status", twilioWebhookValidation, async (req: any, res) 
       if (persisted) {
         await pool
           .query("UPDATE call_recordings SET url = $2 WHERE twilio_recording_sid = $1", [recSid, persisted.url])
-          .catch(() => {});
+          .catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/recordingWebhooks.ts:41");});
         await pool
           .query("UPDATE conferences SET recording_url = $2 WHERE id = $1", [conf.id, persisted.url])
-          .catch(() => {});
+          .catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/recordingWebhooks.ts:44");});
       }
     })();
     // Fire Voice Intelligence transcript on the completed recording (best-effort).

@@ -10,6 +10,7 @@ import {
 } from "../services/lenders/dispatchToSelected.js";
 import { pnwSigningSatisfiedForDispatch } from "../signnow/pnwSigning.js";
 import { sbaSigningSatisfiedForDispatch } from "../signnow/sba/sbaSigning.js"; // BF_SERVER_SBA_DISPATCH_GATE_v96
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const POLL_MS = Number(process.env.LENDER_PACKAGE_POLL_MS || 15000);
 // BF_SERVER_LENDER_PACKAGE_BACKOFF_v1
@@ -151,7 +152,7 @@ export function startLenderPackageWorker(pool: Pool): { stop: () => void } {
               `SELECT failure_reason FROM application_packages
                 WHERE application_id::text = ($1)::text AND status = 'failed'`,
               [applicationId],
-            ).catch(() => ({ rows: [] as { failure_reason: string | null }[] }));
+            ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "workers/lenderPackageWorker.ts:150", ({ rows: [] as { failure_reason: string | null }[] })));
             const detail = reasons.rows
               .map((r) => r.failure_reason ?? "unknown")
               .slice(0, 5).join("; ") || "no_lender_accepted_package";
@@ -219,7 +220,7 @@ export function startLenderPackageWorker(pool: Pool): { stop: () => void } {
                 WHERE id = $1`,
               [job.id, msg.slice(0, 500)]
             )
-            .catch(() => {});
+            .catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "workers/lenderPackageWorker.ts:202");});
           console.error("[lender_package_worker] dispatch failed", {
             applicationId, jobId: job.id, error: msg,
           });

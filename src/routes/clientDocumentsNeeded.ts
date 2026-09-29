@@ -13,6 +13,7 @@ import { loadSbaContext } from "../signnow/sba/sbaOwners.js"; // BF_SERVER_SBA_1
 import { logInfo } from "../observability/logger.js"; // BF_SERVER_SBA_1919_ATTACH_GATE_v162
 
 import { callerOwnsApplication } from "../auth/clientApplicationOwnership.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 
@@ -276,7 +277,7 @@ async function computeOutstandingDocsRaw(
      WHERE da.id::text IN (SELECT root_id::text FROM fam)
         OR da.parent_application_id::text IN (SELECT root_id::text FROM fam)`,
     [applicationId]
-  ).catch(() => ({ rows: [] as Array<{ category: string | null; status: string | null }> }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/clientDocumentsNeeded.ts:265", ({ rows: [] as Array<{ category: string | null; status: string | null }> })));
   const uploaded: UploadedDocRow[] = uploadedRes.rows;
   const satisfied: Set<string> = new Set(
     uploaded
@@ -300,7 +301,7 @@ async function computeOutstandingDocsRaw(
     `SELECT DISTINCT category FROM document_requirements
       WHERE application_id::text = ($1)::text AND required = true AND category IS NOT NULL`,
     [applicationId]
-  ).catch(() => ({ rows: [] as Array<{ category: string }> }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/clientDocumentsNeeded.ts:299", ({ rows: [] as Array<{ category: string }> })));
   for (const r of reqRes.rows) {
     if (r.category && !seen.has(r.category)) {
       seen.add(r.category);
@@ -315,7 +316,7 @@ async function computeOutstandingDocsRaw(
     const metaRes = await pool.query<{ metadata: any }>(
       `SELECT metadata FROM applications WHERE id::text = ($1)::text LIMIT 1`,
       [applicationId]
-    ).catch(() => ({ rows: [] as Array<{ metadata: any }> }));
+    ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/clientDocumentsNeeded.ts:315", ({ rows: [] as Array<{ metadata: any }> })));
     const items = productRequirementItems(metaRes.rows[0]?.metadata);
     for (const item of items) appendRequiredDocAll(item, seen, required);
   }
@@ -331,7 +332,7 @@ async function computeOutstandingDocsRaw(
         WHERE a.id::text = ($1)::text
         LIMIT 1`,
       [applicationId]
-    ).catch(() => ({ rows: [] as Array<{ required_documents: any }> }));
+    ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/clientDocumentsNeeded.ts:327", ({ rows: [] as Array<{ required_documents: any }> })));
     const items = Array.isArray(prodRes.rows[0]?.required_documents)
       ? prodRes.rows[0]?.required_documents
       : [];
@@ -349,7 +350,7 @@ async function computeOutstandingDocsRaw(
     const catRes = await pool.query<{ product_category: string | null }>(
       `SELECT product_category FROM applications WHERE id::text = ($1)::text LIMIT 1`,
       [applicationId]
-    ).catch(() => ({ rows: [] as Array<{ product_category: string | null }> }));
+    ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/clientDocumentsNeeded.ts:349", ({ rows: [] as Array<{ product_category: string | null }> })));
     if (isMediaProductCategory(catRes.rows[0]?.product_category)) {
       for (const label of MEDIA_CATEGORY_DOCS) {
         appendRequiredDocAll({ category: label, required: true }, seen, required);
@@ -448,7 +449,7 @@ export async function getSatisfiedDocTypes(applicationId: string): Promise<strin
        AND d.category IS NOT NULL
        AND (d.status IS NULL OR d.status <> 'rejected')`,
     [applicationId]
-  ).catch(() => ({ rows: [] as Array<{ category: string | null }> }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/clientDocumentsNeeded.ts:439", ({ rows: [] as Array<{ category: string | null }> })));
   return res.rows.map((r) => String(r.category ?? "").trim()).filter(Boolean);
 }
 
@@ -458,7 +459,7 @@ export async function getWaivedDocTypes(applicationId: string): Promise<Set<stri
   const res = await pool.query<{ document_type: string }>(
     `SELECT document_type FROM application_document_waivers WHERE application_id::text = ($1)::text`,
     [applicationId]
-  ).catch(() => ({ rows: [] as Array<{ document_type: string }> }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/clientDocumentsNeeded.ts:458", ({ rows: [] as Array<{ document_type: string }> })));
   return new Set(res.rows.map((r: { document_type: string }) => String(r.document_type ?? "").trim().toLowerCase()));
 }
 
@@ -502,7 +503,7 @@ export async function getRequestedFormIds(applicationId: string): Promise<string
         AND (cta_action LIKE 'form:%'
              OR cta_action IN ('networth','flinks','cra','debt','realestate','equipment','advisors'))`,
     [applicationId]
-  ).catch(() => ({ rows: [] as Array<{ cta_action: string }> }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/clientDocumentsNeeded.ts:499", ({ rows: [] as Array<{ cta_action: string }> })));
   const ids = new Set<string>();
   for (const r of res.rows) {
     let k = String(r.cta_action ?? "");

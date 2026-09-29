@@ -8,6 +8,7 @@
 import { randomUUID, createHash } from "node:crypto";
 import { pool } from "../db.js";
 import { getStorage } from "../lib/storage/index.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 export interface AttachSpec { title: string; filename: string; category: string }
 
@@ -91,7 +92,7 @@ export async function attachRenderedFormDocument(
       );
       await client.query("COMMIT");
     } catch (e) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await client.query("ROLLBACK").catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "pdf/attachRenderedFormDocument.ts:94", undefined));
       return { attached: false, reason: "insert_failed" };
     } finally {
       client.release();

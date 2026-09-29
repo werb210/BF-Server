@@ -8,6 +8,7 @@ import { verifyAccessToken } from "../auth/jwt.js"; // BF_SERVER_SMS_MEDIA_v1
 import { fetchTwilioMedia, persistTwilioMediaToBlob } from "../services/mmsMedia.js"; // BF_SERVER_MMS_BLOB_PROXY_v1
 import twilio from "twilio";
 import { isUndeliverableNumber } from "../lib/smsDeliverability.js"; // BF_SERVER_GUARD_EVERYWHERE_v136
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 
@@ -194,14 +195,14 @@ router.post(
           WHERE right(regexp_replace(coalesce(phone,''), '\D', '', 'g'), 10) = $1
           ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT 1`,
         [phoneDigits],
-      ).catch(() => ({ rows: [] as { id: string }[] }));
+      ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/communications.ts:192", ({ rows: [] as { id: string }[] })));
       resolvedContactId = ph.rows[0]?.id ?? null;
     }
     if (!resolvedContactId && applicationIdHint) {
       const ar = await pool.query<{ contact_id: string | null }>(
         `SELECT contact_id FROM applications WHERE id::text = $1 LIMIT 1`,
         [applicationIdHint],
-      ).catch(() => ({ rows: [] as { contact_id: string | null }[] }));
+      ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/communications.ts:201", ({ rows: [] as { contact_id: string | null }[] })));
       resolvedContactId = ar.rows[0]?.contact_id ?? null;
     }
 
@@ -617,7 +618,7 @@ router.get("/messages/:id/media", safeHandler(async (req: any, res: any) => {
     if (persisted) {
       await pool
         .query("UPDATE communications_messages SET media_url = $2 WHERE id = $1::uuid", [id, persisted.url])
-        .catch(() => {});
+        .catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/communications.ts:618");});
       ct = persisted.contentType || ct;
       buf = persisted.buffer;
     } else {
@@ -664,9 +665,9 @@ router.get("/recordings/by-conference/:conferenceId/media", safeHandler(async (r
     if (persisted) {
       const recId = rows[0]?.id;
       if (recId) {
-        await pool.query("UPDATE call_recordings SET url = $2 WHERE id = $1::uuid", [recId, persisted.url]).catch(() => {});
+        await pool.query("UPDATE call_recordings SET url = $2 WHERE id = $1::uuid", [recId, persisted.url]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/communications.ts:667");});
       }
-      await pool.query("UPDATE conferences SET recording_url = $2 WHERE id = $1", [cid, persisted.url]).catch(() => {});
+      await pool.query("UPDATE conferences SET recording_url = $2 WHERE id = $1", [cid, persisted.url]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/communications.ts:669");});
       ct = persisted.contentType || ct;
       buf = persisted.buffer;
     } else {
@@ -940,7 +941,7 @@ router.post(
          SET last_message_preview = $2, last_message_at = NOW(), updated_at = NOW()
        WHERE id = $1`,
       [conversationId, body.slice(0, 280)],
-    ).catch(() => undefined);
+    ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/communications.ts:938", undefined));
 
     const row = inserted.rows[0];
     return res.status(201).json({
@@ -1312,7 +1313,7 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
                  c.id ASC
         LIMIT 1`,
       [normalizedTo, silo]
-    ).then((r) => r.rows[0] ?? null).catch(() => null);
+    ).then((r) => r.rows[0] ?? null).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/communications.ts:1303", null));
     resolvedContactId = canonicalContact?.id ?? null;
     if (!resolvedContactId) {
       console.warn("sms_outbound_no_contact_id", { to: normalizedTo });
@@ -1591,7 +1592,7 @@ router.post(
             SET last_message_preview = $2, last_message_at = NOW(), updated_at = NOW()
           WHERE id = $1`,
         [replyConversationId, String(__msgMerged || "").slice(0, 280)],
-      ).catch(() => undefined);
+      ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/communications.ts:1589", undefined));
     }
 
     // BF_SERVER_BLOCK_v610_BI_THREAD - Insurance applicants are notified by BI-Server above.

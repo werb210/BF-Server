@@ -8,6 +8,7 @@ import { pool } from "../db.js";
 import { AppleWatchApnsProvider, WatchApnsError } from "../watch/apnsProvider.js";
 // BF_SERVER_FCM_DELIVERY_v1
 import { FcmError, getFcmProvider, initializeFcmProvider, isFcmConfigured } from "./fcmProvider.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 type Silo = "BF" | "BI" | "SLF";
 
@@ -50,12 +51,12 @@ async function tokensForUser(userId: string): Promise<{ token: string; platform:
   const { rows } = await pool.query<{ token: string; platform: string | null }>(
     `SELECT token, platform FROM client_push_tokens WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 20`,
     [userId],
-  ).catch(() => ({ rows: [] as { token: string; platform: string | null }[] }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/clientPushService.ts:50", ({ rows: [] as { token: string; platform: string | null }[] })));
   return rows;
 }
 
 async function dropToken(token: string): Promise<void> {
-  await pool.query(`DELETE FROM client_push_tokens WHERE token = $1`, [token]).catch(() => {});
+  await pool.query(`DELETE FROM client_push_tokens WHERE token = $1`, [token]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/clientPushService.ts:58");});
 }
 
 export async function sendClientPush(input: {

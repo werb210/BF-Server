@@ -47,7 +47,8 @@ describe("the counter", () => {
   });
 
   it("a failed counter update cannot crash the tick", () => {
-    expect(src).toContain(".catch(() => ({ rows: [] as Array<{ abandon_sms_attempts: number }> }))");
+    expect(src).toContain("logWarnSwallowed(swallowedErr, "); // BF_SERVER_SILENT_QUERIES_v678 - logged, same empty result
+    expect(src).toContain("({ rows: [] as Array<{ abandon_sms_attempts: number }> })");
   });
 });
 

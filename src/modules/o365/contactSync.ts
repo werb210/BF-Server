@@ -3,6 +3,7 @@
 // and email/mobile autocomplete work everywhere. Best-effort / fire-and-forget.
 import type { Pool } from "pg";
 import { getGraphForUser } from "./graphClient.js";
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 interface ContactRow {
   id: string; first_name: string | null; last_name: string | null; name: string | null;
@@ -36,7 +37,7 @@ export async function pushContactToOutlook(pool: Pool, contactId: string): Promi
     if (!resp.ok) return;
     if (!c.outlook_contact_id) {
       const j = await resp.json().catch(() => null);
-      if (j?.id) await pool.query(`UPDATE contacts SET outlook_contact_id = $1 WHERE id = $2`, [j.id, c.id]).catch(() => {});
+      if (j?.id) await pool.query(`UPDATE contacts SET outlook_contact_id = $1 WHERE id = $2`, [j.id, c.id]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "modules/o365/contactSync.ts:39");});
     }
   } catch { /* best-effort */ }
 }

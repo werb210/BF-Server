@@ -10,6 +10,7 @@
 import type { Pool } from "pg";
 import { graphAppFetch, isAppGraphConfigured } from "../services/teams/graphAppClient.js";
 import { parseBooking, isBookingBody, toE164 } from "../services/bookings/parseBooking.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const POLL_MS = 10 * 60 * 1000;
 const LOOKBACK_DAYS = 30;
@@ -166,7 +167,7 @@ async function ingest(pool: Pool, upn: string, ev: GraphEvent): Promise<void> {
     await pool.query(
       `UPDATE booking_events SET status = 'failed', error = $2, updated_at = now() WHERE id = $1`,
       [bookingId, message.slice(0, 500)],
-    ).catch(() => undefined);
+    ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "workers/bookingsWorker.ts:166", undefined));
     console.error("[bookings] ingest failed", { graph_event_id: ev.id, message });
   }
 }

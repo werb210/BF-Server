@@ -15,6 +15,7 @@ import { getStorage } from "../../lib/storage/index.js";
 import { resolveSbaOwners, loadSbaContext } from "./sbaOwners.js";
 import { buildSba1919, buildSba912, buildSba413, buildSba4506c, type IvesParticipant } from "./sbaFormBuilder.js";
 import { logInfo, logError } from "../../observability/logger.js";
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const SBA_DOC_CATEGORY = "SBA Forms";
 
@@ -356,7 +357,7 @@ export async function attachSignedSbaDocuments(applicationId: string): Promise<{
         );
         await client.query("COMMIT");
       } catch (error) {
-        await client.query("ROLLBACK").catch(() => undefined);
+        await client.query("ROLLBACK").catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "signnow/sba/sbaSigning.ts:359", undefined));
         throw error;
       } finally {
         client.release();

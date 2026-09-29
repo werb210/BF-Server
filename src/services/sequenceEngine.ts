@@ -10,6 +10,7 @@ import { renderMarketingSms, sendMarketingSms, trackedLink, lookupLineType } fro
 import { renderBrandedEmail } from "./emailTemplateRender.js";
 import { isCanadianMobile } from "./smsConsent.js";
 import { scheduleAfter } from "./sequenceSchedule.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 // BF_SERVER_SEQUENCE_CONSENT_GATE_v31 - JS mirror of CONSENT_SQL in
 // smsConsent.ts. The engine walks one enrollment at a time in JS, so it cannot
@@ -54,7 +55,7 @@ async function clickedSince(pool: Pool, contactId: string, since: any): Promise<
   } catch { return false; }
 }
 async function logStep(pool: Pool, contactId: string, seqId: string, stepIdx: number, channel: string): Promise<void> {
-  await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [contactId, "sequence_step_sent", JSON.stringify({ sequenceId: seqId, step: stepIdx, channel })]).catch(() => {});
+  await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [contactId, "sequence_step_sent", JSON.stringify({ sequenceId: seqId, step: stepIdx, channel })]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/sequenceEngine.ts:57");});
 }
 async function complete(pool: Pool, id: string): Promise<void> { await pool.query(`UPDATE marketing_sequence_enrollments SET status='completed', last_step_at=now(), updated_at=now() WHERE id=$1`, [id]); }
 async function stop(pool: Pool, id: string, status: string): Promise<void> { await pool.query(`UPDATE marketing_sequence_enrollments SET status=$2, updated_at=now() WHERE id=$1`, [id, status]); }
@@ -321,11 +322,11 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
           link: effLink ? trackedLink(sendId, String(effLink)) : null,
         });
         const r = await sendMarketingSms(String(c.phone), text);
-        if (r.ok) { await logStep(pool, c.id, en.sequence_id, idx, "sms"); await pool.query(`UPDATE sequence_sends SET message_sid=$2 WHERE id=$1`, [sendId, r.sid ?? null]).catch(() => {}); }
-        else if (r.optedOut) await pool.query(`UPDATE contacts SET sms_opt_out=true, updated_at=now() WHERE id=$1`, [c.id]).catch(() => {});
+        if (r.ok) { await logStep(pool, c.id, en.sequence_id, idx, "sms"); await pool.query(`UPDATE sequence_sends SET message_sid=$2 WHERE id=$1`, [sendId, r.sid ?? null]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/sequenceEngine.ts:324");}); }
+        else if (r.optedOut) await pool.query(`UPDATE contacts SET sms_opt_out=true, updated_at=now() WHERE id=$1`, [c.id]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/sequenceEngine.ts:325");});
         else {
           // BF_SERVER_SEQ_NO_ADVANCE_ON_SEND_FAIL_v1 - see email branch.
-          await pool.query(`DELETE FROM sequence_sends WHERE id=$1`, [sendId]).catch(() => {});
+          await pool.query(`DELETE FROM sequence_sends WHERE id=$1`, [sendId]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/sequenceEngine.ts:328");});
           console.error("[sequence] sms send failed; will retry", { enrollmentId: en.id });
           await bump(pool, en.id, 60, en.quiet_start, en.quiet_end);
           return;
@@ -349,7 +350,7 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
           // analytics count it as a sent email. The July 3rd blast reported
           // 805 emails / 1637 done while SendGrid rejected everything.
           // Remove the attempt row and retry this step in 60 minutes.
-          if (esId) await pool.query(`DELETE FROM sequence_sends WHERE id=$1`, [esId]).catch(() => {});
+          if (esId) await pool.query(`DELETE FROM sequence_sends WHERE id=$1`, [esId]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/sequenceEngine.ts:352");});
           console.error("[sequence] email send failed; will retry", { enrollmentId: en.id, status: r.status, error: r.error });
           await bump(pool, en.id, 60, en.quiet_start, en.quiet_end);
           return;
@@ -384,10 +385,10 @@ export async function tickSequences(pool: Pool): Promise<void> {
       await pool.query(
         `UPDATE marketing_sequence_enrollments SET status='cancelled', updated_at=now() WHERE id=$1`,
         [en.id],
-      ).catch(() => {});
+      ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/sequenceEngine.ts:384");});
       continue;
     }
     try { await processClaimed(pool, en); }
-    catch { await pool.query(`UPDATE marketing_sequence_enrollments SET status='active', next_run_at=$2, updated_at=now() WHERE id=$1`, [en.id, scheduleAfter(15, en.quiet_start, en.quiet_end)]).catch(() => {}); }
+    catch { await pool.query(`UPDATE marketing_sequence_enrollments SET status='active', next_run_at=$2, updated_at=now() WHERE id=$1`, [en.id, scheduleAfter(15, en.quiet_start, en.quiet_end)]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/sequenceEngine.ts:391");}); }
   }
 }

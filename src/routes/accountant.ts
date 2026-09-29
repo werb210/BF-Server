@@ -5,6 +5,7 @@ import requireAccountant from "../middleware/requireAccountant.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { persistAndEnqueue } from "./documents.js";
 import { computeOutstandingDocs } from "./clientDocumentsNeeded.js"; // BF_SERVER_ACCOUNTANT_SURFACE_v2
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router: Router = Router();
 
@@ -226,7 +227,7 @@ router.get(
         WHERE d.application_id::text = ($1)::text
           AND COALESCE(d.status, '') <> 'rejected'`,
       [id]
-    ).catch(() => ({ rows: [] as Array<{ category: string }> }));
+    ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/accountant.ts:223", ({ rows: [] as Array<{ category: string }> })));
     const receivedCategories = new Set(held.rows.map((r) => normaliseCategory(r.category)));
 
     res.json({

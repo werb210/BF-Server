@@ -12,6 +12,7 @@ import { CALL_DISPOSITIONS, planForDisposition } from "../../modules/calls/callD
 import { describeCrmUpdate, safeDispositionCrmUpdate } from "../../modules/calls/dispositionCrmUpdate.js"; // BF_SERVER_CALL_OUTCOME_CRM_v273
 // BF_SERVER_CALL_REF_v161
 import { parseCallRef, callRefPredicate } from "../../modules/calls/callRef.js";
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = express.Router();
 router.use("/watch", watchCallRoutes);
@@ -70,7 +71,7 @@ router.get("/token", auth, async (req: any, res: Response) => {
          -- recompute below derives status from reasons + hours.
          SET twilio_identity = $2, last_heartbeat = now(), updated_at = now()`,
       [identity, identity]
-    ).catch(() => {}); // non-fatal
+    ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "telephony/routes/telephonyRoutes.ts:65");}); // non-fatal
     await recomputePresence(identity).catch(() => {});
     return res.status(200).json({ success: true, data: { token, identity, outbound_caller_id: outboundCallerId, missing_outbound_caller_id: missingOutboundCallerId } });
   } catch (err) {
@@ -114,7 +115,7 @@ router.post("/presence", auth, async (req: any, res: Response) => {
      VALUES ($1, 'available', $2, now(), now())
      ON CONFLICT (user_id) DO UPDATE SET manual_busy = $2, last_heartbeat = now(), updated_at = now()`,
     [userId, manualBusy]
-  ).catch(() => {});
+  ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "telephony/routes/telephonyRoutes.ts:112");});
   await setManualBusy(userId, manualBusy).catch(() => {});
   res.json({ ok: true, status });
 });
@@ -138,7 +139,7 @@ router.post("/presence/heartbeat", auth, async (req: any, res: Response) => {
     // BF_SERVER_PRESENCE_AUTO_BUSY_v1 — bump heartbeat; recompute derives status.
     `UPDATE staff_presence SET last_heartbeat = now() WHERE user_id = $1`,
     [userId]
-  ).catch(() => {});
+  ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "telephony/routes/telephonyRoutes.ts:137");});
   await recomputePresence(userId).catch(() => {});
   const pr = await pool.query(`SELECT status, coalesce(on_call,false) AS on_call FROM staff_presence WHERE user_id = $1`, [userId]).catch((err: any) => { console.warn("[silent-query] telephony/routes/telephonyRoutes.ts", { message: err?.message }); return { rows: [] as any[] }; });
   res.json({ ok: true, status: pr.rows[0]?.status ?? "available", onCall: !!pr.rows[0]?.on_call });
@@ -208,7 +209,7 @@ router.post("/calls/:id/disposition", auth, async (req: any, res: Response) => {
           WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE source = 'CALL_DISPOSITION' AND source_ref_id = $7::uuid)`,
         [row.silo, plan.followUp.label, `Auto-created from call outcome: ${plan.disposition}`,
           String(plan.followUp.days), staffUserId, row.contact_id, id],
-      ).catch(() => {});
+      ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "telephony/routes/telephonyRoutes.ts:205");});
     }
 
     // BF_SERVER_CALL_OUTCOME_CRM_v273 - update the contact itself, then note what changed.
@@ -218,7 +219,7 @@ router.post("/calls/:id/disposition", auth, async (req: any, res: Response) => {
       await pool.query(
         `INSERT INTO crm_notes (body, contact_id, silo) VALUES ($1, $2::uuid, $3)`,
         [plan.timelineNote + (crmUpdate ? describeCrmUpdate(crmUpdate) : ""), row.contact_id, row.silo],
-      ).catch(() => {});
+      ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "telephony/routes/telephonyRoutes.ts:218");});
     }
 
     return res.json({
@@ -244,7 +245,7 @@ router.get("/call-status", auth, async (_req, res) => {
   const result = await pool.query(
     `SELECT id, phone_number, direction, status, duration_seconds, created_at
      FROM call_logs ORDER BY created_at DESC LIMIT 50`
-  ).catch(() => ({ rows: [] }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "telephony/routes/telephonyRoutes.ts:244", ({ rows: [] })));
   res.json({ calls: result.rows });
 });
 
@@ -303,7 +304,7 @@ router.post("/outbound-call", auth, async (req: any, res: Response) => {
        VALUES (gen_random_uuid(), $1, $2, $1, $3, 'outbound', 'initiated', $4, $5, $6, $7, now(), now())
        ON CONFLICT DO NOTHING`,
       [to, from, call.sid, staffId ?? null, contactId ?? null, applicationId ?? null, silo]
-    ).catch(() => {});
+    ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "telephony/routes/telephonyRoutes.ts:300");});
     res.json({ success: true, callSid: call.sid });
   } catch (err: any) {
     res.status(500).json({ error: err.message ?? "call_failed" });

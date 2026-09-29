@@ -16,6 +16,7 @@ import { eventBus } from "../events/eventBus.js";
 // instead of an inline ad-hoc check.
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
 import { findCallLogByTwilioSid } from "../modules/calls/calls.repo.js"; // BF_SERVER_VOICEMAIL_PER_STAFF_v1
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 void twilio;
 const router = Router();
@@ -173,7 +174,7 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
               ORDER BY created_at ASC
               LIMIT 1`,
             [dialed, siloParam],
-          ).catch(() => ({ rows: [] as { id: string }[] }));
+          ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/webhooks.ts:168", ({ rows: [] as { id: string }[] })));
 
           // callerId is declared further down (in the isSdkOutbound branch we never
           // reach), so resolve the same env chain here rather than reordering that code.
@@ -682,7 +683,7 @@ async function persistInboundSms(req: any): Promise<void> {
         ORDER BY id, primary_match DESC, updated_at DESC NULLS LAST, created_at ASC NULLS LAST
         LIMIT 1`,
     [fromNum]
-  ).then((r) => r.rows[0] ?? null).catch(() => null);
+  ).then((r) => r.rows[0] ?? null).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/webhooks.ts:638", null));
 
   let resolvedSilo = contact?.silo ?? null;
   if (!resolvedSilo && toNum) {
@@ -695,7 +696,7 @@ async function persistInboundSms(req: any): Promise<void> {
         ORDER BY created_at DESC
         LIMIT 1`,
       [toNum]
-    ).then((r) => r.rows[0]?.silo ?? null).catch(() => null);
+    ).then((r) => r.rows[0]?.silo ?? null).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/webhooks.ts:689", null));
     resolvedSilo = toSilo;
   }
   resolvedSilo = resolvedSilo ?? "BF";

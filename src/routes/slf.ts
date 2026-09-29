@@ -7,6 +7,7 @@ import { pool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { AppError } from "../middleware/errors.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 router.use(requireAuth);
@@ -48,7 +49,7 @@ router.patch(
           WHERE id::text = ($2)::text AND silo = 'SLF'`,
         [stage, id],
       )
-      .catch(() => {});
+      .catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/slf.ts:45");});
     res.json({ ok: true });
   }),
 );
@@ -107,7 +108,7 @@ router.get(
           ORDER BY created_at DESC`,
         [id],
       )
-      .catch(() => ({ rows: [] }));
+      .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/slf.ts:103", ({ rows: [] })));
     res.json(rows);
   }),
 );
@@ -134,7 +135,7 @@ router.post(
          VALUES (gen_random_uuid(), $1, $2, now(), now())`,
         [id, text],
       )
-      .catch(() => {});
+      .catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/slf.ts:131");});
     res.status(201).json({ ok: true });
   }),
 );
@@ -162,7 +163,7 @@ router.get(
           ORDER BY created_at DESC`,
         [id],
       )
-      .catch(() => ({ rows: [] }));
+      .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/slf.ts:157", ({ rows: [] })));
     res.json(rows);
   }),
 );

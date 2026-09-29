@@ -7,6 +7,7 @@ import { logError } from "../observability/logger.js";
 // BF_SERVER_BLOCK_v317_MAYA_ESCALATIONS_AUTH_v1
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = express.Router();
 
@@ -256,7 +257,7 @@ router.post(
            $4, now()
          )`,
         [msgId, applicationId, silo, `🆘 Client requested human help via Maya. Reason: ${reason}`]
-      ).catch(() => {});
+      ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/maya.ts:249");});
     }
 
     res.status(201).json({ status: "ok", data: { id, deduped: false } });

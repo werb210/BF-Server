@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import type { Pool, PoolClient } from "pg";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 // Postgres error codes we treat as "already-there, safe to skip":
 //   42P07 duplicate table · 42710 duplicate object · 42701 duplicate column
@@ -145,7 +146,18 @@ export async function runMigrations(pool: Pool): Promise<void> {
           // Everything the baseline already contains is, by definition, applied.
           // Recording every historical filename is what stops the 22 broken ones
           // from running against a schema that already has their tables.
+          // BF_SERVER_BASELINE_MANIFEST_v678 - only the files the snapshot was taken from are
+          // "already applied". Migrations written after the snapshot are listed nowhere, so they
+          // run below like on any other database - CI databases get every new table without the
+          // snapshot being regenerated.
+          const manifestPath = path.join(migrationsDir, "000000_baseline.files.txt");
+          const covered = fs.existsSync(manifestPath)
+            ? new Set(fs.readFileSync(manifestPath, "utf8").split(NL).map((l) => l.split(CR).join("").trim()).filter(Boolean))
+            : null;
+          let recorded = 0;
           for (const f of ordinaryFiles) {
+            if (covered && !covered.has(f)) continue;
+            recorded += 1;
             await client.query(
               "INSERT INTO schema_migrations (id) VALUES ($1) ON CONFLICT (id) DO NOTHING",
               [f],
@@ -157,7 +169,7 @@ export async function runMigrations(pool: Pool): Promise<void> {
           );
           await client.query("COMMIT");
           applied = await fetchApplied(client);
-          console.log(`[MIGRATIONS] baseline applied; ${ordinaryFiles.length} historical migrations recorded`);
+          console.log(`[MIGRATIONS] baseline applied; ${recorded} historical migrations recorded, ${ordinaryFiles.length - recorded} newer ones will run`);
         }
       }
 
@@ -178,14 +190,14 @@ export async function runMigrations(pool: Pool): Promise<void> {
           applied.add(file);
           console.log(`[MIGRATIONS] applied: ${file}`);
         } catch (err) {
-          await client.query("ROLLBACK").catch(() => {});
+          await client.query("ROLLBACK").catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "startup/runMigrations.ts:192");});
           const code = pgErrorCode(err);
           if (code && IDEMPOTENT_CODES.has(code)) {
             console.warn(`[MIGRATIONS] treating ${file} as already-present (code ${code})`);
             await client.query(
               "INSERT INTO schema_migrations (id) VALUES ($1) ON CONFLICT (id) DO NOTHING",
               [file]
-            ).catch(() => {});
+            ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "startup/runMigrations.ts:196");});
             applied.add(file);
             continue;
           }

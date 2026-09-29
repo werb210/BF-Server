@@ -7,6 +7,7 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 // BF_SERVER_WATCH_FACE_v370 - requireAuth is on the route, not router.use:
@@ -25,7 +26,7 @@ export async function buildWatchSnapshot(userId: string) {
         WHERE user_id = $1::uuid
         LIMIT 1`,
       [userId],
-    ).catch(() => ({ rows: [] as { status: string; stale: boolean }[] }));
+    ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "watch/snapshotRoutes.ts:21", ({ rows: [] as { status: string; stale: boolean }[] })));
 
     // BF_SERVER_WATCH_SNAPSHOT_TASKS_v209
     // This query was broken from the day it shipped and failed silently. It read
@@ -43,7 +44,7 @@ export async function buildWatchSnapshot(userId: string) {
           AND event_type = 'call.missed'
           AND created_at >= date_trunc('day', now())`,
       [userId],
-    ).catch(() => ({ rows: [{ count: "0" }] }));
+    ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "watch/snapshotRoutes.ts:39", ({ rows: [{ count: "0" }] })));
 
     // Tasks due today or already overdue and assigned to this user.
     // Overdue is included deliberately: a count that drops something the moment
@@ -61,7 +62,7 @@ export async function buildWatchSnapshot(userId: string) {
           AND due_at < date_trunc('day', now()) + interval '1 day'
           AND status NOT IN ('COMPLETED', 'DEFERRED')`,
       [userId],
-    ).catch(() => ({ rows: [{ count: "0" }] }));
+    ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "watch/snapshotRoutes.ts:56", ({ rows: [{ count: "0" }] })));
 
     // A heartbeat older than five minutes means the client went away without
     // saying so. Reporting the last known status as current would tell the

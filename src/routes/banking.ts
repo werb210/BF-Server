@@ -10,6 +10,7 @@ import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 import { safeKeyGenerator } from "../middleware/rateLimit.js";
 import { config } from "../config/index.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 
@@ -35,7 +36,7 @@ router.post(
           WHERE application_id::text = $1 AND ocr_status = 'completed' AND deleted_at IS NULL`,
         [id]
       )
-      .catch(() => ({ rows: [{ n: "0" }] as Array<{ n: string }> }));
+      .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/banking.ts:32", ({ rows: [{ n: "0" }] as Array<{ n: string }> })));
     const n = Number(ocrCount.rows[0]?.n ?? "0");
     if (n === 0) return res.status(409).json({ error: "no_ocr_complete_documents" });
 
@@ -51,7 +52,7 @@ router.post(
              WHERE application_id::text = ($1)::text AND ocr_status = 'completed'`,
           [id]
         )
-        .catch(() => {});
+        .catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/banking.ts:48");});
       return res.json({ ok: true, triggered: "manual", documents_considered: n, result });
     } catch (e) {
       return res.status(500).json({ error: "banking_analysis_failed", message: e instanceof Error ? e.message : String(e) });

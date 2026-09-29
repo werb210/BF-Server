@@ -20,6 +20,7 @@ import {
   isUndeliverableNumber,
 } from "../lib/smsDeliverability.js";
 import { sendSMS } from "../services/smsService.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const TICK_MS = 15 * 60_000;
 
@@ -159,7 +160,7 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
             `UPDATE applications SET abandon_sms_attempts = abandon_sms_attempts + 1
               WHERE id = $1 RETURNING abandon_sms_attempts`,
             [row.id],
-          ).catch(() => ({ rows: [] as Array<{ abandon_sms_attempts: number }> }));
+          ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "workers/abandonedApplicationWorker.ts:158", ({ rows: [] as Array<{ abandon_sms_attempts: number }> })));
           const attempts = bumped.rows[0]?.abandon_sms_attempts ?? 0;
 
           // Backstop: even a failure that looks transient stops after 3 tries.
@@ -169,7 +170,7 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
             await pool.query(
               `UPDATE applications SET abandon_sms_sent_at = now() WHERE id = $1`,
               [row.id],
-            ).catch(() => {});
+            ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "workers/abandonedApplicationWorker.ts:169");});
             console.warn("[abandonedApplication] sms retired", {
               applicationId: row.id,
               code,

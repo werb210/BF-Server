@@ -2,6 +2,7 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { createContact } from "../services/contacts.js";
 import { persistTwilioMediaToBlob } from "../services/mmsMedia.js"; // BF_SERVER_MMS_BLOB_PERSIST_v1
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 
@@ -169,7 +170,7 @@ router.post("/webhooks/twilio/sms-inbound", async (req: any, res) => {
         if (persisted) {
           await pool
             .query("UPDATE communications_messages SET media_url = $2 WHERE twilio_message_sid = $1", [messageSid, persisted.url])
-            .catch(() => {});
+            .catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/smsInboundWebhook.ts:170");});
         }
       })();
     }

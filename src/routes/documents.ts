@@ -21,6 +21,7 @@ import { safeHandler } from "../middleware/safeHandler.js";
 // BF_SERVER_BLOCK_v215_BF_TO_BI_DOC_MIRROR_v1
 import { mirrorDocToBiAsync, withdrawDocFromBiAsync } from "../services/biDocMirror.js"; // v395
 import { setProcessingStage } from "../modules/applications/processingStage.service.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = express.Router();
 
@@ -113,7 +114,7 @@ async function mirrorDocToSiblingLegs(args: {
       );
       await tx.query("COMMIT");
     } catch {
-      await tx.query("ROLLBACK").catch(() => undefined);
+      await tx.query("ROLLBACK").catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/documents.ts:116", undefined));
       tx.release();
       continue;
     }
@@ -211,7 +212,7 @@ export async function persistAndEnqueue(opts: {
 
     await tx.query("COMMIT");
   } catch (err) {
-    await tx.query("ROLLBACK").catch(() => undefined);
+    await tx.query("ROLLBACK").catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/documents.ts:214", undefined));
     throw err;
   } finally {
     tx.release();
@@ -481,14 +482,14 @@ router.post("/:id/category", requireAuth, async (req: Request, res: Response) =>
 
 router.post("/:id/accept", requireAuth, async (req: Request, res: Response) => {
   const id = toStringSafe(req.params.id);
-  await pool.query(`UPDATE documents SET status='accepted', updated_at=now() WHERE id=$1`, [id]).catch(() => {});
+  await pool.query(`UPDATE documents SET status='accepted', updated_at=now() WHERE id=$1`, [id]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/documents.ts:484");});
   const docRes = await pool.query<{ application_id: string | null }>(`SELECT application_id FROM documents WHERE id=$1 LIMIT 1`, [id]).catch((err: any) => { console.warn("[silent-query] routes/documents.ts", { message: err?.message }); return { rows: [] as any[] }; });
   const applicationId = docRes.rows[0]?.application_id ?? null;
   if (applicationId) {
     const appRes = await pool.query<{ processing_stage: string | null; previous_processing_stage: string | null }>(`SELECT processing_stage, previous_processing_stage FROM applications WHERE id::text = ($1)::text LIMIT 1`, [applicationId]).catch((err: any) => { console.warn("[silent-query] routes/documents.ts", { message: err?.message }); return { rows: [] as any[] }; });
     const app = appRes.rows[0];
     if (app?.processing_stage === "documents_incomplete") {
-      const unresolved = await pool.query<{ count: number }>(`SELECT count(*)::int AS count FROM documents WHERE application_id::text = ($1)::text AND status='rejected'`, [applicationId]).catch(() => ({ rows: [{ count: 0 }] as any[] }));
+      const unresolved = await pool.query<{ count: number }>(`SELECT count(*)::int AS count FROM documents WHERE application_id::text = ($1)::text AND status='rejected'`, [applicationId]).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/documents.ts:491", ({ rows: [{ count: 0 }] as any[] })));
       if ((unresolved.rows[0]?.count ?? 0) === 0 && app.previous_processing_stage) {
         await setProcessingStage({ applicationId, toStage: app.previous_processing_stage as any, reason: "all_documents_resolved", actorUserId: (req as any)?.user?.id ?? null }).catch(() => {});
       }
@@ -499,7 +500,7 @@ router.post("/:id/accept", requireAuth, async (req: Request, res: Response) => {
 
 router.post("/:id/reject", requireAuth, async (req: Request, res: Response) => {
   const id = toStringSafe(req.params.id);
-  await pool.query(`UPDATE documents SET status='rejected', updated_at=now() WHERE id=$1`, [id]).catch(() => {});
+  await pool.query(`UPDATE documents SET status='rejected', updated_at=now() WHERE id=$1`, [id]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/documents.ts:502");});
   const docRes = await pool.query<{ application_id: string | null }>(`SELECT application_id FROM documents WHERE id=$1 LIMIT 1`, [id]).catch((err: any) => { console.warn("[silent-query] routes/documents.ts", { message: err?.message }); return { rows: [] as any[] }; });
   const applicationId = docRes.rows[0]?.application_id ?? null;
   if (applicationId) {
@@ -552,7 +553,7 @@ router.delete(
           WHERE table_schema = 'public'
             AND table_name = 'document_events'
        ) AS present`
-    ).catch(() => ({ rows: [{ present: false }] }));
+    ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/documents.ts:548", ({ rows: [{ present: false }] })));
 
     if (hasEvents.rows[0]?.present) {
       const actor = String((req as any)?.user?.email ?? "unknown");
@@ -560,7 +561,7 @@ router.delete(
         `INSERT INTO document_events (id, document_id, application_id, event, actor, created_at)
          VALUES (gen_random_uuid(), $1, $2::uuid, 'deleted', $3, now())`,
         [documentId, applicationId, actor]
-      ).catch(() => {});
+      ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/documents.ts:559");});
     }
 
     return res.status(200).json({ ok: true, id: documentId, applicationId });

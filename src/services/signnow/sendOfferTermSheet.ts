@@ -24,6 +24,7 @@ import {
   downloadDocument,
 } from "../../signnow/signnowClient.js";
 import { getStorage } from "../../lib/storage/index.js";
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 export const SIGNED_TERM_SHEET_CATEGORY = "Signed Term Sheet";
 const SIGNER_ROLE = "Client";
@@ -134,7 +135,7 @@ export async function attachSignedTermSheet(pool: Pool, applicationId: string): 
           LIMIT 1`,
         [applicationId],
       )
-      .catch(() => ({ rows: [] as { id: string }[] }));
+      .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/signnow/sendOfferTermSheet.ts:128", ({ rows: [] as { id: string }[] })));
     if (existing.rows.length > 0) return { attached: true, reason: "already_attached" };
 
     const r = await pool.query<{ group_id: string | null; doc_id: string | null }>(
@@ -199,7 +200,7 @@ export async function attachSignedTermSheet(pool: Pool, applicationId: string): 
       }
       await client.query("COMMIT");
     } catch {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await client.query("ROLLBACK").catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/signnow/sendOfferTermSheet.ts:202", undefined));
       return { attached: false, reason: "insert_failed" };
     } finally {
       client.release();

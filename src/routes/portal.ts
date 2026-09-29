@@ -63,6 +63,7 @@ import { isUndeliverableNumber } from "../lib/smsDeliverability.js"; // BF_SERVE
 import { misfiledSignal, type ClassificationRow } from "../services/documents/misfiledDocuments.js"; // BF_SERVER_MISFILED_DOCS_v262
 import { bankCoverageForApplication, type Coverage } from "../services/documents/bankStatementCoverage.js"; // BF_SERVER_BANK_COVERAGE_v267
 import { loadNamingContext, sanitizeDisplayName, uniqueDisplayName } from "../services/documents/documentNaming.js"; // BF_SERVER_RENAME_ON_ACCEPT_v264
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 // BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const router = Router();
@@ -230,7 +231,7 @@ async function sendDocumentRejectionSms(params: {
          (id, type, direction, status, body, phone_number, from_number, to_number, twilio_sid, application_id, contact_id, silo, created_at)
        VALUES (gen_random_uuid(), 'sms', 'outbound', $1, $2, $3, $4, $3, $5, $6, $7, COALESCE($8, 'BF'), now())`,
       [msg.status, body, to, from, msg.sid, params.applicationId, row?.contact_id ?? null, row?.silo ?? null]
-    ).catch(() => {});
+    ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/portal.ts:228");});
   }
 }
 
@@ -785,7 +786,7 @@ async function purgeApplicationCascade(applicationId: string): Promise<number> {
     rowCount = r.rowCount ?? 0;
     await client.query("COMMIT");
   } catch (e) {
-    await client.query("ROLLBACK").catch(() => {});
+    await client.query("ROLLBACK").catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/portal.ts:788");});
     throw e;
   } finally {
     client.release();
@@ -971,7 +972,7 @@ router.delete(
       rowCount = r.rowCount ?? 0;
       await client.query("COMMIT");
     } catch (e) {
-      await client.query("ROLLBACK").catch(() => {});
+      await client.query("ROLLBACK").catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/portal.ts:974");});
       throw e;
     } finally {
       client.release();

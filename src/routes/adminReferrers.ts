@@ -8,6 +8,7 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { auth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 // Staff-only: referrers/clients must not see the referrer roster.
@@ -75,7 +76,7 @@ router.post("/:id/pay", requireAuthorization({ roles: [ROLES.ADMIN] }), async (r
        SELECT count(*)::int AS paid_count, COALESCE(SUM(credit_amount), 0) AS paid_amount FROM upd`,
       [referrerId],
     )
-    .catch(() => ({ rows: [{ paid_count: 0, paid_amount: 0 }] as any[] }));
+    .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/adminReferrers.ts:67", ({ rows: [{ paid_count: 0, paid_amount: 0 }] as any[] })));
   const row = r.rows[0] ?? { paid_count: 0, paid_amount: 0 };
   res.json({ status: "ok", paidCount: Number(row.paid_count ?? 0), paidAmount: Number(row.paid_amount ?? 0) });
 });

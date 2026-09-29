@@ -12,6 +12,7 @@
 // the bf-client wizard Step 3 (Step3_Business.tsx), and metadata.applicant / metadata.kyc.
 // Everything is defensive: a missing field becomes an empty cell rather than throwing.
 import type { Pool } from "pg";
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 export type SheetRowData = {
   applicationId: string;
@@ -201,7 +202,7 @@ export async function loadSheetRowData(pool: Pool, applicationId: string): Promi
         LIMIT 1`,
       [applicationId],
     )
-    .catch(() => ({ rows: [] as never[] }));
+    .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "modules/submissions/merchantGrowthSheet.ts:179", ({ rows: [] as never[] })));
 
   const row = Array.isArray(r.rows) ? r.rows[0] : undefined;
   const md = obj(row?.metadata);

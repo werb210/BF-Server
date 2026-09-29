@@ -12,6 +12,7 @@ import { signAccessToken } from "../auth/jwt.js";
 import { ROLES, normalizeRole } from "../auth/roles.js";
 import { fetchCapabilitiesForRole } from "../auth/capabilities.js";
 import { findAuthUserById } from "../modules/auth/auth.repo.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 const RP_ID = process.env.WEBAUTHN_RP_ID || "staff.boreal.financial";
@@ -46,7 +47,7 @@ router.post("/register/options", requireAuth, async (req: any, res) => {
   const existing = await pool
     .query<{ credential_id: string; transports: string[] | null }>(
       `SELECT credential_id, transports FROM webauthn_credentials WHERE user_id = $1`, [userId])
-    .then((r) => r.rows).catch(() => []);
+    .then((r) => r.rows).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/webauthn.ts:46", []));
   const options = await generateRegistrationOptions({
     rpName: RP_NAME, rpID: RP_ID,
     userName: (user as any).email || (user as any).phoneNumber || String(user.id),
@@ -67,7 +68,7 @@ router.post("/register/verify", requireAuth, async (req: any, res) => {
   const ch = await pool
     .query<{ challenge: string }>(
       `SELECT challenge FROM webauthn_challenges WHERE user_id = $1 AND kind = 'register' AND expires_at > now() ORDER BY created_at DESC LIMIT 1`, [userId])
-    .then((r) => r.rows[0]).catch(() => undefined);
+    .then((r) => r.rows[0]).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/webauthn.ts:67", undefined));
   if (!ch) return res.status(400).json({ error: "no_pending_challenge" });
   let verification: any;
   try {
@@ -97,7 +98,7 @@ router.post("/login/verify", async (req: any, res) => {
   const cred = await pool
     .query<{ user_id: string; credential_id: string; public_key: string; counter: string; transports: string[] | null }>(
       `SELECT user_id, credential_id, public_key, counter, transports FROM webauthn_credentials WHERE credential_id = $1`, [body.id])
-    .then((r) => r.rows[0]).catch(() => undefined);
+    .then((r) => r.rows[0]).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/webauthn.ts:97", undefined));
   if (!cred) return res.status(401).json({ error: "unknown_credential" });
   let issuedChallenge: string | undefined;
   try {

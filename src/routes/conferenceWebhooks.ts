@@ -16,6 +16,7 @@ import recordingWebhooksRoutes from "./recordingWebhooks.js";
 import transcriptionWebhooksRoutes from "./transcriptionWebhooks.js";
 
 import VoiceResponse from "twilio/lib/twiml/VoiceResponse.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 // BF_SERVER_BLOCK_v2_LIVE_TRANSCRIPTION - twilio-node 4.x has no <Transcription>
 // verb, so inject it as raw TwiML. Gated by ENABLE_LIVE_TRANSCRIPTION (default
@@ -139,7 +140,7 @@ router.post("/conference/wait", twilioWebhookValidation, async (req: any, res) =
          JOIN conferences c ON c.id = cp.conference_id
         WHERE c.friendly_name = $1 AND cp.kind = 'staff' AND cp.status = 'joined'`,
       [conf],
-    ).catch(() => ({ rows: [{ c: 0 }] }));
+    ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/conferenceWebhooks.ts:137", ({ rows: [{ c: 0 }] })));
     if ((joined.rows[0]?.c ?? 0) > 0) {
       vr.play({ loop: 1 }, "http://com.twilio.sounds.music.s3.amazonaws.com/MARKOVICHAMP-Borghestral.mp3");
       return res.send(vr.toString());

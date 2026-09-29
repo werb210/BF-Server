@@ -23,6 +23,7 @@ import { fillDraftContact, furthestStep } from "../../services/draftProgress.js"
 // BF_SERVER_BLOCK_v213_BF_TO_BI_HANDOFF_v1
 import { postBiHandoff } from "../../services/biHandoff.js";
 import { randomUUID as biRandomUUID } from "node:crypto";
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 // BF_APP_ID_CAST_v39 - Block 39-A - applications.id comparisons cast to text
 
 const router = Router();
@@ -1530,7 +1531,7 @@ router.post(
         partnerContactId: partner?.id ?? null,
       });
     } catch (err: any) {
-      await tx.query("ROLLBACK").catch(() => {});
+      await tx.query("ROLLBACK").catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/client/v1Applications.ts:1533");});
       logError("submit_normalize_failed", {
         event: "submit_normalize_failed",
         token,

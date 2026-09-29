@@ -11,6 +11,7 @@ import { findOrCreateCompanyByNameAndSilo } from "../services/companies.js";
 import { findOrCreateContactByEmailAndCompany } from "../services/contacts.js";
 import { isCollateralFormDocType, buildCollateralFormPdfFromData } from "../pdf/collateralFormPdf.js";
 import { attachRenderedFormDocument } from "../pdf/attachRenderedFormDocument.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router: Router = Router();
 
@@ -239,7 +240,7 @@ router.post("/applications/:id/form-responses/:doc_type/submit", requireAuth, as
           const appRes = await pool.query<{ contact_id: string | null }>(
             `SELECT contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1`,
             [appId],
-          ).catch(() => ({ rows: [] as Array<{ contact_id: string | null }> }));
+          ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/applicationFormResponses.ts:239", ({ rows: [] as Array<{ contact_id: string | null }> })));
           const cid = appRes.rows[0]?.contact_id ?? null;
           if (cid) {
             await pool.query(
