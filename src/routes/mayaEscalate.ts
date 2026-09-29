@@ -28,7 +28,7 @@ async function resolveContactId(opts: {
   const phone = (opts.phone ?? "").trim() || null;
   const email = (opts.email ?? "").trim() || null;
   // BF_SERVER_BLOCK_v687_CONTACT_MATCH_NORMALIZE_v1 — match on the last 10
-  // digits of the phone so "5878881837", "+15878881837" and "(587) 888-1837"
+  // digits of the phone so "4035550123", "+14035550123" and "(403) 555-0123"
   // all resolve to the SAME existing contact instead of spawning duplicates.
   // This was the v686 identity-fragmentation bug (one person => 3 contacts).
   const phoneDigits = phone ? phone.replace(/[^0-9]/g, "") : "";

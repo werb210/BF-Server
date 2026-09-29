@@ -8,7 +8,7 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       # BF_SERVER_SBA_TEMPLATES_IN_CI_v2 - `secrets` cannot be referenced from
       # an `if:` expression; `env` can. Unset resolves to an empty string.
@@ -73,7 +73,7 @@ jobs:
   # reachable Postgres, and then nothing ever ran them. Separate job so a
   # database flake cannot redden the unit gate.
   integration:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         # BF_SERVER_INTEGRATION_MIGRATIONS_v2 - migration 067 requires pgvector.

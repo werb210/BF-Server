@@ -25,7 +25,7 @@ describe("it extends the existing table", () => {
 
 describe("merge fields resolve", () => {
   const ctx = {
-    contact: { name: "Todd Werboweski", email: "todd@werboweski.com", phone: "+15878881837" },
+    contact: { name: "Todd Werboweski", email: "todd@werboweski.com", phone: "+14035550123" },
     company: { name: "Boreal Financial" },
     user: { name: "Andrew Polturak" },
   };

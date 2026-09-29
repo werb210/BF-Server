@@ -24,14 +24,14 @@ git ls-files | xargs grep -nE '(otp|verify)[A-Z_]*|TWILIO_VERIFY|twilio\.verify|
   - plus tests/scripts/migrations listed by grep output.
 
 ```bash
-git ls-files | xargs grep -nE '5878881837|\+1[ -]?587[ -]?888|hardcod|allowList|allowlist|allowedPhone|phoneAllow|verifiedNumber' 2>/dev/null
+git ls-files | xargs grep -nE '4035550123|\+1[ -]?587[ -]?888|hardcod|allowList|allowlist|allowedPhone|phoneAllow|verifiedNumber' 2>/dev/null
 ```
 
-- Matches include seeded/default operator number references (`+15878881837`) in:
+- Matches include seeded/default operator number references (`+14035550123`) in:
   - `.env.example`
   - `src/db/seed.ts`
   - non-OTP business routes/tests/scripts.
-- No direct OTP allowlist branch for `+15878881837` was found in `src/routes/auth.ts`, `src/modules/auth/auth.service.ts`, `src/services/otp.ts`, or `src/modules/auth/phone.ts`.
+- No direct OTP allowlist branch for `+14035550123` was found in `src/routes/auth.ts`, `src/modules/auth/auth.service.ts`, `src/services/otp.ts`, or `src/modules/auth/phone.ts`.
 
 ---
 
@@ -264,7 +264,7 @@ Matched files were fully dumped during audit. OTP/phone-critical ones:
 
 Notable constraints:
 - `019_auth_phone_otp.sql` adds unique constraint `users_phone_number_unique` on `users(phone_number)`.
-- No migration found that hardcodes `+15878881837` into OTP delivery logic.
+- No migration found that hardcodes `+14035550123` into OTP delivery logic.
 
 ---
 
@@ -290,7 +290,7 @@ Notable constraints:
 
 5. **Server-side allowlist for OTP delivery** (low)
    - **No direct allowlist branch for OTP send/verify** found in core OTP runtime handlers.
-   - `+15878881837` appears in seed/default/test content and non-OTP business routes.
+   - `+14035550123` appears in seed/default/test content and non-OTP business routes.
 
 6. **Country-code filter** (medium)
    - `normalizePhone` requires 11 digits starting with `1` -> US/Canada only.

@@ -2,6 +2,7 @@
 import { Router } from "express";
 import { auth } from "../middleware/auth.js";
 import { pool } from "../db.js";
+import { callerIdForUser } from "../voice/directLines.js"; // BF_SERVER_PHONE_ROUTING_v688b
 import { getTwilio, getCallerId, getPublicBaseUrl } from "../voice/twilioClient.js";
 import {
   getConferenceById, getParticipantById, addParticipantRow,
@@ -82,7 +83,7 @@ router.post("/conferences/:id/participants", auth, async (req: any, res) => {
     const pid = await addParticipantRow({ conferenceId: conf.id, kind: "pstn", phoneNumber: to, displayName: req.body?.name ?? to });
     const sid = await dialPstnIntoConference({
       conferenceId: conf.id, conferenceFriendly: conf.friendly_name,
-      toNumber: to, fromNumber: getCallerId(), participantId: pid,
+      toNumber: to, fromNumber: await callerIdForUser(pool, req.user?.userId || req.user?.id || req.user?.sub || ""), // BF_SERVER_PHONE_ROUTING_v688b participantId: pid,
     });
     return res.json({ ok: true, participantId: pid, callSid: sid });
   }
@@ -133,7 +134,7 @@ router.post("/conferences/:id/transfer", auth, async (req: any, res) => {
     newPid = await addParticipantRow({ conferenceId: conf.id, kind: "pstn", phoneNumber: to, displayName: target.name ?? to });
     await dialPstnIntoConference({
       conferenceId: conf.id, conferenceFriendly: conf.friendly_name,
-      toNumber: to, fromNumber: getCallerId(), participantId: newPid,
+      toNumber: to, fromNumber: await callerIdForUser(pool, req.user?.userId || req.user?.id || req.user?.sub || ""), // BF_SERVER_PHONE_ROUTING_v688b participantId: newPid,
     });
   } else if (target.identity) {
     newPid = await addParticipantRow({ conferenceId: conf.id, kind: "staff", identity: target.identity, displayName: target.name ?? target.identity });

@@ -150,7 +150,9 @@ async function resolveTarget(t: Target): Promise<{ identity: string | null; avai
   try {
     const { rows } = await pool.query<{ status: string; twilio_identity: string | null; on_call: boolean; fresh: boolean; phone: string | null; standalone_watch: boolean; user_id: string | null }>(
       `SELECT sp.status, sp.twilio_identity, coalesce(sp.on_call, false) AS on_call, u.id AS user_id,
-              (sp.last_heartbeat > now() - interval '90 seconds') AS fresh,
+              ((sp.last_heartbeat > now() - interval '90 seconds') OR EXISTS (
+                SELECT 1 FROM staff_device_credentials dc WHERE dc.user_id = u.id AND dc.revoked_at IS NULL
+                  AND dc.expires_at > now())) AS fresh, -- BF_SERVER_PHONE_ROUTING_v688b: signed in on the dialler app counts
               u.verified_callback_number AS phone,
               (u.callback_verified_at IS NOT NULL AND EXISTS (
                 SELECT 1 FROM watch_devices wd WHERE wd.staff_user_id=u.id AND wd.revoked_at IS NULL
@@ -286,6 +288,24 @@ router.post("/fallback", twilioWebhookValidation, async (req: Request, res: Resp
   if (wantsVoicemail) emit(v, "vm_prompt", PHRASES.vm_prompt);
   else emit(v, "msg_prompt", PHRASES.msg_prompt);
   v.record({ maxLength: 120, playBeep: true, action: "/api/webhooks/twilio/voicemail" });
+  return send(res, v);
+});
+
+// BF_SERVER_DIRECT_LINES_v688 - nobody answered a direct line: that person's own voicemail.
+router.post("/direct-unavailable", twilioWebhookValidation, async (req: Request, res: Response) => {
+  const v = await newVR();
+  if (String(req.body?.DialCallStatus ?? "") === "completed") return send(res, v);
+  const userId = String(req.query.user ?? "").trim() || null;
+  let name = "The person you called";
+  if (userId) {
+    try {
+      const r = await pool.query<{ first_name: string | null }>(`SELECT first_name FROM users WHERE id::text = $1 LIMIT 1`, [userId]);
+      if (r.rows[0]?.first_name) name = String(r.rows[0].first_name);
+    } catch (err: any) {
+      console.warn("[reception] direct line name lookup failed", { message: err?.message });
+    }
+  }
+  offerMessageOrVoicemail(v, "direct_noanswer", `Sorry, ${name} isn't available right now.`, userId);
   return send(res, v);
 });
 

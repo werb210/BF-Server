@@ -965,7 +965,7 @@ router.post(
 //
 // Phone matching tolerates raw vs compact-digits variants -- the
 // same trick GET /sms already uses, so a contact stored as
-// "+15878881837" and a call log with phone_number "15878881837"
+// "+14035550123" and a call log with phone_number "14035550123"
 // still match.
 //
 // Response shape:

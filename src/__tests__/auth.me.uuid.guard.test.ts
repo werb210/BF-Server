@@ -11,7 +11,7 @@ const JWT_SECRET = "test-jwt-secret-minimum-10-chars";
 describe("GET /api/auth/me — UUID guard", () => {
   it("returns 401 cleanly for old test-mode token with non-UUID sub", async () => {
     const staleToken = jwt.sign(
-      { sub: "test-user:+15878881837", role: "Staff", tokenVersion: 0 },
+      { sub: "test-user:+14035550123", role: "Staff", tokenVersion: 0 },
       JWT_SECRET,
       { expiresIn: "1d" }
     );

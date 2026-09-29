@@ -38,7 +38,7 @@ describe("communications sms thread", () => {
 
   it("accepts synthetic new- phone key and returns 200", async () => {
     const app = await buildApp();
-    const res = await request(app).get("/api/communications/sms/thread?contactId=new-15878881837").set("Authorization", `Bearer ${token}`);
+    const res = await request(app).get("/api/communications/sms/thread?contactId=new-14035550123").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ messages: [] });
   });

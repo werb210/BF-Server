@@ -3,10 +3,16 @@ import { ROLES } from "../auth/roles.js";
 import { runMigrations } from "../migrations.js";
 import { logInfo } from "../observability/logger.js";
 
-export const SEEDED_ADMIN_PHONE = "+15878881837";
+// BF_SERVER_NO_PERSONAL_NUMBERS_v688c - emergency admin logins come from App Service settings, never from code.
+// With a setting missing, that seed is skipped (it only ever runs on an empty database or when asked).
+const seedPhone = (raw: unknown): string | null => {
+  const d = String(raw ?? "").replace(/[^0-9]/g, "");
+  return d.length === 10 ? "+1" + d : d.length === 11 && d.startsWith("1") ? "+" + d : null;
+};
+export const SEEDED_ADMIN_PHONE = seedPhone(process.env.BOOTSTRAP_ADMIN_PHONE) ?? "+14035550100";
 export const SEEDED_ADMIN_ID = "00000000-0000-0000-0000-000000000099";
 export const SEEDED_ADMIN_EMAIL = "seeded-admin@boreal.financial";
-export const SEEDED_ADMIN2_PHONE = "+17802648467";
+export const SEEDED_ADMIN2_PHONE = seedPhone(process.env.BOOTSTRAP_ADMIN2_PHONE) ?? "+14035550101";
 export const SEEDED_ADMIN2_ID = "00000000-0000-0000-0000-000000000100";
 export const SEEDED_ADMIN2_EMAIL = "seeded-admin-2@boreal.financial";
 export const SEEDED_LENDER_ID = "00000000-0000-0000-0000-000000000200";
@@ -15,6 +21,10 @@ export const SEEDED_LENDER_PRODUCT_LOC_ID = "00000000-0000-0000-0000-00000000020
 
 export async function seedAdminUser(): Promise<{ id: string; phoneNumber: string }> {
   const phoneNumber = SEEDED_ADMIN_PHONE;
+  if (process.env.NODE_ENV === "production" && !seedPhone(process.env.BOOTSTRAP_ADMIN_PHONE)) {
+    console.warn("[seed] BOOTSTRAP_ADMIN_PHONE not set - first admin not seeded");
+    return { id: SEEDED_ADMIN_ID, phoneNumber };
+  }
   await runQuery(
     `insert into users (
         id,
@@ -48,6 +58,10 @@ export async function seedSecondAdminUser(): Promise<{
   phoneNumber: string;
 }> {
   const phoneNumber = SEEDED_ADMIN2_PHONE;
+  if (process.env.NODE_ENV === "production" && !seedPhone(process.env.BOOTSTRAP_ADMIN2_PHONE)) {
+    console.warn("[seed] BOOTSTRAP_ADMIN2_PHONE not set - second admin not seeded");
+    return { id: SEEDED_ADMIN2_ID, phoneNumber };
+  }
   await runQuery(
     `insert into users (
         id,

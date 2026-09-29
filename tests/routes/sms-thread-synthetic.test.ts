@@ -37,7 +37,7 @@ describe("GET /api/communications/sms/thread synthetic keys", () => {
     const res = await request(app())
       .get("/api/communications/sms/thread")
       .set("Authorization", `Bearer ${token}`)
-      .query({ contactId: "new-5878881837" });
+      .query({ contactId: "new-4035550123" });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ messages: [] });

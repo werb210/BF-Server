@@ -521,7 +521,7 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
            LEFT JOIN contacts ac2 ON ac2.id = a.contact_id
           WHERE a.submitted_at IS NOT NULL
             -- BF_SERVER_BLOCK_v_OTP_PHONE_NORMALIZED_MATCH_v1 - login sends E.164
-            -- (+1NXXNXXXXXX) but contacts.phone is stored as typed ("(780) 264-8467"),
+            -- (+1NXXNXXXXXX) but contacts.phone is stored as typed ("(403) 555-0188"),
             -- so an exact c.phone = $1 never matched and returning clients were
             -- routed back to Step 1. Match the last 10 digits of each (country-code
             -- and punctuation agnostic), mirroring the digit-normalized contact dedup.

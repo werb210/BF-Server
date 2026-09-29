@@ -393,7 +393,7 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
     ];
     // BF_SERVER_BLOCK_v_CRM_PHONE_SEARCH_v1 - match phone regardless of formatting
     // (dashes/spaces/parens/+1): when the term has >=7 digits, compare digits-only
-    // so "587-888-1837" finds a "+15878881837" contact.
+    // so "403-555-0123" finds a "+14035550123" contact.
     const phoneDigits = search.replace(/[^0-9]/g, "");
     if (phoneDigits.length >= 7) {
       values.push(`%${phoneDigits}%`);

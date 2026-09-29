@@ -409,6 +409,32 @@ export function collapseOutboundLegs(rows: any[]): any[] {
   return out.filter((_, i) => !drop.has(i)).sort((x, y) => ms(y.created_at) - ms(x.created_at));
 }
 
+// BF_SERVER_DIRECT_LINES_v688 - admins give each staff member their own direct number (Settings -> Phone lines).
+router.get("/direct-numbers", auth, async (_req: any, res) => {
+  const { rows } = await pool.query(
+    `SELECT id::text AS id, trim(coalesce(first_name,'') || ' ' || coalesce(last_name,'')) AS name, email, direct_number
+       FROM users WHERE coalesce(active, true) = true AND role IN ('Admin','Staff','admin','staff')
+      ORDER BY first_name NULLS LAST, last_name NULLS LAST`);
+  return res.json({ ok: true, users: rows });
+});
+
+router.put("/direct-numbers/:userId", auth, async (req: any, res) => {
+  if (String(req.user?.role ?? "").toLowerCase() !== "admin") return res.status(403).json({ ok: false, error: "admin_only" });
+  const raw = String(req.body?.direct_number ?? "").trim();
+  const { e164 } = await import("../voice/directLines.js");
+  const number = raw ? e164(raw) : null;
+  if (raw && !number) return res.status(400).json({ ok: false, error: "invalid_number", message: "Enter a full phone number, e.g. +1 825 451 1768." });
+  try {
+    const r = await pool.query(`UPDATE users SET direct_number = $2 WHERE id::text = $1 RETURNING id::text AS id, direct_number`, [req.params.userId, number]);
+    if (!r.rows[0]) return res.status(404).json({ ok: false, error: "not_found" });
+    return res.json({ ok: true, user: r.rows[0] });
+  } catch (err: any) {
+    if (err?.code === "23505") return res.status(409).json({ ok: false, error: "number_in_use", message: "Another staff member already has that number." });
+    console.error("direct_number_update_failed", { message: err?.message });
+    return res.status(500).json({ ok: false, error: "update_failed" });
+  }
+});
+
 router.post("/calls", auth, async (req: any, res) => {
   const target = req.body ?? {};
   const userId: string = req.user?.userId || req.user?.id || req.user?.sub || "";
@@ -458,7 +484,9 @@ router.post("/calls", auth, async (req: any, res) => {
 
     // Callee participant row + dial.
     if (kind === "pstn") {
-      const callerId = getCallerId();
+      // BF_SERVER_DIRECT_LINES_v688 - show the caller's own direct number when they have one.
+      const { callerIdForUser } = await import("../voice/directLines.js");
+      const callerId = await callerIdForUser(pool, userId); // BF_SERVER_PHONE_ROUTING_v688b - direct number, else the 866 main line
       if (!callerId) return res.status(503).json({ ok: false, error: "caller_id_unconfigured" });
       const calleePid = await addParticipantRow({
         conferenceId: conf.id,

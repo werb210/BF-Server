@@ -361,6 +361,23 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
       console.warn("inbound_call_log_create_failed", { callSid, message: err?.message });
     }
     const { default: VoiceResponse } = await import("twilio/lib/twiml/VoiceResponse.js");
+    // BF_SERVER_DIRECT_LINES_v688 - a call to a staff member's direct number rings only them,
+    // then goes to their own voicemail. Every other number (the 866 main line) keeps the receptionist.
+    try {
+      const { pool: dlPool } = await import("../db.js");
+      const { staffForDirectNumber } = await import("../voice/directLines.js");
+      const owner = await staffForDirectNumber(dlPool, to);
+      if (owner) {
+        const { getPublicBaseUrl: dlBase } = await import("../voice/twilioClient.js");
+        const vdl = new VoiceResponse();
+        const dial = vdl.dial({ answerOnBridge: true, timeout: 25, callerId: from, action: `${dlBase()}/api/webhooks/twilio/reception/direct-unavailable?user=${encodeURIComponent(owner.userId)}`, method: "POST" } as any);
+        dial.client(owner.identity);
+        console.log(JSON.stringify({ event: "direct_line_call", callSid, to, staffUserId: owner.userId }));
+        return res.send(vdl.toString());
+      }
+    } catch (err: any) {
+      console.warn("direct_line_lookup_failed", { callSid, message: err?.message });
+    }
     // BF_SERVER_RECEPTION_v1 — when enabled, hand PSTN callers to the Maya
     // receptionist instead of ring-all. Inert unless RECEPTION_ENABLED=true.
     if (process.env.RECEPTION_ENABLED === "true") {

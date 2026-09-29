@@ -10,7 +10,7 @@ const DOC: ExportDoc = {
   equipment: { total: 1515000, items: [{ year: 2020, make: "Claas", model: "Harvester", hours: 2000, price: 450000 }] },
   sections: [{ key: "overview", title: "Overview", text: "Family farm.\n\n**Farm land**\nAppraised at $2.66MM." }, { key: "rationale", title: "Rationale", text: "", bullets: ["Cash neutral"] }, { key: "risks", title: "Risks", text: "", risks: [{ risk: "Short history", mitigant: "Real estate equity" }] }],
 };
-const META = { signedBy: "Andrew Polturak", phone: "780-264-8467", date: new Date("2026-09-26T12:00:00Z") };
+const META = { signedBy: "Andrew Polturak", phone: "403-555-0188", date: new Date("2026-09-26T12:00:00Z") };
 describe("v540 export", () => {
   it("builds the template layout", () => { const blocks = layout(DOC, META); const flat = JSON.stringify(blocks); expect(blocks[0]).toEqual({ t: "title", text: "A&W Farms" }); expect(flat).toContain("September 2026"); expect(blocks).toContainEqual({ t: "p", text: "Farm land", bold: true }); expect(flat).toContain('["DSCR","2.25x","1.10x"]'); expect(flat).toContain("Risks and mitigants"); });
   it("writes a valid docx zip with escaped XML", () => { const entries = readZip(renderDocx(DOC, META)); expect(entries.map(({ name }) => name)).toEqual(expect.arrayContaining(["[Content_Types].xml", "document.xml"])); expect(entries.find(({ name }) => name === "document.xml")!.data.toString()).toContain("A&amp;W Farms"); expect(docxXml([{ t: "p", text: "<script>" }])).toContain("&lt;script&gt;"); });
