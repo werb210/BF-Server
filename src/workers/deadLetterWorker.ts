@@ -3,6 +3,7 @@ import { sendSms } from "../modules/notifications/sms.service.js";
 import { pushLeadToCRM } from "../services/crmWebhook.js";
 import { sendSlackAlert } from "../observability/alerts.js";
 import { isPermanentSmsFailure, isUndeliverableNumber } from "../lib/smsDeliverability.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 async function processJob(job: { type: string; data: any }): Promise<void> {
   switch (job.type) {
@@ -32,7 +33,7 @@ export async function processDeadLetters(): Promise<void> {
     [MAX_RETRIES],
   );
   // Prune long-abandoned jobs (kept 7 days for debugging) so the table cannot grow forever.
-  await pool.query(`DELETE FROM failed_jobs WHERE retry_count >= $1 AND created_at < now() - interval '7 days'`, [MAX_RETRIES]).catch(() => {});
+  await pool.query(`DELETE FROM failed_jobs WHERE retry_count >= $1 AND created_at < now() - interval '7 days'`, [MAX_RETRIES]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "workers/deadLetterWorker.ts:35");});
 
   for (const job of res.rows) {
     if (job.retry_count >= MAX_RETRIES) {
@@ -42,7 +43,7 @@ export async function processDeadLetters(): Promise<void> {
 
     // BF_SERVER_SMS_LOOP_KILL_v121 - retire invalid destinations without Twilio.
     if (job.type === "sms" && isUndeliverableNumber(job.data?.to)) {
-      await pool.query(`UPDATE failed_jobs SET retry_count = $2 WHERE id = $1`, [job.id, MAX_RETRIES]).catch(() => {});
+      await pool.query(`UPDATE failed_jobs SET retry_count = $2 WHERE id = $1`, [job.id, MAX_RETRIES]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "workers/deadLetterWorker.ts:45");});
       continue;
     }
 

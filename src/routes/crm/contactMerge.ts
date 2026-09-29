@@ -8,6 +8,7 @@ import { pool } from "../../db.js";
 import { requireAuth } from "../../middleware/auth.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { resolveSiloFromRequest } from "../../middleware/silo.js";
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
@@ -338,7 +339,7 @@ router.post(
       console.log("[contact-merge] merged", { survivorId, loserIds, moved: summary });
       return res.json({ ok: true, data: { survivorId, loserIds, moved: summary } });
     } catch (err: any) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await client.query("ROLLBACK").catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/crm/contactMerge.ts:341", undefined));
       console.error("[contact-merge] failed", { survivorId, loserIds, message: err?.message });
       return res.status(500).json({ ok: false, error: err?.message ?? "merge_failed" });
     } finally {

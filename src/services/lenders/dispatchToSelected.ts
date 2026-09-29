@@ -10,6 +10,7 @@ import { buildApplicationPackage } from "./buildApplicationPackage.js";
 import { loadPackageInputs } from "./loadPackageInputs.js"; // BF_SERVER_v76_BLOCK_1_9
 import { prepareEmailDelivery } from "./packageLink.js"; // BF_SERVER_BLOCK_v456_LENDER_PACKAGE_LINK
 import { lenderEmailSubject } from "./lenderEmail.js"; // BF_SERVER_BLOCK_v458_LENDER_EMAIL
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 // No shared decrypt helper exists yet in this codebase for lender API keys;
 // treat api_key_encrypted as plaintext fallback until encryption utility is added.
@@ -70,7 +71,7 @@ async function appendLenderSheetRow(
     const release = async () => {
       await ctx.pool
         .query(`DELETE FROM lender_sheet_dispatches WHERE application_id = $1 AND lender_id = $2`, [ctx.applicationId, l.lender_id])
-        .catch(() => {});
+        .catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/lenders/dispatchToSelected.ts:71");});
     };
     try {
       const claim = await ctx.pool.query(

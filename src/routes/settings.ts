@@ -7,6 +7,7 @@ import { respondOk } from "../utils/respondOk.js";
 import { pool } from "../db.js";
 import { AIKnowledgeController, upload as knowledgeUpload } from "../modules/ai/knowledge.controller.js";
 import type { MulterRequest } from "../types/multer.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 
@@ -49,7 +50,7 @@ router.get("/me", safeHandler(async (req: any, res: any) => {
          WHERE id = $1
          LIMIT 1`,
         [userId]
-      ).catch(() => ({ rows: [] as SettingsMeRow[] }))
+      ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/settings.ts:46", ({ rows: [] as SettingsMeRow[] })))
     : { rows: [] as SettingsMeRow[] };
   const user = userResult.rows[0];
   const o365Connected = Boolean(user?.o365_access_token && user.o365_access_token.trim().length > 0);

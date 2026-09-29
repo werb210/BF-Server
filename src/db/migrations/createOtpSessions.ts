@@ -1,4 +1,5 @@
 import { db } from "../../db.js";
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 let migrationPromise: Promise<void> | null = null;
 
@@ -18,7 +19,7 @@ export async function createOtpSessionsTable(): Promise<void> {
         await db.query("CREATE INDEX IF NOT EXISTS idx_otp_phone ON otp_sessions(phone);");
       })
       .then(() => undefined)
-      .catch((error: any) => {
+      .catch((error: any) => { logWarnSwallowed(error, "db/migrations/createOtpSessions.ts:7");
         migrationPromise = null;
         throw error;
       });

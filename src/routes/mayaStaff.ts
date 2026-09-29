@@ -16,6 +16,7 @@ import { runPipelineQuery } from "../services/mayaPipelineQuery.js";
 import { retrieveContext } from "../modules/ai/knowledge.service.js";
 import { sendSms } from "../modules/notifications/sms.service.js";
 import { parseAndResolveMentions } from "../services/notes/mentions.js"; // BF_SERVER_MAYA_CRM_TOOLS_v1
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 
@@ -1156,7 +1157,7 @@ router.post(
     const silo = b2Str(req.body?.silo) ?? "BF";
     try {
       const num = async (sql: string, params: unknown[] = []): Promise<number> =>
-        pool.query(sql, params).then((r) => Number((r.rows[0] as { n?: unknown })?.n ?? 0) || 0).catch(() => 0);
+        pool.query(sql, params).then((r) => Number((r.rows[0] as { n?: unknown })?.n ?? 0) || 0).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/mayaStaff.ts:1159", 0));
       const sp: unknown[] = [silo];
       const [
         newAppsToday, submittedToday, dealsAwaitingDocs, staleDeals,

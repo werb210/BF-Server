@@ -4,6 +4,7 @@
 // channel here; SMS reuses this worker once its runner lands.
 import type { Pool } from "pg";
 import { runEmailSend, runSmsSend } from "../services/marketingSendRunner.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const TICK_MS = 30_000;
 
@@ -56,7 +57,7 @@ export function startSendQueueWorker(pool: Pool): { stop: () => void } {
         await pool.query(
           `UPDATE marketing_send_jobs SET status='failed', error=$2, finished_at=now(), updated_at=now() WHERE id=$1`,
           [job.id, err instanceof Error ? err.message : "send failed"],
-        ).catch(() => {});
+        ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "workers/sendQueueWorker.ts:56");});
       }
     } catch { /* next tick */ } finally { running = false; }
   };

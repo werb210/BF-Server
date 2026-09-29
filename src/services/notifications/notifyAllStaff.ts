@@ -3,6 +3,7 @@ import { pushToUser } from "./pushToUser.js"; // BF_SERVER_BLOCK_v_NOTIF_PUSH_v1
 import { safeErr } from "../../lib/safeErr.js";
 import { sendSMS } from "../smsService.js";
 import { sendWatchNotification, type WatchEventType, type WatchNotificationCategory } from "../../watch/notifications.js";
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 // BF_SERVER_BLOCK_1_24_NOTIFICATIONS_TITLE — fallback title when caller didn't pass one.
 function humanizeType(type: string): string {
@@ -88,7 +89,7 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx, dependencies: {
           AND coalesce(silo, 'BF') = $1`,
       [silo],
     )
-    .catch(() => ({ rows: [] as Array<{ id: string; phone_number: string | null; email: string | null }> }));
+    .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/notifications/notifyAllStaff.ts:67", ({ rows: [] as Array<{ id: string; phone_number: string | null; email: string | null }> })));
 
   let smsSent = 0;
   let notifsCreated = 0;

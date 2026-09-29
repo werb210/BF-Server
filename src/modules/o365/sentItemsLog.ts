@@ -12,6 +12,7 @@
 //   - Portal-sent mail is skipped via a header stamped at send time, so the
 //     same message is never logged twice by two different paths.
 import type { Pool } from "pg";
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 export const SENT_LOGGED_HEADER = "X-Boreal-Logged";
 
@@ -74,7 +75,7 @@ export async function logSentMessage(pool: Pool, userId: string, message: SentMe
        ON CONFLICT (graph_message_id, contact_id) WHERE graph_message_id IS NOT NULL
        DO NOTHING`,
       [from, addressesOf(message.toRecipients), addressesOf(message.ccRecipients), [], String(message.subject ?? ""), String(message.body?.content ?? ""), userId, contact.id, silo, message.id],
-    ).catch(() => ({ rowCount: 0 }));
+    ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "modules/o365/sentItemsLog.ts:69", ({ rowCount: 0 })));
     written += result.rowCount ?? 0;
   }
   return written;

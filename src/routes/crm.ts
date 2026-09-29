@@ -24,6 +24,7 @@ import timelineRoutes from "./crm/timeline.js";
 import sharedMailboxesRoutes from "./crm/sharedMailboxes.js";
 import inboxRoutes from "./crm/inbox.js";
 import voicemailsRoutes from "./crm/voicemails.js"; // BF_SERVER_BLOCK_v830_VOICEMAILS_LIST
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 
@@ -319,7 +320,7 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
        AND table_name = 'contacts'
        AND column_name = ANY($1::text[])`,
     [["company_name", "company_id", "lead_status", "tags", "owner_id", "status"]]
-  ).catch(() => ({ rows: [] as Array<{ column_name: string }> }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/crm.ts:315", ({ rows: [] as Array<{ column_name: string }> })));
   const availableColumns = new Set(contactsColumnCheck.rows.map((row) => row.column_name));
   const hasCompanyName = availableColumns.has("company_name");
   const hasCompanyId = availableColumns.has("company_id");
@@ -1365,7 +1366,7 @@ ${String(transcript).slice(0, 6000)}` },
     await pool.query(
       `INSERT INTO crm_notes (body, contact_id, silo) VALUES ($1, $2::uuid, $3)`,
       [`AI call summary
-${summary}`, contactId, silo]).catch(() => {});
+${summary}`, contactId, silo]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/crm.ts:1365");});
   }
   return respondOk(res, { summary, savedToTimeline: !!contactId });
 }));

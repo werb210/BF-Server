@@ -6,6 +6,7 @@ import type { Pool } from "pg";
 import { eventBus } from "../events/eventBus.js";
 import { runBankingAnalysis } from "../services/banking/bankingAnalysisPipeline.js";
 import { createOcrStorage } from "../modules/ocr/ocr.storage.js"; // BF_SERVER_BLOCK_v688_BANKING_STORAGE_REF_v1
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const POLL_MS = Number(process.env.BANKING_AUTO_POLL_MS || 15000);
 const BATCH = Math.max(1, Number(process.env.BANKING_AUTO_BATCH || 3));
@@ -100,7 +101,7 @@ export function startBankingAutoWorker(pool: Pool): { stop: () => void } {
                      updated_at = NOW()`,
               [applicationId, errMsg.slice(0, 500)]
             )
-            .catch(() => {});
+            .catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "workers/bankingAutoWorker.ts:82");});
         }
       }
     } finally {

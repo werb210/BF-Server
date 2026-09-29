@@ -8,6 +8,7 @@ import type { Pool } from "pg";
 import { sendOne, mergeFields } from "./sendgridService.js";
 import { renderMarketingSms, sendMarketingSms, trackedLink, lookupLineType } from "./marketingSms.js";
 import { isCanadianMobile, SMS_ELIGIBLE_SQL, CAMPAIGN_ELIGIBLE_SQL } from "./smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1 // BF_SERVER_SEND_QUEUE_SMS_v1 BF_SERVER_BLOCK_v784_LINE_TYPE_IMPORT BF_SERVER_SMS_CASCADE_COMPLETE_v12
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 // BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1 - include/exclude tag arrays. Include
 // empty/null = all contacts; otherwise a contact must carry AT LEAST ONE include
@@ -81,12 +82,12 @@ export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendP
         await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [c.id, "email_marketing_sent", JSON.stringify({ subject: job.subject, tag: job.tag })]);
       } else {
         failed++;
-        if (__tseId) await pool.query(`DELETE FROM template_send_events WHERE id = $1`, [__tseId]).catch(() => {});
+        if (__tseId) await pool.query(`DELETE FROM template_send_events WHERE id = $1`, [__tseId]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/marketingSendRunner.ts:84");});
         if (rejectStatus === undefined) rejectStatus = r.status;
         if (rejectError === undefined) rejectError = r.error;
         console.error("sendgrid_email_failed", { to: c.email, status: r.status, error: r.error });
       }
-    } catch (e) { failed++; if (__tseId) await pool.query(`DELETE FROM template_send_events WHERE id = $1`, [__tseId]).catch(() => {}); if (rejectError === undefined) rejectError = e instanceof Error ? e.message : String(e); console.error("sendgrid_email_exception", { to: c.email, error: e instanceof Error ? e.message : String(e) }); }
+    } catch (e) { failed++; if (__tseId) await pool.query(`DELETE FROM template_send_events WHERE id = $1`, [__tseId]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/marketingSendRunner.ts:89");}); if (rejectError === undefined) rejectError = e instanceof Error ? e.message : String(e); console.error("sendgrid_email_exception", { to: c.email, error: e instanceof Error ? e.message : String(e) }); }
     i++;
     if (i % 50 === 0) {
       if (onProgress) { try { await onProgress(sent, failed); } catch { /* progress best-effort */ } }
@@ -190,7 +191,7 @@ export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgr
         // and drop the useless send row so the worker does not later chase it.
         failed++;
         if (r.optedOut) await pool.query(`UPDATE contacts SET sms_opt_out = true, updated_at = now() WHERE id = $1`, [c.id]);
-        await pool.query(`DELETE FROM sms_campaign_sends WHERE id = $1`, [sendId]).catch(() => {});
+        await pool.query(`DELETE FROM sms_campaign_sends WHERE id = $1`, [sendId]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/marketingSendRunner.ts:193");});
         if (c.email && !c.marketing_opt_out && job.fbHtml) {
           const fb = await sendOne({ to: c.email, subject: mergeFields(job.fbSubject || "Following up", vars), html: mergeFields(job.fbHtml, vars), contactId: c.id });
           if (fb.ok) {

@@ -1,19 +1,20 @@
 // BF_SERVER_v74_BLOCK_1_7 — submission lifecycle orchestrator.
 import type { Pool } from "pg";
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 export type OrchestratorContext = { pool: Pool; applicationId: string; };
 export type ReadinessSnapshot = { allDocsAccepted: boolean; allTasksComplete: boolean; lenderSelectionsFinalized: boolean; creditSummarySubmitted: boolean; applicationSigned: boolean; collateralRequired: boolean; collateralComplete: boolean; };
 export async function readReadinessSnapshot(ctx: OrchestratorContext): Promise<ReadinessSnapshot> {
   const id = ctx.applicationId; const pool = ctx.pool;
-  const docCheck = await pool.query<{ blocked: boolean }>(`SELECT EXISTS (SELECT 1 FROM document_requirements dr WHERE dr.application_id::text = $1 AND dr.required = true AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.application_id::text = dr.application_id::text AND d.category = dr.category AND d.status = 'accepted')) AS blocked`, [id]).catch(() => ({ rows: [{ blocked: false }] }));
-  const taskCheck = await pool.query<{ open_count: string }>(`SELECT COUNT(*)::text AS open_count FROM application_tasks WHERE application_id::text = $1 AND completed_at IS NULL`, [id]).catch(() => ({ rows: [{ open_count: "0" }] }));
-  const sel = await pool.query<{ finalized_at: string | null }>(`SELECT MAX(finalized_at) AS finalized_at FROM application_lender_selections WHERE application_id::text = $1`, [id]).catch(() => ({ rows: [{ finalized_at: null as string | null }] }));
+  const docCheck = await pool.query<{ blocked: boolean }>(`SELECT EXISTS (SELECT 1 FROM document_requirements dr WHERE dr.application_id::text = $1 AND dr.required = true AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.application_id::text = dr.application_id::text AND d.category = dr.category AND d.status = 'accepted')) AS blocked`, [id]).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:7", ({ rows: [{ blocked: false }] })));
+  const taskCheck = await pool.query<{ open_count: string }>(`SELECT COUNT(*)::text AS open_count FROM application_tasks WHERE application_id::text = $1 AND completed_at IS NULL`, [id]).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:8", ({ rows: [{ open_count: "0" }] })));
+  const sel = await pool.query<{ finalized_at: string | null }>(`SELECT MAX(finalized_at) AS finalized_at FROM application_lender_selections WHERE application_id::text = $1`, [id]).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:9", ({ rows: [{ finalized_at: null as string | null }] })));
   // BF_SERVER_BLOCK_v142_ORCHESTRATOR_COLUMN_NAMES_v1 — previously read
   // credit_summary_submitted_at and signed_at, neither of which exist.
   // Real columns: credit_summary_completed_at (stamped by creditSummary.repo)
   // and signnow_app_signed_at (stamped by the SignNow webhook after v141).
   // BF_SERVER_CREDIT_SUMMARY_UNDER_500K_v1 — also load requested_amount so we can waive the
   // credit-summary requirement for applications under $500,000.
-  const app = await pool.query<{ credit_summary_completed_at: string | null; signnow_app_signed_at: string | null; requested_amount: string | number | null; }>(`SELECT credit_summary_completed_at, signnow_app_signed_at, requested_amount FROM applications WHERE id::text = $1`, [id]).catch(() => ({ rows: [] as Array<{ credit_summary_completed_at: string | null; signnow_app_signed_at: string | null; requested_amount: string | number | null }> }));
+  const app = await pool.query<{ credit_summary_completed_at: string | null; signnow_app_signed_at: string | null; requested_amount: string | number | null; }>(`SELECT credit_summary_completed_at, signnow_app_signed_at, requested_amount FROM applications WHERE id::text = $1`, [id]).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:16", ({ rows: [] as Array<{ credit_summary_completed_at: string | null; signnow_app_signed_at: string | null; requested_amount: string | number | null }> })));
   const docsBlocked = Boolean(docCheck.rows[0]?.blocked ?? false);
   const openTasks = Number(taskCheck.rows[0]?.open_count ?? "0");
   const finalizedAt = sel.rows[0]?.finalized_at ?? null;
@@ -36,7 +37,7 @@ export async function readReadinessSnapshot(ctx: OrchestratorContext): Promise<R
           AND l.name ILIKE '%accord%'
      ) AS accord`,
     [id]
-  ).catch(() => ({ rows: [{ accord: false }] }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:28", ({ rows: [{ accord: false }] })));
   const collateralDoneRes = await pool.query<{ complete: boolean }>(
     `SELECT EXISTS (
        SELECT 1 FROM application_form_responses
@@ -48,7 +49,7 @@ export async function readReadinessSnapshot(ctx: OrchestratorContext): Promise<R
          )
      ) AS complete`,
     [id]
-  ).catch(() => ({ rows: [{ complete: false }] }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:40", ({ rows: [{ complete: false }] })));
   // BF_SERVER_CREDIT_SUMMARY_UNDER_500K_v1 — applications with a requested amount strictly
   // under $500,000 do not require a completed credit summary. Missing/unparseable amounts are
   // treated as NOT waived (credit summary still required), to stay conservative.
@@ -87,7 +88,7 @@ export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): 
         RETURNING id`,
       [ctx.applicationId]
     )
-    .catch(() => ({ rows: [] as Array<{ id: string }> }));
+    .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:81", ({ rows: [] as Array<{ id: string }> })));
   if (!claim.rows.length) {
     // BF_SERVER_BLOCK_v461_SIGNING_NOTICE - Send again on an unsigned file resends the request.
     const notice = snap.applicationSigned ? undefined : await signingNoticeFor(ctx.applicationId, true);
@@ -123,7 +124,7 @@ export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): 
     }
   } catch (e) { signFailReason = e instanceof Error ? e.message : "signnow_fire_failed"; console.warn("[orchestrator] signnow fire failed", e); }
   if (signFailReason) {
-    await ctx.pool.query(`UPDATE applications SET submission_chain_started_at = NULL WHERE id::text = $1`, [ctx.applicationId]).catch(() => {});
+    await ctx.pool.query(`UPDATE applications SET submission_chain_started_at = NULL WHERE id::text = $1`, [ctx.applicationId]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:126");});
     return { fired: false, reason: signFailReason };
   }
   const notice = await signingNoticeFor(ctx.applicationId, false);
@@ -162,7 +163,7 @@ export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promis
         RETURNING id`,
       [ctx.applicationId, String(LOCK_STALE_MINUTES)]
     )
-    .catch(() => ({ rows: [] as Array<{ id: string }> }));
+    .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:155", ({ rows: [] as Array<{ id: string }> })));
   if (!claim.rows.length) {
     // Another caller holds the lock right now. Never a permanent state.
     return { fired: false, reason: "dispatch_in_progress" };
@@ -173,10 +174,10 @@ export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promis
     // "never had any selections" from "every selected lender already received the
     // package". The latter is the normal no-op when staff re-press Send without
     // adding anyone new.
-    await ctx.pool.query(`UPDATE applications SET submission_packages_started_at = NULL WHERE id::text = $1`, [ctx.applicationId]).catch(() => {});
+    await ctx.pool.query(`UPDATE applications SET submission_packages_started_at = NULL WHERE id::text = $1`, [ctx.applicationId]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:176");});
     const anySel = await ctx.pool
       .query<{ id: string }>(`SELECT id FROM application_lender_selections WHERE application_id::text = $1 LIMIT 1`, [ctx.applicationId])
-      .catch(() => ({ rows: [] as Array<{ id: string }> }));
+      .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:177", ({ rows: [] as Array<{ id: string }> })));
     return { fired: false, reason: anySel.rows.length > 0 ? "already_sent" : "no_selected_lenders" };
   }
   let sentTo: string[] = [];
@@ -192,7 +193,7 @@ export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promis
   // this flag.
   await ctx.pool
     .query(`UPDATE applications SET submission_packages_started_at = NULL WHERE id::text = $1`, [ctx.applicationId])
-    .catch(() => {});
+    .catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:193");});
   if (dispatchErr) return { fired: false, reason: "dispatch_failed" };
   // BF_SERVER_BLOCK_v452_SEND_BLOCKERS — dispatchToSelected reports only the
   // lenders that actually received a package.  Reaching the dispatch loop is
@@ -227,7 +228,7 @@ export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promis
       WHERE id::text = $1
         AND pipeline_state NOT IN ('Off to Lender','Offer','Accepted','Rejected','Declined','Funded','Closed')`,
     [ctx.applicationId]
-  ).catch(() => {});
+  ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:225");});
   return { fired: true, sentTo };
 }
 export async function progressSubmission(ctx: OrchestratorContext): Promise<{ stageA: StageAResult; stageB: { fired: boolean; reason?: string; sentTo?: string[] } }> { const stageA = await maybeStartCreditSummaryAndSign(ctx); const stageB = await maybeBuildAndSendPackage(ctx); return { stageA, stageB }; }

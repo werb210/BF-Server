@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import { sendSMS } from "../smsService.js";
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 export type NotifyCtx = {
   pool: Pool;
@@ -20,7 +21,7 @@ export async function notifyAdminsForCreditSummary(ctx: NotifyCtx): Promise<{
     `SELECT name, requested_amount
        FROM applications WHERE id::text = $1 LIMIT 1`,
     [id]
-  ).catch(() => ({ rows: [] as Array<{ name: string | null; requested_amount: string | number | null }> }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/notifications/notifyAdminsForCreditSummary.ts:16", ({ rows: [] as Array<{ name: string | null; requested_amount: string | number | null }> })));
 
   const appName = appRow.rows[0]?.name ?? id;
   const amountRaw = appRow.rows[0]?.requested_amount ?? null;
@@ -40,7 +41,7 @@ export async function notifyAdminsForCreditSummary(ctx: NotifyCtx): Promise<{
        FROM users
       WHERE active = true
         AND upper(coalesce(role, '')) = 'ADMIN'`
-  ).catch(() => ({ rows: [] as Array<{ id: string; phone_number: string | null; email: string | null }> }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/notifications/notifyAdminsForCreditSummary.ts:34", ({ rows: [] as Array<{ id: string; phone_number: string | null; email: string | null }> })));
 
   let smsSent = 0;
   let notifsCreated = 0;

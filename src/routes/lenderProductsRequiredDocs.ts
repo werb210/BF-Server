@@ -21,6 +21,7 @@ import { pool } from "../db.js";
 // BF_SERVER_SBA_V103
 import { resolveSbaOwners } from "../signnow/sba/sbaOwners.js";
 import { isSbaApplication } from "../signnow/sba/sbaTrigger.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 // BF_SERVER_BLOCK_v115_REQUIRED_DOCS_CATEGORY_NORMALIZE_v1
 // The wizard sends long-form category codes (TERM_LOAN, LINE_OF_CREDIT,
@@ -67,7 +68,7 @@ router.get("/lender-products/required-docs", async (req, res) => {
   const colsRes = await pool.query<{ column_name: string }>(
     `SELECT column_name FROM information_schema.columns
      WHERE table_schema = 'public' AND table_name = 'lender_products'`
-  ).catch(() => ({ rows: [] as Array<{ column_name: string }> }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/lenderProductsRequiredDocs.ts:67", ({ rows: [] as Array<{ column_name: string }> })));
   const cols = new Set(colsRes.rows.map((r) => r.column_name));
 
   if (!cols.has("required_documents")) {

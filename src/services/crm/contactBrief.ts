@@ -5,6 +5,7 @@ import { pool } from "../../db.js";
 import { askAI } from "../../modules/ai/openai.service.js";
 import { loadCrmTimeline } from "../../routes/crm/timeline.js";
 import { contactContextSections } from "./contactContext.js"; // BF_SERVER_CRM_CONTEXT_v653
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const FREE_EMAIL = new Set([
   "gmail.com", "googlemail.com", "yahoo.com", "yahoo.ca", "hotmail.com", "hotmail.ca", "outlook.com", "live.com", "live.ca",
@@ -144,7 +145,7 @@ export async function contactBrief(contactId: string, silo: string): Promise<str
   // swallow-ok: this optional context logs failures and the brief degrades gracefully.
     pool.query(`SELECT count(*)::int AS sessions, min(first_seen_at) AS first_seen, max(last_seen_at) AS last_seen,
       (array_agg(landing_page ORDER BY first_seen_at))[1] AS first_landing, (array_agg(referrer ORDER BY first_seen_at))[1] AS first_referrer
-      FROM visitor_sessions WHERE contact_id::text = $1`, [contactId]).then((r) => r.rows[0]).catch((error) => { readFailed(error); return null; }),
+      FROM visitor_sessions WHERE contact_id::text = $1`, [contactId]).then((r) => r.rows[0]).catch((error) => { logWarnSwallowed(error, "services/crm/contactBrief.ts:145"); readFailed(error); return null; }),
     companyBackground(businessDomain(company.website ?? company.domain, contact.email)).catch((error) => { readFailed(error); return null; }),
   ]);
   const extra = await contextFor(contact, apps);
@@ -167,7 +168,7 @@ export async function companyBrief(companyId: string, silo: string): Promise<str
   // swallow-ok: this optional context logs failures and the brief degrades gracefully.
   const result = await pool.query(`SELECT to_jsonb(co) AS co FROM companies co WHERE co.id::text = $1 LIMIT 1`, [companyId]);
   const company = result.rows[0]?.co ?? {};
-  const firstEmail = await pool.query(`SELECT email FROM contacts WHERE company_id::text = $1 AND email IS NOT NULL LIMIT 1`, [companyId]).then((r) => r.rows[0]?.email).catch((error) => { readFailed(error); return null; });
+  const firstEmail = await pool.query(`SELECT email FROM contacts WHERE company_id::text = $1 AND email IS NOT NULL LIMIT 1`, [companyId]).then((r) => r.rows[0]?.email).catch((error) => { logWarnSwallowed(error, "services/crm/contactBrief.ts:170"); readFailed(error); return null; });
   const [timeline, apps, background] = await Promise.all([
     loadCrmTimeline(false, companyId, silo).catch((error) => { readFailed(error); return []; }),
   // swallow-ok: this optional context logs failures and the brief degrades gracefully.

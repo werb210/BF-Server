@@ -1,6 +1,7 @@
 // BF_SERVER_BLOCK_v198_LENDER_MATCH_GATE_AND_CACHE_v1
 import { pool } from "../db.js";
 import { matchLenders, type LenderMatch } from "../ai/lenderMatchEngine.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 export type LenderMatchEnvelope = {
   status: "locked" | "stale" | "ready";
@@ -137,7 +138,7 @@ export async function getOutstandingRequiredDocs(applicationId: string): Promise
         AND status != 'accepted'
       ORDER BY created_at`,
     [applicationId]
-  ).catch(() => null);
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/lenderMatchCache.ts:133", null));
   return (res?.rows ?? []).map((r) => r.document_category).filter(Boolean);
 }
 
@@ -240,7 +241,7 @@ export async function readCachedMatchesArray(applicationId: string): Promise<any
   const res = await pool.query<{ lender_matches: any }>(
     `SELECT lender_matches FROM applications WHERE id::text = ($1)::text LIMIT 1`,
     [applicationId]
-  ).catch(() => null);
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/lenderMatchCache.ts:240", null));
   const arr = res?.rows[0]?.lender_matches;
   return Array.isArray(arr) ? arr : [];
 }

@@ -5,6 +5,7 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import { pool } from "../db.js";
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js"; // BF_SERVER_BLOCK_v464_SMS_DELIVERY
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 router.use(express.urlencoded({ extended: false }));
@@ -18,7 +19,7 @@ router.post("/status", twilioWebhookValidation, async (req: any, res: any) => {
     const status = String(req.body?.MessageStatus || "");
     if (sid) {
       await pool.query(`UPDATE sms_campaign_sends SET delivery_status = $2 WHERE message_sid = $1`, [sid, status]);
-      await pool.query(`UPDATE sequence_sends SET delivery_status = $2 WHERE message_sid = $1`, [sid, status]).catch(() => {});
+      await pool.query(`UPDATE sequence_sends SET delivery_status = $2 WHERE message_sid = $1`, [sid, status]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/smsRedirect.ts:21");});
       const errorCode = req.body?.ErrorCode ? String(req.body.ErrorCode) : null;
       await pool.query(
         `UPDATE sms_deliveries SET status = $2, error_code = COALESCE($3, error_code), updated_at = now() WHERE message_sid = $1`,
@@ -37,7 +38,7 @@ router.get("/:token", async (req: any, res: any) => {
     if (payload?.sid) {
       await pool.query(`UPDATE sms_campaign_sends SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [payload.sid]);
       // BF_SERVER_BLOCK_v786_SEQ_CLICKS - sequence sends are tracked separately.
-      await pool.query(`UPDATE sequence_sends SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [payload.sid]).catch(() => {});
+      await pool.query(`UPDATE sequence_sends SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [payload.sid]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/smsRedirect.ts:40");});
       const r = await pool.query<{ contact_id: string }>(`SELECT contact_id FROM sms_campaign_sends WHERE id = $1 UNION ALL SELECT contact_id FROM sequence_sends WHERE id = $1 LIMIT 1`, [payload.sid]);
       const cid = r.rows[0]?.contact_id;
       if (cid) await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [cid, "sms_link_clicked", JSON.stringify({ url })]);

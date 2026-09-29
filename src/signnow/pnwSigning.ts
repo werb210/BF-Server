@@ -16,6 +16,7 @@ import {
 } from "./signnowClient.js";
 import { buildPnwPdf } from "./pnwPdfBuilder.js";
 import { getStorage } from "../lib/storage/index.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 // Category shown in the staff Documents list for the signed PNW.
 export const PNW_DOCUMENT_CATEGORY = "Personal Net Worth";
@@ -181,7 +182,7 @@ export async function attachSignedPnwDocument(applicationId: string): Promise<{ 
       );
       await client.query("COMMIT");
     } catch {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await client.query("ROLLBACK").catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "signnow/pnwSigning.ts:184", undefined));
       return { attached: false, reason: "insert_failed" };
     } finally {
       client.release();

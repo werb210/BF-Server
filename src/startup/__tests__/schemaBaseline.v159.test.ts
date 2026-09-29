@@ -67,7 +67,7 @@ describe("it records history so the broken migrations never run", () => {
 
   it("does it in one transaction", () => {
     const i = runner.indexOf("applying schema baseline");
-    const block = runner.slice(i, i + 3000);
+    const block = runner.slice(i, i + 4500); // BF_SERVER_BASELINE_MANIFEST_v678 - longer block
     expect(block).toContain('await client.query("BEGIN")');
     expect(block).toContain('await client.query("COMMIT")');
   });

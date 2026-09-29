@@ -56,7 +56,7 @@ describe("tasks due", () => {
 
 describe("the snapshot cannot fail the watch", () => {
   it("every query degrades to a zero rather than throwing", () => {
-    expect(snap.match(/\.catch\(\(\) => \(\{ rows: \[\{ count: "0" \}\] \}\)\)/g)?.length).toBe(2);
+    expect(snap.match(/logWarnSwallowed\(swallowedErr, "[^"]+", \(\{ rows: \[\{ count: "0" \}\] \}\)\)/g)?.length).toBe(2); // BF_SERVER_SILENT_QUERIES_v678 - logged, same zero
   });
 
   it("makes no Graph call - the watch must not wait on O365", () => {

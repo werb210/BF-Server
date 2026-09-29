@@ -22,6 +22,7 @@ import { pool } from "../db.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 import { AppError } from "../middleware/errors.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 function normalizeProductCategoryForFilter(value: string): string {
   const raw = String(value ?? "").trim().toUpperCase();
@@ -69,7 +70,7 @@ async function probeLenderProductsColumns(): Promise<Set<string>> {
       `SELECT column_name FROM information_schema.columns
      WHERE table_schema = 'public' AND table_name = 'lender_products'`,
     )
-    .catch(() => ({ rows: [] as Array<{ column_name: string }> }));
+    .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/lenderProductsRequiredDocsPreview.ts:67", ({ rows: [] as Array<{ column_name: string }> })));
   return new Set(r.rows.map((row) => row.column_name));
 }
 

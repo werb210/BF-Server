@@ -6,6 +6,7 @@ import { readReadinessSnapshot } from "../services/submission/orchestrator.js";
 // BF_SERVER_BLOCK_v138_E2E_FIX_BATCH_v1 — AUDIT-12 regression repair.
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 
@@ -68,7 +69,7 @@ router.post("/lenders/send", requireAuth, requireAuthorization({ roles: [ROLES.A
        VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NOW())
        ON CONFLICT (application_id, lender_id) DO UPDATE
          SET position = EXCLUDED.position, finalized_at = NOW()`,
-      [applicationId, lenderIds[i], i]).catch((err: any) => { selectionFailures.push({ lenderId: lenderIds[i], error: String(err?.message ?? err).slice(0, 300) }); });
+      [applicationId, lenderIds[i], i]).catch((err: any) => { logWarnSwallowed(err, "routes/submissionOrchestration.ts:67"); selectionFailures.push({ lenderId: lenderIds[i], error: String(err?.message ?? err).slice(0, 300) }); });
   }
   if (selectionFailures.length) {
     console.error("[lender-send] selection save failed", { applicationId: applicationId, selectionFailures });
@@ -122,7 +123,7 @@ router.post("/applications/:id/lenders/send", requireAuth, requireAuthorization(
     await pool.query(`INSERT INTO application_lender_selections (id, application_id, lender_id, position, finalized_at, created_at)
        VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NOW())
        ON CONFLICT (application_id, lender_id) DO UPDATE
-         SET position = EXCLUDED.position, finalized_at = NOW()`, [id, lenderIds[i], i]).catch((err: any) => { selectionFailures.push({ lenderId: lenderIds[i], error: String(err?.message ?? err).slice(0, 300) }); });
+         SET position = EXCLUDED.position, finalized_at = NOW()`, [id, lenderIds[i], i]).catch((err: any) => { logWarnSwallowed(err, "routes/submissionOrchestration.ts:122"); selectionFailures.push({ lenderId: lenderIds[i], error: String(err?.message ?? err).slice(0, 300) }); });
   }
   if (selectionFailures.length) {
     console.error("[lender-send] selection save failed", { applicationId: id, selectionFailures });

@@ -3,6 +3,7 @@
 // dates + reminders reach Outlook and mobile. Best-effort / fire-and-forget.
 import type { Pool } from "pg";
 import { getGraphForUser, type GraphClient } from "./graphClient.js";
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 async function call(graph: GraphClient, path: string, init?: RequestInit): Promise<any> {
   const resp = await graph.fetch(path, init);
@@ -72,7 +73,7 @@ export async function mirrorTaskToTodo(pool: Pool, t: TodoTaskInput): Promise<st
     });
     const gid: string | null = (result as { id?: string } | null)?.id ?? t.graphId ?? null;
     if (gid && gid !== t.graphId) {
-      await pool.query(`UPDATE tasks SET graph_id = $1 WHERE id = $2`, [gid, t.id]).catch(() => {});
+      await pool.query(`UPDATE tasks SET graph_id = $1 WHERE id = $2`, [gid, t.id]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "modules/o365/todoSync.ts:75");});
     }
     return gid;
   } catch {

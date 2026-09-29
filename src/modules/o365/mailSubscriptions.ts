@@ -10,6 +10,7 @@ import { logSentMessage, type SentMessage } from "./sentItemsLog.js"; // BF_SERV
 import { isNonPersonUser } from "../notifications/notifications.repo.js";
 import { notifyAllStaff } from "../../services/notifications/notifyAllStaff.js";
 import { pool as defaultPool } from "../../db.js";
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const RESOURCE = "me/mailFolders('inbox')/messages";
 // BF_SERVER_SENT_ITEMS_v39
@@ -81,9 +82,9 @@ export async function renewDueSubscriptions(pool: Pool): Promise<void> {
         body: JSON.stringify({ expirationDateTime: expiration }),
       });
       if (r.ok) {
-        await pool.query(`UPDATE graph_mail_subscriptions SET expiration_datetime = $1, updated_at = now() WHERE subscription_id = $2`, [expiration, s.subscription_id]).catch(() => {});
+        await pool.query(`UPDATE graph_mail_subscriptions SET expiration_datetime = $1, updated_at = now() WHERE subscription_id = $2`, [expiration, s.subscription_id]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "modules/o365/mailSubscriptions.ts:84");});
       } else if (r.status === 404 || r.status === 410) {
-        await pool.query(`DELETE FROM graph_mail_subscriptions WHERE subscription_id = $1`, [s.subscription_id]).catch(() => {});
+        await pool.query(`DELETE FROM graph_mail_subscriptions WHERE subscription_id = $1`, [s.subscription_id]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "modules/o365/mailSubscriptions.ts:86");});
       }
     } catch {
       /* best-effort */

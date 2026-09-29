@@ -7,6 +7,7 @@ import { getStorage } from "../../lib/storage/index.js";
 
 import { getSignedPnwPdf } from "../../signnow/pnwSigning.js";
 import { isCollateralFormDocType, buildCollateralFormPdfFromData } from "../../pdf/collateralFormPdf.js";
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 export type PackageInputDocs = { category: string; files: { filename: string; content: Buffer }[] };
 export type PackageInputs = {
@@ -86,7 +87,7 @@ async function loadSignedApplicationPdf(ctx: LoadCtx, _fields: FlatField[]): Pro
             COALESCE(metadata->>'signed_application_blob_name', NULL) AS signed_application_blob_name
        FROM applications WHERE id::text = $1 LIMIT 1`,
     [ctx.applicationId]
-  ).catch(() => ({ rows: [] as Array<{signnow_document_id:string|null;primary_doc_id:string|null;signed_at:string|null;signed_application_blob_name:string|null;date_anchors:unknown}> }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/lenders/loadPackageInputs.ts:81", ({ rows: [] as Array<{signnow_document_id:string|null;primary_doc_id:string|null;signed_at:string|null;signed_application_blob_name:string|null;date_anchors:unknown}> })));
   const row = r.rows[0];
   const blobName = row?.signed_application_blob_name ?? null;
   if (blobName) { try { const got = await getStorage().get(blobName); if (got?.buffer?.length) return got.buffer; } catch {} }
@@ -115,7 +116,7 @@ async function loadSignedApplicationPdf(ctx: LoadCtx, _fields: FlatField[]): Pro
           try {
             const { uploadSignedApplicationPdf } = await import("../../signnow/blobStorage.js");
             const stored = await uploadSignedApplicationPdf(ctx.applicationId, outPdf);
-            await ctx.pool.query(`UPDATE applications SET metadata = COALESCE(metadata,'{}'::jsonb) || jsonb_build_object('signed_application_blob_name', $2::text, 'signed_application_blob_url', $3::text), updated_at = now() WHERE id::text = $1`, [ctx.applicationId, stored.blobName, stored.url]).catch(() => {});
+            await ctx.pool.query(`UPDATE applications SET metadata = COALESCE(metadata,'{}'::jsonb) || jsonb_build_object('signed_application_blob_name', $2::text, 'signed_application_blob_url', $3::text), updated_at = now() WHERE id::text = $1`, [ctx.applicationId, stored.blobName, stored.url]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/lenders/loadPackageInputs.ts:118");});
           } catch {}
           return outPdf;
         }
@@ -130,7 +131,7 @@ async function loadSignedApplicationPdf(ctx: LoadCtx, _fields: FlatField[]): Pro
 async function loadCreditSummaryPdf(ctx: LoadCtx): Promise<Buffer | null> {
   // Credit summary is waived under $500k and must never be a draft. Only include
   // it when the deal is >= $500k AND the summary was actually submitted.
-  const g = await ctx.pool.query<{requested_amount:string|number|null;credit_summary_completed_at:string|null}>(`SELECT requested_amount, credit_summary_completed_at FROM applications WHERE id::text = $1 LIMIT 1`, [ctx.applicationId]).catch(()=>({rows:[] as Array<{requested_amount:string|number|null;credit_summary_completed_at:string|null}>}));
+  const g = await ctx.pool.query<{requested_amount:string|number|null;credit_summary_completed_at:string|null}>(`SELECT requested_amount, credit_summary_completed_at FROM applications WHERE id::text = $1 LIMIT 1`, [ctx.applicationId]).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/lenders/loadPackageInputs.ts:133", ({rows:[] as Array<{requested_amount:string|number|null;credit_summary_completed_at:string|null}>})));
   const amt = Number(g.rows[0]?.requested_amount ?? 0);
   const submitted = g.rows[0]?.credit_summary_completed_at != null;
   if ((Number.isFinite(amt) && amt < 500000) || !submitted) return null;
@@ -143,7 +144,7 @@ async function loadCreditSummaryPdf(ctx: LoadCtx): Promise<Buffer | null> {
     const value = await loadExport(ctx.applicationId, null);
     return value ? renderPdf(value.doc, value.meta) : null;
   }
-  const r = await ctx.pool.query<{sections:unknown;status:string|null}>(`SELECT sections, status FROM credit_summaries WHERE application_id::text = $1 ORDER BY updated_at DESC LIMIT 1`, [ctx.applicationId]).catch(()=>({rows:[] as Array<{sections:unknown;status:string|null}>}));
+  const r = await ctx.pool.query<{sections:unknown;status:string|null}>(`SELECT sections, status FROM credit_summaries WHERE application_id::text = $1 ORDER BY updated_at DESC LIMIT 1`, [ctx.applicationId]).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/lenders/loadPackageInputs.ts:146", ({rows:[] as Array<{sections:unknown;status:string|null}>})));
   if (!r.rows.length) return null; const row = r.rows[0]!; const sections = (row.sections ?? {}) as Record<string, unknown>;
   const lines = [`Credit Summary — Application ${ctx.applicationId}`]; if (row.status) lines.push(`Status: ${row.status}`); lines.push("");
   const sectionTitles: Array<[string,string]> = [["application_overview","1. Application Overview"],["transaction","2. Transaction"],["business_overview","3. Business Overview"],["financial_overview","4. Financial Overview"],["banking_analysis","5. Banking Analysis"],["recommendation","6. Recommendation"]];
@@ -152,13 +153,13 @@ async function loadCreditSummaryPdf(ctx: LoadCtx): Promise<Buffer | null> {
   return renderTextPdf(lines);
 }
 async function loadAcceptedDocuments(ctx: LoadCtx): Promise<PackageInputDocs[]> {
-  const r = await ctx.pool.query<{category:string|null;document_type:string|null;filename:string|null;storage_path:string|null}>(`SELECT COALESCE(category, document_type, 'Other') AS category, document_type, COALESCE(display_name, filename, document_type, id::text) AS filename, storage_path FROM documents WHERE application_id::text = $1 AND status = 'accepted' AND storage_path IS NOT NULL ORDER BY category, filename`, [ctx.applicationId]).catch(()=>({rows:[] as Array<{category:string|null;document_type:string|null;filename:string|null;storage_path:string|null}>}));
+  const r = await ctx.pool.query<{category:string|null;document_type:string|null;filename:string|null;storage_path:string|null}>(`SELECT COALESCE(category, document_type, 'Other') AS category, document_type, COALESCE(display_name, filename, document_type, id::text) AS filename, storage_path FROM documents WHERE application_id::text = $1 AND status = 'accepted' AND storage_path IS NOT NULL ORDER BY category, filename`, [ctx.applicationId]).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/lenders/loadPackageInputs.ts:155", ({rows:[] as Array<{category:string|null;document_type:string|null;filename:string|null;storage_path:string|null}>})));
   const groups = new Map<string,{filename:string;content:Buffer}[]>(); const storage=getStorage();
   for (const row of r.rows){ const cat=(row.category??"Other").trim()||"Other"; const fn=(row.filename??"document").trim()||"document"; if(!row.storage_path) continue; try{ const got=await storage.get(row.storage_path); if(got?.buffer?.length){ if(!groups.has(cat)) groups.set(cat,[]); groups.get(cat)!.push({filename:fn,content:got.buffer});}}catch{} }
   return Array.from(groups.entries()).map(([category,files])=>({category,files}));
 }
 async function loadFields(ctx: LoadCtx): Promise<FlatField[]> {
-  const r = await ctx.pool.query<{metadata:unknown;name:string|null;requested_amount:string|number|null;product_category:string|null;product_type:string|null}>(`SELECT metadata, name, requested_amount, product_category, product_type FROM applications WHERE id::text = $1 LIMIT 1`, [ctx.applicationId]).catch(()=>({rows:[] as Array<{metadata:unknown;name:string|null;requested_amount:string|number|null;product_category:string|null;product_type:string|null}>}));
+  const r = await ctx.pool.query<{metadata:unknown;name:string|null;requested_amount:string|number|null;product_category:string|null;product_type:string|null}>(`SELECT metadata, name, requested_amount, product_category, product_type FROM applications WHERE id::text = $1 LIMIT 1`, [ctx.applicationId]).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/lenders/loadPackageInputs.ts:161", ({rows:[] as Array<{metadata:unknown;name:string|null;requested_amount:string|number|null;product_category:string|null;product_type:string|null}>})));
   const row = r.rows[0]; if(!row) return []; const out: FlatField[]=[];
   out.push({label:"Application ID", value:ctx.applicationId},{label:"Application Name",value:row.name??null},{label:"Requested Amount",value:row.requested_amount==null?null:Number(row.requested_amount)},{label:"Product Category",value:row.product_category??null},{label:"Product Type",value:row.product_type??null});
   flatten("", row.metadata ?? {}, out); return out;
@@ -184,7 +185,7 @@ async function loadAdditionalSignedDocs(ctx: LoadCtx): Promise<{ filename: strin
             (metadata->'signnow_date_anchors') AS date_anchors
        FROM applications WHERE id::text = $1 LIMIT 1`,
     [ctx.applicationId]
-  ).catch(() => ({ rows: [] as Array<{ signed_at: string | null; doc_ids: unknown; date_anchors: unknown }> }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/lenders/loadPackageInputs.ts:181", ({ rows: [] as Array<{ signed_at: string | null; doc_ids: unknown; date_anchors: unknown }> })));
   const row = r.rows[0];
   if (!row?.signed_at) return [];
   const ids = Array.isArray(row.doc_ids) ? (row.doc_ids as unknown[]).map((v) => String(v)) : [];
@@ -200,7 +201,7 @@ async function loadAdditionalSignedDocs(ctx: LoadCtx): Promise<{ filename: strin
        JOIN lenders l ON l.id::text = s.lender_id::text
       WHERE s.application_id::text = $1 AND s.finalized_at IS NOT NULL AND l.name ILIKE 'accord%'`,
     [ctx.applicationId]
-  ).catch(() => ({ rows: [{ n: "0" }] }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/lenders/loadPackageInputs.ts:198", ({ rows: [{ n: "0" }] })));
   const isAccord = Number(acc.rows[0]?.n ?? 0) > 0;
   if (!isAccord) return [];
   const files: { filename: string; content: Buffer }[] = [];
@@ -275,7 +276,7 @@ async function loadFormPdfs(ctx: LoadCtx): Promise<{ filename: string; content: 
     `SELECT doc_type, data, submitted_at FROM application_form_responses
       WHERE application_id::text = ($1)::text AND submitted_at IS NOT NULL`,
     [ctx.applicationId],
-  ).catch(() => ({ rows: [] as Array<{ doc_type: string; data: any; submitted_at: string | null }> }));
+  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/lenders/loadPackageInputs.ts:274", ({ rows: [] as Array<{ doc_type: string; data: any; submitted_at: string | null }> })));
   const bySpec = new Map<string, { title: string; file: string }>();
   for (const s of FORM_PDF_SPECS) bySpec.set(s.docType, { title: s.title, file: s.file });
   const out: { filename: string; content: Buffer }[] = [];
