@@ -31,6 +31,7 @@ export const ACTIONS = [
   { key: "assign_owner", label: "Assign an owner" },
   { key: "add_tag", label: "Add a tag to the contact" },
   { key: "add_note", label: "Add a note to the contact" },
+  { key: "team_post", label: "Post in a Team channel" }, // BF_SERVER_TEAM_PHASE_C_v671
   { key: "wait", label: "Wait" },
   { key: "check", label: "Continue only if..." },
 ] as const;

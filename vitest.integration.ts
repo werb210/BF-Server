@@ -24,6 +24,7 @@ export const INTEGRATION_TEST_FILES: string[] = [
   "src/__tests__/chatIsChat.v629.integration.test.ts", // BF_SERVER_CHAT_IS_CHAT_v629 - needs Postgres
   "src/__tests__/teamPrefs.v643.integration.test.ts", // BF_SERVER_TEAM_PREFS_v643 - needs Postgres
   "src/__tests__/teamPhaseB.v658.integration.test.ts", // BF_SERVER_TEAM_PHASE_B_v658 - needs Postgres
+  "src/__tests__/teamPhaseC.v671.integration.test.ts", // BF_SERVER_TEAM_PHASE_C_v671 - needs Postgres
   "src/__tests__/docSharing.v635.integration.test.ts", // BF_SERVER_DOC_SHARING_v635 - needs Postgres
   "src/__tests__/crm-cors-telephony.integration.test.ts",
   "src/__tests__/lenderPortalHygiene.v1.test.ts",
