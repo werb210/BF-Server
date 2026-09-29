@@ -226,6 +226,17 @@ router.post("/intent", twilioWebhookValidation, async (req: Request, res: Respon
   const wantsAndrew = d === "2" || /andrew|underwrit|document|condition|approval|declin|status|lender/.test(s);
   const wantsTodd = d === "1" || /todd|sales|apply|\bnew\b|financ|funding|loan|quote|get started/.test(s);
   const target: Target | null = wantsAndrew ? "underwriting" : wantsTodd ? "sales" : null;
+  // BF_SERVER_VOICE_AUDIT_v686 - retain the caller's attempted response in logs,
+  // then give an unclear caller one explicit keypad retry before voicemail.
+  console.log(JSON.stringify({ event: "reception_intent", callSid: req.body?.CallSid ?? null, speech: s || null, digits: d || null, target, retry: String(req.query.retry ?? "") === "1" }));
+  if (!target && String(req.query.retry ?? "") !== "1") {
+    const company = String(req.query.company ?? "BF");
+    const retryUrl = `${BASE}/intent?company=${encodeURIComponent(company)}&retry=1`;
+    const g = v.gather({ input: "speech dtmf", numDigits: 1, speechTimeout: "auto", timeout: 6, action: retryUrl, method: "POST" });
+    emit(g, "intent_retry", "Sorry, I didn't catch that. Press 1 for Todd, or 2 for Andrew.");
+    v.redirect({ method: "POST" }, retryUrl);
+    return send(res, v);
+  }
   if (!target) { offerMessageOrVoicemail(v, "opener_unclear", PHRASES.opener_unclear); return send(res, v); }
   const t = await resolveTarget(target);
   const name = displayFor(target);

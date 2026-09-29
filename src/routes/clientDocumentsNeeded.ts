@@ -296,12 +296,10 @@ async function computeOutstandingDocsRaw(
   const required: NeededDoc[] = [];
   const seen = new Set<string>();
 
-  // Primary: the application's own document_requirements (required = true).
-  const reqRes = await pool.query<{ category: string }>(
-    `SELECT DISTINCT category FROM document_requirements
-      WHERE application_id::text = ($1)::text AND required = true AND category IS NOT NULL`,
-    [applicationId]
-  ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/clientDocumentsNeeded.ts:299", ({ rows: [] as Array<{ category: string }> })));
+  // BF_SERVER_VOICE_AUDIT_v686 - document_requirements does not exist. Keep an
+  // empty primary set and let the established application/product fallbacks below
+  // construct the required list instead of issuing a failing query on every build.
+  const reqRes = { rows: [] as Array<{ category: string }> };
   for (const r of reqRes.rows) {
     if (r.category && !seen.has(r.category)) {
       seen.add(r.category);

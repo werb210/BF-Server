@@ -69,10 +69,12 @@ router.post("/conference/join", twilioWebhookValidation, async (req: any, res) =
   // BF_SERVER_VOICE_AUDIT_v686 - staff-to-staff Quick Calls (conference direction "internal") are never
   // recorded, announced or transcribed. Recording and the consent notice are for client calls.
   let internalCall = false;
+  let confDirection: string | null = null;
   try {
     const d = await pool.query<{ direction: string | null }>(
       `SELECT direction FROM conferences WHERE friendly_name = $1 ORDER BY created_at DESC LIMIT 1`, [conf]);
-    internalCall = d.rows[0]?.direction === "internal";
+    confDirection = d.rows[0]?.direction ?? null;
+    internalCall = confDirection === "internal";
   } catch (err: any) {
     console.warn("[voice] conference direction lookup failed", { conf, message: err?.message });
   }
@@ -93,7 +95,9 @@ router.post("/conference/join", twilioWebhookValidation, async (req: any, res) =
     ).catch((err: any) => { console.warn("[silent-query] routes/conferenceWebhooks.ts", { message: err?.message }); return { rows: [] as any[] }; });
     legKind = kr.rows[0]?.kind ?? null;
   }
-  const isCallerLeg = legKind === "pstn" || legKind === "client_miniportal";
+  // BF_SERVER_VOICE_AUDIT_v686 - only an inbound caller waits for staff and can
+  // fall through to voicemail. An outbound callee must never enter that loop.
+  const isCallerLeg = (legKind === "pstn" || legKind === "client_miniportal") && confDirection !== "outbound";
 
   const dial = vr.dial({ answerOnBridge: true });
   const confAttrs: Record<string, unknown> = {
@@ -212,6 +216,20 @@ router.post("/conference/status", twilioWebhookValidation, async (req: any, res)
         [conf.id],
       );
       const er: any = endRow.rows[0];
+      // BF_SERVER_VOICE_AUDIT_v686 - if staff ends an outbound conference before
+      // the callee answers, stop any invited or ringing leg immediately.
+      try {
+        const pending = await pool.query<{ id: string }>(
+          `SELECT id FROM conference_participants WHERE conference_id = $1 AND status IN ('invited','ringing')`,
+          [conf.id],
+        );
+        if (pending.rows.length) {
+          const { cancelPendingParticipantCall } = await import("../voice/conferenceService.js");
+          for (const participant of pending.rows) await cancelPendingParticipantCall(participant.id);
+        }
+      } catch (err: any) {
+        console.warn("[voice] cancel still-ringing legs failed", { conferenceId: conf.id, message: err?.message });
+      }
       if (er && er.contact_id && er.direction === "outbound") {
         try {
           await pool.query(
