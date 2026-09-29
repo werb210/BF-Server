@@ -600,6 +600,8 @@ router.post(
             const v711_isAdvisor = /professional advisor|\badvisor/i.test(String(row?.document_type ?? ""));
             if (!v711_isAdvisor && Number(row?.stage ?? 1) !== 2) continue;
             const hit = FORM_BY_KEYWORD.find(([re]) => re.test(String(row?.document_type ?? "")));
+            // BF_SERVER_BANK_CRA_ON_REQUEST_v691 - Connect Bank and CRA Authorization appear only when staff request them.
+            if (hit && (hit[1] === "flinks" || hit[1] === "cra")) continue;
             if (hit && !v711_forms.some((f) => f.id === hit[1])) v711_forms.push({ id: hit[1], name: hit[2] });
           }
           if (v711_forms.length) {

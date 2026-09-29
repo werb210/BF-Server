@@ -499,7 +499,8 @@ export async function getRequestedFormIds(applicationId: string): Promise<string
     `SELECT DISTINCT cta_action FROM communications_messages
       WHERE application_id::text = ($1)::text
         AND (cta_action LIKE 'form:%'
-             OR cta_action IN ('networth','flinks','cra','debt','realestate','equipment','advisors'))`,
+             OR cta_action IN ('networth','flinks','cra','debt','realestate','equipment','advisors'))
+        AND NOT (staff_name IS NULL AND cta_action IN ('cra','flinks','form:cra','form:flinks')) -- BF_SERVER_BANK_CRA_ON_REQUEST_v691`,
     [applicationId]
   ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/clientDocumentsNeeded.ts:499", ({ rows: [] as Array<{ cta_action: string }> })));
   const ids = new Set<string>();

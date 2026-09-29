@@ -752,6 +752,8 @@ router.get(
       return v778_completed.has(k);
     };
     let v778_rows = (rows.rows ?? []).filter((r: any) => !v778_isDone(r.cta_action));
+    // BF_SERVER_BANK_CRA_ON_REQUEST_v691 - hide the old automatic Connect Bank / CRA prompts; staff-requested ones stay.
+    v778_rows = v778_rows.filter((r: any) => !(r.staff_name == null && ["cra", "flinks", "form:cra", "form:flinks"].includes(String(r.cta_action ?? ""))));
     // BF_SERVER_BLOCK_v563 - no PGI prompt until the client has signed a term sheet.
     if (v778_rows.some((r: any) => r.cta_label === "Complete PGI Application")) {
       const { termSheetSigned } = await import("../../services/termSheetSigned.js");

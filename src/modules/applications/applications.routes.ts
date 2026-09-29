@@ -362,7 +362,7 @@ router.post('/:id/request-steps', requireCapability([CAPABILITIES.CRM_WRITE]), s
 
   // Existing prompts → idempotency.
   const existing = await pool.query(
-    `SELECT DISTINCT cta_action FROM communications_messages WHERE application_id::text = ($1)::text`, [id],
+    `SELECT DISTINCT cta_action FROM communications_messages WHERE application_id::text = ($1)::text AND NOT (staff_name IS NULL AND cta_action IN ('cra','flinks','form:cra','form:flinks'))`, [id], // BF_SERVER_BANK_CRA_ON_REQUEST_v691
   ).catch((err: any) => { console.warn("[silent-query] modules/applications/applications.routes.ts", { message: err?.message }); return { rows: [] as any[] }; });
   const existingActions: string[] = (existing.rows ?? []).map((r: any) => String(r.cta_action ?? ''));
   const existingCta = new Set<string>(existingActions.flatMap((cta: string) => {
