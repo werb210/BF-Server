@@ -59,6 +59,11 @@ export async function resolveDisplayName(db: Queryable, identity: string | null 
     if (parsed.kind === "pstn") {
       const digits = String(identity ?? "").replace(/[^0-9]/g, "").slice(-10);
       if (digits.length === 10) {
+        // BF_SERVER_VOICE_AUDIT_v686 - a colleague's number names the colleague before any contact does.
+        const staff = await db.query(`SELECT first_name, last_name, email FROM users
+            WHERE active = true AND right(regexp_replace(coalesce(phone_number, phone, ''), '[^0-9]', '', 'g'), 10) = $1 LIMIT 1`, [digits]);
+        const staffName = staff.rows[0] ? nameFromParts({ firstName: staff.rows[0].first_name, lastName: staff.rows[0].last_name, email: staff.rows[0].email }) : null;
+        if (staffName) return staffName;
         const { rows } = await db.query(`SELECT first_name, last_name FROM contacts
             WHERE right(regexp_replace(coalesce(phone,''), '[^0-9]', '', 'g'), 10) = $1 LIMIT 1`, [digits]);
         const name = rows[0] ? nameFromParts({ firstName: rows[0].first_name, lastName: rows[0].last_name }) : null;

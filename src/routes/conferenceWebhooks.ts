@@ -66,7 +66,17 @@ router.post("/conference/join", twilioWebhookValidation, async (req: any, res) =
   // BF_SERVER_BLOCK_v771_RECORDING_DEFAULT_ON: recording + the Canada
   // two-party consent announcement are core, not opt-in. On by default; the
   // only kill switch is an explicit ENABLE_CALL_RECORDING="false".
-  const enableRecording = process.env.ENABLE_CALL_RECORDING !== "false";
+  // BF_SERVER_VOICE_AUDIT_v686 - staff-to-staff Quick Calls (conference direction "internal") are never
+  // recorded, announced or transcribed. Recording and the consent notice are for client calls.
+  let internalCall = false;
+  try {
+    const d = await pool.query<{ direction: string | null }>(
+      `SELECT direction FROM conferences WHERE friendly_name = $1 ORDER BY created_at DESC LIMIT 1`, [conf]);
+    internalCall = d.rows[0]?.direction === "internal";
+  } catch (err: any) {
+    console.warn("[voice] conference direction lookup failed", { conf, message: err?.message });
+  }
+  const enableRecording = process.env.ENABLE_CALL_RECORDING !== "false" && !internalCall;
   // BF_SERVER_BLOCK_v764_RECORDING_CONSENT — Canada is two-party consent.
   // Announce recording to each party as they join a recorded conference,
   // before they enter. Only when recording is actually on.
@@ -112,7 +122,7 @@ router.post("/conference/join", twilioWebhookValidation, async (req: any, res) =
   }
   dial.conference(confAttrs as any, conf);
 
-  const twiml = injectLiveTranscription(vr.toString(), base, conf, isCallerLeg);
+  const twiml = internalCall ? vr.toString() : injectLiveTranscription(vr.toString(), base, conf, isCallerLeg); // BF_SERVER_VOICE_AUDIT_v686
   console.log(JSON.stringify({
     event: "conference_join_twiml",
     conf,
