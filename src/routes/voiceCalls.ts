@@ -204,6 +204,27 @@ router.post("/resolve-caller", auth, async (req: any, res) => {
 
   if (phone10.length < 10) return res.json({ ok: true, matched: false, isStaff: false, name: null });
 
+  // BF_SERVER_VOICE_AUDIT_v686 - a colleague's own number names the colleague. It used to be checked only
+  // after contacts, so a test application filed with a staff member's cell (Caden's number on a
+  // "Todd Werboweski" contact) named the wrong person on every call from that phone.
+  try {
+    const staffFirst = await pool.query(
+      `SELECT id::text AS user_id, first_name, last_name, email FROM users
+        WHERE active = true AND right(regexp_replace(coalesce(phone_number, phone, ''), '[^0-9]', '', 'g'), 10) = $1
+        ORDER BY first_name ASC NULLS LAST, last_name ASC NULLS LAST LIMIT 1`, [phone10]);
+    const colleague = staffFirst.rows[0];
+    if (colleague) {
+      const name = [colleague.first_name, colleague.last_name].map((p: unknown) => String(p ?? "").trim()).filter(Boolean).join(" ")
+        || String(colleague.email ?? "").trim() || null;
+      if (name) return res.json({ ok: true, matched: true, isStaff: true, name, userId: colleague.user_id });
+    }
+  } catch (err: any) {
+    console.error("resolve_caller_staff_first_failed", { message: err?.message || String(err) });
+  }
+  // BF_SERVER_VOICE_AUDIT_v686 - contacts are matched only in the silo of the line or screen the call is on,
+  // so an Insurance test contact can no longer name a Financial caller.
+  const callSilo = String(req.body?.silo || req.headers["x-silo"] || "BF").toUpperCase();
+
   try {
     const { rows } = await pool.query(
       `SELECT c.id::text AS contact_id, c.name,
@@ -212,8 +233,9 @@ router.post("/resolve-caller", auth, async (req: any, res) => {
               (SELECT a.name FROM applications a WHERE a.contact_id = c.id ORDER BY a.updated_at DESC NULLS LAST LIMIT 1) AS application_name
          FROM contacts c
         WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $1
+          AND c.silo = $2
         ORDER BY c.updated_at DESC NULLS LAST LIMIT 1`,
-      [phone10],
+      [phone10, callSilo],
     );
     const r = rows[0];
     if (r) {
