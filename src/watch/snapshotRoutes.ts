@@ -42,7 +42,7 @@ export async function buildWatchSnapshot(userId: string) {
          FROM call_events
         WHERE user_id = $1::uuid
           AND event_type = 'call.missed'
-          AND created_at >= date_trunc('day', now())`,
+          AND occurred_at >= date_trunc('day', now())`, // BF_SERVER_VOICE_AUDIT_v686 - call_events uses occurred_at
       [userId],
     ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "watch/snapshotRoutes.ts:39", ({ rows: [{ count: "0" }] })));
 
