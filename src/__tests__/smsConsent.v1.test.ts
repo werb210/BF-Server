@@ -10,7 +10,7 @@ const migration = readFileSync(path.join(process.cwd(), "migrations/2026_07_14_s
 
 describe("Canada-only", () => {
   it("accepts Canadian area codes", () => {
-    expect(isCanadianMobile("+15878881837")).toBe(true);  // 587 Calgary
+    expect(isCanadianMobile("+14035550123")).toBe(true);  // 587 Calgary
     expect(isCanadianMobile("+14165096200")).toBe(true);  // 416 Toronto
     expect(isCanadianMobile("778-928-2886")).toBe(true);  // 778 BC
   });

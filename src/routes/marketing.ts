@@ -187,7 +187,7 @@ router.get("/funnel", safeHandler(async (req: any, res: any) => {
 // more without a deploy; the default covers Todd's mobile, which accounted for
 // roughly half the rows. Stored as bare last-10 digits to match the SQL.
 const EXCLUDED_ABANDONED_PHONES: string[] = String(
-  process.env.ABANDONED_EXCLUDE_PHONES ?? "5878881837",
+  process.env.ABANDONED_EXCLUDE_PHONES ?? "", // BF_SERVER_NO_PERSONAL_NUMBERS_v688c - set in App Service, not in code
 )
   .split(",")
   .map((v) => v.replace(/[^0-9]/g, "").slice(-10))

@@ -12,7 +12,7 @@ const r = (p: string) => readFileSync(path.join(process.cwd(), p), "utf8");
 const sample: SheetRowData = {
   applicationId: "app-1",
   firstName: "Todd", lastName: "Werboweski", company: "Todd's Trucking Co.",
-  email: "todd@example.com", mobile: "5878881837", phone: "5555555555",
+  email: "todd@example.com", mobile: "4035550123", phone: "5555555555",
   dob: "1971-04-14", language: "English",
   requestedAmount: "50000", annualRevenue: "1100000", monthlySales: "91667",
   street: "123", city: "Edmonton", province: "AB", country: "Canada", postalCode: "T5R 0P0",
@@ -54,7 +54,7 @@ describe("merchant growth sheet row", () => {
   });
 
   it("strips E.164 phone numbers down to the 10 digits they require", () => {
-    expect(toTenDigits("+15878881837")).toBe("5878881837");
+    expect(toTenDigits("+14035550123")).toBe("4035550123");
     expect(toTenDigits("(555) 555-5555")).toBe("5555555555");
     expect(toTenDigits("")).toBe("");
   });
@@ -93,7 +93,7 @@ describe("merchant growth sheet row", () => {
 
   // BF_SERVER_MG_SHEET_STEP3_SOURCES_v1
   it("rejects phone values that are not valid 10-digit NANP numbers", () => {
-    expect(isValidTenDigits("+15878881837")).toBe(true);
+    expect(isValidTenDigits("+14035550123")).toBe(true);
     expect(isValidTenDigits("(705) 930-0053")).toBe(true);
     // observed in production: leading country code kept, trailing digit lost
     expect(isValidTenDigits("1705930005")).toBe(false);
@@ -103,7 +103,7 @@ describe("merchant growth sheet row", () => {
 
   it("falls through to the next candidate when a phone source is invalid", () => {
     expect(firstValidTenDigits("1705930005", "+17059300053")).toBe("7059300053");
-    expect(firstValidTenDigits("", null, "5878881837")).toBe("5878881837");
+    expect(firstValidTenDigits("", null, "4035550123")).toBe("4035550123");
     expect(firstValidTenDigits("1705930005", "")).toBe("");
   });
 

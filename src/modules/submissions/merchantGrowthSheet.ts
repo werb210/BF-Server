@@ -48,7 +48,7 @@ function obj(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
-// Their template says "(10 digits)". We store E.164 (+15878881837), so strip to the last
+// Their template says "(10 digits)". We store E.164 (+14035550123), so strip to the last
 // 10 digits - sending "+1587..." into a 10-digit column would fail their validation.
 export function toTenDigits(v: unknown): string {
   const digits = s(v).replace(/\D/g, "");

@@ -195,10 +195,12 @@ router.post("/", async (req: any, res: any, next: any) => {
 
   const continuationToken = await createContinuation(applicationId);
 
-  await retry(
+  // BF_SERVER_NO_PERSONAL_NUMBERS_v688c - alert number from the LEAD_ALERT_SMS_TO setting, never from code.
+  const leadAlertTo = String(process.env.LEAD_ALERT_SMS_TO ?? "").trim();
+  if (leadAlertTo) await retry(
     () =>
       sendSms({
-        to: "+15878881837",
+        to: leadAlertTo,
         message: `Credit Readiness: ${fullName} | ${phone} | ${industry ?? "N/A"} | Monthly ${monthlyRevenue ?? "N/A"} / Annual ${annualRevenue ?? "N/A"}`,
       }),
     2

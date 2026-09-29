@@ -39,7 +39,7 @@ describe("BF_SERVER_ACCOUNTANT_INVITE_v1 copy", () => {
   });
 
   it("offers the phone line only when there is a number to offer", () => {
-    expect(buildAccountantInvite({ ...base, supportPhone: "+17802648467" }).html).toContain("call us at +17802648467");
+    expect(buildAccountantInvite({ ...base, supportPhone: "+14035550188" }).html).toContain("call us at +14035550188");
     const withoutPhone = buildAccountantInvite(base).html;
     expect(withoutPhone).toContain("just reply to this email");
     expect(withoutPhone).not.toContain("call us at");
