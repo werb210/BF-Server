@@ -314,6 +314,10 @@ export async function submitClientApplication(params: {
       triggeredBy: "system",
       client,
     });
+    // BF_SERVER_TEAM_PHASE_C_v671 - every submitted application is posted in #deals.
+    void import("../../services/team/teamPhaseC.js")
+      .then((m) => m.postTeamAlert("deals", "New application submitted: " + String(submission.business.legalName || "a client") + " /applications/" + application.id))
+      .catch((err: any) => console.warn("[client_submission] team alert failed", err?.message ?? String(err)));
 
     await upsertStructuredApplicationData({
       applicationId: application.id,

@@ -8,7 +8,7 @@ import { listStatuses, pushRecipients } from "./teamPrefs.js";
 export type ChannelMeta = { id: string; kind: string; name: string | null; topic: string | null; is_private: boolean; archived_at: string | null; created_by: string | null };
 export type ThreadSummary = { reply_count: number; last_reply_at: string | null; participant_ids: string[] };
 const MSG_COLS = `id, channel_id, sender_id, CASE WHEN deleted_at IS NOT NULL THEN '' ELSE body END AS body, created_at, edited_at, deleted_at,
-  reply_to_id, mentions, pinned_at, CASE WHEN deleted_at IS NOT NULL THEN NULL ELSE attachments END AS attachments, thread_root_id`;
+  reply_to_id, mentions, pinned_at, CASE WHEN deleted_at IS NOT NULL THEN NULL ELSE attachments END AS attachments, thread_root_id, bot`; // BF_SERVER_TEAM_PHASE_C_v671
 
 export function normalizeChannelName(raw: unknown): string | null {
   const name = String(raw ?? "").trim().replace(/^#+/, "").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9_-]/g, "").replace(/-{2,}/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);

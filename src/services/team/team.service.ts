@@ -169,7 +169,7 @@ export async function listMessages(channelId: string, opts: { before?: string; l
     beforeClause = `AND created_at < $2`;
   }
   const r = await runQuery<TeamMessage>(
-    `SELECT id, channel_id, sender_id,
+    `SELECT id, channel_id, sender_id, to_jsonb(team_messages)->>'bot' AS bot, -- BF_SERVER_TEAM_PHASE_C_v671
             CASE WHEN deleted_at IS NOT NULL THEN '' ELSE body END AS body,
             created_at, edited_at, deleted_at, reply_to_id, mentions, pinned_at,
             CASE WHEN deleted_at IS NOT NULL THEN NULL ELSE attachments END AS attachments

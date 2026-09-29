@@ -258,6 +258,11 @@ export async function start(): Promise<void> {
     try { const b = startBookingsWorker(pool); workerStops.push(b.stop); console.log("[startup] bookings worker started"); }
     catch (e: any) { console.error("[startup] bookings worker failed to start", { message: e?.message }); }
 
+    // BF_SERVER_TEAM_PHASE_C_v671 - Team "Remind me" reminders.
+    const { startTeamReminderWorker } = await import("./workers/teamReminderWorker.js");
+    try { const w = startTeamReminderWorker(); workerStops.push(w.stop); console.log("[startup] team-reminder worker started"); }
+    catch (err) { console.error("[startup] team-reminder worker failed to start:", err); }
+
     const { startTeamsTranscriptWorker } = await import("./workers/teamsTranscriptWorker.js");
     try { const w = startTeamsTranscriptWorker(pool); workerStops.push(w.stop); console.log("[startup] teams-transcript worker started"); }
     catch (err) { console.error("[startup] teams-transcript worker failed to start:", err); }

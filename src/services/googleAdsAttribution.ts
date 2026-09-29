@@ -76,7 +76,7 @@ export async function resolveAndStoreAdAttribution(input: AttributionInput): Pro
     }
     if (!row) return;
 
-    await pool.query(
+    const saved = await pool.query(
       `INSERT INTO contact_ad_attribution (
          contact_id, gclid, click_date, campaign_id, campaign_name,
          ad_group_id, ad_group_name, ad_id, keyword, keyword_match_type, raw_click
@@ -91,7 +91,8 @@ export async function resolveAndStoreAdAttribution(input: AttributionInput): Pro
          keyword = EXCLUDED.keyword,
          keyword_match_type = EXCLUDED.keyword_match_type,
          raw_click = EXCLUDED.raw_click,
-         updated_at = now()`,
+         updated_at = now()
+       RETURNING (xmax = 0) AS inserted`,
       [
         input.contactId,
         gclid,
@@ -106,6 +107,13 @@ export async function resolveAndStoreAdAttribution(input: AttributionInput): Pro
         JSON.stringify({ applicationId: input.applicationId ?? null, ...row }),
       ],
     );
+    // BF_SERVER_TEAM_PHASE_C_v671 - a first-time ad lead is posted in #leads (not on re-resolves).
+    if (saved.rows[0]?.inserted) {
+      const keyword = row.clickView?.keywordInfo?.text ?? row.adGroupCriterion?.keyword?.text ?? null;
+      void import("./team/teamPhaseC.js")
+        .then((m) => m.postTeamAlert("leads", "New Google Ads lead" + (row.campaign?.name ? " from " + row.campaign.name : "") + (keyword ? ', keyword "' + keyword + '"' : "") + " /crm/contacts/" + input.contactId))
+        .catch((err: any) => console.warn("[google_ads_attribution] team alert failed", err?.message ?? String(err)));
+    }
   } catch (err) {
     console.warn("[google_ads_attribution] resolve failed", err instanceof Error ? err.message : String(err));
   }

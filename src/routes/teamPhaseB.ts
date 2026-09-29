@@ -11,6 +11,7 @@ import {
   normalizeChannelName, postThreadReply, pushThreadReply, searchEverything, setArchived, updateChannel,
 } from "../services/team/teamChannels.js";
 import { broadcastToUsers } from "../ws/teamSocket.js";
+import { askMaya } from "../services/team/teamPhaseC.js"; // BF_SERVER_TEAM_PHASE_C_v671
 
 const router = Router();
 const requireStaff = requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING] });
@@ -113,6 +114,7 @@ router.post("/channels/:id/threads/:rootId/messages", ...guard, safeHandler(asyn
   if (!posted) throw new AppError("not_found", "Thread not found.", 404);
   broadcastToUsers(await memberIdsOf(id), { type: "thread_message", channel_id: id, root_id: rootId, message: posted.message, summary: posted.summary });
   void pushThreadReply(id, rootId, { sender_id: userId, body, mentions });
+  void askMaya(id, posted.message as any, userId); // BF_SERVER_TEAM_PHASE_C_v671
   res.status(200).json({ ok: true, message: posted.message, summary: posted.summary });
 }));
 

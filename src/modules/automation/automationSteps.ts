@@ -117,6 +117,13 @@ export async function runAction(deps: EngineDeps, e: any, step: Step): Promise<s
       await q(`INSERT INTO crm_notes (body, contact_id, silo) VALUES ($1, $2::uuid, $3)`, [t(step.body), e.contact_id, e.silo]);
       return "note added";
     }
+    case "team_post": {
+      // BF_SERVER_TEAM_PHASE_C_v671 - post into a Team channel (created if missing).
+      const channel = String(step.channel ?? "").trim().replace(/^#/, "");
+      if (!channel) return "skip: no channel";
+      const { postTeamAlert } = await import("../../services/team/teamPhaseC.js");
+      return (await postTeamAlert(channel, t(step.body || "Automation update"))) ? `posted in #${channel}` : "skip: could not post";
+    }
     default:
       return `skip: unknown step ${step.type}`;
   }

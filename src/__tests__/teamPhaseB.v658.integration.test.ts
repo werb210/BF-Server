@@ -24,6 +24,7 @@ describe("v658 team channels, threads and search", () => {
     // Empty CI databases load the baseline snapshot, which predates these columns.
     await pool.query(readFileSync("migrations/2026_09_28_v643_team_prefs.sql", "utf8"));
     await pool.query(readFileSync("migrations/2026_09_28_v658_team_phase_b.sql", "utf8"));
+    await pool.query(readFileSync("migrations/2026_09_28_v671_team_phase_c.sql", "utf8")); // BF_SERVER_TEAM_PHASE_C_v671
   });
   beforeEach(() => { deps.db.ready = true; (deps.db as any).client = pool; });
   afterAll(async () => {

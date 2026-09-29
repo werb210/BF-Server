@@ -31,11 +31,14 @@ import {
 import { broadcastToUsers } from "../ws/teamSocket.js";
 import { channelMeta, nameTaken, normalizeChannelName, updateChannel } from "../services/team/teamChannels.js"; // BF_SERVER_TEAM_PHASE_B_v658
 import teamPhaseBRoutes from "./teamPhaseB.js"; // BF_SERVER_TEAM_PHASE_B_v658
+import teamPhaseCRoutes from "./teamPhaseC.js"; // BF_SERVER_TEAM_PHASE_C_v671
+import { askMaya } from "../services/team/teamPhaseC.js";
 import { listStatuses, markUnread, pushTeamMessage, setMuted, setStatus } from "../services/team/teamPrefs.js"; // BF_SERVER_TEAM_PREFS_v643
 
 const router = Router();
 // BF_SERVER_TEAM_PHASE_B_v658 - channels, threads and search (the route registry mounts one router per path).
 router.use(teamPhaseBRoutes);
+router.use(teamPhaseCRoutes); // BF_SERVER_TEAM_PHASE_C_v671
 const requireStaff = requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING] });
 
 function userIdOf(req: { user?: { id?: string | null; userId?: string | null; sub?: string | null } | null }): string {
@@ -157,6 +160,7 @@ router.post(
     const members = await memberIdsOf(id);
     broadcastToUsers(members, { type: "message", channel_id: id, message });
     void pushTeamMessage(id, message); // BF_SERVER_TEAM_PREFS_v643 - alerts for people without the portal open
+    void askMaya(id, message as any, userId); // BF_SERVER_TEAM_PHASE_C_v671 - @Maya answers in a thread
     res.status(200).json({ ok: true, message });
   }),
 );
