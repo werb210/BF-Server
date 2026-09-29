@@ -40,8 +40,10 @@ router.post("/ai/confidence", async (req: any, res: any, next: any) => {
     activityPayload: { score },
   });
 
-  await sendSMS(
-    "+15878881837",
+  // BF_SERVER_MAIN_LINE_866_v693 - the alert number comes from the LEAD_ALERT_SMS_TO App Service setting, never from code.
+  const leadAlertTo = String(process.env.LEAD_ALERT_SMS_TO ?? "").trim();
+  if (leadAlertTo) await sendSMS(
+    leadAlertTo,
     `Lead type: confidence_check | Name: ${fullName ?? "unknown"} | Phone: ${phone ?? "unknown"}`
   ).catch((error) => {
     logWarn("confidence_sms_failed", {
