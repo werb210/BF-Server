@@ -1256,6 +1256,11 @@ router.post(
                   WHERE id::text = ($4)::text`,
                 [r.biApplicationId, r.biPublicId, r.completionUrl, v330_t.bfApplicationId],
               );
+              // BF_SERVER_BI_DOC_COPY_v701 - documents uploaded in the wizard (before this link
+              // existed) were never copied to the PGI application. Copy them now.
+              void import("../../services/biDocMirror.js")
+                .then((m) => m.mirrorApplicationDocsToBi(v330_t.bfApplicationId))
+                .catch((err: unknown) => console.warn("[bi-handoff] document copy failed", { message: err instanceof Error ? err.message : String(err) }));
               // v330: one messenger message per funding app's PGI policy.
               // The body names the product category when available so the
               // applicant can tell which policy belongs to which application.
