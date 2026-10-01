@@ -1,5 +1,6 @@
 // BF_SERVER_ADS_LEAD_SIGNALS_v400
 import { pool } from "../db.js";
+import { commissionRate, ingestConversions } from "./googleDataManager.js"; // BF_SERVER_DATA_MANAGER_v703
 import { logError } from "../observability/logger.js";
 import { accessToken, conversionsConfigured, submitConversionsConfigured } from "./googleAdsConversions.js";
 import { userIdentifiersFor, type UserIdentifier } from "./googleAdsEnhanced.js"; // BF_SERVER_ADS_ENHANCED_v403
@@ -120,7 +121,7 @@ export async function uploadQualifiedConversions(): Promise<{ configured: boolea
   let failed = 0;
   for (const lead of await findPendingQualified()) {
     try {
-      const result = await post("uploadClickConversions", qualifiedPayload(lead, customerId(), actionId, process.env.GOOGLE_ADS_CURRENCY || "CAD"));
+      const result = await ingestConversions(actionId, [{ transactionId: `${lead.applicationId}-qualified`, clickField: lead.clickField, clickId: lead.clickId, at: lead.at, value: lead.value * commissionRate(), userIdentifiers: lead.userIdentifiers }]); // BF_SERVER_DATA_MANAGER_v703
       if (!result.ok) {
         failed++;
         console.warn("[ads_qualified_conversion]", result.detail);

@@ -8,6 +8,7 @@
 import { pool } from "../db.js";
 import { logError } from "../observability/logger.js";
 import { userIdentifiersFor, type UserIdentifier } from "./googleAdsEnhanced.js"; // BF_SERVER_ADS_ENHANCED_v403
+import { commissionRate, ingestConversions } from "./googleDataManager.js"; // BF_SERVER_DATA_MANAGER_v703
 
 const API_VERSION = "v24";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -190,13 +191,27 @@ async function uploadOneSubmit(p: PendingConversion): Promise<boolean> {
   return true;
 }
 
+// BF_SERVER_DATA_MANAGER_v703 - every conversion goes through the Data Manager API; the value is
+// the estimated commission. The old Google Ads API upload functions above are no longer called.
+async function sendViaDataManager(p: PendingConversion, actionEnv: string, transactionId: string): Promise<boolean> {
+  const r = await ingestConversions(String(process.env[actionEnv] ?? ""), [{
+    transactionId, clickField: p.clickField, clickId: p.gclid, at: p.fundedAt,
+    value: p.value * commissionRate(), userIdentifiers: p.userIdentifiers,
+  }]);
+  if (!r.ok) {
+    logError("google_ads_data_manager_upload_failed");
+    console.warn("[ads_conversion] data_manager", transactionId, r.status, r.detail);
+  }
+  return r.ok;
+}
+
 export async function uploadSubmitConversions(): Promise<{ configured: boolean; uploaded: number; failed: number; pending: number }> {
   if (!submitConversionsConfigured()) return { configured: false, uploaded: 0, failed: 0, pending: 0 };
   const pendingList = await findPendingSubmitConversions();
   let uploaded = 0, failed = 0;
   for (const p of pendingList) {
     try {
-      const ok = await uploadOneSubmit(p);
+      const ok = await sendViaDataManager(p, "GOOGLE_ADS_SUBMIT_CONVERSION_ACTION_ID", `${p.applicationId}-submit`);
       if (!ok) { failed++; continue; }
       await pool.query(
         `UPDATE applications
@@ -220,7 +235,7 @@ export async function uploadFundedConversions(): Promise<{ configured: boolean; 
   let uploaded = 0, failed = 0;
   for (const p of pendingList) {
     try {
-      const ok = await uploadOne(p);
+      const ok = await sendViaDataManager(p, "GOOGLE_ADS_CONVERSION_ACTION_ID", p.applicationId);
       if (!ok) { failed++; continue; }
       await pool.query(
         `UPDATE applications
