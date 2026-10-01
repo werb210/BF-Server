@@ -24,6 +24,7 @@ import { googleAdsConfigured, runGoogleAdsReport, googleAdsSearch } from "../ser
 import { linkedInAdsConfigured, runLinkedInAdsReport } from "../services/linkedInAdsService.js"; // BF_SERVER_LINKEDIN_ADS_v1
 import adSpendAnalysisRoutes from "./marketing/adSpendAnalysis.js"; // BF_SERVER_AD_SPEND_ANALYSIS_v1
 import adClicksRoutes from "./marketing/adClicks.js"; // BF_SERVER_BLOCK_v614_AD_CLICKS
+import adsStoryRoutes from "./marketing/adsStory.js"; // BF_SERVER_ADS_STORY_v707
 // BF_EMAIL_TEMPLATE_IMPORTS_v1
 import multer from "multer";
 import path from "node:path";
@@ -38,6 +39,7 @@ const router = Router();
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.MARKETING_VIEW]));
 router.use(adSpendAnalysisRoutes);
+router.use(adsStoryRoutes); // BF_SERVER_ADS_STORY_v707
 router.use(adClicksRoutes); // BF_SERVER_BLOCK_v614_AD_CLICKS
 
 // BF_SERVER_BLOCK_v780_PUBLIC_LANDING — render+store a landing page from
@@ -515,6 +517,24 @@ router.get("/negative-impact", safeHandler(async (req: any, res: any) => {
 }));
 
 router.get("/negative-keywords/recent", safeHandler(async (_req: any, res: any) => {
+  // BF_SERVER_NEGATIVES_RECONCILE_v707
+  if (googleAdsConfigured()) {
+    try {
+      const live = await googleAdsSearch(
+        "SELECT campaign_criterion.resource_name FROM campaign_criterion WHERE campaign_criterion.negative = TRUE AND campaign_criterion.type = 'KEYWORD'",
+      );
+      const names = live.map((r: any) => String(r?.campaignCriterion?.resourceName ?? "")).filter(Boolean);
+      // An empty response may mean Google could not provide data; never interpret it as "all removed".
+      if (names.length > 0) await pool.query(
+        `UPDATE ads_negatives_log SET removed_at = now()
+          WHERE removed_at IS NULL AND resource_name LIKE 'customers/%/campaignCriteria/%'
+            AND NOT (resource_name = ANY($1::text[]))`,
+        [names],
+      );
+    } catch (err: any) {
+      logError("negatives_reconcile_failed", { message: err?.message });
+    }
+  }
   const { rows } = await pool.query(
     `SELECT id, campaign_id, term, match_type, resource_name, added_at
        FROM ads_negatives_log WHERE removed_at IS NULL
@@ -662,7 +682,19 @@ router.post("/linkedin-ads/icp/export", safeHandler(async (req: any, res: any) =
 router.get("/google-ads/suggestions", safeHandler(async (req: any, res: any) => {
   const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 90);
   if (!suggestionsConfigured()) { respondOk(res, { configured: false, suggestions: [] }); return; }
-  respondOk(res, await buildSuggestions(days));
+  // BF_SERVER_ADS_PAUSE_GUARD_v707: zero recorded conversions is not enough evidence to pause ads.
+  const built = await buildSuggestions(days);
+  const { accountConversions } = await import("../services/googleAdsNegativeGuard.js");
+  const conversions = await accountConversions(days);
+  if (conversions <= 0) {
+    respondOk(res, {
+      ...built,
+      suggestions: built.suggestions.filter((sg: any) => sg.kind !== "pause_campaign" && sg.kind !== "pause_keyword"),
+      caveat: "Google Ads has recorded no conversions in this window, so pause suggestions are held back until conversions are flowing.",
+    });
+    return;
+  }
+  respondOk(res, built);
 }));
 router.post("/google-ads/suggestions/apply", safeHandler(async (req: any, res: any) => {
   // BF_SERVER_ADS_WRITE_GATE_v56 - a 403, not a 200 with ok:false, so a blocked
