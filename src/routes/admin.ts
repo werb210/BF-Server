@@ -763,6 +763,7 @@ router.get("/job-queue", requireAuth, wrap(async () => {
     summary: summary.rows,
     claimableNow: claimable.rows,
     stuckOverAnHour: stuck.rows,
+    stuck: stuck.rows, // BF_SERVER_JOB_QUEUE_STUCK_v707 - the portal reads "stuck"
   });
 }));
 
