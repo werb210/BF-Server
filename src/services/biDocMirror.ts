@@ -89,6 +89,18 @@ export function shouldMirrorToPgi(category: string | null | undefined): boolean 
   return pgiDocTypeFor(category) !== null;
 }
 
+// BF_SERVER_BI_DOC_COPY_v701 - stamp documents that reached BI. The start-up catch-up used to
+// look back only 30 days, so documents uploaded before an application was linked to BI (every
+// wizard upload, since the link is made at submit) and older than 30 days never arrived.
+async function markMirrored(bfDocumentId: string | null | undefined): Promise<void> {
+  if (!bfDocumentId) return;
+  try {
+    await pool.query("UPDATE documents SET bi_mirrored_at = now() WHERE id::text = $1", [String(bfDocumentId)]);
+  } catch (err) {
+    logError("bi_doc_mirror_mark_failed", { message: err instanceof Error ? err.message : String(err) });
+  }
+}
+
 export async function mirrorDocToBi(input: MirrorInput): Promise<MirrorResult> {
   const secret = getSecret();
   if (!secret) return { ok: false, error: "no_jwt_secret" };
@@ -135,6 +147,7 @@ export async function mirrorDocToBi(input: MirrorInput): Promise<MirrorResult> {
           bfDocumentId: input.bfDocumentId,
           documentType: input.documentType,
         });
+        await markMirrored(input.bfDocumentId);
         return { ok: false, error: "bi_already_mirrored" };
       }
       // BF_SERVER_BI_UNLINK_DELETED_v404 - BI answers 404 bi_application_not_found
@@ -173,6 +186,7 @@ export async function mirrorDocToBi(input: MirrorInput): Promise<MirrorResult> {
       biDocumentId: j.bi_document_id,
       idempotent: !!j.idempotent,
     });
+    await markMirrored(input.bfDocumentId);
     return {
       ok: true,
       biDocumentId: String(j.bi_document_id),
@@ -217,7 +231,7 @@ export function mirrorDocToBiAsync(input: MirrorInput): void {
 // BF_SERVER_PGI_MIRROR_LABELS_v357 - catch-up for documents uploaded before their
 // labels were recognised, or before the BF application was linked to BI. BI-Server
 // dedupes on the BF document, so re-running is harmless.
-export async function backfillPgiMirrors(days = 30): Promise<{ eligible: number; mirrored: number }> {
+export async function backfillPgiMirrors(_days = 30): Promise<{ eligible: number; mirrored: number }> {
   const r = await pool.query<{
     id: string; application_id: string; category: string | null;
     filename: string | null; size_bytes: number | null; blob_url: string | null;
@@ -229,10 +243,9 @@ export async function backfillPgiMirrors(days = 30): Promise<{ eligible: number;
        JOIN applications a ON a.id::text = d.application_id::text
       WHERE a.bi_public_id IS NOT NULL
         AND COALESCE(d.status, '') <> 'rejected'
-        AND d.created_at >= now() - ($1 || ' days')::interval
+        AND d.bi_mirrored_at IS NULL
       ORDER BY d.created_at
-      LIMIT 500`,
-    [String(days)],
+      LIMIT 2000`,
   );
   let eligible = 0;
   let mirrored = 0;
