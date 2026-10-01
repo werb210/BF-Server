@@ -1,6 +1,7 @@
 // BF_SERVER_RECEPTION_v1 (+ NOVA_VOICE_v1) — Maya phone receptionist.
-// Speech + keypad fallback. Rings Todd (sales) / Andrew (underwriting &
-// named-lender) on their browser softphone only when genuinely available
+// Speech + keypad fallback. Financial: 1 client engagement (Todd + other signed-in staff,
+// not Andrew), 2 credit (Andrew). Risk Management: Todd. Formerly sales / underwriting &
+// named-lender, on their browser softphone only when genuinely available
 // (presence = hours + on-call + in-meeting + manual), else offers "take a
 // message" or "leave a voicemail". Every dead-end records to /voicemail.
 //
@@ -23,8 +24,13 @@ const VOICE = "Polly.Joanna";
 const BASE = "/api/webhooks/twilio/reception";
 
 const PHRASES: Record<string, string> = {
-  greeting: "This call is recorded for quality. Welcome to the Boreal Group of Companies. Are you looking to reach Boreal Financial, or Boreal Risk Management? You can say it, or press 1 for Financial, 2 for Risk Management.",
-  intent_prompt: "Thanks. What can I help you with, or who would you like to reach? You can say sales, underwriting, or a person's name. Or press 1 for sales, 2 for underwriting.",
+  // BF_SERVER_RECEPTION_MENU_v698 - wording approved by Todd 2026-10-01.
+  greeting: "This call may be recorded. Thank you for calling the Boreal Group of Companies. Are you looking for Boreal Financial, or Boreal Risk Management? You can say it, or press 1 for Financial, 2 for Risk Management.",
+  intent_prompt: "Thank you for contacting Boreal Financial. For client engagement, press 1. For credit, press 2.",
+  intent_retry: "Sorry, I didn't catch that. For client engagement, press 1. For credit, press 2.",
+  connect_engagement: "One moment, connecting you to our client engagement team.",
+  engagement_unavail: "Sorry, no one is available to take your call right now.",
+  engagement_noanswer: "Sorry, no one was able to pick up.",
   offer: "Would you like me to take a message and pass it on, or would you like to leave a voicemail? Say message, or press 1. Say voicemail, or press 2.",
   record_prompt: "Please leave your name, number, and a brief message after the tone.",
   vm_prompt: "Please leave your message after the tone.",
@@ -131,7 +137,7 @@ async function newVR(): Promise<any> {
 }
 function send(res: Response, v: any): Response { res.setHeader("Content-Type", "text/xml"); return res.send(v.toString()); }
 
-type Target = "sales" | "underwriting";
+type Target = "sales" | "underwriting" | "engagement";
 function displayFor(t: Target): string { return t === "sales" ? "Todd" : "Andrew"; }
 function lkey(t: Target): string { return t === "sales" ? "todd" : "andrew"; }
 
@@ -166,6 +172,29 @@ async function resolveTarget(t: Target): Promise<{ identity: string | null; avai
     const clientReady = r.status === "available" && !!r.twilio_identity && !!r.fresh;
     return { identity: r.twilio_identity, available: r.status === "available" && !!r.twilio_identity, onCall: !!r.on_call, clientReady, cell: toE164(r.phone), standaloneWatch: !!r.standalone_watch, userId: r.user_id ?? null };
   } catch { return { identity: null, available: false, onCall: false, clientReady: false, cell: null, standaloneWatch: false, userId: null }; }
+}
+
+// Every signed-in, free staff member except Andrew, for the client-engagement group ring.
+async function readyStaffIdentities(excludeUserId: string | null): Promise<string[]> {
+  try {
+    const { rows } = await pool.query<{ twilio_identity: string }>(
+      `SELECT DISTINCT sp.twilio_identity
+         FROM users u JOIN staff_presence sp ON sp.user_id = u.id
+        WHERE sp.status = 'available' AND sp.twilio_identity IS NOT NULL
+          AND coalesce(sp.on_call, false) = false AND coalesce(u.active, true) = true
+          AND ((sp.last_heartbeat > now() - interval '90 seconds') OR EXISTS (
+                SELECT 1 FROM staff_device_credentials dc WHERE dc.user_id = u.id AND dc.revoked_at IS NULL
+                  AND dc.expires_at > now()))
+          AND ($1::text IS NULL OR u.id::text <> $1)
+          AND NOT (coalesce(u.first_name, '') ILIKE '%andrew%' OR coalesce(u.last_name, '') ILIKE '%andrew%')
+        LIMIT 9`,
+      [excludeUserId],
+    );
+    return rows.map((r) => r.twilio_identity).filter(Boolean);
+  } catch (err: any) {
+    console.warn("[reception] ready staff lookup failed", { message: err?.message });
+    return [];
+  }
 }
 
 function offerMessageOrVoicemail(v: any, openerKey: string, openerText: string, staffUserId?: string | null): void {
@@ -211,6 +240,7 @@ router.post("/company", twilioWebhookValidation, async (req: Request, res: Respo
   if (d === "2" || /risk|insurance|brm|management/.test(s)) company = "BRM";
   else if (d === "1" || /financ|finance|loan|funding|\bbf\b/.test(s)) company = "BF";
   const v = await newVR();
+  if (company === "BRM") { v.redirect({ method: "POST" }, `${BASE}/intent?company=BRM`); return send(res, v); }
   const g = v.gather({ input: "speech dtmf", numDigits: 1, speechTimeout: "auto", timeout: 6, action: `${BASE}/intent?company=${company}`, method: "POST" });
   emit(g, "intent_prompt", PHRASES.intent_prompt);
   v.redirect({ method: "POST" }, `${BASE}/intent?company=${company}`);
@@ -225,9 +255,10 @@ router.post("/intent", twilioWebhookValidation, async (req: Request, res: Respon
     emit(v, "opener_address1", PHRASES.opener_address1);
     offerMessageOrVoicemail(v, "opener_address2", PHRASES.opener_address2); return send(res, v);
   }
-  const wantsAndrew = d === "2" || /andrew|underwrit|document|condition|approval|declin|status|lender/.test(s);
-  const wantsTodd = d === "1" || /todd|sales|apply|\bnew\b|financ|funding|loan|quote|get started/.test(s);
-  const target: Target | null = wantsAndrew ? "underwriting" : wantsTodd ? "sales" : null;
+  const wantsAndrew = d === "2" || /credit|andrew|underwrit|document|condition|approval|declin|status|lender/.test(s);
+  const wantsTodd = d === "1" || /client|engag|todd|sales|apply|\bnew\b|financ|funding|loan|quote|get started/.test(s);
+  const isBrm = String(req.query.company ?? "BF") === "BRM";
+  let target: Target | null = isBrm ? "sales" : wantsAndrew ? "underwriting" : wantsTodd ? "engagement" : null;
   // BF_SERVER_VOICE_AUDIT_v686 - retain the caller's attempted response in logs,
   // then give an unclear caller one explicit keypad retry before voicemail.
   console.log(JSON.stringify({ event: "reception_intent", callSid: req.body?.CallSid ?? null, speech: s || null, digits: d || null, target, retry: String(req.query.retry ?? "") === "1" }));
@@ -235,11 +266,32 @@ router.post("/intent", twilioWebhookValidation, async (req: Request, res: Respon
     const company = String(req.query.company ?? "BF");
     const retryUrl = `${BASE}/intent?company=${encodeURIComponent(company)}&retry=1`;
     const g = v.gather({ input: "speech dtmf", numDigits: 1, speechTimeout: "auto", timeout: 6, action: retryUrl, method: "POST" });
-    emit(g, "intent_retry", "Sorry, I didn't catch that. Press 1 for Todd, or 2 for Andrew.");
+    emit(g, "intent_retry", PHRASES.intent_retry);
     v.redirect({ method: "POST" }, retryUrl);
     return send(res, v);
   }
-  if (!target) { offerMessageOrVoicemail(v, "opener_unclear", PHRASES.opener_unclear); return send(res, v); }
+  if (!target) target = "engagement";
+  if (target === "engagement") {
+    const todd = await resolveTarget("sales");
+    const andrew = await resolveTarget("underwriting");
+    const others = await readyStaffIdentities(andrew.userId);
+    const identities = Array.from(new Set([...(todd.clientReady && todd.identity ? [todd.identity] : []), ...others])).slice(0, 10);
+    const callerId = String((req.body?.From ?? "")).trim() || config.twilio.callerId || config.twilio.from || config.twilio.number || undefined;
+    if (identities.length > 0) {
+      emit(v, "connect_engagement", PHRASES.connect_engagement);
+      const dial = v.dial({ answerOnBridge: true, timeout: 25, action: `${BASE}/unavailable?target=engagement`, method: "POST", callerId });
+      for (const identity of identities) dial.client(identity);
+      return send(res, v);
+    }
+    if (todd.standaloneWatch && todd.cell) {
+      emit(v, "connect_engagement", PHRASES.connect_engagement);
+      const dial = v.dial({ answerOnBridge: true, timeout: 25, action: `${BASE}/unavailable?target=engagement`, method: "POST", callerId });
+      dial.number(todd.cell);
+      return send(res, v);
+    }
+    offerMessageOrVoicemail(v, "engagement_unavail", PHRASES.engagement_unavail, null);
+    return send(res, v);
+  }
   const t = await resolveTarget(target);
   const name = displayFor(target);
   // BF_SERVER_RECEPTION_SIMRING_v1 — ring the softphone only when its heartbeat
@@ -272,6 +324,12 @@ router.post("/intent", twilioWebhookValidation, async (req: Request, res: Respon
 });
 
 router.post("/unavailable", twilioWebhookValidation, async (req: Request, res: Response) => {
+  if (String(req.query.target || "") === "engagement") {
+    const v = await newVR();
+    if (String(req.body?.DialCallStatus ?? "") === "completed") { v.hangup(); return send(res, v); }
+    offerMessageOrVoicemail(v, "engagement_noanswer", PHRASES.engagement_noanswer, null);
+    return send(res, v);
+  }
   const target = (String(req.query.target || "") === "underwriting" ? "underwriting" : "sales") as Target;
   const dialStatus = String(req.body?.DialCallStatus ?? "");
   const v = await newVR();
