@@ -4,6 +4,7 @@ import { listRouteInventory } from "../debug/printRoutes.js";
 import { readyHandler } from "./ready.js";
 import internalRoutes from "./internal.js";
 import { runtimeHandler } from "./_int/runtime.js";
+import { getGoogleHealth } from "../services/googleHealth.js"; // BF_SERVER_GOOGLE_HEALTH_v705
 import pwaInternalRoutes from "./_int/pwa.js";
 import twilio from "twilio";
 import { requireAuth } from "../middleware/auth.js";
@@ -11,6 +12,15 @@ import { requireAuth } from "../middleware/auth.js";
 const router = Router();
 
 router.get("/runtime", requireAuth, runtimeHandler);
+// BF_SERVER_GOOGLE_HEALTH_v705 - live Google Ads / Analytics checks for Settings > Runtime Verification.
+router.get("/google-health", requireAuth, async (req, res) => {
+  try {
+    res.json(await getGoogleHealth(String(req.query.refresh ?? "") === "1"));
+  } catch (err) {
+    console.warn("[google_health] route failed", { message: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ error: "google_health_failed" });
+  }
+});
 router.get("/ready", readyHandler);
 router.get("/build", async (_req: any, res: any) => {
   // v611: read build-info written at build time, fall back to env.

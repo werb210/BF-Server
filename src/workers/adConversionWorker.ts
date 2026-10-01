@@ -14,6 +14,7 @@ import { resolvePendingAdAttributions } from "../services/googleAdsAttribution.j
 import { syncCustomerMatch } from "../services/googleAdsEnhanced.js"; // BF_SERVER_ADS_ENHANCED_v403
 import { uploadFundedConversions, uploadSubmitConversions } from "../services/googleAdsConversions.js";
 import { retractClosedSubmitConversions, uploadQualifiedConversions } from "../services/googleAdsLeadSignals.js";
+import { startGoogleHealthMonitor } from "../services/googleHealth.js"; // BF_SERVER_GOOGLE_HEALTH_v705
 
 const TICK_MS = 60 * 60_000;
 
@@ -45,5 +46,6 @@ export function startAdConversionWorker(_pool: Pool): { stop: () => void } {
   };
   const timer = setInterval(() => { void tick(); }, TICK_MS);
   void tick();
-  return { stop: () => { stopped = true; clearInterval(timer); } };
+  const health = startGoogleHealthMonitor(); // BF_SERVER_GOOGLE_HEALTH_v705 - hourly Google checks + alerts
+  return { stop: () => { stopped = true; clearInterval(timer); health.stop(); } };
 }
