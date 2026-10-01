@@ -457,6 +457,13 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
   // wrapped to fail-open: a DB hiccup must not break the call.
   const rawFrom = String(params.From ?? params.from ?? "").trim();
   const isSdkOutbound = rawFrom.startsWith("client:") && looksLikePhone && to;
+  // BF_SERVER_DIALLER_DIRECT_LINE_v699 - staff (not client-app "client-<applicationId>") calls show
+  // the caller's own direct number, else the 866 main line. callerIdForUser never throws.
+  const sdkIdentity = rawFrom.startsWith("client:") ? rawFrom.slice("client:".length).trim() : "";
+  const isStaffSdkCall = Boolean(isSdkOutbound) && sdkIdentity !== "" && !sdkIdentity.startsWith("client-");
+  const effectiveCallerId = isStaffSdkCall
+    ? await (await import("../voice/directLines.js")).callerIdForUser(pool, sdkIdentity)
+    : callerId;
   if (isSdkOutbound) {
     const callSid = String(params.CallSid ?? params.callSid ?? "").trim() || null;
     const identity = rawFrom.slice("client:".length).trim() || null;
@@ -469,7 +476,7 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
       const { startCall } = await import("../modules/calls/calls.service.js");
       await startCall({
         phoneNumber: to,
-        fromNumber: callerId || null,
+        fromNumber: effectiveCallerId || null,
         toNumber: to,
         direction: "outbound",
         status: "initiated",
@@ -498,7 +505,7 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
   // BF_SERVER_BLOCK_50_v1 -- guard against empty callerId. Twilio
   // rejects vr.dial with no callerId for outbound; speak the failure
   // instead so the operator hears it instead of an instant hangup.
-  if ((looksLikePhone || outboundFlag) && to && !callerId) {
+  if ((looksLikePhone || outboundFlag) && to && !effectiveCallerId) {
     vr.say({ voice: "Polly.Joanna" },
       "Outbound calling is not configured. Please set the Twilio caller ID environment variable on the server.");
     vr.hangup();
@@ -506,7 +513,7 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
     return;
   }
   if ((looksLikePhone || outboundFlag) && to) {
-    const dial = vr.dial({ callerId, answerOnBridge: true, timeout: 30 });
+    const dial = vr.dial({ callerId: effectiveCallerId, answerOnBridge: true, timeout: 30 });
     dial.number(to);
   } else if (rawFrom.startsWith("client:")) {
     // BF_SERVER_STAFF_LEG_NO_VOICEMAIL_v1 — a staff browser (SDK) leg that
