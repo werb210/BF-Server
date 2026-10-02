@@ -9,7 +9,7 @@ type AttributionInput = {
   occurredAt?: string | Date | null;
 };
 
-type ClickRow = {
+export type ClickRow = {
   campaign?: { id?: string | number; name?: string };
   adGroup?: { id?: string | number; name?: string };
   adGroupAd?: { resourceName?: string; ad?: { id?: string | number; resourceName?: string } };
@@ -24,7 +24,7 @@ function formatDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function candidateDates(occurredAt?: string | Date | null): string[] {
+export function candidateDates(occurredAt?: string | Date | null): string[] {
   const base = occurredAt ? new Date(occurredAt) : new Date();
   const safe = Number.isNaN(base.getTime()) ? new Date() : base;
   const dates = [0, -1, 1].map((offset) => formatDate(new Date(safe.getTime() + offset * DAY_MS)));
@@ -40,7 +40,7 @@ function parseAdId(row: ClickRow): string | null {
   return match?.[1] ?? match?.[2] ?? null;
 }
 
-async function queryClick(gclid: string, date: string): Promise<ClickRow | null> {
+export async function queryClick(gclid: string, date: string): Promise<ClickRow | null> {
   const escaped = gclid.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   const rows = await googleAdsSearch(`
     SELECT

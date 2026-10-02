@@ -33,6 +33,8 @@ export function startAdConversionWorker(_pool: Pool): { stop: () => void } {
       const { syncAudiencesViaDataManager } = await import("../services/googleAudienceSync.js"); // BF_SERVER_ADS_AUDIENCES_v708
       const audiences = await syncAudiencesViaDataManager();
       // BF_SERVER_CUSTOMER_MATCH_LISTS_v711
+      // BF_SERVER_VISITOR_AD_LOOKUP_v713 - campaign/keyword for every ad visit.
+      const visitorAds = await (await import("../services/visitorAdLookup.js")).resolveVisitorSessionAds();
       const fundedList = await (await import("../services/customerMatchLists.js")).syncFundedList();
       const funded = await uploadFundedConversions();
       console.log("[ads_conversion] tick", JSON.stringify({
@@ -45,6 +47,7 @@ export function startAdConversionWorker(_pool: Pool): { stop: () => void } {
         customerMatch,
         audiences,
         fundedList,
+        visitorAds,
       }));
     } catch (e) {
       console.warn("[ads_conversion] tick failed", e instanceof Error ? e.message : String(e));
