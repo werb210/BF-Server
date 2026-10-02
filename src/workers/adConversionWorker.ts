@@ -30,6 +30,8 @@ export function startAdConversionWorker(_pool: Pool): { stop: () => void } {
       const retracted = await retractClosedSubmitConversions();
       const attribution = await resolvePendingAdAttributions();
       const customerMatch = await syncCustomerMatch(); // weekly; no-op unless GOOGLE_ADS_CUSTOMER_MATCH_ENABLED=true
+      const { syncAudiencesViaDataManager } = await import("../services/googleAudienceSync.js"); // BF_SERVER_ADS_AUDIENCES_v708
+      const audiences = await syncAudiencesViaDataManager();
       const funded = await uploadFundedConversions();
       console.log("[ads_conversion] tick", JSON.stringify({
         ms: Date.now() - startedAt,
@@ -39,6 +41,7 @@ export function startAdConversionWorker(_pool: Pool): { stop: () => void } {
         funded,
         attribution,
         customerMatch,
+        audiences,
       }));
     } catch (e) {
       console.warn("[ads_conversion] tick failed", e instanceof Error ? e.message : String(e));
