@@ -685,18 +685,15 @@ router.get("/google-ads/suggestions", safeHandler(async (req: any, res: any) => 
   const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 90);
   if (!suggestionsConfigured()) { respondOk(res, { configured: false, suggestions: [] }); return; }
   // BF_SERVER_ADS_PAUSE_GUARD_v707: zero recorded conversions is not enough evidence to pause ads.
+  // BF_SERVER_MAYA_ADS_INSIGHTS_v712 - apply every standing ad rule and add full-picture findings.
   const built = await buildSuggestions(days);
   const { accountConversions } = await import("../services/googleAdsNegativeGuard.js");
   const conversions = await accountConversions(days);
-  if (conversions <= 0) {
-    respondOk(res, {
-      ...built,
-      suggestions: built.suggestions.filter((sg: any) => sg.kind !== "pause_campaign" && sg.kind !== "pause_keyword"),
-      caveat: "Google Ads has recorded no conversions in this window, so pause suggestions are held back until conversions are flowing.",
-    });
-    return;
-  }
-  respondOk(res, built);
+  const { applyAdRules } = await import("../services/adsRules.js");
+  const ruled = applyAdRules(built.suggestions, { conversions });
+  const { fullPictureInsights } = await import("../services/adsPicture.js");
+  const insights = await fullPictureInsights(days);
+  respondOk(res, { ...built, suggestions: ruled.suggestions, insights, ...(ruled.caveats.length ? { caveat: ruled.caveats[0] } : {}) });
 }));
 router.post("/google-ads/suggestions/apply", safeHandler(async (req: any, res: any) => {
   // BF_SERVER_ADS_WRITE_GATE_v56 - a 403, not a 200 with ok:false, so a blocked
@@ -707,6 +704,12 @@ router.post("/google-ads/suggestions/apply", safeHandler(async (req: any, res: a
   }
   const action = req.body && req.body.action;
   if (!action || typeof action.type !== "string") { respondOk(res, { ok: false, error: "missing action" }); return; }
+  // BF_SERVER_MAYA_ADS_INSIGHTS_v712 - budgets and bid strategy are Todd's alone.
+  const { isToddOnlyAction } = await import("../services/adsRules.js");
+  if (isToddOnlyAction(action)) {
+    res.status(403).json({ ok: false, error: "todd_only", message: "Budgets and bid strategy are changed by Todd in Google Ads, not from the portal." });
+    return;
+  }
   respondOk(res, await applySuggestion(action));
 }));
 

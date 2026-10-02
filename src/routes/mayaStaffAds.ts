@@ -105,6 +105,50 @@ route("/staff/ads-negatives", "ads.negatives", async () => {
   return adsNegatives(dbq, () => listConflicts());
 });
 
+// BF_SERVER_MAYA_ADS_INSIGHTS_v712 - every read-only Ads report available in
+// the portal is also available to Maya, with the standing rules attached.
+async function withAdRules(report: Record<string, unknown>, summary: string) {
+  const { ADS_RULES } = await import("../services/adsRules.js");
+  return { ...report, ad_rules: ADS_RULES, summary };
+}
+
+route("/staff/ads-story", "ads.story", async (req) => {
+  const { storyReport, storyBy, windowDays } = await import("./marketing/adsStory.js");
+  const days = windowDays(req.body?.days);
+  const by = storyBy(req.body?.by);
+  return withAdRules(await storyReport(days, by), `Ad-to-funded story for ${days} days, grouped by ${by}.`);
+});
+
+route("/staff/ads-visitors", "ads.visitors", async (req) => {
+  const { visitorsReport, windowDays } = await import("./marketing/adsStory.js");
+  const days = windowDays(req.body?.days, 30);
+  const filter = String(req.body?.filter ?? "all");
+  return withAdRules(await visitorsReport(days, filter), `Visitor report for ${days} days (${filter}).`);
+});
+
+route("/staff/ads-dropoff", "ads.dropoff", async (req) => {
+  const { dropoffReport, windowDays } = await import("./marketing/adsStory.js");
+  const days = windowDays(req.body?.days);
+  return withAdRules(await dropoffReport(days), `Application drop-off report for ${days} days.`);
+});
+
+route("/staff/ads-health", "ads.health", async (req) => {
+  const { getGoogleHealth } = await import("../services/googleHealth.js");
+  return withAdRules(await getGoogleHealth(req.body?.refresh === true) as unknown as Record<string, unknown>, "Google connection health report.");
+});
+
+route("/staff/ads-ga4", "ads.ga4", async (req) => {
+  const { ga4Configured, runGa4Report } = await import("../services/ga4Service.js");
+  const days = Math.min(365, Math.max(1, Number(req.body?.days) || 30));
+  const report = ga4Configured() ? await runGa4Report(days) : { configured: false };
+  return withAdRules((report ?? { configured: false }) as Record<string, unknown>, `GA4 report for ${days} days.`);
+});
+
+route("/staff/ads-audiences", "ads.audiences", async () => {
+  const { customerMatchConfigured, listStatus } = await import("../services/customerMatchLists.js");
+  return withAdRules({ configured: customerMatchConfigured(), lists: await listStatus() }, "Google Ads audience list status.");
+});
+
 route("/staff/ads-negatives/add", "ads.negatives.add", async (req) => {
   const campaign = await resolveCampaign(dbq, req.body?.campaign_id ?? req.body?.campaign);
   if (!campaign) return { error: "campaign_not_found", message: "Name the campaign (or its id) the negatives go on." };
