@@ -16,6 +16,7 @@ import { findAuthUserByPhone } from "../modules/auth/auth.repo.js";
 import { runQuery as dbQuery_v68 } from "../lib/db.js";
 import { pool } from "../db.js";
 import { notifyAllStaff } from "../services/notifications/notifyAllStaff.js";
+import { isReviewPhone, reviewCodeMatches } from "../services/reviewLogin.js"; // BF_SERVER_REVIEW_LOGIN_v710
 import microsoftRoutes from "./authMicrosoft.js";
 
 const router = Router();
@@ -123,6 +124,11 @@ router.post("/otp/start", otpStartLimiter, async (req, res) => {
         status: "ok",
         data: { sent: true },
       });
+    }
+
+    // BF_SERVER_REVIEW_LOGIN_v710 - the store-review number gets no text.
+    if (isReviewPhone(phone)) {
+      return res.status(200).json({ status: "ok", data: { sent: true } });
     }
 
     if (process.env.NODE_ENV !== "test" && !process.env.TWILIO_VERIFY_SERVICE_SID) {
@@ -235,9 +241,12 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
   try {
     const twilioClient = getTwilioClient();
 
-    const verificationCheck = await twilioClient.verify.v2
-      .services(serviceSid)
-      .verificationChecks.create({ to: phone, code });
+    // BF_SERVER_REVIEW_LOGIN_v710 - the store-review number accepts only its configured code.
+    const verificationCheck = isReviewPhone(phone)
+      ? { status: reviewCodeMatches(phone, String(code)) ? "approved" : "denied" }
+      : await twilioClient.verify.v2
+          .services(serviceSid)
+          .verificationChecks.create({ to: phone, code });
 
     if (verificationCheck.status !== "approved") {
       return res.status(401).json({ error: "Invalid code" });
