@@ -1501,10 +1501,15 @@ router.post(
           return res.json({ ok: true, preview: true, channel: "sms", tag, recipients: total, summary });
         }
         if (total === 0) return res.json({ ok: true, recipients: 0, smsSent: 0, emailSent: 0, failed: 0 });
-        const out = await runSmsSend(pool, { silo, tag, body, linkUrl: null, fbSubject: null, fbHtml: null, createdBy: null });
-        const summary = `Sent SMS to ${out.total} recipient(s): ${out.smsSent} SMS, ${out.emailSent} email fallback, ${out.failed} failed.`;
-        await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, tag, sent: true }, ok: true, summary, sessionId: sid });
-        return res.json({ ok: true, sent: true, channel: "sms", recipients: out.total, smsSent: out.smsSent, emailSent: out.emailSent, failed: out.failed, summary });
+        // BF_SERVER_SMS_SEND_SAFETY_v710
+        const queued = await pool.query<{ id: string; not_before: string }>(
+          `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by, not_before)
+           VALUES ('sms', $1, $2, $3, $4, NULL, now() + interval '5 minutes') RETURNING id, not_before`,
+          [silo, tag, JSON.stringify({ body, linkUrl: null, fbSubject: null, fbHtml: null, templateId: null, tags: null, excludeTags: null }), total],
+        );
+        const summary = `Queued SMS to ${total} recipient(s). It sends in 5 minutes and can be cancelled in Marketing until then.`;
+        await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, tag, queued: true }, ok: true, summary, sessionId: sid });
+        return res.json({ ok: true, queued: true, jobId: queued.rows[0].id, channel: "sms", recipients: total, notBefore: queued.rows[0].not_before, summary });
       }
       if (!sendgridConfigured()) return res.json({ ok: false, error: "email_not_configured" });
       const subject = biStr(req.body?.subject);

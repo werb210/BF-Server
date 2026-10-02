@@ -41,7 +41,16 @@ export function startSendQueueWorker(pool: Pool): { stop: () => void } {
       try {
         const p = job.payload || {};
         if (job.channel === "sms") {
-          const result = await runSmsSend(pool, { silo: job.silo, tag: job.tag, body: String(p.body || ""), linkUrl: p.linkUrl ?? null, fbSubject: p.fbSubject ?? null, fbHtml: p.fbHtml ?? null, createdBy: job.created_by ?? null, templateId: (p as any).templateId ?? null }, progress, abortCheck);
+          // BF_SERVER_SMS_SEND_SAFETY_v710
+          const result = await runSmsSend(
+            pool,
+            { silo: job.silo, tag: job.tag, body: String(p.body || ""), linkUrl: p.linkUrl ?? null, fbSubject: p.fbSubject ?? null, fbHtml: p.fbHtml ?? null, createdBy: job.created_by ?? null, templateId: (p as any).templateId ?? null, tags: (p.tags as string[] | undefined) ?? null, excludeTags: (p.excludeTags as string[] | undefined) ?? null, campaignId: (p as any).campaignId ?? null },
+            progress,
+            abortCheck,
+            async (campaignId: string) => {
+              await pool.query(`UPDATE marketing_send_jobs SET payload = payload || jsonb_build_object('campaignId', $2::text), updated_at = now() WHERE id = $1`, [job.id, campaignId]);
+            },
+          );
           await pool.query(
             `UPDATE marketing_send_jobs SET status=$5, total=$2, sent=$3, failed=$4, finished_at=now(), updated_at=now() WHERE id=$1`,
             [job.id, result.total, result.smsSent + result.emailSent, result.failed, result.aborted ? 'canceled' : 'done'],

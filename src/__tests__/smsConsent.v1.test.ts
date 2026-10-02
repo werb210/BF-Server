@@ -42,7 +42,7 @@ describe("CASL consent gating", () => {
 
 describe("the send honours it", () => {
   it("marketing_opt_out is now checked on the SMS path, not just the email fallback", () => {
-    expect(runner).toContain("!c.marketing_opt_out && isCanadianMobile(c.phone)");
+    expect(runner).toContain("!r.marketing_opt_out && isCanadianMobile(r.phone)");
   });
   it("the recipient query and the count both use the same eligibility rule", () => {
     expect(runner).toContain("SMS_ELIGIBLE_SQL");
