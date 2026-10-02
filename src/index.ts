@@ -241,6 +241,11 @@ export async function start(): Promise<void> {
     try { const w = startProductKnowledgeWorker(pool); workerStops.push(w.stop); console.log("[startup] product-knowledge worker started"); }
     catch (err) { console.error("[startup] product-knowledge worker failed to start:", err); }
 
+    // BF_SERVER_ADS_WEEKLY_EMAIL_v708
+    const { startAdsWeeklyEmailWorker } = await import("./workers/adsWeeklyEmailWorker.js");
+    try { const w = startAdsWeeklyEmailWorker(pool); workerStops.push(w.stop); console.log("[startup] ads-weekly-email worker started"); }
+    catch (err) { console.error("[startup] ads-weekly-email worker failed to start:", err); }
+
     // BF_SERVER_ADS_WAREHOUSE_v1 - own Google Ads history locally.
     const { startGoogleAdsWarehouseWorker } = await import("./workers/googleAdsWarehouseWorker.js");
     try { const w = startGoogleAdsWarehouseWorker(pool); workerStops.push(w.stop); console.log("[startup] ads-warehouse worker started"); }
