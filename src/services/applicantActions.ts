@@ -162,5 +162,19 @@ async function promptItems(applicationId: string, submittedFormTypes: string[]):
     const item: ActionItem = { key: "form:sba_forms", kind: "form", label: "SBA forms", action: "sba_forms", urgent: false };
     if (missing.length) outstanding.push(item); else completed.push(item);
   }
+  // BF_SERVER_MEDIA_FEE_AGREEMENT_v709 - the applicant signs the fee agreement here.
+  try {
+    const fee = await dbQuery<{ status: string; signer_is_applicant: boolean }>(
+      `SELECT status, signer_is_applicant FROM media_fee_agreements WHERE application_id = $1 LIMIT 1`,
+      [applicationId],
+    );
+    const row = fee.rows?.[0];
+    if (row && row.signer_is_applicant === true && typeof row.status === "string") {
+      const item: ActionItem = { key: "fee_agreement", kind: "action", label: "Sign your fee agreement", action: "sign_fee_agreement", urgent: true };
+      if (row.status === "signed") completed.push(item); else outstanding.push(item);
+    }
+  } catch (err: any) {
+    console.warn("[action-center] fee_agreement_read_failed", { applicationId, message: err?.message });
+  }
   return { outstanding, completed };
 }

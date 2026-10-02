@@ -408,6 +408,54 @@ router.get(
   })
 );
 
+// BF_SERVER_MEDIA_FEE_AGREEMENT_v709 - the client signs the media fee agreement
+// in the CMP. A signing link lets the holder sign, so it is owner-guarded like
+// /signing-session. /fee-agreement/complete verifies with SignNow before marking.
+router.get(
+  "/fee-agreement",
+  makeSigningOwnerGuard((t: string, p?: unknown[]) => dbQuery(t, p as any[])),
+  safeHandler(async (req: any, res: any) => {
+    const applicationId = typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : "";
+    if (!applicationId) { res.status(400).json({ error: "applicationId_required" }); return; }
+    const { getFeeAgreement } = await import("../../services/feeAgreement/mediaFeeAgreement.js");
+    const ag = await getFeeAgreement(applicationId);
+    res.status(200).json(ag
+      ? { required: true, status: ag.status, signerIsApplicant: ag.signer_is_applicant, signerName: ag.signer_name, signedAt: ag.signed_at }
+      : { required: false });
+  })
+);
+router.get(
+  "/fee-agreement/session",
+  makeSigningOwnerGuard((t: string, p?: unknown[]) => dbQuery(t, p as any[])),
+  safeHandler(async (req: any, res: any) => {
+    const applicationId = typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : "";
+    if (!applicationId) { res.status(400).json({ error: "applicationId_required" }); return; }
+    const { createFeeAgreementSigningSession } = await import("../../services/feeAgreement/mediaFeeAgreement.js");
+    try {
+      res.status(200).json(await createFeeAgreementSigningSession(applicationId));
+    } catch (e) {
+      console.warn("[fee-agreement] session failed", { applicationId, message: e instanceof Error ? e.message : String(e) });
+      res.status(200).json({ status: "error", reason: "session_failed" });
+    }
+  })
+);
+router.post(
+  "/fee-agreement/complete",
+  safeHandler(async (req: any, res: any) => {
+    const applicationId =
+      typeof req.query.applicationId === "string" ? req.query.applicationId.trim()
+        : typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
+    if (!applicationId) { res.status(400).json({ error: "applicationId_required" }); return; }
+    const { confirmFeeAgreementSigned } = await import("../../services/feeAgreement/mediaFeeAgreement.js");
+    try {
+      res.status(200).json({ ok: true, ...(await confirmFeeAgreementSigned(applicationId)) });
+    } catch (e) {
+      console.warn("[fee-agreement] confirm failed", { applicationId, message: e instanceof Error ? e.message : String(e) });
+      res.status(200).json({ ok: true, signed: false, reason: "status_check_failed" });
+    }
+  })
+);
+
 // BF_SERVER_BLOCK_v476_CLIENT_OFFERS_v1 - the client mini-portal read offers from
 // the staff-only GET /api/offers (Admin/Staff roles), so every client got 403 and
 // never saw an offer. Same columns, owner-guarded like the signing link.

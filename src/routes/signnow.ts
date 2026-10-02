@@ -130,6 +130,18 @@ router.post(
       }
     }
 
+    // BF_SERVER_MEDIA_FEE_AGREEMENT_v709 - client fee agreement signed. Verified
+    // with SignNow before it is marked signed and filed under Documents.
+    if (documentGroupId || documentId) {
+      const { confirmFeeAgreementBySignNowIds } = await import("../services/feeAgreement/mediaFeeAgreement.js");
+      const fee = await confirmFeeAgreementBySignNowIds([documentGroupId, documentId].filter(Boolean) as string[]);
+      if (fee.matched) {
+        console.log("[signnow-webhook] fee_agreement", fee);
+        res.status(200).json({ received: true, match: "fee_agreement", signed: fee.signed === true });
+        return;
+      }
+    }
+
     // BF_SERVER_SBA_WEBHOOK_ATTACH_v98
     // SBA forms signed. Unlike the PNW there are SEVERAL envelopes per
     // application - one per owner, because Form 413 is a personal balance sheet

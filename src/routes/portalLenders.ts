@@ -170,6 +170,13 @@ router.patch(
         contact_phone: (lender as any).primary_contact_phone ?? null,
       });
     if (!lender) throw new AppError("not_found", "Lender not found.", 404);
+    // BF_SERVER_MEDIA_FEE_AGREEMENT_v709 - box unchecked: every media file already
+    // sent to this lender gets the client fee agreement (idempotent per file).
+    if ((body.hasBrokerAgreement ?? body.has_broker_agreement) === false && (lender as any).has_broker_agreement === false) {
+      void import("../services/feeAgreement/mediaFeeAgreement.js")
+        .then((m) => m.backfillFeeAgreementsForLender(id))
+        .catch((e: unknown) => { console.warn("[fee-agreement] backfill failed", { lenderId: id, message: e instanceof Error ? e.message : String(e) }); });
+    }
     res.status(200).json(lender);
   })
 );

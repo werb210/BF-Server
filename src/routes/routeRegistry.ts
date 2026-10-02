@@ -69,6 +69,7 @@ import o365TokensRoutes from "./o365Tokens.js";
 import o365OAuthRoutes from "./o365OAuth.js";
 import portalRoutes from "./portal.js";
 import portalLendersRoutes from "./portalLenders.js";
+import portalFeeAgreementRoutes from "./portalFeeAgreement.js"; // BF_SERVER_MEDIA_FEE_AGREEMENT_v709
 import portalLenderProductsRoutes from "./portalLenderProducts.js";
 // BF_SERVER_BLOCK_TWO_STAGE_v1
 import applicationFormResponses from "./applicationFormResponses.js";
@@ -148,6 +149,7 @@ const ALL_ROLES: Role[] = [
 const combinedPortalRoutes = Router();
 combinedPortalRoutes.use(portalRoutes);
 combinedPortalRoutes.use(portalLendersRoutes);
+combinedPortalRoutes.use(portalFeeAgreementRoutes); // BF_SERVER_MEDIA_FEE_AGREEMENT_v709
 // BF_SERVER_BLOCK_v110_REQUIRED_DOCS_ROUTE_ORDER_v1 - required-docs route
 // MUST mount BEFORE portalLenderProductsRoutes. The latter has
 // GET /lender-products/:id which captures `required-docs` as the :id
