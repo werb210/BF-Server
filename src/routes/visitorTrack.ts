@@ -23,16 +23,22 @@ router.post("/", async (req: any, res: any) => {
     if (!sessionId) return res.json({ ok: true, skipped: "no_session" });
 
     const a = (b.attribution ?? {}) as Record<string, unknown>;
+    // BF_SERVER_VISITOR_AD_LOOKUP_v713 - the website only stores attribution when a
+    // visit carries ad/UTM tags, so untagged visits had no landing page. Fall back to
+    // the first page viewed in this beacon.
+    const firstPage = Array.isArray(b.events) ? b.events.find((e: any) => (e?.type === "page_view" || e?.type === "pageview") && typeof e?.path === "string" && e.path) : null;
+    const landing = s(a.landing_page) ?? s(firstPage?.path);
     await pool.query(
       `INSERT INTO visitor_sessions (session_id, landing_page, referrer, gclid, gbraid, wbraid, utm_source, utm_medium, utm_campaign, utm_term, utm_content, user_agent)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT (session_id) DO UPDATE SET
          last_seen_at = now(),
+         landing_page = COALESCE(visitor_sessions.landing_page, EXCLUDED.landing_page),
          gclid        = COALESCE(visitor_sessions.gclid, EXCLUDED.gclid),
          utm_source   = COALESCE(visitor_sessions.utm_source, EXCLUDED.utm_source),
          utm_campaign = COALESCE(visitor_sessions.utm_campaign, EXCLUDED.utm_campaign)`,
       [
-        sessionId, s(a.landing_page), s(a.referrer), s(a.gclid, 200), s(a.gbraid, 200), s(a.wbraid, 200),
+        sessionId, landing, s(a.referrer), s(a.gclid, 200), s(a.gbraid, 200), s(a.wbraid, 200),
         s(a.utm_source), s(a.utm_medium), s(a.utm_campaign), s(a.utm_term), s(a.utm_content),
         s(req.headers?.["user-agent"], 300),
       ],
