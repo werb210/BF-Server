@@ -372,5 +372,15 @@ export async function dispatchToSelected(
 
     if (ok) sent.push(l.lender_id);
   }
+  // BF_SERVER_MEDIA_FEE_AGREEMENT_v709 - a MEDIA file that reached a lender which
+  // does not pay Boreal gets the client fee agreement. Never blocks the send.
+  if (sent.length > 0) {
+    try {
+      const { ensureMediaFeeAgreement } = await import("../feeAgreement/mediaFeeAgreement.js");
+      await ensureMediaFeeAgreement(ctx.applicationId, sent);
+    } catch (e) {
+      console.warn("[dispatch] fee agreement check failed", { applicationId: ctx.applicationId, message: e instanceof Error ? e.message : String(e) });
+    }
+  }
   return sent;
 }
