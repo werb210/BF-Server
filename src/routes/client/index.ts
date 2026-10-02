@@ -170,6 +170,13 @@ router.post("/account/delete", safeHandler(async (req: any, res: any) => {
   if (!applicationId) { res.status(400).json({ error: "applicationId_required" }); return; }
   if (!/^[0-9a-f-]{36}$/i.test(applicationId)) { res.status(400).json({ error: "invalid_id" }); return; }
   const { pool } = await import("../../db.js");
+  // BF_SERVER_CUSTOMER_MATCH_LISTS_v711 - deletion also permanently opts out the contact.
+  await pool.query(
+    `UPDATE contacts SET marketing_opt_out = true, tags = array(SELECT DISTINCT unnest(COALESCE(tags,'{}') || ARRAY['account_deleted'])), updated_at = now()
+      WHERE id IN (SELECT contact_id FROM applications WHERE id::text = ($1)::text AND contact_id IS NOT NULL
+                   UNION SELECT contact_id FROM application_contacts WHERE application_id::text = ($1)::text)`,
+    [applicationId],
+  );
   const { rowCount } = await pool.query(
     `DELETE FROM applications WHERE id::text = ($1)::text`, [applicationId]);
   if (!rowCount) { res.status(404).json({ error: "not_found" }); return; }

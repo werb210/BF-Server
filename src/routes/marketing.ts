@@ -24,6 +24,7 @@ import { googleAdsConfigured, runGoogleAdsReport, googleAdsSearch } from "../ser
 import { linkedInAdsConfigured, runLinkedInAdsReport } from "../services/linkedInAdsService.js"; // BF_SERVER_LINKEDIN_ADS_v1
 import adSpendAnalysisRoutes from "./marketing/adSpendAnalysis.js"; // BF_SERVER_AD_SPEND_ANALYSIS_v1
 import adClicksRoutes from "./marketing/adClicks.js"; // BF_SERVER_BLOCK_v614_AD_CLICKS
+import customerMatchRoutes from "./marketing/customerMatch.js"; // BF_SERVER_CUSTOMER_MATCH_LISTS_v711
 import adsStoryRoutes from "./marketing/adsStory.js"; // BF_SERVER_ADS_STORY_v707
 // BF_EMAIL_TEMPLATE_IMPORTS_v1
 import multer from "multer";
@@ -40,6 +41,7 @@ router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.MARKETING_VIEW]));
 router.use(adSpendAnalysisRoutes);
 router.use(adsStoryRoutes); // BF_SERVER_ADS_STORY_v707
+router.use(customerMatchRoutes); // BF_SERVER_CUSTOMER_MATCH_LISTS_v711
 router.use(adClicksRoutes); // BF_SERVER_BLOCK_v614_AD_CLICKS
 
 // BF_SERVER_BLOCK_v780_PUBLIC_LANDING — render+store a landing page from
