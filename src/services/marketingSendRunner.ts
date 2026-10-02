@@ -104,7 +104,36 @@ export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendP
 // identically (and the 36h cascade worker can find the campaign). Mirrors the
 // original inline loop exactly: tracked link, per-send row, opt-out capture, and
 // the no-mobile immediate fallback email.
-export type SmsJob = { silo: string; tag: string | null; body: string; linkUrl: string | null; fbSubject: string | null; fbHtml: string | null; createdBy: string | null; templateId?: string | null; tags?: string[] | null; excludeTags?: string[] | null }; // BF_SERVER_TEMPLATE_ANALYTICS_v1
+export type SmsJob = { silo: string; tag: string | null; body: string; linkUrl: string | null; fbSubject: string | null; fbHtml: string | null; createdBy: string | null; templateId?: string | null; tags?: string[] | null; excludeTags?: string[] | null; campaignId?: string | null }; // BF_SERVER_TEMPLATE_ANALYTICS_v1 BF_SERVER_SMS_SEND_SAFETY_v710
+
+// BF_SERVER_SMS_SEND_SAFETY_v710
+export function phone10(phone: string | null | undefined): string {
+  return String(phone ?? "").replace(/[^0-9]/g, "").slice(-10);
+}
+
+export type SmsAudienceRow = { id: string; email: string | null; phone: string | null; name: string | null; company: string | null; sms_ok: boolean; marketing_opt_out: boolean; line_type: string | null };
+export function planSmsAudience(rows: SmsAudienceRow[], hasFallback: boolean, skipPhones: Set<string> = new Set(), skipEmails: Set<string> = new Set()): { text: SmsAudienceRow[]; email: SmsAudienceRow[] } {
+  const seenPhones = new Set(skipPhones);
+  const seenEmails = new Set(skipEmails);
+  const text: SmsAudienceRow[] = [];
+  const email: SmsAudienceRow[] = [];
+  for (const r of rows) {
+    const p10 = phone10(r.phone);
+    const textable = r.sms_ok === true && !r.marketing_opt_out && isCanadianMobile(r.phone) && (r.line_type == null || r.line_type === "mobile") && p10.length === 10;
+    if (textable) {
+      if (seenPhones.has(p10)) continue;
+      seenPhones.add(p10);
+      text.push(r);
+      continue;
+    }
+    const emailAddress = String(r.email ?? "").trim().toLowerCase();
+    if (hasFallback && emailAddress && !r.marketing_opt_out && !seenEmails.has(emailAddress)) {
+      seenEmails.add(emailAddress);
+      email.push(r);
+    }
+  }
+  return { text, email };
+}
 
 // BF_SERVER_SMS_CONSENT_v1 + BF_SERVER_SMS_AUDIENCE_INCL_EXCL_v1
 // The count now matches what actually gets sent: consent-eligible, not opted out of SMS
@@ -115,52 +144,77 @@ export type SmsJob = { silo: string; tag: string | null; body: string; linkUrl: 
 // number is unchanged; with one, the count includes the people who will receive
 // the email instead, because that is who the campaign actually reaches.
 export async function countSmsRecipients(pool: Pool, silo: string, tag: string | null, tags?: string[] | null, excludeTags?: string[] | null, hasFallback = false): Promise<number> {
-  const r = await pool.query<{ phone: string | null; email: string | null; sms_ok: boolean }>(
-    `SELECT c.phone, c.email, (${SMS_ELIGIBLE_SQL}) AS sms_ok
+  const r = await pool.query<SmsAudienceRow>(
+    `SELECT c.id, c.email, c.phone, c.name, NULL::text AS company, (${SMS_ELIGIBLE_SQL}) AS sms_ok,
+            COALESCE(c.marketing_opt_out,false) AS marketing_opt_out, c.line_type
        FROM contacts c
       WHERE c.silo = $1
         AND ($2::text IS NULL OR $2 = ANY(c.tags))
         AND ($3::text[] IS NULL OR c.tags && $3::text[])
         AND ($4::text[] IS NULL OR NOT (c.tags && $4::text[]))
-        AND ${hasFallback ? CAMPAIGN_ELIGIBLE_SQL : SMS_ELIGIBLE_SQL}`,
+        AND ${hasFallback ? CAMPAIGN_ELIGIBLE_SQL : SMS_ELIGIBLE_SQL}
+      ORDER BY c.created_at ASC, c.id ASC`,
     [silo, tag, tags ?? null, excludeTags ?? null],
   );
-  // isCanadianMobile is JS-side, so it cannot live in the SQL predicate. A row
-  // that is SMS-eligible but not a Canadian mobile still counts when there is a
-  // fallback, because it will be emailed.
-  return r.rows.filter((x) => {
-    const textable = x.sms_ok && isCanadianMobile(x.phone);
-    return textable || (hasFallback && Boolean(x.email));
-  }).length;
+  const plan = planSmsAudience(r.rows, hasFallback, await recentlyTextedPhones(pool));
+  return plan.text.length + plan.email.length;
 }
 
-export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgress, shouldAbort?: ShouldAbort): Promise<{ total: number; smsSent: number; emailSent: number; failed: number; campaignId: string; aborted?: boolean }> { // BF_SERVER_SEND_KILL_SWITCH_v1
-  const cam = await pool.query<{ id: string }>(
-    `INSERT INTO sms_campaigns (silo, tag, sms_body, link_url, fallback_subject, fallback_html, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-    [job.silo, job.tag, job.body, job.linkUrl, job.fbSubject, job.fbHtml, job.createdBy],
+async function recentlyTextedPhones(pool: Pool): Promise<Set<string>> {
+  const r = await pool.query<{ p10: string }>(
+    `SELECT DISTINCT right(regexp_replace(coalesce(phone,''),'[^0-9]','','g'),10) AS p10
+       FROM sms_campaign_sends
+      WHERE message_sid IS NOT NULL AND sent_at > now() - interval '24 hours'`,
   );
-  const campaignId = cam.rows[0].id;
-  const recips = await pool.query<{ id: string; email: string | null; phone: string | null; name: string | null; company: string | null; sms_opt_out: boolean; marketing_opt_out: boolean; line_type: string | null }>(
-    `SELECT c.id, c.email, c.phone, c.name, co.name AS company, COALESCE(c.sms_opt_out,false) AS sms_opt_out, COALESCE(c.marketing_opt_out,false) AS marketing_opt_out, c.line_type
+  return new Set(r.rows.map((x) => x.p10).filter((x) => x.length === 10));
+}
+
+export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgress, shouldAbort?: ShouldAbort, onCampaign?: (campaignId: string) => Promise<void>): Promise<{ total: number; smsSent: number; emailSent: number; failed: number; campaignId: string; aborted?: boolean }> { // BF_SERVER_SEND_KILL_SWITCH_v1
+  let campaignId = job.campaignId ?? null;
+  if (!campaignId) {
+    const cam = await pool.query<{ id: string }>(
+      `INSERT INTO sms_campaigns (silo, tag, sms_body, link_url, fallback_subject, fallback_html, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [job.silo, job.tag, job.body, job.linkUrl, job.fbSubject, job.fbHtml, job.createdBy],
+    );
+    campaignId = cam.rows[0].id;
+    if (onCampaign) await onCampaign(campaignId);
+  }
+  const done = await pool.query<{ p10: string; email: string | null }>(
+    `SELECT right(regexp_replace(coalesce(s.phone,''),'[^0-9]','','g'),10) AS p10, lower(c.email) AS email
+       FROM sms_campaign_sends s LEFT JOIN contacts c ON c.id = s.contact_id
+      WHERE s.campaign_id = $1`, [campaignId],
+  );
+  const skipPhones = await recentlyTextedPhones(pool);
+  const skipEmails = new Set<string>();
+  for (const sent of done.rows) {
+    if (sent.p10?.length === 10) skipPhones.add(sent.p10);
+    if (sent.email) skipEmails.add(sent.email);
+  }
+  const recips = await pool.query<SmsAudienceRow>(
+    `SELECT c.id, c.email, c.phone, c.name, co.name AS company, (${SMS_ELIGIBLE_SQL}) AS sms_ok,
+            COALESCE(c.marketing_opt_out,false) AS marketing_opt_out, c.line_type
        FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
       WHERE c.silo = $1
         AND ($2::text IS NULL OR $2 = ANY(c.tags))
         AND ($3::text[] IS NULL OR c.tags && $3::text[])
         AND ($4::text[] IS NULL OR NOT (c.tags && $4::text[]))
-        AND ${job.fbHtml ? CAMPAIGN_ELIGIBLE_SQL : SMS_ELIGIBLE_SQL}`,
+        AND ${job.fbHtml ? CAMPAIGN_ELIGIBLE_SQL : SMS_ELIGIBLE_SQL}
+      ORDER BY c.created_at ASC, c.id ASC`,
     [job.silo, job.tag, job.tags ?? null, job.excludeTags ?? null],
   );
+  const plan = planSmsAudience(recips.rows, Boolean(job.fbHtml), skipPhones, skipEmails);
+  const ordered = [...plan.text.map((c) => ({ c, mode: "text" as const })), ...plan.email.map((c) => ({ c, mode: "email" as const }))];
   let smsSent = 0, emailSent = 0, failed = 0, i = 0;
   let aborted = false; // BF_SERVER_SEND_KILL_SWITCH_v1
-  for (const c of recips.rows) {
+  for (const { c, mode } of ordered) {
     const first = (c.name || "").trim().split(/\s+/)[0] || "there";
     const vars = { first_name: first, name: c.name || "there", email: c.email || "", company: c.company || "" };
     // BF_SERVER_BLOCK_v784_LINE_TYPE_LOOP - lazily verify line type; skip non-mobile, cache result.
     // BF_SERVER_SMS_CONSENT_v1 - marketing_opt_out was NEVER checked here (only the email
     // fallback below honoured it), so a contact who opted out of all marketing still got
     // texted. Canada-only: nothing in this path ever looked at country.
-    let hasPhone = Boolean(c.phone) && !c.sms_opt_out && !c.marketing_opt_out && isCanadianMobile(c.phone);
+    let hasPhone = mode === "text";
     if (hasPhone && c.line_type == null) {
       const lt = await lookupLineType(String(c.phone));
       if (lt) await pool.query(`UPDATE contacts SET line_type = $2, line_type_checked_at = now() WHERE id = $1`, [c.id, lt]);
@@ -217,5 +271,5 @@ export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgr
     }
   }
   if (onProgress) { try { await onProgress(smsSent + emailSent, failed); } catch { /* best-effort */ } }
-  return { total: recips.rows.length, smsSent, emailSent, failed, campaignId, aborted };
+  return { total: ordered.length, smsSent, emailSent, failed, campaignId, aborted };
 }

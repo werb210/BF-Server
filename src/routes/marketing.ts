@@ -957,28 +957,45 @@ router.post("/sms/send", safeHandler(async (req: any, res: any) => {
   // email exists, so the number shown must be computed the same way.
   const total = await countSmsRecipients(pool, silo, tag, includeTags, excludeTags, Boolean(fbHtml));
   if (total === 0) { respondOk(res, { configured: true, recipients: 0, smsSent: 0, emailSent: 0, failed: 0 }); return; }
-  if (total > 1000) {
-    // BF_SERVER_SEND_LATER_v35
-    let schedule;
-    try {
-      schedule = resolveScheduledAt((req.body ?? {}).sendAt, SEND_HOLD_MINUTES);
-    } catch (err) {
-      if (err instanceof SendScheduleError) {
-        res.status(400).json({ error: { code: err.code, message: err.message } });
-        return;
-      }
-      throw err;
-    }
-    const job = await pool.query<{ id: string; not_before: string }>(
-      `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by, not_before)
-       VALUES ('sms', $1, $2, $3, $4, $5, $6::timestamptz) RETURNING id, not_before`,
-      [silo, tag, JSON.stringify({ body, linkUrl, fbSubject, fbHtml, templateId, tags: includeTags, excludeTags }), total, req.user?.userId ?? null, schedule.at.toISOString()],
-    );
-    respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total, notBefore: job.rows[0].not_before, holdMinutes: SEND_HOLD_MINUTES, scheduled: schedule.scheduled });
+  // BF_SERVER_SMS_SEND_SAFETY_v710
+  const expected = b.expectedCount === undefined || b.expectedCount === null ? null : Number(b.expectedCount);
+  if (expected !== null && Number.isFinite(expected) && expected !== total) {
+    res.status(409).json({ error: { code: "audience_changed", message: `The audience is now ${total}, not ${expected}. Check it and confirm again.` }, total });
     return;
   }
-  const out = await runSmsSend(pool, { silo, tag, body, linkUrl, fbSubject, fbHtml, createdBy: req.user?.userId ?? null, templateId, tags: includeTags, excludeTags });
-  respondOk(res, { configured: true, recipients: out.total, smsSent: out.smsSent, emailSent: out.emailSent, failed: out.failed });
+  let schedule;
+  try {
+    schedule = resolveScheduledAt((req.body ?? {}).sendAt, SEND_HOLD_MINUTES);
+  } catch (err) {
+    if (err instanceof SendScheduleError) {
+      res.status(400).json({ error: { code: err.code, message: err.message } });
+      return;
+    }
+    throw err;
+  }
+  const dup = await pool.query<{ id: string; not_before: string; total: number }>(
+    `SELECT id, not_before, total FROM marketing_send_jobs
+      WHERE channel = 'sms' AND silo = $1 AND status IN ('queued','running')
+        AND payload->>'body' = $2 AND created_at > now() - interval '1 minute'
+      ORDER BY created_at DESC LIMIT 1`, [silo, body],
+  );
+  if (dup.rows[0]) {
+    respondOk(res, { configured: true, queued: true, jobId: dup.rows[0].id, total: dup.rows[0].total, notBefore: dup.rows[0].not_before, holdMinutes: SEND_HOLD_MINUTES, duplicate: true });
+    return;
+  }
+  const job = await pool.query<{ id: string; not_before: string }>(
+    `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by, not_before)
+     VALUES ('sms', $1, $2, $3, $4, $5, $6::timestamptz) RETURNING id, not_before`,
+    [silo, tag, JSON.stringify({ body, linkUrl, fbSubject, fbHtml, templateId, tags: includeTags, excludeTags }), total, req.user?.userId ?? null, schedule.at.toISOString()],
+  );
+  respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total, notBefore: job.rows[0].not_before, holdMinutes: SEND_HOLD_MINUTES, scheduled: schedule.scheduled });
+}));
+
+router.get("/sms/audience-count", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const tag = typeof req.query.tag === "string" && req.query.tag.trim() ? req.query.tag.trim() : null;
+  const n = await countSmsRecipients(pool, silo, tag, tagArr(req.query.include), tagArr(req.query.exclude), req.query.fallback === "1");
+  respondOk(res, { n });
 }));
 
 router.get("/clarity", safeHandler(async (req: any, res: any) => {
