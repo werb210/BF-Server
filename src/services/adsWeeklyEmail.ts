@@ -78,13 +78,15 @@ async function gather(): Promise<WeeklyData> {
   try {
     const { suggestionsConfigured, buildSuggestions } = await import("./googleAdsSuggestions.js");
     const { accountConversions } = await import("./googleAdsNegativeGuard.js");
+    // BF_SERVER_MAYA_ADS_INSIGHTS_v712 - same rules and full-picture findings as the portal.
+    const { fullPictureInsights } = await import("./adsPicture.js");
+    for (const i of await fullPictureInsights(7)) suggestions.push(i.title + " - " + i.detail);
     if (suggestionsConfigured()) {
       const built = await buildSuggestions(30);
-      const noConversions = (await accountConversions(30)) <= 0;
-      suggestions = built.suggestions
-        .filter((s: any) => !noConversions || (s.kind !== "pause_campaign" && s.kind !== "pause_keyword"))
-        .slice(0, 8).map((s: any) => s.title + " - " + s.rationale);
-      if (noConversions) suggestions.push("Pause suggestions are held back: Google Ads has no conversions recorded yet, so zero conversions says nothing about a campaign.");
+      const { applyAdRules } = await import("./adsRules.js");
+      const ruled = applyAdRules(built.suggestions, { conversions: await accountConversions(30) });
+      suggestions.push(...ruled.suggestions.slice(0, 8).map((s: any) => s.title + " - " + s.rationale));
+      suggestions.push(...ruled.caveats);
     }
   } catch (err: any) {
     logError("ads_weekly_suggestions_failed", { message: err?.message });
