@@ -1,6 +1,5 @@
 // BF_SERVER_REPORTS_SECTION_v714 - data for the reports built in this block.
 import { pool } from "../../db.js";
-import { commissionRate } from "../googleDataManager.js";
 
 const CLOSED = ["funded", "declined", "closed", "withdrawn", "archived", "lost", "accepted", "rejected", "draft"]; // BF_SERVER_REPORTS_BATCH2_v719: + rejected, draft
 const days = (v: unknown, d = 90) => Math.min(Math.max(Number(v) || d, 1), 365);
@@ -67,15 +66,21 @@ export async function speedToLead(windowDays: unknown) {
     staff: [...byStaff.entries()].map(([staff, xs]) => ({ staff, calls: xs.length, median_minutes: median(xs) })).sort((a, b) => b.calls - a.calls) };
 }
 
+// BF_SERVER_ONE_COMMISSION_v727 - same commission rule as the Dashboard (2% unless the
+// lender product sets its own; US deals converted to Canadian dollars).
 export async function commissionByMonth(windowDays: unknown) {
   const d = days(windowDays, 365);
-  const rate = commissionRate();
+  const { DEAL_CURRENCY_SQL } = await import("../../routes/dashboard.js");
   const { rows } = await pool.query(
     `SELECT to_char(date_trunc('month', a.funded_at), 'YYYY-MM') AS month, count(*)::int AS funded,
-            COALESCE(sum(COALESCE(a.funded_amount, a.requested_amount)), 0)::float AS funded_amount
-       FROM applications a WHERE a.silo = 'BF' AND a.funded_at IS NOT NULL AND a.funded_at >= now() - ($1 || ' days')::interval
-      GROUP BY 1 ORDER BY 1`, [d]);
-  return { days: d, rate, months: rows.map((r: any) => ({ ...r, commission: Math.round(r.funded_amount * rate) })) };
+            COALESCE(sum(COALESCE(a.funded_amount, a.requested_amount, 0) * COALESCE((SELECT to_cad FROM fx_rates WHERE currency = ${DEAL_CURRENCY_SQL}), 1)), 0)::float AS funded_amount,
+            COALESCE(sum(COALESCE(a.funded_amount, a.requested_amount, 0) * (COALESCE(lp.commission, 2) / 100.0) * COALESCE((SELECT to_cad FROM fx_rates WHERE currency = ${DEAL_CURRENCY_SQL}), 1)), 0)::float AS commission
+       FROM applications a LEFT JOIN lender_products lp ON lp.id = a.lender_product_id::text
+      WHERE a.silo = 'BF' AND a.funded_at IS NOT NULL AND a.funded_at >= now() - ($1 || ' days')::interval
+      GROUP BY 1 ORDER BY 1`,
+    [d],
+  );
+  return { days: d, months: rows.map((r: any) => ({ ...r, funded_amount: Math.round(r.funded_amount), commission: Math.round(r.commission) })) };
 }
 
 // BF_SERVER_REPORTS_BATCH2_v719 - reports get the viewer (role, user id) too.
