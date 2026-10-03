@@ -2,7 +2,7 @@
 import { pool } from "../../db.js";
 import { commissionRate } from "../googleDataManager.js";
 
-const CLOSED = ["funded", "declined", "closed", "withdrawn", "archived", "lost", "accepted"];
+const CLOSED = ["funded", "declined", "closed", "withdrawn", "archived", "lost", "accepted", "rejected", "draft"]; // BF_SERVER_REPORTS_BATCH2_v719: + rejected, draft
 const days = (v: unknown, d = 90) => Math.min(Math.max(Number(v) || d, 1), 365);
 
 export async function stuckDeals(threshold = 7) {
@@ -78,7 +78,17 @@ export async function commissionByMonth(windowDays: unknown) {
   return { days: d, rate, months: rows.map((r: any) => ({ ...r, commission: Math.round(r.funded_amount * rate) })) };
 }
 
-export const DATA: Record<string, (q: Record<string, unknown>) => Promise<unknown>> = {
+// BF_SERVER_REPORTS_BATCH2_v719 - reports get the viewer (role, user id) too.
+import * as B2 from "./data2.js";
+export const DATA: Record<string, (q: Record<string, unknown>, ctx: B2.Ctx) => Promise<unknown>> = {
+  revenue_forecast: () => B2.revenueForecast(),
+  media_fee_agreements: () => B2.mediaFeeAgreements(),
+  payouts_owed: () => B2.payoutsOwed(),
+  staff_activity: (q, ctx) => B2.staffActivity(q, ctx),
+  missed_calls: (q) => B2.missedCalls(q),
+  monthly_cohorts: (q) => B2.monthlyCohorts(q),
+  renewal_opportunities: () => B2.renewalOpportunities(),
+  insurance_cross_sell: (q) => B2.insuranceCrossSell(q),
   stuck_deals: (q) => stuckDeals(Number(q.threshold) || 7),
   lender_scorecard: (q) => lenderScorecard(q.days),
   speed_to_lead: (q) => speedToLead(q.days),
