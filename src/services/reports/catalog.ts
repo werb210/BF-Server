@@ -7,13 +7,23 @@ export const REPORTS: ReportDef[] = [
   { key: "lender_scorecard", title: "Lender scorecard", silo: "BF", group: "operations", size: "full", source: "reports", description: "Files sent, offers, funded and days to an offer, per lender." },
   { key: "speed_to_lead", title: "Speed to lead", silo: "BF", group: "operations", size: "half", source: "reports", description: "Time from a submitted application to the first call, per staff member." },
   { key: "commission_by_month", title: "Commission by month", silo: "BF", group: "money", size: "half", source: "reports", description: "Funded amount and estimated commission per month." },
-  { key: "pipeline_by_stage", title: "Pipeline by stage", silo: "BF", group: "operations", size: "full", source: "dashboard", description: "Open files by stage (projected commission shown to Admins only)." },
-  { key: "application_funnel", title: "Application funnel", silo: "BF", group: "operations", size: "half", source: "dashboard", description: "Applications by wizard step." },
+  // BF_SERVER_REPORTS_BATCH2_v719
+  { key: "revenue_forecast", title: "Revenue forecast", silo: "BF", group: "money", size: "half", source: "reports", description: "Open files weighted by the chance each stage funds - expected commission." },
+  { key: "media_fee_agreements", title: "Media fee agreements", silo: "BF", group: "money", size: "full", source: "reports", description: "Waiting and signed agreements, and the 2% fee each one carries." },
+  { key: "payouts_owed", title: "Broker payouts", silo: "BF", group: "money", size: "full", source: "reports", description: "Funded broker files and whether the broker has been paid." },
+  { key: "staff_activity", title: "Staff activity", silo: "BF", group: "operations", size: "half", source: "reports", description: "Calls, connections and talk time per person (staff see their own)." },
+  { key: "missed_calls", title: "Missed calls", silo: "BF", group: "operations", size: "full", source: "reports", description: "Missed incoming calls and how long until someone called back." },
+  { key: "monthly_cohorts", title: "Monthly cohorts", silo: "BF", group: "marketing", size: "half", source: "reports", description: "Applications started each month and how many submitted and funded." },
+  { key: "renewal_opportunities", title: "Renewal opportunities", silo: "BF", group: "operations", size: "full", source: "reports", description: "Clients funded about a year ago - a call list for repeat business." },
+  { key: "insurance_cross_sell", title: "Insurance cross-sell", silo: "BF", group: "operations", size: "half", source: "reports", description: "Funded Financial deals that also have a Boreal Insurance application." },
+  // Cards that show the existing portal panels. The v714 catalog listed keys the
+  // portal board cannot draw; these four are the ones it renders.
+  { key: "ads_story", title: "Ads: the story", silo: "BF", group: "marketing", size: "full", source: "portal", description: "Ad spend to applications, funded deals and return." },
+  { key: "ads_dropoff", title: "Where applications stop", silo: "BF", group: "marketing", size: "full", source: "portal", description: "The step unfinished applications stopped at, and why." },
+  { key: "ads_visitors", title: "Website visitors", silo: "BF", group: "marketing", size: "full", source: "portal", description: "Who came, from where, and what they did." },
+  { key: "bi_dashboard", title: "Insurance pipeline", silo: "BI", group: "operations", size: "full", source: "portal", description: "Boreal Insurance open pipeline and what needs attention." },
   { key: "ads_story", title: "Ads: the story", silo: "BF", group: "marketing", size: "full", source: "marketing", description: "Ad spend to applications, funded deals and return." },
   { key: "ads_dropoff", title: "Where applications stop", silo: "BF", group: "marketing", size: "half", source: "marketing", description: "The step unfinished applications stopped at." },
-  { key: "link_clicks", title: "Link clicks", silo: "BF", group: "marketing", size: "half", source: "marketing", description: "Clicks on tracked links in emails and texts." },
-  { key: "template_performance", title: "Email and text templates", silo: "BF", group: "marketing", size: "full", source: "marketing", description: "Sends, opens, clicks and replies per template." },
-  { key: "bi_pipeline", title: "Insurance pipeline", silo: "BI", group: "operations", size: "full", source: "bi", description: "Boreal Insurance applications by stage." },
 ];
 
 export function normalizeRole(role: unknown): "Admin" | "Marketing" | "Staff" {

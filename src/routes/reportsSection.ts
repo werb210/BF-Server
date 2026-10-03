@@ -71,6 +71,6 @@ router.get("/data/:key", requireAuth, safeHandler(async (req: any, res: any) => 
   const def = reportByKey(String(req.params?.key ?? "")); const run = def ? DATA[def.key] : undefined;
   if (!def || !run) { res.status(404).json({ error: "unknown_report" }); return; }
   if (!canSee(req.user?.role, def.group)) { res.status(403).json({ error: "not_allowed" }); return; }
-  res.json(await run(req.query ?? {}));
+  res.json(await run(req.query ?? {}, { role: normalizeRole(req.user?.role), userId: uid(req) })); // BF_SERVER_REPORTS_BATCH2_v719
 }));
 export default router;
