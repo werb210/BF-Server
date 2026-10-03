@@ -55,6 +55,12 @@ router.post(
       res.status(400).json({ status: "error", message: "name_email_phone_required" });
       return;
     }
+    // BF_SERVER_BROKER_PORTAL_v717 - the broker link signs up with kind "broker".
+    const isBroker = str(b.kind) === "broker";
+    if (isBroker && !company) {
+      res.status(400).json({ status: "error", message: "brokerage_name_required" });
+      return;
+    }
     if (!street || !city || !province || !postal) {
       res.status(400).json({ status: "error", message: "address_required" });
       return;
@@ -160,6 +166,10 @@ router.post(
       console.error("referrer_crm_contact_failed", { email, message: err?.message });
     }
 
+    if (isBroker) {
+      await pool.query("UPDATE users SET partner_kind = 'broker', updated_at = now() WHERE id::text = $1", [referrerId]);
+    }
+
     if (!referrerAgreementConfigured()) {
       res.status(200).json({ status: "ok", data: { referrerId, agreementConfigured: false } });
       return;
@@ -167,9 +177,12 @@ router.post(
 
     // BF_SERVER_REFERRER_AGREEMENT_PREFILL_v1 - pass profile data so the agreement
     // is pre-filled and the referrer only signs.
-    const session = await createReferrerAgreementSession({
-      referrerId, fullName, email, company, phone, street, city, province, postal, etransfer,
-    });
+    // BF_SERVER_BROKER_PORTAL_v717 - brokers sign the broker agreement instead.
+    const session = isBroker
+      ? await (await import("../modules/referrals/brokerAgreement.service.js")).createBrokerAgreementSession({ brokerId: referrerId, fullName, email, company, phone, street, city, province, postal })
+      : await createReferrerAgreementSession({
+          referrerId, fullName, email, company, phone, street, city, province, postal, etransfer,
+        });
     await pool.query(
       `UPDATE users SET agreement_document_group_id=$2, agreement_document_id=$3, updated_at=now()
         WHERE id::text = $1`,
