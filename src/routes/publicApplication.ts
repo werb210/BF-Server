@@ -325,6 +325,9 @@ router.post(
                 WHERE id = $1`,
               [startContactId]
             );
+            // BF_SERVER_APPLICANT_CONSENT_v728 - starting an application is an inquiry (6-month implied consent).
+            const { RECORD_INQUIRY_CONSENT_SQL } = await import("../services/smsConsent.js");
+            await dbQuery(RECORD_INQUIRY_CONSENT_SQL, [startContactId]);
           }
         } catch (e) {
           console.warn("[start] draft contact capture failed", String(e).slice(0, 200));
