@@ -10,6 +10,9 @@ export function startAdsWeeklyEmailWorker(_pool: Pool): { stop: () => void } {
     try {
       const r = await maybeSendWeeklyAdsEmail();
       if (r.sent) console.log("[ads-weekly] sent");
+      // BF_SERVER_WEEKLY_SUMMARY_v721 - the business summary goes out alongside it.
+      const s = await (await import("../services/weeklySummaryEmail.js")).maybeSendWeeklySummary();
+      if (s.sent) console.log("[weekly-summary] sent");
     } catch (err) {
       console.error("[ads-weekly] failed:", (err as { message?: string })?.message ?? err);
     } finally { running = false; }

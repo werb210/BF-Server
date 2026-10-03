@@ -7,6 +7,9 @@ export const REPORTS: ReportDef[] = [
   { key: "lender_scorecard", title: "Lender scorecard", silo: "BF", group: "operations", size: "full", source: "reports", description: "Files sent, offers, funded and days to an offer, per lender." },
   { key: "speed_to_lead", title: "Speed to lead", silo: "BF", group: "operations", size: "half", source: "reports", description: "Time from a submitted application to the first call, per staff member." },
   { key: "commission_by_month", title: "Commission by month", silo: "BF", group: "money", size: "half", source: "reports", description: "Funded amount and estimated commission per month." },
+  // BF_SERVER_REPORTS_BATCH3_v721
+  { key: "best_lender_by_deal_type", title: "Best lender by deal type", silo: "BF", group: "operations", size: "full", source: "reports", description: "Which lender funds each kind of deal most often." },
+  { key: "consent_health", title: "Consent health", silo: "BF", group: "marketing", size: "half", source: "reports", description: "Who can be texted, who opted out, and texting consent expiring in the next 30 days." },
   // BF_SERVER_REPORTS_BATCH2_v719
   { key: "revenue_forecast", title: "Revenue forecast", silo: "BF", group: "money", size: "half", source: "reports", description: "Open files weighted by the chance each stage funds - expected commission." },
   { key: "media_fee_agreements", title: "Media fee agreements", silo: "BF", group: "money", size: "full", source: "reports", description: "Waiting and signed agreements, and the 2% fee each one carries." },
