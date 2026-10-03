@@ -33,3 +33,46 @@ export async function consentHealth() {
   );
   return rows[0] ?? {};
 }
+
+// BF_SERVER_REPORTS_BATCH4_v722 - decline reasons (from the reasons staff pick when a
+// lender passes or a file is rejected) and document turnaround (from each required
+// document to the first upload in that category).
+export async function declineReasons(q: Record<string, unknown>) {
+  const d = days(q.days, 365);
+  const { rows } = await pool.query(
+    `SELECT r.reason_code AS code, COALESCE(rr.label, r.reason_code) AS reason, count(*)::int AS times,
+            count(DISTINCT r.application_id)::int AS files,
+            count(*) FILTER (WHERE r.lender_id IS NULL)::int AS whole_file,
+            string_agg(DISTINCT COALESCE(l.name, ''), ', ') FILTER (WHERE l.name IS NOT NULL) AS lenders
+       FROM application_rejection_reasons r
+       LEFT JOIN rejection_reasons rr ON rr.code = r.reason_code
+       LEFT JOIN lenders l ON l.id::text = r.lender_id
+       JOIN applications a ON a.id::text = r.application_id AND a.silo = 'BF'
+      WHERE r.created_at >= now() - ($1 || ' days')::interval
+      GROUP BY 1, 2 ORDER BY times DESC LIMIT 50`,
+    [d],
+  );
+  return { days: d, reasons: rows };
+}
+
+export async function documentTurnaround(q: Record<string, unknown>) {
+  const d = days(q.days, 180);
+  const { rows } = await pool.query(
+    `WITH req AS (
+       SELECT rd.application_id, rd.document_category AS category, rd.created_at AS requested_at, rd.status,
+              (SELECT min(COALESCE(doc.uploaded_at, doc.created_at)) FROM documents doc
+                WHERE doc.application_id = rd.application_id AND COALESCE(doc.category, doc.document_type) = rd.document_category
+                  AND COALESCE(doc.uploaded_at, doc.created_at) >= rd.created_at) AS first_upload
+         FROM application_required_documents rd JOIN applications a ON a.id::text = rd.application_id AND a.silo = 'BF'
+        WHERE rd.is_required AND rd.created_at >= now() - ($1 || ' days')::interval
+     )
+     SELECT category, count(*)::int AS requested,
+            count(first_upload)::int AS received,
+            count(*) FILTER (WHERE first_upload IS NULL AND status = 'missing')::int AS outstanding,
+            count(*) FILTER (WHERE status = 'rejected')::int AS rejected,
+            round((percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(epoch FROM (first_upload - requested_at)) / 3600) FILTER (WHERE first_upload IS NOT NULL))::numeric, 1)::float AS median_hours
+       FROM req GROUP BY category ORDER BY requested DESC LIMIT 50`,
+    [d],
+  );
+  return { days: d, categories: rows };
+}
