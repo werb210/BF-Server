@@ -2182,6 +2182,14 @@ router.post(
       throw new AppError("validation_error", "application_id (or applicationId) and lenderProductIds are required.", 400);
     }
 
+    // BF_SERVER_BROKER_SPLIT_LOCK_v716 - broker files need an accepted commission split first.
+    const { brokerSplitBlocker } = await import("../services/brokerImport/splitLock.js");
+    const splitLock = await brokerSplitBlocker(applicationId);
+    if (splitLock.blocked) {
+      res.status(409).json({ error: "broker_split_not_agreed", message: `This file came from ${splitLock.broker ?? "a partner broker"}. Agree the commission split with the broker before sending it to a lender.`, status: splitLock.status });
+      return;
+    }
+
     // BF_SERVER_BLOCK_v331_PORTAL_HISTORY_AND_LENDER_SUBMISSIONS_SILO_v1
     // Pre-fix this endpoint INSERTed into lender_submissions without any
     // silo check, so a BF-silo staff member could submit lender packages
