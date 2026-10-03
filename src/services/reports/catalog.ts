@@ -3,6 +3,17 @@ export type ReportGroup = "money" | "marketing" | "operations";
 export type ReportDef = { key: string; title: string; silo: "BF" | "BI" | "SLF"; group: ReportGroup; size: "half" | "full"; source: string; description: string };
 
 export const REPORTS: ReportDef[] = [
+  // BF_SERVER_DASHBOARD_BOARD_v730 - the standard Dashboard sections, as cards a person can
+  // move, resize, remove and add back. Drawn by the portal; only offered on the Dashboard.
+  { key: "dash_kpis", title: "Key numbers", silo: "BF", group: "operations", size: "full", source: "dashboard", description: "Active applications, deals won, commission earned, new contacts." },
+  { key: "dash_pipeline", title: "Pipeline by stage", silo: "BF", group: "operations", size: "full", source: "dashboard", description: "Open files by stage with projected commission." },
+  { key: "dash_totals", title: "Visits to funded", silo: "BF", group: "operations", size: "full", source: "dashboard", description: "Website visits, applications, submitted and funded." },
+  { key: "dash_dropoffs", title: "Application funnel and drop-offs", silo: "BF", group: "operations", size: "full", source: "dashboard", description: "Recent applications by current stage." },
+  { key: "dash_acquisition", title: "Acquisition channels", silo: "BF", group: "operations", size: "half", source: "dashboard", description: "Where applications came from." },
+  { key: "dash_marketing_perf", title: "Marketing performance", silo: "BF", group: "operations", size: "half", source: "dashboard", description: "Revenue by marketing channel." },
+  { key: "dash_funding_product", title: "Funding by product", silo: "BF", group: "operations", size: "half", source: "dashboard", description: "Funded deals by product." },
+  { key: "dash_doc_issues", title: "Document upload issues", silo: "BF", group: "operations", size: "half", source: "dashboard", description: "Document types with upload problems." },
+  { key: "dash_top_lenders", title: "Top lenders by approval rate", silo: "BF", group: "operations", size: "half", source: "dashboard", description: "Lenders approving the most files." },
   { key: "stuck_deals", title: "Stuck deals", silo: "BF", group: "operations", size: "full", source: "reports", description: "Open files and how many days each has sat in its current stage." },
   { key: "lender_scorecard", title: "Lender scorecard", silo: "BF", group: "operations", size: "full", source: "reports", description: "Files sent, offers, funded and days to an offer, per lender." },
   { key: "speed_to_lead", title: "Speed to lead", silo: "BF", group: "operations", size: "half", source: "reports", description: "Time from a submitted application to the first call, per staff member." },

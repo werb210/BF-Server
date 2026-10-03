@@ -10,7 +10,7 @@ const router = Router();
 const SILOS = new Set(["BF", "BI", "SLF"]);
 const siloOf = (v: unknown) => (SILOS.has(String(v ?? "").toUpperCase()) ? String(v).toUpperCase() : "BF");
 const uid = (req: any) => String(req.user?.userId ?? req.user?.id ?? "");
-type Card = { id: string; report: string; size: "half" | "full"; days?: number };
+type Card = { id: string; report: string; size: "third" | "half" | "full"; days?: number }; // BF_SERVER_DASHBOARD_BOARD_v730 third = Small
 export function cleanCards(role: unknown, raw: unknown): Card[] {
   if (!Array.isArray(raw)) return [];
   const out: Card[] = [];
@@ -19,7 +19,7 @@ export function cleanCards(role: unknown, raw: unknown): Card[] {
     if (!def || !canSee(role, def.group)) continue;
     const days = Number((c as any)?.days);
     out.push({ id: String((c as any)?.id ?? "").slice(0, 60) || Math.random().toString(36).slice(2, 10), report: def.key,
-      size: (c as any)?.size === "half" ? "half" : (c as any)?.size === "full" ? "full" : def.size,
+      size: (c as any)?.size === "third" ? "third" : (c as any)?.size === "half" ? "half" : (c as any)?.size === "full" ? "full" : def.size,
       ...(Number.isFinite(days) && days > 0 ? { days: Math.min(Math.round(days), 365) } : {}) });
   }
   return out;
@@ -27,7 +27,9 @@ export function cleanCards(role: unknown, raw: unknown): Card[] {
 
 router.get("/catalog", requireAuth, safeHandler(async (req: any, res: any) => {
   const silo = siloOf(req.query?.silo);
-  res.json({ role: normalizeRole(req.user?.role), reports: catalogFor(req.user?.role).filter((r) => r.silo === silo) });
+  // BF_SERVER_DASHBOARD_BOARD_v730 - the standard Dashboard sections are only offered on the Dashboard.
+  const forDashboard = req.query?.for === "dashboard";
+  res.json({ role: normalizeRole(req.user?.role), reports: catalogFor(req.user?.role).filter((r) => r.silo === silo && (forDashboard || r.source !== "dashboard")) });
 }));
 router.get("/layouts", requireAuth, safeHandler(async (req: any, res: any) => {
   const silo = siloOf(req.query?.silo);
