@@ -5,7 +5,7 @@ import { Router } from "express";
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
-import { getFeeAgreement } from "../services/feeAgreement/mediaFeeAgreement.js";
+import { getFeeAgreement, sendMediaFeeAgreementNow } from "../services/feeAgreement/mediaFeeAgreement.js";
 
 const router = Router();
 
@@ -30,6 +30,30 @@ router.get(
       signedAt: ag.signed_at,
       documentId: ag.document_id,
     });
+  })
+);
+
+// BF_SERVER_FEE_AGREEMENT_SEND_NOW_v731 - "Send fee agreement to client" on a Media file.
+// POST /api/portal/applications/:id/fee-agreement/send   { lenderName?: string }
+router.post(
+  "/applications/:id/fee-agreement/send",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  safeHandler(async (req: any, res: any) => {
+    const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
+    if (!id) { res.status(400).json({ error: "application_id_required" }); return; }
+    const lenderName = typeof req.body?.lenderName === "string" && req.body.lenderName.trim() ? req.body.lenderName.trim().slice(0, 120) : null;
+    try {
+      const out = await sendMediaFeeAgreementNow(id, lenderName);
+      if (!out.ok) {
+        const msg = out.reason === "not_media" ? "Only Media files get the client fee agreement." : out.reason === "already_signed" ? "The client has already signed the fee agreement." : "Application not found.";
+        res.status(out.reason === "application_not_found" ? 404 : 409).json({ error: out.reason, message: msg });
+        return;
+      }
+      res.status(200).json({ ok: true, result: out.reason });
+    } catch (err: any) {
+      res.status(502).json({ error: "send_failed", message: "Could not send the agreement: " + String(err?.message ?? err).slice(0, 200) });
+    }
   })
 );
 
