@@ -1,0 +1,86 @@
+// BF_SERVER_REPORTS_SECTION_v714 - data for the reports built in this block.
+import { pool } from "../../db.js";
+import { commissionRate } from "../googleDataManager.js";
+
+const CLOSED = ["funded", "declined", "closed", "withdrawn", "archived", "lost", "accepted"];
+const days = (v: unknown, d = 90) => Math.min(Math.max(Number(v) || d, 1), 365);
+
+export async function stuckDeals(threshold = 7) {
+  const { rows } = await pool.query(
+    `SELECT a.id::text AS application_id, COALESCE(NULLIF(a.business_legal_name,''), a.name, 'Application') AS name,
+            a.pipeline_state AS stage, a.requested_amount,
+            COALESCE((SELECT max(h.created_at) FROM application_stage_history h WHERE h.application_id = a.id::text AND h.to_stage = a.pipeline_state), a.submitted_at, a.created_at) AS since
+       FROM applications a
+      WHERE a.silo = 'BF' AND a.submitted_at IS NOT NULL AND a.funded_at IS NULL
+        AND lower(COALESCE(a.pipeline_state,'')) <> ALL($1)
+      ORDER BY since ASC LIMIT 200`, [CLOSED]);
+  const now = Date.now();
+  const items = rows.map((r: any) => ({ ...r, days_in_stage: Math.floor((now - new Date(r.since).getTime()) / 86_400_000) }));
+  return { threshold, items, stuck: items.filter((i) => i.days_in_stage >= threshold).length };
+}
+
+export async function lenderScorecard(windowDays: unknown) {
+  const d = days(windowDays, 180);
+  const { rows } = await pool.query(
+    `WITH s AS (
+       SELECT ls.lender_id, ls.application_id, COALESCE(ls.submitted_at, ls.created_at) AS sent_at
+         FROM lender_submissions ls WHERE COALESCE(ls.submitted_at, ls.created_at) >= now() - ($1 || ' days')::interval AND ls.lender_id IS NOT NULL
+     ), o AS (
+       SELECT o.lender_id::text AS lender_id, o.application_id, min(o.created_at) AS offer_at
+         FROM offers o WHERE COALESCE(o.is_archived, false) = false AND o.lender_id IS NOT NULL GROUP BY 1, 2
+     )
+     SELECT s.lender_id, COALESCE(l.name, 'Lender') AS lender, count(DISTINCT s.application_id)::int AS sent,
+            count(DISTINCT o.application_id)::int AS offers,
+            count(DISTINCT a.id) FILTER (WHERE a.funded_at IS NOT NULL AND a.lender_id::text = s.lender_id)::int AS funded,
+            round(avg(EXTRACT(epoch FROM (o.offer_at - s.sent_at)) / 86400) FILTER (WHERE o.offer_at >= s.sent_at)::numeric, 1)::float AS days_to_offer
+       FROM s LEFT JOIN lenders l ON l.id::text = s.lender_id
+       LEFT JOIN o ON o.lender_id = s.lender_id AND o.application_id = s.application_id
+       LEFT JOIN applications a ON a.id::text = s.application_id
+      GROUP BY s.lender_id, l.name ORDER BY sent DESC LIMIT 100`, [d]);
+  return { days: d, lenders: rows };
+}
+
+export async function speedToLead(windowDays: unknown) {
+  const d = days(windowDays, 30);
+  const { rows } = await pool.query(
+    `SELECT a.id::text AS application_id, a.submitted_at, fc.created_at AS first_call_at, fc.staff_user_id::text AS staff_user_id,
+            COALESCE(NULLIF(trim(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), ''), u.email, 'Unassigned') AS staff
+       FROM applications a LEFT JOIN LATERAL (
+         SELECT c.created_at, c.staff_user_id FROM call_logs c
+          WHERE c.direction ILIKE 'out%' AND c.created_at >= a.submitted_at
+            AND (c.application_id = a.id::text OR (a.contact_id IS NOT NULL AND (c.contact_id = a.contact_id OR c.crm_contact_id = a.contact_id)))
+          ORDER BY c.created_at ASC LIMIT 1
+       ) fc ON true LEFT JOIN users u ON u.id = fc.staff_user_id
+      WHERE a.silo = 'BF' AND a.submitted_at >= now() - ($1 || ' days')::interval
+      ORDER BY a.submitted_at DESC LIMIT 500`, [d]);
+  const mins = (r: any) => (r.first_call_at ? Math.round((new Date(r.first_call_at).getTime() - new Date(r.submitted_at).getTime()) / 60000) : null);
+  const byStaff = new Map<string, number[]>();
+  let notCalled = 0;
+  for (const r of rows) {
+    const m = mins(r);
+    if (m === null) { notCalled += 1; continue; }
+    const k = String(r.staff);
+    byStaff.set(k, [...(byStaff.get(k) ?? []), m]);
+  }
+  const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor((s.length - 1) / 2)] : null; };
+  return { days: d, submitted: rows.length, not_called: notCalled,
+    staff: [...byStaff.entries()].map(([staff, xs]) => ({ staff, calls: xs.length, median_minutes: median(xs) })).sort((a, b) => b.calls - a.calls) };
+}
+
+export async function commissionByMonth(windowDays: unknown) {
+  const d = days(windowDays, 365);
+  const rate = commissionRate();
+  const { rows } = await pool.query(
+    `SELECT to_char(date_trunc('month', a.funded_at), 'YYYY-MM') AS month, count(*)::int AS funded,
+            COALESCE(sum(COALESCE(a.funded_amount, a.requested_amount)), 0)::float AS funded_amount
+       FROM applications a WHERE a.silo = 'BF' AND a.funded_at IS NOT NULL AND a.funded_at >= now() - ($1 || ' days')::interval
+      GROUP BY 1 ORDER BY 1`, [d]);
+  return { days: d, rate, months: rows.map((r: any) => ({ ...r, commission: Math.round(r.funded_amount * rate) })) };
+}
+
+export const DATA: Record<string, (q: Record<string, unknown>) => Promise<unknown>> = {
+  stuck_deals: (q) => stuckDeals(Number(q.threshold) || 7),
+  lender_scorecard: (q) => lenderScorecard(q.days),
+  speed_to_lead: (q) => speedToLead(q.days),
+  commission_by_month: (q) => commissionByMonth(q.days),
+};
