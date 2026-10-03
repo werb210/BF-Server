@@ -18,10 +18,13 @@ export type DmConversion = {
   userIdentifiers?: UserIdentifier[];
 };
 
-// Value sent to Google = estimated commission (Todd 2026-10-01). Default 3%, same as the client tag.
+// Value sent to Google = estimated commission (Todd 2026-10-01).
+// BF_SERVER_COMMISSION_DEFAULT_2PCT_v729 - Boreal's default commission is 2% (Todd
+// 2026-10-03); it was 3% here, in the Ads Story and in both Monday emails. A lender's
+// own rate applies per deal where the deal is known (Dashboard, Reports).
 export function commissionRate(): number {
-  const r = Number(process.env.GOOGLE_ADS_COMMISSION_RATE ?? "0.03");
-  return Number.isFinite(r) && r > 0 && r < 1 ? r : 0.03;
+  const r = Number(process.env.GOOGLE_ADS_COMMISSION_RATE ?? "0.02");
+  return Number.isFinite(r) && r > 0 && r < 1 ? r : 0.02;
 }
 
 export function buildIngestBody(actionId: string, events: DmConversion[], validateOnly = false) {
