@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+// BF_SERVER_CRM_CORS_TEST_TIMEOUT_v715 - every test re-imports the whole app after
+// vi.resetModules(). As the app grew, the first cold import alone passed vitest's
+// 5-second default in the full suite, so "create CRM contact" timed out on main
+// (it passed when run alone). Warm the module cache once and allow 30 seconds.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 });
 import jwt from "jsonwebtoken";
 import request from "supertest";
 
@@ -31,6 +37,12 @@ function makeAuthToken() {
 }
 
 describe("CRM + CORS + telephony regressions", () => {
+  beforeAll(async () => {
+    process.env.NODE_ENV = "test";
+    process.env.JWT_SECRET = "test-jwt-secret-minimum-10-chars";
+    await import("../app.js");
+  });
+
   beforeEach(() => {
     vi.resetModules();
     queryMock.mockReset();
@@ -47,18 +59,20 @@ describe("CRM + CORS + telephony regressions", () => {
 
   it("POST /api/crm/contacts returns 201 with UUID id", async () => {
     const createdId = "11111111-1111-4111-8111-111111111111";
-    queryMock
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({
-      rows: [{
-        id: createdId,
-        name: "Test Contact",
-        email: "test@example.com",
-        phone: "+15555550123",
-        status: "active",
-        created_at: new Date().toISOString(),
-        user_id: "00000000-0000-0000-0000-000000000001",
-      }],
+    // Answer by SQL content, not call order (repo rule): only the insert returns the row.
+    queryMock.mockImplementation(async (sql: string) => {
+      if (String(sql).toUpperCase().split(/ +/).join(" ").includes("INSERT INTO CONTACTS")) {
+        return { rows: [{
+          id: createdId,
+          name: "Test Contact",
+          email: "test@example.com",
+          phone: "+15555550123",
+          status: "active",
+          created_at: new Date().toISOString(),
+          user_id: "00000000-0000-0000-0000-000000000001",
+        }] };
+      }
+      return { rows: [] };
     });
 
     const { createApp } = await import("../app.js");
