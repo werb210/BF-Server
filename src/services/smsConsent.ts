@@ -65,3 +65,16 @@ export const CAMPAIGN_ELIGIBLE_SQL = `(
      (${SMS_ELIGIBLE_SQL})
   OR ${EMAIL_FALLBACK_ELIGIBLE_SQL}
 )`;
+
+// BF_SERVER_APPLICANT_CONSENT_v728 - starting an application is an inquiry, which gives
+// implied consent for 6 months (CASL). Applicant contacts were created with no consent
+// recorded at all unless they finished Step 6 with the box ticked, so everyone who
+// started but didn't finish was invisible to the SMS screen. This records the inquiry
+// without ever downgrading express consent or a client's 2-year transaction consent.
+export const RECORD_INQUIRY_CONSENT_SQL = `
+  UPDATE contacts
+     SET consent_basis  = CASE WHEN COALESCE(sms_consent,false) OR consent_basis IN ('express','implied_transaction') THEN consent_basis ELSE 'implied_inquiry' END,
+         consent_at     = CASE WHEN COALESCE(sms_consent,false) OR consent_basis IN ('express','implied_transaction') THEN consent_at ELSE now() END,
+         consent_source = CASE WHEN COALESCE(sms_consent,false) OR consent_basis IN ('express','implied_transaction') THEN consent_source ELSE 'application_started' END,
+         updated_at     = now()
+   WHERE id = $1`;

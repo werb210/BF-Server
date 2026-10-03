@@ -219,6 +219,12 @@ export async function mirrorApplicationToCrm(input: Wizard): Promise<void> {
       }
     }
 
+    // BF_SERVER_APPLICANT_CONSENT_v728 - an applicant has made an inquiry (6-month implied consent).
+    if (contactId) {
+      const { RECORD_INQUIRY_CONSENT_SQL } = await import("./smsConsent.js");
+      await pool.query(RECORD_INQUIRY_CONSENT_SQL, [contactId]);
+    }
+
     // Link the application. Use COALESCE so we don't overwrite a manual link.
     if (companyId || contactId) {
       // applications.contact_id may not exist on every deploy - guard via
