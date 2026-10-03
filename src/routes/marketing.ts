@@ -929,6 +929,8 @@ router.get("/sms/segments", safeHandler(async (req: any, res: any) => {
     configured: smsMarketingConfigured(),
     all: eligible,
     segments: tags.rows,
+    // BF_SERVER_SMS_AUDIENCES_v726 - audiences no tag can express (exact counts come from /sms/audience-count).
+    audiences: (await import("../services/marketingSendRunner.js")).SMS_AUDIENCES,
     mobiles,
     ineligible: Math.max(0, mobiles - eligible),
   });

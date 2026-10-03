@@ -143,13 +143,31 @@ export function planSmsAudience(rows: SmsAudienceRow[], hasFallback: boolean, sk
 // the widened send. Without a fallback email the audience is SMS-only and the
 // number is unchanged; with one, the count includes the people who will receive
 // the email instead, because that is who the campaign actually reaches.
+// BF_SERVER_SMS_AUDIENCES_v726 - two audiences on the SMS screen that no CRM tag can
+// express, passed as the "tag" so they flow through the count, the queue and the send
+// unchanged. Consent, Canada-only, one-per-phone and the 24-hour rule still apply.
+//   __aud:started_not_submitted - started an application, never submitted one
+//   __aud:cbf_applicants        - past Canadian Business Financing applicants
+export const SMS_AUDIENCES: Array<{ tag: string; label: string }> = [
+  { tag: "__aud:started_not_submitted", label: "Started, not submitted" },
+  { tag: "__aud:cbf_applicants", label: "CBF past applicants" },
+];
+export const SMS_AUDIENCE_SQL = `(
+  $2::text IS NULL
+  OR ($2 = '__aud:started_not_submitted' AND 'application_started' = ANY(c.tags)
+      AND NOT EXISTS (SELECT 1 FROM applications sa LEFT JOIN application_contacts sac ON sac.application_id = sa.id
+                       WHERE sa.submitted_at IS NOT NULL AND (sa.contact_id = c.id OR sac.contact_id = c.id)))
+  OR ($2 = '__aud:cbf_applicants' AND c.consent_source = 'CBF application terms')
+  OR (left($2, 6) <> '__aud:' AND $2 = ANY(c.tags))
+)`;
+
 export async function countSmsRecipients(pool: Pool, silo: string, tag: string | null, tags?: string[] | null, excludeTags?: string[] | null, hasFallback = false): Promise<number> {
   const r = await pool.query<SmsAudienceRow>(
     `SELECT c.id, c.email, c.phone, c.name, NULL::text AS company, (${SMS_ELIGIBLE_SQL}) AS sms_ok,
             COALESCE(c.marketing_opt_out,false) AS marketing_opt_out, c.line_type
        FROM contacts c
       WHERE c.silo = $1
-        AND ($2::text IS NULL OR $2 = ANY(c.tags))
+        AND ${SMS_AUDIENCE_SQL}
         AND ($3::text[] IS NULL OR c.tags && $3::text[])
         AND ($4::text[] IS NULL OR NOT (c.tags && $4::text[]))
         AND ${hasFallback ? CAMPAIGN_ELIGIBLE_SQL : SMS_ELIGIBLE_SQL}
@@ -196,7 +214,7 @@ export async function runSmsSend(pool: Pool, job: SmsJob, onProgress?: SendProgr
             COALESCE(c.marketing_opt_out,false) AS marketing_opt_out, c.line_type
        FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
       WHERE c.silo = $1
-        AND ($2::text IS NULL OR $2 = ANY(c.tags))
+        AND ${SMS_AUDIENCE_SQL}
         AND ($3::text[] IS NULL OR c.tags && $3::text[])
         AND ($4::text[] IS NULL OR NOT (c.tags && $4::text[]))
         AND ${job.fbHtml ? CAMPAIGN_ELIGIBLE_SQL : SMS_ELIGIBLE_SQL}
