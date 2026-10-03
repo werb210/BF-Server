@@ -1,19 +1,39 @@
 // BF_SERVER_REPORTS_BATCH2_v719 - the next reports for the Reports section.
 import { pool } from "../../db.js";
-import { commissionRate } from "../googleDataManager.js";
 
 const days = (v: unknown, d: number) => Math.min(Math.max(Number(v) || d, 1), 730);
 export type Ctx = { role: "Admin" | "Marketing" | "Staff"; userId: string };
 
-export const STAGE_ODDS: Record<string, number> = { "Offer": 0.7, "Accepted": 0.85, "Off to Lender": 0.4, "In Review": 0.25, "Additional Steps Required": 0.15, "Documents Required": 0.15, "Hold": 0.05 };
+// BF_SERVER_ONE_COMMISSION_v727 - the forecast used a flat 3% of the requested amount,
+// counted files on Hold and added US dollars as Canadian, so it never matched the
+// Dashboard. It now uses the Dashboard's own rules: 2% unless the lender product
+// carries its own commission, the funded or accepted-offer amount when there is one,
+// US deals converted at the Bank of Canada rate, Hold/Fraud/Rejected/drafts left out.
+// Only the stage odds are added on top.
+export const STAGE_ODDS: Record<string, number> = { "Offer": 0.7, "Accepted": 0.85, "Off to Lender": 0.4, "In Review": 0.25, "Additional Steps Required": 0.15, "Documents Required": 0.15, "Received": 0.1 };
 export async function revenueForecast() {
-  const rate = commissionRate();
-  const { rows } = await pool.query<{ stage: string; files: number; amount: number }>(
-    `SELECT pipeline_state AS stage, count(*)::int AS files, COALESCE(sum(requested_amount),0)::float AS amount
-       FROM applications WHERE silo = 'BF' AND submitted_at IS NOT NULL AND funded_at IS NULL AND pipeline_state = ANY($1)
-      GROUP BY 1`, [Object.keys(STAGE_ODDS)]);
-  const stages = rows.map((r) => ({ ...r, odds: STAGE_ODDS[r.stage] ?? 0, expected_commission: Math.round(r.amount * (STAGE_ODDS[r.stage] ?? 0) * rate) })).sort((a, b) => b.odds - a.odds);
-  return { rate, stages, total: stages.reduce((s, r) => s + r.expected_commission, 0) };
+  const { DEAL_CURRENCY_SQL, boardScope } = await import("../../routes/dashboard.js");
+  const { liveStageFilter } = await import("../../modules/applications/reportingScope.js");
+  const { rows } = await pool.query<{ stage: string; files: number; amount_cad: number; commission_cad: number }>(
+    `SELECT x.stage, count(*)::int AS files, COALESCE(sum(x.amount * x.fx),0)::float AS amount_cad, COALESCE(sum(x.native * x.fx),0)::float AS commission_cad
+       FROM (
+         SELECT (CASE WHEN a.pipeline_state IN ('Received','In Review','Documents Required','Additional Steps Required','Off to Lender','Offer','Accepted')
+                 THEN a.pipeline_state ELSE 'Received' END) AS stage,
+                COALESCE(a.funded_amount, off.amount, a.requested_amount, 0) AS amount,
+                COALESCE(a.funded_amount, off.amount, a.requested_amount, 0) * (COALESCE(lp.commission, 2) / 100.0) AS native,
+                COALESCE((SELECT to_cad FROM fx_rates WHERE currency = ${DEAL_CURRENCY_SQL}), 1) AS fx
+           FROM applications a
+           LEFT JOIN lender_products lp ON lp.id = a.lender_product_id::text
+           LEFT JOIN LATERAL (SELECT o.amount FROM offers o WHERE o.application_id = a.id AND o.status = 'accepted' ORDER BY o.updated_at DESC NULLS LAST LIMIT 1) off ON TRUE
+          WHERE UPPER(a.silo) = 'BF' AND a.funded_at IS NULL
+            AND COALESCE(a.pipeline_state, '') NOT IN ('draft', 'Draft', '', 'Rejected')
+            AND ${boardScope("a")}
+            ${liveStageFilter("a.pipeline_state")}
+       ) x GROUP BY 1`,
+  );
+  const stages = rows.map((r) => ({ stage: r.stage, files: r.files, amount: Math.round(r.amount_cad), full_commission: Math.round(r.commission_cad), odds: STAGE_ODDS[r.stage] ?? 0, expected_commission: Math.round(r.commission_cad * (STAGE_ODDS[r.stage] ?? 0)) }))
+    .sort((a, b) => b.odds - a.odds);
+  return { stages, total: stages.reduce((s, r) => s + r.expected_commission, 0), full_total: stages.reduce((s, r) => s + r.full_commission, 0) };
 }
 
 export async function mediaFeeAgreements() {

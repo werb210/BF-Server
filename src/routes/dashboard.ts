@@ -13,7 +13,8 @@ const router = Router();
 // the commission figures and the marketing revenue report: the funded currency
 // once funded, else USD when the lender product or the business is in the US,
 // else CAD. Expects applications as "a" and lender_products as "lp".
-const DEAL_CURRENCY_SQL = `(CASE
+// BF_SERVER_ONE_COMMISSION_v727 - exported so Reports compute commission exactly like this card.
+export const DEAL_CURRENCY_SQL = `(CASE
                      WHEN a.funded_amount IS NOT NULL THEN UPPER(COALESCE(NULLIF(TRIM(a.funded_currency), ''), 'CAD'))
                      WHEN UPPER(COALESCE(lp.country::text, '')) IN ('US', 'USA', 'UNITED STATES') THEN 'USD'
                      WHEN UPPER(TRIM(COALESCE(a.metadata->>'country', a.metadata->>'businessCountry',
