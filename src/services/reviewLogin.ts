@@ -32,3 +32,40 @@ export function reviewCodeMatches(phone: string, code: string): boolean {
   const b = Buffer.from(c.code);
   return a.length === b.length && timingSafeEqual(a, b);
 }
+
+// BF_SERVER_STORE_REVIEW_TEST_v734 - anything the Google/Apple reviewers create with the
+// review login is a test, not a lead. Their contacts and applications move to silo 'TEST'
+// (every staff view, report, alert, SMS audience and Customer Match list is scoped to a
+// real silo, so they drop out everywhere) and are tagged store_review. The reviewer's own
+// app experience is unchanged: the client app reads its application by id.
+export async function quarantineReviewRecords(runQuery: (sql: string, params?: unknown[]) => Promise<unknown>): Promise<boolean> {
+  const c = configured();
+  if (!c) return false;
+  const last10 = c.phone.replace(/[^0-9]/g, "").slice(-10);
+  await runQuery(
+    `UPDATE contacts
+        SET silo = 'TEST',
+            tags = (SELECT ARRAY(SELECT DISTINCT unnest(COALESCE(tags, '{}') || ARRAY['store_review']))),
+            updated_at = now()
+      WHERE right(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = $1
+        AND COALESCE(silo, '') <> 'TEST'`,
+    [last10],
+  );
+  await runQuery(
+    `UPDATE applications a
+        SET silo = 'TEST',
+            metadata = COALESCE(a.metadata, '{}'::jsonb) || jsonb_build_object('store_review', true),
+            updated_at = now()
+      WHERE COALESCE(a.silo, '') <> 'TEST'
+        AND (a.contact_id IN (SELECT id FROM contacts WHERE 'store_review' = ANY(COALESCE(tags, '{}')))
+             OR a.id IN (SELECT ac.application_id FROM application_contacts ac JOIN contacts ct ON ct.id = ac.contact_id
+                          WHERE 'store_review' = ANY(COALESCE(ct.tags, '{}'))))`,
+  );
+  // Tasks can only belong to a real silo, so the reviewer's tasks are removed from the queues.
+  await runQuery(
+    `UPDATE tasks SET deleted_at = now(), updated_at = now()
+      WHERE deleted_at IS NULL
+        AND contact_id IN (SELECT id FROM contacts WHERE 'store_review' = ANY(COALESCE(tags, '{}')))`,
+  );
+  return true;
+}

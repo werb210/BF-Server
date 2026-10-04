@@ -458,6 +458,11 @@ router.post(
     if (!application) {
       return res.status(404).json({ error: { message: "application_not_found" } });
     }
+    // BF_SERVER_STORE_REVIEW_TEST_v734 - a store reviewer's submission is a test. Once the
+    // submission has finished (30 s later, so nothing in this request runs against a moved
+    // record), its contact, files and tasks are moved out of the real pipeline. No-op unless
+    // the review login is configured.
+    setTimeout(() => { void import("../../services/reviewLogin.js").then((m) => m.quarantineReviewRecords((sql, params) => pool.query(sql, params as any[]))).catch((e: unknown) => console.warn("[store-review] delayed quarantine failed", e instanceof Error ? e.message : String(e))); }, 30_000).unref?.();
 
     const silo = application.silo || "BF";
     const ownerId = application.owner_user_id || null;
