@@ -140,6 +140,7 @@ export async function buildMediaFeeAgreementPdf(d: MediaFeeAgreementData): Promi
   const doc = await PDFDocument.create();
   const F = await doc.embedFont(StandardFonts.TimesRoman);
   const B = await doc.embedFont(StandardFonts.TimesRomanBold);
+  const SIG = await doc.embedFont(StandardFonts.TimesRomanItalic); // BF_SERVER_FEE_COUNTERSIGN_v746
   const ctx: Ctx = { doc, page: doc.addPage([PW, PH]), y: M, F, B };
 
   ctx.page.drawText("SERVICES AGREEMENT", { x: M, y: PH - ctx.y, size: 13, font: B, color: BLACK });
@@ -172,9 +173,13 @@ export async function buildMediaFeeAgreementPdf(d: MediaFeeAgreementData): Promi
   // Signature box sits above the line (h:20 box anchored top-left, extends down).
   ctx.page.drawText("{{t:s;r:y;o:\"" + MEDIA_FEE_AGREEMENT_ROLE + "\";w:200;h:20;}}", { x: M + 2, y: lineY + 22, size: 6, font: F, color: WHITE });
   ctx.page.drawText("2630108 Alberta Ltd., trading as Boreal Financial", { x: M + sigW + 40, y: lineY + 34, size: 9.5, font: B, color: BLACK });
+  // BF_SERVER_FEE_COUNTERSIGN_v746 - Boreal signs its side when the agreement is issued, so the copy the
+  // client signs is complete and nothing waits on a second signature. (Electronic signature, Alberta ETA.)
+  ctx.page.drawText("/s/ Todd Werboweski", { x: M + sigW + 44, y: lineY + 6, size: 15, font: SIG, color: BLACK });
   ctx.y += 13;
   ctx.page.drawText("Signing Authority on behalf of Company, and Personally", { x: M, y: PH - ctx.y, size: 9, font: F, color: BLACK });
   ctx.page.drawText("Per: Todd Werboweski, Director", { x: M + sigW + 40, y: PH - ctx.y, size: 9, font: F, color: BLACK });
+  ctx.page.drawText(pdfSafe("Signed electronically for Boreal Financial on " + d.agreementDate), { x: M + sigW + 40, y: PH - ctx.y - 14, size: 8, font: F, color: GREY });
   ctx.y += 14;
   ctx.page.drawText(pdfSafe(d.clientName ?? ""), { x: M, y: PH - ctx.y, size: 9, font: F, color: GREY });
 
