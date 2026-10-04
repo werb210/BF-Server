@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import jwt from "jsonwebtoken";
 import request from "supertest";
 
@@ -31,6 +31,9 @@ function makeAuthToken() {
 }
 
 describe("communications maya handoff", () => {
+  // BF_SERVER_MAYA_HANDOFF_TEST_FIX_v738 - warm the expensive app import once.
+  vi.setConfig({ testTimeout: 30_000 });
+  beforeAll(async () => { await import("../app.js"); }, 120_000);
   beforeEach(() => {
     vi.resetModules();
     vi.restoreAllMocks();
@@ -47,10 +50,7 @@ describe("communications maya handoff", () => {
   });
 
   it("POST /api/communications/maya-handoff with available recipients writes escalation + comm message", async () => {
-    queryMock
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ phone: "+15555550111" }] });
+    queryMock.mockImplementation(async (sql: unknown) => (String(sql).includes("FROM staff_presence") ? { rows: [{ phone: "+15555550111" }] } : { rows: [] }));
 
     const fetchSpy = vi.spyOn(globalThis, "fetch" as any).mockResolvedValue({
       ok: true,
