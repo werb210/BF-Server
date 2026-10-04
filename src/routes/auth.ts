@@ -128,6 +128,9 @@ router.post("/otp/start", otpStartLimiter, async (req, res) => {
 
     // BF_SERVER_REVIEW_LOGIN_v710 - the store-review number gets no text.
     if (isReviewPhone(phone)) {
+      // BF_SERVER_STORE_REVIEW_TEST_v734 - keep anything the reviewer made out of the real pipeline.
+      void import("../services/reviewLogin.js").then((m) => m.quarantineReviewRecords((sql, params) => pool.query(sql, params as any[])))
+        .catch((e: unknown) => console.warn("[store-review] quarantine failed", e instanceof Error ? e.message : String(e)));
       return res.status(200).json({ status: "ok", data: { sent: true } });
     }
 
