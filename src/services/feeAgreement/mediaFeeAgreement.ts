@@ -76,6 +76,17 @@ export async function createFeeAgreementSigningSession(applicationId: string): P
   const agreement = await getFeeAgreement(applicationId); if (!agreement) return { status: "none" }; if (agreement.status === "signed") return { status: "signed" }; if (!agreement.signer_is_applicant) return { status: "other_signer", signerName: agreement.signer_name }; if (!signnow.isApiKeyConfigured()) return { status: "stub" };
   const row = (await dbQuery<{ name: string | null; requested_amount: unknown; metadata: unknown }>("SELECT name,requested_amount,metadata FROM applications WHERE id::text=($1)::text LIMIT 1", [applicationId])).rows[0]; if (!row) return { status: "error", reason: "application_not_found" };
   const signer = pickFeeSigner(row.metadata), email = agreement.signer_email ?? signer.email; if (!email) return { status: "error", reason: "signer_email_missing" };
+  // BF_SERVER_FEE_SESSION_REUSE_v744 - reuse the agreement already prepared instead of uploading a new SignNow
+  // document every time the client taps Review (each tap left another unsigned copy behind).
+  if (agreement.signnow_group_id) {
+    try {
+      const inv = (await dbQuery<{ signnow_invite_id: string | null }>("SELECT signnow_invite_id FROM media_fee_agreements WHERE application_id=$1 LIMIT 1", [applicationId])).rows[0]?.signnow_invite_id ?? null;
+      if ((await signnow.getDocumentGroupStatus(agreement.signnow_group_id)).signed) { await confirmFeeAgreementSigned(applicationId); return { status: "signed" }; }
+      if (inv) { const { url } = await signnow.createEmbeddedGroupLink(agreement.signnow_group_id, inv, email); return { status: "ready", url }; }
+    } catch (err) {
+      console.warn("[fee-agreement] reuse_failed_preparing_new_copy", { applicationId, message: err instanceof Error ? err.message : String(err) });
+    }
+  }
   const pdf = await buildMediaFeeAgreementPdf(agreementDataFrom(row, { ...signer, name: agreement.signer_name ?? signer.name })), { documentId } = await signnow.uploadDocumentWithFieldExtract(pdf, `fee-agreement-${applicationId}.pdf`), { groupId } = await signnow.createDocumentGroup([documentId], `Fee Agreement ${applicationId}`), { inviteId } = await signnow.createEmbeddedGroupInvite(groupId, [documentId], [{ email, name: agreement.signer_name ?? undefined, roleName: MEDIA_FEE_AGREEMENT_ROLE }]), { url } = await signnow.createEmbeddedGroupLink(groupId, inviteId, email);
   await dbQuery("UPDATE media_fee_agreements SET signnow_group_id=$2,signnow_doc_id=$3,signnow_invite_id=$4,updated_at=now() WHERE application_id=$1", [applicationId, groupId, documentId, inviteId]); return { status: "ready", url };
 }

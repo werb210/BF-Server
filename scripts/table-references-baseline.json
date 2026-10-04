@@ -2,7 +2,6 @@
  "known": [
   "src/jobs/otpCleanup.ts|otp_sessions",
   "src/routes/auth.ts|through",
-  "src/routes/clientDocumentsNeeded.ts|document_requirements",
   "src/routes/communications.ts|latest",
   "src/routes/communications.ts|number",
   "src/routes/offerAcceptance.ts|through",

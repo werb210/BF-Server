@@ -31,6 +31,10 @@ const router = Router();
 router.use(submitAttemptsRouter); // BF_SERVER_BLOCK_v842_SUBMIT_ATTEMPTS — frictionless beacon, before rate-limit/ownership middleware
 router.use(deviceSignInRouter); // BF_SERVER_CLIENT_FACE_ID_v296 - public sign-in must not need an app id
 router.use(passkeysRouter); // BF_SERVER_BLOCK_v599 - passkey sign-in, before the app-id checks
+// BF_SERVER_CLIENT_APP_VERSION_v744 - phone apps built before this date are missing features the server now
+// relies on (fee agreement signing, to-do buttons). The app compares its own build time and asks the client to
+// update instead of showing buttons that do nothing. Raise CLIENT_APP_MIN_BUILD when a change needs a new app.
+router.get("/app-version", (_req: any, res: any) => { res.json({ minBuild: process.env.CLIENT_APP_MIN_BUILD || "2026-10-04T00:00:00Z", webUrl: "https://client.boreal.financial" }); });
 const clientReadLimiter = clientReadRateLimit() as any;
 
 router.use((req: any, res: any, next: any) => {
