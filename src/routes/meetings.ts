@@ -5,6 +5,7 @@ import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { createRoom, roomBySlug, inviteText, joinUrl, oneTapDial, isOpen, DIAL_IN_DISPLAY, type MeetingRoom } from "../services/meetingRooms.js";
+import { addParticipants, listParticipants, removeParticipant, searchPeople, emailInvites, MAX_PEOPLE, type Person } from "../services/meetingRooms.js"; // BF_SERVER_MEETING_PARTICIPANTS_v737
 
 const router = Router();
 const staff = [requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] })];
@@ -61,11 +62,54 @@ router.post("/", ...staff, safeHandler(async (req: any, res: any) => {
   if (Number.isNaN(startsAt.getTime())) { res.status(400).json({ error: "start_time_required" }); return; }
   const room = await createRoom({ title, startsAt, durationMin: Number(req.body?.durationMin) || 60, hostUserId: req.user?.userId ?? null,
     applicationId: typeof req.body?.applicationId === "string" ? req.body.applicationId : null, contactId: typeof req.body?.contactId === "string" ? req.body.contactId : null });
-  res.status(201).json({ meeting: view(room) });
+  // BF_SERVER_MEETING_PARTICIPANTS_v737 - invite people at creation (up to 10 including the host).
+  const people = parsePeople(req.body?.participants);
+  const result = people.length ? await addParticipants(room, people) : { added: [], refused: 0 };
+  const invited = people.length ? await emailInvites(room).catch((e: unknown) => { console.warn("[meetings] invites failed", e instanceof Error ? e.message : String(e)); return 0; }) : 0;
+  res.status(201).json({ meeting: view(room), participants: await listParticipants(room.id), refused: result.refused, invited });
 }));
 router.post("/:id/cancel", ...staff, safeHandler(async (req: any, res: any) => {
   const { rowCount } = await pool.query(`UPDATE meeting_rooms SET status = 'cancelled', updated_at = now() WHERE id::text = $1`, [String(req.params.id)]);
   res.status(rowCount ? 200 : 404).json({ ok: Boolean(rowCount) });
+}));
+
+// BF_SERVER_MEETING_PARTICIPANTS_v737 - people on a conference room.
+function parsePeople(raw: unknown): Person[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 20).map((p: any) => ({
+    contactId: typeof p?.contactId === "string" ? p.contactId : null,
+    userId: typeof p?.userId === "string" ? p.userId : null,
+    name: String(p?.name ?? "").trim(),
+    email: typeof p?.email === "string" ? p.email.trim() : null,
+    phone: typeof p?.phone === "string" ? p.phone.trim() : null,
+  })).filter((p) => p.name);
+}
+async function roomById(id: string): Promise<MeetingRoom | null> {
+  const { rows } = await pool.query<MeetingRoom>(
+    `SELECT id::text, code, slug, title, host_user_id::text, application_id, contact_id::text, starts_at, duration_min, status
+       FROM meeting_rooms WHERE id::text = $1 LIMIT 1`, [id]);
+  return rows[0] ?? null;
+}
+
+router.get("/people", ...staff, safeHandler(async (req: any, res: any) => {
+  res.json({ people: await searchPeople(String(req.query?.q ?? "")), max: MAX_PEOPLE });
+}));
+
+router.get("/:id/participants", ...staff, safeHandler(async (req: any, res: any) => {
+  res.json({ participants: await listParticipants(String(req.params.id)), max: MAX_PEOPLE });
+}));
+
+router.post("/:id/participants", ...staff, safeHandler(async (req: any, res: any) => {
+  const room = await roomById(String(req.params.id));
+  if (!room || room.status === "cancelled") { res.status(404).json({ error: "meeting_not_found" }); return; }
+  const result = await addParticipants(room, parsePeople(req.body?.people));
+  const invited = await emailInvites(room).catch((e: unknown) => { console.warn("[meetings] invites failed", e instanceof Error ? e.message : String(e)); return 0; });
+  res.json({ participants: await listParticipants(room.id), refused: result.refused, invited, max: MAX_PEOPLE });
+}));
+
+router.delete("/:id/participants/:pid", ...staff, safeHandler(async (req: any, res: any) => {
+  const ok = await removeParticipant(String(req.params.id), String(req.params.pid));
+  res.status(ok ? 200 : 404).json({ ok });
 }));
 
 export default router;

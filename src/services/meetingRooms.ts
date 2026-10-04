@@ -86,3 +86,89 @@ export async function roomBySlug(slug: string): Promise<MeetingRoom | null> {
        FROM meeting_rooms WHERE slug = $1 LIMIT 1`, [String(slug ?? "").slice(0, 40)]);
   return rows[0] ?? null;
 }
+
+// BF_SERVER_MEETING_PARTICIPANTS_v737 - invited people (up to 10 per room, host included),
+// name search across CRM contacts and staff, and an email invite with the code and link.
+export const MAX_PEOPLE = 10;
+export type Person = { contactId?: string | null; userId?: string | null; name: string; email?: string | null; phone?: string | null };
+export type Participant = Person & { id: string; invited_at: string | null };
+
+export async function listParticipants(roomId: string): Promise<Participant[]> {
+  const { rows } = await pool.query(
+    `SELECT id::text, contact_id::text AS "contactId", user_id::text AS "userId", name, email, phone, invited_at
+       FROM meeting_participants WHERE room_id::text = $1 ORDER BY created_at`, [roomId]);
+  return rows as Participant[];
+}
+
+/** Adds people not already on the room; refuses to go over 10 including the host. */
+export async function addParticipants(room: MeetingRoom, people: Person[]): Promise<{ added: Participant[]; refused: number }> {
+  const existing = await listParticipants(room.id);
+  const hostCounts = room.host_user_id && !existing.some((p) => p.userId === room.host_user_id) ? 1 : 0;
+  let room_left = MAX_PEOPLE - hostCounts - existing.length;
+  const seen = new Set(existing.map((p) => (p.contactId || p.userId || p.email || p.phone || p.name).toLowerCase()));
+  const added: Participant[] = [];
+  let refused = 0;
+  for (const p of people) {
+    const name = String(p.name ?? "").trim().slice(0, 120);
+    if (!name) continue;
+    const key = String(p.contactId || p.userId || p.email || p.phone || name).toLowerCase();
+    if (seen.has(key)) continue;
+    if (room_left <= 0) { refused += 1; continue; }
+    const { rows } = await pool.query(
+      `INSERT INTO meeting_participants (id, room_id, contact_id, user_id, name, email, phone)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       RETURNING id::text, contact_id::text AS "contactId", user_id::text AS "userId", name, email, phone, invited_at`,
+      [randomUUID(), room.id, p.contactId || null, p.userId || null, name, p.email?.trim() || null, p.phone?.trim() || null]);
+    added.push(rows[0] as Participant);
+    seen.add(key); room_left -= 1;
+  }
+  return { added, refused };
+}
+
+export async function removeParticipant(roomId: string, participantId: string): Promise<boolean> {
+  const r = await pool.query(`DELETE FROM meeting_participants WHERE room_id::text = $1 AND id::text = $2`, [roomId, participantId]);
+  return Boolean(r.rowCount);
+}
+
+/** Name / email / phone search across Boreal Financial CRM contacts and active staff. */
+export async function searchPeople(q: string): Promise<Array<Person & { kind: "contact" | "staff"; detail: string }>> {
+  const term = String(q ?? "").trim();
+  if (term.length < 2) return [];
+  const like = "%" + term.replace(/[%_]/g, "") + "%";
+  const contacts = await pool.query(
+    `SELECT id::text AS "contactId", COALESCE(NULLIF(name, ''), trim(COALESCE(first_name,'') || ' ' || COALESCE(last_name,''))) AS name,
+            email, phone, company_name
+       FROM contacts
+      WHERE silo = 'BF' AND merged_into_id IS NULL
+        AND (name ILIKE $1 OR first_name ILIKE $1 OR last_name ILIKE $1 OR email ILIKE $1 OR company_name ILIKE $1 OR phone ILIKE $1)
+      ORDER BY updated_at DESC NULLS LAST LIMIT 8`, [like]);
+  const staff = await pool.query(
+    `SELECT id::text AS "userId", trim(COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')) AS name, email, phone_number AS phone
+       FROM users
+      WHERE COALESCE(active, true) AND (first_name ILIKE $1 OR last_name ILIKE $1 OR email ILIKE $1)
+      ORDER BY first_name LIMIT 5`, [like]);
+  return [
+    ...staff.rows.filter((r: any) => r.name).map((r: any) => ({ ...r, kind: "staff" as const, detail: "Boreal staff" })),
+    ...contacts.rows.filter((r: any) => r.name).map((r: any) => ({ contactId: r.contactId, name: r.name, email: r.email, phone: r.phone, kind: "contact" as const, detail: [r.company_name, r.email || r.phone].filter(Boolean).join(" - ") })),
+  ];
+}
+
+/** Emails each participant who has an email and hasn't been invited yet. */
+export async function emailInvites(room: MeetingRoom): Promise<number> {
+  const { sendgridConfigured, sendOne } = await import("./sendgridService.js");
+  if (!sendgridConfigured()) return 0;
+  const people = (await listParticipants(room.id)).filter((p) => p.email && !p.invited_at);
+  const esc = (s: unknown) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '\"': "&quot;" }[c] as string));
+  const html = inviteText(room).split(String.fromCharCode(10)).map((l) => "<p style=" + '\"' + "margin:0 0 6px;font-family:Arial,sans-serif;color:#0B1F3A" + '\"' + ">" + esc(l) + "</p>").join("");
+  let sent = 0;
+  for (const p of people) {
+    const r = await sendOne({ to: p.email!, subject: "Invitation: " + room.title, html, contactId: p.contactId ?? null });
+    if (r.ok) {
+      sent += 1;
+      await pool.query(`UPDATE meeting_participants SET invited_at = now() WHERE id::text = $1`, [p.id]);
+    } else {
+      console.warn("[meetings] invite email failed", { to: p.email, status: r.status, error: r.error });
+    }
+  }
+  return sent;
+}
