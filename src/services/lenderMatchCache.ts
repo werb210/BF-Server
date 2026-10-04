@@ -231,6 +231,17 @@ export async function readLenderMatchEnvelope(applicationId: string): Promise<Le
   const cached: any[] = Array.isArray(row.lender_matches) ? row.lender_matches : [];
   const computedAt = row.lender_matches_computed_at;
   const stale = row.lender_matches_stale === true;
+  // BF_SERVER_MATCH_REFRESH_v732 - out-of-date matches (a lender product was added or
+  // changed) are recalculated on the spot instead of waiting for someone to press
+  // Recalculate. If the recalculation fails, the previous list is shown as before.
+  if (stale && computedAt) {
+    try {
+      const fresh = await computeAndCacheLenderMatches(applicationId);
+      return { status: "ready", outstanding: [], computed_at: new Date().toISOString(), matches: fresh.matches, inputs: fresh.inputs ?? inputs, missing_inputs: fresh.missing_inputs ?? missingInputs };
+    } catch (err) {
+      console.warn("[lender-matches] auto-refresh failed", { applicationId, message: err instanceof Error ? err.message : String(err) });
+    }
+  }
   if (stale || !computedAt || cached.length === 0) {
     return { status: "stale", outstanding: [], computed_at: computedAt, matches: cached, inputs, missing_inputs: missingInputs };
   }

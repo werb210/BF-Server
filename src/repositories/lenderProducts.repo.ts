@@ -13,13 +13,14 @@ type Queryable = Pick<PoolClient, "query">;
 
 // When a lender product is created or edited, the cached lender matches on
 // every still-in-progress application become out of date. Flag them stale so
-// the Lenders tab shows the Recalculate prompt. Applications already sent to a
-// lender (Off to Lender and beyond) are left untouched. Fire-and-forget.
+// the Lenders tab can refresh the list. Fire-and-forget.
 async function markPreLenderMatchesStale(): Promise<void> {
   try {
     await runQuery(
       `update applications set lender_matches_stale = true
-         where pipeline_state in ('Received','In Review','Documents Required','Additional Steps Required')
+         -- BF_SERVER_MATCH_REFRESH_v732 - files still being shopped (Off to Lender, Offer) refresh too,
+         -- so a lender added later (Bondit) appears on files already out to other lenders.
+         where pipeline_state in ('Received','In Review','Documents Required','Additional Steps Required','Off to Lender','Offer')
            and coalesce(lender_matches_stale, false) = false`
     );
   } catch (err) {
