@@ -5,7 +5,8 @@ import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { createRoom, roomBySlug, inviteText, joinUrl, oneTapDial, isOpen, DIAL_IN_DISPLAY, type MeetingRoom } from "../services/meetingRooms.js";
-import { addParticipants, listParticipants, removeParticipant, searchPeople, emailInvites, MAX_PEOPLE, type Person } from "../services/meetingRooms.js"; // BF_SERVER_MEETING_PARTICIPANTS_v737
+import { addParticipants, listParticipants, removeParticipant, searchPeople, MAX_PEOPLE, type Person } from "../services/meetingRooms.js"; // BF_SERVER_MEETING_PARTICIPANTS_v737
+import { notifyMeeting, cancelMeetingNotices } from "../services/meetingNotify.js"; // BF_SERVER_MEETING_NOTIFY_v741
 
 const router = Router();
 const staff = [requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] })];
@@ -65,12 +66,17 @@ router.post("/", ...staff, safeHandler(async (req: any, res: any) => {
   // BF_SERVER_MEETING_PARTICIPANTS_v737 - invite people at creation (up to 10 including the host).
   const people = parsePeople(req.body?.participants);
   const result = people.length ? await addParticipants(room, people) : { added: [], refused: 0 };
-  const invited = people.length ? await emailInvites(room).catch((e: unknown) => { console.warn("[meetings] invites failed", e instanceof Error ? e.message : String(e)); return 0; }) : 0;
-  res.status(201).json({ meeting: view(room), participants: await listParticipants(room.id), refused: result.refused, invited });
+  // BF_SERVER_MEETING_NOTIFY_v741 - Outlook event + invitations, texts to everyone incl. the host.
+  const delivery = await notifyMeeting(room, { isNew: true });
+  res.status(201).json({ meeting: view(room), participants: await listParticipants(room.id), refused: result.refused, invited: delivery.emailed, delivery });
 }));
 router.post("/:id/cancel", ...staff, safeHandler(async (req: any, res: any) => {
   const { rowCount } = await pool.query(`UPDATE meeting_rooms SET status = 'cancelled', updated_at = now() WHERE id::text = $1`, [String(req.params.id)]);
-  res.status(rowCount ? 200 : 404).json({ ok: Boolean(rowCount) });
+  if (!rowCount) { res.status(404).json({ ok: false }); return; }
+  // BF_SERVER_MEETING_NOTIFY_v741 - cancel the Outlook event (Outlook tells attendees) and text people who were texted.
+  const room = await roomById(String(req.params.id));
+  const delivery = room ? await cancelMeetingNotices(room) : null;
+  res.json({ ok: true, delivery });
 }));
 
 // BF_SERVER_MEETING_PARTICIPANTS_v737 - people on a conference room.
@@ -103,8 +109,8 @@ router.post("/:id/participants", ...staff, safeHandler(async (req: any, res: any
   const room = await roomById(String(req.params.id));
   if (!room || room.status === "cancelled") { res.status(404).json({ error: "meeting_not_found" }); return; }
   const result = await addParticipants(room, parsePeople(req.body?.people));
-  const invited = await emailInvites(room).catch((e: unknown) => { console.warn("[meetings] invites failed", e instanceof Error ? e.message : String(e)); return 0; });
-  res.json({ participants: await listParticipants(room.id), refused: result.refused, invited, max: MAX_PEOPLE });
+  const delivery = await notifyMeeting(room, { isNew: false }); // BF_SERVER_MEETING_NOTIFY_v741
+  res.json({ participants: await listParticipants(room.id), refused: result.refused, invited: delivery.emailed, delivery, max: MAX_PEOPLE });
 }));
 
 router.delete("/:id/participants/:pid", ...staff, safeHandler(async (req: any, res: any) => {

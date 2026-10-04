@@ -153,22 +153,4 @@ export async function searchPeople(q: string): Promise<Array<Person & { kind: "c
   ];
 }
 
-/** Emails each participant who has an email and hasn't been invited yet. */
-export async function emailInvites(room: MeetingRoom): Promise<number> {
-  const { sendgridConfigured, sendOne } = await import("./sendgridService.js");
-  if (!sendgridConfigured()) return 0;
-  const people = (await listParticipants(room.id)).filter((p) => p.email && !p.invited_at);
-  const esc = (s: unknown) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '\"': "&quot;" }[c] as string));
-  const html = inviteText(room).split(String.fromCharCode(10)).map((l) => "<p style=" + '\"' + "margin:0 0 6px;font-family:Arial,sans-serif;color:#0B1F3A" + '\"' + ">" + esc(l) + "</p>").join("");
-  let sent = 0;
-  for (const p of people) {
-    const r = await sendOne({ to: p.email!, subject: "Invitation: " + room.title, html, contactId: p.contactId ?? null });
-    if (r.ok) {
-      sent += 1;
-      await pool.query(`UPDATE meeting_participants SET invited_at = now() WHERE id::text = $1`, [p.id]);
-    } else {
-      console.warn("[meetings] invite email failed", { to: p.email, status: r.status, error: r.error });
-    }
-  }
-  return sent;
-}
+// BF_SERVER_MEETING_NOTIFY_v741 - invites now go out through services/meetingNotify.ts (Outlook, text, email).

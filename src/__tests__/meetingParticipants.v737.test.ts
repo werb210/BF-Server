@@ -15,6 +15,6 @@ describe("conference room participants", () => {
   });
   it("has routes to search, add and remove people, and invites at creation", () => {
     const r = readFileSync("src/routes/meetings.ts", "utf8");
-    for (const x of ['router.get("/people"', 'router.post("/:id/participants"', 'router.delete("/:id/participants/:pid"', "await emailInvites(room)"]) expect(r).toContain(x);
+    for (const x of ['router.get("/people"', 'router.post("/:id/participants"', 'router.delete("/:id/participants/:pid"', "await notifyMeeting(room"]) expect(r).toContain(x);
   });
 });
