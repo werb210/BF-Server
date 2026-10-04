@@ -25,7 +25,12 @@ const BASE = "/api/webhooks/twilio/reception";
 
 const PHRASES: Record<string, string> = {
   // BF_SERVER_RECEPTION_MENU_v698 - wording approved by Todd 2026-10-01.
-  greeting: "This call may be recorded. Thank you for calling the Boreal Group of Companies. Are you looking for Boreal Financial, or Boreal Risk Management? You can say it, or press 1 for Financial, 2 for Risk Management.",
+  greeting: "This call may be recorded. Thank you for calling the Boreal Group of Companies. Are you looking for Boreal Financial, or Boreal Risk Management? You can say it, or press 1 for Financial, 2 for Risk Management. To join a scheduled meeting, press 3.",
+  // BF_SERVER_MEETING_ROOMS_v736 - option 3: join a conference room with its access code.
+  meeting_prompt: "Please enter your six digit meeting access code, then press pound.",
+  meeting_retry: "Sorry, that code isn't valid for a meeting happening now. Please enter your six digit access code, then press pound.",
+  meeting_joining: "Thank you. Joining your meeting now.",
+  meeting_failed: "Sorry, we couldn't find a meeting with that code. Please check the code in your invitation and call back, or stay on the line to reach our team.",
   intent_prompt: "Thank you for contacting Boreal Financial. For client engagement, press 1. For credit, press 2.",
   intent_retry: "Sorry, I didn't catch that. For client engagement, press 1. For credit, press 2.",
   connect_engagement: "One moment, connecting you to our client engagement team.",
@@ -236,6 +241,8 @@ router.post("/greeting", twilioWebhookValidation, async (_req: Request, res: Res
 
 router.post("/company", twilioWebhookValidation, async (req: Request, res: Response) => {
   const s = speech(req); const d = digit(req);
+  // BF_SERVER_MEETING_ROOMS_v736 - option 3 (or "meeting" / "conference") joins a meeting room.
+  if (d === "3" || /meeting|conference/.test(s)) { const vm = await newVR(); vm.redirect({ method: "POST" }, `${BASE}/meeting`); return send(res, vm); }
   let company = "BF";
   if (d === "2" || /risk|insurance|brm|management/.test(s)) company = "BRM";
   else if (d === "1" || /financ|finance|loan|funding|\bbf\b/.test(s)) company = "BF";
@@ -244,6 +251,38 @@ router.post("/company", twilioWebhookValidation, async (req: Request, res: Respo
   const g = v.gather({ input: "speech dtmf", numDigits: 1, speechTimeout: "auto", timeout: 6, action: `${BASE}/intent?company=${company}`, method: "POST" });
   emit(g, "intent_prompt", PHRASES.intent_prompt);
   v.redirect({ method: "POST" }, `${BASE}/intent?company=${company}`);
+  return send(res, v);
+});
+
+// BF_SERVER_MEETING_ROOMS_v736 - ask for the access code (two tries), then drop the caller
+// into that meeting's conference. Staff join the same way, from any phone or the dialler.
+router.post("/meeting", twilioWebhookValidation, async (req: Request, res: Response) => {
+  const v = await newVR();
+  const tries = Number(req.query.try ?? 0) || 0;
+  const g = v.gather({ input: "dtmf", numDigits: 6, finishOnKey: "#", timeout: 10, action: `${BASE}/meeting-code?try=${tries}`, method: "POST" });
+  emit(g, tries > 0 ? "meeting_retry" : "meeting_prompt", tries > 0 ? PHRASES.meeting_retry : PHRASES.meeting_prompt);
+  v.redirect({ method: "POST" }, `${BASE}/meeting-code?try=${tries}`);
+  return send(res, v);
+});
+
+router.post("/meeting-code", twilioWebhookValidation, async (req: Request, res: Response) => {
+  const v = await newVR();
+  const tries = Number(req.query.try ?? 0) || 0;
+  const { findOpenRoomByCode, conferenceName } = await import("../services/meetingRooms.js");
+  const room = await findOpenRoomByCode(digit(req)).catch((err: unknown) => {
+    console.error("[meeting] code lookup failed", err instanceof Error ? err.message : String(err));
+    return null;
+  });
+  console.log(JSON.stringify({ event: "meeting_code", callSid: req.body?.CallSid ?? null, matched: Boolean(room), try: tries }));
+  if (room) {
+    emit(v, "meeting_joining", PHRASES.meeting_joining);
+    const dial = v.dial();
+    dial.conference({ startConferenceOnEnter: true, endConferenceOnExit: false, beep: "onEnter", record: "record-from-start" } as any, conferenceName(room.id));
+    return send(res, v);
+  }
+  if (tries < 1) { v.redirect({ method: "POST" }, `${BASE}/meeting?try=${tries + 1}`); return send(res, v); }
+  emit(v, "meeting_failed", PHRASES.meeting_failed);
+  v.redirect({ method: "POST" }, `${BASE}/intent?company=BF`);
   return send(res, v);
 });
 
