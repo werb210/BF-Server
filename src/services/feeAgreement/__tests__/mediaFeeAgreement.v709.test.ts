@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const notifyClient = vi.fn(async () => ({ channel: "sms" as const }));
 vi.mock("../../notifications/notifyClient.js", () => ({ notifyClient }));
+// BF_SERVER_FEE_NOTICE_DELIVERY_v740 - the trigger now goes through deliverFeeNotice
+vi.mock("../deliverFeeNotice.js", () => ({ deliverFeeNotice: (input: unknown) => (notifyClient as any)(input) }));
 vi.mock("../../../db.js", () => ({ dbQuery: vi.fn(async () => ({ rows: [] })), pool: { connect: vi.fn() } }));
 vi.mock("../../../signnow/signnowClient.js", () => ({
   isApiKeyConfigured: () => false,

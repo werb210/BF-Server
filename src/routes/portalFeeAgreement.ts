@@ -2,12 +2,25 @@
 // agreement (media files sent to a lender that does not pay Boreal).
 // GET /api/portal/applications/:id/fee-agreement
 import { Router } from "express";
+import { dbQuery } from "../db.js";
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { getFeeAgreement, sendMediaFeeAgreementNow } from "../services/feeAgreement/mediaFeeAgreement.js";
 
 const router = Router();
+
+// BF_SERVER_FEE_NOTICE_DELIVERY_v740 - the last few notices for this agreement, so staff see what
+// actually went out (text, email, app) and why anything failed.
+async function recentFeeNotices(applicationId: string): Promise<Array<{ channel: string; error: string | null; createdAt: string }>> {
+  try {
+    const r = await dbQuery<{ channel: string; error: string | null; created_at: string }>("SELECT channel, error, created_at FROM client_notifications WHERE application_id = $1 AND kind = 'media_fee_agreement' ORDER BY created_at DESC LIMIT 6", [applicationId]);
+    return r.rows.map((x) => ({ channel: x.channel, error: x.error, createdAt: x.created_at }));
+  } catch (err: any) {
+    console.warn("[fee-agreement] notices_read_failed", { applicationId, message: String(err?.message ?? err) });
+    return [];
+  }
+}
 
 router.get(
   "/applications/:id/fee-agreement",
@@ -29,6 +42,7 @@ router.get(
       sentAt: ag.sent_at,
       signedAt: ag.signed_at,
       documentId: ag.document_id,
+      notices: await recentFeeNotices(id),
     });
   })
 );
@@ -50,7 +64,7 @@ router.post(
         res.status(out.reason === "application_not_found" ? 404 : 409).json({ error: out.reason, message: msg });
         return;
       }
-      res.status(200).json({ ok: true, result: out.reason });
+      res.status(200).json({ ok: true, result: out.reason, delivery: out.delivery ?? null }); // BF_SERVER_FEE_NOTICE_DELIVERY_v740
     } catch (err: any) {
       res.status(502).json({ error: "send_failed", message: "Could not send the agreement: " + String(err?.message ?? err).slice(0, 200) });
     }
