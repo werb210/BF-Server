@@ -24,5 +24,5 @@ describe("BI workflow smoke", () => {
     const { createApp } = await import("../app.js");
     const res = await request(createApp()).post('/api/crm/contacts/bulk-delete').set('Authorization', `Bearer ${token()}`).send({ ids:["11111111-1111-4111-8111-111111111111"] });
     expect(res.status).toBe(409);
-  });
+  }, 30_000); // BF_SERVER_FEE_NOTICE_DELIVERY_v740 - cold app import exceeds the 5 s default on slow runners
 });

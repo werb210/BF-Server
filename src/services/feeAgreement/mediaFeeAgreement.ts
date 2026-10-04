@@ -59,12 +59,14 @@ export async function ensureMediaFeeAgreement(applicationId: string, sentLenderI
   await notifySigner(applicationId, signer, row, query).catch(err => console.warn("[fee-agreement] notify failed", { applicationId, message: err instanceof Error ? err.message : String(err) }));
   return { created: true, reason: "created", agreementId };
 }
-async function notifySigner(applicationId: string, signer: FeeSigner, row: any, query: Q): Promise<void> {
-  if (signer.isApplicant) { const phone = usablePhone(signer.phone); if (!phone) return; const { notifyClient } = await import("../notifications/notifyClient.js"); const first = (signer.name ?? "").split(/\s+/)[0]; const sent = await notifyClient({ phone, applicationId, kind: FEE_AGREEMENT_SMS_KIND, categoryId: "APPLICATION_UPDATE", sms: (first ? `Hi ${first},` : "Hi,") + " Boreal Financial has a fee agreement for you to sign. Sign in at client.boreal.financial with this phone number to review and sign. Reply STOP to opt out.", title: "Fee agreement to sign", body: "Please review and sign your fee agreement.", track: { kind: FEE_AGREEMENT_SMS_KIND, applicationId } }); if (sent.channel === "none") throw new Error(sent.error ?? "not_sent"); await query("UPDATE media_fee_agreements SET sent_at=now(), updated_at=now() WHERE application_id=$1", [applicationId]); return; }
-  if (!signnow.isApiKeyConfigured() || !signer.email) return;
+// BF_SERVER_FEE_NOTICE_DELIVERY_v740 - returns what was delivered; throws when nothing went out.
+async function notifySigner(applicationId: string, signer: FeeSigner, row: any, query: Q): Promise<import("./deliverFeeNotice.js").FeeDelivery | null> {
+  if (signer.isApplicant) { const { deliverFeeNotice } = await import("./deliverFeeNotice.js"); const first = (signer.name ?? "").trim().split(" ")[0] || null; const delivery = await deliverFeeNotice({ applicationId, phone: usablePhone(signer.phone), email: signer.email, firstName: first }); await query("UPDATE media_fee_agreements SET sent_at=now(), updated_at=now() WHERE application_id=$1", [applicationId]); return delivery; }
+  if (!signnow.isApiKeyConfigured()) throw new Error("e-signature (SignNow) is not configured on the server"); if (!signer.email) throw new Error("no email for the signer");
   const pdf = await buildMediaFeeAgreementPdf(agreementDataFrom(row, signer)), { documentId } = await signnow.uploadDocumentWithFieldExtract(pdf, `fee-agreement-${applicationId}.pdf`), { groupId } = await signnow.createDocumentGroup([documentId], `Fee Agreement ${applicationId}`);
   const { inviteId } = await signnow.sendGroupEmailInvite(groupId, { email: signer.email, name: signer.name ?? undefined, roleName: MEDIA_FEE_AGREEMENT_ROLE, fromEmail: process.env.SIGNNOW_FROM_EMAIL || "no-reply@boreal.financial", order: 1 });
   await query("UPDATE media_fee_agreements SET signnow_group_id=$2,signnow_doc_id=$3,signnow_invite_id=$4,sent_at=now(),updated_at=now() WHERE application_id=$1", [applicationId, groupId, documentId, inviteId ?? null]);
+  return { push: false, sms: false, email: true, phoneLast4: null, emailTo: signer.email, errors: [] };
 }
 export type FeeAgreementRow = { id: string; application_id: string; status: string; signer_name: string | null; signer_email: string | null; signer_is_applicant: boolean; trigger_lender_name: string | null; signnow_group_id: string | null; signnow_doc_id: string | null; created_at: string; sent_at: string | null; signed_at: string | null; document_id: string | null };
 export async function getFeeAgreement(applicationId: string, deps: { query?: Q } = {}): Promise<FeeAgreementRow | null> { const result = await (deps.query ?? defaultQuery)("SELECT id::text AS id,application_id,status,signer_name,signer_email,signer_is_applicant,trigger_lender_name,signnow_group_id,signnow_doc_id,created_at,sent_at,signed_at,document_id FROM media_fee_agreements WHERE application_id=$1 LIMIT 1", [applicationId]); return result.rows[0] ?? null; }
@@ -91,7 +93,7 @@ export async function backfillFeeAgreementsForLender(lenderId: string, deps: { q
 // hand outside the portal (as the two Bondit files were) never triggered it. Creates the
 // agreement if there is none and texts or emails the signer; if one is already waiting,
 // it sends the reminder again. A signed agreement is left alone.
-export async function sendMediaFeeAgreementNow(applicationId: string, lenderName: string | null, deps: { query?: Q } = {}): Promise<{ ok: boolean; reason: string }> {
+export async function sendMediaFeeAgreementNow(applicationId: string, lenderName: string | null, deps: { query?: Q } = {}): Promise<{ ok: boolean; reason: string; delivery?: import("./deliverFeeNotice.js").FeeDelivery | null }> {
   const query = deps.query ?? defaultQuery;
   const row = (await query("SELECT id::text AS id, name, requested_amount, product_category, metadata FROM applications WHERE id::text = ($1)::text LIMIT 1", [applicationId])).rows[0];
   if (!row) return { ok: false, reason: "application_not_found" };
@@ -102,6 +104,6 @@ export async function sendMediaFeeAgreementNow(applicationId: string, lenderName
   if (!existing) {
     await query("INSERT INTO media_fee_agreements (id, application_id, trigger_lender_id, trigger_lender_name, signer_name, signer_email, signer_phone, signer_title, signer_is_applicant, status, created_at, updated_at) VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,'pending',now(),now()) ON CONFLICT (application_id) DO NOTHING", [randomUUID(), applicationId, lenderName, signer.name, signer.email, signer.phone, signer.title, signer.isApplicant]);
   }
-  await notifySigner(applicationId, signer, row, query);
-  return { ok: true, reason: existing ? "reminder_sent" : "sent" };
+  const delivery = await notifySigner(applicationId, signer, row, query);
+  return { ok: true, reason: existing ? "reminder_sent" : "sent", delivery };
 }

@@ -1,6 +1,6 @@
 // BF_SERVER_FEE_AGREEMENT_SEND_NOW_v731
 import { describe, it, expect, vi } from "vitest";
-vi.mock("../services/notifications/notifyClient.js", () => ({ notifyClient: vi.fn(async () => ({ channel: "sms" })) }));
+vi.mock("../services/feeAgreement/deliverFeeNotice.js", () => ({ deliverFeeNotice: vi.fn(async () => ({ push: false, sms: true, email: false, phoneLast4: "0100", emailTo: null, errors: [] })) }));
 import { sendMediaFeeAgreementNow } from "../services/feeAgreement/mediaFeeAgreement.js";
 function db(app: any, existing: any) {
   const sql: string[] = [];
@@ -11,7 +11,7 @@ const media = { id: "a1", name: "Northern Gateway Films", product_category: "MED
 describe("staff send the media fee agreement", () => {
   it("creates it for a Media file sent by hand and notifies the client", async () => {
     const { query, sql } = db(media, null);
-    expect(await sendMediaFeeAgreementNow("a1", "Bondit Media", { query })).toEqual({ ok: true, reason: "sent" });
+    expect(await sendMediaFeeAgreementNow("a1", "Bondit Media", { query })).toMatchObject({ ok: true, reason: "sent" });
     expect(sql.some((s) => s.startsWith("INSERT INTO media_fee_agreements"))).toBe(true);
   });
   it("re-sends while waiting, refuses signed or non-Media files", async () => {
