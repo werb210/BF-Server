@@ -1607,7 +1607,24 @@ router.post("/startup-waitlist", safeHandler(async (req: any, res: any) => {
     );
     id = ins.rows[0].id;
   }
-  res.status(200).json({ ok: true, id, created });
+  // BF_SERVER_UNDER_10K_WAITLIST_v735 - one endpoint for both lists. list = "under_10k"
+  // (Canadian businesses under $10k/month revenue) or "startup" (the default). The tag tells
+  // staff which list someone is on; the form's checkbox is express consent to contact them,
+  // recorded so the SMS screen can reach them without the 6-month implied-consent limit.
+  const list = String(req.body?.list ?? "startup") === "under_10k" ? "under_10k_revenue_waitlist" : "startup_waitlist";
+  const consent = req.body?.consent === true;
+  await pool.query(
+    `UPDATE contacts
+        SET tags = (SELECT ARRAY(SELECT DISTINCT unnest(COALESCE(tags, '{}') || ARRAY[$2::text]))),
+            sms_consent    = CASE WHEN $3 THEN true ELSE sms_consent END,
+            consent_basis  = CASE WHEN $3 THEN 'express' ELSE consent_basis END,
+            consent_at     = CASE WHEN $3 THEN now() ELSE consent_at END,
+            consent_source = CASE WHEN $3 THEN 'waitlist_form' ELSE consent_source END,
+            updated_at = now()
+      WHERE id = $1`,
+    [id, list, consent],
+  );
+  res.status(200).json({ ok: true, id, created, list });
 }));
 
 // BF_SERVER_CONTACT_DOCUMENTS_v1 - list documents filed against a contact (e.g. auto-filed
