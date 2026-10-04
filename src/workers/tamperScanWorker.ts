@@ -12,6 +12,7 @@ export async function runTamperScanTick(pool: Pool, scan = scanDocumentForTamper
   const { rows } = await pool.query<{ id: string }>(
     `SELECT id::text AS id FROM documents
       WHERE tamper_scanned_at IS NULL AND created_at > now() - interval '30 days'
+        AND COALESCE(uploaded_by, '') <> 'system' -- BF_SERVER_FEE_COUNTERSIGN_v746: system-signed documents
       ORDER BY created_at DESC
       LIMIT $1`,
     [TAMPER_BATCH],

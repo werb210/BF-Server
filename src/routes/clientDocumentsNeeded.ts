@@ -353,6 +353,11 @@ async function computeOutstandingDocsRaw(
       for (const label of MEDIA_CATEGORY_DOCS) {
         appendRequiredDocAll({ category: label, required: true }, seen, required);
       }
+      // BF_SERVER_MEDIA_NO_BANK_STATEMENTS_v746 - media productions are financed on the project (budget,
+      // presales, tax credits), not on bank history: a media file never asks for bank statements.
+      for (let i = required.length - 1; i >= 0; i -= 1) {
+        if (canonicalDocKey(required[i]!.document_type) === canonicalDocKey("bank_statements_6_months")) required.splice(i, 1);
+      }
     }
   }
 
