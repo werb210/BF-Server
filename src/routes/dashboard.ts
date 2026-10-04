@@ -180,18 +180,21 @@ router.get("/metrics", requireAuth, safeHandler(async (req: any, res: any) => { 
     console.error("[dashboard.metrics] fx read failed", { message: err?.message });
   }
 
+  // BF_SERVER_DASHBOARD_MONEY_ADMIN_v733 - commission figures go to Admin only (Todd,
+  // Andrew); other staff get the counts without the money.
+  const isAdmin = String(req.user?.role ?? "").toLowerCase() === "admin";
   res.json({
     status: "ok",
     data: {
       activeApplications: parseInt(active.rows[0]?.count ?? "0", 10),
       dealsWonThisMonth: parseInt(won.rows[0]?.count ?? "0", 10),
-      commissionEarned,
+      commissionEarned: isAdmin ? commissionEarned : undefined,
       newLeadsToday, // BF_SERVER_BLOCK_v542 - was hard-coded 0
       pipelineByStage,
-      commissionByStage,
+      commissionByStage: isAdmin ? commissionByStage : {},
       // BF_SERVER_DASHBOARD_LEGS_v351 - native amounts per currency.
-      commissionByStageCurrency,
-      commissionEarnedByCurrency: commissionByStageCurrency["Accepted"] ?? {},
+      commissionByStageCurrency: isAdmin ? commissionByStageCurrency : {},
+      commissionEarnedByCurrency: isAdmin ? (commissionByStageCurrency["Accepted"] ?? {}) : {},
       fx,
     },
   });
