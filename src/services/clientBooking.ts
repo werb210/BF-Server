@@ -1,9 +1,10 @@
+import { ALBERTA_TZ } from "../lib/albertaTime.js"; // BF_SERVER_ALBERTA_TIME_v743 - Alberta is UTC-6 all year
 // BF_SERVER_CLIENT_BOOKING_v738 - clients book a 30-minute phone call or Teams meeting.
 import { randomUUID } from "node:crypto";
 import { pool } from "../db.js";
 import { graphAppFetch, isAppGraphConfigured } from "./teams/graphAppClient.js";
 
-export const TZ = "America/Edmonton";
+export const TZ = ALBERTA_TZ;
 export const SLOT_MIN = 30;
 export const DAY_START_H = 9;
 export const DAY_END_H = 17;

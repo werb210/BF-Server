@@ -1,3 +1,4 @@
+import { ALBERTA_TZ } from "../lib/albertaTime.js"; // BF_SERVER_ALBERTA_TIME_v743 - Alberta is UTC-6 all year
 // BF_SERVER_MEETING_NOTIFY_v741
 import { DIAL_IN_DISPLAY, inviteText, joinUrl, oneTapDial, type MeetingRoom } from "./meetingRooms.js";
 import { isAppGraphConfigured } from "./teams/graphAppClient.js";
@@ -15,11 +16,11 @@ export type MeetingNotifyDeps = {
 const NL = String.fromCharCode(10);
 const digits = (p: string | null) => String(p ?? "").replace(/[^0-9]/g, "");
 const e164 = (p: string | null): string | null => { const d = digits(p); if (d.length === 10) return "+1" + d; if (d.length === 11 && d.startsWith("1")) return "+" + d; return null; };
-const whenOf = (room: MeetingRoom) => new Date(room.starts_at).toLocaleString("en-CA", { timeZone: "America/Edmonton", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const whenOf = (room: MeetingRoom) => new Date(room.starts_at).toLocaleString("en-CA", { timeZone: ALBERTA_TZ, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const utc = (d: Date) => d.toISOString().slice(0, 19);
 
 export function meetingSms(room: MeetingRoom): string {
-  return "Boreal Financial meeting: " + room.title + ", " + whenOf(room) + " Mountain time. To join, call " + DIAL_IN_DISPLAY + ", press 3, enter code " + room.code + " then #. One tap: " + oneTapDial(room.code) + " Details: " + joinUrl(room.slug);
+  return "Boreal Financial meeting: " + room.title + ", " + whenOf(room) + " Alberta time. To join, call " + DIAL_IN_DISPLAY + ", press 3, enter code " + room.code + " then #. One tap: " + oneTapDial(room.code) + " Details: " + joinUrl(room.slug);
 }
 async function hostOf(room: MeetingRoom, deps: MeetingNotifyDeps): Promise<Host | null> {
   if (!room.host_user_id) return null;
@@ -74,7 +75,7 @@ export async function cancelMeetingNotices(room: MeetingRoom, deps: MeetingNotif
   const ev = (await deps.query("SELECT graph_event_id, host_email FROM meeting_rooms WHERE id::text = $1", [room.id])).rows[0];
   if (ev?.graph_event_id && ev?.host_email && deps.graphReady()) { const r = await deps.graph("/users/" + encodeURIComponent(ev.host_email) + "/events/" + encodeURIComponent(ev.graph_event_id) + "/cancel", "POST", { comment: "This meeting was cancelled." }); if (r.ok) out.calendar = "cancelled"; else { out.calendar = "failed"; out.calendarError = "Outlook refused the cancellation (" + r.status + ")"; out.errors.push("calendar: " + out.calendarError); } }
   const people = await peopleOf(room, deps);
-  for (const p of people) { const n = e164(p.phone); if (!n || !p.texted_at) continue; const r = await deps.sms(n, "Boreal Financial: the meeting " + room.title + " on " + whenOf(room) + " Mountain time has been cancelled."); if (r.ok) out.texted += 1; else out.errors.push("text to " + p.name + ": " + String(r.error ?? "failed")); }
+  for (const p of people) { const n = e164(p.phone); if (!n || !p.texted_at) continue; const r = await deps.sms(n, "Boreal Financial: the meeting " + room.title + " on " + whenOf(room) + " Alberta time has been cancelled."); if (r.ok) out.texted += 1; else out.errors.push("text to " + p.name + ": " + String(r.error ?? "failed")); }
   return out;
 }
 const defaultDeps: MeetingNotifyDeps = {
