@@ -12,9 +12,15 @@ function tooMany(ip: string): boolean {
   return recent.length > 10;
 }
 
-router.get("/staff", safeHandler(async (_req: any, res: any) => {
-  const staff = await bookableStaff();
-  res.json({ staff: staff.map((s) => ({ id: s.id, firstName: s.first_name || "A Boreal advisor" })) });
+// BF_SERVER_BOOKING_PER_STAFF_v739 - each advisor has their own booking link
+// (boreal.financial/book-todd). The public API never lists the team; a page asks for one
+// advisor by their link name (first name, lower case) and gets just that person.
+export const slugOf = (firstName: string | null, email: string) => String(firstName || email.split(/[.@]/)[0] || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+router.get("/staff/:slug", safeHandler(async (req: any, res: any) => {
+  const want = String(req.params.slug ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const s = (await bookableStaff()).find((x) => slugOf(x.first_name, x.email) === want);
+  if (!s) { res.status(404).json({ error: "not_found" }); return; }
+  res.json({ staff: { id: s.id, firstName: s.first_name || "your advisor", slug: want } });
 }));
 
 router.get("/slots", safeHandler(async (req: any, res: any) => {
