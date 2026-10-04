@@ -1,6 +1,7 @@
+import { ALBERTA_TZ } from "../lib/albertaTime.js"; // BF_SERVER_ALBERTA_TIME_v743 - Alberta is UTC-6 all year
 // BF_SERVER_SEQ_BUSINESS_HOURS_v1 - all deadlines are weekdays inside the
-// sequence's configured send window in America/Edmonton.
-const ZONE = "America/Edmonton";
+// sequence's configured send window in Alberta time.
+const ZONE = ALBERTA_TZ;
 
 function localParts(at: Date): { weekday: string; hour: number } {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: ZONE, weekday: "short", hour: "2-digit", hourCycle: "h23" }).formatToParts(at);

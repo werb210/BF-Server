@@ -1,3 +1,4 @@
+import { ALBERTA_TZ } from "../../lib/albertaTime.js"; // BF_SERVER_ALBERTA_TIME_v743 - Alberta is UTC-6 all year
 // BF_SERVER_BLOCK_v616 - condition evaluation. Pure: no SQL, easy to test.
 export type Condition = { field: string; op: string; value?: unknown };
 
@@ -42,7 +43,7 @@ export function renderTokens(text: unknown, ctx: Record<string, unknown>): strin
 }
 
 /** 09:00-20:00 in the given zone; outside it, the next 09:00. */
-export function nextAllowedSendTime(now: Date, tz = "America/Edmonton", startHour = 9, endHour = 20): Date | null {
+export function nextAllowedSendTime(now: Date, tz = ALBERTA_TZ, startHour = 9, endHour = 20): Date | null {
   const hour = Number(new Intl.DateTimeFormat("en-CA", { timeZone: tz, hour: "numeric", hourCycle: "h23" }).format(now));
   if (hour >= startHour && hour < endHour) return null;
   const hoursUntil = hour >= endHour ? 24 - hour + startHour : startHour - hour;

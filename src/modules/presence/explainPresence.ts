@@ -1,3 +1,4 @@
+import { ALBERTA_TZ } from "../../lib/albertaTime.js"; // BF_SERVER_ALBERTA_TIME_v743 - Alberta is UTC-6 all year
 // BF_SERVER_PRESENCE_EXPLAIN_v142
 // Presence is computed from several independent conditions, so "no agents are
 // available" gives no clue which one fired. This turns a staff_presence row
@@ -44,7 +45,7 @@ export const BUSINESS_END_HOUR = 18;
  * abbreviation, which silently shifted the window by an hour for most of the
  * year - 09:00-19:00 local through the summer.
  */
-export const BUSINESS_TIMEZONE = "America/Edmonton";
+export const BUSINESS_TIMEZONE = ALBERTA_TZ;
 
 export function localHourIn(when: Date, timeZone = BUSINESS_TIMEZONE): number {
   const formatted = new Intl.DateTimeFormat("en-CA", {

@@ -1,3 +1,4 @@
+import { ALBERTA_TZ } from "../../lib/albertaTime.js"; // BF_SERVER_ALBERTA_TIME_v743 - Alberta is UTC-6 all year
 // BF_SERVER_MEDIA_FEE_AGREEMENT_v709
 // MEDIA lender sends create one client services agreement without delaying dispatch.
 import { createHash, randomUUID } from "node:crypto";
@@ -41,7 +42,7 @@ export function agreementDataFrom(row: { name: string | null; requested_amount: 
   const md = object(row.metadata) ?? {}, business = object(md.business) ?? {};
   const legal = string(business.legalName) ?? string(business.companyName) ?? string(business.businessName) ?? string(row.name), bn = string(business.businessNumber) ?? string(business.business_number) ?? string(business.bn);
   const amount = Number(String(row.requested_amount ?? object(md.kyc)?.fundingAmount ?? "").replace(/[^0-9.]/g, ""));
-  return { agreementDate: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Edmonton", year: "numeric", month: "long", day: "numeric" }).format(now), companyName: legal ? (bn ? legal + " BN " + bn : legal) : null, clientName: signer.name, street: string(business.address) ?? string(business.street), city: string(business.city), provinceState: string(business.state) ?? string(business.province), country: string(business.country) ?? string(md.country), title: signer.title, approxAmount: Number.isFinite(amount) && amount > 0 ? "$" + Math.round(amount).toLocaleString("en-US") : null };
+  return { agreementDate: new Intl.DateTimeFormat("en-CA", { timeZone: ALBERTA_TZ, year: "numeric", month: "long", day: "numeric" }).format(now), companyName: legal ? (bn ? legal + " BN " + bn : legal) : null, clientName: signer.name, street: string(business.address) ?? string(business.street), city: string(business.city), provinceState: string(business.state) ?? string(business.province), country: string(business.country) ?? string(md.country), title: signer.title, approxAmount: Number.isFinite(amount) && amount > 0 ? "$" + Math.round(amount).toLocaleString("en-US") : null };
 }
 export type EnsureResult = { created: boolean; reason: string; agreementId?: string };
 export async function ensureMediaFeeAgreement(applicationId: string, sentLenderIds: string[], deps: { query?: Q } = {}): Promise<EnsureResult> {

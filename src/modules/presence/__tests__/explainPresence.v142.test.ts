@@ -9,7 +9,7 @@ import {
 
 const NOON_MDT = new Date("2026-09-11T18:00:00Z"); // 12:00 in Edmonton (MDT, UTC-6)
 const SEVEN_PM_MDT = new Date("2026-09-11T01:00:00Z"); // 19:00 previous day in Edmonton
-const JANUARY_NOON = new Date("2026-01-15T19:00:00Z"); // 12:00 in Edmonton (MST, UTC-7)
+const JANUARY_NOON = new Date("2027-01-15T18:00:00Z"); // 12:00 in Alberta - BF_SERVER_ALBERTA_TIME_v743: UTC-6 all year from 2026
 
 function row(over: Partial<PresenceRow> = {}): PresenceRow {
   return {

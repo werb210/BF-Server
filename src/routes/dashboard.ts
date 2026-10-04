@@ -73,7 +73,7 @@ router.get("/metrics", requireAuth, safeHandler(async (req: any, res: any) => { 
                (SELECT MAX(h.created_at) FROM application_stage_history h
                  WHERE h.application_id = applications.id AND h.to_stage = $1),
                applications.updated_at)
-             >= (date_trunc('month', now() AT TIME ZONE 'America/Edmonton') AT TIME ZONE 'America/Edmonton')
+             >= (date_trunc('month', now() AT TIME ZONE 'America/Regina') AT TIME ZONE 'America/Regina')
          ${liveStageFilter()}`,
       [ApplicationStage.ACCEPTED, silo]
     ),
@@ -159,7 +159,7 @@ router.get("/metrics", requireAuth, safeHandler(async (req: any, res: any) => { 
     const nl = await pool.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM contacts
         WHERE UPPER(COALESCE(silo, 'BF')) = UPPER($1)
-          AND created_at >= (date_trunc('day', now() AT TIME ZONE 'America/Edmonton') AT TIME ZONE 'America/Edmonton')`,
+          AND created_at >= (date_trunc('day', now() AT TIME ZONE 'America/Regina') AT TIME ZONE 'America/Regina')`,
       [silo],
     );
     newLeadsToday = parseInt(nl.rows[0]?.count ?? "0", 10) || 0;

@@ -1,3 +1,4 @@
+import { ALBERTA_TZ } from "../lib/albertaTime.js"; // BF_SERVER_ALBERTA_TIME_v743 - Alberta is UTC-6 all year
 // BF_SERVER_MEETING_ROOMS_v736 - conference rooms with access codes.
 import { Router } from "express";
 import { pool } from "../db.js";
@@ -19,8 +20,8 @@ export function joinPageHtml(r: MeetingRoom | null): string {
 <style>body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f5f8fc;color:#0B1F3A}main{max-width:520px;margin:48px auto;padding:28px;background:#fff;border:1px solid #E4EAF2;border-radius:12px}
 h1{font-size:22px;margin:0 0 6px}.muted{color:#51617D}.code{font-size:34px;font-weight:700;letter-spacing:4px;margin:6px 0 18px}a.btn{display:inline-block;background:#0B1F3A;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:600;margin:6px 8px 0 0}a.sec{background:#fff;color:#0B1F3A;border:1px solid #E4EAF2}</style></head><body><main>`;
   if (!r || r.status === "cancelled") return head + `<h1>This meeting isn't available</h1><p class="muted">It may have been cancelled. Please contact Boreal Financial at ${esc(DIAL_IN_DISPLAY)}.</p></main></body></html>`;
-  const when = new Date(r.starts_at).toLocaleString("en-CA", { timeZone: "America/Edmonton", dateStyle: "full", timeStyle: "short" });
-  return head + `<p class="muted">Boreal Financial meeting</p><h1>${esc(r.title)}</h1><p class="muted">${esc(when)} (Mountain time)</p>
+  const when = new Date(r.starts_at).toLocaleString("en-CA", { timeZone: ALBERTA_TZ, dateStyle: "full", timeStyle: "short" });
+  return head + `<p class="muted">Boreal Financial meeting</p><h1>${esc(r.title)}</h1><p class="muted">${esc(when)} (Alberta time)</p>
 <p>Call <strong>${esc(DIAL_IN_DISPLAY)}</strong>, press <strong>3</strong>, then enter this access code and press #:</p><div class="code">${esc(r.code)}</div>
 <a class="btn" href="tel:${esc(oneTapDial(r.code))}">Call and join</a><a class="btn sec" href="${esc(joinUrl(r.slug))}/ics">Add to calendar</a>
 <p class="muted" style="margin-top:18px;font-size:13px">The room opens 15 minutes before the start time. This call may be recorded.</p></main></body></html>`;

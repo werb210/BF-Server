@@ -1,3 +1,4 @@
+import { ALBERTA_TZ } from "../lib/albertaTime.js"; // BF_SERVER_ALBERTA_TIME_v743 - Alberta is UTC-6 all year
 // BF_SERVER_ADS_WEEKLY_EMAIL_v708 - Maya's Monday ads story (suggest-only), once a
 // week, Monday morning Edmonton time, to GOOGLE_HEALTH_ALERT_EMAILS (default Todd, Andrew).
 import { pool } from "../db.js";
@@ -12,7 +13,7 @@ export function weeklyRecipients(): string[] {
 
 /** Monday in Edmonton, 08:00-11:59 local; returns that Monday's date (YYYY-MM-DD) or null. */
 export function mondayWindow(now: Date): string | null {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Edmonton", weekday: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false }).formatToParts(now);
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: ALBERTA_TZ, weekday: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false }).formatToParts(now);
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
   const hour = Number(get("hour"));
   if (get("weekday") !== "Mon" || hour < 8 || hour > 11) return null;

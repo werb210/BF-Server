@@ -1,3 +1,4 @@
+import { ALBERTA_TZ } from "../../lib/albertaTime.js"; // BF_SERVER_ALBERTA_TIME_v743 - Alberta is UTC-6 all year
 // BF_SERVER_BLOCK_v616 - automation engine (HubSpot-style workflows).
 // A trigger (emitAutomationEvent) enrolls a contact/application in every enabled rule
 // whose conditions match. Each enrollment keeps its own copy of the rule's steps, so
@@ -45,7 +46,7 @@ export async function runEnrollment(deps: EngineDeps, enrollmentId: string): Pro
       continue;
     }
     if (OUTWARD.has(step.type) && !e.test_mode) {
-      const later = nextAllowedSendTime(deps.now(), process.env.AUTOMATION_QUIET_TZ || "America/Edmonton");
+      const later = nextAllowedSendTime(deps.now(), process.env.AUTOMATION_QUIET_TZ || ALBERTA_TZ);
       if (later) {
         await logStep(q, e, i, step.type, "waiting", `quiet hours - sending at ${later.toISOString()}`);
         await save(`UPDATE automation_enrollments SET current_step = $2, next_run_at = $3, locked_until = NULL WHERE id = $1::uuid`, [e.id, i, later.toISOString()]);
