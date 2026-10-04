@@ -5,7 +5,18 @@ export type OrchestratorContext = { pool: Pool; applicationId: string; };
 export type ReadinessSnapshot = { allDocsAccepted: boolean; allTasksComplete: boolean; lenderSelectionsFinalized: boolean; creditSummarySubmitted: boolean; applicationSigned: boolean; collateralRequired: boolean; collateralComplete: boolean; };
 export async function readReadinessSnapshot(ctx: OrchestratorContext): Promise<ReadinessSnapshot> {
   const id = ctx.applicationId; const pool = ctx.pool;
-  const docCheck = await pool.query<{ blocked: boolean }>(`SELECT EXISTS (SELECT 1 FROM document_requirements dr WHERE dr.application_id::text = $1 AND dr.required = true AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.application_id::text = dr.application_id::text AND d.category = dr.category AND d.status = 'accepted')) AS blocked`, [id]).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:7", ({ rows: [{ blocked: false }] })));
+  // BF_SERVER_ORCHESTRATOR_DOCS_GATE_v742 - document_requirements never existed, so this check failed on every
+  // call and its fallback said "not blocked": submissions were never held for missing documents. Use the
+  // live outstanding-documents answer the client to-do list and staff Request Items already use (waiver-aware).
+  let docsBlockedLive = false;
+  try {
+    const { computeOutstandingDocs } = await import("../../routes/clientDocumentsNeeded.js");
+    const o = await computeOutstandingDocs(id);
+    docsBlockedLive = o.stillNeeded.length > 0 || o.rejected.length > 0;
+  } catch (err: unknown) {
+    console.warn("[orchestrator] outstanding_docs_failed", { applicationId: id, message: err instanceof Error ? err.message : String(err) });
+  }
+  const docCheck = { rows: [{ blocked: docsBlockedLive }] };
   const taskCheck = await pool.query<{ open_count: string }>(`SELECT COUNT(*)::text AS open_count FROM application_tasks WHERE application_id::text = $1 AND completed_at IS NULL`, [id]).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:8", ({ rows: [{ open_count: "0" }] })));
   const sel = await pool.query<{ finalized_at: string | null }>(`SELECT MAX(finalized_at) AS finalized_at FROM application_lender_selections WHERE application_id::text = $1`, [id]).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:9", ({ rows: [{ finalized_at: null as string | null }] })));
   // BF_SERVER_BLOCK_v142_ORCHESTRATOR_COLUMN_NAMES_v1 — previously read

@@ -8,7 +8,6 @@
   "src/routes/offerAcceptance.ts|through",
   "src/routes/slf.ts|application_notes",
   "src/routes/tasks.ts|bi_contacts",
-  "src/services/submission/orchestrator.ts|document_requirements",
   "src/telephony/routes/telephonyRoutes.ts|number"
  ]
 }
