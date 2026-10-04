@@ -446,7 +446,8 @@ router.get(
       res.status(200).json(await createFeeAgreementSigningSession(applicationId));
     } catch (e) {
       console.warn("[fee-agreement] session failed", { applicationId, message: e instanceof Error ? e.message : String(e) });
-      res.status(200).json({ status: "error", reason: "session_failed" });
+      // BF_SERVER_FEE_DIAGNOSE_v745 - pass the real reason through so the window (and staff) can see it.
+      res.status(200).json({ status: "error", reason: "session_failed: " + (e instanceof Error ? e.message : String(e)).slice(0, 200) });
     }
   })
 );
