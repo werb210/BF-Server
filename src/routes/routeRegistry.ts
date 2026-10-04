@@ -94,6 +94,7 @@ import webhooksRoutes from "./webhooks.js";
 import graphWebhooksRoutes from "./graphWebhooks.js"; // BF_SERVER_GRAPH_WEBHOOKS_v1
 import webauthnRoutes from "./webauthn.js"; // BF_SERVER_WEBAUTHN_v1
 import receptionRoutes from "./reception.js"; // BF_SERVER_RECEPTION_v1
+import meetingsRoutes from "./meetings.js"; // BF_SERVER_MEETING_ROOMS_v736
 import emailPixelRoutes from "./emailPixel.js"; // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING
 import voiceCallsRoutes from "./voiceCalls.js";
 import voiceMidCallRoutes from "./voiceMidCall.js";
@@ -285,6 +286,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/track", router: emailPixelRoutes }, // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING (public)
   { path: "/voice", router: voiceCallsRoutes },
   { path: "/webhooks/twilio/reception", router: receptionRoutes }, // BF_SERVER_RECEPTION_v1
+  { path: "/meetings", router: meetingsRoutes }, // BF_SERVER_MEETING_ROOMS_v736
   { path: "/webauthn", router: webauthnRoutes }, // BF_SERVER_WEBAUTHN_v1
   { path: "/webhooks/twilio", router: conferenceWebhooksRoutes },
   { path: "/sms", router: webhooksRoutes },
