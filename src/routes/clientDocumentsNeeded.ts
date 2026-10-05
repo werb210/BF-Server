@@ -21,6 +21,7 @@ const router = Router();
 // GET /api/client/documents-needed/action-center?applicationId=...
 // The single outstanding-work list for the applicant home screen. Lives beside
 // the existing docs-needed route because it shares the same ownership check.
+export const lastActionCenterCounts = new Map<string, string>(); // BF_SERVER_QUIET_ACTION_CENTER_v751
 router.get("/action-center", async (req: Request, res: Response) => {
   const applicationId = String((req.query as any)?.applicationId ?? "").trim();
   if (!/^[0-9a-f-]{36}$/i.test(applicationId)) {
@@ -31,11 +32,14 @@ router.get("/action-center", async (req: Request, res: Response) => {
 
   const { buildActionCenter } = await import("../services/applicantActions.js");
   const data = await buildActionCenter(applicationId);
-  logInfo("action_center_built", {
-    applicationId,
-    outstanding: data.outstandingCount,
-    completed: data.completed.length,
-  });
+  // BF_SERVER_QUIET_ACTION_CENTER_v751 - the portal refreshes this every 30 seconds, so logging every
+  // build buried everything else. Log only when an application's counts change.
+  const counts = data.outstandingCount + "/" + data.completed.length;
+  if (lastActionCenterCounts.get(applicationId) !== counts) {
+    lastActionCenterCounts.set(applicationId, counts);
+    if (lastActionCenterCounts.size > 5000) lastActionCenterCounts.clear();
+    logInfo("action_center_built", { applicationId, outstanding: data.outstandingCount, completed: data.completed.length });
+  }
   return res.json(data);
 });
 
