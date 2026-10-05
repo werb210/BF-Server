@@ -1,4 +1,5 @@
 import express from "express";
+import { clientFailureLog } from "./middleware/clientFailureLog.js"; // BF_SERVER_CLIENT_FAILURE_LOG_v749
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
@@ -189,6 +190,8 @@ export function createApp() {
 
   // Apply request silo extraction for all API routes
   applySiloMiddleware(app);
+
+  app.use("/api/client", clientFailureLog); // BF_SERVER_CLIENT_FAILURE_LOG_v749
 
   // 1. API ROUTES FIRST
   app.use("/api", apiRouter);

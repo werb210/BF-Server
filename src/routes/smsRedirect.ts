@@ -31,7 +31,7 @@ router.post("/status", twilioWebhookValidation, async (req: any, res: any) => {
 });
 
 router.get("/:token", async (req: any, res: any) => {
-  const fallbackUrl = "https://boreal.financial";
+  const fallbackUrl = "https://www.boreal.financial"; // BF_SERVER_WWW_FALLBACK_v749
   try {
     const payload = jwt.verify(String(req.params.token), String(process.env.JWT_SECRET)) as { sid?: string; u?: string };
     const url = payload?.u && /^https?:\/\//i.test(payload.u) ? payload.u : fallbackUrl;
