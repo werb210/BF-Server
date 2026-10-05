@@ -143,7 +143,9 @@ export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): 
 }
 export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promise<{ fired: boolean; reason?: string; sentTo?: string[] }> {
   const snap = await readReadinessSnapshot(ctx);
-  if (!snap.creditSummarySubmitted || !snap.applicationSigned) return { fired: false, reason: "not_ready" };
+  // BF_SERVER_SEND_REASON_v752 - say which one is missing instead of a single "not_ready".
+  if (!snap.applicationSigned) return { fired: false, reason: "application_not_signed" };
+  if (!snap.creditSummarySubmitted) return { fired: false, reason: "credit_summary_not_submitted" };
   // BF_SERVER_BLOCK_v310_SUBMISSION_PACKAGE_RACE_CLAIM_v1
   // Pre-fix used SELECT-then-dispatch which races: two concurrent staff
   // "Send to lenders" clicks both saw 0 application_packages rows and both

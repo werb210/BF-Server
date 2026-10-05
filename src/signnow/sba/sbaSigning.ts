@@ -16,6 +16,15 @@ import { resolveSbaOwners, loadSbaContext } from "./sbaOwners.js";
 import { buildSba1919, buildSba912, buildSba413, buildSba4506c, type IvesParticipant } from "./sbaFormBuilder.js";
 import { logInfo, logError } from "../../observability/logger.js";
 import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+// BF_SERVER_SBA_LOG_ONCE_v752
+const lastBlockedLog = new Map<string, number>();
+export function shouldLogBlocked(key: string, now = Date.now()): boolean {
+  const prev = lastBlockedLog.get(key);
+  if (prev !== undefined && now - prev < 6 * 3_600_000) return false;
+  lastBlockedLog.set(key, now);
+  if (lastBlockedLog.size > 2000) lastBlockedLog.clear();
+  return true;
+}
 
 const SBA_DOC_CATEGORY = "SBA Forms";
 
@@ -256,7 +265,8 @@ export async function sbaSigningSatisfiedForDispatch(applicationId: string): Pro
   for (const owner of owners) {
     const envelope = byOwner.get(owner.index);
     if (!envelope) {
-      logInfo("sba_dispatch_blocked_missing_envelope", { applicationId, ownerIndex: owner.index });
+      // BF_SERVER_SBA_LOG_ONCE_v752 - the package worker asks every 5 minutes; log once per 6 hours.
+      if (shouldLogBlocked(applicationId + ":" + owner.index)) logInfo("sba_dispatch_blocked_missing_envelope", { applicationId, ownerIndex: owner.index });
       return false;
     }
     try {

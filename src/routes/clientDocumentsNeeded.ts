@@ -188,6 +188,12 @@ function docTypeFromRequirement(raw: any): string {
 
 // BF_SERVER_REQUEST_ITEMS_FULL_SET_v1 - keeps a document regardless of whether
 // it has been uploaded yet, so the full required set can be built.
+// BF_SERVER_LEASE_OPTIONAL_v752
+export function isAlwaysOptionalDoc(docType: string): boolean {
+  const s = String(docType ?? "").trim().toLowerCase();
+  return s === "lease_or_loi" || /^lease or letter of intent/.test(s);
+}
+
 function appendRequiredDocAll(
   raw: any,
   seen: Set<string>,
@@ -199,7 +205,11 @@ function appendRequiredDocAll(
   // An optional document was DROPPED here entirely, so the three optional SBA
   // items were absent from one path and present-but-unmarked on another. Keep
   // them and carry the flag, so the client can label them rather than guess.
-  const isRequired = !(raw && typeof raw === "object" && raw.required === false);
+  // BF_SERVER_LEASE_OPTIONAL_v752 - a lease or letter of intent only exists when the loan involves
+  // premises, so it is optional whatever list it arrives from (the wizard's Step 5 list stored it as
+  // required). Staff can still make it required for one deal by requesting it from Request Items.
+  const forced = Boolean(raw && typeof raw === "object" && raw.forceRequired === true);
+  const isRequired = !(raw && typeof raw === "object" && raw.required === false) && (forced || !isAlwaysOptionalDoc(docType));
   if (CMP_FORM.test(docType)) return;
   // BF_SERVER_SBA_DOC_LIST_v113 - generated-and-signed, never uploaded.
   if (SBA_GENERATED_FORM.test(docType)) return;
@@ -381,7 +391,7 @@ async function computeOutstandingDocsRaw(
       const key = docKey(row.document_type);
       if (!key || have.has(key)) continue;
       have.add(key);
-      appendRequiredDocAll({ category: row.document_type, required: true }, seen, required);
+      appendRequiredDocAll({ category: row.document_type, required: true, forceRequired: true }, seen, required); // BF_SERVER_LEASE_OPTIONAL_v752
     }
   } catch (err: any) {
     console.error("requested_docs_read_failed", { applicationId, message: err?.message });
