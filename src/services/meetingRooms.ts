@@ -155,3 +155,22 @@ export async function searchPeople(q: string): Promise<Array<Person & { kind: "c
 }
 
 // BF_SERVER_MEETING_NOTIFY_v741 - invites now go out through services/meetingNotify.ts (Outlook, text, email).
+
+// BF_SERVER_STAFF_JOIN_ROOM_v759 - staff join a meeting room straight from the portal calendar (no dialling the
+// 866, no access code). The portal's Twilio device connects with params.meetingSlug; this answers with the same
+// conference callers reach through the 866 menu, recorded the same way. Pure, so it can be tested.
+export async function staffRoomJoinTwiml(room: MeetingRoom | null, now = new Date()): Promise<string> {
+  const { default: VoiceResponse } = await import("twilio/lib/twiml/VoiceResponse.js");
+  const v = new VoiceResponse();
+  if (!room || room.status === "cancelled") {
+    v.say("That meeting room could not be found.");
+    v.hangup();
+  } else if (!isOpen(room, now)) {
+    v.say("This meeting room opens " + OPEN_BEFORE_MIN + " minutes before the start time. Please try again then.");
+    v.hangup();
+  } else {
+    const dial = v.dial();
+    dial.conference({ startConferenceOnEnter: true, endConferenceOnExit: false, beep: "onEnter", record: "record-from-start" } as any, conferenceName(room.id));
+  }
+  return v.toString();
+}
