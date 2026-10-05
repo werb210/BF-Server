@@ -50,6 +50,8 @@ export function assembleActionCenter(input: {
   required: Doc[];
   stillNeeded: Doc[];
   rejected: Doc[];
+  /** BF_SERVER_SBA_FORMS_TODO_v757 - the 20%+ owners on an SBA deal; absent for every other deal. */
+  sbaOwners?: Array<{ index: number; name?: string | null }>;
 }): ActionCenter {
   const outstanding: ActionItem[] = [];
   const completed: ActionItem[] = [];
@@ -81,17 +83,52 @@ export function assembleActionCenter(input: {
 
   const requested = new Set(input.requestedForms.map(norm));
   const waived = new Set(input.waivedForms.map(norm));
+  const sba = Array.isArray(input.sbaOwners) && input.sbaOwners.length > 0;
   for (const task of FORM_TASKS) {
     if (!requested.has(task.key) || waived.has(task.key)) continue;
+    // BF_SERVER_SBA_FORMS_TODO_v757 - on an SBA deal Form 413 is the personal net worth statement.
+    if (sba && task.key === "networth") continue;
     const done = input.submittedFormTypes.some((t) => task.match.test(t));
     const item: ActionItem = { key: `form:${task.key}`, kind: "form", label: task.label, urgent: false };
     if (done) completed.push(item);
     else outstanding.push(item);
   }
 
+  // BF_SERVER_SBA_FORMS_TODO_v757 - every SBA deal lists Form 1919 and a Form 413 for each 20%+ owner
+  // automatically; they open the SBA Forms page. Previously they only appeared, as one "SBA forms" line,
+  // after staff sent a request.
+  if (sba) {
+    const submitted = new Set(input.submittedFormTypes.map(norm));
+    const add = (docType: string, label: string) => {
+      const item: ActionItem = { key: `form:${docType}`, kind: "form", label, action: "sba_forms", urgent: false };
+      if (submitted.has(docType)) completed.push(item); else outstanding.push(item);
+    };
+    add("sba_form_1919", "SBA Form 1919 - Borrower Information");
+    const many = input.sbaOwners!.length > 1;
+    for (const o of input.sbaOwners!) {
+      const docType = o.index === 1 ? "sba_form_413" : "sba_form_413_owner_" + o.index;
+      const who = many ? " - " + (String(o.name ?? "").trim() || "Owner " + o.index) : "";
+      add(docType, "SBA Form 413 - Personal Financial Statement" + who);
+    }
+  }
+
   outstanding.sort((a, b) => Number(b.urgent) - Number(a.urgent) || a.label.localeCompare(b.label));
   completed.sort((a, b) => a.label.localeCompare(b.label));
   return { outstanding, completed, outstandingCount: outstanding.length };
+}
+
+// BF_SERVER_SBA_FORMS_TODO_v757 - the owners whose forms an SBA deal needs; empty for a non-SBA deal.
+export async function sbaOwnersForTodo(applicationId: string): Promise<Array<{ index: number; name: string | null }>> {
+  try {
+    const { isSbaApplication } = await import("../signnow/sba/sbaTrigger.js");
+    if (!(await isSbaApplication(applicationId))) return [];
+    const { resolveSbaOwners } = await import("../signnow/sba/sbaOwners.js");
+    const owners = await resolveSbaOwners(applicationId);
+    return owners.filter((o: any) => o.index >= 1 && o.index <= 5).map((o: any) => ({ index: o.index, name: [o.firstName, o.lastName].filter(Boolean).join(" ") || o.name || null }));
+  } catch (err) {
+    console.warn("[action-center] sba_owners_read_failed", { applicationId, message: err instanceof Error ? err.message : String(err) });
+    return [];
+  }
 }
 
 export async function buildActionCenter(applicationId: string): Promise<ActionCenter> {
@@ -111,7 +148,9 @@ export async function buildActionCenter(applicationId: string): Promise<ActionCe
   ]);
   const waivedForms = Array.from(waivedAll).filter((w) => w.startsWith("form:")).map((w) => w.slice(5));
   const submittedFormTypes = (formsQ.rows ?? []).map((r) => String(r.doc_type ?? ""));
+  const sbaOwners = await sbaOwnersForTodo(applicationId); // BF_SERVER_SBA_FORMS_TODO_v757
   const center = assembleActionCenter({
+    sbaOwners,
     requestedForms,
     waivedForms,
     submittedFormTypes,
@@ -120,7 +159,7 @@ export async function buildActionCenter(applicationId: string): Promise<ActionCe
     rejected: docs.rejected,
   });
   // BF_SERVER_TODO_PROMPTS_v635 - PGI and SBA forms join the to-do list (they used to be chat prompts).
-  const prompts = await promptItems(applicationId, submittedFormTypes).catch((err: any) => {
+  const prompts = await promptItems(applicationId, submittedFormTypes, sbaOwners.length > 0).catch((err: any) => {
     console.warn("[action-center] prompt_items_failed", { applicationId, message: err?.message });
     return { outstanding: [] as ActionItem[], completed: [] as ActionItem[] };
   });
@@ -137,7 +176,7 @@ export function sbaFormsMissing(ownerIndexes: number[], submittedFormTypes: stri
   return expected.filter((t) => !have.has(t));
 }
 
-async function promptItems(applicationId: string, submittedFormTypes: string[]): Promise<{ outstanding: ActionItem[]; completed: ActionItem[] }> {
+async function promptItems(applicationId: string, submittedFormTypes: string[], sbaListed = false): Promise<{ outstanding: ActionItem[]; completed: ActionItem[] }> {
   const outstanding: ActionItem[] = [];
   const completed: ActionItem[] = [];
   const { PGI_PROMPT_LABEL, termSheetSigned } = await import("./termSheetSigned.js");
@@ -155,7 +194,8 @@ async function promptItems(applicationId: string, submittedFormTypes: string[]):
     const item: ActionItem = { key: "pgi", kind: "action", label: "Complete your Personal Guarantee Insurance application", action: pgiUrl, urgent: true };
     if (pgiDone(await pgiStageFor(applicationId))) completed.push(item); else outstanding.push(item);
   }
-  if (rows.some((r) => r.cta_action === "sba_forms" || r.cta_action === "form:sba_forms")) {
+  // BF_SERVER_SBA_FORMS_TODO_v757 - skipped when the forms are already listed one by one.
+  if (!sbaListed && rows.some((r) => r.cta_action === "sba_forms" || r.cta_action === "form:sba_forms")) {
     const { resolveSbaOwners } = await import("../signnow/sba/sbaOwners.js");
     const owners = await resolveSbaOwners(applicationId);
     const missing = sbaFormsMissing(owners.map((o) => o.index), submittedFormTypes);
