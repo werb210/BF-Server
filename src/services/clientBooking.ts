@@ -10,7 +10,23 @@ export const DAY_START_H = 9;
 export const DAY_END_H = 17;
 export const MIN_NOTICE_H = 2;
 export type BookingKind = "phone" | "teams";
-export type Staff = { id: string; email: string; first_name: string | null };
+export type Staff = { id: string; email: string; first_name: string | null; signed_in?: boolean };
+// BF_SERVER_INTAKE_ROUND_ROBIN_v748 - the general booking link (client portal "Book a call", /book) goes to
+// the Intake team: every staff member who has signed in, except the people listed here (Andrew by default).
+// A new staff member joins the rotation automatically the first time they sign in. Personal links
+// (/book-andrew, /book-todd) still book that person directly.
+export function intakeExcludes(): string[] {
+  const raw = process.env.BOOKING_INTAKE_EXCLUDE;
+  return String(raw === undefined ? "andrew.p@boreal.financial" : raw).split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+export function intakeTeam(staff: Staff[]): Staff[] {
+  const out = intakeExcludes();
+  return staff.filter((s) => s.signed_in !== false && !out.includes(s.email.toLowerCase()));
+}
+/** Round robin: whoever was given a booking longest ago (or never) goes first. */
+export function roundRobinPick(candidateIds: string[], lastAssigned: Map<string, number>): string | undefined {
+  return [...candidateIds].sort((a, b) => (lastAssigned.get(a) ?? 0) - (lastAssigned.get(b) ?? 0))[0];
+}
 
 function tzOffsetMin(at: Date, tz = TZ): number {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(at).map((p) => [p.type, p.value]));
@@ -45,7 +61,7 @@ export function overlaps(slot: Date, busy: Array<{ start: Date; end: Date }>): b
 export async function bookableStaff(): Promise<Staff[]> {
   const only = String(process.env.BOOKING_STAFF_EMAILS ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
   // swallow-ok: this query has no catch; the guardrail's scan reaches a later HTTP error-body read
-  const { rows } = await pool.query<Staff>(`SELECT id::text, lower(email) AS email, first_name FROM users
+  const { rows } = await pool.query<Staff>(`SELECT id::text, lower(email) AS email, first_name, (last_login_at IS NOT NULL OR o365_refresh_token IS NOT NULL) AS signed_in FROM users
       WHERE COALESCE(active, true) AND deleted_at IS NULL AND COALESCE(disabled, false) = false
         AND role IN ('Admin', 'Staff') AND email ILIKE '%@boreal.financial'
       ORDER BY first_name NULLS LAST`);
@@ -64,7 +80,8 @@ export async function busyTimes(emails: string[], from: Date, to: Date): Promise
   return out;
 }
 export async function openSlots(now: Date, staffId: string | null, days = 14): Promise<Array<{ startsAt: string; staffIds: string[] }>> {
-  const staff = (await bookableStaff()).filter((s) => !staffId || s.id === staffId);
+  const everyone = await bookableStaff();
+  const staff = staffId ? everyone.filter((s) => s.id === staffId) : intakeTeam(everyone); // BF_SERVER_INTAKE_ROUND_ROBIN_v748
   const slots = candidateSlots(now, days);
   if (!slots.length || !staff.length) return [];
   const busy = await busyTimes(staff.map((s) => s.email), slots[0]!, new Date(slots[slots.length - 1]!.getTime() + SLOT_MIN * 60_000));
@@ -75,9 +92,10 @@ export async function createBooking(input: { kind: BookingKind; startsAt: Date; 
   const match = (await openSlots(input.now ?? new Date(), input.staffId, 15)).find((s) => new Date(s.startsAt).getTime() === input.startsAt.getTime());
   if (!match) return { ok: false, reason: "slot_taken" };
   const staffList = await bookableStaff();
-  const counts = await pool.query<{ staff_user_id: string; n: number }>(`SELECT staff_user_id::text, count(*)::int AS n FROM client_bookings WHERE status = 'booked' AND starts_at > now() GROUP BY 1`);
-  const load = (id: string) => counts.rows.find((r) => r.staff_user_id === id)?.n ?? 0;
-  const pickId = input.staffId ?? [...match.staffIds].sort((a, b) => load(a) - load(b))[0]!;
+  // BF_SERVER_INTAKE_ROUND_ROBIN_v748 - take turns: the intake member booked longest ago gets this one.
+  const lastRes = await pool.query<{ staff_user_id: string; last: string }>(`SELECT staff_user_id::text, max(created_at)::text AS last FROM client_bookings WHERE staff_user_id IS NOT NULL GROUP BY 1`);
+  const lastAssigned = new Map(lastRes.rows.map((r) => [r.staff_user_id, new Date(r.last).getTime()] as [string, number]));
+  const pickId = input.staffId ?? roundRobinPick(match.staffIds, lastAssigned)!;
   const staff = staffList.find((s) => s.id === pickId);
   if (!staff) return { ok: false, reason: "staff_unavailable" };
   const end = new Date(input.startsAt.getTime() + SLOT_MIN * 60_000);
