@@ -1,4 +1,27 @@
+import { randomUUID } from "node:crypto";
 import { dbQuery } from "../db.js";
+
+// BF_SERVER_SIGNED_APP_FILED_v752 - the signed application was saved for the lender package but never
+// added to the documents list, so staff could not see it under Documents. File it there once,
+// accepted and marked as system-made (the tamper scan skips system documents).
+export const SIGNED_APPLICATION_DOCUMENT_TYPE = "signed_application";
+export async function fileSignedApplicationDocument(
+  applicationId: string,
+  stored: { blobName: string; url: string; sizeBytes: number; hash: string },
+  q: (sql: string, params: unknown[]) => Promise<{ rows: any[] }> = dbQuery as any,
+): Promise<{ filed: boolean; reason?: string }> {
+  const existing = await q(
+    `SELECT id::text AS id FROM documents WHERE application_id::text = ($1)::text AND document_type = $2 AND uploaded_by = 'system' LIMIT 1`,
+    [applicationId, SIGNED_APPLICATION_DOCUMENT_TYPE],
+  );
+  if (existing.rows[0]) return { filed: false, reason: "already_filed" };
+  await q(
+    `INSERT INTO documents (id, application_id, filename, hash, category, storage_path, blob_name, blob_url, size_bytes, status, ocr_status, uploaded_by, document_type, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, 'Signed Application', $5, $5, $6, $7, 'accepted', 'skipped', 'system', $8, now(), now())`,
+    [randomUUID(), applicationId, "Signed-Application-" + applicationId + ".pdf", stored.hash, stored.blobName, stored.url, stored.sizeBytes, SIGNED_APPLICATION_DOCUMENT_TYPE],
+  );
+  return { filed: true };
+}
 import { logCrmEvent } from "../modules/crm/crmTimeline.service.js";
 
 // Shared completion logic for a signed application. Idempotent: the signed-at
@@ -66,6 +89,13 @@ export async function finalizeSignedApplication(
             `update applications set metadata = coalesce(metadata,'{}'::jsonb) || jsonb_build_object('signed_application_blob_name', $2::text, 'signed_application_blob_url', $3::text), updated_at = now() where id::text = ($1)::text`,
             [app.id, stored.blobName, stored.url]
           );
+          // BF_SERVER_SIGNED_APP_FILED_v752
+          try {
+            const filed = await fileSignedApplicationDocument(app.id, stored);
+            console.log("[finalize] signed application filed", { applicationId: app.id, ...filed });
+          } catch (e) {
+            console.warn("[finalize] signed application filing failed", { applicationId: app.id, message: e instanceof Error ? e.message : String(e) });
+          }
         }
       }
     } catch (e) {

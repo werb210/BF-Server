@@ -56,9 +56,17 @@ router.get("/lender-products/required-docs", async (req, res) => {
   const country         = String(req.query.country ?? "").toUpperCase().slice(0, 2);
   // BF_SERVER_BLOCK_v115_REQUIRED_DOCS_CATEGORY_NORMALIZE_v1 — normalize to
   // the short-code vocabulary used by the DB column before lowercasing.
-  const product_category = normalizeProductCategoryForFilter(
-    String(req.query.product_category ?? "")
-  ).toLowerCase();
+  // BF_SERVER_SBA_FORMS_SCOPE_v752 - the client SBA Forms page sends only application_id, so the
+  // list was the union of every product's documents. Take the category from the application.
+  let categoryRaw = String(req.query.product_category ?? "");
+  const scopeAppId = String(req.query.application_id ?? "").trim();
+  if (!categoryRaw && /^[0-9a-f-]{36}$/i.test(scopeAppId)) {
+    const appCat = await pool.query<{ product_category: string | null }>(
+      `SELECT product_category FROM applications WHERE id::text = ($1)::text LIMIT 1`, [scopeAppId],
+    ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/lenderProductsRequiredDocs.ts:scope", ({ rows: [] as Array<{ product_category: string | null }> })));
+    categoryRaw = String(appCat.rows[0]?.product_category ?? "");
+  }
+  const product_category = normalizeProductCategoryForFilter(categoryRaw).toLowerCase();
   const funding_amount  = Number(req.query.funding_amount ?? 0) || null;
   const industry        = String(req.query.industry ?? "").toLowerCase();
   const revenue_last_12 = Number(req.query.revenue_last_12 ?? 0) || null;

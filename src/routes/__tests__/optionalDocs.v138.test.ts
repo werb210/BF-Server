@@ -32,7 +32,7 @@ describe("an optional document no longer blocks", () => {
   });
 
   it("keeps optional items in the full required set for staff", () => {
-    expect(docs).toContain("const isRequired = !(raw && typeof raw === \"object\" && raw.required === false);");
+    expect(docs).toContain("const isRequired = !(raw && typeof raw === \"object\" && raw.required === false) && (forced || !isAlwaysOptionalDoc(docType));");
     expect(docs).toContain("return { stillNeeded, rejected, required };");
   });
 });
