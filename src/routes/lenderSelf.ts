@@ -15,6 +15,7 @@ import { ROLES } from "../auth/roles.js";
 import { pool } from "../db.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { notifyAllStaff } from "../services/notifications/notifyAllStaff.js"; // BF_SERVER_LENDER_PRODUCT_NOTIFY_v1
+import { parseLenderSba, readLenderSba, saveLenderSba } from "../services/lenders/lenderSba.js"; // BF_SERVER_LENDER_SBA_IVES_v753
 
 const router = Router();
 
@@ -108,6 +109,28 @@ function normalizeRequiredDocuments(value: unknown): string | null {
       }))
   );
 }
+
+// BF_SERVER_LENDER_SBA_IVES_v753 - the lender answers "Do you offer SBA loans?" and gives its IVES details.
+router.get(
+  "/me/sba",
+  requireLender,
+  safeHandler(async (req: LenderRequest, res: Response) => {
+    const sba = await readLenderSba(String(req.lenderId ?? ""));
+    if (!sba) return res.status(404).json({ status: "error", message: "lender_not_found" });
+    return res.json({ status: "ok", data: sba });
+  })
+);
+router.put(
+  "/me/sba",
+  requireLender,
+  safeHandler(async (req: LenderRequest, res: Response) => {
+    const { value, errors } = parseLenderSba(req.body ?? {});
+    if (errors.length) return res.status(400).json({ status: "error", message: errors.join(" ") });
+    const saved = await saveLenderSba(String(req.lenderId ?? ""), value);
+    if (!saved) return res.status(404).json({ status: "error", message: "lender_not_found" });
+    return res.json({ status: "ok", data: saved });
+  })
+);
 
 router.get(
   "/me",
