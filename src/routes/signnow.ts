@@ -169,6 +169,19 @@ router.post(
       if (sbaMatch.rows[0]) {
         const result = await attachSignedSbaDocuments(sbaMatch.rows[0].id);
         console.log("[signnow-webhook] sba_signed_attach", { applicationId: sbaMatch.rows[0].id, ...result });
+        // BF_SERVER_SBA_ONE_SIGNING_v758 - when every owner has signed their envelope (application + SBA forms),
+        // the application itself is signed: stamp it, store owner 1's signed copy and file it under Documents.
+        try {
+          const { sbaCombinedApplicationDocIfAllSigned } = await import("../signnow/sba/sbaSigning.js");
+          const appDocId = await sbaCombinedApplicationDocIfAllSigned(sbaMatch.rows[0].id);
+          if (appDocId) {
+            const c = await dbQuery<{ contact_id: string | null }>(`select contact_id from applications where id::text = ($1)::text limit 1`, [sbaMatch.rows[0].id]);
+            await finalizeSignedApplication({ id: sbaMatch.rows[0].id, contactId: c.rows[0]?.contact_id ?? null }, { signerEmail, documentId: appDocId });
+            console.log("[signnow-webhook] sba_application_signed", { applicationId: sbaMatch.rows[0].id });
+          }
+        } catch (e) {
+          console.warn("[signnow-webhook] sba application finalize failed", { applicationId: sbaMatch.rows[0].id, message: e instanceof Error ? e.message : String(e) });
+        }
         res.status(200).json({ received: true, match: "sba", attached: result.attached });
         return;
       }
