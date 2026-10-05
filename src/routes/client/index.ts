@@ -6,6 +6,7 @@ import { createPnwSigningSession, isPnwDocType } from "../../signnow/pnwSigning.
 // BF_SERVER_FRAUD_ENFORCE_v50
 import { isApplicationFraud, FRAUD_LOCK_MESSAGE } from "../../services/fraud/fraudGuard.js";
 import continuationRouter from "./continuation.js";
+import uploadFailureRouter from "./uploadFailure.js"; // BF_SERVER_UPLOAD_DIAG_v751
 import documentsRouter from "./documents.js";
 import applicationsRouter from "./applications.js";
 import lendersRouter from "./lenders.js";
@@ -29,6 +30,7 @@ import { AppError } from "../../middleware/errors.js";
 
 const router = Router();
 router.use(submitAttemptsRouter); // BF_SERVER_BLOCK_v842_SUBMIT_ATTEMPTS — frictionless beacon, before rate-limit/ownership middleware
+router.use(uploadFailureRouter); // BF_SERVER_UPLOAD_DIAG_v751 - upload-failure beacon, same reason
 router.use(deviceSignInRouter); // BF_SERVER_CLIENT_FACE_ID_v296 - public sign-in must not need an app id
 router.use(passkeysRouter); // BF_SERVER_BLOCK_v599 - passkey sign-in, before the app-id checks
 // BF_SERVER_CLIENT_APP_VERSION_v744 - phone apps built before this date are missing features the server now

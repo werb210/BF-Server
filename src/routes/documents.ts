@@ -7,6 +7,7 @@ import express, { type Request, type Response } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
 import { requireAuth } from "../middleware/auth.js";
+import { uploadTiming } from "../middleware/uploadTiming.js"; // BF_SERVER_UPLOAD_DIAG_v751
 import { ok, fail } from "../middleware/response.js";
 import { toStringSafe } from "../utils/toStringSafe.js";
 import { pool } from "../db.js";
@@ -388,7 +389,7 @@ router.post("/public-upload", upload.single("file"), async (req: Request, res: R
   }
 });
 
-router.post("/upload", requireAuth, upload.single("file"), async (req: Request, res: Response) => {
+router.post("/upload", uploadTiming, requireAuth, upload.single("file"), async (req: Request, res: Response) => { // BF_SERVER_UPLOAD_DIAG_v751
   const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : null;
   const category      = resolveUploadCategory(req.body); // BF_SERVER_BLOCK_v843 — accept category | document_type | documentType
   const file = (req as Request & { file?: Express.Multer.File }).file;
