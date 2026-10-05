@@ -45,6 +45,7 @@ async function loadIvesLenders(applicationId: string): Promise<IvesParticipant[]
         AND COALESCE(l.ives_participant_name,'') <> ''
         AND COALESCE(l.ives_participant_id,'')   <> ''
         AND COALESCE(l.ives_sor_mailbox_id,'')   <> ''
+        AND COALESCE(l.offers_sba, true) = true -- BF_SERVER_LENDER_SBA_IVES_v753: a lender that says it does not offer SBA gets no 4506-C
       ORDER BY l.name ASC`,
     [applicationId],
   ).catch((err: any) => { console.warn("[silent-query] signnow/sba/sbaSigning.ts", { message: err?.message }); return { rows: [] as any[] }; });

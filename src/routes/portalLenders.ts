@@ -14,6 +14,7 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { AppError } from "../middleware/errors.js";
 import { getSilo } from "../middleware/silo.js";
 import { mirrorLenderToCrm } from "../services/lenderCrmMirror.js"; // BF_LENDER_TO_CRM_v38
+import { parseLenderSba, readLenderSba, saveLenderSba } from "../services/lenders/lenderSba.js"; // BF_SERVER_LENDER_SBA_IVES_v753
 import {
   fetchLenderById,
   createLender,
@@ -49,6 +50,28 @@ router.get(
     if (lender && lender.silo && lender.silo !== silo) throw new AppError("not_found", "Lender not found.", 404);
     if (!lender) throw new AppError("not_found", "Lender not found.", 404);
     res.status(200).json(lender);
+  })
+);
+
+// BF_SERVER_LENDER_SBA_IVES_v753 - GET/PUT /api/portal/lenders/:id/sba: offers SBA + IVES details.
+router.get(
+  "/lenders/:id/sba",
+  requireAuth,
+  safeHandler(async (req: any, res: any) => {
+    const sba = await readLenderSba(String(req.params.id ?? "").trim());
+    if (!sba) throw new AppError("not_found", "Lender not found.", 404);
+    res.status(200).json(sba);
+  })
+);
+router.put(
+  "/lenders/:id/sba",
+  requireAuth,
+  safeHandler(async (req: any, res: any) => {
+    const { value, errors } = parseLenderSba(req.body ?? {});
+    if (errors.length) throw new AppError("validation_error", errors.join(" "), 400);
+    const saved = await saveLenderSba(String(req.params.id ?? "").trim(), value);
+    if (!saved) throw new AppError("not_found", "Lender not found.", 404);
+    res.status(200).json(saved);
   })
 );
 
