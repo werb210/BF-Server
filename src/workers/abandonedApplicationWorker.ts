@@ -33,7 +33,10 @@ const CONSENT_WINDOW_MONTHS = 6;
 export const ABANDON_SMS_BODY =
   "Hi! It's Boreal Financial. We noticed you started an application but did not "
   + "complete it. Are there any questions you have before you complete your "
-  + "application at client.boreal.financial? We are here to assist!";
+  + "application at client.boreal.financial? We are here to assist! "
+  // BF_SERVER_ABANDON_STOP_v760 - CASL needs a way to unsubscribe in this message, and the Twilio toll-free
+  // registration (US numbers are texted from the 866) promises "Reply STOP to opt out" on every text.
+  + "Reply STOP to opt out.";
 
 export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void } {
   let stopped = false;
