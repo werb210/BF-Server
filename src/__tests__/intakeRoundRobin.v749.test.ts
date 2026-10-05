@@ -1,41 +1,34 @@
-// BF_SERVER_INTAKE_ROUND_ROBIN_v749 / BF_SERVER_CLIENT_FAILURE_LOG_v749
-import { describe, it, expect, vi, beforeEach } from "vitest";
+// BF_SERVER_BOOKING_MAILBOX_v749 / BF_SERVER_CLIENT_FAILURE_LOG_v749
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
 
 const q = vi.fn();
 vi.mock("../db.js", () => ({ pool: { query: (sql: string, params?: unknown[]) => q(sql, params) } }));
-import { intakeFilter, pickRoundRobin, bookableStaff, type Staff } from "../services/clientBooking.js";
+import { intakeTeam, mailboxOf, bookableStaff, type Staff } from "../services/clientBooking.js";
 import { isClientFailure, recordClientFailure, recentClientFailures, clearClientFailures, clientFailureLog } from "../middleware/clientFailureLog.js";
 
-const mk = (id: string, email: string, mailbox: string, o365: boolean): Staff => ({ id, email, first_name: id, mailbox, o365 });
-const todd = mk("t", "todd.w@boreal.financial", "todd.w@boreal.financial", true);
-const andrew = mk("a", "andrew@boreal.financial", "andrew.p@boreal.financial", true);
-const caden = mk("c", "caden@boreal.financial", "caden@boreal.financial", false);
-const sam = mk("s", "sam@boreal.financial", "sam@boreal.financial", true);
+const todd: Staff = { id: "t", email: "todd.w@boreal.financial", first_name: "Todd", signed_in: true, mailbox: "todd.w@boreal.financial" };
+const andrew: Staff = { id: "a", email: "andrew@boreal.financial", first_name: "Andrew", signed_in: true, mailbox: "andrew.p@boreal.financial" };
 const src = (p: string) => readFileSync(p, "utf8");
 
-describe("intake team and round robin", () => {
-  it("is Office 365 staff except Andrew, by login or mailbox; the env var overrides", () => {
-    expect(intakeFilter([andrew, caden, sam, todd], undefined).map((s) => s.id)).toEqual(["s", "t"]);
-    expect(intakeFilter([andrew, todd], "andrew.p@boreal.financial").map((s) => s.id)).toEqual(["t"]);
-    expect(intakeFilter([andrew, todd], "todd.w@boreal.financial").map((s) => s.id)).toEqual(["a"]);
-    expect(intakeFilter([andrew, todd], "").map((s) => s.id)).toEqual(["a", "t"]);
-    expect(intakeFilter([andrew, caden], undefined).map((s) => s.id)).toEqual(["c"]);
+describe("booking mailbox (BF_SERVER_BOOKING_MAILBOX_v749)", () => {
+  afterEach(() => { delete process.env.BOOKING_INTAKE_EXCLUDE; });
+  it("Andrew is out of the intake team whether he logs in as andrew@ or andrew.p@", () => {
+    expect(intakeTeam([todd, andrew]).map((s) => s.id)).toEqual(["t"]);
+    expect(intakeTeam([todd, { ...andrew, email: "andrew.p@boreal.financial" }]).map((s) => s.id)).toEqual(["t"]);
+    process.env.BOOKING_INTAKE_EXCLUDE = "andrew.p@boreal.financial";
+    expect(intakeTeam([todd, andrew]).map((s) => s.id)).toEqual(["t"]);
   });
-  it("never-booked first, then least recently booked; only free team members", () => {
-    expect(pickRoundRobin(["s", "t"], new Map([["s", 100]]), [sam, todd])).toBe("t");
-    expect(pickRoundRobin(["s", "t"], new Map([["s", 100], ["t", 200]]), [sam, todd])).toBe("s");
-    expect(pickRoundRobin(["a"], new Map(), [sam, todd])).toBeNull();
-  });
-  it("books into the Office 365 mailbox, not the login email", async () => {
+  it("the calendar is the Office 365 mailbox, falling back to the login email", async () => {
+    expect(mailboxOf(andrew)).toBe("andrew.p@boreal.financial");
+    expect(mailboxOf({ id: "x", email: "Sam@boreal.financial", first_name: null })).toBe("sam@boreal.financial");
     q.mockImplementation(async (sql: string) => (/FROM users/.test(String(sql)) && /o365_user_email/.test(String(sql))
-      ? { rows: [{ id: "a", email: "andrew@boreal.financial", first_name: "Andrew", mailbox: "andrew.p@boreal.financial", o365: true }] }
+      ? { rows: [{ id: "a", email: "andrew@boreal.financial", first_name: "Andrew", signed_in: true, mailbox: "andrew.p@boreal.financial" }] }
       : { rows: [] }));
-    expect((await bookableStaff())[0]!.mailbox).toBe("andrew.p@boreal.financial");
+    expect(mailboxOf((await bookableStaff())[0]!)).toBe("andrew.p@boreal.financial");
     const s = src("src/services/clientBooking.ts");
-    expect(s).toContain("/users/" + String.fromCharCode(36) + "{encodeURIComponent(staff.mailbox)}/events");
-    expect(s).toContain("busyTimes(staff.map((s) => s.mailbox)");
-    expect(s).toContain(": await intakeTeam();");
+    expect(s).toContain("/users/" + String.fromCharCode(36) + "{encodeURIComponent(mailboxOf(staff))}/events");
+    expect(s).toContain("busyTimes(staff.map(mailboxOf)");
   });
 });
 
