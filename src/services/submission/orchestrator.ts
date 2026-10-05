@@ -65,8 +65,20 @@ export async function readReadinessSnapshot(ctx: OrchestratorContext): Promise<R
   // under $500,000 do not require a completed credit summary. Missing/unparseable amounts are
   // treated as NOT waived (credit summary still required), to stay conservative.
   const reqAmtNum = appRow?.requested_amount == null ? NaN : Number(appRow.requested_amount);
-  const creditSummaryWaived = Number.isFinite(reqAmtNum) && reqAmtNum < 500000;
+  // BF_SERVER_SBA_NO_CREDIT_SUMMARY_v754 - the credit summary is not part of an SBA lender package, so an SBA
+  // file never waits for it. Same waiver as a deal under $500,000; non-SBA files above that still need it.
+  const creditSummaryWaived = (await isSbaForReadiness(ctx.applicationId)) || (Number.isFinite(reqAmtNum) && reqAmtNum < 500000);
   return { allDocsAccepted: !docsBlocked, allTasksComplete: openTasks === 0, lenderSelectionsFinalized: finalizedAt !== null, creditSummarySubmitted: Boolean(appRow?.credit_summary_completed_at) || creditSummaryWaived, applicationSigned: Boolean(appRow?.signnow_app_signed_at), collateralRequired: Boolean(collateralReqRes.rows[0]?.accord ?? false) && Number.isFinite(reqAmtNum) && reqAmtNum > 250000 /* BF_SERVER_BLOCK_v_COLLATERAL_THRESHOLD_v1: Accord LOC needs collateral only above $250k */, collateralComplete: Boolean(collateralDoneRes.rows[0]?.complete ?? false) };
+}
+// BF_SERVER_SBA_NO_CREDIT_SUMMARY_v754
+export async function isSbaForReadiness(applicationId: string): Promise<boolean> {
+  try {
+    const { isSbaApplication } = await import("../../signnow/sba/sbaTrigger.js");
+    return await isSbaApplication(applicationId);
+  } catch (err) {
+    console.warn("[orchestrator] SBA check failed - treating as non-SBA", { applicationId, message: err instanceof Error ? err.message : String(err) });
+    return false;
+  }
 }
 // BF_SERVER_BLOCK_v461_SIGNING_NOTICE - who was asked to sign travels with the result.
 export type StageAResult = { fired: boolean; reason?: string; notice?: import("../../signnow/ownerSigningNotice.js").SigningNotice };
