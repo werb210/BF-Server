@@ -98,6 +98,18 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
     conferenceFriendly: sdkConfFriendly || null,
   }));
 
+  // BF_SERVER_STAFF_JOIN_ROOM_v759 - a staff member pressed "Join room" on a calendar event.
+  const meetingSlug = String(params.meetingSlug ?? "").trim();
+  if (meetingSlug && from.startsWith("client:")) {
+    const { roomBySlug, staffRoomJoinTwiml } = await import("../services/meetingRooms.js");
+    const room = await roomBySlug(meetingSlug).catch((err: unknown) => {
+      console.warn("[staff-join-room] room lookup failed", { slug: meetingSlug, message: err instanceof Error ? err.message : String(err) });
+      return null;
+    });
+    console.log(JSON.stringify({ event: "staff_join_room", callSid: callSid || null, slug: meetingSlug, found: Boolean(room) }));
+    return res.send(await staffRoomJoinTwiml(room));
+  }
+
   if (sdkConfFriendly) {
     const { default: VoiceResponse } = await import("twilio/lib/twiml/VoiceResponse.js");
     const { pool } = await import("../db.js");
