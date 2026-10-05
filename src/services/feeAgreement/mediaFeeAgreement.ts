@@ -5,6 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { dbQuery, pool as defaultPool } from "../../db.js";
 import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js";
 import * as signnow from "../../signnow/signnowClient.js";
+import { crmContactEmail } from "../clientEmail.js"; // BF_SERVER_CRM_EMAIL_WINS_v756
 import { buildMediaFeeAgreementPdf, MEDIA_FEE_AGREEMENT_ROLE, type MediaFeeAgreementData } from "../../signnow/mediaFeeAgreementPdfBuilder.js";
 
 export const FEE_AGREEMENT_DOCUMENT_CATEGORY = "Fee Agreement";
@@ -45,6 +46,13 @@ export function agreementDataFrom(row: { name: string | null; requested_amount: 
   return { agreementDate: new Intl.DateTimeFormat("en-CA", { timeZone: ALBERTA_TZ, year: "numeric", month: "long", day: "numeric" }).format(now), companyName: legal ? (bn ? legal + " BN " + bn : legal) : null, clientName: signer.name, street: string(business.address) ?? string(business.street), city: string(business.city), provinceState: string(business.state) ?? string(business.province), country: string(business.country) ?? string(md.country), title: signer.title, approxAmount: Number.isFinite(amount) && amount > 0 ? "$" + Math.round(amount).toLocaleString("en-US") : null };
 }
 export type EnsureResult = { created: boolean; reason: string; agreementId?: string };
+// BF_SERVER_CRM_EMAIL_WINS_v756 - when the client signs the agreement themselves, a corrected CRM email wins over
+// the one typed in the application. A director signing in their place keeps their own email.
+export async function signerWithCrmEmail(applicationId: string, signer: FeeSigner, lookup: (id: string) => Promise<string | null> = crmContactEmail): Promise<FeeSigner> {
+  if (!signer.isApplicant) return signer;
+  const crm = await lookup(applicationId);
+  return crm ? { ...signer, email: crm } : signer;
+}
 export async function ensureMediaFeeAgreement(applicationId: string, sentLenderIds: string[], deps: { query?: Q } = {}): Promise<EnsureResult> {
   const query = deps.query ?? defaultQuery;
   if (!applicationId || !sentLenderIds.length) return { created: false, reason: "nothing_sent" };
@@ -53,7 +61,7 @@ export async function ensureMediaFeeAgreement(applicationId: string, sentLenderI
   if (!isMediaCategory(row.product_category)) return { created: false, reason: "not_media" };
   const lenders = (await query("SELECT id::text AS id, name, has_broker_agreement FROM lenders WHERE id::text = ANY($1::text[])", [sentLenderIds])).rows.filter(l => l.has_broker_agreement !== true);
   if (!lenders.length) return { created: false, reason: "lender_pays" };
-  const signer = pickFeeSigner(row.metadata), id = randomUUID();
+  const signer = await signerWithCrmEmail(applicationId, pickFeeSigner(row.metadata)), id = randomUUID(); // BF_SERVER_CRM_EMAIL_WINS_v756
   const inserted = await query("INSERT INTO media_fee_agreements (id, application_id, trigger_lender_id, trigger_lender_name, signer_name, signer_email, signer_phone, signer_title, signer_is_applicant, status, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',now(),now()) ON CONFLICT (application_id) DO NOTHING RETURNING id::text AS id", [id, applicationId, lenders[0].id, lenders[0].name ?? null, signer.name, signer.email, signer.phone, signer.title, signer.isApplicant]);
   const agreementId = inserted.rows[0]?.id;
   if (!agreementId) return { created: false, reason: "already_exists" };
@@ -112,7 +120,9 @@ export async function sendMediaFeeAgreementNow(applicationId: string, lenderName
   if (!isMediaCategory(row.product_category)) return { ok: false, reason: "not_media" };
   const existing = (await query("SELECT status FROM media_fee_agreements WHERE application_id = $1 LIMIT 1", [applicationId])).rows[0];
   if (existing?.status === "signed") return { ok: false, reason: "already_signed" };
-  const signer = pickFeeSigner(row.metadata);
+  const signer = await signerWithCrmEmail(applicationId, pickFeeSigner(row.metadata)); // BF_SERVER_CRM_EMAIL_WINS_v756
+  // BF_SERVER_CRM_EMAIL_WINS_v756 - a resend picks up a corrected email for the stored agreement too.
+  if (existing && signer.isApplicant && signer.email) await query("UPDATE media_fee_agreements SET signer_email=$2, updated_at=now() WHERE application_id=$1 AND status <> 'signed'", [applicationId, signer.email]);
   if (!existing) {
     await query("INSERT INTO media_fee_agreements (id, application_id, trigger_lender_id, trigger_lender_name, signer_name, signer_email, signer_phone, signer_title, signer_is_applicant, status, created_at, updated_at) VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,'pending',now(),now()) ON CONFLICT (application_id) DO NOTHING", [randomUUID(), applicationId, lenderName, signer.name, signer.email, signer.phone, signer.title, signer.isApplicant]);
   }

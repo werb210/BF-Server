@@ -3,6 +3,7 @@
 // BF_SERVER_BLOCK_v202_SIGNNOW_FILLED_PDF_v1
 import crypto from "node:crypto";
 import { dbQuery } from "../db.js";
+import { crmContactEmail } from "../services/clientEmail.js"; // BF_SERVER_CRM_EMAIL_WINS_v756
 import { logCrmEvent } from "../modules/crm/crmTimeline.service.js";
 import { buildApplicationPdf, type ApplicationPdfInputs, type PdfOwner } from "./pdfBuilder.js";
 import { uploadSignedApplicationPdf } from "./blobStorage.js";
@@ -52,6 +53,14 @@ function ownerFrom(src: Record<string, any>, label: string, prefix = ""): PdfOwn
     dob: str(g("dob")), sin: str(g("ssn")) ?? str(g("sin")),
     creditScore: str(g("creditScoreRange")) ?? str(g("creditScore")),
   };
+}
+
+// BF_SERVER_CRM_EMAIL_WINS_v756
+export async function withCrmEmail<T extends { email?: string | null }>(applicationId: string, owners: T[], lookup: (id: string) => Promise<string | null> = crmContactEmail): Promise<T[]> {
+  if (!owners.length) return owners;
+  const crm = await lookup(applicationId);
+  if (!crm) return owners;
+  return [{ ...owners[0]!, email: crm }, ...owners.slice(1)];
 }
 
 export async function loadApplicationForPdf(applicationId: string): Promise<ApplicationPdfInputs> {
@@ -136,8 +145,10 @@ export async function loadApplicationForPdf(applicationId: string): Promise<Appl
       city: str(business.city), province: str(business.state) ?? str(business.province),
       postal: str(business.zip) ?? str(business.postalCode),
     },
-    owners,
-    applicantEmail: owners[0]?.email ?? null,
+    // BF_SERVER_CRM_EMAIL_WINS_v756 - a corrected CRM email replaces the one typed in the application, for the
+    // signing invite and on the application PDF. Both signing paths load their inputs here.
+    owners: await withCrmEmail(applicationId, owners),
+    applicantEmail: (await crmContactEmail(applicationId)) ?? owners[0]?.email ?? null,
     applicantName: [owners[0]?.firstName, owners[0]?.lastName].filter(Boolean).join(" ").trim() || null,
   };
 }

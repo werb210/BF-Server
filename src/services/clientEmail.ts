@@ -75,3 +75,16 @@ export async function resolveClientEmail(applicationId: string): Promise<Resolve
 
   return { email: null, firstName: clean(row.contact_first_name) || null, source: null };
 }
+
+// BF_SERVER_CRM_EMAIL_WINS_v756 - the CRM contact's email when staff have set one (they correct a mistyped
+// application email there), else null so the caller keeps the application's own email. Never throws: a
+// failed lookup must not stop a notice or a signing request going out.
+export async function crmContactEmail(applicationId: string): Promise<string | null> {
+  try {
+    const r = await resolveClientEmail(applicationId);
+    return r.source === "contact" ? r.email : null;
+  } catch (err) {
+    console.warn("[client-email] CRM email lookup failed", { applicationId, message: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+}
