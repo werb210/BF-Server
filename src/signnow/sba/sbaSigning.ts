@@ -8,6 +8,7 @@ import {
   createDocumentGroup,
   createEmbeddedGroupInvite,
   createEmbeddedGroupLink,
+  sendGroupEmailInvite, // BF_SERVER_SBA_ONE_SIGNING_v758
   getDocumentGroupStatus,
   downloadDocument,
 } from "../signnowClient.js";
@@ -61,6 +62,9 @@ type Envelope = {
   // BF_SERVER_PER_LENDER_IVES_v144 - which lenders this owner's envelope carries
   // a 4506-C for. "__env__" means the single-lender env fallback was used.
   ives4506cLenderIds?: string[];
+  // BF_SERVER_SBA_ONE_SIGNING_v758 - the owner's copy of the Boreal application rides in the same envelope.
+  applicationDocId?: string;
+  delivery?: "portal" | "signnow_email";
   // BF_SERVER_4506C_120_DAY_v163 - when this envelope was created. The IRS
   // rejects a 4506-C received more than 120 days after signature, and signing
   // follows envelope creation within minutes, so this is the clock that matters.
@@ -96,13 +100,21 @@ async function sbaEnvelopes(applicationId: string): Promise<Envelope[]> {
 }
 
 /** Build every SBA form and open one signing session per owner. */
-export async function createSbaSigningSessions(applicationId: string): Promise<
+export async function createSbaSigningSessions(applicationId: string, opts: { includeApplication?: boolean } = {}): Promise<
   Array<{ ownerIndex: number; name: string; email: string; url: string | null }>
 > {
   if (!isApiKeyConfigured()) return [];
   const owners = await resolveSbaOwners(applicationId);
   if (owners.length === 0) return [];
   const ctx = await loadSbaContext(applicationId);
+  // BF_SERVER_SBA_ONE_SIGNING_v758 - one signing per owner: their copy of the Boreal application plus their
+  // SBA forms. Owner 1 signs in the client portal; owners 2+ get a SignNow email invite (no 45-minute expiry).
+  const appInputs = opts.includeApplication
+    ? await (await import("../sendApplicationForSignature.js")).loadApplicationForPdf(applicationId)
+    : null;
+  const { buildApplicationPdf } = await import("../pdfBuilder.js");
+  const { crmContactEmail } = await import("../../services/clientEmail.js");
+  const owner1Email = opts.includeApplication ? await crmContactEmail(applicationId) : null;
 
   // BF_SERVER_PER_LENDER_IVES_v144 - the IVES participants for the lenders staff
   // have already selected. Empty is normal when lenders are chosen after signing.
@@ -120,6 +132,12 @@ export async function createSbaSigningSessions(applicationId: string): Promise<
     }
 
     const docs: Array<{ bytes: Uint8Array; filename: string }> = [];
+    // BF_SERVER_SBA_ONE_SIGNING_v758
+    if (appInputs) {
+      const appPdf = await buildApplicationPdf(appInputs, undefined, { signOnlyAs: `Owner ${owner.index}` });
+      docs.push({ bytes: appPdf, filename: `boreal-application-owner${owner.index}-${applicationId}.pdf` });
+    }
+    const signerEmail = owner.index === 1 && owner1Email ? owner1Email : owner.email;
     // Form 1919 is one per co-applicant and goes only to the authorized representative.
     if (owner.index === 1) {
       const bytes = await buildSba1919({
@@ -181,17 +199,26 @@ export async function createSbaSigningSessions(applicationId: string): Promise<
         docIds.push(documentId);
         docNames.push(doc.filename);
       }
-      const { groupId } = await createDocumentGroup(docIds, `SBA Forms ${applicationId} owner ${owner.index}`);
-      const { inviteId } = await createEmbeddedGroupInvite(groupId, docIds, [
-        { email: owner.email, name: owner.fullName || undefined, roleName: `Owner ${owner.index}` },
-      ]);
-      const { url } = await createEmbeddedGroupLink(groupId, inviteId, owner.email);
+      const { groupId } = await createDocumentGroup(docIds, `${appInputs ? "Application and SBA forms" : "SBA Forms"} ${applicationId} owner ${owner.index}`);
+      // BF_SERVER_SBA_ONE_SIGNING_v758 - owners 2+ are emailed by SignNow; owner 1 signs in the client portal.
+      const byEmail = Boolean(appInputs) && owner.index > 1;
+      let inviteId: string; let url: string | null = null;
+      if (byEmail) {
+        inviteId = (await sendGroupEmailInvite(groupId, { email: signerEmail, name: owner.fullName || undefined, roleName: `Owner ${owner.index}`, fromEmail: process.env.SIGNNOW_FROM_EMAIL || "no-reply@boreal.financial", order: 1 })).inviteId ?? "";
+      } else {
+        ({ inviteId } = await createEmbeddedGroupInvite(groupId, docIds, [
+          { email: signerEmail, name: owner.fullName || undefined, roleName: `Owner ${owner.index}` },
+        ]));
+        ({ url } = await createEmbeddedGroupLink(groupId, inviteId, signerEmail));
+      }
       envelopes.push({
-        ownerIndex: owner.index, email: owner.email, groupId, inviteId, docIds, docNames,
+        applicationDocId: appInputs ? docIds[0] : undefined,
+        delivery: appInputs ? (byEmail ? "signnow_email" : "portal") : undefined,
+        ownerIndex: owner.index, email: signerEmail, groupId, inviteId, docIds, docNames,
         ives4506cLenderIds: Array.from(lendersCovered),
         createdAt: new Date().toISOString(), // BF_SERVER_4506C_120_DAY_v163
       });
-      out.push({ ownerIndex: owner.index, name: owner.fullName, email: owner.email, url });
+      out.push({ ownerIndex: owner.index, name: owner.fullName, email: signerEmail, url });
     } catch (error) {
       logError("sba_signing_session_failed");
       console.warn("[sba_signing]", applicationId, owner.index, error instanceof Error ? error.message : String(error));
@@ -379,4 +406,27 @@ export async function attachSignedSbaDocuments(applicationId: string): Promise<{
     }
   }
   return { attached };
+}
+
+// BF_SERVER_SBA_ONE_SIGNING_v758 - owner 1's signing link for the client portal's "Sign your application
+// documents" item. Minted fresh each time (embedded links expire after 45 minutes).
+export async function sbaOwnerOneSigningSession(applicationId: string): Promise<
+  { status: "signed" } | { status: "ready"; url: string; expiresAt: string | null } | { status: "not_ready"; reason: string }
+> {
+  const envelopes = await sbaEnvelopes(applicationId);
+  const env = envelopes.find((e) => e.ownerIndex === 1 && e.applicationDocId);
+  if (!env) return { status: "not_ready", reason: "sba_signing_not_started" };
+  if ((await getDocumentGroupStatus(env.groupId)).signed === true) return { status: "signed" };
+  const { url } = await createEmbeddedGroupLink(env.groupId, env.inviteId, env.email);
+  return { status: "ready", url, expiresAt: new Date(Date.now() + 45 * 60_000).toISOString() };
+}
+
+/** BF_SERVER_SBA_ONE_SIGNING_v758 - owner 1's application copy once every owner's envelope (with the application) is signed. */
+export async function sbaCombinedApplicationDocIfAllSigned(applicationId: string): Promise<string | null> {
+  const envelopes = (await sbaEnvelopes(applicationId)).filter((e) => e.applicationDocId);
+  if (envelopes.length === 0) return null;
+  for (const e of envelopes) {
+    if ((await getDocumentGroupStatus(e.groupId)).signed !== true) return null;
+  }
+  return envelopes.find((e) => e.ownerIndex === 1)?.applicationDocId ?? envelopes[0]!.applicationDocId ?? null;
 }

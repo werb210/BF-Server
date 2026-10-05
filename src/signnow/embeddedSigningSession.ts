@@ -57,6 +57,19 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
   const row = appRes.rows[0];
   if (!row) return { status: "not_ready", reason: "application_not_found" };
   if (row.signnow_app_signed_at) return { status: "signed" };
+  // BF_SERVER_SBA_ONE_SIGNING_v758 - an SBA client signs the application together with the SBA forms, in the
+  // envelope staff start with "Send for signing". The client portal's sign item opens that envelope, and
+  // Send to lenders never starts a second, separate application signing.
+  try {
+    const { isSbaApplication } = await import("./sba/sbaTrigger.js");
+    if (await isSbaApplication(applicationId)) {
+      if (!signnow.isApiKeyConfigured() || isStubMode()) return { status: "stub", reason: "SignNow is not configured on this server" };
+      const { sbaOwnerOneSigningSession } = await import("./sba/sbaSigning.js");
+      return await sbaOwnerOneSigningSession(applicationId);
+    }
+  } catch (e) {
+    return { status: "error", reason: e instanceof Error ? e.message : String(e) };
+  }
   if (Number(row.finalized_count ?? 0) <= 0) return { status: "not_ready", reason: "lender_not_finalized" };
   // BF_SERVER_BLOCK_PNW_ORDER_GATE_v2 — the Personal Net Worth statement must be
   // signed (its own envelope) BEFORE the application signing session may open.

@@ -107,6 +107,20 @@ router.get("/applications/:id/sba-signing", requireAuth, async (req: Request, re
   }
 });
 
+// BF_SERVER_SBA_ONE_SIGNING_v758 - staff "Send for signing": one signing per owner, application + SBA forms.
+router.post("/applications/:id/sba-signing/send", requireAuth, async (req: Request, res: Response) => {
+  const appId = String(req.params.id);
+  try {
+    const { sendSbaForSigning } = await import("../signnow/sba/sbaTrigger.js");
+    const out = await sendSbaForSigning(appId);
+    if (out.reason === "forms_incomplete") return res.status(409).json({ error: "forms_incomplete", missing: out.missing });
+    if (out.reason === "not_sba") return res.status(409).json({ error: "not_sba" });
+    return res.json({ status: out.ok ? "ok" : "error", data: out });
+  } catch (e) {
+    return res.status(500).json({ error: "sba_send_failed", message: e instanceof Error ? e.message : String(e) });
+  }
+});
+
 router.post("/applications/:id/sba-signing/resend", requireAuth, async (req: Request, res: Response) => {
   const appId = String(req.params.id);
   try {
@@ -173,8 +187,10 @@ router.post("/applications/:id/form-responses/:doc_type/submit", requireAuth, as
       }
     }
 
-    // BF_SERVER_SBA_TRIGGER_v97
-    if (String(docType).startsWith("sba_form_")) {
+    // BF_SERVER_SBA_TRIGGER_v97 / BF_SERVER_SBA_ONE_SIGNING_v758 - signing no longer starts on its own when the
+    // last SBA form is submitted: staff review the file and press "Send for signing" (one signing per owner).
+    const SBA_AUTO_START_SIGNING = false; // BF_SERVER_SBA_ONE_SIGNING_v758
+    if (SBA_AUTO_START_SIGNING && String(docType).startsWith("sba_form_")) {
       void (async () => {
         try {
           const { maybeStartSbaSigning } = await import("../signnow/sba/sbaTrigger.js");

@@ -36,7 +36,9 @@ function val(s: unknown): string { return (s === null || s === undefined || s ==
 type Cell = { label: string; value: unknown } | null;
 
 export type DateAnchor = { role: string; page: number; x: number; y: number };
-export async function buildApplicationPdf(inputs: ApplicationPdfInputs, out?: { dateAnchors: DateAnchor[] }): Promise<Uint8Array> {
+// BF_SERVER_SBA_ONE_SIGNING_v758 - opts.signOnlyAs builds a copy of the application carrying only that owner's
+// signature box, for the owner's own SBA signing envelope (each owner signs a counterpart, privately).
+export async function buildApplicationPdf(inputs: ApplicationPdfInputs, out?: { dateAnchors: DateAnchor[] }, opts?: { signOnlyAs?: string }): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const F = await doc.embedFont(StandardFonts.Helvetica);
   const FB = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -125,6 +127,12 @@ export async function buildApplicationPdf(inputs: ApplicationPdfInputs, out?: { 
   // reject the invite outright ("Role Owner N was not specified"), so this loop
   // and the signers array in embeddedSigningSession must stay in step.
   const signerOwners = inputs.owners.filter((o, i) => i === 0 || (o?.email ?? "").trim().length > 0);
+  if (opts?.signOnlyAs) {
+    ensure(44);
+    sigRow(opts.signOnlyAs, M);
+    y -= 40;
+    return doc.save();
+  }
   for (let i = 0; i < signerOwners.length; i += 2) {
     ensure(44);
     sigRow(`Owner ${i + 1}`, M);

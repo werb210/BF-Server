@@ -131,3 +131,52 @@ export async function restartSbaSigning(applicationId: string) {
   ).catch(() => {});
   return createSbaSigningSessions(applicationId);
 }
+
+// BF_SERVER_SBA_ONE_SIGNING_v758 - staff press "Send for signing". Every owner gets ONE signing: their copy of
+// the Boreal application plus their SBA forms (1919 for owner 1, 912, 4506-C per IVES lender, 413). Owner 1 is
+// texted and emailed to sign in the client portal; owners 2+ are emailed by SignNow.
+export type SendForSigningResult = {
+  ok: boolean; reason?: string; missing?: string[];
+  owners?: Array<{ ownerIndex: number; name: string; email: string; started: boolean; delivery: string }>;
+  notice?: { sms: boolean; email: boolean };
+};
+export async function sendSbaForSigning(applicationId: string): Promise<SendForSigningResult> {
+  if (!(await isSbaApplication(applicationId))) return { ok: false, reason: "not_sba" };
+  const { complete, missing } = await sbaFormsComplete(applicationId);
+  if (!complete) return { ok: false, reason: "forms_incomplete", missing };
+  await dbQuery(
+    `UPDATE applications SET metadata = metadata - 'sba_signnow', updated_at = now() WHERE id::text = ($1)::text`,
+    [applicationId],
+  ).catch((err: any) => { console.warn("[sba_send] could not clear old envelopes", { applicationId, message: err?.message }); });
+  const links = await createSbaSigningSessions(applicationId, { includeApplication: true });
+  const owners = links.map((l) => ({ ownerIndex: l.ownerIndex, name: l.name, email: l.email, started: Boolean(l.email) && (l.ownerIndex > 1 || Boolean(l.url)), delivery: l.ownerIndex === 1 ? "client portal" : "SignNow email" }));
+  const notice = await notifyOwnerOne(applicationId);
+  logInfo("sba_send_for_signing", { applicationId, owners: owners.length, started: owners.filter((o) => o.started).length });
+  return { ok: owners.some((o) => o.started), reason: owners.some((o) => o.started) ? undefined : "no_envelopes_created", owners, notice };
+}
+
+async function notifyOwnerOne(applicationId: string): Promise<{ sms: boolean; email: boolean }> {
+  const out = { sms: false, email: false };
+  const portal = "https://client.boreal.financial";
+  try {
+    const owners = await resolveSbaOwners(applicationId);
+    const o1: any = owners.find((o) => o.index === 1);
+    const phone = String(o1?.homePhone ?? o1?.phone ?? "").trim();
+    if (phone) {
+      const { sendSms } = await import("../../modules/notifications/sms.service.js");
+      await sendSms({ to: phone, message: `Boreal Financial: your application and SBA forms are ready to sign. Sign in at ${portal} and tap "Sign your application documents". Reply STOP to opt out.` });
+      out.sms = true;
+    }
+  } catch (err) { console.warn("[sba_send] owner 1 text failed", { applicationId, message: err instanceof Error ? err.message : String(err) }); }
+  try {
+    const { resolveClientEmail } = await import("../../services/clientEmail.js");
+    const r = await resolveClientEmail(applicationId);
+    if (r.email) {
+      const { sendTransactional } = await import("../../services/sendgridService.js");
+      const hi = r.firstName ? `Hi ${r.firstName},` : "Hello,";
+      const sent = await sendTransactional({ to: r.email, subject: "Your application and SBA forms are ready to sign", html: `<p>${hi}</p><p>Your Boreal Financial application and SBA forms are ready to sign, all in one place.</p><p><a href="${portal}">Sign in to your client portal</a> and tap <strong>Sign your application documents</strong>.</p><p>Boreal Financial</p>` });
+      out.email = sent.ok;
+    }
+  } catch (err) { console.warn("[sba_send] owner 1 email failed", { applicationId, message: err instanceof Error ? err.message : String(err) }); }
+  return out;
+}
