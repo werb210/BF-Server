@@ -11,6 +11,7 @@ import { isUndeliverableNumber } from "../lib/smsDeliverability.js"; // BF_SERVE
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
+import { smsFromFor } from "../lib/smsFrom.js"; // BF_SERVER_US_SMS_TOLLFREE_v755
 
 // BF_SERVER_MEDIA_QUERY_AUTH_v1 - <img>/<audio> elements cannot send an
 // Authorization header, so media/recording proxy routes carry the access token
@@ -1256,7 +1257,7 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
     }
     // BF_SERVER_BLOCK_v499_STAFF_SMS_DELIVERY_STATUS - ask Twilio for delivery updates.
     const statusCallback = `${(process.env.PUBLIC_BASE_URL || "https://server.boreal.financial").replace(/\/+$/, "")}/api/r/status`;
-    message = await client.messages.create({ body: String(mergedBody), from, to: String(to), statusCallback, ...(mmsMediaUrl ? { mediaUrl: [mmsMediaUrl] } : {}) }); // BF_SERVER_BLOCK_v497
+    message = await client.messages.create({ body: String(mergedBody), from: smsFromFor(String(to), from), to: String(to), statusCallback, /* BF_SERVER_US_SMS_TOLLFREE_v755 */ ...(mmsMediaUrl ? { mediaUrl: [mmsMediaUrl] } : {}) }); // BF_SERVER_BLOCK_v497
   } catch (err: any) {
     // eslint-disable-next-line no-console
     console.error("communications.sms.twilio_failed", {

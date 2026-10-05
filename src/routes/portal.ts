@@ -67,6 +67,7 @@ import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILE
 // BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const router = Router();
+import { smsFromFor } from "../lib/smsFrom.js"; // BF_SERVER_US_SMS_TOLLFREE_v755
 
 // BF_SERVER_DOC_WAIVERS_ROUTES_v1 — Request Items checklist (dynamic Step-5 required set) +
 // admin-only per-application document waivers.
@@ -224,7 +225,7 @@ async function sendDocumentRejectionSms(params: {
   if (isUndeliverableNumber(to)) return;
 
   const client: any = twilio(accountSid, authToken);
-  const msg = await client.messages.create({ body, from, to }).catch(() => null);
+  const msg = await client.messages.create({ body, from: smsFromFor(to, from), to }).catch(() => null); // BF_SERVER_US_SMS_TOLLFREE_v755
   if (msg) {
     await pool.query(
       `INSERT INTO communications_messages
