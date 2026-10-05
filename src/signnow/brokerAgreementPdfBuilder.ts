@@ -106,6 +106,7 @@ export async function buildBrokerAgreementPdf(data?: BrokerAgreementData): Promi
   const doc = await PDFDocument.create();
   const F = await doc.embedFont(StandardFonts.Helvetica);
   const B = await doc.embedFont(StandardFonts.HelveticaBold);
+  const SIG = await doc.embedFont(StandardFonts.TimesRomanItalic); // BF_SERVER_AGREEMENT_COUNTERSIGN_v747
   const ctx: Ctx = { doc, page: doc.addPage([PW, PH]), y: M, F, B };
 
   text(ctx, "BOREAL FINANCIAL GROUP", 13, B, NAVY);
@@ -205,8 +206,13 @@ export async function buildBrokerAgreementPdf(data?: BrokerAgreementData): Promi
   ctx.y += 30;
 
   text(ctx, "BOREAL FINANCIAL GROUP", 9.5, B, BLACK);
-  ctx.y += 20;
-  para(ctx, "Countersigned by Boreal Financial Group upon acceptance.", 8, 0, GREY);
+  // BF_SERVER_AGREEMENT_COUNTERSIGN_v747 - Boreal's electronic signature, applied when issued.
+  ctx.y += 22;
+  text(ctx, "/s/ Todd Werboweski", 14, SIG, BLACK);
+  ctx.y += 14;
+  text(ctx, "Per: Todd Werboweski, Director", 8.5, F, BLACK);
+  ctx.y += 12;
+  para(ctx, "Signed electronically for Boreal Financial Group on " + new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "America/Regina" }).format(new Date()) + ".", 8, 0, GREY);
   ctx.y += 10;
   text(ctx, "Boreal Financial Group | 450 Sparling Crt SW, Edmonton, AB T6X 1G9 | info@boreal.financial", 7.5, F, GREY);
 
