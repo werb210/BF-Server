@@ -10,23 +10,10 @@ export const DAY_START_H = 9;
 export const DAY_END_H = 17;
 export const MIN_NOTICE_H = 2;
 export type BookingKind = "phone" | "teams";
-export type Staff = { id: string; email: string; first_name: string | null; signed_in?: boolean };
-// BF_SERVER_INTAKE_ROUND_ROBIN_v748 - the general booking link (client portal "Book a call", /book) goes to
-// the Intake team: every staff member who has signed in, except the people listed here (Andrew by default).
-// A new staff member joins the rotation automatically the first time they sign in. Personal links
-// (/book-andrew, /book-todd) still book that person directly.
-export function intakeExcludes(): string[] {
-  const raw = process.env.BOOKING_INTAKE_EXCLUDE;
-  return String(raw === undefined ? "andrew.p@boreal.financial" : raw).split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-}
-export function intakeTeam(staff: Staff[]): Staff[] {
-  const out = intakeExcludes();
-  return staff.filter((s) => s.signed_in !== false && !out.includes(s.email.toLowerCase()));
-}
-/** Round robin: whoever was given a booking longest ago (or never) goes first. */
-export function roundRobinPick(candidateIds: string[], lastAssigned: Map<string, number>): string | undefined {
-  return [...candidateIds].sort((a, b) => (lastAssigned.get(a) ?? 0) - (lastAssigned.get(b) ?? 0))[0];
-}
+// BF_SERVER_INTAKE_ROUND_ROBIN_v749 - email is the login (used for link names); mailbox is the
+// Outlook calendar. They differ: Andrew logs in as andrew@ but his mailbox is andrew.p@, and
+// andrew@ does not exist in the tenant, so events posted to the login email failed.
+export type Staff = { id: string; email: string; first_name: string | null; mailbox: string; o365: boolean };
 
 function tzOffsetMin(at: Date, tz = TZ): number {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(at).map((p) => [p.type, p.value]));
@@ -61,11 +48,37 @@ export function overlaps(slot: Date, busy: Array<{ start: Date; end: Date }>): b
 export async function bookableStaff(): Promise<Staff[]> {
   const only = String(process.env.BOOKING_STAFF_EMAILS ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
   // swallow-ok: this query has no catch; the guardrail's scan reaches a later HTTP error-body read
-  const { rows } = await pool.query<Staff>(`SELECT id::text, lower(email) AS email, first_name, (last_login_at IS NOT NULL OR o365_refresh_token IS NOT NULL) AS signed_in FROM users
+  const { rows } = await pool.query<Staff>(`SELECT id::text, lower(email) AS email, first_name,
+        lower(COALESCE(NULLIF(trim(o365_user_email), ''), email)) AS mailbox,
+        (NULLIF(trim(o365_user_email), '') IS NOT NULL) AS o365
+      FROM users
       WHERE COALESCE(active, true) AND deleted_at IS NULL AND COALESCE(disabled, false) = false
         AND role IN ('Admin', 'Staff') AND email ILIKE '%@boreal.financial'
       ORDER BY first_name NULLS LAST`);
-  return only.length ? rows.filter((r) => only.includes(r.email)) : rows;
+  return only.length ? rows.filter((r) => only.includes(r.email) || only.includes(r.mailbox)) : rows;
+}
+// BF_SERVER_INTAKE_ROUND_ROBIN_v749 - the general booking page (/book) and the client portal's
+// "Book a call" go to the Intake team: every staff member signed in to Office 365 except the
+// people in BOOKING_INTAKE_EXCLUDE (default: Andrew). Personal links (/book-todd) are unchanged.
+export const DEFAULT_INTAKE_EXCLUDE = "andrew@boreal.financial,andrew.p@boreal.financial";
+export function intakeFilter(staff: Staff[], excludeRaw = process.env.BOOKING_INTAKE_EXCLUDE): Staff[] {
+  const exclude = String(excludeRaw ?? DEFAULT_INTAKE_EXCLUDE).split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const team = staff.filter((s) => s.o365 && !exclude.includes(s.email) && !exclude.includes(s.mailbox));
+  if (team.length) return team;
+  console.warn("[booking] intake team is empty (no Office 365 staff outside BOOKING_INTAKE_EXCLUDE); using every bookable staff member");
+  const rest = staff.filter((s) => !exclude.includes(s.email) && !exclude.includes(s.mailbox));
+  return rest.length ? rest : staff;
+}
+export async function intakeTeam(): Promise<Staff[]> {
+  return intakeFilter(await bookableStaff());
+}
+// Round robin: of the people free at the chosen time, whoever was booked least recently goes
+// next; someone never booked goes first. Ties fall back to first name order.
+export function pickRoundRobin(freeIds: string[], lastBooked: Map<string, number>, staff: Staff[]): string | null {
+  const order = staff.map((s) => s.id);
+  const ids = freeIds.filter((id) => order.includes(id));
+  if (!ids.length) return null;
+  return [...ids].sort((a, b) => (lastBooked.get(a) ?? -1) - (lastBooked.get(b) ?? -1) || order.indexOf(a) - order.indexOf(b))[0]!;
 }
 export async function busyTimes(emails: string[], from: Date, to: Date): Promise<Map<string, Array<{ start: Date; end: Date }>>> {
   const out = new Map<string, Array<{ start: Date; end: Date }>>();
@@ -80,28 +93,27 @@ export async function busyTimes(emails: string[], from: Date, to: Date): Promise
   return out;
 }
 export async function openSlots(now: Date, staffId: string | null, days = 14): Promise<Array<{ startsAt: string; staffIds: string[] }>> {
-  const everyone = await bookableStaff();
-  const staff = staffId ? everyone.filter((s) => s.id === staffId) : intakeTeam(everyone); // BF_SERVER_INTAKE_ROUND_ROBIN_v748
+  const staff = staffId ? (await bookableStaff()).filter((s) => s.id === staffId) : await intakeTeam(); // BF_SERVER_INTAKE_ROUND_ROBIN_v749
   const slots = candidateSlots(now, days);
   if (!slots.length || !staff.length) return [];
-  const busy = await busyTimes(staff.map((s) => s.email), slots[0]!, new Date(slots[slots.length - 1]!.getTime() + SLOT_MIN * 60_000));
-  const taken = await pool.query<{ staff_email: string; starts_at: string }>(`SELECT lower(staff_email) AS staff_email, starts_at FROM client_bookings WHERE status = 'booked' AND starts_at >= $1`, [slots[0]!.toISOString()]);
-  return slots.map((t) => ({ startsAt: t.toISOString(), staffIds: staff.filter((s) => !overlaps(t, busy.get(s.email) ?? []) && !taken.rows.some((b) => b.staff_email === s.email && new Date(b.starts_at).getTime() === t.getTime())).map((s) => s.id) })).filter((x) => x.staffIds.length > 0);
+  const busy = await busyTimes(staff.map((s) => s.mailbox), slots[0]!, new Date(slots[slots.length - 1]!.getTime() + SLOT_MIN * 60_000));
+  const taken = await pool.query<{ staff_user_id: string | null; staff_email: string; starts_at: string }>(`SELECT staff_user_id::text, lower(staff_email) AS staff_email, starts_at FROM client_bookings WHERE status = 'booked' AND starts_at >= $1`, [slots[0]!.toISOString()]);
+  const isTaken = (s: Staff, t: Date) => taken.rows.some((b) => (b.staff_user_id === s.id || b.staff_email === s.email || b.staff_email === s.mailbox) && new Date(b.starts_at).getTime() === t.getTime());
+  return slots.map((t) => ({ startsAt: t.toISOString(), staffIds: staff.filter((s) => !overlaps(t, busy.get(s.mailbox) ?? []) && !isTaken(s, t)).map((s) => s.id) })).filter((x) => x.staffIds.length > 0);
 }
 export async function createBooking(input: { kind: BookingKind; startsAt: Date; staffId: string | null; name: string; email: string; phone: string | null; notes: string | null; now?: Date }): Promise<{ ok: true; booking: { id: string; startsAt: string; staffFirstName: string | null; kind: BookingKind; joinUrl: string | null } } | { ok: false; reason: string }> {
   const match = (await openSlots(input.now ?? new Date(), input.staffId, 15)).find((s) => new Date(s.startsAt).getTime() === input.startsAt.getTime());
   if (!match) return { ok: false, reason: "slot_taken" };
-  const staffList = await bookableStaff();
-  // BF_SERVER_INTAKE_ROUND_ROBIN_v748 - take turns: the intake member booked longest ago gets this one.
-  const lastRes = await pool.query<{ staff_user_id: string; last: string }>(`SELECT staff_user_id::text, max(created_at)::text AS last FROM client_bookings WHERE staff_user_id IS NOT NULL GROUP BY 1`);
-  const lastAssigned = new Map(lastRes.rows.map((r) => [r.staff_user_id, new Date(r.last).getTime()] as [string, number]));
-  const pickId = input.staffId ?? roundRobinPick(match.staffIds, lastAssigned)!;
+  const staffList = input.staffId ? await bookableStaff() : await intakeTeam(); // BF_SERVER_INTAKE_ROUND_ROBIN_v749
+  const last = await pool.query<{ staff_user_id: string; last_at: string }>(`SELECT staff_user_id::text, max(created_at) AS last_at FROM client_bookings WHERE staff_user_id IS NOT NULL GROUP BY 1`);
+  const lastBooked = new Map(last.rows.map((r) => [r.staff_user_id, new Date(r.last_at).getTime()] as [string, number]));
+  const pickId = input.staffId ?? pickRoundRobin(match.staffIds, lastBooked, staffList);
   const staff = staffList.find((s) => s.id === pickId);
   if (!staff) return { ok: false, reason: "staff_unavailable" };
   const end = new Date(input.startsAt.getTime() + SLOT_MIN * 60_000);
   const subject = (input.kind === "teams" ? "Teams meeting" : "Phone call") + " with " + input.name + " - Boreal Financial";
   const bodyLines = [input.kind === "phone" ? "We will call you at " + (input.phone ?? "the number you gave") + "." : "Join with the Teams link in this invitation.", input.notes ? "Notes: " + input.notes : ""].filter(Boolean);
-  const resp = await graphAppFetch(`/users/${encodeURIComponent(staff.email)}/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+  const resp = await graphAppFetch(`/users/${encodeURIComponent(staff.mailbox)}/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
     subject, body: { contentType: "Text", content: bodyLines.join(String.fromCharCode(10)) }, start: { dateTime: input.startsAt.toISOString().slice(0, 19), timeZone: "UTC" }, end: { dateTime: end.toISOString().slice(0, 19), timeZone: "UTC" }, attendees: [{ emailAddress: { address: input.email, name: input.name }, type: "required" }], location: { displayName: input.kind === "phone" ? "Phone call - Boreal calls " + (input.phone ?? "") : "Microsoft Teams" }, isOnlineMeeting: input.kind === "teams", ...(input.kind === "teams" ? { onlineMeetingProvider: "teamsForBusiness" } : {}), allowNewTimeProposals: false,
   }) });
   if (!resp.ok) throw new Error("graph_create_event_failed status=" + resp.status + " " + (await resp.text().catch(() => "")).slice(0, 200)); // swallow-ok
@@ -114,6 +126,6 @@ export async function createBooking(input: { kind: BookingKind; startsAt: Date; 
   }
   const id = randomUUID();
   await pool.query(`INSERT INTO client_bookings (id, contact_id, staff_user_id, staff_email, kind, starts_at, duration_min, client_name, client_email, client_phone, notes, graph_event_id, join_url)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, [id, contactId, staff.id, staff.email, input.kind, input.startsAt.toISOString(), SLOT_MIN, input.name, input.email, input.phone, input.notes, ev.id ?? null, ev.onlineMeeting?.joinUrl ?? null]);
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, [id, contactId, staff.id, staff.mailbox, input.kind, input.startsAt.toISOString(), SLOT_MIN, input.name, input.email, input.phone, input.notes, ev.id ?? null, ev.onlineMeeting?.joinUrl ?? null]);
   return { ok: true, booking: { id, startsAt: input.startsAt.toISOString(), staffFirstName: staff.first_name, kind: input.kind, joinUrl: ev.onlineMeeting?.joinUrl ?? null } };
 }

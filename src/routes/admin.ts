@@ -313,6 +313,13 @@ router.post(
 // 401 => bad/rotated API key; 403 with a "from"/"sender" message => the
 // SENDGRID_FROM address (info@boreal.financial) is not a verified sender or its
 // domain authentication lapsed. Admin-guarded (requireAuth + AUDIT_VIEW above).
+// BF_SERVER_CLIENT_FAILURE_LOG_v749 - the last 200 client-portal requests answered 401/403/5xx
+// on this instance, newest first. Admin-guarded (requireAuth + AUDIT_VIEW above).
+router.get("/client-failures", async (_req: any, res: any) => {
+  const { recentClientFailures, startedAt } = await import("../middleware/clientFailureLog.js");
+  res.json({ instance: process.env.WEBSITE_INSTANCE_ID ? String(process.env.WEBSITE_INSTANCE_ID).slice(0, 12) : null, startedAt, uptimeS: Math.round(process.uptime()), failures: recentClientFailures() });
+});
+
 router.post(
   "/sendgrid-diagnostics",
   requireCapability([CAPABILITIES.USER_MANAGE]),
