@@ -172,6 +172,17 @@ function labelFor(docType: string): string {
 // "we cannot proceed without this" from "send it if you have it". Optional so
 // existing callers compile unchanged; absent means required.
 type NeededDoc = { document_type: string; label: string; required?: boolean };
+
+// BF_SERVER_SBA_NO_BANK_STATEMENTS_v763 - removes every bank statement requirement, whatever a lender product
+// called it ("6 months business banking statements", "bank_statements_6_months", "Bank Statements").
+const BANK_STATEMENT_RE = /\bbank(ing)?\b[\s\S]{0,30}\bstatements?\b|bank_statements?/i;
+export function dropBankStatements<T extends { document_type?: string; label?: string }>(docs: T[]): T[] {
+  for (let i = docs.length - 1; i >= 0; i -= 1) {
+    const d = docs[i]!;
+    if (BANK_STATEMENT_RE.test(String(d.document_type ?? "")) || BANK_STATEMENT_RE.test(String(d.label ?? ""))) docs.splice(i, 1);
+  }
+  return docs;
+}
 type UploadedDocRow = { category: string | null; status: string | null };
 
 function docTypeFromRequirement(raw: any): string {
@@ -373,6 +384,21 @@ async function computeOutstandingDocsRaw(
         if (canonicalDocKey(required[i]!.document_type) === canonicalDocKey("bank_statements_6_months")) required.splice(i, 1);
       }
     }
+  }
+
+  // BF_SERVER_SBA_NO_BANK_STATEMENTS_v763 - an SBA file never asks the client for bank statements (Todd's rule).
+  // They came in from the SBA lender products' document lists. Staff can still ask for them from Request Items,
+  // which is added below and is not filtered.
+  try {
+    const { isSbaApplication } = await import("../signnow/sba/sbaTrigger.js");
+    const beforeFilter = required.slice();
+    if (await isSbaApplication(applicationId)) dropBankStatements(required);
+    // Removed requirements must not prevent staff from explicitly requesting the same document.
+    for (const doc of beforeFilter) {
+      if (!required.includes(doc)) seen.delete(doc.document_type);
+    }
+  } catch (err) {
+    console.warn("[documents-needed] SBA check failed - bank statements left in", { applicationId, message: err instanceof Error ? err.message : String(err) });
   }
 
   // BF_SERVER_REQUESTED_DOCS_v351 - documents staff requested from Request Items
