@@ -68,6 +68,24 @@ export async function createRoom(input: { title: string; startsAt: Date; duratio
   return rows[0]!;
 }
 
+// BF_SERVER_NO_DUPLICATE_ROOMS_v764 - the same host creating the same meeting (same title, same start) again within
+// 15 minutes gets the room already made, not a second room with a second code and a second Outlook event. This covers
+// a double-click and a retry after a slow "Could not create the meeting" answer.
+export async function recentDuplicateRoom(
+  input: { title: string; startsAt: Date; hostUserId: string | null },
+  query: (sql: string, params: unknown[]) => Promise<{ rows: any[] }> = (sql, params) => pool.query(sql, params as any[]),
+): Promise<MeetingRoom | null> {
+  const { rows } = await query(
+    `SELECT id::text, code, slug, title, host_user_id::text, application_id, contact_id::text, starts_at, duration_min, status
+       FROM meeting_rooms
+      WHERE status <> 'cancelled' AND host_user_id::text IS NOT DISTINCT FROM $1 AND title = $2
+        AND starts_at = $3::timestamptz AND created_at > now() - interval '15 minutes'
+      ORDER BY created_at ASC LIMIT 1`,
+    [input.hostUserId, input.title.slice(0, 160), input.startsAt.toISOString()],
+  );
+  return (rows[0] as MeetingRoom | undefined) ?? null;
+}
+
 /** The open room for a code entered on the phone, if any. */
 export async function findOpenRoomByCode(code: string, now = new Date()): Promise<MeetingRoom | null> {
   const clean = String(code ?? "").replace(/[^0-9]/g, "");

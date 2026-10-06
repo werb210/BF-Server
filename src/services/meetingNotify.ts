@@ -38,6 +38,7 @@ function eventBody(room: MeetingRoom, attendees: Row[]) {
 }
 export async function notifyMeeting(room: MeetingRoom, opts: { isNew: boolean }, deps: MeetingNotifyDeps = defaultDeps): Promise<MeetingDelivery> {
   const out: MeetingDelivery = { calendar: "skipped", calendarError: null, emailed: 0, texted: 0, errors: [] };
+  let calendarInFlight = false; // BF_SERVER_NO_DUPLICATE_ROOMS_v764
   const host = await hostOf(room, deps); const people = await peopleOf(room, deps);
   const hostEmail = (host?.email ?? "").toLowerCase();
   const attendees = people.filter((p) => p.email && p.email.toLowerCase() !== hostEmail);
@@ -45,18 +46,34 @@ export async function notifyMeeting(room: MeetingRoom, opts: { isNew: boolean },
   else if (!deps.graphReady()) out.calendarError = "Outlook (Microsoft Graph) is not configured on the server";
   else {
     const existing = (await deps.query("SELECT graph_event_id, host_email FROM meeting_rooms WHERE id::text = $1", [room.id])).rows[0];
+    // BF_SERVER_NO_DUPLICATE_ROOMS_v764 - only ONE request may create a room's Outlook event. Two requests for the same
+    // room (e.g. people added while the room is still being created) both saw no event id and both POSTed, so Outlook
+    // showed the meeting twice. A request now claims the room with a "pending:<time>" marker first; a request that
+    // can't claim it leaves the calendar to the one that did. A claim older than 2 minutes (a crashed request) expires.
+    const raw = existing?.graph_event_id ? String(existing.graph_event_id) : "";
+    const eventId = raw && !raw.startsWith("pending:") ? raw : null;
+    let claimed = Boolean(eventId);
+    if (!eventId) {
+      const c = await deps.query("UPDATE meeting_rooms SET graph_event_id = $2 WHERE id::text = $1 AND (graph_event_id IS NULL OR (CASE WHEN graph_event_id LIKE 'pending:%' THEN substring(graph_event_id from 9)::timestamptz END) < now() - interval '2 minutes') RETURNING id::text", [room.id, "pending:" + new Date().toISOString()]);
+      claimed = c.rows.length > 0;
+    }
+    if (!claimed) { calendarInFlight = true; out.calendar = "skipped"; }
     const path = "/users/" + encodeURIComponent(existing?.host_email || host.email) + "/events";
-    const r = existing?.graph_event_id ? await deps.graph(path + "/" + encodeURIComponent(existing.graph_event_id), "PATCH", eventBody(room, attendees)) : await deps.graph(path, "POST", eventBody(room, attendees));
-    if (r.ok) {
-      out.calendar = existing?.graph_event_id ? "updated" : "created";
-      if (!existing?.graph_event_id) await deps.query("UPDATE meeting_rooms SET graph_event_id = $2, host_email = $3 WHERE id::text = $1", [room.id, String(r.json?.id ?? ""), host.email]);
+    const r = !claimed ? { ok: false, status: 0, json: null, text: "" } : eventId ? await deps.graph(path + "/" + encodeURIComponent(eventId), "PATCH", eventBody(room, attendees)) : await deps.graph(path, "POST", eventBody(room, attendees));
+    if (!claimed) { /* another request is creating this room's Outlook event */ }
+    else if (r.ok) {
+      out.calendar = eventId ? "updated" : "created";
+      if (!eventId) await deps.query("UPDATE meeting_rooms SET graph_event_id = $2, host_email = $3 WHERE id::text = $1", [room.id, String(r.json?.id ?? ""), host.email]);
       const fresh = attendees.filter((p) => !p.invited_at);
       if (fresh.length) await deps.query("UPDATE meeting_participants SET invited_at = now() WHERE id::text = ANY($1::text[])", [fresh.map((p) => p.id)]);
       out.emailed = fresh.length;
-    } else { out.calendar = "failed"; out.calendarError = "Outlook refused the event (" + r.status + "): " + r.text.slice(0, 160); }
+    } else {
+      out.calendar = "failed"; out.calendarError = "Outlook refused the event (" + r.status + "): " + r.text.slice(0, 160);
+      if (!eventId) await deps.query("UPDATE meeting_rooms SET graph_event_id = NULL WHERE id::text = $1 AND graph_event_id LIKE 'pending:%'", [room.id]);
+    }
   }
   if (out.calendarError) out.errors.push("calendar: " + out.calendarError);
-  if (out.calendar === "skipped" || out.calendar === "failed") {
+  if ((out.calendar === "skipped" || out.calendar === "failed") && !calendarInFlight) {
     const html = inviteText(room).split(NL).map((l) => "<p style='margin:0 0 6px;font-family:Arial,sans-serif;color:#0B1F3A'>" + l.replace(/[<>&]/g, " ") + "</p>").join("") + "<p style='font-family:Arial,sans-serif'><a href='" + joinUrl(room.slug) + "/ics'>Add to calendar</a></p>";
     const targets: Array<{ id: string | null; email: string }> = attendees.filter((p) => !p.invited_at).map((p) => ({ id: p.id, email: p.email as string }));
     if (opts.isNew && host?.email) targets.push({ id: null, email: host.email });
@@ -73,7 +90,7 @@ export async function notifyMeeting(room: MeetingRoom, opts: { isNew: boolean },
 export async function cancelMeetingNotices(room: MeetingRoom, deps: MeetingNotifyDeps = defaultDeps): Promise<MeetingDelivery> {
   const out: MeetingDelivery = { calendar: "skipped", calendarError: null, emailed: 0, texted: 0, errors: [] };
   const ev = (await deps.query("SELECT graph_event_id, host_email FROM meeting_rooms WHERE id::text = $1", [room.id])).rows[0];
-  if (ev?.graph_event_id && ev?.host_email && deps.graphReady()) { const r = await deps.graph("/users/" + encodeURIComponent(ev.host_email) + "/events/" + encodeURIComponent(ev.graph_event_id) + "/cancel", "POST", { comment: "This meeting was cancelled." }); if (r.ok) out.calendar = "cancelled"; else { out.calendar = "failed"; out.calendarError = "Outlook refused the cancellation (" + r.status + ")"; out.errors.push("calendar: " + out.calendarError); } }
+  if (ev?.graph_event_id && !String(ev.graph_event_id).startsWith("pending:") && ev?.host_email && deps.graphReady()) { const r = await deps.graph("/users/" + encodeURIComponent(ev.host_email) + "/events/" + encodeURIComponent(ev.graph_event_id) + "/cancel", "POST", { comment: "This meeting was cancelled." }); if (r.ok) out.calendar = "cancelled"; else { out.calendar = "failed"; out.calendarError = "Outlook refused the cancellation (" + r.status + ")"; out.errors.push("calendar: " + out.calendarError); } }
   const people = await peopleOf(room, deps);
   for (const p of people) { const n = e164(p.phone); if (!n || !p.texted_at) continue; const r = await deps.sms(n, "Boreal Financial: the meeting " + room.title + " on " + whenOf(room) + " Alberta time has been cancelled."); if (r.ok) out.texted += 1; else out.errors.push("text to " + p.name + ": " + String(r.error ?? "failed")); }
   return out;

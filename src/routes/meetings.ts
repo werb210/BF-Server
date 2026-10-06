@@ -5,7 +5,7 @@ import { pool } from "../db.js";
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
-import { createRoom, roomBySlug, inviteText, joinUrl, oneTapDial, isOpen, DIAL_IN_DISPLAY, type MeetingRoom } from "../services/meetingRooms.js";
+import { createRoom, recentDuplicateRoom, roomBySlug, inviteText, joinUrl, oneTapDial, isOpen, DIAL_IN_DISPLAY, type MeetingRoom } from "../services/meetingRooms.js";
 import { addParticipants, listParticipants, removeParticipant, searchPeople, MAX_PEOPLE, type Person } from "../services/meetingRooms.js"; // BF_SERVER_MEETING_PARTICIPANTS_v737
 import { notifyMeeting, cancelMeetingNotices } from "../services/meetingNotify.js"; // BF_SERVER_MEETING_NOTIFY_v741
 
@@ -62,6 +62,13 @@ router.post("/", ...staff, safeHandler(async (req: any, res: any) => {
   const startsAt = new Date(String(req.body?.startsAt ?? ""));
   if (!title) { res.status(400).json({ error: "title_required" }); return; }
   if (Number.isNaN(startsAt.getTime())) { res.status(400).json({ error: "start_time_required" }); return; }
+  // BF_SERVER_NO_DUPLICATE_ROOMS_v764 - a repeat of the same request returns the room already made.
+  const dup = await recentDuplicateRoom({ title, startsAt, hostUserId: req.user?.userId ?? null });
+  if (dup) {
+    res.status(200).json({ meeting: view(dup), participants: await listParticipants(dup.id), refused: 0, invited: 0, duplicate: true,
+      delivery: { calendar: "skipped", calendarError: null, emailed: 0, texted: 0, errors: [] } });
+    return;
+  }
   const room = await createRoom({ title, startsAt, durationMin: Number(req.body?.durationMin) || 60, hostUserId: req.user?.userId ?? null,
     applicationId: typeof req.body?.applicationId === "string" ? req.body.applicationId : null, contactId: typeof req.body?.contactId === "string" ? req.body.contactId : null });
   // BF_SERVER_MEETING_PARTICIPANTS_v737 - invite people at creation (up to 10 including the host).
