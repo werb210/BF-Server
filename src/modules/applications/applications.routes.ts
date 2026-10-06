@@ -932,6 +932,15 @@ export function deriveSigningStatus(input: { signedAt: unknown; groupId: unknown
   return 'not_started';
 }
 
+// BF_SERVER_CALL_PHONE_v765 - first value with at least 10 digits.
+export function firstPhone(...values: unknown[]): string | null {
+  for (const v of values) {
+    const s = typeof v === "string" ? v.trim() : typeof v === "number" ? String(v) : "";
+    if (s.replace(/\D+/g, "").length >= 10) return s;
+  }
+  return null;
+}
+
 router.get('/:id/details', safeHandler(async (req: any, res: any) => {
   const { id } = req.params;
   const result = await pool.query(
@@ -940,7 +949,8 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
             a.current_stage, a.silo, a.created_at, a.updated_at,
             a.signnow_app_signed_at,
             (SELECT count(*) FROM application_lender_selections s
-              WHERE s.application_id::text = a.id::text AND s.finalized_at IS NOT NULL) AS finalized_lenders
+              WHERE s.application_id::text = a.id::text AND s.finalized_at IS NOT NULL) AS finalized_lenders,
+            (SELECT c.phone FROM contacts c WHERE c.id = a.contact_id) AS contact_phone
        FROM applications a WHERE a.id::text = ($1)::text`,
     [id]
   );
@@ -1026,6 +1036,9 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
     productCategory: md?.application?.productCategory ?? md?.product_category ?? fd?.productCategory ?? null,
     documents: Array.isArray(md?.documents) ? md.documents : null,
     signing: { status: signingStatus, signedAt: app.signnow_app_signed_at ?? null },
+    // BF_SERVER_CALL_PHONE_v765 - the number the portal's Call client button dials: the CRM contact's phone (staff
+    // correct numbers there) first, then the applicant's phone from the application.
+    callPhone: firstPhone(app.contact_phone, md?.applicant?.phone, md?.applicant?.mobile, md?.borrower?.phone, fd?.applicant?.phone, readinessSrc?.phone),
     rawPayload: md,
   };
 
