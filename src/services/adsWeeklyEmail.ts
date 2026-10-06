@@ -3,7 +3,7 @@ import { ALBERTA_TZ } from "../lib/albertaTime.js"; // BF_SERVER_ALBERTA_TIME_v7
 // week, Monday morning Edmonton time, to GOOGLE_HEALTH_ALERT_EMAILS (default Todd, Andrew).
 import { pool } from "../db.js";
 import { logError } from "../observability/logger.js";
-import { sendgridConfigured, sendOne } from "./sendgridService.js";
+import { sendgridConfigured, sendTransactional } from "./sendgridService.js";
 import { commissionRate } from "./googleDataManager.js";
 
 export function weeklyRecipients(): string[] {
@@ -118,7 +118,7 @@ export async function maybeSendWeeklyAdsEmail(now = new Date(), force = false): 
   const { subject, html } = renderWeeklyEmail(await gather(), commissionRate());
   let ok = 0;
   for (const to of weeklyRecipients()) {
-    const r = await sendOne({ to, subject, html });
+    const r = await sendTransactional({ to, subject, html }) /* BF_SERVER_TRANSACTIONAL_BYPASS_UNSUB_v761 - a staff report, not marketing */;
     if (r.ok) ok += 1; else logError("ads_weekly_email_failed", { to, status: r.status, error: r.error });
   }
   if (ok === 0) await pool.query("DELETE FROM ads_weekly_reports WHERE week_start = $1", [week]);
