@@ -1,5 +1,6 @@
 // BF_SERVER_BLOCK_v456_LENDER_PACKAGE_LINK
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { answerBySql, callsMatching } from "./helpers/answerBySql.js"; // BF_SERVER_SQL_CONTENT_MOCKS_v762
 import fs from "node:fs";
 
 const putMock = vi.fn();
@@ -54,17 +55,17 @@ describe("v456 public download route", () => {
   const token = "A".repeat(32);
   it("serves the zip and counts the download", async () => {
     const request = (await import("supertest")).default;
-    dbQueryMock.mockResolvedValueOnce({ rows: [{ blob_name: "b", filename: "application-app.zip", expires_at: new Date(Date.now() + 86_400_000).toISOString() }] }).mockResolvedValueOnce({ rows: [] });
+    dbQueryMock.mockImplementation(answerBySql([[/FROM lender_package_links/, { rows: [{ blob_name: "b", filename: "application-app.zip", expires_at: new Date(Date.now() + 86_400_000).toISOString() }] }]]));
     getMock.mockResolvedValue({ buffer: Buffer.from("zipbytes"), contentType: "application/zip" });
     const res = await request(await app()).get(`/api/public/lender-package/${token}`);
     expect(res.status).toBe(200); expect(res.headers["content-disposition"]).toBe('attachment; filename="application-app.zip"');
-    expect(dbQueryMock.mock.calls[1][0]).toContain("download_count = download_count + 1");
+    expect(callsMatching(dbQueryMock, "download_count = download_count + 1")).toHaveLength(1);
   });
   it("rejects expired, unknown, and malformed links", async () => {
     const request = (await import("supertest")).default;
-    dbQueryMock.mockResolvedValueOnce({ rows: [{ blob_name: "b", filename: "a.zip", expires_at: new Date(Date.now() - 1000).toISOString() }] });
+    dbQueryMock.mockImplementation(answerBySql([[/FROM lender_package_links/, { rows: [{ blob_name: "b", filename: "a.zip", expires_at: new Date(Date.now() - 1000).toISOString() }] }]]));
     expect((await request(await app()).get(`/api/public/lender-package/${token}`)).status).toBe(410);
-    dbQueryMock.mockResolvedValueOnce({ rows: [] });
+    dbQueryMock.mockImplementation(answerBySql([[/FROM lender_package_links/, { rows: [] }]]));
     expect((await request(await app()).get(`/api/public/lender-package/${token}`)).status).toBe(404);
     expect((await request(await app()).get(`/api/public/lender-package/bad!token`)).status).toBe(404);
   });

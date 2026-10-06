@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { answerBySql } from "../../__tests__/helpers/answerBySql.js"; // BF_SERVER_SQL_CONTENT_MOCKS_v762
 
 const query = vi.fn();
 
@@ -37,17 +38,20 @@ describe("sendWatchNotification", () => {
   });
 
   it.each(["BadDeviceToken", "Unregistered"])("deletes a %s registration and continues to a valid registration", async (reason) => {
-    query.mockResolvedValueOnce({ rows: [
-      { id: "bad", token_ciphertext: "bad-cipher", environment: "sandbox" },
-      { id: "good", token_ciphertext: "good-cipher", environment: "production" },
-    ] }).mockResolvedValueOnce({ rows: [] });
+    query.mockImplementation(answerBySql([
+      [/FROM watch_push_registrations p/, { rows: [
+        { id: "bad", token_ciphertext: "bad-cipher", environment: "sandbox" },
+        { id: "good", token_ciphertext: "good-cipher", environment: "production" },
+      ] }],
+      [/DELETE FROM watch_push_registrations/, { rows: [] }],
+    ]));
     const send = vi.fn()
       .mockRejectedValueOnce(new WatchApnsError(410, reason, true))
       .mockResolvedValueOnce(undefined);
     configureWatchPushProvider({ send });
     expect(await sendWatchNotification(input, deps())).toBe(1);
     expect(send).toHaveBeenCalledTimes(2);
-    expect(query).toHaveBeenNthCalledWith(2, "DELETE FROM watch_push_registrations WHERE id=$1", ["bad"]);
+    expect(query).toHaveBeenCalledWith("DELETE FROM watch_push_registrations WHERE id=$1", ["bad"]);
   });
 
   it.each([

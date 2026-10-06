@@ -1,5 +1,6 @@
 // BF_SERVER_NAME_PARTS_v265
 import { describe, expect, it, vi } from "vitest";
+import { answerBySql, callsMatching } from "../../../__tests__/helpers/answerBySql.js"; // BF_SERVER_SQL_CONTENT_MOCKS_v762
 import fs from "node:fs";
 import { loadNamingContext, suggestedNameParts } from "../documentNaming.js";
 
@@ -13,9 +14,10 @@ describe("name parts for the Accept box", () => {
       .toEqual({ businessName: null, documentType: "Bank Statement", period: null, extension: ".pdf" });
   });
   it("is returned with the naming context", async () => {
-    const query = vi.fn()
-      .mockResolvedValueOnce({ rows: [{ id: "d1", application_id: "a1", filename: "Profit and Loss 4.30.26 (1).pdf", display_name: null, category: "PnL – Interim financials", detected_type: null, detected_confidence: null, business_name: "Voss Events Inc" }] })
-      .mockResolvedValueOnce({ rows: [] });
+    const query = vi.fn(answerBySql([
+      [/FROM documents d/, { rows: [{ id: "d1", application_id: "a1", filename: "Profit and Loss 4.30.26 (1).pdf", display_name: null, category: "PnL – Interim financials", detected_type: null, detected_confidence: null, business_name: "Voss Events Inc" }] }],
+      [/AS name FROM documents/, { rows: [] }],
+    ]));
     const ctx = await loadNamingContext("d1", query as any);
     expect(ctx?.parts).toEqual({ businessName: "Voss Events Inc", documentType: "Profit and Loss", period: "2026-04-30", extension: ".pdf" });
   });

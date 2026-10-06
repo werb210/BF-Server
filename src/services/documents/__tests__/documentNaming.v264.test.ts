@@ -1,5 +1,6 @@
 // BF_SERVER_RENAME_ON_ACCEPT_v264
 import { describe, expect, it, vi } from "vitest";
+import { answerBySql, callsMatching } from "../../../__tests__/helpers/answerBySql.js"; // BF_SERVER_SQL_CONTENT_MOCKS_v762
 import fs from "node:fs";
 import { loadNamingContext, periodFromFilename, sanitizeDisplayName, suggestDocumentName, uniqueDisplayName } from "../documentNaming.js";
 
@@ -41,13 +42,14 @@ describe("names staff type", () => {
 
 describe("context from the database", () => {
   it("uses a confident OCR type and excludes the document itself from the uniqueness check", async () => {
-    const query = vi.fn()
-      .mockResolvedValueOnce({ rows: [{ id: "d1", application_id: "a1", filename: "2024 Voss_Events_Inc (Updated 9.13.25).pdf", display_name: null, category: "3 years accountant prepared financials", detected_type: "tax_returns", detected_confidence: 0.9, business_name: biz }] })
-      .mockResolvedValueOnce({ rows: [{ name: "Voss Events Inc - Tax Return - 2025-09-13.pdf" }] });
+    const query = vi.fn(answerBySql([
+      [/FROM documents d/, { rows: [{ id: "d1", application_id: "a1", filename: "2024 Voss_Events_Inc (Updated 9.13.25).pdf", display_name: null, category: "3 years accountant prepared financials", detected_type: "tax_returns", detected_confidence: 0.9, business_name: biz }] }],
+      [/AS name FROM documents/, { rows: [{ name: "Voss Events Inc - Tax Return - 2025-09-13.pdf" }] }],
+    ]));
     const ctx = await loadNamingContext("d1", query as any);
     expect(ctx?.suggestedName).toBe("Voss Events Inc - Tax Return - 2025-09-13.pdf");
     expect(ctx?.existingNames).toEqual(["Voss Events Inc - Tax Return - 2025-09-13.pdf"]);
-    expect(String(query.mock.calls[1][0])).toContain("id::text <> ($2)::text");
+    expect(String(callsMatching(query, /AS name FROM documents/)[0]![0])).toContain("id::text <> ($2)::text");
   });
 });
 

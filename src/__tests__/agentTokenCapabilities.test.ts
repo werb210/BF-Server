@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { answerBySql } from "./helpers/answerBySql.js"; // BF_SERVER_SQL_CONTENT_MOCKS_v762
 import express from "express";
 import jwt from "jsonwebtoken";
 import request from "supertest";
@@ -33,9 +34,7 @@ describe("BF_AGENT_AUTH_HYDRATE_v53 agent JWT capability hydration", () => {
   });
 
   it("Maya-style role-only Staff JWT clears application:read gate", async () => {
-    queryMock
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ id: "app-1", silo: null, metadata: {} }] });
+    queryMock.mockImplementation(answerBySql([[/FROM applications/, { rows: [{ id: "app-1", silo: null, metadata: {} }] }]]));
 
     const app = await buildApp();
     const res = await request(app)
