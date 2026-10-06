@@ -220,6 +220,12 @@ router.get("/lender-products/required-docs", async (req, res) => {
     }
   }
 
+  // BF_SERVER_SBA_NO_BANK_STATEMENTS_v763 - the wizard's upload step never asks an SBA applicant for bank statements.
+  if (product_category === "sba") {
+    const { dropBankStatements } = await import("./clientDocumentsNeeded.js");
+    items = dropBankStatements(items as Array<{ document_type?: string; label?: string }>) as typeof items;
+  }
+
   res.status(200).json({
     items: items.sort((a, b) => a.document_type.localeCompare(b.document_type)),
   });
