@@ -23,6 +23,11 @@ export async function sendTransactional(opts: { to: string; subject: string; htm
     subject: opts.subject,
     content: [{ type: "text/html", value: opts.html }],
     tracking_settings: { click_tracking: { enable: false, enable_text: false }, open_tracking: { enable: false }, subscription_tracking: { enable: false } },
+    // BF_SERVER_TRANSACTIONAL_BYPASS_UNSUB_v761 - a marketing unsubscribe must not stop the emails a client needs to
+    // act on (signing requests, fee agreements, document requests) or staff reports. SendGrid's global unsubscribe
+    // list blocked all of them. Bounces, blocks and spam reports still suppress, so dead or hostile addresses stay
+    // protected. Marketing (sendOne) is unchanged and still honours every unsubscribe.
+    mail_settings: { bypass_unsubscribe_management: { enable: true } },
   };
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 30_000);

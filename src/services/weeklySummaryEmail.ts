@@ -4,7 +4,7 @@
 // calls nobody returned, and splits or agreements waiting on someone.
 import { pool } from "../db.js";
 import { logError } from "../observability/logger.js";
-import { sendgridConfigured, sendOne } from "./sendgridService.js";
+import { sendgridConfigured, sendTransactional } from "./sendgridService.js";
 import { commissionRate } from "./googleDataManager.js";
 import { weeklyRecipients, mondayWindow } from "./adsWeeklyEmail.js";
 import { stuckDeals } from "./reports/data.js";
@@ -82,7 +82,7 @@ export async function maybeSendWeeklySummary(now = new Date(), force = false): P
   const { subject, html } = renderSummary(await gatherSummary(), commissionRate());
   let ok = 0;
   for (const to of weeklyRecipients()) {
-    const r = await sendOne({ to, subject, html });
+    const r = await sendTransactional({ to, subject, html }) /* BF_SERVER_TRANSACTIONAL_BYPASS_UNSUB_v761 - a staff report, not marketing */;
     if (r.ok) ok += 1; else logError("weekly_summary_email_failed", { to, status: r.status, error: r.error });
   }
   if (ok === 0) await pool.query("DELETE FROM weekly_summary_reports WHERE week_start = $1", [week]);
