@@ -1,6 +1,7 @@
 // BF_SERVER_BLOCK_v530
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
+import { answerBySql, callsMatching } from "../../../__tests__/helpers/answerBySql.js"; // BF_SERVER_SQL_CONTENT_MOCKS_v762
 
 const query = vi.fn();
 vi.mock("../../../db.js", () => ({ pool: { query: (...a: unknown[]) => query(...a) } }));
@@ -15,16 +16,17 @@ beforeEach(() => { query.mockReset(); sendSms.mockClear(); });
 
 describe("v530 broker file actions", () => {
   it("sets the client's mobile on the draft and the import", async () => {
-    query.mockResolvedValueOnce({ rows: [open] }).mockResolvedValueOnce({ rows: [] }).mockResolvedValue({ rows: [] });
+    query.mockImplementation(answerBySql([[/FROM broker_imports/, { rows: [open] }], [/SELECT id FROM applications/, { rows: [] }]]));
     await expect(setBrokerImportPhone("i1", "(514) 555-0100")).resolves.toEqual({ applicantPhone: "+15145550100" });
-    expect(String(query.mock.calls[2][0])).toContain("'readiness_phone'");
-    expect(query.mock.calls[2][1]).toEqual(["a1", "+15145550100"]);
+    const upd = callsMatching(query, "jsonb_build_object('readiness_phone'");
+    expect(upd).toHaveLength(1);
+    expect(upd[0]![1]).toEqual(["a1", "+15145550100"]);
   });
   it("refuses a bad number, a number another file is waiting on, and a file the client already opened", async () => {
     await expect(setBrokerImportPhone("i1", "555")).rejects.toMatchObject({ code: "bad_phone" });
-    query.mockResolvedValueOnce({ rows: [open] }).mockResolvedValueOnce({ rows: [{ id: "a2" }] });
+    query.mockImplementation(answerBySql([[/FROM broker_imports/, { rows: [open] }], [/SELECT id FROM applications/, { rows: [{ id: "a2" }] }]]));
     await expect(setBrokerImportPhone("i1", "5145550100")).rejects.toMatchObject({ code: "phone_in_use", status: 409 });
-    query.mockResolvedValueOnce({ rows: [{ ...open, status: "claimed", pipeline_state: null }] });
+    query.mockImplementation(answerBySql([[/FROM broker_imports/, { rows: [{ ...open, status: "claimed", pipeline_state: null }] }]]));
     await expect(setBrokerImportPhone("i1", "5145550100")).rejects.toMatchObject({ code: "already_claimed" });
   });
   it("texts the client the sign-in link", async () => {

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { answerBySql } from "../../__tests__/helpers/answerBySql.js"; // BF_SERVER_SQL_CONTENT_MOCKS_v762
 import { createCompany, findOrCreateCompanyByNameAndSilo } from "../companies.js";
 
 describe("companies service", () => {
@@ -17,9 +18,10 @@ describe("companies service", () => {
   });
 
   it("creates company when no existing row", async () => {
-    const query = vi.fn()
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ id: "c2", name: "NewCo", silo: "BF", status: "prospect" }] });
+    const query = vi.fn(answerBySql([
+      [/SELECT \* FROM companies/, { rows: [] }],
+      [/INSERT INTO companies/, { rows: [{ id: "c2", name: "NewCo", silo: "BF", status: "prospect" }] }],
+    ]));
 
     const out = await findOrCreateCompanyByNameAndSilo(
       { query } as any,

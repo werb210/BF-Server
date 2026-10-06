@@ -3,6 +3,7 @@
 // src/__tests__/crm-cors-telephony.integration.test.ts: drop the .js from the
 // vi.mock spec and call vi.resetModules() in beforeEach so the hoisted db.js
 // mock binds across the dynamic import boundary inside the auth middleware.
+import { answerBySql } from "../../../__tests__/helpers/answerBySql.js"; // BF_SERVER_SQL_CONTENT_MOCKS_v762
 import express from "express";
 import jwt from "jsonwebtoken";
 import request from "supertest";
@@ -50,13 +51,13 @@ describe("BF_BANKING_ANALYSIS_API_v52 GET /api/applications/:id/banking-analysis
   });
 
   it("returns BankingAnalysis shape with bank counts on success", async () => {
-    queueAuthUserLookup();
-    queryMock
-      .mockResolvedValueOnce({ rows: [{ id: "app-1", banking_completed_at: new Date("2026-04-20T12:00:00Z") }] })
-      .mockResolvedValueOnce({ rows: [{ bank_total: "3", bank_completed: "2", any_completed: "2" }] });
-    // BF_SERVER_BLOCK_v576 - the route now also reads banking_analyses and the monthly summaries;
-    // none stored yet, so the analysis is still in progress.
-    queryMock.mockResolvedValue({ rows: [] });
+    // BF_SERVER_BLOCK_v576 - the route also reads banking_analyses and the monthly summaries; none stored yet
+    // (they fall through to empty rows), so the analysis is still in progress.
+    queryMock.mockImplementation(answerBySql([
+      [/FROM users/, { rows: [{ id: USER_ID, email: null, role: "Staff", silo: "BF", silos: ["BF"] }] }],
+      [/SELECT id, banking_completed_at/, { rows: [{ id: "app-1", banking_completed_at: new Date("2026-04-20T12:00:00Z") }] }],
+      [/AS bank_total/, { rows: [{ bank_total: "3", bank_completed: "2", any_completed: "2" }] }],
+    ]));
 
     const a = await buildApp();
     const res = await request(a)

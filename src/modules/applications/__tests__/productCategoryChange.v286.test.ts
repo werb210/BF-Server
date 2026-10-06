@@ -1,5 +1,6 @@
 // BF_SERVER_CHANGE_PRODUCT_CATEGORY_v286
 import { describe, expect, it, vi } from "vitest";
+import { answerBySql, callsMatching } from "../../../__tests__/helpers/answerBySql.js"; // BF_SERVER_SQL_CONTENT_MOCKS_v762
 import fs from "node:fs";
 import { changeProductCategory, normalizeProductCategory, PRODUCT_CATEGORIES } from "../productCategoryChange.js";
 
@@ -14,12 +15,13 @@ describe("product category values", () => {
 
 describe("changing the category", () => {
   it("sets the column, clears multi-category overrides, keeps history and marks matches stale", async () => {
-    const query = vi.fn()
-      .mockResolvedValueOnce({ rows: [{ product_category: "MERCHANT_CASH_ADVANCE" }] })
-      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+    const query = vi.fn(answerBySql([
+      [/SELECT product_category FROM applications/, { rows: [{ product_category: "MERCHANT_CASH_ADVANCE" }] }],
+      [/UPDATE applications/, { rows: [], rowCount: 1 }],
+    ]));
     const result = await changeProductCategory(query, "app-1", "TERM_LOAN", "user-1");
     expect(result).toEqual({ from: "MERCHANT_CASH_ADVANCE", to: "TERM_LOAN" });
-    const [sql, params] = query.mock.calls[1];
+    const [sql, params] = callsMatching(query, /UPDATE applications/)[0]!;
     expect(sql).toContain("SET product_category = $2");
     expect(sql).toContain("- 'match_categories'");
     expect(sql).toContain("lender_matches_stale = true");

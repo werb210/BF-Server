@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { answerBySql } from "../../__tests__/helpers/answerBySql.js"; // BF_SERVER_SQL_CONTENT_MOCKS_v762
 
 const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }));
 
@@ -44,8 +45,7 @@ describe("POST /api/maya/escalations", () => {
   }
 
   it("persists a new escalation and returns 201 with id", async () => {
-    queryMock.mockResolvedValueOnce({ rows: [] }); // dedupe lookup → none
-    queryMock.mockResolvedValueOnce({ rows: [] }); // insert
+    queryMock.mockImplementation(answerBySql([[/SELECT id FROM maya_escalations/, { rows: [] }], [/INSERT INTO maya_escalations/, { rows: [], rowCount: 1 }]]));
 
     const app = await buildApp();
     const res = await request(app)
@@ -82,8 +82,7 @@ describe("POST /api/maya/escalations", () => {
   });
 
   it("ignores a non-uuid applicationId rather than rejecting", async () => {
-    queryMock.mockResolvedValueOnce({ rows: [] });
-    queryMock.mockResolvedValueOnce({ rows: [] });
+    queryMock.mockImplementation(answerBySql([[/SELECT id FROM maya_escalations/, { rows: [] }], [/INSERT INTO maya_escalations/, { rows: [], rowCount: 1 }]]));
 
     const app = await buildApp();
     const res = await request(app)

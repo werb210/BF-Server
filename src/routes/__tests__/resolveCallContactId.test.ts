@@ -1,5 +1,6 @@
 // BF_SERVER_BLOCK_CALL_CONTACT_RESOLVE_v1 — resolution order regression test.
 import { describe, expect, it, vi } from "vitest";
+import { answerBySql } from "../../__tests__/helpers/answerBySql.js"; // BF_SERVER_SQL_CONTENT_MOCKS_v762
 import { resolveCallContactId } from "../voiceCalls.js";
 
 const base = { contactId: null, applicationId: null, toPstn: "", silo: "BF" };
@@ -15,9 +16,10 @@ describe("resolveCallContactId", () => {
     expect(await resolveCallContactId(q as any, { ...base, applicationId: "a1" })).toBe("c2");
   });
   it("falls back to phone match when no contact/app contact", async () => {
-    const q = vi.fn()
-      .mockResolvedValueOnce({ rows: [{ crm_contact_id: null }] })
-      .mockResolvedValueOnce({ rows: [{ id: "c3" }] });
+    const q = vi.fn(answerBySql([
+      [/SELECT crm_contact_id FROM applications/, { rows: [{ crm_contact_id: null }] }],
+      [/SELECT id FROM contacts/, { rows: [{ id: "c3" }] }],
+    ]));
     expect(await resolveCallContactId(q as any, { ...base, applicationId: "a1", toPstn: "+16475326400" })).toBe("c3");
   });
   it("returns null when nothing resolves (no auto-create)", async () => {

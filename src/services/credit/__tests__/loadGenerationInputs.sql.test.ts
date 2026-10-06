@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { answerBySql, callsMatching } from "../../../__tests__/helpers/answerBySql.js"; // BF_SERVER_SQL_CONTENT_MOCKS_v762
 
 const runQueryMock = vi.fn();
 
@@ -13,23 +14,24 @@ describe("BF_CREDIT_SCHEMA_FIX_v52 loadGenerationInputs SQL shape", () => {
   });
 
   it("queries signed_category and document_type, never bare 'category'", async () => {
-    runQueryMock
-      .mockResolvedValueOnce({ rows: [{
+    runQueryMock.mockImplementation(answerBySql([
+      [/AS analyzed/, { rows: [{ analyzed: "0" }] }],
+      [/COALESCE\(signed_category, document_type, 'unknown'\)/, { rows: [
+        { category: "Bank Statements", cnt: "3" },
+        { category: "general",         cnt: "2" },
+      ] }],
+      [/FROM applications/, { rows: [{
         id: "app-1", name: "X", requested_amount: 1000, industry: null,
         product_category: null, product_type: null, pipeline_state: null,
         metadata: {},
-      }] })
-      .mockResolvedValueOnce({ rows: [
-        { category: "Bank Statements", cnt: "3" },
-        { category: "general",         cnt: "2" },
-      ] })
-      .mockResolvedValueOnce({ rows: [{ analyzed: "0" }] });
+      }] }],
+    ]));
 
     const { loadGenerationInputs } = await import("../generateCreditSummary.js");
     const inputs = await loadGenerationInputs("app-1");
 
     expect(runQueryMock).toHaveBeenCalledTimes(3);
-    const docCallSql = String(runQueryMock.mock.calls[1][0]);
+    const docCallSql = String(callsMatching(runQueryMock, "COALESCE(signed_category, document_type, 'unknown')")[0]![0]);
     expect(docCallSql).toContain("signed_category");
     expect(docCallSql).toContain("document_type");
     expect(docCallSql).toContain("COALESCE(signed_category, document_type, 'unknown')");
