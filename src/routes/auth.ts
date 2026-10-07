@@ -20,6 +20,21 @@ import { isReviewPhone, reviewCodeMatches } from "../services/reviewLogin.js"; /
 import microsoftRoutes from "./authMicrosoft.js";
 
 import { checkTextable, NOT_TEXTABLE_MESSAGES } from "../lib/phoneLineType.js"; // BF_SERVER_PHONE_LINE_TYPE_v771
+import { checkOtpSend, OTP_GUARD_MESSAGES, OTP_GUARD_STATUS } from "../lib/otpGuard.js"; // BF_SERVER_OTP_ABUSE_GUARD_v772
+
+// BF_SERVER_OTP_ABUSE_GUARD_v772 - staff numbers skip the per-number and hourly caps, so staff can
+// still sign in while the circuit breaker is holding off an attack.
+const OTP_TRUSTED_ROLES: ReadonlySet<string> = new Set([ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING]);
+async function isStaffPhone(phone: string): Promise<boolean> {
+  try {
+    const user = await findAuthUserByPhone(phone);
+    const role = user ? normalizeRole(String(user.role ?? "")) : null;
+    return Boolean(role && OTP_TRUSTED_ROLES.has(role));
+  } catch (err: unknown) {
+    console.error("[otp-guard] staff lookup failed", err instanceof Error ? err.message : String(err));
+    return false;
+  }
+}
 const router = Router();
 
 const isValidPhone = (phone: unknown): phone is string => typeof phone === "string" && phone.trim().length > 0;
@@ -133,6 +148,16 @@ router.post("/otp/start", otpStartLimiter, async (req, res) => {
       void import("../services/reviewLogin.js").then((m) => m.quarantineReviewRecords((sql, params) => pool.query(sql, params as any[])))
         .catch((e: unknown) => console.warn("[store-review] quarantine failed", e instanceof Error ? e.message : String(e)));
       return res.status(200).json({ status: "ok", data: { sent: true } });
+    }
+
+    // BF_SERVER_OTP_ABUSE_GUARD_v772 - Canada/US only, per-number and hourly caps, before any paid Twilio call.
+    let guard = checkOtpSend(phone);
+    if (!guard.ok && guard.reason !== "unsupported_country" && (await isStaffPhone(phone))) {
+      guard = checkOtpSend(phone, { trusted: true });
+    }
+    if (!guard.ok) {
+      if (OTP_GUARD_STATUS[guard.reason] === 429) res.setHeader("Retry-After", guard.reason === "otp_busy" ? "300" : "3600");
+      return res.status(OTP_GUARD_STATUS[guard.reason]).json({ error: guard.reason, message: OTP_GUARD_MESSAGES[guard.reason] });
     }
 
     if (process.env.NODE_ENV !== "test" && !process.env.TWILIO_VERIFY_SERVICE_SID) {
