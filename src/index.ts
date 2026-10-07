@@ -323,6 +323,11 @@ export async function start(): Promise<void> {
     try { const w = startAdConversionWorker(pool); workerStops.push(w.stop); console.log("[startup] ad-conversion worker started"); }
     catch (err) { console.error("[startup] ad-conversion worker failed to start:", err); }
 
+    // BF_SERVER_TODO_RECONCILE_v773 - every task (whatever created it) to and from Microsoft To Do.
+    const { startTodoReconcileWorker } = await import("./workers/todoReconcileWorker.js");
+    try { const w = startTodoReconcileWorker(pool); workerStops.push(w.stop); console.log("[startup] todo-reconcile worker started"); }
+    catch (err) { console.error("[startup] todo-reconcile worker failed to start:", err); }
+
     // BF_SERVER_TASKS_M6_v1 - task reminders + recurrence catch-up + daily digest.
     const { startTaskRemindersWorker } = await import("./workers/taskRemindersWorker.js");
     try { const w = startTaskRemindersWorker(pool); workerStops.push(w.stop); console.log("[startup] task-reminders worker started"); }
