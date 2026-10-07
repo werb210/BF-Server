@@ -112,41 +112,14 @@ async function withAdRules(report: Record<string, unknown>, summary: string) {
   return { ...report, ad_rules: ADS_RULES, summary };
 }
 
-route("/staff/ads-story", "ads.story", async (req) => {
-  const { storyReport, storyBy, windowDays } = await import("./marketing/adsStory.js");
-  const days = windowDays(req.body?.days);
-  const by = storyBy(req.body?.by);
-  return withAdRules(await storyReport(days, by), `Ad-to-funded story for ${days} days, grouped by ${by}.`);
-});
-
-route("/staff/ads-visitors", "ads.visitors", async (req) => {
-  const { visitorsReport, windowDays } = await import("./marketing/adsStory.js");
-  const days = windowDays(req.body?.days, 30);
-  const filter = String(req.body?.filter ?? "all");
-  return withAdRules(await visitorsReport(days, filter), `Visitor report for ${days} days (${filter}).`);
-});
-
-route("/staff/ads-dropoff", "ads.dropoff", async (req) => {
-  const { dropoffReport, windowDays } = await import("./marketing/adsStory.js");
-  const days = windowDays(req.body?.days);
-  return withAdRules(await dropoffReport(days), `Application drop-off report for ${days} days.`);
-});
-
-route("/staff/ads-health", "ads.health", async (req) => {
-  const { getGoogleHealth } = await import("../services/googleHealth.js");
-  return withAdRules(await getGoogleHealth(req.body?.refresh === true) as unknown as Record<string, unknown>, "Google connection health report.");
-});
-
+// BF_SERVER_MAYA_ADS_NO_SHADOW_v769 - ads-story, ads-visitors, ads-dropoff, ads-health and ads-audiences were registered
+// here AND in mayaStaffAdsInsights.ts (v712). This router mounts first, so the newer v712 versions (clear summaries,
+// visitors capped at 50 rows for Maya) never answered. They now live only in mayaStaffAdsInsights.ts.
 route("/staff/ads-ga4", "ads.ga4", async (req) => {
   const { ga4Configured, runGa4Report } = await import("../services/ga4Service.js");
   const days = Math.min(365, Math.max(1, Number(req.body?.days) || 30));
   const report = ga4Configured() ? await runGa4Report(days) : { configured: false };
   return withAdRules((report ?? { configured: false }) as Record<string, unknown>, `GA4 report for ${days} days.`);
-});
-
-route("/staff/ads-audiences", "ads.audiences", async () => {
-  const { customerMatchConfigured, listStatus } = await import("../services/customerMatchLists.js");
-  return withAdRules({ configured: customerMatchConfigured(), lists: await listStatus() }, "Google Ads audience list status.");
 });
 
 route("/staff/ads-negatives/add", "ads.negatives.add", async (req) => {
