@@ -35,6 +35,11 @@ export function smsFromFor<T extends string | undefined | null>(to: unknown, def
 // (send from smsFromFor). Marketing and bulk sends do not use this.
 export function smsSenderFor(to: unknown, defaultFrom: string | undefined | null): { messagingServiceSid: string } | { from: string | undefined | null } {
   const sid = String(process.env.TWILIO_RCS_MESSAGING_SERVICE_SID ?? "").trim();
-  if (/^MG[0-9a-fA-F]{32}$/.test(sid)) return { messagingServiceSid: sid };
+  // BF_SERVER_SHORT_LINKS_v771 - with link shortening set up on the Messaging Service (a branded domain such as
+  // go.boreal.financial), TWILIO_SHORTEN_LINKS=on asks Twilio to shorten and click-track links in the text.
+  if (/^MG[0-9a-fA-F]{32}$/.test(sid)) {
+    const shorten = String(process.env.TWILIO_SHORTEN_LINKS ?? "").trim().toLowerCase() === "on";
+    return shorten ? { messagingServiceSid: sid, shortenUrls: true } as { messagingServiceSid: string } : { messagingServiceSid: sid };
+  }
   return { from: smsFromFor(to, defaultFrom) };
 }

@@ -19,6 +19,7 @@ import { notifyAllStaff } from "../services/notifications/notifyAllStaff.js";
 import { isReviewPhone, reviewCodeMatches } from "../services/reviewLogin.js"; // BF_SERVER_REVIEW_LOGIN_v710
 import microsoftRoutes from "./authMicrosoft.js";
 
+import { checkTextable, NOT_TEXTABLE_MESSAGES } from "../lib/phoneLineType.js"; // BF_SERVER_PHONE_LINE_TYPE_v771
 const router = Router();
 
 const isValidPhone = (phone: unknown): phone is string => typeof phone === "string" && phone.trim().length > 0;
@@ -141,6 +142,12 @@ router.post("/otp/start", otpStartLimiter, async (req, res) => {
     const serviceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
     if (!serviceSid) {
       throw new Error("Missing Twilio Verify SID");
+    }
+
+    // BF_SERVER_PHONE_LINE_TYPE_v771 - landlines and numbers that do not exist get a clear message, not a code that never arrives.
+    const textable = await checkTextable(phone);
+    if (!textable.ok) {
+      return res.status(400).json({ error: textable.reason === "landline" ? "landline_number" : "invalid_number", message: NOT_TEXTABLE_MESSAGES[textable.reason] });
     }
 
     const client = getTwilioClient();
