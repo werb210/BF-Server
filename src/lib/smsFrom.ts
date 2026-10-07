@@ -27,3 +27,14 @@ export function smsFromFor<T extends string | undefined | null>(to: unknown, def
   if (!configured || configured.toLowerCase() === "off") return defaultFrom;
   return configured;
 }
+
+// BF_SERVER_RCS_SENDER_v770 - branded texting (RCS). When TWILIO_RCS_MESSAGING_SERVICE_SID is set, transactional texts
+// go through that Twilio Messaging Service. With an approved RCS sender in the service, phones that support RCS get
+// the text from "Boreal Financial" with the logo and a verified badge; every other phone gets an ordinary SMS from the
+// service's number pool (put the 866 toll-free number and the local number in the pool). Unset = unchanged behaviour
+// (send from smsFromFor). Marketing and bulk sends do not use this.
+export function smsSenderFor(to: unknown, defaultFrom: string | undefined | null): { messagingServiceSid: string } | { from: string | undefined | null } {
+  const sid = String(process.env.TWILIO_RCS_MESSAGING_SERVICE_SID ?? "").trim();
+  if (/^MG[0-9a-fA-F]{32}$/.test(sid)) return { messagingServiceSid: sid };
+  return { from: smsFromFor(to, defaultFrom) };
+}

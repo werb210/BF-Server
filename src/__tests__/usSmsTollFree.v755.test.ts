@@ -31,7 +31,7 @@ describe("texts to US numbers go out from the toll-free line", () => {
   });
   it("is wired into the transactional senders and kept out of marketing and bulk sends", () => {
     for (const f of ["src/modules/notifications/sms.service.ts", "src/services/smsService.ts", "src/lib/twilio.ts", "src/routes/communications.ts", "src/routes/auth/otp.ts", "src/routes/portal.ts"]) {
-      expect(readFileSync(f, "utf8"), f).toContain("smsFromFor(");
+      expect(readFileSync(f, "utf8"), f).toMatch(/sms(From|Sender)For\(/); // BF_SERVER_RCS_SENDER_v770 - smsSenderFor wraps smsFromFor
     }
     expect(readFileSync("src/services/marketingSms.ts", "utf8")).not.toContain("smsFromFor(");
     expect(readFileSync("src/routes/communications.ts", "utf8")).toContain("const msg = await client.messages.create({ body: String(mergedBody), from, to });");
