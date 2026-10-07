@@ -19,6 +19,12 @@ export const REPORTS: ReportDef[] = [
   { key: "stuck_deals", title: "Stuck deals", silo: "BF", group: "operations", size: "full", source: "reports", description: "Open files and how many days each has sat in its current stage." },
   { key: "lender_scorecard", title: "Lender scorecard", silo: "BF", group: "operations", size: "full", source: "reports", description: "Files sent, offers, funded and days to an offer, per lender." },
   { key: "speed_to_lead", title: "Speed to lead", silo: "BF", group: "operations", size: "half", source: "reports", description: "Time from a submitted application to the first call, per staff member." },
+  // BF_SERVER_REPORTS_BATCH5_v776
+  { key: "deal_velocity", title: "Deal velocity", silo: "BF", group: "operations", size: "full", source: "reports", description: "Median days from start to submitted, to first offer and to funded, by product." },
+  { key: "win_rate", title: "Won vs lost", silo: "BF", group: "operations", size: "full", source: "reports", description: "Submitted files that funded, were lost or are still open - by month and product." },
+  { key: "call_outcomes", title: "Call outcomes", silo: "BF", group: "operations", size: "half", source: "reports", description: "Outbound calls by result, per person (staff see their own)." },
+  { key: "client_reply_time", title: "Client reply time", silo: "BF", group: "operations", size: "full", source: "reports", description: "How fast staff answer clients, and who is waiting for a reply right now." },
+  { key: "commission_receivable", title: "Commission receivable", silo: "BF", group: "money", size: "full", source: "reports", description: "Commission lenders owe Boreal on funded files, by age; mark it received." },
   { key: "commission_by_month", title: "Commission by month", silo: "BF", group: "money", size: "half", source: "reports", description: "Funded amount and estimated commission per month." },
   // BF_SERVER_REPORTS_BATCH4_v722
   { key: "decline_reasons", title: "Decline reasons", silo: "BF", group: "operations", size: "full", source: "reports", description: "Why lenders pass and files are rejected, from the reasons staff record." },

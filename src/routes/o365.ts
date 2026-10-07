@@ -964,6 +964,60 @@ router.get("/contacts/:id/folder/files", safeHandler(async (req: any, res: any) 
   res.json({ hasFolder: true, url: shareUrl, files: (j.value ?? []).map(mapDriveItem) });
 }));
 
+// BF_SERVER_STAFF_LIBRARY_v776 - one company-wide "Boreal Staff Library" OneDrive folder (with
+// "Lender Forms" and "Read This"), shared with everyone in the organization. It lives in the
+// OneDrive of whoever creates it; any staff member can browse it and share its files in Team chat.
+const LIBRARY_NAME = "Boreal Staff Library";
+const LIBRARY_SUBFOLDERS = ["Lender Forms", "Read This"];
+function shareId(url: string): string {
+  return "u!" + Buffer.from(url).toString("base64").replace(/=+$/, "").replace(/\//g, "_").replace(/\+/g, "-");
+}
+async function libraryRow(): Promise<{ drive_id: string | null; item_id: string; share_url: string } | null> {
+  const r = await pool.query("SELECT drive_id, item_id, share_url FROM staff_library WHERE id = 1");
+  return r.rows[0] ?? null;
+}
+router.post("/library/ensure", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const existing = await libraryRow();
+  if (existing) return res.json({ ok: true, created: false, url: existing.share_url });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const json = { "Content-Type": "application/json" };
+  let r = await graph.fetch("/me/drive/root/children", { method: "POST", headers: json, body: JSON.stringify({ name: LIBRARY_NAME, folder: {}, "@microsoft.graph.conflictBehavior": "fail" }) });
+  if (r.status === 409) r = await graph.fetch("/me/drive/root:/" + encodeURIComponent(LIBRARY_NAME));
+  if (!r.ok) { const d = (await r.text()).slice(0, 400); return res.status(r.status === 401 || r.status === 403 ? 412 : 502).json({ error: "library_create_failed", detail: d }); }
+  const folder: any = await r.json();
+  for (const name of LIBRARY_SUBFOLDERS) {
+    const s = await graph.fetch("/me/drive/items/" + encodeURIComponent(folder.id) + "/children", { method: "POST", headers: json, body: JSON.stringify({ name, folder: {}, "@microsoft.graph.conflictBehavior": "fail" }) });
+    if (!s.ok && s.status !== 409) console.warn("[staff-library] subfolder failed", { name, status: s.status });
+  }
+  const lr = await graph.fetch("/me/drive/items/" + encodeURIComponent(folder.id) + "/createLink", { method: "POST", headers: json, body: JSON.stringify({ type: "edit", scope: "organization" }) });
+  if (!lr.ok) { const d = (await lr.text()).slice(0, 400); return res.status(502).json({ error: "library_link_failed", detail: d }); }
+  const url: string = ((await lr.json()) as any)?.link?.webUrl;
+  await pool.query(
+    "INSERT INTO staff_library (id, drive_id, item_id, share_url, created_by) VALUES (1, $1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET drive_id = EXCLUDED.drive_id, item_id = EXCLUDED.item_id, share_url = EXCLUDED.share_url, created_by = EXCLUDED.created_by",
+    [folder.parentReference?.driveId ?? null, folder.id, url, String(userId)],
+  );
+  res.json({ ok: true, created: true, url });
+}));
+// GET /api/o365/library?item=<folder id>  - the library's files (or a sub-folder's).
+router.get("/library", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const lib = await libraryRow();
+  if (!lib) return res.json({ configured: false, items: [] });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected", url: lib.share_url });
+  const item = typeof req.query?.item === "string" && /^[A-Za-z0-9!_.-]{1,200}$/.test(req.query.item) ? req.query.item : null;
+  const sid = shareId(lib.share_url);
+  let r = await graph.fetch(item ? "/shares/" + sid + "/items/" + encodeURIComponent(item) + "/children?$top=200" : "/shares/" + sid + "/driveItem/children?$top=200");
+  if (!r.ok && item && lib.drive_id) r = await graph.fetch("/drives/" + encodeURIComponent(lib.drive_id) + "/items/" + encodeURIComponent(item) + "/children?$top=200");
+  if (!r.ok) { const d = (await r.text()).slice(0, 400); return res.status(r.status === 401 || r.status === 403 ? 412 : 502).json({ error: "library_list_failed", detail: d, url: lib.share_url }); }
+  const j: any = await r.json();
+  res.json({ configured: true, url: lib.share_url, items: (j.value ?? []).map(mapDriveItem).sort((a: any, b: any) => Number(b.isFolder) - Number(a.isFolder) || String(a.name).localeCompare(String(b.name))) });
+}));
+
 router.post("/contacts/pull", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId;
   if (!userId) return res.status(401).json({ error: "unauthenticated" });

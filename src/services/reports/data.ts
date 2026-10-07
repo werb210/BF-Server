@@ -102,4 +102,10 @@ export const DATA: Record<string, (q: Record<string, unknown>, ctx: B2.Ctx) => P
   lender_scorecard: (q) => lenderScorecard(q.days),
   speed_to_lead: (q) => speedToLead(q.days),
   commission_by_month: (q) => commissionByMonth(q.days),
+  // BF_SERVER_REPORTS_BATCH5_v776
+  deal_velocity: async (q) => (await import("./data5.js")).dealVelocity(q),
+  win_rate: async (q) => (await import("./data5.js")).winRate(q),
+  call_outcomes: async (q, ctx) => (await import("./data5.js")).callOutcomes(q, ctx),
+  client_reply_time: async (q) => (await import("./data5.js")).clientReplyTime(q),
+  commission_receivable: async () => (await import("./data5.js")).commissionReceivable(),
 };

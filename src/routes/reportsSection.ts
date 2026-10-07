@@ -75,4 +75,24 @@ router.get("/data/:key", requireAuth, safeHandler(async (req: any, res: any) => 
   if (!canSee(req.user?.role, def.group)) { res.status(403).json({ error: "not_allowed" }); return; }
   res.json(await run(req.query ?? {}, { role: normalizeRole(req.user?.role), userId: uid(req) })); // BF_SERVER_REPORTS_BATCH2_v719
 }));
+// BF_SERVER_REPORTS_BATCH5_v776 - record (or clear) commission received from the lender. Admin only.
+// POST /api/reports/commission-received  { applicationId, amount?, receivedOn?: "YYYY-MM-DD", clear?: true }
+router.post("/commission-received", requireAuth, safeHandler(async (req: any, res: any) => {
+  if (normalizeRole(req.user?.role) !== "Admin") { res.status(403).json({ error: "admin_only" }); return; }
+  const appId = String(req.body?.applicationId ?? "").trim();
+  if (!appId) { res.status(400).json({ error: "application_id_required" }); return; }
+  let r;
+  if (req.body?.clear === true) {
+    r = await pool.query("UPDATE applications SET commission_received_at = NULL, commission_received_amount = NULL WHERE id::text = $1 AND silo = 'BF'", [appId]);
+  } else {
+    const raw = req.body?.amount;
+    const amount = raw === null || raw === undefined || String(raw).trim() === "" ? null : Number(raw);
+    if (amount !== null && !(Number.isFinite(amount) && amount >= 0)) { res.status(400).json({ error: "invalid_amount", message: "The amount must be a positive number." }); return; }
+    const day = String(req.body?.receivedOn ?? "").trim();
+    if (day && !/^\d{4}-\d{2}-\d{2}$/.test(day)) { res.status(400).json({ error: "invalid_date", message: "Use a real date." }); return; }
+    r = await pool.query("UPDATE applications SET commission_received_at = COALESCE($2::date::timestamptz, now()), commission_received_amount = $3 WHERE id::text = $1 AND silo = 'BF'", [appId, day || null, amount]);
+  }
+  if (!r.rowCount) { res.status(404).json({ error: "not_found" }); return; }
+  res.json({ ok: true });
+}));
 export default router;

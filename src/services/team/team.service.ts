@@ -172,7 +172,8 @@ export async function listMessages(channelId: string, opts: { before?: string; l
     `SELECT id, channel_id, sender_id, to_jsonb(team_messages)->>'bot' AS bot, -- BF_SERVER_TEAM_PHASE_C_v671
             CASE WHEN deleted_at IS NOT NULL THEN '' ELSE body END AS body,
             created_at, edited_at, deleted_at, reply_to_id, mentions, pinned_at,
-            CASE WHEN deleted_at IS NOT NULL THEN NULL ELSE attachments END AS attachments
+            CASE WHEN deleted_at IS NOT NULL THEN NULL ELSE attachments END AS attachments,
+            COALESCE((to_jsonb(team_messages)->>'read_this')::boolean, false) AS read_this -- BF_SERVER_READ_THIS_v776
        FROM team_messages
       WHERE channel_id = $1 AND (to_jsonb(team_messages)->>'thread_root_id') IS NULL ${beforeClause}
       ORDER BY created_at DESC
@@ -211,6 +212,13 @@ export async function listMessages(channelId: string, opts: { before?: string; l
   // BF_SERVER_TEAM_PHASE_B_v658 - reply count, last reply and participants for each thread root.
   const threads = await threadSummaries(ids);
   for (const m of rows) (m as any).thread = threads.get(m.id) ?? null;
+  // BF_SERVER_READ_THIS_v776 - who has read each "Read this" message.
+  const readThisIds = rows.filter((m) => (m as any).read_this).map((m) => m.id);
+  if (readThisIds.length) {
+    const { readsFor } = await import("./readThis.js");
+    const reads = await readsFor(readThisIds);
+    for (const m of rows) if ((m as any).read_this) (m as any).read_by = reads.get(m.id) ?? [];
+  }
   return rows;
 }
 
