@@ -141,6 +141,7 @@ export function createApp() {
   // large bodies; everything else keeps the 10 MB limit below. express.json skips
   // a body that is already parsed, so the global parser leaves this one alone.
   app.use("/api/o365/mail/send", express.json({ limit: "50mb" }));
+  app.use("/api/o365/library/upload", express.json({ limit: "40mb" })); // BF_SERVER_LIBRARY_UPLOAD_v777 - files up to 25 MB (base64)
   app.use(express.json({ limit: "10mb", verify: (req, _res, buf) => { (req as unknown as { rawBody?: Buffer }).rawBody = buf; } }));
   app.use(cookieParser());
 

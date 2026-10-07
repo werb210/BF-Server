@@ -1018,6 +1018,55 @@ router.get("/library", safeHandler(async (req: any, res: any) => {
   res.json({ configured: true, url: lib.share_url, items: (j.value ?? []).map(mapDriveItem).sort((a: any, b: any) => Number(b.isFolder) - Number(a.isFolder) || String(a.name).localeCompare(String(b.name))) });
 }));
 
+// BF_SERVER_LIBRARY_UPLOAD_v777 - upload files and make folders in the Staff Library from the portal's Library page.
+// The caller's own Microsoft sign-in is used. Redeeming the organization link first gives a staff member who is not
+// the library's owner lasting access, so they can write into it.
+export const LIBRARY_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+export function cleanLibraryName(raw: unknown): string {
+  return String(raw ?? "").replace(/[\\/:*?"<>|#%]/g, " ").replace(/[\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().replace(/[. ]+$/g, "").slice(0, 150);
+}
+async function libraryTarget(graph: any, lib: { drive_id: string | null; item_id: string; share_url: string }, folderId: string | null) {
+  await graph.fetch("/shares/" + shareId(lib.share_url) + "/driveItem?$select=id", { headers: { Prefer: "redeemSharingLink" } }).catch((err: unknown) => console.warn("[staff-library] redeem failed", err instanceof Error ? err.message : String(err)));
+  return { driveId: lib.drive_id, parentId: folderId && /^[A-Za-z0-9!_.-]{1,200}$/.test(folderId) ? folderId : lib.item_id };
+}
+router.post("/library/upload", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const lib = await libraryRow();
+  if (!lib || !lib.drive_id) return res.status(409).json({ error: "library_missing", message: "Create the Staff Library first." });
+  const name = cleanLibraryName(req.body?.name);
+  if (!name) return res.status(400).json({ error: "name_required", message: "The file needs a name." });
+  const b64 = String(req.body?.contentBase64 ?? "").replace(/^data:[^,]*,/, "");
+  const content = Buffer.from(b64, "base64");
+  if (!content.length) return res.status(400).json({ error: "empty_file", message: "The file is empty." });
+  if (content.length > LIBRARY_MAX_UPLOAD_BYTES) return res.status(413).json({ error: "too_large", message: "Files up to 25 MB. Upload bigger files in OneDrive." });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const t = await libraryTarget(graph, lib, typeof req.body?.folderId === "string" ? req.body.folderId : null);
+  const base = "/drives/" + encodeURIComponent(t.driveId as string) + "/items/" + encodeURIComponent(t.parentId) + ":/" + encodeURIComponent(name) + ":";
+  const s = await graph.fetch(base + "/createUploadSession", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "rename" } }) });
+  if (!s.ok) { const d = (await s.text()).slice(0, 400); return res.status(s.status === 401 || s.status === 403 ? 412 : 502).json({ error: "upload_failed", detail: d }); }
+  const uploadUrl: string = ((await s.json()) as any)?.uploadUrl;
+  const put = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Length": String(content.length), "Content-Range": "bytes 0-" + (content.length - 1) + "/" + content.length }, body: content });
+  if (!put.ok) { const d = (await put.text()).slice(0, 400); return res.status(502).json({ error: "upload_failed", detail: d }); }
+  const item: any = await put.json();
+  res.json({ ok: true, item: mapDriveItem(item) });
+}));
+router.post("/library/folder", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const lib = await libraryRow();
+  if (!lib || !lib.drive_id) return res.status(409).json({ error: "library_missing", message: "Create the Staff Library first." });
+  const name = cleanLibraryName(req.body?.name);
+  if (!name) return res.status(400).json({ error: "name_required", message: "Give the folder a name." });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const t = await libraryTarget(graph, lib, typeof req.body?.folderId === "string" ? req.body.folderId : null);
+  const r = await graph.fetch("/drives/" + encodeURIComponent(t.driveId as string) + "/items/" + encodeURIComponent(t.parentId) + "/children", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, folder: {}, "@microsoft.graph.conflictBehavior": "rename" }) });
+  if (!r.ok) { const d = (await r.text()).slice(0, 400); return res.status(r.status === 401 || r.status === 403 ? 412 : 502).json({ error: "folder_failed", detail: d }); }
+  res.json({ ok: true, item: mapDriveItem(await r.json()) });
+}));
+
 router.post("/contacts/pull", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId;
   if (!userId) return res.status(401).json({ error: "unauthenticated" });
