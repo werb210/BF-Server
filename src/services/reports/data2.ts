@@ -38,11 +38,15 @@ export async function revenueForecast() {
 
 export async function mediaFeeAgreements() {
   const { rows } = await pool.query(`SELECT m.application_id, COALESCE(NULLIF(a.business_legal_name,''), a.name) AS name, m.trigger_lender_name AS lender, m.status,
-            m.signer_name, m.created_at, a.requested_amount, a.funded_amount, a.funded_at
+            m.signer_name, m.created_at, a.requested_amount, a.funded_amount, a.funded_at,
+            m.signed_manually, m.fee_percent, m.fee_amount
        FROM media_fee_agreements m LEFT JOIN applications a ON a.id::text = m.application_id
       ORDER BY m.created_at DESC LIMIT 200`);
-  const fee = (r: any) => Math.round(Number(r.funded_amount ?? r.requested_amount ?? 0) * 0.02);
-  return { items: rows.map((r: any) => ({ ...r, fee_2pct: fee(r) })), signed: rows.filter((r: any) => r.status === "signed").length, waiting: rows.filter((r: any) => r.status !== "signed").length };
+  // BF_SERVER_FEE_MANUAL_SIGN_v775 - a negotiated agreement carries its own fee (a fixed amount, or a percent); otherwise 2%.
+  const fee = (r: any) => r.fee_amount !== null && r.fee_amount !== undefined ? Math.round(Number(r.fee_amount))
+    : Math.round(Number(r.funded_amount ?? r.requested_amount ?? 0) * (r.fee_percent !== null && r.fee_percent !== undefined ? Number(r.fee_percent) : 2) / 100);
+  const label = (r: any) => r.fee_amount !== null && r.fee_amount !== undefined ? "fixed" : r.fee_percent !== null && r.fee_percent !== undefined ? Number(r.fee_percent) + "%" : "2%";
+  return { items: rows.map((r: any) => ({ ...r, fee: fee(r), fee_2pct: fee(r), fee_terms: label(r) })), signed: rows.filter((r: any) => r.status === "signed").length, waiting: rows.filter((r: any) => r.status !== "signed").length };
 }
 
 export async function payoutsOwed() {
