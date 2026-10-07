@@ -10,7 +10,7 @@ describe("movable Dashboard", () => {
     expect(out).toEqual([{ id: "dash_kpis", report: "dash_kpis", size: "third" }, { id: "x", report: "dash_pipeline", size: "full" }]);
   });
   it("has all nine standard sections, offered only on the Dashboard", () => {
-    expect(REPORTS.filter((r) => r.source === "dashboard").map((r) => r.key)).toHaveLength(9);
+    expect(REPORTS.filter((r) => r.source === "dashboard").map((r) => r.key)).toHaveLength(10); // BF_SERVER_DASH_TEAM_CARD_v774
     expect(readFileSync("src/routes/reportsSection.ts", "utf8")).toContain('(forDashboard || r.source !== "dashboard")');
   });
 });
