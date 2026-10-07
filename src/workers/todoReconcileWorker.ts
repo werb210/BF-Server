@@ -37,10 +37,12 @@ async function call(graph: GraphClient, path: string, init?: RequestInit): Promi
   return text ? JSON.parse(text) : null;
 }
 
-/** To Do shows a due DATE. Noon UTC on the Alberta calendar day reads as that day in every North American time zone. */
+/** To Do keeps only a due DATE. BF_SERVER_TODO_DUE_DATE_v776 - send midnight of the Alberta calendar day in a
+ *  fixed UTC-6 zone (Alberta is UTC-6 all year), the way Microsoft's own apps store it. Noon UTC (v773) was
+ *  stored as midnight UTC, which iPhone/Mac Reminders showed as the day before. */
 export function todoDueDate(due: string | Date): { dateTime: string; timeZone: string } {
   const local = new Date(new Date(due).getTime() - ALBERTA_OFFSET_MS);
-  return { dateTime: local.toISOString().slice(0, 10) + "T12:00:00.0000000", timeZone: "UTC" };
+  return { dateTime: local.toISOString().slice(0, 10) + "T00:00:00.0000000", timeZone: "Central America Standard Time" };
 }
 
 export function todoTitle(t: Pick<PendingTask, "title" | "contact_name">): string {

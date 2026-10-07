@@ -157,6 +157,13 @@ router.post(
     if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
     if ((await channelMeta(id))?.archived_at) throw new AppError("conflict", "This channel is archived.", 409); // BF_SERVER_TEAM_PHASE_B_v658
     const message = await postMessage(id, userId, body, attachments.length ? attachments : null, replyToId, mentions.length ? mentions : null);
+    // BF_SERVER_READ_THIS_v776 - "Read this": recipients get Mark as read; the sender sees who has.
+    if (req.body?.read_this === true) {
+      const { flagReadThis } = await import("../services/team/readThis.js");
+      await flagReadThis(message.id);
+      (message as any).read_this = true;
+      (message as any).read_by = [];
+    }
     const members = await memberIdsOf(id);
     broadcastToUsers(members, { type: "message", channel_id: id, message });
     void pushTeamMessage(id, message); // BF_SERVER_TEAM_PREFS_v643 - alerts for people without the portal open
@@ -164,6 +171,18 @@ router.post(
     res.status(200).json({ ok: true, message });
   }),
 );
+
+// BF_SERVER_READ_THIS_v776 - the reader taps "Mark as read" on a Read this message.
+router.post("/messages/:mid/read-receipt", requireAuth, requireStaff, safeHandler(async (req: any, res: any) => {
+  const userId = userIdOf(req); const mid = String(req.params.mid);
+  const meta = await getMessageMeta(mid);
+  if (!meta) throw new AppError("not_found", "Message not found.", 404);
+  if (!(await isMember(meta.channel_id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
+  const { recordRead } = await import("../services/team/readThis.js");
+  const receipt = await recordRead(mid, userId);
+  broadcastToUsers(await memberIdsOf(meta.channel_id), { type: "read_this", channel_id: meta.channel_id, message_id: mid, user_id: receipt.user_id, read_at: receipt.read_at });
+  res.status(200).json({ ok: true, receipt });
+}));
 
 router.post("/channels/:id/mute", requireAuth, requireStaff, safeHandler(async (req: any, res: any) => {
   const userId = userIdOf(req); const id = String(req.params.id);
