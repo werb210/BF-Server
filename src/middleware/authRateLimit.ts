@@ -18,6 +18,7 @@
 // app.set("trust proxy", 1) and collapses IPv6 to its /64 prefix, so an attacker cannot
 // rotate addresses within a /64 to evade the limit.
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { isIP } from "node:net"; // BF_SERVER_OTP_ABUSE_GUARD_v772
 import type { Request } from "express";
 import { isTest } from "../config/runtime.js";
 
@@ -46,10 +47,37 @@ export function stripPort(raw: string): string {
   return ip.replace(/:\d+$/, "");
 }
 
+// BF_SERVER_OTP_ABUSE_GUARD_v772
+// Azure's front end APPENDS the real caller to X-Forwarded-For. Everything to the left of that
+// was written by the caller and can be forged, so keying on the FIRST entry let a bot send a new
+// fake address with every request and never hit the limit. Walk from the RIGHT instead and take
+// the first public address: that is the one Azure added. Private/internal hops (10.x, 172.16-31.x,
+// 192.168.x, loopback, fc00::/7, fe80::/10) are skipped in case a proxy sits behind the front end.
+export function isPrivateIp(ip: string): boolean {
+  const v = ip.replace(/^::ffff:/i, "");
+  if (isIP(v) === 4) {
+    const [a, b] = v.split(".").map(Number);
+    return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || a === 0;
+  }
+  if (isIP(v) === 6) {
+    const lower = v.toLowerCase();
+    return lower === "::1" || lower === "::" || /^f[cd]/.test(lower) || /^fe[89ab]/.test(lower);
+  }
+  return false;
+}
+
+export function clientIpForRateLimit(req: Pick<Request, "headers" | "ip" | "socket">): string {
+  const header = req.headers["x-forwarded-for"];
+  const joined = Array.isArray(header) ? header.join(",") : String(header ?? "");
+  const hops = joined.split(",").map((s) => stripPort(s.trim())).filter(Boolean);
+  for (let i = hops.length - 1; i >= 0; i--) {
+    if (isIP(hops[i].replace(/^::ffff:/i, "")) && !isPrivateIp(hops[i])) return hops[i];
+  }
+  return hops[hops.length - 1] || stripPort(req.ip || req.socket?.remoteAddress || "");
+}
+
 function keyFromRequest(req: Request): string {
-  const fwd = String(req.headers["x-forwarded-for"] ?? "").split(",")[0]?.trim();
-  const raw = fwd || req.ip || req.socket?.remoteAddress || "";
-  return ipKeyGenerator(stripPort(raw));
+  return ipKeyGenerator(clientIpForRateLimit(req));
 }
 
 export const otpStartLimiter = rateLimit({

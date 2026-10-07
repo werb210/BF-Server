@@ -68,6 +68,7 @@ router.get("/env", (_req: any, res: any) =>
 
 router.post(
   "/twilio-test",
+  requireAuth, // BF_SERVER_OTP_ABUSE_GUARD_v772 - was public; every hit cost a Verify text
   async (_req: any, res: any) => {
     const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID, TWILIO_TEST_TO } = process.env;
     if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_VERIFY_SERVICE_SID) {
