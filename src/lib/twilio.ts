@@ -1,6 +1,6 @@
 import { safeImport } from "../utils/safeImport.js";
 import { isUndeliverableNumber } from "./smsDeliverability.js"; // BF_SERVER_GUARD_EVERYWHERE_v136
-import { smsFromFor } from "./smsFrom.js"; // BF_SERVER_US_SMS_TOLLFREE_v755
+import { smsFromFor, smsSenderFor } from "./smsFrom.js"; // BF_SERVER_US_SMS_TOLLFREE_v755
 
 export async function sendSMS(to: string, body: string) {
   if (process.env.NODE_ENV === "test") {
@@ -33,6 +33,6 @@ export async function sendSMS(to: string, body: string) {
   return client.messages.create({
     to,
     body,
-    from: smsFromFor(to, process.env.TWILIO_PHONE), // BF_SERVER_US_SMS_TOLLFREE_v755
+    ...smsSenderFor(to, process.env.TWILIO_PHONE), // BF_SERVER_US_SMS_TOLLFREE_v755
   });
 }

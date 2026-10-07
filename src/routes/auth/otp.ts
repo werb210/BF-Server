@@ -8,7 +8,7 @@ import { findAuthUserByPhone } from "../../modules/auth/auth.repo.js";
 import { isUndeliverableNumber } from "../../lib/smsDeliverability.js"; // BF_SERVER_GUARD_EVERYWHERE_v136
 
 const router = express.Router();
-import { smsFromFor } from "../../lib/smsFrom.js"; // BF_SERVER_US_SMS_TOLLFREE_v755
+import { smsFromFor, smsSenderFor } from "../../lib/smsFrom.js"; // BF_SERVER_US_SMS_TOLLFREE_v755
 
 const isPhone = (value: unknown): value is string => (
   typeof value === "string" && /^\+?[1-9]\d{7,14}$/.test(value.trim())
@@ -64,7 +64,7 @@ router.post("/start", async (req: Request, res: Response) => {
     await client.messages.create({
       body: `Your Boreal Financial verification code is ${code}`,
       to: phone,
-      from: smsFromFor(phone, process.env.TWILIO_PHONE), // BF_SERVER_US_SMS_TOLLFREE_v755
+      ...smsSenderFor(phone, process.env.TWILIO_PHONE), // BF_SERVER_US_SMS_TOLLFREE_v755
     });
 
     return res.status(200).json({ status: "ok", data: { sent: true } });

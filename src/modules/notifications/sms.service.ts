@@ -3,7 +3,7 @@ import { config } from "../../config/index.js";
 import { withRetry } from "../../lib/retry.js";
 import { pushDeadLetter } from "../../lib/deadLetter.js";
 import { isPermanentSmsFailure, isUndeliverableNumber } from "../../lib/smsDeliverability.js";
-import { smsFromFor } from "../../lib/smsFrom.js"; // BF_SERVER_US_SMS_TOLLFREE_v755
+import { smsFromFor, smsSenderFor } from "../../lib/smsFrom.js"; // BF_SERVER_US_SMS_TOLLFREE_v755
 
 // BF_SERVER_SMS_LOOP_KILL_v121
 export class UndeliverableNumberError extends Error {
@@ -55,7 +55,7 @@ export async function sendSms(
   const client = fetchTwilioClient();
   const payload = {
     body: message,
-    from: smsFromFor(to, config.twilio.from || config.twilio.number || config.twilio.phone), // BF_SERVER_US_SMS_TOLLFREE_v755
+    ...smsSenderFor(to, config.twilio.from || config.twilio.number || config.twilio.phone), // BF_SERVER_US_SMS_TOLLFREE_v755
     to,
     statusCallback: statusCallbackUrl(),
   };
