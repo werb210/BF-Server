@@ -1014,6 +1014,7 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
         fd?.product_category ??
         null,
     },
+    // BF_SERVER_MAYA_SEES_PORTAL_v782 - same resolution as applicationProfileFromMetadata (client Maya reads that).
     kyc: md?.borrower ?? md?.kyc_responses ?? md?.kyc ?? fd?.kyc ?? fd?.financialProfile ?? readinessSrc ?? null,
     // v_CRM_APPLICANT_SOURCE: prefer md.applicant (raw camelCase Step-4 fields, the same
     // source the Accord PDF builder reads) over md.borrower (a trimmed shape) so the CRM
