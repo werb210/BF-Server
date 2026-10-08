@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
 import { pool } from "../db.js";
+import { applicationProfileFromMetadata, mergedProfileFromMetadata } from "../services/applications/applicationProfile.js"; // BF_SERVER_MAYA_SEES_PORTAL_v782
 import { safeHandler } from "../middleware/safeHandler.js";
 import { logError } from "../observability/logger.js";
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js"; // BF_SERVER_MAYA_MKT_TOOLS_v1
@@ -1268,7 +1269,8 @@ router.post(
                          a.metadata->'formData'->'kyc'->>'annualRevenue') AS annual_revenue,
                 -- BF_SERVER_MAYA_KNOWS_CLIENT_v779 - dates, and everything the client typed about their business and
                 -- themselves (home address, date of birth, title, ownership), so Maya can answer "what do you have on me".
-                a.created_at, a.submitted_at, a.metadata->'business' AS business_md, a.metadata->'applicant' AS applicant_md
+                a.created_at, a.submitted_at, a.metadata->'business' AS business_md, a.metadata->'applicant' AS applicant_md,
+                a.metadata AS metadata_full, a.signnow_app_signed_at, a.funded_at -- BF_SERVER_MAYA_SEES_PORTAL_v782
            FROM applications a
            JOIN contacts c ON c.id = a.contact_id
           WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $1
@@ -1290,8 +1292,20 @@ router.post(
         // BF_SERVER_MAYA_KNOWS_CLIENT_v779
         startedAt: a.created_at ?? null,
         submittedAt: a.submitted_at ?? null,
-        business: mayaSafeFields(a.business_md),
-        owner: mayaSafeFields(a.applicant_md),
+        // BF_SERVER_MAYA_SEES_PORTAL_v782 - resolved exactly like the staff portal's Application tab.
+        ...(() => {
+          const p = applicationProfileFromMetadata(a.metadata_full);
+          const m = mergedProfileFromMetadata(a.metadata_full);
+          return {
+            business: mayaSafeFields(m.business) ?? mayaSafeFields(a.business_md),
+            owner: mayaSafeFields(m.applicant) ?? mayaSafeFields(a.applicant_md),
+            financialProfile: mayaSafeFields(m.financial),
+            otherOwners: (p.owners ?? []).map((o: any) => mayaSafeFields(o)).filter(Boolean),
+            productCategory: p.productCategory,
+          };
+        })(),
+        signed: Boolean(a.signnow_app_signed_at),
+        fundedAt: a.funded_at ?? null,
       }));
       // v437 - the duplicate-contact problem: an application attaches to ONE of
       // several contact rows sharing this phone, and only some carry the number.
@@ -1327,17 +1341,25 @@ router.post(
         // BF_SERVER_MAYA_KNOWS_CLIENT_v779 - home address from the most recent application
         homeAddress: applications[0]?.owner ? [applications[0].owner.street, applications[0].owner.city, applications[0].owner.state, applications[0].owner.zip].filter(Boolean).join(", ") || null : null,
       } : null;
-      let latestDocs: { total: number; missing: string[] } | null = null;
+      let latestDocs: { total: number; missing: string[]; documents?: Array<{ category: string; status: string }> } | null = null;
+      let offers: Array<{ lender: string | null; amount: number | null; term: string | null; rate: string | null; status: string | null; expires: string | null }> = [];
       if (applications.length) {
         const dr = await mayaDocRows(String(applications[0].id), "client") /* BF_SERVER_BLOCK_v492 */;
         const missing = dr.rows.filter((x: any) => String(x.status) !== "accepted").map((x: any) => x.document_category).filter(Boolean);
-        latestDocs = { total: dr.rows.length, missing };
+        // BF_SERVER_MAYA_SEES_PORTAL_v782 - every document and its status, and the offers, as staff see them.
+        latestDocs = { total: dr.rows.length, missing, documents: dr.rows.map((x: any) => ({ category: x.document_category, status: x.status })) };
+        const or = await pool.query(
+          `SELECT lender_name, amount, term, rate_factor, status, expiry_date FROM offers
+            WHERE application_id = $1 AND COALESCE(is_archived, false) = false ORDER BY created_at DESC LIMIT 10`,
+          [String(applications[0].id)],
+        ).catch((err: unknown) => { console.warn("[maya] offers lookup failed", err instanceof Error ? err.message : String(err)); return { rows: [] as any[] }; });
+        offers = or.rows.map((o: any) => ({ lender: o.lender_name ?? null, amount: o.amount === null ? null : Number(o.amount), term: o.term ?? null, rate: o.rate_factor ?? null, status: o.status ?? null, expires: o.expiry_date ?? null }));
       }
       const summary = applications.length
         ? `Found ${applications.length} application(s). Most recent: "${applications[0].name ?? "your application"}" at stage "${applications[0].stage ?? "in progress"}". Refer to the business as "${applications[0].businessName ?? applications[0].name ?? "your business"}" and use this stage - do not describe the stage any other way.`
         : "No applications found for that phone number yet — they may be just getting started.";
       await audit({ audience: "client", tool: "application.find_mine", args: { phone10 }, ok: true, summary: `${applications.length} apps`, userId: myAppStr(req.body?.user_id), sessionId: myAppStr(req.body?.session_id) });
-      return res.json({ ok: true, contactName: contact?.contactName ?? null, contact, applications, latestDocs, summary });
+      return res.json({ ok: true, contactName: contact?.contactName ?? null, contact, applications, latestDocs, offers, summary }); // BF_SERVER_MAYA_SEES_PORTAL_v782 - offers
     } catch (e: any) {
       await audit({ audience: "client", tool: "application.find_mine", args: { phone10 }, ok: false, summary: e?.message ?? "error", errorCode: "applications_by_phone_exception" });
       logError("maya_applications_by_phone_failed", { code: "maya_applications_by_phone_failed", error: e?.message ?? "unknown" });
