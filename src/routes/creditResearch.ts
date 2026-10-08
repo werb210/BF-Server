@@ -18,7 +18,9 @@ router.post("/:applicationId/refresh", ...staff, safeHandler(async (req: any, re
   try {
     const result = await (await svc()).refreshApplicationResearch(applicationId, req.query?.force === "1");
     console.info("[credit-research] refreshed", { applicationId, ...result });
-    res.json({ ...result, ...(await (await svc()).loadResearch(applicationId)) });
+    // BF_SERVER_CREDIT_DOC_KINDS_v783 - the list used to overwrite the count ("Found [object Object],..."); send both.
+    const loaded = await (await svc()).loadResearch(applicationId);
+    res.json({ ...result, list: loaded.facts, found: result.facts });
   } catch (error) {
     console.error("[credit-research] refresh_failed", { applicationId, message: (error as Error)?.message });
     res.status(502).json({ error: "research_failed", message: (error as Error)?.message ?? "failed" });

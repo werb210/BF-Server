@@ -65,13 +65,9 @@ export async function extractFromText(text: string): Promise<ExtractedPeriod[]> 
 type Cell = { period: string; period_end: string | null; kind: PeriodKind; line_item: string; value: number; source_document_id: string | null; edited_by: string | null };
 
 export async function extractApplicationFinancials(applicationId: string): Promise<{ documents: number; periods: number; cells: number; skipped: string[] }> {
-  const docs = await pool.query<{ id: string; name: string | null; text: string | null }>(
-    `SELECT d.id::text AS id, COALESCE(d.filename, d.category) AS name, o.extracted_text AS text
-       FROM documents d
-       LEFT JOIN LATERAL (SELECT extracted_text FROM ocr_document_results r WHERE r.document_id = d.id ORDER BY r.created_at DESC LIMIT 1) o ON true
-      WHERE d.application_id::text = $1
-        AND COALESCE(d.category, d.document_type) IN ('financial_statements', 'tax_returns', 'interim_financials', 'balance_sheet', 'profit_and_loss')
-      ORDER BY d.created_at ASC`, [applicationId]);
+  // BF_SERVER_CREDIT_DOC_KINDS_v783 - match by requirement label too, not only the canonical key.
+  const { documentsOfKinds } = await import("./docKinds.js");
+  const docs = { rows: (await documentsOfKinds(applicationId, ["financial_statements", "tax_returns", "interim_financials", "balance_sheet", "profit_and_loss"])).map((d) => ({ id: d.id, name: d.name, text: d.ocr_text })) };
   const skipped: string[] = [];
   let periods = 0;
   let cells = 0;
