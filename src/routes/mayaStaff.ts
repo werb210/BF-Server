@@ -52,6 +52,22 @@ export function verifyMayaService(req: Request): { source: string } | null {
 // mode "client": anything uploaded counts as done (never ask a client to
 // re-upload something waiting on staff review). mode "staff": uploaded but not
 // yet accepted is still outstanding, labelled "awaiting review".
+// BF_SERVER_MAYA_KNOWS_CLIENT_v779 - the client's own answers, minus ID numbers and banking (matched by whole words in
+// the key: "businessName" contains the letters "sin" and "ssn" but is not one).
+const MAYA_NEVER_WORDS = new Set(["ssn", "sin", "ein", "bn", "bank", "routing", "transit", "institution", "password", "signature", "token", "card"]);
+const MAYA_NEVER_KEYS = new Set(["businessnumber", "taxid", "identitynumber", "idnumber", "socialinsurancenumber", "socialsecuritynumber", "accountnumber"]);
+export function mayaSafeFields(obj: unknown): Record<string, any> | null {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    const words = k.split(/(?=[A-Z][a-z])|[_\-\s]+/).map((w) => w.toLowerCase()).filter(Boolean);
+    if (MAYA_NEVER_KEYS.has(k.toLowerCase().replace(/[_\-\s]/g, "")) || words.some((w) => MAYA_NEVER_WORDS.has(w))) continue;
+    if (v === null || v === undefined || v === "") continue;
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") out[k] = v;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 async function mayaDocRows(appId: string, mode: "staff" | "client"): Promise<{ rows: Array<{ document_category: string; status: string; is_required: boolean }> }> {
   try {
     const { computeOutstandingDocs } = await import("./clientDocumentsNeeded.js");
@@ -1249,7 +1265,10 @@ router.post(
                          a.metadata->'formData'->'kyc'->>'yearsInBusiness') AS years_in_business,
                 COALESCE(a.metadata->>'annualRevenue', a.metadata->>'revenueLast12Months',
                          a.metadata->'kyc'->>'annualRevenue',
-                         a.metadata->'formData'->'kyc'->>'annualRevenue') AS annual_revenue
+                         a.metadata->'formData'->'kyc'->>'annualRevenue') AS annual_revenue,
+                -- BF_SERVER_MAYA_KNOWS_CLIENT_v779 - dates, and everything the client typed about their business and
+                -- themselves (home address, date of birth, title, ownership), so Maya can answer "what do you have on me".
+                a.created_at, a.submitted_at, a.metadata->'business' AS business_md, a.metadata->'applicant' AS applicant_md
            FROM applications a
            JOIN contacts c ON c.id = a.contact_id
           WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $1
@@ -1268,6 +1287,11 @@ router.post(
         industry: a.industry ?? null,
         yearsInBusiness: a.years_in_business ?? null,
         annualRevenue: a.annual_revenue ?? null,
+        // BF_SERVER_MAYA_KNOWS_CLIENT_v779
+        startedAt: a.created_at ?? null,
+        submittedAt: a.submitted_at ?? null,
+        business: mayaSafeFields(a.business_md),
+        owner: mayaSafeFields(a.applicant_md),
       }));
       // v437 - the duplicate-contact problem: an application attaches to ONE of
       // several contact rows sharing this phone, and only some carry the number.
@@ -1295,11 +1319,13 @@ router.post(
         // application's, falling back to the CRM contact's company only when the
         // client has no application yet.
         companyName: (applications[0]?.businessName ?? null) || (first.company_name ?? null),
-        dob: first.dob ?? null,
+        dob: first.dob ?? (applications[0]?.owner?.dob as string | undefined) ?? null, // BF_SERVER_MAYA_KNOWS_CLIENT_v779 - date of birth typed in the application
         email: first.email ?? null,
         phone: first.contact_phone ?? null,
         city: first.contact_city ?? null,
         region: first.contact_region ?? null,
+        // BF_SERVER_MAYA_KNOWS_CLIENT_v779 - home address from the most recent application
+        homeAddress: applications[0]?.owner ? [applications[0].owner.street, applications[0].owner.city, applications[0].owner.state, applications[0].owner.zip].filter(Boolean).join(", ") || null : null,
       } : null;
       let latestDocs: { total: number; missing: string[] } | null = null;
       if (applications.length) {
