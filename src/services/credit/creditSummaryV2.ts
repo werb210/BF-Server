@@ -56,7 +56,9 @@ export function buildOverview(app: any, dealType: DealType, collateral: any, fin
   const request = Number(app?.requested_amount);
   const ltv = assetValue && Number.isFinite(request) && request > 0 ? `${Math.round((request / assetValue) * 100)}%` : "TBD";
   const reEquity = collateral?.realEstate?.equity;
-  return { applicant_name: first(md, "business.legalName", "business.businessName") ?? s(app?.name), address,
+  // BF_SERVER_CREDIT_DOC_KINDS_v783 - a legal-name field holding only a number (a business number typed there) is not a
+  // name; use the operating name instead.
+  return { applicant_name: [first(md, "business.legalName"), first(md, "business.businessName", "business.dbaName", "business.operatingName", "company.name"), s(app?.name)].find((n) => n && !/^[\d\s-]+$/.test(String(n))) ?? first(md, "business.legalName") ?? s(app?.name), address,
     principals: principalsFrom(md).join(", ") || null, assets,
     transaction: PRODUCT_LABEL[String(app?.product_category ?? "").toUpperCase()] ?? s(app?.product_category), structure: "Loan", asset_value: assetText,
     facility_request: Number.isFinite(request) && request > 0 ? money(request) : null, term: first(md, "term", "termMonths", "kyc.term", "loan_term") ?? "TBD",
@@ -131,7 +133,8 @@ export async function gatherFacts(applicationId: string) {
   const [financials, collateral, research, timeline, bank] = await Promise.all([
     loadFinancialTable(applicationId), loadCollateral(applicationId), loadResearch(applicationId).then((r) => r.facts as any[]),
     app.contact_id ? loadCrmTimeline(true, String(app.contact_id), String(app.silo ?? "BF")).catch((e) => { console.warn("[credit-summary-v2] timeline_failed", (e as Error)?.message); return []; }) : Promise.resolve([]),
-    pool.query(`SELECT count(*)::int AS n FROM documents WHERE application_id::text = $1 AND COALESCE(category, document_type) IN ('bank_statements_6_months', 'flinks_banking')`, [applicationId]).then((r) => r.rows[0]?.n ?? 0),
+    // BF_SERVER_CREDIT_DOC_KINDS_v783 - "6 months business banking statements" counts as bank statements.
+    import("./docKinds.js").then((m) => m.documentsOfKinds(applicationId, ["bank_statements_6_months", "flinks_banking"])).then((d) => d.length),
   ]);
   const md = app.metadata ?? {}; const usable = research.filter((f) => f.status === "reported" || f.status === "confirmed");
   const facts = { application: { business: md.business ?? null, requested_amount: app.requested_amount, product: app.product_category,

@@ -96,7 +96,9 @@ async function documentText(doc: { id: string; ocr_text: string | null }): Promi
 }
 
 export async function extractApplicationCollateral(applicationId: string): Promise<{ documents: number; stored: number; skipped: string[] }> {
-  const docs = await pool.query<{ id: string; name: string | null; category: string; ocr_text: string | null }>(`SELECT d.id::text AS id, COALESCE(d.filename, d.category) AS name, COALESCE(d.category, d.document_type) AS category, o.extracted_text AS ocr_text FROM documents d LEFT JOIN LATERAL (SELECT extracted_text FROM ocr_document_results r WHERE r.document_id = d.id ORDER BY r.created_at DESC LIMIT 1) o ON true WHERE d.application_id::text = $1 AND COALESCE(d.category, d.document_type) = ANY($2::text[]) ORDER BY d.created_at ASC`, [applicationId, Object.keys(CATEGORY_KIND)]);
+  // BF_SERVER_CREDIT_DOC_KINDS_v783 - "A/R", "A/P" and other requirement labels resolve to the aging / equipment kinds.
+  const { documentsOfKinds } = await import("./docKinds.js");
+  const docs = { rows: (await documentsOfKinds(applicationId, Object.keys(CATEGORY_KIND))).map((d) => ({ id: d.id, name: d.name, category: CATEGORY_KIND[d.kind] ? d.kind : d.category, ocr_text: d.ocr_text })) };
   const skipped: string[] = []; let stored = 0;
   for (const d of docs.rows) {
     const kind = CATEGORY_KIND[d.category]!; let text = "";
