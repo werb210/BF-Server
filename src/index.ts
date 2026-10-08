@@ -181,23 +181,32 @@ export async function start(): Promise<void> {
     console.warn("[startup] BF workers NOT started: BF_WORKERS_ENABLED=false (staging slot) - this instance sends no texts, emails or lender packages");
   }
   if (process.env.NODE_ENV !== "test" && bfWorkersEnabled()) {
+    // BF_SERVER_WORKER_STAGGER_v785 - start the background workers one at a time, 1.5 s apart, after the server is
+    // already answering. Starting ~30 at once after a restart (e.g. a slot swap) opened a burst of new outbound
+    // connections that exhausted Azure's SNAT ports and timed out the database for minutes (Oct 8 2026).
+    const staggerMs = Math.max(0, Number(process.env.WORKER_STAGGER_MS ?? 1500));
+    const workerStagger = () => new Promise<void>((resolve) => setTimeout(resolve, staggerMs));
+    void (async () => {
     const { pool } = await import("./db.js");
     const { startOcrWorker } = await import("./modules/ocr/ocr.worker.js");
     const { startBankingAutoWorker } = await import("./workers/bankingAutoWorker.js");
     const workerStops: Array<() => void> = [];
     try { const w = startOcrWorker(); workerStops.push(w.stop); console.log("[startup] OCR worker started"); }
     catch (err) { console.error("[startup] OCR worker failed to start:", err); }
+    await workerStagger();
     try { const w = startBankingAutoWorker(pool); workerStops.push(w.stop); console.log("[startup] banking auto-worker started"); }
     catch (err) { console.error("[startup] banking auto-worker failed to start:", err); }
 
     // BF_SERVER_BLOCK_v146_LENDER_PACKAGE_WORKER_v1
     const { startLenderPackageWorker } = await import("./workers/lenderPackageWorker.js");
+    await workerStagger();
     try { const w = startLenderPackageWorker(pool); workerStops.push(w.stop); console.log("[startup] lender-package worker started"); }
     catch (err) { console.error("[startup] lender-package worker failed to start:", err); }
 
     // SignNow completion poller — embedded signing has no webhook subscription,
     // so poll document-group status and run the same finalize the webhook would.
     const { startSignNowCompletionPoller } = await import("./workers/signnowCompletionPoller.js");
+    await workerStagger();
     try { const w = startSignNowCompletionPoller(pool); workerStops.push(w.stop); console.log("[startup] signnow completion poller started"); }
     catch (err) { console.error("[startup] signnow completion poller failed to start:", err); }
 
@@ -208,15 +217,18 @@ export async function start(): Promise<void> {
 
     // BF_SERVER_BLOCK_v706_READ_RECEIPTS — stamp opened_at from inbox read receipts.
     const { startReadReceiptWorker } = await import("./workers/readReceiptWorker.js");
+    await workerStagger();
     try { const w = startReadReceiptWorker(pool); workerStops.push(w.stop); console.log("[startup] read-receipt worker started"); }
     catch (err) { console.error("[startup] read-receipt worker failed to start:", err); }
     // BF_SERVER_AUTO_TAMPER_SCAN_v269 - tamper scan every newly uploaded document.
     const { startTamperScanWorker } = await import("./workers/tamperScanWorker.js");
+    await workerStagger();
     try { const w = startTamperScanWorker(pool); workerStops.push(w.stop); console.log("[startup] tamper-scan worker started"); }
     catch (err) { console.error("[startup] tamper-scan worker failed:", err); }
 
     // BF_INBOUND_ATTACHMENT_WORKER_v1 - auto-file inbound email attachments to the CRM.
     const { startInboundAttachmentWorker } = await import("./workers/inboundAttachmentWorker.js");
+    await workerStagger();
     try { const w = startInboundAttachmentWorker(pool); workerStops.push(w.stop); console.log("[startup] inbound-attachment worker started"); }
     catch (err) { console.error("[startup] inbound-attachment worker failed to start:", err); }
 
@@ -224,35 +236,42 @@ export async function start(): Promise<void> {
     // BF_SERVER_ABANDONED_NUDGE_v61 - 4h SMS then a 2-day call task for anyone
     // who starts an application and does not finish.
     const { startAbandonedApplicationWorker } = await import("./workers/abandonedApplicationWorker.js");
+    await workerStagger();
     try { const w = startAbandonedApplicationWorker(pool); workerStops.push(w.stop); console.log("[startup] abandoned-application worker started"); }
     catch (err) { console.warn("[startup] abandoned-application worker failed", err); }
 
     // BF_SERVER_BLOCK_v618 - automation builder: runs steps that are due (after waits, quiet hours, retries).
     const { startAutomationWorker } = await import("./workers/automationWorker.js");
+    await workerStagger();
     try { const w = startAutomationWorker(pool); workerStops.push(w.stop); console.log("[startup] automation worker started"); }
     catch (err) { console.error("[startup] automation worker failed to start:", err); }
 
     const { startEmailFollowupWorker } = await import("./workers/emailFollowupWorker.js");
+    await workerStagger();
     try { const w = startEmailFollowupWorker(pool); workerStops.push(w.stop); console.log("[startup] email follow-up worker started"); }
     catch (err) { console.error("[startup] email follow-up worker failed to start:", err); }
 
     // BF_SERVER_PRODUCT_KNOWLEDGE_SYNC_v1 - keep Maya product knowledge in sync with lender_products (incl. manual/SQL inserts).
     const { startProductKnowledgeWorker } = await import("./workers/productKnowledgeWorker.js");
+    await workerStagger();
     try { const w = startProductKnowledgeWorker(pool); workerStops.push(w.stop); console.log("[startup] product-knowledge worker started"); }
     catch (err) { console.error("[startup] product-knowledge worker failed to start:", err); }
 
     // BF_SERVER_ADS_WEEKLY_EMAIL_v708
     const { startAdsWeeklyEmailWorker } = await import("./workers/adsWeeklyEmailWorker.js");
+    await workerStagger();
     try { const w = startAdsWeeklyEmailWorker(pool); workerStops.push(w.stop); console.log("[startup] ads-weekly-email worker started"); }
     catch (err) { console.error("[startup] ads-weekly-email worker failed to start:", err); }
 
     // BF_SERVER_ADS_WAREHOUSE_v1 - own Google Ads history locally.
     const { startGoogleAdsWarehouseWorker } = await import("./workers/googleAdsWarehouseWorker.js");
+    await workerStagger();
     try { const w = startGoogleAdsWarehouseWorker(pool); workerStops.push(w.stop); console.log("[startup] ads-warehouse worker started"); }
     catch (err) { console.error("[startup] ads-warehouse worker failed to start:", err); }
 
     // BF_SERVER_MARKETING_KNOWLEDGE_v1 - ingest marketing templates + collateral into Maya knowledge.
     const { startMarketingKnowledgeWorker } = await import("./workers/marketingKnowledgeWorker.js");
+    await workerStagger();
     try { const w = startMarketingKnowledgeWorker(pool); workerStops.push(w.stop); console.log("[startup] marketing-knowledge worker started"); }
     catch (err) { console.error("[startup] marketing-knowledge worker failed to start:", err); }
 
@@ -260,37 +279,45 @@ export async function start(): Promise<void> {
     // BF_SERVER_BOOKINGS_TO_CRM_v1 - Microsoft Bookings appointments were displayed on the
     // calendar and nothing else; the prospect never became a CRM record.
     const { startBookingsWorker } = await import("./workers/bookingsWorker.js");
+    await workerStagger();
     try { const b = startBookingsWorker(pool); workerStops.push(b.stop); console.log("[startup] bookings worker started"); }
     catch (e: any) { console.error("[startup] bookings worker failed to start", { message: e?.message }); }
 
     // BF_SERVER_TEAM_PHASE_C_v671 - Team "Remind me" reminders.
     const { startTeamReminderWorker } = await import("./workers/teamReminderWorker.js");
+    await workerStagger();
     try { const w = startTeamReminderWorker(); workerStops.push(w.stop); console.log("[startup] team-reminder worker started"); }
     catch (err) { console.error("[startup] team-reminder worker failed to start:", err); }
 
     const { startTeamsTranscriptWorker } = await import("./workers/teamsTranscriptWorker.js");
+    await workerStagger();
     try { const w = startTeamsTranscriptWorker(pool); workerStops.push(w.stop); console.log("[startup] teams-transcript worker started"); }
     catch (err) { console.error("[startup] teams-transcript worker failed to start:", err); }
 
     // BF_SERVER_BLOCK_v744 — advance BI leads to Engaged on an email reply.
     const { startBiOutreachEmailReplyWorker } = await import("./workers/biOutreachEmailReplyWorker.js");
+    await workerStagger();
     try { const w = startBiOutreachEmailReplyWorker(pool); workerStops.push(w.stop); console.log("[startup] BI outreach email-reply worker started"); }
     catch (err) { console.error("[startup] BI outreach email-reply worker failed to start:", err); }
 
     // BF_SERVER_GRAPH_WEBHOOKS_v1 - keep Graph mail subscriptions alive.
     const { startGraphSubscriptionWorker } = await import("./workers/graphSubscriptionWorker.js");
+    await workerStagger();
     try { const gt = startGraphSubscriptionWorker(); workerStops.push(() => clearInterval(gt)); console.log("[startup] graph-subscription worker started"); }
     catch (err) { console.error("[startup] graph-subscription worker failed to start:", err); }
 
     const { startScheduledEmailWorker } = await import("./workers/scheduledEmailWorker.js");
+    await workerStagger();
     try { const w = startScheduledEmailWorker(pool); workerStops.push(w.stop); console.log("[startup] scheduled-email worker started"); }
     catch (err) { console.error("[startup] scheduled-email worker failed to start:", err); }
 
     const { startSmsCascadeWorker } = await import("./workers/smsCascadeWorker.js");
+    await workerStagger();
     try { const w = startSmsCascadeWorker(pool); workerStops.push(w.stop); console.log("[startup] sms-cascade worker started"); }
     catch (err) { console.error("[startup] sms-cascade worker failed to start:", err); }
 
     const { startSendQueueWorker } = await import("./workers/sendQueueWorker.js");
+    await workerStagger();
     try { const w = startSendQueueWorker(pool); workerStops.push(w.stop); console.log("[startup] send-queue worker started"); }
     catch (err) { console.error("[startup] send-queue worker failed to start:", err); }
 
@@ -305,37 +332,44 @@ export async function start(): Promise<void> {
     // directly. Kept as-is rather than changed, so this block only starts the
     // worker and does not also alter how it reaches the database.
     const { startDeadLetterWorker } = await import("./workers/deadLetterWorker.js");
+    await workerStagger();
     try { const w = startDeadLetterWorker(); workerStops.push(w.stop); console.log("[startup] dead-letter worker started"); }
     catch (err) { console.error("[startup] dead-letter worker failed to start:", err); }
 
     // BF_SERVER_BLOCK_v785_SEQUENCES
     const { startSequenceWorker } = await import("./workers/sequenceWorker.js");
+    await workerStagger();
     try { const w = startSequenceWorker(pool); workerStops.push(w.stop); console.log("[startup] sequence worker started"); }
     catch (err) { console.error("[startup] sequence worker failed to start:", err); }
 
     // BF_SERVER_BLOCK_v787_EMAIL_REPLY_STOP_WORKER
     const { startMailReplyWorker } = await import("./workers/mailReplyWorker.js");
+    await workerStagger();
     try { const w = startMailReplyWorker(pool); workerStops.push(w.stop); console.log("[startup] mail-reply worker started"); }
     catch (err) { console.error("[startup] mail-reply worker failed to start:", err); }
 
     // BF_SERVER_AD_CONVERSION_WORKER_v1 - upload offline conversions to Google Ads.
     const { startAdConversionWorker } = await import("./workers/adConversionWorker.js");
+    await workerStagger();
     try { const w = startAdConversionWorker(pool); workerStops.push(w.stop); console.log("[startup] ad-conversion worker started"); }
     catch (err) { console.error("[startup] ad-conversion worker failed to start:", err); }
 
     // BF_SERVER_TODO_RECONCILE_v773 - every task (whatever created it) to and from Microsoft To Do.
     const { startTodoReconcileWorker } = await import("./workers/todoReconcileWorker.js");
+    await workerStagger();
     try { const w = startTodoReconcileWorker(pool); workerStops.push(w.stop); console.log("[startup] todo-reconcile worker started"); }
     catch (err) { console.error("[startup] todo-reconcile worker failed to start:", err); }
 
     // BF_SERVER_TASKS_M6_v1 - task reminders + recurrence catch-up + daily digest.
     const { startTaskRemindersWorker } = await import("./workers/taskRemindersWorker.js");
+    await workerStagger();
     try { const w = startTaskRemindersWorker(pool); workerStops.push(w.stop); console.log("[startup] task-reminders worker started"); }
     catch (err) { console.error("[startup] task-reminders worker failed to start:", err); }
 
     // BF_SERVER_BI_HANDOFF_RETRY_v397 - retry PGI handoffs that failed at submit time.
     try {
       const { startBiHandoffRetryWorker } = await import("./services/biHandoffRetry.js");
+      await workerStagger();
       const worker = startBiHandoffRetryWorker();
       workerStops.push(worker.stop);
       console.log("[startup] bi-handoff-retry worker started");
@@ -353,11 +387,13 @@ export async function start(): Promise<void> {
 
     // BF_SERVER_FX_RATE_WORKER_v355 - daily Bank of Canada USD->CAD rate.
     const { startFxRateWorker } = await import("./workers/fxRateWorker.js");
+    await workerStagger();
     try { const w = startFxRateWorker(pool); workerStops.push(w.stop); console.log("[startup] fx-rate worker started"); }
     catch (err) { console.error("[startup] fx-rate worker failed to start:", err); }
 
     // BF_SERVER_BLOCK_v494_LENDER_EMAIL_BOUNCES - read lender bounce notices.
     const { startLenderBounceWorker } = await import("./workers/lenderBounceWorker.js");
+    await workerStagger();
     try { const w = startLenderBounceWorker(pool); workerStops.push(w.stop); console.log("[startup] lender-bounce worker started"); }
     catch (err) { console.error("[startup] lender-bounce worker failed to start:", err); }
 
@@ -375,6 +411,7 @@ export async function start(): Promise<void> {
     };
     process.on("SIGTERM", () => { void gracefulShutdown("SIGTERM"); });
     process.on("SIGINT", () => { void gracefulShutdown("SIGINT"); });
+    })().catch((err) => console.error("[startup] worker startup failed", err));
   }
 
   const httpServer = app.listen(PORT, "0.0.0.0", () => {

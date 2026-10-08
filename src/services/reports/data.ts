@@ -114,4 +114,9 @@ export const DATA: Record<string, (q: Record<string, unknown>, ctx: B2.Ctx) => P
   goals: async (q, ctx) => (await import("./data6.js")).goals(q, ctx),
   meetings: async (q) => (await import("./data6.js")).meetings(q),
   tasks_report: async (q, ctx) => (await import("./data6.js")).tasksReport(q, ctx),
+  // BF_SERVER_REPORTS11_14_v785
+  email_performance: async (q) => (await import("./data7.js")).emailPerformance(q),
+  sms_campaign_performance: async (q) => (await import("./data7.js")).smsCampaignPerformance(q),
+  website_pages: async (q) => (await import("./data7.js")).websitePages(q),
+  lifecycle: async (q) => (await import("./data7.js")).lifecycle(q),
 };

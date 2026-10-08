@@ -31,6 +31,11 @@ export const REPORTS: ReportDef[] = [
   { key: "goals", title: "Goals", silo: "BF", group: "money", size: "full", source: "reports", description: "This month's funding and commission targets per person, with progress." },
   { key: "meetings", title: "Meetings", silo: "BF", group: "operations", size: "full", source: "reports", description: "Client bookings per person: booked, held, cancelled, upcoming, and how many led to a funded file." },
   { key: "tasks_report", title: "Tasks", silo: "BF", group: "operations", size: "full", source: "reports", description: "Open, overdue and completed tasks per person, and how many were done on time." },
+  // BF_SERVER_REPORTS11_14_v785
+  { key: "email_performance", title: "Email performance", silo: "BF", group: "marketing", size: "full", source: "reports", description: "Staff, sequence and template emails: sent, opened and clicked." },
+  { key: "sms_campaign_performance", title: "SMS campaign performance", silo: "BF", group: "marketing", size: "full", source: "reports", description: "Texts sent, delivered, failed, clicked, replies and opt-outs per campaign and sequence." },
+  { key: "website_pages", title: "Website pages and devices", silo: "BF", group: "marketing", size: "full", source: "reports", description: "Landing pages that lead to applications, and visits by phone, tablet or computer." },
+  { key: "lifecycle", title: "Lifecycle", silo: "BF", group: "operations", size: "full", source: "reports", description: "Leads to applicants to submitted to funded to repeat clients, with median days between steps." },
   { key: "commission_by_month", title: "Commission by month", silo: "BF", group: "money", size: "half", source: "reports", description: "Funded amount and estimated commission per month." },
   // BF_SERVER_REPORTS_BATCH4_v722
   { key: "decline_reasons", title: "Decline reasons", silo: "BF", group: "operations", size: "full", source: "reports", description: "Why lenders pass and files are rejected, from the reasons staff record." },
