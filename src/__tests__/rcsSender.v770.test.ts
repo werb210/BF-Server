@@ -24,7 +24,7 @@ describe("branded (RCS) texting through a Messaging Service", () => {
     for (const f of ["src/lib/twilio.ts", "src/services/smsService.ts", "src/routes/portal.ts", "src/routes/auth/otp.ts", "src/modules/notifications/sms.service.ts"]) {
       expect(readFileSync(f, "utf8"), f).toContain("...smsSenderFor(");
     }
-    expect(readFileSync("src/routes/communications.ts", "utf8")).toContain("...smsSenderFor(String(to), from)");
+    expect(readFileSync("src/routes/communications.ts", "utf8")).toContain("...smsSenderFor(String(to), from, { silo: senderSilo })"); // BF_SERVER_RCS_BRAND_BF_ONLY_v781
     expect(readFileSync("src/services/marketingSms.ts", "utf8")).not.toContain("smsSenderFor(");
   });
 });

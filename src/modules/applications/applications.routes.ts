@@ -1807,7 +1807,13 @@ router.get('/:id/signing-readiness', safeHandler(async (req: any, res: any) => {
   if (!id) throw new AppError('validation_error', 'Application id required.', 400);
   const { readReadinessSnapshot } = await import('../../services/submission/orchestrator.js');
   const snapshot = await readReadinessSnapshot({ pool, applicationId: id });
-  const reason = signingBlockReason(snapshot);
+  let reason = signingBlockReason(snapshot);
+  // BF_SERVER_SBA_READINESS_v781 - SBA files sign from the SBA Signing tab and do not wait for a lender, so "no lender
+  // finalized" was misleading there.
+  if (reason === 'lender_not_finalized') {
+    const { isSbaApplication } = await import('../../signnow/sba/sbaTrigger.js');
+    if (await isSbaApplication(id).catch(() => false)) reason = 'sba_use_sba_signing';
+  }
   const d = await pool.query(
     `SELECT signnow_app_signed_at, signnow_document_id, requested_amount, metadata->'signnow_embedded' AS embedded FROM applications WHERE id::text = ($1)::text`,
     [id]
