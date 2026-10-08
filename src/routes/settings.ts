@@ -10,6 +10,7 @@ import type { MulterRequest } from "../types/multer.js";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
+import { sharedOpenAI } from "../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
 
 // BF_SERVER_BLOCK_v332_SETTINGS_AND_AUDIT_HARDENING_v1 -- Edit 1
 // Pre-fix the only privilege gate on this router was router.use(requireCapability
@@ -286,7 +287,7 @@ router.post("/maya-tts", safeHandler(async (req: any, res: any) => {
   }
   try {
     const OpenAI = (await import("openai")).default;
-    const client = new OpenAI({ apiKey });
+    const client = sharedOpenAI(apiKey);
     const speech = await client.audio.speech.create({ model: "tts-1", voice: voice as any, input: text });
     const buf = Buffer.from(await speech.arrayBuffer());
     res.setHeader("Content-Type", "audio/mpeg");

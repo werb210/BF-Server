@@ -31,7 +31,7 @@ function buildPoolConfig(): PoolConfig {
     logWarn("db_connection_string_missing");
     return {
       max: 10,
-      idleTimeoutMillis: 30_000,
+      idleTimeoutMillis: 300_000, // BF_SERVER_SNAT_REUSE_v784 - reuse idle connections for 5 min instead of reopening every 30s
       connectionTimeoutMillis: 5_000,
       statement_timeout: 10_000, // BF_SERVER_POOL_STATEMENT_TIMEOUT_v186
     };
@@ -43,7 +43,7 @@ function buildPoolConfig(): PoolConfig {
     connectionString,
     ssl: isAzure ? { rejectUnauthorized: true } : false,
     max: 10,
-    idleTimeoutMillis: 30_000,
+    idleTimeoutMillis: 300_000, // BF_SERVER_SNAT_REUSE_v784 - reuse idle connections for 5 min instead of reopening every 30s
     connectionTimeoutMillis: 5_000,
     // BF_SERVER_BLOCK_v791_KEEPALIVE — Azure silently drops idle TCP connections;
     // without keepalive a culled pooled connection throws read/connect ETIMEDOUT

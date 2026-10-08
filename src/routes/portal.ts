@@ -1,3 +1,4 @@
+import { sharedTwilio } from "../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
 import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import { fetchStatus as startupStatus, isReady } from "../startupState.js";
@@ -224,7 +225,7 @@ async function sendDocumentRejectionSms(params: {
   // BF_SERVER_GUARD_EVERYWHERE_v136
   if (isUndeliverableNumber(to)) return;
 
-  const client: any = twilio(accountSid, authToken);
+  const client: any = sharedTwilio(accountSid, authToken);
   const msg = await client.messages.create({ body, ...smsSenderFor(to, from), to }).catch(() => null); // BF_SERVER_US_SMS_TOLLFREE_v755
   if (msg) {
     await pool.query(

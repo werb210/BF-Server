@@ -3,6 +3,7 @@
 import OpenAI from "openai";
 import { pool } from "../../db.js";
 import { businessDomain, companyBackground } from "../crm/contactBrief.js";
+import { sharedOpenAI } from "../../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
 
 export type FactSource = "website" | "google" | "registry" | "web";
 export type Fact = { source: FactSource; category: string; label: string; value: string; url: string | null };
@@ -102,7 +103,7 @@ const researchPrompt = (ref: CompanyRef) => [
 
 export async function webResearch(ref: CompanyRef): Promise<Fact[]> {
   if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not set");
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const openai = sharedOpenAI(process.env.OPENAI_API_KEY);
   const response: any = await openai.responses.create({
     model: process.env.RESEARCH_LLM_MODEL || process.env.CREDIT_LLM_MODEL || "gpt-5.4-mini",
     tools: [{ type: "web_search_preview" }],

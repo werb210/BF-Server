@@ -7,6 +7,7 @@ import { createContact } from "../../services/contacts.js";
 import { logCrmEvent } from "../crm/crmTimeline.service.js";
 import { sendSms } from "../notifications/sms.service.js";
 import { AzureBlobBackend } from "../../lib/storage/azureBlob.js";
+import { sharedOpenAI } from "../../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
 
 const VM_CONTAINER = process.env.VOICEMAIL_BLOB_CONTAINER || "voicemails";
 let blob: AzureBlobBackend | null = null;
@@ -39,7 +40,7 @@ async function downloadRecording(recordingUrl: string): Promise<Buffer | null> {
 async function transcribe(buffer: Buffer): Promise<string> {
   try {
     if (!config.openai.apiKey) return "";
-    const client = new OpenAI({ apiKey: config.openai.apiKey });
+    const client = sharedOpenAI(config.openai.apiKey);
     const file = await OpenAI.toFile(buffer, "voicemail.mp3");
     const res = await client.audio.transcriptions.create({ file, model: "whisper-1" });
     const text = (res as { text?: string })?.text;

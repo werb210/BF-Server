@@ -25,6 +25,7 @@ import { checkOtpSend, OTP_GUARD_MESSAGES, OTP_GUARD_STATUS } from "../lib/otpGu
 // BF_SERVER_OTP_ABUSE_GUARD_v772 - staff numbers skip the per-number and hourly caps, so staff can
 // still sign in while the circuit breaker is holding off an attack.
 const OTP_TRUSTED_ROLES: ReadonlySet<string> = new Set([ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING]);
+import { sharedTwilio } from "../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
 async function isStaffPhone(phone: string): Promise<boolean> {
   try {
     const user = await findAuthUserByPhone(phone);
@@ -97,7 +98,7 @@ type TwilioVerifyClient = {
 const getTwilioClient = (): TwilioVerifyClient => {
   const accountSid = process.env.TWILIO_ACCOUNT_SID ?? "";
   const authToken = process.env.TWILIO_AUTH_TOKEN ?? "";
-  return twilio(accountSid, authToken) as unknown as TwilioVerifyClient;
+  return sharedTwilio(accountSid, authToken) as unknown as TwilioVerifyClient; // BF_SERVER_SNAT_REUSE_v784
 };
 
 // START OTP

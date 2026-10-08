@@ -15,6 +15,7 @@ import { parseCallRef, callRefPredicate } from "../../modules/calls/callRef.js";
 import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = express.Router();
+import { sharedTwilio } from "../../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
 router.use("/watch", watchCallRoutes);
 const HEARTBEAT_MIN_INTERVAL_MS = 25_000;
 const lastPresenceHeartbeatByUser = new Map<string, number>();
@@ -282,7 +283,7 @@ router.post("/outbound-call", auth, async (req: any, res: Response) => {
 
   try {
     const { default: twilio } = await import("twilio");
-    const client: any = twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!);
+    const client: any = sharedTwilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!);
     const call = await client.calls.create({
       to,
       from,
