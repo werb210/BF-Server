@@ -63,7 +63,7 @@ router.post("/sms", async (req, res) => {
   const body = str(req.body?.body);
   if (!to || !body) { res.status(400).json({ ok: false, error: "to_and_body_required" }); return; }
   try {
-    await sendSMS(to, body);
+    await sendSMS(to, body, { silo: "BI" }); // BF_SERVER_RCS_BRAND_BF_ONLY_v781 - this bridge is BI-Server's
     await recordBridgeSmsOnTimeline(to, body);
     res.json({ ok: true });
   } catch (err) {

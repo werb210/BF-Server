@@ -33,7 +33,10 @@ export function smsFromFor<T extends string | undefined | null>(to: unknown, def
 // the text from "Boreal Financial" with the logo and a verified badge; every other phone gets an ordinary SMS from the
 // service's number pool (put the 866 toll-free number and the local number in the pool). Unset = unchanged behaviour
 // (send from smsFromFor). Marketing and bulk sends do not use this.
-export function smsSenderFor(to: unknown, defaultFrom: string | undefined | null): { messagingServiceSid: string } | { from: string | undefined | null } {
+export function smsSenderFor(to: unknown, defaultFrom: string | undefined | null, opts: { silo?: string | null } = {}): { messagingServiceSid: string } | { from: string | undefined | null } {
+  // BF_SERVER_RCS_BRAND_BF_ONLY_v781 - the RCS sender is branded "Boreal Financial". Boreal Insurance / Boreal Risk
+  // Management texts stay plain SMS until BI has its own RCS sender.
+  if (String(opts.silo ?? "").toUpperCase() === "BI") return { from: smsFromFor(to, defaultFrom) };
   const sid = String(process.env.TWILIO_RCS_MESSAGING_SERVICE_SID ?? "").trim();
   // BF_SERVER_SHORT_LINKS_v771 - with link shortening set up on the Messaging Service (a branded domain such as
   // go.boreal.financial), TWILIO_SHORTEN_LINKS=on asks Twilio to shorten and click-track links in the text.

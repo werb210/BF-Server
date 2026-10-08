@@ -163,9 +163,16 @@ async function notifyOwnerOne(applicationId: string): Promise<{ sms: boolean; em
     const o1: any = owners.find((o) => o.index === 1);
     const phone = String(o1?.homePhone ?? o1?.phone ?? "").trim();
     if (phone) {
-      const { sendSms } = await import("../../modules/notifications/sms.service.js");
-      await sendSms({ to: phone, message: `Boreal Financial: your application and SBA forms are ready to sign. Sign in at ${portal} and tap "Sign your application documents". Reply STOP to opt out.` });
-      out.sms = true;
+      // BF_SERVER_SBA_NOTICE_APP_FIRST_v781 - like every other client notice: the Boreal app first if installed, else SMS.
+      const { pushToClientApp } = await import("../../services/notifications/notifyClient.js");
+      const inApp = await pushToClientApp({ phone, applicationId, kind: "sba_ready_to_sign", sms: "", title: "Ready to sign", body: "Your application and SBA forms are ready to sign.", categoryId: "APPLICATION_UPDATE" });
+      if (!inApp) {
+        const { sendSms } = await import("../../modules/notifications/sms.service.js");
+        await sendSms({ to: phone, message: `Boreal Financial: your application and SBA forms are ready to sign. Sign in at ${portal} and tap "Sign your application documents". Reply STOP to opt out.` });
+        out.sms = true;
+      } else {
+        (out as any).app = true;
+      }
     }
   } catch (err) { console.warn("[sba_send] owner 1 text failed", { applicationId, message: err instanceof Error ? err.message : String(err) }); }
   try {

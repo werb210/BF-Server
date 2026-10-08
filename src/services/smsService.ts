@@ -5,7 +5,7 @@ import { pushDeadLetter } from "../lib/deadLetter.js";
 import { isUndeliverableNumber } from "../lib/smsDeliverability.js"; // BF_SERVER_GUARD_EVERYWHERE_v136
 import { smsFromFor, smsSenderFor } from "../lib/smsFrom.js"; // BF_SERVER_US_SMS_TOLLFREE_v755
 
-export async function sendSMS(to: string, body: string): Promise<{ success: boolean } | void> {
+export async function sendSMS(to: string, body: string, opts: { silo?: string | null } = {}): Promise<{ success: boolean } | void> { // BF_SERVER_RCS_BRAND_BF_ONLY_v781 - silo
   if (config.app.testMode === "true") {
     console.log("[TEST_MODE] SMS skipped");
     return { success: true };
@@ -24,7 +24,7 @@ export async function sendSMS(to: string, body: string): Promise<{ success: bool
 
   const client = fetchTwilioClient();
   try {
-    await withRetry(() => client.messages.create({ to, ...smsSenderFor(to, from), body })); // BF_SERVER_US_SMS_TOLLFREE_v755
+    await withRetry(() => client.messages.create({ to, ...smsSenderFor(to, from, opts), body })); // BF_SERVER_US_SMS_TOLLFREE_v755
   } catch (error) {
     await pushDeadLetter({
       type: "sms",
