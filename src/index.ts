@@ -392,6 +392,11 @@ export async function start(): Promise<void> {
     catch (err) { console.error("[startup] fx-rate worker failed to start:", err); }
 
     // BF_SERVER_BLOCK_v494_LENDER_EMAIL_BOUNCES - read lender bounce notices.
+    // BF_SERVER_REPORTS15_18_v786 - daily pipeline snapshots for the Pipeline snapshot report.
+    const { startPipelineSnapshotWorker } = await import("./workers/pipelineSnapshotWorker.js");
+    await workerStagger();
+    try { const w = startPipelineSnapshotWorker(pool); workerStops.push(w.stop); console.log("[startup] pipeline-snapshot worker started"); }
+    catch (err) { console.error("[startup] pipeline-snapshot worker failed to start:", err); }
     const { startLenderBounceWorker } = await import("./workers/lenderBounceWorker.js");
     await workerStagger();
     try { const w = startLenderBounceWorker(pool); workerStops.push(w.stop); console.log("[startup] lender-bounce worker started"); }

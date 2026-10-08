@@ -36,6 +36,11 @@ export const REPORTS: ReportDef[] = [
   { key: "sms_campaign_performance", title: "SMS campaign performance", silo: "BF", group: "marketing", size: "full", source: "reports", description: "Texts sent, delivered, failed, clicked, replies and opt-outs per campaign and sequence." },
   { key: "website_pages", title: "Website pages and devices", silo: "BF", group: "marketing", size: "full", source: "reports", description: "Landing pages that lead to applications, and visits by phone, tablet or computer." },
   { key: "lifecycle", title: "Lifecycle", silo: "BF", group: "operations", size: "full", source: "reports", description: "Leads to applicants to submitted to funded to repeat clients, with median days between steps." },
+  // BF_SERVER_REPORTS15_18_v786
+  { key: "pipeline_snapshot", title: "Pipeline snapshot", silo: "BF", group: "operations", size: "full", source: "reports", description: "What the open pipeline looked like on a past day, next to today." },
+  { key: "issues_report", title: "Issues", silo: "BF", group: "operations", size: "full", source: "reports", description: "Issues opened and resolved per month, time to resolve, and what is open now." },
+  { key: "custom_report", title: "Custom report", silo: "BF", group: "operations", size: "full", source: "reports", description: "Pick a record type, how to group it and what to count." },
+  { key: "bi_insurance", title: "Insurance reports", silo: "BI", group: "operations", size: "full", source: "portal", description: "Referrals by referrer, carrier turnaround and premium by month (from BI-Server)." }, // BF_SERVER_REPORTS15_18_v786
   { key: "commission_by_month", title: "Commission by month", silo: "BF", group: "money", size: "half", source: "reports", description: "Funded amount and estimated commission per month." },
   // BF_SERVER_REPORTS_BATCH4_v722
   { key: "decline_reasons", title: "Decline reasons", silo: "BF", group: "operations", size: "full", source: "reports", description: "Why lenders pass and files are rejected, from the reasons staff record." },
