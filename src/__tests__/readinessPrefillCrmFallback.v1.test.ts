@@ -19,7 +19,7 @@ describe("readiness-prefill CRM fallback", () => {
 
   it("only runs the fallback on the phone path, keyed on last-10-digit match", () => {
     expect(src).toContain("if (!row && phone)");
-    expect(src).toContain("right(regexp_replace(coalesce(c.phone, ''), '\\D', '', 'g'), 10)");
+    expect(src).toContain("right(regexp_replace(coalesce(c.phone, ''), '\\\\D', '', 'g'), 10)"); // digits only (v778)
   });
 
   it("returns the same prefill field shape as the readiness-session path", () => {

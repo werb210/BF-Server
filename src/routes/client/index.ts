@@ -569,6 +569,35 @@ router.post(
   })
 );
 
+// BF_SERVER_PREFILL_OWN_PHONE_v778
+export function signedInPhone10(req: any): string {
+  const auth = req.headers?.authorization;
+  const secret = process.env.JWT_SECRET;
+  if (!secret || typeof auth !== "string" || !auth.startsWith("Bearer ")) return "";
+  try {
+    const decoded = jwt.verify(auth.slice(7), secret) as Record<string, unknown>;
+    return String(typeof decoded.phone === "string" ? decoded.phone : "").replace(/[^0-9]/g, "").slice(-10);
+  } catch { return ""; }
+}
+// ID numbers and banking are matched by whole words in the key ("partnerSsn", "SINNumber", "bankAccount"), never by
+// letters: "businessName" contains both "sin" and "ssn".
+const PREFILL_NEVER_WORDS = new Set(["ssn", "sin", "ein", "bn", "bank", "routing", "transit", "institution", "password", "signature", "token", "card"]);
+const PREFILL_NEVER_KEYS = new Set(["businessnumber", "taxid", "identitynumber", "idnumber", "socialinsurancenumber", "socialsecuritynumber", "accountnumber"]);
+const prefillNever = (k: string) => {
+  const words = k.split(/(?=[A-Z][a-z])|[_\-\s]+/).map((w) => w.toLowerCase()).filter(Boolean);
+  return PREFILL_NEVER_KEYS.has(k.toLowerCase().replace(/[_\-\s]/g, "")) || words.some((w) => PREFILL_NEVER_WORDS.has(w));
+};
+export function safePrefillFields(obj: unknown): Record<string, unknown> | null {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    if (prefillNever(k)) continue;
+    if (v === null || v === undefined || v === "") continue;
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") out[k] = v;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 router.get(
   "/readiness-prefill",
   safeHandler(async (req: any, res: any) => {
@@ -580,6 +609,19 @@ router.get(
       return;
     }
 
+    // BF_SERVER_PREFILL_OWN_PHONE_v778 - the phone lookup answered anyone who guessed a number with that person's name,
+    // email, company and revenue answers. It now answers only the signed-in client, about their own number. (The
+    // website hand-off by readiness token is unchanged.)
+    if (!token && phone) {
+      const mine = signedInPhone10(req);
+      const asked = phone.replace(/[^0-9]/g, "").slice(-10);
+      if (!mine || mine !== asked) {
+        console.warn("[readiness-prefill] phone lookup refused", { signedIn: Boolean(mine), match: false });
+        res.status(200).json({ found: false });
+        return;
+      }
+    }
+
     let row: Record<string, any> | undefined;
     if (token) {
       const result = await dbQuery(
@@ -589,6 +631,8 @@ router.get(
       row = result.rows[0];
     } else {
       // BF_SERVER_BLOCK_v129a_READINESS_PHONE_NORMALIZE_v1
+      // BF_SERVER_PREFILL_OWN_PHONE_v778 - the regex was written '\D' inside a template literal, which JavaScript turns
+      // into a plain 'D', so this stripped the letter D instead of every non-digit and formatted numbers never matched.
       // Digit-equivalence lookup. Legacy readiness_sessions rows may have
       // raw display format ("(403) 555-1234"); newer rows have E.164
       // ("+14035551234"). Strip both sides to digits. Compare last-10-
@@ -596,9 +640,9 @@ router.get(
       // match. Length guard prevents partial-input false positives.
       const result = await dbQuery(
         `select * from readiness_sessions
-          where right(regexp_replace(coalesce(phone, ''), '\D', '', 'g'), 10)
-                = right(regexp_replace($1, '\D', '', 'g'), 10)
-            and length(regexp_replace(coalesce(phone, ''), '\D', '', 'g')) >= 10
+          where right(regexp_replace(coalesce(phone, ''), '\\D', '', 'g'), 10)
+                = right(regexp_replace($1, '\\D', '', 'g'), 10)
+            and length(regexp_replace(coalesce(phone, ''), '\\D', '', 'g')) >= 10
             and is_active = true
           order by created_at desc limit 1`,
         [phone]
@@ -626,12 +670,13 @@ router.get(
                 COALESCE(a.metadata->'kyc'->>'revenueLast12Months', a.metadata->'kyc'->>'annualRevenue') AS annual_revenue_range,
                 a.metadata->'kyc'->>'monthlyRevenue' AS avg_monthly_revenue_range,
                 COALESCE(a.metadata->'kyc'->>'accountsReceivable', a.metadata->'kyc'->>'arBalance') AS accounts_receivable_range,
-                COALESCE(a.metadata->'kyc'->>'fixedAssets', a.metadata->'kyc'->>'availableCollateral') AS fixed_assets_value_range
+                COALESCE(a.metadata->'kyc'->>'fixedAssets', a.metadata->'kyc'->>'availableCollateral') AS fixed_assets_value_range,
+                a.metadata->'business' AS business, a.metadata->'applicant' AS applicant -- BF_SERVER_PREFILL_OWN_PHONE_v778
            FROM applications a
            JOIN contacts c ON c.id = a.contact_id
-          WHERE right(regexp_replace(coalesce(c.phone, ''), '\D', '', 'g'), 10)
-                = right(regexp_replace($1, '\D', '', 'g'), 10)
-            AND length(regexp_replace($1, '\D', '', 'g')) >= 10
+          WHERE right(regexp_replace(coalesce(c.phone, ''), '\\D', '', 'g'), 10)
+                = right(regexp_replace($1, '\\D', '', 'g'), 10)
+            AND length(regexp_replace($1, '\\D', '', 'g')) >= 10
             AND a.silo = 'BF'
           ORDER BY a.updated_at DESC NULLS LAST, a.created_at DESC
           LIMIT 1`,
@@ -662,8 +707,26 @@ router.get(
             profitable: null,
             existing_debt: null,
             score: null,
+            // BF_SERVER_PREFILL_OWN_PHONE_v778 - business and owner details from the last application, so a returning
+            // client does not retype them. ID numbers and banking details are never sent back.
+            business: safePrefillFields(c.business),
+            applicant: safePrefillFields(c.applicant),
           },
         });
+        return;
+      }
+      // BF_SERVER_PREFILL_OWN_PHONE_v778 - known to the CRM (a call, a web lead) but no application yet.
+      const contact = await dbQuery(
+        `SELECT name, company_name, email, phone FROM contacts
+          WHERE right(regexp_replace(coalesce(phone, ''), '\\D', '', 'g'), 10) = right(regexp_replace($1, '\\D', '', 'g'), 10)
+            AND length(regexp_replace($1, '\\D', '', 'g')) >= 10
+            AND coalesce(silo, 'BF') = 'BF'
+          ORDER BY updated_at DESC NULLS LAST LIMIT 1`,
+        [phone]
+      );
+      const k = contact.rows[0];
+      if (k && (k.name || k.email || k.company_name)) {
+        res.status(200).json({ found: true, source: "contact", prefill: { companyName: k.company_name ?? null, fullName: k.name ?? null, email: k.email ?? null, phone: k.phone ?? phone } });
         return;
       }
     }
