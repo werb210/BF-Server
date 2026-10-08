@@ -20,22 +20,34 @@ export async function stuckDeals(threshold = 7) {
 
 export async function lenderScorecard(windowDays: unknown) {
   const d = days(windowDays, 180);
+  // BF_SERVER_SCORECARD_NAMES_v787 - lender_submissions.lender_id holds a lender id on some paths and a lender
+  // PRODUCT id on others (and is text). Only lender ids were joined, so every product-level row showed "Lender".
+  // Resolve lender id, product id -> its lender, or a stored name, and roll product rows up under their lender.
   const { rows } = await pool.query(
-    `WITH s AS (
-       SELECT ls.lender_id, ls.application_id, COALESCE(ls.submitted_at, ls.created_at) AS sent_at
-         FROM lender_submissions ls WHERE COALESCE(ls.submitted_at, ls.created_at) >= now() - ($1 || ' days')::interval AND ls.lender_id IS NOT NULL
+    `WITH s0 AS (
+       SELECT ls.lender_id AS raw_id, ls.application_id, COALESCE(ls.submitted_at, ls.created_at) AS sent_at
+         FROM lender_submissions ls WHERE COALESCE(ls.submitted_at, ls.created_at) >= now() - ($1 || ' days')::interval
+          AND ls.lender_id IS NOT NULL AND ls.lender_id <> 'default'
+     ), s AS (
+       SELECT COALESCE(l.id::text, p.lender_id::text, s0.raw_id) AS lender_id,
+              COALESCE(l.name, lp.name, CASE WHEN s0.raw_id ~* '^[0-9a-f-]{32,36}$' THEN NULL ELSE s0.raw_id END, 'Unknown lender') AS lender,
+              s0.application_id, s0.sent_at
+         FROM s0
+         LEFT JOIN lenders l ON l.id::text = s0.raw_id
+         LEFT JOIN lender_products p ON p.id = s0.raw_id
+         LEFT JOIN lenders lp ON lp.id = p.lender_id
      ), o AS (
        SELECT o.lender_id::text AS lender_id, o.application_id, min(o.created_at) AS offer_at
          FROM offers o WHERE COALESCE(o.is_archived, false) = false AND o.lender_id IS NOT NULL GROUP BY 1, 2
      )
-     SELECT s.lender_id, COALESCE(l.name, 'Lender') AS lender, count(DISTINCT s.application_id)::int AS sent,
+     SELECT s.lender_id, s.lender, count(DISTINCT s.application_id)::int AS sent,
             count(DISTINCT o.application_id)::int AS offers,
             count(DISTINCT a.id) FILTER (WHERE a.funded_at IS NOT NULL AND a.lender_id::text = s.lender_id)::int AS funded,
             round(avg(EXTRACT(epoch FROM (o.offer_at - s.sent_at)) / 86400) FILTER (WHERE o.offer_at >= s.sent_at)::numeric, 1)::float AS days_to_offer
-       FROM s LEFT JOIN lenders l ON l.id::text = s.lender_id
+       FROM s
        LEFT JOIN o ON o.lender_id = s.lender_id AND o.application_id = s.application_id
        LEFT JOIN applications a ON a.id::text = s.application_id
-      GROUP BY s.lender_id, l.name ORDER BY sent DESC LIMIT 100`, [d]);
+      GROUP BY s.lender_id, s.lender ORDER BY sent DESC LIMIT 100`, [d]);
   return { days: d, lenders: rows };
 }
 
