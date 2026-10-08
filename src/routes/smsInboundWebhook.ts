@@ -68,6 +68,19 @@ async function resolveInboundSmsContact(from: string): Promise<string | null> {
   }
 }
 
+// BF_SERVER_SMS_KEYWORDS_v780 - the replies registered with Twilio for RCS and toll-free verification (Oct 2026).
+const SMS_HELP = "Boreal Financial: For help call 1-866-631-8939 or email info@boreal.financial. Msg frequency varies. Standard message & data rates may apply. Reply STOP to opt out.";
+const SMS_AIDE = "Boreal Financial : Pour de l'aide, appelez le 1-866-631-8939 ou écrivez à info@boreal.financial. La fréquence des messages varie. Des frais standard de messagerie et de données peuvent s'appliquer. Répondez ARRET pour vous désabonner.";
+export function smsKeywordReply(kw: string): { kind: "out" | "in" | "help"; text: string } | null {
+  if (["STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "OPTOUT"].includes(kw)) return { kind: "out", text: "Boreal Financial: You've been unsubscribed and won't receive any more messages. Reply START to resubscribe." };
+  if (kw === "ARRET" || kw === "ARRT") return { kind: "out", text: "Boreal Financial : Vous êtes désabonné et ne recevrez plus de messages. Répondez START pour vous réabonner." };
+  if (["START", "UNSTOP", "SUBSCRIBE", "OPTIN", "YES"].includes(kw)) return { kind: "in", text: "Boreal Financial: You're subscribed to texts about your financing application. Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out." };
+  if (kw === "HELP") return { kind: "help", text: SMS_HELP };
+  if (kw === "AIDE") return { kind: "help", text: SMS_AIDE };
+  if (kw === "INFO") return { kind: "help", text: SMS_HELP + " / " + SMS_AIDE };
+  return null;
+}
+
 router.post("/webhooks/twilio/sms-inbound", async (req: any, res) => {
   const from = String(req.body?.From ?? "");
   const to = String(req.body?.To ?? "");
@@ -88,35 +101,45 @@ router.post("/webhooks/twilio/sms-inbound", async (req: any, res) => {
   // keywords, scoped to this inbound number's silo (BF). Runs before normal logging. If Twilio
   // Advanced Opt-Out is enabled it intercepts STOP upstream (this never fires, no double reply);
   // if not, this sets our DB flag and confirms. Our sends already suppress on sms_opt_out.
+  // BF_SERVER_SMS_KEYWORDS_v780 - adds French ARRET, HELP/AIDE/INFO replies, and the exact wording registered with
+  // Twilio (RCS and toll-free). "YES" was a resubscribe word, so a client answering a staff question with "Yes" got
+  // an automatic reply and their message never reached staff; START-family words now only resubscribe someone who
+  // is actually opted out, and otherwise flow through as a normal message.
   {
     const kw = body.trim().toUpperCase().replace(/[^A-Z]/g, "");
-    const STOP_WORDS = new Set(["STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "OPTOUT"]);
-    const START_WORDS = new Set(["START", "YES", "UNSTOP", "SUBSCRIBE", "OPTIN"]);
-    if (STOP_WORDS.has(kw) || START_WORDS.has(kw)) {
-      const optOut = STOP_WORDS.has(kw);
-      const digits = from.replace(/[^0-9]/g, "");
-      const last10 = digits.length >= 10 ? digits.slice(-10) : digits;
-      try {
-        if (last10) {
-          // BF_SERVER_SMS_STOP_ALL_SILOS_v1 - this was scoped to silo = 'BF', so a BI
-          // contact who texted STOP was never opted out and kept receiving messages.
-          // A person saying STOP means stop, from every silo.
-          await pool.query(
-            `UPDATE contacts SET sms_opt_out = $2, updated_at = now()
-              WHERE phone IS NOT NULL
-                AND length(regexp_replace(phone, '[^0-9]', '', 'g')) >= 10
-                AND right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = $1`,
-            [last10, optOut],
-          );
+    const digits = from.replace(/[^0-9]/g, "");
+    const last10 = digits.length >= 10 ? digits.slice(-10) : digits;
+    const reply = smsKeywordReply(kw);
+    let act: "out" | "in" | "help" | null = reply ? reply.kind : null;
+    if (act === "in") {
+      // Only treat it as "resubscribe" when this number is currently opted out.
+      const cur = last10 ? await pool.query<{ out: boolean }>(
+        `SELECT bool_or(COALESCE(sms_opt_out, false)) AS out FROM contacts
+          WHERE phone IS NOT NULL AND right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = $1`, [last10],
+      ).catch((err: unknown) => { console.warn("[sms-inbound] opt-out lookup failed", err instanceof Error ? err.message : String(err)); return null; }) : null;
+      if (!cur?.rows[0]?.out) act = null;
+    }
+    if (act && reply) {
+      if (act !== "help") {
+        try {
+          if (last10) {
+            // BF_SERVER_SMS_STOP_ALL_SILOS_v1 - a person saying STOP means stop, from every silo.
+            await pool.query(
+              `UPDATE contacts SET sms_opt_out = $2, updated_at = now()
+                WHERE phone IS NOT NULL
+                  AND length(regexp_replace(phone, '[^0-9]', '', 'g')) >= 10
+                  AND right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = $1`,
+              [last10, act === "out"],
+            );
+          }
+          console.log("[sms-inbound] opt_" + act, { from, silo: "ALL", keyword: kw });
+        } catch (err: unknown) {
+          console.warn("[sms-inbound] opt-out update failed", err instanceof Error ? err.message : String(err));
         }
-        console.log("[sms-inbound] opt_" + (optOut ? "out" : "in"), { from, silo: "ALL" });
-      } catch (err: unknown) {
-        console.warn("[sms-inbound] opt-out update failed", err instanceof Error ? err.message : String(err));
+      } else {
+        console.log("[sms-inbound] help_reply", { from, keyword: kw });
       }
-      const reply = optOut
-        ? "You have been unsubscribed from Boreal Financial messages. Reply START to resubscribe."
-        : "You are resubscribed to Boreal Financial messages. Reply STOP to opt out.";
-      return res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
+      return res.type("text/xml").send(`<Response><Message>${reply.text}</Message></Response>`);
     }
   }
 

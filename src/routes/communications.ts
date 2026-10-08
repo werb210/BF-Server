@@ -598,7 +598,9 @@ router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
 // account creds. Token rides the query string so it works in an <img src>.
 router.get("/messages/:id/media", safeHandler(async (req: any, res: any) => {
   const token = String(req.query?.token ?? "");
-  try { verifyAccessToken(token); } catch { return res.status(401).end(); }
+  // BF_SERVER_MMS_DIAG_v780 - every way an image can fail is now logged with its reason, so a broken picture in the
+  // portal can be traced from one log line (the portal shows "Image couldn't load" instead of a broken image).
+  try { verifyAccessToken(token); } catch { console.warn("[mms-media] refused", { reason: token ? "token_invalid_or_expired" : "no_token" }); return res.status(401).end(); }
   const id = String(req.params?.id ?? "");
   if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).end();
   const { rows } = await pool.query<{ media_url: string | null }>(
@@ -606,7 +608,7 @@ router.get("/messages/:id/media", safeHandler(async (req: any, res: any) => {
     [id],
   );
   const mediaUrl = rows[0]?.media_url ?? null;
-  if (!mediaUrl) return res.status(404).end();
+  if (!mediaUrl) { console.warn("[mms-media] no media on message", { id }); return res.status(404).end(); }
   // BF_SERVER_MMS_BLOB_PROXY_v1 - render inbound MMS reliably. Already-persisted
   // (public blob / non-Twilio) URLs stream directly. A raw Twilio URL is copied
   // to public blob on first view (self-heal) so it never breaks again when Twilio
@@ -624,17 +626,18 @@ router.get("/messages/:id/media", safeHandler(async (req: any, res: any) => {
       buf = persisted.buffer;
     } else {
       const direct = await fetchTwilioMedia(mediaUrl);
-      if (!direct) return res.status(502).end();
+      if (!direct) { console.warn("[mms-media] twilio fetch failed (purged or bad credentials)", { id }); return res.status(502).end(); }
       ct = direct.contentType || ct;
       buf = direct.buffer;
     }
   } else {
     try {
       const upstream = await fetch(mediaUrl);
-      if (!upstream.ok) return res.status(502).end();
+      if (!upstream.ok) { console.warn("[mms-media] stored copy unreadable", { id, status: upstream.status, host: (() => { try { return new URL(mediaUrl).host; } catch { return "?"; } })() }); return res.status(502).end(); }
       ct = upstream.headers.get("content-type") ?? ct;
       buf = Buffer.from(await upstream.arrayBuffer());
-    } catch {
+    } catch (err: unknown) {
+      console.warn("[mms-media] stored copy fetch threw", { id, error: err instanceof Error ? err.message : String(err) });
       return res.status(502).end();
     }
   }

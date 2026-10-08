@@ -95,4 +95,23 @@ router.post("/commission-received", requireAuth, safeHandler(async (req: any, re
   if (!r.rowCount) { res.status(404).json({ error: "not_found" }); return; }
   res.json({ ok: true });
 }));
+// BF_SERVER_REPORTS6_10_v780 - PUT /api/reports/goals { userId, fundingTarget?, commissionTarget? } (this month; Admin only)
+router.put("/goals", requireAuth, safeHandler(async (req: any, res: any) => {
+  if (normalizeRole(req.user?.role) !== "Admin") { res.status(403).json({ error: "admin_only" }); return; }
+  const userId = String(req.body?.userId ?? "").trim();
+  if (!/^[0-9a-f-]{36}$/i.test(userId)) { res.status(400).json({ error: "user_id_required" }); return; }
+  const money = (raw: unknown): number | null | "bad" => {
+    if (raw === null || raw === undefined || String(raw).trim() === "") return null;
+    const n = Number(raw); return Number.isFinite(n) && n >= 0 ? n : "bad";
+  };
+  const f = money(req.body?.fundingTarget), c = money(req.body?.commissionTarget);
+  if (f === "bad" || c === "bad") { res.status(400).json({ error: "invalid_amount", message: "Targets must be positive numbers." }); return; }
+  await pool.query(
+    `INSERT INTO report_goals (user_id, month, funding_target, commission_target, updated_at)
+     VALUES ($1::uuid, date_trunc('month', now())::date, $2, $3, now())
+     ON CONFLICT (user_id, month) DO UPDATE SET funding_target = EXCLUDED.funding_target, commission_target = EXCLUDED.commission_target, updated_at = now()`,
+    [userId, f, c],
+  );
+  res.json({ ok: true });
+}));
 export default router;

@@ -108,4 +108,10 @@ export const DATA: Record<string, (q: Record<string, unknown>, ctx: B2.Ctx) => P
   call_outcomes: async (q, ctx) => (await import("./data5.js")).callOutcomes(q, ctx),
   client_reply_time: async (q) => (await import("./data5.js")).clientReplyTime(q),
   commission_receivable: async () => (await import("./data5.js")).commissionReceivable(),
+  // BF_SERVER_REPORTS6_10_v780
+  pipeline_movement: async (q) => (await import("./data6.js")).pipelineMovement(q),
+  average_deal_size: async (q) => (await import("./data6.js")).averageDealSize(q),
+  goals: async (q, ctx) => (await import("./data6.js")).goals(q, ctx),
+  meetings: async (q) => (await import("./data6.js")).meetings(q),
+  tasks_report: async (q, ctx) => (await import("./data6.js")).tasksReport(q, ctx),
 };

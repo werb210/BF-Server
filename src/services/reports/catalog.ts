@@ -25,6 +25,12 @@ export const REPORTS: ReportDef[] = [
   { key: "call_outcomes", title: "Call outcomes", silo: "BF", group: "operations", size: "half", source: "reports", description: "Outbound calls by result, per person (staff see their own)." },
   { key: "client_reply_time", title: "Client reply time", silo: "BF", group: "operations", size: "full", source: "reports", description: "How fast staff answer clients, and who is waiting for a reply right now." },
   { key: "commission_receivable", title: "Commission receivable", silo: "BF", group: "money", size: "full", source: "reports", description: "Commission lenders owe Boreal on funded files, by age; mark it received." },
+  // BF_SERVER_REPORTS6_10_v780
+  { key: "pipeline_movement", title: "Pipeline movement", silo: "BF", group: "operations", size: "full", source: "reports", description: "Files started, submitted, funded and lost in the period, with amounts." },
+  { key: "average_deal_size", title: "Average deal size", silo: "BF", group: "operations", size: "full", source: "reports", description: "Average and median requested amount by product and lead source, and for funded files." },
+  { key: "goals", title: "Goals", silo: "BF", group: "money", size: "full", source: "reports", description: "This month's funding and commission targets per person, with progress." },
+  { key: "meetings", title: "Meetings", silo: "BF", group: "operations", size: "full", source: "reports", description: "Client bookings per person: booked, held, cancelled, upcoming, and how many led to a funded file." },
+  { key: "tasks_report", title: "Tasks", silo: "BF", group: "operations", size: "full", source: "reports", description: "Open, overdue and completed tasks per person, and how many were done on time." },
   { key: "commission_by_month", title: "Commission by month", silo: "BF", group: "money", size: "half", source: "reports", description: "Funded amount and estimated commission per month." },
   // BF_SERVER_REPORTS_BATCH4_v722
   { key: "decline_reasons", title: "Decline reasons", silo: "BF", group: "operations", size: "full", source: "reports", description: "Why lenders pass and files are rejected, from the reasons staff record." },
