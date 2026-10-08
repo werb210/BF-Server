@@ -13,6 +13,7 @@ import express, { Router, type Request, type Response } from "express";
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
 import { pool } from "../db.js";
 import { config } from "../config/index.js";
+import { sharedOpenAI } from "../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
 
 const router = Router();
 
@@ -67,7 +68,7 @@ async function renderNova(text: string): Promise<Buffer | null> {
   }
   try {
     const OpenAI = (await import("openai")).default;
-    const client = new OpenAI({ apiKey });
+    const client = sharedOpenAI(apiKey);
     const speech = await client.audio.speech.create({ model: "tts-1", voice: "nova", input: text });
     return Buffer.from(await speech.arrayBuffer());
   } catch (error) {

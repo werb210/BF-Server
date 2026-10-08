@@ -1,6 +1,7 @@
 // BF_SERVER_BLOCK_v535_FINANCIAL_EXTRACTION - financial statement and T2 extraction.
 import OpenAI from "openai";
 import { pool } from "../../db.js";
+import { sharedOpenAI } from "../../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
 
 export const LINE_ITEMS = [
   "revenue", "cost_of_sales", "gross_margin", "operating_expenses", "rent_expense", "depreciation_amortization",
@@ -50,7 +51,7 @@ const PROMPT = [
 
 export async function extractFromText(text: string): Promise<ExtractedPeriod[]> {
   if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not set");
-  const response = await new OpenAI({ apiKey: process.env.OPENAI_API_KEY }).chat.completions.create({
+  const response = await sharedOpenAI(process.env.OPENAI_API_KEY).chat.completions.create({
     model: process.env.CREDIT_LLM_MODEL || process.env.BANKING_LLM_MODEL || "gpt-5.4-mini",
     response_format: { type: "json_object" },
     messages: [{ role: "system", content: PROMPT }, { role: "user", content: text.slice(0, 80000) }],

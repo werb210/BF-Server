@@ -1,3 +1,4 @@
+import { sharedTwilio } from "../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
 import { Router } from "express";
 import { requireAuth, requireAuthorization, requireCapability } from "../middleware/auth.js";
 import { CAPABILITIES } from "../auth/capabilities.js";
@@ -1244,7 +1245,7 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
   if (!accountSid || !authToken || !from) {
     return res.status(503).json({ error: { message: "SMS not configured", code: "service_unavailable" } });
   }
-  const client: any = twilio(accountSid, authToken);
+  const client: any = sharedTwilio(accountSid, authToken);
   // BF_SERVER_COMMS_SMS_TWILIO_ERROR_v1 - wrap the Twilio send so a rejection
   // (invalid number, A2P/10DLC, geo-permission, funds) returns the real code
   // instead of an opaque 500. Without this every Twilio failure looked
@@ -1919,7 +1920,7 @@ router.post("/broadcast", safeHandler(async (req: any, res: any) => {
     if (!accountSid || !authToken || !from) {
       return res.status(503).json({ error: { message: "SMS not configured", code: "service_unavailable" } });
     }
-    client = twilio(accountSid, authToken);
+    client = sharedTwilio(accountSid, authToken);
   }
 
   const results: Array<{ contactId: string; ok: boolean; error?: string }> = [];

@@ -4,6 +4,7 @@ import { pool } from "../../db.js";
 import { findActiveDocumentVersion } from "../../modules/applications/applications.repo.js";
 import { createOcrStorage } from "../../modules/ocr/ocr.storage.js";
 import { readZip } from "../brokerImport/zip.js";
+import { sharedOpenAI } from "../../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
 
 export type CollateralKind = "ar_aging" | "ap_aging" | "equipment" | "real_estate";
 export const CATEGORY_KIND: Record<string, CollateralKind> = {
@@ -57,7 +58,7 @@ const PROMPTS: Record<CollateralKind, string> = {
 
 async function extractKind(kind: CollateralKind, text: string): Promise<unknown> {
   if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not set");
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const openai = sharedOpenAI(process.env.OPENAI_API_KEY);
   const response = await openai.chat.completions.create({ model: process.env.CREDIT_LLM_MODEL || process.env.BANKING_LLM_MODEL || "gpt-5.4-mini", response_format: { type: "json_object" }, messages: [{ role: "system", content: `${PROMPTS[kind]} Leave out anything not shown. Never estimate.` }, { role: "user", content: text.slice(0, 80000) }] });
   try { return JSON.parse(response.choices[0]?.message?.content ?? "{}"); } catch { return {}; }
 }

@@ -379,6 +379,7 @@ export async function start(): Promise<void> {
 
   const httpServer = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server listening on ${PORT}`);
+    void import("./lib/netSockets.js").then((m) => m.startSocketReport()).catch((err) => console.warn("[net-sockets] not started", err?.message)); // BF_SERVER_SNAT_REUSE_v784
     markReady();
     startKeepWarm();
     // Optional subsystems come up only once the port is serving.

@@ -9,6 +9,7 @@ import { config } from "../config/index.js";
 import { emitAiEscalation } from "../realtime/events.js";
 import { circuitGuard, recordFailure, resetCircuit } from "../utils/circuitBreaker.js";
 import { retry } from "../utils/retry.js";
+import { sharedOpenAI } from "../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
 
 // TEMP TYPE FIXES
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -64,7 +65,7 @@ async function createAiResponse(prompt: string, context: string[]): Promise<stri
       .join(" ")}`;
   }
 
-  const client = new OpenAI({ apiKey });
+  const client = sharedOpenAI(apiKey);
   const response = await retry(async () => {
     circuitGuard();
     try {

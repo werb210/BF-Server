@@ -5,6 +5,7 @@ import { loadFinancialTable, type FinancialTable } from "./financials.js";
 import { loadCollateral } from "./collateral.js";
 import { loadResearch } from "./research.js";
 import { loadCrmTimeline } from "../../routes/crm/timeline.js";
+import { sharedOpenAI } from "../../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
 
 export type DealType = "equipment" | "abl" | "term";
 export function dealTypeFor(productCategory: unknown): DealType {
@@ -111,7 +112,7 @@ const DEAL_SECTION: Record<DealType, string> = {
 };
 export async function writeNarrative(facts: object, dealType: DealType): Promise<Section[]> {
   if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not set");
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const openai = sharedOpenAI(process.env.OPENAI_API_KEY);
   const r = await openai.chat.completions.create({ model: process.env.CREDIT_WRITER_MODEL || process.env.CREDIT_LLM_MODEL || "gpt-5.4", response_format: { type: "json_object" },
     messages: [{ role: "system", content: STYLE }, { role: "user", content: ["Write these sections and return ONLY JSON:",
       "{\"transaction\":\"...\",\"overview\":\"... (paragraphs separated by blank lines; special situations as '**Heading**' then text)\",",

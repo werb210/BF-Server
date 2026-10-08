@@ -14,6 +14,7 @@ import { detectUnusualTransactions, aggregateVendors } from "./transactionInsigh
 import { classifyOcrFailure, isInfrastructureFailure, anyInfrastructureFailure, describeOcrFailure } from "./ocrFailure.js";
 import { averageDailyBalance } from "./balanceMetrics.js";
 import { detectStatementCurrency, isNsfDescription, sanitizeTransactions, statementBodyFingerprint, type CurrencyCode } from "./statementIntegrity.js";
+import { sharedOpenAI } from "../../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
 
 // BF_SERVER_BANKING_INTEGRITY_v44
 
@@ -23,7 +24,7 @@ import { detectStatementCurrency, isNsfDescription, sanitizeTransactions, statem
 // OpenAI mock.
 function getOpenAiClient(): OpenAI | null {
   return process.env.OPENAI_API_KEY
-    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+    ? sharedOpenAI(process.env.OPENAI_API_KEY)
     : null;
 }
 
