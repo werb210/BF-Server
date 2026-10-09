@@ -1,4 +1,4 @@
-import { Router } from "express";
+import express, { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { pool } from "../db.js";
@@ -1051,6 +1051,57 @@ router.post("/library/upload", safeHandler(async (req: any, res: any) => {
   if (!put.ok) { const d = (await put.text()).slice(0, 400); return res.status(502).json({ error: "upload_failed", detail: d }); }
   const item: any = await put.json();
   res.json({ ok: true, item: mapDriveItem(item) });
+}));
+// BF_SERVER_LIBRARY_BIG_UPLOAD_v790 - files up to 200 MB. The portal asks for a OneDrive upload session, then sends
+// the file in 5 MB pieces; each piece is passed straight on to OneDrive, so nothing large is ever held in memory.
+export const LIBRARY_MAX_BIG_UPLOAD_BYTES = 200 * 1024 * 1024;
+export const LIBRARY_CHUNK_BYTES = 16 * 320 * 1024; // 5 MiB - OneDrive wants pieces in multiples of 320 KiB
+export function isOneDriveUploadUrl(raw: unknown): boolean {
+  try {
+    const u = new URL(String(raw ?? ""));
+    if (u.protocol !== "https:") return false;
+    const h = u.hostname.toLowerCase();
+    return [".sharepoint.com", ".1drv.com", ".onedrive.com", ".live.com", ".microsoft.com"].some((s) => h.endsWith(s));
+  } catch { return false; }
+}
+router.post("/library/upload-session", safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const lib = await libraryRow();
+  if (!lib || !lib.drive_id) return res.status(409).json({ error: "library_missing", message: "Create the Staff Library first." });
+  const name = cleanLibraryName(req.body?.name);
+  if (!name) return res.status(400).json({ error: "name_required", message: "The file needs a name." });
+  const size = Number(req.body?.size);
+  if (!Number.isFinite(size) || size <= 0) return res.status(400).json({ error: "empty_file", message: "The file is empty." });
+  if (size > LIBRARY_MAX_BIG_UPLOAD_BYTES) return res.status(413).json({ error: "too_large", message: "Files up to 200 MB. Upload bigger files in OneDrive." });
+  const graph = await getGraphForUser(pool, userId);
+  if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  const t = await libraryTarget(graph, lib, typeof req.body?.folderId === "string" ? req.body.folderId : null);
+  const base = "/drives/" + encodeURIComponent(t.driveId as string) + "/items/" + encodeURIComponent(t.parentId) + ":/" + encodeURIComponent(name) + ":";
+  const s = await graph.fetch(base + "/createUploadSession", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "rename" } }) });
+  if (!s.ok) { const d = (await s.text()).slice(0, 400); return res.status(s.status === 401 || s.status === 403 ? 412 : 502).json({ error: "upload_failed", detail: d }); }
+  const uploadUrl: string = ((await s.json()) as any)?.uploadUrl;
+  if (!isOneDriveUploadUrl(uploadUrl)) return res.status(502).json({ error: "upload_failed", detail: "OneDrive did not return an upload address." });
+  res.json({ ok: true, uploadUrl, chunkBytes: LIBRARY_CHUNK_BYTES, maxBytes: LIBRARY_MAX_BIG_UPLOAD_BYTES });
+}));
+router.post("/library/upload-chunk", express.raw({ type: "application/octet-stream", limit: "12mb" }), safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId;
+  if (!userId) return res.status(401).json({ error: "unauthenticated" });
+  const uploadUrl = String(req.headers["x-upload-url"] ?? "");
+  if (!isOneDriveUploadUrl(uploadUrl)) return res.status(400).json({ error: "bad_upload_url" });
+  const start = Number(req.headers["x-chunk-start"]);
+  const total = Number(req.headers["x-total-size"]);
+  const body: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+  if (!body.length || !Number.isInteger(start) || start < 0 || !Number.isInteger(total) || total > LIBRARY_MAX_BIG_UPLOAD_BYTES || start + body.length > total) {
+    return res.status(400).json({ error: "bad_chunk" });
+  }
+  const end = start + body.length - 1;
+  const put = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Length": String(body.length), "Content-Range": "bytes " + start + "-" + end + "/" + total }, body: new Uint8Array(body) });
+  if (put.status === 202) return res.json({ ok: true, done: false, next: end + 1 });
+  if (put.status === 200 || put.status === 201) return res.json({ ok: true, done: true, item: mapDriveItem(await put.json()) });
+  const d = (await put.text()).slice(0, 400);
+  console.warn("[staff-library] chunk upload failed", { status: put.status, start, total });
+  return res.status(502).json({ error: "upload_failed", detail: d });
 }));
 router.post("/library/folder", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId;

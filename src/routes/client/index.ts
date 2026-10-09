@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import jwt from "jsonwebtoken";
@@ -21,7 +21,6 @@ import { makeSigningOwnerGuard } from "./signingOwner.js"; // BF_SERVER_BLOCK_v4
 import submitAttemptsRouter from "./submitAttempts.js";
 import {
   clientDocumentsRateLimit,
-  clientReadRateLimit,
   safeKeyGenerator,
 } from "../../middleware/rateLimit.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
@@ -37,7 +36,23 @@ router.use(passkeysRouter); // BF_SERVER_BLOCK_v599 - passkey sign-in, before th
 // relies on (fee agreement signing, to-do buttons). The app compares its own build time and asks the client to
 // update instead of showing buttons that do nothing. Raise CLIENT_APP_MIN_BUILD when a change needs a new app.
 router.get("/app-version", (_req: any, res: any) => { res.json({ minBuild: process.env.CLIENT_APP_MIN_BUILD || "2026-10-04T00:00:00Z", webUrl: "https://client.boreal.financial" }); });
-const clientReadLimiter = clientReadRateLimit() as any;
+// BF_SERVER_CMP_READ_LIMIT_v790 - every client GET used to share the site-wide 200-per-15-minutes limiter, keyed by IP.
+// The client portal polls about 25 GETs a minute, so after ~8 minutes every read failed with 429 for the rest of
+// the window: the to-do list failed to load and "Sign your application documents" never appeared. Reads now get
+// their own ceiling, counted per signed-in client (their session token), or per IP when there is none.
+const clientReadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "RATE_LIMITED" },
+  keyGenerator: (req: any) => {
+    const auth = String(req.headers?.authorization ?? "");
+    const token = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
+    return token ? "tok:" + createHash("sha256").update(token).digest("hex").slice(0, 24) : "ip:" + safeKeyGenerator(req);
+  },
+  validate: { xForwardedForHeader: false, trustProxy: false, keyGeneratorIpFallback: false },
+}) as any;
 
 router.use((req: any, res: any, next: any) => {
   if (req.method === "GET") {

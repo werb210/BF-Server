@@ -993,7 +993,8 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
   const snEmbed = (md?.signnow_embedded && typeof md.signnow_embedded === 'object') ? md.signnow_embedded as Record<string, any> : null;
   const signingStatus = deriveSigningStatus({
     signedAt: app.signnow_app_signed_at ?? null,
-    groupId: snEmbed?.group_id ?? null,
+    // BF_SERVER_SBA_ONE_BUTTON_v789 - an SBA file's signing lives in metadata.sba_signnow.
+    groupId: snEmbed?.group_id ?? (Array.isArray(md?.sba_signnow) && md.sba_signnow.length > 0 ? (md.sba_signnow[0]?.groupId ?? 'sba') : null),
     finalizedLenders: Number(app.finalized_lenders ?? 0),
   });
 
@@ -1803,18 +1804,24 @@ function signingBlockReason(s: { allDocsAccepted: boolean; allTasksComplete: boo
   return 'ready';
 }
 
+// BF_SERVER_SBA_ONE_BUTTON_v789
+async function sbaReadinessReason(id: string, reason: string): Promise<string> {
+  const trig = await import('../../signnow/sba/sbaTrigger.js');
+  if (!(await trig.isSbaApplication(id))) return reason;
+  if ((await trig.sbaEnvelopeCount(id)) > 0) return 'started';
+  const forms = await trig.sbaFormsComplete(id);
+  return forms.complete ? reason : 'sba_forms_incomplete';
+}
+
 router.get('/:id/signing-readiness', safeHandler(async (req: any, res: any) => {
   const id = String(req.params.id ?? '').trim();
   if (!id) throw new AppError('validation_error', 'Application id required.', 400);
   const { readReadinessSnapshot } = await import('../../services/submission/orchestrator.js');
   const snapshot = await readReadinessSnapshot({ pool, applicationId: id });
   let reason = signingBlockReason(snapshot);
-  // BF_SERVER_SBA_READINESS_v781 - SBA files sign from the SBA Signing tab and do not wait for a lender, so "no lender
-  // finalized" was misleading there.
-  if (reason === 'lender_not_finalized') {
-    const { isSbaApplication } = await import('../../signnow/sba/sbaTrigger.js');
-    if (await isSbaApplication(id).catch(() => false)) reason = 'sba_use_sba_signing';
-  }
+  // BF_SERVER_SBA_ONE_BUTTON_v789 - an SBA file signs like every other file (lender saved first: the 4506-C names it).
+  // Only the SBA-specific states are added: forms not finished, or signing already out.
+  if (reason === 'ready') reason = await sbaReadinessReason(id, reason);
   const d = await pool.query(
     `SELECT signnow_app_signed_at, signnow_document_id, requested_amount, metadata->'signnow_embedded' AS embedded FROM applications WHERE id::text = ($1)::text`,
     [id]
@@ -1843,6 +1850,19 @@ router.post('/:id/resend-signing', safeHandler(async (req: any, res: any) => {
   const reason = signingBlockReason(snapshot);
   if (reason !== 'ready') {
     res.json({ status: 'ok', data: { ok: false, reason, snapshot } });
+    return;
+  }
+  // BF_SERVER_SBA_ONE_BUTTON_v789 - on an SBA file this button starts (or, after edits, restarts) the SBA signing:
+  // every owner signs the application, their SBA forms and a 4506-C for each saved lender.
+  const trig = await import('../../signnow/sba/sbaTrigger.js');
+  if (await trig.isSbaApplication(id)) {
+    const started = await trig.startSbaSigningForStaff(id);
+    if (started.started) {
+      await pool.query(`UPDATE applications SET submission_chain_started_at = COALESCE(submission_chain_started_at, NOW()) WHERE id::text = ($1)::text`, [id])
+        .catch((err: any) => { console.warn('[resend-signing] sba claim stamp failed', { applicationId: id, message: err?.message }); });
+    }
+    res.json({ status: 'ok', data: { ok: started.started, sessionStatus: started.started ? 'ready' : 'not_ready', reason: started.started ? 'ready' : started.reason,
+      ...(started.started ? { owners: started.owners } : { missing: started.missing ?? [] }), snapshot } });
     return;
   }
   const mod: any = await import('../../signnow/embeddedSigningSession.js').catch(() => null);

@@ -98,6 +98,10 @@ export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): 
   // Facility section filled before SignNow fires (otherwise the envelope/package
   // would go out with empty collateral fields).
   if (snap.collateralRequired && !snap.collateralComplete) return { fired: false, reason: "collateral_incomplete" };
+  // BF_SERVER_SBA_ONE_BUTTON_v789 - Send on an SBA file starts the SBA signing (application + SBA forms +
+  // a 4506-C for the lenders just saved) instead of failing, and never sends the staff "credit summary" alert:
+  // an SBA file has no credit summary.
+  if (await isSbaForReadiness(ctx.applicationId)) return sbaStageA(ctx, snap);
   // BF_SERVER_BLOCK_v179_ORCHESTRATOR_CAS_v1
   // Race-safe start: claim the chain via UPDATE...WHERE IS NULL
   // RETURNING id. If RETURNING is empty, another caller beat us;
@@ -153,8 +157,46 @@ export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): 
   const notice = await signingNoticeFor(ctx.applicationId, false);
   return { fired: true, ...(notice ? { notice } : {}) };
 }
-export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promise<{ fired: boolean; reason?: string; sentTo?: string[] }> {
+// BF_SERVER_SBA_ONE_BUTTON_v789
+async function sbaStageA(ctx: OrchestratorContext, snap: ReadinessSnapshot): Promise<StageAResult> {
+  if (snap.applicationSigned) return { fired: false, reason: "already_signed" };
+  const trig = await import("../../signnow/sba/sbaTrigger.js");
+  if ((await trig.sbaEnvelopeCount(ctx.applicationId)) > 0) {
+    // Same as every other file: Send again on an unsigned file re-texts owner 1 (at most every 2 minutes).
+    const notice = await signingNoticeFor(ctx.applicationId, true);
+    return { fired: false, reason: "already_started", ...(notice ? { notice } : {}) };
+  }
+  const claim = await ctx.pool
+    .query<{ id: string }>(
+      `UPDATE applications SET submission_chain_started_at = NOW()
+        WHERE id::text = $1 AND submission_chain_started_at IS NULL
+        RETURNING id`,
+      [ctx.applicationId]
+    )
+    .catch((err: unknown) => { console.warn("[orchestrator] sba claim failed", { applicationId: ctx.applicationId, message: err instanceof Error ? err.message : String(err) }); return { rows: [] as Array<{ id: string }> }; });
+  if (!claim.rows.length) return { fired: false, reason: "already_started" };
+  let started: Awaited<ReturnType<typeof trig.startSbaSigningForStaff>>;
+  try {
+    started = await trig.startSbaSigningForStaff(ctx.applicationId);
+  } catch (e) {
+    console.warn("[orchestrator] sba signing start failed", { applicationId: ctx.applicationId, message: e instanceof Error ? e.message : String(e) });
+    started = { started: false, reason: "no_envelopes_created" };
+  }
+  if (!started.started) {
+    await ctx.pool.query(`UPDATE applications SET submission_chain_started_at = NULL WHERE id::text = $1`, [ctx.applicationId])
+      .catch((err: unknown) => { console.warn("[orchestrator] sba claim release failed", { applicationId: ctx.applicationId, message: err instanceof Error ? err.message : String(err) }); });
+    return { fired: false, reason: started.reason };
+  }
+  const notice = await signingNoticeFor(ctx.applicationId, false);
+  return { fired: true, ...(notice ? { notice } : {}) };
+}
+export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promise<{ fired: boolean; reason?: string; detail?: string; sentTo?: string[] }> {
   const snap = await readReadinessSnapshot(ctx);
+  // BF_SERVER_SBA_PACKAGE_READINESS_v788 - an SBA file signs from the SBA Signing tab, so the document and
+  // 4506-C checks on the normal signing path never ran for it. Hold here, with a reason staff can act on.
+  const { sbaPackageBlocker } = await import("../../signnow/sba/sbaPackageReadiness.js");
+  const sbaBlock = await sbaPackageBlocker(ctx.applicationId);
+  if (sbaBlock) return { fired: false, reason: sbaBlock.reason, ...(sbaBlock.detail ? { detail: sbaBlock.detail } : {}) };
   // BF_SERVER_SEND_REASON_v752 - say which one is missing instead of a single "not_ready".
   if (!snap.applicationSigned) return { fired: false, reason: "application_not_signed" };
   if (!snap.creditSummarySubmitted) return { fired: false, reason: "credit_summary_not_submitted" };
@@ -256,4 +298,4 @@ export async function maybeBuildAndSendPackage(ctx: OrchestratorContext): Promis
   ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:225");});
   return { fired: true, sentTo };
 }
-export async function progressSubmission(ctx: OrchestratorContext): Promise<{ stageA: StageAResult; stageB: { fired: boolean; reason?: string; sentTo?: string[] } }> { const stageA = await maybeStartCreditSummaryAndSign(ctx); const stageB = await maybeBuildAndSendPackage(ctx); return { stageA, stageB }; }
+export async function progressSubmission(ctx: OrchestratorContext): Promise<{ stageA: StageAResult; stageB: { fired: boolean; reason?: string; detail?: string; sentTo?: string[] } }> { const stageA = await maybeStartCreditSummaryAndSign(ctx); const stageB = await maybeBuildAndSendPackage(ctx); return { stageA, stageB }; }

@@ -17,7 +17,8 @@ describe("an unsigned application cannot starve the lender queue", () => {
   });
 
   it("every signing gate goes through the backoff helper", () => {
-    expect(worker.match(/await requeueUnsigned\(/g)?.length).toBe(3);
+    // BF_SERVER_SBA_PACKAGE_READINESS_v788 - fourth gate: the SBA package readiness hold.
+    expect(worker.match(/await requeueUnsigned\(/g)?.length).toBe(4);
   });
 
   it("sets a future next_attempt_at when requeueing", () => {

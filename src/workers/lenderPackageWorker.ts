@@ -10,6 +10,7 @@ import {
 } from "../services/lenders/dispatchToSelected.js";
 import { pnwSigningSatisfiedForDispatch } from "../signnow/pnwSigning.js";
 import { sbaSigningSatisfiedForDispatch } from "../signnow/sba/sbaSigning.js"; // BF_SERVER_SBA_DISPATCH_GATE_v96
+import { sbaPackageBlocker } from "../signnow/sba/sbaPackageReadiness.js"; // BF_SERVER_SBA_PACKAGE_READINESS_v788
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const POLL_MS = Number(process.env.LENDER_PACKAGE_POLL_MS || 15000);
@@ -114,6 +115,14 @@ export function startLenderPackageWorker(pool: Pool): { stop: () => void } {
           // BF_SERVER_SBA_DISPATCH_GATE_v96: requeue rather than dispatching unsigned SBA forms.
           if (!(await sbaSigningSatisfiedForDispatch(applicationId))) {
             await requeueUnsigned(job.id, "sba_forms_not_signed_yet", applicationId);
+            continue;
+          }
+
+          // BF_SERVER_SBA_PACKAGE_READINESS_v788 - same hold as the staff Send: outstanding documents, open
+          // client tasks, or a selected lender with no 4506-C keep an SBA package here until fixed.
+          const sbaBlock = await sbaPackageBlocker(applicationId, { signingChecked: true });
+          if (sbaBlock) {
+            await requeueUnsigned(job.id, sbaBlock.reason, applicationId);
             continue;
           }
 

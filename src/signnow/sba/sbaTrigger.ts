@@ -150,7 +150,27 @@ export async function sendSbaForSigning(applicationId: string): Promise<SendForS
   ).catch((err: any) => { console.warn("[sba_send] could not clear old envelopes", { applicationId, message: err?.message }); });
   const links = await createSbaSigningSessions(applicationId, { includeApplication: true });
   const owners = links.map((l) => ({ ownerIndex: l.ownerIndex, name: l.name, email: l.email, started: Boolean(l.email) && (l.ownerIndex > 1 || Boolean(l.url)), delivery: l.ownerIndex === 1 ? "client portal" : "SignNow email" }));
-  const notice = await notifyOwnerOne(applicationId);
+  // BF_SERVER_SBA_PACKAGE_READINESS_v788 - fresh envelopes mean the file is unsigned again. The old stamp used
+  // to stay set, so Send on the Lenders tab shipped the package while the new envelopes were unsigned, with no
+  // SBA forms in it. Clear it (kept in signing_history); the webhook stamps it again when every owner signs.
+  if (owners.some((o) => o.started)) {
+    await dbQuery(
+      `UPDATE applications
+          SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('signing_history',
+                COALESCE(metadata->'signing_history', '[]'::jsonb)
+                || jsonb_build_array(jsonb_build_object('signed_at', signnow_app_signed_at, 'reset_at', now(), 'reason', 'sba_send_for_signing'))),
+              signnow_app_signed_at = NULL,
+              submission_chain_started_at = NULL,
+              updated_at = now()
+        WHERE id::text = ($1)::text AND signnow_app_signed_at IS NOT NULL`,
+      [applicationId],
+    ).catch((err: any) => { console.warn("[sba_send] could not clear the old signed stamp", { applicationId, message: err?.message }); });
+  }
+  // BF_SERVER_SBA_OWNER1_EMAIL_v790 - only tell owner 1 to sign when their signing actually exists; the text and
+  // email used to go out even when SignNow had not created it, sending the client to an empty portal.
+  const ownerOne = owners.find((o) => o.ownerIndex === 1);
+  if (!ownerOne?.started) console.warn("[sba_send] owner 1 signing was not created - owner 1 not notified", { applicationId, owners: owners.map((o) => ({ i: o.ownerIndex, started: o.started, email: Boolean(o.email) })) });
+  const notice = ownerOne?.started ? await notifyOwnerOne(applicationId) : { sms: false, email: false };
   logInfo("sba_send_for_signing", { applicationId, owners: owners.length, started: owners.filter((o) => o.started).length });
   return { ok: owners.some((o) => o.started), reason: owners.some((o) => o.started) ? undefined : "no_envelopes_created", owners, notice };
 }
@@ -166,6 +186,14 @@ async function notifyOwnerOne(applicationId: string): Promise<{ sms: boolean; em
       // BF_SERVER_SBA_NOTICE_APP_FIRST_v781 - like every other client notice: the Boreal app first if installed, else SMS.
       const { pushToClientApp } = await import("../../services/notifications/notifyClient.js");
       const inApp = await pushToClientApp({ phone, applicationId, kind: "sba_ready_to_sign", sms: "", title: "Ready to sign", body: "Your application and SBA forms are ready to sign.", categoryId: "APPLICATION_UPDATE" });
+      // BF_SERVER_SBA_ONE_BUTTON_v789 - record when owner 1 was asked, so the portal can say so and a second
+      // Send waits two minutes before texting again (same throttle as every other signing reminder).
+      await dbQuery(
+        `UPDATE applications SET metadata = COALESCE(metadata,'{}'::jsonb)
+            || jsonb_build_object('owner1_signing_sms_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))
+          WHERE id::text = ($1)::text`,
+        [applicationId],
+      ).catch((err: any) => { console.warn("[sba_send] could not stamp owner 1 notice time", { applicationId, message: err?.message }); });
       if (!inApp) {
         const { sendSms } = await import("../../modules/notifications/sms.service.js");
         await sendSms({ to: phone, message: `Boreal Financial: your application and SBA forms are ready to sign. Sign in at ${portal} and tap "Sign your application documents". Reply STOP to opt out.` });
@@ -186,4 +214,29 @@ async function notifyOwnerOne(applicationId: string): Promise<{ sms: boolean; em
     }
   } catch (err) { console.warn("[sba_send] owner 1 email failed", { applicationId, message: err instanceof Error ? err.message : String(err) }); }
   return out;
+}
+
+// BF_SERVER_SBA_ONE_BUTTON_v789
+// One way to start SBA signing, used by Send on the Lenders tab (orchestrator stage A) and by Send for signing on
+// the Application tab. An SBA file now signs exactly like every other file: save the lender, press Send, the client
+// signs in their portal, the package goes out. The lender has to be saved first because the 4506-C names it.
+export type StaffSbaStart =
+  | { started: true; owners: NonNullable<SendForSigningResult["owners"]> }
+  | { started: false; reason: "not_sba" | "sba_forms_incomplete" | "no_envelopes_created"; missing?: string[] };
+export async function startSbaSigningForStaff(applicationId: string): Promise<StaffSbaStart> {
+  const out = await sendSbaForSigning(applicationId);
+  if (out.reason === "not_sba") return { started: false, reason: "not_sba" };
+  if (out.reason === "forms_incomplete") return { started: false, reason: "sba_forms_incomplete", missing: out.missing };
+  if (!out.ok) return { started: false, reason: "no_envelopes_created" };
+  return { started: true, owners: out.owners ?? [] };
+}
+
+/** How many SBA envelopes the file has right now (0 = signing never started). */
+export async function sbaEnvelopeCount(applicationId: string): Promise<number> {
+  const r = await dbQuery<{ n: string }>(
+    `SELECT COALESCE(jsonb_array_length(metadata->'sba_signnow'), 0)::text AS n
+       FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+    [applicationId],
+  ).catch((err: any) => { console.warn("[sba_envelope_count] query failed", { applicationId, message: err?.message }); return { rows: [{ n: "0" }] }; });
+  return Number(r.rows[0]?.n ?? 0);
 }

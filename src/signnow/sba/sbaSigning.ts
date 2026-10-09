@@ -30,7 +30,7 @@ export function shouldLogBlocked(key: string, now = Date.now()): boolean {
 const SBA_DOC_CATEGORY = "SBA Forms";
 
 // BF_SERVER_PER_LENDER_IVES_v144
-async function loadIvesLenders(applicationId: string): Promise<IvesParticipant[]> {
+export async function loadIvesLenders(applicationId: string): Promise<IvesParticipant[]> {
   const r = await dbQuery<any>(
     `SELECT l.id::text AS "lenderId", COALESCE(l.name,'') AS "lenderName",
             COALESCE(l.ives_participant_name,'') AS "participantName",
@@ -53,7 +53,7 @@ async function loadIvesLenders(applicationId: string): Promise<IvesParticipant[]
   return r.rows as IvesParticipant[];
 }
 
-type Envelope = {
+export type Envelope = {
   ownerIndex: number; email: string; groupId: string; inviteId: string; docIds: string[];
   // BF_SERVER_SBA_GATE_SCOPE_v135 - parallel to docIds, so a signed file can be
   // named for the form it is rather than for its SignNow id. Optional: envelopes
@@ -90,7 +90,7 @@ export function is4506cExpired(createdAt?: string | null): boolean {
   return age !== null && age > IRS_4506C_VALID_DAYS;
 }
 
-async function sbaEnvelopes(applicationId: string): Promise<Envelope[]> {
+export async function sbaEnvelopes(applicationId: string): Promise<Envelope[]> {
   const result = await dbQuery<{ metadata: any }>(
     `SELECT metadata FROM applications WHERE id::text = ($1)::text LIMIT 1`,
     [applicationId],
@@ -125,8 +125,12 @@ export async function createSbaSigningSessions(applicationId: string, opts: { in
   const out: Array<{ ownerIndex: number; name: string; email: string; url: string | null }> = [];
 
   for (const owner of owners) {
-    if (!owner.email) {
+    // BF_SERVER_SBA_OWNER1_EMAIL_v790 - owner 1's signing goes to the CRM contact's email; an owner 1 with no email
+    // on the application form used to be skipped even when that CRM email existed (and was then emailed to sign).
+    const signerEmail = owner.index === 1 && owner1Email ? owner1Email : owner.email;
+    if (!signerEmail) {
       logInfo("sba_signing_owner_skipped_no_email", { applicationId, ownerIndex: owner.index });
+      console.warn("[sba_signing] owner has no email - no signing created", { applicationId, ownerIndex: owner.index });
       out.push({ ownerIndex: owner.index, name: owner.fullName, email: "", url: null });
       continue;
     }
@@ -137,7 +141,6 @@ export async function createSbaSigningSessions(applicationId: string, opts: { in
       const appPdf = await buildApplicationPdf(appInputs, undefined, { signOnlyAs: `Owner ${owner.index}` });
       docs.push({ bytes: appPdf, filename: `boreal-application-owner${owner.index}-${applicationId}.pdf` });
     }
-    const signerEmail = owner.index === 1 && owner1Email ? owner1Email : owner.email;
     // Form 1919 is one per co-applicant and goes only to the authorized representative.
     if (owner.index === 1) {
       const bytes = await buildSba1919({
