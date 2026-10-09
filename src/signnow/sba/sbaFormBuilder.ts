@@ -55,7 +55,7 @@ export async function buildSba1919(args: { applicationId: string; business: any;
     // BF_SERVER_SBA_RADIO_FIX_v130 - 5.a is a dollar amount, not the country
     // list. It was being given q5_exports_detail, so the money box read
     // "United States, Mexico".
-    [F19.exportSalesTotal]: money(f.q5_export_sales), [F19.repName]: owners[0]?.fullName ?? "", [F19.repTitle]: owners[0]?.title ?? "",
+    [F19.exportSalesTotal]: money(f.q5_export_sales), [F19.repName]: owners[0]?.fullName ?? "", [F19.repTitle]: owners[0]?.title || "Owner" /* BF_SERVER_SBA_FIELD_PLACEMENT_v793 - Title was left blank */,
   };
   // BF_SERVER_SBA_OWNER_CAPACITY_v105 - the form physically holds five. Dropping
   // a sixth owner without a word produces a 1919 that understates ownership, so
@@ -119,7 +119,7 @@ export async function buildSba912(args: { business: any; owner: SbaOwner }): Pro
     // ran up to the month the present one started.
     [F12.presentAddressDates]: o.addressSince ? `${o.addressSince} to present` : "",
     [F12.priorAddressDates]: o.priorAddress && o.addressSince ? `to ${o.addressSince}` : "",
-    [F12.priorAddress]: o.priorAddress, [F12.title]: o.title,
+    [F12.priorAddress]: o.priorAddress, [F12.title]: o.title || "Owner",
   };
   if (yes(o.usCitizen)) values[F12.citizenRadio] = R.citizen.yes;
   else if (no(o.usCitizen)) values[F12.citizenRadio] = R.citizen.no;

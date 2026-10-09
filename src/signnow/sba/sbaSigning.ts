@@ -335,6 +335,9 @@ export async function getSignedSbaPdfs(applicationId: string): Promise<Array<{ f
     return [];
   }
   const out: Array<{ filename: string; content: Buffer }> = [];
+  // BF_SERVER_SBA_FIELD_PLACEMENT_v793 - the forms' Date boxes were left blank; stamp the signing date.
+  const { stampSbaSignDate, sbaSignDateFor } = await import("./sbaSignDate.js");
+  const signedOn = await sbaSignDateFor(applicationId);
   for (const envelope of envelopes) {
     try {
       if ((await getDocumentGroupStatus(envelope.groupId)).signed !== true) return [];
@@ -347,7 +350,7 @@ export async function getSignedSbaPdfs(applicationId: string): Promise<Array<{ f
         const named = envelope.docNames?.[i];
         out.push({
           filename: named ? `signed-${named}` : `sba-owner${envelope.ownerIndex}-${docId}.pdf`,
-          content,
+          content: await stampSbaSignDate(named ?? "", Buffer.from(content), signedOn),
         });
       }
     } catch {
