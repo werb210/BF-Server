@@ -65,6 +65,60 @@ router.post(
   }),
 );
 
+// BF_SERVER_AUDIT_v800 - the portal's SLF screen asks for /api/slf/stats, /api/slf/deals and /api/slf/deals/:id,
+// which did not exist, so the SLF tab never loaded. Serve them from SLF-silo applications (same source as
+// /pipeline above) until the SLF-server sync lands; the sync-only parts come back empty.
+router.get(
+  "/stats",
+  safeHandler(async (_req: any, res: any) => {
+    const byStage = await pool.query(
+      `SELECT pipeline_state AS stage, COUNT(*)::int AS n, COALESCE(SUM(requested_amount), 0)::numeric AS total
+         FROM applications WHERE silo = 'SLF' GROUP BY pipeline_state ORDER BY COUNT(*) DESC`,
+    );
+    const byFamily = await pool.query(
+      `SELECT product_category AS product_family, COUNT(*)::int AS n
+         FROM applications WHERE silo = 'SLF' GROUP BY product_category ORDER BY COUNT(*) DESC`,
+    );
+    res.json({ byStage: byStage.rows, byFamily: byFamily.rows, recentSyncs: [] });
+  }),
+);
+
+router.get(
+  "/deals",
+  safeHandler(async (req: any, res: any) => {
+    const limit = Math.min(Math.max(Number(req.query?.limit) || 200, 1), 500);
+    const { rows } = await pool.query(
+      `SELECT a.id::text AS id, a.product_category AS product_family, a.requested_amount AS amount,
+              a.pipeline_state AS stage, COALESCE(a.business_legal_name, a.name) AS company_name,
+              c.first_name, c.last_name, c.email, c.phone AS phone_number,
+              (SELECT COUNT(*)::int FROM documents d WHERE d.application_id = a.id) AS file_count
+         FROM applications a
+         LEFT JOIN contacts c ON c.id = a.contact_id
+        WHERE a.silo = 'SLF'
+        ORDER BY a.updated_at DESC
+        LIMIT $1`,
+      [limit],
+    );
+    res.json(rows);
+  }),
+);
+
+router.get(
+  "/deals/:id",
+  safeHandler(async (req: any, res: any) => {
+    const id = String(req.params.id ?? "").trim();
+    if (!id) throw new AppError("validation_error", "Deal id required.", 400);
+    const app = await pool.query(`SELECT * FROM applications WHERE id::text = ($1)::text AND silo = 'SLF' LIMIT 1`, [id]);
+    if (!app.rows[0]) throw new AppError("not_found", "Deal not found.", 404);
+    const files = await pool.query(
+      `SELECT id::text AS id, filename, document_type, status, created_at FROM documents
+        WHERE application_id::text = ($1)::text ORDER BY created_at DESC`,
+      [id],
+    );
+    res.json({ request: app.rows[0], sub: null, users: [], contracts: [], offers: [], files: files.rows, notes: [] });
+  }),
+);
+
 // GET /api/slf/applications/:id
 router.get(
   "/applications/:id",
