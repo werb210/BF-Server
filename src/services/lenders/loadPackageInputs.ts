@@ -81,7 +81,10 @@ function fmtSignDate(signedAt: string | null, mode: "iso" | "us"): string {
 async function loadSignedApplicationPdf(ctx: LoadCtx, _fields: FlatField[]): Promise<Buffer | null> {
   const r = await ctx.pool.query<{signnow_document_id:string|null;primary_doc_id:string|null;signed_at:string|null;signed_application_blob_name:string|null;date_anchors:unknown}>(
     `SELECT signnow_document_id,
-            (metadata->'signnow_embedded'->'doc_ids'->>0) AS primary_doc_id,
+            COALESCE(metadata->'signnow_embedded'->'doc_ids'->>0,
+              -- BF_SERVER_SBA_PACKAGE_PDF_v792 - an SBA file's application is owner 1's envelope document
+              (SELECT e->>'applicationDocId' FROM jsonb_array_elements(CASE WHEN jsonb_typeof(metadata->'sba_signnow') = 'array' THEN metadata->'sba_signnow' ELSE '[]'::jsonb END) e
+                WHERE (e->>'ownerIndex') = '1' LIMIT 1)) AS primary_doc_id,
             signnow_app_signed_at AS signed_at,
             (metadata->'signnow_date_anchors') AS date_anchors,
             COALESCE(metadata->>'signed_application_blob_name', NULL) AS signed_application_blob_name
@@ -90,7 +93,18 @@ async function loadSignedApplicationPdf(ctx: LoadCtx, _fields: FlatField[]): Pro
   ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/lenders/loadPackageInputs.ts:81", ({ rows: [] as Array<{signnow_document_id:string|null;primary_doc_id:string|null;signed_at:string|null;signed_application_blob_name:string|null;date_anchors:unknown}> })));
   const row = r.rows[0];
   const blobName = row?.signed_application_blob_name ?? null;
-  if (blobName) { try { const got = await getStorage().get(blobName); if (got?.buffer?.length) return got.buffer; } catch {} }
+  // BF_SERVER_SBA_PACKAGE_PDF_v792 - finalize stores the signed copy in the signed-applications container, but this
+  // only looked in the documents container, so the cached copy was never found. Non-SBA files recovered by
+  // downloading from SignNow again; SBA files had no document id to download, so the package failed with
+  // signed_application_pdf_missing. Read the right container first.
+  if (blobName) {
+    try {
+      const { downloadBlobAsset } = await import("../../signnow/blobStorage.js");
+      const buf = await downloadBlobAsset(blobName);
+      if (buf?.length) return buf;
+    } catch (e) { console.warn("[loadPackageInputs] signed copy not in signed-applications container", e instanceof Error ? e.message : String(e)); }
+    try { const got = await getStorage().get(blobName); if (got?.buffer?.length) return got.buffer; } catch {}
+  }
   // SELF-HEAL: the blob may be missing if finalize never ran (e.g. the SignNow
   // webhook never reached us). Only fetch the REAL signed document on demand when
   // the app is genuinely signed (signnow_app_signed_at set) so we can never ship

@@ -1662,7 +1662,15 @@ router.get(
     }
 
     const storage = getStorage();
-    const fileResult = await storage.get(storageKey);
+    let fileResult = await storage.get(storageKey);
+    // BF_SERVER_SBA_PACKAGE_PDF_v792 - the filed signed application lives in the signed-applications container.
+    if (!fileResult) {
+      try {
+        const { downloadBlobAsset } = await import("../signnow/blobStorage.js");
+        const buf = await downloadBlobAsset(storageKey);
+        if (buf?.length) fileResult = { buffer: buf, contentType: "application/pdf" } as any;
+      } catch (e) { console.warn("[documents/file] signed-applications fallback failed", e instanceof Error ? e.message : String(e)); }
+    }
     if (!fileResult) {
       throw new AppError("not_found", "Document file not available.", 404);
     }
