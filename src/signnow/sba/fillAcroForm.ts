@@ -9,7 +9,7 @@
 // referenced by env so they can be swapped when SBA revises a form without a
 // deploy. Expiration dates matter: 1919 expires 6/30/2027, 413 on 8/31/2027, 912
 // on 12/31/2028. A lender will reject a superseded edition.
-import { PDFDocument, StandardFonts, rgb, type PDFPage } from "pdf-lib";
+import { PDFCheckBox, PDFDocument, PDFName, PDFRadioGroup, PDFSignature, StandardFonts, rgb, type PDFForm, type PDFPage } from "pdf-lib";
 import { logInfo } from "../../observability/logger.js";
 
 export type FieldMap = Record<string, string | boolean | undefined | null>;
@@ -30,7 +30,15 @@ export type SignTag = { field: string; type: "s" | "i"; role: string };
 export async function fillAcroForm(templateBytes: Uint8Array, values: FieldMap, signTags: SignTag[] = []): Promise<Uint8Array> {
   const doc = await PDFDocument.load(templateBytes);
   const form = doc.getForm();
+  tidyWidgets(form); // BF_SERVER_SBA_FORM_TIDY_v799
   const tagSpots = locateSignTags(doc, signTags);
+  // BF_SERVER_SBA_FORM_TIDY_v799 - SignNow signs over our text tags, so the form's own empty signature boxes are
+  // not needed (their positions were read just above). Flattened, they only left shaded rectangles behind.
+  for (const f of form.getFields()) {
+    if (f instanceof PDFSignature) {
+      try { form.removeField(f); } catch (err) { console.warn("[sba_form_tidy] could not remove a signature box", { field: f.getName().slice(0, 60), message: err instanceof Error ? err.message : String(err) }); }
+    }
+  }
   const missing: string[] = [];
   const unmatchedOptions: Array<{ field: string; wanted: string; options: string[] }> = [];
   const tooLong: Array<{ field: string; maxLength: number; value: string }> = [];
@@ -97,6 +105,34 @@ export async function fillAcroForm(templateBytes: Uint8Array, values: FieldMap, 
   if (!process.env.SBA_NO_FLATTEN) form.flatten();
   if (signTags.length) await drawSignTags(doc, signTags, tagSpots);
   return doc.save();
+}
+
+// BF_SERVER_SBA_FORM_TIDY_v799 - three problems in the official SBA templates, found by filling the real files:
+//  1. 14 boxes on the 1919 (veteran, sex, race, ethnicity) and 2 on the 413 have upside-down rectangles (top and
+//     bottom swapped). Viewers cope, but when the form is flattened the tick is drawn 9 pt too high, beside the
+//     wrong label, and an empty shaded square is left above the real box.
+//  2. The 1919 and 413 fields carry a light-blue background colour, which gets baked into the finished form.
+//  3. The 912 question 10 "Yes" circle ships with a broken drawing.
+// Every box is put the right way up, the background colour is removed, and every field is redrawn fresh when
+// the form is flattened. Signature fields are left alone.
+export function tidyWidgets(form: PDFForm): void {
+  for (const field of form.getFields()) {
+    if (field instanceof PDFSignature) continue;
+    for (const w of field.acroField.getWidgets()) {
+      const r = w.getRectangle();
+      if (r.width < 0 || r.height < 0) {
+        w.setRectangle({ x: Math.min(r.x, r.x + r.width), y: Math.min(r.y, r.y + r.height), width: Math.abs(r.width), height: Math.abs(r.height) });
+      }
+      const mk = w.getAppearanceCharacteristics();
+      mk?.dict.delete(PDFName.of("BG")); // the light-blue fill
+      mk?.dict.delete(PDFName.of("BC")); // and the drawn border, which doubled the printed box once redrawn
+    }
+    // Tick boxes and circles keep their old (shaded, or broken) drawings unless told to redraw.
+    if (field instanceof PDFCheckBox || field instanceof PDFRadioGroup) {
+      try { field.defaultUpdateAppearances(); } catch (err) { console.warn("[sba_form_tidy] could not redraw", { field: field.getName().slice(0, 60), message: err instanceof Error ? err.message : String(err) }); }
+    }
+    form.markFieldAsDirty(field.ref);
+  }
 }
 
 type Spot = { page: PDFPage; x: number; y: number; w: number; h: number };
