@@ -332,5 +332,13 @@ export async function loadPackageInputs(ctx: LoadCtx): Promise<PackageInputs> {
   const fields = await loadFields(ctx);
   const [signedApplicationPdf, creditSummaryPdf, documents, additionalSignedDocs, formPdfs, sbaPdfs] = await Promise.all([loadSignedApplicationPdf(ctx, fields), loadCreditSummaryPdf(ctx), loadAcceptedDocuments(ctx), loadAdditionalSignedDocs(ctx), loadFormPdfs(ctx), loadSbaPdfs(ctx)]); // BF_SERVER_SBA_IN_PACKAGE_v96
   // BF_SERVER_BLOCK_v_FORM_PDFS_v1 — generated CMP form PDFs ride in at package root.
-  return { signedApplicationPdf, creditSummaryPdf, documents, additionalSignedDocs: [...additionalSignedDocs, ...formPdfs, ...sbaPdfs], fields };
+  // BF_SERVER_SBA_FIELD_PLACEMENT_v793 - the signed SBA forms were in the package twice (filed under SBA Forms and
+  // attached again loose), and owner 1's signed application three times. Keep one of each.
+  const isAppCopy = (n: string) => /^signed-boreal-application-/i.test(n);
+  const docsOut = documents
+    .map((d) => ({ ...d, files: d.files.filter((f) => !isAppCopy(f.filename)) }))
+    .filter((d) => d.files.length > 0);
+  const filed = new Set(docsOut.flatMap((d) => d.files.map((f) => f.filename)));
+  const sbaLoose = sbaPdfs.filter((p) => !isAppCopy(p.filename) && !filed.has(p.filename));
+  return { signedApplicationPdf, creditSummaryPdf, documents: docsOut, additionalSignedDocs: [...additionalSignedDocs, ...formPdfs, ...sbaLoose], fields };
 }

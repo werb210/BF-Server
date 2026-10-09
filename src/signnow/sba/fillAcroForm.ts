@@ -132,7 +132,9 @@ async function drawSignTags(doc: PDFDocument, tags: SignTag[], spots: Map<string
     if (!spot) { logInfo("sba_sign_tag_field_missing", { field: tag.field.slice(0, 60), role: tag.role }); continue; }
     const w = Math.max(40, Math.round(spot.w));
     const h = Math.max(12, Math.round(spot.h));
-    spot.page.drawText(signTagText(tag, w, h), { x: spot.x + 1, y: spot.y + 1, size: 6, font, color: rgb(1, 1, 1) });
+    // BF_SERVER_SBA_FIELD_PLACEMENT_v793 - SignNow hangs the field DOWN from the tag, so the tag goes at the top of the
+    // box; at the bottom the signature landed below the line, over the label (1919, 912, 4506-C).
+    spot.page.drawText(signTagText(tag, w, h), { x: spot.x + 1, y: spot.y + spot.h - 6, size: 6, font, color: rgb(1, 1, 1) });
     if (tag.type === "s") placedSignature = true;
   }
   // Never leave a document with no signer: SignNow would refuse the whole signing.
