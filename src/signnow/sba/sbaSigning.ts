@@ -372,7 +372,26 @@ export async function attachSignedSbaDocuments(applicationId: string): Promise<{
         `SELECT id FROM documents WHERE application_id::text = ($1)::text AND filename = $2 LIMIT 1`,
         [applicationId, pdf.filename],
       ).catch(() => ({ rows: [] as Array<{ id: string }> }));
-      if (existing.rows.length > 0) continue;
+      if (existing.rows.length > 0) {
+        // BF_SERVER_SBA_SIGN_AGAIN_v794 - after signing again the new signed copy replaces the old one under
+        // Documents (it used to be skipped because a file with that name already existed).
+        const newHash = createHash("sha256").update(pdf.content).digest("hex");
+        const cur = await dbQuery<{ hash: string | null }>(`SELECT hash FROM documents WHERE id = $1`, [existing.rows[0]!.id])
+          .catch((err: any) => { console.warn("[sba_attach] hash lookup failed", { applicationId, message: err?.message }); return { rows: [] as Array<{ hash: string | null }> }; });
+        if (cur.rows[0]?.hash === newHash) continue;
+        const re = await storage.put({ buffer: pdf.content, filename: pdf.filename, contentType: "application/pdf", pathPrefix: `sba/${applicationId}` });
+        await dbQuery(
+          `UPDATE documents SET hash = $2, storage_path = $3, blob_name = $3, blob_url = $4, size_bytes = $5, updated_at = now() WHERE id = $1`,
+          [existing.rows[0]!.id, newHash, re.blobName, re.url, re.sizeBytes],
+        );
+        await dbQuery(
+          `INSERT INTO document_versions (id, document_id, version, blob_name, hash, metadata, content, created_at)
+           SELECT $1, $2, COALESCE(MAX(version), 0) + 1, $3, $4, $5::jsonb, $6, now() FROM document_versions WHERE document_id = $2`,
+          [randomUUID(), existing.rows[0]!.id, re.blobName, newHash, JSON.stringify({ source: "signnow_sba", resigned: true }), re.url],
+        );
+        attached += 1;
+        continue;
+      }
       const stored = await storage.put({
         buffer: pdf.content,
         filename: pdf.filename,

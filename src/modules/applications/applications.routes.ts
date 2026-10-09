@@ -1829,9 +1829,13 @@ router.get('/:id/signing-readiness', safeHandler(async (req: any, res: any) => {
   const drow: any = d.rows[0] ?? {};
   // BF_SERVER_BLOCK_v_COLLATERAL_THRESHOLD_v1 — Accord LOC collateral applies only above $250k.
   const v_amt = drow?.requested_amount == null ? NaN : Number(drow.requested_amount);
+  // BF_SERVER_SBA_SIGN_AGAIN_v794 - the portal offers "Sign again" on SBA files once signing is out or done.
+  const { isSbaApplication: v794IsSba } = await import('../../signnow/sba/sbaTrigger.js');
+  const isSba = await v794IsSba(id);
   res.json({ status: 'ok', data: {
     reason,
     canSend: reason === 'ready',
+    isSba,
     collateralApplies: Number.isFinite(v_amt) && v_amt > 250000,
     snapshot,
     signing: {
@@ -1847,7 +1851,12 @@ router.post('/:id/resend-signing', safeHandler(async (req: any, res: any) => {
   if (!id) throw new AppError('validation_error', 'Application id required.', 400);
   const { readReadinessSnapshot } = await import('../../services/submission/orchestrator.js');
   const snapshot = await readReadinessSnapshot({ pool, applicationId: id });
-  const reason = signingBlockReason(snapshot);
+  // BF_SERVER_SBA_SIGN_AGAIN_v794 - "Sign again" (body.again) on an SBA file: every owner signs a fresh set even
+  // though the file is already signed (after the applicant edits anything, or to re-check the forms).
+  const again = req.body?.again === true;
+  const trigAgain = await import('../../signnow/sba/sbaTrigger.js');
+  const signAgain = again && (await trigAgain.isSbaApplication(id));
+  const reason = signingBlockReason(signAgain ? { ...snapshot, applicationSigned: false } : snapshot);
   if (reason !== 'ready') {
     res.json({ status: 'ok', data: { ok: false, reason, snapshot } });
     return;
