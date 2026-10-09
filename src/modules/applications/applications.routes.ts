@@ -1930,6 +1930,24 @@ router.get('/:id/sent-lenders', safeHandler(async (req: any, res: any) => {
 // portal send: a 'sent' package row (flagged sent_manually), so it shows on the
 // Lenders tab, counts for pass reasons and offers, and the application moves to
 // Off to Lender. Later stages are never moved backwards.
+// BF_SERVER_LENDER_RESEND_v797 - send the current package again to a lender that already received it.
+router.post('/:id/lenders/:lenderId/resend', requireCapability([CAPABILITIES.CRM_WRITE]), safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id ?? '').trim();
+  const lenderId = String(req.params.lenderId ?? '').trim();
+  if (!id) throw new AppError('validation_error', 'Application id required.', 400);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lenderId)) {
+    throw new AppError('validation_error', 'A valid lender id is required.', 400);
+  }
+  const { isApplicationFraud } = await import('../../services/fraud/fraudGuard.js');
+  if (await isApplicationFraud({ query: (t: string, p?: any[]) => pool.query(t, p) } as any, id)) {
+    res.status(409).json({ status: 'error', data: { ok: false, reason: 'fraud_hold' } });
+    return;
+  }
+  const { resendPackageToLender } = await import('../../services/submission/resendToLender.js');
+  const result = await resendPackageToLender({ pool, applicationId: id }, lenderId);
+  res.json({ status: 'ok', data: result });
+}));
+
 router.post('/:id/lenders/:lenderId/mark-sent', requireCapability([CAPABILITIES.CRM_WRITE]), safeHandler(async (req: any, res: any) => {
   const id = String(req.params.id ?? '').trim();
   const lenderId = String(req.params.lenderId ?? '').trim();
