@@ -362,7 +362,7 @@ export async function getSignedSbaPdfs(applicationId: string): Promise<Array<{ f
 }
 
 /** File signed copies into the staff Documents list. Best effort. */
-export async function attachSignedSbaDocuments(applicationId: string): Promise<{ attached: number }> {
+async function attachSignedSbaDocumentsUnlocked(applicationId: string): Promise<{ attached: number }> {
   const pdfs = await getSignedSbaPdfs(applicationId);
   if (pdfs.length === 0) return { attached: 0 };
   let attached = 0;
@@ -465,4 +465,38 @@ export async function sbaCombinedApplicationDocIfAllSigned(applicationId: string
     if ((await getDocumentGroupStatus(e.groupId)).signed !== true) return null;
   }
   return envelopes.find((e) => e.ownerIndex === 1)?.applicationDocId ?? envelopes[0]!.applicationDocId ?? null;
+}
+
+// BF_SERVER_SBA_ATTACH_LOCK_v796 - SignNow sends about ten webhooks within a second when a signing finishes, and
+// each one ran this at the same time: every run saw "not filed yet" and filed its own copy, so each signed form
+// appeared on the Documents tab several times. One run per application at a time now (a Postgres advisory lock,
+// so it holds across instances); the later runs find the forms already filed. Runs in this process queue up here
+// first, so only one connection per application sits waiting on the lock - the pool has 10 connections and the
+// run holding the lock needs its own to do the filing.
+const sbaAttachQueue = new Map<string, Promise<unknown>>();
+
+export async function attachSignedSbaDocuments(applicationId: string): Promise<{ attached: number }> {
+  const prev = sbaAttachQueue.get(applicationId) ?? Promise.resolve();
+  const run = prev.catch(() => undefined).then(() => attachSignedSbaDocumentsLocked(applicationId));
+  sbaAttachQueue.set(applicationId, run);
+  try {
+    return await run;
+  } finally {
+    if (sbaAttachQueue.get(applicationId) === run) sbaAttachQueue.delete(applicationId);
+  }
+}
+
+async function attachSignedSbaDocumentsLocked(applicationId: string): Promise<{ attached: number }> {
+  const client = await pool.connect();
+  try {
+    await client.query(`SELECT pg_advisory_lock(hashtext($1))`, ["sba_attach:" + applicationId]);
+    try {
+      return await attachSignedSbaDocumentsUnlocked(applicationId);
+    } finally {
+      await client.query(`SELECT pg_advisory_unlock(hashtext($1))`, ["sba_attach:" + applicationId])
+        .catch((err: unknown) => { console.warn("[sba_attach] unlock failed", { applicationId, message: err instanceof Error ? err.message : String(err) }); });
+    }
+  } finally {
+    client.release();
+  }
 }
