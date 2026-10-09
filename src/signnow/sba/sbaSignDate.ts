@@ -46,7 +46,8 @@ export async function dateBoxFor(templateBytes: Uint8Array, field: string): Prom
   const ref = widget.P();
   let page = ref ? pages.findIndex((p) => p.ref === ref) : -1;
   if (page < 0) page = pages.findIndex((p) => (p.node.Annots()?.asArray() ?? []).some((a) => doc.context.lookup(a) === widget.dict));
-  return page < 0 ? null : { page, x: r.x, y: r.y, w: r.width, h: r.height };
+  // BF_SERVER_SBA_FORM_TIDY_v799 - some template boxes are stored upside down; use the box the right way up.
+  return page < 0 ? null : { page, x: Math.min(r.x, r.x + r.width), y: Math.min(r.y, r.y + r.height), w: Math.abs(r.width), h: Math.abs(r.height) };
 }
 
 /** Writes the date into the form's Date box; returns the PDF unchanged when the form or box is unknown. */

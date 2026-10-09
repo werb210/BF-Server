@@ -231,7 +231,7 @@ export async function buildSba413(args: { business: any; owner: SbaOwner; data: 
     [F413.businessAddress]: [s(b.address), s(b.city), s(b.state), s(b.zip)].filter(Boolean).join(", "),
     [F413.typeCorporation]: t === "corporation" || t.includes("c-corp"), [F413.typeSCorp]: t.includes("s-corp") || t.includes("s corp"),
     [F413.typeLlc]: t.includes("llc"), [F413.typePartnership]: t.includes("partner"), [F413.typeSoleProp]: t.includes("sole"),
-    [F413.currentAsOf]: today, [F413.printName]: o.fullName, [F413.ssn]: o.ssn, [F413.date]: today,
+    [F413.currentAsOf]: today, [F413.printName]: o.fullName, [F413.ssn]: o.ssn, // BF_SERVER_SBA_FORM_TIDY_v799 - the signing date is stamped after signing; filling it here printed two dates on top of each other
     [F413.assetCash]: money(d?.asset_cash), [F413.assetSavings]: money(d?.asset_savings), [F413.assetIra]: money(d?.asset_ira),
     [F413.assetAr]: money(d?.asset_ar), [F413.assetLifeInsurance]: money(d?.asset_life_insurance), [F413.assetStocksBonds]: money(d?.asset_stocks_bonds),
     [F413.assetRealEstate]: money(d?.asset_real_estate), [F413.assetAutomobiles]: money(d?.asset_automobiles),
