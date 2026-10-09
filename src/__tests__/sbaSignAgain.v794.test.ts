@@ -13,7 +13,7 @@ describe("signing an SBA file again", () => {
     expect(routes).toContain("isSba,");
   });
   it("a re-signed form replaces the old copy under Documents instead of being skipped", () => {
-    const a = signing.slice(signing.indexOf("export async function attachSignedSbaDocuments"));
+    const a = signing.slice(signing.indexOf("async function attachSignedSbaDocumentsUnlocked") /* BF_SERVER_SBA_TEST_ANCHOR_v798 - v796 moved the filing body behind a lock wrapper */);
     expect(a).toContain("if (cur.rows[0]?.hash === newHash) continue;");
     expect(a).toContain("UPDATE documents SET hash = $2");
   });

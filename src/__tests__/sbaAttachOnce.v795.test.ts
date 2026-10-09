@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 const s = readFileSync("src/signnow/sba/sbaSigning.ts", "utf8");
-const attach = s.slice(s.indexOf("export async function attachSignedSbaDocuments"));
+const attach = s.slice(s.indexOf("async function attachSignedSbaDocumentsUnlocked") /* BF_SERVER_SBA_TEST_ANCHOR_v798 - v796 moved the filing body behind a lock wrapper */);
 describe("signed SBA forms are filed once per signing", () => {
   it("each signed copy carries its SignNow document id", () => {
     expect(s).toContain("docId, // BF_SERVER_SBA_ATTACH_ONCE_v795");
