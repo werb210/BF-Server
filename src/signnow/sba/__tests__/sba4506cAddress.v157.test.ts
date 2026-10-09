@@ -15,7 +15,7 @@ describe("line 3 - the taxpayer's current address", () => {
   it("the builder reads fields that exist", () => {
     expect(builder).toContain("[F.addressCity]: s(o.homeCity)");
     expect(builder).toContain("[F.addressState]: s(o.homeState)");
-    expect(builder).toContain("[F.addressZip]: s(o.homeZip)");
+    expect(builder).toContain("[F.addressZip]: zip5(s(o.homeZip))"); // BF_SERVER_SBA_SIGN_TAGS_v791
   });
   it("no longer casts away the type error that hid this", () => {
     expect(builder).not.toContain("s((o as any).city)");
