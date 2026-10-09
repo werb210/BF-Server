@@ -67,6 +67,13 @@ describe("Staff Library uploads up to 200 MB", () => {
   });
 });
 
+describe("the browser is allowed to send upload pieces cross-origin", () => {
+  it("CORS allows the three upload headers (staff.boreal.financial -> server.boreal.financial)", () => {
+    const a = readFileSync("src/app.ts", "utf8");
+    for (const h of ['"x-upload-url"', '"x-chunk-start"', '"x-total-size"']) expect(a).toContain(h);
+  });
+});
+
 describe("the client portal is not starved by the site-wide limiter", () => {
   const c = readFileSync("src/routes/client/index.ts", "utf8");
   it("client reads have their own per-client ceiling", () => {

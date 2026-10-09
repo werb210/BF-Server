@@ -40,8 +40,8 @@ describe("1919 fields present on the template but intentionally unwritten", () =
     expect(F19.specialOwnOtherText).toBe("specOwnTypeOther");
   });
   it("does not write the /Sig fields", () => {
-    expect(builder).not.toContain("F19.q4Initials");
-    expect(builder).not.toContain("F19.repSignature");
+    expect(builder).not.toContain("[F19.q4Initials]"); // BF_SERVER_SBA_SIGN_TAGS_v791 - named only to place SignNow tags, never written
+    expect(builder).not.toContain("[F19.repSignature]");
   });
 });
 
@@ -69,6 +69,6 @@ describe("912 initials are /Tx and must stay unwritten", () => {
     expect(F12.q10Initials).toContain("Initial21");
   });
   it("the builder never types into them", () => {
-    for (const f of ["q8Initials", "q9Initials", "q10Initials", "sbaOffice", "loanNumber"]) expect(builder).not.toContain(`F12.${f}`);
+    for (const f of ["q8Initials", "q9Initials", "q10Initials", "sbaOffice", "loanNumber"]) expect(builder).not.toContain(`[F12.${f}]`); // BF_SERVER_SBA_SIGN_TAGS_v791
   });
 });

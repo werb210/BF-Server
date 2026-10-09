@@ -99,7 +99,8 @@ export async function buildSba1919(args: { applicationId: string; business: any;
       });
     }
   }
-  return fillAcroForm(tpl, values);
+  // BF_SERVER_SBA_SIGN_TAGS_v791 - 1919 is signed by owner 1 (the authorized representative).
+  return fillAcroForm(tpl, values, [{ field: F19.repSignature, type: "s", role: "Owner 1" }, { field: F19.q4Initials, type: "i", role: "Owner 1" }]);
 }
 
 export async function buildSba912(args: { business: any; owner: SbaOwner }): Promise<Uint8Array | null> {
@@ -127,7 +128,12 @@ export async function buildSba912(args: { business: any; owner: SbaOwner }): Pro
     if (yes(answer)) values[field] = R.plain.yes; else if (no(answer)) values[field] = R.plain.no;
   };
   question(o.q8, F12.q8Radio); question(o.q9, F12.q9Radio); question(o.q10, F12.q10Radio);
-  return fillAcroForm(tpl, values);
+  return fillAcroForm(tpl, values, [
+    { field: F12.signature, type: "s", role: `Owner ${args.owner.index}` }, // BF_SERVER_SBA_SIGN_TAGS_v791
+    { field: F12.q8Initials, type: "i", role: `Owner ${args.owner.index}` },
+    { field: F12.q9Initials, type: "i", role: `Owner ${args.owner.index}` },
+    { field: F12.q10Initials, type: "i", role: `Owner ${args.owner.index}` },
+  ]);
 }
 
 // BF_SERVER_SBA_4506C_MAP_v118
@@ -182,7 +188,7 @@ export async function buildSba4506c(args: {
     [F.addressStreet]: s(o.homeStreet) || s(o.homeAddress),
     [F.addressCity]: s(o.homeCity),
     [F.addressState]: s(o.homeState),
-    [F.addressZip]: s(o.homeZip),
+    [F.addressZip]: zip5(s(o.homeZip)), // BF_SERVER_SBA_SIGN_TAGS_v791 - the box holds 5 characters; ZIP+4 was rejected
     [F.ivesName]: ivesName, [F.ivesId]: ivesId, [F.ivesMailboxId]: ivesMailbox,
     [F.ivesStreet]: ivesStreet, [F.ivesCity]: ivesCity,
     [F.ivesState]: ivesState, [F.ivesZip]: ivesZip,
@@ -200,7 +206,7 @@ export async function buildSba4506c(args: {
   if (s((o as any).priorAddress)) values[F.prevAddressStreet] = s((o as any).priorAddress);
   const year = new Date().getFullYear() - 1;
   [0, 1, 2].forEach((offset) => { const base = offset * 3; values[F.periodBox(base + 1)] = "12"; values[F.periodBox(base + 2)] = "31"; values[F.periodBox(base + 3)] = String(year - offset); });
-  return fillAcroForm(tpl, values);
+  return fillAcroForm(tpl, values, [{ field: F.signature, type: "s", role: `Owner ${args.owner.index}` }]); // BF_SERVER_SBA_SIGN_TAGS_v791
 }
 
 export async function buildSba413(args: { business: any; owner: SbaOwner; data: any }): Promise<Uint8Array | null> {
@@ -327,5 +333,11 @@ export async function buildSba413(args: { business: any; owner: SbaOwner; data: 
     });
   }
 
-  return fillAcroForm(tpl, values);
+  return fillAcroForm(tpl, values, [{ field: "Signature", type: "s", role: `Owner ${args.owner.index}` }]); // BF_SERVER_SBA_SIGN_TAGS_v791 - 413 owner signature (Signature_2 is the spouse line)
+}
+
+// BF_SERVER_SBA_SIGN_TAGS_v791 - "12344-5332" -> "12344"; anything that is not a US ZIP is left as it is.
+export function zip5(v: string): string {
+  const m = /^(\d{5})-?\d{4}$/.exec(String(v ?? "").trim());
+  return m ? m[1]! : v;
 }

@@ -9,10 +9,15 @@
 // referenced by env so they can be swapped when SBA revises a form without a
 // deploy. Expiration dates matter: 1919 expires 6/30/2027, 413 on 8/31/2027, 912
 // on 12/31/2028. A lender will reject a superseded edition.
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFPage } from "pdf-lib";
 import { logInfo } from "../../observability/logger.js";
 
 export type FieldMap = Record<string, string | boolean | undefined | null>;
+
+// BF_SERVER_SBA_SIGN_TAGS_v791 - SignNow only knows who signs a page from a text tag ({{t:s;o:"Owner 1";...}}).
+// The SBA forms had none, so SignNow refused every SBA signing: "Role Owner 1 is not found on document".
+// Each tag is drawn white at 6 pt (as on the application PDF, which SignNow reads) over the form's own signature or initials box, after flattening.
+export type SignTag = { field: string; type: "s" | "i"; role: string };
 
 /**
  * Set every field we have a value for, and leave the rest alone.
@@ -22,9 +27,10 @@ export type FieldMap = Record<string, string | boolean | undefined | null>;
  * and a single renamed field must not stop an entire loan package from being
  * produced - a form with one box empty is recoverable, a crashed dispatch is not.
  */
-export async function fillAcroForm(templateBytes: Uint8Array, values: FieldMap): Promise<Uint8Array> {
+export async function fillAcroForm(templateBytes: Uint8Array, values: FieldMap, signTags: SignTag[] = []): Promise<Uint8Array> {
   const doc = await PDFDocument.load(templateBytes);
   const form = doc.getForm();
+  const tagSpots = locateSignTags(doc, signTags);
   const missing: string[] = [];
   const unmatchedOptions: Array<{ field: string; wanted: string; options: string[] }> = [];
   const tooLong: Array<{ field: string; maxLength: number; value: string }> = [];
@@ -89,7 +95,55 @@ export async function fillAcroForm(templateBytes: Uint8Array, values: FieldMap):
   // BF_SERVER_SBA_RADIO_FIX_v130 - tests set SBA_NO_FLATTEN so the filled values
   // can be read back off the PDF. Never set in any deployed environment.
   if (!process.env.SBA_NO_FLATTEN) form.flatten();
+  if (signTags.length) await drawSignTags(doc, signTags, tagSpots);
   return doc.save();
+}
+
+type Spot = { page: PDFPage; x: number; y: number; w: number; h: number };
+function locateSignTags(doc: PDFDocument, tags: SignTag[]): Map<string, Spot> {
+  const spots = new Map<string, Spot>();
+  if (!tags.length) return spots;
+  const form = doc.getForm();
+  const pages = doc.getPages();
+  for (const tag of tags) {
+    try {
+      const field = form.getFieldMaybe(tag.field);
+      const widget = field?.acroField.getWidgets()[0];
+      if (!widget) continue;
+      const r = widget.getRectangle();
+      const pageRef = widget.P();
+      let page = pageRef ? pages.find((p) => p.ref === pageRef) : undefined;
+      if (!page) {
+        page = pages.find((p) => (p.node.Annots()?.asArray() ?? []).some((a) => doc.context.lookup(a) === widget.dict));
+      }
+      if (page) spots.set(tag.field, { page, x: r.x, y: r.y, w: r.width, h: r.height });
+    } catch (err) {
+      console.warn("[sba_sign_tags] could not locate field", { field: tag.field.slice(0, 60), message: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return spots;
+}
+async function drawSignTags(doc: PDFDocument, tags: SignTag[], spots: Map<string, Spot>): Promise<void> {
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const pages = doc.getPages();
+  let placedSignature = false;
+  for (const tag of tags) {
+    const spot = spots.get(tag.field);
+    if (!spot) { logInfo("sba_sign_tag_field_missing", { field: tag.field.slice(0, 60), role: tag.role }); continue; }
+    const w = Math.max(40, Math.round(spot.w));
+    const h = Math.max(12, Math.round(spot.h));
+    spot.page.drawText(signTagText(tag, w, h), { x: spot.x + 1, y: spot.y + 1, size: 6, font, color: rgb(1, 1, 1) });
+    if (tag.type === "s") placedSignature = true;
+  }
+  // Never leave a document with no signer: SignNow would refuse the whole signing.
+  const sig = tags.find((t) => t.type === "s");
+  if (sig && !placedSignature && pages.length) {
+    logInfo("sba_sign_tag_fallback", { role: sig.role });
+    pages[pages.length - 1]!.drawText(signTagText(sig, 160, 18), { x: 40, y: 40, size: 6, font, color: rgb(1, 1, 1) });
+  }
+}
+export function signTagText(tag: SignTag, w: number, h: number): string {
+  return `{{t:${tag.type};r:y;o:"${tag.role}";w:${w};h:${h};}}`;
 }
 
 /**
