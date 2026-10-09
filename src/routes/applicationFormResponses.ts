@@ -100,8 +100,13 @@ router.get("/applications/:id/sba-signing", requireAuth, async (req: Request, re
     const r = await pool.query(
       `SELECT COALESCE(metadata->'sba_signnow', '[]'::jsonb) AS envelopes
          FROM applications WHERE id::text = ($1)::text LIMIT 1`, [appId]);
+    // BF_SERVER_SBA_PACKAGE_READINESS_v788 - who the 4506-C will name, and what (if anything) holds the package.
+    const { loadSelectedLendersForSba, ivesFallbackConfigured, sbaPackageBlocker } = await import("../signnow/sba/sbaPackageReadiness.js");
+    const selectedLenders = await loadSelectedLendersForSba(appId);
+    const packageBlock = await sbaPackageBlocker(appId, { signingChecked: true }); // allSigned above already asked SignNow
     return res.json({ status: "ok", data: { isSba: true, formsComplete: forms.complete,
-      missingForms: forms.missing, envelopes: r.rows[0]?.envelopes ?? [], allSigned: signed } });
+      missingForms: forms.missing, envelopes: r.rows[0]?.envelopes ?? [], allSigned: signed,
+      selectedLenders, ivesFallback: ivesFallbackConfigured(), packageBlock } });
   } catch (e) {
     return res.status(500).json({ error: "sba_status_failed", message: e instanceof Error ? e.message : String(e) });
   }
@@ -124,11 +129,13 @@ router.post("/applications/:id/sba-signing/send", requireAuth, async (req: Reque
 router.post("/applications/:id/sba-signing/resend", requireAuth, async (req: Request, res: Response) => {
   const appId = String(req.params.id);
   try {
-    const { restartSbaSigning, sbaFormsComplete } = await import("../signnow/sba/sbaTrigger.js");
-    const forms = await sbaFormsComplete(appId);
-    if (!forms.complete) return res.status(409).json({ error: "forms_incomplete", missing: forms.missing });
-    const links = await restartSbaSigning(appId);
-    return res.json({ status: "ok", data: { links } });
+    // BF_SERVER_SBA_ONE_BUTTON_v789 - "resend" used to rebuild SBA-only envelopes, which dropped the
+    // application from the signing so it could never be marked signed. It now does the one SBA signing.
+    const { startSbaSigningForStaff } = await import("../signnow/sba/sbaTrigger.js");
+    const started = await startSbaSigningForStaff(appId);
+    if (!started.started && started.reason === "sba_forms_incomplete") return res.status(409).json({ error: "forms_incomplete", missing: started.missing ?? [] });
+    if (!started.started && started.reason === "not_sba") return res.status(409).json({ error: "not_sba" });
+    return res.json({ status: started.started ? "ok" : "error", data: { ok: started.started, owners: started.started ? started.owners : [] } });
   } catch (e) {
     return res.status(500).json({ error: "sba_resend_failed", message: e instanceof Error ? e.message : String(e) });
   }

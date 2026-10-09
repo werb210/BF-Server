@@ -31,7 +31,11 @@ describe("SBA ready-to-sign notice and banner", () => {
     expect(app).toBeLessThan(text);
     expect(s).toContain("if (!inApp) {");
   });
-  it("SBA files are not told to wait for a lender", () => {
-    expect(readFileSync("src/modules/applications/applications.routes.ts", "utf8")).toContain("if (await isSbaApplication(id).catch(() => false)) reason = 'sba_use_sba_signing';");
+  // BF_SERVER_SBA_ONE_BUTTON_v789 - superseded: an SBA file now saves its lender first (the 4506-C names it) and
+  // signs from the same Send as every other file, so "no lender finalized" is the right message again.
+  it("SBA files get their own readiness states on top of the normal ones", () => {
+    const s = readFileSync("src/modules/applications/applications.routes.ts", "utf8");
+    expect(s).toContain("if (reason === 'ready') reason = await sbaReadinessReason(id, reason);");
+    expect(s).not.toContain("reason = 'sba_use_sba_signing'");
   });
 });
