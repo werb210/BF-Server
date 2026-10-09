@@ -68,7 +68,7 @@ export function applyDemographics(
 ): void {
   if (!owner) return;
   values[F.demoOwnerName] = owner.fullName;
-  values[F.demoOwnerPosition] = owner.title;
+  values[F.demoOwnerPosition] = owner.title || "Owner"; // BF_SERVER_AUDIT_v800 - was blank when no title, like the Title boxes
   tick(values, owner.veteranStatus, VETERAN, F.demoVetNotDisclosed);
   tick(values, owner.sex, SEX, "");
   tick(values, owner.race, RACE, F.demoRaceNotDisclosed);
