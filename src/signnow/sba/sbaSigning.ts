@@ -323,7 +323,7 @@ export async function sbaSigningSatisfiedForDispatch(applicationId: string): Pro
 }
 
 /** Return every signed SBA PDF, or an empty array if any form is outstanding. */
-export async function getSignedSbaPdfs(applicationId: string): Promise<Array<{ filename: string; content: Buffer }>> {
+export async function getSignedSbaPdfs(applicationId: string): Promise<Array<{ filename: string; content: Buffer; docId?: string }>> {
   if (!isApiKeyConfigured()) return [];
   const envelopes = await sbaEnvelopes(applicationId);
   // BF_SERVER_SBA_V103 - an empty envelope list is not
@@ -334,7 +334,7 @@ export async function getSignedSbaPdfs(applicationId: string): Promise<Array<{ f
     logInfo("sba_signed_pdfs_none_available", { applicationId });
     return [];
   }
-  const out: Array<{ filename: string; content: Buffer }> = [];
+  const out: Array<{ filename: string; content: Buffer; docId?: string }> = [];
   // BF_SERVER_SBA_FIELD_PLACEMENT_v793 - the forms' Date boxes were left blank; stamp the signing date.
   const { stampSbaSignDate, sbaSignDateFor } = await import("./sbaSignDate.js");
   const signedOn = await sbaSignDateFor(applicationId);
@@ -351,6 +351,7 @@ export async function getSignedSbaPdfs(applicationId: string): Promise<Array<{ f
         out.push({
           filename: named ? `signed-${named}` : `sba-owner${envelope.ownerIndex}-${docId}.pdf`,
           content: await stampSbaSignDate(named ?? "", Buffer.from(content), signedOn),
+          docId, // BF_SERVER_SBA_ATTACH_ONCE_v795
         });
       }
     } catch {
@@ -376,6 +377,16 @@ export async function attachSignedSbaDocuments(applicationId: string): Promise<{
         // BF_SERVER_SBA_SIGN_AGAIN_v794 - after signing again the new signed copy replaces the old one under
         // Documents (it used to be skipped because a file with that name already existed).
         const newHash = createHash("sha256").update(pdf.content).digest("hex");
+        // BF_SERVER_SBA_ATTACH_ONCE_v795 - every SignNow webhook re-downloads the signed forms, and each download has
+        // different bytes, so the hash check below added a new version on every webhook (up to ten per signing).
+        // Replace only when the signed copy comes from a different SignNow document (i.e. a new signing).
+        if (pdf.docId) {
+          const seen = await dbQuery<{ n: string }>(
+            `SELECT COUNT(*)::text AS n FROM document_versions WHERE document_id = $1 AND metadata->>'signnow_doc_id' = $2`,
+            [existing.rows[0]!.id, pdf.docId],
+          ).catch((err: any) => { console.warn("[sba_attach] version lookup failed", { applicationId, message: err?.message }); return { rows: [{ n: "0" }] }; });
+          if (Number(seen.rows[0]?.n ?? 0) > 0) continue;
+        }
         const cur = await dbQuery<{ hash: string | null }>(`SELECT hash FROM documents WHERE id = $1`, [existing.rows[0]!.id])
           .catch((err: any) => { console.warn("[sba_attach] hash lookup failed", { applicationId, message: err?.message }); return { rows: [] as Array<{ hash: string | null }> }; });
         if (cur.rows[0]?.hash === newHash) continue;
@@ -387,7 +398,7 @@ export async function attachSignedSbaDocuments(applicationId: string): Promise<{
         await dbQuery(
           `INSERT INTO document_versions (id, document_id, version, blob_name, hash, metadata, content, created_at)
            SELECT $1, $2, COALESCE(MAX(version), 0) + 1, $3, $4, $5::jsonb, $6, now() FROM document_versions WHERE document_id = $2`,
-          [randomUUID(), existing.rows[0]!.id, re.blobName, newHash, JSON.stringify({ source: "signnow_sba", resigned: true }), re.url],
+          [randomUUID(), existing.rows[0]!.id, re.blobName, newHash, JSON.stringify({ source: "signnow_sba", resigned: true, signnow_doc_id: pdf.docId ?? null }), re.url],
         );
         attached += 1;
         continue;
@@ -416,7 +427,7 @@ export async function attachSignedSbaDocuments(applicationId: string): Promise<{
           `INSERT INTO document_versions
              (id, document_id, version, blob_name, hash, metadata, content, created_at)
            VALUES ($1, $2, 1, $3, $4, $5::jsonb, $6, now())`,
-          [versionId, documentId, stored.blobName, hash, JSON.stringify({ source: "signnow_sba" }), stored.url],
+          [versionId, documentId, stored.blobName, hash, JSON.stringify({ source: "signnow_sba", signnow_doc_id: pdf.docId ?? null }), stored.url],
         );
         await client.query("COMMIT");
       } catch (error) {
