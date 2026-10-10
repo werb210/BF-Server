@@ -105,4 +105,16 @@ router.get("/callback", safeHandler(async (req: any, res: any) => {
   return res.redirect(returnUrl("o365=connected"));
 }));
 
+// BF_SERVER_O365_DISCONNECT_v802 - POST /api/o365-oauth/disconnect. The portal's Disconnect button only
+// cleared the screen; the stored Microsoft tokens stayed, so mail and calendar kept using the account.
+router.post("/disconnect", requireAuth, safeHandler(async (req: any, res: any) => {
+  const userId = req.user?.id ?? req.user?.userId ?? req.user?.sub;
+  if (!userId) return res.status(401).json({ error: "unauthorized" });
+  await pool.query(
+    "UPDATE users SET o365_access_token = NULL, o365_refresh_token = NULL, o365_access_token_expires_at = NULL, o365_token_expires_at = NULL, o365_user_email = NULL, o365_account_id = NULL WHERE id = $1",
+    [String(userId)],
+  );
+  return res.json({ ok: true, connected: false });
+}));
+
 export default router;

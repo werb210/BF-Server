@@ -68,6 +68,7 @@ import serviceBridgeRoutes from "./serviceBridge.js"; // BF_SERVER_SERVICE_BRIDG
 import usersRoutes from "./users.js";
 import o365TokensRoutes from "./o365Tokens.js";
 import o365OAuthRoutes from "./o365OAuth.js";
+import auditActivityRoutes from "./auditActivity.js"; // BF_SERVER_AUDIT_ACTIVITY_v802
 import portalRoutes from "./portal.js";
 import portalLendersRoutes from "./portalLenders.js";
 import portalFeeAgreementRoutes from "./portalFeeAgreement.js"; // BF_SERVER_MEDIA_FEE_AGREEMENT_v709
@@ -300,6 +301,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/r", router: smsRedirectRoutes }, // BF_SERVER_SMS_REDIRECT_v1 (public)
   { path: "/webhooks/sendgrid", router: sendgridWebhookRoutes }, // BF_SERVER_SENDGRID_WEBHOOK_v1 (public)
   { path: "/o365-oauth", router: o365OAuthRoutes },
+  { path: "/audit", router: auditActivityRoutes }, // BF_SERVER_AUDIT_ACTIVITY_v802
   { path: "/o365", router: o365Routes },
   { path: "/ocr/admin", router: ocrAdminRoutes },
   { path: "/_diag", router: diagnosticsRoutes },
