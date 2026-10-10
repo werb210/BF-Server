@@ -15,7 +15,7 @@ describe("v492 Maya reads real documents", () => {
     expect(src).not.toMatch(/FROM application_required_documents\s+WHERE application_id::text = \$1 AND status/);
   });
   it("all five document answers use the helper", () => {
-    expect(src.match(/mayaDocRows\(/g)?.length).toBe(6); // definition + 5 uses
+    expect(src.match(/mayaDocRows\(/g)?.length).toBe(7); // definition + 5 uses + the per-application list (BF_SERVER_MAYA_FACTS_v803)
     expect(src).toContain('mayaDocRows(String(applications[0].id), "client")');
   });
 });
