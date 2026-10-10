@@ -259,10 +259,15 @@ export async function getGraphForUser(
         resp = await doFetch(currentToken);
       }
     }
+    // BF_SERVER_GRAPH_RETRY_v801 - Microsoft also returns brief 502/504 gateway errors (overnight log: inbox,
+    // To Do sync and bookings each failed once on a 502). Retry those too, but only for reads (GET): a POST such
+    // as sendMail may already have gone through behind a gateway error, and repeating it could send twice.
+    const isGet = String(init.method ?? "GET").toUpperCase() === "GET";
+    const transientGatewayRead = (s: number) => isGet && (s === 502 || s === 504);
     for (
       let attempt = 0;
       attempt < GRAPH_MAX_RETRIES
-        && (resp.status === 429 || resp.status === 503)
+        && ((resp.status === 429 || resp.status === 503) || transientGatewayRead(resp.status))
         && isReplayableBody(init.body);
       attempt += 1
     ) {
