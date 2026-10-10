@@ -2,6 +2,10 @@
 import { describe, expect, it, vi } from "vitest";
 import express from "express";
 import request from "supertest";
+// BF_SERVER_MAYA_ADS_LIVE_v803 - campaign numbers now come from the live Google Ads report, like the Ads page.
+vi.mock("../services/googleAdsService.js", () => ({
+  runGoogleAdsReport: async () => ({ configured: true, days: 7, campaigns: [{ name: "Search - LOC", status: "ENABLED", cost: 420.5, clicks: 200, impressions: 5000, cpc: 2.1, conversions: 3 }] }),
+}));
 import { adsPerformance, automationsOverview, commsOverview, referrersOverview, todoStatus, type Q } from "../routes/mayaStaffInsights.js";
 import insightsRouter from "../routes/mayaStaffInsights.js";
 
@@ -20,7 +24,6 @@ function fake(answers: Array<[string, any[]]>): Q & { calls: string[] } {
 describe("v655 Maya insights", () => {
   it("ads: spend, waste (costly terms with no conversions), converting terms and negatives", async () => {
     const q = fake([
-      ["level = 'campaign'", [{ name: "Search - LOC", cost_now: 420.5, conv_now: 3, cost_prev: 380, conv_prev: 1 }]],
       ["level = 'search_term'", [
         { term: "free grants", campaign_name: "Search - LOC", cost: 55.2, clicks: 11, conversions: 0 },
         { term: "business line of credit", campaign_name: "Search - LOC", cost: 90, clicks: 20, conversions: 3 },
@@ -33,7 +36,9 @@ describe("v655 Maya insights", () => {
     expect(out.campaigns[0]).toMatchObject({ campaign: "Search - LOC", spend: 420.5, conversions: 3, cost_per_conversion: 140.17 });
     expect(out.wasted_search_terms).toEqual([{ term: "free grants", campaign: "Search - LOC", spend: 55.2, clicks: 11 }]);
     expect(out.converting_search_terms[0].term).toBe("business line of credit");
-    expect(out.summary).toBe("Last 7 day(s): 420.50 spend across 1 campaign(s), 4 ad lead(s); 55.20 on 1 search term(s) with no conversions; 1 active negative(s).");
+    expect(out.summary).toBe("Last 7 day(s): 420.50 spend, 200 clicks, 3 conversion(s) across 1 campaign(s); 55.20 on 1 search term(s) with no conversions.");
+    expect(out.leads_from_ads).toBe(4);
+    expect(out.negatives.active).toBe(1);
   });
 
   it("comms: waiting on reply, missed calls, voicemails, call summaries, issues and Team unread for the staff member", async () => {

@@ -17,23 +17,98 @@ const num = (v: unknown, dflt: number, max: number) => { const n = Number(v); re
 const r2 = (v: unknown) => Math.round(Number(v ?? 0) * 100) / 100;
 
 export async function adsPerformance(q: Q, days: number) {
-  const campaigns = (await q(`SELECT name, sum(cost) AS cost, sum(clicks) AS clicks, sum(impressions) AS impressions, sum(conversions) AS conversions,
-      sum(cost) FILTER (WHERE stat_date >= current_date - $1::int) AS cost_now, sum(conversions) FILTER (WHERE stat_date >= current_date - $1::int) AS conv_now,
-      sum(cost) FILTER (WHERE stat_date < current_date - $1::int) AS cost_prev, sum(conversions) FILTER (WHERE stat_date < current_date - $1::int) AS conv_prev
-    FROM google_ads_daily WHERE level = 'campaign' AND stat_date >= current_date - ($1::int * 2) GROUP BY name ORDER BY cost_now DESC NULLS LAST`, [days])).rows.map((c) => ({
-      campaign: c.name, spend: r2(c.cost_now), conversions: r2(c.conv_now), previous_spend: r2(c.cost_prev), previous_conversions: r2(c.conv_prev),
-      cost_per_conversion: Number(c.conv_now) > 0 ? r2(Number(c.cost_now) / Number(c.conv_now)) : null,
-    }));
+  // BF_SERVER_MAYA_ADS_LIVE_v803 - the same live Google Ads report the Marketing -> Ads page shows, so Maya's spend,
+  // clicks and cost per conversion match the page. Removed campaigns (Performance Max was deleted) are left out.
+  const { runGoogleAdsReport } = await import("../services/googleAdsService.js");
+  const live: any = await runGoogleAdsReport(days);
+  if (!live?.configured) return { days, error: "google_ads_not_connected", status: 503 };
+  if (live.error) return { days, error: "google_ads_report_failed: " + String(live.error).slice(0, 200), status: 502 };
+  const keep = (c: any) => String(c?.status ?? "").toUpperCase() !== "REMOVED" && !/performance\s*max/i.test(String(c?.name ?? ""));
+  const campaigns = (Array.isArray(live.campaigns) ? live.campaigns : []).filter(keep).map((c: any) => ({
+    campaign: c.name, status: c.status ?? null, spend: r2(c.cost), clicks: Number(c.clicks ?? 0), impressions: Number(c.impressions ?? 0),
+    cost_per_click: r2(c.cpc), conversions: r2(c.conversions),
+    cost_per_conversion: Number(c.conversions) > 0 ? r2(Number(c.cost) / Number(c.conversions)) : null,
+  }));
+  const sum = (k: string) => campaigns.reduce((t: number, c: any) => t + Number(c[k] ?? 0), 0);
+  const totals = { spend: r2(sum("spend")), clicks: sum("clicks"), impressions: sum("impressions"), conversions: r2(sum("conversions")) };
+  const totalsOut = { ...totals, cost_per_click: totals.clicks ? r2(totals.spend / totals.clicks) : null, cost_per_conversion: totals.conversions ? r2(totals.spend / totals.conversions) : null };
   const terms = (await q(`SELECT name AS term, campaign_name, sum(cost) AS cost, sum(clicks) AS clicks, sum(conversions) AS conversions
     FROM google_ads_daily WHERE level = 'search_term' AND stat_date >= current_date - $1::int GROUP BY name, campaign_name ORDER BY sum(cost) DESC LIMIT 60`, [days])).rows;
   const wasted = terms.filter((t) => Number(t.cost) > 0 && Number(t.conversions) === 0).slice(0, 15).map((t) => ({ term: t.term, campaign: t.campaign_name, spend: r2(t.cost), clicks: Number(t.clicks) }));
   const converting = terms.filter((t) => Number(t.conversions) > 0).slice(0, 10).map((t) => ({ term: t.term, campaign: t.campaign_name, spend: r2(t.cost), conversions: r2(t.conversions) }));
   const leads = (await q(`SELECT count(*)::int AS n FROM contact_ad_attribution WHERE created_at >= now() - ($1::int * interval '1 day')`, [days])).rows[0]?.n ?? 0;
   const negatives = (await q(`SELECT term, match_type, campaign_name, added_at FROM ads_negatives_log WHERE removed_at IS NULL ORDER BY added_at DESC LIMIT 200`, [])).rows;
-  const spend = r2(campaigns.reduce((a, c) => a + c.spend, 0));
+  const spend = totalsOut.spend;
   const waste = r2(wasted.reduce((a, w) => a + w.spend, 0));
-  return { days, spend, leads_from_ads: leads, campaigns, wasted_search_terms: wasted, wasted_spend: waste, converting_search_terms: converting,
-    negatives: { active: negatives.length, recent: negatives.slice(0, 10) }, summary: `Last ${days} day(s): ${spend.toFixed(2)} spend across ${campaigns.length} campaign(s), ${leads} ad lead(s); ${waste.toFixed(2)} on ${wasted.length} search term(s) with no conversions; ${negatives.length} active negative(s).` };
+  return { days, source: "Live Google Ads report - the same numbers as Marketing -> Ads", totals: totalsOut, spend, leads_from_ads: leads, campaigns,
+    wasted_search_terms: wasted, wasted_spend: waste, converting_search_terms: converting,
+    negatives: { active: negatives.length, recent: negatives.slice(0, 10) },
+    not_in_this_data: ["campaign budgets", "remaining budget"],
+    summary: `Last ${days} day(s): ${spend.toFixed(2)} spend, ${totalsOut.clicks} clicks, ${totalsOut.conversions} conversion(s) across ${campaigns.length} campaign(s); ${waste.toFixed(2)} on ${wasted.length} search term(s) with no conversions.` };
+}
+
+// BF_SERVER_MAYA_FACTS_v803 - one snapshot of the pipeline for staff Maya, built with the SAME rules as the
+// Dashboard and the Pipeline board (boardScope + the live-stage filter): drafts never count, "funded" is the
+// Accepted stage, Hold and Fraud stay out of the live numbers. Maya was counting 92 drafts as "Received" and
+// calling them funded.
+const ACTIVE_EXCLUDED = new Set(["Rejected", "Accepted", "Hold", "Fraud"]);
+const edmontonMonthStart = (now = new Date()): number => {
+  const e = new Date(now.getTime() - 6 * 3600_000);
+  return Date.UTC(e.getUTCFullYear(), e.getUTCMonth(), 1) + 6 * 3600_000;
+};
+export async function pipelineFacts(q: Q, silo: string, isAdmin: boolean) {
+  const { boardScope, DEAL_CURRENCY_SQL } = await import("./dashboard.js");
+  const rows = (await q(`SELECT a.id::text AS id, COALESCE(NULLIF(TRIM(a.business_legal_name), ''), NULLIF(TRIM(a.name), ''), 'Application') AS name,
+      COALESCE(a.pipeline_state, 'Received') AS stage, a.requested_amount, a.funded_amount, ${DEAL_CURRENCY_SQL} AS currency,
+      COALESCE(NULLIF(a.product_category, ''), a.product_type) AS product, a.submitted_at, a.created_at, a.funded_at,
+      COALESCE((SELECT max(h.created_at) FROM application_stage_history h WHERE h.application_id = a.id::text AND h.to_stage = a.pipeline_state), a.submitted_at, a.created_at) AS stage_since,
+      COALESCE(lp.commission, 2) AS commission_pct,
+      (SELECT o.amount FROM offers o WHERE o.application_id = a.id AND o.status = 'accepted' ORDER BY o.updated_at DESC NULLS LAST LIMIT 1) AS accepted_offer
+    FROM applications a LEFT JOIN lender_products lp ON lp.id = a.lender_product_id::text
+    WHERE UPPER(a.silo) = UPPER($1) AND ${boardScope("a")}
+    ORDER BY a.submitted_at DESC NULLS LAST, a.created_at DESC LIMIT 1000`, [silo])).rows;
+  const now = Date.now();
+  const app = (r: any) => ({ id: r.id, short_id: String(r.id).slice(-8).toUpperCase(), name: r.name, stage: r.stage,
+    amount: r.requested_amount == null ? null : r2(r.requested_amount), currency: r.currency, product: r.product ?? null,
+    submitted_at: r.submitted_at ?? null, days_in_stage: Math.max(0, Math.floor((now - new Date(r.stage_since ?? r.created_at).getTime()) / 86_400_000)) });
+  const active = rows.filter((r) => !ACTIVE_EXCLUDED.has(r.stage));
+  const byStage: Record<string, { count: number; applications: any[] }> = {};
+  for (const r of rows) (byStage[r.stage] ??= { count: 0, applications: [] }).applications.push(app(r));
+  for (const s of Object.values(byStage)) s.count = s.applications.length;
+  const monthStart = edmontonMonthStart();
+  const funded = rows.filter((r) => r.stage === "Accepted");
+  const fundedThisMonth = funded.filter((r) => new Date(r.stage_since ?? r.funded_at ?? 0).getTime() >= monthStart);
+  const value: Record<string, number> = {};
+  for (const r of active) value[r.currency] = r2((value[r.currency] ?? 0) + Number(r.requested_amount ?? 0));
+  const largest = [...active].sort((a, b) => Number(b.requested_amount ?? 0) - Number(a.requested_amount ?? 0))[0];
+  const oldest = [...active].sort((a, b) => new Date(a.submitted_at ?? a.created_at).getTime() - new Date(b.submitted_at ?? b.created_at).getTime())[0];
+  const newest = rows.find((r) => r.stage !== "Fraud");
+  const lenders = (await q(`SELECT name FROM lenders WHERE silo = $1 ORDER BY lower(name)`, [silo])).rows.map((l: any) => l.name);
+  let commission: Record<string, unknown> | string = "Commission figures are shown to Admin staff only.";
+  if (isAdmin) {
+    const proj: Record<string, Record<string, number>> = {};
+    for (const r of rows) {
+      if (r.stage === "Rejected" || r.stage === "Fraud") continue;
+      const base = Number(r.funded_amount ?? r.accepted_offer ?? r.requested_amount ?? 0) * (Number(r.commission_pct) / 100);
+      const bucket = (proj[r.stage] ??= {}); bucket[r.currency] = r2((bucket[r.currency] ?? 0) + base);
+    }
+    commission = { by_stage: proj, earned_on_funded_deals: proj["Accepted"] ?? {}, rule: "2% of the funded amount unless the lender product carries its own rate; amount = funded amount, else accepted offer, else requested amount." };
+  }
+  return {
+    definitions: "Same rules as the Dashboard: drafts never count; active = every stage except Rejected, Accepted (funded), Hold and Fraud; funded = the Accepted stage.",
+    active_count: active.length,
+    by_stage: byStage,
+    funded_this_month: fundedThisMonth.length,
+    funded_all_time: funded.length,
+    newest_application: newest ? app(newest) : null,
+    oldest_active_application: oldest ? app(oldest) : null,
+    pipeline_value_by_currency: value,
+    largest_active_application: largest ? app(largest) : null,
+    lender_count: lenders.length,
+    lenders,
+    commission,
+    summary: `${active.length} active application(s); ${fundedThisMonth.length} funded this month; ${lenders.length} lender(s) on the panel.`,
+  };
 }
 
 export async function commsOverview(q: Q, silo: string, userEmail: string | null) {
@@ -42,7 +117,7 @@ export async function commsOverview(q: Q, silo: string, userEmail: string | null
     ORDER BY m.contact_id, m.created_at DESC) t WHERE direction = 'inbound' ORDER BY created_at ASC LIMIT 25`, [silo])).rows.map((w) => ({ contact_id: w.contact_id, name: w.name, phone: w.phone, last_message: String(w.body ?? "").slice(0, 200), since: w.created_at, unread: !w.read_at }));
   const missed = (await q(`SELECT e.from_number, e.occurred_at AS created_at, c.name, c.id::text AS contact_id FROM call_events e LEFT JOIN contacts c ON c.id = e.contact_id WHERE e.event_type = 'call.missed' AND e.occurred_at >= now() - interval '2 days' AND (e.silo = $1 OR e.silo IS NULL) ORDER BY e.occurred_at DESC LIMIT 15`, [silo])).rows;
   const voicemails = (await q(`SELECT v.from_number, v.created_at, COALESCE(v.transcript, v.transcription) AS transcript, c.name FROM voicemails v LEFT JOIN contacts c ON c.id = v.contact_id WHERE v.created_at >= now() - interval '3 days' AND (v.silo = $1 OR v.silo IS NULL) ORDER BY v.created_at DESC LIMIT 10`, [silo])).rows.map((v) => ({ ...v, transcript: String(v.transcript ?? "").slice(0, 300) }));
-  const calls = (await q(`SELECT cf.started_at, cf.direction, c.name, c.id::text AS contact_id, t.voice_intelligence_summary AS summary FROM conferences cf JOIN call_transcripts t ON t.conference_id = cf.id LEFT JOIN contacts c ON c.id = cf.contact_id WHERE t.voice_intelligence_summary IS NOT NULL AND (cf.silo = $1 OR cf.silo IS NULL) ORDER BY cf.started_at DESC NULLS LAST LIMIT 8`, [silo])).rows.map((c) => ({ ...c, summary: String(c.summary ?? "").slice(0, 600) }));
+  const calls = (await q(`SELECT cf.started_at, cf.direction, c.name, c.id::text AS contact_id, t.voice_intelligence_summary AS summary FROM conferences cf JOIN call_transcripts t ON t.conference_id = cf.id LEFT JOIN contacts c ON c.id::text = cf.contact_id WHERE t.voice_intelligence_summary IS NOT NULL AND (cf.silo = $1 OR cf.silo IS NULL) ORDER BY cf.started_at DESC NULLS LAST LIMIT 8`, [silo])).rows.map((c) => ({ ...c, summary: String(c.summary ?? "").slice(0, 600) }));
   const issues = (await q(`SELECT id::text AS id, title, status, kind, created_at FROM issues WHERE status = 'open' AND (silo = $1 OR silo IS NULL) ORDER BY created_at DESC LIMIT 10`, [silo])).rows;
   let team: any[] = [];
   if (userEmail) team = (await q(`SELECT ch.name, ch.kind, count(tm.id)::int AS unread FROM users u JOIN team_channel_members mem ON mem.user_id = u.id JOIN team_channels ch ON ch.id = mem.channel_id JOIN team_messages tm ON tm.channel_id = ch.id AND tm.deleted_at IS NULL AND tm.sender_id <> u.id AND tm.created_at > COALESCE(mem.last_read_at, 'epoch'::timestamptz) WHERE lower(u.email) = lower($1) GROUP BY ch.name, ch.kind ORDER BY unread DESC`, [userEmail])).rows;
@@ -104,7 +179,8 @@ function route(path: string, tool: string, run: (req: Request) => Promise<any>) 
   }));
 }
 const siloOf = (req: Request) => (str(req.body?.silo) ?? "BF").toUpperCase();
-route("/staff/ads-performance", "ads.performance", (req) => adsPerformance(dbq, num(req.body?.days, 7, 90)));
+route("/staff/pipeline-facts", "pipeline.facts", (req) => pipelineFacts(dbq, siloOf(req), String(req.body?.role ?? "").toLowerCase() === "admin")); // BF_SERVER_MAYA_FACTS_v803
+route("/staff/ads-performance", "ads.performance", (req) => adsPerformance(dbq, num(req.body?.days, 30, 365))); // BF_SERVER_MAYA_ADS_LIVE_v803 - 30 days like the Ads page
 route("/staff/comms-overview", "comms.overview", (req) => commsOverview(dbq, siloOf(req), str(req.body?.user_email)));
 route("/staff/automations-overview", "automations.overview", (req) => automationsOverview(dbq, siloOf(req)));
 route("/staff/referrers-overview", "referrers.overview", () => referrersOverview(dbq));

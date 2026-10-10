@@ -88,9 +88,11 @@ async function mayaDocRows(appId: string, mode: "staff" | "client"): Promise<{ r
       let status: string;
       if (needed.has(d.document_type)) status = rejected.has(d.document_type) ? "rejected" : "missing";
       else if (statuses.has("accepted")) status = "accepted";
-      else status = mode === "client" ? "accepted" : "uploaded";
+      // BF_SERVER_MAYA_FACTS_v803 - an upload not yet reviewed is "received" for clients (it was called "accepted",
+      // so Maya said "awaiting review" and "all accepted" about the same file).
+      else status = mode === "client" ? "received" : "uploaded";
       const label = d.label || d.document_type;
-      const suffix = status === "uploaded" ? " (uploaded, awaiting review)" : status === "rejected" ? " (rejected - needs re-upload)" : "";
+      const suffix = status === "uploaded" ? " (uploaded, awaiting review)" : status === "received" ? " (received - our team is reviewing it)" : status === "rejected" ? " (rejected - needs re-upload)" : "";
       return { document_category: label + suffix, status, is_required: true };
     });
     return { rows };
@@ -226,7 +228,23 @@ router.post(
     if (!verifyMayaService(req)) {
       return res.status(401).json({ ok: false, error: "service_jwt_required" });
     }
-    const appId = typeof req.body?.application_id === "string" ? req.body.application_id.trim() : "";
+    let appId = typeof req.body?.application_id === "string" ? req.body.application_id.trim() : "";
+    // BF_SERVER_MAYA_FACTS_v803 - staff ask by business name ("details on BIBUSA") or short id, not by UUID.
+    const lookup = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!appId && lookup) {
+      const { boardScope } = await import("./dashboard.js");
+      const cleaned = lookup.replace(/^#/, "");
+      const found = await pool.query<{ id: string }>(
+        `SELECT a.id::text AS id FROM applications a
+          WHERE UPPER(COALESCE(a.silo, 'BF')) = UPPER($3) AND ${boardScope("a")}
+            AND (upper(right(a.id::text, length($2))) = upper($2)
+                 OR a.name ILIKE $1 OR a.business_legal_name ILIKE $1)
+          ORDER BY a.submitted_at DESC NULLS LAST, a.updated_at DESC NULLS LAST LIMIT 1`,
+        ["%" + lookup.replace(/[%_]/g, "") + "%", cleaned.length >= 4 ? cleaned : "__no_short_id__", typeof req.body?.silo === "string" ? req.body.silo : "BF"],
+      );
+      appId = found.rows[0]?.id ?? "";
+      if (!appId) return res.status(404).json({ ok: false, error: "not_found", message: "No application matches " + lookup });
+    }
     if (!appId) {
       return res.status(400).json({ ok: false, error: "application_id_required" });
     }
@@ -234,6 +252,10 @@ router.post(
       const ar = await pool.query(
         `SELECT id::text AS id, name, pipeline_state, status, requested_amount, product_type, updated_at,
                 created_at, submitted_at, owner_user_id::text AS owner_user_id, -- BF_SERVER_BLOCK_v493
+                COALESCE(NULLIF(business_legal_name, ''), name) AS business_name, product_category, funded_amount, funded_at, -- BF_SERVER_MAYA_FACTS_v803
+                COALESCE((SELECT max(h.created_at) FROM application_stage_history h WHERE h.application_id = applications.id::text AND h.to_stage = applications.pipeline_state), submitted_at, created_at) AS stage_since,
+                CASE WHEN UPPER(TRIM(COALESCE(metadata->>'country', metadata->>'businessCountry', metadata->>'businessLocation',
+                       metadata->'kyc'->>'businessLocation', metadata->'kyc'->>'country', ''))) IN ('US', 'USA', 'UNITED STATES') THEN 'USD' ELSE 'CAD' END AS currency,
                 bi_public_id, bi_completion_url -- BF_SERVER_BLOCK_v489
            FROM applications WHERE id::text = $1 LIMIT 1`,
         [appId],
@@ -276,8 +298,31 @@ router.post(
         missing.length > 0
           ? `Collect ${missing.length} outstanding document(s): ${missing.join(", ")}`
           : "Documents complete — ready for lender match / submission review.";
+      // BF_SERVER_MAYA_FACTS_v803 - where the file has been sent and what came back (staff only).
+      const sent = await pool.query(
+        `SELECT COALESCE(l.name, lp2.name, 'Lender') AS lender, ls.status, COALESCE(ls.submitted_at, ls.created_at) AS sent_at
+           FROM lender_submissions ls
+           LEFT JOIN lenders l ON l.id::text = ls.lender_id
+           LEFT JOIN lender_products p ON p.id = ls.lender_id
+           LEFT JOIN lenders lp2 ON lp2.id = p.lender_id
+          WHERE ls.application_id = $1 ORDER BY COALESCE(ls.submitted_at, ls.created_at) DESC LIMIT 25`,
+        [appId],
+      ).catch((err: any) => { logError("maya_summary_submissions_failed", { code: "maya_summary_submissions_failed", error: err?.message ?? "unknown" }); return { rows: [] as any[] }; });
+      const offerRows = await pool.query(
+        `SELECT lender_name, amount, term, rate_factor, status FROM offers WHERE application_id = $1 AND COALESCE(is_archived, false) = false ORDER BY created_at DESC LIMIT 10`,
+        [appId],
+      ).catch((err: any) => { logError("maya_summary_offers_failed", { code: "maya_summary_offers_failed", error: err?.message ?? "unknown" }); return { rows: [] as any[] }; });
       const summary = {
         applicationId: app.id,
+        shortId: String(app.id).slice(-8).toUpperCase(),
+        businessName: app.business_name ?? app.name,
+        productCategory: app.product_category ?? null,
+        currency: app.currency,
+        fundedAmount: app.funded_amount ?? null,
+        fundedAt: app.funded_at ?? null,
+        daysInStage: Math.max(0, Math.floor((Date.now() - new Date(app.stage_since ?? app.created_at).getTime()) / 86_400_000)),
+        sentToLenders: sent.rows.map((r: any) => ({ lender: r.lender, status: r.status ?? null, sentAt: r.sent_at ?? null })),
+        offers: offerRows.rows.map((o: any) => ({ lender: o.lender_name ?? null, amount: o.amount == null ? null : Number(o.amount), term: o.term ?? null, rateOrFactor: o.rate_factor ?? null, status: o.status ?? null })),
         name: app.name,
         stage,
         status: app.status,
@@ -1127,7 +1172,7 @@ router.post(
       );
       if (ar.rowCount === 0) return res.status(404).json({ ok: false, error: "not_found" });
       const applicantName = b2Str(ar.rows[0].applicant_name) ?? "there";
-      const dr = { rows: (await mayaDocRows(appId, "client")).rows.filter((r) => r.status !== "accepted") } /* BF_SERVER_BLOCK_v492 */;
+      const dr = { rows: (await mayaDocRows(appId, "client")).rows.filter((r) => r.status === "missing" || r.status === "rejected") } /* BF_SERVER_BLOCK_v492 + BF_SERVER_MAYA_FACTS_v803 */;
       const missing = dr.rows.map((r: any) => r.document_category).filter(Boolean);
       if (!missing.length) {
         await audit({ audience: "staff", tool: "docs.request_draft", args: { application_id: appId }, ok: true, summary: "nothing_missing" });
@@ -1195,10 +1240,10 @@ router.post(
         num(`SELECT COUNT(*)::int AS n FROM communications_messages WHERE ($1::text IS NULL OR silo = $1) AND lower(COALESCE(type, '')) = 'email' AND lower(COALESCE(direction, '')) = 'inbound' AND created_at >= date_trunc('day', now())`, sp),
         num(`SELECT COUNT(*)::int AS n FROM communications_messages WHERE ($1::text IS NULL OR silo = $1) AND lower(COALESCE(type, '')) IN ('chat', 'message') AND lower(COALESCE(direction, '')) = 'inbound' AND created_at >= date_trunc('day', now())`, sp),
         num(`SELECT COUNT(*)::int AS n FROM crm_notes WHERE ($1::text IS NULL OR silo = $1) AND created_at >= date_trunc('day', now())`, sp),
-        num(`SELECT COUNT(*)::int AS n FROM crm_tasks WHERE ($1::text IS NULL OR silo = $1) AND lower(COALESCE(status, '')) NOT IN ('done', 'completed', 'complete', 'closed', 'cancelled')`, sp),
+        num(`SELECT COUNT(*)::int AS n FROM tasks WHERE ($1::text IS NULL OR silo = $1) AND deleted_at IS NULL AND status NOT IN ('COMPLETED', 'DEFERRED')`, sp), // BF_SERVER_MAYA_FACTS_v803 - crm_tasks is retired; tasks is the live table
         num(`SELECT COUNT(*)::int AS n FROM application_tasks t JOIN applications a ON a.id = t.application_id WHERE ($1::text IS NULL OR a.silo = $1) AND t.completed_at IS NULL`, sp),
         num(`SELECT COUNT(*)::int AS n FROM voicemails WHERE created_at > now() - interval '2 days'`),
-        num(`SELECT COUNT(*)::int AS n FROM call_events WHERE event_type = 'call.missed' AND ($1::text IS NULL OR silo = $1) AND created_at > now() - interval '2 days'`, sp),
+        num(`SELECT COUNT(*)::int AS n FROM call_events WHERE event_type = 'call.missed' AND ($1::text IS NULL OR silo = $1) AND occurred_at > now() - interval '2 days'`, sp), // BF_SERVER_MAYA_FACTS_v803 - call_events has occurred_at, not created_at
       ]);
       const counts = {
         newAppsToday, submittedToday, dealsAwaitingDocs, staleDeals,
@@ -1282,6 +1327,7 @@ router.post(
       // per-application business details so client Maya can answer identity questions.
       const applications = r.rows.map((a: any) => ({
         id: a.id, name: a.name ?? null,
+        shortId: String(a.id).slice(-4).toUpperCase(), // BF_SERVER_MAYA_FACTS_v803 - the "#61AE" the client sees in the app
         businessName: a.name ?? null, // BF_SERVER_BLOCK_v489
         stage: a.pipeline_state ?? a.status ?? null, status: a.status ?? null,
         requestedAmount: a.requested_amount ?? null, productType: a.product_type ?? null,
@@ -1345,9 +1391,16 @@ router.post(
       let offers: Array<{ lender: string | null; amount: number | null; term: string | null; rate: string | null; status: string | null; expires: string | null }> = [];
       if (applications.length) {
         const dr = await mayaDocRows(String(applications[0].id), "client") /* BF_SERVER_BLOCK_v492 */;
-        const missing = dr.rows.filter((x: any) => String(x.status) !== "accepted").map((x: any) => x.document_category).filter(Boolean);
+        const missing = dr.rows.filter((x: any) => x.status === "missing" || x.status === "rejected").map((x: any) => x.document_category).filter(Boolean); // BF_SERVER_MAYA_FACTS_v803
         // BF_SERVER_MAYA_SEES_PORTAL_v782 - every document and its status, and the offers, as staff see them.
         latestDocs = { total: dr.rows.length, missing, documents: dr.rows.map((x: any) => ({ category: x.document_category, status: x.status })) };
+        // BF_SERVER_MAYA_FACTS_v803 - each application's own document list (requirements differ by amount, product and country).
+        for (const app of applications.slice(0, 5)) {
+          const d2 = app.id === applications[0].id ? dr : await mayaDocRows(String(app.id), "client");
+          (app as any).documents = { missing: d2.rows.filter((x: any) => x.status === "missing" || x.status === "rejected").map((x: any) => x.document_category),
+            received: d2.rows.filter((x: any) => x.status === "received").map((x: any) => x.document_category),
+            accepted: d2.rows.filter((x: any) => x.status === "accepted").map((x: any) => x.document_category) };
+        }
         const or = await pool.query(
           `SELECT lender_name, amount, term, rate_factor, status, expiry_date FROM offers
             WHERE application_id = $1 AND COALESCE(is_archived, false) = false ORDER BY created_at DESC LIMIT 10`,
