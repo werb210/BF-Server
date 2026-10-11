@@ -17,6 +17,8 @@ const router = express.Router();
 // Staff keeps read-only access. Lender / Referrer / client tokens are refused.
 const writers = requireAuthorization({ roles: [ROLES.ADMIN, ROLES.MARKETING] });
 const readers = requireAuthorization({ roles: [ROLES.ADMIN, ROLES.MARKETING, ROLES.STAFF] });
+// BF_SERVER_v788_STAFF_ENROLL - Staff may manually enroll a contact; every other write stays Admin / Marketing.
+const enrollers = requireAuthorization({ roles: [ROLES.ADMIN, ROLES.MARKETING, ROLES.STAFF] });
 const COLS = `id::text, name, description, silo, trigger_type, conditions, actions, steps, enabled, reenroll, test_mode, version, template_key, graph, settings, goal, schema_version, created_at, updated_at`;
 const REENROLL = new Set(["never", "always", "after_complete"]);
 const TRIGGER_KEYS = new Set<string>(TRIGGERS.map((t) => t.key));
@@ -299,8 +301,8 @@ router.get("/:id/enrollments", readers, safeHandler(async (req: any, res: any) =
   respondOk(res, rows);
 }));
 
-// Manual trigger: Admin / Marketing enroll a contact (or application). testMode runs every action as a dry run.
-router.post("/:id/enroll", writers, safeHandler(async (req: any, res: any) => {
+// Manual trigger: Admin / Marketing / Staff enroll a contact (or application). testMode runs every action as a dry run.
+router.post("/:id/enroll", enrollers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const contactId = isUuid(req.body?.contactId) ? req.body.contactId : null;
   const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId : null;

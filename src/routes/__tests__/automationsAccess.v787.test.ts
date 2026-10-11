@@ -59,7 +59,7 @@ describe("v787 workflow access", () => {
     expect((await request(m).post(`/api/automations/${RULE}/enroll`).send({ contactId: CONTACT })).status).toBe(200);
   });
 
-  it("Staff can read but every write is 403", async () => {
+  it("Staff can read and enroll; every other write is 403", async () => {
     const s = app({ role: "Staff" });
     expect((await request(s).get("/api/automations")).status).toBe(200);
     expect((await request(s).get(`/api/automations/${RULE}`)).status).toBe(200);
@@ -71,7 +71,8 @@ describe("v787 workflow access", () => {
     expect((await request(s).post("/api/automations/lists").send({ name: "Hot" })).status).toBe(403);
     expect((await request(s).post("/api/automations/from-library").send({ key: "no_reply_3_days" })).status).toBe(403);
     expect((await request(s).post("/api/automations/draft-from-text").send({ prompt: "x" })).status).toBe(403);
-    expect((await request(s).post(`/api/automations/${RULE}/enroll`).send({ contactId: CONTACT })).status).toBe(403);
+    // BF_SERVER_v788_STAFF_ENROLL - Staff may manually enroll a contact.
+    expect((await request(s).post(`/api/automations/${RULE}/enroll`).send({ contactId: CONTACT })).status).toBe(200);
     expect((await request(s).post(`/api/automations/enrollments/${RULE}/stop`)).status).toBe(403);
   });
 

@@ -44,7 +44,7 @@ describe("trigger emitters", () => {
     ["link.clicked", "src/routes/smsRedirect.ts", 'm.emitAutomationEvent("link.clicked"'],
     ["email.* (SendGrid)", "src/routes/sendgridWebhook.ts", "m.emitAutomationEvent(automationType"],
     ["date.relative / no_reply (worker)", "src/workers/automationWorker.ts", "graph.runDailyTriggers(deps)"],
-    ["manual (enroll endpoint)", "src/routes/automations.ts", 'router.post("/:id/enroll", writers'],
+    ["manual (enroll endpoint)", "src/routes/automations.ts", 'router.post("/:id/enroll", enrollers'],
   ];
   for (const [name, file, needle] of cases) it(`${name} fires from ${file}`, () => expect(src(file)).toContain(needle));
 
