@@ -6,3 +6,6 @@ deploy.zip
 
 # Generated baseline — review before committing
 migrations/000_baseline.sql.unreviewed
+
+# Files written by test runs and local uploads
+uploads/
