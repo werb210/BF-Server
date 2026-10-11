@@ -69,12 +69,14 @@ async function pollOnce(pool: Pool): Promise<void> {
       const contact = c.rows[0];
       if (!contact) continue;
 
-      await pool.query(
+      const ins = await pool.query(
         `INSERT INTO communications_messages (type, direction, contact_id, body, created_at, silo, from_number, twilio_sid, read_at)
          VALUES ('email','inbound',$1,$2,$3,$4,$5,$6, now())
          ON CONFLICT (twilio_sid) WHERE twilio_sid IS NOT NULL DO NOTHING`,
         [contact.id, String(m.bodyPreview || "").slice(0, 2000), received, contact.silo || "BF", sender, msgId],
       );
+      // BF_SERVER_v786_WORKFLOW_GRAPH - message.inbound (email), once per new message.
+      if (ins.rowCount) void import("../modules/automation/automationEngine.js").then((mod) => mod.emitAutomationEvent("message.inbound", { silo: contact.silo || "BF", contactId: String(contact.id), data: { channel: "email" } })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
     } catch {
       // Skip malformed or otherwise unprocessable messages; the next poll can continue.
     }

@@ -19,10 +19,16 @@ export async function runEnrollment(deps: EngineDeps, enrollmentId: string): Pro
   const claim = await q(
     `UPDATE automation_enrollments SET locked_until = now() + interval '2 minutes', updated_at = now()
       WHERE id = $1::uuid AND status = 'active' AND next_run_at <= now() AND (locked_until IS NULL OR locked_until < now())
-      RETURNING id::text AS id, rule_id::text AS rule_id, silo, contact_id::text AS contact_id, application_id, context, steps, current_step, attempts, test_mode, created_at`,
+      RETURNING id::text AS id, rule_id::text AS rule_id, silo, contact_id::text AS contact_id, application_id, context, steps, current_step, attempts, test_mode, created_at,
+                schema_version, graph, settings, goal, current_node_id, path, wait_event, wait_timeout_at, steps_today, steps_day`,
     [enrollmentId]);
   const e = claim.rows[0];
   if (!e) return "not_due";
+  // BF_SERVER_v786_WORKFLOW_GRAPH - graph enrollments run on the v2 engine.
+  if (Number(e.schema_version) === 2) {
+    const { runGraphClaimed } = await import("./graphEngine.js");
+    return runGraphClaimed(deps, e);
+  }
   const steps: Step[] = Array.isArray(e.steps) ? e.steps : [];
   let i = Number(e.current_step) || 0;
   const save = (sql: string, params: unknown[]) => q(sql, params);
@@ -116,15 +122,53 @@ export async function defaultDeps(): Promise<EngineDeps> {
       await sendSms({ to: phone, message: `Boreal: ${body}\n${applicationId ? `${base}/application/${encodeURIComponent(applicationId)}` : `${base}/portal`}`, track: { kind: "automation", applicationId } });
       return "sms";
     },
+    // BF_SERVER_v786_WORKFLOW_GRAPH - v2 action senders.
+    async sendEmail({ to, subject, html, contactId, from }) {
+      const { sendOne } = await import("../../services/sendgridService.js");
+      const r = await sendOne({ to, subject, html, contactId, from });
+      return { ok: r.ok, error: r.error };
+    },
+    async sendStaffEmail({ to, subject, html }) {
+      const { sendTransactional } = await import("../../services/sendgridService.js");
+      const r = await sendTransactional({ to, subject, html });
+      return { ok: r.ok, error: r.error };
+    },
+    httpFetch: (url, init) => fetch(url, init),
+    async setApplicationStage(applicationId, stage) {
+      const { transitionPipelineState } = await import("../applications/applications.service.js");
+      await transitionPipelineState({ applicationId, nextState: stage as any, actorUserId: null, actorRole: null, trigger: "automation", reason: "workflow" });
+    },
   };
 }
 
-/** Called from trigger points. Enrolls, then runs whatever is due at once (e.g. a task with no wait). */
-export async function emitAutomationEvent(ev: AutomationEvent): Promise<void> {
+export type EventPayload = { silo?: string | null; contactId?: string | null; applicationId?: string | null; fromStage?: string | null; toStage?: string | null; data?: Record<string, unknown> };
+
+/** BF_SERVER_v786_WORKFLOW_GRAPH - one event shape whichever way a caller fires it. */
+export function toEvent(evOrType: AutomationEvent | string, payload: EventPayload = {}): AutomationEvent {
+  if (typeof evOrType === "string") return { trigger: evOrType, silo: payload.silo ?? null, contactId: payload.contactId ?? null, applicationId: payload.applicationId ?? null, fromStage: payload.fromStage ?? null, toStage: payload.toStage ?? null, data: payload.data ?? {} };
+  return evOrType;
+}
+
+/** Enrolls (v1 rules not yet converted, then v2 workflows), wakes waiting enrollments, and runs what is due now. */
+export async function dispatchEvent(deps: EngineDeps, ev: AutomationEvent): Promise<string[]> {
+  const v1 = await emitWith(deps, ev);
+  const { emitGraph } = await import("./graphEngine.js");
+  const v2 = await emitGraph(deps, ev);
+  const ids = [...v1, ...v2];
+  for (const id of ids) await runEnrollment(deps, id).catch((err: any) => console.error("[automation] immediate run failed", { id, message: err?.message }));
+  return ids;
+}
+
+/**
+ * The automation event bus. Called from every trigger point as
+ * emitAutomationEvent(type, { silo, contactId, applicationId?, data }) (or the older single-object form).
+ * Never throws into the operation that fired the trigger.
+ */
+export async function emitAutomationEvent(evOrType: AutomationEvent | string, payload: EventPayload = {}): Promise<void> {
+  const ev = toEvent(evOrType, payload);
   try {
     const deps = await defaultDeps();
-    const ids = await emitWith(deps, ev);
-    for (const id of ids) await runEnrollment(deps, id).catch((err: any) => console.error("[automation] immediate run failed", { id, message: err?.message }));
+    await dispatchEvent(deps, ev);
   } catch (err: any) {
     console.error("[automation] emit failed", { trigger: ev.trigger, message: err?.message ?? String(err) });
   }

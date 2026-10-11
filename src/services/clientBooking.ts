@@ -97,7 +97,26 @@ export async function openSlots(now: Date, staffId: string | null, days = 14): P
   const isTaken = (s: Staff, t: Date) => taken.rows.some((b) => (b.staff_user_id === s.id || b.staff_email === s.email || b.staff_email === mailboxOf(s)) && new Date(b.starts_at).getTime() === t.getTime());
   return slots.map((t) => ({ startsAt: t.toISOString(), staffIds: staff.filter((s) => !overlaps(t, busy.get(mailboxOf(s)) ?? []) && !isTaken(s, t)).map((s) => s.id) })).filter((x) => x.staffIds.length > 0);
 }
-export async function createBooking(input: { kind: BookingKind; startsAt: Date; staffId: string | null; name: string; email: string; phone: string | null; notes: string | null; now?: Date }): Promise<{ ok: true; booking: { id: string; startsAt: string; staffFirstName: string | null; kind: BookingKind; joinUrl: string | null } } | { ok: false; reason: string }> {
+// BF_SERVER_v786_BOOKING_CRM - a phone booking needs a real North American number: 10 digits,
+// or 11 starting with 1, formatting ignored. Stored as E.164 (+1XXXXXXXXXX). null = not valid.
+export function bookingPhoneE164(raw: unknown): string | null {
+  const d = String(raw ?? "").replace(/[^0-9]/g, "");
+  if (d.length === 10) return "+1" + d;
+  if (d.length === 11 && d.startsWith("1")) return "+" + d;
+  return null;
+}
+
+type BookingResult = { ok: true; booking: { id: string; startsAt: string; staffFirstName: string | null; kind: BookingKind; joinUrl: string | null } } | { ok: false; reason: string };
+
+export class BookingCalendarError extends Error {
+  constructor(message: string, readonly bookingId: string) { super(message); this.name = "BookingCalendarError"; }
+}
+
+// BF_SERVER_v786_BOOKING_CRM - CRM first, Outlook second. The contact (found by email or the
+// last 10 digits of the phone, else created), the client_bookings row and the CRM meeting row
+// (crm_meetings: what the Meetings tab and the timeline read) all exist before Graph is called.
+// If Graph fails the CRM records stay, marked failed, and the caller answers 503.
+export async function createBooking(input: { kind: BookingKind; startsAt: Date; staffId: string | null; name: string; email: string; phone: string | null; notes: string | null; now?: Date }): Promise<BookingResult> {
   const match = (await openSlots(input.now ?? new Date(), input.staffId, 15)).find((s) => new Date(s.startsAt).getTime() === input.startsAt.getTime());
   if (!match) return { ok: false, reason: "slot_taken" };
   const everyone = await bookableStaff();
@@ -107,22 +126,64 @@ export async function createBooking(input: { kind: BookingKind; startsAt: Date; 
   const pickId = input.staffId ?? roundRobinPick(match.staffIds, lastAssigned)!;
   const staff = staffList.find((s) => s.id === pickId);
   if (!staff) return { ok: false, reason: "staff_unavailable" };
+  const phone = input.phone ? bookingPhoneE164(input.phone) : null;
   const end = new Date(input.startsAt.getTime() + SLOT_MIN * 60_000);
   const subject = (input.kind === "teams" ? "Teams meeting" : "Phone call") + " with " + input.name + " - Boreal Financial";
-  const bodyLines = [input.kind === "phone" ? "We will call you at " + (input.phone ?? "the number you gave") + "." : "Join with the Teams link in this invitation.", input.notes ? "Notes: " + input.notes : ""].filter(Boolean);
-  const resp = await graphAppFetch(`/users/${encodeURIComponent(mailboxOf(staff))}/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-    subject, body: { contentType: "Text", content: bodyLines.join(String.fromCharCode(10)) }, start: { dateTime: input.startsAt.toISOString().slice(0, 19), timeZone: "UTC" }, end: { dateTime: end.toISOString().slice(0, 19), timeZone: "UTC" }, attendees: [{ emailAddress: { address: input.email, name: input.name }, type: "required" }], location: { displayName: input.kind === "phone" ? "Phone call - Boreal calls " + (input.phone ?? "") : "Microsoft Teams" }, isOnlineMeeting: input.kind === "teams", ...(input.kind === "teams" ? { onlineMeetingProvider: "teamsForBusiness" } : {}), allowNewTimeProposals: false,
-  }) });
-  if (!resp.ok) throw new Error("graph_create_event_failed status=" + resp.status + " " + (await resp.text().catch(() => "")).slice(0, 200)); // swallow-ok
-  const ev = (await resp.json()) as { id?: string; onlineMeeting?: { joinUrl?: string } };
-  const contact = await pool.query<{ id: string }>(`SELECT id::text FROM contacts WHERE silo = 'BF' AND merged_into_id IS NULL AND (lower(email) = lower($1) OR ($2::text IS NOT NULL AND right(regexp_replace(COALESCE(phone,''), '[^0-9]', '', 'g'), 10) = right(regexp_replace($2::text, '[^0-9]', '', 'g'), 10))) ORDER BY updated_at DESC NULLS LAST LIMIT 1`, [input.email, input.phone]);
+  const location = input.kind === "phone" ? "Phone call - Boreal calls " + (phone ?? "") : "Microsoft Teams";
+
+  // 1. Contact: find by email or last-10 phone; fill what is missing; tag; owner if none.
+  const contact = await pool.query<{ id: string; name: string | null; email: string | null; phone: string | null; owner_id: string | null }>(
+    `SELECT id::text, name, email, phone, owner_id::text FROM contacts
+      WHERE silo = 'BF' AND merged_into_id IS NULL
+        AND (lower(email) = lower($1) OR ($2::text IS NOT NULL AND right(regexp_replace(COALESCE(phone,''), '[^0-9]', '', 'g'), 10) = right(regexp_replace($2::text, '[^0-9]', '', 'g'), 10)))
+      ORDER BY updated_at DESC NULLS LAST LIMIT 1`, [input.email, phone]);
   let contactId = contact.rows[0]?.id ?? null;
-  if (!contactId) {
-    const ins = await pool.query<{ id: string }>(`INSERT INTO contacts (id, name, email, phone, silo, tags, created_at, updated_at) VALUES ($1,$2,$3,$4,'BF',ARRAY['booked_call'],now(),now()) RETURNING id::text`, [randomUUID(), input.name, input.email, input.phone]);
+  let contactCreated = false;
+  if (contactId) {
+    await pool.query(
+      `UPDATE contacts SET name = COALESCE(NULLIF(name, ''), $2), email = COALESCE(NULLIF(email, ''), $3), phone = COALESCE(NULLIF(phone, ''), $4),
+              tags = (SELECT ARRAY(SELECT DISTINCT unnest(COALESCE(tags, '{}') || ARRAY['booked_call']))),
+              owner_id = COALESCE(owner_id, $5::uuid), updated_at = now()
+        WHERE id = $1::uuid`, [contactId, input.name, input.email, phone, staff.id]);
+  } else {
+    const ins = await pool.query<{ id: string }>(
+      `INSERT INTO contacts (id, name, email, phone, silo, tags, owner_id, created_at, updated_at) VALUES ($1,$2,$3,$4,'BF',ARRAY['booked_call'],$5::uuid,now(),now()) RETURNING id::text`,
+      [randomUUID(), input.name, input.email, phone, staff.id]);
     contactId = ins.rows[0]!.id;
+    contactCreated = true;
   }
+
+  // 2. The booking and the CRM meeting.
   const id = randomUUID();
-  await pool.query(`INSERT INTO client_bookings (id, contact_id, staff_user_id, staff_email, kind, starts_at, duration_min, client_name, client_email, client_phone, notes, graph_event_id, join_url)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, [id, contactId, staff.id, mailboxOf(staff), input.kind, input.startsAt.toISOString(), SLOT_MIN, input.name, input.email, input.phone, input.notes, ev.id ?? null, ev.onlineMeeting?.joinUrl ?? null]);
-  return { ok: true, booking: { id, startsAt: input.startsAt.toISOString(), staffFirstName: staff.first_name, kind: input.kind, joinUrl: ev.onlineMeeting?.joinUrl ?? null } };
+  const meetingId = randomUUID();
+  await pool.query(`INSERT INTO client_bookings (id, contact_id, staff_user_id, staff_email, kind, starts_at, duration_min, client_name, client_email, client_phone, notes, crm_meeting_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, [id, contactId, staff.id, mailboxOf(staff), input.kind, input.startsAt.toISOString(), SLOT_MIN, input.name, input.email, phone, input.notes, meetingId]);
+  await pool.query(`INSERT INTO crm_meetings (id, title, attendee_description, start_at, end_at, location, attendees_json, owner_id, contact_id, silo, meeting_type, status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::uuid,$9::uuid,'BF',$10,'scheduled')`,
+    [meetingId, subject, input.notes, input.startsAt.toISOString(), end.toISOString(), location, JSON.stringify([{ name: input.name, email: input.email, phone }]), staff.id, contactId, input.kind]);
+
+  const { emitAutomationEvent } = await import("../modules/automation/automationEngine.js");
+  if (contactCreated) void emitAutomationEvent("contact.created", { silo: "BF", contactId, data: { source: "booking" } });
+  void emitAutomationEvent("booking.created", { silo: "BF", contactId, data: { booking_id: id, kind: input.kind, starts_at: input.startsAt.toISOString(), staff_user_id: staff.id } });
+
+  // 3. Outlook.
+  const bodyLines = [input.kind === "phone" ? "We will call you at " + (phone ?? "the number you gave") + "." : "Join with the Teams link in this invitation.", input.notes ? "Notes: " + input.notes : ""].filter(Boolean);
+  let ev: { id?: string; onlineMeeting?: { joinUrl?: string } };
+  try {
+    const resp = await graphAppFetch(`/users/${encodeURIComponent(mailboxOf(staff))}/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      subject, body: { contentType: "Text", content: bodyLines.join(String.fromCharCode(10)) }, start: { dateTime: input.startsAt.toISOString().slice(0, 19), timeZone: "UTC" }, end: { dateTime: end.toISOString().slice(0, 19), timeZone: "UTC" }, attendees: [{ emailAddress: { address: input.email, name: input.name }, type: "required" }], location: { displayName: location }, isOnlineMeeting: input.kind === "teams", ...(input.kind === "teams" ? { onlineMeetingProvider: "teamsForBusiness" } : {}), allowNewTimeProposals: false,
+    }) });
+    if (!resp.ok) throw new Error("graph_create_event_failed status=" + resp.status + " " + (await resp.text().catch(() => "")).slice(0, 200)); // swallow-ok
+    ev = (await resp.json()) as { id?: string; onlineMeeting?: { joinUrl?: string } };
+  } catch (err) {
+    const reason = (err instanceof Error ? err.message : String(err)).slice(0, 300);
+    console.error("[booking] Outlook event failed; CRM records kept and marked failed", { bookingId: id, meetingId, contactId, reason });
+    await pool.query(`UPDATE client_bookings SET status = 'failed', failure_reason = $2 WHERE id = $1`, [id, reason]);
+    await pool.query(`UPDATE crm_meetings SET status = 'failed', updated_at = now() WHERE id = $1`, [meetingId]);
+    throw new BookingCalendarError(reason, id);
+  }
+  const joinUrl = ev.onlineMeeting?.joinUrl ?? null;
+  await pool.query(`UPDATE client_bookings SET graph_event_id = $2, join_url = $3 WHERE id = $1`, [id, ev.id ?? null, joinUrl]);
+  await pool.query(`UPDATE crm_meetings SET graph_id = $2, location = COALESCE($3, location), updated_at = now() WHERE id = $1`, [meetingId, ev.id ?? null, joinUrl]);
+  return { ok: true, booking: { id, startsAt: input.startsAt.toISOString(), staffFirstName: staff.first_name, kind: input.kind, joinUrl } };
 }

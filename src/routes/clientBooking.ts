@@ -2,7 +2,7 @@ import { ALBERTA_TZ } from "../lib/albertaTime.js"; // BF_SERVER_ALBERTA_TIME_v7
 // BF_SERVER_CLIENT_BOOKING_v738 - public booking API used by the website and client app.
 import { Router } from "express";
 import { safeHandler } from "../middleware/safeHandler.js";
-import { bookableStaff, openSlots, createBooking } from "../services/clientBooking.js";
+import { bookableStaff, openSlots, createBooking, bookingPhoneE164 } from "../services/clientBooking.js";
 
 const router = Router();
 const hits = new Map<string, number[]>();
@@ -45,10 +45,12 @@ router.post("/", safeHandler(async (req: any, res: any) => {
   const startsAt = new Date(String(b.startsAt ?? ""));
   if (!kind) { res.status(400).json({ error: "kind_must_be_phone_or_teams" }); return; }
   if (!name || !/^[^@ ]+@[^@ ]+[.][^@ ]+$/.test(email)) { res.status(400).json({ error: "name_and_email_required" }); return; }
-  if (kind === "phone" && (!phone || phone.replace(/[^0-9]/g, "").length < 10)) { res.status(400).json({ error: "phone_required" }); return; }
+  // BF_SERVER_v786_BOOKING_CRM - 10 digits, or 11 starting with 1; stored as E.164.
+  const phoneE164 = phone ? bookingPhoneE164(phone) : null;
+  if (kind === "phone" && !phoneE164) { res.status(400).json({ error: "invalid_phone" }); return; }
   if (Number.isNaN(startsAt.getTime())) { res.status(400).json({ error: "start_time_required" }); return; }
   try {
-    const out = await createBooking({ kind, startsAt, staffId: typeof b.staffId === "string" && b.staffId !== "any" ? b.staffId : null, name, email, phone, notes: String(b.notes ?? "").trim().slice(0, 1000) || null });
+    const out = await createBooking({ kind, startsAt, staffId: typeof b.staffId === "string" && b.staffId !== "any" ? b.staffId : null, name, email, phone: phoneE164, notes: String(b.notes ?? "").trim().slice(0, 1000) || null });
     if (!out.ok) { res.status(409).json({ error: out.reason, message: "That time was just taken. Please pick another." }); return; }
     res.status(201).json(out);
   } catch (err) {

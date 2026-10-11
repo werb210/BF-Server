@@ -70,7 +70,7 @@ router.post("/", ...staff, safeHandler(async (req: any, res: any) => {
     return;
   }
   const room = await createRoom({ title, startsAt, durationMin: Number(req.body?.durationMin) || 60, hostUserId: req.user?.userId ?? null,
-    applicationId: typeof req.body?.applicationId === "string" ? req.body.applicationId : null, contactId: typeof req.body?.contactId === "string" ? req.body.contactId : null });
+    applicationId: typeof req.body?.applicationId === "string" ? req.body.applicationId : null, contactId: typeof req.body?.contactId === "string" && /^[0-9a-f-]{36}$/i.test(req.body.contactId) ? req.body.contactId : null }); // BF_SERVER_v786_ROOM_RECORDINGS - stored on meeting_rooms.contact_id
   // BF_SERVER_MEETING_PARTICIPANTS_v737 - invite people at creation (up to 10 including the host).
   const people = parsePeople(req.body?.participants);
   const result = people.length ? await addParticipants(room, people) : { added: [], refused: 0 };

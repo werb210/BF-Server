@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { ALBERTA_TZ } from "../lib/albertaTime.js";
 import { albertaTime } from "../services/clientBooking.js";
 import { inviteText } from "../services/meetingRooms.js";
+import { effectiveTz } from "../modules/automation/graph.js";
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const f of readdirSync(dir)) {
@@ -28,7 +29,10 @@ describe("Alberta time is UTC-6 all year", () => {
     expect(text).toContain("(Alberta time)");
   });
   it("no server code still assumes America/Edmonton clock changes", () => {
-    const hits = walk("src").filter((p) => readFileSync(p, "utf8").includes("America/Edmonton"));
+    // BF_SERVER_v786_WORKFLOW_GRAPH - the shared workflow format stores the zone name; graph.ts is the one
+    // place that names it, and it computes it as ALBERTA_TZ (checked below).
+    const hits = walk("src").filter((p) => readFileSync(p, "utf8").includes("America/Edmonton") && !p.endsWith(join("modules", "automation", "graph.ts")));
     expect(hits).toEqual([]);
+    expect(effectiveTz("America/Edmonton")).toBe(ALBERTA_TZ);
   });
 });

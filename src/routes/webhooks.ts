@@ -107,7 +107,7 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
       return null;
     });
     console.log(JSON.stringify({ event: "staff_join_room", callSid: callSid || null, slug: meetingSlug, found: Boolean(room) }));
-    return res.send(await staffRoomJoinTwiml(room));
+    return res.send(await staffRoomJoinTwiml(room, new Date(), from || null));
   }
 
   if (sdkConfFriendly) {
@@ -793,6 +793,33 @@ async function persistInboundSms(req: any): Promise<void> {
 }
 
 // ── Inbound SMS webhook ───────────────────────────────────────────────────────
+// BF_SERVER_v786_ROOM_RECORDINGS - conference room status (start / end / join / leave), Twilio-signed.
+// Creates the room's conferences row on the first join, records every participant and matches them to
+// contacts, links the room recording to every participant, and fires meeting.completed at the end.
+router.post("/twilio/meeting-room-status", twilioWebhookValidation, safeHandler(async (req: any, res: any) => {
+  const roomId = String(req.query?.room ?? "").trim();
+  const event = String(req.body?.StatusCallbackEvent ?? "").trim();
+  const callSid = String(req.body?.CallSid ?? "").trim() || null;
+  let from = String(req.body?.From ?? req.body?.Caller ?? req.query?.from ?? "").trim() || null;
+  if (!roomId || !event) return res.status(200).send("");
+  if (!from && callSid && event === "participant-join") {
+    try {
+      const { getTwilioClient } = await import("../voice/twilioClient.js");
+      const call = await getTwilioClient().calls(callSid).fetch();
+      from = String(call?.from ?? "") || null;
+    } catch (err: any) {
+      console.warn("[meeting-room] caller lookup failed", { callSid, message: err?.message ?? String(err) });
+    }
+  }
+  try {
+    const { handleRoomStatus } = await import("../services/meetingRoomConference.js");
+    await handleRoomStatus({ roomId, event, callSid, conferenceSid: String(req.body?.ConferenceSid ?? "").trim() || null, from });
+  } catch (err: any) {
+    console.error("[meeting-room] status handling failed", { roomId, event, message: err?.message ?? String(err) });
+  }
+  return res.status(200).send("");
+}));
+
 router.post("/twilio/sms", twilioWebhookValidation, safeHandler(async (req: any, res: any) => {
   res.setHeader("Content-Type", "text/xml");
   const mr = new MessagingResponse();

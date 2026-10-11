@@ -219,6 +219,8 @@ export async function persistAndEnqueue(opts: {
   } finally {
     tx.release();
   }
+  // BF_SERVER_v786_WORKFLOW_GRAPH - automation trigger.
+  void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent("document.uploaded", { applicationId: String(opts.applicationId), data: { document_id: documentId, document_type: opts.category ?? "document" } })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
 
   // v629: clear banking_auto_skip when a new doc lands; pipeline can retry.
   try {

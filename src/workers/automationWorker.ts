@@ -5,12 +5,24 @@ import type { Pool } from "pg";
 export function startAutomationWorker(_pool: Pool, intervalMs = 60_000): { stop: () => void } {
   let stopped = false;
   let running = false;
+  let converted = false;
+  let lastDaily = 0;
   const tick = async () => {
     if (stopped || running) return;
     running = true;
     try {
       const { defaultDeps, runDue } = await import("../modules/automation/automationEngine.js");
       const deps = await defaultDeps();
+      // BF_SERVER_v786_WORKFLOW_GRAPH - on startup, convert every v1 rule to a workflow graph (idempotent),
+      // then every 15 minutes evaluate the date.relative and no_reply triggers.
+      const graph = await import("../modules/automation/graphEngine.js");
+      if (!converted) {
+        try { await graph.convertV1Rules(deps.query); converted = true; } catch (err: any) { console.error("[automation-worker] v1 conversion failed", { message: err?.message ?? String(err) }); }
+      }
+      if (Date.now() - lastDaily >= 15 * 60_000) {
+        lastDaily = Date.now();
+        try { await graph.runDailyTriggers(deps); } catch (err: any) { console.error("[automation-worker] daily triggers failed", { message: err?.message ?? String(err) }); }
+      }
       let n = 0;
       do { n = await runDue(deps, 50); } while (n === 50 && !stopped);
     } catch (err: any) {

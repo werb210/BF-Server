@@ -383,6 +383,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/webhooks/twilio/conference/status", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/call/status", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/recording/status", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/meeting-room-status", roles: [] }, // BF_SERVER_v786_ROOM_RECORDINGS
   { method: "POST", path: "/api/webhooks/twilio/transcription/event", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/voice/no-answer", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/voicemail", roles: [] },

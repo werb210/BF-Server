@@ -215,6 +215,12 @@ export async function createApplication(params: {
     triggeredBy: params.triggeredBy ?? "system",
     client: runner,
   });
+  // BF_SERVER_v786_WORKFLOW_GRAPH - application.created. Inside a caller's transaction the row is not
+  // visible yet, so the event waits a few seconds (the engine reads the application by id).
+  const fire = () => void import("../automation/automationEngine.js")
+    .then((m) => m.emitAutomationEvent("application.created", { silo: String((params as any).silo ?? "BF").toUpperCase(), applicationId: String(record.id), data: { source: params.source ?? null, product_type: params.productType } }))
+    .catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
+  if (params.client) setTimeout(fire, 5_000).unref?.(); else fire();
   return record;
 }
 

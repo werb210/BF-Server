@@ -29,6 +29,15 @@ router.post("/recording/status", twilioWebhookValidation, async (req: any, res) 
            status = EXCLUDED.status, updated_at = now()`,
     [conf.id, recSid, url || null, dur || null, chan || 2, status || "in-progress"],
   );
+  // BF_SERVER_v786_ROOM_RECORDINGS - a conference room recording belongs to every participant and attendee contact.
+  if ((conf as any).meeting_room_id) {
+    try {
+      const { linkRoomRecordings } = await import("../services/meetingRoomConference.js");
+      await linkRoomRecordings(conf.id);
+    } catch (err: any) {
+      console.warn("[recording] room recording contact link failed", { conf: conf.id, message: err?.message ?? String(err) });
+    }
+  }
   if (status === "completed" && url) {
     await pool.query(
       `UPDATE conferences SET recording_sid = $2, recording_url = $3, updated_at = now() WHERE id = $1`,

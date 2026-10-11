@@ -127,7 +127,15 @@ export async function addParticipants(room: MeetingRoom, people: Person[]): Prom
   const seen = new Set(existing.map((p) => (p.contactId || p.userId || p.email || p.phone || p.name).toLowerCase()));
   const added: Participant[] = [];
   let refused = 0;
-  for (const p of people) {
+  // BF_SERVER_v786_ROOM_RECORDINGS - a typed-in attendee email becomes a CRM contact (found by email in the
+  // room's silo, else created with just the email and tag meeting_attendee) and is linked on the participant row.
+  const siloRow = await pool.query(`SELECT COALESCE(silo, 'BF') AS silo FROM meeting_rooms WHERE id::text = $1`, [room.id]);
+  const silo = String(siloRow.rows[0]?.silo ?? "BF");
+  for (const raw of people) {
+    const p = { ...raw };
+    if (!p.contactId && !p.userId && p.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.email.trim())) {
+      p.contactId = await attendeeContact(silo, p.email.trim());
+    }
     const name = String(p.name ?? "").trim().slice(0, 120);
     if (!name) continue;
     const key = String(p.contactId || p.userId || p.email || p.phone || name).toLowerCase();
@@ -142,6 +150,18 @@ export async function addParticipants(room: MeetingRoom, people: Person[]): Prom
     seen.add(key); room_left -= 1;
   }
   return { added, refused };
+}
+
+async function attendeeContact(silo: string, email: string): Promise<string> {
+  const found = await pool.query(
+    `SELECT id::text AS id FROM contacts WHERE silo = $1 AND merged_into_id IS NULL AND (lower(email) = lower($2) OR lower(COALESCE(secondary_email, '')) = lower($2))
+      ORDER BY (lower(email) = lower($2)) DESC, updated_at DESC NULLS LAST LIMIT 1`, [silo, email]);
+  if (found.rows[0]) return found.rows[0].id;
+  const ins = await pool.query(`INSERT INTO contacts (email, silo, tags, created_at, updated_at) VALUES ($1, $2, ARRAY['meeting_attendee'], now(), now()) RETURNING id::text AS id`, [email, silo]);
+  const id = ins.rows[0].id as string;
+  void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent("contact.created", { silo, contactId: id, data: { source: "conference" } }))
+    .catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
+  return id;
 }
 
 export async function removeParticipant(roomId: string, participantId: string): Promise<boolean> {
@@ -177,7 +197,26 @@ export async function searchPeople(q: string): Promise<Array<Person & { kind: "c
 // BF_SERVER_STAFF_JOIN_ROOM_v759 - staff join a meeting room straight from the portal calendar (no dialling the
 // 866, no access code). The portal's Twilio device connects with params.meetingSlug; this answers with the same
 // conference callers reach through the 866 menu, recorded the same way. Pure, so it can be tested.
-export async function staffRoomJoinTwiml(room: MeetingRoom | null, now = new Date()): Promise<string> {
+// BF_SERVER_v786_ROOM_RECORDINGS - both room <Conference> builders (the 866 access-code menu and the staff
+// "Join room" button) record from the start, report start / end / join / leave to the signed
+// meeting-room-status webhook (which creates the conferences row and the participants), and report the
+// recording to the same recording status route dialer calls use, so the recording -> call_recordings ->
+// transcription pipeline runs unchanged. caller = the leg's From, carried in case Twilio omits it.
+export function roomConferenceAttrs(roomId: string, caller?: string | null): Record<string, unknown> {
+  const base = (process.env.PUBLIC_BASE_URL || "https://server.boreal.financial").replace(/[/]+$/, "");
+  const from = caller ? "&from=" + encodeURIComponent(caller) : "";
+  return {
+    startConferenceOnEnter: true, endConferenceOnExit: false, beep: "onEnter", record: "record-from-start",
+    statusCallback: base + "/api/webhooks/twilio/meeting-room-status?room=" + encodeURIComponent(roomId) + from,
+    statusCallbackEvent: "start end join leave",
+    statusCallbackMethod: "POST",
+    recordingStatusCallback: base + "/api/webhooks/twilio/recording/status?conf=" + encodeURIComponent(conferenceName(roomId)),
+    recordingStatusCallbackEvent: "in-progress completed absent",
+    recordingStatusCallbackMethod: "POST",
+  };
+}
+
+export async function staffRoomJoinTwiml(room: MeetingRoom | null, now = new Date(), caller: string | null = null): Promise<string> {
   const { default: VoiceResponse } = await import("twilio/lib/twiml/VoiceResponse.js");
   const v = new VoiceResponse();
   if (!room || room.status === "cancelled") {
@@ -188,7 +227,7 @@ export async function staffRoomJoinTwiml(room: MeetingRoom | null, now = new Dat
     v.hangup();
   } else {
     const dial = v.dial();
-    dial.conference({ startConferenceOnEnter: true, endConferenceOnExit: false, beep: "onEnter", record: "record-from-start" } as any, conferenceName(room.id));
+    dial.conference(roomConferenceAttrs(room.id, caller) as any, conferenceName(room.id));
   }
   return v.toString();
 }

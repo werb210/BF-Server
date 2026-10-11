@@ -20,6 +20,11 @@ export type EngineDeps = {
   sendSms: (to: string, message: string) => Promise<void>;
   notifyClient: (input: { silo: string; phone: string; contactId: string | null; applicationId: string | null; title: string; body: string }) => Promise<"app" | "sms" | "none">;
   now: () => Date;
+  // BF_SERVER_v786_WORKFLOW_GRAPH - v2 actions. Optional so v1 callers and tests keep working.
+  sendEmail?: (input: { to: string; subject: string; html: string; contactId: string | null; from?: string | null }) => Promise<{ ok: boolean; error?: string }>;
+  sendStaffEmail?: (input: { to: string; subject: string; html: string }) => Promise<{ ok: boolean; error?: string }>;
+  httpFetch?: (url: string, init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal }) => Promise<{ ok: boolean; status: number }>;
+  setApplicationStage?: (applicationId: string, stage: string) => Promise<void>;
 };
 
 export const SYSTEM_USER = "00000000-0000-0000-0000-000000000099";
@@ -48,13 +53,16 @@ export async function buildContext(q: Query, ev: AutomationEvent): Promise<Recor
     if (app) {
       silo = silo || app.silo;
       contactId = contactId || app.contact_id;
-      Object.assign(ctx, { stage: app.pipeline_state, product_type: app.product_type, requested_amount: app.requested_amount != null ? Number(app.requested_amount) : null, owner_user_id: app.owner_user_id });
+      const base = String(process.env.CLIENT_URL ?? "https://client.boreal.financial").replace(/\/$/, ""); // BF_SERVER_v786_WORKFLOW_GRAPH
+      Object.assign(ctx, { stage: app.pipeline_state, pipeline_state: app.pipeline_state, product_type: app.product_type, requested_amount: app.requested_amount != null ? Number(app.requested_amount) : null, owner_user_id: app.owner_user_id,
+        application_link: `${base}/application/${encodeURIComponent(String(app.id))}` });
       if (ctx.source === undefined) ctx.source = app.source;
     }
   }
   if (contactId) {
     const c = await q(
       `SELECT c.id::text AS id, c.silo, c.name, c.first_name, c.last_name, c.phone, c.email, c.tags, c.owner_id::text AS owner_id,
+              c.company_name, c.job_title, c.lead_status, c.lifecycle_stage, c.status, c.role, c.created_at AS contact_created_at,
               u.first_name AS owner_first, u.last_name AS owner_last, u.email AS owner_email
          FROM contacts c LEFT JOIN users u ON u.id = c.owner_id WHERE c.id::text = $1 LIMIT 1`, [contactId]);
     const ct = c.rows[0];
@@ -68,7 +76,13 @@ export async function buildContext(q: Query, ev: AutomationEvent): Promise<Recor
         contact_tag: Array.isArray(ct.tags) ? ct.tags : [],
         contact_owner_id: ct.owner_id,
         owner_name: [ct.owner_first, ct.owner_last].filter(Boolean).join(" ") || "our team",
+        // BF_SERVER_v786_WORKFLOW_GRAPH - more fields for v2 conditions and personalization tokens.
+        last_name: ct.last_name || full.split(" ").slice(1).join(" ") || "",
+        company: ct.company_name || "", company_name: ct.company_name || null, job_title: ct.job_title ?? null,
+        lead_status: ct.lead_status ?? null, lifecycle_stage: ct.lifecycle_stage ?? null, contact_status: ct.status ?? null, contact_role: ct.role ?? null,
+        tags: Array.isArray(ct.tags) ? ct.tags : [], owner_id: ct.owner_id ?? null, owner_email: ct.owner_email ?? null,
       });
+      if (ctx.application_link === undefined) ctx.application_link = String(process.env.CLIENT_URL ?? "https://client.boreal.financial").replace(/\/$/, "") + "/portal";
     }
   }
   if (ctx.document_type) ctx.document_type = String(ctx.document_type).replace(/_/g, " ");
@@ -81,9 +95,10 @@ export async function buildContext(q: Query, ev: AutomationEvent): Promise<Recor
 export async function emitWith(deps: EngineDeps, ev: AutomationEvent): Promise<string[]> {
   const q = deps.query;
   const ctx = await buildContext(q, ev);
+  // BF_SERVER_v786_WORKFLOW_GRAPH - v1 only runs rules not yet converted to a graph.
   const rules = await q(
     `SELECT id::text AS id, conditions, steps, actions, reenroll, test_mode, version
-       FROM automation_rules WHERE enabled = true AND silo = $1 AND trigger_type = $2`, [ctx.silo, ev.trigger]);
+       FROM automation_rules WHERE enabled = true AND silo = $1 AND trigger_type = $2 AND graph IS NULL`, [ctx.silo, ev.trigger]);
   const created: string[] = [];
   for (const rule of rules.rows) {
     if (!conditionsMatch(rule.conditions, ctx)) continue;
