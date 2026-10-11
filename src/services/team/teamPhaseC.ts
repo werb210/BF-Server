@@ -3,6 +3,7 @@
 // plus a "Post in a Team channel" automation action), Save for later / Remind me, and @Maya.
 // Schema: migrations/2026_09_28_v671_team_phase_c.sql.
 import { runQuery } from "../../db.js";
+import { signMayaContext } from "../mayaContext.js"; // BF_SERVER_MAYA_CONTEXT_v1
 import { logError } from "../../observability/logger.js";
 import { broadcastToUsers } from "../../ws/teamSocket.js";
 import { pushToUser } from "../notifications/pushToUser.js";
@@ -152,7 +153,17 @@ export async function askMaya(channelId: string, message: { id: string; body: st
       const question = String(message.body).replace(/@maya\b/gi, "").trim() || "Hello";
       const resp = await fetch(mayaUrl + "/api/maya/message", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Maya-Audience": "staff", "X-Silo": String(me.silo || "BF").toUpperCase() },
+        // BF_SERVER_MAYA_CONTEXT_v1 - the agent trusts identity only from a signed X-Maya-Context.
+        headers: {
+          "Content-Type": "application/json",
+          "X-Maya-Audience": "staff",
+          "X-Silo": String(me.silo || "BF").toUpperCase(),
+          "X-Maya-Context": signMayaContext({
+            audience: "staff",
+            staff: { id: String(me.id ?? askerId), name: [me.first_name, me.last_name].filter(Boolean).join(" ") || null, email: me.email ?? null, role: me.role ?? null },
+            silo: String(me.silo || "BF").toUpperCase(),
+          }),
+        },
         body: JSON.stringify({ message: question, session_id: "team-" + rootId, staff: { id: me.id ?? askerId, name: [me.first_name, me.last_name].filter(Boolean).join(" ") || null, email: me.email ?? null, role: me.role ?? null } }),
         signal: ctrl.signal,
       });

@@ -5,7 +5,11 @@
 // submit the insurance side by hand.
 //
 // bi-server already owns carrier dispatch end to end:
-//   POST /api/application/:id/submit-pgi -> submitApplicationToPGI()
+//   POST /api/v1/bi/application/:id/submit-pgi -> submitApplicationToPGI()
+// (BI-Server src/routes/biApplicationRoutes.ts, behind BI requireAuth). Its :id
+// is the BI-internal bi_applications.id, which BF never stores (BF keeps the
+// BI public_id and application code), so the id is resolved first through
+// BI's read-only pgi-readiness lookup, which accepts a public_id.
 // which validates, checks assertDocsReadyForCarrier, and talks to the carrier.
 // So this is a call, not a reimplementation.
 //
@@ -15,17 +19,51 @@ import jwt from "jsonwebtoken";
 import { pool } from "../db.js";
 import { logError, logInfo } from "../observability/logger.js";
 
+// BF_SERVER_BI_CARRIER_PATH_FIX_v1 - the old fallback host and path did not
+// exist (404 on every accepted deal). Same host as every other BF -> BI call.
 const BI_SERVER_URL =
-  process.env.BI_SERVER_URL || process.env.BI_BASE_URL || "https://bi-server.azurewebsites.net";
+  process.env.BI_SERVER_URL || "https://bi-server-cse0apamgkheb9d5.canadacentral-01.azurewebsites.net";
 
 function getSecret(): string {
-  const s = process.env.BF_BI_SHARED_SECRET || process.env.JWT_SECRET || "";
-  if (!s) throw new Error("bi_shared_secret_missing");
+  const s = process.env.JWT_SECRET || "";
+  if (!s) throw new Error("jwt_secret_missing");
   return s;
 }
 
+// Cross-repo contract: BF-Server -> BI-Server staff routes use a service token
+// { kind: "service", service: "bf-server" } signed with the shared JWT_SECRET.
+// `source` is kept for BI code that still reads it (same as biDocMirror).
 function mintServiceJwt(): string {
-  return jwt.sign({ sub: "bf-server", scope: "bi:service" }, getSecret(), { expiresIn: "5m" });
+  return jwt.sign({ kind: "service", service: "bf-server", source: "bf-server" }, getSecret(), { algorithm: "HS256", expiresIn: "5m" });
+}
+
+// BI's pgi-readiness lookup only admits Maya service tokens (source maya-service),
+// the same token BF's pgiStage.ts already uses for that endpoint.
+async function resolveBiApplicationId(publicId: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const token = jwt.sign({ kind: "service", service: "bf-server", source: "maya-service" }, getSecret(), { algorithm: "HS256", expiresIn: "5m" });
+    const r = await fetch(`${BI_SERVER_URL.replace(/\/+$/, "")}/api/v1/bi/maya/staff/pgi-readiness`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ public_id: publicId }),
+      signal: controller.signal,
+    });
+    const text = await r.text();
+    if (!r.ok) {
+      logError("bi_carrier_resolve_failed", { publicId, status: r.status, body: text.slice(0, 300) });
+      return null;
+    }
+    const parsed = JSON.parse(text) as { result?: { applicationId?: unknown } };
+    const id = parsed?.result?.applicationId;
+    return typeof id === "string" && id ? id : null;
+  } catch (err) {
+    logError("bi_carrier_resolve_failed", { publicId, error: String(err) });
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export type CarrierSubmitResult =
@@ -55,7 +93,13 @@ export async function submitBiToCarrier(bfApplicationId: string): Promise<Carrie
   // No BI application means the applicant declined PGI at Step 6. Expected.
   if (!publicId) return { ok: true, skipped: "no_pgi" };
 
-  const url = `${BI_SERVER_URL.replace(/\/+$/, "")}/api/application/${encodeURIComponent(publicId)}/submit-pgi`;
+  const biApplicationId = await resolveBiApplicationId(publicId);
+  if (!biApplicationId) {
+    logError("bi_carrier_submit_rejected", { bfApplicationId, publicId, status: null, body: "BI application id could not be resolved from public_id" });
+    return { ok: false, reason: "bi_application_unresolved" };
+  }
+
+  const url = `${BI_SERVER_URL.replace(/\/+$/, "")}/api/v1/bi/application/${encodeURIComponent(biApplicationId)}/submit-pgi`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
 

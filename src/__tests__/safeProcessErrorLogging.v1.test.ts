@@ -26,9 +26,12 @@ describe("process error handlers never log a raw error object", () => {
     expect(index).toContain("String(e?.message ?? err) + code");
   });
 
-  it("handlers stay registered so an uncaught error does not exit the process", () => {
-    expect(errors).toContain('process.on("uncaughtException"');
+  // BF_SERVER_FAIL_FAST_v1 - an uncaught exception now logs and exits(1) from
+  // index.ts (the only handler); unhandled rejections are still logged only.
+  it("uncaught exceptions log and exit; unhandled rejections only log", () => {
     expect(errors).toContain('process.on("unhandledRejection"');
     expect(errors).not.toContain("process.exit");
+    expect(index).toMatch(/process\.on\("uncaughtException",[\s\S]{0,200}logFatal\([\s\S]{0,80}process\.exit\(1\)/);
+    expect(index).toMatch(/start\(\)\.catch\([\s\S]{0,120}process\.exit\(1\)/);
   });
 });

@@ -14,32 +14,32 @@ import { sendViaGraph } from "../services/email/graphSendService.js";
 
 // BF_SERVER_BLOCK_v141_SIGNNOW_WEBHOOK_REPAIR_v1
 // HMAC-SHA256 verify against SIGNNOW_WEBHOOK_SECRET. SignNow sends the
-// signature in the x-signnow-signature header (hex). When the env var
+// signature in the x-signnow-signature header (base64). When the env var
 // is absent we DENY rather than fall open - this used to be a no-op
 // echo so any attacker could trigger SSN/SIN purge by faking a payload.
 function verifySignNowSignature(req: Request): boolean {
-  // BF_SERVER_BLOCK_v188_SIGNNOW_SECRET_OPTIONAL_v1
-  const secret = process.env.SIGNNOW_WEBHOOK_SECRET;
-  const verifyEnabled = typeof secret === "string" && secret.trim().length > 0;
-
-  if (!verifyEnabled) {
+  // BF_SERVER_SIGNNOW_FAIL_CLOSED_v1 - v188 made the secret optional and accepted
+  // unsigned posts when it was unset, which let anyone fake a "signed" event and
+  // trigger finalize (stage change + SIN/SSN purge). Unset now means reject.
+  const secret = (process.env.SIGNNOW_WEBHOOK_SECRET ?? "").trim();
+  if (!secret) {
     // eslint-disable-next-line no-console
-    console.warn(
-      "[signnow] SIGNNOW_WEBHOOK_SECRET is unset - accepting webhook without HMAC verify (paid SignNow feature not enabled)"
+    console.error(
+      "[signnow] SIGNNOW_WEBHOOK_SECRET is unset - rejecting webhook (set it in App Service configuration; startup attaches it to the SignNow subscriptions)"
     );
-    return true;
-  }
-
-  const sig = req.header("x-signnow-signature");
-  if (!sig || typeof sig !== "string") return false;
-  const raw = (req as any).rawBody;
-  if (!raw || !Buffer.isBuffer(raw)) return false;
-  const expected = crypto.createHmac("sha256", secret).update(raw).digest("hex");
-  try {
-    return crypto.timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(sig, "hex"));
-  } catch {
     return false;
   }
+
+  const sig = String(req.header("x-signnow-signature") ?? "").trim();
+  if (!sig) return false;
+  const raw = (req as any).rawBody;
+  if (!raw || !Buffer.isBuffer(raw)) return false;
+  // SignNow sends HMAC-SHA256(raw body, secret_key) base64-encoded; hex is
+  // accepted too for any older sender.
+  const mac = crypto.createHmac("sha256", secret).update(raw).digest();
+  const candidates = [Buffer.from(mac.toString("base64")), Buffer.from(mac.toString("hex"))];
+  const given = Buffer.from(sig);
+  return candidates.some((c) => c.length === given.length && crypto.timingSafeEqual(c, given));
 }
 
 const router = Router();

@@ -4,7 +4,9 @@ import { z } from "zod";
 import { pool, runQuery } from "../../db.js";
 import { config } from "../../config/index.js";
 import { AppError } from "../../middleware/errors.js";
-import { requireAuth } from "../../middleware/requireAuth.js";
+import { requireAuthAllowing } from "../../middleware/requireAuth.js";
+// BF_SERVER_STAFF_ONLY_AUTH_v1 - these routes serve the signed-in client.
+const requireAuth = requireAuthAllowing("client");
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { prettyDocLabel } from "../../lib/docDisplay.js"; // BF_SERVER_PNL_DISPLAY_v1
 import { ApplicationStage, statusFromPipeline } from "../../modules/applications/pipelineState.js";

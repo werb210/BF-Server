@@ -29,9 +29,20 @@ export async function fetchTwilioMedia(
 ): Promise<{ buffer: Buffer; contentType: string } | null> {
   const sid = process.env.TWILIO_ACCOUNT_SID ?? "";
   const tok = process.env.TWILIO_AUTH_TOKEN ?? "";
-  const isTwilio = /api\.twilio\.com/.test(url);
+  // BF_SERVER_MMS_FETCH_ALLOWLIST_v1 - the URL arrives in a webhook body. A regex
+  // match ("api.twilio.com" anywhere in the string) let https://evil.example/?api.twilio.com
+  // receive our Twilio Basic credentials, and any other URL be fetched server-side.
+  // Only https://api.twilio.com/... is fetched, and only it gets the auth header.
+  let parsedUrl: URL | null = null;
+  try { parsedUrl = new URL(url); } catch { parsedUrl = null; }
+  if (!parsedUrl || parsedUrl.protocol !== "https:" || parsedUrl.hostname !== "api.twilio.com") {
+    // eslint-disable-next-line no-console
+    console.error({ event: "mms_media_fetch_refused", reason: "not_twilio_https", host: parsedUrl?.hostname ?? null, protocol: parsedUrl?.protocol ?? null });
+    return null;
+  }
+  const isTwilio = true;
   const headers: Record<string, string> = {};
-  if (isTwilio && sid && tok) {
+  if (sid && tok) {
     headers.Authorization = "Basic " + Buffer.from(`${sid}:${tok}`).toString("base64");
   }
   try {

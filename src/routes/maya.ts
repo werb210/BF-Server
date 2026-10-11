@@ -1,15 +1,54 @@
 import express from "express";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { pool } from "../db.js";
-import jwt from "jsonwebtoken";
 import { addMessage } from "../modules/ai/chat.repo.js";
 import { logError } from "../observability/logger.js";
 // BF_SERVER_BLOCK_v317_MAYA_ESCALATIONS_AUTH_v1
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { resolveMayaIdentity, signMayaContext } from "../services/mayaContext.js"; // BF_SERVER_MAYA_CONTEXT_v1
+import jwt from "jsonwebtoken";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit"; // BF_SERVER_MAYA_RATE_LIMIT_v1
+import { classifyPrincipal } from "../auth/principal.js";
 
 const router = express.Router();
+
+// BF_SERVER_MAYA_RATE_LIMIT_v1 - the Maya proxy is public (website widget) and
+// every call costs an OpenAI completion. 20 requests/minute per IP for anyone
+// who is not signed-in staff; 120/minute per staff user. req.ip honours the
+// app's single trusted proxy hop (Azure), unlike the raw X-Forwarded-For.
+function mayaStaffKey(req: any): string | null {
+  if (req.__mayaStaffKey !== undefined) return req.__mayaStaffKey;
+  let key: string | null = null;
+  const m = /^Bearer\s+(.+)$/i.exec(String(req.headers?.authorization ?? ""));
+  const secret = process.env.JWT_SECRET;
+  if (m && secret) {
+    try {
+      const claims = jwt.verify(m[1].trim(), secret, { algorithms: ["HS256"] }) as Record<string, unknown>;
+      const sub = typeof claims.sub === "string" ? claims.sub : typeof claims.id === "string" ? claims.id : "";
+      if (sub && classifyPrincipal(claims) === "staff") key = `staff:${sub}`;
+    } catch {
+      key = null;
+    }
+  }
+  req.__mayaStaffKey = key;
+  return key;
+}
+function mayaIpKey(req: any): string {
+  const raw = String(req.ip ?? req.socket?.remoteAddress ?? "unknown").replace(/^::ffff:/, "");
+  const ip = /^\d+\.\d+\.\d+\.\d+:\d+$/.test(raw) ? raw.split(":")[0] : raw;
+  return `ip:${ipKeyGenerator(ip)}`;
+}
+export const mayaProxyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: (req: any) => (mayaStaffKey(req) ? 120 : 20),
+  keyGenerator: (req: any) => mayaStaffKey(req) ?? mayaIpKey(req),
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "rate_limited", message: "Too many messages. Please wait a minute and try again." },
+  validate: { xForwardedForHeader: false, trustProxy: false, keyGeneratorIpFallback: false },
+}) as unknown as express.RequestHandler;
 
 // BF_SERVER_BLOCK_v638_MULTIFIX_v1 — accept the original req so we can forward
 // X-Maya-Audience (staff|client|visitor) + X-Silo to the agent. Without these
@@ -33,59 +72,26 @@ export async function proxyMayaToAgent(
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 10000);
-    // BF_SERVER_BLOCK_v638_MULTIFIX_v1 — forward audience + silo from caller.
+    // BF_SERVER_MAYA_CONTEXT_v1 - identity comes ONLY from the verified bearer
+    // token (resolveMayaIdentity). The caller's X-Maya-Audience header and any
+    // body.phone / body.staff / body.audience are dropped. The agent receives a
+    // signed X-Maya-Context JWT, plus X-Maya-Audience set to the derived value
+    // (and the derived phone / staff in the body) so an older agent keeps working.
     const fwdHeaders: Record<string, string> = method === "POST" ? { "Content-Type": "application/json" } : {};
-    const audience = req?.header("x-maya-audience");
-    if (audience) fwdHeaders["X-Maya-Audience"] = String(audience);
-    const silo = req?.header("x-silo");
-    if (silo) fwdHeaders["X-Silo"] = String(silo);
-    // BF_SERVER_MAYA_CLIENT_IDENTITY_v1 - client widget requests carry the OTP
-    // bearer token, not a body phone. Decode that token and forward phone so the
-    // Maya agent can recognize the signed-in client via ctx.phone.
+    const identity = await resolveMayaIdentity(req);
+    fwdHeaders["X-Maya-Context"] = signMayaContext(identity);
+    fwdHeaders["X-Maya-Audience"] = identity.audience;
+    if (identity.silo) fwdHeaders["X-Silo"] = identity.silo;
     let fwdBody: unknown = body;
-    if (method === "POST" && (agentPath.includes("/api/maya/message") || agentPath.includes("/api/maya/chat"))) {
-      try {
-        const authz = req?.header("authorization") || "";
-        const m = /^Bearer\s+(.+)$/i.exec(String(authz));
-        const secret = process.env.JWT_SECRET;
-        if (m && secret) {
-          const decoded = jwt.verify(m[1], secret) as { phone?: unknown; sub?: unknown; role?: unknown };
-          const tokenPhone = typeof decoded?.phone === "string" ? decoded.phone : null;
-          const b: Record<string, unknown> =
-            body && typeof body === "object" ? { ...(body as Record<string, unknown>) } : {};
-          let mutated = false;
-          if (tokenPhone && (typeof b.phone !== "string" || !b.phone)) {
-            b.phone = tokenPhone;
-            mutated = true;
-          }
-          // BF_SERVER_MAYA_STAFF_IDENTITY_v1 - staff Maya must know which signed-in staff
-          // member it is assisting. Resolve the token subject to a user and forward name/
-          // email/role so the agent can inject a staff identity (parallel to the client one).
-          const tokenRole = typeof decoded?.role === "string" ? decoded.role : null;
-          const tokenSub = typeof decoded?.sub === "string" ? decoded.sub : null;
-          if (tokenSub && tokenRole && tokenRole.toLowerCase() !== "client" && !b.staff) {
-            try {
-              const u = await pool.query(
-                "SELECT first_name, last_name, email, role FROM users WHERE id::text = $1 LIMIT 1",
-                [tokenSub],
-              );
-              const row = u.rows?.[0] as
-                | { first_name?: string | null; last_name?: string | null; email?: string | null; role?: string | null }
-                | undefined;
-              if (row) {
-                const staffName = [row.first_name, row.last_name].filter(Boolean).join(" ").trim() || null;
-                b.staff = { id: tokenSub, name: staffName, email: row.email ?? null, role: row.role ?? tokenRole };
-                mutated = true;
-              }
-            } catch {
-              // best-effort staff identity; never block the reply
-            }
-          }
-          if (mutated) fwdBody = b;
-        }
-      } catch {
-        // Invalid/expired token: keep caller anonymous.
-      }
+    if (method === "POST") {
+      const b: Record<string, unknown> =
+        body && typeof body === "object" && !Array.isArray(body) ? { ...(body as Record<string, unknown>) } : {};
+      delete b.phone;
+      delete b.staff;
+      delete b.audience;
+      if (identity.phone) b.phone = identity.phone;
+      if (identity.staff) b.staff = identity.staff;
+      fwdBody = b;
     }
     const upstream = await fetch(`${mayaUrl}${agentPath}`, {
       method,
@@ -159,6 +165,7 @@ export async function proxyMayaToAgent(
 
 router.post(
   "/chat",
+  mayaProxyLimiter,
   safeHandler(async (req: any, res: any) => {
     await proxyMayaToAgent("/api/maya/chat", "POST", req.body, res, req);
   })
@@ -166,6 +173,7 @@ router.post(
 
 router.post(
   "/message",
+  mayaProxyLimiter,
   safeHandler(async (req: any, res: any) => {
     await proxyMayaToAgent("/api/maya/message", "POST", req.body, res, req);
   })

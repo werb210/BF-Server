@@ -20,8 +20,9 @@
 // backend, and anyone with log-stream access could read them. It also buried the
 // real error under ~60 lines of object dump on every occurrence.
 //
-// Same redaction as index.ts. Keeping the handlers registered still prevents the
-// process exiting on an uncaught error; only the logging changes.
+// Same redaction as index.ts.
+// BF_SERVER_FAIL_FAST_v1 - uncaughtException is owned by src/index.ts, which logs
+// (same redaction) and exits non-zero; a second handler here only logged twice.
 function safeLog(tag: string, err: unknown): void {
   const e = err as { message?: unknown; code?: unknown; stack?: string } | null | undefined;
   const code = e && e.code != null ? ` (${String(e.code)})` : "";
@@ -31,8 +32,4 @@ function safeLog(tag: string, err: unknown): void {
 
 process.on("unhandledRejection", (e) => {
   safeLog("[UNHANDLED REJECTION]", e);
-});
-
-process.on("uncaughtException", (e) => {
-  safeLog("[UNCAUGHT EXCEPTION]", e);
 });

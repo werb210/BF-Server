@@ -1,5 +1,7 @@
 /node_modules/
 .env
+.env.test
+.env.local
 deploy.zip
 /dist/
 

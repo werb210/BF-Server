@@ -12,7 +12,7 @@ describe("texts to US numbers go out from the toll-free line", () => {
     expect(isUsNumber("+18184157968")).toBe(true);  // Los Angeles
     expect(isUsNumber("(212) 555-0100")).toBe(true);
     expect(isUsNumber("+17873000000")).toBe(true);  // Puerto Rico is US
-    expect(isUsNumber("+15878881837")).toBe(false); // Calgary
+    expect(isUsNumber("+15875550199")).toBe(false); // Calgary
     expect(isUsNumber("+14165550100")).toBe(false); // Toronto
     expect(isUsNumber("+18765550100")).toBe(false); // Jamaica
     expect(isUsNumber("+447700900000")).toBe(false);
@@ -21,7 +21,7 @@ describe("texts to US numbers go out from the toll-free line", () => {
   it("uses the 866 for US recipients and the local number for everyone else", () => {
     expect(DEFAULT_US_SMS_FROM).toBe("+18666318939");
     expect(smsFromFor("+19173043342", LOCAL)).toBe("+18666318939");
-    expect(smsFromFor("+15878881837", LOCAL)).toBe(LOCAL);
+    expect(smsFromFor("+15875550199", LOCAL)).toBe(LOCAL);
   });
   it("can be pointed elsewhere or switched off without code", () => {
     process.env.TWILIO_US_SMS_FROM = "+18005550199";

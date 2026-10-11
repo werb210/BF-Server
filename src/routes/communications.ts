@@ -1771,7 +1771,12 @@ router.get(
     }
     const jwt = await import("jsonwebtoken");
     const token = String(req.query.token ?? "");
-    try { jwt.verify(token, String(process.env.JWT_SECRET ?? "")); }
+    // BF_SERVER_STAFF_ONLY_AUTH_v1 - a valid signature is not enough: staff stream only.
+    try {
+      const { classifyPrincipal, isStaffOrService } = await import("../auth/principal.js");
+      const claims = jwt.verify(token, String(process.env.JWT_SECRET ?? ""), { algorithms: ["HS256"] }) as Record<string, unknown>;
+      if (!isStaffOrService(classifyPrincipal(claims))) return res.status(403).end();
+    }
     catch { return res.status(401).end(); }
 
     res.set({

@@ -108,8 +108,9 @@ export async function finalizeSignedApplication(
   // they signed. Caller only invokes finalize once getDocumentGroupStatus reports
   // ALL invites complete, so `fresh` here is the true all-signed transition.
   if (fresh) {
-    await dbQuery(`update applicants set ssn = null, sin = null, updated_at = now() where application_id = $1`, [app.id]).catch(() => {});
-    await dbQuery(`update application_partners set ssn = null, sin = null, updated_at = now() where application_id = $1`, [app.id]).catch(() => {});
+    // BF_SERVER_SIN_PURGE_LOGGED_v1 - a failed purge leaves SIN/SSN at rest; never swallow it silently.
+    await dbQuery(`update applicants set ssn = null, sin = null, updated_at = now() where application_id = $1`, [app.id]).catch((err: any) => { console.error("[signnow] SIN/SSN purge failed (applicants)", { applicationId: app.id, message: err?.message }); });
+    await dbQuery(`update application_partners set ssn = null, sin = null, updated_at = now() where application_id = $1`, [app.id]).catch((err: any) => { console.error("[signnow] SIN/SSN purge failed (application_partners)", { applicationId: app.id, message: err?.message }); });
   }
 
   if (fresh && app.contactId) {

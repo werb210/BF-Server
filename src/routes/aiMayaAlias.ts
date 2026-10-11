@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { safeHandler } from "../middleware/safeHandler.js";
-import { proxyMayaToAgent } from "./maya.js";
+import { proxyMayaToAgent, mayaProxyLimiter } from "./maya.js";
 
 const router = Router();
 
 // BF_SERVER_BLOCK_v638_MULTIFIX_v1 — pass req to the proxy so headers land at the agent.
 router.post(
   "/message",
+  mayaProxyLimiter, // BF_SERVER_MAYA_RATE_LIMIT_v1
   safeHandler(async (req: any, res: any) => {
     await proxyMayaToAgent("/api/maya/message", "POST", req.body, res, req);
   })
@@ -14,6 +15,7 @@ router.post(
 
 router.post(
   "/chat",
+  mayaProxyLimiter, // BF_SERVER_MAYA_RATE_LIMIT_v1
   safeHandler(async (req: any, res: any) => {
     await proxyMayaToAgent("/api/maya/chat", "POST", req.body, res, req);
   })
@@ -21,6 +23,7 @@ router.post(
 
 router.post(
   "/escalate",
+  mayaProxyLimiter, // BF_SERVER_MAYA_RATE_LIMIT_v1
   safeHandler(async (req: any, res: any) => {
     await proxyMayaToAgent("/maya/escalate", "POST", req.body, res, req);
   })
@@ -34,7 +37,7 @@ router.post(
 // agent expects { message, sessionId }) and forwards. Without this
 // route, every chat call returned 404 and the widget showed the
 // "I'm having trouble" fallback (see FloatingChat.tsx line 95).
-router.post("/maya/website-chat", async (req, res) => {
+router.post("/maya/website-chat", mayaProxyLimiter, async (req, res) => { // BF_SERVER_MAYA_RATE_LIMIT_v1
   try {
     const websitePayload = req.body ?? {};
     const messageText: string = String(websitePayload.message ?? "").trim();

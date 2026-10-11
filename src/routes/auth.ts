@@ -6,7 +6,7 @@ import { fetchCapabilitiesForRole } from "../auth/capabilities.js";
 import { signAccessToken } from "../auth/jwt.js";
 import { ROLES, normalizeRole } from "../auth/roles.js";
 import { isTest } from "../config/runtime.js";
-import { requireAuth } from "../middleware/requireAuth.js";
+import { requireAuth, requireAuthAllowing } from "../middleware/requireAuth.js";
 import { otpStartLimiter, otpVerifyLimiter } from "../middleware/authRateLimit.js"; // BF_SERVER_AUTH_RATE_LIMIT_v1
 import { authMeHandler } from "./auth/me.js";
 import { findAuthUserByPhone } from "../modules/auth/auth.repo.js";
@@ -653,7 +653,7 @@ router.post("/device-sign-in/revoke", requireAuth, async (req: any, res: any) =>
   return res.json({ revoked: await revokeStaffDevices(q, String(req.user?.id ?? ""), credentialId) });
 });
 
-router.get("/me", requireAuth, authMeHandler);
+router.get("/me", requireAuthAllowing("client"), authMeHandler); // BF_SERVER_STAFF_ONLY_AUTH_v1 - the client app reads /me too
 router.use(microsoftRoutes);
 
 export default router;

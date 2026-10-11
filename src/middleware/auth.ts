@@ -9,6 +9,8 @@ import { isRole, ROLES } from "../auth/roles.js";
 import { resolveSiloFromRequest } from "./silo.js";
 // BF_SERVER_AUDIT_PRINCIPAL_CONTEXT_v1
 import { markRequestServicePrincipal } from "../observability/requestContext.js";
+// BF_SERVER_STAFF_ONLY_AUTH_v1
+import { classifyPrincipal, isStaffOrService, type NonStaffKind } from "../auth/principal.js";
 
 type AuthorizationOptions = {
   roles?: string[];
@@ -25,6 +27,29 @@ export interface AuthRequest extends Request {
 }
 
 export async function auth(req: Request, res: Response, next: NextFunction) {
+  return authWith(req, res, next, NO_NON_STAFF);
+}
+
+const NO_NON_STAFF: ReadonlySet<NonStaffKind> = new Set();
+
+/**
+ * BF_SERVER_STAFF_ONLY_AUTH_v1 - the plain `auth` / `requireAuth` admits only
+ * staff humans and service principals. A route that legitimately serves a
+ * client, lender, referrer, accountant or applicant token must say so here.
+ * The allowance is per-handler (never stored on the request), so it cannot
+ * leak into a later router on the same request.
+ */
+export function requireAuthAllowing(...kinds: NonStaffKind[]): RequestHandler {
+  const allowed: ReadonlySet<NonStaffKind> = new Set(kinds);
+  return (req: Request, res: Response, next: NextFunction) => authWith(req, res, next, allowed);
+}
+
+async function authWith(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  allowed: ReadonlySet<NonStaffKind>,
+) {
   const token = req.headers.authorization?.split(" ")[1];
 
   if (!token) {
@@ -44,7 +69,7 @@ export async function auth(req: Request, res: Response, next: NextFunction) {
     const userId = (decoded as any).id ?? (decoded as any).sub ?? null;
 
     let dbUser: { id: string; email: string | null; role: string | null; silo: string | null; silos: string[] | null } | null = null;
-    if (typeof userId === "string" && userId && !userId.startsWith("client:") && (decoded as any).kind !== "service" && !["agent-service", "maya-service"].includes(userId)) { // BF_SERVER_CLIENT_TOKEN_SKIP_v623 // BF_SERVER_MAYA_SEES_PORTAL_v782 - Maya's service account is not a user (the lookup only logged an error)
+    if (typeof userId === "string" && userId && !userId.startsWith("client:") && !userId.includes(":") /* BF_SERVER_STAFF_ONLY_AUTH_v1 - lender:/referrer:/accountant: subjects are not users.id */ && (decoded as any).kind !== "service" && !["agent-service", "maya-service"].includes(userId)) { // BF_SERVER_CLIENT_TOKEN_SKIP_v623 // BF_SERVER_MAYA_SEES_PORTAL_v782 - Maya's service account is not a user (the lookup only logged an error)
       const result = await pool.query<{ id: string; email: string | null; role: string | null; silo: string | null; silos: string[] | null }>(
         `SELECT id, email, role, silo, silos FROM users WHERE id = $1 LIMIT 1`,
         [userId]
@@ -74,6 +99,21 @@ export async function auth(req: Request, res: Response, next: NextFunction) {
     // record who actually acted. Absent claims mean a human token: unchanged.
     const isServicePrincipal = decodedAny.principal === "service";
 
+    // BF_SERVER_STAFF_ONLY_AUTH_v1
+    const principalKind = classifyPrincipal(decodedAny, dbUser?.role ?? null);
+    if (principalKind === "unknown" && !(typeof decodedAny.role === "string" && decodedAny.role && (decodedAny.sub || decodedAny.id || decodedAny.userId))) {
+      // Tracked-link ({sid,u}), role-less and other capability payloads.
+      return res.status(401).json({ status: "error", message: "Invalid token" });
+    }
+    if (!isStaffOrService(principalKind) && !allowed.has(principalKind as NonStaffKind)) {
+      console.warn("[auth] non-staff token refused on staff route", {
+        kind: principalKind,
+        method: req.method,
+        path: req.originalUrl?.split("?")[0],
+      });
+      return res.status(403).json({ status: "error", error: "FORBIDDEN", message: "Staff access required" });
+    }
+
     (req as any).user = {
       ...(decoded as any),
       ...(dbUser ?? {}),
@@ -81,6 +121,7 @@ export async function auth(req: Request, res: Response, next: NextFunction) {
       capabilities: hydratedCaps,
       silos: dbUser?.silos ?? (Array.isArray((decoded as any).silos) ? (decoded as any).silos : []),
       isServicePrincipal,
+      principalKind,
       serviceName: isServicePrincipal ? String(decodedAny.service ?? "unknown") : null,
       // A service id that resolves to no users row is expected, not corruption.
       actorResolved: Boolean(dbUser),

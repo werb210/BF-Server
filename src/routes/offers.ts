@@ -7,6 +7,8 @@ import { eventBus } from "../events/eventBus.js";
 // BF_SERVER_BLOCK_v138_E2E_FIX_BATCH_v1 — AUDIT-11 regression repair: stop
 // public reads/writes on /api/offers, /api/offers/:id/status.
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
+import { requireAuthAllowing } from "../middleware/auth.js"; // BF_SERVER_STAFF_ONLY_AUTH_v1
+import { clientOwnershipOf } from "../auth/clientApplicationOwnership.js"; // BF_SERVER_CLIENT_OWNERSHIP_v1
 import { ROLES } from "../auth/roles.js";
 import multer from "multer";
 import { getStorage } from "../lib/storage/index.js";
@@ -41,6 +43,29 @@ export async function attachTermSheetUrls(rows: any[]): Promise<any[]> {
 }
 
 const router = Router();
+
+// BF_SERVER_STAFF_ONLY_AUTH_v1 - the client mini-portal requests changes on, and
+// opens the term sheet of, its own offers. Staff pass; a client must own the
+// application the offer belongs to.
+const clientOrStaff = requireAuthAllowing("client");
+async function clientOwnsOffer(req: any, res: any, next: any) {
+  if (req.user?.principalKind !== "client") return next();
+  try {
+    const r = await pool.query<{ application_id: string | null }>(
+      `select application_id from offers where id::text = $1 limit 1`,
+      [String(req.params.id ?? "")],
+    );
+    const appId = r.rows[0]?.application_id;
+    if (!appId) return res.status(404).json({ error: "not_found" });
+    if ((await clientOwnershipOf(String(appId), req.user?.phone)) !== "owner") {
+      return res.status(404).json({ error: "not_found" });
+    }
+    return next();
+  } catch (err) {
+    console.error("[offers] client ownership check failed", { offerId: req.params.id, err: String(err) });
+    return res.status(500).json({ error: "ownership_check_failed" });
+  }
+}
 
 const offerUpload = multer({
   storage: multer.memoryStorage(),
@@ -242,7 +267,8 @@ router.patch(
 // with the lender and re-issue.
 router.post(
   "/:id/request-changes",
-  requireAuth,
+  clientOrStaff,
+  clientOwnsOffer,
   safeHandler(async (req: any, res: any) => {
     const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
     if (!id) throw new AppError("validation_error", "Offer id is required.", 400);
@@ -287,7 +313,7 @@ router.post(
 // handing the browser a raw/SAS blob URL. Fixes: SAS expiry, private-container 403s,
 // and wrong Content-Type (Chrome renders an XML error as "Failed to load PDF document").
 // Streams with the correct inline PDF headers and validates the %PDF- magic bytes.
-router.get("/:id/term-sheet", requireAuth, safeHandler(async (req: any, res: any) => {
+router.get("/:id/term-sheet", clientOrStaff, clientOwnsOffer, safeHandler(async (req: any, res: any) => {
   const offerId = String(req.params.id);
   const row = await runQuery<{ term_sheet_blob_name: string | null; term_sheet_filename: string | null }>(
     `select term_sheet_blob_name, term_sheet_filename from offers where id::text = $1 limit 1`,

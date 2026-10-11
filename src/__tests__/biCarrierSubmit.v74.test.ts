@@ -10,13 +10,17 @@ const MIRROR = fs.readFileSync("src/services/biDocMirror.ts", "utf8");
 
 describe("it calls bi-server rather than reimplementing the carrier", () => {
   it("hits the endpoint that owns dispatch", () => {
-    expect(SVC).toContain("/submit-pgi");
+    // BF_SERVER_BI_CARRIER_PATH_FIX_v1 - BI-Server serves it under /api/v1/bi on the real BI host.
+    expect(SVC).toContain("/api/v1/bi/application/${encodeURIComponent(biApplicationId)}/submit-pgi");
+    expect(SVC).toContain("bi-server-cse0apamgkheb9d5.canadacentral-01.azurewebsites.net");
+    expect(SVC).not.toContain("https://bi-server.azurewebsites.net");
   });
 
   it("uses the same service-JWT pattern as the document mirror", () => {
     expect(SVC).toContain("mintServiceJwt");
     expect(MIRROR).toContain("mintServiceJwt");
-    expect(SVC).toContain('scope: "bi:service"');
+    // BF_SERVER_BI_CARRIER_PATH_FIX_v1 - contract service token, not the old scope token.
+    expect(SVC).toContain('kind: "service", service: "bf-server"');
   });
 });
 

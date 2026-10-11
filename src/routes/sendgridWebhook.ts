@@ -1,7 +1,7 @@
 // BF_SERVER_SENDGRID_WEBHOOK_v1 - PUBLIC SendGrid Event Webhook receiver.
 // Writes delivered/open/click/bounce/spam/unsubscribe to the contact timeline and
 // flips marketing_opt_out on bounce/spam/unsubscribe (CASL suppression). Verifies
-// the ECDSA signature when SENDGRID_WEBHOOK_PUBLIC_KEY is set. Raw body required.
+// the ECDSA signature with SENDGRID_WEBHOOK_PUBLIC_KEY (required; unset -> reject). Raw body required.
 import { Router } from "express";
 import express from "express";
 import crypto from "crypto";
@@ -29,8 +29,11 @@ function isSuppressEvent(event: string, ev: any): boolean {
 function verify(rawBody: Buffer, signature: string, timestamp: string): boolean {
   const key = process.env.SENDGRID_WEBHOOK_PUBLIC_KEY;
   if (!key) {
-    console.warn("[sendgrid-webhook] SENDGRID_WEBHOOK_PUBLIC_KEY is not set - accepting unsigned posts");
-    return true; // not configured -> accept (configure to enforce)
+    // BF_SERVER_SENDGRID_FAIL_CLOSED_v1 - unsigned events could flip any contact's
+    // marketing_opt_out and forge timeline entries. Without the key nothing is
+    // verifiable, so nothing is accepted.
+    console.error("[sendgrid-webhook] SENDGRID_WEBHOOK_PUBLIC_KEY is not set - rejecting event (set it in App Service configuration from SendGrid > Mail Settings > Event Webhook > Signature Verification)");
+    return false;
   }
   try {
     const pubPem = `-----BEGIN PUBLIC KEY-----\n${key}\n-----END PUBLIC KEY-----\n`;

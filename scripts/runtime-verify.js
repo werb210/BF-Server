@@ -166,6 +166,7 @@ async function run() {
     const routesResponse = await httpRequest({
       method: "GET",
       path: "/api/_int/routes",
+      token, // BF_SERVER_INT_ROUTES_STAFF_ONLY_v1
     });
     if (routesResponse.status !== 200) {
       throw new Error(`/api/_int/routes expected 200, got ${routesResponse.status}`);

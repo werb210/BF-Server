@@ -1,8 +1,11 @@
-import { Router } from "express";
+import express, { Router } from "express";
 import { pool } from "../db.js";
 import { createContact } from "../services/contacts.js";
 import { persistTwilioMediaToBlob } from "../services/mmsMedia.js"; // BF_SERVER_MMS_BLOB_PERSIST_v1
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+// BF_SERVER_SMS_INBOUND_SIGNED_v1 - same validator (and Azure-aware URL
+// reconstruction) as every other Twilio webhook in webhooks.ts / conferenceWebhooks.ts.
+import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
 
 const router = Router();
 
@@ -81,7 +84,9 @@ export function smsKeywordReply(kw: string): { kind: "out" | "in" | "help"; text
   return null;
 }
 
-router.post("/webhooks/twilio/sms-inbound", async (req: any, res) => {
+// BF_SERVER_SMS_INBOUND_SIGNED_v1 - was unsigned: anyone could forge inbound SMS
+// (including STOP / START opt-outs) for any phone number.
+router.post("/webhooks/twilio/sms-inbound", express.urlencoded({ extended: false }), twilioWebhookValidation, async (req: any, res) => {
   const from = String(req.body?.From ?? "");
   const to = String(req.body?.To ?? "");
   const rawBody = String(req.body?.Body ?? "").trim();

@@ -56,6 +56,21 @@ import { resolveDisplayName } from "../modules/voice/callerDisplay.js";
 
 const router = Router();
 
+// BF_SERVER_VOICE_STATUS_ROUTE_v1 - the iOS dialer POSTs /api/voice/status with
+// {callStatus: "completed" | "failed"} when a call ends. The only /status handler
+// lived in routes/voice.ts, which is never mounted, so every report 404'd (and its
+// schema wanted {callId, status}, which the dialer does not send). Accept both
+// shapes, acknowledge, and log it; Twilio's own status callbacks stay the source
+// of truth for call records.
+const VOICE_STATUSES = new Set(["initiated", "ringing", "in-progress", "completed", "failed"]);
+router.post("/status", auth, (req: any, res) => {
+  const status = String(req.body?.callStatus ?? req.body?.status ?? "").trim();
+  if (!VOICE_STATUSES.has(status)) return res.status(400).json({ status: "error", error: "INVALID_INPUT" });
+  const callId = typeof req.body?.callId === "string" ? req.body.callId.slice(0, 64) : null;
+  console.log("[voice/status] dialer reported", { status, callId, userId: req.user?.userId ?? null });
+  return res.status(200).json({ status: "ok", data: { received: true } });
+});
+
 // BF_SERVER_VOICE_TOKEN_ROUTE_v1 - native iOS dialer POSTs /api/voice/token
 // (body {lineId}, X-Silo header) and decodes {token}; that route did not
 // exist (only GET /api/telephony/token), so every iOS call 404'd at token

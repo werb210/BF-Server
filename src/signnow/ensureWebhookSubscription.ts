@@ -17,6 +17,10 @@ export async function ensureSignnowWebhook(): Promise<void> {
   // /signed|complete/ event). Register each best-effort: an unknown event name on a
   // given SignNow plan must not block the others or crash startup.
   const events = ["user.document.fieldinvite.signed", "user.document.complete"];
+  // BF_SERVER_SIGNNOW_SIGNED_WEBHOOKS_v1 - the route rejects unsigned events.
+  if (!(process.env.SIGNNOW_WEBHOOK_SECRET ?? "").trim()) {
+    console.error("[signnow-webhook] SIGNNOW_WEBHOOK_SECRET is not set - subscriptions are unsigned and /api/webhooks/signnow will reject every event (the completion poller still runs)");
+  }
   for (const ev of events) {
     try {
       const r = await ensureUserSignedSubscription(callback, ev);

@@ -35,7 +35,8 @@ describe("Maya alias routes", () => {
       "https://maya.example/api/maya/message",
       expect.objectContaining({
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // BF_SERVER_MAYA_CONTEXT_v1 - an anonymous caller is forwarded as the public audience with a signed context.
+        headers: expect.objectContaining({ "Content-Type": "application/json", "X-Maya-Audience": "public", "X-Maya-Context": expect.any(String) }),
         body: JSON.stringify({ message: "hi" }),
         signal: expect.any(AbortSignal),
       })

@@ -8,17 +8,17 @@ afterEach(() => { delete process.env.TWILIO_RCS_MESSAGING_SERVICE_SID; delete pr
 
 describe("branded (RCS) texting through a Messaging Service", () => {
   it("unchanged when no Messaging Service is configured: local number for Canada, 866 for the US", () => {
-    expect(smsSenderFor("+15878881837", "+15875550100")).toEqual({ from: "+15875550100" });
+    expect(smsSenderFor("+15875550199", "+15875550100")).toEqual({ from: "+15875550100" });
     expect(smsSenderFor("+19173043342", "+15875550100")).toEqual({ from: "+18666318939" });
   });
   it("sends through the Messaging Service when TWILIO_RCS_MESSAGING_SERVICE_SID is a valid MG sid", () => {
     process.env.TWILIO_RCS_MESSAGING_SERVICE_SID = SID;
-    expect(smsSenderFor("+15878881837", "+15875550100")).toEqual({ messagingServiceSid: SID });
+    expect(smsSenderFor("+15875550199", "+15875550100")).toEqual({ messagingServiceSid: SID });
     expect(smsSenderFor("+19173043342", "+15875550100")).toEqual({ messagingServiceSid: SID });
   });
   it("ignores a malformed value instead of breaking texting", () => {
     process.env.TWILIO_RCS_MESSAGING_SERVICE_SID = "not-a-sid";
-    expect(smsSenderFor("+15878881837", "+15875550100")).toEqual({ from: "+15875550100" });
+    expect(smsSenderFor("+15875550199", "+15875550100")).toEqual({ from: "+15875550100" });
   });
   it("transactional senders use it; marketing and bulk sends do not", () => {
     for (const f of ["src/lib/twilio.ts", "src/services/smsService.ts", "src/routes/portal.ts", "src/routes/auth/otp.ts", "src/modules/notifications/sms.service.ts"]) {

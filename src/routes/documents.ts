@@ -6,7 +6,8 @@
 import express, { type Request, type Response } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireAuthAllowing } from "../middleware/auth.js";
+import { requireClientOwnsApplication } from "../auth/clientApplicationOwnership.js"; // BF_SERVER_CLIENT_OWNERSHIP_v1
 import { uploadTiming } from "../middleware/uploadTiming.js"; // BF_SERVER_UPLOAD_DIAG_v751
 import { ok, fail } from "../middleware/response.js";
 import { toStringSafe } from "../utils/toStringSafe.js";
@@ -389,7 +390,9 @@ router.post("/public-upload", upload.single("file"), async (req: Request, res: R
   }
 });
 
-router.post("/upload", uploadTiming, requireAuth, upload.single("file"), async (req: Request, res: Response) => { // BF_SERVER_UPLOAD_DIAG_v751
+// BF_SERVER_STAFF_ONLY_AUTH_v1 - the client app uploads here (as /api/client/documents/upload); the
+// client must own the application, checked after multer has parsed the multipart body.
+router.post("/upload", uploadTiming, requireAuthAllowing("client"), upload.single("file"), requireClientOwnsApplication((req) => req.body?.applicationId), async (req: Request, res: Response) => { // BF_SERVER_UPLOAD_DIAG_v751
   const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : null;
   const category      = resolveUploadCategory(req.body); // BF_SERVER_BLOCK_v843 — accept category | document_type | documentType
   const file = (req as Request & { file?: Express.Multer.File }).file;

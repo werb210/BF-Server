@@ -98,6 +98,13 @@ interface GraphNotification {
   resourceData?: { id?: string };
 }
 
+export function clientStateMatches(given: unknown, expected: unknown): boolean {
+  if (typeof given !== "string" || typeof expected !== "string" || !given || !expected) return false;
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 const SENT_SELECT = "id,subject,body,from,toRecipients,ccRecipients,internetMessageHeaders";
 
 async function fetchSentMessage(graph: GraphClient, messageId: string): Promise<SentMessage | null> {
@@ -117,7 +124,15 @@ export async function handleGraphNotifications(pool: Pool, values: GraphNotifica
       );
       const sub = r.rows[0];
       if (!sub) continue;
-      if (n.clientState && sub.client_state && n.clientState !== sub.client_state) continue;
+      // BF_SERVER_GRAPH_CLIENTSTATE_REQUIRED_v1 - a notification without clientState
+      // used to skip the check, so anyone who learned a subscription id could forge
+      // mail notifications. Every subscription is created with a clientState
+      // (client_state is NOT NULL) and Graph echoes it on every notification and
+      // keeps it across PATCH renewals, so a missing or wrong value is a forgery.
+      if (!clientStateMatches(n.clientState, sub.client_state)) {
+        console.warn("[graph-webhook] notification rejected: clientState missing or wrong", { subscriptionId: n.subscriptionId, present: Boolean(n.clientState) });
+        continue;
+      }
       if (sub.resource === SENT_RESOURCE) {
         const messageId = n.resourceData?.id;
         if (!messageId) continue;

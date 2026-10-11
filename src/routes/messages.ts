@@ -52,8 +52,11 @@ router.get(
 );
 
 // POST /api/messages
+// BF_SERVER_MESSAGES_POST_AUTH_v1 - was unauthenticated: anyone could write a
+// message (any direction, any staff name) onto any application's thread.
 router.post(
   "/",
+  requireAuth,
   safeHandler(async (req: any, res: any, _next: any) => {
     let applicationId = "";
     let body = "";

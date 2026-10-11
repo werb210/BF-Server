@@ -224,29 +224,49 @@ export async function listEventSubscriptions(): Promise<unknown[]> {
   const body = (await signnowFetch(`/api/v2/events`, { method: "GET" })) as any;
   return Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : [];
 }
+// BF_SERVER_SIGNNOW_SIGNED_WEBHOOKS_v1
+// The webhook route rejects every event that is not HMAC-signed with
+// SIGNNOW_WEBHOOK_SECRET, so the subscriptions must be created WITH that secret
+// (attributes.secret_key). SignNow does not reliably return whether an existing
+// subscription has a secret, so when the secret is configured every matching
+// subscription is updated in place (PUT /api/v2/events/{id}) on each boot - an
+// idempotent call that also rotates the key when the env var changes.
 export async function ensureUserSignedSubscription(
   callbackUrl: string,
   eventName = "user.document.fieldinvite.signed",
+  secretKey: string | null = (process.env.SIGNNOW_WEBHOOK_SECRET ?? "").trim() || null,
 ): Promise<{ created: boolean; summary: string }> {
   const userId = await getAuthenticatedUserId();
   if (!userId) return { created: false, summary: "no user id from GET /user" };
   let existing: unknown[] = [];
-  try { existing = await listEventSubscriptions(); } catch { existing = []; }
-  const already = existing.some((it) => {
+  try { existing = await listEventSubscriptions(); } catch (e) { console.warn("[signnow-webhook] listing subscriptions failed", { message: e instanceof Error ? e.message : String(e) }); existing = []; }
+  const matching = existing.filter((it) => {
     const s = JSON.stringify(it ?? "");
     return s.includes(eventName) && s.includes(callbackUrl);
   });
-  if (already) return { created: false, summary: `subscription already present (${eventName})` };
+  const attributes: Record<string, unknown> = { callback: callbackUrl, use_tls_12: true, ...(secretKey ? { secret_key: secretKey } : {}) };
+  const payload = { event: eventName, entity_id: userId, action: "callback", attributes };
+  if (matching.length > 0) {
+    if (!secretKey) return { created: false, summary: `subscription already present (${eventName}) - UNSIGNED: set SIGNNOW_WEBHOOK_SECRET or every event is rejected` };
+    let updated = 0;
+    for (const it of matching) {
+      const id = typeof (it as any)?.id === "string" ? (it as any).id : null;
+      if (!id) continue;
+      await signnowFetch(`/api/v2/events/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      updated += 1;
+    }
+    if (updated === 0) throw new Error(`existing ${eventName} subscription has no id; cannot attach the signing secret`);
+    return { created: false, summary: `subscription updated with signing secret (${eventName}, ${updated})` };
+  }
   try {
     await signnowFetch(`/api/v2/events`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        event: eventName,
-        entity_id: userId,
-        action: "callback",
-        attributes: { callback: callbackUrl, use_tls_12: true },
-      }),
+      body: JSON.stringify(payload),
     });
   } catch (e) {
     // SignNow rejects a duplicate subscription with code 15006045 / "must have
@@ -255,9 +275,9 @@ export async function ensureUserSignedSubscription(
     // log on every reboot when GET /api/v2/events doesn't dedup cleanly).
     const msg = e instanceof Error ? e.message : String(e);
     if (/different combinations|15006045/i.test(msg)) {
-      return { created: false, summary: `subscription already active (${eventName})` };
+      return { created: false, summary: `subscription already active (${eventName})${secretKey ? " - could not confirm signing secret" : ""}` };
     }
     throw e;
   }
-  return { created: true, summary: `subscription created (${eventName} -> ${callbackUrl})` };
+  return { created: true, summary: `subscription created (${eventName} -> ${callbackUrl})${secretKey ? " with signing secret" : " UNSIGNED"}` };
 }

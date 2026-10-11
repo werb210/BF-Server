@@ -1,4 +1,8 @@
 // BF_SERVER_UNCLAIMED_APP_OWNERSHIP_v10
+// BF_SERVER_CLIENT_OWNERSHIP_v1 - the rule moved into auth/clientApplicationOwnership.ts
+// (clientOwnershipOf) and the client router's guard no longer lets a request
+// without a token, or with an unverifiable token, through to an existing
+// application. Behaviour is covered in routes/client/__tests__/clientOwnership.audit.test.ts.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -7,33 +11,31 @@ const src = readFileSync(
   fileURLToPath(new URL("../routes/client/index.ts", import.meta.url)),
   "utf-8",
 );
+const rule = readFileSync(
+  fileURLToPath(new URL("../auth/clientApplicationOwnership.ts", import.meta.url)),
+  "utf-8",
+);
 
 describe("mid-wizard application ownership", () => {
   it("counts how many linked contacts actually have a phone", () => {
-    expect(src).toContain("FROM app_phones WHERE p10 <> ''");
-    expect(src).toContain("AS known");
+    expect(rule).toContain("FROM app_phones WHERE p10 <> ''");
+    expect(rule).toContain("AS known");
   });
 
-  it("only forbids when the application has a known owner that is not you", () => {
-    const middleware = src.slice(
-      src.indexOf("BF_SERVER_UNCLAIMED_APP_OWNERSHIP_v10"),
-      src.indexOf('router.use("/", continuationRouter)'),
-    );
-    expect(middleware).toContain("if (total > 0 && known > 0 && mine === 0) {");
-    // The old predicate rejected every unclaimed application.
-    expect(middleware).not.toContain("if (total > 0 && mine === 0) {");
+  it("an application nobody has claimed yet is claimable by the signed-in client", () => {
+    expect(rule).toContain('if (known === 0 && phone10.length === 10) return "owner";');
   });
 
   it("still forbids a genuine pivot to someone else's application", () => {
-    // known > 0 && mine === 0 is precisely the pivot case, and it still 403s.
-    const guard = src.slice(src.indexOf("const known ="), src.indexOf("return next();", src.indexOf("const known =")));
-    expect(guard).toContain('res.status(403).json({ error: "forbidden" })');
+    expect(rule).toContain('return "not_owner";');
+    expect(src).toContain('if (own === "not_owner") {');
+    expect(src).toContain('res.status(403).json({ error: "forbidden" })');
   });
 
-  it("leaves the capability fallbacks untouched", () => {
-    // No token, no app id, unverifiable token: all still fall through.
-    expect(src).toContain('if (!aid) return next();');
-    expect(src).toContain("return next(); // invalid/expired token -> treat as capability access, don't block");
-    expect(src).toContain("if (!phone10) return next();");
+  it("no longer treats a missing or unverifiable token as capability access", () => {
+    expect(src).not.toContain("return next(); // invalid/expired token -> treat as capability access, don't block");
+    expect(src).toContain('res.status(401).json({ error: "auth_required"');
+    // Ids that are not applications (continuation / submit tokens) still fall through.
+    expect(src).toContain("if (Number(exists.rows?.[0]?.n ?? 0) === 0) return next();");
   });
 });

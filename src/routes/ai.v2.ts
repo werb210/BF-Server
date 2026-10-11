@@ -24,8 +24,10 @@ router.post("/ai/message", async (req: any, res: any, next: any) => {
   };
 
   await runQuery(
-    `insert into chat_messages (id, session_id, role, content)
-     values ($1, $2, 'user', $3)`,
+    // BF_SERVER_CHAT_MESSAGES_NOT_NULL_v1 - chat_messages.message and .content are
+    // both NOT NULL in the live schema; the insert named only content and always failed.
+    `insert into chat_messages (id, session_id, role, message, content)
+     values ($1, $2, 'user', $3, $3)`,
     [randomUUID(), sessionId, message]
   );
 
@@ -72,8 +74,8 @@ router.post("/ai/confidence-check", async (req: any, res: any, next: any) => {
   };
 
   await runQuery(
-    `insert into chat_messages (id, session_id, role, content, metadata)
-     values ($1, $2, 'system', $3, $4::jsonb)`,
+    `insert into chat_messages (id, session_id, role, message, content, metadata)
+     values ($1, $2, 'system', $3, $3, $4::jsonb)`,
     [
       randomUUID(),
       sessionId,
@@ -92,8 +94,8 @@ router.post("/ai/startup-interest", async (req: any, res: any, next: any) => {
   };
 
   await runQuery(
-    `insert into chat_messages (id, session_id, role, content, metadata)
-     values ($1, $2, 'system', $3, $4::jsonb)`,
+    `insert into chat_messages (id, session_id, role, message, content, metadata)
+     values ($1, $2, 'system', $3, $3, $4::jsonb)`,
     [
       randomUUID(),
       sessionId,

@@ -1,6 +1,7 @@
 // BF_SERVER_BLOCK_v606 -- /api/realtime/stream (SSE; accepts ?token= query
 // because EventSource cannot send custom headers).
 import express, { type Request, type Response, type NextFunction } from "express";
+import { classifyPrincipal, isStaffOrService } from "../auth/principal.js";
 import jwt from "jsonwebtoken";
 import { auth } from "../middleware/auth.js";
 import { subscribe, subscriberCount } from "./sseBus.js";
@@ -22,7 +23,12 @@ function sseAuth(req: Request, res: Response, next: NextFunction): void {
     return;
   }
   try {
-    const decoded = jwt.verify(token, secret) as any;
+    const decoded = jwt.verify(token, secret, { algorithms: ["HS256"] }) as any;
+    // BF_SERVER_STAFF_ONLY_AUTH_v1 - staff event stream: staff and service tokens only.
+    if (!isStaffOrService(classifyPrincipal(decoded))) {
+      res.status(403).json({ error: "forbidden" });
+      return;
+    }
     (req as any).user = {
       ...decoded,
       userId: decoded.id ?? decoded.sub ?? null,

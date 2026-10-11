@@ -1,5 +1,7 @@
 import { Router } from "express";
-import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { requireAuth, requireAuthorization, requireCapability } from "../middleware/auth.js";
+import multer from "multer"; // BF_SERVER_AI_DOCUMENTS_UPLOAD_v1
+import { ROLES } from "../auth/roles.js";
 import { adminRateLimit } from "../middleware/rateLimit.js";
 import { CAPABILITIES } from "../auth/capabilities.js";
 import { runQuery } from "../db.js";
@@ -805,6 +807,51 @@ router.get("/ai-documents", async (_req: any, res: any) => {
   const r = await pool.query(`SELECT id, COALESCE(source_id, LEFT(content, 60)) AS name FROM ai_knowledge ORDER BY created_at DESC LIMIT 500`);
   res.json(r.rows);
 });
+// BF_SERVER_AI_DOCUMENTS_UPLOAD_v1 - the portal's AI Knowledge Base page posts a
+// multipart upload (one part named "file") here; only GET and DELETE existed, so
+// every upload 404'd. Stored exactly like the other knowledge uploads: text is
+// extracted (PDF via pdf-parse, else utf8), then embedAndStore() writes one
+// ai_knowledge row with source_id = the file name, which is what GET lists.
+const aiDocumentUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
+router.post(
+  "/ai-documents",
+  requireAuthorization({ roles: [ROLES.ADMIN] }),
+  (req: any, res: any, next: any) => {
+    aiDocumentUpload.single("file")(req, res, (err: any) => {
+      if (err?.code === "LIMIT_FILE_SIZE") return res.status(413).json({ error: "file_too_large" });
+      if (err) return res.status(400).json({ error: "invalid_upload" });
+      return next();
+    });
+  },
+  async (req: any, res: any) => {
+    const file = req.file as { originalname?: string; mimetype?: string; buffer?: Buffer } | undefined;
+    if (!file?.buffer?.length) return res.status(400).json({ error: "file_required" });
+    const name = String(file.originalname || "document").slice(0, 200);
+    let text = "";
+    try {
+      const { extractTextFromBuffer } = await import("../ai/embeddingService.js");
+      text = String((await extractTextFromBuffer(file.buffer, file.mimetype || "")) || "").slice(0, 200_000).trim();
+    } catch (err) {
+      console.warn("[ai-documents] text extraction failed", { name, message: err instanceof Error ? err.message : String(err) });
+      return res.status(422).json({ error: "unreadable_file", message: "Could not read text from this file. Supported: PDF and plain-text files." });
+    }
+    if (!text) return res.status(422).json({ error: "no_text", message: "No text found in this file (scanned PDFs have no text layer)." });
+    const pool = (await import("../db.js")).pool;
+    const { embedAndStore } = await import("../modules/ai/knowledge.service.js");
+    try {
+      await embedAndStore(pool as any, text, "upload", name, name);
+      return res.status(201).json({ ok: true, name, indexed: true });
+    } catch (err: any) {
+      // embedAndStore has already saved the row without an embedding for these.
+      if (err?.code === "openai_not_configured" || err?.code === "embedding_failed" || err?.code === "no_vector") {
+        console.warn("[ai-documents] saved without embedding", { name, code: err.code });
+        return res.status(201).json({ ok: true, name, indexed: false, message: "Saved, but not yet searchable by Maya (embeddings unavailable)." });
+      }
+      console.error("[ai-documents] upload failed", { name, message: err?.message ?? String(err) });
+      return res.status(500).json({ error: "upload_failed" });
+    }
+  },
+);
 router.delete("/ai-documents/:id", async (req: any, res: any) => {
   const pool = (await import("../db.js")).pool;
   await pool.query(`DELETE FROM ai_knowledge WHERE id = $1`, [req.params.id]);

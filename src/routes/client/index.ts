@@ -26,6 +26,8 @@ import {
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { dbQuery } from "../../db.js";
 import { AppError } from "../../middleware/errors.js";
+import { classifyPrincipal } from "../../auth/principal.js"; // BF_SERVER_CLIENT_OWNERSHIP_v1
+import { clientOwnershipOf } from "../../auth/clientApplicationOwnership.js";
 
 const router = Router();
 router.use(submitAttemptsRouter); // BF_SERVER_BLOCK_v842_SUBMIT_ATTEMPTS — frictionless beacon, before rate-limit/ownership middleware
@@ -87,84 +89,68 @@ router.use(async (req: any, res: any, next: any) => {
   }
 });
 
+// BF_SERVER_CLIENT_OWNERSHIP_v1 - replaces the soft v728 guard, which let any
+// request with NO token straight through and only looked at applicationId in
+// the query/body (so /application/:id/status and PATCH /applications/:id were
+// never checked). A client route that names an existing application - in the
+// query, the body, or the path (/application/:id/..., /applications/:id/...) -
+// now needs a valid client token for a phone on that application (or a staff /
+// service token). Unknown ids fall through untouched so capability tokens
+// (continuation tokens, submit-by-token) keep working, and an application with
+// no linked phone yet (mid-wizard) stays claimable by the signed-in client.
+const PATH_APP_ID = /^\/applications?\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/i;
+function clientRouteApplicationId(req: any): string {
+  const fromQuery = typeof req.query?.applicationId === "string" ? req.query.applicationId.trim() : "";
+  if (fromQuery) return fromQuery;
+  const fromBody = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
+  if (fromBody) return fromBody;
+  const m = PATH_APP_ID.exec(String(req.path ?? ""));
+  return m ? m[1] : "";
+}
 router.use(async (req: any, res: any, next: any) => {
+  const aid = clientRouteApplicationId(req);
+  if (!aid) return next();
   try {
-    const aid =
-      (typeof req.query?.applicationId === "string" && req.query.applicationId.trim()) ||
-      (typeof req.body?.applicationId === "string" && req.body.applicationId.trim()) ||
-      "";
-    if (!aid) return next();
-    const auth = req.headers?.authorization;
-    if (!auth || typeof auth !== "string" || !auth.startsWith("Bearer ")) return next();
-    const secret = process.env.JWT_SECRET;
-    if (!secret) return next();
-    let phone10 = "";
-    try {
-      const decoded = jwt.verify(auth.slice(7), secret) as Record<string, unknown>;
-      phone10 = String(typeof decoded.phone === "string" ? decoded.phone : "")
-        .replace(/[^0-9]/g, "")
-        .slice(-10);
-    } catch {
-      return next(); // invalid/expired token -> treat as capability access, don't block
-    }
-    if (!phone10) return next();
-    // BF_SERVER_BLOCK_v_CLIENT_OWNERSHIP_PARTNER_FIX_v1 — ownership must consider
-    // ALL contacts linked to the application (applicant + partner + guarantor) via
-    // application_contacts, not just applications.contact_id. On a partner app the
-    // logged-in person can be the PARTNER, whose phone != the applicant contact,
-    // which made mine===0 -> 403 on every CMP read. UNION the link-table members
-    // with the legacy single contact_id so pre-link-table solo apps still resolve.
-    // Mirrors the correct pattern in auth.ts.
-    const r = await dbQuery(
-      `WITH app_phones AS (
-         SELECT right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),10) AS p10
-           FROM application_contacts ac
-           JOIN contacts c ON c.id = ac.contact_id
-          WHERE ac.application_id::text = ($1)::text
-         UNION
-         SELECT right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),10) AS p10
-           FROM applications a
-           JOIN contacts c ON c.id = a.contact_id
-          WHERE a.id::text = ($1)::text
-       )
-       SELECT
-         (SELECT COUNT(*)::int FROM applications WHERE id::text = ($1)::text) AS total,
-         (SELECT COUNT(*)::int FROM app_phones WHERE p10 = $2)               AS mine,
-         -- BF_SERVER_UNCLAIMED_APP_OWNERSHIP_v10 - how many contacts on this
-         -- application have a usable phone at all. Blank phones are excluded
-         -- because right(regexp_replace(...)) yields '' for them, and '' can
-         -- never match a caller's ten digits.
-         (SELECT COUNT(*)::int FROM app_phones WHERE p10 <> '')              AS known`,
-      [aid, phone10],
+    const exists = await dbQuery<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM applications WHERE id::text = ($1)::text`,
+      [aid],
     );
-    const total = Number(r.rows?.[0]?.total ?? 0);
-    const mine = Number(r.rows?.[0]?.mine ?? 0);
-    // BF_SERVER_UNCLAIMED_APP_OWNERSHIP_v10
-    // This used to 403 on `total > 0 && mine === 0`, which reads as "the
-    // application exists and is not yours". Mid-wizard that is wrong: the
-    // bf-client wizard is local-first, contacts are only created by the Step 6
-    // submit handler, so between create_blank_application and submit an
-    // application has ZERO linked contacts. app_phones came back empty, mine
-    // was 0, and the guard rejected the person who had just created it.
-    //
-    // It bit Step 5's "have my accountant upload the documents" - POST
-    // /api/client/accountant carries applicationId in the body, so it hit this
-    // guard, returned 403, and the applicant was told we could not reach their
-    // accountant. It applies to every POST client route that names an
-    // applicationId before submit, not just that one.
-    //
-    // An application nobody has claimed cannot be pivoted TO, because there is
-    // no other owner to pivot away from - so it falls back to the capability
-    // model the rest of this middleware already relies on. The moment any
-    // contact with a phone is linked, the check is exactly as strict as before.
-    const known = Number(r.rows?.[0]?.known ?? 0);
-    if (total > 0 && known > 0 && mine === 0) {
+    if (Number(exists.rows?.[0]?.n ?? 0) === 0) return next(); // not an application id: capability token or 404 downstream
+    const auth = String(req.headers?.authorization ?? "");
+    const secret = process.env.JWT_SECRET;
+    let claims: Record<string, unknown> | null = null;
+    if (auth.startsWith("Bearer ") && secret) {
+      try {
+        claims = jwt.verify(auth.slice(7), secret, { algorithms: ["HS256"] }) as Record<string, unknown>;
+      } catch {
+        claims = null;
+      }
+    }
+    if (!claims) {
+      res.status(401).json({ error: "auth_required", message: "Sign in to continue." });
+      return;
+    }
+    const kind = classifyPrincipal(claims);
+    if (kind === "unknown") {
+      res.status(401).json({ error: "auth_required", message: "Sign in to continue." });
+      return;
+    }
+    if (kind === "staff" || kind === "service") return next();
+    if (kind !== "client") {
+      res.status(403).json({ error: "forbidden" });
+      return;
+    }
+    const own = await clientOwnershipOf(aid, claims.phone);
+    if (own === "not_owner") {
       res.status(403).json({ error: "forbidden" });
       return;
     }
     return next();
-  } catch {
-    return next();
+  } catch (err) {
+    // Fail closed: an ownership check that cannot run must not hand out the file.
+    console.error("[client-ownership] check failed", { applicationId: aid, err: String(err) });
+    res.status(503).json({ error: "ownership_check_unavailable" });
+    return;
   }
 });
 

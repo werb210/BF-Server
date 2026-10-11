@@ -51,12 +51,15 @@ router.get("/version", (_req: any, res: any) => {
   });
 });
 
-router.get("/routes", (req: any, res: any) => {
+// BF_SERVER_INT_ROUTES_STAFF_ONLY_v1 - the full route inventory and the Twilio
+// configuration flag are reconnaissance for an attacker; staff only. /build,
+// /version, /ready and /health stay public for deploy checks and probes.
+router.get("/routes", requireAuth, (req: any, res: any) => {
   const routes = listRouteInventory(req.app);
   res.status(200).json({ routes });
 });
 
-router.get("/env", (_req: any, res: any) =>
+router.get("/env", requireAuth, (_req: any, res: any) =>
   res["json"]({
     twilioAvailable: Boolean(
       config.twilio.accountSid &&

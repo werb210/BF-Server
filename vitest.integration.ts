@@ -22,6 +22,7 @@ export const INTEGRATION_TEST_FILES: string[] = [
   "src/__tests__/auth.otp.client-fallthrough.test.ts",
   "src/__tests__/bi-workflows.smoke.test.ts",
   "src/__tests__/chatIsChat.v629.integration.test.ts", // BF_SERVER_CHAT_IS_CHAT_v629 - needs Postgres
+  "src/__tests__/aiChatSchema.audit.integration.test.ts", // BF_SERVER_CHAT_SESSIONS_UPDATED_AT_v1 - needs Postgres
   "src/__tests__/teamPrefs.v643.integration.test.ts", // BF_SERVER_TEAM_PREFS_v643 - needs Postgres
   "src/__tests__/teamPhaseB.v658.integration.test.ts", // BF_SERVER_TEAM_PHASE_B_v658 - needs Postgres
   "src/__tests__/teamPhaseC.v671.integration.test.ts", // BF_SERVER_TEAM_PHASE_C_v671 - needs Postgres

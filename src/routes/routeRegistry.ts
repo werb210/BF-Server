@@ -109,7 +109,7 @@ import emailRoutes from "./email.js";
 import smsRedirectRoutes from "./smsRedirect.js"; // BF_SERVER_SMS_REDIRECT_v1 (public)
 import sendgridWebhookRoutes from "./sendgridWebhook.js"; // BF_SERVER_SENDGRID_WEBHOOK_v1 (public)
 import websiteRoutes from "./website.js";
-import mayaRoutes, { proxyMayaToAgent } from "./maya.js";
+import mayaRoutes, { proxyMayaToAgent, mayaProxyLimiter } from "./maya.js";
 import aiMayaAlias from "./aiMayaAlias.js";
 import mayaAdminStubs from "./mayaAdminStubs.js";
 import mayaEscalateRoutes from "./mayaEscalate.js";
@@ -126,7 +126,7 @@ import o365Routes from "./o365.js";
 import diagnosticsRoutes from "./diagnostics.js";
 import { createMountTracker } from "./_canonicalMount.js";
 import { siloMiddleware } from "../middleware/silo.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireAuthAllowing } from "../middleware/auth.js";
 import watchAuthRoutes from "../watch/authRoutes.js";
 import watchDeviceRoutes from "../watch/deviceRoutes.js";
 import watchDataRoutes from "../watch/dataRoutes.js";
@@ -187,7 +187,7 @@ watchRoutes.use(watchDataRoutes);
 
 const combinedMayaRoutes = Router();
 // BF_SERVER_BLOCK_v674 - website widget posts /api/maya/website-chat
-combinedMayaRoutes.post("/website-chat", async (req, res) => {
+combinedMayaRoutes.post("/website-chat", mayaProxyLimiter, async (req, res) => { // BF_SERVER_MAYA_RATE_LIMIT_v1
   await proxyMayaToAgent(
     "/api/maya/message",
     "POST",
@@ -481,7 +481,7 @@ export function registerApiRouteMounts(app: Router): void {
 
   mount(app, "/ocr/admin", Router().use(requireAuth, ocrAdminRoutes));
   mount(app, "/automations", Router().use(requireAuth, automationRoutes)); // BF_SERVER_AUTOMATION_ENGINE_v1
-  mount(app, "/push", Router().use(requireAuth, clientPushRoutes)); // BF_SERVER_CLIENT_PUSH_TOKEN_v1
+  mount(app, "/push", Router().use(requireAuthAllowing("client"), clientPushRoutes)); // BF_SERVER_CLIENT_PUSH_TOKEN_v1 - BF_SERVER_STAFF_ONLY_AUTH_v1: the client app registers its device
 
   API_ROUTE_MOUNTS.forEach((entry) => {
     if (entry.path === "/ocr/admin") return;

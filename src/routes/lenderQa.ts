@@ -9,7 +9,12 @@
 // /api/portal/applications/:id/qa/...
 import { Router, type Response, type NextFunction } from "express";
 import { pool } from "../db.js";
-import { requireAuth, type AuthRequest } from "../middleware/auth.js";
+import { requireAuth, requireAuthAllowing, type AuthRequest } from "../middleware/auth.js";
+import { requireClientOwnsApplication } from "../auth/clientApplicationOwnership.js"; // BF_SERVER_CLIENT_OWNERSHIP_v1
+
+// BF_SERVER_STAFF_ONLY_AUTH_v1 - the CMP endpoints below serve the applicant's
+// client token; the applicant must own the application in the path.
+const clientOwnerOrStaff = [requireAuthAllowing("client"), requireClientOwnsApplication((req) => req.params.id)];
 import { ROLES } from "../auth/roles.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { sendSMS } from "../services/smsService.js";
@@ -399,7 +404,7 @@ router.post(
 // The questions the client currently needs to answer (sent or rejected).
 router.get(
   "/applications/:id/qa/open",
-  requireAuth,
+  ...clientOwnerOrStaff,
   async (req: AuthRequest, res: Response) => {
     const appId = String(req.params.id);
     try {
@@ -432,7 +437,7 @@ router.get(
 // Autosave a single answer (kept editable until the client submits).
 router.patch(
   "/applications/:id/qa/questions/:qid/answer",
-  requireAuth,
+  ...clientOwnerOrStaff,
   async (req: AuthRequest, res: Response) => {
     const qid = String(req.params.qid);
     const answerText =
@@ -446,8 +451,9 @@ router.patch(
                 answer_document_id = COALESCE($3, answer_document_id),
                 updated_at = now()
           WHERE id = $1 AND review_status = ANY($4::text[])
+            AND set_id IN (SELECT id FROM qa_sets WHERE application_id = $5)
           RETURNING id`,
-        [qid, answerText, answerDocumentId, ANSWERABLE],
+        [qid, answerText, answerDocumentId, ANSWERABLE, String(req.params.id)],
       );
       if (!r.rows[0]) {
         res.status(409).json({ error: "not_answerable" });
@@ -465,7 +471,7 @@ router.patch(
 // flag the set, and notify staff.
 router.post(
   "/applications/:id/qa/sets/:setId/answers/submit",
-  requireAuth,
+  ...clientOwnerOrStaff,
   async (req: AuthRequest, res: Response) => {
     const appId = String(req.params.id);
     const setId = String(req.params.setId);
@@ -478,14 +484,15 @@ router.post(
             WHERE set_id = $1
               AND review_status = ANY($2::text[])
               AND answer_text IS NOT NULL AND btrim(answer_text) <> ''
+              AND set_id IN (SELECT id FROM qa_sets WHERE application_id = $3)
             RETURNING 1
          )
          SELECT COUNT(*)::int AS n FROM m`,
-        [setId, ANSWERABLE],
+        [setId, ANSWERABLE, appId],
       );
       await pool.query(
-        `UPDATE qa_sets SET status = 'answered', updated_at = now() WHERE id = $1`,
-        [setId],
+        `UPDATE qa_sets SET status = 'answered', updated_at = now() WHERE id = $1 AND application_id = $2`,
+        [setId, appId],
       );
       try {
         const { notifyAllStaff } = await import("../services/notifications/notifyAllStaff.js");

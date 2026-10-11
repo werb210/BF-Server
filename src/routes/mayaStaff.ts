@@ -18,6 +18,8 @@ import { retrieveContext } from "../modules/ai/knowledge.service.js";
 import { sendSms } from "../modules/notifications/sms.service.js";
 import { parseAndResolveMentions } from "../services/notes/mentions.js"; // BF_SERVER_MAYA_CRM_TOOLS_v1
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { requireAuth } from "../middleware/auth.js"; // BF_SERVER_MAYA_SMS_CONFIRM_v1
+import { ROLES } from "../auth/roles.js";
 
 const router = Router();
 
@@ -446,7 +448,11 @@ router.post(
   }),
 );
 
-// BF_SERVER_MAYA_STAFF_SEND_SMS — 2-step: returns a draft unless approved===true, then sends via Twilio.
+// BF_SERVER_MAYA_SMS_CONFIRM_v1 - Maya NEVER sends an SMS. The old handler sent
+// whenever the model set approved=true, so the model alone could text anyone.
+// Now the agent's call only records a pending draft (maya_pending_actions); a
+// signed-in human staff member presses Send in the portal's Maya panel, which
+// calls POST /api/maya/pending-actions/:id/confirm, and only that sends.
 router.post(
   "/staff/send-sms",
   safeHandler(async (req: Request, res: Response) => {
@@ -456,27 +462,137 @@ router.post(
     const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
     let to = typeof req.body?.to === "string" ? req.body.to.trim() : "";
     const contactId = typeof req.body?.contact_id === "string" ? req.body.contact_id.trim() : "";
-    const approved = req.body?.approved === true;
+    const applicationId = typeof req.body?.application_id === "string" ? req.body.application_id.trim() : "";
+    const staffUserId = typeof req.body?.staff_user_id === "string" && req.body.staff_user_id.trim() ? req.body.staff_user_id.trim() : null;
+    const sessionId = typeof req.body?.session_id === "string" ? req.body.session_id : null;
+    const siloRaw = String(req.body?.silo ?? req.header("x-silo") ?? "").trim().toUpperCase();
+    const silo = ["BF", "BI", "SLF"].includes(siloRaw) ? siloRaw : null;
     if (!body) return res.status(400).json({ ok: false, error: "body_required" });
+    if (body.length > 1600) return res.status(400).json({ ok: false, error: "body_too_long" });
     try {
       if (!to && contactId) {
         const cr = await pool.query(`SELECT phone FROM contacts WHERE id::text = $1 LIMIT 1`, [contactId]);
         to = cr.rows[0]?.phone ?? "";
       }
       if (!to) return res.status(400).json({ ok: false, error: "recipient_required" });
-      if (!approved) {
-        await audit({ audience: "staff", tool: "comm.send_sms", args: { to, contact_id: contactId, approved: false }, ok: true, summary: `draft sms to ${to}`, userId: typeof req.body?.user_id === "string" ? req.body.user_id : null, sessionId: typeof req.body?.session_id === "string" ? req.body.session_id : null });
-        return res.json({ ok: true, draft: true, to, body, status: "draft_pending_approval", note: "Draft only — re-call with approved=true to send after staff confirms." });
-      }
-      const r: any = await sendSms({ to, message: body });
-      const sid = r?.sid ?? null;
-      await audit({ audience: "staff", tool: "comm.send_sms", args: { to, contact_id: contactId, approved: true }, ok: true, summary: `sent sms to ${to}`, userId: typeof req.body?.user_id === "string" ? req.body.user_id : null, sessionId: typeof req.body?.session_id === "string" ? req.body.session_id : null });
-      return res.json({ ok: true, sent: true, to, sid });
+      if (to.replace(/[^0-9]/g, "").length < 10) return res.status(400).json({ ok: false, error: "invalid_recipient" });
+      const payload = { to, body, ...(contactId ? { contactId } : {}), ...(applicationId ? { applicationId } : {}) };
+      const ins = await pool.query<{ id: string }>(
+        `INSERT INTO maya_pending_actions (kind, payload, staff_user_id, silo)
+         VALUES ('sms', $1::jsonb, $2, $3)
+         RETURNING id::text AS id`,
+        [JSON.stringify(payload), staffUserId, silo],
+      );
+      const pendingId = ins.rows[0]?.id ?? null;
+      await audit({ audience: "staff", tool: "comm.send_sms", args: { to, contact_id: contactId, pending_id: pendingId }, ok: true, summary: `sms draft pending staff confirmation (${to})`, userId: staffUserId, sessionId });
+      return res.json({ ok: true, pending: true, pendingId, preview: { to, body } });
     } catch (e: any) {
-      await audit({ audience: "staff", tool: "comm.send_sms", args: { to, contact_id: contactId, approved }, ok: false, summary: e?.message ?? "error", errorCode: "send_sms_exception" });
-      logError("maya_send_sms_failed", { code: "maya_send_sms_failed", error: e?.message ?? "unknown" });
+      await audit({ audience: "staff", tool: "comm.send_sms", args: { to, contact_id: contactId }, ok: false, summary: e?.message ?? "error", errorCode: "send_sms_draft_exception" });
+      logError("maya_send_sms_draft_failed", { code: "maya_send_sms_draft_failed", error: e?.message ?? "unknown" });
       return res.status(500).json({ ok: false, error: "send_sms_failed" });
     }
+  }),
+);
+
+// Human staff only: a service token (the agent itself) must never confirm.
+function humanStaff(req: any, res: Response): { id: string; isAdmin: boolean } | null {
+  const u = req.user ?? {};
+  const id = String(u.userId ?? u.id ?? u.sub ?? "");
+  if (u.principalKind !== "staff" || u.isServicePrincipal || !id) {
+    res.status(403).json({ ok: false, error: "human_staff_required" });
+    return null;
+  }
+  return { id, isAdmin: u.role === ROLES.ADMIN };
+}
+
+router.get(
+  "/pending-actions",
+  requireAuth,
+  safeHandler(async (req: Request, res: Response) => {
+    const me = humanStaff(req, res);
+    if (!me) return;
+    const { rows } = await pool.query(
+      `SELECT id::text AS id, kind, payload, status, created_at, expires_at
+         FROM maya_pending_actions
+        WHERE staff_user_id = $1 AND status = 'pending' AND expires_at > now()
+        ORDER BY created_at ASC
+        LIMIT 50`,
+      [me.id],
+    );
+    return res.json({ ok: true, items: rows });
+  }),
+);
+
+router.post(
+  "/pending-actions/:id/confirm",
+  requireAuth,
+  safeHandler(async (req: Request, res: Response) => {
+    const me = humanStaff(req, res);
+    if (!me) return;
+    const id = String(req.params.id ?? "");
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ ok: false, error: "invalid_id" });
+    // Atomic claim: a double click (or two tabs) can send at most once.
+    const claimed = await pool.query<{ id: string; kind: string; payload: any }>(
+      `UPDATE maya_pending_actions
+          SET status = 'sent', decided_at = now()
+        WHERE id::text = $1 AND status = 'pending' AND expires_at > now()
+          AND (staff_user_id = $2 OR $3::boolean)
+        RETURNING id::text AS id, kind, payload`,
+      [id, me.id, me.isAdmin],
+    );
+    const row = claimed.rows[0];
+    if (!row) {
+      const cur = await pool.query<{ status: string; expired: boolean; staff_user_id: string | null }>(
+        `SELECT status, (expires_at <= now()) AS expired, staff_user_id FROM maya_pending_actions WHERE id::text = $1 LIMIT 1`,
+        [id],
+      );
+      const c = cur.rows[0];
+      if (!c || (!me.isAdmin && c.staff_user_id !== me.id)) return res.status(404).json({ ok: false, error: "not_found" });
+      if (c.status === "pending" && c.expired) {
+        await pool.query(`UPDATE maya_pending_actions SET status = 'expired', decided_at = now() WHERE id::text = $1 AND status = 'pending'`, [id]);
+        return res.status(410).json({ ok: false, status: "expired" });
+      }
+      return res.status(409).json({ ok: false, status: c.status });
+    }
+    if (row.kind !== "sms") {
+      await pool.query(`UPDATE maya_pending_actions SET status = 'failed', result = $2::jsonb WHERE id::text = $1`, [id, JSON.stringify({ error: "unsupported_kind" })]);
+      return res.status(400).json({ ok: false, status: "failed", error: "unsupported_kind" });
+    }
+    const to = String(row.payload?.to ?? "");
+    const message = String(row.payload?.body ?? "");
+    try {
+      const r: any = await sendSms({ to, message });
+      const sid = r?.sid ?? null;
+      await pool.query(`UPDATE maya_pending_actions SET result = $2::jsonb WHERE id::text = $1`, [id, JSON.stringify({ sid, confirmedBy: me.id })]);
+      await audit({ audience: "staff", tool: "comm.send_sms", args: { to, pending_id: id, confirmed_by: me.id }, ok: true, summary: `sent sms to ${to} after staff confirmation`, userId: me.id });
+      return res.json({ ok: true, status: "sent", sid });
+    } catch (e: any) {
+      await pool.query(`UPDATE maya_pending_actions SET status = 'failed', result = $2::jsonb WHERE id::text = $1`, [id, JSON.stringify({ error: String(e?.message ?? e).slice(0, 300), confirmedBy: me.id })])
+        .catch((err: any) => { logError("maya_pending_mark_failed", { code: "maya_pending_mark_failed", error: err?.message ?? "unknown" }); });
+      await audit({ audience: "staff", tool: "comm.send_sms", args: { to, pending_id: id }, ok: false, summary: e?.message ?? "error", errorCode: "send_sms_exception", userId: me.id });
+      logError("maya_send_sms_failed", { code: "maya_send_sms_failed", error: e?.message ?? "unknown" });
+      return res.status(502).json({ ok: false, status: "failed" });
+    }
+  }),
+);
+
+router.post(
+  "/pending-actions/:id/cancel",
+  requireAuth,
+  safeHandler(async (req: Request, res: Response) => {
+    const me = humanStaff(req, res);
+    if (!me) return;
+    const id = String(req.params.id ?? "");
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ ok: false, error: "invalid_id" });
+    const r = await pool.query(
+      `UPDATE maya_pending_actions
+          SET status = 'cancelled', decided_at = now()
+        WHERE id::text = $1 AND status = 'pending' AND (staff_user_id = $2 OR $3::boolean)
+        RETURNING id`,
+      [id, me.id, me.isAdmin],
+    );
+    if (!r.rows[0]) return res.status(404).json({ ok: false, error: "not_found_or_decided" });
+    return res.json({ ok: true, status: "cancelled" });
   }),
 );
 

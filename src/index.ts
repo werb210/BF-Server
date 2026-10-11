@@ -21,8 +21,13 @@ process.on("unhandledRejection", (err) => {
   logFatal("[UNHANDLED REJECTION]", err);
 });
 
+// BF_SERVER_FAIL_FAST_v1 - after an uncaught exception the process state is
+// undefined (half-written responses, broken pool clients). Log and exit so the
+// App Service restarts a clean container instead of serving from a wreck.
+// Vitest installs its own handlers and must not have its worker killed.
 process.on("uncaughtException", (err) => {
   logFatal("[UNCAUGHT EXCEPTION]", err);
+  if (!process.env.VITEST) process.exit(1);
 });
 
 import "./system/errors.js";
@@ -435,5 +440,10 @@ export async function start(): Promise<void> {
 }
 
 if (process.env.NODE_ENV !== "test") {
-  start().catch(console.error);
+  // BF_SERVER_FAIL_FAST_v1 - a failed startup used to be logged and then left a
+  // process that served nothing; exit non-zero so the platform restarts it.
+  start().catch((err) => {
+    logFatal("[STARTUP FAILED]", err);
+    process.exit(1);
+  });
 }
