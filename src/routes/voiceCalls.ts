@@ -3,8 +3,9 @@
 // or staff target into it. Staff browser then joins via SDK using the
 // conferenceFriendly we return.
 
-import { Router } from "express";
+import { Router, urlencoded } from "express";
 import { auth } from "../middleware/auth.js";
+import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
 import { generateVoiceToken } from "../telephony/services/tokenService.js"; // BF_SERVER_VOICE_TOKEN_ROUTE_v1
 import { pool } from "../db.js";
 
@@ -558,14 +559,21 @@ router.get("/conferences/:id", auth, async (req, res) => {
 const CALL_STATUSES = new Set([
   "queued", "initiated", "ringing", "in-progress", "completed", "busy", "failed", "no-answer", "canceled",
 ]);
-router.post("/status", auth, (req: any, res) => {
+// BF_SERVER_v785_VOICE_STATUS_TWILIO - voiceIncoming.ts also points Twilio's
+// statusCallback here. A request carrying X-Twilio-Signature is validated as a
+// Twilio webhook; anything else still needs staff auth.
+function twilioOrStaffAuth(req: any, res: any, next: any) {
+  if (req.get("X-Twilio-Signature")) return twilioWebhookValidation(req, res, next);
+  return auth(req, res, next);
+}
+router.post("/status", urlencoded({ extended: false }), twilioOrStaffAuth, (req: any, res) => {
   const body = req.body ?? {};
-  const rawStatus = body.status ?? body.callStatus;
+  const rawStatus = body.status ?? body.callStatus ?? body.CallStatus;
   const status = typeof rawStatus === "string" ? rawStatus.trim().toLowerCase() : "";
   if (!CALL_STATUSES.has(status)) {
     return res.status(400).json({ ok: false, error: "invalid_status" });
   }
-  const rawCallId = body.callId ?? body.callSid;
+  const rawCallId = body.callId ?? body.callSid ?? body.CallSid;
   const callId = typeof rawCallId === "string" && rawCallId.trim() ? rawCallId.trim() : null;
   return res.status(200).json({ status: "ok", data: { received: true, callId, callStatus: status } });
 });

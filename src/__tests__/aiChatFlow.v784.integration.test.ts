@@ -87,20 +87,23 @@ describe("v784 ai chat flow against real Postgres", () => {
   });
 
   it("start -> message -> escalate -> close, then the admin chats list shows it", async () => {
-    const start = await request(app).post("/api/ai/ai/start").send({ source: "website" });
+    const start = await request(app).post("/api/ai/ai/start").set("Authorization", "Bearer " + adminToken).send({ source: "website" });
     expect(start.status).toBe(200);
     const sessionId = start.body.sessionId as string;
     sessionIds.push(sessionId);
 
-    const msg = await request(app).post("/api/ai/ai/message").send({ sessionId, message: "Do you do equipment loans?" });
+    const msg = await request(app).post("/api/ai/ai/message").set("Authorization", "Bearer " + adminToken).send({ sessionId, message: "Do you do equipment loans?" });
     expect(msg.status).toBe(200);
     expect(msg.body.reply).toBe("Happy to help.");
-    const stored = await pool.query("SELECT role, message, content FROM chat_messages WHERE session_id = $1", [sessionId]);
-    expect(stored.rows).toEqual([{ role: "user", message: "Do you do equipment loans?", content: "Do you do equipment loans?" }]);
+    const stored = await pool.query("SELECT role, message, content FROM chat_messages WHERE session_id = $1 ORDER BY role DESC", [sessionId]);
+    expect(stored.rows).toEqual([
+      { role: "user", message: "Do you do equipment loans?", content: "Do you do equipment loans?" },
+      { role: "assistant", message: "Happy to help.", content: "Happy to help." },
+    ]);
 
-    const conf = await request(app).post("/api/ai/ai/confidence-check").send({ sessionId, score: 0.4 });
+    const conf = await request(app).post("/api/ai/ai/confidence-check").set("Authorization", "Bearer " + adminToken).send({ sessionId, score: 0.4 });
     expect(conf.status).toBe(200);
-    const interest = await request(app).post("/api/ai/ai/startup-interest").send({ sessionId, tags: ["equipment"] });
+    const interest = await request(app).post("/api/ai/ai/startup-interest").set("Authorization", "Bearer " + adminToken).send({ sessionId, tags: ["equipment"] });
     expect(interest.status).toBe(200);
     const sys = await pool.query("SELECT message, content FROM chat_messages WHERE session_id = $1 AND role = 'system' ORDER BY message", [sessionId]);
     expect(sys.rows).toEqual([
@@ -108,14 +111,14 @@ describe("v784 ai chat flow against real Postgres", () => {
       { message: "startup_interest", content: "startup_interest" },
     ]);
 
-    const esc = await request(app).post("/api/ai/ai/escalate").send({ sessionId });
+    const esc = await request(app).post("/api/ai/ai/escalate").set("Authorization", "Bearer " + adminToken).send({ sessionId });
     expect(esc.status).toBe(200);
     const queued = await pool.query("SELECT status, updated_at FROM chat_sessions WHERE id = $1", [sessionId]);
     expect(queued.rows[0].status).toBe("queued");
     expect(queued.rows[0].updated_at).toBeTruthy();
     expect((await pool.query("SELECT 1 FROM chat_queue WHERE session_id = $1", [sessionId])).rowCount).toBe(1);
 
-    const close = await request(app).post("/api/ai/ai/close").send({ sessionId });
+    const close = await request(app).post("/api/ai/ai/close").set("Authorization", "Bearer " + adminToken).send({ sessionId });
     expect(close.status).toBe(200);
     expect((await pool.query("SELECT status FROM chat_sessions WHERE id = $1", [sessionId])).rows[0].status).toBe("closed");
 

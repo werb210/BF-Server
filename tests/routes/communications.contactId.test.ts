@@ -14,7 +14,7 @@ import { errorHandler } from "../../src/middleware/errors.js";
 
 describe("GET /api/communications/messages contactId aliases", () => {
   const token = jwt.sign(
-    { id: "user-1", capabilities: ["communications:read"] },
+    { id: "user-1", role: "Admin", capabilities: ["communications:read"] },
     "test-secret"
   );
 

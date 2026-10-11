@@ -18,7 +18,7 @@ import crmRouter from "../../src/routes/crm.js";
 import { errorHandler } from "../../src/middleware/errors.js";
 
 describe("POST /api/crm/contacts", () => {
-  const token = jwt.sign({ id: "user-1", capabilities: ["crm:read", "crm:write"] }, "test-secret");
+  const token = jwt.sign({ id: "user-1", role: "Admin", capabilities: ["crm:read", "crm:write"] }, "test-secret");
 
   beforeEach(() => {
     createContact.mockClear();
@@ -60,7 +60,7 @@ describe("POST /api/crm/contacts", () => {
   });
 
   it("refuses staff without crm:write", async () => {
-    const readOnly = jwt.sign({ id: "user-1", capabilities: ["crm:read"] }, "test-secret");
+    const readOnly = jwt.sign({ id: "user-1", role: "Admin", capabilities: ["crm:read"] }, "test-secret");
     const res = await request(app()).post("/api/crm/contacts").set("Authorization", `Bearer ${readOnly}`).send({ first_name: "A", last_name: "B" });
     expect(res.status).toBe(403);
   });
