@@ -97,7 +97,11 @@ export async function loadCrmTimeline(isContact: boolean, id: string, silo: stri
           FROM call_recordings cr
           JOIN conferences cf ON cf.id = cr.conference_id
           LEFT JOIN call_transcripts ct ON ct.conference_id = cr.conference_id
-         WHERE cf.contact_id = $1::text AND cf.silo = $2 AND cr.url IS NOT NULL
+         -- BF_SERVER_v786_ROOM_RECORDINGS - a conference room recording belongs to every participant
+         -- and attendee contact (call_recording_contacts), not only the conference's own contact.
+         WHERE (cf.contact_id = $1::text
+                OR EXISTS (SELECT 1 FROM call_recording_contacts rc WHERE rc.recording_id = cr.id AND rc.contact_id::text = $1::text))
+           AND cf.silo = $2 AND cr.url IS NOT NULL
         UNION ALL
         -- BF_SERVER_VOICEMAIL_TIMELINE_v1 — saved voicemails on the contact
         -- timeline. kind 'call' so the existing UI renders it; title "Voicemail".
@@ -148,6 +152,8 @@ export async function loadCrmTimeline(isContact: boolean, id: string, silo: stri
         SELECT (CASE WHEN event_type LIKE 'sms_%' THEN 'sms'
                      WHEN event_type = 'sequence_step_sent' AND payload->>'channel' = 'sms' THEN 'sms'
                      WHEN event_type = 'attribution' THEN 'system'
+                     -- BF_SERVER_v786_AUTOMATION_TIMELINE - workflow steps render as plain system rows.
+                     WHEN event_type = 'automation' THEN 'system'
                      ELSE 'email_activity' END) AS kind,
                id::text, created_at AS ts,
                (CASE event_type
@@ -168,6 +174,8 @@ export async function loadCrmTimeline(isContact: boolean, id: string, silo: stri
                   -- BF_SERVER_ATTRIBUTION_ON_TIMELINE_v1 - render the ad click
                   -- readably; the portal shows kind='system' rows as-is.
                   WHEN 'attribution' THEN 'Ad click attribution'
+                  WHEN 'automation' THEN ('Automation: ' || COALESCE(NULLIF(payload->>'rule_name', '') || ' - ', '') || COALESCE(payload->>'step', 'step')
+                                          || CASE WHEN COALESCE(payload->>'outcome', 'done') <> 'done' THEN ' (' || (payload->>'outcome') || ')' ELSE '' END)
                   ELSE event_type END) AS title,
                (CASE WHEN event_type = 'attribution' THEN
                   NULLIF(concat_ws(' | ',
@@ -184,11 +192,13 @@ export async function loadCrmTimeline(isContact: boolean, id: string, silo: stri
                        NULLIF(concat_ws(': ', NULLIF(payload->>'title',''), NULLIF(payload->>'body','')), '')
                      WHEN event_type = 'sms_marketing_sent' THEN
                        NULLIF(COALESCE(payload->>'body',''), '')
+                     WHEN event_type = 'automation' THEN
+                       NULLIF(COALESCE(payload->>'detail',''), '')
                 ELSE NULLIF(payload->>'url','') END) AS body,
                NULL::text AS extra
           FROM crm_timeline_events
          WHERE contact_id = $1
-           AND event_type IN ('sequence_step_sent','email_open','email_click','email_bounce','email_dropped','email_spamreport','email_unsubscribe','email_group_unsubscribe','sms_link_clicked','attribution','email_marketing_sent','client_notice_sent','sms_marketing_sent','email_cascade_sent','email_notice_sent')
+           AND event_type IN ('sequence_step_sent','email_open','email_click','email_bounce','email_dropped','email_spamreport','email_unsubscribe','email_group_unsubscribe','sms_link_clicked','attribution','email_marketing_sent','client_notice_sent','sms_marketing_sent','email_cascade_sent','email_notice_sent','automation')
         UNION ALL
         -- BF_SERVER_TEAMS_TRANSCRIPT_POLLER_v1 - Teams meetings with their
         -- recording link + transcript. Reuses kind 'recording', which the portal

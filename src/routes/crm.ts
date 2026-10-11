@@ -25,8 +25,19 @@ import sharedMailboxesRoutes from "./crm/sharedMailboxes.js";
 import inboxRoutes from "./crm/inbox.js";
 import voicemailsRoutes from "./crm/voicemails.js"; // BF_SERVER_BLOCK_v830_VOICEMAILS_LIST
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { emitAutomationEvent } from "../modules/automation/automationEngine.js"; // BF_SERVER_v786_WORKFLOW_GRAPH
 
 const router = Router();
+
+// BF_SERVER_v786_WORKFLOW_GRAPH - automation triggers from contact create / edit / import.
+function emitFieldChanges(silo: string, contactId: string, before: any, after: any, fields: string[], source = "edit"): void {
+  for (const field of fields) {
+    const from = before?.[field] ?? null;
+    const to = after?.[field] ?? null;
+    if (String(from ?? "") === String(to ?? "")) continue;
+    void emitAutomationEvent("contact.field_changed", { silo, contactId, data: { field, from, to, source } });
+  }
+}
 
 // Public website lead intake endpoint
 router.post("/web-leads", SupportController.createWebLead);
@@ -532,6 +543,8 @@ router.post("/contacts", requireCrmWrite, safeHandler(async (req: any, res: any)
   });
 
   if (row?.id) void pushContactToOutlook(pool, String(row.id)); // BF_SERVER_BLOCK_v_CONTACTS_OUTLOOK_SYNC_v1
+  // BF_SERVER_v786_WORKFLOW_GRAPH - automation trigger.
+  if (row?.id) void emitAutomationEvent("contact.created", { silo, contactId: String(row.id), data: { source: "manual" } });
   return res.status(201).json({ ok: true, data: row });
 }));
 
@@ -566,6 +579,9 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
   let created = 0;
   let updated = 0;
   let skipped = 0;
+  // BF_SERVER_v786_WORKFLOW_GRAPH - automation events fire after COMMIT.
+  const createdIds: string[] = [];
+  const changed: Array<{ id: string; before: any; after: Record<string, unknown> }> = [];
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -591,10 +607,11 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
       let existingId: string | null = null;
       if (email) {
         const ex = await client.query(
-          `SELECT id FROM contacts WHERE silo = $1 AND lower(email) = lower($2) LIMIT 1`,
+          `SELECT * FROM contacts WHERE silo = $1 AND lower(email) = lower($2) LIMIT 1`,
           [silo, email],
         );
         existingId = ex.rows[0]?.id ?? null;
+        if (existingId) changed.push({ id: String(existingId), before: ex.rows[0], after: { first_name: fname || null, last_name: lname || null, phone, company_name: companyName, job_title: jobTitle, lead_status: leadStatus } });
       }
 
       if (existingId) {
@@ -651,10 +668,11 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
           add("marketing_opt_out", false);
           add("sms_opt_out", false);
         }
-        await client.query(
-          `INSERT INTO contacts (${insCols.join(", ")}) VALUES (${ph.join(", ")})`,
+        const ins = await client.query(
+          `INSERT INTO contacts (${insCols.join(", ")}) VALUES (${ph.join(", ")}) RETURNING id`,
           vals,
         );
+        if (ins.rows[0]?.id) createdIds.push(String(ins.rows[0].id));
         created++;
       }
     }
@@ -666,6 +684,15 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
     client.release();
   }
 
+  // BF_SERVER_v786_WORKFLOW_GRAPH - contact.created (source import) and contact.field_changed, in the background.
+  void (async () => {
+    for (const cid of createdIds) await emitAutomationEvent("contact.created", { silo, contactId: cid, data: { source: "import" } });
+    for (const c of changed) {
+      const after = { ...c.before };
+      for (const [k, v] of Object.entries(c.after)) if (v != null && v !== "") after[k] = v;
+      emitFieldChanges(silo, c.id, c.before, after, Object.keys(c.after), "import");
+    }
+  })();
   return res.json({ ok: true, created, updated, skipped, total: rows.length });
 }));
 
@@ -1012,6 +1039,8 @@ router.patch("/contacts/:id", requireCrmWrite, safeHandler(async (req: any, res:
     }
   }
   if (!updates.length) return res.json({ data: null });
+  // BF_SERVER_v786_WORKFLOW_GRAPH - read the old values so contact.field_changed carries from/to.
+  const before = /^[0-9a-f-]{36}$/i.test(id) ? (await pool.query(`SELECT * FROM contacts WHERE id = $1`, [id])).rows[0] ?? null : null;
   params.push(id);
   const { rows } = await pool.query(
     `UPDATE contacts SET ${updates.join(", ")}, updated_at = NOW()
@@ -1019,6 +1048,7 @@ router.patch("/contacts/:id", requireCrmWrite, safeHandler(async (req: any, res:
     params,
   );
   void pushContactToOutlook(pool, id); // BF_SERVER_BLOCK_v_CONTACTS_OUTLOOK_SYNC_v1
+  if (before && rows[0]) emitFieldChanges(String(rows[0].silo ?? "BF"), id, before, rows[0], ALLOWED);
   res.json({ data: rows[0] ?? null });
 }));
 
@@ -1396,6 +1426,8 @@ router.get("/contacts/:id/calls", safeHandler(async (req: any, res: any) => {
       -- time (conferences.contact_id NULL) still surfaces when a participant
       -- phone matches this contact's phone on the last 10 digits.
       WHERE cf.contact_id = $1
+         -- BF_SERVER_v786_ROOM_RECORDINGS - conference room recordings linked to this contact.
+         OR cf.id IN (SELECT r2.conference_id FROM call_recording_contacts rc JOIN call_recordings r2 ON r2.id = rc.recording_id WHERE rc.contact_id::text = $1)
          OR cf.id IN (
               SELECT cp.conference_id
                 FROM conference_participants cp

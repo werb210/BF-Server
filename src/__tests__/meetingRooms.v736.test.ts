@@ -35,6 +35,8 @@ describe("meeting rooms", () => {
     const r = readFileSync("src/routes/reception.ts", "utf8");
     expect(r).toContain("To join a scheduled meeting, press 3.");
     expect(r).toContain('if (d === "3" || /meeting|conference/.test(s))');
-    expect(r).toContain("dial.conference({ startConferenceOnEnter: true");
+    // BF_SERVER_v786_ROOM_RECORDINGS - the attributes (record-from-start + status/recording callbacks) are shared.
+    expect(r).toContain("dial.conference(roomConferenceAttrs(room.id");
+    expect(readFileSync("src/services/meetingRooms.ts", "utf8")).toContain('startConferenceOnEnter: true, endConferenceOnExit: false, beep: "onEnter", record: "record-from-start"');
   });
 });

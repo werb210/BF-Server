@@ -269,7 +269,7 @@ router.post("/meeting", twilioWebhookValidation, async (req: Request, res: Respo
 router.post("/meeting-code", twilioWebhookValidation, async (req: Request, res: Response) => {
   const v = await newVR();
   const tries = Number(req.query.try ?? 0) || 0;
-  const { findOpenRoomByCode, conferenceName } = await import("../services/meetingRooms.js");
+  const { findOpenRoomByCode, conferenceName, roomConferenceAttrs } = await import("../services/meetingRooms.js");
   const room = await findOpenRoomByCode(digit(req)).catch((err: unknown) => {
     console.error("[meeting] code lookup failed", err instanceof Error ? err.message : String(err));
     return null;
@@ -278,7 +278,8 @@ router.post("/meeting-code", twilioWebhookValidation, async (req: Request, res: 
   if (room) {
     emit(v, "meeting_joining", PHRASES.meeting_joining);
     const dial = v.dial();
-    dial.conference({ startConferenceOnEnter: true, endConferenceOnExit: false, beep: "onEnter", record: "record-from-start" } as any, conferenceName(room.id));
+    // BF_SERVER_v786_ROOM_RECORDINGS - status + recording callbacks so the room is recorded into the CRM.
+    dial.conference(roomConferenceAttrs(room.id, String(req.body?.From ?? req.body?.Caller ?? "") || null) as any, conferenceName(room.id));
     return send(res, v);
   }
   if (tries < 1) { v.redirect({ method: "POST" }, `${BASE}/meeting?try=${tries + 1}`); return send(res, v); }

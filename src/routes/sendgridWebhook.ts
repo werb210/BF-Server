@@ -15,6 +15,11 @@ router.use(express.raw({ type: "*/*", limit: "2mb" }));
 // longer flip marketing_opt_out; previously every greylist/mailbox-full event
 // permanently shrank the audience blast after blast.
 const SUPPRESS = new Set(["spamreport", "unsubscribe", "group_unsubscribe"]);
+// BF_SERVER_v786_WORKFLOW_GRAPH - SendGrid event -> automation trigger.
+export const SENDGRID_TRIGGERS: Record<string, string> = {
+  open: "email.opened", click: "email.clicked", bounce: "email.bounced",
+  unsubscribe: "email.unsubscribed", group_unsubscribe: "email.unsubscribed",
+};
 function isSuppressEvent(event: string, ev: any): boolean {
   if (SUPPRESS.has(event)) return true;
   if (event === "bounce" && String(ev?.type ?? "bounce") === "bounce") return true; // hard bounce only
@@ -112,6 +117,9 @@ router.post("/", async (req: any, res: any) => {
       if (isSuppressEvent(event, ev)) {
         await pool.query(`UPDATE contacts SET marketing_opt_out = true, updated_at = now() WHERE id = $1`, [cid]);
       }
+      // BF_SERVER_v786_WORKFLOW_GRAPH - email.opened / clicked / bounced / unsubscribed automation triggers.
+      const automationType = SENDGRID_TRIGGERS[event];
+      if (automationType) void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent(automationType, { contactId: String(cid), data: { email, url: clickedUrl } })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
       // BF_SERVER_BLOCK_v790 - attribute sequence email opens/clicks.
       const seqSendId = ev?.seq_send_id ? String(ev.seq_send_id) : null;
       if (seqSendId && event === "open") await pool.query(`UPDATE sequence_sends SET opened_at = COALESCE(opened_at, now()) WHERE id = $1`, [seqSendId]).catch((err: any) => { console.warn("sendgrid_seq_open_failed", { seqSendId, message: err?.message }); });

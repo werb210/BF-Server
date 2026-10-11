@@ -155,7 +155,7 @@ router.post("/applicant-messages", async (req, res) => {
     if (!message) { res.status(400).json({ ok: false, error: "invalid_phone" }); return; }
     void import("../services/biApplicantThread.js").then((t) => t.biContactForPhone(q, phone)).then((contactId) => {
       // BF_SERVER_BLOCK_v619 - automation trigger.
-      if (contactId) void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent({ trigger: "message.inbound", silo: "BI", contactId, data: { channel: "app" } }));
+      if (contactId) void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent({ trigger: "message.inbound", silo: "BI", contactId, data: { channel: "client_portal" } }));
     }).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
     res.status(201).json({ ok: true, message_id: message.id, ...message });
   } catch (err) {

@@ -19,7 +19,7 @@ describe("contact timeline covers every channel", () => {
   it("marketing email and engagement no longer use the kind the portal discards", () => {
     expect(tl).toContain("ELSE 'email_activity' END) AS kind");
     expect(tl).toContain("WHEN 'email_notice_sent' THEN 'Email sent'");
-    expect(tl).toContain("'sms_marketing_sent','email_cascade_sent','email_notice_sent')");
+    expect(tl).toContain("'sms_marketing_sent','email_cascade_sent','email_notice_sent','automation')"); // BF_SERVER_v786_AUTOMATION_TIMELINE
   });
   it("records Graph sends and bridge SMS on the contact", () => {
     expect(graph).toContain("if (result.ok) await recordGraphSendOnTimeline(input);");
