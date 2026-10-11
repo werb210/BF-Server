@@ -52,6 +52,9 @@ export const STAFF_ROLES: ReadonlySet<string> = new Set<string>([
   ROLES.MARKETING,
 ]);
 
+// BF_SERVER_v785_STAFF_ROLE_CASE - "admin"/"staff" count as Admin/Staff.
 export function isStaffRole(value: unknown): boolean {
-  return typeof value === "string" && STAFF_ROLES.has(value);
+  if (typeof value !== "string") return false;
+  const role = normalizeRole(value);
+  return role !== null && STAFF_ROLES.has(role);
 }

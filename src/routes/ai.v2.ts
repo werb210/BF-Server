@@ -2,8 +2,14 @@ import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { pool, runQuery } from "../db.js";
 import { generateAIResponse } from "../modules/ai/ai.service.js";
+import { auth } from "../middleware/auth.js";
 
 const router = Router();
+
+// BF_SERVER_v785_AI_STAFF_AUTH - the staff portal's AI page is the only caller;
+// every route here is under /ai, so gate that prefix only (other /api/ai mounts
+// such as /api/ai/maya are untouched).
+router.use("/ai", auth);
 
 router.post("/ai/start", async (req: any, res: any, next: any) => {
   const id = randomUUID();
@@ -32,8 +38,21 @@ router.post("/ai/message", async (req: any, res: any, next: any) => {
   );
 
   const reply = await generateAIResponse(sessionId, message);
+  const parsed = JSON.parse(reply) as { reply?: unknown };
 
-  res["json"](JSON.parse(reply) as unknown);
+  // BF_SERVER_v785_AI_ASSISTANT_ROW - store Maya's reply too, so the transcript
+  // is not one-sided. A failed insert is logged and does not fail the response.
+  if (typeof parsed.reply === "string") {
+    await runQuery(
+      `insert into chat_messages (id, session_id, role, message, content)
+       values ($1, $2, 'assistant', $3, $3)`,
+      [randomUUID(), sessionId, parsed.reply]
+    ).catch((err: any) => {
+      console.warn("[silent-query] routes/ai.v2.ts assistant insert", { message: err?.message });
+    });
+  }
+
+  res["json"](parsed as unknown);
 });
 
 router.post("/ai/escalate", async (req: any, res: any, next: any) => {

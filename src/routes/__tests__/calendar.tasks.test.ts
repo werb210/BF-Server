@@ -10,7 +10,7 @@ vi.mock("../../db", async () => {
   return { ...actual, pool: { query: queryMock } };
 });
 
-const token = jwt.sign({ id: "00000000-0000-0000-0000-000000000001", capabilities: ["calendar:read"] }, "test-secret");
+const token = jwt.sign({ id: "00000000-0000-0000-0000-000000000001", role: "Staff", capabilities: ["calendar:read"] }, "test-secret");
 
 describe("calendar tasks routes", () => {
   beforeEach(() => {

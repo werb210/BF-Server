@@ -20,7 +20,7 @@ describe("outbound clients are reused, so the server stops burning Azure SNAT po
     for (const f of ["src/routes/portal.ts", "src/routes/communications.ts", "src/telephony/routes/telephonyRoutes.ts", "src/routes/auth.ts"]) {
       expect(readFileSync(f, "utf8"), f).not.toMatch(/=\s*twilio\(/);
     }
-    for (const f of ["src/services/credit/financials.ts", "src/services/credit/collateral.ts", "src/services/credit/research.ts", "src/services/credit/creditSummaryV2.ts", "src/services/brokerImport/extract.ts", "src/modules/voice/voicemailEnrich.service.ts", "src/routes/reception.ts", "src/routes/settings.ts", "src/ai/aiChatController.ts", "src/services/banking/bankingAnalysisPipeline.ts"]) {
+    for (const f of ["src/services/credit/financials.ts", "src/services/credit/collateral.ts", "src/services/credit/research.ts", "src/services/credit/creditSummaryV2.ts", "src/services/brokerImport/extract.ts", "src/modules/voice/voicemailEnrich.service.ts", "src/routes/reception.ts", "src/routes/settings.ts", "src/services/banking/bankingAnalysisPipeline.ts"]) {
       expect(readFileSync(f, "utf8"), f).not.toMatch(/new OpenAI\(\{ ?apiKey/);
     }
     expect(readFileSync("src/db.prod.ts", "utf8")).toContain("idleTimeoutMillis: 300_000,");

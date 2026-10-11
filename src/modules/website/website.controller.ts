@@ -69,7 +69,7 @@ export async function submitCreditReadiness(req: Request, res: Response) {
         ? null
         : Number(requestedAmount);
 
-    await pool.query(
+    const readinessRes = await pool.query(
       `INSERT INTO readiness_sessions (
          id, token, email, phone, company_name, full_name, industry,
          business_location, funding_type, requested_amount, purpose_of_funds,
@@ -116,7 +116,9 @@ export async function submitCreditReadiness(req: Request, res: Response) {
          readiness_score = EXCLUDED.readiness_score, -- BF_SERVER_READINESS_SCORE_v1
          readiness_tier = EXCLUDED.readiness_tier,
          readiness_over_ask = EXCLUDED.readiness_over_ask, -- BF_SERVER_READINESS_OVER_ASK_v1
-         updated_at = now()`,
+         updated_at = now()
+       RETURNING readiness_score, readiness_tier -- BF_SERVER_v785_READINESS_RESPONSE
+      `,
       [
         String(email).toLowerCase(),
         normalizedPhone,
@@ -249,6 +251,8 @@ export async function submitCreditReadiness(req: Request, res: Response) {
       // Phone-based prefill is the primary mechanism. The token is kept for
       // back-compat with any consumer that prefers token-based hydration.
       redirect: `https://client.boreal.financial/apply?continue=${token}`,
+      readinessScore: readinessRes.rows[0]?.readiness_score ?? null,
+      readinessTier: readinessRes.rows[0]?.readiness_tier ?? null,
     });
   } catch (err) {
     console.error("[website_credit_readiness] error:", safeErr(err));
