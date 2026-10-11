@@ -13,8 +13,10 @@ import { convertV1Rule, normalizeSettings, validateGraph, type Issue, type Valid
 import { catalogStatic, libraryItems } from "../modules/automation/library.js";
 
 const router = express.Router();
-const adminOnly = requireAuthorization({ roles: [ROLES.ADMIN] });
-const staff = requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] });
+// BF_SERVER_v787_WORKFLOW_ACCESS - Admin and Marketing read and write every workflow route;
+// Staff keeps read-only access. Lender / Referrer / client tokens are refused.
+const writers = requireAuthorization({ roles: [ROLES.ADMIN, ROLES.MARKETING] });
+const readers = requireAuthorization({ roles: [ROLES.ADMIN, ROLES.MARKETING, ROLES.STAFF] });
 const COLS = `id::text, name, description, silo, trigger_type, conditions, actions, steps, enabled, reenroll, test_mode, version, template_key, graph, settings, goal, schema_version, created_at, updated_at`;
 const REENROLL = new Set(["never", "always", "after_complete"]);
 const TRIGGER_KEYS = new Set<string>(TRIGGERS.map((t) => t.key));
@@ -78,7 +80,7 @@ function workflowFromBody(b: any): { graph: any; settings: any; goal: any } | { 
 
 const firstTrigger = (graph: any) => String(graph?.triggers?.[0]?.type ?? "manual");
 
-router.get("/catalog", staff, safeHandler(async (req: any, res: any) => {
+router.get("/catalog", readers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const refs = await refsFor(silo);
   respondOk(res, { ...catalogStatic(), templates: refs.templateRows, lists: refs.listRows, workflows: refs.workflowRows,
@@ -86,11 +88,11 @@ router.get("/catalog", staff, safeHandler(async (req: any, res: any) => {
     legacy: { triggers: TRIGGERS, actions: ACTIONS, checks: CHECKS } });
 }));
 
-router.get("/library", staff, safeHandler(async (_req: any, res: any) => {
+router.get("/library", readers, safeHandler(async (_req: any, res: any) => {
   respondOk(res, libraryItems());
 }));
 
-router.post("/from-library", adminOnly, safeHandler(async (req: any, res: any) => {
+router.post("/from-library", writers, safeHandler(async (req: any, res: any) => {
   const silo = siloFor(req);
   const item = libraryItems().find((x) => x.key === String(req.body?.key ?? ""));
   if (!item) return res.status(404).json({ error: { code: "unknown_template" } });
@@ -105,7 +107,7 @@ router.post("/from-library", adminOnly, safeHandler(async (req: any, res: any) =
 
 // BF_SERVER_v786_WORKFLOW_GRAPH - describe a workflow in words; OpenAI drafts the graph, which is
 // validated strictly before it is returned. Nothing is saved.
-router.post("/draft-from-text", adminOnly, safeHandler(async (req: any, res: any) => {
+router.post("/draft-from-text", writers, safeHandler(async (req: any, res: any) => {
   const prompt = String(req.body?.prompt ?? "").trim().slice(0, 4000);
   const silo = siloFor(req);
   if (!prompt) return res.status(400).json({ error: { code: "prompt_required" } });
@@ -120,7 +122,7 @@ router.post("/draft-from-text", adminOnly, safeHandler(async (req: any, res: any
 }));
 
 // ---- lists ------------------------------------------------------------------------------
-router.get("/lists", staff, safeHandler(async (req: any, res: any) => {
+router.get("/lists", readers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const { rows } = await pool.query(
     `SELECT l.id::text AS id, l.name, l.silo, l.created_at, (SELECT count(*)::int FROM automation_list_members m WHERE m.list_id = l.id) AS member_count
@@ -128,14 +130,14 @@ router.get("/lists", staff, safeHandler(async (req: any, res: any) => {
   respondOk(res, rows);
 }));
 
-router.post("/lists", adminOnly, safeHandler(async (req: any, res: any) => {
+router.post("/lists", writers, safeHandler(async (req: any, res: any) => {
   const name = String(req.body?.name ?? "").trim().slice(0, 120);
   if (!name) return res.status(400).json({ error: { code: "name_required" } });
   const { rows } = await pool.query(`INSERT INTO automation_lists (name, silo) VALUES ($1, $2) RETURNING id::text AS id, name, silo, created_at`, [name, siloFor(req)]);
   respondOk(res, rows[0]);
 }));
 
-router.delete("/lists/:listId", adminOnly, safeHandler(async (req: any, res: any) => {
+router.delete("/lists/:listId", writers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   if (!isUuid(req.params.listId)) return res.status(400).json({ error: { code: "invalid_id" } });
   const r = await pool.query(`DELETE FROM automation_lists WHERE id = $1::uuid AND silo = $2`, [req.params.listId, silo]);
@@ -143,7 +145,7 @@ router.delete("/lists/:listId", adminOnly, safeHandler(async (req: any, res: any
   respondOk(res, { deleted: r.rowCount ?? 0 });
 }));
 
-router.get("/", staff, safeHandler(async (req: any, res: any) => {
+router.get("/", readers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const { rows } = await pool.query(
     `SELECT ${COLS},
@@ -153,7 +155,7 @@ router.get("/", staff, safeHandler(async (req: any, res: any) => {
   respondOk(res, rows);
 }));
 
-router.get("/enrollments/:enrollmentId/log", staff, safeHandler(async (req: any, res: any) => {
+router.get("/enrollments/:enrollmentId/log", readers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const { rows } = await pool.query(
     `SELECT l.step_index, l.step_type, l.node_id, l.outcome, l.detail, l.created_at
@@ -162,13 +164,13 @@ router.get("/enrollments/:enrollmentId/log", staff, safeHandler(async (req: any,
   respondOk(res, rows);
 }));
 
-router.post("/enrollments/:enrollmentId/stop", staff, safeHandler(async (req: any, res: any) => {
+router.post("/enrollments/:enrollmentId/stop", writers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const r = await pool.query(`UPDATE automation_enrollments SET status = 'stopped', completed_at = now(), wait_event = NULL WHERE id = $1::uuid AND silo = $2 AND status = 'active'`, [req.params.enrollmentId, silo]);
   respondOk(res, { stopped: r.rowCount ?? 0 });
 }));
 
-router.get("/:id", staff, safeHandler(async (req: any, res: any) => {
+router.get("/:id", readers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   if (!isUuid(req.params.id)) return res.status(404).json({ error: { code: "not_found" } });
   const { rows } = await pool.query(`SELECT ${COLS} FROM automation_rules WHERE id = $1::uuid AND silo = $2`, [req.params.id, silo]);
@@ -176,7 +178,7 @@ router.get("/:id", staff, safeHandler(async (req: any, res: any) => {
   respondOk(res, rows[0]);
 }));
 
-router.post("/", adminOnly, safeHandler(async (req: any, res: any) => {
+router.post("/", writers, safeHandler(async (req: any, res: any) => {
   const silo = siloFor(req);
   const b = req.body ?? {};
   const name = String(b.name ?? "").trim();
@@ -195,7 +197,7 @@ router.post("/", adminOnly, safeHandler(async (req: any, res: any) => {
   respondOk(res, { ...rows[0], issues });
 }));
 
-router.patch("/:id", adminOnly, safeHandler(async (req: any, res: any) => {
+router.patch("/:id", writers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const b = req.body ?? {};
   if (!isUuid(req.params.id)) return res.status(404).json({ error: { code: "not_found" } });
@@ -232,14 +234,14 @@ router.patch("/:id", adminOnly, safeHandler(async (req: any, res: any) => {
   respondOk(res, { ...rows[0], issues });
 }));
 
-router.delete("/:id", adminOnly, safeHandler(async (req: any, res: any) => {
+router.delete("/:id", writers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   if (!isUuid(req.params.id)) return res.status(404).json({ error: { code: "not_found" } });
   const r = await pool.query(`DELETE FROM automation_rules WHERE id = $1::uuid AND silo = $2`, [req.params.id, silo]);
   respondOk(res, { deleted: r.rowCount ?? 0 });
 }));
 
-router.post("/:id/validate", staff, safeHandler(async (req: any, res: any) => {
+router.post("/:id/validate", readers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   if (!isUuid(req.params.id)) return res.status(404).json({ error: { code: "not_found" } });
   const { rows } = await pool.query(`SELECT ${COLS} FROM automation_rules WHERE id = $1::uuid AND silo = $2`, [req.params.id, silo]);
@@ -251,7 +253,7 @@ router.post("/:id/validate", staff, safeHandler(async (req: any, res: any) => {
   respondOk(res, { issues: validateGraph(graph, b.settings ?? rule.settings, b.goal !== undefined ? b.goal : rule.goal, await refsFor(rule.silo ?? silo)) });
 }));
 
-router.get("/:id/performance", staff, safeHandler(async (req: any, res: any) => {
+router.get("/:id/performance", readers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   if (!isUuid(req.params.id)) return res.status(404).json({ error: { code: "not_found" } });
   const r = await pool.query(`SELECT id FROM automation_rules WHERE id = $1::uuid AND silo = $2`, [req.params.id, silo]);
@@ -272,7 +274,7 @@ router.get("/:id/performance", staff, safeHandler(async (req: any, res: any) => 
   respondOk(res, { enrolled: Number(k.enrolled) || 0, active: Number(k.active) || 0, completed: Number(k.completed) || 0, goalReached: Number(k.goal_reached) || 0, byNode });
 }));
 
-router.get("/:id/history", staff, safeHandler(async (req: any, res: any) => {
+router.get("/:id/history", readers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   if (!isUuid(req.params.id)) return res.status(404).json({ error: { code: "not_found" } });
   const contactId = isUuid(req.query?.contactId) ? String(req.query.contactId) : null;
@@ -287,7 +289,7 @@ router.get("/:id/history", staff, safeHandler(async (req: any, res: any) => {
   respondOk(res, rows);
 }));
 
-router.get("/:id/enrollments", staff, safeHandler(async (req: any, res: any) => {
+router.get("/:id/enrollments", readers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const { rows } = await pool.query(
     `SELECT e.id::text, e.status, e.current_step, e.current_node_id, e.next_run_at, e.last_error, e.test_mode, e.created_at, e.completed_at,
@@ -297,8 +299,8 @@ router.get("/:id/enrollments", staff, safeHandler(async (req: any, res: any) => 
   respondOk(res, rows);
 }));
 
-// Manual trigger: staff enroll a contact (or application). testMode runs every action as a dry run.
-router.post("/:id/enroll", staff, safeHandler(async (req: any, res: any) => {
+// Manual trigger: Admin / Marketing enroll a contact (or application). testMode runs every action as a dry run.
+router.post("/:id/enroll", writers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const contactId = isUuid(req.body?.contactId) ? req.body.contactId : null;
   const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId : null;

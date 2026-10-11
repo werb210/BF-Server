@@ -170,7 +170,8 @@ export async function removeParticipant(roomId: string, participantId: string): 
 }
 
 /** Name / email / phone search across Boreal Financial CRM contacts and active staff. */
-export async function searchPeople(q: string): Promise<Array<Person & { kind: "contact" | "staff"; detail: string }>> {
+// BF_SERVER_v787_WORKFLOW_ACCESS - contacts come from the caller's silo (default BF).
+export async function searchPeople(q: string, silo: string = "BF"): Promise<Array<Person & { kind: "contact" | "staff"; detail: string }>> {
   const term = String(q ?? "").trim();
   if (term.length < 2) return [];
   const like = "%" + term.replace(/[%_]/g, "") + "%";
@@ -178,9 +179,9 @@ export async function searchPeople(q: string): Promise<Array<Person & { kind: "c
     `SELECT id::text AS "contactId", COALESCE(NULLIF(name, ''), trim(COALESCE(first_name,'') || ' ' || COALESCE(last_name,''))) AS name,
             email, phone, company_name
        FROM contacts
-      WHERE silo = 'BF' AND merged_into_id IS NULL
+      WHERE silo = $2 AND merged_into_id IS NULL
         AND (name ILIKE $1 OR first_name ILIKE $1 OR last_name ILIKE $1 OR email ILIKE $1 OR company_name ILIKE $1 OR phone ILIKE $1)
-      ORDER BY updated_at DESC NULLS LAST LIMIT 8`, [like]);
+      ORDER BY updated_at DESC NULLS LAST LIMIT 8`, [like, String(silo || "BF").toUpperCase()]);
   const staff = await pool.query(
     `SELECT id::text AS "userId", trim(COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')) AS name, email, phone_number AS phone
        FROM users
