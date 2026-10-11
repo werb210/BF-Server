@@ -108,7 +108,7 @@ describe("automation endpoints", () => {
 
   it("POST /:id/enroll enrolls a contact by hand", async () => {
     db.rule.graph = goodGraph;
-    const r = await request(app("Staff")).post(`/api/automations/${RULE}/enroll`).send({ contactId: CONTACT });
+    const r = await request(app("Marketing")).post(`/api/automations/${RULE}/enroll`).send({ contactId: CONTACT });
     expect(r.body.data).toEqual({ enrollmentId: "e-77", outcome: "completed" });
     expect(enrollGraph).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: RULE }), expect.objectContaining({ contact_id: CONTACT }), { ignoreReenroll: true });
   });

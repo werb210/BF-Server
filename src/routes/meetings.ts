@@ -5,6 +5,7 @@ import { pool } from "../db.js";
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
+import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { createRoom, recentDuplicateRoom, roomBySlug, inviteText, joinUrl, oneTapDial, isOpen, DIAL_IN_DISPLAY, type MeetingRoom } from "../services/meetingRooms.js";
 import { addParticipants, listParticipants, removeParticipant, searchPeople, MAX_PEOPLE, type Person } from "../services/meetingRooms.js"; // BF_SERVER_MEETING_PARTICIPANTS_v737
 import { notifyMeeting, cancelMeetingNotices } from "../services/meetingNotify.js"; // BF_SERVER_MEETING_NOTIFY_v741
@@ -105,8 +106,9 @@ async function roomById(id: string): Promise<MeetingRoom | null> {
   return rows[0] ?? null;
 }
 
+// BF_SERVER_v787_WORKFLOW_ACCESS - search the request's silo (X-Silo), so BI workflows enroll BI contacts.
 router.get("/people", ...staff, safeHandler(async (req: any, res: any) => {
-  res.json({ people: await searchPeople(String(req.query?.q ?? "")), max: MAX_PEOPLE });
+  res.json({ people: await searchPeople(String(req.query?.q ?? ""), resolveSiloFromRequest(req)), max: MAX_PEOPLE });
 }));
 
 router.get("/:id/participants", ...staff, safeHandler(async (req: any, res: any) => {
