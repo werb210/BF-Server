@@ -15,7 +15,6 @@ import { countEmailRecipients, runEmailSend, countSmsRecipients, runSmsSend } fr
 import { createLandingPageFromHtml, withViewInBrowser } from "../services/landingPage.service.js"; // BF_SERVER_MAYA_MKT_TOOLS_v1
 import { runPipelineQuery } from "../services/mayaPipelineQuery.js";
 import { retrieveContext } from "../modules/ai/knowledge.service.js";
-import { sendSms } from "../modules/notifications/sms.service.js";
 import { parseAndResolveMentions } from "../services/notes/mentions.js"; // BF_SERVER_MAYA_CRM_TOOLS_v1
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
@@ -446,7 +445,13 @@ router.post(
   }),
 );
 
-// BF_SERVER_MAYA_STAFF_SEND_SMS — 2-step: returns a draft unless approved===true, then sends via Twilio.
+// BF_SERVER_MAYA_STAFF_SEND_SMS
+// BF_SERVER_v784_MAYA_SMS_CONFIRM - Maya NEVER sends from here any more. Every
+// valid request (approved or not) only queues a maya_pending_actions row; the
+// staff member confirms it in the portal (POST /api/maya/pending-actions/:id/confirm),
+// which is the only place the SMS is actually sent. The agent's old 2-step flow
+// (draft, then approved=true) calls this twice with the same text, so an
+// identical pending, unexpired row for the same staff user is reused.
 router.post(
   "/staff/send-sms",
   safeHandler(async (req: Request, res: Response) => {
@@ -456,6 +461,12 @@ router.post(
     const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
     let to = typeof req.body?.to === "string" ? req.body.to.trim() : "";
     const contactId = typeof req.body?.contact_id === "string" ? req.body.contact_id.trim() : "";
+    const applicationId = typeof req.body?.application_id === "string" ? req.body.application_id.trim() : "";
+    const staffUserId = typeof req.body?.staff_user_id === "string" && req.body.staff_user_id.trim()
+      ? req.body.staff_user_id.trim()
+      : typeof req.body?.user_id === "string" && req.body.user_id.trim() ? req.body.user_id.trim() : null;
+    const siloRaw = typeof req.body?.silo === "string" ? req.body.silo : (req.header("x-silo") || "");
+    const silo = ["BF", "BI", "SLF"].includes(siloRaw.trim().toUpperCase()) ? siloRaw.trim().toUpperCase() : null;
     const approved = req.body?.approved === true;
     if (!body) return res.status(400).json({ ok: false, error: "body_required" });
     try {
@@ -464,14 +475,29 @@ router.post(
         to = cr.rows[0]?.phone ?? "";
       }
       if (!to) return res.status(400).json({ ok: false, error: "recipient_required" });
-      if (!approved) {
-        await audit({ audience: "staff", tool: "comm.send_sms", args: { to, contact_id: contactId, approved: false }, ok: true, summary: `draft sms to ${to}`, userId: typeof req.body?.user_id === "string" ? req.body.user_id : null, sessionId: typeof req.body?.session_id === "string" ? req.body.session_id : null });
-        return res.json({ ok: true, draft: true, to, body, status: "draft_pending_approval", note: "Draft only — re-call with approved=true to send after staff confirms." });
+      const payload: Record<string, unknown> = { to, body };
+      if (contactId) payload.contactId = contactId;
+      if (applicationId) payload.applicationId = applicationId;
+      const existing = await pool.query<{ id: string }>(
+        `SELECT id FROM maya_pending_actions
+          WHERE kind = 'sms' AND status = 'pending' AND expires_at > now()
+            AND staff_user_id IS NOT DISTINCT FROM $1
+            AND payload->>'to' = $2 AND payload->>'body' = $3
+          ORDER BY created_at DESC LIMIT 1`,
+        [staffUserId, to, body],
+      );
+      let pendingId: string | null = existing.rows[0]?.id ?? null;
+      if (!pendingId) {
+        const ins = await pool.query<{ id: string }>(
+          `INSERT INTO maya_pending_actions (kind, payload, staff_user_id, silo)
+           VALUES ('sms', $1::jsonb, $2, $3)
+           RETURNING id`,
+          [JSON.stringify(payload), staffUserId, silo],
+        );
+        pendingId = ins.rows[0]?.id ?? null;
       }
-      const r: any = await sendSms({ to, message: body });
-      const sid = r?.sid ?? null;
-      await audit({ audience: "staff", tool: "comm.send_sms", args: { to, contact_id: contactId, approved: true }, ok: true, summary: `sent sms to ${to}`, userId: typeof req.body?.user_id === "string" ? req.body.user_id : null, sessionId: typeof req.body?.session_id === "string" ? req.body.session_id : null });
-      return res.json({ ok: true, sent: true, to, sid });
+      await audit({ audience: "staff", tool: "comm.send_sms", args: { to, contact_id: contactId, approved, pending_id: pendingId }, ok: true, summary: `queued sms to ${to} for staff confirmation`, userId: staffUserId, sessionId: typeof req.body?.session_id === "string" ? req.body.session_id : null });
+      return res.json({ ok: true, pending: true, pendingId, preview: { to, body } });
     } catch (e: any) {
       await audit({ audience: "staff", tool: "comm.send_sms", args: { to, contact_id: contactId, approved }, ok: false, summary: e?.message ?? "error", errorCode: "send_sms_exception" });
       logError("maya_send_sms_failed", { code: "maya_send_sms_failed", error: e?.message ?? "unknown" });

@@ -5,7 +5,7 @@
 // submit the insurance side by hand.
 //
 // bi-server already owns carrier dispatch end to end:
-//   POST /api/application/:id/submit-pgi -> submitApplicationToPGI()
+//   POST /api/v1/bi/application/:id/submit-pgi -> submitApplicationToPGI()
 // which validates, checks assertDocsReadyForCarrier, and talks to the carrier.
 // So this is a call, not a reimplementation.
 //
@@ -15,17 +15,51 @@ import jwt from "jsonwebtoken";
 import { pool } from "../db.js";
 import { logError, logInfo } from "../observability/logger.js";
 
-const BI_SERVER_URL =
-  process.env.BI_SERVER_URL || process.env.BI_BASE_URL || "https://bi-server.azurewebsites.net";
+// BF_SERVER_v784_BI_CARRIER - the old call went to /api/application/:id/submit-pgi
+// on a host BI does not run on, with a token BI does not accept. BI serves
+// POST /api/v1/bi/application/:id/submit-pgi (BI's own API, hence /v1/) keyed
+// by BI's internal id, which BF does not store - so resolve it first through
+// BI's read-only pgi-readiness lookup, exactly as pgiStage.ts does.
+function biBaseUrl(): string {
+  return (process.env.BI_SERVER_URL || "https://bi-server-cse0apamgkheb9d5.canadacentral-01.azurewebsites.net").replace(/\/+$/, "");
+}
 
 function getSecret(): string {
-  const s = process.env.BF_BI_SHARED_SECRET || process.env.JWT_SECRET || "";
-  if (!s) throw new Error("bi_shared_secret_missing");
+  const s = process.env.JWT_SECRET || "";
+  if (!s) throw new Error("jwt_secret_missing");
   return s;
 }
 
-function mintServiceJwt(): string {
-  return jwt.sign({ sub: "bf-server", scope: "bi:service" }, getSecret(), { expiresIn: "5m" });
+export function mintServiceJwt(): string {
+  return jwt.sign({ kind: "service", service: "bf-server" }, getSecret(), { algorithm: "HS256", expiresIn: "5m" });
+}
+
+// BI's Maya read routes accept source 'maya-service' only (see mayaStaff.ts).
+function mintLookupJwt(): string {
+  return jwt.sign({ kind: "service", source: "maya-service" }, getSecret(), { algorithm: "HS256", expiresIn: "5m" });
+}
+
+async function lookupBiInternalId(publicId: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const resp = await fetch(`${biBaseUrl()}/api/v1/bi/maya/staff/pgi-readiness`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${mintLookupJwt()}` },
+      body: JSON.stringify({ public_id: publicId }),
+      signal: controller.signal,
+    });
+    const body: any = await resp.json().catch((err) => {
+      logError("bi_carrier_lookup_parse_failed", { publicId, error: String(err) });
+      return null;
+    });
+    if (!resp.ok || !body?.ok) return null;
+    const r = body.result ?? {};
+    const id = r.applicationId ?? r.application_id ?? r.id ?? r.application?.id ?? null;
+    return id == null || id === "" ? null : String(id);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export type CarrierSubmitResult =
@@ -55,7 +89,19 @@ export async function submitBiToCarrier(bfApplicationId: string): Promise<Carrie
   // No BI application means the applicant declined PGI at Step 6. Expected.
   if (!publicId) return { ok: true, skipped: "no_pgi" };
 
-  const url = `${BI_SERVER_URL.replace(/\/+$/, "")}/api/application/${encodeURIComponent(publicId)}/submit-pgi`;
+  let biId: string | null = null;
+  try {
+    biId = await lookupBiInternalId(publicId);
+  } catch (err) {
+    logError("bi_carrier_bi_lookup_failed", { bfApplicationId, publicId, error: String(err) });
+    return { ok: false, reason: "bi_lookup_failed" };
+  }
+  if (!biId) {
+    logError("bi_carrier_bi_id_missing", { bfApplicationId, publicId });
+    return { ok: false, reason: "bi_id_not_found" };
+  }
+
+  const url = `${biBaseUrl()}/api/v1/bi/application/${encodeURIComponent(biId)}/submit-pgi`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
 

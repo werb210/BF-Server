@@ -18,8 +18,10 @@ describe("sendgrid webhook visibility", () => {
     expect(hook).toContain("contactsResolved: resolved");
   });
 
-  it("warns when the key is unset, since that silently accepts unsigned posts", () => {
-    expect(hook).toContain("SENDGRID_WEBHOOK_PUBLIC_KEY is not set");
+  // BF_SERVER_v784_WEBHOOK_SIGNATURES - an unset key now rejects instead of accepting unsigned posts.
+  it("logs and rejects when the key is unset", () => {
+    expect(hook).toContain("SENDGRID_WEBHOOK_PUBLIC_KEY unset - rejecting");
+    expect(hook).not.toContain("accepting unsigned posts");
   });
 
   it("never logs the key or the signature themselves", () => {

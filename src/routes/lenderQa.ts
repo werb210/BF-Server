@@ -9,7 +9,8 @@
 // /api/portal/applications/:id/qa/...
 import { Router, type Response, type NextFunction } from "express";
 import { pool } from "../db.js";
-import { requireAuth, type AuthRequest } from "../middleware/auth.js";
+import { requireAuth, requireAuthAllowClient, type AuthRequest } from "../middleware/auth.js";
+import { requireApplicationAccess } from "../auth/clientApplicationOwnership.js"; // BF_SERVER_v784_CLIENT_OWNERSHIP
 import { ROLES } from "../auth/roles.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { sendSMS } from "../services/smsService.js";
@@ -392,16 +393,19 @@ router.post(
 );
 
 // ---------------------------------------------------------------------------
-// CLIENT endpoints (CMP) -- requireAuth only (the applicant is authenticated
-// via OTP), mirroring application_form_responses.
+// CLIENT endpoints (CMP) -- the applicant is authenticated via OTP.
+// BF_SERVER_v784_CLIENT_OWNERSHIP - these used to take any token and never tied
+// the question / set to the application in the path. A client token must own
+// the application, and every write is scoped to that application's sets.
 // ---------------------------------------------------------------------------
 
 // The questions the client currently needs to answer (sent or rejected).
 router.get(
   "/applications/:id/qa/open",
-  requireAuth,
+  requireAuthAllowClient,
   async (req: AuthRequest, res: Response) => {
     const appId = String(req.params.id);
+    if (!(await requireApplicationAccess(req, res, appId))) return;
     try {
       const setRes = await pool.query(
         `SELECT id, round, status FROM qa_sets
@@ -432,9 +436,11 @@ router.get(
 // Autosave a single answer (kept editable until the client submits).
 router.patch(
   "/applications/:id/qa/questions/:qid/answer",
-  requireAuth,
+  requireAuthAllowClient,
   async (req: AuthRequest, res: Response) => {
+    const appId = String(req.params.id);
     const qid = String(req.params.qid);
+    if (!(await requireApplicationAccess(req, res, appId))) return;
     const answerText =
       req.body?.answer_text === undefined ? null : String(req.body.answer_text);
     const answerDocumentId =
@@ -446,8 +452,9 @@ router.patch(
                 answer_document_id = COALESCE($3, answer_document_id),
                 updated_at = now()
           WHERE id = $1 AND review_status = ANY($4::text[])
+            AND set_id IN (SELECT id FROM qa_sets WHERE application_id::text = ($5)::text)
           RETURNING id`,
-        [qid, answerText, answerDocumentId, ANSWERABLE],
+        [qid, answerText, answerDocumentId, ANSWERABLE, appId],
       );
       if (!r.rows[0]) {
         res.status(409).json({ error: "not_answerable" });
@@ -465,12 +472,21 @@ router.patch(
 // flag the set, and notify staff.
 router.post(
   "/applications/:id/qa/sets/:setId/answers/submit",
-  requireAuth,
+  requireAuthAllowClient,
   async (req: AuthRequest, res: Response) => {
     const appId = String(req.params.id);
     const setId = String(req.params.setId);
     const silo = resolveSiloFromRequest(req);
+    if (!(await requireApplicationAccess(req, res, appId))) return;
     try {
+      const owned = await pool.query(
+        `SELECT 1 FROM qa_sets WHERE id = $1 AND application_id::text = ($2)::text LIMIT 1`,
+        [setId, appId],
+      );
+      if (!owned.rows[0]) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
       const moved = await pool.query<{ n: string }>(
         `WITH m AS (
            UPDATE qa_questions

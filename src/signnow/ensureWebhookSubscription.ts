@@ -17,9 +17,15 @@ export async function ensureSignnowWebhook(): Promise<void> {
   // /signed|complete/ event). Register each best-effort: an unknown event name on a
   // given SignNow plan must not block the others or crash startup.
   const events = ["user.document.fieldinvite.signed", "user.document.complete"];
+  // BF_SERVER_v784_WEBHOOK_SIGNATURES - register (or update) with secret_key so SignNow
+  // signs callbacks; the webhook route rejects unsigned ones.
+  const secret = (process.env.SIGNNOW_WEBHOOK_SECRET ?? "").trim();
+  if (!secret) {
+    console.error("[signnow-webhook] SIGNNOW_WEBHOOK_SECRET unset - subscriptions will be unsigned and every callback will be rejected");
+  }
   for (const ev of events) {
     try {
-      const r = await ensureUserSignedSubscription(callback, ev);
+      const r = await ensureUserSignedSubscription(callback, ev, secret);
       console.log(`[signnow-webhook] ${r.summary}`);
     } catch (e) {
       console.error(

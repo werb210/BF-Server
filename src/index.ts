@@ -17,12 +17,16 @@ function logFatal(tag: string, err: unknown): void {
   if (e?.stack) console.error(e.stack);
 }
 
+// BF_SERVER_v784_PROCESS_HANDLERS - an unhandled rejection is logged only (one
+// stray promise must not take the API down); an uncaught exception leaves the
+// process in an undefined state, so log and exit(1) and let the host restart it.
 process.on("unhandledRejection", (err) => {
   logFatal("[UNHANDLED REJECTION]", err);
 });
 
 process.on("uncaughtException", (err) => {
   logFatal("[UNCAUGHT EXCEPTION]", err);
+  process.exit(1);
 });
 
 import "./system/errors.js";
@@ -435,5 +439,9 @@ export async function start(): Promise<void> {
 }
 
 if (process.env.NODE_ENV !== "test") {
-  start().catch(console.error);
+  // BF_SERVER_v784_PROCESS_HANDLERS - a failed boot must not leave a half-started process.
+  start().catch((err) => {
+    logFatal("[STARTUP FAILED]", err);
+    process.exit(1);
+  });
 }

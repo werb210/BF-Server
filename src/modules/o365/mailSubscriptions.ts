@@ -107,6 +107,19 @@ async function fetchSentMessage(graph: GraphClient, messageId: string): Promise<
   return text ? (JSON.parse(text) as SentMessage) : null;
 }
 
+// BF_SERVER_v784_GRAPH_CLIENT_STATE - a notification is trusted only when its
+// clientState is present and exactly equals the secret stored for that
+// subscription. Missing on either side, or any difference, means drop it: the
+// webhook is anonymous, and subscription ids are not secret.
+export function clientStateMatches(received: unknown, stored: unknown): boolean {
+  if (typeof received !== "string" || typeof stored !== "string") return false;
+  if (!received || !stored) return false;
+  const a = Buffer.from(received, "utf8");
+  const b = Buffer.from(stored, "utf8");
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
 export async function handleGraphNotifications(pool: Pool, values: GraphNotification[]): Promise<void> {
   for (const n of values) {
     try {
@@ -117,7 +130,10 @@ export async function handleGraphNotifications(pool: Pool, values: GraphNotifica
       );
       const sub = r.rows[0];
       if (!sub) continue;
-      if (n.clientState && sub.client_state && n.clientState !== sub.client_state) continue;
+      if (!clientStateMatches(n.clientState, sub.client_state)) {
+        console.warn("[graph-webhook] notification dropped: clientState mismatch", { subscriptionId: n.subscriptionId });
+        continue;
+      }
       if (sub.resource === SENT_RESOURCE) {
         const messageId = n.resourceData?.id;
         if (!messageId) continue;

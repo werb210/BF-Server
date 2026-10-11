@@ -52,8 +52,10 @@ router.get(
 );
 
 // POST /api/messages
+// BF_SERVER_v784_MESSAGES_STAFF_AUTH - this sent SMS on behalf of Boreal with no auth at all.
 router.post(
   "/",
+  requireAuth,
   safeHandler(async (req: any, res: any, _next: any) => {
     let applicationId = "";
     let body = "";

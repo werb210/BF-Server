@@ -13,7 +13,7 @@ describe("Portal issues routes", () => {
 
   beforeAll(() => {
     app = createServer();
-    authHeader = `Bearer ${generateTestToken({ role: "staff" })}`;
+    authHeader = `Bearer ${generateTestToken({ role: "Staff" })}`;
   });
 
   beforeEach(() => {

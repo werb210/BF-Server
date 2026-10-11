@@ -4,7 +4,8 @@ import { z } from "zod";
 import { pool, runQuery } from "../../db.js";
 import { config } from "../../config/index.js";
 import { AppError } from "../../middleware/errors.js";
-import { requireAuth } from "../../middleware/requireAuth.js";
+// BF_SERVER_v784_STAFF_ONLY_AUTH - these routes serve the client app; each checks the phone claim itself.
+import { requireAuthAllowClient } from "../../middleware/requireAuth.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { prettyDocLabel } from "../../lib/docDisplay.js"; // BF_SERVER_PNL_DISPLAY_v1
 import { ApplicationStage, statusFromPipeline } from "../../modules/applications/pipelineState.js";
@@ -1722,7 +1723,7 @@ router.get(
 // BF_SERVER_CLIENT_LENDER_RESPONSES_v4
 router.get(
   "/application/:id/lender-responses",
-  requireAuth,
+  requireAuthAllowClient,
   safeHandler(async (req: any, res: any) => {
     const applicationId = String(req.params.id ?? "").trim();
     if (!applicationId) {
@@ -1765,7 +1766,7 @@ router.get(
 
 router.get(
   "/applications/by-phone",
-  requireAuth,
+  requireAuthAllowClient,
   safeHandler(async (req: any, res: any) => {
     // BF_SERVER_BLOCK_v727_MULTI_APP_BY_PHONE_v1 - return ALL of the caller's
     // applications (multi-application switcher), matched by last-10 phone digits
@@ -1824,7 +1825,7 @@ router.get(
 // The signed-in client brings their own on-hold file back to In Review.
 router.post(
   "/applications/:id/reactivate",
-  requireAuth,
+  requireAuthAllowClient,
   safeHandler(async (req: any, res: any) => {
     const applicationId = String(req.params.id ?? "").trim();
     if (!/^[0-9a-f-]{36}$/i.test(applicationId)) return res.status(400).json({ error: "invalid_application_id" });

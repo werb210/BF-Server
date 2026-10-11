@@ -41,3 +41,17 @@ export function normalizeRole(value: string): Role | null {
   const normalized = value.trim().toLowerCase();
   return ROLE_BY_LOWERCASE.get(normalized) ?? null;
 }
+
+// BF_SERVER_v784_STAFF_ONLY_AUTH - the human staff roles. Lender and Referrer are
+// in ROLES for their own portals but are NOT staff; the staff middleware only
+// admits these (plus service principals).
+export const STAFF_ROLES: ReadonlySet<string> = new Set<string>([
+  ROLES.ADMIN,
+  ROLES.STAFF,
+  ROLES.OPS,
+  ROLES.MARKETING,
+]);
+
+export function isStaffRole(value: unknown): boolean {
+  return typeof value === "string" && STAFF_ROLES.has(value);
+}

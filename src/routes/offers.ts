@@ -6,7 +6,8 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { eventBus } from "../events/eventBus.js";
 // BF_SERVER_BLOCK_v138_E2E_FIX_BATCH_v1 — AUDIT-11 regression repair: stop
 // public reads/writes on /api/offers, /api/offers/:id/status.
-import { requireAuth, requireAuthorization } from "../middleware/auth.js";
+import { requireAuth, requireAuthAllowClient, requireAuthorization } from "../middleware/auth.js";
+import { requireApplicationAccess } from "../auth/clientApplicationOwnership.js"; // BF_SERVER_v784_CLIENT_OWNERSHIP
 import { ROLES } from "../auth/roles.js";
 import multer from "multer";
 import { getStorage } from "../lib/storage/index.js";
@@ -237,15 +238,31 @@ router.patch(
   })
 );
 
+// BF_SERVER_v784_CLIENT_OWNERSHIP - a client token reaches an offer only
+// through an application it owns; staff and service pass.
+async function requireOfferAccess(req: any, res: any, offerId: string): Promise<boolean> {
+  const r = await runQuery<{ application_id: string | null }>(
+    `select application_id::text as application_id from offers where id::text = $1 limit 1`,
+    [offerId],
+  );
+  const applicationId = r.rows[0]?.application_id ?? null;
+  if (!applicationId) {
+    res.status(404).json({ error: "not_found" });
+    return false;
+  }
+  return requireApplicationAccess(req, res, applicationId);
+}
+
 // Client requests changes to an offer: a flag + staff notification, NOT a
 // decline and NOT a stage change. Keep the offer active so staff can follow up
 // with the lender and re-issue.
 router.post(
   "/:id/request-changes",
-  requireAuth,
+  requireAuthAllowClient, // BF_SERVER_v784_STAFF_ONLY_AUTH - the client app asks for changes
   safeHandler(async (req: any, res: any) => {
     const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
     if (!id) throw new AppError("validation_error", "Offer id is required.", 400);
+    if (!(await requireOfferAccess(req, res, id))) return;
     const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
     const { getSilo } = await import("../middleware/silo.js");
     const callerSilo = getSilo(res) ?? null;
@@ -287,8 +304,9 @@ router.post(
 // handing the browser a raw/SAS blob URL. Fixes: SAS expiry, private-container 403s,
 // and wrong Content-Type (Chrome renders an XML error as "Failed to load PDF document").
 // Streams with the correct inline PDF headers and validates the %PDF- magic bytes.
-router.get("/:id/term-sheet", requireAuth, safeHandler(async (req: any, res: any) => {
+router.get("/:id/term-sheet", requireAuthAllowClient, safeHandler(async (req: any, res: any) => {
   const offerId = String(req.params.id);
+  if (!(await requireOfferAccess(req, res, offerId))) return; // BF_SERVER_v784_CLIENT_OWNERSHIP
   const row = await runQuery<{ term_sheet_blob_name: string | null; term_sheet_filename: string | null }>(
     `select term_sheet_blob_name, term_sheet_filename from offers where id::text = $1 limit 1`,
     [offerId],

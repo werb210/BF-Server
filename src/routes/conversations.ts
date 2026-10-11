@@ -109,10 +109,12 @@ router.post("/conversations/:id/messages", requireAuth, safeHandler(async (req: 
 }));
 
 router.get("/conversations/:id/stream", async (req, res) => {
-  const jwt = await import("jsonwebtoken");
-  const token = String(req.query.token ?? "");
-  try { jwt.verify(token, String(process.env.JWT_SECRET ?? "")); }
-  catch { return res.status(401).end(); }
+  // BF_SERVER_v784_STAFF_ONLY_AUTH - staff live updates: staff humans and services only.
+  const { verifyPrincipalToken, staffRejectionStatus } = await import("../auth/principal.js");
+  const principal = verifyPrincipalToken(String(req.query.token ?? ""));
+  if (!principal) return res.status(401).end();
+  const rejection = staffRejectionStatus(principal);
+  if (rejection) return res.status(rejection).end();
 
   res.set({
     "Content-Type": "text/event-stream",

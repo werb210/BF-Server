@@ -29,9 +29,25 @@ export async function fetchTwilioMedia(
 ): Promise<{ buffer: Buffer; contentType: string } | null> {
   const sid = process.env.TWILIO_ACCOUNT_SID ?? "";
   const tok = process.env.TWILIO_AUTH_TOKEN ?? "";
-  const isTwilio = /api\.twilio\.com/.test(url);
+  // BF_SERVER_v784_WEBHOOK_SIGNATURES - the old /api\.twilio\.com/ substring test matched
+  // e.g. https://evil.example/api.twilio.com and sent our Twilio Basic auth there (SSRF +
+  // credential leak). Only fetch https://api.twilio.com/...; refuse anything else.
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    // eslint-disable-next-line no-console
+    console.error({ event: "mms_media_fetch_refused", reason: "invalid_url" });
+    return null;
+  }
+  if (parsed.protocol !== "https:" || parsed.hostname !== "api.twilio.com") {
+    // eslint-disable-next-line no-console
+    console.error({ event: "mms_media_fetch_refused", reason: "host_not_allowed", protocol: parsed.protocol, host: parsed.hostname });
+    return null;
+  }
+  const isTwilio = true;
   const headers: Record<string, string> = {};
-  if (isTwilio && sid && tok) {
+  if (sid && tok) {
     headers.Authorization = "Basic " + Buffer.from(`${sid}:${tok}`).toString("base64");
   }
   try {

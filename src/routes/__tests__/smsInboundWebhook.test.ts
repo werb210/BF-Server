@@ -4,6 +4,8 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }));
 vi.mock("../../db.js", async () => ({ ...(await vi.importActual<any>("../../db.js")), pool: { query: queryMock } }));
+// BF_SERVER_v784_WEBHOOK_SIGNATURES - the route now requires a Twilio signature; signature behaviour is covered in webhookSignatures.v784.test.ts.
+vi.mock("../../middleware/twilioWebhookValidation.js", () => ({ twilioWebhookValidation: (_req: any, _res: any, next: any) => next() }));
 
 describe("smsInboundWebhook", () => {
   beforeEach(() => queryMock.mockReset());

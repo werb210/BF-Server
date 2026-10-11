@@ -187,8 +187,8 @@ async function sendStub(applicationId: string, blobName: string, blobUrl: string
 }
 async function simulateSignedWebhook(applicationId: string, documentId: string): Promise<void> {
   const stamped = await dbQuery<{ id: string }>(`UPDATE applications SET signnow_app_signed_at = now(), updated_at = now() WHERE id::text = ($1)::text AND signnow_app_signed_at IS NULL RETURNING id`, [applicationId]); if (stamped.rows.length === 0) return;
-  await dbQuery(`UPDATE applicants SET ssn = null, sin = null, updated_at = now() WHERE application_id = $1`, [applicationId]).catch(() => {});
-  await dbQuery(`UPDATE application_partners SET ssn = null, sin = null, updated_at = now() WHERE application_id = $1`, [applicationId]).catch(() => {});
+  await dbQuery(`UPDATE applicants SET ssn = null, sin = null, updated_at = now() WHERE application_id = $1`, [applicationId]).catch((err) => console.error("[signnow-stub] ssn/sin purge failed (applicants)", err instanceof Error ? err.message : String(err))); // BF_SERVER_v784_SSN_PURGE_LOG
+  await dbQuery(`UPDATE application_partners SET ssn = null, sin = null, updated_at = now() WHERE application_id = $1`, [applicationId]).catch((err) => console.error("[signnow-stub] ssn/sin purge failed (application_partners)", err instanceof Error ? err.message : String(err))); // BF_SERVER_v784_SSN_PURGE_LOG
   const c = await dbQuery<{ crm_contact_id: string | null }>(`SELECT crm_contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1`, [applicationId]).catch(() => ({ rows: [] as Array<{ crm_contact_id: string | null }> }));
   const contactId = c.rows[0]?.crm_contact_id; if (contactId) await logCrmEvent({ contactId, applicationId, eventType: "signnow_signed", payload: { documentId, stub: true } }).catch(() => {});
   await dbQuery(`INSERT INTO job_queue (id, type, payload, status, created_at) VALUES (gen_random_uuid(), 'send_lender_package', $1::jsonb, 'pending', now()) ON CONFLICT ((payload->>'applicationId')) WHERE type = 'send_lender_package' AND status IN ('pending','running') DO NOTHING`, [JSON.stringify({ applicationId })]).catch(() => {});

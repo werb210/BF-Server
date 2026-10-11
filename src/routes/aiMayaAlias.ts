@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { safeHandler } from "../middleware/safeHandler.js";
-import { proxyMayaToAgent } from "./maya.js";
+import { proxyMayaToAgent, mayaProxyRateLimit } from "./maya.js";
 
 const router = Router();
 
 // BF_SERVER_BLOCK_v638_MULTIFIX_v1 — pass req to the proxy so headers land at the agent.
 router.post(
   "/message",
+  mayaProxyRateLimit, // BF_SERVER_v784_MAYA_RATE_LIMIT
   safeHandler(async (req: any, res: any) => {
     await proxyMayaToAgent("/api/maya/message", "POST", req.body, res, req);
   })
@@ -14,6 +15,7 @@ router.post(
 
 router.post(
   "/chat",
+  mayaProxyRateLimit, // BF_SERVER_v784_MAYA_RATE_LIMIT
   safeHandler(async (req: any, res: any) => {
     await proxyMayaToAgent("/api/maya/chat", "POST", req.body, res, req);
   })
@@ -21,6 +23,7 @@ router.post(
 
 router.post(
   "/escalate",
+  mayaProxyRateLimit, // BF_SERVER_v784_MAYA_RATE_LIMIT
   safeHandler(async (req: any, res: any) => {
     await proxyMayaToAgent("/maya/escalate", "POST", req.body, res, req);
   })
@@ -34,7 +37,7 @@ router.post(
 // agent expects { message, sessionId }) and forwards. Without this
 // route, every chat call returned 404 and the widget showed the
 // "I'm having trouble" fallback (see FloatingChat.tsx line 95).
-router.post("/maya/website-chat", async (req, res) => {
+router.post("/maya/website-chat", mayaProxyRateLimit, async (req, res) => {
   try {
     const websitePayload = req.body ?? {};
     const messageText: string = String(websitePayload.message ?? "").trim();
@@ -43,10 +46,11 @@ router.post("/maya/website-chat", async (req, res) => {
     }
     // Translate to the agent /api/maya/message wire shape. The agent
     // doesn't need attribution; we drop it server-side.
+    // BF_SERVER_v784_MAYA_IDENTITY - no body audience: the proxy derives the
+    // audience from the verified token and sends it in X-Maya-Context.
     const agentPayload = {
       message: messageText,
       sessionId: websitePayload.sessionId ?? null,
-      audience: "visitor",
     };
     await proxyMayaToAgent("/api/maya/message", "POST", agentPayload, res, req);
   } catch (err) {

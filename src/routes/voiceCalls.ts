@@ -552,6 +552,24 @@ router.get("/conferences/:id", auth, async (req, res) => {
   return res.json({ ok: true, conference: conf, participants: parts.rows });
 });
 
+// BF_SERVER_v784_VOICE_STATUS - the dialer posts /api/voice/status, but the
+// handler lived in routes/voice.ts, which is never mounted, so every post 404'd.
+// The dialer sends {callStatus}; the old schema wanted {callId, status}. Both work.
+const CALL_STATUSES = new Set([
+  "queued", "initiated", "ringing", "in-progress", "completed", "busy", "failed", "no-answer", "canceled",
+]);
+router.post("/status", auth, (req: any, res) => {
+  const body = req.body ?? {};
+  const rawStatus = body.status ?? body.callStatus;
+  const status = typeof rawStatus === "string" ? rawStatus.trim().toLowerCase() : "";
+  if (!CALL_STATUSES.has(status)) {
+    return res.status(400).json({ ok: false, error: "invalid_status" });
+  }
+  const rawCallId = body.callId ?? body.callSid;
+  const callId = typeof rawCallId === "string" && rawCallId.trim() ? rawCallId.trim() : null;
+  return res.status(200).json({ status: "ok", data: { received: true, callId, callStatus: status } });
+});
+
 // v504b -- mid-call endpoints live on the same /voice mount
 router.use("/", voiceMidCallRoutes);
 

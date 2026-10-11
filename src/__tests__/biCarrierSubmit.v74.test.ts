@@ -16,7 +16,8 @@ describe("it calls bi-server rather than reimplementing the carrier", () => {
   it("uses the same service-JWT pattern as the document mirror", () => {
     expect(SVC).toContain("mintServiceJwt");
     expect(MIRROR).toContain("mintServiceJwt");
-    expect(SVC).toContain('scope: "bi:service"');
+    // BF_SERVER_v784_BI_CARRIER - BI accepts kind service / service bf-server.
+    expect(SVC).toContain('{ kind: "service", service: "bf-server" }');
   });
 });
 
