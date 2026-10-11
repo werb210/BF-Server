@@ -7,10 +7,12 @@ const proxy = readFileSync(fileURLToPath(new URL("../routes/maya.ts", import.met
 const staff = readFileSync(fileURLToPath(new URL("../routes/mayaStaff.ts", import.meta.url)), "utf-8");
 
 describe("maya client identity", () => {
-  it("proxy decodes the OTP token and injects phone", () => {
-    expect(proxy).toContain('import jwt from "jsonwebtoken"');
-    expect(proxy).toContain("jwt.verify");
-    expect(proxy).toContain("b.phone = tokenPhone");
+  // BF_SERVER_v784_MAYA_IDENTITY - the client phone now travels in the signed
+  // X-Maya-Context derived from the verified token (services/mayaContext.ts), not
+  // in the body; behaviour is covered by mayaIdentity.v784.test.ts.
+  it("proxy derives identity from the verified token and forwards the stripped body", () => {
+    expect(proxy).toContain("deriveMayaIdentity(req)");
+    expect(proxy).toContain("mayaContextHeaders(identity)");
     expect(proxy).toContain("JSON.stringify(fwdBody ?? {})");
   });
 

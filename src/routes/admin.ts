@@ -1,8 +1,12 @@
 import { Router } from "express";
-import { requireAuth, requireCapability } from "../middleware/auth.js";
+import { requireAuth, requireAuthorization, requireCapability } from "../middleware/auth.js";
+import { ROLES } from "../auth/roles.js";
+import fs from "fs";
+import { upload as knowledgeUpload } from "../modules/ai/knowledge.controller.js";
+import { embedAndStore } from "../modules/ai/knowledge.service.js";
 import { adminRateLimit } from "../middleware/rateLimit.js";
 import { CAPABILITIES } from "../auth/capabilities.js";
-import { runQuery } from "../db.js";
+import { pool as knowledgePool, runQuery } from "../db.js";
 import { ok } from "../lib/apiResponse.js";
 import { wrap } from "../lib/routeWrap.js";
 import auditRoutes from "../modules/audit/audit.routes.js";
@@ -805,6 +809,48 @@ router.get("/ai-documents", async (_req: any, res: any) => {
   const r = await pool.query(`SELECT id, COALESCE(source_id, LEFT(content, 60)) AS name FROM ai_knowledge ORDER BY created_at DESC LIMIT 500`);
   res.json(r.rows);
 });
+// BF_SERVER_v784_AI_DOCS_UPLOAD - the AI Knowledge Base page posts here, but
+// only GET and DELETE existed. Same storage as the settings knowledge upload
+// (multer disk -> extract text -> embedAndStore into ai_knowledge), except the
+// row's source_id is the file name so the GET above lists it by name.
+router.post(
+  "/ai-documents",
+  requireAuthorization({ roles: [ROLES.ADMIN] }),
+  knowledgeUpload.single("file"),
+  async (req: any, res: any) => {
+    const file = req.file as Express.Multer.File | undefined;
+    if (!file) return res.status(400).json({ error: "file_required" });
+    const name = file.originalname;
+    try {
+      const buffer = await fs.promises.readFile(file.path);
+      const { extractTextFromBuffer } = await import("../ai/embeddingService.js");
+      let text = "";
+      try {
+        text = ((await extractTextFromBuffer(buffer, file.mimetype || "")) || "").slice(0, 200_000).trim();
+      } catch (err: any) {
+        console.warn("[admin ai-documents] text extraction failed", { name, message: err?.message });
+        return res.status(422).json({ error: "unreadable_file" });
+      }
+      if (!text) return res.status(422).json({ error: "no_text_extracted" });
+      try {
+        await embedAndStore(knowledgePool, text, "sheet", name, name);
+      } catch (err: any) {
+        // embedAndStore has already saved the row without an embedding.
+        if (err?.code === "openai_not_configured" || err?.code === "embedding_failed" || err?.code === "no_vector") {
+          console.warn("[admin ai-documents] stored without embedding", { name, code: err.code });
+          return res.status(201).json({ ok: true, name, indexed: false });
+        }
+        throw err;
+      }
+      return res.status(201).json({ ok: true, name, indexed: true });
+    } catch (err: any) {
+      console.error("[admin ai-documents] upload failed", { name, message: err?.message });
+      return res.status(500).json({ error: "upload_failed" });
+    } finally {
+      fs.unlink(file.path, () => undefined);
+    }
+  },
+);
 router.delete("/ai-documents/:id", async (req: any, res: any) => {
   const pool = (await import("../db.js")).pool;
   await pool.query(`DELETE FROM ai_knowledge WHERE id = $1`, [req.params.id]);

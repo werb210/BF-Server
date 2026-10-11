@@ -224,19 +224,73 @@ export async function listEventSubscriptions(): Promise<unknown[]> {
   const body = (await signnowFetch(`/api/v2/events`, { method: "GET" })) as any;
   return Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : [];
 }
+// BF_SERVER_v784_WEBHOOK_SIGNATURES - subscriptions carry SIGNNOW_WEBHOOK_SECRET as
+// attributes.secret_key so SignNow signs each callback (x-signnow-signature, base64
+// HMAC-SHA256 of the body); routes/signnow.ts now rejects unsigned callbacks. An
+// existing subscription without a secret_key is updated in place (PUT) to add it.
+function subscriptionAttrs(it: unknown): Record<string, unknown> {
+  const o = (it ?? {}) as Record<string, unknown>;
+  const a = (o.attributes ?? o.json_attributes ?? {}) as Record<string, unknown>;
+  return a && typeof a === "object" ? a : {};
+}
+function subscriptionHasSecret(it: unknown): boolean {
+  const a = subscriptionAttrs(it);
+  const v = a.secret_key ?? (it as Record<string, unknown> | null)?.secret_key;
+  return typeof v === "string" ? v.length > 0 : v === true;
+}
+function subscriptionIsActive(it: unknown): boolean {
+  const o = (it ?? {}) as Record<string, unknown>;
+  if (o.active === false || o.is_active === false) return false;
+  const st = String(o.status ?? "").toLowerCase();
+  return !st || st === "active" || st === "enabled";
+}
+export async function updateEventSubscription(
+  subscriptionId: string,
+  eventName: string,
+  entityId: string,
+  callbackUrl: string,
+  secretKey: string,
+): Promise<void> {
+  await signnowFetch(`/api/v2/events/${encodeURIComponent(subscriptionId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event: eventName,
+      entity_id: entityId,
+      action: "callback",
+      attributes: { callback: callbackUrl, use_tls_12: true, secret_key: secretKey },
+    }),
+  });
+}
 export async function ensureUserSignedSubscription(
   callbackUrl: string,
   eventName = "user.document.fieldinvite.signed",
+  secretKey: string = (process.env.SIGNNOW_WEBHOOK_SECRET ?? "").trim(),
 ): Promise<{ created: boolean; summary: string }> {
   const userId = await getAuthenticatedUserId();
   if (!userId) return { created: false, summary: "no user id from GET /user" };
   let existing: unknown[] = [];
   try { existing = await listEventSubscriptions(); } catch { existing = []; }
-  const already = existing.some((it) => {
+  const matches = existing.filter((it) => {
     const s = JSON.stringify(it ?? "");
     return s.includes(eventName) && s.includes(callbackUrl);
   });
-  if (already) return { created: false, summary: `subscription already present (${eventName})` };
+  if (matches.length > 0) {
+    if (!secretKey) return { created: false, summary: `subscription already present (${eventName}); SIGNNOW_WEBHOOK_SECRET unset so callbacks are unsigned and will be rejected` };
+    let updated = 0;
+    for (const it of matches) {
+      if (!subscriptionIsActive(it) || subscriptionHasSecret(it)) continue;
+      const o = (it ?? {}) as Record<string, unknown>;
+      const id = typeof o.id === "string" ? o.id : "";
+      if (!id) continue;
+      const entityId = typeof o.entity_id === "string" && o.entity_id ? o.entity_id : userId;
+      await updateEventSubscription(id, eventName, entityId, callbackUrl, secretKey);
+      updated += 1;
+    }
+    return updated > 0
+      ? { created: false, summary: `subscription updated with secret_key (${eventName}, ${updated})` }
+      : { created: false, summary: `subscription already present (${eventName})` };
+  }
   try {
     await signnowFetch(`/api/v2/events`, {
       method: "POST",
@@ -245,7 +299,7 @@ export async function ensureUserSignedSubscription(
         event: eventName,
         entity_id: userId,
         action: "callback",
-        attributes: { callback: callbackUrl, use_tls_12: true },
+        attributes: { callback: callbackUrl, use_tls_12: true, ...(secretKey ? { secret_key: secretKey } : {}) },
       }),
     });
   } catch (e) {

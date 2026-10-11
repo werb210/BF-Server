@@ -3,6 +3,7 @@
 import express, { type Request, type Response, type NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { auth } from "../middleware/auth.js";
+import { classifyClaims, staffRejectionStatus } from "../auth/principal.js"; // BF_SERVER_v784_STAFF_ONLY_AUTH
 import { subscribe, subscriberCount } from "./sseBus.js";
 
 const router = express.Router();
@@ -22,7 +23,13 @@ function sseAuth(req: Request, res: Response, next: NextFunction): void {
     return;
   }
   try {
-    const decoded = jwt.verify(token, secret) as any;
+    const decoded = jwt.verify(token, secret, { algorithms: ["HS256"] }) as any;
+    // BF_SERVER_v784_STAFF_ONLY_AUTH - staff live updates: staff humans and services only.
+    const rejection = staffRejectionStatus(classifyClaims(decoded && typeof decoded === "object" ? decoded : {}));
+    if (rejection) {
+      res.status(rejection).json({ error: rejection === 401 ? "invalid_token" : "forbidden" });
+      return;
+    }
     (req as any).user = {
       ...decoded,
       userId: decoded.id ?? decoded.sub ?? null,

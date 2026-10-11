@@ -26,7 +26,7 @@ describe("upload timing log", () => {
     warn.mockRestore();
   });
   it("sits in front of the client upload route", () => {
-    expect(readFileSync("src/routes/documents.ts", "utf8")).toContain('router.post("/upload", uploadTiming, requireAuth, upload.single("file")');
+    expect(readFileSync("src/routes/documents.ts", "utf8")).toContain('router.post("/upload", uploadTiming, requireAuthAllowClient, upload.single("file")');
   });
 });
 

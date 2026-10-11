@@ -10,7 +10,7 @@ router.post("/ai/start", async (req: any, res: any, next: any) => {
 
   await runQuery(
     `insert into chat_sessions (id, crm_contact_id, source, status)
-     values ($1, $2, $3, 'ai')`,
+     values ($1, $2, coalesce($3, 'website'), 'ai')`,
     [id, req.body.crmContactId ?? null, req.body.source]
   );
 
@@ -24,8 +24,10 @@ router.post("/ai/message", async (req: any, res: any, next: any) => {
   };
 
   await runQuery(
-    `insert into chat_messages (id, session_id, role, content)
-     values ($1, $2, 'user', $3)`,
+    // BF_SERVER_v784_CHAT_SCHEMA - live chat_messages has both message and
+    // content NOT NULL; fill both.
+    `insert into chat_messages (id, session_id, role, message, content)
+     values ($1, $2, 'user', $3, $3)`,
     [randomUUID(), sessionId, message]
   );
 
@@ -72,8 +74,8 @@ router.post("/ai/confidence-check", async (req: any, res: any, next: any) => {
   };
 
   await runQuery(
-    `insert into chat_messages (id, session_id, role, content, metadata)
-     values ($1, $2, 'system', $3, $4::jsonb)`,
+    `insert into chat_messages (id, session_id, role, message, content, metadata)
+     values ($1, $2, 'system', $3, $3, $4::jsonb)`,
     [
       randomUUID(),
       sessionId,
@@ -92,8 +94,8 @@ router.post("/ai/startup-interest", async (req: any, res: any, next: any) => {
   };
 
   await runQuery(
-    `insert into chat_messages (id, session_id, role, content, metadata)
-     values ($1, $2, 'system', $3, $4::jsonb)`,
+    `insert into chat_messages (id, session_id, role, message, content, metadata)
+     values ($1, $2, 'system', $3, $3, $4::jsonb)`,
     [
       randomUUID(),
       sessionId,

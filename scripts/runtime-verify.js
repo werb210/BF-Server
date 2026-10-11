@@ -166,6 +166,7 @@ async function run() {
     const routesResponse = await httpRequest({
       method: "GET",
       path: "/api/_int/routes",
+      token, // BF_SERVER_v784_INT_AUTH - /routes now requires staff auth
     });
     if (routesResponse.status !== 200) {
       throw new Error(`/api/_int/routes expected 200, got ${routesResponse.status}`);

@@ -33,8 +33,9 @@ export async function createSupportThread(input: SupportThreadInput): Promise<st
         };
 
   await dbQuery(
-    `insert into chat_messages (id, session_id, role, message, metadata)
-     values ($1, $2, 'user', $3, $4::jsonb)`,
+    // BF_SERVER_v784_CHAT_SCHEMA - content is NOT NULL on the live table too.
+    `insert into chat_messages (id, session_id, role, message, content, metadata)
+     values ($1, $2, 'user', $3, $3, $4::jsonb)`,
     [
       randomUUID(),
       sessionId,

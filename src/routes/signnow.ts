@@ -13,30 +13,34 @@ import { createEmbeddedGroupLink } from "../signnow/signnowClient.js";
 import { sendViaGraph } from "../services/email/graphSendService.js";
 
 // BF_SERVER_BLOCK_v141_SIGNNOW_WEBHOOK_REPAIR_v1
-// HMAC-SHA256 verify against SIGNNOW_WEBHOOK_SECRET. SignNow sends the
-// signature in the x-signnow-signature header (hex). When the env var
-// is absent we DENY rather than fall open - this used to be a no-op
-// echo so any attacker could trigger SSN/SIN purge by faking a payload.
-function verifySignNowSignature(req: Request): boolean {
-  // BF_SERVER_BLOCK_v188_SIGNNOW_SECRET_OPTIONAL_v1
-  const secret = process.env.SIGNNOW_WEBHOOK_SECRET;
-  const verifyEnabled = typeof secret === "string" && secret.trim().length > 0;
+// HMAC-SHA256 verify against SIGNNOW_WEBHOOK_SECRET over the raw body, sent in
+// the x-signnow-signature header.
+// BF_SERVER_v784_WEBHOOK_SIGNATURES - v188 made the secret optional and accepted
+// every webhook unverified when it was unset, so anyone could POST a fake
+// "signed" event (finalizes applications, attaches documents, purges SSN/SIN).
+// Now fail closed: no secret -> reject. SignNow signs in base64 (the secret_key
+// set on the event subscription, see ensureWebhookSubscription.ts); hex is also
+// accepted. Both compares are timing-safe.
+function safeEqual(a: Buffer, b: Buffer): boolean {
+  return a.length === b.length && a.length > 0 && crypto.timingSafeEqual(a, b);
+}
 
-  if (!verifyEnabled) {
+function verifySignNowSignature(req: Request): boolean {
+  const secret = (process.env.SIGNNOW_WEBHOOK_SECRET ?? "").trim();
+  if (!secret) {
     // eslint-disable-next-line no-console
-    console.warn(
-      "[signnow] SIGNNOW_WEBHOOK_SECRET is unset - accepting webhook without HMAC verify (paid SignNow feature not enabled)"
-    );
-    return true;
+    console.error("[signnow-webhook] SIGNNOW_WEBHOOK_SECRET unset - rejecting");
+    return false;
   }
 
-  const sig = req.header("x-signnow-signature");
-  if (!sig || typeof sig !== "string") return false;
+  const sig = (req.header("x-signnow-signature") ?? "").trim();
+  if (!sig) return false;
   const raw = (req as any).rawBody;
   if (!raw || !Buffer.isBuffer(raw)) return false;
-  const expected = crypto.createHmac("sha256", secret).update(raw).digest("hex");
+  const digest = crypto.createHmac("sha256", secret).update(raw).digest();
   try {
-    return crypto.timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(sig, "hex"));
+    if (/^[0-9a-f]{64}$/i.test(sig) && safeEqual(digest, Buffer.from(sig, "hex"))) return true;
+    return safeEqual(digest, Buffer.from(sig, "base64"));
   } catch {
     return false;
   }
@@ -51,6 +55,8 @@ router.post(
     // anything destructive (the handler purges SSN/SIN). Deny on missing
     // secret so a misconfigured deploy fails closed instead of open.
     if (!verifySignNowSignature(req as any)) {
+      // eslint-disable-next-line no-console
+      console.warn("[signnow-webhook] rejected: missing or invalid x-signnow-signature");
       res.status(401).json({ error: "invalid_signature" });
       return;
     }

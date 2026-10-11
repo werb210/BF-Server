@@ -109,7 +109,8 @@ import emailRoutes from "./email.js";
 import smsRedirectRoutes from "./smsRedirect.js"; // BF_SERVER_SMS_REDIRECT_v1 (public)
 import sendgridWebhookRoutes from "./sendgridWebhook.js"; // BF_SERVER_SENDGRID_WEBHOOK_v1 (public)
 import websiteRoutes from "./website.js";
-import mayaRoutes, { proxyMayaToAgent } from "./maya.js";
+import mayaRoutes, { proxyMayaToAgent, mayaProxyRateLimit } from "./maya.js";
+import mayaPendingActionsRouter from "./mayaPendingActions.js"; // BF_SERVER_v784_MAYA_SMS_CONFIRM
 import aiMayaAlias from "./aiMayaAlias.js";
 import mayaAdminStubs from "./mayaAdminStubs.js";
 import mayaEscalateRoutes from "./mayaEscalate.js";
@@ -126,7 +127,7 @@ import o365Routes from "./o365.js";
 import diagnosticsRoutes from "./diagnostics.js";
 import { createMountTracker } from "./_canonicalMount.js";
 import { siloMiddleware } from "../middleware/silo.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireAuthAllowClient } from "../middleware/auth.js";
 import watchAuthRoutes from "../watch/authRoutes.js";
 import watchDeviceRoutes from "../watch/deviceRoutes.js";
 import watchDataRoutes from "../watch/dataRoutes.js";
@@ -187,20 +188,22 @@ watchRoutes.use(watchDataRoutes);
 
 const combinedMayaRoutes = Router();
 // BF_SERVER_BLOCK_v674 - website widget posts /api/maya/website-chat
-combinedMayaRoutes.post("/website-chat", async (req, res) => {
+// BF_SERVER_v784_MAYA_RATE_LIMIT + BF_SERVER_v784_MAYA_IDENTITY - rate limited; the
+// audience now comes from the verified token (X-Maya-Context), not the body.
+combinedMayaRoutes.post("/website-chat", mayaProxyRateLimit, async (req, res) => {
   await proxyMayaToAgent(
     "/api/maya/message",
     "POST",
     {
       message: String((req.body?.message ?? "")).trim(),
       sessionId: req.body?.sessionId ?? null,
-      audience: "visitor",
     },
     res,
     req
   );
 });
 combinedMayaRoutes.use(mayaRoutes);
+combinedMayaRoutes.use(mayaPendingActionsRouter); // BF_SERVER_v784_MAYA_SMS_CONFIRM - /pending-actions (staff humans only)
 combinedMayaRoutes.use(mayaAdminStubs);
 // BF_SERVER_BLOCK_v214_MAYA_STAFF_PIPELINE_QUERY_v1
 combinedMayaRoutes.use(mayaStaffRouter);
@@ -481,7 +484,7 @@ export function registerApiRouteMounts(app: Router): void {
 
   mount(app, "/ocr/admin", Router().use(requireAuth, ocrAdminRoutes));
   mount(app, "/automations", Router().use(requireAuth, automationRoutes)); // BF_SERVER_AUTOMATION_ENGINE_v1
-  mount(app, "/push", Router().use(requireAuth, clientPushRoutes)); // BF_SERVER_CLIENT_PUSH_TOKEN_v1
+  mount(app, "/push", Router().use(requireAuthAllowClient, clientPushRoutes)); // BF_SERVER_v784_STAFF_ONLY_AUTH - applicant device registers its own token // BF_SERVER_CLIENT_PUSH_TOKEN_v1
 
   API_ROUTE_MOUNTS.forEach((entry) => {
     if (entry.path === "/ocr/admin") return;

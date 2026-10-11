@@ -34,7 +34,7 @@ describe("v138 E2E fix batch", () => {
 
   it("AUDIT-11: offers.ts (3 routes) are gated", () => {
     const src = read("src/routes/offers.ts");
-    expect(src).toContain('import { requireAuth, requireAuthorization } from "../middleware/auth.js"');
+    expect(src).toContain('import { requireAuth, requireAuthAllowClient, requireAuthorization } from "../middleware/auth.js"');
     expect(src).toContain('import { ROLES } from "../auth/roles.js"');
     const matches = src.match(/requireAuthorization\(\{ roles: \[ROLES\.ADMIN, ROLES\.STAFF\] \}\)/g) || [];
     expect(matches.length).toBeGreaterThanOrEqual(3);

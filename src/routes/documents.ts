@@ -6,7 +6,8 @@
 import express, { type Request, type Response } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireAuthAllowClient } from "../middleware/auth.js";
+import { requireApplicationAccess } from "../auth/clientApplicationOwnership.js"; // BF_SERVER_v784_CLIENT_OWNERSHIP
 import { uploadTiming } from "../middleware/uploadTiming.js"; // BF_SERVER_UPLOAD_DIAG_v751
 import { ok, fail } from "../middleware/response.js";
 import { toStringSafe } from "../utils/toStringSafe.js";
@@ -389,11 +390,13 @@ router.post("/public-upload", upload.single("file"), async (req: Request, res: R
   }
 });
 
-router.post("/upload", uploadTiming, requireAuth, upload.single("file"), async (req: Request, res: Response) => { // BF_SERVER_UPLOAD_DIAG_v751
+router.post("/upload", uploadTiming, requireAuthAllowClient, upload.single("file"), async (req: Request, res: Response) => { // BF_SERVER_UPLOAD_DIAG_v751
   const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : null;
   const category      = resolveUploadCategory(req.body); // BF_SERVER_BLOCK_v843 — accept category | document_type | documentType
   const file = (req as Request & { file?: Express.Multer.File }).file;
   if (!applicationId || !category || !file) return fail(res, 400, "INVALID_DOCUMENT_UPLOAD_PAYLOAD");
+  // BF_SERVER_v784_CLIENT_OWNERSHIP - the client app uploads here with its OTP token; it may only upload to its own file.
+  if (!(await requireApplicationAccess(req, res, applicationId))) return;
   try {
     const userId = (req as any)?.user?.id ?? null;
     const r = await persistAndEnqueue({ applicationId, category, file, uploadedBy: userId, receivedInBackground: req.header("x-background-upload") === "1" });

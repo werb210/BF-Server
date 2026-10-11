@@ -83,6 +83,8 @@ describe("v671 team phase C", () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, any];
     expect(url).toBe("http://maya.test/api/maya/message");
     expect(init.headers["X-Maya-Audience"]).toBe("staff");
+    // BF_SERVER_v784_MAYA_IDENTITY - the asker's identity travels in a signed X-Maya-Context.
+    expect((jwt.verify(init.headers["X-Maya-Context"], SECRET) as any)).toMatchObject({ kind: "maya_context", audience: "staff", staff: { id: me } });
     expect(JSON.parse(init.body).message).toBe("what is waiting on documents?");
     const channelMsgs = await request(app).get(`/api/team/channels/${channelId}/messages`).set("Authorization", tok);
     expect(channelMsgs.body.messages).toHaveLength(1);

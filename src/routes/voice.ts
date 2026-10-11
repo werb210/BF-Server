@@ -2,9 +2,6 @@ import express from "express";
 import twilio from "twilio";
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
-import { requireAuth } from "../middleware/requireAuth.js";
-import { validate } from "../middleware/validate.js";
-import { CallStatusSchema } from "../schemas/index.js";
 import { ok as respondOk } from "../lib/respond.js";
 
 const router = express.Router();
@@ -18,8 +15,6 @@ router.post("/incoming", (_req, res) => {
   return respondOk(res, voiceResponse.toString());
 });
 
-router.post("/status", requireAuth, validate(CallStatusSchema), (req, res) => {
-  return respondOk(res, { received: true });
-});
+// BF_SERVER_v784_VOICE_STATUS - POST /status moved to the mounted voiceCalls.ts.
 
 export default router;

@@ -18,7 +18,9 @@ describe("v651 — Maya website-chat alias", () => {
   it("forwards to agent /api/maya/message via proxyMayaToAgent", () => {
     expect(src).toMatch(/proxyMayaToAgent\(\s*['"]\/api\/maya\/message['"]/);
   });
-  it("translates audience to 'visitor'", () => {
-    expect(src).toMatch(/audience:\s*['"]visitor['"]/);
+  // BF_SERVER_v784_MAYA_IDENTITY - the audience is derived from the verified token by
+  // the proxy (X-Maya-Context), never put in the forwarded body.
+  it("does not set a body audience", () => {
+    expect(src).not.toMatch(/audience:\s*['"]visitor['"]/);
   });
 });

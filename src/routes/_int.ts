@@ -51,12 +51,13 @@ router.get("/version", (_req: any, res: any) => {
   });
 });
 
-router.get("/routes", (req: any, res: any) => {
+// BF_SERVER_v784_INT_AUTH - route inventory and env flags are staff-only; build/version/ready stay public.
+router.get("/routes", requireAuth, (req: any, res: any) => {
   const routes = listRouteInventory(req.app);
   res.status(200).json({ routes });
 });
 
-router.get("/env", (_req: any, res: any) =>
+router.get("/env", requireAuth, (_req: any, res: any) =>
   res["json"]({
     twilioAvailable: Boolean(
       config.twilio.accountSid &&

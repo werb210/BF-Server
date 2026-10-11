@@ -9,11 +9,11 @@ import { errorHandler } from "../../src/middleware/errors.js";
 
 describe("Admin-only DELETE routes", () => {
   const staffToken = jwt.sign(
-    { id: "staff-1", capabilities: ["crm:read"] },
+    { id: "staff-1", role: "Staff", capabilities: ["crm:read"] },
     "test-secret"
   );
   const adminToken = jwt.sign(
-    { id: "admin-1", capabilities: ["crm:read"] },
+    { id: "admin-1", role: "Admin", capabilities: ["crm:read"] },
     "test-secret"
   );
 

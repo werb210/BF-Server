@@ -9,6 +9,8 @@ import { isRole, ROLES } from "../auth/roles.js";
 import { resolveSiloFromRequest } from "./silo.js";
 // BF_SERVER_AUDIT_PRINCIPAL_CONTEXT_v1
 import { markRequestServicePrincipal } from "../observability/requestContext.js";
+// BF_SERVER_v784_STAFF_ONLY_AUTH
+import { classifyClaims, staffRejectionStatus } from "../auth/principal.js";
 
 type AuthorizationOptions = {
   roles?: string[];
@@ -24,7 +26,21 @@ export interface AuthRequest extends Request {
   user?: Request["user"];
 }
 
+// BF_SERVER_v784_STAFF_ONLY_AUTH - every token family is signed with JWT_SECRET,
+// so a verified signature used to be enough to reach /api/companies, /api/tasks,
+// /api/calendar, /api/slf/deals with a client OTP token or an SMS tracked-link
+// token. The default middleware now admits only staff humans and service
+// principals. Routes that legitimately serve the client app opt in by name with
+// requireAuthAllowClient and check ownership themselves.
 export async function auth(req: Request, res: Response, next: NextFunction) {
+  return authenticate(req, res, next, false);
+}
+
+export async function requireAuthAllowClient(req: Request, res: Response, next: NextFunction) {
+  return authenticate(req, res, next, true);
+}
+
+async function authenticate(req: Request, res: Response, next: NextFunction, allowClient: boolean) {
   const token = req.headers.authorization?.split(" ")[1];
 
   if (!token) {
@@ -41,6 +57,18 @@ export async function auth(req: Request, res: Response, next: NextFunction) {
     // BF_SERVER_JWT_HARDENING_v1 - pin the algorithm; otherwise the library trusts the
     // `alg` the token itself claims, which is the classic algorithm-confusion foothold.
     const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
+    if (!decoded || typeof decoded !== "object") {
+      return res.status(401).json({ status: "error", message: "Invalid token" });
+    }
+    const principal = classifyClaims(decoded as Record<string, unknown>);
+    const rejection = allowClient && principal.kind === "client" ? null : staffRejectionStatus(principal);
+    if (rejection) {
+      return res.status(rejection).json({
+        status: "error",
+        message: rejection === 401 ? "Invalid token" : "Forbidden",
+        error: rejection === 401 ? "UNAUTHORIZED" : "STAFF_ONLY",
+      });
+    }
     const userId = (decoded as any).id ?? (decoded as any).sub ?? null;
 
     let dbUser: { id: string; email: string | null; role: string | null; silo: string | null; silos: string[] | null } | null = null;

@@ -9,7 +9,7 @@ import { errorHandler } from "../../src/middleware/errors.js";
 
 describe("GET /api/communications/sms/thread synthetic keys", () => {
   const token = jwt.sign(
-    { id: "user-1", capabilities: ["communications:read"] },
+    { id: "user-1", role: "Staff", capabilities: ["communications:read"] },
     "test-secret"
   );
 

@@ -26,6 +26,7 @@ import {
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { dbQuery } from "../../db.js";
 import { AppError } from "../../middleware/errors.js";
+import { clientApplicationOwnershipGuard } from "../../auth/clientApplicationOwnership.js"; // BF_SERVER_v784_CLIENT_OWNERSHIP
 
 const router = Router();
 router.use(submitAttemptsRouter); // BF_SERVER_BLOCK_v842_SUBMIT_ATTEMPTS — frictionless beacon, before rate-limit/ownership middleware
@@ -68,6 +69,7 @@ router.use((req: any, res: any, next: any) => {
 // a valid OTP session token AND targets a specific applicationId, verify the app
 // belongs to that phone. No token / no app id / unverifiable token -> allowed (this
 // preserves SMS deep-links and the capability model). Never breaks a request on error.
+// (Superseded by BF_SERVER_v784_CLIENT_OWNERSHIP below: a token is now required.)
 // BF_SERVER_FRAUD_ENFORCE_v50 - an application parked in Fraud is read-only to
 // the applicant: no uploads, no edits, no resubmission. Documents and history
 // are kept; reactivating the file lifts this immediately.
@@ -87,86 +89,13 @@ router.use(async (req: any, res: any, next: any) => {
   }
 });
 
-router.use(async (req: any, res: any, next: any) => {
-  try {
-    const aid =
-      (typeof req.query?.applicationId === "string" && req.query.applicationId.trim()) ||
-      (typeof req.body?.applicationId === "string" && req.body.applicationId.trim()) ||
-      "";
-    if (!aid) return next();
-    const auth = req.headers?.authorization;
-    if (!auth || typeof auth !== "string" || !auth.startsWith("Bearer ")) return next();
-    const secret = process.env.JWT_SECRET;
-    if (!secret) return next();
-    let phone10 = "";
-    try {
-      const decoded = jwt.verify(auth.slice(7), secret) as Record<string, unknown>;
-      phone10 = String(typeof decoded.phone === "string" ? decoded.phone : "")
-        .replace(/[^0-9]/g, "")
-        .slice(-10);
-    } catch {
-      return next(); // invalid/expired token -> treat as capability access, don't block
-    }
-    if (!phone10) return next();
-    // BF_SERVER_BLOCK_v_CLIENT_OWNERSHIP_PARTNER_FIX_v1 — ownership must consider
-    // ALL contacts linked to the application (applicant + partner + guarantor) via
-    // application_contacts, not just applications.contact_id. On a partner app the
-    // logged-in person can be the PARTNER, whose phone != the applicant contact,
-    // which made mine===0 -> 403 on every CMP read. UNION the link-table members
-    // with the legacy single contact_id so pre-link-table solo apps still resolve.
-    // Mirrors the correct pattern in auth.ts.
-    const r = await dbQuery(
-      `WITH app_phones AS (
-         SELECT right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),10) AS p10
-           FROM application_contacts ac
-           JOIN contacts c ON c.id = ac.contact_id
-          WHERE ac.application_id::text = ($1)::text
-         UNION
-         SELECT right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),10) AS p10
-           FROM applications a
-           JOIN contacts c ON c.id = a.contact_id
-          WHERE a.id::text = ($1)::text
-       )
-       SELECT
-         (SELECT COUNT(*)::int FROM applications WHERE id::text = ($1)::text) AS total,
-         (SELECT COUNT(*)::int FROM app_phones WHERE p10 = $2)               AS mine,
-         -- BF_SERVER_UNCLAIMED_APP_OWNERSHIP_v10 - how many contacts on this
-         -- application have a usable phone at all. Blank phones are excluded
-         -- because right(regexp_replace(...)) yields '' for them, and '' can
-         -- never match a caller's ten digits.
-         (SELECT COUNT(*)::int FROM app_phones WHERE p10 <> '')              AS known`,
-      [aid, phone10],
-    );
-    const total = Number(r.rows?.[0]?.total ?? 0);
-    const mine = Number(r.rows?.[0]?.mine ?? 0);
-    // BF_SERVER_UNCLAIMED_APP_OWNERSHIP_v10
-    // This used to 403 on `total > 0 && mine === 0`, which reads as "the
-    // application exists and is not yours". Mid-wizard that is wrong: the
-    // bf-client wizard is local-first, contacts are only created by the Step 6
-    // submit handler, so between create_blank_application and submit an
-    // application has ZERO linked contacts. app_phones came back empty, mine
-    // was 0, and the guard rejected the person who had just created it.
-    //
-    // It bit Step 5's "have my accountant upload the documents" - POST
-    // /api/client/accountant carries applicationId in the body, so it hit this
-    // guard, returned 403, and the applicant was told we could not reach their
-    // accountant. It applies to every POST client route that names an
-    // applicationId before submit, not just that one.
-    //
-    // An application nobody has claimed cannot be pivoted TO, because there is
-    // no other owner to pivot away from - so it falls back to the capability
-    // model the rest of this middleware already relies on. The moment any
-    // contact with a phone is linked, the check is exactly as strict as before.
-    const known = Number(r.rows?.[0]?.known ?? 0);
-    if (total > 0 && known > 0 && mine === 0) {
-      res.status(403).json({ error: "forbidden" });
-      return;
-    }
-    return next();
-  } catch {
-    return next();
-  }
-});
+// BF_SERVER_v784_CLIENT_OWNERSHIP - this guard used to let token-less requests
+// through and only read applicationId from query/body, so GET
+// /application/:id/status, PATCH /applications/:id and friends answered anyone
+// holding the id. Any request naming an existing application (query, body or
+// path) now needs a valid token: a client must own it (or nobody has claimed it
+// yet, mid-wizard), staff and service pass. See src/auth/clientApplicationOwnership.ts.
+router.use(clientApplicationOwnershipGuard);
 
 router.use("/", continuationRouter);
 router.use("/", applicationsRouter);

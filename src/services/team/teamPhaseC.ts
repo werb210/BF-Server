@@ -8,6 +8,7 @@ import { broadcastToUsers } from "../../ws/teamSocket.js";
 import { pushToUser } from "../notifications/pushToUser.js";
 import { memberIdsOf } from "./team.service.js";
 import { threadSummaries } from "./teamChannels.js";
+import { loadStaffIdentity, mayaContextHeaders, type MayaIdentity } from "../mayaContext.js"; // BF_SERVER_v784_MAYA_IDENTITY
 
 export type CardRef = { kind: "contact" | "application"; id: string };
 const REF = /\/(crm\/contacts|contacts|applications)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi;
@@ -147,13 +148,17 @@ export async function askMaya(channelId: string, message: { id: string; body: st
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 30_000);
     try {
-      const u = await runQuery<any>(`SELECT id::text AS id, first_name, last_name, email, role, silo FROM users WHERE id::text = $1`, [askerId]);
-      const me = u.rows[0] ?? {};
+      // BF_SERVER_v784_MAYA_IDENTITY - the asker is the authenticated staff user who
+      // posted; Maya gets that identity in a signed X-Maya-Context, not in the body.
+      const loaded = await loadStaffIdentity(askerId, null, null);
+      const identity: MayaIdentity = loaded
+        ? { audience: "staff", staff: loaded.staff, silo: loaded.silo }
+        : { audience: "staff", staff: { id: askerId, name: null, email: null, role: null }, silo: "BF" };
       const question = String(message.body).replace(/@maya\b/gi, "").trim() || "Hello";
       const resp = await fetch(mayaUrl + "/api/maya/message", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Maya-Audience": "staff", "X-Silo": String(me.silo || "BF").toUpperCase() },
-        body: JSON.stringify({ message: question, session_id: "team-" + rootId, staff: { id: me.id ?? askerId, name: [me.first_name, me.last_name].filter(Boolean).join(" ") || null, email: me.email ?? null, role: me.role ?? null } }),
+        headers: { "Content-Type": "application/json", ...mayaContextHeaders(identity), "X-Silo": identity.silo ?? "BF" },
+        body: JSON.stringify({ message: question, session_id: "team-" + rootId }),
         signal: ctrl.signal,
       });
       const data: any = await resp.json().catch(() => ({}));

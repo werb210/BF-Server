@@ -1,9 +1,16 @@
 // BF_SERVER_UNCLAIMED_APP_OWNERSHIP_v10
+// BF_SERVER_v784_CLIENT_OWNERSHIP - the guard moved out of src/routes/client/index.ts
+// into src/auth/clientApplicationOwnership.ts and no longer lets token-less
+// requests through; the mid-wizard (unclaimed) rule is unchanged.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const src = readFileSync(
+  fileURLToPath(new URL("../auth/clientApplicationOwnership.ts", import.meta.url)),
+  "utf-8",
+);
+const routerSrc = readFileSync(
   fileURLToPath(new URL("../routes/client/index.ts", import.meta.url)),
   "utf-8",
 );
@@ -15,25 +22,17 @@ describe("mid-wizard application ownership", () => {
   });
 
   it("only forbids when the application has a known owner that is not you", () => {
-    const middleware = src.slice(
-      src.indexOf("BF_SERVER_UNCLAIMED_APP_OWNERSHIP_v10"),
-      src.indexOf('router.use("/", continuationRouter)'),
-    );
-    expect(middleware).toContain("if (total > 0 && known > 0 && mine === 0) {");
-    // The old predicate rejected every unclaimed application.
-    expect(middleware).not.toContain("if (total > 0 && mine === 0) {");
+    // Unclaimed (known === 0) or owned (mine > 0) passes; everything else is the pivot case.
+    expect(src).toContain("if (counts.mine > 0 || counts.known === 0) return { ok: true, principal };");
+    expect(src).toContain('return { ok: false, status: 403, error: "forbidden" };');
   });
 
-  it("still forbids a genuine pivot to someone else's application", () => {
-    // known > 0 && mine === 0 is precisely the pivot case, and it still 403s.
-    const guard = src.slice(src.indexOf("const known ="), src.indexOf("return next();", src.indexOf("const known =")));
-    expect(guard).toContain('res.status(403).json({ error: "forbidden" })');
+  it("the client router runs the shared guard", () => {
+    expect(routerSrc).toContain("router.use(clientApplicationOwnershipGuard);");
   });
 
-  it("leaves the capability fallbacks untouched", () => {
-    // No token, no app id, unverifiable token: all still fall through.
-    expect(src).toContain('if (!aid) return next();');
-    expect(src).toContain("return next(); // invalid/expired token -> treat as capability access, don't block");
-    expect(src).toContain("if (!phone10) return next();");
+  it("no longer treats a missing or invalid token as capability access", () => {
+    expect(src).toContain('if (!principal) return { ok: false, status: 401, error: "unauthorized" };');
+    expect(routerSrc).not.toContain("treat as capability access, don't block");
   });
 });
