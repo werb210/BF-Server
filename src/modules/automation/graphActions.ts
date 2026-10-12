@@ -4,6 +4,9 @@
 import { renderTokens, CONTACT_FIELDS_SETTABLE, type ActionNode } from "./graph.js";
 import { FALLBACK_USER_SQL, SYSTEM_USER, type EngineDeps } from "./automationContext.js";
 import { runAction as runV1Action } from "./automationSteps.js";
+import { ssrfSafeFetch, SsrfBlockedError } from "../../security/ssrfGuard.js"; // BF_SERVER_v789_SSRF_GUARD
+import { recordAuditEvent, type AuditParams } from "../audit/audit.service.js"; // BF_SERVER_v789_SSRF_GUARD
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js";
 
 const TASK_TYPES = ["CALL", "EMAIL", "SMS", "TODO"];
 const TASK_PRIORITIES = ["NONE", "LOW", "MEDIUM", "HIGH"];
@@ -24,6 +27,39 @@ export async function loadTemplate(deps: EngineDeps, channel: "email" | "sms", i
     return { subject: String(r.subject ?? r.name ?? ""), html: String(r.body_html ?? (r.body_text ? esc(String(r.body_text)).replace(/\n/g, "<br>") : "")), text: String(r.body_text ?? "") };
   }
   return null;
+}
+
+// BF_SERVER_v789_SSRF_GUARD - one audit_events row per webhook send: workflow id,
+// host, and the NAMES of the fields sent (never their values). Written through the
+// engine's own query so it lands in the same database the engine uses. An audit
+// failure is logged and never fails the step.
+async function auditWebhookSend(
+  deps: EngineDeps,
+  e: any,
+  info: { host: string; finalHost: string; fields: string[]; status: number | null; outcome: string },
+): Promise<void> {
+  try {
+    await recordAuditEvent({
+      actorUserId: null,
+      targetUserId: null,
+      targetType: "automation_rule",
+      targetId: e?.rule_id != null ? String(e.rule_id) : null,
+      action: "automation_webhook_send",
+      success: info.outcome === "sent",
+      metadata: {
+        workflowId: e?.rule_id ?? null,
+        enrollmentId: e?.id ?? null,
+        host: info.host,
+        finalHost: info.finalHost,
+        fields: ["workflowId", "enrollmentId", "contactId", "applicationId", ...info.fields],
+        status: info.status,
+        outcome: info.outcome,
+      },
+      client: { query: deps.query } as unknown as AuditParams["client"],
+    });
+  } catch (err) {
+    logWarnSwallowed(err, "automation.webhook.audit");
+  }
 }
 
 async function ownerOf(deps: EngineDeps, e: any, to: unknown): Promise<string | null> {
@@ -184,14 +220,26 @@ export async function runGraphAction(deps: EngineDeps, e: any, node: ActionNode)
       const doFetch = deps.httpFetch ?? ((u: string, init: any) => fetch(u, init) as any);
       const ctl = new AbortController();
       const timer = setTimeout(() => ctl.abort(), 10_000);
+      // BF_SERVER_v789_SSRF_GUARD - https only, every hop resolved and refused if internal,
+      // max 3 manual redirects; each send is audited (workflow, host, field names - no values).
+      let status: number | null = null;
+      let finalHost = url.host;
+      let outcome = "error";
       try {
-        const r = await doFetch(url.toString(), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: ctl.signal });
-        if (!r.ok) { console.warn("[automation] webhook failed", { url: url.host, status: r.status }); throw new Error(`webhook answered ${r.status}`); }
+        const { response: r, url: landed } = await ssrfSafeFetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: ctl.signal }, { httpsOnly: true, maxRedirects: 3, fetchImpl: doFetch as any });
+        status = r.status;
+        finalHost = landed.host;
+        if (!r.ok) { outcome = "http_error"; console.warn("[automation] webhook failed", { url: url.host, status: r.status }); throw new Error(`webhook answered ${r.status}`); }
+        outcome = "sent";
         return `webhook ${url.host} ${r.status}`;
       } catch (err: any) {
+        if (err instanceof SsrfBlockedError) outcome = `blocked:${err.code}`;
         console.warn("[automation] webhook error", { url: url.host, message: err?.message ?? String(err) });
         throw new Error(err?.name === "AbortError" ? "webhook timed out after 10 s" : String(err?.message ?? err));
-      } finally { clearTimeout(timer); }
+      } finally {
+        clearTimeout(timer);
+        await auditWebhookSend(deps, e, { host: url.host, finalHost, fields, status, outcome });
+      }
     }
     case "enroll_workflow": {
       if (!p.workflowId) return "skip: no workflow";

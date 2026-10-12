@@ -1,10 +1,11 @@
 // BF_SERVER_ADS_WEEKLY_EMAIL_v708 - checks every 30 minutes; sends once on Monday morning.
 import type { Pool } from "pg";
 import { maybeSendWeeklyAdsEmail } from "../services/adsWeeklyEmail.js";
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 export function startAdsWeeklyEmailWorker(_pool: Pool): { stop: () => void } {
   let running = false;
-  const tick = async () => {
+  const tickUnclaimed = async () => {
     if (running) return;
     running = true;
     try {
@@ -17,6 +18,7 @@ export function startAdsWeeklyEmailWorker(_pool: Pool): { stop: () => void } {
       console.error("[ads-weekly] failed:", (err as { message?: string })?.message ?? err);
     } finally { running = false; }
   };
+  const tick = claimedTick("ads_weekly_email", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
   const timer = setInterval(() => { void tick(); }, 30 * 60 * 1000);
   const kickoff = setTimeout(() => { void tick(); }, 90 * 1000);
   return { stop: () => { clearInterval(timer); clearTimeout(kickoff); } };

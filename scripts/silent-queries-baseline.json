@@ -1,37 +1,191 @@
 {
- "keys": [
-  "0dc59017baa0",
-  "14e4d82236c3",
-  "17939b557cee",
-  "1b2f2406efcd",
-  "1cdfdc9489af",
-  "21ec7a860826",
-  "233fbc91ee4a",
-  "2360f098a5f6",
-  "2432baf95b06",
-  "3245ed891dbf",
-  "4581dcf0166b",
-  "46138d8f801d",
-  "48562837c669",
-  "50d95bc422a5",
-  "707095fc10d4",
-  "85158b679a15",
-  "8875eff41ab7",
-  "8b15808d8a60",
-  "966ee0a71c9a",
-  "97d7b3e9a3c2",
-  "9cedf0157091",
-  "9f2202e60f1a",
-  "ae92c1d29411",
-  "afa1d49a6a1b",
-  "b05d26e4e887",
-  "b24b7f731dfe",
-  "baf7be8bf699",
-  "bbb0649bb428",
-  "e26ac12277c3",
-  "e45ceebd4c1e",
-  "f2aa040fdbc8",
-  "f2b4bfbd323f",
-  "fef976d0903b"
- ]
+ "_comment": "Per-occurrence baseline written by scripts/check-silent-queries.py --write-baseline. Shrink only.",
+ "total": 49,
+ "entries": {
+  "01c26f16c48d3e45": {
+   "file": "src/signnow/accordPdfBuilder.ts",
+   "line": "const adv = await dbQuery<{ data: any }>(",
+   "count": 1
+  },
+  "13c81058cdc3b21e": {
+   "file": "src/services/rejectionNotice.ts",
+   "line": "await dbQuery(",
+   "count": 1
+  },
+  "23aceace58085be8": {
+   "file": "src/signnow/pnwSigning.ts",
+   "line": "const fr = await dbQuery<{ data: any }>(",
+   "count": 1
+  },
+  "26189cdcf77bccb9": {
+   "file": "src/signnow/sba/sbaTrigger.ts",
+   "line": "const existing = await dbQuery<{ n: string }>(",
+   "count": 1
+  },
+  "28528fd6b3bcada4": {
+   "file": "src/signnow/sba/sbaOwners.ts",
+   "line": "const application = await dbQuery<{ metadata: any }>(",
+   "count": 1
+  },
+  "2926b790bed1ddee": {
+   "file": "src/modules/ai/chat.repo.ts",
+   "line": "const rows = await runQuery<{",
+   "count": 1
+  },
+  "2a19425e8c214f26": {
+   "file": "src/routes/publicApplication.ts",
+   "line": "await dbQuery(`UPDATE broker_imports SET status = 'claimed', updated_at = now() WHERE application_id = $1`, [bd.id]).catch(() => {});",
+   "count": 1
+  },
+  "46154c31e6eb2d2e": {
+   "file": "src/signnow/sendApplicationForSignature.ts",
+   "line": "await dbQuery(`INSERT INTO job_queue (id, type, payload, status, created_at) VALUES (gen_random_uuid(), 'send_lender_package', $1::jsonb, 'pending', now()) ON C",
+   "count": 1
+  },
+  "4a56470ff42de952": {
+   "file": "src/services/notes/mentions.ts",
+   "line": "const r = await runQuery<{ id: string }>(",
+   "count": 1
+  },
+  "4d43496b938f8f58": {
+   "file": "src/signnow/sba/sbaSigning.ts",
+   "line": "const existing = await dbQuery<{ id: string }>(",
+   "count": 1
+  },
+  "59020a34e71cf911": {
+   "file": "src/signnow/sba/sbaTrigger.ts",
+   "line": "const r = await dbQuery<{ doc_type: string; owner_fingerprint: string | null }>(",
+   "count": 1
+  },
+  "5c5f8a44209fd126": {
+   "file": "src/signnow/sba/sbaTrigger.ts",
+   "line": "await dbQuery(",
+   "count": 1
+  },
+  "614894d58a9a3b85": {
+   "file": "src/routes/portal.ts",
+   "line": "const bankingRow = await runQuery<{",
+   "count": 1
+  },
+  "614cb8d585d8dce8": {
+   "file": "src/services/rejectionNotice.ts",
+   "line": "const r = await dbQuery<ReasonRow>(",
+   "count": 1
+  },
+  "618c2eb9ad9b9646": {
+   "file": "src/services/lenders/loadPackageInputs.ts",
+   "line": "} catch {}",
+   "count": 1
+  },
+  "6716c8a0c877d16f": {
+   "file": "src/signnow/sba/sbaTrigger.ts",
+   "line": "const a = await dbQuery<{ purpose: string | null }>(",
+   "count": 1
+  },
+  "67e44095d4abaed4": {
+   "file": "src/routes/portal.ts",
+   "line": "await runQuery(",
+   "count": 12
+  },
+  "69b337ba484603d1": {
+   "file": "src/services/credit/creditSummary.repo.ts",
+   "line": "await runQuery(",
+   "count": 1
+  },
+  "74258bf114de91af": {
+   "file": "src/routes/portal.ts",
+   "line": "const result = await runQuery<{ total: string; accepted: string }>(",
+   "count": 1
+  },
+  "7d15078c24edda5e": {
+   "file": "src/services/rejectionNotice.ts",
+   "line": "const guard = await dbQuery<{ already: string | null }>(",
+   "count": 1
+  },
+  "9e9f93b950a8e348": {
+   "file": "src/signnow/pnwSigning.ts",
+   "line": "const existing = await dbQuery<{ id: string }>(",
+   "count": 1
+  },
+  "a70d67af2a256e50": {
+   "file": "src/signnow/sba/sbaTrigger.ts",
+   "line": "const r = await dbQuery<{ n: string }>(",
+   "count": 1
+  },
+  "ab416e6b6419705e": {
+   "file": "src/routes/publicApplication.ts",
+   "line": "await dbQuery(",
+   "count": 2
+  },
+  "ac6457ae70096fca": {
+   "file": "src/signnow/sba/sbaOwners.ts",
+   "line": "const result = await dbQuery<{ metadata: any }>(",
+   "count": 1
+  },
+  "b067b7cdd3ee935f": {
+   "file": "src/services/rejectionNotice.ts",
+   "line": "const r = await dbQuery<{ sent: string; passed: string }>(",
+   "count": 1
+  },
+  "b6702f8322044778": {
+   "file": "src/modules/ocr/ocr.service.ts",
+   "line": "const current = await dbQuery<{ category: string | null }>(",
+   "count": 1
+  },
+  "bad1def9867e647c": {
+   "file": "src/signnow/sba/sbaSigning.ts",
+   "line": "const result = await dbQuery<{ metadata: any }>(",
+   "count": 1
+  },
+  "ced3904a9c10fd75": {
+   "file": "src/routes/portal.ts",
+   "line": "const docsRow = await runQuery<{",
+   "count": 1
+  },
+  "d2d5ee414876ef74": {
+   "file": "src/signnow/embeddedSigningSession.ts",
+   "line": "const res = await dbQuery<{ n: string }>(",
+   "count": 1
+  },
+  "dfa9dc85519dfce9": {
+   "file": "src/routes/portal.ts",
+   "line": "const dupRes = await runQuery<{ n: string }>(",
+   "count": 1
+  },
+  "e669071d26f2cbab": {
+   "file": "src/services/rejectionNotice.ts",
+   "line": "const biz_q = await dbQuery<{ business_name: string | null }>(",
+   "count": 1
+  },
+  "e681330d39057693": {
+   "file": "src/signnow/sendApplicationForSignature.ts",
+   "line": "const c = await dbQuery<{ crm_contact_id: string | null }>(`SELECT crm_contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1`, [applicationId]).catch",
+   "count": 1
+  },
+  "e9151b1e672490d4": {
+   "file": "src/services/holdNotice.ts",
+   "line": "const r = await dbQuery<{ email: string | null; first_name: string | null; name: string | null }>(",
+   "count": 1
+  },
+  "e9c3820bcb24195e": {
+   "file": "src/modules/ai/chat.repo.ts",
+   "line": "let result = await runQuery(",
+   "count": 1
+  },
+  "eb0ff8ae2cc004c0": {
+   "file": "src/routes/portal.ts",
+   "line": "const jobsRow = await runQuery<{",
+   "count": 1
+  },
+  "ec74dbe607309a7b": {
+   "file": "src/signnow/embeddedSigningSession.ts",
+   "line": "await dbQuery(",
+   "count": 1
+  },
+  "fea9b36374a573d3": {
+   "file": "src/signnow/sba/sbaOwners.ts",
+   "line": "const forms = await dbQuery<{ doc_type: string; data: any }>(",
+   "count": 1
+  }
+ }
 }

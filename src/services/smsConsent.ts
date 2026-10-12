@@ -78,3 +78,83 @@ export const RECORD_INQUIRY_CONSENT_SQL = `
          consent_source = CASE WHEN COALESCE(sms_consent,false) OR consent_basis IN ('express','implied_transaction') THEN consent_source ELSE 'application_started' END,
          updated_at     = now()
    WHERE id = $1`;
+
+// BF_SERVER_v789_CASL_EXPRESS_CONSENT - the public website forms (contact / lead,
+// credit readiness, booking, Maya talk-to-a-human) show a CASL consent checkbox.
+// Express consent is recorded on the contact, in the same columns the applicant
+// consent work uses (sms_consent / consent_basis / consent_at / consent_source),
+// plus the exact wording the visitor agreed to (consent_text). Only an explicit
+// boolean true counts: absent, false, "true" or 1 record nothing.
+export type ExpressCaslConsent = { text: string | null; at: Date };
+
+const CASL_TEXT_MAX = 2000;
+const CASL_CLOCK_SKEW_MS = 5 * 60 * 1000;
+const CASL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+export function parseExpressCaslConsent(body: unknown, now: Date = new Date()): ExpressCaslConsent | null {
+  const b = (body ?? {}) as Record<string, unknown>;
+  if (b.casl_consent !== true) return null;
+  const rawText = typeof b.casl_consent_text === "string" ? b.casl_consent_text.trim() : "";
+  const text = rawText ? rawText.slice(0, CASL_TEXT_MAX) : null;
+  // The browser's timestamp is kept when it is plausible (not in the future, not
+  // older than a day); otherwise the server's clock is the record.
+  let at = now;
+  if (typeof b.casl_consent_at === "string" || typeof b.casl_consent_at === "number") {
+    const d = new Date(b.casl_consent_at as string | number);
+    const t = d.getTime();
+    if (Number.isFinite(t) && t <= now.getTime() + CASL_CLOCK_SKEW_MS && t >= now.getTime() - CASL_MAX_AGE_MS) at = d;
+  }
+  return { text, at };
+}
+
+export const RECORD_EXPRESS_CASL_CONSENT_BY_ID_SQL = `
+  UPDATE contacts
+     SET sms_consent    = true,
+         consent_basis  = 'express',
+         consent_at     = $2::timestamptz,
+         consent_source = $3,
+         consent_text   = $4,
+         updated_at     = now()
+   WHERE id::text = ($1)::text`;
+
+export const RECORD_EXPRESS_CASL_CONSENT_BY_EMAIL_SQL = `
+  UPDATE contacts
+     SET sms_consent    = true,
+         consent_basis  = 'express',
+         consent_at     = $2::timestamptz,
+         consent_source = $3,
+         consent_text   = $4,
+         updated_at     = now()
+   WHERE silo = $5 AND lower(email) = lower($1)`;
+
+type ConsentQuery = (sql: string, params: unknown[]) => Promise<{ rowCount?: number | null }>;
+
+// Records express consent on one contact (by id) or on the silo's contacts with
+// that email. Never throws: a consent write failure is logged and must not fail
+// the visitor's submission. Returns whether a contact row was updated.
+export async function recordExpressCaslConsent(
+  query: ConsentQuery,
+  target: { contactId?: string | null; email?: string | null; silo?: string | null },
+  consent: ExpressCaslConsent | null,
+  source: string,
+): Promise<boolean> {
+  if (!consent) return false;
+  const at = consent.at.toISOString();
+  const silo = String(target.silo ?? "BF").toUpperCase();
+  try {
+    if (target.contactId) {
+      const r = await query(RECORD_EXPRESS_CASL_CONSENT_BY_ID_SQL, [target.contactId, at, source, consent.text]);
+      return Number(r.rowCount ?? 0) > 0;
+    }
+    const email = String(target.email ?? "").trim();
+    if (email) {
+      const r = await query(RECORD_EXPRESS_CASL_CONSENT_BY_EMAIL_SQL, [email, at, source, consent.text, silo]);
+      return Number(r.rowCount ?? 0) > 0;
+    }
+    console.warn("[casl-consent] no contact to record express consent on", { source });
+    return false;
+  } catch (err) {
+    console.warn("[casl-consent] record failed", { source, message: err instanceof Error ? err.message : String(err) });
+    return false;
+  }
+}

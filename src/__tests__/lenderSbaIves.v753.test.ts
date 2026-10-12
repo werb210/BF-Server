@@ -1,6 +1,16 @@
 // BF_SERVER_LENDER_SBA_IVES_v753
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import express from "express";
+import request from "supertest";
+import jwt from "jsonwebtoken";
+import { answerBySql, callsMatching } from "./helpers/answerBySql.js";
+
+const h = vi.hoisted(() => ({ query: vi.fn() }));
+vi.mock("../db.js", async (orig) => ({ ...(await orig() as any), pool: { query: h.query, connect: vi.fn() }, runQuery: h.query, dbQuery: h.query }));
+import lenderSelf from "../routes/lenderSelf.js";
+import portalLenders from "../routes/portalLenders.js";
+import { loadIvesLenders } from "../signnow/sba/sbaSigning.js";
 import { parseLenderSba, readLenderSba, saveLenderSba } from "../services/lenders/lenderSba.js";
 
 describe("offers SBA + IVES details", () => {
@@ -31,10 +41,41 @@ describe("offers SBA + IVES details", () => {
     expect(saved).toMatchObject({ offersSba: true, ivesParticipantName: "Acme", ivesParticipantId: "1", ivesSorMailboxId: "M", ivesStreet: "" });
     expect(await readLenderSba("l1", q)).toEqual(saved);
   });
-  it("routes exist for staff and for the lender, and a lender saying no gets no 4506-C", () => {
-    expect(readFileSync("src/routes/portalLenders.ts", "utf8")).toContain('"/lenders/:id/sba"');
-    expect(readFileSync("src/routes/lenderSelf.ts", "utf8")).toContain('"/me/sba"');
-    expect(readFileSync("src/signnow/sba/sbaSigning.ts", "utf8")).toContain("AND COALESCE(l.offers_sba, true) = true");
+  it("routes exist for staff and for the lender, and a lender saying no gets no 4506-C", async () => {
+    const LENDER_ID = "12121212-3434-4565-8787-909090909090";
+    const stored = { offers_sba: false, ives_participant_name: null, ives_participant_id: null, ives_sor_mailbox_id: null, ives_street: null, ives_city: null, ives_state: null, ives_zip: null };
+    h.query.mockImplementation(answerBySql([
+      [/SELECT offers_sba, ives_participant_name/, { rows: [stored] }],
+      [/UPDATE lenders SET offers_sba = \$2/, { rows: [{ id: LENDER_ID }] }],
+    ]));
+    const app = express();
+    app.use(express.json());
+    app.use("/api/lender", lenderSelf);
+    app.use("/api/portal", portalLenders);
+    const staff = jwt.sign({ sub: "13131313-1313-4313-8313-131313131313", role: "Admin", tokenVersion: 0, tv: 0 }, process.env.JWT_SECRET as string);
+    const lender = jwt.sign({ sub: "lender:" + LENDER_ID, role: "Lender", lenderId: LENDER_ID }, process.env.JWT_SECRET as string);
+
+    const staffGet = await request(app).get(`/api/portal/lenders/${LENDER_ID}/sba`).set("Authorization", `Bearer ${staff}`);
+    expect(staffGet.status).toBe(200);
+    expect(staffGet.body).toMatchObject({ offersSba: false });
+
+    const mine = await request(app).get("/api/lender/me/sba").set("Authorization", `Bearer ${lender}`);
+    expect(mine.status).toBe(200);
+    expect(mine.body.data).toMatchObject({ offersSba: false });
+    expect(callsMatching(h.query, /SELECT offers_sba/).every((c) => (c[1] as unknown[])[0] === LENDER_ID)).toBe(true);
+
+    const bad = await request(app).put("/api/lender/me/sba").set("Authorization", `Bearer ${lender}`).send({ offersSba: true });
+    expect(bad.status).toBe(400);
+    const saved = await request(app).put("/api/lender/me/sba").set("Authorization", `Bearer ${lender}`).send({ offersSba: false });
+    expect(saved.status).toBe(200);
+    expect(callsMatching(h.query, /UPDATE lenders SET offers_sba = \$2/)[0][1]).toEqual(expect.arrayContaining([LENDER_ID, false]));
+
+    // A lender that answered "no" is filtered out of the 4506-C participants; unanswered still counts.
+    h.query.mockImplementation(answerBySql([]));
+    await loadIvesLenders("app-1");
+    const ives = String(callsMatching(h.query, /FROM application_lender_selections s/)[0][0]);
+    expect(ives).toContain("AND COALESCE(l.offers_sba, true) = true");
+
     expect(readFileSync("migrations/2026_10_05_v753_lender_offers_sba.sql", "utf8")).toContain("ADD COLUMN IF NOT EXISTS offers_sba BOOLEAN");
   });
 });

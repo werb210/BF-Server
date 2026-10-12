@@ -1,6 +1,24 @@
 // BF_SERVER_FRAUD_ENFORCE_v50
 import { describe, it, expect, vi } from "vitest";
-import { readFileSync } from "node:fs";
+import express from "express";
+import request from "supertest";
+import jwt from "jsonwebtoken";
+import { answerBySql, callsMatching } from "../../../__tests__/helpers/answerBySql.js";
+
+const APP = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const h = vi.hoisted(() => ({ query: vi.fn(), loadPackageInputs: vi.fn(), questionsGate: vi.fn() }));
+vi.mock("../../../db.js", async (orig) => {
+  const real: any = await orig();
+  const q = (sql: unknown, params?: unknown[]) => h.query(sql, params);
+  const pool = { query: q, connect: async () => ({ query: q, release: () => undefined }) };
+  return { ...real, dbQuery: q, runQuery: q, query: q, pool, db: pool, default: pool };
+});
+vi.mock("../../lenders/loadPackageInputs.js", async (orig) => ({ ...(await orig<any>()), loadPackageInputs: h.loadPackageInputs }));
+vi.mock("../../productQuestions/sendGate.js", async (orig) => ({ ...(await orig<any>()), assertProductQuestionsAnswered: h.questionsGate }));
+
+import { dispatchToSelected } from "../../lenders/dispatchToSelected.js";
+import { tickSequences } from "../../sequenceEngine.js";
+import clientRouter from "../../../routes/client/index.js";
 import {
   isApplicationFraud, contactHasFraudApplication,
   assertApplicationNotFraud, FraudLockedError, FRAUD_LOCK_MESSAGE,
@@ -71,19 +89,57 @@ describe("assertApplicationNotFraud", () => {
 });
 
 describe("enforcement is wired at the choke points", () => {
-  const read = (p: string) => readFileSync(p, "utf8");
-  it("refuses a fraud file before a lender package is built", () => {
-    const src = read("src/services/lenders/dispatchToSelected.ts");
-    expect(src).toContain("await assertApplicationNotFraud(ctx.pool, ctx.applicationId);");
-    expect(src.indexOf("assertApplicationNotFraud")).toBeLessThan(src.indexOf("loadPackageInputs(ctx)"));
+  const stagePool = (stage: string) => ({ query: vi.fn(answerBySql([[/SELECT pipeline_state FROM applications/, { rows: [{ pipeline_state: stage }] }]])) });
+
+  it("refuses a fraud file before a lender package is built", async () => {
+    h.loadPackageInputs.mockReset();
+    h.questionsGate.mockReset();
+    const pool = stagePool("Fraud");
+    await expect(dispatchToSelected({ pool: pool as any, applicationId: APP }, [])).rejects.toBeInstanceOf(FraudLockedError);
+    expect(h.questionsGate).not.toHaveBeenCalled();
+    expect(h.loadPackageInputs).not.toHaveBeenCalled();
+    expect(callsMatching(pool.query, /SELECT pipeline_state FROM applications/)[0]![1]).toEqual([APP]);
+
+    // A working file goes on to build its package.
+    h.loadPackageInputs.mockRejectedValue(new Error("stop here"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await dispatchToSelected({ pool: stagePool("Off to Lender") as any, applicationId: APP }, []).catch(() => undefined);
+    expect(h.loadPackageInputs).toHaveBeenCalled();
+    warn.mockRestore();
   });
-  it("locks the applicant out of a fraud file", () => {
-    const src = read("src/routes/client/index.ts");
-    expect(src).toContain('res.status(423).json({ error: "application_locked"');
+
+  it("locks the applicant out of a fraud file", async () => {
+    const OWNER = "+15875550123";
+    h.query.mockReset();
+    h.query.mockImplementation(answerBySql([
+      [/SELECT pipeline_state FROM applications/, { rows: [{ pipeline_state: "Fraud" }] }],
+      [/FROM applications WHERE lower\(id::text\) = ANY/, { rows: [{ id: APP }] }],
+      [/WITH app_phones AS/, { rows: [{ total: 1, mine: 1, known: 1 }] }],
+    ]));
+    const app = express();
+    app.use(express.json());
+    app.use("/api/client", clientRouter);
+    const token = "Bearer " + jwt.sign({ sub: "client:" + OWNER, role: "client", phone: OWNER, isClient: true }, process.env.JWT_SECRET as string, { algorithm: "HS256" });
+    for (const r of [
+      await request(app).get(`/api/client/messages?applicationId=${APP}`).set("Authorization", token),
+      await request(app).post("/api/client/messages").set("Authorization", token).send({ applicationId: APP, body: "hello" }),
+    ]) {
+      expect(r.status).toBe(423);
+      expect(r.body).toEqual({ error: "application_locked", message: FRAUD_LOCK_MESSAGE });
+    }
+    expect(callsMatching(h.query, /communications_messages/)).toHaveLength(0);
   });
-  it("cancels rather than pauses a marketing enrollment on a fraud contact", () => {
-    const src = read("src/services/sequenceEngine.ts");
-    expect(src).toContain("contactHasFraudApplication(pool, en.contact_id)");
-    expect(src).toContain("status='cancelled'");
+
+  it("cancels rather than pauses a marketing enrollment on a fraud contact", async () => {
+    let claimed = false;
+    const query = vi.fn(answerBySql([
+      [/UPDATE marketing_sequence_enrollments SET status='running'/, () => (claimed ? { rows: [] } : ((claimed = true), { rows: [{ id: "en-1", sequence_id: "seq-1", contact_id: "c-fraud", current_step: 0 }] }))],
+      [/SELECT a\.id AS fraud_application_id/, (_s: string, p?: unknown[]) => ({ rows: p?.[0] === "c-fraud" ? [{ fraud_application_id: "app-9" }] : [] })],
+    ]));
+    await tickSequences({ query } as any);
+    expect(callsMatching(query, /SELECT a\.id AS fraud_application_id/)[0]![1]).toEqual(["c-fraud", "Fraud"]);
+    expect(callsMatching(query, "status='cancelled'").map((c) => c[1])).toEqual([["en-1"]]);
+    expect(callsMatching(query, /SET status='paused'|SET status='active'/)).toHaveLength(0);
+    expect(callsMatching(query, /marketing_sequence_steps|FROM marketing_sequences s WHERE/)).toHaveLength(0);
   });
 });

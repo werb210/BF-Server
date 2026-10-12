@@ -5,7 +5,6 @@ import { describe, it, expect, vi } from "vitest";
 import express from "express";
 import request from "supertest";
 import jwt from "jsonwebtoken";
-import fs from "node:fs";
 
 vi.mock("../db.js", () => {
   const query = vi.fn(async () => ({ rows: [] }));
@@ -42,10 +41,5 @@ describe("POST /api/voice/status", () => {
   it("requires auth", async () => {
     const r = await request(app).post("/api/voice/status").send({ callStatus: "ringing" });
     expect(r.status).toBe(401);
-  });
-
-  it("is gone from the unmounted routes/voice.ts", () => {
-    const src = fs.readFileSync("src/routes/voice.ts", "utf8");
-    expect(src).not.toContain('router.post("/status"');
   });
 });

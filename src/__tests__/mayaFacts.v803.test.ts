@@ -1,7 +1,9 @@
 // BF_SERVER_MAYA_FACTS_v803
-import { describe, it, expect, vi } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+import express from "express";
+import jwt from "jsonwebtoken";
+import request from "supertest";
+import { answerBySql, callsMatching, sqlText } from "./helpers/answerBySql.js";
 
 vi.mock("../services/googleAdsService.js", () => ({
   runGoogleAdsReport: vi.fn(async () => ({
@@ -12,7 +14,16 @@ vi.mock("../services/googleAdsService.js", () => ({
     ],
   })),
 }));
-import { pipelineFacts, adsPerformance } from "../routes/mayaStaffInsights.js";
+const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }));
+vi.mock("../db.js", async () => {
+  const actual = await vi.importActual<typeof import("../db.js")>("../db.js");
+  return { ...actual, pool: { query: queryMock } };
+});
+vi.mock("../routes/clientDocumentsNeeded.js", () => ({
+  computeOutstandingDocs: async () => ({ required: [], stillNeeded: [], rejected: [] }),
+}));
+import { pipelineFacts, adsPerformance, commsOverview } from "../routes/mayaStaffInsights.js";
+import mayaStaff from "../routes/mayaStaff.js";
 
 const day = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
 const APPS = [
@@ -62,17 +73,78 @@ describe("staff Maya ad numbers come from the live Google Ads report", () => {
 });
 
 describe("server errors from the log stream are fixed", () => {
-  const staff = readFileSync(fileURLToPath(new URL("../routes/mayaStaff.ts", import.meta.url)), "utf-8");
-  const insights = readFileSync(fileURLToPath(new URL("../routes/mayaStaffInsights.ts", import.meta.url)), "utf-8");
-  it("missed calls use call_events.occurred_at and open tasks use the live tasks table", () => {
-    expect(staff).toContain("event_type = 'call.missed' AND ($1::text IS NULL OR silo = $1) AND occurred_at > now()");
-    expect(staff).not.toContain("FROM crm_tasks WHERE ($1::text IS NULL OR silo = $1)");
+  const app = express();
+  app.use(express.json());
+  app.use("/api/maya", mayaStaff);
+  const svc = () => "Bearer " + jwt.sign({ kind: "service", source: "agent" }, process.env.JWT_SECRET as string, { algorithm: "HS256" });
+  const post = (p: string, body: Record<string, unknown>) => request(app).post("/api/maya" + p).set("Authorization", svc()).send(body);
+  const APP_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaa1234bbbb";
+
+  beforeEach(() => {
+    queryMock.mockReset();
+    queryMock.mockImplementation(answerBySql([
+      // The columns and tables production does not have fail the way Postgres fails them.
+      [/crm_tasks/, new Error('relation "crm_tasks" does not exist')],
+      [/FROM call_events[\s\S]*created_at > now\(\)/, new Error('column "created_at" does not exist')],
+      [/FROM call_events WHERE event_type = 'call.missed'/, { rows: [{ n: 3 }] }],
+      [/FROM tasks WHERE/, { rows: [{ n: 4 }] }],
+      [/FROM application_tasks t/, { rows: [{ n: 2 }] }],
+    ]));
   });
-  it("comms overview compares conferences.contact_id as text", () => {
-    expect(insights).toContain("LEFT JOIN contacts c ON c.id::text = cf.contact_id");
+
+  it("missed calls use call_events.occurred_at and open tasks use the live tasks table", async () => {
+    const r = await post("/staff/daily-briefing", { silo: "BF" });
+    expect(r.status).toBe(200);
+    expect(r.body.counts.recentMissedCalls).toBe(3);
+    expect(r.body.counts.openTasks).toBe(6);
+    const [missed] = callsMatching(queryMock, /FROM call_events/);
+    expect(sqlText(missed[0])).toContain("event_type = 'call.missed' AND ($1::text IS NULL OR silo = $1) AND occurred_at > now()");
+    expect(missed[1]).toEqual(["BF"]);
+    expect(sqlText(callsMatching(queryMock, /FROM tasks WHERE/)[0][0])).toContain("status NOT IN ('COMPLETED', 'DEFERRED')");
+    expect(callsMatching(queryMock, /crm_tasks/)).toHaveLength(0);
+    expect(r.body.summary).toContain("3 recent missed call(s)");
+    expect(r.body.summary).toContain("6 open task(s)");
   });
-  it("application summary can be found by name or short id", () => {
-    expect(staff).toContain('const lookup = typeof req.body?.name === "string"');
-    expect(staff).toContain("sentToLenders");
+
+  it("comms overview compares conferences.contact_id as text", async () => {
+    const seen: string[] = [];
+    const q = async (sql: string) => {
+      seen.push(sql);
+      if (sql.includes("FROM conferences cf")) {
+        // conferences.contact_id is TEXT; a uuid = text comparison is a Postgres error.
+        if (!sql.includes("c.id::text = cf.contact_id")) throw new Error("operator does not exist: uuid = text");
+        return { rows: [{ started_at: "2026-10-01", direction: "inbound", name: "Todd W", contact_id: "c1", summary: "Asked about rates" }] };
+      }
+      return { rows: [] };
+    };
+    const out: any = await commsOverview(q, "BF", null);
+    expect(out.recent_calls).toEqual([{ started_at: "2026-10-01", direction: "inbound", name: "Todd W", contact_id: "c1", summary: "Asked about rates" }]);
+    expect(seen.find((s) => s.includes("FROM conferences cf"))).toContain("LEFT JOIN contacts c ON c.id::text = cf.contact_id");
+  });
+
+  it("application summary can be found by name or short id", async () => {
+    queryMock.mockImplementation(answerBySql([
+      [/SELECT a.id::text AS id FROM applications a/, (_s: string, p?: unknown[]) => ({
+        rows: (p?.[0] === "%BIBUSA%" || String(p?.[1]).toUpperCase() === "1234BBBB") ? [{ id: APP_ID }] : [],
+      })],
+      [/FROM applications WHERE id::text = \$1 LIMIT 1/, (_s: string, p?: unknown[]) => ({
+        rows: p?.[0] === APP_ID ? [{ id: APP_ID, name: "BIBUSA CN LLC", pipeline_state: "Off to Lender", created_at: "2026-10-01", currency: "USD" }] : [],
+      })],
+      [/FROM lender_submissions ls/, { rows: [{ lender: "Bank A", status: "submitted", sent_at: "2026-10-02" }] }],
+    ]));
+    const byName = await post("/staff/application-summary", { name: "BIBUSA" });
+    expect(byName.status).toBe(200);
+    expect(byName.body.summary.applicationId).toBe(APP_ID);
+    expect(byName.body.summary.sentToLenders).toEqual([{ lender: "Bank A", status: "submitted", sentAt: "2026-10-02" }]);
+    const lookup = callsMatching(queryMock, /SELECT a.id::text AS id FROM applications a/);
+    expect(lookup[0][1]).toEqual(["%BIBUSA%", "BIBUSA", "BF"]);
+
+    const byShortId = await post("/staff/application-summary", { name: "#1234bbbb" });
+    expect(byShortId.status).toBe(200);
+    expect(byShortId.body.summary.shortId).toBe("1234BBBB");
+
+    const none = await post("/staff/application-summary", { name: "Nobody Inc" });
+    expect(none.status).toBe(404);
+    expect(none.body.error).toBe("not_found");
   });
 });

@@ -3,9 +3,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 import jwt from "jsonwebtoken";
-import { readFileSync } from "node:fs";
 
-const state: { kind: string; status: string; owns: boolean; deal: string | null; updates: Array<{ sql: string; params: unknown[] }> } = { kind: "broker", status: "active", owns: true, deal: "proposed", updates: [] };
+const state: { kind: string; status: string; owns: boolean; deal: string | null; updates: Array<{ sql: string; params: unknown[] }>; reads: Array<{ sql: string; params: unknown[] }> } = { kind: "broker", status: "active", owns: true, deal: "proposed", updates: [], reads: [] };
 vi.mock("../db.js", () => ({
   pool: {
     query: vi.fn(async (sql: string, params: unknown[] = []) => {
@@ -13,6 +12,10 @@ vi.mock("../db.js", () => ({
       if (/SELECT 1 FROM broker_imports/.test(sql)) return { rows: state.owns ? [{ "?column?": 1 }] : [] };
       if (/SELECT status FROM broker_deal_confirmations/.test(sql)) return { rows: state.deal ? [{ status: state.deal }] : [] };
       if (/UPDATE broker_deal_confirmations/.test(sql)) { state.updates.push({ sql, params }); return { rows: [{ status: "accepted" }] }; }
+      if (/FROM broker_imports bi/.test(sql)) {
+        state.reads.push({ sql, params });
+        return { rows: [{ import_id: "i1", application_id: "app1", zip_name: "client.zip", import_status: "imported", business_name: "Lee Haulage", stage: "Off to Lender", requested_amount: 250000, boreal_pct: 50, broker_pct: 50, split_status: "accepted" }] };
+      }
       return { rows: [] };
     }),
   },
@@ -27,7 +30,7 @@ async function app() {
   return a;
 }
 
-beforeEach(() => { state.kind = "broker"; state.status = "active"; state.owns = true; state.deal = "proposed"; state.updates = []; });
+beforeEach(() => { state.kind = "broker"; state.status = "active"; state.owns = true; state.deal = "proposed"; state.updates = []; state.reads = []; });
 
 describe("broker portal access", () => {
   it("referrers who are not brokers, and brokers who have not signed, are refused", async () => {
@@ -67,9 +70,17 @@ describe("agreeing the split", () => {
 });
 
 describe("sign-up and files", () => {
-  it("brokers see status only - the file list has no lender names or offer terms", () => {
-    const src = readFileSync("src/routes/brokerSelf.ts", "utf8");
-    const list = src.slice(src.indexOf('router.get("/files"'), src.indexOf('router.post("/files"'));
-    expect(list).not.toMatch(/lender|offers/i);
+  it("brokers see status only - the file list has no lender names or offer terms", async () => {
+    const r = await request(await app()).get("/api/broker/files").set("Authorization", "Bearer " + token());
+    expect(r.status).toBe(200);
+    expect(r.body.files[0]).toMatchObject({ application_id: "app1", stage: "Off to Lender", split_status: "accepted" });
+    expect(state.reads).toHaveLength(1);
+    expect(state.reads[0]!.sql).not.toMatch(/lender|offers/i);
+    expect(state.reads[0]!.params).toEqual(["u1"]);
+  });
+  it("a broker who has not signed cannot list files either", async () => {
+    state.status = "pending_agreement";
+    expect((await request(await app()).get("/api/broker/files").set("Authorization", "Bearer " + token())).status).toBe(403);
+    expect(state.reads).toHaveLength(0);
   });
 });

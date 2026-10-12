@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router = Router();
 
@@ -18,7 +19,7 @@ const optionalEnvKeys = [
   "MAYA_SERVICE_URL",
 ] as const;
 
-router.get("/", async (_req, res) => {
+router.get("/", safeHandler(async (_req, res) => {
   const missingRequired = requiredEnvKeys.filter((key) => !process.env[key]);
   const missingOptional = optionalEnvKeys.filter((key) => !process.env[key]);
 
@@ -53,6 +54,6 @@ router.get("/", async (_req, res) => {
     status: "ok",
     data: { ...data, maya },
   });
-});
+}));
 
 export default router;

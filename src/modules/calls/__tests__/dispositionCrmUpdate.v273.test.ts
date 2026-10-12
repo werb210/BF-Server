@@ -1,8 +1,20 @@
 // BF_SERVER_CALL_OUTCOME_CRM_v273
+import express from "express";
+import jwt from "jsonwebtoken";
+import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
-import fs from "node:fs";
+import { answerBySql, callsMatching } from "../../../__tests__/helpers/answerBySql.js";
+
+const h = vi.hoisted(() => ({ queryMock: vi.fn() }));
+vi.mock("../../../db.js", async (orig) => {
+  const real = await orig<typeof import("../../../db.js")>();
+  return { ...real, pool: { query: h.queryMock } };
+});
 import { CALL_DISPOSITIONS } from "../callDisposition.js";
 import { applyDispositionCrmUpdate, describeCrmUpdate, DISPOSITION_CRM_RULES, safeDispositionCrmUpdate } from "../dispositionCrmUpdate.js";
+import telephonyRouter from "../../../telephony/routes/telephonyRoutes.js";
+import watchDataRouter from "../../../watch/dataRoutes.js";
+import { issueWatchAccessToken } from "../../../watch/security.js";
 
 const CONTACT = "11111111-1111-1111-1111-111111111111";
 
@@ -60,8 +72,41 @@ describe("contact updates", () => {
 });
 
 describe("wiring", () => {
-  it("the dialer/portal route and the Watch route both apply it", () => {
-    expect(fs.readFileSync("src/telephony/routes/telephonyRoutes.ts", "utf8")).toContain("safeDispositionCrmUpdate(row?.contact_id, plan.disposition");
-    expect(fs.readFileSync("src/watch/dataRoutes.ts", "utf8")).toContain("safeDispositionCrmUpdate(row?.contact_id, disposition");
+  const CALL = "22222222-2222-4222-8222-222222222222";
+  const STAFF = "33333333-3333-4333-8333-333333333333";
+  const db = () => {
+    h.queryMock.mockReset();
+    h.queryMock.mockImplementation(answerBySql([
+      [/FROM watch_sessions s JOIN watch_devices d/, { rows: [{ id: "s1", staff_user_id: STAFF, role: "Staff", silo: "BF", silos: [] }] }],
+      [/UPDATE call_logs SET disposition/, { rows: [{ id: CALL, contact_id: CONTACT, silo: "BF" }], rowCount: 1 }],
+      [/SET lead_status/, (_s: string, p?: unknown[]) => ({ rows: [{ lead_status: p?.[1] }] })],
+      [/marketing_sequence_enrollments/, { rows: [{ id: "e1" }] }],
+    ]));
+  };
+  const contactUpdates = () => callsMatching(h.queryMock, /SET lead_status/).map((c) => c[1] as unknown[]);
+  const note = () => String((callsMatching(h.queryMock, /INSERT INTO crm_notes/)[0]?.[1] as unknown[] | undefined)?.[0] ?? "");
+
+  it("the dialer/portal route and the Watch route both apply it", async () => {
+    db();
+    const app = express();
+    app.use(express.json());
+    app.use("/api/telephony", telephonyRouter);
+    const staff = jwt.sign({ sub: STAFF, role: "Staff", tokenVersion: 0, tv: 0 }, process.env.JWT_SECRET as string, { algorithm: "HS256" });
+    const dialer = await request(app).post(`/api/telephony/calls/${CALL}/disposition`).set("Authorization", "Bearer " + staff).send({ disposition: "not_interested" });
+    expect(dialer.status).toBe(200);
+    expect(dialer.body.data.crmUpdate).toEqual({ leadStatus: "Unqualified", sequencesStopped: 1, optedOut: false });
+    expect(contactUpdates()[0].slice(0, 2)).toEqual([CONTACT, "Unqualified"]);
+    expect(note()).toContain("lead status set to Unqualified");
+
+    db();
+    const watchApp = express();
+    watchApp.use(express.json());
+    watchApp.use("/api/watch", watchDataRouter);
+    const { accessToken } = issueWatchAccessToken(STAFF, "device-1", "session-1");
+    const watch = await request(watchApp).post(`/api/watch/calls/${CALL}/disposition`).set("Authorization", "Bearer " + accessToken).send({ disposition: "do_not_contact" });
+    expect(watch.status).toBe(200);
+    expect(watch.body.crmUpdate).toEqual({ leadStatus: "Do not contact", sequencesStopped: 1, optedOut: true });
+    expect(contactUpdates()[0].slice(0, 2)).toEqual([CONTACT, "Do not contact"]);
+    expect(note()).toContain("marketing email and SMS turned off");
   });
 });

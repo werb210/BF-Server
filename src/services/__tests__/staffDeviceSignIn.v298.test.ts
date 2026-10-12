@@ -1,6 +1,18 @@
 // BF_SERVER_STAFF_FACE_ID_v298
-import { describe, expect, it, vi } from "vitest";
-import fs from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import express from "express";
+import request from "supertest";
+import jwt from "jsonwebtoken";
+
+const h = vi.hoisted(() => ({ poolQuery: vi.fn(), findAuthUserById: vi.fn() }));
+// The production path of the auth router, so the real OTP rate limiter is live.
+vi.mock("../../config/runtime.js", () => ({ isTest: false }));
+vi.mock("../../db.js", async () => ({ ...(await vi.importActual<any>("../../db.js")), pool: { query: h.poolQuery }, dbQuery: h.poolQuery }));
+vi.mock("../../modules/auth/auth.repo.js", async () => ({
+  ...(await vi.importActual<any>("../../modules/auth/auth.repo.js")),
+  findAuthUserById: h.findAuthUserById,
+}));
+
 import { enrollStaffDevice, hashSecret, isActiveStaff, revokeStaffDevices, verifyStaffDevice } from "../staffDeviceSignIn.js";
 
 const ID = "22222222-2222-2222-2222-222222222222";
@@ -55,10 +67,46 @@ describe("staff Face ID sign-in", () => {
     expect(rows.get(ID).revoked_at).toBeTruthy();
   });
 
-  it("routes are on the auth router with the OTP rate limit", () => {
-    const auth = fs.readFileSync("src/routes/auth.ts", "utf8");
-    expect(auth).toContain('router.post("/device-sign-in", otpVerifyLimiter');
-    expect(auth).toContain('router.post("/device-sign-in/enroll", requireAuth');
-    expect(auth).toContain('router.post("/device-sign-in/revoke", requireAuth');
+  describe("routes are on the auth router with the OTP rate limit", () => {
+    const token = () => jwt.sign({ sub: staff.id, role: "Staff", tokenVersion: 0, tv: 0 }, String(process.env.JWT_SECRET));
+    let app: express.Express;
+    beforeEach(async () => {
+      const { query } = store();
+      h.poolQuery.mockReset().mockImplementation(query);
+      h.findAuthUserById.mockReset().mockResolvedValue({ ...staff, phoneNumber: "+14035550177" });
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const router = (await import("../../routes/auth.js")).default;
+      app = express();
+      app.use(express.json());
+      app.use("/api/auth", router);
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    it("enroll and revoke require a signed-in user", async () => {
+      expect((await request(app).post("/api/auth/device-sign-in/enroll").send({})).status).toBe(401);
+      expect((await request(app).post("/api/auth/device-sign-in/revoke").send({})).status).toBe(401);
+      expect(h.poolQuery).not.toHaveBeenCalled();
+    });
+
+    it("enroll, sign in with the device secret, then revoke", async () => {
+      const enrolled = await request(app).post("/api/auth/device-sign-in/enroll").set("Authorization", `Bearer ${token()}`).send({ deviceLabel: "iPhone" });
+      expect(enrolled.status).toBe(201);
+      const { credentialId, secret } = enrolled.body;
+      const signIn = await request(app).post("/api/auth/device-sign-in").send({ credentialId, secret });
+      expect(signIn.status).toBe(200);
+      expect((jwt.decode(signIn.body.data.token) as any).sub).toBe(staff.id);
+      const revoked = await request(app).post("/api/auth/device-sign-in/revoke").set("Authorization", `Bearer ${token()}`).send({ credentialId });
+      expect(revoked.body).toEqual({ revoked: 1 });
+      expect((await request(app).post("/api/auth/device-sign-in").send({ credentialId, secret: signIn.body.data.secret })).status).toBe(401);
+    });
+
+    it("device sign-in is rate limited like OTP verify", async () => {
+      const statuses: number[] = [];
+      for (let i = 0; i < 12; i++) {
+        statuses.push((await request(app).post("/api/auth/device-sign-in").send({ credentialId: ID, secret: "wrong" })).status);
+      }
+      expect(statuses.filter((s) => s === 401).length).toBeGreaterThan(0);
+      expect(statuses.at(-1)).toBe(429);
+    });
   });
 });

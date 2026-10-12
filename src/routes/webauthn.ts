@@ -12,7 +12,8 @@ import { signAccessToken } from "../auth/jwt.js";
 import { ROLES, normalizeRole } from "../auth/roles.js";
 import { fetchCapabilitiesForRole } from "../auth/capabilities.js";
 import { findAuthUserById } from "../modules/auth/auth.repo.js";
-import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 const RP_ID = process.env.WEBAUTHN_RP_ID || "staff.boreal.financial";
@@ -39,7 +40,7 @@ async function purgeExpiredChallenges(): Promise<void> {
   try { await pool.query(`DELETE FROM webauthn_challenges WHERE expires_at < now()`); } catch { /* noop */ }
 }
 
-router.post("/register/options", requireAuth, async (req: any, res) => {
+router.post("/register/options", requireAuth, safeHandler(async (req: any, res) => {
   const userId = req.user?.id;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
   const user = await findAuthUserById(String(userId));
@@ -60,9 +61,9 @@ router.post("/register/options", requireAuth, async (req: any, res) => {
   await purgeExpiredChallenges();
   await pool.query(`INSERT INTO webauthn_challenges (challenge, user_id, kind) VALUES ($1, $2, 'register')`, [options.challenge, userId]);
   return res.json(options);
-});
+}));
 
-router.post("/register/verify", requireAuth, async (req: any, res) => {
+router.post("/register/verify", requireAuth, safeHandler(async (req: any, res) => {
   const userId = req.user?.id;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
   const ch = await pool
@@ -83,16 +84,16 @@ router.post("/register/verify", requireAuth, async (req: any, res) => {
      typeof req.body?.deviceLabel === "string" ? req.body.deviceLabel.slice(0, 120) : null]);
   await pool.query(`DELETE FROM webauthn_challenges WHERE user_id = $1 AND kind = 'register'`, [userId]);
   return res.json({ ok: true });
-});
+}));
 
-router.post("/login/options", async (_req, res) => {
+router.post("/login/options", safeHandler(async (_req, res) => {
   const options = await generateAuthenticationOptions({ rpID: RP_ID, userVerification: "preferred" });
   await purgeExpiredChallenges();
   await pool.query(`INSERT INTO webauthn_challenges (challenge, kind) VALUES ($1, 'login')`, [options.challenge]);
   return res.json(options);
-});
+}));
 
-router.post("/login/verify", async (req: any, res) => {
+router.post("/login/verify", safeHandler(async (req: any, res) => {
   const body = req.body;
   if (!body?.id || !body?.response?.clientDataJSON) return res.status(400).json({ error: "invalid_request" });
   const cred = await pool
@@ -137,6 +138,6 @@ router.post("/login/verify", async (req: any, res) => {
   const user = await findAuthUserById(cred.user_id);
   if (!user || (user as any).disabled || !(user as any).active) return res.status(403).json({ error: "user_inactive" });
   return res.json({ status: "ok", data: { token: mintStaffToken(user) } });
-});
+}));
 
 export default router;

@@ -7,6 +7,7 @@
 import { Router } from "express";
 import { pool } from "../db.js";
 import { classifyOpenSource } from "./openTruth.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 export { classifyOpenSource, MACHINE_SOURCES } from "./openTruth.js";
 
@@ -18,7 +19,7 @@ const PIXEL = Buffer.from(
   "base64",
 );
 
-router.get("/email/:token.gif", async (req, res) => {
+router.get("/email/:token.gif", safeHandler(async (req, res) => {
   const token = String(req.params.token ?? "").trim();
   if (token) {
     try {
@@ -53,6 +54,6 @@ router.get("/email/:token.gif", async (req, res) => {
   res.set("Pragma", "no-cache");
   res.set("Expires", "0");
   res.end(PIXEL);
-});
+}));
 
 export default router;

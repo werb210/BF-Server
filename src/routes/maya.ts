@@ -10,6 +10,8 @@ import { ROLES } from "../auth/roles.js";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 import { deriveMayaIdentity, mayaContextHeaders, staffIdFromPrincipal } from "../services/mayaContext.js"; // BF_SERVER_v784_MAYA_IDENTITY
 import { principalFromRequest } from "../auth/principal.js";
+import { checkApplicationAccess } from "../auth/clientApplicationOwnership.js"; // BF_SERVER_v789_MAYA_PROXY_SCOPE
+import type { MayaAudience } from "../services/mayaContext.js";
 import { safeKeyGenerator } from "../middleware/rateLimit.js";
 
 const router = express.Router();
@@ -44,6 +46,37 @@ export const mayaProxyRateLimit = rateLimit({
   },
 });
 
+// BF_SERVER_v789_MAYA_PROXY_SCOPE - the agent answers about whatever application
+// id the body names, so a client could name someone else's file. Client callers
+// keep an id only when they can access that application; public callers never
+// forward one. Staff keep theirs.
+export const MAYA_PROXY_TIMEOUT_MS = 25_000;
+const MAYA_APP_ID_KEYS = ["application_id", "applicationId"] as const;
+
+function stripApplicationIds(body: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...body };
+  for (const k of MAYA_APP_ID_KEYS) delete out[k];
+  return out;
+}
+
+export async function scopeApplicationIds(
+  body: Record<string, unknown>,
+  audience: MayaAudience,
+  req: express.Request,
+): Promise<Record<string, unknown>> {
+  if (audience === "staff") return body;
+  if (audience !== "client") return stripApplicationIds(body);
+  const out = { ...body };
+  const principal = principalFromRequest(req as any);
+  for (const k of MAYA_APP_ID_KEYS) {
+    if (!(k in out)) continue;
+    const id = typeof out[k] === "string" ? String(out[k]).trim() : "";
+    const access = id ? await checkApplicationAccess(principal, id) : { ok: false };
+    if (!access.ok) delete out[k];
+  }
+  return out;
+}
+
 // BF_SERVER_BLOCK_v638_MULTIFIX_v1 — accept the original req so we can forward
 // X-Maya-Audience (staff|client|visitor) + X-Silo to the agent. Without these
 // the agent defaulted to "visitor" and the staff Maya widget kept asking for
@@ -65,7 +98,8 @@ export async function proxyMayaToAgent(
   }
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 10000);
+    // BF_SERVER_v789_MAYA_PROXY_SCOPE - the agent budgets 22 s per turn; 10 s cut long answers off.
+    const t = setTimeout(() => ctrl.abort(), MAYA_PROXY_TIMEOUT_MS);
     // BF_SERVER_v784_MAYA_IDENTITY - identity comes only from the verified
     // Authorization token (see services/mayaContext.ts). The caller's own
     // X-Maya-Audience header and body.phone / body.staff / body.audience are
@@ -79,7 +113,7 @@ export async function proxyMayaToAgent(
     let fwdBody: unknown = body;
     if (body && typeof body === "object" && !Array.isArray(body)) {
       const { phone: _p, staff: _s, audience: _a, ...rest } = body as Record<string, unknown>;
-      fwdBody = rest;
+      fwdBody = req ? await scopeApplicationIds(rest, identity.audience, req) : stripApplicationIds(rest);
     }
     const upstream = await fetch(`${mayaUrl}${agentPath}`, {
       method,

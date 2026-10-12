@@ -1,5 +1,5 @@
 // BF_SERVER_CRM_CONTEXT_v653 - optional context used by CRM summaries and Maya.
-import jwt from "jsonwebtoken";
+import { signServiceToken } from "../../auth/serviceTokens.js"; // BF_SERVER_v789_SERVICE_TOKENS
 import { pool } from "../../db.js";
 import { buildActionCenter } from "../applicantActions.js";
 import { pgiStageFor } from "../pgiStage.js";
@@ -93,9 +93,10 @@ export async function contactContextSections(contact: any, apps: any[], deps: Co
 }
 
 export async function fetchBiPerson(email: string | null, phone: string | null): Promise<any | null> {
-  const secret = process.env.JWT_SECRET || ""; if (!secret) return null;
+  // BF_SERVER_v789_SERVICE_TOKENS - helper token (iss/aud, BI secret when set).
+  let token: string; try { token = signServiceToken("bi-server", { source: "maya-service" }); } catch (error) { console.warn("[crm-context] bi_token_unavailable", { message: (error as Error)?.message }); return null; }
   const base = (process.env.BI_SERVER_URL || "https://bi-server-cse0apamgkheb9d5.canadacentral-01.azurewebsites.net").replace(/\/+$/, "");
-  const token = jwt.sign({ kind: "service", source: "maya-service" }, secret, { expiresIn: "5m" }); const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 5000);
+  const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 5000);
   try { const response = await fetch(`${base}/api/v1/bi/maya/staff/person-summary`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ email, phone }), signal: controller.signal }); if (!response.ok) { console.warn("[crm-context] bi_person_http", { status: response.status }); return null; } const body: any = await response.json(); return body?.ok ? body : null; }
   finally { clearTimeout(timer); }
 }

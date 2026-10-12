@@ -3,45 +3,90 @@ import path from "path";
 import type { Pool, PoolClient } from "pg";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
-// Postgres error codes we treat as "already-there, safe to skip":
-//   42P07 duplicate table · 42710 duplicate object · 42701 duplicate column
-//   42P16 invalid table def · 42P06 duplicate schema · 42P05 dup prepared stmt
-//   42P03 duplicate cursor · 42704 undefined object (older PG IF EXISTS)
-const IDEMPOTENT_CODES = new Set(["42P07", "42710", "42701", "42P16", "42P06", "42P05", "42P03", "42704"]);
+// BF_SERVER_v789_MIGRATIONS_STRICT - there is no tolerated-error list any more.
+// Migrations are idempotent by rule (IF NOT EXISTS / NOT EXISTS), production
+// already has its history recorded and a fresh database loads the baseline, so
+// an error is a real error: the file is rolled back, NOT recorded, and the
+// throw stops startup (src/index.ts exits non-zero so App Service restarts
+// instead of serving on a half-migrated schema).
 
 const MIGRATION_ADVISORY_LOCK_KEY = 8732914055n;
 
 // BF_SERVER_BLOCK_v681_MIGRATION_LOCK_NONBLOCKING_v1
 // Was BLOCKING pg_advisory_lock(): two instances booting at once (staging slot
-// + production, which happens on every deploy/swap) collided — one took the
-// lock, the other blocked FOREVER inside pg_advisory_lock and never reached
-// app.listen(). Azure killed the blocked instance, it restarted, collided
-// again, and both slots crash-looped with nobody able to log in.
-// Now: NON-BLOCKING pg_try_advisory_lock() with a short bounded retry. If
-// another instance is already applying the (additive-only) migrations, this
-// one gives up after the budget and BOOTS ANYWAY without running them —
-// serving traffic beats hanging. A genuinely broken migration still throws and
-// stays fatal upstream; only the lock-contention hang is removed.
-const LOCK_RETRY_ATTEMPTS = 20;
-const LOCK_RETRY_DELAY_MS = 500; // up to ~10s before booting anyway
+// + production) collided and the loser hung forever inside pg_advisory_lock.
+// The lock is still taken NON-BLOCKING with pg_try_advisory_lock().
+// BF_SERVER_v789_MIGRATION_LOCK_WAIT - v681 then BOOTED ANYWAY after ~10s
+// without running migrations, i.e. it served traffic on an old schema. Now it
+// polls quickly for the first 10s, then keeps polling (slower) for up to 5
+// minutes; if the lock is still held it throws MigrationLockTimeoutError, so
+// the process exits non-zero and App Service restarts it.
+export type RunMigrationsOptions = {
+  /** Poll interval during the fast phase. */
+  lockPollMs?: number;
+  /** Length of the fast phase (default 10s); a warning is logged after it. */
+  lockFastPhaseMs?: number;
+  /** Poll interval after the fast phase. */
+  lockSlowPollMs?: number;
+  /** Total time to wait for the lock before giving up (default 5 minutes). */
+  lockTimeoutMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+};
 
-function sleep(ms: number): Promise<void> {
+const DEFAULT_LOCK_POLL_MS = 500;
+const DEFAULT_LOCK_FAST_PHASE_MS = 10_000;
+const DEFAULT_LOCK_SLOW_POLL_MS = 5_000;
+const DEFAULT_LOCK_TIMEOUT_MS = 5 * 60_000;
+
+export class MigrationLockTimeoutError extends Error {
+  constructor(waitedMs: number) {
+    super(`[MIGRATIONS] migration lock still held by another instance after ${Math.round(waitedMs / 1000)}s; refusing to boot on an unmigrated schema`);
+    this.name = "MigrationLockTimeoutError";
+  }
+}
+
+function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function tryAcquireMigrationLock(client: PoolClient): Promise<boolean> {
-  for (let attempt = 1; attempt <= LOCK_RETRY_ATTEMPTS; attempt++) {
+async function acquireMigrationLock(client: PoolClient, opts: RunMigrationsOptions): Promise<void> {
+  const pollMs = opts.lockPollMs ?? DEFAULT_LOCK_POLL_MS;
+  const fastPhaseMs = opts.lockFastPhaseMs ?? DEFAULT_LOCK_FAST_PHASE_MS;
+  const slowPollMs = opts.lockSlowPollMs ?? DEFAULT_LOCK_SLOW_POLL_MS;
+  const timeoutMs = opts.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
+  const sleep = opts.sleep ?? defaultSleep;
+  const now = opts.now ?? Date.now;
+  const startedAt = now();
+  let warned = false;
+  for (let attempt = 1; ; attempt++) {
     const res = await client.query<{ locked: boolean }>(
       "SELECT pg_try_advisory_lock($1) AS locked",
       [String(MIGRATION_ADVISORY_LOCK_KEY)]
     );
-    if (res.rows[0]?.locked === true) return true;
-    if (attempt < LOCK_RETRY_ATTEMPTS) {
-      console.log(`[MIGRATIONS] lock held by another instance; retry ${attempt}/${LOCK_RETRY_ATTEMPTS} in ${LOCK_RETRY_DELAY_MS}ms`);
-      await sleep(LOCK_RETRY_DELAY_MS);
+    if (res.rows[0]?.locked === true) return;
+    const waited = now() - startedAt;
+    if (waited >= timeoutMs) throw new MigrationLockTimeoutError(waited);
+    const fast = waited < fastPhaseMs;
+    if (!fast && !warned) {
+      warned = true;
+      console.warn(`[MIGRATIONS] lock still held by another instance after ${Math.round(waited / 1000)}s; waiting up to ${Math.round(timeoutMs / 1000)}s, then exiting`);
     }
+    const delay = Math.max(1, Math.min(fast ? pollMs : slowPollMs, timeoutMs - waited));
+    console.log(`[MIGRATIONS] lock held by another instance; retry ${attempt} in ${delay}ms`);
+    await sleep(delay);
   }
-  return false;
+}
+
+// BF_SERVER_v789_MIGRATION_SESSION - session settings for the migration client
+// only. statement_timeout 0 so a long backfill is not cut off by a role or
+// database default; lock_timeout 30s so DDL stuck behind live traffic fails
+// loudly instead of queueing every other query behind it. The connection is
+// destroyed afterwards (release(true)), so the pool never hands these settings,
+// or the baseline's search_path, to other code.
+async function applyMigrationSessionSettings(client: PoolClient): Promise<void> {
+  await client.query("SET statement_timeout = 0");
+  await client.query("SET lock_timeout = '30s'");
 }
 
 async function releaseMigrationLock(client: PoolClient): Promise<void> {
@@ -66,16 +111,17 @@ async function fetchApplied(client: PoolClient): Promise<Set<string>> {
   return new Set(res.rows.map((r) => r.id));
 }
 
-function pgErrorCode(err: unknown): string | undefined {
-  if (!err || typeof err !== "object") return undefined;
-  const code = (err as { code?: unknown }).code;
-  return typeof code === "string" ? code : undefined;
+// Message + code only: a pg error object references the live connection.
+function errSummary(err: unknown): string {
+  const e = err as { message?: unknown; code?: unknown } | null | undefined;
+  const code = e && typeof e.code === "string" ? ` (code ${e.code})` : "";
+  return String(e?.message ?? err) + code;
 }
 
-export async function runMigrations(pool: Pool): Promise<void> {
+export async function runMigrations(pool: Pool, opts: RunMigrationsOptions = {}): Promise<void> {
   const migrationsDir = path.join(process.cwd(), "migrations");
   if (!fs.existsSync(migrationsDir)) {
-    console.log("[MIGRATIONS] No migrations directory — skipping.");
+    console.log("[MIGRATIONS] No migrations directory - skipping (nothing to apply).");
     return;
   }
 
@@ -90,11 +136,8 @@ export async function runMigrations(pool: Pool): Promise<void> {
 
   const client = await pool.connect();
   try {
-    const acquired = await tryAcquireMigrationLock(client);
-    if (!acquired) {
-      console.warn("[MIGRATIONS] another instance holds the migration lock; skipping migrations and booting to serve traffic.");
-      return;
-    }
+    await applyMigrationSessionSettings(client);
+    await acquireMigrationLock(client, opts);
     try {
       await ensureTrackingTable(client);
       let applied = await fetchApplied(client);
@@ -134,45 +177,55 @@ export async function runMigrations(pool: Pool): Promise<void> {
           // just created. Drop it so the baseline restores its real definition,
           // then the inserts below repopulate it - rather than teaching the
           // baseline to be idempotent, which is not ours to edit.
-          await client.query("BEGIN");
-          await client.query("DROP TABLE IF EXISTS schema_migrations");
-          await client.query(baselineSql);
-          // pg_dump emits SET search_path = '' and qualifies every object, so
-          // anything unqualified after it fails with "no schema has been
-          // selected to create in". Put it back before touching the tracking
-          // table or inserting a single row.
-          await client.query("SET search_path TO public");
-          await ensureTrackingTable(client);
-          // Everything the baseline already contains is, by definition, applied.
-          // Recording every historical filename is what stops the 22 broken ones
-          // from running against a schema that already has their tables.
-          // BF_SERVER_BASELINE_MANIFEST_v678 - only the files the snapshot was taken from are
-          // "already applied". Migrations written after the snapshot are listed nowhere, so they
-          // run below like on any other database - CI databases get every new table without the
-          // snapshot being regenerated.
-          const manifestPath = path.join(migrationsDir, "000000_baseline.files.txt");
-          const covered = fs.existsSync(manifestPath)
-            ? new Set(fs.readFileSync(manifestPath, "utf8").split(NL).map((l) => l.split(CR).join("").trim()).filter(Boolean))
-            : null;
           let recorded = 0;
-          for (const f of ordinaryFiles) {
-            if (covered && !covered.has(f)) continue;
-            recorded += 1;
+          await client.query("BEGIN");
+          try {
+            await client.query("DROP TABLE IF EXISTS schema_migrations");
+            await client.query(baselineSql);
+            // pg_dump emits SET search_path = '' and qualifies every object, so
+            // anything unqualified after it fails with "no schema has been
+            // selected to create in". Put it back before touching the tracking
+            // table or inserting a single row.
+            await client.query("SET search_path TO public");
+            await ensureTrackingTable(client);
+            // Everything the baseline already contains is, by definition, applied.
+            // Recording every historical filename is what stops the 22 broken ones
+            // from running against a schema that already has their tables.
+            // BF_SERVER_BASELINE_MANIFEST_v678 - only the files the snapshot was taken from are
+            // "already applied". Migrations written after the snapshot are listed nowhere, so they
+            // run below like on any other database - CI databases get every new table without the
+            // snapshot being regenerated.
+            const manifestPath = path.join(migrationsDir, "000000_baseline.files.txt");
+            const covered = fs.existsSync(manifestPath)
+              ? new Set(fs.readFileSync(manifestPath, "utf8").split(NL).map((l) => l.split(CR).join("").trim()).filter(Boolean))
+              : null;
+            for (const f of ordinaryFiles) {
+              if (covered && !covered.has(f)) continue;
+              recorded += 1;
+              await client.query(
+                "INSERT INTO schema_migrations (id) VALUES ($1) ON CONFLICT (id) DO NOTHING",
+                [f],
+              );
+            }
             await client.query(
               "INSERT INTO schema_migrations (id) VALUES ($1) ON CONFLICT (id) DO NOTHING",
-              [f],
+              [BASELINE_FILE],
             );
+            await client.query("COMMIT");
+          } catch (err) {
+            // BF_SERVER_v789_MIGRATIONS_STRICT - a failed baseline leaves nothing behind.
+            await client.query("ROLLBACK").catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "startup/runMigrations.ts:baseline_rollback");});
+            console.error("[MIGRATIONS] FATAL loading the schema baseline", errSummary(err));
+            throw err;
           }
-          await client.query(
-            "INSERT INTO schema_migrations (id) VALUES ($1) ON CONFLICT (id) DO NOTHING",
-            [BASELINE_FILE],
-          );
-          await client.query("COMMIT");
+          // The dump SETs lock_timeout / statement_timeout for the session; put ours back.
+          await applyMigrationSessionSettings(client);
           applied = await fetchApplied(client);
           console.log(`[MIGRATIONS] baseline applied; ${recorded} historical migrations recorded, ${ordinaryFiles.length - recorded} newer ones will run`);
         }
       }
 
+      let newlyApplied = 0;
       for (const file of ordinaryFiles) {
         if (applied.has(file)) continue;
 
@@ -188,20 +241,12 @@ export async function runMigrations(pool: Pool): Promise<void> {
           );
           await client.query("COMMIT");
           applied.add(file);
+          newlyApplied += 1;
           console.log(`[MIGRATIONS] applied: ${file}`);
         } catch (err) {
+          // BF_SERVER_v789_MIGRATIONS_STRICT - any error: roll back, do not record, stop.
           await client.query("ROLLBACK").catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "startup/runMigrations.ts:192");});
-          const code = pgErrorCode(err);
-          if (code && IDEMPOTENT_CODES.has(code)) {
-            console.warn(`[MIGRATIONS] treating ${file} as already-present (code ${code})`);
-            await client.query(
-              "INSERT INTO schema_migrations (id) VALUES ($1) ON CONFLICT (id) DO NOTHING",
-              [file]
-            ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "startup/runMigrations.ts:196");});
-            applied.add(file);
-            continue;
-          }
-          console.error(`[MIGRATIONS] FATAL on ${file}`, err);
+          console.error(`[MIGRATIONS] FATAL on ${file}`, errSummary(err));
           throw err;
         }
       }
@@ -231,10 +276,14 @@ export async function runMigrations(pool: Pool): Promise<void> {
           );
         }
       }
+      // BF_SERVER_v789_MIGRATION_LOCK_WAIT - logged here, and only here: every file is applied.
+      console.log(`[MIGRATIONS] All migrations applied (${newlyApplied} new this boot).`);
     } finally {
       await releaseMigrationLock(client);
     }
   } finally {
-    client.release();
+    // BF_SERVER_v789_MIGRATION_SESSION - destroy, never return to the pool: the
+    // connection carries session-level SETs (ours and the baseline's).
+    client.release(true);
   }
 }

@@ -1,17 +1,19 @@
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { clientIpForRateLimit } from "./authRateLimit.js";
 
+// BF_SERVER_v789_XFF_KEY
+// Keying on the LEFT-most X-Forwarded-For entry let a caller forge a new address per
+// request and never hit any limiter built on this generator. Azure appends the real
+// caller on the RIGHT, so reuse authRateLimit's right-to-left walk (first public hop,
+// port stripped, falling back to req.ip, which honours trust proxy 1). ipKeyGenerator
+// collapses IPv6 to its /64.
 function safeKeyGenerator(req: any): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  const rawIp = typeof forwarded === "string"
-    ? forwarded.split(",")[0].trim()
-    : (req.ip ?? "unknown");
-
-  const withoutV4Mapped = rawIp.replace(/^::ffff:/, "");
-  const cleanIp = /^\d+\.\d+\.\d+\.\d+:\d+$/.test(withoutV4Mapped)
-    ? withoutV4Mapped.split(":")[0]
-    : withoutV4Mapped;
-
-  return ipKeyGenerator(cleanIp || rawIp);
+  const ip = clientIpForRateLimit({
+    headers: req?.headers ?? {},
+    ip: req?.ip,
+    socket: req?.socket,
+  } as any).replace(/^::ffff:/i, "");
+  return ipKeyGenerator(ip || "unknown");
 }
 
 export const globalLimiter = rateLimit({

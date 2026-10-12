@@ -1,13 +1,24 @@
 // BF_SERVER_BLOCK_v534_CRM_AI_BRIEF
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import fs from "node:fs";
+import express from "express";
+import request from "supertest";
+import { mountRouter, staffToken } from "../../../__tests__/helpers/staffRouterApp.js";
 
 const query = vi.fn();
-vi.mock("../../../db.js", () => ({ pool: { query: (...args: unknown[]) => query(...args) } }));
+vi.mock("../../../db.js", async () => ({
+  ...(await vi.importActual<any>("../../../db.js")),
+  pool: { query: (...args: unknown[]) => query(...args) },
+}));
 const askAI = vi.fn(async () => "Background: Roofing contractor in Laval.\n- Application in review");
-vi.mock("../../../modules/ai/openai.service.js", () => ({ askAI: (...args: unknown[]) => askAI(...(args as [])) }));
+vi.mock("../../../modules/ai/openai.service.js", async () => ({
+  ...(await vi.importActual<any>("../../../modules/ai/openai.service.js")),
+  askAI: (...args: unknown[]) => askAI(...(args as [])),
+}));
 const loadCrmTimeline = vi.fn();
-vi.mock("../../../routes/crm/timeline.js", () => ({ loadCrmTimeline: (...args: unknown[]) => loadCrmTimeline(...args) }));
+vi.mock("../../../routes/crm/timeline.js", () => ({
+  loadCrmTimeline: (...args: unknown[]) => loadCrmTimeline(...args),
+  default: express.Router(),
+}));
 
 import { businessDomain, contactBrief, htmlToText, isPublicHost, timelineLines } from "../contactBrief.js";
 
@@ -71,10 +82,26 @@ describe("v534 contact brief", () => {
 });
 
 describe("v534 wiring", () => {
-  it("both summary routes use the brief and the timeline is shared", () => {
-    const crm = fs.readFileSync("src/routes/crm.ts", "utf8");
-    expect(crm).toContain("await contactBrief(String(req.params.id), resolveSiloFromRequest(req))");
-    expect(crm).toContain("await companyBrief(String(req.params.id), resolveSiloFromRequest(req))");
-    expect(fs.readFileSync("src/routes/crm/timeline.ts", "utf8")).toContain("export async function loadCrmTimeline(");
+  const crmApp = async () => mountRouter((await import("../../../routes/crm.js")).default, "/api/crm");
+
+  it("the contact summary route uses the brief with the selected silo and the shared timeline", async () => {
+    loadCrmTimeline.mockResolvedValue([{ kind: "note", ts: "2026-09-20T10:00:00Z", title: "Called back", body: "" }]);
+    query.mockResolvedValue({ rows: [] });
+    const res = await request(await crmApp()).get("/api/crm/contacts/c1/ai-summary")
+      .set("Authorization", `Bearer ${staffToken()}`).set("X-Silo", "BI");
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body)).toContain("Roofing contractor in Laval");
+    expect(loadCrmTimeline).toHaveBeenCalledWith(true, "c1", "BI");
+    expect(askAI).toHaveBeenCalledTimes(1);
+  });
+
+  it("the company summary route uses the company brief and the shared timeline", async () => {
+    loadCrmTimeline.mockResolvedValue([{ kind: "note", ts: "2026-09-20T10:00:00Z", title: "Called back", body: "" }]);
+    query.mockResolvedValue({ rows: [] });
+    const res = await request(await crmApp()).get("/api/crm/companies/co1/ai-summary")
+      .set("Authorization", `Bearer ${staffToken()}`).set("X-Silo", "BF");
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body)).toContain("Roofing contractor in Laval");
+    expect(loadCrmTimeline).toHaveBeenCalledWith(false, "co1", "BF");
   });
 });

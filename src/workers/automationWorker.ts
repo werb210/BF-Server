@@ -1,13 +1,14 @@
 // BF_SERVER_BLOCK_v616 - runs automation steps that are due (after a wait, a quiet-hours
 // hold or a retry). Triggers run their first steps immediately; this picks up the rest.
 import type { Pool } from "pg";
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 export function startAutomationWorker(_pool: Pool, intervalMs = 60_000): { stop: () => void } {
   let stopped = false;
   let running = false;
   let converted = false;
   let lastDaily = 0;
-  const tick = async () => {
+  const tickUnclaimed = async () => {
     if (stopped || running) return;
     running = true;
     try {
@@ -31,6 +32,7 @@ export function startAutomationWorker(_pool: Pool, intervalMs = 60_000): { stop:
       running = false;
     }
   };
+  const tick = claimedTick("automation", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
   const timer = setInterval(() => void tick(), intervalMs);
   void tick();
   return { stop: () => { stopped = true; clearInterval(timer); } };

@@ -15,12 +15,13 @@ import { syncCustomerMatch } from "../services/googleAdsEnhanced.js"; // BF_SERV
 import { uploadFundedConversions, uploadSubmitConversions } from "../services/googleAdsConversions.js";
 import { retractClosedSubmitConversions, uploadQualifiedConversions } from "../services/googleAdsLeadSignals.js";
 import { startGoogleHealthMonitor } from "../services/googleHealth.js"; // BF_SERVER_GOOGLE_HEALTH_v705
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 const TICK_MS = 60 * 60_000;
 
 export function startAdConversionWorker(_pool: Pool): { stop: () => void } {
   let stopped = false, running = false;
-  const tick = async () => {
+  const tickUnclaimed = async () => {
     if (stopped || running) return;
     running = true;
     const startedAt = Date.now();
@@ -53,6 +54,7 @@ export function startAdConversionWorker(_pool: Pool): { stop: () => void } {
       console.warn("[ads_conversion] tick failed", e instanceof Error ? e.message : String(e));
     } finally { running = false; }
   };
+  const tick = claimedTick("ad_conversion", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
   const timer = setInterval(() => { void tick(); }, TICK_MS);
   void tick();
   const health = startGoogleHealthMonitor(); // BF_SERVER_GOOGLE_HEALTH_v705 - hourly Google checks + alerts

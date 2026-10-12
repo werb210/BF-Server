@@ -1,8 +1,33 @@
 // BF_SERVER_BLOCK_v536_COLLATERAL_EXTRACTION
-import fs from "node:fs";
-import { describe, expect, it, vi } from "vitest";
-vi.mock("../../../db.js", () => ({ pool: { query: vi.fn(async () => ({ rows: [], rowCount: 0 })) } }));
-import { agingSummary, equipmentSummary, normalizeAging, normalizeEquipment, normalizeRealEstate, realEstateSummary, xlsxToText } from "../collateral.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { answerBySql, callsMatching } from "../../../__tests__/helpers/answerBySql.js";
+
+const { queryMock, createMock, docsMock } = vi.hoisted(() => ({ queryMock: vi.fn(), createMock: vi.fn(), docsMock: vi.fn() }));
+vi.mock("../../../db.js", async () => {
+  const actual = await vi.importActual<typeof import("../../../db.js")>("../../../db.js");
+  return { ...actual, pool: { query: queryMock } };
+});
+vi.mock("../../../lib/sharedClients.js", () => ({
+  sharedOpenAI: () => ({ chat: { completions: { create: createMock } } }),
+  sharedTwilio: () => ({ messages: { create: vi.fn() } }),
+}));
+vi.mock("../docKinds.js", async (orig) => ({ ...(await orig<Record<string, unknown>>()), documentsOfKinds: docsMock }));
+import { agingSummary, equipmentSummary, extractApplicationCollateral, normalizeAging, normalizeEquipment, normalizeRealEstate, realEstateSummary, saveCollateralRow, xlsxToText } from "../collateral.js";
+import { API_ROUTE_MOUNTS } from "../../../routes/routeRegistry.js";
+import creditCollateralRoutes from "../../../routes/creditCollateral.js";
+
+beforeEach(() => {
+  queryMock.mockReset();
+  queryMock.mockImplementation(answerBySql([
+    [/INSERT INTO application_collateral/, { rows: [], rowCount: 1 }],
+    [/SELECT kind FROM application_collateral/, { rows: [{ kind: "ar_aging" }], rowCount: 1 }],
+  ]));
+  createMock.mockReset();
+  createMock.mockResolvedValue({ choices: [{ message: { content: JSON.stringify({ as_of: "2025-03-31", total: 900000, customers: [{ name: "Cenovus", total: 900000 }] }) } }] });
+  docsMock.mockReset();
+  docsMock.mockResolvedValue([{ id: "d1", name: "AR aging.pdf", category: "accounts_receivable_aging", kind: "accounts_receivable_aging", ocr_text: "Customer Total Cenovus 900,000 ".repeat(5) }]);
+  process.env.OPENAI_API_KEY = "sk-test";
+});
 
 function makeZip(files: { name: string; data: string }[]): Buffer {
   const locals: Buffer[] = []; const centrals: Buffer[] = []; let offset = 0;
@@ -30,8 +55,22 @@ describe("v536 collateral", () => {
     const xlsx = makeZip([{ name: "xl/sharedStrings.xml", data: '<sst><si><t>Customer</t></si><si><t>Total</t></si><si><t>Cenovus &amp; Co</t></si></sst>' }, { name: "xl/worksheets/sheet1.xml", data: '<worksheet><sheetData><row><c t="s"><v>0</v></c><c t="s"><v>1</v></c></row><row><c t="s"><v>2</v></c><c><v>900000</v></c></row></sheetData></worksheet>' }]);
     expect(xlsxToText(xlsx)).toBe("Customer\tTotal\nCenovus & Co\t900000");
   });
-  it("mounts the route and preserves staff corrections", () => {
-    expect(fs.readFileSync("src/routes/routeRegistry.ts", "utf8")).toMatch(/path: "\/credit-collateral", router: creditCollateralRoutes/);
-    expect(fs.readFileSync("src/services/credit/collateral.ts", "utf8")).toContain("WHERE application_collateral.extracted_by = 'ai'");
+  it("mounts the route", () => {
+    expect(API_ROUTE_MOUNTS.filter((m) => m.router === creditCollateralRoutes).map((m) => m.path)).toEqual(["/credit-collateral"]);
+  });
+  it("re-extraction only overwrites rows the AI wrote, so staff corrections survive", async () => {
+    const out = await extractApplicationCollateral("app-1");
+    expect(out).toEqual({ documents: 1, stored: 1, skipped: [] });
+    const [ins] = callsMatching(queryMock, /INSERT INTO application_collateral/);
+    expect(ins![0]).toMatch(/ON CONFLICT \(application_id, source_document_id\) DO UPDATE[\s\S]*WHERE application_collateral\.extracted_by = 'ai'/);
+    expect(ins![1]!.slice(0, 3)).toEqual(["app-1", "ar_aging", "d1"]);
+    expect(JSON.parse(String(ins![1]![3]))).toMatchObject({ as_of: "2025-03-31", total: 900000 });
+  });
+  it("a staff correction is stamped as staff, which the AI upsert then leaves alone", async () => {
+    expect(await saveCollateralRow("app-1", "row-1", { total: "1,000" }, "u-1")).toBe(true);
+    const [upd] = callsMatching(queryMock, /UPDATE application_collateral/);
+    expect(upd![0]).toContain("extracted_by = 'staff'");
+    expect(upd![1]![0]).toBe("row-1");
+    expect(upd![1]![3]).toBe("u-1");
   });
 });

@@ -1,5 +1,6 @@
 // BF_SERVER_v786_WORKFLOW_GRAPH - every v2 action, against a database that answers by SQL content.
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import dns from "node:dns";
 
 const postTeamAlert = vi.fn(async () => true);
 vi.mock("../../../services/team/teamPhaseC.js", () => ({ postTeamAlert: (...a: any[]) => (postTeamAlert as any)(...a) }));
@@ -135,6 +136,8 @@ describe("v2 actions", () => {
   });
 
   it("webhook: https only, sends the chosen fields, 10 s timeout, failures logged and thrown", async () => {
+    // BF_SERVER_v789_SSRF_GUARD - the step now resolves the host first; answer DNS with a public address.
+    vi.spyOn(dns.promises, "lookup").mockImplementation((async () => [{ address: "93.184.216.34", family: 4 }]) as any);
     const h = harness();
     expect(await h.run("webhook", { url: "https://hooks.example.com/x", method: "POST", includeFields: ["first_name", "company"] })).toBe("webhook hooks.example.com 200");
     const [url, init] = (h.deps.httpFetch as any).mock.calls[0];
@@ -147,6 +150,7 @@ describe("v2 actions", () => {
     await expect(h.run("webhook", { url: "https://hooks.example.com/x" })).rejects.toThrow(/500/);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+    vi.restoreAllMocks();
   });
 
   it("enroll_workflow enrolls the contact in the other workflow", async () => {

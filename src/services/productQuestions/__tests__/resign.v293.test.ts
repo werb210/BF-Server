@@ -1,10 +1,17 @@
 // BF_SERVER_PRODUCT_SWITCH_RESIGN_v293
 import { describe, expect, it, vi } from "vitest";
-import fs from "node:fs";
+import express from "express";
+import jwt from "jsonwebtoken";
+import request from "supertest";
 
 vi.mock("../../push/applicantPush.js", () => ({ notifyApplicant: vi.fn(async () => ({ sent: 1 })) }));
 const createNotification = vi.hoisted(() => vi.fn(async () => ({})));
 vi.mock("../../../modules/notifications/notifications.repo.js", () => ({ createNotification }));
+const routeQuery = vi.hoisted(() => vi.fn());
+vi.mock("../../../db", async () => {
+  const actual = await vi.importActual<typeof import("../../../db.js")>("../../../db");
+  return { ...actual, pool: { query: routeQuery }, runQuery: routeQuery, dbQuery: routeQuery, query: routeQuery };
+});
 
 import { notifyStaffQuestionsAnswered, productQuestionsSummary, requestResignature, resignNeeded } from "../sendGate.js";
 
@@ -58,8 +65,52 @@ describe("staff notification", () => {
     await notifyStaffQuestionsAnswered(db() as any, "a1");
     expect(createNotification).toHaveBeenCalledWith(expect.objectContaining({ type: "PRODUCT_QUESTIONS_ANSWERED", title: "Client answered the Line of Credit questions" }));
   });
-  it("is wired to the client submission and the staff route", () => {
-    expect(fs.readFileSync("src/routes/client/productQuestions.ts", "utf8")).toContain("notifyStaffQuestionsAnswered(query, id)");
-    expect(fs.readFileSync("src/modules/applications/applications.routes.ts", "utf8")).toContain("router.post('/:id/product-questions/request-signature'");
+});
+
+describe("wiring", () => {
+  const APP_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  // The route-level database: the same answers as db() plus the ownership and silo lookups.
+  function routeDb(opts: { signedAt?: string | null; history?: any[] } = {}) {
+    const inner = db(opts);
+    routeQuery.mockReset();
+    routeQuery.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (/LEFT JOIN application_contacts ac/.test(sql)) return { rows: [{ "?column?": 1 }], rowCount: 1 };
+      if (/select id, silo from applications/.test(sql)) return { rows: [{ id: APP_ID, silo: "BF" }] };
+      return (inner as any)(sql, params);
+    });
+  }
+  async function mount(path: string, modPath: string) {
+    const router = (await import(modPath)).default;
+    const { errorHandler } = await import("../../../middleware/errors.js");
+    const app = express();
+    app.use(express.json());
+    app.use(path, router);
+    app.use(errorHandler);
+    return app;
+  }
+
+  it("the client's submission tells staff the answers are in", async () => {
+    routeDb();
+    createNotification.mockClear();
+    const clientToken = jwt.sign({ sub: "client:+15875550142", role: "client", phone: "+15875550142", tokenVersion: 0, isClient: true }, process.env.JWT_SECRET as string);
+    const app = await mount("/api/client", "../../../routes/client/productQuestions.js");
+    const res = await request(app).post(`/api/client/applications/${APP_ID}/product-questions`).set("Authorization", `Bearer ${clientToken}`).send({ answers: {}, submit: true });
+    expect(res.status).toBe(200);
+    await vi.waitFor(() => expect(createNotification).toHaveBeenCalledWith(expect.objectContaining({ type: "PRODUCT_QUESTIONS_ANSWERED", applicationId: APP_ID })));
+  });
+
+  it("staff ask for a new signature through POST /:id/product-questions/request-signature", async () => {
+    routeDb({ signedAt: signed, history: [{ to: "LINE_OF_CREDIT", at: "2026-09-15T10:00:00Z" }] });
+    const staff = jwt.sign({ sub: "00000000-0000-4000-8000-0000000000b1", role: "Staff", tokenVersion: 0, tv: 0 }, process.env.JWT_SECRET as string);
+    const app = await mount("/api/applications", "../../../modules/applications/applications.routes.js");
+    const res = await request(app).post(`/api/applications/${APP_ID}/product-questions/request-signature`).set("Authorization", `Bearer ${staff}`).send({});
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(routeQuery.mock.calls.some((c) => String(c[0]).includes("signnow_app_signed_at = NULL"))).toBe(true);
+
+    routeDb({ signedAt: null });
+    const refused = await request(app).post(`/api/applications/${APP_ID}/product-questions/request-signature`).set("Authorization", `Bearer ${staff}`).send({});
+    expect(refused.status).toBe(409);
+    expect(refused.body).toEqual({ error: "not_required", message: "This application does not need a new signature." });
   });
 });

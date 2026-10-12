@@ -13,7 +13,8 @@ import express, { Router, type Request, type Response } from "express";
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
 import { pool } from "../db.js";
 import { config } from "../config/index.js";
-import { sharedOpenAI } from "../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
+import { sharedOpenAI } from "../lib/sharedClients.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_SNAT_REUSE_v784
 
 const router = Router();
 
@@ -214,7 +215,7 @@ function offerMessageOrVoicemail(v: any, openerKey: string, openerText: string, 
   v.record({ maxLength: 120, playBeep: true, action });
 }
 
-router.get("/voice", async (req: Request, res: Response) => {
+router.get("/voice", safeHandler(async (req: Request, res: Response) => {
   const key = String(req.query.key || "");
   const text = PHRASES[key];
   if (!text) return res.status(404).end();
@@ -230,17 +231,17 @@ router.get("/voice", async (req: Request, res: Response) => {
   res.setHeader("Content-Type", "audio/mpeg");
   res.setHeader("Cache-Control", "public, max-age=86400");
   return res.send(buf);
-});
+}));
 
-router.post("/greeting", twilioWebhookValidation, async (_req: Request, res: Response) => {
+router.post("/greeting", twilioWebhookValidation, safeHandler(async (_req: Request, res: Response) => {
   const v = await newVR();
   const g = v.gather({ input: "speech dtmf", numDigits: 1, speechTimeout: "auto", timeout: 6, action: `${BASE}/company`, method: "POST" });
   emit(g, "greeting", PHRASES.greeting);
   v.redirect({ method: "POST" }, `${BASE}/company`);
   return send(res, v);
-});
+}));
 
-router.post("/company", twilioWebhookValidation, async (req: Request, res: Response) => {
+router.post("/company", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
   const s = speech(req); const d = digit(req);
   // BF_SERVER_MEETING_ROOMS_v736 - option 3 (or "meeting" / "conference") joins a meeting room.
   if (d === "3" || /meeting|conference/.test(s)) { const vm = await newVR(); vm.redirect({ method: "POST" }, `${BASE}/meeting`); return send(res, vm); }
@@ -253,20 +254,20 @@ router.post("/company", twilioWebhookValidation, async (req: Request, res: Respo
   emit(g, "intent_prompt", PHRASES.intent_prompt);
   v.redirect({ method: "POST" }, `${BASE}/intent?company=${company}`);
   return send(res, v);
-});
+}));
 
 // BF_SERVER_MEETING_ROOMS_v736 - ask for the access code (two tries), then drop the caller
 // into that meeting's conference. Staff join the same way, from any phone or the dialler.
-router.post("/meeting", twilioWebhookValidation, async (req: Request, res: Response) => {
+router.post("/meeting", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
   const v = await newVR();
   const tries = Number(req.query.try ?? 0) || 0;
   const g = v.gather({ input: "dtmf", numDigits: 6, finishOnKey: "#", timeout: 10, action: `${BASE}/meeting-code?try=${tries}`, method: "POST" });
   emit(g, tries > 0 ? "meeting_retry" : "meeting_prompt", tries > 0 ? PHRASES.meeting_retry : PHRASES.meeting_prompt);
   v.redirect({ method: "POST" }, `${BASE}/meeting-code?try=${tries}`);
   return send(res, v);
-});
+}));
 
-router.post("/meeting-code", twilioWebhookValidation, async (req: Request, res: Response) => {
+router.post("/meeting-code", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
   const v = await newVR();
   const tries = Number(req.query.try ?? 0) || 0;
   const { findOpenRoomByCode, conferenceName, roomConferenceAttrs } = await import("../services/meetingRooms.js");
@@ -286,9 +287,9 @@ router.post("/meeting-code", twilioWebhookValidation, async (req: Request, res: 
   emit(v, "meeting_failed", PHRASES.meeting_failed);
   v.redirect({ method: "POST" }, `${BASE}/intent?company=BF`);
   return send(res, v);
-});
+}));
 
-router.post("/intent", twilioWebhookValidation, async (req: Request, res: Response) => {
+router.post("/intent", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
   const s = speech(req); const d = digit(req);
   const v = await newVR();
   if (/caden/.test(s)) { offerMessageOrVoicemail(v, "opener_caden", PHRASES.opener_caden); return send(res, v); }
@@ -362,9 +363,9 @@ router.post("/intent", twilioWebhookValidation, async (req: Request, res: Respon
   const reasonText = `Sorry, ${name} ${t.onCall ? "is on another call" : "isn't available right now"}.`;
   offerMessageOrVoicemail(v, reasonKey, reasonText, t.userId);
   return send(res, v);
-});
+}));
 
-router.post("/unavailable", twilioWebhookValidation, async (req: Request, res: Response) => {
+router.post("/unavailable", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
   if (String(req.query.target || "") === "engagement") {
     const v = await newVR();
     if (String(req.body?.DialCallStatus ?? "") === "completed") { v.hangup(); return send(res, v); }
@@ -378,9 +379,9 @@ router.post("/unavailable", twilioWebhookValidation, async (req: Request, res: R
   const tt = await resolveTarget(target);
   offerMessageOrVoicemail(v, `noanswer_${lkey(target)}`, `Sorry, ${displayFor(target)} didn't pick up.`, tt.userId);
   return send(res, v);
-});
+}));
 
-router.post("/fallback", twilioWebhookValidation, async (req: Request, res: Response) => {
+router.post("/fallback", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
   const s = speech(req); const d = digit(req);
   const v = await newVR();
   const wantsVoicemail = d === "2" || /voicemail|voice mail|\bvm\b|message later/.test(s);
@@ -388,10 +389,10 @@ router.post("/fallback", twilioWebhookValidation, async (req: Request, res: Resp
   else emit(v, "msg_prompt", PHRASES.msg_prompt);
   v.record({ maxLength: 120, playBeep: true, action: "/api/webhooks/twilio/voicemail" });
   return send(res, v);
-});
+}));
 
 // BF_SERVER_DIRECT_LINES_v688 - nobody answered a direct line: that person's own voicemail.
-router.post("/direct-unavailable", twilioWebhookValidation, async (req: Request, res: Response) => {
+router.post("/direct-unavailable", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
   const v = await newVR();
   if (String(req.body?.DialCallStatus ?? "") === "completed") return send(res, v);
   const userId = String(req.query.user ?? "").trim() || null;
@@ -406,7 +407,7 @@ router.post("/direct-unavailable", twilioWebhookValidation, async (req: Request,
   }
   offerMessageOrVoicemail(v, "direct_noanswer", `Sorry, ${name} isn't available right now.`, userId);
   return send(res, v);
-});
+}));
 
 if (novaOn()) { void warmReceptionVoice(); }
 

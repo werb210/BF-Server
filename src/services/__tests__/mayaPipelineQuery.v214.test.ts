@@ -1,5 +1,6 @@
 // BF_SERVER_BLOCK_v214_MAYA_STAFF_PIPELINE_QUERY_v1
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { answerBySql } from "../../__tests__/helpers/answerBySql.js"; // BF_SERVER_v789_SQL_CONTENT_MOCKS
 
 const queryMock = vi.fn();
 vi.mock("../../db.js", () => ({
@@ -41,9 +42,9 @@ describe("BF_SERVER_BLOCK_v214 — pipeline query matcher", () => {
   });
 
   it("runPipelineQuery returns rows + summary when matched", async () => {
-    queryMock.mockResolvedValueOnce({
-      rows: [{ id: "a1", name: "Acme", created_at: "2025-01-01" }],
-    });
+    queryMock.mockImplementation(answerBySql([
+      [/FROM applications[\s\S]*ORDER BY created_at ASC/, { rows: [{ id: "a1", name: "Acme", created_at: "2025-01-01" }] }],
+    ]));
     const r = await runPipelineQuery("oldest active application");
     expect(r.ok).toBe(true);
     expect(r.not_supported).toBeFalsy();

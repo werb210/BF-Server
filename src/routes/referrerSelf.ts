@@ -254,7 +254,7 @@ function requireReferrer(req: ReferrerRequest, res: Response, next: NextFunction
     return;
   }
   try {
-    const decoded = jwt.verify(token, secret) as Record<string, unknown>;
+    const decoded = jwt.verify(token, secret, { algorithms: ["HS256"] }) as Record<string, unknown>;
     const role = String(decoded.role ?? "");
     const referrerId = decoded.referrerId ?? decoded.referrer_id ?? null;
     if (role !== ROLES.REFERRER) {

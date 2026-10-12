@@ -3,7 +3,10 @@ import { Router } from "express";
 import { pool, runQuery } from "../db.js";
 import { AppError } from "../middleware/errors.js";
 import { safeHandler } from "../middleware/safeHandler.js";
-import { requireAuth } from "../middleware/requireAuth.js";
+// BF_SERVER_v789_SILO_SCOPING - staff auth from middleware/auth.ts hydrates the user's silo(s)
+// from the users row, which resolveSiloFromRequest needs.
+import { requireAuth } from "../middleware/auth.js";
+import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { eventBus } from "../events/eventBus.js";
 import { optionalString, requireString } from "../system/validate.js";
 
@@ -21,10 +24,12 @@ router.get(
       throw new AppError("validation_error", "contactId or applicationId is required.", 400);
     }
 
+    // BF_SERVER_v789_SILO_SCOPING - only a contact / application in the caller's silo.
+    const silo = resolveSiloFromRequest(req);
     const condition = contactId
-      ? "contact_id = $1"
+      ? "contact_id::text = $1::text AND contact_id IN (SELECT c.id FROM contacts c WHERE c.id::text = $1::text AND c.silo = $2)"
       : `contact_id = (
-           SELECT contact_id FROM applications WHERE id = $1 LIMIT 1 -- v342_FIX_CRM_CONTACTS
+           SELECT contact_id FROM applications WHERE id = $1 AND silo = $2 LIMIT 1 -- v342_FIX_CRM_CONTACTS
          )`;
 
     const rows = await pool.query(
@@ -33,7 +38,7 @@ router.get(
        WHERE ${condition}
        ORDER BY created_at ASC
        LIMIT 200`,
-      [contactId ?? applicationId]
+      [contactId ?? applicationId, silo]
     );
 
     res.status(200).json({

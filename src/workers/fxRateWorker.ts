@@ -3,6 +3,7 @@
 // so every CAD figure built from a USD deal used a stale rate. This refreshes it
 // from the Bank of Canada's published daily USD/CAD rate (Valet API, no key).
 import type { Pool } from "pg";
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 const VALET_URL = "https://www.bankofcanada.ca/valet/observations/FXUSDCAD/json?recent=1";
 
@@ -44,8 +45,10 @@ export async function refreshUsdCadRate(
 }
 
 export function startFxRateWorker(pool: Pick<Pool, "query">): { stop: () => void } {
-  void refreshUsdCadRate(pool);
-  const handle = setInterval(() => { void refreshUsdCadRate(pool); }, 6 * 60 * 60 * 1000);
+  // BF_SERVER_v789_WORKER_CLAIM - one instance per tick.
+  const tick = claimedTick("fx_rate", () => refreshUsdCadRate(pool));
+  void tick();
+  const handle = setInterval(() => { void tick(); }, 6 * 60 * 60 * 1000);
   (handle as any).unref?.();
   return { stop: () => clearInterval(handle) };
 }

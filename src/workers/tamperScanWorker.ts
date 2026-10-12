@@ -4,6 +4,7 @@
 // arrives: wizard, portal, accountant, email attachments, signed PDFs.
 import type { Pool } from "pg";
 import { recordTamperResult, scanDocumentForTampering } from "../services/documents/tamperScan.js";
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 const TICK_MS = 60_000;
 export const TAMPER_BATCH = 10;
@@ -35,13 +36,14 @@ export async function runTamperScanTick(pool: Pool, scan = scanDocumentForTamper
 export function startTamperScanWorker(pool: Pool): { stop: () => void } {
   let stopped = false;
   let running = false;
-  const tick = async () => {
+  const tickUnclaimed = async () => {
     if (stopped || running) return;
     running = true;
     try { await runTamperScanTick(pool); }
     catch (err) { console.error("[tamper-scan] tick failed:", err instanceof Error ? err.message : err); }
     finally { running = false; }
   };
+  const tick = claimedTick("tamper_scan", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
   const timer = setInterval(() => { void tick(); }, TICK_MS);
   setTimeout(() => { void tick(); }, 15_000);
   return { stop: () => { stopped = true; clearInterval(timer); } };

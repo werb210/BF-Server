@@ -16,13 +16,18 @@ type BrokerReq = Request & { broker?: { id: string; company: string; name: strin
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024, files: 1 } });
 
-async function requireBroker(req: BrokerReq, res: Response, next: NextFunction) {
+// BF_SERVER_v789_SAFE_HANDLERS - middleware errors go to next(err).
+function requireBroker(req: BrokerReq, res: Response, next: NextFunction): void {
+  requireBrokerImpl(req, res, next).catch(next);
+}
+
+async function requireBrokerImpl(req: BrokerReq, res: Response, next: NextFunction) {
   const token = req.headers.authorization?.split(" ")[1];
   const secret = process.env.JWT_SECRET;
   if (!token || !secret) return void res.status(401).json({ error: "unauthorized" });
   let id = "";
   try {
-    const d = jwt.verify(token, secret) as Record<string, unknown>;
+    const d = jwt.verify(token, secret, { algorithms: ["HS256"] }) as Record<string, unknown>;
     if (String(d.role ?? "") !== ROLES.REFERRER) return void res.status(403).json({ error: "broker_required" });
     id = String(d.referrerId ?? d.referrer_id ?? "");
   } catch {

@@ -4,11 +4,12 @@
 // and the user had to reconnect ~hourly. Here the server redeems an auth CODE
 // with its client secret + offline_access, capturing a long-lived REFRESH token
 // that graphClient.ts can renew indefinitely.
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { Router } from "express";
-import jwt from "jsonwebtoken";
 import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { pool } from "../db.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js";
 
 const router = Router();
 const AUTH_BASE = "https://login.microsoftonline.com";
@@ -22,17 +23,63 @@ function returnUrl(suffix: string): string {
   return base + (base.includes("?") ? "&" : "?") + suffix;
 }
 
-// GET /api/o365-oauth/start - authed via header (fetched by the portal); returns
-// the Microsoft authorize URL. The portal then sets window.location to it.
+// BF_SERVER_v789_O365_OAUTH_STATE - the state used to be a JWT naming the user,
+// so anyone holding a valid state (or a code+state pair) could bind THEIR Microsoft
+// account to that staff user (login CSRF). Now /start issues a random single-use
+// nonce, stores sha256(nonce) with the user id and a 10-minute expiry, and sets the
+// nonce in an HttpOnly, Secure, SameSite=Lax cookie. The state carries only the
+// nonce. The callback requires the cookie to equal the state, consumes the row
+// atomically (unused + unexpired), and saves tokens on the user who started it.
+// Lax is enough: the callback is a top-level GET navigation from Microsoft.
+const STATE_COOKIE = "o365_oauth_nonce";
+const STATE_TTL_MS = 10 * 60 * 1000;
+const COOKIE_PATH = "/api/o365-oauth";
+
+function nonceHash(nonce: string): string {
+  return createHash("sha256").update(nonce, "utf8").digest("hex");
+}
+
+function cookieValue(req: any, name: string): string {
+  const parsed = req.cookies && typeof req.cookies[name] === "string" ? req.cookies[name] : null;
+  if (parsed !== null) return parsed;
+  const header = typeof req.headers?.cookie === "string" ? req.headers.cookie : "";
+  for (const part of header.split(";")) {
+    const i = part.indexOf("=");
+    if (i < 0) continue;
+    if (part.slice(0, i).trim() !== name) continue;
+    try { return decodeURIComponent(part.slice(i + 1).trim()); } catch { return ""; }
+  }
+  return "";
+}
+
+function sameNonce(a: string, b: string): boolean {
+  const x = Buffer.from(a, "utf8");
+  const y = Buffer.from(b, "utf8");
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+const stateCookieOptions = { httpOnly: true, secure: true, sameSite: "lax" as const, path: COOKIE_PATH };
+
+// GET /api/o365-oauth/start - authed via header (fetched by the portal with
+// credentials so the nonce cookie is stored); returns the Microsoft authorize URL.
+// The portal then sets window.location to it.
 router.get("/start", requireAuth, safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId ?? req.user?.sub;
   const tenant = process.env.MSAL_TENANT_ID;
   const client = process.env.MSAL_CLIENT_ID;
-  const secret = process.env.JWT_SECRET;
-  if (!userId || !tenant || !client || !secret) {
+  if (!userId || !tenant || !client) {
     return res.status(500).json({ error: "o365_oauth_not_configured" });
   }
-  const state = jwt.sign({ uid: String(userId) }, secret, { expiresIn: "10m" });
+  const nonce = randomBytes(32).toString("base64url");
+  await pool.query(
+    `INSERT INTO o365_oauth_states (nonce_hash, user_id, expires_at) VALUES ($1, $2, $3)`,
+    [nonceHash(nonce), String(userId), new Date(Date.now() + STATE_TTL_MS)],
+  );
+  // Housekeeping only; a failure here must not block the connect.
+  await pool.query(`DELETE FROM o365_oauth_states WHERE expires_at < now() - interval '1 day'`)
+    .catch((err: unknown) => logWarnSwallowed(err, "o365_oauth_states.prune"));
+  res.cookie(STATE_COOKIE, nonce, { ...stateCookieOptions, maxAge: STATE_TTL_MS });
+  const state = nonce;
   const params = new URLSearchParams({
     client_id: client,
     response_type: "code",
@@ -51,17 +98,34 @@ router.get("/start", requireAuth, safeHandler(async (req: any, res: any) => {
 router.get("/callback", safeHandler(async (req: any, res: any) => {
   const code = typeof req.query.code === "string" ? req.query.code : "";
   const stateRaw = typeof req.query.state === "string" ? req.query.state : "";
+  // BF_SERVER_v789_O365_OAUTH_STATE - the nonce cookie is single-use: clear it now.
+  const cookieNonce = cookieValue(req, STATE_COOKIE);
+  res.clearCookie(STATE_COOKIE, stateCookieOptions);
   if (typeof req.query.error === "string" && req.query.error) return res.redirect(returnUrl("o365=error"));
 
-  const secret = process.env.JWT_SECRET;
   const tenant = process.env.MSAL_TENANT_ID;
   const client = process.env.MSAL_CLIENT_ID;
   const clientSecret = process.env.MSAL_CLIENT_SECRET;
-  if (!code || !stateRaw || !secret || !tenant || !client || !clientSecret) return res.redirect(returnUrl("o365=error"));
+  if (!code || !stateRaw || !tenant || !client || !clientSecret) return res.redirect(returnUrl("o365=error"));
 
-  let uid = "";
-  try { uid = String((jwt.verify(stateRaw, secret) as any).uid ?? ""); } catch { return res.redirect(returnUrl("o365=error")); }
-  if (!uid) return res.redirect(returnUrl("o365=error"));
+  // The browser finishing the flow must be the one that started it.
+  if (!cookieNonce || !sameNonce(cookieNonce, stateRaw)) {
+    console.warn("o365_oauth_state_cookie_mismatch", { hasCookie: Boolean(cookieNonce) });
+    return res.redirect(returnUrl("o365=error"));
+  }
+  // Consume atomically: only an unused, unexpired nonce yields its user.
+  const consumed = await pool.query<{ user_id: string }>(
+    `UPDATE o365_oauth_states
+        SET consumed_at = now()
+      WHERE nonce_hash = $1 AND consumed_at IS NULL AND expires_at > now()
+      RETURNING user_id::text AS user_id`,
+    [nonceHash(stateRaw)],
+  );
+  const uid = consumed.rows[0]?.user_id ?? "";
+  if (!uid) {
+    console.warn("o365_oauth_state_invalid", { reason: "unknown_used_or_expired" });
+    return res.redirect(returnUrl("o365=error"));
+  }
 
   const body = new URLSearchParams({
     client_id: client,
@@ -77,7 +141,8 @@ router.get("/callback", safeHandler(async (req: any, res: any) => {
     body,
   });
   if (!tokRes.ok) {
-    console.error("o365_oauth_exchange_failed", { status: tokRes.status, detail: (await tokRes.text().catch(() => "")).slice(0, 300) });
+    const detail = await tokRes.text().catch((err: unknown) => { console.warn("o365_oauth_exchange_body_unreadable", { message: (err as Error)?.message }); return ""; });
+    console.error("o365_oauth_exchange_failed", { status: tokRes.status, detail: detail.slice(0, 300) });
     return res.redirect(returnUrl("o365=error"));
   }
   const tok = (await tokRes.json()) as { access_token?: string; refresh_token?: string; expires_in?: number };

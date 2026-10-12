@@ -1,8 +1,27 @@
 // BF_SERVER_PHONE_LINE_TYPE_v771 / BF_SERVER_SHORT_LINKS_v771
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { readFileSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import request from "supertest";
 import { checkTextable, interpretLookup, _clearLineTypeCache, NOT_TEXTABLE_MESSAGES } from "../lib/phoneLineType.js";
 import { smsSenderFor } from "../lib/smsFrom.js";
+
+const h = vi.hoisted(() => ({
+  query: vi.fn(async () => ({ rows: [], rowCount: 0 })),
+  findAuthUserByPhone: vi.fn(),
+  verificationCheck: vi.fn(),
+  verificationCreate: vi.fn(),
+}));
+vi.mock("../config/runtime.js", () => ({ isTest: false }));
+vi.mock("../middleware/authRateLimit.js", async () => (await import("./helpers/otpVerifyApp.js")).passthroughLimiters());
+vi.mock("../lib/sharedClients.js", async () => {
+  const { fakeSharedTwilio } = await import("./helpers/otpVerifyApp.js");
+  return { sharedTwilio: () => fakeSharedTwilio(h), sharedOpenAI: () => ({}) };
+});
+vi.mock("../lib/db.js", async () => ({ ...(await vi.importActual<any>("../lib/db.js")), runQuery: h.query }));
+vi.mock("../db.js", async () => ({ ...(await vi.importActual<any>("../db.js")), pool: { query: h.query }, dbQuery: h.query }));
+vi.mock("../modules/auth/auth.repo.js", async () => ({
+  ...(await vi.importActual<any>("../modules/auth/auth.repo.js")),
+  findAuthUserByPhone: h.findAuthUserByPhone,
+}));
 
 const answer = (body: unknown, ok = true) => (async () => ({ ok, status: ok ? 200 : 500, json: async () => body })) as unknown as typeof fetch;
 
@@ -33,11 +52,50 @@ describe("sign-in codes only go to numbers that can receive texts", () => {
     process.env.TWILIO_LOOKUP_LINE_TYPE = "off";
     expect(await checkTextable("+14035550103", answer({ valid: false }))).toEqual({ ok: true });
   });
-  it("the live sign-in route checks before asking Verify for a code and returns a clear message", () => {
-    const src = readFileSync("src/routes/auth.ts", "utf8");
-    expect(src.indexOf("await checkTextable(phone)")).toBeGreaterThan(0);
-    expect(src.indexOf("await checkTextable(phone)")).toBeLessThan(src.indexOf("const verification = await client.verify.v2"));
-    expect(NOT_TEXTABLE_MESSAGES.landline).toContain("mobile number");
+  describe("the live sign-in route checks before asking Verify for a code and returns a clear message", () => {
+    const lookups: string[] = [];
+    function stubLookup(type: string) {
+      vi.stubGlobal("fetch", (async (url: string) => {
+        lookups.push(String(url));
+        if (String(url).startsWith("https://lookups.twilio.com/v2/PhoneNumbers/")) {
+          return { ok: true, status: 200, json: async () => ({ valid: true, line_type_intelligence: { type } }) };
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      }) as unknown as typeof fetch);
+    }
+    beforeEach(async () => {
+      lookups.length = 0;
+      // checkTextable skips the real Lookup under NODE_ENV=test; this exercises the deployed path.
+      vi.stubEnv("NODE_ENV", "production");
+      vi.stubEnv("TWILIO_VERIFY_SERVICE_SID", "VA00000000000000000000000000000000");
+      h.findAuthUserByPhone.mockReset().mockResolvedValue(null);
+      h.verificationCreate.mockReset().mockResolvedValue({ status: "pending" });
+      (await import("../lib/otpGuard.js"))._resetOtpGuard();
+    });
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    });
+    const start = async (phone: string) =>
+      request(await (await import("./helpers/otpVerifyApp.js")).otpApp()).post("/api/auth/otp/start").send({ phone });
+
+    it("a landline gets a clear 400 and no Verify code", async () => {
+      stubLookup("landline");
+      const res = await start("+14035550110");
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ error: "landline_number", message: NOT_TEXTABLE_MESSAGES.landline });
+      expect(NOT_TEXTABLE_MESSAGES.landline).toContain("mobile number");
+      expect(lookups).toHaveLength(1);
+      expect(h.verificationCreate).not.toHaveBeenCalled();
+    });
+
+    it("a mobile is looked up first, then sent a Verify code", async () => {
+      stubLookup("mobile");
+      const res = await start("+14035550111");
+      expect(res.status).toBe(200);
+      expect(lookups[0]).toContain(encodeURIComponent("+14035550111"));
+      expect(h.verificationCreate).toHaveBeenCalledWith({ to: "+14035550111", channel: "sms" });
+    });
   });
 });
 

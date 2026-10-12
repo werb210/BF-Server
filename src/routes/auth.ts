@@ -9,6 +9,10 @@ import { isTest } from "../config/runtime.js";
 import { requireAuth, requireAuthAllowClient } from "../middleware/requireAuth.js";
 import { otpStartLimiter, otpVerifyLimiter } from "../middleware/authRateLimit.js"; // BF_SERVER_AUTH_RATE_LIMIT_v1
 import { authMeHandler } from "./auth/me.js";
+// BF_SERVER_v789_STAFF_USER_STATE / BF_SERVER_v789_URL_TICKETS
+import { requireAuth as requireStaffAuth } from "../middleware/auth.js";
+import { clearStaffUserCache, loadStaffUser } from "../auth/staffUserState.js";
+import { signUrlTicket } from "../auth/urlTicket.js";
 import { findAuthUserByPhone } from "../modules/auth/auth.repo.js";
 // BF_SERVER_v68_OTP_HAS_SUBMISSION - server-authoritative submission lookup
 // during OTP verify so the client can route to /portal even when localStorage
@@ -21,11 +25,13 @@ import microsoftRoutes from "./authMicrosoft.js";
 
 import { checkTextable, NOT_TEXTABLE_MESSAGES } from "../lib/phoneLineType.js"; // BF_SERVER_PHONE_LINE_TYPE_v771
 import { checkOtpSend, OTP_GUARD_MESSAGES, OTP_GUARD_STATUS } from "../lib/otpGuard.js"; // BF_SERVER_OTP_ABUSE_GUARD_v772
+import { maskPhoneLast4, maskPhonesInText } from "../lib/maskPhone.js"; // BF_SERVER_v789_PHONE_LOG_MASK
 
 // BF_SERVER_OTP_ABUSE_GUARD_v772 - staff numbers skip the per-number and hourly caps, so staff can
 // still sign in while the circuit breaker is holding off an attack.
 const OTP_TRUSTED_ROLES: ReadonlySet<string> = new Set([ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING]);
-import { sharedTwilio } from "../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
+import { sharedTwilio } from "../lib/sharedClients.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_SNAT_REUSE_v784
 async function isStaffPhone(phone: string): Promise<boolean> {
   try {
     const user = await findAuthUserByPhone(phone);
@@ -195,7 +201,7 @@ router.post("/otp/start", otpStartLimiter, async (req, res) => {
     // can show "Too many attempts, wait 10 minutes" instead of a server-down
     // error spinner.
     const message = err instanceof Error ? err.message : "Unknown OTP error";
-    console.error("[error] OTP ERROR:", message);
+    console.error("[error] OTP ERROR:", maskPhonesInText(message)); // BF_SERVER_v789_PHONE_LOG_MASK
 
     if (/max send attempts|too many|rate.?limit/i.test(message)) {
       res.setHeader("Retry-After", "600");
@@ -334,12 +340,12 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
       // pick one - refuse with a clear error so the data collision is caught and
       // fixed rather than locking the other lenders out invisibly.
       if (lenderResult.rows.length > 1) {
-        console.log("[otp_verify] lender_login_ambiguous_phone", { phone, matches: lenderResult.rows.length });
+        console.log("[otp_verify] lender_login_ambiguous_phone", { phone: maskPhoneLast4(phone), matches: lenderResult.rows.length });
         return res.status(409).json({ error: "ambiguous_lender_phone", message: "This phone number is set on more than one lender. Contact CBoreal to give each lender a unique contact phone." });
       }
       const lender = lenderResult.rows[0];
       if (!lender) {
-        console.log("[otp_verify] lender_login_no_match", { phone });
+        console.log("[otp_verify] lender_login_no_match", { phone: maskPhoneLast4(phone) });
         return res.status(403).json({ error: "no_lender_for_phone" });
       }
       const lenderToken = signAccessToken({
@@ -400,18 +406,18 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
         [phone, ROLES.REFERRER]
       );
       if (referrerResult.rows.length > 1) {
-        console.log("[otp_verify] referrer_login_ambiguous_phone", { phone, matches: referrerResult.rows.length });
+        console.log("[otp_verify] referrer_login_ambiguous_phone", { phone: maskPhoneLast4(phone), matches: referrerResult.rows.length });
         return res.status(409).json({ error: "ambiguous_referrer_phone", message: "This phone number is set on more than one referrer. Contact CBoreal to give each referrer a unique phone." });
       }
       const referrer = referrerResult.rows[0];
       if (!referrer) {
-        console.log("[otp_verify] referrer_login_no_match", { phone });
+        console.log("[otp_verify] referrer_login_no_match", { phone: maskPhoneLast4(phone) });
         return res.status(403).json({ error: "no_referrer_for_phone" });
       }
       // BF_SERVER_REFERRER_SIGNUP_v1 - only agreement-signed (active) referrers
       // may log in. Pending self-signups must finish the signing flow first.
       if (referrer.referrer_status && referrer.referrer_status !== "active") {
-        console.log("[otp_verify] referrer_login_pending_agreement", { phone });
+        console.log("[otp_verify] referrer_login_pending_agreement", { phone: maskPhoneLast4(phone) });
         return res.status(403).json({ error: "referrer_agreement_pending" });
       }
       const referrerToken = signAccessToken({
@@ -452,7 +458,7 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
       // One phone answering for two accountants would silently hand one firm
       // the other firm's clients. Refuse and make the collision visible.
       if (accountantResult.rows.length > 1) {
-        console.log("[otp_verify] accountant_login_ambiguous_phone", { phone, matches: accountantResult.rows.length });
+        console.log("[otp_verify] accountant_login_ambiguous_phone", { phone: maskPhoneLast4(phone), matches: accountantResult.rows.length });
         return res.status(409).json({
           error: "ambiguous_accountant_phone",
           message: "This phone number is recorded for more than one accountant. Contact Boreal to correct it.",
@@ -460,7 +466,7 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
       }
       const accountant = accountantResult.rows[0];
       if (!accountant) {
-        console.log("[otp_verify] accountant_login_no_match", { phone });
+        console.log("[otp_verify] accountant_login_no_match", { phone: maskPhoneLast4(phone) });
         return res.status(403).json({ error: "no_accountant_for_phone" });
       }
       if (!process.env.JWT_SECRET) {
@@ -529,7 +535,7 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
     } else {
       // BF_SERVER_CLIENT_USERTYPE_v334 - log which of the two reasons applied, so
       // "why am I a client here" is answerable from the log stream alone.
-      console.log("[otp_verify] client_fallthrough", { phone, requestedClient: wantsClient, isActiveStaff });
+      console.log("[otp_verify] client_fallthrough", { phone: maskPhoneLast4(phone), requestedClient: wantsClient, isActiveStaff });
       token = jwt.sign(
         {
           sub: `client:${phone}`,
@@ -646,11 +652,51 @@ router.post("/device-sign-in", otpVerifyLimiter, async (req: any, res: any) => {
   }
 });
 
-router.post("/device-sign-in/revoke", requireAuth, async (req: any, res: any) => {
+router.post("/device-sign-in/revoke", requireAuth, safeHandler(async (req: any, res: any) => {
   const { revokeStaffDevices } = await import("../services/staffDeviceSignIn.js");
   const q = (sql: string, params: unknown[]) => pool.query(sql, params as any[]);
   const credentialId = typeof req.body?.credentialId === "string" ? req.body.credentialId : null;
   return res.json({ revoked: await revokeStaffDevices(q, String(req.user?.id ?? ""), credentialId) });
+}));
+
+// BF_SERVER_v789_STAFF_USER_STATE - sign-out. Access tokens are stateless, so a
+// single-session logout is the client discarding its token; this endpoint exists
+// so every app has one call to make and always answers 204.
+router.post("/logout", (_req, res) => {
+  res.status(204).end();
+});
+
+// Sign out everywhere: bumps users.token_version, so every token issued before
+// now (tv below the new version) is refused by the staff middleware, and revokes
+// the refresh tokens.
+router.post("/logout-all", requireStaffAuth, async (req: any, res: any) => {
+  const userId = String(req.user?.userId ?? req.user?.id ?? "");
+  if (!userId || req.user?.isServicePrincipal) return res.status(403).json({ error: "staff_user_required" });
+  try {
+    const { incrementTokenVersion, revokeRefreshTokensForUser } = await import("../modules/auth/auth.repo.js");
+    await incrementTokenVersion(userId);
+    await revokeRefreshTokensForUser(userId);
+    clearStaffUserCache(userId);
+    return res.status(204).end();
+  } catch (err) {
+    console.error("[auth] logout-all failed", { userId, message: err instanceof Error ? err.message : String(err) });
+    return res.status(500).json({ error: "logout_all_failed" });
+  }
+});
+
+// BF_SERVER_v789_URL_TICKETS - a 60-second ticket for the routes that read a token
+// from the query string (media proxies, SSE streams, the team websocket).
+router.post("/url-ticket", requireStaffAuth, async (req: any, res: any) => {
+  const userId = String(req.user?.userId ?? req.user?.id ?? "");
+  if (!userId || req.user?.isServicePrincipal) return res.status(403).json({ error: "staff_user_required" });
+  try {
+    const record = await loadStaffUser(userId, req.user ?? {}, { profile: false });
+    if (!record) return res.status(401).json({ error: "unauthorized" });
+    return res.status(200).json({ ticket: signUrlTicket(userId, Number(record.token_version ?? 0) || 0) });
+  } catch (err) {
+    console.error("[auth] url-ticket failed", { userId, message: err instanceof Error ? err.message : String(err) });
+    return res.status(503).json({ error: "auth_unavailable" });
+  }
 });
 
 router.get("/me", requireAuthAllowClient, authMeHandler); // BF_SERVER_v784_STAFF_ONLY_AUTH - client app reads its own identity

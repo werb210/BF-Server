@@ -10,6 +10,7 @@ import {
 } from "../auth/auth.repo.js";
 import { type Role } from "../../auth/roles.js";
 import { pool, runQuery } from "../../db.js";
+import { clearStaffUserCache } from "../../auth/staffUserState.js"; // BF_SERVER_v789_STAFF_USER_STATE
 
 export async function setUserStatus(params: {
   userId: string;
@@ -57,6 +58,7 @@ export async function setUserStatus(params: {
       client,
     });
     await client.query("commit");
+    clearStaffUserCache(params.userId); // BF_SERVER_v789_STAFF_USER_STATE - the staff middleware re-reads the row now
   } catch (err) {
     await client.query("rollback");
     await recordAuditEvent({
@@ -117,6 +119,7 @@ export async function changeUserRole(params: {
       client,
     });
     await client.query("commit");
+    clearStaffUserCache(params.userId); // BF_SERVER_v789_STAFF_USER_STATE - the staff middleware re-reads the row now
   } catch (err) {
     await client.query("rollback");
     await recordAuditEvent({

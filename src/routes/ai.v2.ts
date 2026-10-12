@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { pool, runQuery } from "../db.js";
 import { generateAIResponse } from "../modules/ai/ai.service.js";
 import { auth } from "../middleware/auth.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router = Router();
 
@@ -11,7 +12,7 @@ const router = Router();
 // such as /api/ai/maya are untouched).
 router.use("/ai", auth);
 
-router.post("/ai/start", async (req: any, res: any, next: any) => {
+router.post("/ai/start", safeHandler(async (req: any, res: any, next: any) => {
   const id = randomUUID();
 
   await runQuery(
@@ -21,9 +22,9 @@ router.post("/ai/start", async (req: any, res: any, next: any) => {
   );
 
   res["json"]({ sessionId: id });
-});
+}));
 
-router.post("/ai/message", async (req: any, res: any, next: any) => {
+router.post("/ai/message", safeHandler(async (req: any, res: any, next: any) => {
   const { sessionId, message } = req.body as {
     sessionId: string;
     message: string;
@@ -53,9 +54,9 @@ router.post("/ai/message", async (req: any, res: any, next: any) => {
   }
 
   res["json"](parsed as unknown);
-});
+}));
 
-router.post("/ai/escalate", async (req: any, res: any, next: any) => {
+router.post("/ai/escalate", safeHandler(async (req: any, res: any, next: any) => {
   const { sessionId } = req.body as { sessionId: string };
 
   await runQuery(
@@ -71,9 +72,9 @@ router.post("/ai/escalate", async (req: any, res: any, next: any) => {
   );
 
   res["json"]({ status: "queued" });
-});
+}));
 
-router.post("/ai/close", async (req: any, res: any, next: any) => {
+router.post("/ai/close", safeHandler(async (req: any, res: any, next: any) => {
   const { sessionId } = req.body as { sessionId: string };
 
   await runQuery(
@@ -83,9 +84,9 @@ router.post("/ai/close", async (req: any, res: any, next: any) => {
   );
 
   res["json"]({ status: "closed" });
-});
+}));
 
-router.post("/ai/confidence-check", async (req: any, res: any, next: any) => {
+router.post("/ai/confidence-check", safeHandler(async (req: any, res: any, next: any) => {
   const { sessionId, score, reason } = req.body as {
     sessionId: string;
     score: number;
@@ -104,9 +105,9 @@ router.post("/ai/confidence-check", async (req: any, res: any, next: any) => {
   );
 
   res["json"]({ ok: true, escalateRecommended: score < 0.65 });
-});
+}));
 
-router.post("/ai/startup-interest", async (req: any, res: any, next: any) => {
+router.post("/ai/startup-interest", safeHandler(async (req: any, res: any, next: any) => {
   const { sessionId, tags } = req.body as {
     sessionId: string;
     tags: string[];
@@ -124,6 +125,6 @@ router.post("/ai/startup-interest", async (req: any, res: any, next: any) => {
   );
 
   res["json"]({ ok: true, tags });
-});
+}));
 
 export default router;

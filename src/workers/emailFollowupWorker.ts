@@ -7,6 +7,7 @@
 // which can shift the weekend cutoff by a few hours vs Mountain Time — acceptable for a
 // next-business-day nudge.
 import type { Pool } from "pg";
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 const TICK_MS = 30 * 60_000;
 
@@ -26,7 +27,7 @@ export function startEmailFollowupWorker(pool: Pool): { stop: () => void } {
   let stopped = false;
   let running = false;
 
-  const tick = async () => {
+  const tickUnclaimed = async () => {
     if (stopped || running) return;
     running = true;
     try {
@@ -81,6 +82,7 @@ export function startEmailFollowupWorker(pool: Pool): { stop: () => void } {
       running = false;
     }
   };
+  const tick = claimedTick("email_followup", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
 
   const timer = setInterval(() => { void tick(); }, TICK_MS);
   setTimeout(() => { void tick(); }, 60_000);

@@ -15,7 +15,7 @@
 //
 // The agent receives the identity as a short-lived HS256 JWT in X-Maya-Context
 // (plus X-Maya-Audience mirroring the derived audience for older agent builds).
-import jwt from "jsonwebtoken";
+import { signServiceToken } from "../auth/serviceTokens.js"; // BF_SERVER_v789_SERVICE_TOKENS
 import { pool } from "../db.js";
 import { principalFromRequest, type Principal } from "../auth/principal.js";
 import { logError } from "../observability/logger.js";
@@ -97,12 +97,12 @@ export async function deriveMayaIdentity(req: { headers?: Record<string, unknown
 }
 
 export function signMayaContext(identity: MayaIdentity): string {
-  const secret = process.env.JWT_SECRET || "";
-  const payload: Record<string, unknown> = { kind: "maya_context", audience: identity.audience };
+  // BF_SERVER_v789_SERVICE_TOKENS - iss "bf-server", aud "agent"; kind stays "maya_context".
+  const payload: Record<string, unknown> = { audience: identity.audience };
   if (identity.phone) payload.phone = identity.phone;
   if (identity.staff) payload.staff = identity.staff;
   if (identity.silo) payload.silo = identity.silo;
-  return jwt.sign(payload, secret, { algorithm: "HS256", expiresIn: "5m" });
+  return signServiceToken("agent", { kind: "maya_context", claims: payload });
 }
 
 export function mayaContextHeaders(identity: MayaIdentity): Record<string, string> {

@@ -7,6 +7,7 @@
 // NOT mean unread. Processed receipts are marked read so they aren't re-scanned.
 import type { Pool } from "pg";
 import { getGraphForUser } from "../modules/o365/graphClient.js";
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 const TICK_MS = 120_000;
 const READ_PREFIX = "Read: ";
@@ -15,7 +16,7 @@ export function startReadReceiptWorker(pool: Pool): { stop: () => void } {
   let stopped = false;
   let running = false;
 
-  const tick = async () => {
+  const tickUnclaimed = async () => {
     if (stopped || running) return;
     running = true;
     try {
@@ -61,6 +62,7 @@ export function startReadReceiptWorker(pool: Pool): { stop: () => void } {
       running = false;
     }
   };
+  const tick = claimedTick("read_receipt", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
 
   const timer = setInterval(() => { void tick(); }, TICK_MS);
   setTimeout(() => { void tick(); }, 15_000);

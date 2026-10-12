@@ -11,7 +11,7 @@
 //
 // Same service-JWT pattern as biDocMirror, deliberately: one auth path between
 // the silos rather than two that can drift.
-import jwt from "jsonwebtoken";
+import { signServiceToken } from "../auth/serviceTokens.js"; // BF_SERVER_v789_SERVICE_TOKENS
 import { pool } from "../db.js";
 import { logError, logInfo } from "../observability/logger.js";
 
@@ -24,19 +24,16 @@ function biBaseUrl(): string {
   return (process.env.BI_SERVER_URL || "https://bi-server-cse0apamgkheb9d5.canadacentral-01.azurewebsites.net").replace(/\/+$/, "");
 }
 
-function getSecret(): string {
-  const s = process.env.JWT_SECRET || "";
-  if (!s) throw new Error("jwt_secret_missing");
-  return s;
-}
-
+// BF_SERVER_v789_SERVICE_TOKENS - both tokens come from the shared helper
+// (iss "bf-server", aud "bi-server", BI_SERVICE_JWT_SECRET when set). The helper
+// throws when no key is configured, as getSecret did.
 export function mintServiceJwt(): string {
-  return jwt.sign({ kind: "service", service: "bf-server" }, getSecret(), { algorithm: "HS256", expiresIn: "5m" });
+  return signServiceToken("bi-server", { source: "bf-server", claims: { service: "bf-server" } });
 }
 
 // BI's Maya read routes accept source 'maya-service' only (see mayaStaff.ts).
 function mintLookupJwt(): string {
-  return jwt.sign({ kind: "service", source: "maya-service" }, getSecret(), { algorithm: "HS256", expiresIn: "5m" });
+  return signServiceToken("bi-server", { source: "maya-service" });
 }
 
 async function lookupBiInternalId(publicId: string): Promise<string | null> {

@@ -61,7 +61,7 @@ describe("PATCH /api/client/applications/:id — uuid validation", () => {
 
   it("accepts a real uuid (proceeds past validation, returns 410 only if not found)", async () => {
     const app = await buildApp();
-    queryMock.mockResolvedValueOnce({ rows: [] }); // findApplicationById -> null
+    // beforeEach answers every query with no rows, so findApplicationById -> null
     const res = await request(app)
       .patch("/api/client/applications/550e8400-e29b-41d4-a716-446655440000")
       .send({ metadata: { draft: { step: 2 } } });

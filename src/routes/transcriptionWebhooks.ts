@@ -2,12 +2,13 @@
 import { Router } from "express";
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
 import { getConferenceByFriendly, notifyConferenceState } from "../voice/conferenceService.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router = Router();
 
 // Fired by Twilio for each transcription event:
 //   transcription-started | transcription-content | transcription-stopped | transcription-error
-router.post("/transcription/event", twilioWebhookValidation, async (req: any, res) => {
+router.post("/transcription/event", twilioWebhookValidation, safeHandler(async (req: any, res) => {
   const confFriendly = String(req.query.conf ?? "").trim();
   const pid = String(req.query.pid ?? "").trim();
   const event = String(req.body?.TranscriptionEvent ?? "").trim();
@@ -38,11 +39,11 @@ router.post("/transcription/event", twilioWebhookValidation, async (req: any, re
     await notifyConferenceState(conf.id, "transcript.live.ended", { pid, txSid, event });
   }
   return res.status(200).send("");
-});
+}));
 
-router.post("/recording/pause", twilioWebhookValidation, async (req: any, res) => {
+router.post("/recording/pause", twilioWebhookValidation, safeHandler(async (req: any, res) => {
   void req;
   res.status(200).send("");
-});
+}));
 
 export default router;

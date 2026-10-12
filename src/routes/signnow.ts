@@ -11,6 +11,7 @@ import { notifyAllStaff } from "../services/notifications/notifyAllStaff.js"; //
 import { pool } from "../db.js"; // BF_SERVER_OFFER_TERMSHEET_SIGNING_v1
 import { createEmbeddedGroupLink } from "../signnow/signnowClient.js";
 import { sendViaGraph } from "../services/email/graphSendService.js";
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_v789_SILENT_QUERIES
 
 // BF_SERVER_BLOCK_v141_SIGNNOW_WEBHOOK_REPAIR_v1
 // HMAC-SHA256 verify against SIGNNOW_WEBHOOK_SECRET over the raw body, sent in
@@ -62,7 +63,6 @@ router.post(
     }
 
     const b: any = req.body ?? {};
-    try { console.log("[signnow-webhook] raw:", JSON.stringify(b).slice(0, 1500)); } catch { /* ignore */ }
 
     // SignNow payloads vary (flat vs nested under meta/content/data). Search the
     // common containers for ids and the event/status signal.
@@ -81,6 +81,13 @@ router.post(
     const documentId = grab(["document_id", "documentId", "doc_id", "docid"]);
     const documentGroupId = grab(["document_group_id", "documentGroupId", "group_id", "documentgroup_id"]);
     const signerEmail = grab(["signer_email", "email"]);
+    // BF_SERVER_v789_SIGNNOW_LOG - the raw body (signer emails, names, field values) was
+    // logged verbatim; log only the event type and document ids.
+    console.log("[signnow-webhook] received", {
+      event: eventName || status || null,
+      documentId: documentId ?? null,
+      documentGroupId: documentGroupId ?? null,
+    });
 
     // Accept either an explicit signed status or a signing event name (e.g.
     // user.document.fieldinvite.signed, document.complete, document_group...completed).
@@ -171,7 +178,7 @@ router.post(
              or e->'docIds' ?| $1::text[]
           limit 1`,
         [sbaIds],
-      ).catch(() => ({ rows: [] as Array<{ id: string }> }));
+      ).catch((err: unknown) => logWarnSwallowed(err, "routes/signnow.ts:172", ({ rows: [] as Array<{ id: string }> })));
       if (sbaMatch.rows[0]) {
         const result = await attachSignedSbaDocuments(sbaMatch.rows[0].id);
         console.log("[signnow-webhook] sba_signed_attach", { applicationId: sbaMatch.rows[0].id, ...result });
@@ -258,7 +265,7 @@ router.post(
     const groupIdForStatus = documentGroupId
       ?? (await dbQuery<{ gid: string | null }>(
             `select coalesce(signnow_document_id, metadata->'signnow_embedded'->>'group_id') as gid from applications where id::text = ($1)::text limit 1`,
-            [app.id]).then((r) => r.rows[0]?.gid ?? null).catch(() => null));
+            [app.id]).then((r) => r.rows[0]?.gid ?? null).catch((err: unknown) => logWarnSwallowed(err, "routes/signnow.ts:265", null)));
     let groupComplete = true;
     if (groupIdForStatus) {
       try {
@@ -306,7 +313,7 @@ This link is unique to you.`,
                  || jsonb_build_object('owner2_invite_sent_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))
                where id::text = ($1)::text`,
               [app.id]
-            ).catch(() => {});
+            ).catch((err: unknown) => { logWarnSwallowed(err, "routes/signnow.ts:310"); });
             console.log(`[signnow-webhook] app=${app.id} Owner 2 signing link emailed`);
           } else {
             console.error(`[signnow-webhook] app=${app.id} Owner 2 invite email failed: ${sent.error}`);
@@ -316,7 +323,7 @@ This link is unique to you.`,
                                        'partner_invite_error_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))
                where id::text = ($1)::text`,
               [app.id, String(sent.error).slice(0, 400)]
-            ).catch(() => {});
+            ).catch((err: unknown) => { logWarnSwallowed(err, "routes/signnow.ts:319"); });
           }
         }
       } catch (e) {
@@ -375,7 +382,7 @@ This link is unique to you.`,
                         coalesce(metadata->'owner_invite_sent','[]'::jsonb) || to_jsonb($2::int))
                  where id::text = ($1)::text`,
                 [app.id, Number(nextOwner.index)]
-              ).catch(() => {});
+              ).catch((err: unknown) => { logWarnSwallowed(err, "routes/signnow.ts:378"); });
               console.log(`[signnow-webhook] app=${app.id} Owner ${nextOwner.index} signing link emailed`);
             } else {
               // NOT marked sent, so the next signer event retries it.
@@ -386,7 +393,7 @@ This link is unique to you.`,
                                          'owner_invite_error_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))
                  where id::text = ($1)::text`,
                 [app.id, `Owner ${nextOwner.index}: ${String(sent.error).slice(0, 360)}`]
-              ).catch(() => {});
+              ).catch((err: unknown) => { logWarnSwallowed(err, "routes/signnow.ts:389"); });
             }
           } catch (inner) {
             // 19019002 here means this owner's step is not reachable yet, which is

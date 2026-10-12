@@ -41,6 +41,7 @@ router.get(
       `SELECT id, kind, payload, status, created_at, expires_at
          FROM maya_pending_actions
         WHERE staff_user_id = $1 AND status = 'pending' AND expires_at > now()
+          AND kind = 'sms' -- BF_SERVER_v789_MAYA_MKT_CONFIRM: marketing previews are confirmed through Maya, not here
         ORDER BY created_at DESC
         LIMIT 100`,
       [caller.id],

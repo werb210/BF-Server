@@ -2,7 +2,7 @@
 // Mirrors a BF document to the linked BI application. Called
 // fire-and-forget from the BF client doc-upload handler. Service
 // JWT signed with the shared JWT_SECRET (decision A1).
-import jwt from "jsonwebtoken";
+import { signServiceToken } from "../auth/serviceTokens.js"; // BF_SERVER_v789_SERVICE_TOKENS
 import { pool } from "../db.js";
 import { logError, logInfo } from "../observability/logger.js";
 
@@ -10,16 +10,14 @@ const BI_SERVER_URL =
   process.env.BI_SERVER_URL
   || "https://bi-server-cse0apamgkheb9d5.canadacentral-01.azurewebsites.net";
 
+// BF_SERVER_v789_SERVICE_TOKENS - signed by the shared helper (iss/aud, and
+// BI_SERVICE_JWT_SECRET when set). getSecret only answers "is a key configured".
 function getSecret(): string {
-  return process.env.JWT_SECRET || "";
+  return process.env.BI_SERVICE_JWT_SECRET?.trim() || process.env.JWT_SECRET?.trim() || "";
 }
 
 function mintServiceJwt(): string {
-  return jwt.sign(
-    { kind: "service", source: "bf-server" },
-    getSecret(),
-    { expiresIn: "5m" },
-  );
+  return signServiceToken("bi-server", { source: "bf-server" });
 }
 
 export type MirrorInput = {

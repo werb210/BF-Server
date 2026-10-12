@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
+import { answerBySql } from "../../__tests__/helpers/answerBySql.js"; // BF_SERVER_v789_SQL_CONTENT_MOCKS
 
 const runQueryMock = vi.fn();
 
@@ -13,7 +14,7 @@ vi.mock("../../middleware/auth.js", () => ({ requireAuth: (_req: any, _res: any,
 
 describe("GET /api/portal/applications doc_progress", () => {
   it("returns doc_progress aggregate on pipeline cards", async () => {
-    runQueryMock.mockResolvedValueOnce({ rows: [{
+    runQueryMock.mockImplementation(answerBySql([[/AS doc_progress/, { rows: [{
       id: "app-1",
       stage: "In Review",
       requested_amount: "15000",
@@ -31,7 +32,7 @@ describe("GET /api/portal/applications doc_progress", () => {
       stage_entered_at: "2026-01-02T00:00:00.000Z",
       doc_progress: { accepted: 1, rejected: 1, pending: 2, total: 4 },
       status_note: "",
-    }] });
+    }] }]]));
 
     const router = (await import("../portal.js")).default;
     const app = express();

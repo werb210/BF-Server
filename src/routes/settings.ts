@@ -8,6 +8,7 @@ import { pool } from "../db.js";
 import { AIKnowledgeController, upload as knowledgeUpload } from "../modules/ai/knowledge.controller.js";
 import type { MulterRequest } from "../types/multer.js";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { ssrfSafeFetch, SsrfBlockedError } from "../security/ssrfGuard.js"; // BF_SERVER_v789_SSRF_GUARD
 
 const router = Router();
 import { sharedOpenAI } from "../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
@@ -211,13 +212,24 @@ router.post("/ai-knowledge/url", requireAdminWrite, safeHandler(async (req: any,
     return res.status(400).json({ error: { code: "validation_error", message: "valid http(s) url required" } });
   }
   let text = "";
+  // BF_SERVER_v789_SSRF_GUARD - the server fetches this URL, so it must not reach an
+  // internal address: every hop is resolved and checked, max 3 redirects.
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 15_000);
   try {
-    const r = await fetch(url, { redirect: "follow", headers: { "User-Agent": "BorealMayaBot/1.0" } });
+    const { response: r } = await ssrfSafeFetch(url, { method: "GET", headers: { "User-Agent": "BorealMayaBot/1.0" }, signal: ctl.signal });
     if (!r.ok) return res.status(502).json({ ok: false, error: "fetch_failed", status: r.status });
     const html = await r.text();
     text = htmlToText(html);
-  } catch {
+  } catch (err) {
+    if (err instanceof SsrfBlockedError) {
+      console.warn("[settings.ai-knowledge/url] refused", { code: err.code, message: err.message });
+      return res.status(400).json({ ok: false, error: "url_not_allowed", reason: err.code });
+    }
+    console.warn("[settings.ai-knowledge/url] fetch failed", { message: (err as Error)?.message ?? String(err) });
     return res.status(502).json({ ok: false, error: "fetch_failed" });
+  } finally {
+    clearTimeout(timer);
   }
   if (!text) return res.status(422).json({ ok: false, error: "no_text_extracted" });
   const { embedAndStore } = await import("../modules/ai/knowledge.service.js");

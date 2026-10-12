@@ -1,38 +1,73 @@
-// BF_SERVER_v68_LEAD_RES_JSON
-import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+// BF_SERVER_v68_LEAD_RES_JSON - every /lead branch must send its response
+// (res.status(N).json(envelope)); a bare `return ok(...)` left the client hanging.
+import { beforeEach, describe, it, expect, vi } from "vitest";
+import express from "express";
+import request from "supertest";
+import { answerBySql, callsMatching } from "./helpers/answerBySql.js";
+
+const h = vi.hoisted(() => ({ query: vi.fn(), acceptAll: false }));
+vi.mock("../db.js", async (orig) => {
+  const real: any = await orig();
+  const q = (sql: unknown, params?: unknown[]) => h.query(sql, params);
+  const pool = { query: q, connect: async () => ({ query: q, release: () => undefined }) };
+  return { ...real, pool, db: pool, default: pool, dbQuery: q, runQuery: q, query: q };
+});
+// The lead schema is strict; the success branch is exercised with a permissive stand-in.
+vi.mock("../validation.js", async (orig) => {
+  const real: any = await orig();
+  return {
+    ...real,
+    LeadSchema: {
+      safeParse: (v: any) => (h.acceptAll ? { success: true, data: { ...v, phone: v.phone ?? "4035230100" } } : real.LeadSchema.safeParse(v)),
+    },
+  };
+});
+
+import publicRoutes from "../routes/public.js";
+
+const app = express();
+app.use(express.json());
+app.use("/api/public", publicRoutes);
+
+beforeEach(() => {
+  h.acceptAll = false;
+  h.query.mockReset();
+  h.query.mockImplementation(answerBySql([[/insert into crm_leads/i, { rows: [{ id: "lead-1" }] }]]));
+});
 
 describe("BF_SERVER_v68_LEAD_RES_JSON", () => {
-  const src = readFileSync(
-    join(__dirname, "..", "routes", "public.ts"),
-    "utf8"
-  );
-
-  it("anchor present", () => {
-    expect(src).toContain("BF_SERVER_v68_LEAD_RES_JSON");
+  it("/lead success branch sends 200 with the ok() envelope", async () => {
+    h.acceptAll = true;
+    const r = await request(app).post("/api/public/lead").timeout(3000)
+      .send({ companyName: "Acme", email: "a@acme.example", productType: "LOC" });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ status: "ok", data: { leadId: "lead-1" } });
+    const [insert] = callsMatching(h.query, /insert into crm_leads/i);
+    expect((insert![1] as unknown[]).slice(0, 3)).toEqual(["a@acme.example", "4035230100", "Acme"]);
   });
 
-  it("/lead success branch calls res.status(200).json(ok(...))", () => {
-    expect(src).toMatch(/res\.status\(200\)\.json\(ok\(\{\s*leadId:/);
+  it("/lead invalid-input branch sends 400 with the fail() envelope", async () => {
+    const r = await request(app).post("/api/public/lead").timeout(3000)
+      .send({ companyName: "Acme", email: "not-an-email" });
+    expect(r.status).toBe(400);
+    expect(r.body).toEqual({ status: "error", error: "INVALID_INPUT" });
+    expect(callsMatching(h.query, /insert into crm_leads/i)).toHaveLength(0);
   });
 
-  it("/lead invalid-input branch calls res.status(400).json(fail(...))", () => {
-    expect(src).toMatch(/res\.status\(400\)\.json\(fail\(res,\s*"INVALID_INPUT"\)\)/);
+  it("/lead with no insert result is also a 400, not a hang", async () => {
+    h.acceptAll = true;
+    h.query.mockImplementation(answerBySql([[/insert into crm_leads/i, { rows: [] }]]));
+    const r = await request(app).post("/api/public/lead").timeout(3000)
+      .send({ companyName: "Acme", email: "a@acme.example", productType: "LOC" });
+    expect(r.status).toBe(400);
+    expect(r.body).toEqual({ status: "error", error: "INVALID_INPUT" });
   });
 
-  it("/lead method-not-allowed catch-all calls res.status(405).json(fail(...))", () => {
-    expect(src).toMatch(/res\.status\(405\)\.json\(fail\(res,\s*"METHOD_NOT_ALLOWED"\)\)/);
-  });
-
-  it("no remaining bare `return ok(...)` or bare `return fail(res, ...)` inside the /lead block", () => {
-    const start = src.indexOf('router.post(\n  "/lead"');
-    expect(start).toBeGreaterThan(-1);
-    const end = src.indexOf("export default router", start);
-    expect(end).toBeGreaterThan(start);
-    const block = src.slice(start, end);
-    expect(block).not.toMatch(/return ok\(\{\s*leadId:/);
-    expect(block).not.toMatch(/return fail\(res,\s*"INVALID_INPUT"\);/);
-    expect(block).not.toMatch(/=>\s*fail\(res,\s*"METHOD_NOT_ALLOWED"\)\)/);
+  it("/lead method-not-allowed catch-all sends 405 with the fail() envelope", async () => {
+    for (const method of ["get", "put", "delete"] as const) {
+      const r = await request(app)[method]("/api/public/lead").timeout(3000);
+      expect(r.status).toBe(405);
+      expect(r.body).toEqual({ status: "error", error: "METHOD_NOT_ALLOWED" });
+    }
   });
 });

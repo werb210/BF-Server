@@ -2,7 +2,7 @@
 // BF cannot read bi_companies (separate database). Fetch the company +
 // primary-contact shape from BI-Server over HTTP, using the same service
 // JWT pattern as biHandoff.ts / biDocMirror.ts (no new env var).
-import jwt from "jsonwebtoken";
+import { signServiceToken } from "../auth/serviceTokens.js"; // BF_SERVER_v789_SERVICE_TOKENS
 
 const BI_SERVER_URL =
   process.env.BI_SERVER_URL || "https://bi-server-cse0apamgkheb9d5.canadacentral-01.azurewebsites.net";
@@ -20,8 +20,7 @@ export type BIImportCompany = {
 };
 
 function serviceToken(): string {
-  const secret = process.env.JWT_SECRET || "";
-  return jwt.sign({ kind: "service", source: "bf-server" }, secret, { expiresIn: "5m" });
+  return signServiceToken("bi-server", { source: "bf-server" });
 }
 
 export async function fetchBiCompaniesByIds(ids: string[]): Promise<BIImportCompany[]> {

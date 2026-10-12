@@ -60,15 +60,17 @@ describe("runMigrations", () => {
     expect(calls[i + 2].sql).toBe("COMMIT");
   });
 
-  it("records an already-present object (42P07) instead of failing", async () => {
+  // BF_SERVER_v789_MIGRATIONS_STRICT - was "records an already-present object
+  // (42P07) instead of failing". There is no tolerated-error list any more.
+  it("fails on an already-present object (42P07) and does not record the file", async () => {
     const { pool, calls } = fakePool((sql) => {
       if (sql === "SELECT id FROM schema_migrations") return { rows: [{ id: "001_a.sql" }] };
       if (sql === "create table b(id int);") throw Object.assign(new Error("exists"), { code: "42P07" });
       return { rows: [] };
     });
-    await runMigrations(pool);
+    await expect(runMigrations(pool)).rejects.toThrow("exists");
     expect(calls.some((c) => c.sql === "ROLLBACK")).toBe(true);
-    expect(calls.some((c) => c.sql.startsWith("INSERT INTO schema_migrations") && (c.params ?? [])[0] === "002_b.sql")).toBe(true);
+    expect(calls.some((c) => c.sql.startsWith("INSERT INTO schema_migrations") && (c.params ?? [])[0] === "002_b.sql")).toBe(false);
   });
 
   it("stops on any other error", async () => {

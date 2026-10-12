@@ -10,6 +10,7 @@ import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { resumeSequenceTask } from "../services/sequenceEngine.js"; // BF_SERVER_SEQ_TASK_STEP_v1
 import { safeHandler } from "../middleware/safeHandler.js";
 import { respondOk } from "../utils/respondOk.js";
+import { fetchBiOutreachContact } from "../services/biOutreach.js"; // BF_SERVER_v789_BI_OUTREACH_VIA_API
 
 function respondError(res: any, status: number, message: string): void {
   res.status(status).json({ error: { message } });
@@ -308,12 +309,12 @@ router.post("/", safeHandler(async (req: any, res: any) => {
       // into the main CRM contacts table (silo='BI') and attach the task to that
       // real contact - matching how a BF contact behaves. Idempotent: reuse an
       // existing BI contacts row matched by phone/email before creating one.
-      const bi = await pool.query<{ full_name: string | null; email: string | null; phone_e164: string | null; company_id: string | null }>(
-        `SELECT full_name, email, phone_e164, company_id FROM bi_contacts WHERE id::text = $1`,
-        [contactId],
-      );
-      if (!bi.rowCount) { respondError(res, 400, "contact_not_found"); return; }
-      const lead = bi.rows[0]!;
+      // BF_SERVER_v789_BI_OUTREACH_VIA_API - bi_contacts is BI-Server's table, so
+      // the lead is read from BI over HTTP (404 -> contact_not_found).
+      const bi = await fetchBiOutreachContact(contactId);
+      if (bi.status === "not_found") { respondError(res, 400, "contact_not_found"); return; }
+      if (bi.status !== "ok") { respondError(res, 502, "bi_contact_lookup_failed"); return; }
+      const lead = bi.lead;
       const phone = lead.phone_e164 ? String(lead.phone_e164) : null;
       const email = lead.email ? String(lead.email) : null;
       let promotedId: string | null = null;

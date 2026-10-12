@@ -25,9 +25,21 @@ import { fillDraftContact, furthestStep } from "../../services/draftProgress.js"
 import { postBiHandoff } from "../../services/biHandoff.js";
 import { randomUUID as biRandomUUID } from "node:crypto";
 import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { applicationParamGuard } from "../../auth/clientApplicationOwnership.js"; // BF_SERVER_v789_ID_NORMALIZE
 // BF_APP_ID_CAST_v39 - Block 39-A - applications.id comparisons cast to text
 
 const router = Router();
+
+// BF_SERVER_v789_ID_NORMALIZE - defense in depth behind the client router's
+// path guard: once Express has decoded :id / :token, a value naming an existing
+// application (any case, any encoding) must pass requireApplicationAccess.
+// Continuation tokens are not application ids and are left alone.
+router.param("id", (req: any, res: any, next: any, value: unknown) => {
+  applicationParamGuard(req, res, next, value).catch(next);
+});
+router.param("token", (req: any, res: any, next: any, value: unknown) => {
+  applicationParamGuard(req, res, next, value).catch(next);
+});
 
 // BF_WIZARD_TO_PORTAL_v33 - shared extraction helpers used by both PATCH and
 // /submit so the portal drawer reads the same shape regardless of which path
@@ -357,7 +369,7 @@ router.post(
       const parentRes: any = await runQuery(
         `select requested_amount from applications where id = $1 limit 1`,
         [parent_application_id]
-      ).catch(() => ({ rows: [] }));
+      ).catch((err: unknown) => logWarnSwallowed(err, "routes/client/v1Applications.ts:369", ({ rows: [] })));
       const parentAmt = Number(parentRes?.rows?.[0]?.requested_amount ?? 0);
       if (parentAmt > 0) {
         effectiveAmount = Math.min(Math.round(parentAmt * 0.15), 250000);
@@ -1098,7 +1110,9 @@ router.post(
             `UPDATE applications SET product_category = $1 WHERE id = $2`,
             [primaryCategory, application.id]
           );
-        } catch {}
+        } catch (err) {
+          logWarnSwallowed(err, "routes/client/v1Applications.ts:product_category"); // BF_SERVER_v789_SILENT_QUERIES
+        }
       }
 
       // BF_SERVER_CLOSING_COST_NORMALIZE_v1 - single source of truth for the

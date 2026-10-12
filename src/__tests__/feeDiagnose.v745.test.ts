@@ -1,18 +1,33 @@
 // BF_SERVER_FEE_DIAGNOSE_v745
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
+import express from "express";
+import request from "supertest";
+import jwt from "jsonwebtoken";
 
+const APP = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const OWNER = "+15875550123";
+const SECRET_DETAIL = "signnow 500 at https://internal.example/api key=abc123";
 const rows = vi.hoisted(() => ({ app: null as any, texts: [] as any[] }));
-vi.mock("../db.js", () => ({
-  pool: { query: vi.fn(), connect: vi.fn() },
-  dbQuery: vi.fn(async (sql: string) => {
+vi.mock("../db.js", async (orig) => {
+  const real: any = await orig();
+  const q = async (sql: string, params: unknown[] = []) => {
+    // The client router's ownership checks (signed-in owner of APP).
+    if (sql.includes("WITH app_phones AS")) return { rows: [{ total: 1, mine: params[1] === OWNER.slice(-10) ? 1 : 0, known: 1 }] };
+    if (/FROM applications WHERE lower\(id::text\) = ANY/.test(sql)) return { rows: [{ id: APP }] };
     if (sql.includes("FROM applications")) return { rows: rows.app ? [rows.app] : [] };
     if (sql.includes("FROM sms_deliveries")) return { rows: rows.texts };
     return { rows: [] };
-  }),
+  };
+  const pool = { query: q, connect: async () => ({ query: q, release: () => undefined }) };
+  return { ...real, pool, db: pool, default: pool, dbQuery: q, runQuery: q, query: q };
+});
+vi.mock("../signnow/signnowClient.js", async (orig) => ({ ...(await orig<any>()), isApiKeyConfigured: () => true }));
+vi.mock("../services/feeAgreement/mediaFeeAgreement.js", async (orig) => ({
+  ...(await orig<any>()),
+  createFeeAgreementSigningSession: async () => { throw new Error(SECRET_DETAIL); },
 }));
-vi.mock("../signnow/signnowClient.js", () => ({ isApiKeyConfigured: () => true }));
 import { diagnoseFeeAgreement } from "../routes/portalFeeAgreement.js";
+import clientRouter from "../routes/client/index.js";
 
 beforeEach(() => {
   process.env.TWILIO_PHONE = "+15875550199"; process.env.TWILIO_ACCOUNT_SID = "AC1"; process.env.TWILIO_AUTH_TOKEN = "t";
@@ -45,8 +60,19 @@ describe("fee agreement diagnosis", () => {
     const d: any = await diagnoseFeeAgreement("a1");
     expect(d).toMatchObject({ ok: true, problems: [] });
   });
-  it("the client signing window now receives the real failure reason", () => {
-    const s = readFileSync("src/routes/client/index.ts", "utf8");
-    expect(s).toContain('reason: "session_failed: " + (e instanceof Error ? e.message : String(e)).slice(0, 200)');
+  // BF_SERVER_v789_GENERIC_ERRORS - the failure detail is logged, never returned to the client.
+  it("the client signing window receives a generic failure code, the detail is logged", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const app = express();
+    app.use(express.json());
+    app.use("/api/client", clientRouter);
+    const token = "Bearer " + jwt.sign({ sub: "client:" + OWNER, role: "client", phone: OWNER, isClient: true }, process.env.JWT_SECRET as string, { algorithm: "HS256" });
+    const r = await request(app).get(`/api/client/fee-agreement/session?applicationId=${APP}`).set("Authorization", token);
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ status: "error", reason: "session_failed" });
+    expect(JSON.stringify(r.body)).not.toContain("internal.example");
+    const logged = warn.mock.calls.find((c) => c[0] === "[fee-agreement] session failed");
+    expect(logged?.[1]).toEqual({ applicationId: APP, message: SECRET_DETAIL });
+    warn.mockRestore();
   });
 });

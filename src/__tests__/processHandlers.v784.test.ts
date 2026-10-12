@@ -1,39 +1,40 @@
-// BF_SERVER_v784_PROCESS_HANDLERS - static check of the process-level handlers in src/index.ts.
-import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import path from "node:path";
+// BF_SERVER_v784_PROCESS_HANDLERS - the process-level handlers src/index.ts registers,
+// exercised by importing it with its dependencies stubbed and firing the handlers.
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { bootIndex, type Boot } from "./helpers/bootIndex.js";
 
-const src = readFileSync(path.join(process.cwd(), "src/index.ts"), "utf8");
-
-function handlerBody(event: string): string {
-  const start = src.indexOf(`process.on("${event}"`);
-  expect(start).toBeGreaterThanOrEqual(0);
-  const end = src.indexOf("\n});", start);
-  expect(end).toBeGreaterThan(start);
-  return src.slice(start, end);
-}
+let boot: Boot | null = null;
+afterEach(() => { boot?.restore(); boot = null; });
 
 describe("src/index.ts process handlers", () => {
-  it("registers each handler exactly once", () => {
-    expect(src.split('process.on("uncaughtException"').length - 1).toBe(1);
-    expect(src.split('process.on("unhandledRejection"').length - 1).toBe(1);
+  it("registers each handler exactly once", async () => {
+    boot = await bootIndex({ callStart: false });
+    expect(boot.handlers.get("uncaughtException")).toHaveLength(1);
+    expect(boot.handlers.get("unhandledRejection")).toHaveLength(1);
   });
-  it("uncaughtException logs and exits 1", () => {
-    const body = handlerBody("uncaughtException");
-    expect(body).toContain("logFatal(");
-    expect(body).toContain("process.exit(1)");
+
+  it("uncaughtException logs and exits 1", async () => {
+    boot = await bootIndex({ callStart: false });
+    boot.handlers.get("uncaughtException")![0](new Error("boom"));
+    expect(boot.logText("error")).toContain("[UNCAUGHT EXCEPTION] boom");
+    expect(boot.exitCodes).toEqual([1]);
   });
-  it("unhandledRejection logs only and does not exit", () => {
-    const body = handlerBody("unhandledRejection");
-    expect(body).toContain("logFatal(");
-    expect(body).not.toContain("process.exit");
+
+  it("unhandledRejection logs only and does not exit", async () => {
+    boot = await bootIndex({ callStart: false });
+    boot.handlers.get("unhandledRejection")![0](new Error("stray promise"));
+    expect(boot.logText("error")).toContain("[UNHANDLED REJECTION] stray promise");
+    expect(boot.exitCodes).toEqual([]);
   });
-  it("a failed start() logs and exits 1", () => {
-    expect(src).not.toContain("start().catch(console.error)");
-    const i = src.indexOf("start().catch(");
-    expect(i).toBeGreaterThan(0);
-    const tail = src.slice(i, i + 200);
-    expect(tail).toContain("logFatal(");
-    expect(tail).toContain("process.exit(1)");
+
+  it("a failed start() logs and exits 1", async () => {
+    // Importing outside NODE_ENV=test runs start() itself; make it fail early.
+    boot = await bootIndex({
+      importNodeEnv: "development",
+      stubs: { assertJwtSecretAtStartup: () => { throw new Error("JWT_SECRET is a placeholder"); } },
+    });
+    await vi.waitFor(() => expect(boot!.exitCodes).toEqual([1]));
+    expect(boot.logText("error")).toContain("[STARTUP FAILED] JWT_SECRET is a placeholder");
+    expect(boot.events).not.toContain("listen");
   });
 });

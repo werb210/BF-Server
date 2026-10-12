@@ -3,7 +3,8 @@ import { pool } from "../db.js";
 import { createContact } from "../services/contacts.js";
 import { persistTwilioMediaToBlob } from "../services/mmsMedia.js"; // BF_SERVER_MMS_BLOB_PERSIST_v1
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
-import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js"; // BF_SERVER_v784_WEBHOOK_SIGNATURES
+import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_v784_WEBHOOK_SIGNATURES
 
 const router = Router();
 
@@ -87,7 +88,7 @@ export function smsKeywordReply(kw: string): { kind: "out" | "in" | "help"; text
 // twilioWebhookValidation middleware as every webhook in src/routes/webhooks.ts. The
 // urlencoded parser runs first (a no-op if the body was already parsed) because the
 // signature covers the form params.
-router.post("/webhooks/twilio/sms-inbound", express.urlencoded({ extended: false }), twilioWebhookValidation, async (req: any, res) => {
+router.post("/webhooks/twilio/sms-inbound", express.urlencoded({ extended: false }), twilioWebhookValidation, safeHandler(async (req: any, res) => {
   const from = String(req.body?.From ?? "");
   const to = String(req.body?.To ?? "");
   const rawBody = String(req.body?.Body ?? "").trim();
@@ -217,6 +218,6 @@ router.post("/webhooks/twilio/sms-inbound", express.urlencoded({ extended: false
     console.error("sms_inbound_persist_failed", err);
     return res.type("text/xml").send("<Response/>");
   }
-});
+}));
 
 export default router;

@@ -7,6 +7,7 @@ import { pool } from "../../db.js";
 import { findOrCreateContactByEmailAndCompany } from "../../services/contacts.js";
 import { findOrCreateCompanyByNameAndSilo } from "../../services/companies.js";
 import { notifyAllStaff } from "../../services/notifications/notifyAllStaff.js";
+import { parseExpressCaslConsent, recordExpressCaslConsent } from "../../services/smsConsent.js"; // BF_SERVER_v789_CASL_EXPRESS_CONSENT
 // BF_SERVER_ACCOUNTANT_SURFACE_v2 - an acknowledgement is a reply, not a
 // campaign; its links must not be rewritten through sendgrid.net on a
 // stranger's first contact with us.
@@ -74,6 +75,13 @@ export async function submitContactForm(req: Request, res: Response) {
     } catch (e) {
       console.warn("[website_contact] CRM contact/company upsert failed", e);
     }
+    // BF_SERVER_v789_CASL_EXPRESS_CONSENT - only an explicit casl_consent === true.
+    await recordExpressCaslConsent(
+      (sql, params) => pool.query(sql, params as any[]),
+      { contactId, email, silo: "BF" },
+      parseExpressCaslConsent(req.body),
+      "website_contact_form",
+    );
 
     // BF_SERVER_CONTACT_FORM_AUTOMATION_v1 - auto-send the "BF-After contact form"
     // template email to the person who submitted the form. Best-effort: never

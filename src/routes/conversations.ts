@@ -5,6 +5,7 @@
 import { Router } from "express";
 import { pool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { urlTicketOrHeaderAuth } from "../auth/urlTicket.js"; // BF_SERVER_v789_URL_TICKETS
 import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_BLOCK_v578
 import { sendSms } from "../modules/notifications/sms.service.js";
 
@@ -108,13 +109,11 @@ router.post("/conversations/:id/messages", requireAuth, safeHandler(async (req: 
   });
 }));
 
-router.get("/conversations/:id/stream", async (req, res) => {
-  // BF_SERVER_v784_STAFF_ONLY_AUTH - staff live updates: staff humans and services only.
-  const { verifyPrincipalToken, staffRejectionStatus } = await import("../auth/principal.js");
-  const principal = verifyPrincipalToken(String(req.query.token ?? ""));
-  if (!principal) return res.status(401).end();
-  const rejection = staffRejectionStatus(principal);
-  if (rejection) return res.status(rejection).end();
+// BF_SERVER_v784_STAFF_ONLY_AUTH - staff live updates: staff humans and services only.
+// BF_SERVER_v789_URL_TICKETS - EventSource sends ?token=<URL ticket> (a full staff JWT
+// in the query string is a 401); the Authorization header works too.
+router.get("/conversations/:id/stream", urlTicketOrHeaderAuth(requireAuth), safeHandler(async (req, res) => {
+  if (!(req as any).user) return res.status(401).end();
 
   res.set({
     "Content-Type": "text/event-stream",
@@ -144,6 +143,6 @@ router.get("/conversations/:id/stream", async (req, res) => {
   }, 3000);
 
   req.on("close", () => clearInterval(interval));
-});
+}));
 
 export default router;

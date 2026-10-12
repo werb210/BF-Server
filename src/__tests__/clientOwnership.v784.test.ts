@@ -20,7 +20,8 @@ vi.mock("../db.js", () => {
 });
 
 function answer(sql: string, params: unknown[] = []) {
-  if (sql.includes("FROM applications WHERE id::text = ANY($1::text[])")) {
+  // BF_SERVER_v789_ID_NORMALIZE - the lookup now compares lower(id::text).
+  if (/FROM applications WHERE (lower\()?id::text\)? = ANY\(\$1::text\[\]\)/.test(sql)) {
     const ids = (params[0] as string[]) ?? [];
     return { rows: ids.filter((id) => id === OWNED || id === UNCLAIMED).map((id) => ({ id })) };
   }

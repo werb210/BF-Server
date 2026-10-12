@@ -6,6 +6,7 @@ import { stripUndefined } from "../../utils/clean.js";
 import { pool } from "../../db.js";
 import { createContact } from "../../services/contacts.js";
 import { notifyAllStaff } from "../../services/notifications/notifyAllStaff.js";
+import { parseExpressCaslConsent, recordExpressCaslConsent } from "../../services/smsConsent.js"; // BF_SERVER_v789_CASL_EXPRESS_CONSENT
 // BF_SERVER_BLOCK_v129a_READINESS_PHONE_NORMALIZE_v1
 import { normalizePhoneNumber } from "../auth/phone.js";
 
@@ -162,6 +163,13 @@ export async function submitCreditReadiness(req: Request, res: Response) {
     } catch (e) {
       console.warn("[readiness] createContact/tag failed", e);
     }
+    // BF_SERVER_v789_CASL_EXPRESS_CONSENT - only an explicit casl_consent === true.
+    await recordExpressCaslConsent(
+      (sql, params) => pool.query(sql, params as any[]),
+      { email: String(email), silo: "BF" },
+      parseExpressCaslConsent(req.body),
+      "website_credit_readiness",
+    );
 
     // BF_SERVER_BLOCK_v101_READINESS_DRAFT_APPLICATION_v1
     // Per Todd: "Check my credit readiness" should leave a draft on

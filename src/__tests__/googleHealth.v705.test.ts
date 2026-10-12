@@ -1,16 +1,31 @@
 // BF_SERVER_GOOGLE_HEALTH_v705
-import { readFileSync } from "node:fs";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import express from "express";
+import jwt from "jsonwebtoken";
+import request from "supertest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ pending: 0, ga4: false, sms: [] as string[], emails: [] as unknown[] }));
+const monitorStop = vi.hoisted(() => vi.fn());
 vi.mock("../services/googleAdsConversions.js", () => ({ accessToken: async () => "tok-v703" }));
-vi.mock("../db.js", () => ({ pool: { query: async (sql: string) => (sql.includes("ad_submit_conversion_uploaded_at") ? { rows: [{ n: state.pending }] } : { rows: [] }) } }));
+vi.mock("../db.js", async (orig) => {
+  const real = await orig<typeof import("../db.js")>();
+  const query = async (sql: string) => (sql.includes("ad_submit_conversion_uploaded_at") ? { rows: [{ n: state.pending }] } : { rows: [] });
+  return { ...real, pool: { query } };
+});
 vi.mock("../services/ga4Service.js", () => ({ ga4Configured: () => state.ga4, runGa4Report: async () => ({ configured: true, days: 1, error: "quota exhausted" }) }));
 vi.mock("../services/smsService.js", () => ({ sendSMS: async (to: string) => { state.sms.push(to); } }));
 vi.mock("../services/email/graphSendService.js", () => ({ sendViaGraph: async (input: unknown) => { state.emails.push(input); return { ok: true }; } }));
+// The worker's own hourly tick is not under test here; the health monitor it starts is.
+vi.mock("../workers/claim.js", () => ({ claimedTick: () => async () => undefined }));
+vi.mock("../services/googleHealth.js", async (orig) => {
+  const real = await orig<typeof import("../services/googleHealth.js")>();
+  return { ...real, startGoogleHealthMonitor: vi.fn(() => ({ stop: monitorStop })) };
+});
 
 import { DATA_MANAGER_INGEST_URL } from "../services/googleDataManager.js";
-import { alertIfFailing, runGoogleHealthChecks, __resetGoogleHealthForTests } from "../services/googleHealth.js";
+import { alertIfFailing, runGoogleHealthChecks, startGoogleHealthMonitor, __resetGoogleHealthForTests } from "../services/googleHealth.js";
+import intRouter from "../routes/_int.js";
+import { startAdConversionWorker } from "../workers/adConversionWorker.js";
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
@@ -26,13 +41,14 @@ beforeEach(() => {
   __resetGoogleHealthForTests();
 });
 
+const google = (scope: string, dmStatus = 200) => (async (url: string, init?: any) => {
+  if (url.includes("tokeninfo")) return json(200, { scope });
+  if (url === DATA_MANAGER_INGEST_URL) { expect(JSON.parse(init.body).validateOnly).toBe(true); return dmStatus === 200 ? json(200, { requestId: "x" }) : json(dmStatus, { error: { message: "PERMISSION_DENIED" } }); }
+  if (url.includes("googleAds:search")) return json(200, { results: [] });
+  return json(404, {});
+}) as any;
+
 describe("Google health checks", () => {
-  const google = (scope: string, dmStatus = 200) => (async (url: string, init?: any) => {
-    if (url.includes("tokeninfo")) return json(200, { scope });
-    if (url === DATA_MANAGER_INGEST_URL) { expect(JSON.parse(init.body).validateOnly).toBe(true); return dmStatus === 200 ? json(200, { requestId: "x" }) : json(dmStatus, { error: { message: "PERMISSION_DENIED" } }); }
-    if (url.includes("googleAds:search")) return json(200, { results: [] });
-    return json(404, {});
-  }) as any;
   it("all green when the login has both permissions and Google accepts the test upload", async () => {
     const r = await runGoogleHealthChecks(google("https://www.googleapis.com/auth/adwords https://www.googleapis.com/auth/datamanager"));
     expect(Object.fromEntries(r.checks.map((c) => [c.key, c.status]))).toEqual({ google_login: "ok", conversion_test: "ok", ads_reporting: "ok", submissions_sent: "ok", ga4: "off" });
@@ -58,8 +74,23 @@ describe("Google health checks", () => {
 });
 
 describe("health route and monitor are wired in", () => {
-  it("serves /google-health and starts the hourly monitor", () => {
-    expect(readFileSync("src/routes/_int.ts", "utf8")).toContain('router.get("/google-health", requireAuth');
-    expect(readFileSync("src/workers/adConversionWorker.ts", "utf8")).toContain("startGoogleHealthMonitor()");
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("serves /google-health to a signed-in user only", async () => {
+    vi.stubGlobal("fetch", google("https://www.googleapis.com/auth/adwords https://www.googleapis.com/auth/datamanager"));
+    const app = express();
+    app.use("/api/_int", intRouter);
+    expect((await request(app).get("/api/_int/google-health")).status).toBe(401);
+    const token = jwt.sign({ sub: "11111111-1111-4111-8111-111111111111", role: "Admin", tokenVersion: 0, tv: 0 }, process.env.JWT_SECRET as string, { algorithm: "HS256" });
+    const r = await request(app).get("/api/_int/google-health?refresh=1").set("Authorization", "Bearer " + token);
+    expect(r.status).toBe(200);
+    expect(Object.fromEntries(r.body.checks.map((c: any) => [c.key, c.status]))).toMatchObject({ google_login: "ok", conversion_test: "ok" });
+  });
+
+  it("the ad conversion worker starts the hourly monitor and stops it with itself", () => {
+    const worker = startAdConversionWorker({} as any);
+    expect(startGoogleHealthMonitor).toHaveBeenCalledTimes(1);
+    worker.stop();
+    expect(monitorStop).toHaveBeenCalledTimes(1);
   });
 });

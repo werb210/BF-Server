@@ -4,6 +4,7 @@ import { pool } from "../db.js";
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 import jwt from "jsonwebtoken";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 // BF_SERVER_BLOCK_v476_OFFER_OWNER_v1 - /:id/accept and /:id/decline took the offer
 // id alone with no login at all. Now: Admin/Staff tokens pass; any other token
@@ -14,7 +15,7 @@ async function offerCallerStatus(req: any, offerId: string): Promise<number> {
   const auth = req.headers?.authorization;
   if (!secret || typeof auth !== "string" || !auth.startsWith("Bearer ")) return 401;
   let decoded: Record<string, unknown>;
-  try { decoded = jwt.verify(auth.slice(7), secret) as Record<string, unknown>; } catch { return 401; }
+  try { decoded = jwt.verify(auth.slice(7), secret, { algorithms: ["HS256"] }) as Record<string, unknown>; } catch { return 401; }
   const role = typeof decoded.role === "string" ? decoded.role : "";
   if (role === ROLES.ADMIN || role === ROLES.STAFF) return 0;
   const phone10 = String(typeof decoded.phone === "string" ? decoded.phone : "").replace(/[^0-9]/g, "").slice(-10);
@@ -46,7 +47,7 @@ const router = Router();
 
 // Client (or staff acting as client): stage an offer for acceptance.
 // BF_SERVER_BLOCK_v138_E2E_FIX_BATCH_v1 — AUDIT-17 wire-in.
-router.post("/:id/accept", async (req, res) => {
+router.post("/:id/accept", safeHandler(async (req, res) => {
   const id = String(req.params.id ?? "").trim();
   if (!id) return res.status(400).json({ error: "missing_offer_id" });
   { // BF_SERVER_BLOCK_v476_OFFER_OWNER_v1
@@ -80,11 +81,11 @@ router.post("/:id/accept", async (req, res) => {
   }
 
   return res.json({ ok: true, offer: row });
-});
+}));
 
 // Staff confirms acceptance — flips to accepted + fires lender SignNow.
 // BF_SERVER_BLOCK_v138_E2E_FIX_BATCH_v1 — AUDIT-13 regression repair.
-router.post("/:id/confirm-acceptance", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), async (req, res) => {
+router.post("/:id/confirm-acceptance", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req, res) => {
   const id = String(req.params.id ?? "").trim();
   if (!id) return res.status(400).json({ error: "missing_offer_id" });
 
@@ -103,6 +104,26 @@ router.post("/:id/confirm-acceptance", requireAuth, requireAuthorization({ roles
   // other silo by knowing the offer UUID. Silo lives on applications, not
   // offers, so JOIN through application_id. Use the same getSilo pattern
   // as portal.ts v309 and 404 on mismatch.
+  // BF_SERVER_v789 - validated BEFORE the offer is marked accepted, so a 400 leaves it untouched.
+  // BF_SERVER_FUNDED_AMOUNT_v1 - staff enter the ACTUAL amount the lender advanced. Commission
+  // and ad-conversion value are computed from this, not from the requested or quoted amount.
+  // Falls back to the offer amount when staff do not supply one.
+  // BF_SERVER_FUNDED_CURRENCY_v6 - mandatory. This is the reporting number;
+  // leaving it optional meant revenue quietly fell back to the quoted offer.
+  const rawFunded = (req.body ?? {}).fundedAmount ?? (req.body ?? {}).funded_amount;
+  if (rawFunded === undefined || rawFunded === null || String(rawFunded).trim() === "") {
+    return res.status(400).json({ error: "funded_amount_required" });
+  }
+  const rawCurrency = String(
+    (req.body ?? {}).fundedCurrency ?? (req.body ?? {}).funded_currency ?? "CAD"
+  ).trim().toUpperCase();
+  if (rawCurrency !== "CAD" && rawCurrency !== "USD") {
+    return res.status(400).json({ error: "invalid_funded_currency" });
+  }
+  const fundedAmount = rawFunded === undefined || rawFunded === null || rawFunded === "" ? null : Number(rawFunded);
+  if (fundedAmount !== null && (!Number.isFinite(fundedAmount) || fundedAmount < 0)) {
+    return res.status(400).json({ error: "invalid_funded_amount" });
+  }
   const { getSilo } = await import("../middleware/silo.js");
   const callerSilo = getSilo(res);
 
@@ -127,25 +148,6 @@ router.post("/:id/confirm-acceptance", requireAuth, requireAuthorization({ roles
   const row = r.rows[0];
   if (!row) return res.status(409).json({ error: "offer_not_pending" });
 
-  // BF_SERVER_FUNDED_AMOUNT_v1 - staff enter the ACTUAL amount the lender advanced. Commission
-  // and ad-conversion value are computed from this, not from the requested or quoted amount.
-  // Falls back to the offer amount when staff do not supply one.
-  // BF_SERVER_FUNDED_CURRENCY_v6 - mandatory. This is the reporting number;
-  // leaving it optional meant revenue quietly fell back to the quoted offer.
-  const rawFunded = (req.body ?? {}).fundedAmount ?? (req.body ?? {}).funded_amount;
-  if (rawFunded === undefined || rawFunded === null || String(rawFunded).trim() === "") {
-    return res.status(400).json({ error: "funded_amount_required" });
-  }
-  const rawCurrency = String(
-    (req.body ?? {}).fundedCurrency ?? (req.body ?? {}).funded_currency ?? "CAD"
-  ).trim().toUpperCase();
-  if (rawCurrency !== "CAD" && rawCurrency !== "USD") {
-    return res.status(400).json({ error: "invalid_funded_currency" });
-  }
-  const fundedAmount = rawFunded === undefined || rawFunded === null || rawFunded === "" ? null : Number(rawFunded);
-  if (fundedAmount !== null && (!Number.isFinite(fundedAmount) || fundedAmount < 0)) {
-    return res.status(400).json({ error: "invalid_funded_amount" });
-  }
   await pool.query(
     `UPDATE applications
         SET funded_currency = $4,
@@ -187,10 +189,10 @@ router.post("/:id/confirm-acceptance", requireAuth, requireAuthorization({ roles
   }
 
   return res.json({ ok: true, offer: row });
-});
+}));
 
 // Decline path — staff or client.
-router.post("/:id/decline", async (req, res) => {
+router.post("/:id/decline", safeHandler(async (req, res) => {
   const id = String(req.params.id ?? "").trim();
   if (!id) return res.status(400).json({ error: "missing_offer_id" });
   { // BF_SERVER_BLOCK_v476_OFFER_OWNER_v1
@@ -213,6 +215,6 @@ router.post("/:id/decline", async (req, res) => {
   if (!row) return res.status(409).json({ error: "offer_not_declinable" });
 
   return res.json({ ok: true, offer: row });
-});
+}));
 
 export default router;

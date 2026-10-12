@@ -10,7 +10,7 @@ import { createLandingPage, createLandingPageFromHtml, updateLandingPageHtml, sl
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js";
 import { smsMarketingConfigured, sendMarketingSms, renderMarketingSms } from "../services/marketingSms.js";
 import { SMS_ELIGIBLE_SQL } from "../services/smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1
-import { countEmailRecipients, runEmailSend, countSmsRecipients, runSmsSend } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1 BF_SERVER_SEND_QUEUE_SMS_v1
+import { countEmailRecipients, runEmailSend, countSmsRecipients, runSmsSend, EMAIL_BLAST_ELIGIBLE_SQL } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1 BF_SERVER_SEND_QUEUE_SMS_v1
 import { enrollContactsDetailed, enrollSequence } from "../services/sequenceEngine.js"; // BF_SERVER_BLOCK_v785_SEQUENCES
 import { suggestionsConfigured, buildSuggestions, applySuggestion, adsMutateAllowed, ADS_MUTATE_BLOCKED_REASON } from "../services/googleAdsSuggestions.js"; // BF_SERVER_ADS_WRITE_GATE_v56
 import { linkedInSuggestionsConfigured, buildLinkedInSuggestions, applyLinkedInSuggestion } from "../services/linkedInAdsSuggestions.js"; // BF_SERVER_LINKEDIN_SUGGESTIONS_v1
@@ -730,13 +730,13 @@ router.get("/email/segments", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const tags = await pool.query(
     `SELECT tag, count(*)::int AS n FROM (
-       SELECT unnest(tags) AS tag FROM contacts
-        WHERE silo = $1 AND COALESCE(email,'') <> '' AND COALESCE(marketing_opt_out,false) = false
+       SELECT unnest(c.tags) AS tag FROM contacts c
+        WHERE c.silo = $1 AND ${EMAIL_BLAST_ELIGIBLE_SQL} -- BF_SERVER_v789_EMAIL_BLAST_CONSENT
      ) t GROUP BY tag ORDER BY n DESC`,
     [silo],
   );
   const total = await pool.query(
-    `SELECT count(*)::int AS n FROM contacts WHERE silo = $1 AND COALESCE(email,'') <> '' AND COALESCE(marketing_opt_out,false) = false`,
+    `SELECT count(*)::int AS n FROM contacts c WHERE c.silo = $1 AND ${EMAIL_BLAST_ELIGIBLE_SQL}`,
     [silo],
   );
   respondOk(res, { configured: sendgridConfigured(), all: total.rows[0]?.n ?? 0, segments: tags.rows });
@@ -808,6 +808,7 @@ router.post("/email/send", safeHandler(async (req: any, res: any) => {
   // silently dropped here and the blast targeted the whole silo.
   const includeTags = tagArr(b.tags);
   const excludeTags = tagArr(b.excludeTags);
+  if (emailAudienceMissing(tag, includeTags)) { res.status(400).json({ error: "audience_required", message: "Choose at least one tag to send to." }); return; } // BF_SERVER_v789_EMAIL_BLAST_CONSENT
   // BF_SERVER_BLOCK_v782_VIEW_IN_BROWSER: host a public copy, inject the link.
   // BF_SERVER_EMAIL_HARDENING_v1 - landing hosting is best-effort; a failed
   // insert must not 500 the whole blast.
@@ -1102,6 +1103,13 @@ router.post("/email/assets/upload", emailAssetUpload.single("file"), safeHandler
 }));
 
 // BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1 - sanitize a tag list from body/query.
+// BF_SERVER_v789_EMAIL_BLAST_CONSENT - an empty include list used to mean "the whole
+// silo". Like sequences (BF_SERVER_SEQUENCE_CONSENT_GATE_v31) a blast now fails closed:
+// no tag and no include tags is no audience.
+export function emailAudienceMissing(tag: string | null, includeTags: string[] | null): boolean {
+  return !(tag && tag.trim()) && !(includeTags && includeTags.length > 0);
+}
+
 function tagArr(v: unknown): string[] | null {
   const raw = Array.isArray(v) ? v : typeof v === "string" ? v.split(",") : [];
   const out = [...new Set(raw.map((x) => String(x).trim()).filter(Boolean))];
@@ -1136,6 +1144,7 @@ router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
   // BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1 - multi-tag include/exclude audience.
   const includeTags = tagArr(b.tags);
   const excludeTags = tagArr(b.excludeTags);
+  if (emailAudienceMissing(tag, includeTags)) { res.status(400).json({ error: "audience_required", message: "Choose at least one tag to send to." }); return; } // BF_SERVER_v789_EMAIL_BLAST_CONSENT
   // BF_SERVER_BLOCK_v782_VIEW_IN_BROWSER
   // BF_SERVER_EMAIL_HARDENING_v1 - landing hosting is best-effort here too.
   let htmlOut = html;

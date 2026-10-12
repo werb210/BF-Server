@@ -11,6 +11,7 @@ import {
 // BF_SERVER_BLOCK_v686_BANKING_DIAGNOSTIC_v1
 import { pool } from "../../db.js";
 import { requireAdmin } from "../../middleware/requireAdmin.js";
+import { safeHandler } from "../../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router = Router();
 
@@ -21,7 +22,7 @@ function fetchAuditContext(req: Request): { ip: string | null; userAgent: string
   };
 }
 
-router.post("/documents/:documentId/enqueue", async (req: any, res: any, next: any) => {
+router.post("/documents/:documentId/enqueue", safeHandler(async (req: any, res: any, next: any) => {
   try {
     const job = await enqueueOcrForDocument(req.params.documentId);
     await recordAuditEvent({
@@ -46,9 +47,9 @@ router.post("/documents/:documentId/enqueue", async (req: any, res: any, next: a
     });
     next(err);
   }
-});
+}));
 
-router.post("/applications/:applicationId/enqueue", async (req: any, res: any, next: any) => {
+router.post("/applications/:applicationId/enqueue", safeHandler(async (req: any, res: any, next: any) => {
   try {
     const jobs = await enqueueOcrForApplication(req.params.applicationId);
     await recordAuditEvent({
@@ -73,9 +74,9 @@ router.post("/applications/:applicationId/enqueue", async (req: any, res: any, n
     });
     next(err);
   }
-});
+}));
 
-router.get("/documents/:documentId/status", async (req: any, res: any, next: any) => {
+router.get("/documents/:documentId/status", safeHandler(async (req: any, res: any, next: any) => {
   try {
     const job = await fetchOcrJobStatus(req.params.documentId);
     if (!job) {
@@ -103,9 +104,9 @@ router.get("/documents/:documentId/status", async (req: any, res: any, next: any
     });
     next(err);
   }
-});
+}));
 
-router.get("/documents/:documentId/result", async (req: any, res: any, next: any) => {
+router.get("/documents/:documentId/result", safeHandler(async (req: any, res: any, next: any) => {
   try {
     const result = await fetchOcrResult(req.params.documentId);
     if (!result) {
@@ -133,9 +134,9 @@ router.get("/documents/:documentId/result", async (req: any, res: any, next: any
     });
     next(err);
   }
-});
+}));
 
-router.post("/documents/:documentId/retry", async (req: any, res: any, next: any) => {
+router.post("/documents/:documentId/retry", safeHandler(async (req: any, res: any, next: any) => {
   try {
     const job = await retryOcrJob(req.params.documentId);
     await recordAuditEvent({
@@ -160,7 +161,7 @@ router.post("/documents/:documentId/retry", async (req: any, res: any, next: any
     });
     next(err);
   }
-});
+}));
 
 // BF_SERVER_BLOCK_v686_BANKING_DIAGNOSTIC_v1 — read-only aggregate answering
 // "why is Banking analysis empty?" Admin-only. Runs inside the App Service, so

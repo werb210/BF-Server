@@ -1,8 +1,27 @@
 // BF_SERVER_OTP_NANP_VALIDATION_v33
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import request from "supertest";
 
 import { isValidNanp } from "../auth.js";
+
+const h = vi.hoisted(() => ({
+  query: vi.fn(async () => ({ rows: [], rowCount: 0 })),
+  findAuthUserByPhone: vi.fn(),
+  verificationCheck: vi.fn(),
+  verificationCreate: vi.fn(),
+}));
+vi.mock("../../config/runtime.js", () => ({ isTest: false }));
+vi.mock("../../middleware/authRateLimit.js", async () => (await import("../../__tests__/helpers/otpVerifyApp.js")).passthroughLimiters());
+vi.mock("../../lib/sharedClients.js", async () => {
+  const { fakeSharedTwilio } = await import("../../__tests__/helpers/otpVerifyApp.js");
+  return { sharedTwilio: () => fakeSharedTwilio(h), sharedOpenAI: () => ({}) };
+});
+vi.mock("../../lib/db.js", async () => ({ ...(await vi.importActual<any>("../../lib/db.js")), runQuery: h.query }));
+vi.mock("../../db.js", async () => ({ ...(await vi.importActual<any>("../../db.js")), pool: { query: h.query }, dbQuery: h.query }));
+vi.mock("../../modules/auth/auth.repo.js", async () => ({
+  ...(await vi.importActual<any>("../../modules/auth/auth.repo.js")),
+  findAuthUserByPhone: h.findAuthUserByPhone,
+}));
 
 describe("isValidNanp", () => {
   it("accepts real numbers seen in today's logs", () => {
@@ -29,19 +48,51 @@ describe("isValidNanp", () => {
 });
 
 describe("otp error mapping", () => {
-  const src = readFileSync("src/routes/auth.ts", "utf8");
+  beforeEach(async () => {
+    vi.stubEnv("TWILIO_VERIFY_SERVICE_SID", "VA00000000000000000000000000000000");
+    h.findAuthUserByPhone.mockReset().mockResolvedValue(null);
+    h.verificationCreate.mockReset();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    (await import("../../lib/otpGuard.js"))._resetOtpGuard();
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+  async function startWith(providerError: string) {
+    h.verificationCreate.mockRejectedValue(new Error(providerError));
+    const { otpApp } = await import("../../__tests__/helpers/otpVerifyApp.js");
+    return request(await otpApp()).post("/api/auth/otp/start").send({ phone: "+14035550166" });
+  }
 
-  it("returns 400 for a destination Twilio refuses, not 500", () => {
-    expect(src).toContain('error: "invalid_phone"');
-    expect(src).toContain("invalid parameter .?to.?");
+  it("returns 400 for a destination Twilio refuses, not 500", async () => {
+    for (const msg of ["Invalid parameter `To`: +14035550166", "Invalid parameter To", "The number is not a valid phone number"]) {
+      const res = await startWith(msg);
+      expect(res.status, msg).toBe(400);
+      expect(res.body.error).toBe("invalid_phone");
+    }
   });
 
-  it("keeps the 429 rate-limit mapping ahead of it", () => {
-    expect(src.indexOf("otp_rate_limited")).toBeLessThan(src.indexOf('error: "invalid_phone"'));
+  it("keeps the 429 rate-limit mapping ahead of it", async () => {
+    // A message matching both patterns is a rate limit, not a bad number.
+    const res = await startWith("Max send attempts reached; invalid parameter To");
+    expect(res.status).toBe(429);
+    expect(res.body.error).toBe("otp_rate_limited");
+    expect(res.headers["retry-after"]).toBe("600");
   });
 
-  it("still has a 500 for genuine server failures", () => {
-    expect(src).toContain('error: "OTP failed"');
+  it("still has a 500 for genuine server failures", async () => {
+    const res = await startWith("socket hang up");
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("OTP failed");
+  });
+
+  it("refuses a structurally impossible NANP number before any Twilio call", async () => {
+    const { otpApp } = await import("../../__tests__/helpers/otpVerifyApp.js");
+    const res = await request(await otpApp()).post("/api/auth/otp/start").send({ phone: "+19115551234" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Phone is not a valid number");
+    expect(h.verificationCreate).not.toHaveBeenCalled();
   });
 });
 

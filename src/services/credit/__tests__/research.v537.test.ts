@@ -1,16 +1,40 @@
 // BF_SERVER_BLOCK_v537_RESEARCH_PACK
-import { afterEach, describe, expect, it, vi } from "vitest";
-import fs from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { answerBySql, callsMatching } from "../../../__tests__/helpers/answerBySql.js";
 
-vi.mock("../../../db.js", () => ({ pool: { query: vi.fn(async () => ({ rows: [], rowCount: 0 })) } }));
+const { queryMock, responsesCreate } = vi.hoisted(() => ({ queryMock: vi.fn(), responsesCreate: vi.fn() }));
+vi.mock("../../../db.js", async () => {
+  const actual = await vi.importActual<typeof import("../../../db.js")>("../../../db.js");
+  return { ...actual, pool: { query: queryMock } };
+});
+vi.mock("../../../lib/sharedClients.js", () => ({
+  sharedOpenAI: () => ({ responses: { create: responsesCreate } }),
+  sharedTwilio: () => ({ messages: { create: vi.fn() } }),
+}));
 vi.mock("../../crm/contactBrief.js", () => ({
   businessDomain: (website: unknown, email: unknown) => website
     ? String(website).replace(/^https?:\/\/(www\.)?/, "").replace(/\/.*$/, "")
     : /@(.+)$/.exec(String(email ?? ""))?.[1] ?? null,
-  companyBackground: vi.fn(async () => null),
+  companyBackground: vi.fn(async (domain: string | null) => (domain ? "Downhole tool services in Nisku, AB." : null)),
 }));
 
-import { cacheKey, companyRefFrom, googlePlace, normalizeWebFacts, placesFacts } from "../research.js";
+import { cacheKey, companyRefFrom, googlePlace, normalizeWebFacts, placesFacts, refreshApplicationResearch } from "../research.js";
+import { API_ROUTE_MOUNTS } from "../../../routes/routeRegistry.js";
+import creditResearchRoutes from "../../../routes/creditResearch.js";
+
+beforeEach(() => {
+  queryMock.mockReset();
+  queryMock.mockImplementation(answerBySql([
+    [/FROM applications a LEFT JOIN contacts c/, { rows: [{ a: { name: "App", metadata: { business: { legalName: "Pro-Pipe Service & Sales Ltd.", city: "Nisku", state: "AB", website: "https://www.propipecanada.com" } } }, contact_email: null }] }],
+    [/INSERT INTO application_research_facts/, { rows: [], rowCount: 1 }],
+  ]));
+  responsesCreate.mockReset();
+  responsesCreate.mockResolvedValue({ output_text: JSON.stringify({ facts: [
+    { category: "registry", label: "Incorporated", value: "Alberta, 1998-03-12, active", url: "https://www.alberta.ca/registry" },
+    { category: "news", label: "Contract win", value: "Awarded a 2024 supply contract", url: "https://news.example.com/a" },
+  ] }) });
+  process.env.OPENAI_API_KEY = "sk-test";
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -67,8 +91,22 @@ describe("v537 Google Business profile", () => {
 });
 
 describe("v537 wiring", () => {
-  it("mounts the route and stores web and registry facts as unverified", () => {
-    expect(fs.readFileSync("src/routes/routeRegistry.ts", "utf8")).toMatch(/path: "\/credit-research", router: creditResearchRoutes/);
-    expect(fs.readFileSync("src/services/credit/research.ts", "utf8")).toContain('fact.source === "registry" || fact.source === "web" ? "unverified" : "reported"');
+  it("mounts the route", () => {
+    expect(API_ROUTE_MOUNTS.filter((m) => m.router === creditResearchRoutes).map((m) => m.path)).toEqual(["/credit-research"]);
+  });
+
+  it("stores web and registry facts as unverified, the company's own website as reported", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const out = await refreshApplicationResearch("app-1", true);
+    expect(out.facts).toBe(3);
+    const stored = callsMatching(queryMock, /INSERT INTO application_research_facts/).map((c) => {
+      const p = c[1] as unknown[];
+      return [p[1], p[3], p[6]];
+    });
+    expect(stored).toEqual([
+      ["website", "From the company website", "reported"],
+      ["registry", "Incorporated", "unverified"],
+      ["web", "Contract win", "unverified"],
+    ]);
   });
 });

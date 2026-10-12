@@ -6,6 +6,7 @@ import { sendSMS } from "../services/smsService.js";
 import { config } from "../config/index.js";
 import { stripUndefined } from "../utils/clean.js";
 import { safeKeyGenerator } from "../middleware/rateLimit.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router = Router();
 
@@ -45,7 +46,7 @@ const creditSchema = z.object({
   existingDebt: z.boolean().default(false),
 });
 
-router.post("/score", creditScoreLimiter, async (req: any, res: any, next: any) => {
+router.post("/score", creditScoreLimiter, safeHandler(async (req: any, res: any, next: any) => {
   const parsed = creditSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid payload" });
@@ -101,6 +102,6 @@ router.post("/score", creditScoreLimiter, async (req: any, res: any, next: any) 
     score,
     message: "Preliminary assessment complete.",
   });
-});
+}));
 
 export default router;

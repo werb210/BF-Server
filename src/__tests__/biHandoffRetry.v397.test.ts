@@ -1,8 +1,11 @@
 // BF_SERVER_BI_HANDOFF_RETRY_v397
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { retryMissingBiHandoffs, type RetryDeps } from "../services/biHandoffRetry.js";
+import { answerBySql, callsMatching } from "./helpers/answerBySql.js";
+import { bootIndex } from "./helpers/bootIndex.js";
+
+const query = vi.fn();
+vi.mock("../db.js", () => ({ pool: { query: (...a: unknown[]) => query(...a) } }));
+import { MAX_ATTEMPTS, retryMissingBiHandoffs, type RetryDeps } from "../services/biHandoffRetry.js";
 
 function deps(sendResults: any[]): RetryDeps & { calls: Record<string, any[]> } {
   const calls: Record<string, any[]> = { success: [], failure: [], mirror: [], send: [] };
@@ -49,17 +52,25 @@ describe("PGI applications that never reached BI are retried automatically", () 
     expect(d.calls.failure[0]).toEqual(["app-1", "network down"]);
   });
 
-  it("only picks submitted, PGI-opted, unlinked BF applications, with a retry limit and spacing", () => {
-    const source = readFileSync(path.join(process.cwd(), "src/services/biHandoffRetry.ts"), "utf8");
-    expect(source).toContain("AND bi_application_id IS NULL");
-    expect(source).toContain("AND metadata->>'submittedAt' IS NOT NULL");
-    expect(source).toContain("= 'yes'");
-    expect(source).toContain("COALESCE((metadata->>'bi_handoff_attempts')::int, 0) < $2");
-    expect(source).toContain("interval '30 minutes'");
+  it("only picks submitted, PGI-opted, unlinked BF applications, with a retry limit and spacing", async () => {
+    query.mockReset();
+    query.mockImplementation(answerBySql([]));
+    const result = await retryMissingBiHandoffs(7);
+    expect(result).toEqual({ tried: 0, linked: 0, failed: 0 });
+    const [sql, params] = callsMatching(query, /FROM applications/)[0] as [string, unknown[]];
+    expect(sql).toContain("AND bi_application_id IS NULL");
+    expect(sql).toContain("AND metadata->>'submittedAt' IS NOT NULL");
+    expect(sql).toContain("= 'yes'");
+    expect(sql).toContain("COALESCE((metadata->>'bi_handoff_attempts')::int, 0) < $2");
+    expect(sql).toContain("interval '30 minutes'");
+    expect(params).toEqual([7, MAX_ATTEMPTS]);
   });
 
-  it("starts with the server", () => {
-    const index = readFileSync(path.join(process.cwd(), "src/index.ts"), "utf8");
-    expect(index).toContain("startBiHandoffRetryWorker()");
+  it("starts with the server (no arguments)", async () => {
+    const boot = await bootIndex();
+    try {
+      await boot.workersDone();
+      expect(boot.workerCalls.get("startBiHandoffRetryWorker")).toEqual([[]]);
+    } finally { boot.restore(); }
   });
 });

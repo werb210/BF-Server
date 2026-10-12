@@ -27,11 +27,8 @@ function authToken(): string {
   );
 }
 
-function queueAuthUserLookup() {
-  queryMock.mockResolvedValueOnce({
-    rows: [{ id: USER_ID, email: null, role: "Staff", silo: "BF", silos: ["BF"] }],
-  });
-}
+// BF_SERVER_v789_SQL_CONTENT_MOCKS - the auth user lookup is answered by SQL text, not by call order.
+const AUTH_USER_RULE: [RegExp, unknown] = [/FROM users/, { rows: [{ id: USER_ID, email: null, role: "Staff", silo: "BF", silos: ["BF"] }] }];
 
 async function buildApp() {
   const router = (await import("../applications.routes.js")).default;
@@ -54,7 +51,7 @@ describe("BF_BANKING_ANALYSIS_API_v52 GET /api/applications/:id/banking-analysis
     // BF_SERVER_BLOCK_v576 - the route also reads banking_analyses and the monthly summaries; none stored yet
     // (they fall through to empty rows), so the analysis is still in progress.
     queryMock.mockImplementation(answerBySql([
-      [/FROM users/, { rows: [{ id: USER_ID, email: null, role: "Staff", silo: "BF", silos: ["BF"] }] }],
+      AUTH_USER_RULE,
       [/SELECT id, banking_completed_at/, { rows: [{ id: "app-1", banking_completed_at: new Date("2026-04-20T12:00:00Z") }] }],
       [/AS bank_total/, { rows: [{ bank_total: "3", bank_completed: "2", any_completed: "2" }] }],
     ]));
@@ -75,8 +72,10 @@ describe("BF_BANKING_ANALYSIS_API_v52 GET /api/applications/:id/banking-analysis
   });
 
   it("404s when the application is not found", async () => {
-    queueAuthUserLookup();
-    queryMock.mockResolvedValueOnce({ rows: [] });
+    queryMock.mockImplementation(answerBySql([
+      AUTH_USER_RULE,
+      [/SELECT id, banking_completed_at/, { rows: [] }],
+    ]));
     const a = await buildApp();
     const res = await request(a)
       .get("/api/applications/missing/banking-analysis")

@@ -21,7 +21,7 @@ export function clientPhoneFromAuth(authHeader: unknown, jwtSecret: string | und
   const auth = String(authHeader ?? "");
   if (!jwtSecret || !auth.startsWith("Bearer ")) return null;
   try {
-    const claims = jwt.verify(auth.slice(7), jwtSecret) as Record<string, unknown>;
+    const claims = jwt.verify(auth.slice(7), jwtSecret, { algorithms: ["HS256"] }) as Record<string, unknown>;
     if (claims.role !== "client" || typeof claims.phone !== "string" || !claims.phone) return null;
     return claims.phone;
   } catch {

@@ -4,7 +4,8 @@ import rateLimit from "express-rate-limit";
 import { pool } from "../db.js";
 import { auth } from "../middleware/auth.js";
 import { hashWatchSecret, issueWatchAccessToken, newWatchSecret, watchError } from "./security.js";
-import { rateLimitKeyFromRequest } from "../middleware/clientIp.js"; // BF_SERVER_AZURE_XFF_PORT_v183
+import { rateLimitKeyFromRequest } from "../middleware/clientIp.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_AZURE_XFF_PORT_v183
 
 const router = Router();
 // BF_SERVER_AZURE_XFF_PORT_v183 - this was the only limiter in the repo with no
@@ -34,7 +35,7 @@ const limiter = rateLimit({ windowMs: 60_000, limit: 10, standardHeaders: true, 
 const ENROLLMENT_CODE_TTL_MS = 24 * 60 * 60_000;
 
 // The authenticated iPhone requests a single-use enrollment code.
-router.post("/enrollment", auth, limiter, async (req: any, res) => {
+router.post("/enrollment", auth, limiter, safeHandler(async (req: any, res) => {
   const staffUserId = req.user?.userId || req.user?.id || req.user?.sub;
   if (!staffUserId || String(req.user?.role || "").toLowerCase() === "client")
     return watchError(req, res, 403, "forbidden", "Staff authentication required");
@@ -43,9 +44,9 @@ router.post("/enrollment", auth, limiter, async (req: any, res) => {
   await pool.query(`INSERT INTO watch_link_codes(staff_user_id,code_hash,expires_at) VALUES($1,$2,$3)`,
     [staffUserId, hashWatchSecret(code), expiresAt]);
   return res.status(201).json({ oneTimeCode: code, expiresAt: expiresAt.toISOString() });
-});
+}));
 
-router.post("/link", limiter, async (req, res) => {
+router.post("/link", limiter, safeHandler(async (req, res) => {
   const code = typeof req.body?.oneTimeCode === "string" ? req.body.oneTimeCode.trim() : "";
   const device = req.body?.device;
   if (!/^\d{8}$/.test(code) || device?.platform !== "watchos")
@@ -79,9 +80,9 @@ router.post("/link", limiter, async (req, res) => {
     await client.query("ROLLBACK");
     return watchError(req, res, 503, "server_unavailable", "Unable to link Watch", true);
   } finally { client.release(); }
-});
+}));
 
-router.post("/refresh", limiter, async (req, res) => {
+router.post("/refresh", limiter, safeHandler(async (req, res) => {
   const oldToken = typeof req.body?.refreshToken === "string" ? req.body.refreshToken : "";
   if (!oldToken) return watchError(req, res, 400, "invalid_request", "Refresh token is required");
   const nextToken = newWatchSecret();
@@ -96,6 +97,6 @@ router.post("/refresh", limiter, async (req, res) => {
   if (!row) return watchError(req, res, 401, "unauthenticated", "Refresh token is invalid, expired, or revoked");
   const access = issueWatchAccessToken(row.staff_user_id, row.device_id, row.id);
   return res.json({ ...access, expiresAt: access.expiresAt.toISOString(), refreshToken: nextToken, deviceId: row.device_id });
-});
+}));
 
 export default router;

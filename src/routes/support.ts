@@ -1,7 +1,20 @@
 import express from "express";
+import rateLimit from "express-rate-limit";
 import { pool } from "../db.js";
+import { rateLimitKeyFromRequest } from "../middleware/clientIp.js";
 
 const router = express.Router();
+
+// BF_SERVER_v789_PUBLIC_RATE_LIMITS - public and unauthenticated: 5 a minute per IP.
+const supportLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "RATE_LIMITED" },
+  keyGenerator: rateLimitKeyFromRequest,
+  validate: { xForwardedForHeader: false },
+});
 
 // BF_SERVER_BLOCK_v332_SETTINGS_AND_AUDIT_HARDENING_v1 -- Edit 12
 // Pre-fix this router declared its route as router.post("/support"), and
@@ -11,7 +24,7 @@ const router = express.Router();
 // either (verified across BF-portal, BF-client, BF-Website). The route is
 // effectively dead. Renaming the internal path to "/" makes the live URL
 // /api/support, matching the mount point.
-router.post("/", async (req, res) => {
+router.post("/", supportLimiter, async (req, res) => {
   try {
     const { name, email, message } = req.body;
 

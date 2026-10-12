@@ -16,6 +16,7 @@ import { sendSMS } from "../services/smsService.js";
 import { sendViaGraph } from "../services/email/graphSendService.js";
 import { getStorage } from "../lib/storage/index.js";
 import { findActiveDocumentVersion } from "../modules/applications/applications.repo.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router: Router = Router();
 router.use(requireServiceToken);
@@ -71,7 +72,7 @@ router.post("/sms", async (req, res) => {
   }
 });
 
-router.post("/mail", async (req, res) => {
+router.post("/mail", safeHandler(async (req, res) => {
   const to = str(req.body?.to);
   const subject = str(req.body?.subject);
   if (!to || !subject) { res.status(400).json({ ok: false, error: "to_and_subject_required" }); return; }
@@ -98,7 +99,7 @@ router.post("/mail", async (req, res) => {
   }
   console.info("[service-mail] accepted_by_microsoft", { silo, sentAs, toDomain });
   res.json({ ok: true, messageId: result.messageId ?? null, sentAs });
-});
+}));
 
 // BF_SERVER_BLOCK_v610_BI_THREAD - BI applicant thread. BI-Server authenticates the
 // applicant and passes their phone in x-applicant-phone; the service token above is the

@@ -7,6 +7,7 @@ import { runBankingAnalysis } from "../services/banking/bankingAnalysisPipeline.
 import { createOcrStorage } from "../modules/ocr/ocr.storage.js"; // BF_SERVER_BLOCK_v688_BANKING_STORAGE_REF_v1
 import { pool as bankingPool } from "../db.js";
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
+import { getSilo } from "../middleware/silo.js"; // BF_SERVER_v789_SILO_SCOPING
 import { ROLES } from "../auth/roles.js";
 import { safeKeyGenerator } from "../middleware/rateLimit.js";
 import { config } from "../config/index.js";
@@ -26,7 +27,7 @@ router.post(
   "/applications/:id/banking-analysis/run",
   requireAuth,
   requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
-  async (req, res) => {
+  safeHandler(async (req, res) => {
     const id = String(req.params.id ?? "").trim();
     if (!id) return res.status(400).json({ error: "missing_application_id" });
 
@@ -57,7 +58,7 @@ router.post(
     } catch (e) {
       return res.status(500).json({ error: "banking_analysis_failed", message: e instanceof Error ? e.message : String(e) });
     }
-  }
+  })
 );
 
 // BF_SERVER_BLOCK_v335_AUTH_HARDENING_AND_DEAD_CODE_v1 -- Edit 1
@@ -151,8 +152,8 @@ router.get(
       `SELECT banking_completed_at,
               COALESCE((metadata->>'banking_auto_skip')::boolean, false) AS banking_auto_skip
          FROM applications
-        WHERE id::text = $1::text LIMIT 1`,
-      [applicationId],
+        WHERE id::text = $1::text AND silo = $2 LIMIT 1`,
+      [applicationId, getSilo(res)], // BF_SERVER_v789_SILO_SCOPING - other silo reads as not found
     );
     if (appRow.rowCount === 0) {
       return res.status(404).json({ error: "application_not_found" });

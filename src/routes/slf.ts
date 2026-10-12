@@ -8,6 +8,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { AppError } from "../middleware/errors.js";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { logError } from "../observability/logger.js"; // BF_SERVER_v789_SLF_NOTES
 
 const router = Router();
 router.use(requireAuth);
@@ -155,15 +156,20 @@ router.get(
       [id],
     );
     if (!app.rows[0]) throw new AppError("not_found", "Application not found.", 404);
-    const { rows } = await pool
-      .query(
-        `SELECT id, body AS text, created_at FROM application_notes
-          WHERE application_id::text = ($1)::text
+    // BF_SERVER_v789_SLF_NOTES - SLF notes live in slf_application_notes (application_notes
+    // never existed). A failed read is a logged 500, not a silent empty list.
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, body AS text, created_at FROM slf_application_notes
+          WHERE application_id = ($1)::text
           ORDER BY created_at DESC`,
         [id],
-      )
-      .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/slf.ts:103", ({ rows: [] })));
-    res.json(rows);
+      );
+      res.json(rows);
+    } catch (err: unknown) {
+      logError("slf_notes_list_failed", { applicationId: id, error: (err as { message?: string })?.message ?? String(err) });
+      res.status(500).json({ error: "notes_unavailable" });
+    }
   }),
 );
 
@@ -183,13 +189,20 @@ router.post(
       [id],
     );
     if (!app.rows[0]) throw new AppError("not_found", "Application not found.", 404);
-    await pool
-      .query(
-        `INSERT INTO application_notes (id, application_id, body, created_at, updated_at)
-         VALUES (gen_random_uuid(), $1, $2, now(), now())`,
-        [id, text],
-      )
-      .catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/slf.ts:131");});
+    // BF_SERVER_v789_SLF_NOTES - a failed write is a logged 500, never a false 201.
+    const authorRaw = String(req.user?.userId ?? req.user?.id ?? "");
+    const authorId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(authorRaw) ? authorRaw : null;
+    try {
+      await pool.query(
+        `INSERT INTO slf_application_notes (application_id, body, author_user_id, created_at, updated_at)
+         VALUES ($1, $2, $3::uuid, now(), now())`,
+        [String(app.rows[0].id), text, authorId],
+      );
+    } catch (err: unknown) {
+      logError("slf_notes_create_failed", { applicationId: id, error: (err as { message?: string })?.message ?? String(err) });
+      res.status(500).json({ error: "note_not_saved" });
+      return;
+    }
     res.status(201).json({ ok: true });
   }),
 );

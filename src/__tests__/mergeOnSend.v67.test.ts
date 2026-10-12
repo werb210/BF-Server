@@ -1,10 +1,52 @@
 // BF_SERVER_MERGE_ON_SEND_v67 - renderMergeFields shipped in v65 and nothing
 // called it, so {{contact.first_name}} went to clients as literal text.
-import { describe, it, expect } from "vitest";
-import fs from "node:fs";
+import express from "express";
+import jwt from "jsonwebtoken";
+import request from "supertest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hasMergeFields, renderMergeFields } from "../services/mergeFields.js";
+import { answerBySql, callsMatching, type SqlRule } from "./helpers/answerBySql.js";
 
-const ROUTE = fs.readFileSync("src/routes/communications.ts", "utf8");
+const { queryMock, createMock } = vi.hoisted(() => ({ queryMock: vi.fn(), createMock: vi.fn() }));
+vi.mock("../db.js", async () => {
+  const actual = await vi.importActual<typeof import("../db.js")>("../db.js");
+  return { ...actual, pool: { query: queryMock }, runQuery: queryMock };
+});
+vi.mock("../lib/sharedClients.js", () => ({
+  sharedTwilio: () => ({ messages: { create: createMock } }),
+  sharedOpenAI: () => ({}),
+}));
+
+const STAFF_ID = "00000000-0000-4000-8000-0000000000a1";
+const CONTACT = "11111111-2222-4333-8444-555555555555";
+const TO = "+15874441234";
+const token = () => jwt.sign({ sub: STAFF_ID, id: STAFF_ID, role: "Admin", tokenVersion: 0, tv: 0 }, String(process.env.JWT_SECRET));
+
+async function app() {
+  const router = (await import("../routes/communications.js")).default;
+  const a = express();
+  a.use(express.json());
+  a.use("/api/communications", router);
+  return a;
+}
+const sendSms = async (body: Record<string, unknown>) =>
+  request(await app()).post("/api/communications/sms").set("Authorization", `Bearer ${token()}`).send(body);
+
+function db(extra: SqlRule[] = []) {
+  queryMock.mockImplementation(answerBySql([
+    ...extra,
+    [/FROM contacts c\s+LEFT JOIN companies co/, { rows: [{ name: "Jordan Lee", first_name: null, email: "j@lee.test", phone: TO, company_name: "Lee Haulage" }] }],
+  ]));
+}
+
+beforeEach(() => {
+  queryMock.mockReset();
+  createMock.mockReset();
+  createMock.mockResolvedValue({ sid: "SM1", status: "queued" });
+  process.env.TWILIO_FROM_NUMBER = "+15875550100";
+  db();
+});
+afterEach(() => { delete process.env.TWILIO_FROM_NUMBER; vi.restoreAllMocks(); });
 
 describe("the cheap pre-check", () => {
   it("spots a token", () => {
@@ -22,24 +64,37 @@ describe("the cheap pre-check", () => {
 });
 
 describe("SMS send resolves before Twilio", () => {
-  it("checks for tokens first", () => {
-    expect(ROUTE).toContain("hasMergeFields(String(body))");
+  it("checks for tokens first: plain text pays for no contact lookup", async () => {
+    const res = await sendSms({ to: TO, contactId: CONTACT, body: "Hi Todd, your docs are ready" });
+    expect(res.status).toBe(200);
+    expect(callsMatching(queryMock, /LEFT JOIN companies co/)).toHaveLength(0);
+    expect(createMock.mock.calls[0]![0].body).toBe("Hi Todd, your docs are ready");
   });
 
-  it("looks the contact up by the id the composer already sends", () => {
-    expect(ROUTE).toContain("FROM contacts c");
-    expect(ROUTE).toContain("LEFT JOIN companies co");
+  it("looks the contact up by the id the composer already sends", async () => {
+    await sendSms({ to: TO, contactId: CONTACT, body: "Hi {{contact.first_name}} from {{company.name}}" });
+    const [call] = callsMatching(queryMock, /FROM contacts c\s+LEFT JOIN companies co/);
+    expect(call).toBeDefined();
+    expect(call![1]).toEqual([CONTACT]);
   });
 
-  it("resolves before the body is used", () => {
-    const render = ROUTE.indexOf("body = renderMergeFields(");
-    const twilio = ROUTE.indexOf("accountSid", render);
-    expect(render).toBeGreaterThan(-1);
-    expect(twilio).toBeGreaterThan(render);
+  it("resolves before the body reaches Twilio, and the stored copy matches", async () => {
+    const res = await sendSms({ to: TO, contactId: CONTACT, body: "Hi {{contact.first_name}} from {{company.name}}" });
+    expect(res.status).toBe(200);
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(createMock.mock.calls[0]![0].body).toBe("Hi Jordan from Lee Haulage");
+    const [insert] = callsMatching(queryMock, "INSERT INTO communications_messages");
+    expect((insert![1] as unknown[])[1]).toBe("Hi Jordan from Lee Haulage");
   });
 
-  it("never lets a merge failure block the send", () => {
-    expect(ROUTE).toContain('console.warn("[sms] merge-field render failed"');
+  it("never lets a merge failure block the send", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    db([[/FROM contacts c\s+LEFT JOIN companies co/, new Error("db down")]]);
+    const res = await sendSms({ to: TO, contactId: CONTACT, body: "Hi {{contact.first_name}}" });
+    expect(res.status).toBe(200);
+    expect(warn).toHaveBeenCalledWith("[sms] merge-field render failed", expect.stringContaining("db down"));
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(createMock.mock.calls[0]![0].body).toBe("Hi {{contact.first_name}}");
   });
 });
 

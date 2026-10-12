@@ -1,13 +1,28 @@
 name: Build and deploy Node.js app to Azure Web App
 
+# BF_SERVER_v789_DEPLOY_AFTER_CI - was `on: push` to main, which deployed in
+# parallel with CI, so a commit that failed typecheck, tests or the migration
+# replay still reached the staging slot. Now the deploy starts only when the
+# "CI" workflow finished successfully for a push to main, and it deploys exactly
+# the commit CI tested (workflow_run.head_sha), not whatever main is by then.
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-24.04
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
 
     env:
       SCM_DO_BUILD_DURING_DEPLOYMENT: false
@@ -15,6 +30,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          # The commit CI tested; a manual dispatch deploys the selected ref.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Use Node
         uses: actions/setup-node@v5
@@ -43,7 +61,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           node scripts/verify-build.js
-          node -e "require('./dist/routes'); require('./dist/routes/auth'); require('./dist/config/env');"
+          node -e "require('./dist/routes/auth'); require('./dist/config/env');"
 
       - name: Create deployment package
         run: |
@@ -55,7 +73,7 @@ jobs:
                ".github/*" \
                ".env"
 
-      # 🔴 THIS IS THE FIX
+      # Azure login (service principal from AZURE_CREDENTIALS)
       - name: Azure Login
         uses: azure/login@v2
         with:

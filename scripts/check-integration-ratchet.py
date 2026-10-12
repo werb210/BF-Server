@@ -45,6 +45,11 @@ def main() -> int:
     failed_files = int(report.get("numFailedTestSuites", 0))
     failed_tests = int(report.get("numFailedTests", 0))
     total_tests = int(report.get("numTotalTests", 0))
+    # BF_SERVER_v789_RATCHET_TOTALS - zero failures out of fewer tests is not a
+    # pass: a deleted file, a describe.skip or an exclude glob shrinks the suite
+    # without failing anything. vitest's JSON reporter counts skipped tests in
+    # numPendingTests and it.todo in numTodoTests.
+    skipped_tests = int(report.get("numPendingTests", 0)) + int(report.get("numTodoTests", 0))
 
     # BF_SERVER_RATCHET_COLLECTION_v225
     # A file that throws while being imported reports as a failed suite with no
@@ -66,12 +71,18 @@ def main() -> int:
     max_files = int(ceiling["maxFailedFiles"])
     max_tests = int(ceiling["maxFailedTests"])
     max_collection = int(ceiling.get("maxCollectionFailures", max_files))
+    # BF_SERVER_v789_RATCHET_TOTALS - required keys: a ceiling file without them
+    # would silently disable the check.
+    min_total = int(ceiling["minTotalTests"])
+    max_skipped = int(ceiling["maxSkipped"])
 
     summary("### Integration suite")
     summary("")
     summary(f"- Failing files: **{failed_files}** (ceiling {max_files})")
     summary(f"- Failing tests: **{failed_tests}** of {total_tests} (ceiling {max_tests})")
     summary(f"- Files that failed before running anything: **{n_collection}** (ceiling {max_collection})")
+    summary(f"- Total tests: **{total_tests}** (floor {min_total})")
+    summary(f"- Skipped tests (pending + todo): **{skipped_tests}** (ceiling {max_skipped})")
     summary("")
     if n_collection:
         summary(
@@ -97,9 +108,18 @@ def main() -> int:
             summary(f"- {n}")
         summary("\n</details>")
 
-    if failed_files > max_files or failed_tests > max_tests or n_collection > max_collection:
+    shrunk = total_tests < min_total
+    more_skipped = skipped_tests > max_skipped
+    if failed_files > max_files or failed_tests > max_tests or n_collection > max_collection or shrunk or more_skipped:
         summary("")
         summary("**This change made the integration suite worse.**")
+        summary(
+            f"Total tests {total_tests} < {min_total} - tests were removed or stopped being collected"
+            if shrunk else ""
+        )
+        summary(
+            f"Skipped tests {skipped_tests} > {max_skipped}" if more_skipped else ""
+        )
         summary(
             f"Files {failed_files} > {max_files}" if failed_files > max_files else ""
         )
@@ -117,6 +137,12 @@ def main() -> int:
             f"Improved. Lower the ceiling in scripts/integration-ceiling.json to "
             f"{failed_files} files / {failed_tests} tests / {n_collection} import "
             f"failures so it cannot regress."
+        )
+    if total_tests > min_total or skipped_tests < max_skipped:
+        summary("")
+        summary(
+            f"Suite grew or un-skipped. Set minTotalTests to {total_tests} and "
+            f"maxSkipped to {skipped_tests} in scripts/integration-ceiling.json."
         )
 
     return 0

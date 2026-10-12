@@ -24,6 +24,11 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { mirrorDocToBiAsync, withdrawDocFromBiAsync } from "../services/biDocMirror.js"; // v395
 import { setProcessingStage } from "../modules/applications/processingStage.service.js";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import rateLimit from "express-rate-limit"; // BF_SERVER_v789_PUBLIC_UPLOAD_AUTH
+import { rateLimitKeyFromRequest } from "../middleware/clientIp.js";
+import { isStaffOrService, principalFromRequest } from "../auth/principal.js";
+import { isApplicationFraud, FRAUD_LOCK_MESSAGE } from "../services/fraud/fraudGuard.js";
+import { isClientUploadableCategory } from "../services/documents/clientUploadCategories.js";
 
 const router = express.Router();
 
@@ -290,7 +295,72 @@ export async function persistAndEnqueue(opts: {
   };
 }
 
-router.post("/public-upload", upload.single("file"), async (req: Request, res: Response) => {
+// BF_SERVER_v789_PUBLIC_UPLOAD_AUTH - 20 uploads an hour per IP. Runs before
+// multer so a flood never gets as far as buffering 25 MB bodies.
+const publicUploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "RATE_LIMITED" },
+  keyGenerator: rateLimitKeyFromRequest,
+  validate: { xForwardedForHeader: false },
+});
+
+// BF_SERVER_v789_PUBLIC_UPLOAD_AUTH - the wizard's continuation token (the one
+// /applications/:token/submit accepts) is a credential for the application it
+// converted into. Sent as X-Continuation-Token or body continuationToken.
+function continuationTokenFrom(req: Request): string {
+  const h = req.header("x-continuation-token");
+  if (typeof h === "string" && h.trim()) return h.trim();
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  return typeof b.continuationToken === "string" ? b.continuationToken.trim() : "";
+}
+
+async function continuationTokenOwnsApplication(token: string, applicationId: string): Promise<boolean> {
+  if (!token || token.length > 512) return false;
+  const r = await pool.query<{ ok: number }>(
+    `SELECT 1 AS ok FROM application_continuations
+      WHERE token = $1 AND lower(converted_application_id::text) = lower($2::text)
+      LIMIT 1`,
+    [token, applicationId],
+  );
+  return r.rows.length > 0;
+}
+
+// Continuation token for this application, or a bearer token that passes the
+// shared ownership rule (client owner, unclaimed mid-wizard file, staff,
+// service). Writes the rejection and returns false otherwise.
+async function requirePublicUploadAccess(req: Request, res: Response, applicationId: string): Promise<boolean> {
+  const token = continuationTokenFrom(req);
+  if (token) {
+    try {
+      if (await continuationTokenOwnsApplication(token, applicationId)) return true;
+    } catch (err) {
+      console.error("[documents] public-upload continuation check failed", { applicationId, err: String(err) });
+      fail(res, 503, "UPLOAD_AUTH_UNAVAILABLE");
+      return false;
+    }
+  }
+  const auth = req.header("authorization");
+  if (!auth || !auth.startsWith("Bearer ")) {
+    fail(res, 401, "UNAUTHORIZED");
+    return false;
+  }
+  return requireApplicationAccess(req, res, applicationId);
+}
+
+// BF_SERVER_v789_PUBLIC_UPLOAD_AUTH - the client router's fraud lock runs before
+// multer, so on a multipart upload it never saw applicationId. Run it here.
+async function rejectIfFraudLocked(res: Response, applicationId: string): Promise<boolean> {
+  if (await isApplicationFraud({ query: (t: string, p?: any[]) => pool.query(t, p) } as any, applicationId)) {
+    res.status(423).json({ error: "application_locked", message: FRAUD_LOCK_MESSAGE });
+    return true;
+  }
+  return false;
+}
+
+router.post("/public-upload", publicUploadLimiter, upload.single("file"), safeHandler(async (req: Request, res: Response) => {
   const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
   const category      = resolveUploadCategory(req.body) ?? ""; // BF_SERVER_BLOCK_v843 — accept category | document_type | documentType
   // BF_SERVER_SIGNED_TERM_SHEET_v7 - the offer this signature belongs to,
@@ -299,6 +369,13 @@ router.post("/public-upload", upload.single("file"), async (req: Request, res: R
     ? req.body.offerId
     : null;
   if (!applicationId || !category) return fail(res, 400, "MISSING_FIELDS");
+  // BF_SERVER_v789_PUBLIC_UPLOAD_AUTH - credential, fraud lock, category allow-list.
+  if (!(await requirePublicUploadAccess(req, res, applicationId))) return;
+  if (await rejectIfFraudLocked(res, applicationId)) return;
+  if (!isClientUploadableCategory(category)) {
+    console.warn("[documents] public-upload rejected category", { applicationId, category: category.slice(0, 120) });
+    return fail(res, 400, "CATEGORY_NOT_ALLOWED");
+  }
   const file = (req as Request & { file?: Express.Multer.File }).file;
   if (!file) return fail(res, 400, "NO_FILE");
 
@@ -330,6 +407,7 @@ router.post("/public-upload", upload.single("file"), async (req: Request, res: R
   // surface is meant for the website wizard (which uses the same
   // function via /api/documents/public-upload). Operator may want
   // to add an explicit limiter here too -- flagged as a follow-up.
+  // (BF_SERVER_v789_PUBLIC_UPLOAD_AUTH: done - publicUploadLimiter, 20/hour per IP.)
   const ALLOWED_MIME_PREFIXES = [
     "application/pdf",
     "image/jpeg", "image/png", "image/heic", "image/heif", "image/webp",
@@ -390,15 +468,24 @@ router.post("/public-upload", upload.single("file"), async (req: Request, res: R
     console.error("[documents] public-upload failed", { applicationId, category, err: String(err) });
     return fail(res, 500, "UPLOAD_FAILED");
   }
-});
+}));
 
-router.post("/upload", uploadTiming, requireAuthAllowClient, upload.single("file"), async (req: Request, res: Response) => { // BF_SERVER_UPLOAD_DIAG_v751
+router.post("/upload", uploadTiming, requireAuthAllowClient, upload.single("file"), safeHandler(async (req: Request, res: Response) => { // BF_SERVER_UPLOAD_DIAG_v751
   const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : null;
   const category      = resolveUploadCategory(req.body); // BF_SERVER_BLOCK_v843 — accept category | document_type | documentType
   const file = (req as Request & { file?: Express.Multer.File }).file;
   if (!applicationId || !category || !file) return fail(res, 400, "INVALID_DOCUMENT_UPLOAD_PAYLOAD");
   // BF_SERVER_v784_CLIENT_OWNERSHIP - the client app uploads here with its OTP token; it may only upload to its own file.
   if (!(await requireApplicationAccess(req, res, applicationId))) return;
+  // BF_SERVER_v789_PUBLIC_UPLOAD_AUTH - same fraud lock and category allow-list
+  // as /public-upload for a client caller; staff and service file anything.
+  if (!isStaffOrService(principalFromRequest(req))) {
+    if (await rejectIfFraudLocked(res, applicationId)) return;
+    if (!isClientUploadableCategory(category)) {
+      console.warn("[documents] upload rejected category", { applicationId, category: category.slice(0, 120) });
+      return fail(res, 400, "CATEGORY_NOT_ALLOWED");
+    }
+  }
   try {
     const userId = (req as any)?.user?.id ?? null;
     const r = await persistAndEnqueue({ applicationId, category, file, uploadedBy: userId, receivedInBackground: req.header("x-background-upload") === "1" });
@@ -435,10 +522,10 @@ router.post("/upload", uploadTiming, requireAuthAllowClient, upload.single("file
     console.error("[documents] upload failed", { applicationId, category, err: String(err) });
     return fail(res, 500, "UPLOAD_FAILED");
   }
-});
+}));
 
 // BF_SERVER_MOVE_DOCUMENT_v315 - staff move a document to the right category.
-router.post("/:id/category", requireAuth, async (req: Request, res: Response) => {
+router.post("/:id/category", requireAuth, safeHandler(async (req: Request, res: Response) => {
   const { canMoveDocuments, cleanCategory, moveDocument } = await import("../services/documents/moveDocument.js");
   const user = (req as any)?.user ?? {};
   if (!canMoveDocuments(user.role)) return fail(res, 403, "STAFF_ONLY");
@@ -484,9 +571,9 @@ router.post("/:id/category", requireAuth, async (req: Request, res: Response) =>
     console.error("[documents] move failed", { documentId: req.params.id, err: String(err) });
     return fail(res, 500, "MOVE_FAILED");
   }
-});
+}));
 
-router.post("/:id/accept", requireAuth, async (req: Request, res: Response) => {
+router.post("/:id/accept", requireAuth, safeHandler(async (req: Request, res: Response) => {
   const id = toStringSafe(req.params.id);
   await pool.query(`UPDATE documents SET status='accepted', updated_at=now() WHERE id=$1`, [id]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/documents.ts:484");});
   const docRes = await pool.query<{ application_id: string | null }>(`SELECT application_id FROM documents WHERE id=$1 LIMIT 1`, [id]).catch((err: any) => { console.warn("[silent-query] routes/documents.ts", { message: err?.message }); return { rows: [] as any[] }; });
@@ -502,9 +589,9 @@ router.post("/:id/accept", requireAuth, async (req: Request, res: Response) => {
     }
   }
   return ok(res, { id, status: "accepted" });
-});
+}));
 
-router.post("/:id/reject", requireAuth, async (req: Request, res: Response) => {
+router.post("/:id/reject", requireAuth, safeHandler(async (req: Request, res: Response) => {
   const id = toStringSafe(req.params.id);
   await pool.query(`UPDATE documents SET status='rejected', updated_at=now() WHERE id=$1`, [id]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/documents.ts:502");});
   const docRes = await pool.query<{ application_id: string | null }>(`SELECT application_id FROM documents WHERE id=$1 LIMIT 1`, [id]).catch((err: any) => { console.warn("[silent-query] routes/documents.ts", { message: err?.message }); return { rows: [] as any[] }; });
@@ -515,7 +602,7 @@ router.post("/:id/reject", requireAuth, async (req: Request, res: Response) => {
     void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent({ trigger: "document.rejected", applicationId, data: { document_id: id } })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
   }
   return ok(res, { id, status: "rejected" });
-});
+}));
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 

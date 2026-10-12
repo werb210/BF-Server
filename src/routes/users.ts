@@ -10,6 +10,7 @@ import {
 } from "../services/users.service.js";
 import adminUserRoutes from "../modules/users/users.routes.js";
 import { ALL_ROLES, ROLES } from "../auth/roles.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router = Router();
 
@@ -50,7 +51,7 @@ router.patch(
   "/me",
   requireAuth,
   requireAuthorization({ roles: ALL_ROLES }),
-  handlePatchMe
+  safeHandler(handlePatchMe) // BF_SERVER_v789_SAFE_HANDLERS
 );
 
 /**
@@ -60,7 +61,7 @@ router.get(
   "/",
   requireAuth,
   requireAuthorization({ roles: [ROLES.ADMIN] }),
-  listUsers
+  safeHandler(listUsers) // BF_SERVER_v789_SAFE_HANDLERS
 );
 router.post(
   "/",

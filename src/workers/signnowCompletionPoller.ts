@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import * as signnow from "../signnow/signnowClient.js";
 import { finalizeSignedApplication } from "../signnow/finalizeSignedApplication.js";
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 // Embedded signing has no SignNow webhook subscription, so the signed event
 // never reaches /webhooks/signnow. This poller checks in-flight signings
@@ -24,7 +25,7 @@ export function startSignNowCompletionPoller(pool: Pool): { stop: () => void } {
     return { stop: () => {} };
   }
 
-  const tick = async () => {
+  const tickUnclaimed = async () => {
     if (stopped || running) return;
     if (!signnow.isApiKeyConfigured()) return;
     running = true;
@@ -68,6 +69,7 @@ export function startSignNowCompletionPoller(pool: Pool): { stop: () => void } {
       running = false;
     }
   };
+  const tick = claimedTick("signnow_completion", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
 
   const timer = setInterval(() => { void tick(); }, POLL_MS);
   void tick();

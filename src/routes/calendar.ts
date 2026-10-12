@@ -9,6 +9,7 @@ import { getSilo } from "../middleware/silo.js";
 import { pool } from "../db.js";
 import { getGraphForUser, type GraphClient } from "../modules/o365/graphClient.js";
 import { parseMicrosoftError, recordO365Failure } from "../modules/o365/o365Health.js"; // BF_SERVER_O365_VISIBILITY_v274
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_v789_CALENDAR_TASKS_ON_TASKS
 function noteCalendarFailure(req: any, err: unknown): void {
   const e = err as { status?: number; bodyText?: string; message?: string };
   recordO365Failure(req.user?.userId ? String(req.user.userId) : null, { stage: "graph_calendar", status: e?.status ?? null, ...parseMicrosoftError(String(e?.bodyText ?? e?.message ?? "")) });
@@ -145,6 +146,22 @@ function normalizePriority(value: unknown): "low" | "normal" | "high" {
 function normalizeStatus(value: unknown): "open" | "done" {
   return value === "done" ? "done" : "open";
 }
+
+// BF_SERVER_v789_CALENDAR_TASKS_ON_TASKS - the calendar task routes read/write the unified
+// tasks table (UPPERCASE values per its CHECKs, keyed on assignee_user_id). The portal still
+// receives the old shape: notes, priority low|normal|high, status open|done, o365TaskId.
+function toDbPriority(value: "low" | "normal" | "high"): "LOW" | "NONE" | "HIGH" {
+  return value === "low" ? "LOW" : value === "high" ? "HIGH" : "NONE";
+}
+
+function toDbStatus(value: "open" | "done"): "COMPLETED" | "NOT_STARTED" {
+  return value === "done" ? "COMPLETED" : "NOT_STARTED";
+}
+
+const CALENDAR_TASK_COLUMNS = `t.id, t.title, t.body AS notes, t.due_at,
+      CASE t.priority WHEN 'LOW' THEN 'low' WHEN 'HIGH' THEN 'high' ELSE 'normal' END AS priority,
+      CASE t.status WHEN 'COMPLETED' THEN 'done' ELSE 'open' END AS status,
+      t.assignee_user_id, t.graph_id AS o365_task_id, t.created_at, t.updated_at, t.completed_at`;
 
 async function getDefaultTodoListId(graph: GraphClient): Promise<string | null> {
   const lists = await graphCall(graph, "/me/todo/lists?$top=20");
@@ -335,7 +352,7 @@ router.delete("/events/:id", safeHandler(async (req: any, res: any) => {
   }
 }));
 
-// BF_SERVER_BLOCK_v332_UNIFY_TASKS_v1 — tasks unified onto crm_tasks (one table)
+// BF_SERVER_v789_CALENDAR_TASKS_ON_TASKS - calendar tasks live in the unified tasks table.
 // GET /api/calendar/tasks
 router.get("/tasks", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId;
@@ -345,13 +362,11 @@ router.get("/tasks", safeHandler(async (req: any, res: any) => {
   const dueBefore = typeof req.query.dueBefore === "string" ? req.query.dueBefore : null;
   const dueAfter = typeof req.query.dueAfter === "string" ? req.query.dueAfter : null;
 
-  const clauses = ["(t.assigned_to = $1 OR t.owner_id = $1)", "t.silo = $2"];
+  const clauses = ["(t.assignee_user_id = $1 OR t.created_by = $1)", "t.silo = $2", "t.deleted_at IS NULL"];
   const params: unknown[] = [userId, silo];
 
-  if (status === "open" || status === "done") {
-    params.push(status);
-    clauses.push(`t.status = $${params.length}`);
-  }
+  if (status === "open") clauses.push("t.status <> 'COMPLETED'");
+  if (status === "done") clauses.push("t.status = 'COMPLETED'");
   if (dueBefore) {
     params.push(dueBefore);
     clauses.push(`t.due_at <= $${params.length}::timestamptz`);
@@ -362,10 +377,10 @@ router.get("/tasks", safeHandler(async (req: any, res: any) => {
   }
 
   const { rows } = await pool.query<CalendarTaskRow>(
-    `SELECT t.id, t.title, t.notes, t.due_at, t.priority, t.status, t.assigned_to AS assignee_user_id, t.graph_id AS o365_task_id, t.created_at, t.updated_at, t.completed_at,
+    `SELECT ${CALENDAR_TASK_COLUMNS},
       COALESCE(NULLIF(trim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email) as assignee_name, u.email as assignee_email
-       FROM crm_tasks t
-      LEFT JOIN users u ON u.id = t.assigned_to
+       FROM tasks t
+      LEFT JOIN users u ON u.id = t.assignee_user_id
       WHERE ${clauses.join(" AND ")}
       ORDER BY COALESCE(t.due_at, '9999-12-31'::timestamptz) ASC, t.created_at DESC`,
     params,
@@ -391,14 +406,15 @@ router.post("/tasks", safeHandler(async (req: any, res: any) => {
   const assigneeUserId = typeof body.assignee_user_id === "string" && body.assignee_user_id.trim().length > 0 ? body.assignee_user_id : null;
 
   const { rows } = await pool.query<CalendarTaskRow>(
-    `INSERT INTO crm_tasks (owner_id, silo, title, notes, due_at, priority, status, completed_at, assigned_to, task_type)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'todo')
-     RETURNING id, title, notes, due_at, priority, status, assigned_to AS assignee_user_id, graph_id AS o365_task_id, created_at, updated_at, completed_at`,
-    [userId, silo, title, notes, dueAt, priority, status, status === "done" ? new Date().toISOString() : null, assigneeUserId],
+    `INSERT INTO tasks AS t (created_by, silo, title, body, due_at, priority, status, completed_at, assignee_user_id, type, source)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'TODO', 'MANUAL')
+     RETURNING ${CALENDAR_TASK_COLUMNS}`,
+    // tasks.assignee_user_id is NOT NULL: an unassigned calendar task belongs to its creator.
+    [userId, silo, title, notes, dueAt, toDbPriority(priority), toDbStatus(status), status === "done" ? new Date().toISOString() : null, assigneeUserId ?? userId],
   );
   const row = rows[0];
 
-  const graph = await getGraphForUser(pool, userId).catch(() => null);
+  const graph = await getGraphForUser(pool, userId).catch((err: unknown) => logWarnSwallowed<GraphClient | null>(err, "routes/calendar.ts:tasks.graph", null)); // BF_SERVER_v789_CALENDAR_TASKS_ON_TASKS
   if (graph) {
     try {
       const listId = await getDefaultTodoListId(graph);
@@ -416,10 +432,10 @@ router.post("/tasks", safeHandler(async (req: any, res: any) => {
         const graphId = (graphTask as any)?.id;
         if (graphId) {
           const updated = await pool.query<CalendarTaskRow>(
-            `UPDATE crm_tasks
+            `UPDATE tasks t
                 SET graph_id = $1, updated_at = NOW()
-              WHERE id = $2 AND owner_id = $3 AND silo = $4
-            RETURNING id, title, notes, due_at, priority, status, assigned_to AS assignee_user_id, graph_id AS o365_task_id, created_at, updated_at, completed_at`,
+              WHERE t.id = $2 AND t.created_by = $3 AND t.silo = $4
+            RETURNING ${CALENDAR_TASK_COLUMNS}`,
             [graphId, row.id, userId, silo],
           );
           return res.status(201).json(toTaskResponse(updated.rows[0] ?? row));
@@ -440,9 +456,9 @@ router.patch("/tasks/:id", safeHandler(async (req: any, res: any) => {
   const silo = getSilo(res);
 
   const current = await pool.query<CalendarTaskRow>(
-    `SELECT id, title, notes, due_at, priority, status, assigned_to AS assignee_user_id, graph_id AS o365_task_id, created_at, updated_at, completed_at
-       FROM crm_tasks
-      WHERE id = $1 AND owner_id = $2 AND silo = $3
+    `SELECT ${CALENDAR_TASK_COLUMNS}
+       FROM tasks t
+      WHERE t.id::text = $1 AND (t.created_by = $2 OR t.assignee_user_id = $2) AND t.silo = $3 AND t.deleted_at IS NULL
       LIMIT 1`,
     [req.params.id, userId, silo],
   );
@@ -462,7 +478,7 @@ router.patch("/tasks/:id", safeHandler(async (req: any, res: any) => {
   }
   if (typeof body.notes !== "undefined") {
     params.push(body.notes ?? null);
-    updates.push(`notes = $${params.length}`);
+    updates.push(`body = $${params.length}`);
   }
   if (typeof body.dueAt !== "undefined") {
     const dueAt = typeof body.dueAt === "string" ? (body.dueAt.trim().length > 0 ? body.dueAt : null) : (body.dueAt ?? null);
@@ -471,19 +487,23 @@ router.patch("/tasks/:id", safeHandler(async (req: any, res: any) => {
   }
   if (typeof body.assignee_user_id !== "undefined") {
     const assigneeUserId = typeof body.assignee_user_id === "string" && body.assignee_user_id.trim().length > 0 ? body.assignee_user_id : null;
-    params.push(assigneeUserId);
-    updates.push(`assigned_to = $${params.length}`);
+    params.push(assigneeUserId ?? userId);
+    updates.push(`assignee_user_id = $${params.length}`);
   }
-  if (typeof body.priority !== "undefined") {
-    params.push(normalizePriority(body.priority));
+  // Only write priority/status when the portal-level value actually changes, so a
+  // MEDIUM or IN_PROGRESS task set elsewhere is not flattened by an unrelated edit.
+  if (typeof body.priority !== "undefined" && normalizePriority(body.priority) !== row.priority) {
+    params.push(toDbPriority(normalizePriority(body.priority)));
     updates.push(`priority = $${params.length}`);
   }
 
   let nextStatus = row.status;
   if (typeof body.status !== "undefined") {
     nextStatus = normalizeStatus(body.status);
-    params.push(nextStatus);
-    updates.push(`status = $${params.length}`);
+    if (nextStatus !== row.status) {
+      params.push(toDbStatus(nextStatus));
+      updates.push(`status = $${params.length}`);
+    }
   }
 
   if (row.status !== nextStatus) {
@@ -493,15 +513,15 @@ router.patch("/tasks/:id", safeHandler(async (req: any, res: any) => {
   updates.push("updated_at = NOW()");
   params.push(req.params.id, userId, silo);
   const { rows } = await pool.query<CalendarTaskRow>(
-    `UPDATE crm_tasks SET ${updates.join(", ")}
-      WHERE id = $${params.length - 2} AND owner_id = $${params.length - 1} AND silo = $${params.length}
-      RETURNING id, title, notes, due_at, priority, status, assigned_to AS assignee_user_id, graph_id AS o365_task_id, created_at, updated_at, completed_at`,
+    `UPDATE tasks t SET ${updates.join(", ")}
+      WHERE t.id::text = $${params.length - 2} AND (t.created_by = $${params.length - 1} OR t.assignee_user_id = $${params.length - 1}) AND t.silo = $${params.length} AND t.deleted_at IS NULL
+      RETURNING ${CALENDAR_TASK_COLUMNS}`,
     params,
   );
 
   const updated = rows[0];
 
-  const graph = await getGraphForUser(pool, userId).catch(() => null);
+  const graph = await getGraphForUser(pool, userId).catch((err: unknown) => logWarnSwallowed<GraphClient | null>(err, "routes/calendar.ts:tasks.graph", null)); // BF_SERVER_v789_CALENDAR_TASKS_ON_TASKS
   if (graph && updated?.o365_task_id) {
     try {
       const listId = await getDefaultTodoListId(graph);
@@ -532,14 +552,16 @@ router.delete("/tasks/:id", safeHandler(async (req: any, res: any) => {
   const silo = getSilo(res);
 
   const { rows } = await pool.query<{ o365_task_id: string | null }>(
-    `DELETE FROM crm_tasks
-      WHERE id = $1 AND owner_id = $2 AND silo = $3
+    // tasks deletes are soft (deleted_at), matching /api/tasks.
+    `UPDATE tasks
+        SET deleted_at = NOW(), updated_at = NOW()
+      WHERE id::text = $1 AND (created_by = $2 OR assignee_user_id = $2) AND silo = $3 AND deleted_at IS NULL
       RETURNING graph_id AS o365_task_id`,
     [req.params.id, userId, silo],
   );
 
   const o365TaskId = rows[0]?.o365_task_id ?? null;
-  const graph = await getGraphForUser(pool, userId).catch(() => null);
+  const graph = await getGraphForUser(pool, userId).catch((err: unknown) => logWarnSwallowed<GraphClient | null>(err, "routes/calendar.ts:tasks.graph", null)); // BF_SERVER_v789_CALENDAR_TASKS_ON_TASKS
   if (graph && o365TaskId) {
     try {
       const listId = await getDefaultTodoListId(graph);

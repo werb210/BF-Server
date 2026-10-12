@@ -4,7 +4,8 @@ import { createCompany, findOrCreateCompanyByNameAndSilo } from "../companies.js
 
 describe("companies service", () => {
   it("returns existing company when lower(name)+silo matches", async () => {
-    const query = vi.fn().mockResolvedValueOnce({ rows: [{ id: "c1", name: "Acme", silo: "BF" }] });
+    // BF_SERVER_v789_SQL_CONTENT_MOCKS - answered by SQL text, not by call order.
+    const query = vi.fn(answerBySql([[/SELECT \* FROM companies/, { rows: [{ id: "c1", name: "Acme", silo: "BF" }] }]]));
     const out = await findOrCreateCompanyByNameAndSilo(
       { query } as any,
       "acme",
@@ -35,7 +36,7 @@ describe("companies service", () => {
   });
 
   it("createCompany inserts row", async () => {
-    const query = vi.fn().mockResolvedValueOnce({ rows: [{ id: "c3", name: "Direct", silo: "BF", status: "prospect" }] });
+    const query = vi.fn(answerBySql([[/INSERT INTO companies/, { rows: [{ id: "c3", name: "Direct", silo: "BF", status: "prospect" }] }]]));
     const out = await createCompany({ query } as any, { name: "Direct", silo: "BF" });
     expect(out.id).toBe("c3");
   });

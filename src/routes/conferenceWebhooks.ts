@@ -16,7 +16,8 @@ import recordingWebhooksRoutes from "./recordingWebhooks.js";
 import transcriptionWebhooksRoutes from "./transcriptionWebhooks.js";
 
 import VoiceResponse from "twilio/lib/twiml/VoiceResponse.js";
-import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_SILENT_QUERIES_v678
 
 // BF_SERVER_BLOCK_v2_LIVE_TRANSCRIPTION - twilio-node 4.x has no <Transcription>
 // verb, so inject it as raw TwiML. Gated by ENABLE_LIVE_TRANSCRIPTION (default
@@ -39,7 +40,7 @@ const router = Router();
 // Mounted before the route defs so recording/transcription subrouters inherit it.
 router.use(express.urlencoded({ extended: false }));
 
-router.post("/conference/join", twilioWebhookValidation, async (req: any, res) => {
+router.post("/conference/join", twilioWebhookValidation, safeHandler(async (req: any, res) => {
   res.setHeader("Content-Type", "text/xml");
   const conf = String(req.query.conf ?? req.body?.conf ?? "").trim();
   const pid  = String(req.query.pid ?? req.body?.pid ?? "").trim();
@@ -137,10 +138,10 @@ router.post("/conference/join", twilioWebhookValidation, async (req: any, res) =
     twiml_bytes: twiml.length,
   }));
   return res.send(twiml);
-});
+}));
 
 // BF_SERVER_BLOCK_v843_NO_ANSWER_VOICEMAIL — caller hold loop with voicemail escape.
-router.post("/conference/wait", twilioWebhookValidation, async (req: any, res) => {
+router.post("/conference/wait", twilioWebhookValidation, safeHandler(async (req: any, res) => {
   res.setHeader("Content-Type", "text/xml");
   const base = getPublicBaseUrl();
   const conf = String(req.query.conf ?? req.body?.conf ?? "").trim();
@@ -183,9 +184,9 @@ router.post("/conference/wait", twilioWebhookValidation, async (req: any, res) =
   vr.pause({ length: 5 });
   vr.redirect({ method: "POST" }, `${base}/api/webhooks/twilio/conference/wait?conf=${encodeURIComponent(conf)}&pid=${encodeURIComponent(pid)}&n=${n + 1}`);
   return res.send(vr.toString());
-});
+}));
 
-router.post("/conference/status", twilioWebhookValidation, async (req: any, res) => {
+router.post("/conference/status", twilioWebhookValidation, safeHandler(async (req: any, res) => {
   const event = String(req.body?.StatusCallbackEvent ?? "").trim();
   const confFriendly = String(req.query.conf ?? req.body?.FriendlyName ?? "").trim();
   const confSid = String(req.body?.ConferenceSid ?? "").trim();
@@ -322,9 +323,9 @@ router.post("/conference/status", twilioWebhookValidation, async (req: any, res)
   await notifyConferenceState(conf.id, "conference.update", { event });
   await syncStaffOnCallFromConferences(); // BF_SERVER_PRESENCE_ONCALL_WIRE_v1
   return res.status(200).send("");
-});
+}));
 
-router.post("/call/status", twilioWebhookValidation, async (req: any, res) => {
+router.post("/call/status", twilioWebhookValidation, safeHandler(async (req: any, res) => {
   const callSid = String(req.body?.CallSid ?? "").trim();
   const status  = String(req.body?.CallStatus ?? "").trim();
   if (!callSid) return res.status(200).send("");
@@ -339,7 +340,7 @@ router.post("/call/status", twilioWebhookValidation, async (req: any, res) => {
   await pool.query(`UPDATE conference_participants SET status = $2, left_at = CASE WHEN $2 = 'left' THEN now() ELSE left_at END WHERE id = $1`, [part.id, newStatus]);
   await notifyConferenceState(part.conference_id, "conference.update", { callSid, callStatus: status });
   return res.status(200).send("");
-});
+}));
 
 // v502b -- siblings live on the same /webhooks/twilio mount
 router.use("/", recordingWebhooksRoutes);

@@ -11,6 +11,7 @@ import type { Pool } from "pg";
 import { graphAppFetch, isAppGraphConfigured } from "../services/teams/graphAppClient.js";
 import { parseBooking, isBookingBody, toE164 } from "../services/bookings/parseBooking.js";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 const POLL_MS = 10 * 60 * 1000;
 const LOOKBACK_DAYS = 30;
@@ -175,7 +176,7 @@ async function ingest(pool: Pool, upn: string, ev: GraphEvent): Promise<void> {
 export function startBookingsWorker(pool: Pool): { stop: () => void } {
   let running = false;
 
-  const tick = async (): Promise<void> => {
+  const tickUnclaimed = async (): Promise<void> => {
     if (running) return;
     if (!isAppGraphConfigured()) return;
     running = true;
@@ -193,6 +194,7 @@ export function startBookingsWorker(pool: Pool): { stop: () => void } {
       running = false;
     }
   };
+  const tick = claimedTick("bookings", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
 
   void tick();
   const handle = setInterval(() => void tick(), POLL_MS);

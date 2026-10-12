@@ -2,7 +2,7 @@
 // Asks BI-Server (the PGI data owner) for the linked application's stage through
 // the same Maya service endpoint staff use. Cached 5 minutes per application,
 // because the client portal polls its thread. Unknown means "not done".
-import jwt from "jsonwebtoken";
+import { signServiceToken } from "../auth/serviceTokens.js"; // BF_SERVER_v789_SERVICE_TOKENS
 
 const TTL_MS = 5 * 60 * 1000;
 const cache = new Map<string, { at: number; stage: string | null }>();
@@ -38,7 +38,7 @@ const defaultDeps: Deps = {
   },
   async fetchStage(biPublicId) {
     const base = (process.env.BI_SERVER_URL || "https://bi-server-cse0apamgkheb9d5.canadacentral-01.azurewebsites.net").replace(/\/+$/, "");
-    const token = jwt.sign({ kind: "service", source: "maya-service" }, process.env.JWT_SECRET || "", { expiresIn: "5m" });
+    const token = signServiceToken("bi-server", { source: "maya-service" }); // BF_SERVER_v789_SERVICE_TOKENS
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
     try {

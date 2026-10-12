@@ -1,7 +1,36 @@
 // BF_SERVER_BLOCK_v614_AD_CLICKS
-import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import express from "express";
+import request from "supertest";
+import jwt from "jsonwebtoken";
+import { answerBySql, callsMatching } from "../../../__tests__/helpers/answerBySql.js";
+
+const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }));
+vi.mock("../../../db.js", async (orig) => {
+  const real: any = await orig();
+  const pool = { query: queryMock, connect: vi.fn() };
+  return { ...real, pool, db: pool };
+});
+vi.mock("../../../services/googleAdsService.js", async (orig) => {
+  const real: any = await orig();
+  return { ...real, googleAdsConfigured: () => false };
+});
+
 import { buildClickTree } from "../adClicks.js";
+import marketing from "../../marketing.js";
+
+const app = express();
+app.use(express.json());
+app.use("/api/marketing", marketing);
+const token = jwt.sign({ sub: "11111111-1111-4111-8111-111111111111", role: "Admin", tokenVersion: 0, tv: 0 }, process.env.JWT_SECRET!, { expiresIn: "5m" });
+const CLICKS = /FROM contact_ad_attribution a/;
+
+beforeEach(() => {
+  queryMock.mockReset();
+  queryMock.mockImplementation(answerBySql([
+    [CLICKS, { rows: [{ campaign: "BF Search - CA", ad_group: "Equipment", ad_id: "333", keyword: "equipment financing canada", clicks: 9 }] }],
+  ]));
+});
 
 describe("ad clicks tree", () => {
   it("groups campaign > ad group > ad with keyword counts, busiest first", () => {
@@ -21,11 +50,14 @@ describe("ad clicks tree", () => {
     expect(us.adGroups[1].ads[0].label).toBe("Ad not recorded");
   });
 
-  it("reads CRM attribution, all time, and leaves out Performance Max", () => {
-    const src = readFileSync("src/routes/marketing/adClicks.ts", "utf8");
-    expect(src).toContain("FROM contact_ad_attribution a");
-    expect(src).toContain("NOT ILIKE '%performance max%'");
-    expect(src).not.toContain("interval");
-    expect(readFileSync("src/routes/marketing.ts", "utf8")).toContain("router.use(adClicksRoutes)");
+  it("is mounted on the marketing router and reads CRM attribution, all time, leaving out Performance Max", async () => {
+    const r = await request(app).get("/api/marketing/ad-clicks").set("Authorization", `Bearer ${token}`).set("X-Silo", "BI");
+    expect(r.status).toBe(200);
+    expect(r.body.total).toBe(9);
+    expect(r.body.campaigns[0].campaign).toBe("BF Search - CA");
+    const [sql, params] = callsMatching(queryMock, CLICKS)[0] as [string, unknown[]];
+    expect(params).toEqual(["BI"]);
+    expect(sql).toContain("NOT ILIKE '%performance max%'");
+    expect(sql).not.toContain("interval");
   });
 });

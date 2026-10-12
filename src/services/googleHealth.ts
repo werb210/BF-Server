@@ -8,6 +8,7 @@ import { ingestConversions } from "./googleDataManager.js";
 import { ga4Configured, runGa4Report } from "./ga4Service.js";
 import { sendSMS } from "./smsService.js";
 import { sendViaGraph } from "./email/graphSendService.js";
+import { claimedTick } from "../workers/claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 export type HealthStatus = "ok" | "fail" | "off";
 export type HealthCheck = { key: string; label: string; status: HealthStatus; detail: string };
@@ -135,10 +136,11 @@ export async function alertIfFailing(report: HealthReport, now = Date.now()): Pr
 }
 
 export function startGoogleHealthMonitor(): { stop: () => void } {
-  const tick = async () => {
+  const tickUnclaimed = async () => {
     try { await alertIfFailing(await getGoogleHealth(true)); }
     catch (err) { console.warn("[google_health] tick failed", { message: err instanceof Error ? err.message : String(err) }); }
   };
+  const tick = claimedTick("google_health", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
   const first = setTimeout(() => { void tick(); }, 5 * 60_000);
   const timer = setInterval(() => { void tick(); }, 60 * 60_000);
   return { stop: () => { clearTimeout(first); clearInterval(timer); } };

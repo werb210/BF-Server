@@ -29,8 +29,7 @@ describe("connection pools", () => {
     expect(init).not.toContain("new Pool(");
   });
 
-  it("routes the platform and lib helpers at the same pool", () => {
-    expect(readFileSync("src/platform/dbClient.ts", "utf8")).toContain("db.prod.js");
+  it("routes the lib helper at the same pool", () => {
     expect(readFileSync("src/lib/db.ts", "utf8")).toContain("db.prod.js");
   });
 });

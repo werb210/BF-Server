@@ -5,6 +5,7 @@ import { AppError } from "../middleware/errors.js";
 import { normalizeRole } from "../auth/roles.js";
 import { createUserAccount } from "../modules/auth/auth.service.js";
 import { setUserStatus } from "../modules/users/users.service.js";
+import { clearStaffUserCache } from "../auth/staffUserState.js"; // BF_SERVER_v789_STAFF_USER_STATE
 import { recordAuditEvent } from "../modules/audit/audit.service.js";
 import { logger } from "../server/utils/logger.js";
 
@@ -333,6 +334,21 @@ export async function adminUpdateUser(req: Request, res: Response) {
       fields.push(`${k} = $${idx++}`);
       values.push(v);
     }
+    // BF_SERVER_v789_STAFF_USER_STATE - a role change or a deactivation revokes the
+    // user's existing tokens (token_version bump; for role, only when it really
+    // changes), and status keeps active / is_active / disabled in step so sign-in
+    // and the staff middleware agree with the admin screen.
+    const keys = Object.keys(normalized);
+    const revokeIf: string[] = [];
+    if (keys.includes("role")) revokeIf.push(`role IS DISTINCT FROM $${keys.indexOf("role") + 1}`);
+    if (keys.includes("status")) {
+      const p = `$${keys.indexOf("status") + 1}`;
+      fields.push(`active = (${p} = 'ACTIVE')`, `is_active = (${p} = 'ACTIVE')`, `disabled = (${p} <> 'ACTIVE')`);
+      revokeIf.push(`${p} <> 'ACTIVE'`);
+    }
+    if (revokeIf.length > 0) {
+      fields.push(`token_version = token_version + CASE WHEN ${revokeIf.join(" OR ")} THEN 1 ELSE 0 END`);
+    }
 
     values.push(targetId);
 
@@ -365,6 +381,7 @@ export async function adminUpdateUser(req: Request, res: Response) {
     }
 
     const updated = result.rows[0] as UserRecord;
+    clearStaffUserCache(targetId); // BF_SERVER_v789_STAFF_USER_STATE
 
     await recordAuditEvent({
       actorUserId: req.user?.userId ?? null,

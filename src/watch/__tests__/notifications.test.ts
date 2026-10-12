@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { answerBySql } from "../../__tests__/helpers/answerBySql.js"; // BF_SERVER_SQL_CONTENT_MOCKS_v762
+import { answerBySql, callsMatching } from "../../__tests__/helpers/answerBySql.js"; // BF_SERVER_SQL_CONTENT_MOCKS_v762
 
 const query = vi.fn();
 
@@ -8,6 +8,9 @@ import { configureWatchPushProvider, sendWatchNotification } from "../notificati
 
 const input = { staffUserId: "staff-1", category: "MESSAGE" as const, eventType: "client_message" as const,
   title: "T".repeat(80), body: "B".repeat(140), resourceId: "opaque-id" };
+// BF_SERVER_v789_SQL_CONTENT_MOCKS - the registration lookup is answered by SQL text, not by call order.
+const REGS = /FROM watch_push_registrations p/;
+const answerRegs = (rows: unknown[]) => query.mockImplementation(answerBySql([[REGS, { rows }]]));
 const deps = () => ({ query: query as any, decrypt: (value: string) => `plain:${value}` });
 
 beforeEach(() => { query.mockReset(); configureWatchPushProvider(null); });
@@ -19,10 +22,10 @@ describe("sendWatchNotification", () => {
   });
 
   it("sends the exact version-one allowlisted contract to mixed environments", async () => {
-    query.mockResolvedValueOnce({ rows: [
+    answerRegs([
       { id: "r1", device_id: "d1", token_ciphertext: "cipher1", environment: "sandbox" },
       { id: "r2", device_id: "d2", token_ciphertext: "cipher2", environment: "production" },
-    ] });
+    ]);
     const send = vi.fn().mockResolvedValue(undefined);
     configureWatchPushProvider({ send });
     expect(await sendWatchNotification(input, deps())).toBe(2);
@@ -39,7 +42,7 @@ describe("sendWatchNotification", () => {
 
   it.each(["BadDeviceToken", "Unregistered"])("deletes a %s registration and continues to a valid registration", async (reason) => {
     query.mockImplementation(answerBySql([
-      [/FROM watch_push_registrations p/, { rows: [
+      [REGS, { rows: [
         { id: "bad", token_ciphertext: "bad-cipher", environment: "sandbox" },
         { id: "good", token_ciphertext: "good-cipher", environment: "production" },
       ] }],
@@ -59,23 +62,25 @@ describe("sendWatchNotification", () => {
     ["HTTP 429", new WatchApnsError(429, "TooManyRequests")],
     ["HTTP 500", new WatchApnsError(500, "InternalServerError")],
   ])("does not delete a transient %s failure", async (_label, failure) => {
-    query.mockResolvedValueOnce({ rows: [{ id: "r1", token_ciphertext: "cipher", environment: "production" }] });
+    answerRegs([{ id: "r1", token_ciphertext: "cipher", environment: "production" }]);
     configureWatchPushProvider({ send: vi.fn().mockRejectedValue(failure) });
     expect(await sendWatchNotification(input, deps())).toBe(0);
     expect(query).toHaveBeenCalledTimes(1);
   });
 
   it("queries only active devices with standard registrations", async () => {
-    query.mockResolvedValueOnce({ rows: [] });
+    answerRegs([]);
     configureWatchPushProvider({ send: vi.fn() });
     await sendWatchNotification(input, deps());
-    const sql = query.mock.calls[0][0] as string;
+    const lookups = callsMatching(query, REGS);
+    expect(lookups).toHaveLength(1);
+    const sql = lookups[0][0] as string;
     expect(sql).toContain("d.revoked_at IS NULL");
     expect(sql).toContain("p.push_type='standard'");
   });
 
   it("cannot pass arbitrary sensitive data through the opaque id field", async () => {
-    query.mockResolvedValueOnce({ rows: [{ id: "r1", token_ciphertext: "cipher", environment: "production" }] });
+    answerRegs([{ id: "r1", token_ciphertext: "cipher", environment: "production" }]);
     const send = vi.fn().mockResolvedValue(undefined);
     configureWatchPushProvider({ send });
     await sendWatchNotification({ ...input, resourceId: "account balance: $12,345" }, deps());

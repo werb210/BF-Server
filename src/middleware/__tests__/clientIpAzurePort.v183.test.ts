@@ -23,6 +23,16 @@ describe("clientIpFromRequest", () => {
       .toBe("203.0.113.9");
   });
 
+  // BF_SERVER_v789_XFF_RIGHTMOST
+  it("ignores a spoofed left-most entry (keys on the right-most public hop)", () => {
+    const real = clientIpFromRequest(req({ "x-forwarded-for": "198.51.100.7:5000" }));
+    const spoofed = clientIpFromRequest(req({ "x-forwarded-for": "1.2.3.4, 198.51.100.7:5000" }));
+    const spoofed2 = clientIpFromRequest(req({ "x-forwarded-for": "9.9.9.9, 8.8.8.8, 198.51.100.7:6000" }));
+    expect(real).toBe("198.51.100.7");
+    expect(spoofed).toBe(real);
+    expect(spoofed2).toBe(real);
+  });
+
   it("does not mangle a bare IPv6 address", () => {
     expect(clientIpFromRequest(req({ "x-forwarded-for": "2001:db8::1" }))).toBe("2001:db8::1");
   });

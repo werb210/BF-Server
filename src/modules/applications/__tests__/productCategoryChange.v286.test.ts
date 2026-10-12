@@ -1,8 +1,30 @@
 // BF_SERVER_CHANGE_PRODUCT_CATEGORY_v286
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import express from "express";
+import jwt from "jsonwebtoken";
+import request from "supertest";
 import { answerBySql, callsMatching } from "../../../__tests__/helpers/answerBySql.js"; // BF_SERVER_SQL_CONTENT_MOCKS_v762
-import fs from "node:fs";
 import { changeProductCategory, normalizeProductCategory, PRODUCT_CATEGORIES } from "../productCategoryChange.js";
+
+const h = vi.hoisted(() => ({
+  queryMock: vi.fn(),
+  computeAndCacheLenderMatches: vi.fn(async () => undefined),
+  readLenderMatchEnvelope: vi.fn(async () => ({ matches: [] })),
+  requestProductQuestions: vi.fn(async () => ({ requested: false })),
+}));
+vi.mock("../../../db", async () => {
+  const actual = await vi.importActual<typeof import("../../../db.js")>("../../../db");
+  return { ...actual, pool: { query: h.queryMock }, runQuery: h.queryMock, dbQuery: h.queryMock };
+});
+vi.mock("../../../services/lenderMatchCache.js", async (orig) => ({
+  ...(await orig<typeof import("../../../services/lenderMatchCache.js")>()),
+  computeAndCacheLenderMatches: h.computeAndCacheLenderMatches,
+  readLenderMatchEnvelope: h.readLenderMatchEnvelope,
+}));
+vi.mock("../../../services/productQuestions/sendGate.js", async (orig) => ({
+  ...(await orig<typeof import("../../../services/productQuestions/sendGate.js")>()),
+  requestProductQuestions: h.requestProductQuestions,
+}));
 
 describe("product category values", () => {
   it("accepts the match engine's buckets in any casing", () => {
@@ -29,12 +51,50 @@ describe("changing the category", () => {
   });
 });
 
-describe("wiring", () => {
-  it("the route checks write permission and silo, then re-matches lenders", () => {
-    const routes = fs.readFileSync("src/modules/applications/applications.routes.ts", "utf8");
-    const route = routes.slice(routes.indexOf("router.post('/:id/product-category'"));
-    expect(route).toContain("requireCapability([CAPABILITIES.CRM_WRITE])");
-    expect(route.indexOf("app.silo !== silo")).toBeLessThan(route.indexOf("changeProductCategory("));
-    expect(route.indexOf("computeAndCacheLenderMatches(appId)")).toBeGreaterThan(route.indexOf("changeProductCategory("));
+describe("wiring: POST /api/applications/:id/product-category", () => {
+  const APP_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const STAFF_ID = "00000000-0000-4000-8000-0000000000b1";
+  const sign = (extra: Record<string, unknown> = {}) => jwt.sign({ sub: STAFF_ID, role: "Staff", tokenVersion: 0, tv: 0, ...extra }, process.env.JWT_SECRET as string);
+  const post = async (tok: string, silo = "BF") => {
+    h.queryMock.mockImplementation(answerBySql([
+      [/select id, silo from applications/, { rows: [{ id: APP_ID, silo }] }],
+      [/SELECT product_category FROM applications/, { rows: [{ product_category: "MERCHANT_CASH_ADVANCE" }] }],
+    ]));
+    const router = (await import("../applications.routes.js")).default;
+    const { errorHandler } = await import("../../../middleware/errors.js");
+    const app = express();
+    app.use(express.json());
+    app.use("/api/applications", router);
+    app.use(errorHandler);
+    return request(app).post(`/api/applications/${APP_ID}/product-category`).set("Authorization", `Bearer ${tok}`).send({ category: "term loan" });
+  };
+  const categoryWrites = () => callsMatching(h.queryMock, /SET product_category = \$2/);
+
+  beforeEach(() => { h.queryMock.mockReset(); h.computeAndCacheLenderMatches.mockClear(); h.requestProductQuestions.mockClear(); });
+
+  it("checks write permission", async () => {
+    const res = await post(sign({ capabilities: ["application:read"] }));
+    expect(res.status).toBe(403);
+    expect(categoryWrites()).toHaveLength(0);
+    expect(h.computeAndCacheLenderMatches).not.toHaveBeenCalled();
+  });
+
+  it("checks the silo before changing anything", async () => {
+    const res = await post(sign(), "BI");
+    expect(res.status).toBe(404);
+    expect(categoryWrites()).toHaveLength(0);
+    expect(h.computeAndCacheLenderMatches).not.toHaveBeenCalled();
+  });
+
+  it("changes the category, then re-matches lenders", async () => {
+    const res = await post(sign());
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ product_category: "TERM_LOAN", previous_product_category: "MERCHANT_CASH_ADVANCE" });
+    const write = categoryWrites();
+    expect(write).toHaveLength(1);
+    expect(write[0]![1]).toEqual([APP_ID, "TERM_LOAN", expect.any(String)]);
+    expect(h.computeAndCacheLenderMatches).toHaveBeenCalledWith(APP_ID);
+    const writeOrder = h.queryMock.mock.invocationCallOrder[h.queryMock.mock.calls.findIndex((c) => /SET product_category = \$2/.test(String(c[0])))]!;
+    expect(h.computeAndCacheLenderMatches.mock.invocationCallOrder[0]!).toBeGreaterThan(writeOrder);
   });
 });
