@@ -17,10 +17,11 @@
 // No custom keyGenerator here: the library default already honours
 // app.set("trust proxy", 1) and collapses IPv6 to its /64 prefix, so an attacker cannot
 // rotate addresses within a /64 to evade the limit.
-import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import rateLimit from "express-rate-limit";
 import { isIP } from "node:net"; // BF_SERVER_OTP_ABUSE_GUARD_v772
 import type { Request } from "express";
 import { isTest } from "../config/runtime.js";
+import { rateLimitKeyFromRequest } from "./clientIp.js"; // BF_SERVER_v791_RATE_LIMIT_KEYS
 
 // BF_SERVER_AUTH_RATE_LIMIT_v2
 // Azure App Service hands Express a req.ip WITH THE PORT ATTACHED ("77.246.52.163:62553").
@@ -76,9 +77,9 @@ export function clientIpForRateLimit(req: Pick<Request, "headers" | "ip" | "sock
   return hops[hops.length - 1] || stripPort(req.ip || req.socket?.remoteAddress || "");
 }
 
-function keyFromRequest(req: Request): string {
-  return ipKeyGenerator(clientIpForRateLimit(req));
-}
+// BF_SERVER_v791_RATE_LIMIT_KEYS - the OTP limiters key on the shared helper too
+// (CODEX.md: every limiter uses rateLimitKeyFromRequest).
+const keyFromRequest = rateLimitKeyFromRequest;
 
 export const otpStartLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { randomUUID } from "node:crypto"; // BF_SERVER_v791_LEAD_SCHEMA
 import { dbQuery } from "../db.js";
 import { requireFields } from "../middleware/validate.js";
 import { LeadSchema } from "../validation.js";
@@ -74,36 +75,32 @@ router.get("/landing/:slug", async (req, res) => {
 });
 
 
-type LeadPayload = {
-  email?: string;
-  phone?: string;
-  productType?: string;
-  businessName?: string;
-  companyName?: string;
-  requestedAmount?: number;
-};
+type LeadPayload = Record<string, unknown>;
 
+// BF_SERVER_v791_LEAD_SCHEMA - companyName is the required company field (the
+// route's requireFields demands it and the schema now accepts it).
 async function createLead(payload: LeadPayload): Promise<{ leadId?: string }> {
   // BF_SERVER_v789_CASL_EXPRESS_CONSENT - the consent fields are recorded by the
   // route, not part of the (strict) lead schema.
-  const { casl_consent: _c, casl_consent_text: _t, casl_consent_at: _a, ...leadFields } = payload as LeadPayload & Record<string, unknown>;
-  const normalizedPayload = {
-    ...leadFields,
-    businessName: payload.businessName ?? payload.companyName,
-  };
+  const { casl_consent: _c, casl_consent_text: _t, casl_consent_at: _a, ...leadFields } = payload ?? {};
 
-  const parsed = LeadSchema.safeParse(normalizedPayload ?? {});
+  const parsed = LeadSchema.safeParse(leadFields);
 
   if (!parsed.success) {
     return {};
   }
 
   const data = parsed.data;
+  const fullName = (data.fullName || [data.firstName, data.lastName].filter(Boolean).join(" ")).trim() || null;
+  const requestedAmount = data.requestedAmount === undefined || data.requestedAmount === null || data.requestedAmount === ""
+    ? null
+    : String(data.requestedAmount);
+  // crm_leads.id has no column default - supply it, as every other insert does.
   const result = await dbQuery<{ id: string }>(
-    `insert into crm_leads (email, phone, company_name, product_interest, requested_amount, source)
-       values ($1, $2, $3, $4, $5, 'public_api')
+    `insert into crm_leads (id, email, phone, company_name, product_interest, requested_amount, full_name, notes, source)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, 'public_api')
        returning id`,
-    [data.email, data.phone, data.businessName, data.productType, data.requestedAmount ?? null],
+    [randomUUID(), data.email, data.phone || null, data.companyName, data.productType || null, requestedAmount, fullName, data.message || null],
   );
 
   return stripUndefined({ leadId: result.rows[0]?.id });
@@ -306,8 +303,7 @@ const conversationMessageLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "RATE_LIMITED" },
-  keyGenerator: rateLimitKeyFromRequest,
-  validate: { xForwardedForHeader: false },
+  keyGenerator: rateLimitKeyFromRequest, // BF_SERVER_v791_RATE_LIMIT_KEYS - no validate overrides
 });
 
 router.get(

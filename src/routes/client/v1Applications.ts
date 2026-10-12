@@ -26,6 +26,7 @@ import { postBiHandoff } from "../../services/biHandoff.js";
 import { randomUUID as biRandomUUID } from "node:crypto";
 import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 import { applicationParamGuard } from "../../auth/clientApplicationOwnership.js"; // BF_SERVER_v789_ID_NORMALIZE
+import { checkSubmitCompleteness, type CompletenessResult } from "../../services/applicationCompleteness.js"; // BF_SERVER_v791_SUBMIT_COMPLETENESS
 // BF_APP_ID_CAST_v39 - Block 39-A - applications.id comparisons cast to text
 
 const router = Router();
@@ -470,6 +471,42 @@ router.post(
     const application = await loadApplicationByToken(token);
     if (!application) {
       return res.status(404).json({ error: { message: "application_not_found" } });
+    }
+    // BF_SERVER_v791_SUBMIT_COMPLETENESS - re-check the wizard's Step 1/3/4 required
+    // answers (payload merged with what is already stored) before anything is written.
+    {
+      let storedMetadata: unknown = null;
+      try {
+        const stored = await pool.query<{ metadata: unknown }>(
+          `SELECT metadata FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+          [application.id],
+        );
+        storedMetadata = stored?.rows?.[0]?.metadata ?? null;
+      } catch (err) {
+        console.warn("[client-submit] completeness: stored metadata read failed; checking the payload alone", {
+          applicationId: application.id,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+      let completeness: CompletenessResult = { ok: true, checked: false };
+      try {
+        completeness = checkSubmitCompleteness(legacyApp, storedMetadata);
+      } catch (err) {
+        console.warn("[client-submit] completeness check threw; allowing submit", {
+          applicationId: application.id,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+      if (!completeness.ok) {
+        logInfo("client_submit_incomplete", { applicationId: application.id, step: completeness.step, missing: completeness.missing });
+        return res.status(422).json({ error: "application_incomplete", step: completeness.step, missing: completeness.missing });
+      }
+      if (!completeness.checked) {
+        console.warn("[client-submit] completeness: unrecognised payload shape; allowing submit unchecked", {
+          applicationId: application.id,
+          absent: completeness.absent ?? ["kyc", "business", "applicant"],
+        });
+      }
     }
     // BF_SERVER_STORE_REVIEW_TEST_v734 - a store reviewer's submission is a test. Once the
     // submission has finished (30 s later, so nothing in this request runs against a moved

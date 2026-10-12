@@ -9,7 +9,7 @@ import { pool as bankingPool } from "../db.js";
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { getSilo } from "../middleware/silo.js"; // BF_SERVER_v789_SILO_SCOPING
 import { ROLES } from "../auth/roles.js";
-import { safeKeyGenerator } from "../middleware/rateLimit.js";
+import { rateLimitKeyFromRequest } from "../middleware/clientIp.js"; // BF_SERVER_v791_RATE_LIMIT_KEYS
 import { config } from "../config/index.js";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
@@ -78,12 +78,8 @@ const bankingAnalysisLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: {
-    xForwardedForHeader: false,
-    trustProxy: false,
-  },
   skip: () => config.env === "test",
-  keyGenerator: safeKeyGenerator,
+  keyGenerator: rateLimitKeyFromRequest, // BF_SERVER_v791_RATE_LIMIT_KEYS
 });
 
 router.post(

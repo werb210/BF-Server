@@ -1,6 +1,6 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { safeKeyGenerator } from "../middleware/rateLimit.js";
+import { rateLimitKeyFromRequest } from "../middleware/clientIp.js"; // BF_SERVER_v791_RATE_LIMIT_KEYS
 import { submitContactForm } from "../modules/website/contact.controller.js";
 import { submitCreditReadiness } from "../modules/website/website.controller.js";
 import { config } from "../config/index.js";
@@ -12,12 +12,8 @@ const websiteLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: {
-    xForwardedForHeader: false,
-    trustProxy: false,
-  },
   skip: () => config.env === "test",
-  keyGenerator: safeKeyGenerator,
+  keyGenerator: rateLimitKeyFromRequest, // BF_SERVER_v791_RATE_LIMIT_KEYS
 });
 
 const websiteBodyLimitBytes = 64 * 1024;

@@ -10,7 +10,7 @@ import { createLandingPage, createLandingPageFromHtml, updateLandingPageHtml, sl
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js";
 import { smsMarketingConfigured, sendMarketingSms, renderMarketingSms } from "../services/marketingSms.js";
 import { SMS_ELIGIBLE_SQL } from "../services/smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1
-import { countEmailRecipients, runEmailSend, countSmsRecipients, runSmsSend, EMAIL_BLAST_ELIGIBLE_SQL } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1 BF_SERVER_SEND_QUEUE_SMS_v1
+import { countEmailRecipients, countSmsRecipients, EMAIL_BLAST_ELIGIBLE_SQL } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1 BF_SERVER_SEND_QUEUE_SMS_v1
 import { enrollContactsDetailed, enrollSequence } from "../services/sequenceEngine.js"; // BF_SERVER_BLOCK_v785_SEQUENCES
 import { suggestionsConfigured, buildSuggestions, applySuggestion, adsMutateAllowed, ADS_MUTATE_BLOCKED_REASON } from "../services/googleAdsSuggestions.js"; // BF_SERVER_ADS_WRITE_GATE_v56
 import { linkedInSuggestionsConfigured, buildLinkedInSuggestions, applyLinkedInSuggestion } from "../services/linkedInAdsSuggestions.js"; // BF_SERVER_LINKEDIN_SUGGESTIONS_v1
@@ -821,30 +821,29 @@ router.post("/email/send", safeHandler(async (req: any, res: any) => {
   // large ones go to the durable background queue (no cap, no request blocking).
   const total = await countEmailRecipients(pool, silo, tag, includeTags, excludeTags);
   if (total === 0) { respondOk(res, { configured: true, recipients: 0, sent: 0, failed: 0, capped: false }); return; }
-  if (total > 0) { // BF_SERVER_ALWAYS_QUEUE_v1 - always use the durable queue; inline sends cannot resume
-    // BF_SERVER_SEND_LATER_v35
-    let schedule;
-    try {
-      schedule = resolveScheduledAt((req.body ?? {}).sendAt, SEND_HOLD_MINUTES);
-    } catch (err) {
-      if (err instanceof SendScheduleError) {
-        res.status(400).json({ error: { code: err.code, message: err.message } });
-        return;
-      }
-      throw err;
+  // BF_SERVER_ALWAYS_QUEUE_v1 - always use the durable queue; inline sends cannot resume.
+  // BF_SERVER_v791_DEAD_INLINE_SEND - countEmailRecipients returns count(*)::int (a
+  // non-negative integer, 0 when no row) and total === 0 returned above, so every
+  // request reaching here queues; the old inline runEmailSend fallback was unreachable.
+  // BF_SERVER_SEND_LATER_v35
+  let schedule;
+  try {
+    schedule = resolveScheduledAt((req.body ?? {}).sendAt, SEND_HOLD_MINUTES);
+  } catch (err) {
+    if (err instanceof SendScheduleError) {
+      res.status(400).json({ error: { code: err.code, message: err.message } });
+      return;
     }
-    const job = await pool.query<{ id: string; not_before: string }>(
-      `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by, not_before)
-       VALUES ('email', $1, $2, $3, $4, $5, $6::timestamptz) RETURNING id, not_before`,
-      // BF_SERVER_EMAIL_TWO_COLUMN_ONLY_v15 - `resend` rides along in the payload
-      // so the worker that picks this job up honours it too.
-      [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId, resend: b.resend === true }), total, req.user?.userId ?? null, schedule.at.toISOString()],
-    );
-    respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total, notBefore: job.rows[0].not_before, holdMinutes: SEND_HOLD_MINUTES, scheduled: schedule.scheduled });
-    return;
+    throw err;
   }
-  const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut, resend: b.resend === true, tags: includeTags, excludeTags, templateId });
-  respondOk(res, { configured: true, recipients: out.total, sent: out.sent, failed: out.failed, rejected: out.failed, rejectStatus: out.rejectStatus, rejectError: out.rejectError, capped: false });
+  const job = await pool.query<{ id: string; not_before: string }>(
+    `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by, not_before)
+     VALUES ('email', $1, $2, $3, $4, $5, $6::timestamptz) RETURNING id, not_before`,
+    // BF_SERVER_EMAIL_TWO_COLUMN_ONLY_v15 - `resend` rides along in the payload
+    // so the worker that picks this job up honours it too.
+    [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId, resend: b.resend === true }), total, req.user?.userId ?? null, schedule.at.toISOString()],
+  );
+  respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total, notBefore: job.rows[0].not_before, holdMinutes: SEND_HOLD_MINUTES, scheduled: schedule.scheduled });
 }));
 
 // BF_SERVER_SEND_QUEUE_v1 - background blast job status (for the portal progress UI).
@@ -1154,29 +1153,28 @@ router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
   } catch (e) { console.error("landing_page_failed", { error: e instanceof Error ? e.message : String(e) }); }
   const total = await countEmailRecipients(pool, silo, tag, includeTags, excludeTags);
   if (total === 0) { respondOk(res, { configured: true, recipients: 0, sent: 0, failed: 0 }); return; }
-  if (total > 0) { // BF_SERVER_ALWAYS_QUEUE_v1 - always use the durable queue; inline sends cannot resume
-    // BF_SERVER_SEND_LATER_v35
-    let schedule;
-    try {
-      schedule = resolveScheduledAt((req.body ?? {}).sendAt, SEND_HOLD_MINUTES);
-    } catch (err) {
-      if (err instanceof SendScheduleError) {
-        res.status(400).json({ error: { code: err.code, message: err.message } });
-        return;
-      }
-      throw err;
+  // BF_SERVER_ALWAYS_QUEUE_v1 - always use the durable queue; inline sends cannot resume.
+  // BF_SERVER_v791_DEAD_INLINE_SEND - countEmailRecipients returns count(*)::int (a
+  // non-negative integer, 0 when no row) and total === 0 returned above, so every
+  // request reaching here queues; the old inline runEmailSend fallback was unreachable.
+  // BF_SERVER_SEND_LATER_v35
+  let schedule;
+  try {
+    schedule = resolveScheduledAt((req.body ?? {}).sendAt, SEND_HOLD_MINUTES);
+  } catch (err) {
+    if (err instanceof SendScheduleError) {
+      res.status(400).json({ error: { code: err.code, message: err.message } });
+      return;
     }
-    const job = await pool.query<{ id: string; not_before: string }>(
-      `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by, not_before) VALUES ('email', $1, $2, $3, $4, $5, $6::timestamptz) RETURNING id, not_before`,
-      // BF_SERVER_EMAIL_TWO_COLUMN_ONLY_v15 - `resend` rides along in the payload
-      // so the worker that picks this job up honours it too.
-      [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId, resend: b.resend === true }), total, req.user?.userId ?? null, schedule.at.toISOString()],
-    );
-    respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total, notBefore: job.rows[0].not_before, holdMinutes: SEND_HOLD_MINUTES, scheduled: schedule.scheduled });
-    return;
+    throw err;
   }
-  const out = await runEmailSend(pool, { silo, tag, subject, html: htmlOut, resend: b.resend === true, tags: includeTags, excludeTags, templateId }); // BF_SERVER_TEMPLATE_ANALYTICS_SENDTPL_v1
-  respondOk(res, { configured: true, recipients: out.total, sent: out.sent, failed: out.failed, rejected: out.failed, rejectStatus: out.rejectStatus, rejectError: out.rejectError });
+  const job = await pool.query<{ id: string; not_before: string }>(
+    `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by, not_before) VALUES ('email', $1, $2, $3, $4, $5, $6::timestamptz) RETURNING id, not_before`,
+    // BF_SERVER_EMAIL_TWO_COLUMN_ONLY_v15 - `resend` rides along in the payload
+    // so the worker that picks this job up honours it too.
+    [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId, resend: b.resend === true }), total, req.user?.userId ?? null, schedule.at.toISOString()],
+  );
+  respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total, notBefore: job.rows[0].not_before, holdMinutes: SEND_HOLD_MINUTES, scheduled: schedule.scheduled });
 }));
 
 // BF_SERVER_BLOCK_v783_MARKETING_TEMPLATES — named templates per channel.
