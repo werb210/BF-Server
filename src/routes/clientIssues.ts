@@ -3,8 +3,32 @@ import { z } from "zod";
 import { pool } from "../db.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { AppError } from "../middleware/errors.js";
+import rateLimit from "express-rate-limit";
+import { rateLimitKeyFromRequest } from "../middleware/clientIp.js";
 
 const router = Router();
+
+// BF_SERVER_v789_PUBLIC_RATE_LIMITS - public and unauthenticated: 5 reports a
+// minute per IP, and a screenshot of at most 5 MB (decoded).
+const clientIssuesLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "RATE_LIMITED" },
+  keyGenerator: rateLimitKeyFromRequest,
+  validate: { xForwardedForHeader: false },
+});
+
+export const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024;
+
+// Decoded byte size of a base64 payload, with or without a data: URL prefix.
+export function base64DecodedBytes(value: string): number {
+  const comma = value.startsWith("data:") ? value.indexOf(",") : -1;
+  const b64 = (comma >= 0 ? value.slice(comma + 1) : value).replace(/\s+/g, "");
+  const padding = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((b64.length * 3) / 4) - padding);
+}
 
 const schema = z.object({
   message: z.string().trim().min(1).max(4000),
@@ -21,6 +45,7 @@ const schema = z.object({
  */
 router.post(
   "/",
+  clientIssuesLimiter,
   safeHandler(async (req: any, res: any) => {
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) {
@@ -28,6 +53,10 @@ router.post(
     }
 
     const { message, screenshotBase64, applicationId, contactPhone } = parsed.data;
+    if (screenshotBase64 && base64DecodedBytes(screenshotBase64) > MAX_SCREENSHOT_BYTES) {
+      res.status(413).json({ error: "screenshot_too_large", maxBytes: MAX_SCREENSHOT_BYTES });
+      return;
+    }
     const userAgent = (req.headers["user-agent"] as string | undefined) ?? null;
     const url = (req.headers.referer as string | undefined) ?? null;
 

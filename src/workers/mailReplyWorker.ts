@@ -6,6 +6,7 @@
 // (server-side OAuth flow already grants Mail.Read + a stored refresh token).
 import type { Pool } from "pg";
 import { getGraphForUser } from "../modules/o365/graphClient.js";
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 const TICK_MS = 180_000; // 3 min
 
@@ -93,7 +94,7 @@ export function startMailReplyWorker(pool: Pool): { stop: () => void } {
   let stopped = false;
   let running = false;
 
-  const tick = async () => {
+  const tickUnclaimed = async () => {
     if (stopped || running) return;
     running = true;
     try {
@@ -104,6 +105,7 @@ export function startMailReplyWorker(pool: Pool): { stop: () => void } {
       running = false;
     }
   };
+  const tick = claimedTick("mail_reply", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
 
   const timer = setInterval(() => { void tick(); }, TICK_MS);
   void tick();

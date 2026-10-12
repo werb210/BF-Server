@@ -9,6 +9,7 @@
 //   3. Daily digest: once per day per assignee, at/after 08:00 their time, a
 //      "Due today" summary notification. Deduped via task_digest_log.
 import type { Pool } from "pg";
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 const TICK_MS = 5 * 60 * 1000; // every 5 minutes
 
@@ -99,11 +100,12 @@ async function runDigest(pool: Pool): Promise<void> {
 }
 
 export function startTaskRemindersWorker(pool: Pool): { stop: () => void } {
-  const tick = async () => {
+  const tickUnclaimed = async () => {
     try { await runReminders(pool); } catch (e) { console.error("[tasks-worker] reminders", e instanceof Error ? e.message : e); }
     try { await runRecurrenceCatchup(pool); } catch (e) { console.error("[tasks-worker] recurrence", e instanceof Error ? e.message : e); }
     try { await runDigest(pool); } catch (e) { console.error("[tasks-worker] digest", e instanceof Error ? e.message : e); }
   };
+  const tick = claimedTick("task_reminders", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
   const timer = setInterval(() => { void tick(); }, TICK_MS);
   void tick();
   return { stop: () => clearInterval(timer) };

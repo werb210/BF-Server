@@ -1,6 +1,6 @@
 import { pool, runQuery } from "../db.js";
 import { ROLES } from "../auth/roles.js";
-import { runMigrations } from "../migrations.js";
+import { runMigrations } from "../startup/runMigrations.js"; // BF_SERVER_v789_DEAD_CODE - the one migration runner
 import { logInfo } from "../observability/logger.js";
 
 // BF_SERVER_NO_PERSONAL_NUMBERS_v688c - emergency admin logins come from App Service settings, never from code.
@@ -19,13 +19,35 @@ export const SEEDED_LENDER_ID = "00000000-0000-0000-0000-000000000200";
 export const SEEDED_LENDER_PRODUCT_TERM_ID = "00000000-0000-0000-0000-000000000201";
 export const SEEDED_LENDER_PRODUCT_LOC_ID = "00000000-0000-0000-0000-000000000202";
 
-export async function seedAdminUser(): Promise<{ id: string; phoneNumber: string }> {
-  const phoneNumber = SEEDED_ADMIN_PHONE;
-  if (process.env.NODE_ENV === "production" && !seedPhone(process.env.BOOTSTRAP_ADMIN_PHONE)) {
-    console.warn("[seed] BOOTSTRAP_ADMIN_PHONE not set - first admin not seeded");
-    return { id: SEEDED_ADMIN_ID, phoneNumber };
+// BF_SERVER_v789_SEED_CREATE_ONLY - a bootstrap admin is CREATED when no user has
+// that phone number, and nothing else. The old upsert (ON CONFLICT DO UPDATE)
+// re-enabled, unlocked, re-roled and overwrote whichever account held the phone
+// on every boot with BOOTSTRAP_ADMIN_PHONE set, so a disabled or demoted user
+// came back as an active Admin. An existing user is never touched now.
+async function createBootstrapAdminIfAbsent(
+  label: string,
+  id: string,
+  email: string,
+  phoneNumber: string,
+): Promise<boolean> {
+  const digits = phoneNumber.replace(/[^0-9]/g, "").slice(-10);
+  const existing = await runQuery<{ id: string }>(
+    `select id from users
+      where phone_number = $1
+         or phone = $1
+         or right(regexp_replace(coalesce(phone_number, ''), '[^0-9]', '', 'g'), 10) = $2
+         or right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10) = $2
+      limit 1`,
+    [phoneNumber, digits],
+  );
+  if (existing.rows.length > 0) {
+    console.log(`[seed] ${label}: a user already has this phone - left unchanged`);
+    return false;
   }
-  await runQuery(
+  // ON CONFLICT DO NOTHING with no target: a clash on id, email or phone_number
+  // (a concurrent boot, or the seeded id now holding another phone) is left
+  // alone rather than overwritten.
+  const inserted = await runQuery<{ id: string }>(
     `insert into users (
         id,
         email,
@@ -39,17 +61,22 @@ export async function seedAdminUser(): Promise<{ id: string; phoneNumber: string
         phone_verified
       )
      values ($1, $2, $3, $4, $5, true, true, false, null, true)
-     on conflict (phone_number) do update
-       set email = excluded.email,
-           phone = excluded.phone,
-           role = excluded.role,
-           active = excluded.active,
-           is_active = excluded.is_active,
-           disabled = excluded.disabled,
-           locked_until = excluded.locked_until,
-           phone_verified = excluded.phone_verified`,
-    [SEEDED_ADMIN_ID, SEEDED_ADMIN_EMAIL, phoneNumber, phoneNumber, ROLES.ADMIN]
+     on conflict do nothing
+     returning id`,
+    [id, email, phoneNumber, phoneNumber, ROLES.ADMIN],
   );
+  const created = inserted.rows.length > 0;
+  console.log(`[seed] ${label}: ${created ? "created" : "not created (a conflicting user exists) - left unchanged"}`);
+  return created;
+}
+
+export async function seedAdminUser(): Promise<{ id: string; phoneNumber: string }> {
+  const phoneNumber = SEEDED_ADMIN_PHONE;
+  if (process.env.NODE_ENV === "production" && !seedPhone(process.env.BOOTSTRAP_ADMIN_PHONE)) {
+    console.warn("[seed] BOOTSTRAP_ADMIN_PHONE not set - first admin not seeded");
+    return { id: SEEDED_ADMIN_ID, phoneNumber };
+  }
+  await createBootstrapAdminIfAbsent("first admin", SEEDED_ADMIN_ID, SEEDED_ADMIN_EMAIL, phoneNumber);
   return { id: SEEDED_ADMIN_ID, phoneNumber };
 }
 
@@ -62,31 +89,7 @@ export async function seedSecondAdminUser(): Promise<{
     console.warn("[seed] BOOTSTRAP_ADMIN2_PHONE not set - second admin not seeded");
     return { id: SEEDED_ADMIN2_ID, phoneNumber };
   }
-  await runQuery(
-    `insert into users (
-        id,
-        email,
-        phone_number,
-        phone,
-        role,
-        active,
-        is_active,
-        disabled,
-        locked_until,
-        phone_verified
-      )
-     values ($1, $2, $3, $4, $5, true, true, false, null, true)
-     on conflict (phone_number) do update
-       set email = excluded.email,
-           phone = excluded.phone,
-           role = excluded.role,
-           active = excluded.active,
-           is_active = excluded.is_active,
-           disabled = excluded.disabled,
-           locked_until = excluded.locked_until,
-           phone_verified = excluded.phone_verified`,
-    [SEEDED_ADMIN2_ID, SEEDED_ADMIN2_EMAIL, phoneNumber, phoneNumber, ROLES.ADMIN]
-  );
+  await createBootstrapAdminIfAbsent("second admin", SEEDED_ADMIN2_ID, SEEDED_ADMIN2_EMAIL, phoneNumber);
   return { id: SEEDED_ADMIN2_ID, phoneNumber };
 }
 
@@ -159,7 +162,7 @@ export async function seedBaselineLenders(): Promise<void> {
 }
 
 export async function seedDatabase(): Promise<void> {
-  await runMigrations();
+  await runMigrations(pool);
   await seedAdminUser();
   await seedSecondAdminUser();
   await seedBaselineLenders();

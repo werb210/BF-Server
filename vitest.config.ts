@@ -18,6 +18,8 @@ export default defineConfig({
     exclude: [
       "**/node_modules/**",
       "**/dist/**",
+      // BF_SERVER_v789 - local agent worktrees are not part of the suite
+      "**/.claude/**",
       "src/__tests__/db.real.integration.test.ts",
       // BF_SERVER_SPLIT_INTEGRATION_TESTS_v1
       ...(process.env.VITEST_INTEGRATION === "true" ? [] : INTEGRATION_TEST_FILES),

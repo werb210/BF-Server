@@ -84,6 +84,7 @@ import documentTypesRouter from "./documentTypes.js";
 import pwaRoutes from "./pwa.js";
 import publicApplicationRoutes from "./publicApplication.js";
 import visitorTrackRoutes from "./visitorTrack.js"; // BF_SERVER_VISITOR_JOURNEY_v1 (public)
+import analyticsRoutes from "./analytics.js"; // BF_SERVER_v789_ANALYTICS_COLLECTOR (public, 60/min per IP)
 import naicsRoutes from "./naics.js"; // BF_SERVER_NAICS_v83 (public)
 import recipientSuggestRoutes from "./recipientSuggest.js"; // BF_SERVER_RECIPIENT_SUGGEST_v100
 import referralsRoutes from "./referrals.js";
@@ -131,6 +132,7 @@ import { requireAuth, requireAuthAllowClient } from "../middleware/auth.js";
 import watchAuthRoutes from "../watch/authRoutes.js";
 import watchDeviceRoutes from "../watch/deviceRoutes.js";
 import watchDataRoutes from "../watch/dataRoutes.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 export type ApiRoute = {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -190,7 +192,7 @@ const combinedMayaRoutes = Router();
 // BF_SERVER_BLOCK_v674 - website widget posts /api/maya/website-chat
 // BF_SERVER_v784_MAYA_RATE_LIMIT + BF_SERVER_v784_MAYA_IDENTITY - rate limited; the
 // audience now comes from the verified token (X-Maya-Context), not the body.
-combinedMayaRoutes.post("/website-chat", mayaProxyRateLimit, async (req, res) => {
+combinedMayaRoutes.post("/website-chat", mayaProxyRateLimit, safeHandler(async (req, res) => {
   await proxyMayaToAgent(
     "/api/maya/message",
     "POST",
@@ -201,7 +203,7 @@ combinedMayaRoutes.post("/website-chat", mayaProxyRateLimit, async (req, res) =>
     res,
     req
   );
-});
+}));
 combinedMayaRoutes.use(mayaRoutes);
 combinedMayaRoutes.use(mayaPendingActionsRouter); // BF_SERVER_v784_MAYA_SMS_CONFIRM - /pending-actions (staff humans only)
 combinedMayaRoutes.use(mayaAdminStubs);
@@ -314,6 +316,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   // (keeping the first), which silently unmounted this collector. Public URL is unchanged:
   // POST /api/track/journey.
   { path: "/track/journey", router: visitorTrackRoutes }, // BF_SERVER_VISITOR_JOURNEY_v1 (public)
+  { path: "/analytics", router: analyticsRoutes }, // BF_SERVER_v789_ANALYTICS_COLLECTOR (public, rate limited in the router)
   { path: "/naics", router: naicsRoutes }, // BF_SERVER_NAICS_v83 (public)
   { path: "/recipients/suggest", router: recipientSuggestRoutes }, // BF_SERVER_RECIPIENT_SUGGEST_v100
   { path: "/", router: rootRoutes },
@@ -363,6 +366,8 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/webauthn/login/verify", roles: [] },
   { method: "GET", path: "/api/auth/me", roles: ALL_ROLES },
   { method: "POST", path: "/api/auth/logout", roles: ALL_ROLES },
+  { method: "POST", path: "/api/auth/logout-all", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING] }, // BF_SERVER_v789_STAFF_USER_STATE
+  { method: "POST", path: "/api/auth/url-ticket", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING] }, // BF_SERVER_v789_URL_TICKETS
   { method: "GET", path: "/api/telephony/token", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "POST", path: "/api/telephony/outbound-call", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/telephony/presence", roles: [ROLES.ADMIN, ROLES.STAFF] },
@@ -463,6 +468,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/website/contact", roles: [] },
   { method: "POST", path: "/api/public/application/start", roles: [] },
   { method: "POST", path: "/api/track/journey", roles: [] }, // BF_SERVER_VISITOR_JOURNEY_v1
+  { method: "POST", path: "/api/analytics", roles: [] }, // BF_SERVER_v789_ANALYTICS_COLLECTOR
   { method: "POST", path: "/api/public/readiness", roles: [] },
   { method: "POST", path: "/api/crm/readiness", roles: [] },
   { method: "GET", path: "/api/client/application-stage", roles: [] },

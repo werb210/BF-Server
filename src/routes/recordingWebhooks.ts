@@ -5,11 +5,12 @@ import { pool } from "../db.js";
 import { persistTwilioMediaToBlob } from "../services/mmsMedia.js"; // BF_SERVER_RECORDING_BLOB_PERSIST_v1
 import { getConferenceByFriendly, notifyConferenceState } from "../voice/conferenceService.js";
 import { getTwilio } from "../voice/twilioClient.js";
-import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 
-router.post("/recording/status", twilioWebhookValidation, async (req: any, res) => {
+router.post("/recording/status", twilioWebhookValidation, safeHandler(async (req: any, res) => {
   const confFriendly = String(req.query.conf ?? "").trim();
   const recSid = String(req.body?.RecordingSid ?? "").trim();
   const status = String(req.body?.RecordingStatus ?? "").trim();
@@ -63,7 +64,7 @@ router.post("/recording/status", twilioWebhookValidation, async (req: any, res) 
   }
   await notifyConferenceState(conf.id, "recording.update", { recSid, status, url, dur });
   return res.status(200).send("");
-});
+}));
 
 async function triggerVoiceIntelligence(conferenceId: string, recordingSid: string) {
   const serviceSid = process.env.VOICE_INTELLIGENCE_SERVICE_SID;

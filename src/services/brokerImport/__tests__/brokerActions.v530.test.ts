@@ -1,6 +1,5 @@
 // BF_SERVER_BLOCK_v530
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import fs from "node:fs";
 import { answerBySql, callsMatching } from "../../../__tests__/helpers/answerBySql.js"; // BF_SERVER_SQL_CONTENT_MOCKS_v762
 
 const query = vi.fn();
@@ -30,26 +29,30 @@ describe("v530 broker file actions", () => {
     await expect(setBrokerImportPhone("i1", "5145550100")).rejects.toMatchObject({ code: "already_claimed" });
   });
   it("texts the client the sign-in link", async () => {
-    query.mockResolvedValueOnce({ rows: [open] }).mockResolvedValue({ rows: [] });
+    query.mockImplementation(answerBySql([[/FROM broker_imports/, { rows: [open] }]])); // BF_SERVER_v789_SQL_CONTENT_MOCKS
     await expect(textBrokerClient("i1")).resolves.toEqual({ sentTo: "+15145550199" });
     expect(sendSms).toHaveBeenCalledWith(expect.objectContaining({ to: "+15145550199", message: expect.stringContaining("Hi Jean, Avance has sent Boreal Financial") }));
     expect(clientInviteText(null, "Avance")).toMatch(/^Hi, Avance .*https:\/\/client\.boreal\.financial$/);
   });
   it("will not text without a mobile", async () => {
-    query.mockResolvedValueOnce({ rows: [{ ...open, applicant_phone: null }] });
+    query.mockImplementation(answerBySql([[/FROM broker_imports/, { rows: [{ ...open, applicant_phone: null }] }]]));
     await expect(textBrokerClient("i1")).rejects.toMatchObject({ code: "no_phone" });
   });
   it("discard makes the draft unclaimable and frees the number", async () => {
-    query.mockResolvedValueOnce({ rows: [open] }).mockResolvedValue({ rows: [] });
+    query.mockImplementation(answerBySql([[/FROM broker_imports/, { rows: [open] }]]));
     await discardBrokerImport("i1");
-    expect(String(query.mock.calls[1][0])).toContain("source = 'broker_import_discarded'");
-    expect(String(query.mock.calls[1][0])).toContain("- 'readiness_phone'");
-    expect(String(query.mock.calls[2][0])).toContain("status = 'discarded'");
+    const draft = callsMatching(query, "source = 'broker_import_discarded'");
+    expect(draft).toHaveLength(1);
+    expect(String(draft[0]![0])).toContain("- 'readiness_phone'");
+    expect(draft[0]![1]).toEqual(["a1"]);
+    expect(callsMatching(query, "status = 'discarded'")).toHaveLength(1);
   });
-  it("routes are mounted", () => {
-    const r = fs.readFileSync("src/routes/brokerImports.ts", "utf8");
-    expect(r).toContain('router.put("/:id/phone"');
-    expect(r).toContain('router.post("/:id/text-client"');
-    expect(r).toContain('router.post("/:id/discard"');
+  it("routes are mounted", async () => {
+    // BF_SERVER_v789 - read the live router, not its source text.
+    const router = (await import("../../../routes/brokerImports.js")).default as any;
+    const has = (method: string, path: string) => router.stack.some((l: any) => l.route?.path === path && l.route.methods[method]);
+    expect(has("put", "/:id/phone")).toBe(true);
+    expect(has("post", "/:id/text-client")).toBe(true);
+    expect(has("post", "/:id/discard")).toBe(true);
   });
 });

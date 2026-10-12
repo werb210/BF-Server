@@ -21,7 +21,8 @@ import { pool } from "../db.js";
 // BF_SERVER_SBA_V103
 import { resolveSbaOwners } from "../signnow/sba/sbaOwners.js";
 import { isSbaApplication } from "../signnow/sba/sbaTrigger.js";
-import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_SILENT_QUERIES_v678
 
 // BF_SERVER_BLOCK_v115_REQUIRED_DOCS_CATEGORY_NORMALIZE_v1
 // The wizard sends long-form category codes (TERM_LOAN, LINE_OF_CREDIT,
@@ -52,7 +53,7 @@ function normalizeProductCategoryForFilter(value: string): string {
 
 const router = Router();
 
-router.get("/lender-products/required-docs", async (req, res) => {
+router.get("/lender-products/required-docs", safeHandler(async (req, res) => {
   const country         = String(req.query.country ?? "").toUpperCase().slice(0, 2);
   // BF_SERVER_BLOCK_v115_REQUIRED_DOCS_CATEGORY_NORMALIZE_v1 — normalize to
   // the short-code vocabulary used by the DB column before lowercasing.
@@ -229,6 +230,6 @@ router.get("/lender-products/required-docs", async (req, res) => {
   res.status(200).json({
     items: items.sort((a, b) => a.document_type.localeCompare(b.document_type)),
   });
-});
+}));
 
 export default router;

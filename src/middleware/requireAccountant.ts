@@ -16,7 +16,7 @@ export function readAccountantIdentity(req: Request): AccountantIdentity | null 
   const secret = process.env.JWT_SECRET;
   if (!secret) return null;
   try {
-    const decoded = jwt.verify(raw, secret) as Record<string, unknown>;
+    const decoded = jwt.verify(raw, secret, { algorithms: ["HS256"] }) as Record<string, unknown>;
     if (String(decoded.role ?? "") !== "accountant") return null;
     const contactId = String(decoded.contactId ?? "").trim();
     if (!contactId) return null;

@@ -5,7 +5,8 @@ import { allowedLine, watchAuth, watchError } from "./security.js";
 import { buildWatchSnapshot } from "./snapshotRoutes.js"; // BF_SERVER_WATCH_FACE_v370
 // BF_SERVER_CALL_DISPOSITION_v145
 import { CALL_DISPOSITIONS as SHARED_CALL_DISPOSITIONS, followUpFor } from "../modules/calls/callDisposition.js";
-import { describeCrmUpdate, safeDispositionCrmUpdate } from "../modules/calls/dispositionCrmUpdate.js"; // BF_SERVER_CALL_OUTCOME_CRM_v273
+import { describeCrmUpdate, safeDispositionCrmUpdate } from "../modules/calls/dispositionCrmUpdate.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_CALL_OUTCOME_CRM_v273
 
 const router = Router();
 router.use(watchAuth);
@@ -22,7 +23,7 @@ router.get("/face", async (req: any, res) => {
 
 const bounded = (value: unknown, fallback: number, max: number) => Math.max(1, Math.min(max, Number.parseInt(String(value || fallback), 10) || fallback));
 
-router.get("/contacts", async (req, res) => {
+router.get("/contacts", safeHandler(async (req, res) => {
   const requested = String(req.query.line || "").toUpperCase();
   const line = allowedLine(req, requested);
   if (!line) return watchError(req, res, ["BF", "BI", "SLF"].includes(requested) ? 403 : 400,
@@ -41,9 +42,9 @@ router.get("/contacts", async (req, res) => {
   const more = found.rows.length > limit;
   const items = found.rows.slice(0, limit);
   return res.json({ items, nextCursor: more ? items.at(-1)?.id : null });
-});
+}));
 
-router.get("/calls/recent", async (req: any, res) => {
+router.get("/calls/recent", safeHandler(async (req: any, res) => {
   const requested = String(req.query.line || "").toUpperCase();
   const line = allowedLine(req, requested);
   if (!line) return watchError(req, res, ["BF", "BI", "SLF"].includes(requested) ? 403 : 400,
@@ -71,7 +72,7 @@ router.get("/calls/recent", async (req: any, res) => {
   const more = found.rows.length > limit;
   const items = found.rows.slice(0, limit);
   return res.json({ items, nextCursor: more ? new Date(items.at(-1).cursorAt).toISOString() : null });
-});
+}));
 
 // BF_SERVER_WATCH_CALLBACKS_v216
 // The calls this person owes today, for the wrist.
@@ -84,7 +85,7 @@ router.get("/calls/recent", async (req: any, res) => {
 // Overdue is included on purpose. A list that drops a call the moment it is late
 // is worse than no list: the ones you have already missed are the ones that
 // matter most.
-router.get("/callbacks", async (req: any, res) => {
+router.get("/callbacks", safeHandler(async (req: any, res) => {
   const requested = String(req.query.line || "").toUpperCase();
   const line = allowedLine(req, requested);
   if (!line) return watchError(req, res, ["BF", "BI", "SLF"].includes(requested) ? 403 : 400,
@@ -115,12 +116,12 @@ router.get("/callbacks", async (req: any, res) => {
   });
 
   return res.json({ items: found.rows, count: found.rows.length });
-});
+}));
 
 // BF_SERVER_WATCH_CALL_DISPOSITION_v1 - record a post-call outcome from the Watch.
 // BF_SERVER_CALL_DISPOSITION_v145 - shared with the dialer and staff portal.
 const CALL_DISPOSITIONS = new Set<string>(SHARED_CALL_DISPOSITIONS);
-router.post("/calls/:id/disposition", async (req: any, res) => {
+router.post("/calls/:id/disposition", safeHandler(async (req: any, res) => {
   const id = String(req.params.id || "");
   if (!/^[0-9a-f-]{36}$/i.test(id)) return watchError(req, res, 400, "invalid_request", "Invalid call id");
   const disposition = String(req.body?.disposition || "");
@@ -149,7 +150,7 @@ router.post("/calls/:id/disposition", async (req: any, res) => {
       [`Call outcome: ${disposition.replace(/_/g, " ")}` + (crmUpdate ? describeCrmUpdate(crmUpdate) : ""), row.contact_id, row.silo]).catch((err) => console.error("[watch] disposition note failed", err instanceof Error ? err.message : err));
   }
   return res.json({ id, disposition, crmUpdate });
-});
+}));
 
 // BF_SERVER_WATCH_SMS_v1 - quick text from the wrist: list SMS templates/snippets + send.
 router.get("/sms-templates", async (req: any, res) => {
@@ -166,7 +167,7 @@ router.get("/sms-templates", async (req: any, res) => {
   }
 });
 
-router.post("/sms", async (req: any, res) => {
+router.post("/sms", safeHandler(async (req: any, res) => {
   const to = String(req.body?.to || "").trim();
   const body = String(req.body?.body || "").trim();
   if (!to || !body) return watchError(req, res, 400, "invalid_request", "to and body are required");
@@ -176,6 +177,6 @@ router.post("/sms", async (req: any, res) => {
     return watchError(req, res, 502, "send_failed", "Could not send the message");
   }
   return res.json({ ok: true });
-});
+}));
 
 export default router;

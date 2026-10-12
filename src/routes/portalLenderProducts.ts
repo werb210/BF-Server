@@ -33,7 +33,7 @@ import {
 // report labels (A/R and A/P already cover the same docs). Added
 // "Debt stack" -- new doc-type that maps to a digital form rather
 // than an upload.
-const PORTAL_FORM_DOC_LABELS: ReadonlySet<string> = new Set([
+export const PORTAL_FORM_DOC_LABELS: ReadonlySet<string> = new Set([
   // alwaysRequiredDoc + equipmentFinanceAlwaysRequiredDoc
   "6 months business banking statements",
   "Purchase Order or Invoice of Equipment to finance",
@@ -211,6 +211,20 @@ function asString(v: unknown): string | null {
   const s = String(v);
   return s === "" ? null : s;
 }
+// BF_SERVER_v789_RATE_KIND - lowercase and allow only the values the
+// lender_products_rate_kind_check constraint accepts; anything else is a 400
+// instead of a 23514 surfacing as a generic constraint error (or a 500 on create).
+const RATE_KINDS: ReadonlySet<string> = new Set(["apr", "monthly", "factor"]);
+export function parseRateKind(v: unknown): string | null {
+  const s = asString(v);
+  if (s === null) return null;
+  const lower = s.trim().toLowerCase();
+  if (lower === "") return null;
+  if (!RATE_KINDS.has(lower)) {
+    throw new AppError("invalid_rate_kind", "rate_kind must be one of apr, monthly, factor or null.", 400);
+  }
+  return lower;
+}
 // BF_SERVER_BLOCK_v88_LENDER_PRODUCT_CATEGORY_NORMALIZE_v1
 // The portal dropdown still emits the long-vocabulary codes
 // (TERM_LOAN, LINE_OF_CREDIT, EQUIPMENT_FINANCE, etc.) but the
@@ -368,7 +382,7 @@ router.post(
       signnowTemplateId: asString(pickFirst(body.signnowTemplateId, body.signnow_template_id)),
       eligibilityNotes: asString(pickFirst(body.eligibilityRules, body.eligibilityNotes, body.eligibility_notes, body.notes)),
       // BF_SERVER_BLOCK_v647_LENDER_PRODUCTS_SEED_v1 — rate kind plumbing
-      rateKind: asString(pickFirst(body.rateKind, body.rate_kind)),
+      rateKind: parseRateKind(pickFirst(body.rateKind, body.rate_kind)), // BF_SERVER_v789_RATE_KIND
       rateMinNum: asNum(pickFirst(body.rateMinNum, body.rate_min_num, body.rateMin, body.rate_min)),
       rateMaxNum: asNum(pickFirst(body.rateMaxNum, body.rate_max_num, body.rateMax, body.rate_max)),
       categoryLabel: asString(pickFirst(body.categoryLabel, body.category_label)),
@@ -398,6 +412,7 @@ router.put(
           ? body.productName
           : "";
     if (!name) throw new AppError("validation_error", "name is required.", 400);
+    const rateKind = parseRateKind(pickFirst(body.rateKind, body.rate_kind)); // BF_SERVER_v789_RATE_KIND
 
     const existing = await fetchLenderProductById(id, pool);
     if (!existing || (existing.silo && existing.silo !== silo)) throw new AppError("not_found", "Lender product not found.", 404);
@@ -440,7 +455,7 @@ router.put(
         signnowTemplateId: asString(pickFirst(body.signnowTemplateId, body.signnow_template_id)),
         eligibilityNotes: asString(pickFirst(body.eligibilityRules, body.eligibilityNotes, body.eligibility_notes, body.notes)),
         // BF_SERVER_BLOCK_v647_LENDER_PRODUCTS_SEED_v1 — rate kind plumbing
-        rateKind: asString(pickFirst(body.rateKind, body.rate_kind)),
+        rateKind, // BF_SERVER_v789_RATE_KIND
         rateMinNum: asNum(pickFirst(body.rateMinNum, body.rate_min_num, body.rateMin, body.rate_min)),
         rateMaxNum: asNum(pickFirst(body.rateMaxNum, body.rate_max_num, body.rateMax, body.rate_max)),
         categoryLabel: asString(pickFirst(body.categoryLabel, body.category_label)),
@@ -478,12 +493,12 @@ router.put(
 );
 
 // DELETE /api/portal/lender-products/:id
-router.delete("/lender-products/:id", requireAuth, async (req: any, res) => {
+router.delete("/lender-products/:id", requireAuth, safeHandler(async (req: any, res) => {
   const role = String(req.user?.role ?? "").toLowerCase();
   if (role !== "admin" && role !== "staff") return res.status(403).json({ error: "forbidden" });
   const r = await pool.query(`DELETE FROM lender_products WHERE id = $1 RETURNING id`, [req.params.id]);
   if (r.rowCount === 0) return res.status(404).json({ error: "not_found" });
   return res.json({ ok: true, deleted: r.rows[0].id });
-});
+}));
 
 export default router;

@@ -21,6 +21,7 @@ import {
 } from "../lib/smsDeliverability.js";
 import { sendSMS } from "../services/smsService.js";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 const TICK_MS = 15 * 60_000;
 
@@ -42,7 +43,7 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
   let stopped = false;
   let running = false;
 
-  const tick = async () => {
+  const tickUnclaimed = async () => {
     if (stopped || running) return;
     running = true;
     try {
@@ -242,6 +243,7 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
       running = false;
     }
   };
+  const tick = claimedTick("abandoned_application", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
 
   void tick();
   const timer = setInterval(() => void tick(), TICK_MS);

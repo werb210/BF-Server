@@ -13,7 +13,8 @@ import { loadSbaContext } from "../signnow/sba/sbaOwners.js"; // BF_SERVER_SBA_1
 import { logInfo } from "../observability/logger.js"; // BF_SERVER_SBA_1919_ATTACH_GATE_v162
 
 import { callerOwnsApplication } from "../auth/clientApplicationOwnership.js";
-import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 
@@ -22,7 +23,7 @@ const router = Router();
 // The single outstanding-work list for the applicant home screen. Lives beside
 // the existing docs-needed route because it shares the same ownership check.
 export const lastActionCenterCounts = new Map<string, string>(); // BF_SERVER_QUIET_ACTION_CENTER_v751
-router.get("/action-center", async (req: Request, res: Response) => {
+router.get("/action-center", safeHandler(async (req: Request, res: Response) => {
   const applicationId = String((req.query as any)?.applicationId ?? "").trim();
   if (!/^[0-9a-f-]{36}$/i.test(applicationId)) {
     return res.status(400).json({ error: "invalid_application_id" });
@@ -41,7 +42,7 @@ router.get("/action-center", async (req: Request, res: Response) => {
     logInfo("action_center_built", { applicationId, outstanding: data.outstandingCount, completed: data.completed.length });
   }
   return res.json(data);
-});
+}));
 
 // BF_SERVER_SBA_1919_ATTACH_GATE_v162
 // The "Supporting detail for any Yes answer on Form 1919" attachment
@@ -579,7 +580,7 @@ export async function getRequestItemsForApp(
   return { required: raw.required, waived, forms, formsWaived, satisfied, shared };
 }
 
-router.get("/needed", async (req: Request, res: Response) => {
+router.get("/needed", safeHandler(async (req: Request, res: Response) => {
   const applicationId =
     typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : "";
   if (!applicationId) return res.status(400).json({ error: "applicationId is required" });
@@ -598,6 +599,6 @@ router.get("/needed", async (req: Request, res: Response) => {
   } catch (err: any) {
     return res.status(500).json({ error: err?.message ?? "needed_docs_failed" });
   }
-});
+}));
 
 export default router;

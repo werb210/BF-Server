@@ -1,10 +1,12 @@
 // BF_SERVER_NOTIFY_CONTACT_v626
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { readFileSync } from "node:fs";
+import request from "supertest";
+import { mountRouter, staffToken } from "./helpers/staffRouterApp.js";
 
 const state = vi.hoisted(() => ({ contact: null as any, inserts: [] as any[], pushOk: false, smsSent: [] as any[], biCalls: [] as any[] }));
 
-vi.mock("../db.js", () => ({
+vi.mock("../db.js", async () => ({
+  ...(await vi.importActual<any>("../db.js")),
   pool: {
     query: vi.fn(async (sql: string, params: any[]) => {
       if (sql.includes("FROM contacts")) return { rows: state.contact ? [state.contact] : [] };
@@ -59,8 +61,31 @@ describe("notifyContact", () => {
 });
 
 describe("wiring", () => {
-  it("route and timeline know about the notice", () => {
-    expect(readFileSync("src/routes/crm.ts", "utf8")).toContain('"/contacts/:id/notify"');
-    expect(readFileSync("src/routes/crm/timeline.ts", "utf8")).toContain("'client_notice_sent'");
+  const crmApp = async () => mountRouter((await import("../routes/crm.js")).default, "/api/crm");
+
+  it("the CRM route sends the notice", async () => {
+    state.contact = { id: "c1", phone: "+17805550100", silo: "BF" };
+    state.pushOk = true;
+    const res = await request(await crmApp()).post("/api/crm/contacts/c1/notify")
+      .set("Authorization", `Bearer ${staffToken()}`).send({ title: "Hi", body: "Docs needed" });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, channel: "app" });
+    expect(JSON.parse(state.inserts[0][1])).toMatchObject({ channel: "app", title: "Hi", body: "Docs needed" });
+  });
+
+  it("the CRM route refuses an empty notice and 404s an unknown contact", async () => {
+    const app = await crmApp();
+    const auth = { Authorization: `Bearer ${staffToken()}` };
+    expect((await request(app).post("/api/crm/contacts/c1/notify").set(auth).send({ title: "", body: "" })).status).toBe(400);
+    expect((await request(app).post("/api/crm/contacts/zz/notify").set(auth).send({ body: "Docs needed" })).status).toBe(404);
+  });
+
+  it("the timeline knows about the notice", async () => {
+    const { pool } = await import("../db.js");
+    const { loadCrmTimeline } = await import("../routes/crm/timeline.js");
+    await loadCrmTimeline(true, "c1", "BF");
+    const sql = String(vi.mocked(pool.query).mock.calls.at(-1)?.[0]);
+    expect(sql).toMatch(/event_type IN \([^)]*'client_notice_sent'/);
+    expect(sql).toContain("WHEN 'client_notice_sent' THEN ('Notice sent'");
   });
 });

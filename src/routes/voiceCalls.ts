@@ -54,6 +54,7 @@ import { getCallerId } from "../voice/twilioClient.js";
 import voiceMidCallRoutes from "./voiceMidCall.js";
 // BF_SERVER_CALLER_DISPLAY_v148
 import { resolveDisplayName } from "../modules/voice/callerDisplay.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router = Router();
 
@@ -89,7 +90,7 @@ function normalizeE164(raw: string): string {
 // BF_SERVER_CALLER_RESOLVE_v1 — resolve an inbound caller's number to a CRM
 // contact (name + id + most-recent application) so the incoming-call toast
 // shows who is calling and staff can open the contact mid-call. Read-only.
-router.post("/resolve-caller", auth, async (req: any, res) => {
+router.post("/resolve-caller", auth, safeHandler(async (req: any, res) => {
   const raw = typeof req.body?.phone === "string" ? req.body.phone : "";
 
   // BF_SERVER_INTERNAL_CALLER_v54 - a portal-to-portal ring arrives as
@@ -271,11 +272,11 @@ router.post("/resolve-caller", auth, async (req: any, res) => {
     console.error("resolve_caller_staff_failed", { message: err?.message || String(err) });
   }
   return res.json({ ok: true, matched: false, isStaff: false, name: null });
-});
+}));
 
 // BF_SERVER_RECENT_CALLS_v1 - recent calls for the logged-in staff member, newest
 // first, with the resolved contact name. Powers the dialer "Recents" list.
-router.get("/recent-calls", auth, async (req: any, res) => {
+router.get("/recent-calls", auth, safeHandler(async (req: any, res) => {
   const userId = req.user?.userId ?? req.user?.id ?? null;
   if (!userId) return res.json({ ok: true, items: [] });
   const r = await pool
@@ -373,7 +374,7 @@ router.get("/recent-calls", auth, async (req: any, res) => {
     .catch((e: unknown) => { console.error("[voice.recent-calls] query_failed", (e as Error)?.message); return { rows: [] as any[] }; });
   // BF_SERVER_BLOCK_v542 - one row per outbound call (see collapseOutboundLegs).
   return res.json({ ok: true, items: collapseOutboundLegs(r.rows ?? []) });
-});
+}));
 
 // BF_SERVER_BLOCK_v542_ONE_ROW_PER_CALL - an outbound call is written twice with
 // DIFFERENT Twilio SIDs (the dialer's own leg and the PSTN leg), so the sid dedup
@@ -411,15 +412,15 @@ export function collapseOutboundLegs(rows: any[]): any[] {
 }
 
 // BF_SERVER_DIRECT_LINES_v688 - admins give each staff member their own direct number (Settings -> Phone lines).
-router.get("/direct-numbers", auth, async (_req: any, res) => {
+router.get("/direct-numbers", auth, safeHandler(async (_req: any, res) => {
   const { rows } = await pool.query(
     `SELECT id::text AS id, trim(coalesce(first_name,'') || ' ' || coalesce(last_name,'')) AS name, email, direct_number
        FROM users WHERE coalesce(active, true) = true AND role IN ('Admin','Staff','admin','staff')
       ORDER BY first_name NULLS LAST, last_name NULLS LAST`);
   return res.json({ ok: true, users: rows });
-});
+}));
 
-router.put("/direct-numbers/:userId", auth, async (req: any, res) => {
+router.put("/direct-numbers/:userId", auth, safeHandler(async (req: any, res) => {
   if (String(req.user?.role ?? "").toLowerCase() !== "admin") return res.status(403).json({ ok: false, error: "admin_only" });
   const raw = String(req.body?.direct_number ?? "").trim();
   const { e164 } = await import("../voice/directLines.js");
@@ -434,7 +435,7 @@ router.put("/direct-numbers/:userId", auth, async (req: any, res) => {
     console.error("direct_number_update_failed", { message: err?.message });
     return res.status(500).json({ ok: false, error: "update_failed" });
   }
-});
+}));
 
 router.post("/calls", auth, async (req: any, res) => {
   const target = req.body ?? {};
@@ -541,7 +542,7 @@ router.post("/calls", auth, async (req: any, res) => {
   }
 });
 
-router.get("/conferences/:id", auth, async (req, res) => {
+router.get("/conferences/:id", auth, safeHandler(async (req, res) => {
   const { getConferenceById } = await import("../voice/conferenceService.js");
   const { pool } = await import("../db.js");
   const conf = await getConferenceById(req.params.id);
@@ -551,7 +552,7 @@ router.get("/conferences/:id", auth, async (req, res) => {
     [req.params.id],
   );
   return res.json({ ok: true, conference: conf, participants: parts.rows });
-});
+}));
 
 // BF_SERVER_v784_VOICE_STATUS - the dialer posts /api/voice/status, but the
 // handler lived in routes/voice.ts, which is never mounted, so every post 404'd.

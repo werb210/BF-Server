@@ -1,6 +1,7 @@
 // BF_SERVER_TODO_RECONCILE_v773
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
+import { bootIndex } from "./helpers/bootIndex.js";
 
 const graphCalls: Array<{ path: string; method: string; body?: any }> = [];
 let graphAnswer: (path: string, method: string) => { status: number; json?: unknown } = () => ({ status: 200, json: {} });
@@ -15,6 +16,7 @@ vi.mock("../modules/o365/graphClient.js", () => ({
     },
   },
 }));
+import { mirrorTaskToTodo } from "../modules/o365/todoSync.js";
 import { reconcileTodoOnce, todoDueDate, todoTitle, todoPayload, type PendingTask } from "../workers/todoReconcileWorker.js";
 
 type Q = { sql: string; params: unknown[] };
@@ -24,6 +26,7 @@ function fakePool(tasks: PendingTask[], openSynced: Array<{ id: string; graph_id
     query: async (sql: string, params: unknown[] = []) => {
       queries.push({ sql, params });
       if (sql.includes("SELECT DISTINCT t.assignee_user_id")) return { rows: [{ user_id: "u1" }] };
+      if (sql.includes("SELECT assignee_user_id FROM tasks WHERE id = $1")) return { rows: [{ assignee_user_id: "u1" }] };
       if (sql.includes("FROM tasks t") && sql.includes("LEFT JOIN contacts")) return { rows: tasks };
       if (sql.includes("SELECT id, graph_id FROM tasks")) return { rows: openSynced };
       return { rows: [], rowCount: 1 };
@@ -87,9 +90,23 @@ describe("reconcile", () => {
 });
 
 describe("wiring", () => {
-  it("the worker starts with the server and the save-time mirror uses it", () => {
-    expect(readFileSync("src/index.ts", "utf8")).toContain("startTodoReconcileWorker(pool)");
-    expect(readFileSync("src/modules/o365/todoSync.ts", "utf8")).toContain("syncTaskNow(pool, t.id)");
+  it("the worker starts with the server", async () => {
+    const boot = await bootIndex();
+    try {
+      await boot.workersDone();
+      expect(boot.workerCalls.get("startTodoReconcileWorker")).toEqual([[boot.pool]]);
+    } finally { boot.restore(); }
+  });
+  it("the save-time mirror runs the same sync for that task", async () => {
+    const { pool, queries } = fakePool([task({ id: "t-save", title: "Call back" })]);
+    // The fields passed in are ignored except id: the saved row is what is synced.
+    expect(await mirrorTaskToTodo(pool, { id: "t-save", title: "stale title", userId: "someone-else" })).toBeNull();
+    expect(queries.find((q) => q.sql.includes("SELECT assignee_user_id FROM tasks WHERE id = $1"))?.params).toEqual(["t-save"]);
+    const post = graphCalls.find((c) => c.method === "POST")!;
+    expect(post.body.title).toBe("Call back - Clarice Gray");
+    expect(queries.some((q) => q.sql.includes("graph_synced_at = updated_at") && q.params[1] === "G-new")).toBe(true);
+  });
+  it("the migration is idempotent", () => {
     expect(readFileSync("migrations/2026_10_07_v773_tasks_todo_sync.sql", "utf8")).toContain("ADD COLUMN IF NOT EXISTS graph_synced_at");
   });
 });

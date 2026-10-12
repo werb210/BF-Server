@@ -5,6 +5,7 @@ import { pool } from "../db.js";
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
 import { getWatchCallProvider } from "./provider.js";
 import { allowedLine, watchAuth, watchError } from "./security.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router = Router();
 const normalizeE164 = (raw: unknown): string | null => {
@@ -19,7 +20,7 @@ const normalizeE164 = (raw: unknown): string | null => {
 const present = (r: any) => ({ callId: r.id, status: r.status, version: r.version,
   updatedAt: r.updated_at, error: r.error_code ? { code: r.error_code } : null });
 
-router.post("/calls", watchAuth, async (req: any, res) => {
+router.post("/calls", watchAuth, safeHandler(async (req: any, res) => {
   const key = req.header("idempotency-key")?.trim();
   if (!key || key.length > 200) return watchError(req, res, 400, "invalid_request", "Idempotency-Key is required");
   const destination = normalizeE164(req.body?.destination);
@@ -65,15 +66,15 @@ router.post("/calls", watchAuth, async (req: any, res) => {
     await pool.query(`UPDATE watch_call_bridges SET status='failed',error_code=$2,version=version+1,updated_at=now(),ended_at=now() WHERE id=$1`, [call.id, code]);
     return watchError(req, res, 503, code, message, !notConfigured);
   }
-});
+}));
 
-router.get("/calls/:callId", watchAuth, async (req: any, res) => {
+router.get("/calls/:callId", watchAuth, safeHandler(async (req: any, res) => {
   const found = await pool.query(`SELECT * FROM watch_call_bridges WHERE id=$1 AND staff_user_id=$2`, [req.params.callId, req.watch.staffUserId]);
   if (!found.rows[0]) return watchError(req, res, 404, "not_found", "Call was not found");
   return res.json(present(found.rows[0]));
-});
+}));
 
-router.delete("/calls/:callId", watchAuth, async (req: any, res) => {
+router.delete("/calls/:callId", watchAuth, safeHandler(async (req: any, res) => {
   const found = await pool.query(`SELECT * FROM watch_call_bridges WHERE id=$1 AND staff_user_id=$2`, [req.params.callId, req.watch.staffUserId]);
   const call = found.rows[0];
   if (!call) return watchError(req, res, 404, "not_found", "Call was not found");
@@ -85,20 +86,20 @@ router.delete("/calls/:callId", watchAuth, async (req: any, res) => {
     `UPDATE watch_call_bridges SET status='ended',version=version+1,updated_at=now(),ended_at=now()
      WHERE id=$1 AND status NOT IN ('ended','failed') RETURNING *`, [call.id]);
   return res.json(present(updated.rows[0] || call));
-});
+}));
 
 // Twilio-authenticated endpoints. Destination is loaded from the database and is
 // never accepted from provider/client request parameters.
-router.post("/provider/:callId/twiml", urlencoded({ extended: false }), twilioWebhookValidation, async (req, res) => {
+router.post("/provider/:callId/twiml", urlencoded({ extended: false }), twilioWebhookValidation, safeHandler(async (req, res) => {
   const found = await pool.query(`SELECT destination FROM watch_call_bridges WHERE id=$1 AND status NOT IN ('ended','failed')`, [req.params.callId]);
   if (!found.rows[0]) return res.status(404).type("text/xml").send("<Response><Hangup/></Response>");
   await pool.query(`UPDATE watch_call_bridges SET status='bridging',version=version+1,updated_at=now() WHERE id=$1 AND status IN ('requesting','waitingForCallback')`, [req.params.callId]);
   const response = new twilio.twiml.VoiceResponse();
   (response.dial() as any).number(found.rows[0].destination);
   return res.type("text/xml").send(response.toString());
-});
+}));
 
-router.post("/provider/:callId/status", urlencoded({ extended: false }), twilioWebhookValidation, async (req, res) => {
+router.post("/provider/:callId/status", urlencoded({ extended: false }), twilioWebhookValidation, safeHandler(async (req, res) => {
   const statusMap: Record<string, string> = { initiated: "waitingForCallback", ringing: "ringing", "in-progress": "connected", completed: "ended", busy: "failed", failed: "failed", "no-answer": "failed", canceled: "ended" };
   const next = statusMap[String(req.body?.CallStatus || "")];
   if (next) await pool.query(
@@ -110,6 +111,6 @@ router.post("/provider/:callId/status", urlencoded({ extended: false }), twilioW
          <= CASE $2 WHEN 'requesting' THEN 1 WHEN 'waitingForCallback' THEN 2 WHEN 'bridging' THEN 3
          WHEN 'ringing' THEN 4 WHEN 'connected' THEN 5 ELSE 6 END`, [req.params.callId, next]);
   return res.status(204).send();
-});
+}));
 
 export default router;

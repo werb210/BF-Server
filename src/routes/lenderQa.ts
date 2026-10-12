@@ -14,6 +14,7 @@ import { requireApplicationAccess } from "../auth/clientApplicationOwnership.js"
 import { ROLES } from "../auth/roles.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { sendSMS } from "../services/smsService.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router: Router = Router();
 
@@ -403,7 +404,7 @@ router.post(
 router.get(
   "/applications/:id/qa/open",
   requireAuthAllowClient,
-  async (req: AuthRequest, res: Response) => {
+  safeHandler(async (req: AuthRequest, res: Response) => {
     const appId = String(req.params.id);
     if (!(await requireApplicationAccess(req, res, appId))) return;
     try {
@@ -430,14 +431,14 @@ router.get(
       console.error("[qa.clientOpen] failed", e);
       res.status(500).json({ error: "internal" });
     }
-  },
+  }),
 );
 
 // Autosave a single answer (kept editable until the client submits).
 router.patch(
   "/applications/:id/qa/questions/:qid/answer",
   requireAuthAllowClient,
-  async (req: AuthRequest, res: Response) => {
+  safeHandler(async (req: AuthRequest, res: Response) => {
     const appId = String(req.params.id);
     const qid = String(req.params.qid);
     if (!(await requireApplicationAccess(req, res, appId))) return;
@@ -465,7 +466,7 @@ router.patch(
       console.error("[qa.clientAnswer] failed", e);
       res.status(500).json({ error: "internal" });
     }
-  },
+  }),
 );
 
 // Submit all answers in a set: move answered questions to 'answered',
@@ -473,7 +474,7 @@ router.patch(
 router.post(
   "/applications/:id/qa/sets/:setId/answers/submit",
   requireAuthAllowClient,
-  async (req: AuthRequest, res: Response) => {
+  safeHandler(async (req: AuthRequest, res: Response) => {
     const appId = String(req.params.id);
     const setId = String(req.params.setId);
     const silo = resolveSiloFromRequest(req);
@@ -522,7 +523,7 @@ router.post(
       console.error("[qa.clientSubmit] failed", e);
       res.status(500).json({ error: "internal" });
     }
-  },
+  }),
 );
 
 // Download the finalized export for a set (staff; manual send to lender).

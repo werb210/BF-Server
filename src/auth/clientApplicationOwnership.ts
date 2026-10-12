@@ -19,7 +19,7 @@ export async function callerOwnsApplication(req: Request, applicationId: string)
   let phone10 = "";
   try {
     const jwt = (await import("jsonwebtoken")).default;
-    const decoded = jwt.verify(auth.slice(7), secret) as Record<string, unknown>;
+    const decoded = jwt.verify(auth.slice(7), secret, { algorithms: ["HS256"] }) as Record<string, unknown>;
     phone10 = String(typeof decoded.phone === "string" ? decoded.phone : "")
       .replace(/[^0-9]/g, "")
       .slice(-10);
@@ -126,34 +126,132 @@ export async function requireApplicationAccess(req: any, res: Response, applicat
   return false;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+// BF_SERVER_v789_ID_NORMALIZE - a path segment that cannot be percent-decoded.
+export class MalformedApplicationIdError extends Error {
+  constructor() {
+    super("malformed_path");
+    this.name = "MalformedApplicationIdError";
+  }
+}
+
+// BF_SERVER_v789_ID_NORMALIZE - Express decodes :params before handlers see them
+// and Postgres compares uuid values case-insensitively, but this guard used to
+// test the raw path segment and compare id::text (always lowercase). So
+// /applications/%62bb..., an UPPERCASE id, or a double-encoded id slipped past
+// the guard and still reached the handler as the real application. Each segment
+// is now decoded (repeatedly, so %2562 -> %62 -> b) and lowercased; every form
+// that looks like a UUID is a candidate. A segment that cannot be decoded throws.
+const MAX_DECODE_ROUNDS = 4;
+function decodedForms(segment: string): string[] {
+  const forms: string[] = [];
+  let cur = segment;
+  for (let i = 0; i < MAX_DECODE_ROUNDS; i += 1) {
+    forms.push(cur);
+    if (!cur.includes("%")) break;
+    let next: string;
+    try {
+      next = decodeURIComponent(cur);
+    } catch {
+      throw new MalformedApplicationIdError();
+    }
+    if (next === cur) break;
+    cur = next;
+  }
+  if (!forms.includes(cur)) forms.push(cur);
+  return forms;
+}
+
+export function normalizeApplicationIdCandidate(value: string): string | null {
+  const v = value.trim().toLowerCase();
+  return UUID_RE.test(v) ? v : null;
+}
 
 // Every id a client request could be naming an application by: ?applicationId,
 // body.applicationId, and any UUID path segment (/application/:id/status,
 // /applications/:id, ...). Path params are not parsed yet at router.use time,
-// so the path is read directly.
+// so the path is read directly. Ids are returned lowercased.
 export function candidateApplicationIds(req: any): string[] {
   const out = new Set<string>();
   for (const v of [req.query?.applicationId, req.body?.applicationId]) {
-    if (typeof v === "string" && v.trim()) out.add(v.trim());
+    if (typeof v === "string" && v.trim()) out.add(v.trim().toLowerCase());
   }
   for (const seg of String(req.path ?? "").split("/")) {
-    if (UUID_RE.test(seg)) out.add(seg);
+    if (!seg) continue;
+    for (const form of decodedForms(seg)) {
+      const id = normalizeApplicationIdCandidate(form);
+      if (id) out.add(id);
+    }
   }
   return [...out];
+}
+
+// BF_SERVER_v789_ID_NORMALIZE - the application id a (decoded) route param names,
+// or null when it is not an existing application. Lookup errors propagate.
+export async function existingApplicationId(value: unknown): Promise<string | null> {
+  if (typeof value !== "string") return null;
+  let forms: string[];
+  try {
+    forms = decodedForms(value);
+  } catch {
+    throw new MalformedApplicationIdError();
+  }
+  const ids = [...new Set(forms.map(normalizeApplicationIdCandidate).filter((v): v is string => Boolean(v)))];
+  if (!ids.length) return null;
+  const { pool } = await import("../db.js");
+  const r = await pool.query<{ id: string }>(
+    `SELECT id::text AS id FROM applications WHERE lower(id::text) = ANY($1::text[]) LIMIT 1`,
+    [ids],
+  );
+  return r.rows[0]?.id ? String(r.rows[0].id) : null;
+}
+
+// BF_SERVER_v789_ID_NORMALIZE - router.param handler: when an id-like param names
+// an existing application, the caller must pass requireApplicationAccess.
+export async function applicationParamGuard(req: any, res: Response, next: NextFunction, value: unknown) {
+  let applicationId: string | null;
+  try {
+    applicationId = await existingApplicationId(value);
+  } catch (err: any) {
+    if (err instanceof MalformedApplicationIdError) {
+      res.status(400).json({ error: "malformed_path" });
+      return;
+    }
+    console.error("[client-ownership] param lookup failed", { message: err?.message || String(err) });
+    res.status(503).json({ error: "ownership_check_unavailable" });
+    return;
+  }
+  if (!applicationId) return next();
+  if (!(await requireApplicationAccess(req, res, applicationId))) return;
+  return next();
 }
 
 // Router-level guard for src/routes/client/index.ts. Ids that are not
 // applications (continuation and submit tokens, public upload, readiness
 // prefill, document ids) are left alone so the wizard and mini-portal work.
-export async function clientApplicationOwnershipGuard(req: any, res: Response, next: NextFunction) {
-  const ids = candidateApplicationIds(req);
+// BF_SERVER_v789_SAFE_HANDLERS - registered via router.use; errors go to next(err).
+export function clientApplicationOwnershipGuard(req: any, res: Response, next: NextFunction): Promise<void> {
+  return clientApplicationOwnershipGuardImpl(req, res, next).then(() => undefined, next);
+}
+
+async function clientApplicationOwnershipGuardImpl(req: any, res: Response, next: NextFunction) {
+  let ids: string[];
+  try {
+    ids = candidateApplicationIds(req);
+  } catch (err) {
+    if (err instanceof MalformedApplicationIdError) {
+      res.status(400).json({ error: "malformed_path" });
+      return;
+    }
+    throw err;
+  }
   if (!ids.length) return next();
   let existing: string[];
   try {
     const { pool } = await import("../db.js");
     const r = await pool.query<{ id: string }>(
-      `SELECT id::text AS id FROM applications WHERE id::text = ANY($1::text[])`,
+      `SELECT id::text AS id FROM applications WHERE lower(id::text) = ANY($1::text[])`,
       [ids],
     );
     existing = r.rows.map((row) => String(row.id));

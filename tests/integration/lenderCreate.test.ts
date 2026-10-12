@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import * as db from "../../src/db.js";
+import { answerBySql, callsMatching } from "../../src/__tests__/helpers/answerBySql.js"; // BF_SERVER_v789_SQL_CONTENT_MOCKS
 import { createLender } from "../../src/repositories/lenders.repo.js";
 
 describe("createLender submission_method normalization", () => {
   it("writes EMAIL uppercase when payload has lowercase email method", async () => {
-    vi.spyOn(db, "runQuery").mockResolvedValueOnce({
+    vi.spyOn(db, "runQuery").mockImplementation(answerBySql([[/information_schema\.columns/, {
       rows: [
         { column_name: "id" },
         { column_name: "name" },
@@ -19,9 +20,9 @@ describe("createLender submission_method normalization", () => {
         { column_name: "created_at" },
         { column_name: "updated_at" },
       ],
-    } as any);
+    }]]) as any);
 
-    const dbQuery = vi.fn().mockResolvedValue({ rows: [{ id: "lender-1" }] });
+    const dbQuery = vi.fn(answerBySql([[/INSERT INTO lenders/, { rows: [{ id: "lender-1" }] }]]));
 
     await createLender(
       { query: dbQuery },
@@ -33,7 +34,9 @@ describe("createLender submission_method normalization", () => {
       }
     );
 
-    const [sql, values] = dbQuery.mock.calls[0] as [string, unknown[]];
+    const inserts = callsMatching(dbQuery, /INSERT INTO lenders/);
+    expect(inserts).toHaveLength(1);
+    const [sql, values] = inserts[0] as [string, unknown[]];
     expect(sql).toContain("INSERT INTO lenders");
     expect(values).toContain("EMAIL");
     expect(values).not.toContain("email");

@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+import { answerBySql, callsMatching } from "../../__tests__/helpers/answerBySql.js"; // BF_SERVER_v789_SQL_CONTENT_MOCKS
 import { decryptSsnFromRow } from "../../security/ssnCrypto.js";
 import { createContact, findOrCreateContactByEmailAndCompany } from "../contacts.js";
 
 describe("contacts service", () => {
   it("returns existing contact when lower(email)+company+silo matches", async () => {
-    const query = vi.fn().mockResolvedValueOnce({ rows: [{ id: "k1", email: "a@b.com", company_id: "co1", silo: "BF" }] });
+    const query = vi.fn(answerBySql([[/FROM contacts/, { rows: [{ id: "k1", email: "a@b.com", company_id: "co1", silo: "BF" }] }]]));
     const out = await findOrCreateContactByEmailAndCompany(
       { query } as any,
       "A@B.COM",
@@ -14,6 +15,7 @@ describe("contacts service", () => {
     );
     expect(out.created).toBe(false);
     expect(out.row.id).toBe("k1");
+    expect(callsMatching(query, /INSERT INTO contacts/)).toHaveLength(0);
   });
 
   it("encrypts SSN before insert and can decrypt roundtrip", async () => {

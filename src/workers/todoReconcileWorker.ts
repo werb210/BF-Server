@@ -13,6 +13,7 @@
 import type { Pool } from "pg";
 import { getGraphForUser, type GraphClient } from "../modules/o365/graphClient.js";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js";
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 const TICK_MS = 5 * 60 * 1000;
 const MAX_USERS_PER_TICK = 50;
@@ -207,13 +208,14 @@ export async function syncTaskNow(pool: Pool, taskId: string): Promise<void> {
 
 export function startTodoReconcileWorker(pool: Pool): { stop: () => void } {
   let running = false;
-  const tick = async () => {
+  const tickUnclaimed = async () => {
     if (running) return;
     running = true;
     try { await reconcileTodoOnce(pool); }
     catch (err) { logWarnSwallowed(err, "workers/todoReconcileWorker.ts:tick"); }
     finally { running = false; }
   };
+  const tick = claimedTick("todo_reconcile", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
   const first = setTimeout(() => void tick(), 60 * 1000);
   const timer = setInterval(() => void tick(), TICK_MS);
   return { stop: () => { clearTimeout(first); clearInterval(timer); } };

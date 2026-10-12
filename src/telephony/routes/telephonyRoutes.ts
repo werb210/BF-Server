@@ -15,7 +15,8 @@ import { parseCallRef, callRefPredicate } from "../../modules/calls/callRef.js";
 import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 const router = express.Router();
-import { sharedTwilio } from "../../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
+import { sharedTwilio } from "../../lib/sharedClients.js";
+import { safeHandler } from "../../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_SNAT_REUSE_v784
 router.use("/watch", watchCallRoutes);
 const HEARTBEAT_MIN_INTERVAL_MS = 25_000;
 const lastPresenceHeartbeatByUser = new Map<string, number>();
@@ -102,7 +103,7 @@ router.get("/presence", auth, async (_req: Request, res: Response) => {
   }
 });
 
-router.post("/presence", auth, async (req: any, res: Response) => {
+router.post("/presence", auth, safeHandler(async (req: any, res: Response) => {
   const status = req.body?.status;
   if (!["available", "busy", "offline"].includes(status)) {
     return res.status(400).json({ error: "status must be available, busy, or offline" });
@@ -119,10 +120,10 @@ router.post("/presence", auth, async (req: any, res: Response) => {
   ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "telephony/routes/telephonyRoutes.ts:112");});
   await setManualBusy(userId, manualBusy).catch(() => {});
   res.json({ ok: true, status });
-});
+}));
 
 // Heartbeat — client should call no more than once every 30 seconds to keep presence alive.
-router.post("/presence/heartbeat", auth, async (req: any, res: Response) => {
+router.post("/presence/heartbeat", auth, safeHandler(async (req: any, res: Response) => {
   const userId = req.user?.userId || req.user?.id;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
 
@@ -144,7 +145,7 @@ router.post("/presence/heartbeat", auth, async (req: any, res: Response) => {
   await recomputePresence(userId).catch(() => {});
   const pr = await pool.query(`SELECT status, coalesce(on_call,false) AS on_call FROM staff_presence WHERE user_id = $1`, [userId]).catch((err: any) => { console.warn("[silent-query] telephony/routes/telephonyRoutes.ts", { message: err?.message }); return { rows: [] as any[] }; });
   res.json({ ok: true, status: pr.rows[0]?.status ?? "available", onCall: !!pr.rows[0]?.on_call });
-});
+}));
 
 // ── Call status / log ─────────────────────────────────────────────────────────
 // BF_SERVER_PRESENCE_EXPLAIN_v142
@@ -242,13 +243,13 @@ router.post("/calls/:id/disposition", auth, async (req: any, res: Response) => {
   }
 });
 
-router.get("/call-status", auth, async (_req, res) => {
+router.get("/call-status", auth, safeHandler(async (_req, res) => {
   const result = await pool.query(
     `SELECT id, phone_number, direction, status, duration_seconds, created_at
      FROM call_logs ORDER BY created_at DESC LIMIT 50`
   ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "telephony/routes/telephonyRoutes.ts:244", ({ rows: [] })));
   res.json({ calls: result.rows });
-});
+}));
 
 // BF_SERVER_BLOCK_v144_TELEPHONY_AUTH_v1 — was unauthed.
 router.post("/call-status", auth, (_req: Request, res: Response) => { res.json({ updated: true }); });
@@ -315,7 +316,7 @@ router.post("/outbound-call", auth, async (req: any, res: Response) => {
 // BF_SERVER_BLOCK_v695_QUICK_CALL_v1 — staff quick-call slots for the dialer.
 // GET returns callable staff (with their twilio identity + presence) plus the
 // caller's saved 3 picks; PUT saves the caller's picks (staff user ids).
-router.get("/quick-call", auth, async (req: any, res: Response) => {
+router.get("/quick-call", auth, safeHandler(async (req: any, res: Response) => {
   const userId = req.user?.userId || req.user?.id;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
   const staff = await pool.query(
@@ -352,9 +353,9 @@ router.get("/quick-call", auth, async (req: any, res: Response) => {
     })),
     slots: Array.isArray(me.rows[0]?.slots) ? me.rows[0].slots : [],
   });
-});
+}));
 
-router.put("/quick-call", auth, async (req: any, res: Response) => {
+router.put("/quick-call", auth, safeHandler(async (req: any, res: Response) => {
   const userId = req.user?.userId || req.user?.id;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
   const slots = Array.isArray(req.body?.slots)
@@ -362,6 +363,6 @@ router.put("/quick-call", auth, async (req: any, res: Response) => {
     : [];
   await pool.query(`UPDATE users SET quick_call_slots = $2::jsonb WHERE id = $1`, [userId, JSON.stringify(slots)]);
   res.json({ ok: true, slots });
-});
+}));
 
 export default router;

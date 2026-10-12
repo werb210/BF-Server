@@ -7,7 +7,7 @@
 import type { Pool } from "pg";
 import { sendOne, mergeFields } from "./sendgridService.js";
 import { renderMarketingSms, sendMarketingSms, trackedLink, lookupLineType } from "./marketingSms.js";
-import { isCanadianMobile, SMS_ELIGIBLE_SQL, CAMPAIGN_ELIGIBLE_SQL } from "./smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1 // BF_SERVER_SEND_QUEUE_SMS_v1 BF_SERVER_BLOCK_v784_LINE_TYPE_IMPORT BF_SERVER_SMS_CASCADE_COMPLETE_v12
+import { isCanadianMobile, SMS_ELIGIBLE_SQL, CAMPAIGN_ELIGIBLE_SQL, CONSENT_SQL } from "./smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1 // BF_SERVER_SEND_QUEUE_SMS_v1 BF_SERVER_BLOCK_v784_LINE_TYPE_IMPORT BF_SERVER_SMS_CASCADE_COMPLETE_v12
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 // BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1 - include/exclude tag arrays. Include
@@ -21,11 +21,19 @@ export type SendProgress = (sent: number, failed: number) => Promise<void>;
 export type ShouldAbort = () => Promise<boolean>;
 export type EmailSendResult = { total: number; sent: number; failed: number; rejectStatus?: number; rejectError?: string; aborted?: boolean }; // BF_SERVER_EMAIL_FAIL_VISIBILITY_v1
 
+// BF_SERVER_v789_EMAIL_BLAST_CONSENT - an email blast reaches only contacts with a live
+// CASL consent (CONSENT_SQL: express, implied_transaction < 2 years, implied_inquiry
+// < 6 months - the same rule sequences apply via hasSmsConsent) who have not opted out
+// of marketing. The count and the send share this predicate.
+export const EMAIL_BLAST_ELIGIBLE_SQL = `
+      COALESCE(c.email,'') <> '' AND COALESCE(c.marketing_opt_out,false) = false
+  AND ${CONSENT_SQL}`;
+
 export async function countEmailRecipients(pool: Pool, silo: string, tag: string | null, tags: string[] | null = null, excludeTags: string[] | null = null): Promise<number> {
   const r = await pool.query<{ n: number }>(
     `SELECT count(*)::int AS n
        FROM contacts c
-      WHERE c.silo = $1 AND COALESCE(c.email,'') <> '' AND COALESCE(c.marketing_opt_out,false) = false
+      WHERE c.silo = $1 AND ${EMAIL_BLAST_ELIGIBLE_SQL}
         AND ($2::text IS NULL OR $2 = ANY(c.tags))
         AND ($3::text[] IS NULL OR COALESCE(c.tags,'{}') && $3)
         AND ($4::text[] IS NULL OR NOT (COALESCE(c.tags,'{}') && $4))`,
@@ -35,10 +43,18 @@ export async function countEmailRecipients(pool: Pool, silo: string, tag: string
 }
 
 export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendProgress, shouldAbort?: ShouldAbort): Promise<EmailSendResult> { // BF_SERVER_EMAIL_FAIL_VISIBILITY_v1 BF_SERVER_SEND_KILL_SWITCH_v1
+  // BF_SERVER_v789_EMAIL_BLAST_CONSENT - a job with no tag and no include tags would
+  // reach the whole silo; refuse it here too so a queued or Maya job cannot bypass the
+  // route-level audience_required check.
+  const hasAudience = Boolean(job.tag && job.tag.trim()) || (Array.isArray(job.tags) && job.tags.some((t) => String(t ?? "").trim()));
+  if (!hasAudience) {
+    console.warn("marketing_email_send_refused_no_audience", { silo: job.silo });
+    return { total: 0, sent: 0, failed: 0, rejectStatus: 400, rejectError: "audience_required" };
+  }
   const recips = await pool.query<{ id: string; email: string; name: string | null; company: string | null }>(
     `SELECT c.id, c.email, c.name, co.name AS company
        FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
-      WHERE c.silo = $1 AND COALESCE(c.email,'') <> '' AND COALESCE(c.marketing_opt_out,false) = false
+      WHERE c.silo = $1 AND ${EMAIL_BLAST_ELIGIBLE_SQL}
         AND ($2::text IS NULL OR $2 = ANY(c.tags))
         AND ($3::text[] IS NULL OR COALESCE(c.tags,'{}') && $3)
         AND ($4::text[] IS NULL OR NOT (COALESCE(c.tags,'{}') && $4))`,

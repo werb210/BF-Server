@@ -4,6 +4,7 @@ import { pushLeadToCRM } from "../services/crmWebhook.js";
 import { sendSlackAlert } from "../observability/alerts.js";
 import { isPermanentSmsFailure, isUndeliverableNumber } from "../lib/smsDeliverability.js";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 async function processJob(job: { type: string; data: any }): Promise<void> {
   switch (job.type) {
@@ -79,7 +80,7 @@ async function safeProcess(): Promise<void> {
 // 15s was the original interval and is kept. The queue is small and bounded
 // (LIMIT 20 per tick, jobs pruned after 7 days), so the tick is cheap.
 export function startDeadLetterWorker(): { stop: () => void } {
-  const timer = setInterval(safeProcess, 15000);
+  const timer = setInterval(claimedTick("dead_letter", safeProcess), 15000); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
   // Do not hold the process open on shutdown.
   if (typeof timer.unref === "function") timer.unref();
   return { stop: () => clearInterval(timer) };

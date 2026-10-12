@@ -7,6 +7,7 @@
 import type { Pool } from "pg";
 import { getGraphForUser, type GraphClient } from "../modules/o365/graphClient.js";
 import { fileInboundAttachments } from "../services/contactDocuments.js";
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 // BF_INBOUND_ATTACHMENT_ATTEMPT_LEDGER_v189
 // A message that files nothing writes no contact_documents row, so the old
@@ -94,7 +95,7 @@ export function startInboundAttachmentWorker(pool: Pool): { stop: () => void } {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
 
-  const tick = async (): Promise<void> => {
+  const tickUnclaimed = async (): Promise<void> => {
     if (stopped) return;
     try {
       const { rows: users } = await pool.query<{ id: string; silo: string | null }>(
@@ -206,14 +207,22 @@ export function startInboundAttachmentWorker(pool: Pool): { stop: () => void } {
             }
           }
         }
-      } catch {
-        /* shared-mailbox pass is best-effort */
+      } catch (err) {
+        // shared-mailbox pass is best-effort
+        console.warn("[inbound-attachments] shared-mailbox pass failed", { message: (err as Error)?.message ?? String(err) });
       }
-    } catch {
-      /* best-effort background work; swallow and reschedule */
-    } finally {
-      if (!stopped) timer = setTimeout(() => { void tick(); }, INTERVAL_MS);
+    } catch (err) {
+      // best-effort background work; log and reschedule
+      console.warn("[inbound-attachments] tick failed", { message: (err as Error)?.message ?? String(err) });
     }
+  };
+  // BF_SERVER_v789_WORKER_CLAIM - one instance per tick. The reschedule lives
+  // outside the claim, so a tick skipped because another instance holds the
+  // lock still schedules the next one.
+  const claimed = claimedTick("inbound_attachment", tickUnclaimed);
+  const tick = async (): Promise<void> => {
+    await claimed();
+    if (!stopped) timer = setTimeout(() => { void tick(); }, INTERVAL_MS);
   };
 
   timer = setTimeout(() => { void tick(); }, INITIAL_DELAY_MS);

@@ -4,6 +4,7 @@
 // reingest. Runs once ~15s after startup, then every 10 minutes. Non-overlapping.
 import type { Pool } from "pg";
 import { reconcileProductKnowledge } from "../modules/ai/productIngest.service.js";
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 const INTERVAL_MS = 10 * 60 * 1000;
 const KICKOFF_MS = 15 * 1000;
@@ -11,7 +12,7 @@ const KICKOFF_MS = 15 * 1000;
 export function startProductKnowledgeWorker(pool: Pool): { stop: () => void } {
   let running = false;
 
-  const tick = async (): Promise<void> => {
+  const tickUnclaimed = async (): Promise<void> => {
     if (running) return;
     running = true;
 
@@ -26,6 +27,7 @@ export function startProductKnowledgeWorker(pool: Pool): { stop: () => void } {
       running = false;
     }
   };
+  const tick = claimedTick("product_knowledge", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
 
   const kickoff = setTimeout(() => { void tick(); }, KICKOFF_MS);
   const timer = setInterval(() => { void tick(); }, INTERVAL_MS);

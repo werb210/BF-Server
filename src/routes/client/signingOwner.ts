@@ -13,7 +13,7 @@ export type OwnerQuery = (text: string, params?: unknown[]) => Promise<{ rows: a
 export function phone10FromAuthHeader(auth: unknown, secret: string | undefined): string {
   if (!secret || typeof auth !== "string" || !auth.startsWith("Bearer ")) return "";
   try {
-    const decoded = jwt.verify(auth.slice(7), secret) as Record<string, unknown>;
+    const decoded = jwt.verify(auth.slice(7), secret, { algorithms: ["HS256"] }) as Record<string, unknown>;
     return String(typeof decoded.phone === "string" ? decoded.phone : "").replace(/[^0-9]/g, "").slice(-10);
   } catch {
     return "";

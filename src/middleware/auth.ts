@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction, type RequestHandler } from "express";
 import jwt from "jsonwebtoken";
-import { pool } from "../db.js";
 // BF_AGENT_AUTH_HYDRATE_v53
 import { fetchCapabilitiesForRole } from "../auth/capabilities.js";
 import { isRole, ROLES } from "../auth/roles.js";
@@ -11,6 +10,9 @@ import { resolveSiloFromRequest } from "./silo.js";
 import { markRequestServicePrincipal } from "../observability/requestContext.js";
 // BF_SERVER_v784_STAFF_ONLY_AUTH
 import { classifyClaims, staffRejectionStatus } from "../auth/principal.js";
+// BF_SERVER_v789_STAFF_USER_STATE
+import { checkStaffUser } from "../auth/staffUserState.js";
+import { looksLikeServiceToken, verifyServiceToken } from "../auth/serviceTokens.js";
 
 type AuthorizationOptions = {
   roles?: string[];
@@ -32,12 +34,14 @@ export interface AuthRequest extends Request {
 // token. The default middleware now admits only staff humans and service
 // principals. Routes that legitimately serve the client app opt in by name with
 // requireAuthAllowClient and check ownership themselves.
-export async function auth(req: Request, res: Response, next: NextFunction) {
-  return authenticate(req, res, next, false);
+// BF_SERVER_v789_SAFE_HANDLERS - not async: a rejection inside authenticate goes to
+// next(err) instead of becoming an unhandled rejection that hangs the request.
+export function auth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  return authenticate(req, res, next, false).then(() => undefined, next);
 }
 
-export async function requireAuthAllowClient(req: Request, res: Response, next: NextFunction) {
-  return authenticate(req, res, next, true);
+export function requireAuthAllowClient(req: Request, res: Response, next: NextFunction): Promise<void> {
+  return authenticate(req, res, next, true).then(() => undefined, next);
 }
 
 async function authenticate(req: Request, res: Response, next: NextFunction, allowClient: boolean) {
@@ -56,7 +60,12 @@ async function authenticate(req: Request, res: Response, next: NextFunction, all
 
     // BF_SERVER_JWT_HARDENING_v1 - pin the algorithm; otherwise the library trusts the
     // `alg` the token itself claims, which is the classic algorithm-confusion foothold.
-    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
+    // BF_SERVER_v789_SERVICE_TOKENS - a service token verifies with its sender's key
+    // (BI_SERVICE_JWT_SECRET / AGENT_SERVICE_JWT_SECRET when set); everything else
+    // with JWT_SECRET.
+    const decoded = looksLikeServiceToken(token)
+      ? verifyServiceToken(token).claims
+      : jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
     if (!decoded || typeof decoded !== "object") {
       return res.status(401).json({ status: "error", message: "Invalid token" });
     }
@@ -70,29 +79,38 @@ async function authenticate(req: Request, res: Response, next: NextFunction, all
       });
     }
     const userId = (decoded as any).id ?? (decoded as any).sub ?? null;
-
-    let dbUser: { id: string; email: string | null; role: string | null; silo: string | null; silos: string[] | null } | null = null;
-    if (typeof userId === "string" && userId && !userId.startsWith("client:") && (decoded as any).kind !== "service" && !["agent-service", "maya-service"].includes(userId)) { // BF_SERVER_CLIENT_TOKEN_SKIP_v623 // BF_SERVER_MAYA_SEES_PORTAL_v782 - Maya's service account is not a user (the lookup only logged an error)
-      const result = await pool.query<{ id: string; email: string | null; role: string | null; silo: string | null; silos: string[] | null }>(
-        `SELECT id, email, role, silo, silos FROM users WHERE id = $1 LIMIT 1`,
-        [userId]
-      ).catch((err: any) => { console.warn("[silent-query] middleware/auth.ts", { message: err?.message }); return { rows: [] as any[] }; });
-      dbUser = result.rows[0] ?? null;
-    }
-
-    // BF_AGENT_AUTH_HYDRATE_v53 — derive capabilities from role when the
-    // JWT didn't carry an explicit capabilities array. Mirrors what the
-    // login flow (auth.service.ts) bakes into freshly-minted user tokens.
-    // Service tokens (Maya, dialer) only include {id, role}; this lets them
-    // pass the requireCapability gate. Tokens that already carry an explicit
-    // capabilities array are honored exactly as-issued.
     const decodedAny = decoded as Record<string, unknown>;
-    const explicitCaps = Array.isArray(decodedAny.capabilities)
-      ? (decodedAny.capabilities as string[])
-      : null;
-    const effectiveRole = (dbUser?.role ?? (decodedAny.role as string | undefined)) ?? null;
-    const hydratedCaps = explicitCaps
-      ?? (effectiveRole && isRole(effectiveRole) ? fetchCapabilitiesForRole(effectiveRole) : []);
+
+    // BF_SERVER_v789_STAFF_USER_STATE - a staff human must still be an active,
+    // unlocked account whose users.token_version the token's tv has not fallen
+    // behind. The role comes from the database and token capabilities that role
+    // does not grant are dropped. Service principals and client tokens have no
+    // users row and skip this. A failed lookup is a logged 503, not a pass.
+    let dbUser: Record<string, unknown> | null = null;
+    let effectiveRole: string | null = typeof decodedAny.role === "string" ? decodedAny.role : null;
+    let hydratedCaps: string[];
+    if (principal.kind === "staff") {
+      const check = await checkStaffUser(typeof userId === "string" ? userId : "", decodedAny, { profile: true });
+      if (!check.ok) {
+        return res.status(check.status).json({
+          status: "error",
+          message: check.status === 503 ? "Auth unavailable" : check.status === 403 ? "Forbidden" : "Invalid token",
+          error: check.status === 503 ? "AUTH_UNAVAILABLE" : check.status === 403 ? "STAFF_ONLY" : "UNAUTHORIZED",
+        });
+      }
+      dbUser = check.record.profile;
+      effectiveRole = check.role;
+      hydratedCaps = check.capabilities;
+    } else {
+      // BF_AGENT_AUTH_HYDRATE_v53 - service tokens (Maya, dialer) only include
+      // {id, role}; derive capabilities from the role so they pass the
+      // requireCapability gate. An explicit capabilities array is honored as-issued.
+      const explicitCaps = Array.isArray(decodedAny.capabilities)
+        ? (decodedAny.capabilities as string[])
+        : null;
+      hydratedCaps = explicitCaps
+        ?? (effectiveRole && isRole(effectiveRole) ? fetchCapabilitiesForRole(effectiveRole) : []);
+    }
 
     // BF_SERVER_SERVICE_PRINCIPAL_v1
     // Maya and the dialer authenticate as role Staff with an id that matches
@@ -105,9 +123,10 @@ async function authenticate(req: Request, res: Response, next: NextFunction, all
     (req as any).user = {
       ...(decoded as any),
       ...(dbUser ?? {}),
+      ...(effectiveRole ? { role: effectiveRole } : {}),
       userId,
       capabilities: hydratedCaps,
-      silos: dbUser?.silos ?? (Array.isArray((decoded as any).silos) ? (decoded as any).silos : []),
+      silos: (dbUser?.silos as string[] | null | undefined) ?? (Array.isArray((decoded as any).silos) ? (decoded as any).silos : []),
       isServicePrincipal,
       serviceName: isServicePrincipal ? String(decodedAny.service ?? "unknown") : null,
       // A service id that resolves to no users row is expected, not corruption.

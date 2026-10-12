@@ -4,6 +4,7 @@ import { pool } from "../db.js";
 import { watchAuth, watchError } from "./security.js";
 import { getWatchCallProvider } from "./provider.js";
 import { encryptWatchPushToken } from "./pushTokenCrypto.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router = Router();
 router.use(watchAuth);
@@ -15,7 +16,7 @@ async function owned(req: any) {
   return found.rows[0] || null;
 }
 
-router.put("/:deviceId", async (req: any, res) => {
+router.put("/:deviceId", safeHandler(async (req: any, res) => {
   if (!await owned(req)) return watchError(req, res, 403, "forbidden", "Device does not belong to this session");
   const appVersion = typeof req.body?.appVersion === "string" ? req.body.appVersion.trim().slice(0, 40) : null;
   const name = typeof req.body?.name === "string" ? req.body.name.trim().slice(0, 100) : null;
@@ -27,9 +28,9 @@ router.put("/:deviceId", async (req: any, res) => {
       created_at AS "createdAt",updated_at AS "updatedAt",last_seen_at AS "lastSeenAt",revoked_at AS "revokedAt"`,
     [req.params.deviceId, appVersion, name]);
   return res.json(result.rows[0]);
-});
+}));
 
-router.put("/:deviceId/push-token", async (req: any, res) => {
+router.put("/:deviceId/push-token", safeHandler(async (req: any, res) => {
   if (!await owned(req)) return watchError(req, res, 403, "forbidden", "Device does not belong to this session");
   const { pushType, token, environment } = req.body || {};
   if (pushType !== "standard" || typeof token !== "string" || !/^[A-Fa-f0-9]{32,}$/.test(token) || !["sandbox", "production"].includes(environment))
@@ -40,15 +41,15 @@ router.put("/:deviceId/push-token", async (req: any, res) => {
      push_type='standard',environment=$4,updated_at=now()`,
     [req.params.deviceId, crypto.createHash("sha256").update(token).digest("hex"), encryptWatchPushToken(token), environment]);
   return res.json({ registered: true, pushType: "standard", environment });
-});
+}));
 
-router.delete("/:deviceId/push-token", async (req: any, res) => {
+router.delete("/:deviceId/push-token", safeHandler(async (req: any, res) => {
   if (!await owned(req)) return watchError(req, res, 403, "forbidden", "Device does not belong to this session");
   await pool.query(`DELETE FROM watch_push_registrations WHERE device_id=$1`, [req.params.deviceId]);
   return res.status(204).send();
-});
+}));
 
-router.put("/:deviceId/standalone-routing", async (req: any, res) => {
+router.put("/:deviceId/standalone-routing", safeHandler(async (req: any, res) => {
   if (!await owned(req)) return watchError(req, res, 403, "forbidden", "Device does not belong to this session");
   if (typeof req.body?.enabled !== "boolean" || Object.prototype.hasOwnProperty.call(req.body || {}, "callbackNumber"))
     return watchError(req, res, 400, "invalid_request", "enabled must be boolean");
@@ -59,9 +60,9 @@ router.put("/:deviceId/standalone-routing", async (req: any, res) => {
   await pool.query(`UPDATE watch_devices SET standalone_routing_enabled=$2,updated_at=now() WHERE id=$1`,
     [req.params.deviceId, req.body.enabled]);
   return res.json({ enabled: req.body.enabled, verifiedCallback: verified });
-});
+}));
 
-router.delete("/:deviceId/session", async (req: any, res) => {
+router.delete("/:deviceId/session", safeHandler(async (req: any, res) => {
   if (!await owned(req)) return watchError(req, res, 403, "forbidden", "Device does not belong to this session");
   const client = await pool.connect();
   try {
@@ -76,6 +77,6 @@ router.delete("/:deviceId/session", async (req: any, res) => {
     return res.status(204).send();
   } catch { await client.query("ROLLBACK"); return watchError(req, res, 503, "provider_unavailable", "Unable to safely revoke device", true); }
   finally { client.release(); }
-});
+}));
 
 export default router;

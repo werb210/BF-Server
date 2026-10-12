@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf-8");
 const enrich = read("../modules/voice/voicemailEnrich.service.ts");
 const webhooks = read("../routes/webhooks.ts");
-const twilioRoutes = read("../routes/twilio.ts");
 const migration = read("../../migrations/2026_08_03_voicemail_recording_sid_unique.sql");
 
 describe("voicemail unification", () => {
@@ -33,7 +32,5 @@ describe("voicemail unification", () => {
     expect(handler).toContain("INSERT INTO voicemails");
     expect(handler).toContain("ON CONFLICT (recording_sid) DO NOTHING");
     expect(handler.indexOf("res.send(vr.toString())")).toBeLessThan(handler.indexOf("enrichAndDistributeVoicemail({"));
-    expect(twilioRoutes).toContain("void enrichAndDistributeVoicemail({");
-    expect(twilioRoutes).not.toContain("await enrichAndDistributeVoicemail({");
   });
 });

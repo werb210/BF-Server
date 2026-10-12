@@ -17,6 +17,7 @@ import type { Pool } from "pg";
 import { graphAppFetch, isAppGraphConfigured } from "../services/teams/graphAppClient.js";
 // BF_SERVER_MAYA_MEETING_INTEL_v1
 import { runMeetingIntel } from "../services/teams/meetingIntel.js";
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 const INTERVAL_MS = 10 * 60 * 1000;
 const KICKOFF_MS = 25 * 1000;
@@ -227,7 +228,7 @@ async function processRow(pool: Pool, row: PendingRow): Promise<void> {
 export function startTeamsTranscriptWorker(pool: Pool): { stop: () => void } {
   let running = false;
 
-  const tick = async (): Promise<void> => {
+  const tickUnclaimed = async (): Promise<void> => {
     if (running) return;
     if (!isAppGraphConfigured()) return;
     running = true;
@@ -267,6 +268,7 @@ export function startTeamsTranscriptWorker(pool: Pool): { stop: () => void } {
       running = false;
     }
   };
+  const tick = claimedTick("teams_transcript", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
 
   const kickoff = setTimeout(() => {
     void tick();

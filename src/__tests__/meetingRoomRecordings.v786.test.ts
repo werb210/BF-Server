@@ -2,7 +2,9 @@
 // participants, matches them to contacts (an unknown caller becomes a contact), the recording is
 // linked to every participant and attendee contact, and meeting.completed fires at the end.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { readFileSync } from "node:fs";
+import express from "express";
+import request from "supertest";
+import twilio from "twilio";
 
 const ROOM = "99999999-9999-4999-8999-999999999999";
 type Row = Record<string, any>;
@@ -13,6 +15,9 @@ const db = {
 const last10 = (s: unknown) => String(s ?? "").replace(/[^0-9]/g, "").slice(-10);
 const q = vi.fn(async (sql: string, p: any[] = []) => {
   if (sql.includes("FROM meeting_rooms WHERE id::text = $1")) return { rows: p[0] === ROOM ? [db.room] : [] };
+  // Ends the transcript poll right after the transcript is requested (no 6-second wait in a test).
+  if (sql.startsWith("INSERT INTO call_transcripts")) throw new Error("test: stop transcript polling");
+  if (sql.includes("FROM meeting_rooms WHERE code = $1")) return { rows: p[0] === "482913" ? [{ ...db.room, code: "482913", starts_at: new Date().toISOString(), duration_min: 60, status: "scheduled" }] : [] };
   if (sql.includes("FROM conferences WHERE meeting_room_id::text = $1 AND ended_at IS NULL")) return { rows: db.conferences.filter((c) => c.meeting_room_id === p[0] && !c.ended_at).map((c) => ({ id: c.id })) };
   if (sql.startsWith("INSERT INTO conferences")) {
     if (db.conferences.some((c) => c.meeting_room_id === p[6] && !c.ended_at)) return { rows: [] };
@@ -55,7 +60,27 @@ const q = vi.fn(async (sql: string, p: any[] = []) => {
   }
   return { rows: [], rowCount: 0 };
 });
-vi.mock("../db.js", () => ({ pool: { query: (sql: string, p?: unknown[]) => q(sql, p as any[]) } }));
+vi.mock("../db", async () => {
+  const actual = await vi.importActual<typeof import("../db.js")>("../db");
+  const query = (sql: string, p?: unknown[]) => q(sql, p as any[]);
+  return { ...actual, pool: { query }, runQuery: query, dbQuery: query, query };
+});
+// Twilio signs every webhook; these tests sign requests with the real library.
+vi.mock("twilio", async () => await vi.importActual<typeof import("twilio")>("twilio"));
+const tw = vi.hoisted(() => ({ create: vi.fn(async () => ({ sid: "GT1" })) }));
+vi.mock("../voice/twilioClient.js", async (orig) => ({
+  ...(await orig<typeof import("../voice/twilioClient.js")>()),
+  getTwilio: () => ({ intelligence: { v2: { transcripts: Object.assign(() => ({ fetch: async () => ({ status: "failed" }) }), { create: tw.create }) } } }),
+}));
+vi.mock("../voice/conferenceService.js", async (orig) => ({
+  ...(await orig<typeof import("../voice/conferenceService.js")>()),
+  getConferenceByFriendly: vi.fn(async () => (db.conferences[0] ? { id: db.conferences[0].id, meeting_room_id: ROOM } : null)),
+  notifyConferenceState: vi.fn(async () => undefined),
+}));
+vi.mock("../services/mmsMedia.js", async (orig) => ({
+  ...(await orig<typeof import("../services/mmsMedia.js")>()),
+  persistTwilioMediaToBlob: vi.fn(async () => null),
+}));
 const emitAutomationEvent = vi.fn(async () => undefined);
 vi.mock("../modules/automation/automationEngine.js", () => ({ emitAutomationEvent: (...a: any[]) => (emitAutomationEvent as any)(...a) }));
 
@@ -131,15 +156,58 @@ describe("room TwiML and routes", () => {
     expect(xml).toContain('record="record-from-start"');
     expect(xml).toContain("meeting-room-status?room=r1&amp;from=client%3Au-staff");
     expect(xml).toContain("recording/status?conf=" + conferenceName("r1"));
-    expect(readFileSync("src/routes/reception.ts", "utf8")).toContain("dial.conference(roomConferenceAttrs(room.id");
   });
 
-  it("the status route is Twilio-signed and the recording route links room recordings", () => {
-    const w = readFileSync("src/routes/webhooks.ts", "utf8");
-    expect(w).toContain('router.post("/twilio/meeting-room-status", twilioWebhookValidation,');
-    const r = readFileSync("src/routes/recordingWebhooks.ts", "utf8");
-    expect(r).toContain("linkRoomRecordings(conf.id)");
+  it("the 866 meeting-code step joins with the same recorded room attributes", async () => {
+    const res = await signedPost("/api/webhooks/twilio/reception", "../routes/reception.js", "/meeting-code", { Digits: "482913", From: "+17805551212", CallSid: "CA1" });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('record="record-from-start"');
+    expect(res.text).toContain("meeting-room-status?room=" + ROOM + "&amp;from=%2B17805551212");
+    expect(res.text).toContain("recording/status?conf=" + conferenceName(ROOM));
+    expect(res.text).toContain(">" + conferenceName(ROOM) + "</Conference>");
+  });
+});
+
+// Signs a webhook the way Twilio does, against a fixed public URL.
+async function signedPost(mount: string, modPath: string, path: string, params: Record<string, string>, signed = true) {
+  const router = (await import(modPath)).default;
+  const app = express();
+  app.use(express.urlencoded({ extended: false }));
+  app.use(mount, router);
+  const full = mount + path;
+  let r = request(app).post(full).type("form").set("X-Forwarded-Host", "example.com").set("X-Forwarded-Proto", "https");
+  if (signed) r = r.set("X-Twilio-Signature", twilio.getExpectedTwilioSignature(String(process.env.TWILIO_AUTH_TOKEN), "https://example.com" + full, params));
+  return r.send(params);
+}
+
+describe("room webhooks", () => {
+  beforeEach(() => {
+    db.conferences = []; db.participants = []; db.recordings = []; db.links = []; db.contacts = []; db.meetingParticipants = [];
+    tw.create.mockClear();
+  });
+
+  it("the status route is Twilio-signed", async () => {
+    const path = "/twilio/meeting-room-status?room=" + ROOM;
+    const unsigned = await signedPost("/api/webhooks", "../routes/webhooks.js", path, { StatusCallbackEvent: "participant-join", CallSid: "CA1", ConferenceSid: "CF1", From: "+17805551212" }, false);
+    expect(unsigned.status).toBe(403);
+    expect(db.conferences).toHaveLength(0);
+    const signed = await signedPost("/api/webhooks", "../routes/webhooks.js", path, { StatusCallbackEvent: "participant-join", CallSid: "CA1", ConferenceSid: "CF1", From: "+17805551212" });
+    expect(signed.status).toBe(200);
+    expect(db.conferences).toHaveLength(1);
+    expect(db.participants.map((x) => x.call_sid)).toEqual(["CA1"]);
+  });
+
+  it("the recording route links room recordings and transcribes them", async () => {
+    process.env.VOICE_INTELLIGENCE_SERVICE_SID = "GA00000000000000000000000000000000";
+    await ev("participant-join", "CA1", "+17805551212");
+    db.recordings.push({ id: "rec-1", conference_id: db.conferences[0]!.id });
+    const res = await signedPost("/api/webhooks/twilio", "../routes/recordingWebhooks.js", "/recording/status?conf=" + conferenceName(ROOM), {
+      RecordingSid: "RE1", RecordingStatus: "completed", RecordingUrl: "https://api.twilio.com/rec/RE1", RecordingDuration: "60",
+    });
+    expect(res.status).toBe(200);
+    expect(db.links.map((l) => l.contact_id).sort()).toEqual(["c-new-0", "c-room"]);
     // transcription runs for every completed recording, room recordings included
-    expect(r).toContain("void triggerVoiceIntelligence(conf.id, recSid)");
+    await vi.waitFor(() => expect(tw.create).toHaveBeenCalledWith({ serviceSid: "GA00000000000000000000000000000000", channel: { media_properties: { source_sid: "RE1" } } }));
+    delete process.env.VOICE_INTELLIGENCE_SERVICE_SID;
   });
 });

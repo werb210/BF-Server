@@ -5,7 +5,7 @@ import path from "node:path";
 import process from "node:process";
 
 const repoRoot = process.cwd();
-const entrypoint = path.resolve(repoRoot, "src/routes/index.ts");
+const entrypoint = path.resolve(repoRoot, "src/routes/routeRegistry.ts");
 const sourceExtensions = [".ts", ".tsx", ".mts", ".cts"];
 
 function resolveSourceImport(importer, specifier) {
@@ -52,7 +52,7 @@ function inspectSource(filename) {
 }
 
 if (!fs.existsSync(entrypoint)) {
-  console.error("Route entrypoint not found: src/routes/index.ts");
+  console.error("Route entrypoint not found: src/routes/routeRegistry.ts");
   process.exit(2);
 }
 
@@ -78,7 +78,7 @@ while (stack.length > 0) {
 
 const relative = (filename) => path.relative(repoRoot, filename).split(path.sep).join("/");
 if (violations.length > 0) {
-  console.error("ERROR: top-level await is reachable from src/routes/index.ts.");
+  console.error("ERROR: top-level await is reachable from src/routes/routeRegistry.ts.");
   console.error("This graph must remain compatible with require() during deploy verification.\n");
   for (const violation of violations) {
     console.error(`Top-level await at ${relative(violation.chain.at(-1))}:${violation.line}:${violation.column}`);

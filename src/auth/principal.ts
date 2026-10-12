@@ -7,6 +7,7 @@
 // service principals.
 import jwt from "jsonwebtoken";
 import { isStaffRole } from "./roles.js";
+import { looksLikeServiceToken, tryVerifyServiceToken } from "./serviceTokens.js"; // BF_SERVER_v789_SERVICE_TOKENS
 
 export type PrincipalKind =
   | "staff"
@@ -64,9 +65,16 @@ export function classifyClaims(claims: Record<string, unknown>): Principal {
 }
 
 // HS256 only; returns null on a missing secret or any verification failure.
+// BF_SERVER_v789_SERVICE_TOKENS - a service token verifies with its sender's key
+// (BI_SERVICE_JWT_SECRET / AGENT_SERVICE_JWT_SECRET when set) via verifyServiceToken.
 export function verifyPrincipalToken(token: string | null | undefined): Principal | null {
+  if (!token) return null;
+  if (looksLikeServiceToken(token)) {
+    const verified = tryVerifyServiceToken(token);
+    return verified ? classifyClaims(verified.claims) : null;
+  }
   const secret = process.env.JWT_SECRET;
-  if (!token || !secret) return null;
+  if (!secret) return null;
   try {
     const decoded = jwt.verify(token, secret, { algorithms: ["HS256"] });
     if (!decoded || typeof decoded !== "object") return null;

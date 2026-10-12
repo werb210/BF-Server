@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { answerBySql, callsMatching } from "./helpers/answerBySql.js"; // BF_SERVER_v789_SQL_CONTENT_MOCKS
 
 const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }));
 
@@ -32,14 +33,16 @@ describe("db resilience", () => {
     const { deps } = await import("../system/deps.js");
     deps.db.ready = false;
     deps.db.error = null;
-    queryMock
-      .mockRejectedValueOnce(new Error("offline"))
-      .mockRejectedValueOnce(new Error("offline"))
-      .mockResolvedValueOnce({ rows: [] });
+    // BF_SERVER_v789_SQL_CONTENT_MOCKS - the connectivity ping (SELECT 1) is offline for its first two attempts.
+    let pings = 0;
+    queryMock.mockImplementation(answerBySql([
+      [/^SELECT 1$/, () => (++pings <= 2 ? new Error("offline") : { rows: [] })],
+    ], new Error("unexpected query")));
     const { initDependencies } = await import("../system/init.js");
 
     await initDependencies();
     expect(deps.db.ready).toBe(true);
+    expect(callsMatching(queryMock, /^SELECT 1$/)).toHaveLength(3);
     expect(queryMock).toHaveBeenCalledTimes(3);
   });
 

@@ -1,18 +1,44 @@
-import { readFileSync } from "node:fs";
+// BF_SERVER_BLOCK_v661 - OTP preflight guard
+import request from "supertest";
 import { describe, it, expect } from "vitest";
+import { createApp } from "../app.js";
 
-const app = readFileSync("src/app.ts", "utf-8");
+const app = createApp();
+const ORIGIN = "https://staff.boreal.financial";
 
 describe("v661 OTP preflight guard", () => {
-  it("short-circuits OPTIONS for /api/auth/* with 204 after cors()", () => {
-    expect(app).toContain("BF_SERVER_BLOCK_v661");
-    expect(app).toMatch(/app\.options\(\/\^\\\/api\\\/auth\\\/\/, cors\(corsOptions\)/);
-    expect(app).toContain("res.sendStatus(204)");
+  it("answers OPTIONS for /api/auth/* with 204 and the CORS headers", async () => {
+    const r = await request(app)
+      .options("/api/auth/otp/start")
+      .set("Origin", ORIGIN)
+      .set("Access-Control-Request-Method", "POST")
+      .set("Access-Control-Request-Headers", "content-type");
+    expect(r.status).toBe(204);
+    expect(r.headers["access-control-allow-origin"]).toBe(ORIGIN);
+    expect(r.headers["access-control-allow-credentials"]).toBe("true");
+    expect(String(r.headers["access-control-allow-methods"])).toContain("POST");
   });
-  it("keeps the catch-all options handler ahead of the json body parser", () => {
-    const optionsIdx = app.indexOf('app.options("*", cors(corsOptions));');
-    const jsonIdx = app.indexOf("express.json(");
-    expect(optionsIdx).toBeGreaterThan(-1);
-    expect(jsonIdx).toBeGreaterThan(optionsIdx);
+
+  it("does not hand a disallowed origin the CORS headers", async () => {
+    const r = await request(app)
+      .options("/api/auth/otp/start")
+      .set("Origin", "https://evil.example.com")
+      .set("Access-Control-Request-Method", "POST");
+    expect(r.status).toBe(204);
+    expect(r.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  it("answers a preflight before the json body parser can reject it", async () => {
+    // A malformed JSON body on a preflight would be a 400 if express.json ran first.
+    for (const path of ["/api/auth/otp/verify", "/api/client/messages"]) {
+      const r = await request(app)
+        .options(path)
+        .set("Origin", ORIGIN)
+        .set("Access-Control-Request-Method", "POST")
+        .set("Content-Type", "application/json")
+        .send("{not json");
+      expect(r.status).toBe(204);
+      expect(r.headers["access-control-allow-origin"]).toBe(ORIGIN);
+    }
   });
 });

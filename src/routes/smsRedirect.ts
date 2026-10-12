@@ -5,7 +5,8 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import { pool } from "../db.js";
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js"; // BF_SERVER_BLOCK_v464_SMS_DELIVERY
-import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 router.use(express.urlencoded({ extended: false }));
@@ -13,7 +14,7 @@ router.use(express.urlencoded({ extended: false }));
 // BF_SERVER_BLOCK_v464_SMS_DELIVERY - this was public and unsigned; anyone could post
 // a status. It now checks Twilio's signature like every other Twilio webhook, and
 // records the delivery result (and error code) for every tracked text.
-router.post("/status", twilioWebhookValidation, async (req: any, res: any) => {
+router.post("/status", twilioWebhookValidation, safeHandler(async (req: any, res: any) => {
   try {
     const sid = String(req.body?.MessageSid || "");
     const status = String(req.body?.MessageStatus || "");
@@ -28,12 +29,12 @@ router.post("/status", twilioWebhookValidation, async (req: any, res: any) => {
     }
   } catch { /* ignore */ }
   res.status(204).end();
-});
+}));
 
 router.get("/:token", async (req: any, res: any) => {
   const fallbackUrl = "https://www.boreal.financial"; // BF_SERVER_WWW_FALLBACK_v749
   try {
-    const payload = jwt.verify(String(req.params.token), String(process.env.JWT_SECRET)) as { sid?: string; u?: string };
+    const payload = jwt.verify(String(req.params.token), String(process.env.JWT_SECRET), { algorithms: ["HS256"] }) as { sid?: string; u?: string };
     const url = payload?.u && /^https?:\/\//i.test(payload.u) ? payload.u : fallbackUrl;
     if (payload?.sid) {
       await pool.query(`UPDATE sms_campaign_sends SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [payload.sid]);

@@ -2,7 +2,9 @@ import { ALBERTA_TZ } from "../lib/albertaTime.js"; // BF_SERVER_ALBERTA_TIME_v7
 // BF_SERVER_CLIENT_BOOKING_v738 - public booking API used by the website and client app.
 import { Router } from "express";
 import { safeHandler } from "../middleware/safeHandler.js";
-import { bookableStaff, openSlots, createBooking, bookingPhoneE164 } from "../services/clientBooking.js";
+import { bookableStaff, openSlots, createBooking, bookingPhoneE164, BookingCalendarError } from "../services/clientBooking.js";
+import { pool } from "../db.js";
+import { parseExpressCaslConsent, recordExpressCaslConsent } from "../services/smsConsent.js"; // BF_SERVER_v789_CASL_EXPRESS_CONSENT
 
 const router = Router();
 const hits = new Map<string, number[]>();
@@ -49,11 +51,17 @@ router.post("/", safeHandler(async (req: any, res: any) => {
   const phoneE164 = phone ? bookingPhoneE164(phone) : null;
   if (kind === "phone" && !phoneE164) { res.status(400).json({ error: "invalid_phone" }); return; }
   if (Number.isNaN(startsAt.getTime())) { res.status(400).json({ error: "start_time_required" }); return; }
+  // BF_SERVER_v789_CASL_EXPRESS_CONSENT - only an explicit casl_consent === true; recorded
+  // once the booking has created or matched the contact (also when only Outlook failed).
+  const consent = parseExpressCaslConsent(b);
+  const recordConsent = () => recordExpressCaslConsent((sql, params) => pool.query(sql, params as any[]), { email, silo: "BF" }, consent, "website_booking");
   try {
     const out = await createBooking({ kind, startsAt, staffId: typeof b.staffId === "string" && b.staffId !== "any" ? b.staffId : null, name, email, phone: phoneE164, notes: String(b.notes ?? "").trim().slice(0, 1000) || null });
     if (!out.ok) { res.status(409).json({ error: out.reason, message: "That time was just taken. Please pick another." }); return; }
+    await recordConsent();
     res.status(201).json(out);
   } catch (err) {
+    if (err instanceof BookingCalendarError) await recordConsent();
     console.error("[booking] create failed", err instanceof Error ? err.message : String(err));
     res.status(503).json({ error: "booking_failed", message: "We couldn't book that right now. Please call (866) 631-8939." });
   }

@@ -5,6 +5,7 @@
 // picked up. Non-overlapping; never throws.
 import type { Pool } from "pg";
 import { snapshotGoogleAds } from "../services/googleAdsWarehouse.js";
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000;
 const KICKOFF_MS = 60 * 1000;
@@ -13,7 +14,7 @@ const WINDOW_DAYS = 30;
 export function startGoogleAdsWarehouseWorker(pool: Pool): { stop: () => void } {
   let running = false;
 
-  const tick = async (): Promise<void> => {
+  const tickUnclaimed = async (): Promise<void> => {
     if (running) return;
     running = true;
     try {
@@ -25,6 +26,7 @@ export function startGoogleAdsWarehouseWorker(pool: Pool): { stop: () => void } 
       running = false;
     }
   };
+  const tick = claimedTick("google_ads_warehouse", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
 
   const kickoff = setTimeout(() => { void tick(); }, KICKOFF_MS);
   const timer = setInterval(() => { void tick(); }, INTERVAL_MS);

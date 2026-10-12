@@ -38,6 +38,7 @@ import { hashRefreshToken } from "../../auth/tokenUtils.js";
 import { fetchCapabilitiesForRole } from "../../auth/capabilities.js";
 import { fetchTwilioClient, fetchVerifyServiceSid } from "../../services/twilio.js";
 import { assertLenderBinding } from "../../auth/lenderBinding.js";
+import { resolveOtpHashSalt, warnIfOtpHashSaltDerived } from "./otpHashSalt.js"; // BF_SERVER_v789_OTP_HASH_SALT
 
 const OTP_SESSION_TTL_MS = 10 * 60 * 1000;
 
@@ -253,8 +254,13 @@ function ensureTestOtp(phoneE164: string): string {
   return (parseInt(createHash("sha256").update(seed).digest("hex").slice(0, 8), 16) % 900000 + 100000).toString();
 }
 
-function hashOtpCode(code: string): string {
-  const salt = config.auth.otpHashSalt?.trim() || config.twilio.authToken?.trim() || "staff-server-otp";
+// BF_SERVER_v789_OTP_HASH_SALT - no Twilio-token or constant fallback; derive from JWT_SECRET.
+export function hashOtpCode(code: string): string {
+  const { salt, derived } = resolveOtpHashSalt(
+    config.auth.otpHashSalt,
+    config.auth.jwtSecret || process.env.JWT_SECRET,
+  );
+  if (derived) warnIfOtpHashSaltDerived(config.auth.otpHashSalt);
   return createHash("sha256").update(`${salt}:${code}`).digest("hex");
 }
 

@@ -515,6 +515,11 @@ export async function updateLenderProduct(params: {
   }
   if (existing.has("category") && params.category !== undefined) {
     updates.push({ name: "category", value: params.category });
+    // BF_SERVER_v789_LP_TYPE_SYNC - create writes type = category, but update only moved
+    // category, so readers keyed on `type` kept the old product category.
+    if (existing.has("type") && params.category !== null) {
+      updates.push({ name: "type", value: params.category });
+    }
   }
   if (existing.has("country") && params.country !== undefined) {
     updates.push({ name: "country", value: params.country });

@@ -15,6 +15,7 @@ import ocrAdminRoutes from "../modules/ocr/ocr.admin.routes.js";
 import adminOpsRoutes from "./admin.ops.js";
 import adminExportsRoutes from "./admin.exports.js";
 import adminDashboardRoutes from "./admin.dashboard.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router = Router();
 
@@ -63,19 +64,19 @@ router.get("/users", requireCapability([CAPABILITIES.USER_MANAGE]), async (_req:
     return res.status(500).json({ error: "users_list_failed" });
   }
 });
-router.get("/users/:id", requireCapability([CAPABILITIES.USER_MANAGE]), async (req: any, res: any) => {
+router.get("/users/:id", requireCapability([CAPABILITIES.USER_MANAGE]), safeHandler(async (req: any, res: any) => {
   const { rows } = await (await import("../db.js")).pool.query(`SELECT id, email, role, silo, outbound_caller_id FROM users WHERE id = $1 LIMIT 1`, [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: "not_found" });
   return res.status(200).json(rows[0]);
-});
+}));
 
-router.patch("/users/:id", requireCapability([CAPABILITIES.USER_MANAGE]), async (req: any, res: any) => {
+router.patch("/users/:id", requireCapability([CAPABILITIES.USER_MANAGE]), safeHandler(async (req: any, res: any) => {
   const value = req.body?.outbound_caller_id;
   if (!(value === null || (typeof value === "string" && /^\+[1-9]\d{6,14}$/.test(value)))) return res.status(400).json({ error: "invalid_outbound_caller_id" });
   const { rows } = await (await import("../db.js")).pool.query(`UPDATE users SET outbound_caller_id = $1 WHERE id = $2 RETURNING id, email, role, silo, outbound_caller_id`, [value, req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: "not_found" });
   return res.status(200).json(rows[0]);
-});
+}));
 
 router.use("/", lenderAdminRoutes);
 
@@ -319,10 +320,10 @@ router.post(
 // domain authentication lapsed. Admin-guarded (requireAuth + AUDIT_VIEW above).
 // BF_SERVER_CLIENT_FAILURE_LOG_v749 - the last 200 client-portal requests answered 401/403/5xx
 // on this instance, newest first. Admin-guarded (requireAuth + AUDIT_VIEW above).
-router.get("/client-failures", async (_req: any, res: any) => {
+router.get("/client-failures", safeHandler(async (_req: any, res: any) => {
   const { recentClientFailures, startedAt } = await import("../middleware/clientFailureLog.js");
   res.json({ instance: process.env.WEBSITE_INSTANCE_ID ? String(process.env.WEBSITE_INSTANCE_ID).slice(0, 12) : null, startedAt, uptimeS: Math.round(process.uptime()), failures: recentClientFailures() });
-});
+}));
 
 router.post(
   "/sendgrid-diagnostics",
@@ -465,7 +466,7 @@ router.post(
 router.post(
   "/referrer-agreement-diagnostics",
   requireCapability([CAPABILITIES.USER_MANAGE]),
-  async (req: any, res: any) => {
+  safeHandler(async (req: any, res: any) => {
     const apiKeySet = Boolean((process.env.SIGNNOW_API_KEY ?? "").trim());
     const templateId = (process.env.SIGNNOW_REFERRER_TEMPLATE_ID ?? "").trim();
     const roleName = (process.env.SIGNNOW_REFERRER_ROLE_NAME ?? "Referrer").trim();
@@ -515,7 +516,7 @@ router.post(
     }
     out.diagnosis = "ready_send_probe_true_to_verify_a_real_agreement_upload";
     return res.json(out);
-  },
+  }),
 );
 
 // BF_SERVER_REFERRER_TEMPLATE_GEN_v1 - generate the SignNow referrer-agreement TEMPLATE
@@ -739,7 +740,9 @@ router.post(
 // Same query as /api/_int/job-queue. That path is internal: the browser
 // gets no CORS header and net::ERR_FAILED, so the portal could never read
 // it. This is the staff-authenticated equivalent the portal can call.
-router.get("/job-queue", requireAuth, wrap(async () => {
+// BF_SERVER_v789 - wrap() only forwards errors; it never wrote the returned payload, so
+// this route hung. Send it.
+router.get("/job-queue", requireAuth, wrap(async (_req, res) => {
   const summary = await runQuery(
     `SELECT type, status, COUNT(*)::text AS count,
             MIN(created_at) AS oldest,
@@ -770,31 +773,31 @@ router.get("/job-queue", requireAuth, wrap(async () => {
       LIMIT 50`
   );
 
-  return ok({
+  res.json(ok({
     summary: summary.rows,
     claimableNow: claimable.rows,
     stuckOverAnHour: stuck.rows,
     stuck: stuck.rows, // BF_SERVER_JOB_QUEUE_STUCK_v707 - the portal reads "stuck"
-  });
+  }));
 }));
 
 // BF_SERVER_ADMIN_NAV_ENDPOINTS_v1 - back the previously-dead admin nav pages with real data.
-router.get("/issue-reports", async (_req: any, res: any) => {
+router.get("/issue-reports", safeHandler(async (_req: any, res: any) => {
   const pool = (await import("../db.js")).pool;
   const r = await pool.query(`SELECT id, description FROM issues WHERE status = 'open' ORDER BY created_at DESC LIMIT 200`);
   res.json(r.rows);
-});
-router.get("/website-leads", async (_req: any, res: any) => {
+}));
+router.get("/website-leads", safeHandler(async (_req: any, res: any) => {
   const pool = (await import("../db.js")).pool;
   const r = await pool.query(`SELECT id, company_name AS company, full_name AS name, email, phone FROM crm_leads ORDER BY created_at DESC LIMIT 200`);
   res.json(r.rows);
-});
-router.get("/live-chat-queue", async (_req: any, res: any) => {
+}));
+router.get("/live-chat-queue", safeHandler(async (_req: any, res: any) => {
   const pool = (await import("../db.js")).pool;
   const r = await pool.query(`SELECT id, status, source FROM chat_sessions WHERE status IN ('queued','open','active') LIMIT 200`);
   res.json(r.rows);
-});
-router.get("/conversion-stats", async (_req: any, res: any) => {
+}));
+router.get("/conversion-stats", safeHandler(async (_req: any, res: any) => {
   const pool = (await import("../db.js")).pool;
   const leadsQ = await pool.query(`SELECT COUNT(*)::int AS n FROM crm_leads`);
   const appsQ = await pool.query(`SELECT COUNT(*)::int AS n FROM applications`);
@@ -803,12 +806,12 @@ router.get("/conversion-stats", async (_req: any, res: any) => {
   const visitors = leads + applications;
   const rate = visitors > 0 ? Math.round((applications / visitors) * 1000) / 10 : 0;
   res.json({ visitors, leads, applications, rate });
-});
-router.get("/ai-documents", async (_req: any, res: any) => {
+}));
+router.get("/ai-documents", safeHandler(async (_req: any, res: any) => {
   const pool = (await import("../db.js")).pool;
   const r = await pool.query(`SELECT id, COALESCE(source_id, LEFT(content, 60)) AS name FROM ai_knowledge ORDER BY created_at DESC LIMIT 500`);
   res.json(r.rows);
-});
+}));
 // BF_SERVER_v784_AI_DOCS_UPLOAD - the AI Knowledge Base page posts here, but
 // only GET and DELETE existed. Same storage as the settings knowledge upload
 // (multer disk -> extract text -> embedAndStore into ai_knowledge), except the
@@ -851,10 +854,10 @@ router.post(
     }
   },
 );
-router.delete("/ai-documents/:id", async (req: any, res: any) => {
+router.delete("/ai-documents/:id", safeHandler(async (req: any, res: any) => {
   const pool = (await import("../db.js")).pool;
   await pool.query(`DELETE FROM ai_knowledge WHERE id = $1`, [req.params.id]);
   res.json({ ok: true });
-});
+}));
 
 export default router;

@@ -67,6 +67,19 @@ router.get('/:publicId/required-documents', safeHandler(async (req: any, res: an
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.APPLICATION_READ]));
 
+// BF_SERVER_v789_SILO_SCOPING - per-application routes answer 404 when the record lives in a
+// silo other than the caller's (getSilo(res) is re-resolved by requireAuth from the users row).
+async function assertApplicationInCallerSilo(res: any, id: string): Promise<void> {
+  const r = await pool.query<{ silo: string | null }>(
+    `SELECT silo FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+    [id],
+  );
+  const row = r.rows[0];
+  if (row && String(row.silo ?? 'BF').toUpperCase() !== getSilo(res)) {
+    throw new AppError('not_found', 'Application not found.', 404);
+  }
+}
+
 // GET /api/applications — portal pipeline list
 router.get('/', safeHandler(async (req: any, res: any) => {
   const page = Math.max(1, Number(req.query.page) || 1);
@@ -127,7 +140,8 @@ router.get('/', safeHandler(async (req: any, res: any) => {
   });
 }));
 
-router.get('/dup-debug', safeHandler(async (req: any, res: any) => {
+// BF_SERVER_v789_SILO_SCOPING - Admin-only and limited to the caller's silo.
+router.get('/dup-debug', requireAdmin, safeHandler(async (req: any, res: any) => {
   // BF_SERVER_BLOCK_v781_DUP_DEBUG — read-only. Lists applications matching a
   // name (business or contact) or a contactId, with the fields that tell a true
   // duplicate submission from an expected companion/child app. No writes.
@@ -139,17 +153,18 @@ router.get('/dup-debug', safeHandler(async (req: any, res: any) => {
                 a.created_at, a.submitted_at,
                 c.name AS contact_name, c.email AS contact_email,
                 right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) AS contact_phone_last10`;
+  const dupSilo = getSilo(res);
   let rows: any[] = [];
   if (contactId) {
     const r = await pool.query(
       `SELECT ${cols} FROM applications a LEFT JOIN contacts c ON c.id = a.contact_id
-        WHERE a.contact_id::text = $1 ORDER BY a.created_at ASC`, [contactId]);
+        WHERE a.contact_id::text = $1 AND a.silo = $2 ORDER BY a.created_at ASC`, [contactId, dupSilo]);
     rows = r.rows;
   } else {
     const r = await pool.query(
       `SELECT ${cols} FROM applications a LEFT JOIN contacts c ON c.id = a.contact_id
-        WHERE a.name ILIKE $1 OR c.name ILIKE $1
-        ORDER BY a.contact_id NULLS LAST, a.created_at ASC`, [`%${q}%`]);
+        WHERE (a.name ILIKE $1 OR c.name ILIKE $1) AND a.silo = $2
+        ORDER BY a.contact_id NULLS LAST, a.created_at ASC`, [`%${q}%`, dupSilo]);
     rows = r.rows;
   }
   const apps = rows.map((r) => ({
@@ -200,6 +215,7 @@ router.get('/:id/task-status', safeHandler(async (req: any, res: any) => {
   // responses + uploaded non-rejected documents + all required docs in).
   const id = String(req.params.id);
   if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: "invalid id" });
+  await assertApplicationInCallerSilo(res, id); // BF_SERVER_v789_SILO_SCOPING
 
   const prompts = await pool.query(
     `SELECT DISTINCT cta_action, max(cta_label) AS cta_label
@@ -463,7 +479,8 @@ router.post('/:id/request-steps', requireCapability([CAPABILITIES.CRM_WRITE]), s
 // phone each application is actually linked to, so a grouping mismatch (two apps
 // on different phones) is visible. Optional ?ids=id1,id2 inspects specific apps.
 // Gated by the requireAuth + APPLICATION_READ capability set above. No writes.
-router.get('/phone-debug', safeHandler(async (req: any, res: any) => {
+// BF_SERVER_v789_SILO_SCOPING - Admin-only and limited to the caller's silo.
+router.get('/phone-debug', requireAdmin, safeHandler(async (req: any, res: any) => {
   const phoneRaw = String(req.query?.phone ?? "").trim();
   const phone10 = phoneRaw.replace(/[^0-9]/g, "").slice(-10);
   const ids = String(req.query?.ids ?? "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -476,6 +493,7 @@ router.get('/phone-debug', safeHandler(async (req: any, res: any) => {
                 right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) AS contact_phone_last10,
                 a.updated_at`;
 
+  const phoneSilo = getSilo(res);
   let matched: any[] = [];
   if (phone10) {
     const r = await pool.query(
@@ -483,8 +501,9 @@ router.get('/phone-debug', safeHandler(async (req: any, res: any) => {
          FROM applications a
          JOIN contacts c ON c.id = a.contact_id
         WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $1
+          AND a.silo = $2
         ORDER BY a.updated_at DESC`,
-      [phone10],
+      [phone10, phoneSilo],
     );
     matched = r.rows;
   }
@@ -495,8 +514,8 @@ router.get('/phone-debug', safeHandler(async (req: any, res: any) => {
       `SELECT ${cols}
          FROM applications a
          LEFT JOIN contacts c ON c.id = a.contact_id
-        WHERE a.id::text = ANY($1::text[])`,
-      [ids],
+        WHERE a.id::text = ANY($1::text[]) AND a.silo = $2`,
+      [ids, phoneSilo],
     );
     byIds = r.rows;
   }
@@ -808,9 +827,9 @@ router.get('/:id/banking-analysis', safeHandler(async (req: any, res: any) => {
   }>(
     `SELECT id, banking_completed_at
        FROM applications
-      WHERE id::text = ($1)::text
+      WHERE id::text = ($1)::text AND silo = $2
       LIMIT 1`,
-    [applicationId]
+    [applicationId, getSilo(res)] // BF_SERVER_v789_SILO_SCOPING - other silo reads as not found
   );
   if (!appRes.rows[0]) {
     throw new AppError('not_found', 'Application not found.', 404);
@@ -1849,6 +1868,7 @@ router.get('/:id/signing-readiness', safeHandler(async (req: any, res: any) => {
 router.post('/:id/resend-signing', safeHandler(async (req: any, res: any) => {
   const id = String(req.params.id ?? '').trim();
   if (!id) throw new AppError('validation_error', 'Application id required.', 400);
+  await assertApplicationInCallerSilo(res, id); // BF_SERVER_v789_SILO_SCOPING
   const { readReadinessSnapshot } = await import('../../services/submission/orchestrator.js');
   const snapshot = await readReadinessSnapshot({ pool, applicationId: id });
   // BF_SERVER_SBA_SIGN_AGAIN_v794 - "Sign again" (body.again) on an SBA file: every owner signs a fresh set even
@@ -1888,6 +1908,7 @@ router.post('/:id/resend-signing', safeHandler(async (req: any, res: any) => {
 router.get('/:id/sent-lenders', safeHandler(async (req: any, res: any) => {
   const id = String(req.params.id ?? '').trim();
   if (!id) throw new AppError('validation_error', 'Application id required.', 400);
+  await assertApplicationInCallerSilo(res, id); // BF_SERVER_v789_SILO_SCOPING
   const r = await pool.query(
     // BF_SERVER_BLOCK_v458_LENDER_EMAIL - include download activity for packages
     // that went out as a link, so staff can see whether the lender opened it.
@@ -2130,6 +2151,7 @@ router.post('/:id/reject', requireAuth, safeHandler(async (req: any, res: any) =
     ? req.body.reasonCodes.map((x: any) => String(x).trim()).filter(Boolean).slice(0, 20)
     : [];
   if (codes.length === 0) throw new AppError('validation_error', 'At least one reason is required.', 400);
+  await assertApplicationInCallerSilo(res, id); // BF_SERVER_v789_SILO_SCOPING
   const note = String(req.body?.note ?? '').trim().slice(0, 2000);
   const staffName = String(req.user?.name ?? req.user?.email ?? 'Boreal Financial');
 

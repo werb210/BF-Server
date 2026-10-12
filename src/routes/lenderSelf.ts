@@ -64,7 +64,7 @@ function requireLender(req: LenderRequest, res: Response, next: NextFunction): v
   }
 
   try {
-    const decoded = jwt.verify(token, secret) as Record<string, unknown>;
+    const decoded = jwt.verify(token, secret, { algorithms: ["HS256"] }) as Record<string, unknown>;
     const role = String(decoded.role ?? "");
     const lenderId = decoded.lenderId ?? decoded.lender_id ?? null;
 

@@ -41,6 +41,8 @@ import { initTeamWebSocket } from "./ws/teamSocket.js"; // BF_SERVER_BLOCK_v750_
 import { logGraphConfigStatus } from "./services/email/graphSendService.js"; // BF_SERVER_v72_BLOCK_1_5
 import { initializeClientPushProvider } from "./services/clientPushService.js";
 import { initializeWatchPushProvider } from "./watch/initWatchPush.js";
+import { assertJwtSecretAtStartup } from "./startup/jwtSecretPolicy.js"; // BF_SERVER_v789_JWT_SECRET_POLICY
+import { warnIfOtpHashSaltDerived } from "./modules/auth/otpHashSalt.js"; // BF_SERVER_v789_OTP_HASH_SALT
 
 const PORT = Number(process.env.PORT) || 8080;
 
@@ -57,6 +59,10 @@ if (process.env.NODE_ENV === "production") {
 }
 
 export async function start(): Promise<void> {
+  // BF_SERVER_v789_JWT_SECRET_POLICY - refuse to start on a missing, short or placeholder
+  // JWT_SECRET (before any DB work); warn when shorter than 32.
+  assertJwtSecretAtStartup(process.env.JWT_SECRET);
+  warnIfOtpHashSaltDerived(process.env.OTP_HASH_SALT); // BF_SERVER_v789_OTP_HASH_SALT (logs once)
   // BF_SERVER_BLOCK_v335 -- push init moved after listen. Watch push is
   // optional, so its configuration must not stop the API accepting traffic.
   initializeClientPushProvider();
@@ -75,9 +81,11 @@ export async function start(): Promise<void> {
     const { pool } = await import("./db.js");
     const { runMigrations } = await import("./startup/runMigrations.js");
     try {
+      // BF_SERVER_v789_MIGRATION_LOCK_WAIT - throws on any migration error and when the
+      // migration lock is not acquired within 5 minutes; "All migrations applied" is
+      // logged by runMigrations itself, only once every file really is applied.
       await runMigrations(pool);
       logGraphConfigStatus(); // BF_SERVER_v72_BLOCK_1_5
-      console.log("[MIGRATIONS] All migrations applied.");
       try {
         const has = await pgcryptoAvailable(pool);
         console.log(JSON.stringify({ event: "ssn_crypto_mode", mode: has ? "pgcrypto" : "node_aes_256_gcm" }));
@@ -85,7 +93,7 @@ export async function start(): Promise<void> {
         console.log(JSON.stringify({ event: "ssn_crypto_mode_check_failed", error: String(err) }));
       }
     } catch (err) {
-      console.error("[MIGRATIONS] FATAL — refusing to start:", err);
+      logFatal("[MIGRATIONS] FATAL - refusing to start:", err); // BF_SERVER_v789_MIGRATIONS_STRICT
       // Exit so Azure App Service restarts and does not route traffic to a broken schema.
       process.exit(1);
     }
@@ -164,9 +172,7 @@ export async function start(): Promise<void> {
     );
   }
 
-  if (!process.env.JWT_SECRET || process.env.JWT_SECRET === "change-me-in-production") {
-    throw new Error("JWT_SECRET must be set to a secure value in production");
-  }
+  // BF_SERVER_v789_JWT_SECRET_POLICY - JWT_SECRET is validated at the top of start().
 
   // BF_AZURE_OCR_TERMSHEET_v44 — Azure Blob storage hard-check (production).
   // In development/test the storage factory falls back to LocalBackend.
@@ -415,6 +421,9 @@ export async function start(): Promise<void> {
       shuttingDown = true;
       console.log(`[shutdown] ${signal} received — stopping workers, draining pool`);
       for (const stop of workerStops) { try { stop(); } catch { /* ignore */ } }
+      // BF_SERVER_v789_WORKER_CLAIM - hand the worker-lock session back first; pool.end() waits for it.
+      try { const { closeWorkerLocks } = await import("./workers/claim.js"); await closeWorkerLocks(); }
+      catch (err) { console.error("[shutdown] worker lock close failed:", (err as Error)?.message ?? String(err)); }
       try { await pool.end(); } catch (err) { console.error("[shutdown] pool.end failed:", err); }
       process.exit(0);
     };

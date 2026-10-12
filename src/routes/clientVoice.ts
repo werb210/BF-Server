@@ -12,12 +12,13 @@ import { Router, type Request, type Response } from "express";
 import { generateVoiceToken } from "../telephony/services/tokenService.js";
 
 import { callerOwnsApplication } from "../auth/clientApplicationOwnership.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router = Router();
 
 
 
-router.get("/token", async (req: Request, res: Response) => {
+router.get("/token", safeHandler(async (req: Request, res: Response) => {
   // Optional applicationId; if missing, anonymous identity
   const applicationIdRaw = typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : "";
   let identity: string;
@@ -71,6 +72,6 @@ router.get("/token", async (req: Request, res: Response) => {
   } catch (err: any) {
     return res.status(500).json({ error: err?.message ?? "token_generation_failed" });
   }
-});
+}));
 
 export default router;

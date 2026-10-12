@@ -7,6 +7,11 @@ import { wrap } from "../lib/routeWrap.js";
 import { stripUndefined } from "../utils/clean.js";
 import { getLandingBySlug } from "../services/landingPage.service.js"; // BF_SERVER_BLOCK_v780_PUBLIC_LANDING_IMPORT
 import { getStorage } from "../lib/storage/index.js"; // BF_SERVER_BLOCK_v456_LENDER_PACKAGE_LINK
+import rateLimit from "express-rate-limit";
+import { rateLimitKeyFromRequest } from "../middleware/clientIp.js";
+import { CONVERSATION_TOKEN_HEADER, verifyConversationToken } from "../services/publicConversationTokens.js"; // BF_SERVER_v789_CONVERSATION_TOKENS
+import { parseExpressCaslConsent, recordExpressCaslConsent } from "../services/smsConsent.js"; // BF_SERVER_v789_CASL_EXPRESS_CONSENT
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_v789_SILENT_QUERIES
 
 const router = Router();
 
@@ -79,8 +84,11 @@ type LeadPayload = {
 };
 
 async function createLead(payload: LeadPayload): Promise<{ leadId?: string }> {
+  // BF_SERVER_v789_CASL_EXPRESS_CONSENT - the consent fields are recorded by the
+  // route, not part of the (strict) lead schema.
+  const { casl_consent: _c, casl_consent_text: _t, casl_consent_at: _a, ...leadFields } = payload as LeadPayload & Record<string, unknown>;
   const normalizedPayload = {
-    ...payload,
+    ...leadFields,
     businessName: payload.businessName ?? payload.companyName,
   };
 
@@ -133,7 +141,7 @@ router.post(
               = regexp_replace(($1)::text, '[^0-9]', '', 'g')
           LIMIT 1`,
         [phone],
-      ).catch(() => ({ rows: [] as Array<{ id: string }> }));
+      ).catch((err: unknown) => logWarnSwallowed(err, "routes/public.ts:137", ({ rows: [] as Array<{ id: string }> })));
       contactId = c.rows[0]?.id ?? null;
     }
 
@@ -153,7 +161,7 @@ router.post(
         phone,
         String(b.sessionKey ?? "").trim().slice(0, 80) || null,
       ],
-    ).catch(() => {});
+    ).catch((err: unknown) => { logWarnSwallowed(err, "routes/public.ts:147"); });
 
     // The answers never reached the application row, so put them there too -
     // that is what makes the Monthly revenue column on the abandoned list fill in.
@@ -165,7 +173,7 @@ router.post(
                   '{kyc,monthlyRevenue}', to_jsonb(($2)::text), true)
           WHERE id::text = ($1)::text`,
         [applicationId, String(b.monthlyRevenue ?? "")],
-      ).catch(() => {});
+      ).catch((err: unknown) => { logWarnSwallowed(err, "routes/public.ts:168"); });
     }
 
     if (contactId) {
@@ -175,7 +183,7 @@ router.post(
         `INSERT INTO crm_notes (contact_id, body, silo)
          VALUES (($1)::uuid, $2, 'BF')`,
         [contactId, `Stopped at the application: ${reason}. Country ${String(b.country ?? "unknown")}, average monthly revenue ${String(b.monthlyRevenue ?? "not given")}.`],
-      ).catch(() => {});
+      ).catch((err: unknown) => { logWarnSwallowed(err, "routes/public.ts:181"); });
     }
 
     return res.status(200).json(ok({ recorded: true }));
@@ -191,6 +199,15 @@ router.post(
       if (!result?.leadId) {
         return res.status(400).json(fail(res, "INVALID_INPUT"));
       }
+
+      // BF_SERVER_v789_CASL_EXPRESS_CONSENT - only an explicit casl_consent === true,
+      // recorded on the BF contact with this email when there is one.
+      await recordExpressCaslConsent(
+        (sql, params) => dbQuery(sql, params as any[]),
+        { email: typeof req.body?.email === "string" ? req.body.email : null, silo: "BF" },
+        parseExpressCaslConsent(req.body),
+        "public_api_lead",
+      );
 
       return res.status(200).json(ok({ leadId: result.leadId }));
     }),
@@ -263,18 +280,51 @@ router.get(
 // inbox (v683) reads/writes - two-way without exposing other conversations.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+// BF_SERVER_v789_CONVERSATION_TOKENS - the UUID alone is no longer enough: the
+// widget sends the visitor_token /api/maya/escalate issued as X-Conversation-Token
+// (401 when missing, expired or for another conversation), and a read returns
+// only messages created at or after that token was issued.
+async function conversationAccess(req: any, res: any, id: string): Promise<{ createdAt: string } | null> {
+  const header = req.headers?.[CONVERSATION_TOKEN_HEADER];
+  const token = typeof header === "string" ? header.trim() : "";
+  if (!token) {
+    res.status(401).json(fail(res, "UNAUTHORIZED"));
+    return null;
+  }
+  const access = await verifyConversationToken(id, token);
+  if (!access) {
+    res.status(401).json(fail(res, "UNAUTHORIZED"));
+    return null;
+  }
+  return access;
+}
+
+// BF_SERVER_v789_PUBLIC_RATE_LIMITS - visitor follow-ups, 20 a minute per IP.
+const conversationMessageLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "RATE_LIMITED" },
+  keyGenerator: rateLimitKeyFromRequest,
+  validate: { xForwardedForHeader: false },
+});
+
 router.get(
   "/conversation/:id/messages",
   wrap(async (req, res) => {
     const id = String(req.params.id ?? "");
     if (!UUID_RE.test(id)) return res.status(400).json(fail(res, "INVALID_INPUT"));
+    const access = await conversationAccess(req, res, id);
+    if (!access) return;
     const result = await dbQuery<{ id: string; direction: string; body: string; created_at: string }>(
       `SELECT id, direction, body, created_at
          FROM communications_messages
         WHERE conversation_id = $1
+          AND created_at >= ($2)::timestamptz
         ORDER BY created_at ASC
         LIMIT 500`,
-      [id],
+      [id, access.createdAt],
     );
     return res.status(200).json(ok({ messages: result.rows }));
   }),
@@ -282,9 +332,11 @@ router.get(
 
 router.post(
   "/conversation/:id/message",
+  conversationMessageLimiter,
   wrap(async (req, res) => {
     const id = String(req.params.id ?? "");
     if (!UUID_RE.test(id)) return res.status(400).json(fail(res, "INVALID_INPUT"));
+    if (!(await conversationAccess(req, res, id))) return;
     const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
     if (!body) return res.status(400).json(fail(res, "INVALID_INPUT"));
     const conv = await dbQuery<{ id: string; contact_id: string | null; silo: string | null; contact_phone: string | null }>(

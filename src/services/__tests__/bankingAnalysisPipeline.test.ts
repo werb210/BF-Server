@@ -22,9 +22,9 @@ describe("banking analysis pipeline", () => {
   });
 
   it("falls back to prebuilt-bankStatement.us when prebuilt-layout returns OTHER", async () => {
-    analyzeWithDocIntelMock
-      .mockResolvedValueOnce({ documents: [{ docType: "OTHER" }], pages: [], tables: [] })
-      .mockResolvedValueOnce({
+    // BF_SERVER_v789_SQL_CONTENT_MOCKS - OCR answers by the model asked for, not by call order.
+    const layout = { documents: [{ docType: "OTHER" }], pages: [], tables: [] };
+    const bankStatement = {
         documents: [{ docType: "bankStatement.us" }],
         pages: [{ pageNumber: 1 }],
         tables: [{
@@ -38,7 +38,9 @@ describe("banking analysis pipeline", () => {
             { rowIndex: 1, columnIndex: 2, content: "$100.00" },
           ],
         }],
-      });
+      };
+    analyzeWithDocIntelMock.mockImplementation(async (_buf: Buffer, model: string) =>
+      (model === "prebuilt-layout" ? layout : model === "prebuilt-bankStatement.us" ? bankStatement : { documents: [], pages: [], tables: [] }));
 
     const persistedAccounts: string[] = [];
     queryMock.mockImplementation(async (sql: string, params?: unknown[]) => {

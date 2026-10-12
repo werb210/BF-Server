@@ -2,16 +2,16 @@
 // Routes called by the agent (Maya service) on behalf of staff
 // audience. Service-JWT-authed with the shared JWT_SECRET. Every
 // call writes a row to maya_audit.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
-import jwt from "jsonwebtoken";
+import { signServiceToken, verifyServiceToken } from "../auth/serviceTokens.js"; // BF_SERVER_v789_SERVICE_TOKENS
 import { pool } from "../db.js";
 import { applicationProfileFromMetadata, mergedProfileFromMetadata } from "../services/applications/applicationProfile.js"; // BF_SERVER_MAYA_SEES_PORTAL_v782
 import { safeHandler } from "../middleware/safeHandler.js";
 import { logError } from "../observability/logger.js";
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js"; // BF_SERVER_MAYA_MKT_TOOLS_v1
 import { smsMarketingConfigured, sendMarketingSms, renderMarketingSms } from "../services/marketingSms.js"; // BF_SERVER_MAYA_MKT_TOOLS_v1
-import { countEmailRecipients, runEmailSend, countSmsRecipients, runSmsSend } from "../services/marketingSendRunner.js"; // BF_SERVER_MAYA_MKT_TOOLS_v1
+import { countEmailRecipients, runEmailSend, countSmsRecipients, runSmsSend, phone10 } from "../services/marketingSendRunner.js"; // BF_SERVER_MAYA_MKT_TOOLS_v1
 import { createLandingPageFromHtml, withViewInBrowser } from "../services/landingPage.service.js"; // BF_SERVER_MAYA_MKT_TOOLS_v1
 import { runPipelineQuery } from "../services/mayaPipelineQuery.js";
 import { retrieveContext } from "../modules/ai/knowledge.service.js";
@@ -20,19 +20,15 @@ import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILE
 
 const router = Router();
 
-function getSecret(): string {
-  return process.env.JWT_SECRET || "";
-}
-
 // BF_SERVER_MAYA_INSIGHTS_v655 - exported for mayaStaffInsights.ts.
 export function verifyMayaService(req: Request): { source: string } | null {
   const auth = req.header("authorization") || "";
   const m = auth.match(/^Bearer\s+(.+)$/i);
   if (!m) return null;
-  const secret = getSecret();
-  if (!secret) return null;
   try {
-    const p = jwt.verify(m[1], secret) as { kind?: string; source?: string };
+    // BF_SERVER_v789_SERVICE_TOKENS - shared verifier: HS256 only, the agent's
+    // own key (AGENT_SERVICE_JWT_SECRET) when set, aud must be bf-server if present.
+    const p = verifyServiceToken(m[1]).claims as { kind?: string; source?: string };
     if (p?.kind !== "service") return null;
     // Maya service mints JWTs with source='maya-service' or
     // source='agent'. Accept either so the agent repo doesn't
@@ -255,6 +251,8 @@ router.post(
                 COALESCE((SELECT max(h.created_at) FROM application_stage_history h WHERE h.application_id = applications.id::text AND h.to_stage = applications.pipeline_state), submitted_at, created_at) AS stage_since,
                 CASE WHEN UPPER(TRIM(COALESCE(metadata->>'country', metadata->>'businessCountry', metadata->>'businessLocation',
                        metadata->'kyc'->>'businessLocation', metadata->'kyc'->>'country', ''))) IN ('US', 'USA', 'UNITED STATES') THEN 'USD' ELSE 'CAD' END AS currency,
+                signnow_app_signed_at, metadata->'signnow_embedded'->>'group_id' AS signnow_group_id, metadata->'sba_signnow' AS sba_signnow, -- BF_SERVER_v789_MAYA_SUMMARY_PORTAL
+                (SELECT count(*) FROM application_lender_selections s WHERE s.application_id::text = applications.id::text AND s.finalized_at IS NOT NULL)::int AS finalized_lenders,
                 bi_public_id, bi_completion_url -- BF_SERVER_BLOCK_v489
            FROM applications WHERE id::text = $1 LIMIT 1`,
         [appId],
@@ -311,6 +309,23 @@ router.post(
         `SELECT lender_name, amount, term, rate_factor, status FROM offers WHERE application_id = $1 AND COALESCE(is_archived, false) = false ORDER BY created_at DESC LIMIT 10`,
         [appId],
       ).catch((err: any) => { logError("maya_summary_offers_failed", { code: "maya_summary_offers_failed", error: err?.message ?? "unknown" }); return { rows: [] as any[] }; });
+      // BF_SERVER_v789_MAYA_SUMMARY_PORTAL - the same offers rows the client mini-portal reads (GET /api/client/offers),
+      // and the signing state the portal derives (deriveSigningStatus, shared with the staff header chip).
+      const portalOffers = await pool.query(
+        `SELECT o.lender_name, lp.name AS product_name, o.amount::text AS amount, o.rate_factor, o.term, o.status, o.expiry_date
+           FROM offers o
+           LEFT JOIN lender_submissions ls ON ls.id = o.lender_submission_id
+           LEFT JOIN lender_products lp ON lp.id = ls.lender_id
+          WHERE o.application_id::text = ($1)::text AND COALESCE(o.is_archived, false) = false
+          ORDER BY o.updated_at DESC LIMIT 25`,
+        [appId],
+      ).catch((err: any) => { logError("maya_summary_portal_offers_failed", { code: "maya_summary_portal_offers_failed", error: err?.message ?? "unknown" }); return { rows: [] as any[] }; });
+      const { deriveSigningStatus } = await import("../modules/applications/applications.routes.js");
+      const signatureStatus = deriveSigningStatus({
+        signedAt: app.signnow_app_signed_at ?? null,
+        groupId: app.signnow_group_id ?? (Array.isArray(app.sba_signnow) && app.sba_signnow.length > 0 ? (app.sba_signnow[0]?.groupId ?? "sba") : null),
+        finalizedLenders: Number(app.finalized_lenders ?? 0),
+      });
       const summary = {
         applicationId: app.id,
         shortId: String(app.id).slice(-8).toUpperCase(),
@@ -348,6 +363,18 @@ router.post(
         documents: dr.rows.map((d: any) => ({ document_category: d.document_category, status: d.status })),
         bi_public_id: app.bi_public_id ?? null,
         bi_completion_url: app.bi_completion_url ?? null,
+        // BF_SERVER_v789_MAYA_SUMMARY_PORTAL - what the client portal shows: offers, signing state, resume link.
+        offers: portalOffers.rows.map((o: any) => ({
+          lender_name: o.lender_name ?? null,
+          product_name: o.product_name ?? null,
+          amount: o.amount == null ? null : Number(o.amount),
+          rate: o.rate_factor ?? null,
+          term: o.term ?? null,
+          status: o.status ?? null,
+          expires_at: o.expiry_date ?? null,
+        })),
+        signature_status: signatureStatus,
+        continuation_url: clientApplicationUrl(app.id),
       });
     } catch (e: any) {
       await audit({ audience: "staff", tool: "application.summary", args: { application_id: appId }, ok: false, summary: e?.message ?? "error", errorCode: "application_summary_exception" });
@@ -744,7 +771,7 @@ const BI_SERVER_URL =
 // NOTE: BI-Server's Maya routes accept source 'maya-service' | 'agent'
 // only (NOT 'bf-server', which is reserved for the from-bf ingest routes).
 function mintBiMayaServiceJwt(): string {
-  return jwt.sign({ kind: "service", source: "maya-service" }, getSecret(), { expiresIn: "5m" });
+  return signServiceToken("bi-server", { source: "maya-service" }); // BF_SERVER_v789_SERVICE_TOKENS
 }
 
 router.post(
@@ -830,6 +857,13 @@ router.post(
     }
   }),
 );
+
+// BF_SERVER_v789_MAYA_SUMMARY_PORTAL - the client app link every resume nudge sends (notifyContact,
+// automation application_link, staff-message SMS): CLIENT_URL + /application/:id.
+export function clientApplicationUrl(appId: string): string {
+  const base = String(process.env.CLIENT_URL ?? "https://client.boreal.financial").replace(/\/$/, "");
+  return `${base}/application/${encodeURIComponent(String(appId))}`;
+}
 
 // BF_SERVER_MAYA_BATCH_B_STAFF_READS_v1 — four read-only staff endpoints
 // (lender-product lookup, contact-360 timeline, call/voicemail triage, deal
@@ -1510,12 +1544,19 @@ router.post(
     const contactId = biStr(req.body?.contact_id);
     if (!contactId) return res.status(400).json({ ok: false, error: "contact_id_required" });
     try {
+      // BF_SERVER_v789_MAYA_TASKS_ON_TASKS - reads the unified tasks table; status/priority are
+      // mapped back to the lowercase values Maya already understands (open|done, none|low|medium|high).
+      const taskSilo = biStr(req.body?.silo)?.toUpperCase() ?? null;
       const r = await pool.query(
-        `SELECT t.id::text AS id, t.title, t.status, t.priority, t.due_at,
+        `SELECT t.id::text AS id, t.title,
+                CASE t.status WHEN 'COMPLETED' THEN 'done' ELSE 'open' END AS status,
+                lower(t.priority) AS priority, t.due_at,
                 NULLIF(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), '') AS assignee_name
-           FROM crm_tasks t LEFT JOIN users u ON u.id = t.assigned_to
-          WHERE t.contact_id::text = $1 ORDER BY COALESCE(t.due_at, t.created_at) DESC LIMIT 50`,
-        [contactId],
+           FROM tasks t LEFT JOIN users u ON u.id = t.assignee_user_id
+          WHERE t.contact_id::text = $1 AND t.deleted_at IS NULL
+            AND ($2::text IS NULL OR t.silo = $2::text)
+          ORDER BY COALESCE(t.due_at, t.created_at) DESC LIMIT 50`,
+        [contactId, taskSilo],
       );
       const tasks = r.rows.map((x: any) => ({ id: x.id, title: x.title, status: x.status ?? null, priority: x.priority ?? null, dueAt: x.due_at ?? null, assignee: x.assignee_name ?? null }));
       const summary = tasks.length ? `${tasks.length} task(s) for this contact.` : "No tasks for this contact.";
@@ -1535,20 +1576,33 @@ router.post(
     if (!verifyMayaService(req)) return res.status(401).json({ ok: false, error: "service_jwt_required" });
     const contactId = biStr(req.body?.contact_id);
     const title = biStr(req.body?.title);
-    const silo = biStr(req.body?.silo) ?? "BF";
+    // BF_SERVER_v789_MAYA_TASKS_ON_TASKS - writes the unified tasks table with UPPERCASE values
+    // that pass its CHECKs. assignee_user_id is NOT NULL: the staff user Maya acts for, else the
+    // contact's owner; with neither the task cannot be created.
+    const siloRaw = (biStr(req.body?.silo) ?? "BF").toUpperCase();
+    const silo = siloRaw === "BI" || siloRaw === "SLF" ? siloRaw : "BF";
     const dueAt = biStr(req.body?.due_at);
-    const priority = biStr(req.body?.priority) ?? "none";
+    const priorityRaw = (biStr(req.body?.priority) ?? "none").toUpperCase();
+    const priority = ["LOW", "MEDIUM", "HIGH"].includes(priorityRaw) ? priorityRaw : "NONE";
     const notes = biStr(req.body?.notes);
+    const staffUserId = biStr(req.body?.staff_user_id) ?? biStr(req.body?.user_id);
     if (!contactId || !title) return res.status(400).json({ ok: false, error: "contact_id_and_title_required" });
     try {
       const r = await pool.query(
-        `INSERT INTO crm_tasks
-           (title, notes, due_at, reminder_at, task_type, priority, queue_name,
-            assigned_to, owner_id, contact_id, company_id, status, graph_id, silo)
-         VALUES ($1,$2,$3,NULL,'todo',$4,NULL,NULL,NULL,$5,NULL,'open',NULL,$6)
+        `INSERT INTO tasks
+           (silo, title, body, type, status, priority, due_at, assignee_user_id, contact_id, created_by, source)
+         SELECT $1, $2, $3, 'TODO', 'NOT_STARTED', $4, $5::timestamptz, a.assignee, c.id, s.id, 'API'
+           FROM contacts c
+           LEFT JOIN users s ON s.id::text = $7::text
+           CROSS JOIN LATERAL (SELECT COALESCE(s.id, c.owner_id) AS assignee) a
+          WHERE c.id::text = $6::text AND a.assignee IS NOT NULL
          RETURNING id::text AS id`,
-        [title, notes ?? null, dueAt ?? null, priority, contactId, silo],
+        [silo, title, notes ?? null, priority, dueAt ?? null, contactId, staffUserId ?? null],
       );
+      if (!r.rows?.[0]) {
+        await audit({ audience: "staff", tool: "crm.create_task", args: { contact_id: contactId }, ok: false, summary: "no assignee", errorCode: "crm_create_task_no_assignee" });
+        return res.status(400).json({ ok: false, error: "assignee_required" });
+      }
       const summary = "Task created for the contact.";
       await audit({ audience: "staff", tool: "crm.create_task", args: { contact_id: contactId, title }, ok: true, summary, sessionId: biStr(req.body?.session_id) });
       return res.json({ ok: true, id: r.rows?.[0]?.id ?? null, summary });
@@ -1597,6 +1651,56 @@ router.post(
   }),
 );
 
+// BF_SERVER_v789_MAYA_MKT_CONFIRM - a confirmed Maya marketing send must carry the
+// pending_action_id its own preview returned: same staff user, at most 15 minutes old,
+// same channel/silo/segment/content, and usable once (claimed by an atomic UPDATE).
+// A test send goes only to the requesting staff user's own email or phone.
+export const MAYA_MKT_PREVIEW_TTL_MINUTES = 15;
+const MAYA_MKT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function mayaStaffUserId(body: any): string | null {
+  return biStr(body?.staff_user_id) ?? biStr(body?.user_id);
+}
+export function marketingSendFingerprint(parts: Record<string, unknown>): string {
+  return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
+}
+async function isStaffOwnRecipient(staffUserId: string, recipient: string, channel: "email" | "sms"): Promise<boolean> {
+  const r = await pool.query<{ email: string | null; o365_user_email: string | null; phone: string | null; phone_number: string | null }>(
+    `SELECT email, o365_user_email, phone, phone_number FROM users
+      WHERE id::text = $1 AND COALESCE(disabled, false) = false AND role IN ('Admin', 'Staff', 'Ops', 'Marketing')
+      LIMIT 1`,
+    [staffUserId],
+  );
+  const u = r.rows[0];
+  if (!u) return false;
+  if (channel === "email") {
+    const want = recipient.trim().toLowerCase();
+    return want.length > 0 && [u.email, u.o365_user_email].some((e) => typeof e === "string" && e.trim().toLowerCase() === want);
+  }
+  const want = phone10(recipient);
+  return want.length === 10 && [u.phone, u.phone_number].some((p) => phone10(p) === want);
+}
+async function createMarketingPreview(staffUserId: string, silo: string, payload: Record<string, unknown>): Promise<string | null> {
+  const r = await pool.query<{ id: string }>(
+    `INSERT INTO maya_pending_actions (kind, payload, staff_user_id, silo, expires_at)
+     VALUES ('marketing_send', $1::jsonb, $2, $3, now() + make_interval(mins => $4::int))
+     RETURNING id`,
+    [JSON.stringify(payload), staffUserId, silo, MAYA_MKT_PREVIEW_TTL_MINUTES],
+  );
+  return r.rows[0]?.id ?? null;
+}
+async function consumeMarketingPreview(id: string, staffUserId: string, fingerprint: string): Promise<boolean> {
+  const r = await pool.query<{ id: string }>(
+    `UPDATE maya_pending_actions
+        SET status = 'consumed', decided_at = now()
+      WHERE id::text = $1 AND kind = 'marketing_send' AND status = 'pending'
+        AND staff_user_id = $2 AND payload->>'fingerprint' = $3
+        AND expires_at > now() AND created_at > now() - make_interval(mins => $4::int)
+      RETURNING id`,
+    [id, staffUserId, fingerprint, MAYA_MKT_PREVIEW_TTL_MINUTES],
+  );
+  return Boolean(r.rows[0]);
+}
+
 router.post(
   "/staff/marketing-send",
   safeHandler(async (req: Request, res: Response) => {
@@ -1607,12 +1711,23 @@ router.post(
     const test = biStr(req.body?.test) ?? null;
     const confirm = req.body?.confirm === true;
     const sid = biStr(req.body?.session_id);
+    const staffUserId = mayaStaffUserId(req.body); // BF_SERVER_v789_MAYA_MKT_CONFIRM
+    const pendingActionId = biStr(req.body?.pending_action_id);
+    const testAllowed = async (ch: "email" | "sms"): Promise<boolean> =>
+      Boolean(staffUserId && test && (await isStaffOwnRecipient(staffUserId, test, ch)));
+    const claim = async (fingerprint: string): Promise<{ ok: true } | { ok: false; status: number; error: string }> => {
+      if (!staffUserId) return { ok: false, status: 400, error: "staff_user_required" };
+      if (!pendingActionId || !MAYA_MKT_UUID.test(pendingActionId)) return { ok: false, status: 400, error: "pending_action_required" };
+      if (!(await consumeMarketingPreview(pendingActionId, staffUserId, fingerprint))) return { ok: false, status: 409, error: "pending_action_invalid" };
+      return { ok: true };
+    };
     try {
       if (channel === "sms") {
         if (!smsMarketingConfigured()) return res.json({ ok: false, error: "sms_not_configured" });
         const body = biStr(req.body?.body);
         if (!body) return res.status(400).json({ ok: false, error: "body_required" });
         if (test) {
+          if (!(await testAllowed("sms"))) return res.status(403).json({ ok: false, error: "test_recipient_not_staff" });
           const r = await sendMarketingSms(test, renderMarketingSms({
             body,
             vars: { first_name: "there", name: "there", email: test, company: "" },
@@ -1621,12 +1736,16 @@ router.post(
           await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, test: true }, ok: true, summary: "Sent SMS test.", sessionId: sid });
           return res.json({ ...r, ok: true, test: true });
         }
+        const fingerprint = marketingSendFingerprint({ channel: "sms", silo, tag, body });
         const total = await countSmsRecipients(pool, silo, tag);
         if (!confirm) {
+          const pending_action_id = staffUserId ? await createMarketingPreview(staffUserId, silo, { channel: "sms", silo, tag, fingerprint, recipients: total }) : null;
           const summary = `PREVIEW: this SMS would reach ${total} recipient(s)${tag ? ` in segment '${tag}'` : " (entire opted-in SMS audience)"}. Nothing was sent. Confirm to send.`;
-          await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, tag, preview: true }, ok: true, summary, sessionId: sid });
-          return res.json({ ok: true, preview: true, channel: "sms", tag, recipients: total, summary });
+          await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, tag, preview: true, pending_action_id }, ok: true, summary, sessionId: sid, userId: staffUserId });
+          return res.json({ ok: true, preview: true, channel: "sms", tag, recipients: total, pending_action_id, expires_in_minutes: MAYA_MKT_PREVIEW_TTL_MINUTES, summary });
         }
+        const smsClaim = await claim(fingerprint);
+        if (!smsClaim.ok) return res.status(smsClaim.status).json({ ok: false, error: smsClaim.error });
         if (total === 0) return res.json({ ok: true, recipients: 0, smsSent: 0, emailSent: 0, failed: 0 });
         // BF_SERVER_SMS_SEND_SAFETY_v710
         const queued = await pool.query<{ id: string; not_before: string }>(
@@ -1643,17 +1762,24 @@ router.post(
       const html = biStr(req.body?.html);
       if (!subject || !html) return res.status(400).json({ ok: false, error: "subject_and_html_required" });
       if (test) {
+        if (!(await testAllowed("email"))) return res.status(403).json({ ok: false, error: "test_recipient_not_staff" });
         const merge = { first_name: "there", name: "there", email: test, company: "" };
         const r = await sendOne({ to: test, subject: mergeFields(subject, merge), html: mergeFields(html, merge) });
         await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, test: true }, ok: true, summary: "Sent email test.", sessionId: sid });
         return res.json({ ...r, ok: true, test: true });
       }
+      // BF_SERVER_v789_EMAIL_BLAST_CONSENT - no whole-silo email blasts from Maya either.
+      if (!tag || !tag.trim()) return res.status(400).json({ ok: false, error: "audience_required" });
+      const fingerprint = marketingSendFingerprint({ channel: "email", silo, tag, subject, html });
       const total = await countEmailRecipients(pool, silo, tag);
       if (!confirm) {
+        const pending_action_id = staffUserId ? await createMarketingPreview(staffUserId, silo, { channel: "email", silo, tag, fingerprint, recipients: total }) : null;
         const summary = `PREVIEW: this email would reach ${total} recipient(s)${tag ? ` in segment '${tag}'` : " (entire opted-in email audience)"}. Nothing was sent. Confirm to send.`;
-        await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, tag, preview: true }, ok: true, summary, sessionId: sid });
-        return res.json({ ok: true, preview: true, channel: "email", tag, recipients: total, summary });
+        await audit({ audience: "staff", tool: "marketing.send_campaign", args: { channel, tag, preview: true, pending_action_id }, ok: true, summary, sessionId: sid, userId: staffUserId });
+        return res.json({ ok: true, preview: true, channel: "email", tag, recipients: total, pending_action_id, expires_in_minutes: MAYA_MKT_PREVIEW_TTL_MINUTES, summary });
       }
+      const emailClaim = await claim(fingerprint);
+      if (!emailClaim.ok) return res.status(emailClaim.status).json({ ok: false, error: emailClaim.error });
       if (total === 0) return res.json({ ok: true, recipients: 0, sent: 0, failed: 0 });
       const { url: viewUrl } = await createLandingPageFromHtml(html, silo, subject, null);
       const htmlOut = withViewInBrowser(html, viewUrl);

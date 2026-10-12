@@ -8,14 +8,15 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { auth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
-import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 // Staff-only: referrers/clients must not see the referrer roster.
 router.use(auth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] }));
 
 // GET /api/admin/referrers - list with rollups.
-router.get("/", async (_req, res) => {
+router.get("/", safeHandler(async (_req, res) => {
   const r = await pool
     .query(
       `SELECT u.id::text AS id,
@@ -53,13 +54,13 @@ router.get("/", async (_req, res) => {
     )
     .catch((err: any) => { console.warn("[silent-query] routes/adminReferrers.ts", { message: err?.message }); return { rows: [] as any[] }; });
   res.json({ referrers: r.rows ?? [] });
-});
+}));
 
 // BF_SERVER_REFERRER_PAYOUT_v1
 // POST /api/admin/referrers/:id/pay - ADMIN ONLY. Flip this referrer's credited
 // conversions to paid and stamp paid_at; returns count + total paid. Idempotent
 // (a second call finds nothing still 'credited' and pays 0).
-router.post("/:id/pay", requireAuthorization({ roles: [ROLES.ADMIN] }), async (req, res) => {
+router.post("/:id/pay", requireAuthorization({ roles: [ROLES.ADMIN] }), safeHandler(async (req, res) => {
   const referrerId = String(req.params.id ?? "").trim();
   if (!referrerId) {
     res.status(400).json({ error: "referrer_id_required" });
@@ -79,10 +80,10 @@ router.post("/:id/pay", requireAuthorization({ roles: [ROLES.ADMIN] }), async (r
     .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/adminReferrers.ts:67", ({ rows: [{ paid_count: 0, paid_amount: 0 }] as any[] })));
   const row = r.rows[0] ?? { paid_count: 0, paid_amount: 0 };
   res.json({ status: "ok", paidCount: Number(row.paid_count ?? 0), paidAmount: Number(row.paid_amount ?? 0) });
-});
+}));
 
 // GET /api/admin/referrers/:id/detail - one referrer's referrals + matched apps.
-router.get("/:id/detail", async (req, res) => {
+router.get("/:id/detail", safeHandler(async (req, res) => {
   const id = String(req.params.id || "");
   const ref = await pool
     .query(
@@ -128,6 +129,6 @@ router.get("/:id/detail", async (req, res) => {
       commissions: [],
     },
   });
-});
+}));
 
 export default router;

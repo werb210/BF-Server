@@ -8,6 +8,7 @@ import {
   getConferenceById, getParticipantById, addParticipantRow,
   dialPstnIntoConference, dialClientIntoConference, notifyConferenceState,
 } from "../voice/conferenceService.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router = Router();
 
@@ -32,7 +33,7 @@ async function userMaySee(userId: string, conferenceId: string): Promise<boolean
   return (r.rowCount ?? 0) > 0;
 }
 
-router.post("/conferences/:id/participants/:pid/mute", auth, async (req: any, res) => {
+router.post("/conferences/:id/participants/:pid/mute", auth, safeHandler(async (req: any, res) => {
   const userId = req.user?.userId || req.user?.id || req.user?.sub || "";
   if (!await userMaySee(userId, req.params.id)) return res.status(403).json({ ok: false });
   const part = await getParticipantById(req.params.pid);
@@ -43,9 +44,9 @@ router.post("/conferences/:id/participants/:pid/mute", auth, async (req: any, re
   await pool.query(`UPDATE conference_participants SET muted = $2 WHERE id = $1`, [part.id, muted]);
   void notifyConferenceState(conf.id, "conference.update", { pid: part.id, muted });
   return res.json({ ok: true });
-});
+}));
 
-router.post("/conferences/:id/participants/:pid/hold", auth, async (req: any, res) => {
+router.post("/conferences/:id/participants/:pid/hold", auth, safeHandler(async (req: any, res) => {
   const userId = req.user?.userId || req.user?.id || req.user?.sub || "";
   if (!await userMaySee(userId, req.params.id)) return res.status(403).json({ ok: false });
   const part = await getParticipantById(req.params.pid);
@@ -56,9 +57,9 @@ router.post("/conferences/:id/participants/:pid/hold", auth, async (req: any, re
   await pool.query(`UPDATE conference_participants SET on_hold = $2 WHERE id = $1`, [part.id, hold]);
   void notifyConferenceState(conf.id, "conference.update", { pid: part.id, hold });
   return res.json({ ok: true });
-});
+}));
 
-router.delete("/conferences/:id/participants/:pid", auth, async (req: any, res) => {
+router.delete("/conferences/:id/participants/:pid", auth, safeHandler(async (req: any, res) => {
   const userId = req.user?.userId || req.user?.id || req.user?.sub || "";
   if (!await userMaySee(userId, req.params.id)) return res.status(403).json({ ok: false });
   const part = await getParticipantById(req.params.pid);
@@ -68,9 +69,9 @@ router.delete("/conferences/:id/participants/:pid", auth, async (req: any, res) 
   await pool.query(`UPDATE conference_participants SET status = 'left', left_at = now() WHERE id = $1`, [part.id]);
   void notifyConferenceState(conf.id, "conference.update", { pid: part.id, kicked: true });
   return res.json({ ok: true });
-});
+}));
 
-router.post("/conferences/:id/participants", auth, async (req: any, res) => {
+router.post("/conferences/:id/participants", auth, safeHandler(async (req: any, res) => {
   const userId = req.user?.userId || req.user?.id || req.user?.sub || "";
   if (!await userMaySee(userId, req.params.id)) return res.status(403).json({ ok: false });
   const conf = await getConferenceById(req.params.id);
@@ -83,7 +84,7 @@ router.post("/conferences/:id/participants", auth, async (req: any, res) => {
     const pid = await addParticipantRow({ conferenceId: conf.id, kind: "pstn", phoneNumber: to, displayName: req.body?.name ?? to });
     const sid = await dialPstnIntoConference({
       conferenceId: conf.id, conferenceFriendly: conf.friendly_name,
-      toNumber: to, fromNumber: await callerIdForUser(pool, req.user?.userId || req.user?.id || req.user?.sub || ""), // BF_SERVER_PHONE_ROUTING_v688b participantId: pid,
+      toNumber: to, fromNumber: await callerIdForUser(pool, req.user?.userId || req.user?.id || req.user?.sub || ""), participantId: pid, // BF_SERVER_PHONE_ROUTING_v688b (v789: participantId was inside this comment)
     });
     return res.json({ ok: true, participantId: pid, callSid: sid });
   }
@@ -93,16 +94,16 @@ router.post("/conferences/:id/participants", auth, async (req: any, res) => {
     return res.json({ ok: true, participantId: pid, callSid: sid });
   }
   return res.status(400).json({ ok: false, error: "phone_or_identity_required" });
-});
+}));
 
-router.post("/calls/:callSid/dtmf", auth, async (req: any, res) => {
+router.post("/calls/:callSid/dtmf", auth, safeHandler(async (req: any, res) => {
   const digits: string = String(req.body?.digits ?? "");
   if (!/^[0-9*#]+$/.test(digits)) return res.status(400).json({ ok: false, error: "invalid_digits" });
   await getTwilio().calls(req.params.callSid).update({ sendDigits: digits });
   return res.json({ ok: true });
-});
+}));
 
-router.post("/conferences/:id/recording", auth, async (req: any, res) => {
+router.post("/conferences/:id/recording", auth, safeHandler(async (req: any, res) => {
   const userId = req.user?.userId || req.user?.id || req.user?.sub || "";
   if (!await userMaySee(userId, req.params.id)) return res.status(403).json({ ok: false });
   const conf = await getConferenceById(req.params.id);
@@ -117,9 +118,9 @@ router.post("/conferences/:id/recording", auth, async (req: any, res) => {
   await pool.query(`UPDATE conferences SET recording_paused = $2, updated_at = now() WHERE id = $1`, [conf.id, op === "pause"]);
   void notifyConferenceState(conf.id, "recording.update", { op });
   return res.json({ ok: true });
-});
+}));
 
-router.post("/conferences/:id/transfer", auth, async (req: any, res) => {
+router.post("/conferences/:id/transfer", auth, safeHandler(async (req: any, res) => {
   const userId = req.user?.userId || req.user?.id || req.user?.sub || "";
   if (!await userMaySee(userId, req.params.id)) return res.status(403).json({ ok: false });
   const conf = await getConferenceById(req.params.id);
@@ -134,7 +135,7 @@ router.post("/conferences/:id/transfer", auth, async (req: any, res) => {
     newPid = await addParticipantRow({ conferenceId: conf.id, kind: "pstn", phoneNumber: to, displayName: target.name ?? to });
     await dialPstnIntoConference({
       conferenceId: conf.id, conferenceFriendly: conf.friendly_name,
-      toNumber: to, fromNumber: await callerIdForUser(pool, req.user?.userId || req.user?.id || req.user?.sub || ""), // BF_SERVER_PHONE_ROUTING_v688b participantId: newPid,
+      toNumber: to, fromNumber: await callerIdForUser(pool, req.user?.userId || req.user?.id || req.user?.sub || ""), participantId: newPid, // BF_SERVER_PHONE_ROUTING_v688b (v789: participantId was inside this comment)
     });
   } else if (target.identity) {
     newPid = await addParticipantRow({ conferenceId: conf.id, kind: "staff", identity: target.identity, displayName: target.name ?? target.identity });
@@ -151,6 +152,6 @@ router.post("/conferences/:id/transfer", auth, async (req: any, res) => {
     }
   }
   return res.json({ ok: true, newParticipantId: newPid });
-});
+}));
 
 export default router;

@@ -5,17 +5,13 @@ process.env.TWILIO_API_SECRET = "test";
 process.env.TWILIO_APP_SID = "test";
 
 import { afterEach, beforeEach, vi } from "vitest";
-import { resetRedisMock } from "../lib/redis.js";
-import { resetTestDb } from "../lib/dbTestUtils.js";
-import { resetRateLimitForTests } from "../system/rateLimit.js";
 
+// BF_SERVER_v789_DEAD_CODE - this used to build a pg-mem pool nobody read, and reset
+// a Redis mock and a rate-limit store that no live module uses. Those modules are gone.
 beforeEach(async () => {
-  await resetTestDb();
-  resetRedisMock();
   // BF_SERVER_BLOCK_v571 - was resetOtpStateForTests() from ../app.js, which loaded the
   // whole route graph before each test file's vi.mock could apply. Same reset, no import.
   (globalThis as any).__otpStore = {};
-  resetRateLimitForTests();
 });
 
 afterEach(() => {

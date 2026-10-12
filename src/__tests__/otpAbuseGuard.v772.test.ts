@@ -1,8 +1,31 @@
 // BF_SERVER_OTP_ABUSE_GUARD_v772
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { readFileSync } from "node:fs";
+import express from "express";
+import jwt from "jsonwebtoken";
+import request from "supertest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { answerBySql } from "./helpers/answerBySql.js";
+
+const h = vi.hoisted(() => ({ queryMock: vi.fn(), checkTextable: vi.fn(), verifyCreate: vi.fn(), twilioFactory: vi.fn() }));
+// The OTP start route short-circuits in test mode; run it as it runs in production.
+vi.mock("../config/runtime.js", async (orig) => ({ ...(await orig<typeof import("../config/runtime.js")>()), isTest: false }));
+vi.mock("../middleware/authRateLimit.js", async (orig) => ({
+  ...(await orig<typeof import("../middleware/authRateLimit.js")>()),
+  otpStartLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
+  otpVerifyLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
+vi.mock("../db.js", async (orig) => ({ ...(await orig<typeof import("../db.js")>()), pool: { query: h.queryMock } }));
+vi.mock("../lib/db.js", async (orig) => ({ ...(await orig<typeof import("../lib/db.js")>()), runQuery: h.queryMock }));
+vi.mock("../lib/phoneLineType.js", async (orig) => ({ ...(await orig<typeof import("../lib/phoneLineType.js")>()), checkTextable: h.checkTextable }));
+vi.mock("../lib/sharedClients.js", async (orig) => ({
+  ...(await orig<typeof import("../lib/sharedClients.js")>()),
+  sharedTwilio: () => ({ verify: { v2: { services: () => ({ verifications: { create: h.verifyCreate }, verificationChecks: { create: vi.fn() } }) } } }),
+}));
+vi.mock("twilio", () => ({ default: h.twilioFactory }));
+
 import { isAllowedOtpDestination, checkOtpSend, _resetOtpGuard, OTP_GUARD_MESSAGES, OTP_GUARD_STATUS } from "../lib/otpGuard.js";
 import { clientIpForRateLimit } from "../middleware/authRateLimit.js";
+import authRouter from "../routes/auth.js";
+import intRouter from "../routes/_int.js";
 
 describe("sign-in codes only go to Canadian and US numbers", () => {
   it("allows Canada and the US", () => {
@@ -74,15 +97,57 @@ describe("the rate limit cannot be dodged with a forged X-Forwarded-For", () => 
 });
 
 describe("the live routes", () => {
-  const auth = readFileSync("src/routes/auth.ts", "utf8");
-  it("checks the guard before Lookup and before Verify", () => {
-    const g = auth.indexOf("let guard = checkOtpSend(phone);");
-    expect(g).toBeGreaterThan(0);
-    expect(g).toBeLessThan(auth.indexOf("await checkTextable(phone)"));
-    expect(g).toBeLessThan(auth.indexOf("const verification = await client.verify.v2"));
+  const app = express();
+  app.use(express.json());
+  app.use("/api/auth", authRouter);
+  app.use("/api/_int", intRouter);
+  const start = (phone: string) => request(app).post("/api/auth/otp/start").send({ phone });
+
+  beforeEach(() => {
+    _resetOtpGuard();
+    vi.stubEnv("TWILIO_VERIFY_SERVICE_SID", "VA00000000000000000000000000000000");
+    h.queryMock.mockReset();
+    h.queryMock.mockImplementation(answerBySql([]));
+    h.checkTextable.mockReset();
+    h.checkTextable.mockResolvedValue({ ok: true });
+    h.verifyCreate.mockReset();
+    h.verifyCreate.mockResolvedValue({ status: "pending" });
+    h.twilioFactory.mockReset();
   });
-  it("the Twilio test send needs a signed-in user", () => {
-    const intRoutes = readFileSync("src/routes/_int.ts", "utf8");
-    expect(intRoutes).toMatch(/"\/twilio-test",\s*requireAuth,/);
+  afterEach(() => { _resetOtpGuard(); vi.unstubAllEnvs(); });
+
+  it("checks the guard before Lookup and before Verify", async () => {
+    // A refused country never reaches the paid Lookup or Verify calls.
+    const foreign = await start("+18765550100");
+    expect(foreign.status).toBe(400);
+    expect(foreign.body.error).toBe("unsupported_country");
+    expect(h.checkTextable).not.toHaveBeenCalled();
+    expect(h.verifyCreate).not.toHaveBeenCalled();
+
+    // An allowed number goes guard -> Lookup -> Verify...
+    for (let i = 0; i < 8; i++) expect((await start("+14035550100")).status).toBe(200);
+    expect(h.checkTextable).toHaveBeenCalledTimes(8);
+    expect(h.verifyCreate).toHaveBeenCalledTimes(8);
+    expect(h.verifyCreate).toHaveBeenLastCalledWith({ to: "+14035550100", channel: "sms" });
+
+    // ...until the per-number cap, which refuses before either paid call.
+    const capped = await start("+14035550100");
+    expect(capped.status).toBe(429);
+    expect(capped.body.error).toBe("otp_phone_daily_limit");
+    expect(capped.headers["retry-after"]).toBe("3600");
+    expect(h.checkTextable).toHaveBeenCalledTimes(8);
+    expect(h.verifyCreate).toHaveBeenCalledTimes(8);
+  });
+
+  it("the Twilio test send needs a signed-in user", async () => {
+    const anon = await request(app).post("/api/_int/twilio-test").send({});
+    expect(anon.status).toBe(401);
+    expect(h.twilioFactory).not.toHaveBeenCalled();
+    const token = jwt.sign({ sub: "11111111-1111-4111-8111-111111111111", role: "Admin", tokenVersion: 0, tv: 0 }, process.env.JWT_SECRET as string, { algorithm: "HS256" });
+    vi.stubEnv("TWILIO_TEST_TO", "+14035550100");
+    h.twilioFactory.mockReturnValue({ verify: { v2: { services: () => ({ verifications: { create: async () => ({ status: "pending" }) } }) } } });
+    const signedIn = await request(app).post("/api/_int/twilio-test").set("Authorization", "Bearer " + token).send({});
+    expect(signedIn.status).toBe(200);
+    expect(h.twilioFactory).toHaveBeenCalledTimes(1);
   });
 });

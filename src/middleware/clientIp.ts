@@ -12,12 +12,37 @@
 // within its own allocation to reset a limit.
 import type { Request } from "express";
 import { ipKeyGenerator } from "express-rate-limit";
+import { isIP } from "node:net";
+
+// BF_SERVER_v789_XFF_RIGHTMOST - the left-most x-forwarded-for entry is whatever
+// the caller sent; only the entries appended by our own proxies can be trusted.
+// Walk from the right and take the first public address (same rule as
+// authRateLimit.ts), so a spoofed left-most entry cannot change the key.
+function normalise(raw: string): string {
+  const withoutV4Mapped = raw.trim().replace(/^::ffff:/i, "");
+  if (/^\d+\.\d+\.\d+\.\d+:\d+$/.test(withoutV4Mapped)) return withoutV4Mapped.split(":")[0];
+  const bracketed = withoutV4Mapped.match(/^\[([^\]]+)\](?::\d+)?$/);
+  if (bracketed) return bracketed[1];
+  return withoutV4Mapped;
+}
+
+function isPrivate(ip: string): boolean {
+  if (isIP(ip) === 4) {
+    const [a, b] = ip.split(".").map(Number);
+    return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127);
+  }
+  const l = ip.toLowerCase();
+  return l === "::1" || l.startsWith("fc") || l.startsWith("fd") || l.startsWith("fe80");
+}
 
 export function clientIpFromRequest(req: Request): string {
   const forwarded = req.headers["x-forwarded-for"];
-  const rawIp = typeof forwarded === "string"
-    ? forwarded.split(",")[0].trim()
-    : ((req as { ip?: string }).ip ?? "unknown");
+  const joined = Array.isArray(forwarded) ? forwarded.join(",") : typeof forwarded === "string" ? forwarded : "";
+  const hops = joined.split(",").map(normalise).filter(Boolean);
+  for (let i = hops.length - 1; i >= 0; i--) {
+    if (isIP(hops[i]) && !isPrivate(hops[i])) return hops[i];
+  }
+  const rawIp = hops[hops.length - 1] || ((req as { ip?: string }).ip ?? "unknown");
 
   const withoutV4Mapped = rawIp.replace(/^::ffff:/, "");
   // Only an IPv4 address can be split on ":" - a bare IPv6 address is full of

@@ -6,10 +6,77 @@
 //                            stored as a base64 data URL in screenshot_url —
 //                            the portal img tag renders data URLs natively.
 import { Router, Request, Response } from "express";
+import rateLimit from "express-rate-limit";
 import { pool } from "../db.js";
 import { createContact } from "../services/contacts.js";
+import { rateLimitKeyFromRequest } from "../middleware/clientIp.js";
+import { issueConversationToken } from "../services/publicConversationTokens.js"; // BF_SERVER_v789_CONVERSATION_TOKENS
+import { parseExpressCaslConsent, recordExpressCaslConsent } from "../services/smsConsent.js"; // BF_SERVER_v789_CASL_EXPRESS_CONSENT
 
 const router = Router();
+
+// BF_SERVER_v789_ESCALATE_LIMITS - escalate is public and texts staff, so it is
+// limited per IP (5 a minute) and per contact (20 a day per phone, 20 a day per
+// email), and the staff SMS alert goes out at most once per contact per 10 minutes.
+function escalatePhoneKey(req: Request): string {
+  const c = (req.body ?? {}).contact ?? {};
+  const digits = typeof c.phone === "string" ? c.phone.replace(/[^0-9]/g, "") : "";
+  return digits.length >= 7 ? digits.slice(-10) : "";
+}
+function escalateEmailKey(req: Request): string {
+  const c = (req.body ?? {}).contact ?? {};
+  return typeof c.email === "string" ? c.email.trim().toLowerCase().slice(0, 254) : "";
+}
+
+const escalateIpLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "RATE_LIMITED" },
+  keyGenerator: rateLimitKeyFromRequest,
+  validate: { xForwardedForHeader: false },
+});
+const escalatePhoneLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "RATE_LIMITED" },
+  skip: (req) => !escalatePhoneKey(req as Request),
+  keyGenerator: (req) => "phone:" + escalatePhoneKey(req as Request),
+  validate: { xForwardedForHeader: false, keyGeneratorIpFallback: false },
+});
+const escalateEmailLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "RATE_LIMITED" },
+  skip: (req) => !escalateEmailKey(req as Request),
+  keyGenerator: (req) => "email:" + escalateEmailKey(req as Request),
+  validate: { xForwardedForHeader: false, keyGeneratorIpFallback: false },
+});
+
+export const STAFF_ALERT_COOLDOWN_MS = 10 * 60 * 1000;
+const lastStaffAlertAt = new Map<string, number>();
+// True when a staff SMS for this contact may go out now (and records it).
+export function claimStaffAlert(key: string, now: number = Date.now()): boolean {
+  if (lastStaffAlertAt.size > 5000) {
+    for (const [k, t] of lastStaffAlertAt) if (now - t >= STAFF_ALERT_COOLDOWN_MS) lastStaffAlertAt.delete(k);
+  }
+  const last = lastStaffAlertAt.get(key);
+  if (last !== undefined && now - last < STAFF_ALERT_COOLDOWN_MS) return false;
+  lastStaffAlertAt.set(key, now);
+  return true;
+}
+export function resetStaffAlertThrottleForTests(): void {
+  lastStaffAlertAt.clear();
+}
+function staffAlertKey(kind: string, req: Request, contactId: string | null): string {
+  const who = contactId || escalatePhoneKey(req) || escalateEmailKey(req) || "ip:" + rateLimitKeyFromRequest(req);
+  return kind + ":" + who;
+}
 
 // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1
 // Every Talk-to-a-Human / Report-an-Issue interaction must attach to a CRM
@@ -74,7 +141,7 @@ async function resolveContactId(opts: {
   }
 }
 
-router.post("/maya/escalate", async (req: Request, res: Response) => {
+router.post("/maya/escalate", escalateIpLimiter, escalatePhoneLimiter, escalateEmailLimiter, async (req: Request, res: Response) => {
   const b = req.body ?? {};
   const kind = String(b.kind ?? "");
   const contact = b.contact ?? {};
@@ -113,6 +180,10 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
 
       // BF_SERVER_BLOCK_v686_MAYA_CRM_UNIFY_v1 — attach to a CRM contact first.
       const contactId = await resolveContactId({ name: nameIn, email, phone, silo });
+      // BF_SERVER_v789_CASL_EXPRESS_CONSENT - only an explicit casl_consent === true.
+      if (contactId) {
+        await recordExpressCaslConsent((sql, params) => pool.query(sql, params as any[]), { contactId }, parseExpressCaslConsent(b), "maya_escalate");
+      }
 
       // Reuse the contact's existing open messenger thread instead of spawning a
       // brand-new conversation on every click (the v686 fragmentation bug).
@@ -144,6 +215,12 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
         convId = conv.rows[0].id;
       }
 
+      // BF_SERVER_v789_CONVERSATION_TOKENS - the conversation id is no longer a
+      // credential (it may be the contact's existing thread). A fresh visitor
+      // token is issued before the handoff marker is written, so the visitor sees
+      // the marker and everything after it, never the thread's earlier history.
+      const visitorToken = await issueConversationToken(String(convId));
+
       await pool.query(
         `INSERT INTO communications_messages
            (id, conversation_id, contact_id, channel, type, direction, body, silo, from_number, created_at)
@@ -157,7 +234,8 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
       // forget: the API still returns 201 immediately. Recipients=available
       // ranges over staff_presence WHERE status='available'; if zero, the
       // helper falls back to MAYA_FALLBACK_SMS_NUMBERS env CSV (off-hours).
-      void (async () => {
+      const talkAlertAllowed = claimStaffAlert(staffAlertKey("talk_to_human", req, contactId)); // BF_SERVER_v789_ESCALATE_LIMITS
+      if (talkAlertAllowed) void (async () => {
         try {
           const { sendStaffNotification } = await import("../services/notifications/staffSms.js");
           const summary = message.length > 140 ? `${message.slice(0, 137)}…` : message;
@@ -177,7 +255,7 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
         }
       })();
 
-      return res.status(201).json({ ok: true, conversation_id: convId });
+      return res.status(201).json({ ok: true, conversation_id: convId, visitor_token: visitorToken });
     }
 
     // kind === "report_issue"
@@ -192,6 +270,10 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
     const issueEmail = (typeof contact.email === "string" ? contact.email.trim() : "") || null;
     const issueName = typeof contact.name === "string" ? contact.name.trim() : null;
     const issueContactId = await resolveContactId({ name: issueName, email: issueEmail, phone: issuePhone, silo });
+    // BF_SERVER_v789_CASL_EXPRESS_CONSENT - only an explicit casl_consent === true.
+    if (issueContactId) {
+      await recordExpressCaslConsent((sql, params) => pool.query(sql, params as any[]), { contactId: issueContactId }, parseExpressCaslConsent(b), "maya_escalate");
+    }
     const issueConvName = issueName || issuePhone || issueEmail || "Issue report";
     const issuePreview = `[Issue] ${description}`.slice(0, 200);
     const issueConv = await pool.query<{ id: string }>(
@@ -242,7 +324,8 @@ router.post("/maya/escalate", async (req: Request, res: Response) => {
     );
 
     // BF_SERVER_BLOCK_v222_MAYA_ESCALATE_STAFF_NOTIFY_v1
-    void (async () => {
+    const issueAlertAllowed = claimStaffAlert(staffAlertKey("report_issue", req, issueContactId)); // BF_SERVER_v789_ESCALATE_LIMITS
+    if (issueAlertAllowed) void (async () => {
       try {
         const { sendStaffNotification } = await import("../services/notifications/staffSms.js");
         const summary = description.length > 140 ? `${description.slice(0, 137)}…` : description;

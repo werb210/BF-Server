@@ -6,7 +6,8 @@ import { readReadinessSnapshot } from "../services/submission/orchestrator.js";
 // BF_SERVER_BLOCK_v138_E2E_FIX_BATCH_v1 — AUDIT-12 regression repair.
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
-import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { logWarnSwallowed } from "../lib/logWarnSwallowed.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_SILENT_QUERIES_v678
 
 const router = Router();
 
@@ -45,7 +46,7 @@ async function sendBlockers(applicationId: string, reason?: string) {
 // readiness gate entirely (any preconditions failure was silently ignored).
 // Now: rely on progressSubmission's internal gate. If stageB didn't fire,
 // return 409 with a structured reason instead of confirming "sent".
-router.post("/lenders/send", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), async (req, res) => {
+router.post("/lenders/send", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req, res) => {
   const b = req.body ?? {};
   const applicationId = String(b.applicationId ?? b.application_id ?? "").trim();
   const rawLenders = b.lenderIds ?? b.lenders ?? b.lender_ids ?? [];
@@ -102,9 +103,9 @@ router.post("/lenders/send", requireAuth, requireAuthorization({ roles: [ROLES.A
   // prior one already completed). DO NOT call dispatchToSelected here;
   // maybeBuildAndSendPackage owns the atomic claim + dispatch.
   return res.json({ ok: true, finalized: lenderIds, orchestrator });
-});
+}));
 
-router.post("/applications/:id/lenders/send", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), async (req, res) => {
+router.post("/applications/:id/lenders/send", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req, res) => {
   const id = String(req.params.id ?? "").trim();
   const lenderIds: string[] = Array.isArray((req.body ?? {}).lenderIds) ? (req.body.lenderIds as unknown[]).map((x) => String(x)) : [];
   if (!id) return res.status(400).json({ error: "missing_application_id" });
@@ -146,12 +147,12 @@ router.post("/applications/:id/lenders/send", requireAuth, requireAuthorization(
     }
   }
   return res.json({ ok: true, finalized: lenderIds, sent: orchestrator.stageB.sentTo ?? [], orchestrator });
-});
+}));
 
-router.post("/applications/:id/submit-trigger-check", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), async (req, res) => {
+router.post("/applications/:id/submit-trigger-check", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req, res) => {
   const id = String(req.params.id ?? "").trim();
   if (!id) return res.status(400).json({ error: "missing_application_id" });
   const result = await progressSubmission({ pool, applicationId: id });
   return res.json({ ok: true, ...result });
-});
+}));
 export default router;

@@ -1,9 +1,27 @@
 // BF_SERVER_US_SMS_TOLLFREE_v755
-import { describe, it, expect, afterEach } from "vitest";
-import { readFileSync } from "node:fs";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { isUsNumber, smsFromFor, DEFAULT_US_SMS_FROM } from "../lib/smsFrom.js";
+import { BULK, LOCAL_FROM, TRANSACTIONAL, driveSender } from "./helpers/smsSenderDrivers.js";
+
+const { queryMock, createMock } = vi.hoisted(() => ({ queryMock: vi.fn(), createMock: vi.fn() }));
+vi.mock("../db.js", async () => {
+  const actual = await vi.importActual<typeof import("../db.js")>("../db.js");
+  return { ...actual, pool: { query: queryMock }, runQuery: queryMock };
+});
+vi.mock("../lib/sharedClients.js", () => ({ sharedTwilio: () => ({ messages: { create: createMock } }), sharedOpenAI: () => ({}) }));
+vi.mock("../services/twilio.js", () => ({ fetchTwilioClient: () => ({ messages: { create: createMock } }) }));
+vi.mock("twilio", () => ({ default: () => ({ messages: { create: createMock } }) }));
+vi.mock("../services/push/applicantPush.js", () => ({ notifyApplicant: vi.fn(async () => undefined) }));
+vi.mock("../modules/automation/automationEngine.js", () => ({ emitAutomationEvent: vi.fn(async () => undefined) }));
+vi.mock("../services/lenderMatchCache.js", () => ({
+  markLenderMatchesStale: vi.fn(async () => undefined),
+  computeAndCacheLenderMatches: vi.fn(async () => undefined),
+  getOutstandingRequiredDocs: vi.fn(async () => []),
+}));
 
 const LOCAL = "+18254511768";
+const US_TO = "+19173043342";
+const CA_TO = "+15874441234";
 
 describe("texts to US numbers go out from the toll-free line", () => {
   afterEach(() => { delete process.env.TWILIO_US_SMS_FROM; });
@@ -29,11 +47,20 @@ describe("texts to US numbers go out from the toll-free line", () => {
     process.env.TWILIO_US_SMS_FROM = "off";
     expect(smsFromFor("+19173043342", LOCAL)).toBe(LOCAL);
   });
-  it("is wired into the transactional senders and kept out of marketing and bulk sends", () => {
-    for (const f of ["src/modules/notifications/sms.service.ts", "src/services/smsService.ts", "src/lib/twilio.ts", "src/routes/communications.ts", "src/routes/auth/otp.ts", "src/routes/portal.ts"]) {
-      expect(readFileSync(f, "utf8"), f).toMatch(/sms(From|Sender)For\(/); // BF_SERVER_RCS_SENDER_v770 - smsSenderFor wraps smsFromFor
-    }
-    expect(readFileSync("src/services/marketingSms.ts", "utf8")).not.toContain("smsFromFor(");
-    expect(readFileSync("src/routes/communications.ts", "utf8")).toContain("const msg = await client.messages.create({ body: String(mergedBody), from, to });");
+
+  it.each(TRANSACTIONAL)("%s sends a US text from the 866 and a Canadian one from the local number", async (name) => {
+    const us = await driveSender(name, US_TO, { queryMock, createMock });
+    expect(us.error).toBeUndefined();
+    expect(us.payload, `${name} reached Twilio`).toBeDefined();
+    expect(us.payload!.from).toBe(DEFAULT_US_SMS_FROM);
+    expect(us.payload!.to).toBe(US_TO);
+    const ca = await driveSender(name, CA_TO, { queryMock, createMock });
+    expect(ca.payload!.from).toBe(LOCAL_FROM);
+  });
+
+  it.each(BULK)("%s is kept off the toll-free line", async (name) => {
+    const us = await driveSender(name, US_TO, { queryMock, createMock });
+    expect(us.payload, `${name} reached Twilio`).toBeDefined();
+    expect(us.payload!.from).toBe(LOCAL_FROM);
   });
 });

@@ -25,6 +25,7 @@ import sharedMailboxesRoutes from "./crm/sharedMailboxes.js";
 import inboxRoutes from "./crm/inbox.js";
 import voicemailsRoutes from "./crm/voicemails.js"; // BF_SERVER_BLOCK_v830_VOICEMAILS_LIST
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { logWarn } from "../observability/logger.js"; // BF_SERVER_v789_WAITLIST_NO_TAKEOVER
 import { emitAutomationEvent } from "../modules/automation/automationEngine.js"; // BF_SERVER_v786_WORKFLOW_GRAPH
 
 const router = Router();
@@ -46,7 +47,9 @@ router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.CRM_READ]));
 
 // BF_SERVER_BLOCK_BI_ROUND7_OPS_DASHBOARD_v1
-router.get("/leads", safeHandler(async (_req: any, res: any) => {
+router.get("/leads", safeHandler(async (req: any, res: any) => {
+  // BF_SERVER_v789_SILO_SCOPING - leads are silo-scoped (crm_leads.silo, default BF).
+  const silo = resolveSiloFromRequest(req);
   const result = await pool.query(`
     SELECT
       id,
@@ -63,9 +66,10 @@ router.get("/leads", safeHandler(async (_req: any, res: any) => {
       tags,
       created_at
     FROM crm_leads
+    WHERE silo = $1
     ORDER BY created_at DESC
     LIMIT 500
-  `).catch((err: any) => {
+  `, [silo]).catch((err: any) => {
     console.warn("crm.leads.query_failed", {
       message: err?.message, code: err?.code,
     });
@@ -229,13 +233,14 @@ router.get("/contacts/:id/ai-summary", safeHandler(async (req: any, res: any) =>
 // BF_SERVER_CONTACT_STAGE_HISTORY_v1 - stage-change audit trail across the contact's applications.
 router.get("/contacts/:id/stage-events", safeHandler(async (req: any, res: any) => {
   const id = req.params.id;
+  const silo = resolveSiloFromRequest(req); // BF_SERVER_v789_SILO_SCOPING
   const { rows } = await pool.query(
     `SELECT e.id::text, e.application_id::text AS application_id, e.from_stage, e.to_stage,
             e.trigger, e.triggered_by, e.reason, e.created_at
        FROM application_stage_events e
-      WHERE e.application_id IN (SELECT id FROM applications WHERE contact_id = $1::uuid)
+      WHERE e.application_id IN (SELECT id FROM applications WHERE contact_id = $1::uuid AND silo = $2)
       ORDER BY e.created_at DESC
-      LIMIT 100`, [id]);
+      LIMIT 100`, [id, silo]);
   respondOk(res, rows);
 }));
 router.get("/contacts/:id/applications", safeHandler(async (req: any, res: any) => {
@@ -257,9 +262,9 @@ router.get("/contacts/:id/applications", safeHandler(async (req: any, res: any) 
               coalesce(pipeline_state, current_stage, status, '') AS stage,
               contact_id::text                                    AS "contactId"
          FROM applications
-        WHERE contact_id::text = $1
+        WHERE contact_id::text = $1 AND silo = $2
         ORDER BY created_at DESC`,
-      [req.params.id]
+      [req.params.id, resolveSiloFromRequest(req)] // BF_SERVER_v789_SILO_SCOPING
     );
 
     return res.json(rows);
@@ -891,7 +896,7 @@ router.post("/contacts/dedupe-merge", requireCrmWrite, safeHandler(async (req: a
           AND NOT EXISTS (SELECT 1 FROM application_contacts ac WHERE ac.contact_id = c.id)
           AND NOT EXISTS (SELECT 1 FROM communications_messages m WHERE m.contact_id = c.id)
           AND NOT EXISTS (SELECT 1 FROM crm_notes n WHERE n.contact_id = c.id)
-          AND NOT EXISTS (SELECT 1 FROM crm_tasks t WHERE t.contact_id = c.id)
+          AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.contact_id = c.id) -- BF_SERVER_v789_TASKS_UNIFIED
           AND NOT EXISTS (SELECT 1 FROM call_events e WHERE e.contact_id = c.id)`;
   const toPlan = (rows: any[]) => rows.map((r: any) => ({
     key: r.key,
@@ -1600,7 +1605,7 @@ router.get("/contacts/:id/application-forms", safeHandler(async (req: any, res: 
 // MAYA_LEAD_CAPTURE_v1 — Maya visitor.identify / waitlist.join intake.
 // Creates (or updates) a CRM contact the moment a website visitor gives a name
 // PLUS an email or phone, so the lead is immediately marketable. Deduped by
-// email/phone; new leads land in the BF silo with status 'prospect'. Public
+// email/phone within the request silo; new leads land in that silo with status 'prospect'. Public
 // intake (the agent calls this server-to-server); gated by name + contact.
 router.post("/startup-waitlist", safeHandler(async (req: any, res: any) => {
   const name = (req.body?.name ?? req.body?.fullName ?? "").toString().trim();
@@ -1614,28 +1619,53 @@ router.post("/startup-waitlist", safeHandler(async (req: any, res: any) => {
   const parts = name.split(/\s+/);
   const firstName = parts[0] ?? name;
   const lastName = parts.length > 1 ? parts.slice(1).join(" ") : "";
+  // BF_SERVER_v789_WAITLIST_NO_TAKEOVER - the match is scoped to the request silo, and an
+  // existing contact's name/email/phone is never overwritten: only null/empty fields are
+  // filled. If the email belongs to one contact and the phone to another, neither is touched.
+  const silo = resolveSiloFromRequest(req);
   const existing = await pool.query(
-    `select id from contacts
-      where (email = $1 and $1 is not null) or (phone = $2 and $2 is not null)
-      order by created_at asc limit 1`,
-    [email, phone],
+    `select id, (email is not null and $1::text is not null and email = $1::text) as email_match,
+            (phone is not null and $2::text is not null and phone = $2::text) as phone_match
+       from contacts
+      where silo = $3
+        and ((email = $1::text and $1::text is not null) or (phone = $2::text and $2::text is not null))
+      order by created_at asc`,
+    [email, phone, silo],
   );
+  const emailMatch = existing.rows.find((r: any) => r.email_match);
+  const phoneMatch = existing.rows.find((r: any) => r.phone_match);
+  if (emailMatch && phoneMatch && String(emailMatch.id) !== String(phoneMatch.id)) {
+    logWarn("crm.startup_waitlist.contact_conflict", {
+      silo,
+      emailContactId: String(emailMatch.id),
+      phoneContactId: String(phoneMatch.id),
+    });
+    res.status(200).json({ ok: true, id: null, created: false, conflict: true });
+    return;
+  }
+  const match = emailMatch ?? phoneMatch;
   let id: string;
   let created = false;
-  if (existing.rows[0]) {
-    id = existing.rows[0].id;
+  if (match) {
+    id = match.id;
     await pool.query(
-      `update contacts set name = coalesce($2, name), email = coalesce($3, email),
-              phone = coalesce($4, phone), updated_at = now() where id = $1`,
-      [id, name || null, email, phone],
+      `update contacts
+          set name       = case when coalesce(name, '') = '' then $2 else name end,
+              first_name = case when coalesce(first_name, '') = '' then $3 else first_name end,
+              last_name  = case when coalesce(last_name, '') = '' then $4 else last_name end,
+              email      = case when coalesce(email, '') = '' then $5 else email end,
+              phone      = case when coalesce(phone, '') = '' then $6 else phone end,
+              updated_at = now()
+        where id = $1 and silo = $7`,
+      [id, name || null, firstName || null, lastName || null, email, phone, silo],
     );
   } else {
     created = true;
     const ins = await pool.query(
       `insert into contacts (id, name, first_name, last_name, email, phone, status, silo, created_at, updated_at)
-       values (gen_random_uuid(), $1, $2, $3, $4, $5, 'prospect', 'BF', now(), now())
+       values (gen_random_uuid(), $1, $2, $3, $4, $5, 'prospect', $6, now(), now())
        returning id`,
-      [name || null, firstName, lastName, email, phone],
+      [name || null, firstName, lastName, email, phone, silo],
     );
     id = ins.rows[0].id;
   }
@@ -1653,8 +1683,8 @@ router.post("/startup-waitlist", safeHandler(async (req: any, res: any) => {
             consent_at     = CASE WHEN $3 THEN now() ELSE consent_at END,
             consent_source = CASE WHEN $3 THEN 'waitlist_form' ELSE consent_source END,
             updated_at = now()
-      WHERE id = $1`,
-    [id, list, consent],
+      WHERE id = $1 AND silo = $4`,
+    [id, list, consent, silo],
   );
   res.status(200).json({ ok: true, id, created, list });
 }));

@@ -26,7 +26,12 @@ import {
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { dbQuery } from "../../db.js";
 import { AppError } from "../../middleware/errors.js";
-import { clientApplicationOwnershipGuard } from "../../auth/clientApplicationOwnership.js"; // BF_SERVER_v784_CLIENT_OWNERSHIP
+import {
+  clientApplicationOwnershipGuard,
+  normalizeApplicationIdCandidate,
+  requireApplicationAccess,
+} from "../../auth/clientApplicationOwnership.js"; // BF_SERVER_v784_CLIENT_OWNERSHIP, BF_SERVER_v789_FORM_RESPONSE_AUTH
+import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_v789_SILENT_QUERIES
 
 const router = Router();
 router.use(submitAttemptsRouter); // BF_SERVER_BLOCK_v842_SUBMIT_ATTEMPTS — frictionless beacon, before rate-limit/ownership middleware
@@ -140,51 +145,31 @@ router.post("/account/delete", safeHandler(async (req: any, res: any) => {
 // router's phone-based ownership. doc_type is the long key the forms use
 // (cra_view_only_authorization, flinks_banking, ...).
 {
+  // BF_SERVER_v789_FORM_RESPONSE_AUTH - the path id wins, so the id that is
+  // authorized is the id that is read and written.
   const formResponseApplicationId = (req: any) =>
-    (typeof req.query?.applicationId === "string" && req.query.applicationId.trim()) ||
-    (typeof req.body?.applicationId === "string" && req.body.applicationId.trim()) ||
-    (typeof req.params?.id === "string" && req.params.id.trim()) ||
-    null;
+    ((typeof req.params?.id === "string" && req.params.id.trim().toLowerCase()) ||
+    (typeof req.query?.applicationId === "string" && req.query.applicationId.trim().toLowerCase()) ||
+    (typeof req.body?.applicationId === "string" && req.body.applicationId.trim().toLowerCase()) ||
+    null);
 
+  // BF_SERVER_v789_FORM_RESPONSE_AUTH - no token, an invalid token or a missing
+  // JWT_SECRET used to mean "allowed", so anyone holding an id (or a non-UUID id
+  // the path guard skips) could read and overwrite the file's CRA / banking /
+  // PNW forms. A bearer token is now required (401 otherwise) and the shared
+  // ownership rule decides the rest (src/auth/clientApplicationOwnership.ts).
   const verifyFormResponseOwnership = async (req: any, res: any, appId: string) => {
     const auth = req.headers?.authorization;
-    if (!auth || typeof auth !== "string" || !auth.startsWith("Bearer ")) return true;
-    const secret = process.env.JWT_SECRET;
-    if (!secret) return true;
-    let phone10 = "";
-    try {
-      const decoded = jwt.verify(auth.slice(7), secret) as Record<string, unknown>;
-      phone10 = String(typeof decoded.phone === "string" ? decoded.phone : "")
-        .replace(/[^0-9]/g, "")
-        .slice(-10);
-    } catch {
-      return true;
-    }
-    if (!phone10) return true;
-    const result = await dbQuery(
-      `WITH app_phones AS (
-         SELECT right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),10) AS p10
-           FROM application_contacts ac
-           JOIN contacts c ON c.id = ac.contact_id
-          WHERE ac.application_id::text = ($1)::text
-         UNION
-         SELECT right(regexp_replace(coalesce(c.phone,''),'[^0-9]','','g'),10) AS p10
-           FROM applications a
-           JOIN contacts c ON c.id = a.contact_id
-          WHERE a.id::text = ($1)::text
-       )
-       SELECT
-         (SELECT COUNT(*)::int FROM applications WHERE id::text = ($1)::text) AS total,
-         (SELECT COUNT(*)::int FROM app_phones WHERE p10 = $2)               AS mine`,
-      [appId, phone10],
-    );
-    const total = Number(result.rows?.[0]?.total ?? 0);
-    const mine = Number(result.rows?.[0]?.mine ?? 0);
-    if (total > 0 && mine === 0) {
-      res.status(403).json({ error: "forbidden" });
+    if (!auth || typeof auth !== "string" || !auth.startsWith("Bearer ")) {
+      res.status(401).json({ error: "unauthorized" });
       return false;
     }
-    return true;
+    const normalized = normalizeApplicationIdCandidate(appId);
+    if (!normalized) {
+      res.status(400).json({ error: "invalid_application_id" });
+      return false;
+    }
+    return requireApplicationAccess(req, res, normalized);
   };
 
   router.get(
@@ -392,8 +377,8 @@ router.get(
       res.status(200).json(await createFeeAgreementSigningSession(applicationId));
     } catch (e) {
       console.warn("[fee-agreement] session failed", { applicationId, message: e instanceof Error ? e.message : String(e) });
-      // BF_SERVER_FEE_DIAGNOSE_v745 - pass the real reason through so the window (and staff) can see it.
-      res.status(200).json({ status: "error", reason: "session_failed: " + (e instanceof Error ? e.message : String(e)).slice(0, 200) });
+      // BF_SERVER_v789_GENERIC_ERRORS - the detail stays in the log above; the client gets a generic code only.
+      res.status(200).json({ status: "error", reason: "session_failed" });
     }
   })
 );
@@ -491,7 +476,9 @@ router.post(
       const st = await snow.getDocumentGroupStatus(String(groupId));
       signed = !!st.signed; summary = st.summary;
     } catch (e: any) {
-      res.json({ ok: true, signed: false, reason: "status_check_failed", detail: e?.message ?? "unknown" });
+      // BF_SERVER_v789_GENERIC_ERRORS - log the SignNow detail, return a generic code.
+      console.warn("[signing-complete] status check failed", { applicationId, message: e?.message ?? String(e) });
+      res.json({ ok: true, signed: false, reason: "status_check_failed" });
       return;
     }
     if (!signed) { res.json({ ok: true, signed: false, summary }); return; }
@@ -519,7 +506,7 @@ export function signedInPhone10(req: any): string {
   const secret = process.env.JWT_SECRET;
   if (!secret || typeof auth !== "string" || !auth.startsWith("Bearer ")) return "";
   try {
-    const decoded = jwt.verify(auth.slice(7), secret) as Record<string, unknown>;
+    const decoded = jwt.verify(auth.slice(7), secret, { algorithms: ["HS256"] }) as Record<string, unknown>;
     return String(typeof decoded.phone === "string" ? decoded.phone : "").replace(/[^0-9]/g, "").slice(-10);
   } catch { return ""; }
 }
@@ -727,7 +714,7 @@ router.get(
     await dbQuery(
       `UPDATE applications SET last_portal_seen_at = now() WHERE id = $1`,
       [applicationId]
-    ).catch(() => undefined);
+    ).catch((err: unknown) => logWarnSwallowed(err, "routes/client/index.ts:713", undefined));
 
     // v636: include `direction` + `cta_label` + `cta_action` so MiniPortalPage
     // maps inbound→self / outbound→other correctly and MessageThread renders
@@ -912,7 +899,7 @@ router.post(
           AND right(regexp_replace(coalesce(a.applicant_phone,''), '[^0-9]', '', 'g'), 10)
             = right(regexp_replace(coalesce(c.phone,''),            '[^0-9]', '', 'g'), 10)`,
       [applicationId]
-    ).catch(() => undefined);
+    ).catch((err: unknown) => logWarnSwallowed(err, "routes/client/index.ts:891", undefined));
 
     const id = randomUUID();
     await dbQuery(
@@ -970,7 +957,7 @@ router.post(
        ON CONFLICT (contact_id, side)
        DO UPDATE SET updated_at = NOW()`,
       [applicationId]
-    ).catch(() => undefined);
+    ).catch((err: unknown) => logWarnSwallowed(err, "routes/client/index.ts:950", undefined));
     res.json({ ok: true });
   })
 );
@@ -1007,7 +994,7 @@ router.post(
           AND read_at IS NULL
           AND application_id::text = $1`,
       [applicationId]
-    ).catch(() => ({ rowCount: 0 }));
+    ).catch((err: unknown) => logWarnSwallowed(err, "routes/client/index.ts:988", ({ rowCount: 0 })));
     res.json({ ok: true, updated: (r as any).rowCount ?? 0 });
   })
 );

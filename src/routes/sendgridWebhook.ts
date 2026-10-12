@@ -6,6 +6,7 @@ import { Router } from "express";
 import express from "express";
 import crypto from "crypto";
 import { pool } from "../db.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router = Router();
 router.use(express.raw({ type: "*/*", limit: "2mb" }));
@@ -50,7 +51,7 @@ function verify(rawBody: Buffer, signature: string, timestamp: string): boolean 
   }
 }
 
-router.post("/", async (req: any, res: any) => {
+router.post("/", safeHandler(async (req: any, res: any) => {
   // BF_SERVER_EMAIL_HARDENING_v1 - prefer the true raw bytes captured by the
   // global json parser (req.rawBody); the router-level raw parser never runs
   // because the stream is already consumed upstream.
@@ -161,6 +162,6 @@ router.post("/", async (req: any, res: any) => {
     types: Array.from(seenTypes).join(",") || "none",
   });
   res.status(200).json({ ok: true });
-});
+}));
 
 export default router;

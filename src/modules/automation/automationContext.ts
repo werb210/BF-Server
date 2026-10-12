@@ -23,7 +23,8 @@ export type EngineDeps = {
   // BF_SERVER_v786_WORKFLOW_GRAPH - v2 actions. Optional so v1 callers and tests keep working.
   sendEmail?: (input: { to: string; subject: string; html: string; contactId: string | null; from?: string | null }) => Promise<{ ok: boolean; error?: string }>;
   sendStaffEmail?: (input: { to: string; subject: string; html: string }) => Promise<{ ok: boolean; error?: string }>;
-  httpFetch?: (url: string, init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal }) => Promise<{ ok: boolean; status: number }>;
+  // BF_SERVER_v789_SSRF_GUARD - called with redirect "manual"; headers (location) are read on a 3xx.
+  httpFetch?: (url: string, init: { method: string; headers: Record<string, string>; body?: string; signal: AbortSignal; redirect?: "manual" }) => Promise<{ ok: boolean; status: number; headers?: { get(name: string): string | null } }>;
   setApplicationStage?: (applicationId: string, stage: string) => Promise<void>;
 };
 

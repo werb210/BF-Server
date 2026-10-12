@@ -1,13 +1,17 @@
 // BF_SERVER_FEE_SESSION_REUSE_v744
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ agreement: null as any, invite: "inv-1" as string | null, signed: false }));
+const state = vi.hoisted(() => ({ agreement: null as any, invite: "inv-1" as string | null, signed: false, deadGroup: null as string | null }));
 const sn = vi.hoisted(() => ({
   isApiKeyConfigured: () => true,
   uploadDocumentWithFieldExtract: vi.fn(async () => ({ documentId: "doc-new" })),
   createDocumentGroup: vi.fn(async () => ({ groupId: "grp-new" })),
   createEmbeddedGroupInvite: vi.fn(async () => ({ inviteId: "inv-new" })),
-  createEmbeddedGroupLink: vi.fn(async (g: string) => ({ url: "https://sign.example/" + g, expiresAt: null })),
+  // BF_SERVER_v789_SQL_CONTENT_MOCKS - a group that can no longer be opened fails by its id, not by call order.
+  createEmbeddedGroupLink: vi.fn(async (g: string) => {
+    if (g === state.deadGroup) throw new Error("invite cancelled");
+    return { url: "https://sign.example/" + g, expiresAt: null };
+  }),
   getDocumentGroupStatus: vi.fn(async () => ({ signed: state.signed, summary: "" })),
   sendGroupEmailInvite: vi.fn(), downloadDocument: vi.fn(),
 }));
@@ -26,7 +30,7 @@ vi.mock("../../../db.js", () => ({
 import { createFeeAgreementSigningSession } from "../mediaFeeAgreement.js";
 
 const base = { id: "ag1", application_id: "a1", status: "pending", signer_name: "Dana R", signer_email: "dana@example.com", signer_is_applicant: true, trigger_lender_name: null, signnow_doc_id: null, created_at: "", sent_at: null, signed_at: null, document_id: null };
-beforeEach(() => { vi.clearAllMocks(); state.signed = false; state.invite = "inv-1"; });
+beforeEach(() => { vi.clearAllMocks(); state.signed = false; state.invite = "inv-1"; state.deadGroup = null; });
 
 describe("fee agreement signing session", () => {
   it("reuses the prepared agreement instead of uploading a new copy on every Review tap", async () => {
@@ -48,7 +52,7 @@ describe("fee agreement signing session", () => {
   });
   it("prepares a fresh copy if the old one can no longer be opened", async () => {
     state.agreement = { ...base, signnow_group_id: "grp-1" };
-    sn.createEmbeddedGroupLink.mockImplementationOnce(async () => { throw new Error("invite cancelled"); });
+    state.deadGroup = "grp-1";
     const r = await createFeeAgreementSigningSession("a1");
     expect(r).toEqual({ status: "ready", url: "https://sign.example/grp-new" });
   });

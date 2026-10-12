@@ -1,12 +1,9 @@
 {
  "known": [
-  "src/jobs/otpCleanup.ts|otp_sessions",
   "src/routes/auth.ts|through",
   "src/routes/communications.ts|latest",
   "src/routes/communications.ts|number",
   "src/routes/offerAcceptance.ts|through",
-  "src/routes/slf.ts|application_notes",
-  "src/routes/tasks.ts|bi_contacts",
   "src/telephony/routes/telephonyRoutes.ts|number"
  ]
 }

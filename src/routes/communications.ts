@@ -5,7 +5,7 @@ import { CAPABILITIES } from "../auth/capabilities.js";
 import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { pool } from "../db.js";
-import { verifyAccessToken } from "../auth/jwt.js"; // BF_SERVER_SMS_MEDIA_v1
+import { unlessUrlTicket, urlTicketOrHeaderAuth } from "../auth/urlTicket.js"; // BF_SERVER_v789_URL_TICKETS
 import { fetchTwilioMedia, persistTwilioMediaToBlob } from "../services/mmsMedia.js"; // BF_SERVER_MMS_BLOB_PROXY_v1
 import twilio from "twilio";
 import { isUndeliverableNumber } from "../lib/smsDeliverability.js"; // BF_SERVER_GUARD_EVERYWHERE_v136
@@ -14,19 +14,17 @@ import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILE
 const router = Router();
 import { smsFromFor, smsSenderFor } from "../lib/smsFrom.js"; // BF_SERVER_US_SMS_TOLLFREE_v755
 
-// BF_SERVER_MEDIA_QUERY_AUTH_v1 - <img>/<audio> elements cannot send an
-// Authorization header, so media/recording proxy routes carry the access token
-// in a ?token= query param. This runs BEFORE router.use(requireAuth): for those
-// paths it promotes the query token into a Bearer header so the normal auth and
-// capability checks still apply. Non-media routes are untouched. This is what
-// makes inbound MMS images and call-recording <audio> actually load.
-router.use((req: any, _res: any, next: any) => {
+// BF_SERVER_MEDIA_QUERY_AUTH_v1 - <img>/<audio>/EventSource cannot send an
+// Authorization header, so the media proxies and the message stream accept a
+// ?token= query param. This runs BEFORE router.use(requireAuth).
+// BF_SERVER_v789_URL_TICKETS - the query param must be a 60-second URL ticket
+// from POST /api/auth/url-ticket (a full staff JWT there is a 401). Without a
+// query token the normal Authorization header applies via requireAuth below.
+const queryTicketAuth = urlTicketOrHeaderAuth((_req, _res, next) => next());
+router.use((req: any, res: any, next: any) => {
   const p = String(req.path || "");
   const isMedia = /\/media$/.test(p) && (/\/messages\//.test(p) || /\/recordings\//.test(p));
-  if (isMedia && !req.headers.authorization) {
-    const t = String(req.query?.token ?? "");
-    if (t) req.headers.authorization = "Bearer " + t;
-  }
+  if (isMedia || p === "/messages/stream") return queryTicketAuth(req, res, next);
   next();
 });
 
@@ -84,7 +82,7 @@ async function mergeCtxForContact(opts: { contactId?: string | null; phone?: str
   } catch { /* best-effort */ }
   return ctx;
 }
-router.use(requireAuth);
+router.use(unlessUrlTicket(requireAuth)); // BF_SERVER_v789_URL_TICKETS
 router.use(requireCapability([CAPABILITIES.COMMUNICATIONS_READ]));
 
 router.post("/call-events", safeHandler(async (req: any, res: any) => {
@@ -125,19 +123,14 @@ router.post("/call-events", safeHandler(async (req: any, res: any) => {
   // BF_SERVER_BLOCK_v822_BI_OUTBOUND_CONTACTED - a BI outbound call advances the contact to
   // "contacted" (matched by dialed number; only from an earlier stage, so it never downgrades
   // engaged/demo_booked/onboarding/active, and re-firing on later call events is a no-op).
+  // BF_SERVER_v789_BI_OUTREACH_VIA_API - bi_contacts is BI-Server's table; ask BI to
+  // advance it (forward-only rules live there). Non-blocking; failures are logged.
   if (silo === "BI" && String(body.direction ?? "").toLowerCase() !== "inbound") {
     const d10 = String(toNumber || "").replace(/\D/g, "").slice(-10);
     if (d10.length === 10) {
-      try {
-        await pool.query(
-          `UPDATE bi_contacts SET outreach_status = 'contacted', outreach_updated_at = NOW()
-            WHERE right(regexp_replace(coalesce(phone_e164, ''), '[^0-9]', '', 'g'), 10) = $1
-              AND (outreach_status IS NULL OR outreach_status IN ('cold','new','attempting','voicemail'))`,
-          [d10],
-        );
-      } catch (err) {
-        console.warn("[communications] BI outbound-call contacted-advance failed", { err: String(err) });
-      }
+      void import("../services/biOutreach.js")
+        .then((m) => m.advanceBiOutreach({ phone: toNumber }, "contacted"))
+        .catch((err: any) => console.warn("[communications] BI outbound-call contacted-advance failed", { err: String(err?.message ?? err) }));
     }
   }
   return res.status(201).json(rows[0]);
@@ -598,10 +591,10 @@ router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
 // require Basic auth, so the browser can't <img> them directly; proxy with the
 // account creds. Token rides the query string so it works in an <img src>.
 router.get("/messages/:id/media", safeHandler(async (req: any, res: any) => {
-  const token = String(req.query?.token ?? "");
   // BF_SERVER_MMS_DIAG_v780 - every way an image can fail is now logged with its reason, so a broken picture in the
   // portal can be traced from one log line (the portal shows "Image couldn't load" instead of a broken image).
-  try { verifyAccessToken(token); } catch { console.warn("[mms-media] refused", { reason: token ? "token_invalid_or_expired" : "no_token" }); return res.status(401).end(); }
+  // BF_SERVER_v789_URL_TICKETS - authenticated above by a ?token= URL ticket or the Authorization header.
+  if (!req.user) { console.warn("[mms-media] refused", { reason: "no_user" }); return res.status(401).end(); }
   const id = String(req.params?.id ?? "");
   if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).end();
   const { rows } = await pool.query<{ media_url: string | null }>(
@@ -653,8 +646,7 @@ router.get("/messages/:id/media", safeHandler(async (req: any, res: any) => {
 // 0:00), so proxy by conference id and self-heal raw Twilio URLs into public
 // blob so playback survives Twilio media purge.
 router.get("/recordings/by-conference/:conferenceId/media", safeHandler(async (req: any, res: any) => {
-  const token = String(req.query?.token ?? "");
-  try { verifyAccessToken(token); } catch { return res.status(401).end(); }
+  if (!req.user) return res.status(401).end(); // BF_SERVER_v789_URL_TICKETS - URL ticket or Authorization header, checked above
   const cid = String(req.params?.conferenceId ?? "");
   if (!/^[0-9a-fA-F-]{8,40}$/.test(cid)) return res.status(400).end();
   const { rows } = await pool.query<{ id: string; url: string | null }>(
@@ -1770,11 +1762,9 @@ router.get(
       return res.status(400).end();
     }
     // BF_SERVER_v784_STAFF_ONLY_AUTH - staff live updates: staff humans and services only.
-    const { verifyPrincipalToken, staffRejectionStatus } = await import("../auth/principal.js");
-    const principal = verifyPrincipalToken(String(req.query.token ?? ""));
-    if (!principal) return res.status(401).end();
-    const rejection = staffRejectionStatus(principal);
-    if (rejection) return res.status(rejection).end();
+    // BF_SERVER_v789_URL_TICKETS - admitted above by a ?token= URL ticket or the staff
+    // Authorization header (requireAuth); a full JWT in the query string is a 401 there.
+    if (!req.user) return res.status(401).end();
 
     res.set({
       "Content-Type": "text/event-stream",

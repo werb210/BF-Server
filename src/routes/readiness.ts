@@ -5,6 +5,7 @@ import { upsertCrmLead } from "../modules/crm/leadUpsert.service.js";
 import { linkCrmContact } from "../modules/readiness/readiness.service.js";
 import { randomUUID } from "node:crypto";
 import { dbQuery } from "../db.js";
+import { parseExpressCaslConsent, recordExpressCaslConsent } from "../services/smsConsent.js"; // BF_SERVER_v789_CASL_EXPRESS_CONSENT
 
 const router = Router();
 
@@ -39,7 +40,14 @@ router.post(
       score,
     } = parsed.data;
 
-    await linkCrmContact({ fullName, email, phone });
+    const readinessContactId = await linkCrmContact({ fullName, email, phone });
+    // BF_SERVER_v789_CASL_EXPRESS_CONSENT - only an explicit casl_consent === true.
+    await recordExpressCaslConsent(
+      (sql, params) => dbQuery(sql, params as any[]),
+      { contactId: readinessContactId, email, silo: "BF" },
+      parseExpressCaslConsent(req.body),
+      "readiness_website",
+    );
 
     const { id: crmLeadId } = await upsertCrmLead({
       fullName,

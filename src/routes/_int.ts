@@ -8,10 +8,11 @@ import { getGoogleHealth } from "../services/googleHealth.js"; // BF_SERVER_GOOG
 import pwaInternalRoutes from "./_int/pwa.js";
 import twilio from "twilio";
 import { requireAuth } from "../middleware/auth.js";
+import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router = Router();
 
-router.get("/runtime", requireAuth, runtimeHandler);
+router.get("/runtime", requireAuth, safeHandler(runtimeHandler)); // BF_SERVER_v789_SAFE_HANDLERS
 // BF_SERVER_GOOGLE_HEALTH_v705 - live Google Ads / Analytics checks for Settings > Runtime Verification.
 router.get("/google-health", requireAuth, async (req, res) => {
   try {
@@ -22,7 +23,7 @@ router.get("/google-health", requireAuth, async (req, res) => {
   }
 });
 router.get("/ready", readyHandler);
-router.get("/build", async (_req: any, res: any) => {
+router.get("/build", safeHandler(async (_req: any, res: any) => {
   // v611: read build-info written at build time, fall back to env.
   let info: Record<string, unknown> = { buildTimestamp: config.buildTimestamp };
   try {
@@ -39,7 +40,7 @@ router.get("/build", async (_req: any, res: any) => {
     // fall through with env-only timestamp
   }
   res.status(200).json(info);
-});
+}));
 
 router.get("/version", (_req: any, res: any) => {
   const commitHash = config.commitSha;

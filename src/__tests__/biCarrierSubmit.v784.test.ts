@@ -30,7 +30,7 @@ beforeEach(() => {
     return new Response(JSON.stringify({ status: "submitted", externalId: "EXT-1" }), { status: 200 });
   }));
 });
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => { vi.unstubAllGlobals(); delete process.env.BI_SERVER_URL; });
 
 describe("submitBiToCarrier", () => {
   it("looks up the BI id, then posts to /api/v1/bi/application/<biId>/submit-pgi on the cse0 host", async () => {
@@ -60,9 +60,16 @@ describe("submitBiToCarrier", () => {
     expect(calls.some((c) => c.url.includes("/submit-pgi"))).toBe(false);
   });
 
-  it("no longer references the dead bi-server.azurewebsites.net host", async () => {
-    const fs = await import("node:fs");
-    const src = fs.readFileSync("src/services/biCarrierSubmit.ts", "utf8");
-    expect(src).not.toContain("https://bi-server.azurewebsites.net");
+  it("no longer calls the dead bi-server.azurewebsites.net host, by default or when BI_SERVER_URL is set", async () => {
+    const { submitBiToCarrier } = await import("../services/biCarrierSubmit.js");
+    await submitBiToCarrier("app-1");
+    process.env.BI_SERVER_URL = "https://bi.example.test/";
+    await submitBiToCarrier("app-1");
+    expect(calls).toHaveLength(4);
+    for (const c of calls) expect(c.url.startsWith("https://bi-server.azurewebsites.net")).toBe(false);
+    expect(calls.slice(2).map((c) => c.url)).toEqual([
+      "https://bi.example.test/api/v1/bi/maya/staff/pgi-readiness",
+      "https://bi.example.test/api/v1/bi/application/bi-internal-42/submit-pgi",
+    ]);
   });
 });

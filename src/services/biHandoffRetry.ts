@@ -5,6 +5,7 @@
 import { pool } from "../db.js";
 import { postBiHandoff } from "./biHandoff.js";
 import { mirrorApplicationDocsToBi } from "./biDocMirror.js";
+import { claimedTick } from "../workers/claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 export const MAX_ATTEMPTS = 12;
 
@@ -99,7 +100,7 @@ const TICK_MS = 10 * 60_000;
 
 export function startBiHandoffRetryWorker(): { stop: () => void } {
   let running = false;
-  const tick = async () => {
+  const tickUnclaimed = async () => {
     if (running) return;
     running = true;
     try {
@@ -110,6 +111,7 @@ export function startBiHandoffRetryWorker(): { stop: () => void } {
       running = false;
     }
   };
+  const tick = claimedTick("bi_handoff_retry", tickUnclaimed); // BF_SERVER_v789_WORKER_CLAIM - one instance per tick
   const first = setTimeout(() => { void tick(); }, 90_000);
   const timer = setInterval(() => { void tick(); }, TICK_MS);
   first.unref?.();

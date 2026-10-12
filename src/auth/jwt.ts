@@ -8,6 +8,9 @@ export type AccessTokenPayload = {
   sub: string;
   role: Role;
   tokenVersion: number;
+  // BF_SERVER_v789_STAFF_USER_STATE - the claim the staff middleware compares with
+  // users.token_version. signAccessToken fills it from tokenVersion.
+  tv?: number;
   phone?: string | null;
   lenderId?: string; // BF_SERVER_LENDER_OTP_v1 - lender-portal tokens bind to a lenders.id
   referrerId?: string; // BF_SERVER_REFERRER_OTP_v1 - referrer-portal tokens bind to a users.id (role Referrer)
@@ -116,7 +119,8 @@ export function signAccessToken(payload: AccessTokenPayload): string {
   }
 
   try {
-    return jwt.sign(payload, secret, options);
+    // BF_SERVER_v789_STAFF_USER_STATE - every access token carries tv.
+    return jwt.sign({ ...payload, tv: payload.tv ?? payload.tokenVersion }, secret, options);
   } catch (err) {
     throw new AccessTokenSigningError("Failed to sign access token");
   }

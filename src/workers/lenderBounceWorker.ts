@@ -5,6 +5,7 @@
 import type { Pool } from "pg";
 import { graphAppToken, graphSendAsMailbox } from "../services/email/graphSendService.js";
 import { isBounce, bounceReason, failedRecipients } from "../services/lenders/bounceDetect.js";
+import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 const TICK_MS = 15 * 60 * 1000;
 
@@ -60,7 +61,9 @@ export async function readBouncesOnce(pool: Pool): Promise<number> {
 }
 
 export function startLenderBounceWorker(pool: Pool): { stop: () => void } {
-  const run = () => { readBouncesOnce(pool).catch((err) => console.error("[lender-bounce] read failed", { error: err?.message ?? String(err) })); };
+  // BF_SERVER_v789_WORKER_CLAIM - one instance per tick.
+  const claimed = claimedTick("lender_bounce", () => readBouncesOnce(pool).catch((err) => console.error("[lender-bounce] read failed", { error: err?.message ?? String(err) })));
+  const run = () => { void claimed(); };
   run();
   const t = setInterval(run, TICK_MS);
   return { stop: () => clearInterval(t) };

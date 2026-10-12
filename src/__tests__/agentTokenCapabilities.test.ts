@@ -46,7 +46,7 @@ describe("BF_AGENT_AUTH_HYDRATE_v53 agent JWT capability hydration", () => {
   });
 
   it("unknown role gets 403 (no hydration possible)", async () => {
-    queryMock.mockResolvedValueOnce({ rows: [] });
+    queryMock.mockImplementation(answerBySql([])); // every query answers empty
     const app = await buildApp();
     const res = await request(app)
       .get("/api/applications/app-1")
