@@ -16,8 +16,7 @@ const clientIssuesLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "RATE_LIMITED" },
-  keyGenerator: rateLimitKeyFromRequest,
-  validate: { xForwardedForHeader: false },
+  keyGenerator: rateLimitKeyFromRequest, // BF_SERVER_v791_RATE_LIMIT_KEYS - no validate overrides
 });
 
 export const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024;

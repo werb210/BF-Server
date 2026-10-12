@@ -19,10 +19,8 @@ import productQuestionsRouter from "./productQuestions.js"; // BF_SERVER_PRODUCT
 import sessionRouter from "./session.js";
 import { makeSigningOwnerGuard } from "./signingOwner.js"; // BF_SERVER_BLOCK_v473_SIGNING_OWNER_v1
 import submitAttemptsRouter from "./submitAttempts.js";
-import {
-  clientDocumentsRateLimit,
-  safeKeyGenerator,
-} from "../../middleware/rateLimit.js";
+import { clientDocumentsRateLimit } from "../../middleware/rateLimit.js";
+import { rateLimitKeyFromRequest } from "../../middleware/clientIp.js"; // BF_SERVER_v791_RATE_LIMIT_KEYS
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { dbQuery } from "../../db.js";
 import { AppError } from "../../middleware/errors.js";
@@ -55,9 +53,8 @@ const clientReadLimiter = rateLimit({
   keyGenerator: (req: any) => {
     const auth = String(req.headers?.authorization ?? "");
     const token = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
-    return token ? "tok:" + createHash("sha256").update(token).digest("hex").slice(0, 24) : "ip:" + safeKeyGenerator(req);
-  },
-  validate: { xForwardedForHeader: false, trustProxy: false, keyGeneratorIpFallback: false },
+    return token ? "tok:" + createHash("sha256").update(token).digest("hex").slice(0, 24) : "ip:" + rateLimitKeyFromRequest(req);
+  }, // BF_SERVER_v791_RATE_LIMIT_KEYS - no validate overrides; the key never reads the raw request IP.
 }) as any;
 
 router.use((req: any, res: any, next: any) => {
@@ -282,8 +279,7 @@ const cmpPollLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "RATE_LIMITED" },
-  keyGenerator: safeKeyGenerator,
-  validate: { xForwardedForHeader: false, trustProxy: false },
+  keyGenerator: rateLimitKeyFromRequest, // BF_SERVER_v791_RATE_LIMIT_KEYS
 });
 router.use(cmpPollLimiter);
 

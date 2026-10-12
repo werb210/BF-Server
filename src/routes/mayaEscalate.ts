@@ -34,8 +34,7 @@ const escalateIpLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "RATE_LIMITED" },
-  keyGenerator: rateLimitKeyFromRequest,
-  validate: { xForwardedForHeader: false },
+  keyGenerator: rateLimitKeyFromRequest, // BF_SERVER_v791_RATE_LIMIT_KEYS - no validate overrides
 });
 const escalatePhoneLimiter = rateLimit({
   windowMs: 24 * 60 * 60 * 1000,
@@ -45,7 +44,6 @@ const escalatePhoneLimiter = rateLimit({
   message: { error: "RATE_LIMITED" },
   skip: (req) => !escalatePhoneKey(req as Request),
   keyGenerator: (req) => "phone:" + escalatePhoneKey(req as Request),
-  validate: { xForwardedForHeader: false, keyGeneratorIpFallback: false },
 });
 const escalateEmailLimiter = rateLimit({
   windowMs: 24 * 60 * 60 * 1000,
@@ -55,7 +53,6 @@ const escalateEmailLimiter = rateLimit({
   message: { error: "RATE_LIMITED" },
   skip: (req) => !escalateEmailKey(req as Request),
   keyGenerator: (req) => "email:" + escalateEmailKey(req as Request),
-  validate: { xForwardedForHeader: false, keyGeneratorIpFallback: false },
 });
 
 export const STAFF_ALERT_COOLDOWN_MS = 10 * 60 * 1000;

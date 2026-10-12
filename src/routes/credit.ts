@@ -5,7 +5,7 @@ import { createCRMLead } from "../services/crmService.js";
 import { sendSMS } from "../services/smsService.js";
 import { config } from "../config/index.js";
 import { stripUndefined } from "../utils/clean.js";
-import { safeKeyGenerator } from "../middleware/rateLimit.js";
+import { rateLimitKeyFromRequest } from "../middleware/clientIp.js"; // BF_SERVER_v791_RATE_LIMIT_KEYS
 import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 const router = Router();
@@ -25,12 +25,8 @@ const creditScoreLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: {
-    xForwardedForHeader: false,
-    trustProxy: false,
-  },
   skip: () => config.env === "test",
-  keyGenerator: safeKeyGenerator,
+  keyGenerator: rateLimitKeyFromRequest, // BF_SERVER_v791_RATE_LIMIT_KEYS
 });
 
 const creditSchema = z.object({

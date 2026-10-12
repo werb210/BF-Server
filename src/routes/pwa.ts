@@ -18,7 +18,7 @@ import { replaySyncBatch } from "../services/pwaSyncService.js";
 import { pool, runQuery } from "../db.js";
 import { ALL_ROLES, ROLES } from "../auth/roles.js";
 import { toStringSafe } from "../utils/toStringSafe.js";
-import { safeKeyGenerator } from "../middleware/rateLimit.js";
+import { rateLimitKeyFromRequest } from "../middleware/clientIp.js"; // BF_SERVER_v791_RATE_LIMIT_KEYS
 
 const router = Router();
 const DEFAULT_NOTIFICATION_LIMIT = 50;
@@ -29,12 +29,8 @@ const perUserNotificationReadLimiter = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: {
-    xForwardedForHeader: false,
-    trustProxy: false,
-  },
   skip: () => config.env === "test" || config.rateLimit.enabled === "false",
-  keyGenerator: safeKeyGenerator,
+  keyGenerator: rateLimitKeyFromRequest, // BF_SERVER_v791_RATE_LIMIT_KEYS
 });
 
 const perUserNotificationAckLimiter = rateLimit({
@@ -42,12 +38,8 @@ const perUserNotificationAckLimiter = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: {
-    xForwardedForHeader: false,
-    trustProxy: false,
-  },
   skip: () => config.env === "test" || config.rateLimit.enabled === "false",
-  keyGenerator: safeKeyGenerator,
+  keyGenerator: rateLimitKeyFromRequest, // BF_SERVER_v791_RATE_LIMIT_KEYS
 });
 
 const subscriptionSchema = z.object({

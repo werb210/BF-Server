@@ -36,13 +36,17 @@ function isPrivate(ip: string): boolean {
 }
 
 export function clientIpFromRequest(req: Request): string {
-  const forwarded = req.headers["x-forwarded-for"];
+  // BF_SERVER_v791_RATE_LIMIT_KEYS - tolerate a bare request-like object (no headers).
+  const forwarded = req.headers?.["x-forwarded-for"];
   const joined = Array.isArray(forwarded) ? forwarded.join(",") : typeof forwarded === "string" ? forwarded : "";
   const hops = joined.split(",").map(normalise).filter(Boolean);
   for (let i = hops.length - 1; i >= 0; i--) {
     if (isIP(hops[i]) && !isPrivate(hops[i])) return hops[i];
   }
-  const rawIp = hops[hops.length - 1] || ((req as { ip?: string }).ip ?? "unknown");
+  const rawIp = hops[hops.length - 1]
+    || (req as { ip?: string }).ip
+    || (req as { socket?: { remoteAddress?: string } }).socket?.remoteAddress
+    || "unknown";
 
   const withoutV4Mapped = rawIp.replace(/^::ffff:/, "");
   // Only an IPv4 address can be split on ":" - a bare IPv6 address is full of

@@ -12,7 +12,7 @@ import { deriveMayaIdentity, mayaContextHeaders, staffIdFromPrincipal } from "..
 import { principalFromRequest } from "../auth/principal.js";
 import { checkApplicationAccess } from "../auth/clientApplicationOwnership.js"; // BF_SERVER_v789_MAYA_PROXY_SCOPE
 import type { MayaAudience } from "../services/mayaContext.js";
-import { safeKeyGenerator } from "../middleware/rateLimit.js";
+import { rateLimitKeyFromRequest } from "../middleware/clientIp.js"; // BF_SERVER_v791_RATE_LIMIT_KEYS
 
 const router = express.Router();
 
@@ -36,14 +36,9 @@ export const mayaProxyRateLimit = rateLimit({
   message: { error: "rate_limited", message: "Too many Maya requests. Try again in a minute." },
   keyGenerator: (req: any) => {
     const staffId = mayaRateStaffId(req);
-    return staffId ? `staff:${staffId}` : `ip:${safeKeyGenerator(req)}`;
+    return staffId ? `staff:${staffId}` : `ip:${rateLimitKeyFromRequest(req)}`; // BF_SERVER_v791_RATE_LIMIT_KEYS
   },
   skip: () => process.env.NODE_ENV === "test" && process.env.MAYA_RATE_LIMIT_IN_TESTS !== "1",
-  validate: {
-    xForwardedForHeader: false,
-    trustProxy: false,
-    keyGeneratorIpFallback: false,
-  },
 });
 
 // BF_SERVER_v789_MAYA_PROXY_SCOPE - the agent answers about whatever application

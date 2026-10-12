@@ -1,7 +1,7 @@
 // BF_SERVER_BLOCK_v599 - /api/client/passkeys/*
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { safeKeyGenerator } from "../../middleware/rateLimit.js";
+import { rateLimitKeyFromRequest } from "../../middleware/clientIp.js"; // BF_SERVER_v791_RATE_LIMIT_KEYS
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { dbQuery } from "../../db.js";
 import { clientPhoneFromAuth } from "../../services/clientDeviceSignIn.js";
@@ -21,7 +21,7 @@ router.use((req: any, _res: any, next: any) => {
   next();
 });
 const query = (sql: string, params: unknown[]) => dbQuery(sql, params as any[]) as any;
-const limiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: "RATE_LIMITED" }, keyGenerator: safeKeyGenerator, validate: { xForwardedForHeader: false, trustProxy: false } });
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: "RATE_LIMITED" }, keyGenerator: rateLimitKeyFromRequest } /* BF_SERVER_v791_RATE_LIMIT_KEYS */);
 const phoneOf = (req: any) => clientPhoneFromAuth(req.headers?.authorization, process.env.JWT_SECRET);
 
 router.post("/passkeys/register/options", safeHandler(async (req: any, res: any) => {

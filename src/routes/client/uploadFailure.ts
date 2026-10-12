@@ -5,7 +5,7 @@
 // a failure caused by an expired session can still be reported. Logs one line; stores nothing.
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { safeKeyGenerator } from "../../middleware/rateLimit.js";
+import { rateLimitKeyFromRequest } from "../../middleware/clientIp.js"; // BF_SERVER_v791_RATE_LIMIT_KEYS
 
 const str = (v: unknown, max: number): string | null =>
   typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
@@ -33,8 +33,7 @@ const limiter = rateLimit({
   limit: 60,
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  keyGenerator: safeKeyGenerator,
-  validate: { xForwardedForHeader: false, trustProxy: false },
+  keyGenerator: rateLimitKeyFromRequest, // BF_SERVER_v791_RATE_LIMIT_KEYS
 });
 
 const router = Router();

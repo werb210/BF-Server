@@ -12,8 +12,7 @@ const supportLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "RATE_LIMITED" },
-  keyGenerator: rateLimitKeyFromRequest,
-  validate: { xForwardedForHeader: false },
+  keyGenerator: rateLimitKeyFromRequest, // BF_SERVER_v791_RATE_LIMIT_KEYS - no validate overrides
 });
 
 // BF_SERVER_BLOCK_v332_SETTINGS_AND_AUDIT_HARDENING_v1 -- Edit 12

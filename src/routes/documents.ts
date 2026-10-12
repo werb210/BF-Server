@@ -303,8 +303,7 @@ const publicUploadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "RATE_LIMITED" },
-  keyGenerator: rateLimitKeyFromRequest,
-  validate: { xForwardedForHeader: false },
+  keyGenerator: rateLimitKeyFromRequest, // BF_SERVER_v791_RATE_LIMIT_KEYS - no validate overrides
 });
 
 // BF_SERVER_v789_PUBLIC_UPLOAD_AUTH - the wizard's continuation token (the one
