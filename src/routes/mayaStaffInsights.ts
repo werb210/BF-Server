@@ -126,7 +126,7 @@ export async function commsOverview(q: Q, silo: string, userEmail: string | null
 }
 
 export async function automationsOverview(q: Q, silo: string) {
-  const rules = (await q(`SELECT r.name, r.trigger_type, r.enabled, COALESCE(r.test_mode, false) AS test_mode, count(e.id) FILTER (WHERE e.status = 'active')::int AS active, count(e.id) FILTER (WHERE e.status = 'completed')::int AS completed, count(e.id) FILTER (WHERE e.status = 'failed')::int AS failed FROM automation_rules r LEFT JOIN automation_enrollments e ON e.rule_id = r.id WHERE r.silo = $1 GROUP BY r.id ORDER BY r.enabled DESC, r.name`, [silo])).rows;
+  const rules = (await q(`SELECT r.name, r.trigger_type, r.enabled, COALESCE(r.test_mode, false) AS test_mode, count(e.id) FILTER (WHERE e.status = 'active')::int AS active, count(e.id) FILTER (WHERE e.status = 'completed')::int AS completed, count(e.id) FILTER (WHERE e.status = 'failed')::int AS failed FROM automation_rules r LEFT JOIN automation_enrollments e ON e.rule_id = r.id AND e.test_mode = false WHERE r.silo = $1 GROUP BY r.id ORDER BY r.enabled DESC, r.name`, [silo])).rows;
   const sequences = (await q(`SELECT s.name, s.status, s.audience_tag, count(e.id) FILTER (WHERE e.status = 'active')::int AS active, count(e.id)::int AS total FROM marketing_sequences s LEFT JOIN marketing_sequence_enrollments e ON e.sequence_id = s.id WHERE s.silo = $1 GROUP BY s.id ORDER BY s.status, s.name`, [silo])).rows;
   const running = rules.filter((r) => r.enabled).length;
   return { automations: rules, sequences, summary: `${running} of ${rules.length} automation(s) enabled; ${sequences.filter((s) => s.status === "active").length} of ${sequences.length} sequence(s) active.` };

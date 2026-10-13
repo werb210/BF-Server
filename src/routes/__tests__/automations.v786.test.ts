@@ -19,8 +19,8 @@ const q = vi.fn(async (sql: string, p: any[] = []) => {
   if (sql.includes("FROM automation_rules WHERE id = $1::uuid AND silo = $2")) return { rows: db.rule ? [db.rule] : [] };
   if (sql.startsWith("UPDATE automation_rules SET")) { db.updates.push(p); return { rows: [{ ...db.rule, enabled: p[6] ?? db.rule.enabled }] }; }
   if (sql.includes("SELECT id FROM automation_rules WHERE id = $1::uuid")) return { rows: db.rule ? [{ id: RULE }] : [] };
-  if (sql.includes("count(*) FILTER (WHERE goal_reached_at IS NOT NULL)")) return { rows: [{ enrolled: 7, active: 2, completed: 5, goal_reached: 3 }] };
-  if (sql.includes("FROM automation_step_log WHERE rule_id = $1::uuid AND node_id IS NOT NULL")) return { rows: [{ node_id: "a", entered: 7, failed: 1 }, { node_id: "b", entered: 4, failed: 0 }] };
+  if (sql.includes("count(*) FILTER (WHERE goal_reached_at IS NOT NULL)") && sql.includes("test_mode = false")) return { rows: [{ enrolled: 7, active: 2, completed: 5, goal_reached: 3 }] };
+  if (sql.includes("FROM automation_step_log l JOIN automation_enrollments e") && sql.includes("e.test_mode = false") && sql.includes("GROUP BY l.node_id")) return { rows: [{ node_id: "a", entered: 7, failed: 1 }, { node_id: "b", entered: 4, failed: 0 }] };
   if (sql.includes("FROM automation_enrollments e LEFT JOIN contacts c") && sql.includes("e.path")) {
     return { rows: [{ id: "e-1", status: "completed", contact_id: p[2] ?? CONTACT, path: [{ nodeId: "a", kind: "action", at: "2026-10-11T18:00:00Z", result: "tag booked" }] }] };
   }
