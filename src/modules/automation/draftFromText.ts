@@ -22,7 +22,9 @@ date.relative triggers put {"field","offsetDays","time"} in params; no_reply tri
 Use only the triggers, actions, fields, operators, template ids, list ids and workflow ids in the catalog. Use personalization tokens like {{first_name}}, {{owner_name}}, {{application_link}} in text.
 "kind" is always exactly one of: action, delay, branch, value_branch, goto. An action step puts the action name in "action", never in "kind". Example: {"id":"s1","kind":"action","action":"send_sms","params":{"body":"Hi {{first_name}}, your offer is ready.","kind":"transactional"},"next":"s2"}.
 Build every step the description asks for, in the order it asks, linked through "next".
-For send_sms and notify_client write the text the description asks for in params.body; use a catalog templateId only when that template says the same thing.`;
+For send_sms and notify_client write the text the description asks for in params.body; use a catalog templateId only when that template says the same thing.
+People: to reach the contact's owner put "owner" in params.to (notify_staff) or params.assignee (create_task). A specific person is that person's id from catalog.users. assign_owner needs params.userId from catalog.users. Never write {{owner_id}} or a person's name in these fields.
+"From the website" means the trigger filter {"field":"source","op":"in","value":["website","website_form","readiness_check"]}.`;
 
 type Completion = { choices?: Array<{ message?: { content?: string | null } }> };
 
@@ -30,7 +32,15 @@ type Completion = { choices?: Array<{ message?: { content?: string | null } }> }
 // That step is then unknown, and every step after it is unreachable, so the editor showed one broken
 // step. Such steps are rewritten to {"kind":"action","action":...} before validation.
 const NODE_KINDS = new Set(["action", "delay", "branch", "value_branch", "goto"]);
-export function normalizeDraftNodes(nodes: Record<string, any>): Record<string, any> {
+export function normalizeDraftNodes(nodes: Record<string, any>, users: Array<{ id: string; name: string }> = []): Record<string, any> {
+  // BF_SERVER_v796_PEOPLE_CHECK - {{owner_id}} / "owner_id" mean the contact owner; a staff name becomes its id.
+  const person = (v: unknown): unknown => {
+    if (typeof v !== "string") return v;
+    const s = v.trim();
+    if (/^\{\{\s*(contact_)?owner(_id|name)?\s*\}\}$/i.test(s) || /^(contact)?owner(_id)?$/i.test(s)) return "owner";
+    const hit = users.find((u) => String(u.name ?? "").trim().toLowerCase() === s.toLowerCase());
+    return hit ? hit.id : s;
+  };
   const out: Record<string, any> = {};
   for (const [key, raw] of Object.entries(nodes)) {
     if (!raw || typeof raw !== "object") { out[key] = raw; continue; }
@@ -44,7 +54,11 @@ export function normalizeDraftNodes(nodes: Record<string, any>): Record<string, 
     }
     if (n.kind === "action") {
       if (!n.action && typeof n.type === "string" && (ACTION_TYPES as readonly string[]).includes(n.type)) n.action = n.type;
-      if (!n.params || typeof n.params !== "object") n.params = {};
+      n.params = n.params && typeof n.params === "object" ? { ...n.params } : {};
+      if (n.params.assignee !== undefined) n.params.assignee = person(n.params.assignee);
+      if (n.action === "notify_staff" && n.params.to !== undefined) n.params.to = person(n.params.to);
+      if (n.params.userId !== undefined) { const v = person(n.params.userId); n.params.userId = v === "owner" ? "" : v; }
+      if (Array.isArray(n.params.userIds)) n.params.userIds = n.params.userIds.map(person).filter((x: unknown) => x !== "owner");
       if (n.next === undefined) n.next = null;
     }
     out[key] = n;
@@ -88,7 +102,7 @@ export async function draftWorkflowFromText(prompt: string, catalog: Record<stri
   const graph: Graph = {
     triggers: Array.isArray(g.triggers) ? g.triggers : [],
     startNodeId: typeof g.startNodeId === "string" ? g.startNodeId : null,
-    nodes: g.nodes && typeof g.nodes === "object" && !Array.isArray(g.nodes) ? normalizeDraftNodes(g.nodes) : {},
+    nodes: g.nodes && typeof g.nodes === "object" && !Array.isArray(g.nodes) ? normalizeDraftNodes(g.nodes, Array.isArray((catalog as any).users) ? (catalog as any).users : []) : {},
   };
   return {
     name: String(parsed.name ?? "Drafted workflow").slice(0, 120),
