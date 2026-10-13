@@ -118,9 +118,21 @@ router.post("/draft-from-text", writers, safeHandler(async (req: any, res: any) 
   const { draftWorkflowFromText } = await import("../modules/automation/draftFromText.js");
   const out = await draftWorkflowFromText(prompt, { ...catalogStatic(), templates: refs.templateRows, lists: refs.listRows, workflows: refs.workflowRows });
   if ("error" in out) return res.status(422).json({ error: { code: "draft_failed", message: out.error }, issues: [{ nodeId: null, message: out.error }] });
-  const issues = validateGraph(out.graph, out.settings, out.goal, refs);
-  if (issues.length) return res.status(422).json({ error: { code: "draft_invalid" }, issues, draft: out });
-  respondOk(res, out);
+  let draft = out;
+  let issues = validateGraph(draft.graph, draft.settings, draft.goal, refs);
+  // BF_SERVER_v795_DRAFT_REPAIR - one repair round: hand the model its problems and keep the
+  // corrected draft when it has fewer issues.
+  if (issues.length) {
+    const fixed = await draftWorkflowFromText(prompt, { ...catalogStatic(), templates: refs.templateRows, lists: refs.listRows, workflows: refs.workflowRows }, undefined, { previous: JSON.stringify(draft), issues: issues.map((i) => i.message) });
+    if (!("error" in fixed)) {
+      const again = validateGraph(fixed.graph, fixed.settings, fixed.goal, refs);
+      if (again.length < issues.length) { draft = fixed; issues = again; }
+    } else {
+      console.error("[automation] draft-from-text repair failed", { message: fixed.error });
+    }
+  }
+  if (issues.length) return res.status(422).json({ error: { code: "draft_invalid" }, issues, draft });
+  respondOk(res, draft);
 }));
 
 // ---- lists ------------------------------------------------------------------------------
