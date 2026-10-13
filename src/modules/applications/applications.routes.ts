@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, requireCapability } from '../../middleware/auth.js';
 import { CAPABILITIES } from '../../auth/capabilities.js';
+import { familyAppIdsSql } from './applications.repo.js'; // BF_SERVER_v797_FAMILY_DOCS
 import { pool } from '../../db.js';
 import { isPipelineState } from './pipelineState.js';
 import { transitionPipelineState } from './applications.service.js';
@@ -1538,7 +1539,10 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
     (app.source === 'capital_and_equipment_leg' ||
      (meta as any)?.capital_and_equipment_leg === true ||
      (meta as any)?.leg_category === 'EQUIPMENT');
-  if (isCapitalAndEquipmentLeg && app.parent_application_id) {
+  // BF_SERVER_v797_FAMILY_DOCS - every family member (parent, equipment leg, closing-costs add-on)
+  // lists the documents uploaded anywhere in the family.
+  void isCapitalAndEquipmentLeg;
+  {
     try {
       const r = await pool.query<FileRow>(
         `SELECT
@@ -1555,9 +1559,9 @@ router.get('/:id/documents', safeHandler(async (req: any, res: any) => {
             NULL::timestamp AS ocr_extracted_at,
           COALESCE(d.received_in_background, false) AS received_in_background
          FROM documents d
-         WHERE d.application_id::text = ($1)::text
+         WHERE d.application_id::text IN ${familyAppIdsSql("$1")} AND d.application_id::text <> ($1)::text
          ORDER BY d.created_at ASC`,
-        [app.parent_application_id],
+        [appId],
       );
       const seenIds = new Set(fileRows.map((f) => f.id));
       for (const row of r.rows) {

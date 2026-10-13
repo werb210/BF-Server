@@ -992,3 +992,28 @@ export async function findActiveDocumentVersion(params: {
   const latestRecord = latest.rows[0];
   return latestRecord ?? null;
 }
+
+// BF_SERVER_v797_FAMILY_DOCS - linked applications (a capital application, its equipment leg and
+// its closing-costs add-on) share one set of documents. The wizard uploads to the primary
+// application, so every family member must see, accept and send the same files. The family is
+// the root application plus every application whose parent is that root - the same rule the
+// client's outstanding-documents check already uses (BF_SERVER_DOCS_FAMILY_SHARE_v1).
+export function familyAppIdsSql(param: string): string {
+  return `(WITH fam AS (SELECT COALESCE(fa.parent_application_id, fa.id) AS root_id FROM applications fa WHERE fa.id::text = (${param})::text)
+           SELECT x.id::text FROM applications x, fam WHERE x.id::text = fam.root_id::text OR x.parent_application_id::text = fam.root_id::text)`;
+}
+
+export async function listFamilyDocumentsByApplicationId(
+  applicationId: string,
+  client?: Queryable
+): Promise<DocumentRecord[]> {
+  const runner = client ?? pool;
+  const res = await runner.query<DocumentRecord>(
+    `select id, application_id, owner_user_id, title, document_type, status, filename, storage_key, size_bytes, uploaded_by, rejection_reason, ocr_status, created_at, updated_at
+     from documents
+     where application_id::text = ($1)::text or application_id::text in ${familyAppIdsSql("$1")}
+     order by created_at asc`,
+    [applicationId]
+  );
+  return Array.isArray(res.rows) ? res.rows : [];
+}

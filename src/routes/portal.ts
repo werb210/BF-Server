@@ -7,6 +7,8 @@ import {
   findActiveDocumentVersion,
   findApplicationById,
   listDocumentsByApplicationId,
+  listFamilyDocumentsByApplicationId,
+  familyAppIdsSql,
 } from "../modules/applications/applications.repo.js";
 // BF_SERVER_BLOCK_v202_PORTAL_FINANCIALS_ENDPOINT_v1
 import { listOcrFieldsForApplication } from "../modules/ocr/ocr.repo.js";
@@ -527,13 +529,15 @@ router.get(
     // this fix or webhook delivery misses. Best-effort and idempotent.
     await attachSignedPnwDocument(record.id).catch(() => undefined);
 
-    const documents = await listDocumentsByApplicationId(record.id);
+    // BF_SERVER_v797_FAMILY_DOCS - an equipment leg or closing-costs add-on shows the documents
+    // uploaded anywhere in its family; applicationId on each document says where it lives.
+    const documents = await listFamilyDocumentsByApplicationId(record.id);
     // BF_SERVER_MISFILED_DOCS_v262 - OCR's view of each document, for "filed as X, looks like Y".
     const classificationById = new Map<string, ClassificationRow>();
     try {
       const cls = await pool.query<ClassificationRow & { id: string }>(
         `SELECT id::text AS id, document_type, category, category_before_retag, detected_type, detected_confidence, display_name, tamper_level, tamper_signals, COALESCE(received_in_background, false) AS received_in_background
-           FROM documents WHERE application_id::text = ($1)::text`,
+           FROM documents WHERE application_id::text = ($1)::text OR application_id::text IN ${familyAppIdsSql("$1")}`,
         [record.id],
       );
       for (const row of cls.rows) classificationById.set(row.id, row);

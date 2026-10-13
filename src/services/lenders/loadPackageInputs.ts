@@ -1,6 +1,7 @@
 // BF_SERVER_v76_BLOCK_1_9 — real package input loader.
 // BF_SERVER_v76_BLOCK_1_9_FIX — fields value widened to string|number|boolean|null
 // to match buildApplicationPackage.FlatFields and the FlatField producer below.
+import { familyAppIdsSql } from "../../modules/applications/applications.repo.js"; // BF_SERVER_v797_FAMILY_DOCS
 import type { Pool } from "pg";
 import { Buffer } from "node:buffer";
 import { getStorage } from "../../lib/storage/index.js";
@@ -167,7 +168,7 @@ async function loadCreditSummaryPdf(ctx: LoadCtx): Promise<Buffer | null> {
   return renderTextPdf(lines);
 }
 async function loadAcceptedDocuments(ctx: LoadCtx): Promise<PackageInputDocs[]> {
-  const r = await ctx.pool.query<{category:string|null;document_type:string|null;filename:string|null;storage_path:string|null}>(`SELECT COALESCE(category, document_type, 'Other') AS category, document_type, COALESCE(display_name, filename, document_type, id::text) AS filename, storage_path FROM documents WHERE application_id::text = $1 AND status = 'accepted' AND storage_path IS NOT NULL ORDER BY category, filename`, [ctx.applicationId]).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/lenders/loadPackageInputs.ts:155", ({rows:[] as Array<{category:string|null;document_type:string|null;filename:string|null;storage_path:string|null}>})));
+  const r = await ctx.pool.query<{category:string|null;document_type:string|null;filename:string|null;storage_path:string|null}>(`SELECT COALESCE(category, document_type, 'Other') AS category, document_type, COALESCE(display_name, filename, document_type, id::text) AS filename, storage_path FROM documents WHERE (application_id::text = $1 OR application_id::text IN ${familyAppIdsSql("$1")}) AND status = 'accepted' AND storage_path IS NOT NULL ORDER BY category, filename`, [ctx.applicationId]).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/lenders/loadPackageInputs.ts:155", ({rows:[] as Array<{category:string|null;document_type:string|null;filename:string|null;storage_path:string|null}>})));
   const groups = new Map<string,{filename:string;content:Buffer}[]>(); const storage=getStorage();
   for (const row of r.rows){ const cat=(row.category??"Other").trim()||"Other"; const fn=(row.filename??"document").trim()||"document"; if(!row.storage_path) continue; try{ const got=await storage.get(row.storage_path); if(got?.buffer?.length){ if(!groups.has(cat)) groups.set(cat,[]); groups.get(cat)!.push({filename:fn,content:got.buffer});}}catch{} }
   return Array.from(groups.entries()).map(([category,files])=>({category,files}));
