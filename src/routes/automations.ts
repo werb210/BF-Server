@@ -48,7 +48,7 @@ function siloFor(req: any): string {
   return SILOS.has(b) ? b : resolveSiloFromRequest(req);
 }
 
-async function refsFor(silo: string): Promise<ValidateRefs & { templateRows: { email: Array<{ id: string; name: string }>; sms: Array<{ id: string; name: string }> }; listRows: Array<{ id: string; name: string }>; workflowRows: Array<{ id: string; name: string }> }> {
+async function refsFor(silo: string): Promise<ValidateRefs & { templateRows: { email: Array<{ id: string; name: string }>; sms: Array<{ id: string; name: string }> }; listRows: Array<{ id: string; name: string }>; workflowRows: Array<{ id: string; name: string }>; userRows: Array<{ id: string; name: string }> }> {
   const t = await pool.query(
     `SELECT id::text AS id, name, channel FROM marketing_template WHERE silo = $1 AND channel IN ('email', 'sms')
      UNION ALL
@@ -56,6 +56,8 @@ async function refsFor(silo: string): Promise<ValidateRefs & { templateRows: { e
      ORDER BY name`, [silo]);
   const l = await pool.query(`SELECT id::text AS id, name FROM automation_lists WHERE silo = $1 ORDER BY name`, [silo]);
   const w = await pool.query(`SELECT id::text AS id, name FROM automation_rules WHERE silo = $1 ORDER BY name`, [silo]);
+  // BF_SERVER_v796_PEOPLE_CHECK - active staff, so steps can be checked against real people.
+  const u = await pool.query(`SELECT id::text AS id, TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')) AS name FROM users WHERE active = true AND role IN ('Admin', 'Staff', 'Marketing') AND (silo IS NULL OR silo = $1) ORDER BY first_name`, [silo]);
   const email = t.rows.filter((r: any) => r.channel === "email").map((r: any) => ({ id: r.id, name: r.name }));
   const sms = t.rows.filter((r: any) => r.channel === "sms").map((r: any) => ({ id: r.id, name: r.name }));
   return {
@@ -63,6 +65,7 @@ async function refsFor(silo: string): Promise<ValidateRefs & { templateRows: { e
     lists: l.rows.map((r: any) => r.id),
     workflows: w.rows.map((r: any) => r.id),
     templateRows: { email, sms }, listRows: l.rows, workflowRows: w.rows,
+    users: u.rows.map((r: any) => r.id), userRows: u.rows,
   };
 }
 
@@ -116,14 +119,14 @@ router.post("/draft-from-text", writers, safeHandler(async (req: any, res: any) 
   if (!process.env.OPENAI_API_KEY) return res.status(503).json({ error: { code: "openai_not_configured" } });
   const refs = await refsFor(silo);
   const { draftWorkflowFromText } = await import("../modules/automation/draftFromText.js");
-  const out = await draftWorkflowFromText(prompt, { ...catalogStatic(), templates: refs.templateRows, lists: refs.listRows, workflows: refs.workflowRows });
+  const out = await draftWorkflowFromText(prompt, { ...catalogStatic(), templates: refs.templateRows, lists: refs.listRows, workflows: refs.workflowRows, users: refs.userRows });
   if ("error" in out) return res.status(422).json({ error: { code: "draft_failed", message: out.error }, issues: [{ nodeId: null, message: out.error }] });
   let draft = out;
   let issues = validateGraph(draft.graph, draft.settings, draft.goal, refs);
   // BF_SERVER_v795_DRAFT_REPAIR - one repair round: hand the model its problems and keep the
   // corrected draft when it has fewer issues.
   if (issues.length) {
-    const fixed = await draftWorkflowFromText(prompt, { ...catalogStatic(), templates: refs.templateRows, lists: refs.listRows, workflows: refs.workflowRows }, undefined, { previous: JSON.stringify(draft), issues: issues.map((i) => i.message) });
+    const fixed = await draftWorkflowFromText(prompt, { ...catalogStatic(), templates: refs.templateRows, lists: refs.listRows, workflows: refs.workflowRows, users: refs.userRows }, undefined, { previous: JSON.stringify(draft), issues: issues.map((i) => i.message) });
     if (!("error" in fixed)) {
       const again = validateGraph(fixed.graph, fixed.settings, fixed.goal, refs);
       if (again.length < issues.length) { draft = fixed; issues = again; }
@@ -163,8 +166,8 @@ router.get("/", readers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const { rows } = await pool.query(
     `SELECT ${COLS},
-            (SELECT COUNT(*)::int FROM automation_enrollments e WHERE e.rule_id = r.id AND e.status = 'active') AS active_count,
-            (SELECT COUNT(*)::int FROM automation_enrollments e WHERE e.rule_id = r.id) AS total_count
+            (SELECT COUNT(*)::int FROM automation_enrollments e WHERE e.rule_id = r.id AND e.status = 'active' AND e.test_mode = false) AS active_count,
+            (SELECT COUNT(*)::int FROM automation_enrollments e WHERE e.rule_id = r.id AND e.test_mode = false) AS total_count
        FROM automation_rules r WHERE silo = $1 ORDER BY created_at DESC`, [silo]);
   respondOk(res, rows);
 }));

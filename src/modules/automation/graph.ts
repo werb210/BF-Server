@@ -242,6 +242,12 @@ export function validateGraph(graph: unknown, settings?: unknown, goal?: unknown
           if (!p.workflowId) issues.push({ nodeId: id, message: "pick a workflow" });
           else if (refs.workflows && !refs.workflows.includes(String(p.workflowId))) issues.push({ nodeId: id, message: "that workflow no longer exists" });
         }
+        // BF_SERVER_v796_PEOPLE_CHECK - a person field is the contact owner or a real staff member.
+        const isUser = (v: unknown) => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v) && (!refs.users?.length || refs.users.includes(v));
+        if (n.action === "create_task" && p.assignee !== undefined && p.assignee !== "owner" && !isUser(p.assignee)) issues.push({ nodeId: id, message: "choose who gets the task: the contact owner or a staff member" });
+        if (n.action === "notify_staff" && String(p.channel ?? "in_app") !== "team" && p.to !== undefined && p.to !== "owner" && !isUser(p.to)) issues.push({ nodeId: id, message: "choose who gets it: the contact owner or a staff member" });
+        if (n.action === "assign_owner" && p.userId && !isUser(p.userId)) issues.push({ nodeId: id, message: "pick the new owner from the staff list" });
+        if (n.action === "rotate_owner" && Array.isArray(p.userIds) && p.userIds.some((x: unknown) => !isUser(x))) issues.push({ nodeId: id, message: "pick the people to rotate between from the staff list" });
         refIssue(issues, nodes, id, n.next, "next");
         break;
       }

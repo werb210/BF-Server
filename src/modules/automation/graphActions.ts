@@ -251,3 +251,52 @@ export async function runGraphAction(deps: EngineDeps, e: any, node: ActionNode)
       return `skip: unknown action ${node.action}`;
   }
 }
+
+// BF_SERVER_v796_TEST_DETAIL - what a step would do in a test run, in plain words. Read-only: it never
+// moves the rotation, writes or sends. Returns null to keep the default "would run: <label>".
+async function staffName(deps: EngineDeps, id: string): Promise<string> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return "";
+  const r = await deps.query(`SELECT TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')) AS name FROM users WHERE id = $1::uuid`, [id]);
+  return String(r.rows[0]?.name ?? "").trim();
+}
+export async function describeTestAction(deps: EngineDeps, e: any, node: ActionNode, label: string): Promise<string | null> {
+  const p = (node.params ?? {}) as Record<string, any>;
+  const t = (s: unknown) => renderTokens(String(s ?? ""), e.context ?? {});
+  try {
+    switch (node.action) {
+      case "add_tag": return `would add tag ${t(p.tag)}`;
+      case "remove_tag": return `would remove tag ${t(p.tag)}`;
+      case "set_application_stage": return `would move the application to ${t(p.stage)}`;
+      case "set_contact_field": return `would set ${String(p.field ?? "")} to ${t(p.value)}`;
+      case "assign_owner": {
+        const name = await staffName(deps, String(p.userId ?? ""));
+        return name ? `would assign to ${name}` : "would fail: the new owner is not a staff member";
+      }
+      case "rotate_owner": {
+        const pool = Array.isArray(p.userIds) && p.userIds.length
+          ? p.userIds.map(String)
+          : (await deps.query(`SELECT id::text AS id FROM users WHERE active = true AND role IN ('Admin','Staff') AND id::text <> '${SYSTEM_USER}' AND (silo IS NULL OR silo = $1) ORDER BY created_at ASC`, [e.silo])).rows.map((r: any) => r.id);
+        if (!pool.length) return "would skip: no active staff";
+        const rr = await deps.query(`SELECT rr_index FROM automation_rules WHERE id = $1::uuid`, [e.rule_id]);
+        const nextId = pool[(Number(rr.rows[0]?.rr_index ?? 0)) % pool.length];
+        const name = await staffName(deps, String(nextId));
+        return `would assign to ${name || "the next person in turn"} (next in turn)`;
+      }
+      case "notify_staff": {
+        const channel = String(p.channel ?? "in_app");
+        if (channel === "team") return null;
+        const id = await ownerOf(deps, e, p.to);
+        const name = id ? await staffName(deps, id) : "";
+        const how = channel === "email" ? "an internal email" : channel === "sms" ? "an internal text" : "an in-app notice";
+        return `would send ${how} to ${name || "nobody (no owner found)"}: ${t(p.message).slice(0, 160)}`;
+      }
+      case "send_sms":
+        return p.kind === "transactional" ? null : `would run: ${label} (marketing text - sent only if they agreed to marketing texts)`;
+      default:
+        return null;
+    }
+  } catch (err) {
+    logWarnSwallowed(err, "automation.test_detail");
+    return null;
+  }
+}

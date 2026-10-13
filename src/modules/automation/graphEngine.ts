@@ -6,7 +6,7 @@
 // timeline. The goal is checked before every step and on every event for the contact.
 import { buildContext, type AutomationEvent, type EngineDeps, type Query } from "./automationContext.js";
 import { runCheck } from "./automationSteps.js";
-import { runGraphAction } from "./graphActions.js";
+import { describeTestAction, runGraphAction } from "./graphActions.js";
 import {
   conditionsPass, convertV1Rule, durationMs, fieldsOf, nextTimeOfDay, normalizeSettings, quietHoursRelease, effectiveTz,
   renderTokens, SEND_ACTIONS, MAX_STEPS_PER_DAY,
@@ -310,8 +310,10 @@ export async function runGraphClaimed(deps: EngineDeps, e: any): Promise<string>
       case "action": {
         const label = renderTokens(node.params?.title || node.params?.body || node.params?.message || node.action, e.context).slice(0, 200);
         if (testRun) {
-          record(node, `test mode - would run: ${label}`);
-          await logNode(q, e, idx, node, "dry_run", `would run: ${label}`);
+          // BF_SERVER_v796_TEST_DETAIL - say what the step would do (tag, owner, recipient), not its internal name.
+          const detail = (await describeTestAction(deps, e, node, label)) ?? `would run: ${label}`;
+          record(node, `test mode - ${detail}`);
+          await logNode(q, e, idx, node, "dry_run", detail);
           current = node.next;
           break;
         }
