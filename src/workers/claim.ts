@@ -39,6 +39,15 @@ export function createWorkerLock(getPool: () => Pool | Promise<Pool>): WorkerLoc
   let session: PoolClient | null = null;
   let connecting: Promise<PoolClient> | null = null;
   const heldHere = new Set<string>();
+  // BF_SERVER_v798_LOCK_SESSION_QUEUE - every worker shares this one session, and their ticks fire
+  // together. pg warns (and pg@9 throws) when a query is sent while another is still running on the
+  // same client, so lock and unlock queries on the session run strictly one after another.
+  let queue: Promise<unknown> = Promise.resolve();
+  function onSession<R>(c: PoolClient, sql: string, params: unknown[]): Promise<R> {
+    const run = queue.then(() => c.query(sql, params) as Promise<unknown>) as Promise<R>;
+    queue = run.catch(() => undefined);
+    return run;
+  }
 
   function discard(c: PoolClient, err?: unknown): void {
     if (session === c) session = null;
@@ -79,7 +88,7 @@ export function createWorkerLock(getPool: () => Pool | Promise<Pool>): WorkerLoc
     let c: PoolClient;
     try {
       c = await getSession();
-      const r = await c.query<{ locked: boolean }>(
+      const r = await onSession<{ rows: Array<{ locked: boolean }> }>(c,
         "SELECT pg_try_advisory_lock($1, hashtext($2)) AS locked",
         [WORKER_LOCK_CLASS, name],
       );
@@ -96,7 +105,7 @@ export function createWorkerLock(getPool: () => Pool | Promise<Pool>): WorkerLoc
       return { ran: true, result: await fn() };
     } finally {
       try {
-        await c.query("SELECT pg_advisory_unlock($1, hashtext($2))", [WORKER_LOCK_CLASS, name]);
+        await onSession(c, "SELECT pg_advisory_unlock($1, hashtext($2))", [WORKER_LOCK_CLASS, name]);
       } catch (err) {
         // The session is unusable; destroying it is what releases the lock server-side.
         console.warn("[worker-lock] unlock failed; discarding the lock session", { worker: name, message: errMessage(err) });
@@ -111,7 +120,7 @@ export function createWorkerLock(getPool: () => Pool | Promise<Pool>): WorkerLoc
     session = null;
     if (!c) return;
     try {
-      await c.query("SELECT pg_advisory_unlock_all()");
+      await onSession(c, "SELECT pg_advisory_unlock_all()", []);
     } catch (err) {
       console.warn("[worker-lock] unlock_all on close failed", { message: errMessage(err) });
     }
