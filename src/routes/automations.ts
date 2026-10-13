@@ -265,11 +265,13 @@ router.get("/:id/performance", readers, safeHandler(async (req: any, res: any) =
             count(*) FILTER (WHERE status = 'active')::int AS active,
             count(*) FILTER (WHERE status = 'completed')::int AS completed,
             count(*) FILTER (WHERE goal_reached_at IS NOT NULL)::int AS goal_reached
-       FROM automation_enrollments WHERE rule_id = $1::uuid`, [req.params.id]);
+       FROM automation_enrollments WHERE rule_id = $1::uuid AND test_mode = false`, [req.params.id]);
+  // BF_SERVER_v792_WORKFLOW_TEST_RUN - test runs never count toward performance.
   const n = await pool.query(
-    `SELECT node_id, count(DISTINCT enrollment_id)::int AS entered,
-            count(DISTINCT enrollment_id) FILTER (WHERE outcome = 'failed')::int AS failed
-       FROM automation_step_log WHERE rule_id = $1::uuid AND node_id IS NOT NULL GROUP BY node_id`, [req.params.id]);
+    `SELECT l.node_id, count(DISTINCT l.enrollment_id)::int AS entered,
+            count(DISTINCT l.enrollment_id) FILTER (WHERE l.outcome = 'failed')::int AS failed
+       FROM automation_step_log l JOIN automation_enrollments e ON e.id = l.enrollment_id
+      WHERE l.rule_id = $1::uuid AND l.node_id IS NOT NULL AND e.test_mode = false GROUP BY l.node_id`, [req.params.id]);
   const byNode: Record<string, { entered: number; failed: number }> = {};
   for (const row of n.rows) byNode[row.node_id] = { entered: Number(row.entered) || 0, failed: Number(row.failed) || 0 };
   const k = c.rows[0] ?? {};
@@ -302,6 +304,8 @@ router.get("/:id/enrollments", readers, safeHandler(async (req: any, res: any) =
 }));
 
 // Manual trigger: Admin / Marketing / Staff enroll a contact (or application). testMode runs every action as a dry run.
+// BF_SERVER_v792_WORKFLOW_TEST_RUN - a test run walks the whole workflow at once (works while the workflow
+// is Off) and returns its step log: { enrollmentId, outcome, testMode: true, steps: [...] }.
 router.post("/:id/enroll", enrollers, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const contactId = isUuid(req.body?.contactId) ? req.body.contactId : null;
@@ -324,7 +328,10 @@ router.post("/:id/enroll", enrollers, safeHandler(async (req: any, res: any) => 
   const enrollmentId = await enrollGraph(deps, { ...rule, settings }, ctx, { ignoreReenroll: true });
   if (!enrollmentId) return res.status(409).json({ error: { code: "not_enrolled" } });
   const outcome = await runEnrollment(deps, enrollmentId);
-  respondOk(res, { enrollmentId, outcome });
+  if (!testMode) return respondOk(res, { enrollmentId, outcome });
+  const log = await pool.query(
+    `SELECT step_index, node_id, step_type, outcome, detail FROM automation_step_log WHERE enrollment_id = $1::uuid ORDER BY id ASC`, [enrollmentId]);
+  respondOk(res, { enrollmentId, outcome, testMode: true, steps: log.rows });
 }));
 
 export default router;

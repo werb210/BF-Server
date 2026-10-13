@@ -17,6 +17,27 @@ const ENROLL_COLS = `id::text AS id, rule_id::text AS rule_id, silo, contact_id:
   attempts, schema_version, graph, settings, goal, current_node_id, path, wait_event, wait_timeout_at, steps_today, steps_day`;
 
 const nowIso = (d: Date) => d.toISOString();
+
+// BF_SERVER_v792_WORKFLOW_TEST_RUN - a test enrollment walks the whole workflow in one run: delays
+// are logged as "dry_run" and skipped, goals and quiet hours never pause it, and it is capped.
+export const MAX_TEST_RUN_STEPS = 200;
+const plural = (n: number, unit: string) => `${n} ${n === 1 ? unit.replace(/s$/, "") : unit}`;
+function testWaitDetail(node: any, now: Date): string {
+  const p = node.params ?? {};
+  if (node.mode === "until_event") {
+    const amount = Number(p.timeoutAmount) || 0;
+    const timeout = amount > 0 ? plural(amount, String(p.timeoutUnit ?? "hours")) : "no time limit";
+    return `would wait for ${p.event} (up to ${timeout}); test continues as if it did not happen`;
+  }
+  if (node.mode === "until_time") {
+    const tz = effectiveTz(p.tz);
+    const at = nextTimeOfDay(now, p.time, p.weekdays, tz);
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .formatToParts(at).map((x) => [x.type, x.value]));
+    return `would wait until ${parts.weekday} ${String(Number(parts.hour) % 24).padStart(2, "0")}:${parts.minute}`;
+  }
+  return `would wait ${plural(Math.max(0, Number(p.amount) || 0), String(p.unit ?? "hours"))}`;
+}
 const asObj = (v: unknown) => (typeof v === "string" ? JSON.parse(v) : v);
 
 // ---- facts ------------------------------------------------------------------------
@@ -181,6 +202,8 @@ export async function runGraphClaimed(deps: EngineDeps, e: any): Promise<string>
   const today = deps.now().toISOString().slice(0, 10);
   let stepsToday = String(e.steps_day ?? "").slice(0, 10) === today ? Number(e.steps_today) || 0 : 0;
   let current: string | null = e.current_node_id ?? null;
+  const testRun = !!(settings.testMode || e.test_mode);
+  let testSteps = 0;
   // Fresh contact / application facts for every run; the event data from enrollment is kept.
   const fresh = await buildContext(q, { trigger: "run", silo: e.silo, contactId: e.contact_id, applicationId: e.application_id });
   const { from_stage: _f, to_stage: _t, source: _s, ...current_facts } = fresh;
@@ -197,7 +220,8 @@ export async function runGraphClaimed(deps: EngineDeps, e: any): Promise<string>
   };
 
   for (;;) {
-    if (e.goal && settings.unenrollOnGoal && await goalMet(q, e)) {
+    // Test runs never stop early for the goal; they walk the whole workflow.
+    if (!testRun && e.goal && settings.unenrollOnGoal && await goalMet(q, e)) {
       await save();
       await finishGoal(q, { ...e, path }, deps.now());
       return "goal_reached";
@@ -205,8 +229,16 @@ export async function runGraphClaimed(deps: EngineDeps, e: any): Promise<string>
     if (!current) return end("completed", null);
     const node = graph?.nodes?.[current] as GraphNode | undefined;
     if (!node) return end("failed", `step ${current} does not exist`);
+    if (testRun) {
+      testSteps += 1;
+      if (testSteps > MAX_TEST_RUN_STEPS) {
+        await logNode(q, e, path.length, node, "stopped", "stopped: too many steps");
+        await save(`, status = 'stopped', locked_until = NULL, completed_at = now(), wait_event = NULL, last_error = 'too_many_steps'`);
+        return "stopped";
+      }
+    }
     stepsToday += 1;
-    if (stepsToday > MAX_STEPS_PER_DAY) {
+    if (!testRun && stepsToday > MAX_STEPS_PER_DAY) {
       await logNode(q, e, path.length, node, "failed", `loop guard: more than ${MAX_STEPS_PER_DAY} steps today`);
       return end("failed", "loop_guard");
     }
@@ -242,6 +274,13 @@ export async function runGraphClaimed(deps: EngineDeps, e: any): Promise<string>
       }
       case "delay": {
         const now = deps.now();
+        if (testRun) {
+          const detail = testWaitDetail(node, now);
+          record(node, `test mode - ${detail}`);
+          await logNode(q, e, idx, node, "dry_run", detail);
+          current = node.mode === "until_event" ? (node.timeoutNext ?? node.next) : node.next;
+          break;
+        }
         if (node.mode === "until_event") {
           if (e.wait_event) {
             // Claimed while still waiting: the timeout passed.
@@ -270,7 +309,7 @@ export async function runGraphClaimed(deps: EngineDeps, e: any): Promise<string>
       }
       case "action": {
         const label = renderTokens(node.params?.title || node.params?.body || node.params?.message || node.action, e.context).slice(0, 200);
-        if (settings.testMode || e.test_mode) {
+        if (testRun) {
           record(node, `test mode - would run: ${label}`);
           await logNode(q, e, idx, node, "dry_run", `would run: ${label}`);
           current = node.next;
