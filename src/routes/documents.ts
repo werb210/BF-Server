@@ -3,6 +3,7 @@
 // upload then failed forever with "document_version_missing", spamming Azure
 // logs and leaving every uploaded doc unreadable by the credit-summary engine,
 // banking analyzer, and lender package builder.
+import { familyAppIdsSql } from "../modules/applications/applications.repo.js"; // BF_SERVER_v797_FAMILY_DOCS
 import express, { type Request, type Response } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
@@ -617,7 +618,7 @@ router.delete(
     }
 
     const exists = await pool.query<{ ok: number }>(
-      `SELECT 1 AS ok FROM documents WHERE id = $1 AND application_id::text = $2 LIMIT 1`,
+      `SELECT 1 AS ok FROM documents WHERE id = $1 AND (application_id::text = $2 OR application_id::text IN ${familyAppIdsSql("$2")}) LIMIT 1`, // BF_SERVER_v797_FAMILY_DOCS
       [documentId, applicationId]
     );
     if (!exists.rows[0]) return fail(res, 404, "DOCUMENT_NOT_FOUND");

@@ -23,6 +23,7 @@ vi.mock("../../../modules/applications/applications.repo.js", async (orig) => ({
   findActiveDocumentVersion: async () => null,
   findApplicationById: async (id: string) => ({ id, name: "Acme", product_type: "term", pipeline_state: "In Review", created_at: "2026-09-01", updated_at: "2026-09-02", metadata: {} }),
   listDocumentsByApplicationId: async (id: string) => [{ id: "doc-1", application_id: id, document_type: "bank_statements", title: "Bank", created_at: "2026-09-01", status: "pending" }],
+  listFamilyDocumentsByApplicationId: async (id: string) => [{ id: "doc-1", application_id: id, document_type: "bank_statements", title: "Bank", created_at: "2026-09-01", status: "pending" }], // BF_SERVER_v797_FAMILY_DOCS
 }));
 import portalRouter from "../../../routes/portal.js";
 import { scanDocumentForTampering } from "../tamperScan.js";

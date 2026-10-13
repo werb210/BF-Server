@@ -86,7 +86,7 @@ describe("background upload flag", () => {
     const file = (id: string, bg: boolean | null) => ({ id, filename: `${id}.pdf`, size_bytes: 1, created_at: "2026-10-01T00:00:00Z", status: "uploaded", category: "Void cheque", ocr_status: null, received_in_background: bg });
     h.queryMock.mockImplementation(answerBySql([
       [/SELECT id, silo, requested_amount, metadata, parent_application_id, source FROM applications/, { rows: [{ id: APP_ID, silo: "BF", requested_amount: null, metadata: {}, parent_application_id: "pppppppp-pppp-4ppp-8ppp-pppppppppppp", source: "capital_and_equipment_leg" }] }],
-      [/FROM documents d/, (_sql: string, params?: unknown[]) => ({ rows: params?.[0] === APP_ID ? [file("own", true), file("own2", null)] : [file("parent", true)] })],
+      [/FROM documents d/, (sql: string) => ({ rows: String(sql).includes("fam AS") ? [file("parent", true)] : [file("own", true), file("own2", null)] })], // BF_SERVER_v797_FAMILY_DOCS
     ]));
     const app = await mount("/api/applications", "../../modules/applications/applications.routes.js");
     const res = await request(app).get(`/api/applications/${APP_ID}/documents`).set("Authorization", `Bearer ${staffToken()}`);
