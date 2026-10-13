@@ -23,11 +23,13 @@ export function startOcrWorker(): { stop: () => void } {
     if (stopped || running) {
       return;
     }
-    if (await isKillSwitchEnabled("ocr")) {
-      return;
-    }
     running = true;
     try {
+      // BF_SERVER_v798_OCR_LOG_LABELS - the kill-switch read is inside the try, so a database
+      // timeout here logs as a skipped tick, not as a failed document.
+      if (await isKillSwitchEnabled("ocr")) {
+        return;
+      }
       const jobs = await lockOcrJobs({ limit: concurrency, lockedBy: workerId });
       await Promise.all(
         jobs.map((job) =>
@@ -38,19 +40,19 @@ export function startOcrWorker(): { stop: () => void } {
       // BF_SERVER_BLOCK_v210_LENDER_CATEGORY_ALIAS_AND_OCR_AUDIT_v1
       // Was silently swallowing. Likely culprit when OCR worker appears dead:
       // lockOcrJobs() throwing due to schema/query issue.
-      console.error("[ocr.worker] tick FAILED:", (err && (err as any).message) || err);
+      console.error("[ocr.worker] tick skipped (no job lost; locked jobs are retried):", (err && (err as any).message) || err);
     } finally {
       running = false;
     }
   };
 
   const timer = setInterval(() => {
-    tick().catch((err) => { console.error("[ocr.worker] processOcrJob FAILED:", (err && err.message) || err); });
+    tick().catch((err) => { console.error("[ocr.worker] tick skipped (no job lost):", (err && err.message) || err); });
   }, pollInterval);
 
-  clearExpiredOcrLocks().catch((err) => { console.error("[ocr.worker] processOcrJob FAILED:", (err && err.message) || err); });
+  clearExpiredOcrLocks().catch((err) => { console.error("[ocr.worker] clearing expired OCR locks failed:", (err && err.message) || err); });
 
-  tick().catch((err) => { console.error("[ocr.worker] processOcrJob FAILED:", (err && err.message) || err); });
+  tick().catch((err) => { console.error("[ocr.worker] tick skipped (no job lost):", (err && err.message) || err); });
 
   const stop = () => {
     stopped = true;
