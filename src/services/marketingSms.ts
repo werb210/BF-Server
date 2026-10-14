@@ -33,8 +33,23 @@ function fromNumber(): string {
   return String(process.env.TWILIO_SMS_FROM || config.twilio.number || config.twilio.phone || "");
 }
 
+// BF_SERVER_v806_NO_MARKETING_FROM_TOLL_FREE - the 866 toll-free number is verified with the carriers for
+// application messages only (sign-in codes, status, documents, signing). Marketing texts from it would break
+// that verification, so marketing SMS never goes out from a toll-free number: set TWILIO_SMS_FROM to a
+// Canadian local number for campaigns and sequences.
+const TOLL_FREE_AREA_CODES = new Set(["800", "833", "844", "855", "866", "877", "888"]);
+export function isTollFreeNumber(n: unknown): boolean {
+  let d = String(n ?? "").replace(/\D/g, "");
+  if (d.length === 11 && d.startsWith("1")) d = d.slice(1);
+  return d.length === 10 && TOLL_FREE_AREA_CODES.has(d.slice(0, 3));
+}
+function marketingFromNumber(): string {
+  const from = fromNumber();
+  return from && !isTollFreeNumber(from) ? from : "";
+}
+
 export function smsMarketingConfigured(): boolean {
-  return Boolean(fromNumber() && process.env.TWILIO_ACCOUNT_SID && process.env.JWT_SECRET);
+  return Boolean(marketingFromNumber() && process.env.TWILIO_ACCOUNT_SID && process.env.JWT_SECRET);
 }
 
 export function trackedLink(sendId: string, url: string): string {
@@ -43,7 +58,11 @@ export function trackedLink(sendId: string, url: string): string {
 }
 
 export async function sendMarketingSms(to: string, body: string): Promise<{ ok: boolean; sid?: string; optedOut?: boolean; error?: string }> {
-  const from = fromNumber();
+  const from = marketingFromNumber();
+  if (!from && isTollFreeNumber(fromNumber())) {
+    console.error("[marketingSms] not sent: the marketing from-number is toll-free; set TWILIO_SMS_FROM to a Canadian local number");
+    return { ok: false, error: "toll_free_sender_not_allowed_for_marketing" };
+  }
   if (!from || !to) return { ok: false, error: "no_from_or_to" };
   // BF_SERVER_GUARD_EVERYWHERE_v136 - count junk imported numbers as failures.
   if (isUndeliverableNumber(to)) return { ok: false, error: "undeliverable_number" };

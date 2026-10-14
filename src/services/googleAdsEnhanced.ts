@@ -25,13 +25,15 @@ export function consentGiven(value: unknown): boolean {
 
 export type UserIdentifier = { hashedEmail: string } | { hashedPhoneNumber: string };
 
-export function userIdentifiersFor(email: unknown, phone: unknown, consent: unknown): UserIdentifier[] {
+// BF_SERVER_v806_NO_PHONE_TO_ADS - mobile numbers never go to Google (or any advertiser), hashed or not. Our
+// texting promise to the carriers is that mobile numbers and SMS consent are never shared with third parties
+// for marketing; Twilio rejected the 866 toll-free number as "third-party lead generation" (30468). Only the
+// hashed email is sent. `phone` stays in the signature so every caller keeps compiling.
+export function userIdentifiersFor(email: unknown, _phone: unknown, consent: unknown): UserIdentifier[] {
   if (!consentGiven(consent)) return [];
   const identifiers: UserIdentifier[] = [];
   const normalizedEmail = normalizeEmail(email);
   if (normalizedEmail.includes("@")) identifiers.push({ hashedEmail: sha256(normalizedEmail) });
-  const normalizedPhone = normalizePhone(phone);
-  if (normalizedPhone) identifiers.push({ hashedPhoneNumber: sha256(normalizedPhone) });
   return identifiers;
 }
 

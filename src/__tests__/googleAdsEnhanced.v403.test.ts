@@ -27,10 +27,9 @@ beforeEach(() => { h.query.mockReset(); h.query.mockImplementation(answerBySql([
 afterEach(() => { process.env = { ...env }; });
 
 describe("enhanced conversions for leads", () => {
-  it("sends hashed email and phone only with consent", () => {
+  it("sends the hashed email only with consent, and never the phone (v806)", () => {
     expect(userIdentifiersFor(" Ann@Acme.com ", "(403) 555-1234", true)).toEqual([
       { hashedEmail: sha("ann@acme.com") },
-      { hashedPhoneNumber: sha("+14035551234") },
     ]);
     expect(userIdentifiersFor("ann@acme.com", "4035551234", false)).toEqual([]);
     expect(userIdentifiersFor("ann@acme.com", "4035551234", undefined)).toEqual([]);
@@ -60,7 +59,7 @@ describe("enhanced conversions for leads", () => {
     await uploadFundedConversions();
     const sent = h.ingest.mock.calls.map((c: any[]) => c[1][0]);
     const byTx = Object.fromEntries(sent.map((e: any) => [e.transactionId, e.userIdentifiers]));
-    const ann = [{ hashedEmail: sha("ann@acme.com") }, { hashedPhoneNumber: sha("+14035551234") }];
+    const ann = [{ hashedEmail: sha("ann@acme.com") }]; // BF_SERVER_v806_NO_PHONE_TO_ADS
     expect(byTx).toEqual({ "yes-submit": ann, "no-submit": [], yes: ann, no: [] });
     // Both lookups read the applicant's consent.
     const lookups = callsMatching(h.query, /FROM applications\s+WHERE silo = 'BF'/);
