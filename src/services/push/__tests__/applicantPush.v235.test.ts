@@ -9,7 +9,7 @@ describe("BF_SERVER_APPLICANT_PUSH_v235", () => {
   beforeEach(() => { query.mockReset(); send.mockReset().mockResolvedValue({ sent: 1, skipped: 0, unsupported: 0 }); __resetApplicantPushDedupe(); __setApplicantPushSender(send as any); });
   it("builds client links", () => {
     expect(applicantDeepLink("DOCUMENT_REQUEST", APP)).toBe("borealclient://documents");
-    expect(applicantDeepLink("OFFER_READY", APP)).toBe(`borealclient://application/${APP}`);
+    expect(applicantDeepLink("OFFER_READY", APP)).toBe("borealclient://offers"); // BF_SERVER_v802_PUSH_SECTIONS
     expect(applicantDeepLink("APPLICATION_UPDATE", "")).toBe("borealclient://home");
   });
   it("resolves client token subjects by phone", async () => {

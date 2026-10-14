@@ -15,6 +15,8 @@ export type ApplicantPushCategory = "DOCUMENT_REQUEST" | "APPLICATION_UPDATE" | 
 /** BF-client parseNativeUrl only accepts borealclient:// links (src/native/deepLinks.ts). */
 export function applicantDeepLink(categoryId: ApplicantPushCategory, applicationId: string): string {
   if (categoryId === "DOCUMENT_REQUEST") return "borealclient://documents";
+  // BF_SERVER_v802_PUSH_SECTIONS - an offer push opens the offers (the app scopes it to data.applicationId).
+  if (categoryId === "OFFER_READY") return "borealclient://offers";
   const id = String(applicationId || "").trim();
   return id ? `borealclient://application/${encodeURIComponent(id)}` : "borealclient://home";
 }
