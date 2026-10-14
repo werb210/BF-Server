@@ -5,8 +5,9 @@ import { assembleActionCenter } from "../services/applicantActions.js";
 const base = { requestedForms: ["networth", "debt"], waivedForms: [], required: [], stillNeeded: [], rejected: [] };
 
 describe("SBA forms on the client's to-do list", () => {
+  // BF_SERVER_v808_PNW_ON_SBA - Form 413 replaces Personal Net Worth unless staff ticked PNW in Request Items.
   it("an SBA deal lists Form 1919 and a 413 per owner, and Form 413 replaces Personal Net Worth", () => {
-    const c = assembleActionCenter({ ...base, submittedFormTypes: [], sbaOwners: [{ index: 1, name: "Brandon Voss" }, { index: 2, name: "Pat Partner" }] });
+    const c = assembleActionCenter({ ...base, requestedForms: ["debt"], submittedFormTypes: [], sbaOwners: [{ index: 1, name: "Brandon Voss" }, { index: 2, name: "Pat Partner" }] });
     const labels = c.outstanding.map((i) => i.label);
     expect(labels).toContain("SBA Form 1919 - Borrower Information");
     expect(labels).toContain("SBA Form 413 - Personal Financial Statement - Brandon Voss");

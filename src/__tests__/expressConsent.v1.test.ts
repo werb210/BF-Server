@@ -70,27 +70,30 @@ describe("Step 6 Communication Consent reaches the contact record", () => {
     expect(await patchSignature({ termsAccepted: true, infoConfirmed: true })).toMatchObject({ communicationConsent: true });
   });
 
-  it("stamps EXPRESS consent on the applicant and partner -- express does not expire", async () => {
-    const stamps = await submitNormalized({ app: { signature: { communicationConsent: true } } });
-    expect(stamps.map((c) => c[1])).toEqual([["ct-applicant"], ["ct-partner"]]);
+  // BF_SERVER_v808_MARKETING_OPTIN - the required Step 6 agreement no longer counts as consent to marketing
+  // texts. Express consent comes only from the separate, optional "Text me offers" box.
+  it("stamps EXPRESS marketing consent on the applicant only when the optional offers box is ticked", async () => {
+    const stamps = await submitNormalized({ app: { marketing_sms_consent: true, signature: { communicationConsent: true } } });
+    expect(stamps.map((c) => (c[1] as unknown[])[0])).toEqual(["ct-applicant"]);
     const sql = String(stamps[0]![0]);
     expect(sql).toContain("consent_basis  = 'express'");
-    expect(sql).toContain("consent_source = 'application_step6'");
-    expect(sql).toContain("consent_at     = now()");
+    expect(sql).toContain("consent_source = 'marketing_sms_optin'");
+    expect((stamps[0]![1] as unknown[])[1]).toContain("Text me offers");
   });
 
-  it("reads the consent from the request body shapes too", async () => {
-    expect(await submitNormalized({ communication_consent: true })).toHaveLength(2);
+  it("the required agreement alone records only the inquiry consent every applicant gets", async () => {
+    expect(await submitNormalized({ app: { signature: { communicationConsent: true } } })).toHaveLength(0);
+    expect(callsMatching(queryMock, /'implied_inquiry'/).length).toBe(2);
     queryMock.mockReset();
-    expect(await submitNormalized({ infoConfirmed: true })).toHaveLength(2);
+    expect(await submitNormalized({ communication_consent: true, infoConfirmed: true })).toHaveLength(0);
   });
 
-  it("only stamps it when the box was actually ticked", async () => {
-    expect(await submitNormalized({ app: { signature: { communicationConsent: false } } })).toHaveLength(0);
+  it("only an explicit true from the offers box counts", async () => {
+    expect(await submitNormalized({ app: { marketing_sms_consent: false } })).toHaveLength(0);
     queryMock.mockReset();
-    expect(await submitNormalized({ communication_consent: "true" })).toHaveLength(0);
+    expect(await submitNormalized({ app: { marketing_sms_consent: "true" } })).toHaveLength(0);
     queryMock.mockReset();
-    expect(await submitNormalized({})).toHaveLength(0);
+    expect(await submitNormalized({ marketing_sms_consent: true })).toHaveLength(1);
   });
 
   it("backfills express consent from application metadata where it exists", () => {

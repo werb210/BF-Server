@@ -33,6 +33,11 @@ router.get("/action-center", safeHandler(async (req: Request, res: Response) => 
 
   const { buildActionCenter } = await import("../services/applicantActions.js");
   const data = await buildActionCenter(applicationId);
+  // BF_SERVER_v808_STAGE_ADVANCE - nothing left for the client: move the file on from Additional Steps.
+  if (data.outstandingCount === 0) {
+    const { advanceWhenClientItemsDone } = await import("../services/clientItemsDoneAdvance.js");
+    await advanceWhenClientItemsDone(applicationId, 0, "Client finished every requested document and form");
+  }
   // BF_SERVER_QUIET_ACTION_CENTER_v751 - the portal refreshes this every 30 seconds, so logging every
   // build buried everything else. Log only when an application's counts change.
   const counts = data.outstandingCount + "/" + data.completed.length;
