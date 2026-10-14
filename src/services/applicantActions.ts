@@ -41,6 +41,25 @@ export const FORM_TASKS: Array<{ key: string; label: string; match: RegExp }> = 
 
 const norm = (s: string): string => String(s ?? "").trim().toLowerCase();
 
+// BF_SERVER_v807_FORM_DOCS - a lender's required "document" that is really one of our forms (the PNW
+// statement, debt stack, equipment list, real estate schedule, advisors list). The client fills these in as
+// forms; they used to show as a file to upload (and the form itself read "Optional"). CRA and bank
+// connection are not here on purpose: they are listed only when staff tick them in Request Items.
+export const FORM_DOC_TYPES: Record<string, string> = {
+  personal_net_worth: "networth",
+  net_worth_statement: "networth",
+  personal_net_worth_statement: "networth",
+  debt_stack: "debt",
+  debt_schedule: "debt",
+  equipment_list: "equipment",
+  real_estate_schedule: "realestate",
+  real_estate_collateral_disclosure: "realestate",
+  professional_advisors: "advisors",
+};
+export function formForDocType(docType: string): string | null {
+  return FORM_DOC_TYPES[norm(docType)] ?? null;
+}
+
 // Pure: everything the list shows is decided here, so it is testable without a
 // database.
 export function assembleActionCenter(input: {
@@ -59,6 +78,12 @@ export function assembleActionCenter(input: {
   const still = new Set(input.stillNeeded.map((d) => norm(d.document_type)));
   const rejected = new Set(input.rejected.map((d) => norm(d.document_type)));
   const seen = new Set<string>();
+  // BF_SERVER_v807_FORM_DOCS - form-backed requirements become requested forms, not uploads.
+  const requested = new Set(input.requestedForms.map(norm));
+  for (const d of [...input.rejected, ...input.required, ...input.stillNeeded]) {
+    const form = formForDocType(d.document_type);
+    if (form) { requested.add(form); seen.add(norm(d.document_type)); }
+  }
 
   for (const d of input.rejected) {
     const k = norm(d.document_type);
@@ -81,7 +106,6 @@ export function assembleActionCenter(input: {
     outstanding.push({ key: `upload:${k}`, kind: "document", label: d.label || d.document_type, urgent: false });
   }
 
-  const requested = new Set(input.requestedForms.map(norm));
   const waived = new Set(input.waivedForms.map(norm));
   const sba = Array.isArray(input.sbaOwners) && input.sbaOwners.length > 0;
   for (const task of FORM_TASKS) {

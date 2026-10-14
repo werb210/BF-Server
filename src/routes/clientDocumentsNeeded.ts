@@ -595,7 +595,11 @@ router.get("/needed", safeHandler(async (req: Request, res: Response) => {
   }
   try {
     const result = await computeOutstandingDocs(applicationId);
-    return res.status(200).json(result);
+    // BF_SERVER_v807_FORM_DOCS - the upload list never asks for a form (PNW, debt stack...) as a file;
+    // those are filled in from the to-do list.
+    const { formForDocType } = await import("../services/applicantActions.js");
+    const notForm = (d: { document_type?: string }) => !formForDocType(String(d.document_type ?? ""));
+    return res.status(200).json({ ...result, stillNeeded: result.stillNeeded.filter(notForm), rejected: result.rejected.filter(notForm) });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message ?? "needed_docs_failed" });
   }
