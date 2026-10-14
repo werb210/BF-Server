@@ -27,3 +27,17 @@ describe("v807 forms that lenders require", () => {
     expect(c.outstanding.map((i) => i.key)).toEqual(["upload:bank_statements"]);
   });
 });
+
+// BF_SERVER_v808_PNW_ON_SBA - staff ticked Personal Net Worth on an SBA deal: it is listed (it used to be hidden
+// because SBA Form 413 normally stands in for it). Not ticked: still left to Form 413.
+describe("v808 Personal Net Worth on an SBA deal", () => {
+  const sbaOwners = [{ index: 1, name: "Todd" }];
+  it("is listed when staff requested it", () => {
+    const c = assembleActionCenter({ ...base, sbaOwners, requestedForms: ["networth", "debt", "advisors"] });
+    expect(c.outstanding.map((i) => i.key)).toEqual(expect.arrayContaining(["form:networth", "form:debt", "form:advisors"]));
+  });
+  it("is left to Form 413 when staff did not request it", () => {
+    const c = assembleActionCenter({ ...base, sbaOwners, required: [{ document_type: "personal_net_worth", label: "PNW" }] });
+    expect(c.outstanding.map((i) => i.key)).not.toContain("form:networth");
+  });
+});

@@ -27,6 +27,7 @@ import { randomUUID as biRandomUUID } from "node:crypto";
 import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 import { applicationParamGuard } from "../../auth/clientApplicationOwnership.js"; // BF_SERVER_v789_ID_NORMALIZE
 import { checkSubmitCompleteness, type CompletenessResult } from "../../services/applicationCompleteness.js"; // BF_SERVER_v791_SUBMIT_COMPLETENESS
+import { MARKETING_SMS_OPTIN_TEXT } from "../../services/smsConsent.js"; // BF_SERVER_v808_MARKETING_OPTIN
 // BF_APP_ID_CAST_v39 - Block 39-A - applications.id comparisons cast to text
 
 const router = Router();
@@ -1539,25 +1540,34 @@ router.post(
       // Stamp it onto the contact so the send can see it.
       {
         const sigBlock: any = (legacyApp && typeof legacyApp === "object" ? (legacyApp as any).signature : null) ?? {};
-        const commsConsent =
-          sigBlock.communication_consent ??
-          sigBlock.communicationConsent ??
-          (req.body as any)?.communication_consent ??
-          (req.body as any)?.infoConfirmed ??
+        // BF_SERVER_v808_MARKETING_OPTIN - the required Step 6 agreement covers texts about the application;
+        // carriers do not accept it as consent to marketing texts. Express marketing consent now comes only from
+        // the separate, optional, unticked "Text me offers" box (marketing_sms_consent). The applicant who does
+        // not tick it keeps the CASL inquiry consent every applicant gets, and is never sent marketing by text
+        // from the toll-free number.
+        const appBlob: any = legacyApp && typeof legacyApp === "object" ? legacyApp : {};
+        const marketingOptIn =
+          sigBlock.marketing_sms_consent ??
+          appBlob.marketing_sms_consent ??
+          (req.body as any)?.marketing_sms_consent ??
           null;
-        if (commsConsent === true) {
-          for (const c of [applicant, partner]) {
-            if (!c) continue;
+        for (const c of [applicant, partner]) {
+          if (!c) continue;
+          if (marketingOptIn === true && c === applicant) {
             await tx.query(
               `UPDATE contacts
                   SET sms_consent    = true,
                       consent_basis  = 'express',
                       consent_at     = now(),
-                      consent_source = 'application_step6',
+                      consent_source = 'marketing_sms_optin',
+                      consent_text   = $2,
                       updated_at     = now()
                 WHERE id = $1`,
-              [c.id],
+              [c.id, MARKETING_SMS_OPTIN_TEXT],
             );
+          } else {
+            const { RECORD_INQUIRY_CONSENT_SQL } = await import("../../services/smsConsent.js");
+            await tx.query(RECORD_INQUIRY_CONSENT_SQL, [c.id]);
           }
         }
       }

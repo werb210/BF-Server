@@ -34,13 +34,24 @@ export const CONSENT_SQL = `(
   OR (c.consent_basis = 'implied_inquiry'     AND c.consent_at > now() - interval '6 months')
 )`;
 
+// BF_SERVER_v808_TOLLFREE_MARKETING - when marketing texts go out from the toll-free number (TWILIO_SMS_FROM is an
+// 8XX number and TWILIO_TOLLFREE_MARKETING=on), only people who ticked the optional "Text me offers" box may be
+// texted, so the counts and lists on the SMS screens show exactly those people. Settings are read at start-up
+// (changing them in Azure restarts the server).
+function tollFreeMarketingSender(): boolean {
+  const d = String(process.env.TWILIO_SMS_FROM ?? "").replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
+  return /^8(00|33|44|55|66|77|88)\d{7}$/.test(d) && String(process.env.TWILIO_TOLLFREE_MARKETING ?? "").trim().toLowerCase() === "on";
+}
+export const MARKETING_OPTIN_SQL = `(COALESCE(c.sms_consent, false) = true AND c.consent_source = 'marketing_sms_optin')`;
+
 // Everything the law and the carriers require before a marketing SMS may go out.
 export const SMS_ELIGIBLE_SQL = `
       COALESCE(c.phone,'') <> ''
   AND COALESCE(c.sms_opt_out, false) = false
   AND COALESCE(c.marketing_opt_out, false) = false
   AND (c.line_type IS NULL OR c.line_type = 'mobile')
-  AND ${CONSENT_SQL}
+  AND ${CONSENT_SQL}${tollFreeMarketingSender() ? `
+  AND ${MARKETING_OPTIN_SQL}` : ""}
 `;
 
 // BF_SERVER_SMS_CASCADE_COMPLETE_v12
@@ -65,6 +76,13 @@ export const CAMPAIGN_ELIGIBLE_SQL = `(
      (${SMS_ELIGIBLE_SQL})
   OR ${EMAIL_FALLBACK_ELIGIBLE_SQL}
 )`;
+
+// BF_SERVER_v808_MARKETING_OPTIN - the exact wording of the optional "Text me offers" box on the client app's
+// Step 6 (BF-client MARKETING_SMS_OPTIN_TEXT). Stored as consent_text with consent_source 'marketing_sms_optin';
+// only these contacts may get marketing texts from the toll-free number.
+export const MARKETING_SMS_OPTIN_TEXT =
+  "Optional: Text me offers and news about Boreal Financial products. Up to 4 messages per month. Message and data rates may apply. Reply STOP to opt out at any time. Not required to apply.";
+export const MARKETING_SMS_OPTIN_SOURCE = "marketing_sms_optin";
 
 // BF_SERVER_APPLICANT_CONSENT_v728 - starting an application is an inquiry, which gives
 // implied consent for 6 months (CASL). Applicant contacts were created with no consent

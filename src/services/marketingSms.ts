@@ -43,9 +43,38 @@ export function isTollFreeNumber(n: unknown): boolean {
   if (d.length === 11 && d.startsWith("1")) d = d.slice(1);
   return d.length === 10 && TOLL_FREE_AREA_CODES.has(d.slice(0, 3));
 }
+// BF_SERVER_v808_TOLLFREE_MARKETING - marketing is to come from the 866. Allowed only once Twilio has approved
+// marketing on the toll-free number (set TWILIO_TOLLFREE_MARKETING=on then), and only to people who ticked
+// the optional "Text me offers" box (consent_source 'marketing_sms_optin'). Until then the v806 rule stands:
+// no marketing from a toll-free number.
+export function tollFreeMarketingApproved(): boolean {
+  return String(process.env.TWILIO_TOLLFREE_MARKETING ?? "").trim().toLowerCase() === "on";
+}
 function marketingFromNumber(): string {
   const from = fromNumber();
-  return from && !isTollFreeNumber(from) ? from : "";
+  if (!from) return "";
+  return !isTollFreeNumber(from) || tollFreeMarketingApproved() ? from : "";
+}
+export async function hasMarketingSmsOptIn(to: string): Promise<boolean> {
+  const p10 = String(to ?? "").replace(/\D/g, "").slice(-10);
+  if (p10.length !== 10) return false;
+  try {
+    const { pool } = await import("../db.js");
+    const r = await pool.query(
+      `SELECT 1 FROM contacts
+        WHERE right(regexp_replace(COALESCE(phone,''), '[^0-9]', '', 'g'), 10) = $1
+          AND COALESCE(sms_consent, false) = true
+          AND consent_source = 'marketing_sms_optin'
+          AND COALESCE(sms_opt_out, false) = false
+          AND COALESCE(marketing_opt_out, false) = false
+        LIMIT 1`,
+      [p10],
+    );
+    return (r.rows?.length ?? 0) > 0;
+  } catch (err) {
+    console.error("[marketingSms] opt-in check failed; not sending", err instanceof Error ? err.message : String(err));
+    return false;
+  }
 }
 
 export function smsMarketingConfigured(): boolean {
@@ -64,6 +93,7 @@ export async function sendMarketingSms(to: string, body: string): Promise<{ ok: 
     return { ok: false, error: "toll_free_sender_not_allowed_for_marketing" };
   }
   if (!from || !to) return { ok: false, error: "no_from_or_to" };
+  if (isTollFreeNumber(from) && !(await hasMarketingSmsOptIn(to))) return { ok: false, error: "no_marketing_optin" };
   // BF_SERVER_GUARD_EVERYWHERE_v136 - count junk imported numbers as failures.
   if (isUndeliverableNumber(to)) return { ok: false, error: "undeliverable_number" };
   try {

@@ -80,6 +80,8 @@ export function assembleActionCenter(input: {
   const seen = new Set<string>();
   // BF_SERVER_v807_FORM_DOCS - form-backed requirements become requested forms, not uploads.
   const requested = new Set(input.requestedForms.map(norm));
+  // BF_SERVER_v808_PNW_ON_SBA - what staff ticked in Request Items is always listed, even on an SBA deal.
+  const staffRequested = new Set(input.requestedForms.map(norm));
   for (const d of [...input.rejected, ...input.required, ...input.stillNeeded]) {
     const form = formForDocType(d.document_type);
     if (form) { requested.add(form); seen.add(norm(d.document_type)); }
@@ -111,7 +113,7 @@ export function assembleActionCenter(input: {
   for (const task of FORM_TASKS) {
     if (!requested.has(task.key) || waived.has(task.key)) continue;
     // BF_SERVER_SBA_FORMS_TODO_v757 - on an SBA deal Form 413 is the personal net worth statement.
-    if (sba && task.key === "networth") continue;
+    if (sba && task.key === "networth" && !staffRequested.has("networth")) continue;
     const done = input.submittedFormTypes.some((t) => task.match.test(t));
     const item: ActionItem = { key: `form:${task.key}`, kind: "form", label: task.label, urgent: false };
     if (done) completed.push(item);
