@@ -55,13 +55,6 @@ export async function previewIcp(silo: string, filters: IcpFilters): Promise<{ e
 
 const sha256 = (s: string): string => createHash("sha256").update(s).digest("hex");
 function normEmail(e: string | null): string { return e ? sha256(e.trim().toLowerCase()) : ""; }
-function normPhone(p: string | null): string {
-  if (!p) return "";
-  let d = String(p).replace(/\D/g, "");
-  if (d.length === 10) d = "1" + d;
-  if (!d) return "";
-  return sha256("+" + d);
-}
 
 // Build a Customer Match CSV of SHA-256 hashes. type 'seed' = ideal clients
 // (filtered); type 'exclusion' = ALL funded clients (to suppress from prospecting).
@@ -85,15 +78,13 @@ export async function buildLinkedInAudienceCsv(silo: string, filters: IcpFilters
 export async function buildHashedList(silo: string, filters: IcpFilters, type: "seed" | "exclusion"): Promise<{ rows: number; csv: string }> {
   const rows = await querySeed(silo, filters, type === "seed");
   const seen = new Set<string>();
-  const lines = ["Email,Phone"];
+  // BF_SERVER_v806_NO_PHONE_TO_ADS - the Customer Match download carries hashed emails only, never phone numbers.
+  const lines = ["Email"];
   for (const r of rows) {
     const he = normEmail(r.email);
-    const hp = normPhone(r.phone);
-    if (!he && !hp) continue;
-    const key = he + "|" + hp;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    lines.push(`${he},${hp}`);
+    if (!he || seen.has(he)) continue;
+    seen.add(he);
+    lines.push(he);
   }
   return { rows: lines.length - 1, csv: lines.join("\n") };
 }
