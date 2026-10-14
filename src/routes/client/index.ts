@@ -330,6 +330,64 @@ router.get(
   })
 );
 
+// BF_SERVER_v802_CLIENT_ADVISOR - the client app's Home shows who is looking after the file:
+// the application's owner, else the contact's owner, when that person is active staff. Its own
+// route (read once per application) because the photo can be a large data URL and the stage
+// route above is polled every 30 seconds. bookable = the advisor takes calls through /api/booking.
+router.get(
+  "/advisor",
+  safeHandler(async (req: any, res: any) => {
+    const applicationId =
+      typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : "";
+    if (!applicationId) {
+      res.status(400).json({ error: "applicationId_required" });
+      return;
+    }
+    const { callerOwnsApplication } = await import("../../auth/clientApplicationOwnership.js");
+    if (!(await callerOwnsApplication(req, applicationId))) {
+      res.status(404).json({ found: false });
+      return;
+    }
+    const result = await dbQuery(
+      `select u.id::text as id, u.first_name, u.last_name, u.profile_image_url
+         from (select a.owner_user_id as uid, 1 as pri from applications a where a.id::text = ($1)::text
+               union all
+               select c.owner_id, 2 from applications a join contacts c on c.id = a.contact_id where a.id::text = ($1)::text) o
+         join users u on u.id = o.uid
+        where u.role in ('Admin', 'Staff', 'Ops', 'Marketing')
+          and u.active is not false
+          and coalesce(u.disabled, false) = false
+          and coalesce(u.status, 'ACTIVE') = 'ACTIVE'
+        order by o.pri
+        limit 1`,
+      [applicationId]
+    );
+    const row = result.rows[0] as { id: string; first_name: string | null; last_name: string | null; profile_image_url: string | null } | undefined;
+    if (!row) {
+      res.status(200).json({ advisor: null });
+      return;
+    }
+    let bookable = false;
+    try {
+      const { bookableStaff } = await import("../../services/clientBooking.js");
+      bookable = (await bookableStaff()).some((s) => s.id === row.id);
+    } catch (err) {
+      console.warn("[client] advisor bookable check failed", { message: err instanceof Error ? err.message : String(err) });
+    }
+    const photo = typeof row.profile_image_url === "string" ? row.profile_image_url.trim() : "";
+    res.status(200).json({
+      advisor: {
+        id: row.id,
+        firstName: (row.first_name ?? "").trim() || null,
+        lastName: (row.last_name ?? "").trim() || null,
+        // https links and image data URLs up to ~400 KB; anything else is left out.
+        photoUrl: /^https:\/\//i.test(photo) || (/^data:image\//i.test(photo) && photo.length <= 400_000) ? photo : null,
+        bookable,
+      },
+    });
+  })
+);
+
 // BF_SERVER_BLOCK_v712_EMBEDDED_GROUP_SIGNING_v1 — client-accessible embedded
 // signing session for the CMP iframe (our application + each finalized lender form).
 router.get(

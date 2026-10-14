@@ -1624,6 +1624,7 @@ router.post(
             phone: row.phone, applicationId: applicationId || null, kind: "staff_message",
             title: `New message from ${staffName ?? "Boreal"}`, body: body.length > 140 ? body.slice(0, 137) + "..." : body,
             sms: "", categoryId: "APPLICATION_UPDATE",
+            url: "borealclient://messages", // BF_SERVER_v802_PUSH_SECTIONS - a staff message opens the chat
           })
         : false;
       if (stale && row?.phone && !viaApp) {
