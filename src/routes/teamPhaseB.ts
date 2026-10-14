@@ -12,6 +12,7 @@ import {
 } from "../services/team/teamChannels.js";
 import { broadcastToUsers } from "../ws/teamSocket.js";
 import { askMaya } from "../services/team/teamPhaseC.js"; // BF_SERVER_TEAM_PHASE_C_v671
+import { notifyTeamMentions, teamMentionsFor } from "../services/team/teamMentions.js"; // BF_SERVER_v803_TEAM_MENTIONS
 
 const router = Router();
 const requireStaff = requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING] });
@@ -108,12 +109,14 @@ router.post("/channels/:id/threads/:rootId/messages", ...guard, safeHandler(asyn
   const attachments = (Array.isArray(req.body?.attachments) ? req.body.attachments : [])
     .filter((a: any) => a && typeof a.dataUrl === "string" && a.dataUrl.length < 7_000_000).slice(0, 10)
     .map((a: any) => ({ name: typeof a.name === "string" ? a.name.slice(0, 200) : "file", contentType: typeof a.contentType === "string" ? a.contentType.slice(0, 100) : "application/octet-stream", dataUrl: String(a.dataUrl) }));
-  const mentions: string[] = Array.isArray(req.body?.mentions) ? req.body.mentions.map(String).slice(0, 50) : [];
+  const clientMentions: string[] = Array.isArray(req.body?.mentions) ? req.body.mentions.map(String).slice(0, 50) : [];
   if (!body && !attachments.length) throw new AppError("validation_error", "Message body or attachment required.", 400);
+  const mentions = await teamMentionsFor(id, userId, body, clientMentions); // BF_SERVER_v803_TEAM_MENTIONS - picked or typed
   const posted = await postThreadReply(id, rootId, userId, body, attachments.length ? attachments : null, mentions.length ? mentions : null);
   if (!posted) throw new AppError("not_found", "Thread not found.", 404);
   broadcastToUsers(await memberIdsOf(id), { type: "thread_message", channel_id: id, root_id: rootId, message: posted.message, summary: posted.summary });
   void pushThreadReply(id, rootId, { sender_id: userId, body, mentions });
+  void notifyTeamMentions({ channelId: id, messageId: String((posted.message as any)?.id ?? ""), senderId: userId, body, mentions }); // BF_SERVER_v803_TEAM_MENTIONS
   void askMaya(id, posted.message as any, userId); // BF_SERVER_TEAM_PHASE_C_v671
   res.status(200).json({ ok: true, message: posted.message, summary: posted.summary });
 }));

@@ -41,8 +41,9 @@ export async function notifyMentions(p: NotifyMentionsParams): Promise<{ inserte
       );
       if (r.rows[0]) inserted += 1;
       if (r.rows[0]) void pushToUser(userId, "New mention", snippet, p.contextUrl ?? "/"); // BF_SERVER_BLOCK_v_NOTIF_PUSH_v1
-    } catch {
-      // swallow — notifications are advisory
+    } catch (err) {
+      // BF_SERVER_v803_TEAM_MENTIONS - advisory, but logged: a failed insert used to vanish silently.
+      console.warn("[notifications] mention insert failed", { userId, message: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -75,6 +76,7 @@ export interface Notification {
   id: string;
   user_id: string;
   type: string;
+  title?: string | null; // BF_SERVER_v803_TEAM_MENTIONS - e.g. "Andrew mentioned you in #deals"
   ref_table: string;
   ref_id: string;
   body: string | null;
@@ -88,7 +90,7 @@ export async function listForUser(userId: string, opts: { unreadOnly?: boolean; 
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
   const where = opts.unreadOnly ? "AND is_read = false" : "";
   const r = await runQuery<Notification>(
-    `SELECT id, user_id, type, ref_table, ref_id, body, context_url, is_read, created_at, read_at
+    `SELECT id, user_id, type, title, ref_table, ref_id, body, context_url, is_read, created_at, read_at
        FROM notifications
       WHERE user_id = $1 ${where}
       ORDER BY created_at DESC

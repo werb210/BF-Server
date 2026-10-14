@@ -33,6 +33,7 @@ import { channelMeta, nameTaken, normalizeChannelName, updateChannel } from "../
 import teamPhaseBRoutes from "./teamPhaseB.js"; // BF_SERVER_TEAM_PHASE_B_v658
 import teamPhaseCRoutes from "./teamPhaseC.js"; // BF_SERVER_TEAM_PHASE_C_v671
 import { askMaya } from "../services/team/teamPhaseC.js";
+import { notifyTeamMentions, teamMentionsFor } from "../services/team/teamMentions.js"; // BF_SERVER_v803_TEAM_MENTIONS
 import { listStatuses, markUnread, pushTeamMessage, setMuted, setStatus } from "../services/team/teamPrefs.js"; // BF_SERVER_TEAM_PREFS_v643
 
 const router = Router();
@@ -152,10 +153,11 @@ router.post(
         dataUrl: String(a.dataUrl),
       }));
     const replyToId = typeof req.body?.reply_to_id === "string" ? req.body.reply_to_id : null;
-    const mentions: string[] = Array.isArray(req.body?.mentions) ? req.body.mentions.map(String).slice(0, 50) : [];
+    const clientMentions: string[] = Array.isArray(req.body?.mentions) ? req.body.mentions.map(String).slice(0, 50) : [];
     if (!body && attachments.length === 0) throw new AppError("validation_error", "Message body or attachment required.", 400);
     if (!(await isMember(id, userId))) throw new AppError("forbidden", "Not a member of this channel.", 403);
     if ((await channelMeta(id))?.archived_at) throw new AppError("conflict", "This channel is archived.", 409); // BF_SERVER_TEAM_PHASE_B_v658
+    const mentions = await teamMentionsFor(id, userId, body, clientMentions); // BF_SERVER_v803_TEAM_MENTIONS - picked or typed
     const message = await postMessage(id, userId, body, attachments.length ? attachments : null, replyToId, mentions.length ? mentions : null);
     // BF_SERVER_READ_THIS_v776 - "Read this": recipients get Mark as read; the sender sees who has.
     if (req.body?.read_this === true) {
@@ -167,6 +169,7 @@ router.post(
     const members = await memberIdsOf(id);
     broadcastToUsers(members, { type: "message", channel_id: id, message });
     void pushTeamMessage(id, message); // BF_SERVER_TEAM_PREFS_v643 - alerts for people without the portal open
+    void notifyTeamMentions({ channelId: id, messageId: String(message.id), senderId: userId, body, mentions }); // BF_SERVER_v803_TEAM_MENTIONS
     void askMaya(id, message as any, userId); // BF_SERVER_TEAM_PHASE_C_v671 - @Maya answers in a thread
     res.status(200).json({ ok: true, message });
   }),

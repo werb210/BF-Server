@@ -1,5 +1,6 @@
 // BF_MINI_PORTAL_NOTES_v47 — parse @mentions from a note body and resolve to user ids.
 import { runQuery } from "../../lib/db.js";
+import { logWarn } from "../../observability/logger.js"; // BF_SERVER_v803_TEAM_MENTIONS
 
 const MENTION_RE = /(^|[\s(])@([a-zA-Z0-9_.\-]{2,40})(?![a-zA-Z0-9_.\-])/g;
 
@@ -20,7 +21,11 @@ export async function resolveMentionUserIds(tokens: string[]): Promise<string[]>
          OR LOWER(SPLIT_PART(email, '@', 1)) = ANY($1::text[])
          OR LOWER(COALESCE(first_name, '')) = ANY($1::text[])`,
     [tokens]
-  ).catch(() => ({ rows: [] as { id: string }[] }));
+  ).catch((err: unknown) => {
+    // BF_SERVER_v803_TEAM_MENTIONS - a failed lookup was silent, so a mention just vanished.
+    logWarn("note_mention_resolve_failed", { message: err instanceof Error ? err.message : String(err) });
+    return { rows: [] as { id: string }[] };
+  });
   return r.rows.map((row) => row.id);
 }
 
