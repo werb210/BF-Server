@@ -388,6 +388,74 @@ router.get(
   })
 );
 
+// BF_SERVER_v807_CLIENT_PROFILE - the client edits their own details in the app's Settings (name, email,
+// business name). It updates the CRM contact on the file and the application, so staff see the same thing.
+// The mobile number is the sign-in number and is not changed here.
+export function cleanProfileInput(body: any): { ok: true; firstName: string; lastName: string; email: string; businessName: string } | { ok: false; error: string } {
+  const text = (v: unknown, max: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+  const firstName = text(body?.firstName, 80);
+  const lastName = text(body?.lastName, 80);
+  const email = text(body?.email, 160).toLowerCase();
+  const businessName = text(body?.businessName, 160);
+  if (!firstName) return { ok: false, error: "first_name_required" };
+  if (!lastName) return { ok: false, error: "last_name_required" };
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { ok: false, error: "email_invalid" };
+  if (!businessName) return { ok: false, error: "business_name_required" };
+  return { ok: true, firstName, lastName, email, businessName };
+}
+
+router.post(
+  "/profile",
+  safeHandler(async (req: any, res: any) => {
+    const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
+    if (!/^[0-9a-f-]{36}$/i.test(applicationId)) {
+      res.status(400).json({ error: "applicationId_required" });
+      return;
+    }
+    const { callerOwnsApplication } = await import("../../auth/clientApplicationOwnership.js");
+    if (!(await callerOwnsApplication(req, applicationId))) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const input = cleanProfileInput(req.body);
+    if (!input.ok) {
+      res.status(400).json({ error: input.error });
+      return;
+    }
+    const fullName = input.firstName + " " + input.lastName;
+    const app = await dbQuery(
+      `UPDATE applications
+          SET name = $2,
+              metadata = jsonb_set(
+                jsonb_set(
+                  jsonb_set(
+                    jsonb_set(COALESCE(metadata, '{}'::jsonb), '{applicant}', COALESCE(metadata->'applicant', '{}'::jsonb), true),
+                    '{applicant,firstName}', to_jsonb($3::text), true),
+                  '{applicant,lastName}', to_jsonb($4::text), true),
+                '{applicant,email}', to_jsonb($5::text), true)
+                || jsonb_build_object('business', COALESCE(metadata->'business', '{}'::jsonb) || jsonb_build_object('name', $2::text)),
+              updated_at = now()
+        WHERE id::text = ($1)::text
+        RETURNING contact_id::text AS contact_id`,
+      [applicationId, input.businessName, input.firstName, input.lastName, input.email],
+    );
+    const contactId = (app.rows[0] as { contact_id: string | null } | undefined)?.contact_id ?? null;
+    if (!app.rows[0]) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    if (contactId) {
+      await dbQuery(
+        `UPDATE contacts SET first_name = $2, last_name = $3, name = $4, email = $5, company_name = $6, updated_at = now()
+          WHERE id::text = ($1)::text`,
+        [contactId, input.firstName, input.lastName, fullName, input.email, input.businessName],
+      );
+    }
+    console.info("[client] profile_updated", { applicationId, contactId });
+    res.status(200).json({ ok: true, profile: { firstName: input.firstName, lastName: input.lastName, email: input.email, businessName: input.businessName } });
+  })
+);
+
 // BF_SERVER_BLOCK_v712_EMBEDDED_GROUP_SIGNING_v1 — client-accessible embedded
 // signing session for the CMP iframe (our application + each finalized lender form).
 router.get(

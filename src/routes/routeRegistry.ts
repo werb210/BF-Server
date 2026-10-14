@@ -472,6 +472,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/public/readiness", roles: [] },
   { method: "POST", path: "/api/crm/readiness", roles: [] },
   { method: "GET", path: "/api/client/application-stage", roles: [] },
+  { method: "POST", path: "/api/client/profile", roles: [] }, // BF_SERVER_v807_CLIENT_PROFILE
   { method: "GET", path: "/api/client/signing-session", roles: [] },
   { method: "GET", path: "/api/client/readiness-prefill", roles: [] },
   { method: "GET", path: "/api/client/messages", roles: [] },
