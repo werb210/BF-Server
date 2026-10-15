@@ -44,7 +44,7 @@ describe("BF_SERVER_v64_CLIENT_MSG_ENRICH", () => {
   it("backfills the application's contact_id before inserting the message", async () => {
     await request(app).post("/api/client/messages").send({ applicationId: APP_ID, body: "x" });
     const calls = query.mock.calls.map((c) => String(c[0]));
-    const backfill = calls.findIndex((s) => /UPDATE applications a\s+SET contact_id = c\.id/.test(s));
+    const backfill = calls.findIndex((s) => /UPDATE applications a\s+SET contact_id = COALESCE\(/.test(s));
     const insert = calls.findIndex((s) => s.includes("INSERT INTO communications_messages"));
     expect(backfill).toBeGreaterThan(-1);
     expect(insert).toBeGreaterThan(backfill);
