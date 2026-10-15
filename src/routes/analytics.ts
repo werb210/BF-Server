@@ -84,12 +84,15 @@ export function buildAnalyticsRouter(): Router {
 
   router.post("/", safeHandler(async (req: any, res: any) => {
     const b = req.body && typeof req.body === "object" ? req.body : {};
-    const rawEvent = str(b.event, 100) ?? str(b.name, 100);
+    // BF_SERVER_v811_MOBILE_APPS_REPORT - BF-client's trackEvent posts { event_name, payload }; accept that shape too
+    // (it was answered with 400 and never stored).
+    const rawEvent = str(b.event, 100) ?? str(b.name, 100) ?? str(b.event_name, 100);
     if (!rawEvent) return res.status(400).json({ ok: false, error: "event_required" });
     const event = redactContactText(rawEvent);
-    const rawSession = str(b.session_id, 100) ?? str(b.sessionId, 100);
+    const payload = b.payload && typeof b.payload === "object" && !Array.isArray(b.payload) ? b.payload : null;
+    const rawSession = str(b.session_id, 100) ?? str(b.sessionId, 100) ?? str(payload?.session_id, 100);
     const sessionId = rawSession && redactContactText(rawSession) === rawSession ? rawSession : null;
-    const properties = sanitizeProperties(b.properties);
+    const properties = sanitizeProperties(b.properties ?? payload);
     try {
       await logAnalyticsEvent({
         event,
