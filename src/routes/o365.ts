@@ -10,6 +10,7 @@ import { pullOutlookContactsForUser } from "../modules/o365/contactPull.js"; // 
 import { getStorage } from "../lib/storage/index.js"; // v693
 import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { randomUUID } from "node:crypto";
+import staffLibraryPlus from "./staffLibraryPlus.js"; // BF_SERVER_v810_LIBRARY_PLUS
 
 // BF_SERVER_BLOCK_v513_LARGE_EMAIL_ATTACHMENTS - Graph sendMail takes at most ~3 MB
 // of inline attachments per request. Bigger files go on a draft: small ones by
@@ -1011,11 +1012,16 @@ router.get("/library", safeHandler(async (req: any, res: any) => {
   if (!graph) return res.status(412).json({ error: "o365_not_connected", url: lib.share_url });
   const item = typeof req.query?.item === "string" && /^[A-Za-z0-9!_.-]{1,200}$/.test(req.query.item) ? req.query.item : null;
   const sid = shareId(lib.share_url);
-  let r = await graph.fetch(item ? "/shares/" + sid + "/items/" + encodeURIComponent(item) + "/children?$top=200" : "/shares/" + sid + "/driveItem/children?$top=200");
-  if (!r.ok && item && lib.drive_id) r = await graph.fetch("/drives/" + encodeURIComponent(lib.drive_id) + "/items/" + encodeURIComponent(item) + "/children?$top=200");
+  // BF_SERVER_v810_LIBRARY_PLUS - thumbnails, file type, size and who changed it last; the recycle bin folder is hidden.
+  const q = "/children?$top=200&$expand=thumbnails";
+  let r = await graph.fetch(item ? "/shares/" + sid + "/items/" + encodeURIComponent(item) + q : "/shares/" + sid + "/driveItem" + q);
+  if (!r.ok && item && lib.drive_id) r = await graph.fetch("/drives/" + encodeURIComponent(lib.drive_id) + "/items/" + encodeURIComponent(item) + q);
   if (!r.ok) { const d = (await r.text()).slice(0, 400); return res.status(r.status === 401 || r.status === 403 ? 412 : 502).json({ error: "library_list_failed", detail: d, url: lib.share_url }); }
   const j: any = await r.json();
-  res.json({ configured: true, url: lib.share_url, items: (j.value ?? []).map(mapDriveItem).sort((a: any, b: any) => Number(b.isFolder) - Number(a.isFolder) || String(a.name).localeCompare(String(b.name))) });
+  const { mapLibraryItem, sortItems } = await import("../modules/library/libraryGraph.js");
+  const { TRASH_FOLDER_NAME } = await import("../modules/library/library.repo.js");
+  const items = (j.value ?? []).filter((i: any) => !(i?.folder && i?.name === TRASH_FOLDER_NAME && !item)).map(mapLibraryItem);
+  res.json({ configured: true, url: lib.share_url, rootId: lib.item_id, items: sortItems(items) });
 }));
 
 // BF_SERVER_LIBRARY_UPLOAD_v777 - upload files and make folders in the Staff Library from the portal's Library page.
@@ -1028,6 +1034,13 @@ export function cleanLibraryName(raw: unknown): string {
 async function libraryTarget(graph: any, lib: { drive_id: string | null; item_id: string; share_url: string }, folderId: string | null) {
   await graph.fetch("/shares/" + shareId(lib.share_url) + "/driveItem?$select=id", { headers: { Prefer: "redeemSharingLink" } }).catch((err: unknown) => console.warn("[staff-library] redeem failed", err instanceof Error ? err.message : String(err)));
   return { driveId: lib.drive_id, parentId: folderId && /^[A-Za-z0-9!_.-]{1,200}$/.test(folderId) ? folderId : lib.item_id };
+}
+// BF_SERVER_v810_LIBRARY_PLUS - uploads and new folders show in the library's Activity and Recent.
+async function logLibraryAdd(req: any, item: any, action: "uploaded" | "created_folder"): Promise<void> {
+  const { logActivity } = await import("../modules/library/library.repo.js");
+  const { actorOf } = await import("./staffLibraryPlus.js");
+  const a = actorOf(req);
+  if (item?.id) await logActivity({ itemId: String(item.id), itemName: String(item.name ?? ""), isFolder: action === "created_folder", action, actorId: a.id, actorName: a.name });
 }
 router.post("/library/upload", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId;
@@ -1050,6 +1063,7 @@ router.post("/library/upload", safeHandler(async (req: any, res: any) => {
   const put = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Length": String(content.length), "Content-Range": "bytes 0-" + (content.length - 1) + "/" + content.length }, body: content });
   if (!put.ok) { const d = (await put.text()).slice(0, 400); return res.status(502).json({ error: "upload_failed", detail: d }); }
   const item: any = await put.json();
+  await logLibraryAdd(req, item, "uploaded");
   res.json({ ok: true, item: mapDriveItem(item) });
 }));
 // BF_SERVER_LIBRARY_BIG_UPLOAD_v790 - files up to 200 MB. The portal asks for a OneDrive upload session, then sends
@@ -1098,7 +1112,7 @@ router.post("/library/upload-chunk", express.raw({ type: "application/octet-stre
   const end = start + body.length - 1;
   const put = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Length": String(body.length), "Content-Range": "bytes " + start + "-" + end + "/" + total }, body: new Uint8Array(body) });
   if (put.status === 202) return res.json({ ok: true, done: false, next: end + 1 });
-  if (put.status === 200 || put.status === 201) return res.json({ ok: true, done: true, item: mapDriveItem(await put.json()) });
+  if (put.status === 200 || put.status === 201) { const done: any = await put.json(); await logLibraryAdd(req, done, "uploaded"); return res.json({ ok: true, done: true, item: mapDriveItem(done) }); }
   const d = (await put.text()).slice(0, 400);
   console.warn("[staff-library] chunk upload failed", { status: put.status, start, total });
   return res.status(502).json({ error: "upload_failed", detail: d });
@@ -1115,8 +1129,14 @@ router.post("/library/folder", safeHandler(async (req: any, res: any) => {
   const t = await libraryTarget(graph, lib, typeof req.body?.folderId === "string" ? req.body.folderId : null);
   const r = await graph.fetch("/drives/" + encodeURIComponent(t.driveId as string) + "/items/" + encodeURIComponent(t.parentId) + "/children", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, folder: {}, "@microsoft.graph.conflictBehavior": "rename" }) });
   if (!r.ok) { const d = (await r.text()).slice(0, 400); return res.status(r.status === 401 || r.status === 403 ? 412 : 502).json({ error: "folder_failed", detail: d }); }
-  res.json({ ok: true, item: mapDriveItem(await r.json()) });
+  const made: any = await r.json();
+  await logLibraryAdd(req, made, "created_folder");
+  res.json({ ok: true, item: mapDriveItem(made) });
 }));
+
+// BF_SERVER_v810_LIBRARY_PLUS - search, preview, rename / move / delete, recycle bin, stars, recent, activity,
+// versions, share links, upload links and zip downloads (src/routes/staffLibraryPlus.ts).
+router.use("/library", staffLibraryPlus);
 
 router.post("/contacts/pull", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId;
