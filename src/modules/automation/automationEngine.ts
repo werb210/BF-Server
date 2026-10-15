@@ -117,6 +117,12 @@ export async function defaultDeps(): Promise<EngineDeps> {
       const { pushToClientApp } = await import("../../services/notifications/notifyClient.js");
       const viaApp = await pushToClientApp({ phone, applicationId, kind: "automation", title, body, sms: "", categoryId: "APPLICATION_UPDATE" } as any);
       if (viaApp) return "app";
+      // BF_SERVER_v809_SMS_UPDATES_CONSENT - automatic texts only to clients who ticked "Text me updates".
+      const { smsUpdatesAllowed } = await import("../../services/smsUpdatesConsent.js");
+      if (!(await smsUpdatesAllowed(phone))) {
+        console.info("[automation] notify_client skipped: no sms updates consent", { applicationId: applicationId ?? null });
+        return "none";
+      }
       const { sendSms } = await import("../notifications/sms.service.js");
       const base = String(process.env.CLIENT_URL ?? "https://client.boreal.financial").replace(/\/$/, "");
       await sendSms({ to: phone, message: `Boreal: ${body}\n${applicationId ? `${base}/application/${encodeURIComponent(applicationId)}` : `${base}/portal`}`, track: { kind: "automation", applicationId } });

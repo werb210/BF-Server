@@ -1398,7 +1398,8 @@ router.post(
                 const v650_to = String(phoneFromContact ?? phoneFromMeta ?? "").trim();
                 // BF_SERVER_BLOCK_v563 - the PGI link goes out when the term sheet is signed
                 // (signnow webhook), not at submit - unless it is somehow already signed.
-                if (v650_to && (await (await import("../../services/termSheetSigned.js")).termSheetSigned(String(v330_t.bfApplicationId)))) {
+                // BF_SERVER_v809_SMS_UPDATES_CONSENT - texted only if the client ticked "Text me updates".
+                if (v650_to && (await (await import("../../services/smsUpdatesConsent.js")).smsUpdatesAllowed(v650_to)) && (await (await import("../../services/termSheetSigned.js")).termSheetSigned(String(v330_t.bfApplicationId)))) {
                   const { sendSms } = await import("../../modules/notifications/sms.service.js");
                   await sendSms({
                     to: v650_to,

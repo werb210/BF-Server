@@ -81,7 +81,7 @@ export const CAMPAIGN_ELIGIBLE_SQL = `(
 // Step 6 (BF-client MARKETING_SMS_OPTIN_TEXT). Stored as consent_text with consent_source 'marketing_sms_optin';
 // only these contacts may get marketing texts from the toll-free number.
 export const MARKETING_SMS_OPTIN_TEXT =
-  "Optional: Text me offers and news about Boreal Financial products. Up to 4 messages per month. Message and data rates may apply. Reply STOP to opt out at any time. Not required to apply.";
+  "Optional: Text me news, tips and offers from Boreal Financial. Up to 4 messages per month. Message and data rates may apply. Reply STOP to opt out at any time. Not required to apply.";
 export const MARKETING_SMS_OPTIN_SOURCE = "marketing_sms_optin";
 
 // BF_SERVER_APPLICANT_CONSENT_v728 - starting an application is an inquiry, which gives

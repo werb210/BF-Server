@@ -13,6 +13,7 @@ export type FeeDeliveryDeps = {
   emailReady: () => boolean;
   email: (to: string, subject: string, html: string) => Promise<{ ok: boolean; error?: string }>;
   record: (applicationId: string, phone10: string, channel: string, error: string | null) => Promise<void>;
+  smsAllowed?: (phone: string) => Promise<boolean>; // BF_SERVER_v809_SMS_UPDATES_CONSENT
 };
 export const FEE_NOTICE_KIND = "media_fee_agreement";
 const digits10 = (p: string): string => String(p ?? "").replace(/[^0-9]/g, "").slice(-10);
@@ -30,7 +31,11 @@ export async function deliverFeeNotice(input: { applicationId: string; phone: st
       out.errors.push("app: " + String(err?.message ?? err));
     }
     let smsError: string | null = null;
-    try {
+    // BF_SERVER_v809_SMS_UPDATES_CONSENT - no text unless the client ticked "Text me updates"; the email still goes.
+    const smsOk = deps.smsAllowed ? await deps.smsAllowed(input.phone).catch(() => false) : true;
+    if (!smsOk) {
+      smsError = "no text: the client did not tick \"Text me updates\"";
+    } else try {
       const r = await deps.sms(input.phone, smsText, { kind: FEE_NOTICE_KIND, applicationId: input.applicationId });
       if (r && typeof r.sid === "string" && r.sid) out.sms = true;
       else smsError = "text not sent (server is in TEST_MODE or Twilio returned no message id)";
@@ -65,6 +70,10 @@ const defaultDeps: FeeDeliveryDeps = {
   async pushApp(n) {
     const { pushToClientApp } = await import("../notifications/notifyClient.js");
     return pushToClientApp(n as any);
+  },
+  async smsAllowed(phone) {
+    const { smsUpdatesAllowed } = await import("../smsUpdatesConsent.js");
+    return smsUpdatesAllowed(phone);
   },
   async sms(phone, text, track) {
     const { sendSms } = await import("../../modules/notifications/sms.service.js");

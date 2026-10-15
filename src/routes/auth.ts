@@ -298,6 +298,14 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
       return res.status(500).json({ error: "auth not configured" });
     }
 
+    // BF_SERVER_v809_SMS_UPDATES_CONSENT - the client ticked "Text me updates about my application" on the
+    // sign-in screen. Only an explicit true is recorded; an unticked box changes nothing (a returning client
+    // who said yes before keeps it, and can switch it off in the client portal or by replying STOP).
+    if (String((req.body ?? {}).userType ?? "") === "client" && (req.body ?? {}).sms_updates_consent === true) {
+      const { recordSmsUpdatesConsent } = await import("../services/smsUpdatesConsent.js");
+      await recordSmsUpdatesConsent(phone, true, "sign_in");
+    }
+
     // BF_SERVER_BLOCK_v146_OTP_CLIENT_FALLTHROUGH_PORTED_v1 - port the v145
     // fallthrough from the dead src/routes/auth/otp.ts into the actually-
     // mounted handler. Twilio has approved the code. If the phone is an

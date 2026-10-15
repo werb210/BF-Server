@@ -1,5 +1,7 @@
 // BF_SERVER_LIBRARY_BIG_UPLOAD_v790 / BF_SERVER_CMP_READ_LIMIT_v790 / BF_SERVER_SBA_OWNER1_EMAIL_v790
 import { describe, it, expect, vi, beforeEach } from "vitest";
+// BF_SERVER_v809_SMS_UPDATES_CONSENT - this client ticked "Text me updates"; the consent gate has its own tests.
+vi.mock("../services/smsUpdatesConsent.js", () => ({ smsUpdatesAllowed: async () => true }));
 import express from "express";
 import request from "supertest";
 import jwt from "jsonwebtoken";

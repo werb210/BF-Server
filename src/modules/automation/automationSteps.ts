@@ -66,11 +66,13 @@ export async function runAction(deps: EngineDeps, e: any, step: Step): Promise<s
       if (!e.contact_id) return "skip: no contact";
       const purpose = step.purpose === "transactional" ? "transactional" : "marketing";
       const { SMS_ELIGIBLE_SQL } = await import("../../services/smsConsent.js");
+      // BF_SERVER_v809_SMS_UPDATES_CONSENT - an automatic transactional text needs the client's "Text me updates" yes.
+      const { SMS_UPDATES_CONSENT_SQL } = await import("../../services/smsUpdatesConsent.js");
       const gate = purpose === "marketing"
         ? SMS_ELIGIBLE_SQL
-        : `COALESCE(c.phone,'') <> '' AND COALESCE(c.sms_opt_out, false) = false`;
+        : `COALESCE(c.phone,'') <> '' AND COALESCE(c.sms_opt_out, false) = false AND ${SMS_UPDATES_CONSENT_SQL}`;
       const r = await q(`SELECT c.phone FROM contacts c WHERE c.id::text = $1 AND ${gate} LIMIT 1`, [e.contact_id]);
-      if (!r.rows[0]?.phone) return `skip: no ${purpose === "marketing" ? "consent or opt-in" : "phone or opted out"}`;
+      if (!r.rows[0]?.phone) return `skip: no ${purpose === "marketing" ? "consent or opt-in" : "phone, opted out, or no text consent"}`;
       await deps.sendSms(r.rows[0].phone, t(step.body));
       return `sms sent (${purpose})`;
     }

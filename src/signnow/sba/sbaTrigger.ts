@@ -194,7 +194,11 @@ async function notifyOwnerOne(applicationId: string): Promise<{ sms: boolean; em
           WHERE id::text = ($1)::text`,
         [applicationId],
       ).catch((err: any) => { console.warn("[sba_send] could not stamp owner 1 notice time", { applicationId, message: err?.message }); });
-      if (!inApp) {
+      // BF_SERVER_v809_SMS_UPDATES_CONSENT - text only if owner 1 ticked "Text me updates"; the email below goes regardless.
+      const { smsUpdatesAllowed } = await import("../../services/smsUpdatesConsent.js");
+      if (!inApp && !(await smsUpdatesAllowed(phone))) {
+        (out as any).smsSkipped = "no_sms_updates_consent";
+      } else if (!inApp) {
         const { sendSms } = await import("../../modules/notifications/sms.service.js");
         await sendSms({ to: phone, message: `Boreal Financial: your application and SBA forms are ready to sign. Sign in at ${portal} and tap "Sign your application documents". Reply STOP to opt out.` });
         out.sms = true;

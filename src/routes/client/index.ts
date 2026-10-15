@@ -456,6 +456,39 @@ router.post(
   })
 );
 
+// BF_SERVER_v809_SMS_UPDATES_CONSENT - the client sees and changes "Text me updates about my application" in
+// the client portal's Details. The choice belongs to the signed-in client's own mobile number (from the token),
+// so no application id is needed and nobody can change another person's choice.
+async function signedInClientPhone(req: any): Promise<string> {
+  const { principalFromRequest } = await import("../../auth/principal.js");
+  const p = principalFromRequest(req);
+  if (!p || p.kind !== "client") return "";
+  return String(p.phone ?? "").replace(/[^0-9]/g, "").slice(-10);
+}
+
+router.get(
+  "/sms-updates",
+  safeHandler(async (req: any, res: any) => {
+    const phone = await signedInClientPhone(req);
+    if (!phone) { res.status(401).json({ error: "unauthorized" }); return; }
+    const { getSmsUpdatesConsent } = await import("../../services/smsUpdatesConsent.js");
+    res.status(200).json({ smsUpdates: (await getSmsUpdatesConsent(phone)) === true });
+  })
+);
+
+router.post(
+  "/sms-updates",
+  safeHandler(async (req: any, res: any) => {
+    const phone = await signedInClientPhone(req);
+    if (!phone) { res.status(401).json({ error: "unauthorized" }); return; }
+    if (typeof req.body?.smsUpdates !== "boolean") { res.status(400).json({ error: "smsUpdates_boolean_required" }); return; }
+    const { recordSmsUpdatesConsent } = await import("../../services/smsUpdatesConsent.js");
+    const ok = await recordSmsUpdatesConsent(phone, req.body.smsUpdates, "client_portal");
+    if (!ok) { res.status(503).json({ error: "not_saved" }); return; }
+    res.status(200).json({ ok: true, smsUpdates: req.body.smsUpdates });
+  })
+);
+
 // BF_SERVER_BLOCK_v712_EMBEDDED_GROUP_SIGNING_v1 — client-accessible embedded
 // signing session for the CMP iframe (our application + each finalized lender form).
 router.get(
