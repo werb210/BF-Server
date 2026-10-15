@@ -125,6 +125,7 @@ import mayaStaffAdsRouter from "./mayaStaffAds.js"; // BF_SERVER_MAYA_ADS_v683
 import mayaStaffAdsInsightsRouter from "./mayaStaffAdsInsights.js"; // BF_SERVER_MAYA_ADS_TOOLS_v712
 import aiRoutes from "./ai.v2.js";
 import o365Routes from "./o365.js";
+import libraryPublicRoutes from "./libraryPublic.js"; // BF_SERVER_v810_LIBRARY_PLUS (public)
 import diagnosticsRoutes from "./diagnostics.js";
 import { createMountTracker } from "./_canonicalMount.js";
 import { siloMiddleware } from "../middleware/silo.js";
@@ -308,6 +309,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/o365-oauth", router: o365OAuthRoutes },
   { path: "/audit", router: auditActivityRoutes }, // BF_SERVER_AUDIT_ACTIVITY_v802
   { path: "/o365", router: o365Routes },
+  { path: "/shared", router: libraryPublicRoutes }, // BF_SERVER_v810_LIBRARY_PLUS - share links and upload links (public)
   { path: "/ocr/admin", router: ocrAdminRoutes },
   { path: "/_diag", router: diagnosticsRoutes },
   { path: "/public", router: publicApplicationRoutes },
@@ -474,6 +476,10 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET", path: "/api/client/application-stage", roles: [] },
   { method: "POST", path: "/api/client/profile", roles: [] }, // BF_SERVER_v807_CLIENT_PROFILE
   { method: "GET", path: "/api/client/sms-updates", roles: [] }, // BF_SERVER_v809_SMS_UPDATES_CONSENT
+  { method: "GET", path: "/api/shared/f/:token", roles: [] }, // BF_SERVER_v810_LIBRARY_PLUS
+  { method: "POST", path: "/api/shared/f/:token/file", roles: [] }, // BF_SERVER_v810_LIBRARY_PLUS
+  { method: "GET", path: "/api/shared/r/:token", roles: [] }, // BF_SERVER_v810_LIBRARY_PLUS
+  { method: "POST", path: "/api/shared/r/:token/upload", roles: [] }, // BF_SERVER_v810_LIBRARY_PLUS
   { method: "POST", path: "/api/client/sms-updates", roles: [] }, // BF_SERVER_v809_SMS_UPDATES_CONSENT
   { method: "GET", path: "/api/client/signing-session", roles: [] },
   { method: "GET", path: "/api/client/readiness-prefill", roles: [] },
