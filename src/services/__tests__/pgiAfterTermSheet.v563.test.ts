@@ -1,6 +1,8 @@
 // BF_SERVER_BLOCK_v563 - PGI waits for a signed term sheet.
 import crypto from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+// BF_SERVER_v809_SMS_UPDATES_CONSENT - this client ticked "Text me updates"; the consent gate has its own tests.
+vi.mock("../smsUpdatesConsent.js", () => ({ smsUpdatesAllowed: async () => true }));
 import express from "express";
 import request from "supertest";
 import jwt from "jsonwebtoken";

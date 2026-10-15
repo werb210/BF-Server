@@ -17,7 +17,7 @@ export type ClientNotice = {
   url?: string;
   track?: { kind?: string; applicationId?: string | null }; // BF_SERVER_BLOCK_v555 - SMS delivery tracking
 };
-export type NoticeResult = { channel: "push" | "sms" | "none"; error?: string };
+export type NoticeResult = { channel: "push" | "sms" | "email" | "none"; error?: string };
 
 export type NotifyDeps = {
   pushReady: () => Promise<boolean>;
@@ -25,6 +25,10 @@ export type NotifyDeps = {
   push: (userId: string, n: ClientNotice) => Promise<number>;
   sms: (phone: string, text: string, track?: { kind?: string; applicationId?: string | null }) => Promise<void>;
   record: (n: ClientNotice, phone10: string, r: NoticeResult) => Promise<void>;
+  // BF_SERVER_v809_SMS_UPDATES_CONSENT - optional so callers with their own deps keep today's behaviour.
+  // smsAllowed: did this number tick "Text me updates about my application"? email: the fallback when not.
+  smsAllowed?: (phone: string) => Promise<boolean>;
+  email?: (n: ClientNotice, phone10: string) => Promise<boolean>;
 };
 
 export const phone10Of = (phone: string): string => String(phone ?? "").replace(/[^0-9]/g, "").slice(-10);
@@ -42,6 +46,11 @@ export async function notifyClient(n: ClientNotice, deps: NotifyDeps = defaultDe
     }
     if (pushed > 0) {
       result = { channel: "push" };
+    } else if (deps.smsAllowed && !(await deps.smsAllowed(n.phone).catch(() => false))) {
+      // BF_SERVER_v809_SMS_UPDATES_CONSENT - no text without the client's yes; email instead.
+      const emailed = deps.email ? await deps.email(n, phone10).catch(() => false) : false;
+      result = emailed ? { channel: "email" } : { channel: "none", error: "no_sms_updates_consent" };
+      if (!emailed) console.warn("[notify-client] no_sms_consent_no_email", { kind: n.kind, applicationId: n.applicationId ?? null });
     } else {
       await deps.sms(n.phone, n.sms, n.track ?? { kind: n.kind, applicationId: n.applicationId ?? null });
       result = { channel: "sms" };
@@ -105,6 +114,13 @@ const defaultDeps: NotifyDeps = {
     const { sendSms } = await import("../../modules/notifications/sms.service.js");
     await sendSms({ to: phone, message: text, ...(track ? { track } : {}) });
   },
+  async smsAllowed(phone) {
+    const { smsUpdatesAllowed } = await import("../smsUpdatesConsent.js");
+    return smsUpdatesAllowed(phone);
+  },
+  async email(n, phone10) {
+    return emailClientNotice(n, phone10);
+  },
   async record(n, phone10, r) {
     const { pool } = await import("../../db.js");
     await pool.query(
@@ -113,3 +129,34 @@ const defaultDeps: NotifyDeps = {
     );
   },
 };
+
+// BF_SERVER_v809_SMS_UPDATES_CONSENT - the email a client gets instead of a text when they did not tick
+// "Text me updates about my application". Uses the email on their CRM contact (same mobile number).
+export function noticeEmailHtml(n: ClientNotice): string {
+  const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const base = String(process.env.CLIENT_URL ?? "https://client.boreal.financial").replace(/\/$/, "");
+  const link = n.applicationId ? base + "/application/" + encodeURIComponent(n.applicationId) : base;
+  return "<p>" + esc(n.body) + "</p>"
+    + "<p><a href='" + link + "'>Open your Boreal Financial client portal</a></p>"
+    + "<p>Questions? Call (866) 631-8939.</p>";
+}
+
+async function emailClientNotice(n: ClientNotice, phone10: string): Promise<boolean> {
+  const { sendgridConfigured, sendTransactional } = await import("../sendgridService.js");
+  if (!sendgridConfigured()) return false;
+  const { pool } = await import("../../db.js");
+  const { rows } = await pool.query<{ id: string; email: string }>(
+    `SELECT id::text AS id, email FROM contacts
+      WHERE COALESCE(email, '') <> ''
+        AND right(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = $1
+        AND (silo IS NULL OR silo = 'BF')
+      ORDER BY updated_at DESC NULLS LAST
+      LIMIT 1`,
+    [phone10],
+  );
+  const to = rows[0]?.email;
+  if (!to) return false;
+  const r = await sendTransactional({ to, subject: "Boreal Financial: " + n.title, html: noticeEmailHtml(n), contactId: rows[0]!.id, customArgs: { kind: n.kind } });
+  if (!r.ok) console.warn("[notify-client] email_failed", { kind: n.kind, error: r.error });
+  return r.ok;
+}

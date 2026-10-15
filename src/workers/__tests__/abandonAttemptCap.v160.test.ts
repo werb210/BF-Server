@@ -1,5 +1,7 @@
 // BF_SERVER_ABANDON_ATTEMPT_CAP_v1
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+// BF_SERVER_v809_SMS_UPDATES_CONSENT - this client ticked "Text me updates"; the consent gate has its own tests.
+vi.mock("../../services/smsUpdatesConsent.js", () => ({ smsUpdatesAllowed: async () => true }));
 import fs from "node:fs";
 import path from "node:path";
 import type { Pool } from "pg";

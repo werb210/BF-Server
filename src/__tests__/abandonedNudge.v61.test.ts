@@ -2,6 +2,8 @@
 // by hand. This does it on a schedule and books the follow-up call.
 // v789: drives the real worker tick against a SQL-content-mocked pool.
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+// BF_SERVER_v809_SMS_UPDATES_CONSENT - this client ticked "Text me updates"; the consent gate has its own tests.
+vi.mock("../services/smsUpdatesConsent.js", () => ({ smsUpdatesAllowed: async () => true }));
 import fs from "node:fs";
 import { answerBySql, callsMatching, type SqlRule } from "./helpers/answerBySql.js";
 import { bootIndex, type Boot } from "./helpers/bootIndex.js";

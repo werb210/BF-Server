@@ -9,6 +9,8 @@
 // deliverability guards. These assertions pin that safety contract on the query
 // the worker actually runs.
 import { afterEach, beforeAll, describe, it, expect, vi } from "vitest";
+// BF_SERVER_v809_SMS_UPDATES_CONSENT - this client ticked "Text me updates"; the consent gate has its own tests.
+vi.mock("../../services/smsUpdatesConsent.js", () => ({ smsUpdatesAllowed: async () => true }));
 import type { Pool } from "pg";
 import { answerBySql, callsMatching, sqlText } from "../../__tests__/helpers/answerBySql.js";
 

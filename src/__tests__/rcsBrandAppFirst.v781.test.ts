@@ -3,6 +3,8 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import request from "supertest";
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
+// BF_SERVER_v809_SMS_UPDATES_CONSENT - this client ticked "Text me updates"; the consent gate has its own tests.
+vi.mock("../services/smsUpdatesConsent.js", () => ({ smsUpdatesAllowed: async () => true }));
 import { answerBySql } from "./helpers/answerBySql.js";
 import { smsSenderFor } from "../lib/smsFrom.js";
 

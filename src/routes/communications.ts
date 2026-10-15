@@ -507,6 +507,16 @@ router.get("/messages-list", safeHandler(async (req: any, res: any) => {
 }));
 
 // BF_SERVER_BLOCK_83_SMS_MESSAGES_TYPE_FILTER_v1 - thread loader scoped to type='sms'.
+// BF_SERVER_v809_SMS_UPDATES_CONSENT - the SMS tab shows "No text consent" on a client who did not tick
+// "Text me updates about my application", so staff know before texting. Staff can still text by hand.
+router.get("/sms/consent", safeHandler(async (req: any, res: any) => {
+  const { phone10, getSmsUpdatesConsent } = await import("../services/smsUpdatesConsent.js");
+  const p = phone10(req.query.phone);
+  if (!p) return res.status(400).json({ error: "phone_required" });
+  const consent = await getSmsUpdatesConsent(p);
+  res.json({ smsUpdatesConsent: consent === true, recorded: consent !== null });
+}));
+
 router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
   const { getSilo } = await import("../middleware/silo.js");
   const silo = String(getSilo(res) ?? req.user?.silo ?? "BF").toUpperCase();

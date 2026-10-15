@@ -78,7 +78,7 @@ describe("Step 6 Communication Consent reaches the contact record", () => {
     const sql = String(stamps[0]![0]);
     expect(sql).toContain("consent_basis  = 'express'");
     expect(sql).toContain("consent_source = 'marketing_sms_optin'");
-    expect((stamps[0]![1] as unknown[])[1]).toContain("Text me offers");
+    expect((stamps[0]![1] as unknown[])[1]).toContain("Text me news, tips and offers");
   });
 
   it("the required agreement alone records only the inquiry consent every applicant gets", async () => {

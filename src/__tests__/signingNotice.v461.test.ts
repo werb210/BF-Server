@@ -1,5 +1,7 @@
 // BF_SERVER_BLOCK_v461_SIGNING_NOTICE
 import { describe, it, expect, vi, beforeEach } from "vitest";
+// BF_SERVER_v809_SMS_UPDATES_CONSENT - this client ticked "Text me updates"; the consent gate has its own tests.
+vi.mock("../services/smsUpdatesConsent.js", () => ({ smsUpdatesAllowed: async () => true }));
 import fs from "node:fs";
 
 const dbQuery = vi.fn();

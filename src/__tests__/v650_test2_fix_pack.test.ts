@@ -3,6 +3,8 @@
 // and deleted in v789; its checks went with it. Everything below drives the live code.
 import request from "supertest";
 import { beforeEach, describe, it, expect, vi } from "vitest";
+// BF_SERVER_v809_SMS_UPDATES_CONSENT - this client ticked "Text me updates"; the consent gate has its own tests.
+vi.mock("../services/smsUpdatesConsent.js", () => ({ smsUpdatesAllowed: async () => true }));
 import { answerBySql, callsMatching } from "./helpers/answerBySql.js";
 import { APP_ID, PARAM_GUARD_RULE, buildV1App, submitBaseRules } from "./helpers/v1AppsHarness.js";
 import { docsNeededRules, wizardRequirements } from "./helpers/docsNeededHarness.js";
