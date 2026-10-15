@@ -23,6 +23,7 @@ import { clientDocumentsRateLimit } from "../../middleware/rateLimit.js";
 import { rateLimitKeyFromRequest } from "../../middleware/clientIp.js"; // BF_SERVER_v791_RATE_LIMIT_KEYS
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { dbQuery } from "../../db.js";
+import { principalFromRequest } from "../../auth/principal.js"; // BF_SERVER_v812_CLIENT_MSG_CONTACT_LINK
 import { AppError } from "../../middleware/errors.js";
 import {
   clientApplicationOwnershipGuard,
@@ -1044,17 +1045,29 @@ router.post(
     // mini-portal message lands with contact_id=NULL, and the staff Messages
     // tab silently drops it (it filters on contact_id presence). Result: the
     // client's send looked "dead" because staff never saw it.
+    // BF_SERVER_v812_CLIENT_MSG_CONTACT_LINK - applications has no applicant_phone column, so the old
+    // backfill failed on every message and never linked anything. Match on the signed-in client's phone
+    // (or the phone captured at Step 1 in metadata.applicant_phone), preferring a contact in the
+    // application's own silo, then the oldest one.
+    const v812Principal = principalFromRequest(req);
+    const v812Phone10 = v812Principal?.kind === "client"
+      ? String(v812Principal.phone ?? "").replace(/[^0-9]/g, "").slice(-10)
+      : "";
     await dbQuery(
       `UPDATE applications a
-          SET contact_id = c.id
-         FROM contacts c
-        WHERE a.id = $1
-          AND a.contact_id IS NULL
-          AND a.applicant_phone IS NOT NULL
-          AND right(regexp_replace(coalesce(a.applicant_phone,''), '[^0-9]', '', 'g'), 10)
-            = right(regexp_replace(coalesce(c.phone,''),            '[^0-9]', '', 'g'), 10)`,
-      [applicationId]
-    ).catch((err: unknown) => logWarnSwallowed(err, "routes/client/index.ts:891", undefined));
+          SET contact_id = COALESCE((
+                SELECT c.id
+                  FROM contacts c
+                 WHERE right(regexp_replace(coalesce(c.phone,''), '[^0-9]', '', 'g'), 10)
+                     = COALESCE(NULLIF($2::text, ''),
+                                right(regexp_replace(coalesce(a.metadata->>'applicant_phone',''), '[^0-9]', '', 'g'), 10))
+                   AND length(right(regexp_replace(coalesce(c.phone,''), '[^0-9]', '', 'g'), 10)) = 10
+                 ORDER BY (c.silo = a.silo) DESC, c.created_at ASC
+                 LIMIT 1), a.contact_id)
+        WHERE a.id::text = ($1)::text
+          AND a.contact_id IS NULL`,
+      [applicationId, v812Phone10]
+    ).catch((err: unknown) => logWarnSwallowed(err, "routes/client/index.ts:v812_contact_link", undefined));
 
     const id = randomUUID();
     await dbQuery(
