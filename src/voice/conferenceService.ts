@@ -1,5 +1,6 @@
 // BF_SERVER_BLOCK_v500 -- conference DB layer (no Twilio calls here)
 import { pool } from "../db.js";
+import { mainLineNumber } from "./directLines.js"; // BF_SERVER_v817_DIALER_MESSAGING - caller-ID last resort
 
 export type ParticipantKind = "staff" | "pstn" | "client_miniportal";
 export type ParticipantRole = "moderator" | "participant";
@@ -155,6 +156,13 @@ function __callerId(): string {
     || "";
 }
 
+// BF_SERVER_v817_DIALER_MESSAGING - caller ID for an outbound leg: the number the route
+// resolved, else the configured caller ID, else the 866 main line.
+export function __outboundFrom(fromNumber: unknown): string {
+  const explicit = typeof fromNumber === "string" ? fromNumber.trim() : "";
+  return explicit || __callerId() || mainLineNumber();
+}
+
 // ── Name aliases ──────────────────────────────────────────────────────────
 export const getConferenceByFriendly = getConferenceByFriendlyName;
 export const getConferenceById = getConference;
@@ -282,10 +290,12 @@ export async function dialPstnIntoConference(args: DialIntoConferenceArgs): Prom
   if (!friendly || !phone) throw new Error("dialPstnIntoConference: missing args");
   const tw = __getTw();
   const call = await tw.calls.create({
-    to: phone, from: __callerId(),
+    // BF_SERVER_v817_DIALER_MESSAGING - honour the caller ID the route resolved (the staff
+    // member's direct line / 866 main line); __callerId() ignored it and showed a generic number.
+    to: phone, from: __outboundFrom(args.fromNumber),
     url: `${__baseUrl()}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(friendly)}&pid=${encodeURIComponent(String(args.participantId ?? ""))}`,
     method: "POST",
-    statusCallback: `${__baseUrl()}/api/webhooks/twilio/voice/call-status`,
+    statusCallback: `${__baseUrl()}/api/webhooks/twilio/call/status`, // BF_SERVER_v817_DIALER_MESSAGING - /voice/call-status never existed; conferenceWebhooks serves /call/status
     statusCallbackEvent: ["initiated","ringing","answered","completed"],
     statusCallbackMethod: "POST",
   });
@@ -302,10 +312,10 @@ export async function dialClientIntoConference(args: DialIntoConferenceArgs): Pr
     // staff dialer instead of our own Twilio number. fromNumber is the PSTN
     // caller; fall back to our caller ID when no real number is available.
     to: `client:${identity}`,
-    from: (typeof args.fromNumber === "string" && args.fromNumber.trim() ? args.fromNumber : __callerId()),
+    from: __outboundFrom(args.fromNumber), // BF_SERVER_v817_DIALER_MESSAGING - shared fallback chain
     url: `${__baseUrl()}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(friendly)}&pid=${encodeURIComponent(String(args.participantId ?? ""))}`,
     method: "POST",
-    statusCallback: `${__baseUrl()}/api/webhooks/twilio/voice/call-status`,
+    statusCallback: `${__baseUrl()}/api/webhooks/twilio/call/status`, // BF_SERVER_v817_DIALER_MESSAGING - /voice/call-status never existed; conferenceWebhooks serves /call/status
     statusCallbackEvent: ["initiated","ringing","answered","completed"],
     statusCallbackMethod: "POST",
     timeout: 15, // BF_SERVER_NO_ANSWER_15S — ring staff 15s, then caller -> voicemail

@@ -11,6 +11,53 @@
 // 7pm, and inbound calls answered "no agents are available". The named zone
 // tracks DST.
 import { pool } from "../../db.js";
+// BF_SERVER_v817_DIALER_MESSAGING - business hours deliberately stay on ALBERTA_TZ (America/Regina):
+// Alberta is on UTC-6 all year from 2026 and older tzdata still moves the Edmonton zone to UTC-7 in
+// November (see src/lib/albertaTime.ts, enforced by albertaTime.v743.test.ts).
+
+// BF_SERVER_v817_DIALER_MESSAGING - who an inbound call may ring. The iOS dialler stops
+// heartbeating ~5 minutes after it is closed (the recompute then marks it 'offline'), yet it
+// still receives Twilio VoIP pushes, so 'available'-only meant a closed app never rang. A staff
+// member is ringable when they have a Twilio client identity, did not mark themselves busy and
+// are not on a call / in a meeting, and either:
+//   - presence is 'available' (fresh heartbeat, business hours), or
+//   - presence went 'offline' only because the heartbeat is stale, it is business hours, and the
+//     device is still registered (an unrevoked dialler credential or a voice token in the last 7 days).
+// 'busy' (manual / on call / meeting / after hours with the app open) is never rung.
+export const BUSINESS_HOURS_SQL = `(extract(hour from (now() AT TIME ZONE 'America/Regina')) >= 8
+      AND extract(hour from (now() AT TIME ZONE 'America/Regina')) < 18)`;
+export function ringableStaffSql(sp = "sp", u = "u"): string {
+  return `(${sp}.twilio_identity IS NOT NULL
+    AND coalesce(${sp}.manual_busy, false) = false
+    AND coalesce(${sp}.on_call, false) = false
+    AND coalesce(${sp}.in_meeting, false) = false
+    AND (
+      (${sp}.status = 'available' AND ${sp}.last_heartbeat > now() - interval '5 minutes')
+      OR (${sp}.status = 'offline' AND ${BUSINESS_HOURS_SQL}
+          AND (${sp}.voice_token_at > now() - interval '7 days'
+               OR EXISTS (SELECT 1 FROM staff_device_credentials dc
+                           WHERE dc.user_id = ${u}.id AND dc.revoked_at IS NULL AND dc.expires_at > now())))
+    ))`;
+}
+
+/** BF_SERVER_v817_DIALER_MESSAGING - record that this user just fetched a voice token, so the
+ *  IVR knows their client identity is registered even after the app stops heartbeating. */
+export async function recordVoiceTokenIssued(userId: string, identity: string): Promise<void> {
+  if (!userId || !identity) return;
+  try {
+    await pool.query(
+      `INSERT INTO staff_presence (user_id, status, twilio_identity, voice_token_at, last_heartbeat, updated_at)
+       VALUES ($1::uuid, 'available', $2, now(), now(), now())
+       ON CONFLICT (user_id) DO UPDATE SET twilio_identity = EXCLUDED.twilio_identity,
+                                         voice_token_at = now(), last_heartbeat = now(), updated_at = now()`,
+      [userId, identity],
+    );
+    // A token fetch means the app is alive (same as GET /api/telephony/token); status is derived.
+    await recomputePresence(userId);
+  } catch (err: unknown) {
+    console.warn("[presence] voice token registration failed", { userId, message: err instanceof Error ? err.message : String(err) });
+  }
+}
 
 const RECOMPUTE_SQL = `
   UPDATE staff_presence SET

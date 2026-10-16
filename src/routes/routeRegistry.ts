@@ -123,6 +123,7 @@ import mayaStaffRouter from "./mayaStaff.js";
 import mayaStaffInsightsRouter from "./mayaStaffInsights.js"; // BF_SERVER_MAYA_INSIGHTS_v655
 import mayaStaffAdsRouter from "./mayaStaffAds.js"; // BF_SERVER_MAYA_ADS_v683
 import mayaStaffAdsInsightsRouter from "./mayaStaffAdsInsights.js"; // BF_SERVER_MAYA_ADS_TOOLS_v712
+import mayaClientChecklistRouter from "./mayaClientChecklist.js"; // BF_SERVER_v817_MAYA - client Maya reads the portal's own to-do list
 import aiRoutes from "./ai.v2.js";
 import o365Routes from "./o365.js";
 import libraryPublicRoutes from "./libraryPublic.js"; // BF_SERVER_v810_LIBRARY_PLUS (public)
@@ -213,6 +214,7 @@ combinedMayaRoutes.use(mayaStaffRouter);
 combinedMayaRoutes.use(mayaStaffInsightsRouter);
 combinedMayaRoutes.use(mayaStaffAdsRouter); // BF_SERVER_MAYA_ADS_v683
 combinedMayaRoutes.use(mayaStaffAdsInsightsRouter); // BF_SERVER_MAYA_ADS_TOOLS_v712
+combinedMayaRoutes.use(mayaClientChecklistRouter); // BF_SERVER_v817_MAYA - POST /api/maya/client-checklist (service JWT, owner phone)
 
 // BF_SERVER_v77_BLOCK_1_11_OFFERS_COLLISION - single mount at /offers,
 // composed of the legacy offers router (list/create/status) plus the

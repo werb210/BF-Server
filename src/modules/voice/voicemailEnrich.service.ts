@@ -86,6 +86,42 @@ async function resolveContactByPhone(from: string, silo: string): Promise<string
   }
 }
 
+// BF_SERVER_v817_DIALER_MESSAGING - a call from a Twilio client arrives with From = "client:<identity>".
+// That raw identity ("client:client-6f1c...") was stored as the conversation name and shown to staff.
+//   client:client-<applicationId>  -> the applicant (mini-portal "Call us"): their contact / business name
+//   client:<staff user id>         -> that staff member's name, else "Boreal staff"
+// Returns null for an ordinary phone number. contactId is set for an applicant call.
+export async function resolveClientIdentityCaller(from: string): Promise<{ label: string; contactId: string | null; applicationId: string | null } | null> {
+  const m = /^client:(.+)$/i.exec(String(from ?? "").trim());
+  if (!m) return null;
+  const ident = m[1].trim();
+  const appId = /^client-([0-9a-f-]{36})$/i.exec(ident)?.[1] ?? null;
+  try {
+    if (appId) {
+      const r = await pool.query<{ contact_id: string | null; contact_name: string | null; business_name: string | null }>(
+        `SELECT a.contact_id::text AS contact_id,
+                NULLIF(TRIM(COALESCE(NULLIF(TRIM(c.name), ''), TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')))), '') AS contact_name,
+                COALESCE(NULLIF(TRIM(a.business_legal_name), ''), NULLIF(TRIM(a.name), '')) AS business_name
+           FROM applications a LEFT JOIN contacts c ON c.id = a.contact_id
+          WHERE a.id::text = $1 LIMIT 1`,
+        [appId],
+      );
+      const row = r.rows[0];
+      return { label: row?.contact_name || row?.business_name || "Client app caller", contactId: row?.contact_id ?? null, applicationId: row ? appId : null };
+    }
+    if (/^client-anon-/i.test(ident)) return { label: "Website caller", contactId: null, applicationId: null };
+    const u = await pool.query<{ name: string | null }>(
+      `SELECT NULLIF(TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')), '') AS name
+         FROM users WHERE id::text = $1 LIMIT 1`,
+      [ident],
+    );
+    return { label: u.rows[0]?.name || "Boreal staff", contactId: null, applicationId: null };
+  } catch (err: unknown) {
+    console.warn("[voicemail] client identity lookup failed", { from, message: err instanceof Error ? err.message : String(err) });
+    return { label: appId ? "Client app caller" : "Boreal staff", contactId: null, applicationId: null };
+  }
+}
+
 export async function enrichAndDistributeVoicemail(params: {
   callSid: string;
   recordingSid: string;
@@ -102,7 +138,10 @@ export async function enrichAndDistributeVoicemail(params: {
   const callLog = await findCallLogByTwilioSid(callSid).catch(() => null);
   const silo = callLog?.silo || "BF";
   const fromNumber = params.fromNumber || callLog?.from_number || callLog?.phone_number || "";
-  const applicationId = callLog?.application_id ?? null;
+  // BF_SERVER_v817_DIALER_MESSAGING - name "client:..." callers instead of showing the raw identity.
+  const clientCaller = await resolveClientIdentityCaller(fromNumber);
+  const callerLabel = clientCaller?.label ?? fromNumber;
+  const applicationId = callLog?.application_id ?? clientCaller?.applicationId ?? null;
   const durationSeconds = params.durationSeconds ?? callLog?.recording_duration_seconds ?? null;
   const staffUserId = params.staffUserId ?? callLog?.staff_user_id ?? null;
 
@@ -126,8 +165,10 @@ export async function enrichAndDistributeVoicemail(params: {
   }
   const transcript = buf ? await transcribe(buf) : "";
 
-  let contactId: string | null = callLog?.crm_contact_id ?? initialClientId;
-  if (!contactId) contactId = await resolveContactByPhone(fromNumber, silo);
+  let contactId: string | null = callLog?.crm_contact_id ?? initialClientId ?? clientCaller?.contactId ?? null;
+  // BF_SERVER_v817_DIALER_MESSAGING - a client identity is not a phone number: never create an
+  // "Unknown caller" contact whose phone is "client:...".
+  if (!contactId && !clientCaller) contactId = await resolveContactByPhone(fromNumber, silo);
 
   const preview = transcript ? transcript.slice(0, 200) : "📞 New voicemail";
 
@@ -143,8 +184,8 @@ export async function enrichAndDistributeVoicemail(params: {
       const ins = await pool.query<{ id: string }>(
         `INSERT INTO communications_conversations
            (contact_id, contact_phone, contact_name, channel, last_message_preview, last_message_at, unread, silo)
-         VALUES ($1, $2, $2, 'voice', $3, NOW(), 1, $4) RETURNING id`,
-        [contactId, fromNumber, preview, silo],
+         VALUES ($1, $2, $5, 'voice', $3, NOW(), 1, $4) RETURNING id`,
+        [contactId, fromNumber, preview, silo, callerLabel], // BF_SERVER_v817_DIALER_MESSAGING - contact_name is the label
       );
       convId = ins.rows[0].id;
     } else {
@@ -221,7 +262,7 @@ export async function enrichAndDistributeVoicemail(params: {
       if (u.rows[0]?.phone) notify = u.rows[0].phone;
     }
     if (notify) {
-      const who = fromNumber || "an unknown caller";
+      const who = callerLabel || "an unknown caller"; // BF_SERVER_v817_DIALER_MESSAGING
       const tail = transcript ? `: "${transcript.slice(0, 140)}"` : "";
       await sendSms({ to: notify, message: `New Boreal voicemail from ${who}${tail}` });
     }

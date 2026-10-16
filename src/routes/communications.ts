@@ -85,12 +85,25 @@ async function mergeCtxForContact(opts: { contactId?: string | null; phone?: str
 router.use(unlessUrlTicket(requireAuth)); // BF_SERVER_v789_URL_TICKETS
 router.use(requireCapability([CAPABILITIES.COMMUNICATIONS_READ]));
 
+// BF_SERVER_v817_DIALER_MESSAGING - see the call-events route below.
+const CALL_EVENT_TYPES = new Set(["call.started", "call.ended", "call.failed", "call.missed", "call.declined"]);
+export function normalizeCallEventType(raw: unknown): string {
+  const t = String(raw ?? "").trim().toLowerCase().replace(/_/g, ".");
+  if (!t) return "";
+  const mapped = t === "call.completed" || t === "completed" ? "call.ended" : t.startsWith("call.") ? t : `call.${t}`;
+  return CALL_EVENT_TYPES.has(mapped) ? mapped : "";
+}
+
 router.post("/call-events", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId ?? null;
   const { getSilo } = await import("../middleware/silo.js");
   const silo = getSilo(res);
   const body = req.body ?? {};
-  const eventType = typeof body.event_type === "string" ? body.event_type : "";
+  // BF_SERVER_v817_DIALER_MESSAGING - call_events only accepts call.started/ended/failed/missed/declined.
+  // The iOS dialler posted "call_completed", which broke the CHECK constraint and 500'd after every call,
+  // so no call reached the contact's timeline. Accept the underscore spellings and map "completed" to
+  // "call.ended"; anything else is a 400, not a 500.
+  const eventType = normalizeCallEventType(body.event_type);
   const toNumber = typeof body.to_number === "string" ? body.to_number : "";
   if (!eventType || !toNumber) return res.status(400).json({ error: "event_type and to_number are required" });
   // BF_SERVER_BLOCK_v708 - when the client doesn't thread contact_id, resolve it
@@ -216,6 +229,30 @@ router.post(
     // The handoff is recorded in maya_escalations and staff are pinged by SMS;
     // the full Maya conversation is viewable in the Maya tab (chat_sessions).
 
+    // BF_SERVER_v817_DIALER_MESSAGING - when the visitor IS a known contact, put one inbound row in
+    // the Messages tab so staff can see and answer the request there (the SMS ping alone left no
+    // trace). Anonymous handoffs (no contact) still write nothing, which keeps v763's intent.
+    if (resolvedContactId) {
+      let handoffAppId: string | null = applicationIdHint;
+      if (!handoffAppId) {
+        const la = await pool.query<{ id: string }>(
+          `SELECT id FROM applications WHERE contact_id::text = $1
+            ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST LIMIT 1`,
+          [resolvedContactId],
+        ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/communications.ts:maya-handoff-app", ({ rows: [] as { id: string }[] })));
+        handoffAppId = la.rows[0]?.id ?? null;
+      }
+      const handoffBody = summary && summary.trim()
+        ? `Asked to talk to a person: ${summary.trim()}`
+        : "Asked to talk to a person.";
+      await pool.query(
+        `INSERT INTO communications_messages
+           (id, type, direction, status, contact_id, application_id, silo, body, created_at)
+         VALUES (gen_random_uuid(), 'message', 'inbound', 'received', $1, $2, $3, $4, now())`,
+        [resolvedContactId, handoffAppId, silo, handoffBody],
+      ).catch((err: any) => console.warn("[maya-handoff] messages row insert failed", { contactId: resolvedContactId, message: err?.message ?? String(err) }));
+    }
+
     const smsBody = `Maya handoff (${surface}): ${summary ?? "visitor requested human"}. Session ${sessionId ?? "n/a"}.`;
     const fanout = await sendStaffNotification({ recipients: recipientsRaw, body: smsBody });
 
@@ -309,6 +346,51 @@ router.get("/maya-sessions/:id/messages", safeHandler(async (req: any, res: any)
   }
 }));
 
+// BF_SERVER_v817_DIALER_MESSAGING - ?q= thread search for /sms and /messages-list (the dialer uses
+// it). Name is a case-insensitive ILIKE; a query with 3+ digits also matches the last 10 digits
+// of the phone. Returns a SQL fragment (empty when q is absent) plus the params it binds.
+export function threadSearchClause(
+  qRaw: unknown,
+  firstParamIdx: number,
+  nameExprs: string[],
+  phoneExprs: string[],
+): { sql: string; params: string[] } {
+  const q = typeof qRaw === "string" ? qRaw.trim().slice(0, 100) : "";
+  if (!q) return { sql: "", params: [] };
+  const params: string[] = [`%${q.replace(/[\\%_]/g, (c) => "\\" + c)}%`];
+  const nameIdx = firstParamIdx;
+  const ors = nameExprs.map((e) => `${e} ILIKE $${nameIdx}`);
+  const digits = q.replace(/\D/g, "");
+  if (digits.length >= 3) {
+    params.push(digits.length > 10 ? digits.slice(-10) : digits);
+    const dIdx = firstParamIdx + 1;
+    for (const e of phoneExprs) {
+      ors.push(`right(regexp_replace(coalesce(${e}, ''), '[^0-9]', '', 'g'), 10) LIKE '%' || $${dIdx} || '%'`);
+    }
+  }
+  return { sql: `AND (${ors.join(" OR ")})`, params };
+}
+
+// BF_SERVER_v817_DIALER_MESSAGING - inbound verification-code / OTP texts (e.g. a service texting a
+// login code to our Twilio number, +12024558888) and short-code senders are not client
+// conversations; keep them out of the SMS thread list. They stay in communications_messages and
+// remain readable via /sms/thread.
+export const SYSTEM_SMS_EXCLUDE_SQL = `AND NOT (
+         m.direction = 'inbound' AND (
+           length(regexp_replace(coalesce(m.from_number, ''), '[^0-9]', '', 'g')) BETWEEN 1 AND 7
+           OR (
+             -- a 4-8 digit code AND code wording, so a client asking "what's the login code?" still shows
+             coalesce(m.body, '') ~ '(^|[^0-9])[0-9]{4,8}([^0-9]|$)'
+             AND (
+               coalesce(m.body, '') ~* '(verification|security|confirmation|login|sign[- ]?in|one[- ]time|access|authentication|auth)[^a-z0-9]{0,3}(code|pin|passcode)'
+               OR coalesce(m.body, '') ~* '(your|the) (code|pin|passcode)( is|:)'
+               OR coalesce(m.body, '') ~* '\\m(otp|2fa)\\M'
+               OR coalesce(m.body, '') ~* '\\mG-[0-9]{4,8}\\M'
+             )
+           )
+         )
+       )`;
+
 // BF_SERVER_BLOCK_83_SMS_MESSAGES_TYPE_FILTER_v1 - SMS tab list must
 // only show Twilio SMS threads. Inner LATERAL preview query also
 // scoped to type='sms' so the snippet shown in the list matches what
@@ -317,13 +399,21 @@ router.get("/sms", safeHandler(async (req: any, res: any) => {
   const { getSilo } = await import("../middleware/silo.js");
   const silo = getSilo(res);
   const mode = String(req.query.mode ?? "").toLowerCase();
+  // BF_SERVER_v817_DIALER_MESSAGING - optional ?q= (contact name / phone digits).
+  const search = threadSearchClause(req.query.q, 2, ["c.name"], ["c.phone", "m.from_number", "m.to_number"]);
+  const ctSearch = threadSearchClause(req.query.q, 2, ["ct.name"], ["ct.phone"]);
+  const smsParams: any[] = [silo, ...search.params];
   const threadsSql = `
     WITH base AS (
        SELECT
-         COALESCE(m.contact_id::text, m.from_number) AS thread_key,
+         -- BF_SERVER_v817_DIALER_MESSAGING - the OTHER party's number: to_number on an outbound
+         -- text, from_number on an inbound one. Keying on from_number filed every outbound text
+         -- to an unknown number under Boreal's own Twilio number (one mixed-up thread).
+         COALESCE(m.contact_id::text,
+                  CASE WHEN m.direction = 'outbound' THEN m.to_number ELSE m.from_number END) AS thread_key,
          m.contact_id,
-         COALESCE(c.name, m.from_number, m.to_number) AS display_name,
-         COALESCE(c.phone, m.from_number, m.to_number) AS phone,
+         COALESCE(c.name, CASE WHEN m.direction = 'outbound' THEN m.to_number ELSE m.from_number END) AS display_name,
+         COALESCE(c.phone, CASE WHEN m.direction = 'outbound' THEN m.to_number ELSE m.from_number END) AS phone,
          m.created_at,
          m.body,
          m.read_at,
@@ -332,6 +422,8 @@ router.get("/sms", safeHandler(async (req: any, res: any) => {
        LEFT JOIN contacts c ON c.id = m.contact_id
        WHERE m.silo = $1
          AND m.type = 'sms'
+         ${SYSTEM_SMS_EXCLUDE_SQL}
+         ${search.sql}
      ),
      ranked AS (
        SELECT
@@ -368,6 +460,7 @@ router.get("/sms", safeHandler(async (req: any, res: any) => {
        LEFT JOIN threads t ON t.contact_id = ct.id
        WHERE COALESCE(ct.status, 'active') <> 'archived'
          AND (ct.silo IS NULL OR ct.silo = $1)
+         ${ctSearch.sql}
        UNION ALL
        SELECT
          t.thread_key,
@@ -381,7 +474,7 @@ router.get("/sms", safeHandler(async (req: any, res: any) => {
        WHERE t.contact_id IS NULL
        ORDER BY last_at DESC NULLS LAST, display_name ASC
        LIMIT 1000`,
-      [silo],
+      smsParams,
     );
     return res.json({ conversations: result.rows });
   }
@@ -390,7 +483,7 @@ router.get("/sms", safeHandler(async (req: any, res: any) => {
     `${threadsSql}
      ORDER BY last_at DESC
      LIMIT 200`,
-    [silo],
+    smsParams,
   );
   res.json({ conversations: result.rows });
 }));
@@ -418,6 +511,10 @@ router.get("/messages-list", safeHandler(async (req: any, res: any) => {
     ? `AND m.type = ANY($2::text[])`
     : `AND (m.type IS NULL OR m.type <> 'sms')`;
   const typeParams: any[] = types.length ? [silo, types] : [silo];
+  // BF_SERVER_v817_DIALER_MESSAGING - optional ?q= (contact name / email / phone digits).
+  const search = threadSearchClause(req.query.q, typeParams.length + 1, ["c.name", "c.email"], ["c.phone"]);
+  const ctSearch = threadSearchClause(req.query.q, typeParams.length + 1, ["ct.name", "ct.email"], ["ct.phone"]);
+  typeParams.push(...search.params);
 
   const threadsSql = `
     WITH base AS (
@@ -440,6 +537,7 @@ router.get("/messages-list", safeHandler(async (req: any, res: any) => {
         -- deleted; drop those threads so they stop showing as "Unknown contact".
         AND m.contact_id IS NOT NULL
         ${typeClause}
+        ${search.sql}
     ),
     -- BF_SERVER_MESSAGES_LIST_PERF_v1: DISTINCT ON walks the (silo, contact_id, created_at DESC)
     -- index and stops at the first row per thread, instead of ranking every message in the silo
@@ -486,6 +584,7 @@ router.get("/messages-list", safeHandler(async (req: any, res: any) => {
        LEFT JOIN threads t ON t.contact_id = ct.id
        WHERE COALESCE(ct.status, 'active') <> 'archived'
          AND (ct.silo IS NULL OR ct.silo = $1)
+         ${ctSearch.sql}
        UNION ALL
        SELECT t.thread_key, t.contact_id, t.display_name, t.phone, t.email,
               t.last_at, t.last_body, COALESCE(t.unread_count, 0)
@@ -570,9 +669,12 @@ router.get("/sms/thread", safeHandler(async (req: any, res: any) => {
     const compact = phone.replace(/[^\d]/g, "");
     const e164 = phone.startsWith("+") ? phone : `+${compact}`;
     params.push(phone, e164, compact);
+    // BF_SERVER_v817_DIALER_MESSAGING - match the OTHER party only (inbound from / outbound to).
+    // Matching to_number on inbound rows meant opening our own number's "thread" pulled in every
+    // orphan text anyone sent us.
     where += ` AND contact_id IS NULL AND (
-      from_number IN ($${params.length - 2}, $${params.length - 1}, $${params.length}) OR
-      to_number   IN ($${params.length - 2}, $${params.length - 1}, $${params.length})
+      (direction <> 'outbound' AND from_number IN ($${params.length - 2}, $${params.length - 1}, $${params.length})) OR
+      (direction =  'outbound' AND to_number   IN ($${params.length - 2}, $${params.length - 1}, $${params.length}))
     )`;
   }
 
@@ -1133,8 +1235,38 @@ router.get("/timeline", safeHandler(async (req: any, res: any) => {
 }));
 
 // POST /api/communications/sms - send outbound + persist to DB
+// BF_SERVER_v817_DIALER_MESSAGING - one normalisation for the outbound SMS number. Twilio rejects
+// anything that is not E.164, so "4035550142" / "(403) 555-0142" failed when no contact matched.
+export function normalizeSmsTo(raw: unknown): { e164: string } | { error: "invalid_number" } {
+  const s = String(raw ?? "").trim();
+  const plus = s.startsWith("+");
+  const digits = s.replace(/\D/g, "");
+  if (digits.length < 10) return { error: "invalid_number" };
+  if (plus && digits.length <= 15) return { e164: `+${digits}` };
+  if (digits.length === 10) return { e164: `+1${digits}` };
+  if (digits.length === 11 && digits.startsWith("1")) return { e164: `+${digits}` };
+  if (digits.length <= 15) return { e164: `+${digits}` };
+  return { error: "invalid_number" };
+}
+
+/** BF_SERVER_v817_DIALER_MESSAGING - "+14035550142" -> "(403) 555-0142"; other numbers unchanged. */
+export function formatPhoneForName(e164: string): string {
+  const d = String(e164 ?? "").replace(/\D/g, "");
+  const ten = d.length === 11 && d.startsWith("1") ? d.slice(1) : d.length === 10 ? d : "";
+  return ten ? `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}` : String(e164 ?? "");
+}
+
 router.post("/sms", safeHandler(async (req: any, res: any) => {
-  const { contactId, to } = req.body ?? {};
+  const { contactId } = req.body ?? {};
+  // BF_SERVER_v817_DIALER_MESSAGING - normalise `to` once; everything below uses the E.164 form.
+  let to: string = "";
+  if (req.body?.to) {
+    const norm = normalizeSmsTo(req.body.to);
+    if ("error" in norm) {
+      return res.status(400).json({ error: { code: "invalid_number", message: "Enter a full phone number with area code." } });
+    }
+    to = norm.e164;
+  }
   let body = req.body?.body;
   let applicationId = req.body?.applicationId ?? null;
   // BF_SERVER_BLOCK_v497_OUTBOUND_MMS - one picture or PDF per text, <= 5 MB
@@ -1300,8 +1432,7 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
   // because the JWT primary silo never changes.
   const { resolveSiloFromRequest } = await import("../middleware/silo.js");
   const silo = resolveSiloFromRequest(req);
-  const normalizedToDigits = String(to).replace(/\D/g, "");
-  const normalizedTo = normalizedToDigits.length === 10 ? `+1${normalizedToDigits}` : String(to);
+  const normalizedTo = to; // BF_SERVER_v817_DIALER_MESSAGING - already E.164 (normalised at the top)
   let resolvedContactId: string | null = contactId ?? null;
   if (!resolvedContactId) {
     // BF_SERVER_SMS_CONTACT_MATCH_v1 - this matched on phone across EVERY silo and
@@ -1324,7 +1455,25 @@ router.post("/sms", safeHandler(async (req: any, res: any) => {
     ).then((r) => r.rows[0] ?? null).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/communications.ts:1303", null));
     resolvedContactId = canonicalContact?.id ?? null;
     if (!resolvedContactId) {
-      console.warn("sms_outbound_no_contact_id", { to: normalizedTo });
+      // BF_SERVER_v817_DIALER_MESSAGING - create the contact (same shape inbound SMS uses in
+      // smsInboundWebhook.resolveInboundSmsContact: createContact, role 'other') so the thread
+      // groups under it. Orphan rows grouped under from_number - our own Twilio number - which
+      // mixed every unknown recipient into one thread.
+      try {
+        const { createContact } = await import("../services/contacts.js");
+        const created = await createContact(pool, {
+          first_name: formatPhoneForName(normalizedTo),
+          last_name: "",
+          phone: normalizedTo,
+          role: "other",
+          is_primary_applicant: false,
+          silo,
+        });
+        resolvedContactId = created?.id ?? null;
+      } catch (err: any) {
+        console.warn("sms_outbound_contact_create_failed", { to: normalizedTo, message: err?.message ?? String(err) });
+      }
+      if (!resolvedContactId) console.warn("sms_outbound_no_contact_id", { to: normalizedTo });
     }
   }
   await pool.query(

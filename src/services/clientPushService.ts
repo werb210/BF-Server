@@ -21,20 +21,42 @@ const BUNDLE_IDS: Record<Silo, string | undefined> = {
   SLF: process.env.CLIENT_APNS_BUNDLE_ID_BF,
 };
 
+// BF_SERVER_v817_CLIENT - the client app moved to the company Apple team (76VAY7UJKJ,
+// com.borealfinancial.client). A .p8 key only signs for its own team, so the client
+// app may need its own key while the dialer/Watch keep theirs. CLIENT_APNS_TEAM_ID /
+// CLIENT_APNS_KEY_ID / CLIENT_APNS_PRIVATE_KEY win; each falls back to the WATCH_APNS_* value.
+export function clientApnsCredentials(env: NodeJS.ProcessEnv = process.env): {
+  teamId?: string; keyId?: string; privateKey?: string; bundleId?: string;
+} {
+  const pick = (own: string, shared: string) => (env[own]?.trim() || env[shared]?.trim() || undefined);
+  return {
+    teamId: pick("CLIENT_APNS_TEAM_ID", "WATCH_APNS_TEAM_ID"),
+    keyId: pick("CLIENT_APNS_KEY_ID", "WATCH_APNS_KEY_ID"),
+    privateKey: pick("CLIENT_APNS_PRIVATE_KEY", "WATCH_APNS_PRIVATE_KEY")?.replace(/\\n/g, "\n"),
+    bundleId: env.CLIENT_APNS_BUNDLE_ID_BF?.trim() || undefined,
+  };
+}
+
 export function initializeClientPushProvider(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env.NODE_ENV === "test") return false;
   initializeFcmProvider(env);
-  const team = env.WATCH_APNS_TEAM_ID?.trim();
-  const keyId = env.WATCH_APNS_KEY_ID?.trim();
-  const key = env.WATCH_APNS_PRIVATE_KEY?.replace(/\\n/g, "\n");
-  const bundle = env.CLIENT_APNS_BUNDLE_ID_BF?.trim();
+  const { teamId: team, keyId, privateKey: key, bundleId: bundle } = clientApnsCredentials(env);
   if (!team || !keyId || !key || !bundle) {
     console.warn(JSON.stringify({ event: "client_apns_not_configured" }));
     return false;
   }
-  provider = new AppleWatchApnsProvider({ teamId: team, keyId, privateKey: key, bundleId: bundle });
+  // BF_SERVER_v817_CLIENT - a malformed .p8 used to throw out of start(); push is optional.
+  try {
+    provider = new AppleWatchApnsProvider({ teamId: team, keyId, privateKey: key, bundleId: bundle });
+  } catch (error) {
+    console.error(JSON.stringify({ event: "client_apns_misconfigured", error: String((error as Error)?.message ?? error) }));
+    provider = null;
+    configured = false;
+    return false;
+  }
   configured = true;
-  console.log(JSON.stringify({ event: "client_apns_initialized" }));
+  console.log(JSON.stringify({ event: "client_apns_initialized", bundleId: bundle, teamId: team, keyId,
+    environment: env.CLIENT_APNS_ENVIRONMENT === "sandbox" ? "sandbox" : "production" }));
   return true;
 }
 
@@ -98,18 +120,35 @@ export async function sendClientPush(input: {
       continue;
     }
     if (!provider) { unsupported += 1; continue; }
+    const payload = {
+      aps: {
+        alert: { title: input.title, body: input.body },
+        sound: "default",
+        ...(input.categoryId ? { category: input.categoryId } : {}),
+      },
+      ...(input.data ?? {}),
+      ...routing,
+    };
     try {
-      await provider.send({ token: row.token, environment }, {
-        aps: {
-          alert: { title: input.title, body: input.body },
-          sound: "default",
-          ...(input.categoryId ? { category: input.categoryId } : {}),
-        },
-        ...(input.data ?? {}),
-        ...routing,
-      });
+      try {
+        await provider.send({ token: row.token, environment }, payload);
+      } catch (error) {
+        // BF_SERVER_v817_CLIENT - TestFlight/App Store builds hold production tokens, Xcode
+        // debug builds sandbox ones; Apple answers BadDeviceToken when the host is the wrong one.
+        // Try the other host once before treating the token as dead.
+        if (!(error instanceof WatchApnsError && error.reason === "BadDeviceToken")) throw error;
+        await provider.send({ token: row.token, environment: environment === "production" ? "sandbox" : "production" }, payload);
+      }
       sent += 1;
     } catch (error) {
+      // BF_SERVER_v817_CLIENT - a refused push was invisible; staff only saw the SMS fallback.
+      console.warn(JSON.stringify({
+        event: "client_apns_send_failed",
+        userId: input.userId,
+        status: error instanceof WatchApnsError ? error.statusCode : null,
+        reason: error instanceof WatchApnsError ? error.reason : String((error as Error)?.message ?? error),
+        dropped: error instanceof WatchApnsError && error.invalidRegistration,
+      }));
       if (error instanceof WatchApnsError && error.invalidRegistration) await dropToken(row.token);
       skipped += 1;
     }

@@ -67,6 +67,10 @@ router.post("/token", auth, async (req: any, res) => {
   if (!identity) return res.status(401).json({ error: "unauthorized" });
   try {
     const token = generateVoiceToken(identity);
+    // BF_SERVER_v817_DIALER_MESSAGING - register the client identity in staff_presence so the
+    // IVR can ring this dialler by VoIP push even after its heartbeat goes stale.
+    const { recordVoiceTokenIssued } = await import("../modules/presence/presenceService.js");
+    await recordVoiceTokenIssued(String(identity), String(identity));
     return res.status(200).json({ token, identity });
   } catch (err: any) {
     console.error("[voice/token] generation failed:", err?.message || err);

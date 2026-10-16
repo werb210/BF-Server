@@ -1,9 +1,3 @@
-import { createRequire } from "module";
-
-const require = createRequire(import.meta.url);
-const twilio = require("twilio");
-
-const AccessToken = twilio.jwt.AccessToken;
 import { AppError } from "../../middleware/errors.js";
 import { logError, logInfo, logWarn } from "../../observability/logger.js";
 import { normalizePhoneNumber } from "../auth/phone.js";
@@ -14,7 +8,6 @@ import { type CallStatus, type CallLogRecord } from "../calls/calls.repo.js";
 import { config } from "../../config/index.js";
 import { recordAuditEvent } from "../audit/audit.service.js";
 
-const VOICE_TOKEN_TTL_SECONDS = 15 * 60;
 const DEFAULT_HOLD_TWIML =
   "<Response><Say>One moment.</Say><Pause length=\"3600\"/></Response>";
 
@@ -216,23 +209,8 @@ function mapTwilioStatus(status: string | null | undefined): CallStatus | null {
   }
 }
 
-export function issueVoiceToken(params: { userId: string }): string {
-  assertVoiceEnabled();
-  const { accountSid, apiKey, apiSecret, applicationSid } = fetchVoiceConfig();
-
-  const token = new AccessToken(accountSid, apiKey, apiSecret, {
-    identity: params.userId,
-    ttl: VOICE_TOKEN_TTL_SECONDS,
-  });
-
-  const voiceGrant = new AccessToken.VoiceGrant({
-    outgoingApplicationSid: applicationSid,
-  });
-
-  token.addGrant(voiceGrant);
-
-  return token.toJwt();
-}
+// BF_SERVER_v817_DIALER_MESSAGING - issueVoiceToken() removed: nothing called it; voice tokens come
+// from telephony/services/tokenService.generateVoiceToken (POST /api/voice/token, GET /api/telephony/token).
 
 export async function startVoiceCall(params: {
   phoneNumber: string;

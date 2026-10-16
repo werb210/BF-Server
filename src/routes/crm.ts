@@ -1770,10 +1770,14 @@ router.get("/contacts/:id/journey", requireAuth, safeHandler(async (req: any, re
   if (!sess.rows.length) return respondOk(res, { sessions: [], events: [], applications });
   const ids = sess.rows.map((r: any) => r.session_id);
   const ev = await pool.query(
-    `SELECT session_id, event_type, path, title, step, dwell_ms, occurred_at
+    `SELECT session_id, event_type, path, title, step, dwell_ms, occurred_at, meta
        FROM visitor_events WHERE session_id = ANY($1) ORDER BY occurred_at ASC LIMIT 1000`,
     [ids],
   );
+  // BF_SERVER_v814_JOURNEY_DETAIL - the field, button and form names behind each step ("Filled in: Annual revenue").
+  // Only these named keys are passed on; nothing a visitor typed is ever recorded.
+  for (const e of ev.rows as any[]) e.detail = journeyDetail(e.meta);
+  for (const e of ev.rows as any[]) delete e.meta;
   const pageviews = ev.rows.filter((e: any) => e.event_type === "pageview");
   const lastPage = pageviews.length ? pageviews[pageviews.length - 1] : null;
   const totalDwell = pageviews.reduce((acc: number, e: any) => acc + (Number(e.dwell_ms) || 0), 0);
@@ -1792,5 +1796,20 @@ router.get("/contacts/:id/journey", requireAuth, safeHandler(async (req: any, re
     },
   });
 }));
+
+// BF_SERVER_v814_JOURNEY_DETAIL
+const JOURNEY_DETAIL_KEYS = ["field", "label", "form", "section", "depth", "fields", "reason"] as const;
+export function journeyDetail(meta: unknown): Record<string, string | number> | null {
+  let m: any = meta;
+  if (typeof m === "string") { try { m = JSON.parse(m); } catch { return null; } }
+  if (!m || typeof m !== "object") return null;
+  const out: Record<string, string | number> = {};
+  for (const k of JOURNEY_DETAIL_KEYS) {
+    const v = m[k];
+    if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
+    else if (typeof v === "string" && v.trim()) out[k] = v.trim().slice(0, 80);
+  }
+  return Object.keys(out).length ? out : null;
+}
 
 export default router;
