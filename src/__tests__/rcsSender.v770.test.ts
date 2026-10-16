@@ -23,9 +23,9 @@ const SID = "MG" + "a".repeat(32);
 afterEach(() => { delete process.env.TWILIO_RCS_MESSAGING_SERVICE_SID; delete process.env.TWILIO_US_SMS_FROM; });
 
 describe("branded (RCS) texting through a Messaging Service", () => {
-  it("unchanged when no Messaging Service is configured: local number for Canada, 866 for the US", () => {
+  it("unchanged when no Messaging Service is configured: the local number for Canada and the US (v813)", () => {
     expect(smsSenderFor("+15875550123", "+15875550100")).toEqual({ from: "+15875550100" });
-    expect(smsSenderFor("+19173043342", "+15875550100")).toEqual({ from: "+18666318939" });
+    expect(smsSenderFor("+19173043342", "+15875550100")).toEqual({ from: "+15875550100" });
   });
   it("sends through the Messaging Service when TWILIO_RCS_MESSAGING_SERVICE_SID is a valid MG sid", () => {
     process.env.TWILIO_RCS_MESSAGING_SERVICE_SID = SID;
