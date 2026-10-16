@@ -101,6 +101,8 @@ export const EnvSchema = z
     JWT_CLOCK_SKEW_SECONDS: numericString.optional(),
     AI_EMBEDDING_MODEL: z.string().min(1).optional(),
     OPENAI_OCR_MODEL: z.string().min(1).optional(),
+    OPENAI_TTS_MODEL: z.string().min(1).optional(), // setting; read in lib/openaiAudioModels.ts (default gpt-4o-mini-tts)
+    OPENAI_TRANSCRIBE_MODEL: z.string().min(1).optional(), // setting; read in lib/openaiAudioModels.ts (default gpt-4o-mini-transcribe)
     OCR_ENABLED: boolString.optional(),
     OCR_PROVIDER: z.string().min(1).optional(),
     OCR_MAX_ATTEMPTS: numericString.optional(),
@@ -281,6 +283,7 @@ export const EnvSchema = z
     TWILIO_MAIN_LINE_NUMBER: z.string().optional(), // phone number(s), E.164; read in voice/directLines.ts
     TWILIO_RCS_MESSAGING_SERVICE_SID: z.string().optional(), // identifier; read in lib/smsFrom.ts
     TWILIO_PUSH_CREDENTIAL_SID: z.string().optional(), // identifier (CR...); read in telephony/services/tokenService.ts
+    TWILIO_PUSH_CREDENTIAL_SID_PORTAL: z.string().optional(), // identifier (CR...), staff portal iPad app; read in telephony/services/tokenService.ts // BF_SERVER_v817_IPAD_VOIP
     TWILIO_SHORTEN_LINKS: z.string().optional(), // setting; read in lib/smsFrom.ts
     TWILIO_SMS_FROM: z.string().optional(), // phone number(s), E.164; read in services/marketingSms.ts
     TWILIO_TEST_TO: z.string().optional(), // phone number(s), E.164; read in routes/_int.ts

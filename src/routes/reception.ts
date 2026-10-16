@@ -71,7 +71,10 @@ async function renderNova(text: string): Promise<Buffer | null> {
   try {
     const OpenAI = (await import("openai")).default;
     const client = sharedOpenAI(apiKey);
-    const speech = await client.audio.speech.create({ model: "tts-1", voice: "nova", input: text });
+    // BF_SERVER_v817_AUDIO_MODELS - model from OPENAI_TTS_MODEL, falling back to tts-1.
+    const { ttsModel, LEGACY_TTS_MODEL, withAudioModelFallback } = await import("../lib/openaiAudioModels.js");
+    const speech = await withAudioModelFallback(ttsModel(), LEGACY_TTS_MODEL,
+      (model) => client.audio.speech.create({ model, voice: "nova", input: text }), "reception_nova");
     return Buffer.from(await speech.arrayBuffer());
   } catch (error) {
     // BF_SERVER_RECEPTION_VOICE_FALLBACK_v40 - this catch swallowed everything.

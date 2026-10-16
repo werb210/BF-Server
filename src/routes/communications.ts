@@ -446,32 +446,23 @@ router.get("/sms", safeHandler(async (req: any, res: any) => {
   `;
 
   if (mode === "all") {
+    // BF_SERVER_v818_THREADS_ALWAYS_LISTED - every conversation is listed first, whatever its contact's
+    // status or silo, then the contacts with no conversation yet. Before, the list was built FROM contacts, so a
+    // conversation whose contact was archived (e.g. the loser of a merge) or filed in another silo vanished from
+    // the portal while the dialler (which lists conversations only) still showed it.
     const result = await pool.query(
       `WITH threads AS (${threadsSql})
-       SELECT
-         COALESCE(t.thread_key, ct.id::text) AS thread_key,
-         COALESCE(t.contact_id, ct.id)       AS contact_id,
-         COALESCE(t.display_name, ct.name, ct.email, ct.phone, 'Unknown') AS display_name,
-         COALESCE(t.phone, ct.phone)         AS phone,
-         t.last_at,
-         t.last_body,
-         COALESCE(t.unread_count, 0)         AS unread_count
-       FROM contacts ct
-       LEFT JOIN threads t ON t.contact_id = ct.id
-       WHERE COALESCE(ct.status, 'active') <> 'archived'
-         AND (ct.silo IS NULL OR ct.silo = $1)
-         ${ctSearch.sql}
+       SELECT t.thread_key, t.contact_id, t.display_name, t.phone, t.last_at, t.last_body,
+              COALESCE(t.unread_count, 0) AS unread_count
+         FROM threads t
        UNION ALL
-       SELECT
-         t.thread_key,
-         t.contact_id,
-         t.display_name,
-         t.phone,
-         t.last_at,
-         t.last_body,
-         COALESCE(t.unread_count, 0)
-       FROM threads t
-       WHERE t.contact_id IS NULL
+       SELECT ct.id::text, ct.id, COALESCE(ct.name, ct.email, ct.phone, 'Unknown'), ct.phone,
+              NULL, NULL, 0
+         FROM contacts ct
+        WHERE COALESCE(ct.status, 'active') <> 'archived'
+          AND (ct.silo IS NULL OR ct.silo = $1)
+          ${ctSearch.sql}
+          AND NOT EXISTS (SELECT 1 FROM threads t2 WHERE t2.contact_id = ct.id)
        ORDER BY last_at DESC NULLS LAST, display_name ASC
        LIMIT 1000`,
       smsParams,
@@ -569,27 +560,22 @@ router.get("/messages-list", safeHandler(async (req: any, res: any) => {
 
   if (mode === "all") {
     // v636: include every silo contact, even with no prior message rows.
+    // BF_SERVER_v818_THREADS_ALWAYS_LISTED - every conversation first (whatever its contact's status or silo),
+    // then contacts with no conversation. A client-portal chat filed on an archived (merged) contact used to vanish
+    // from the portal's Messages tab while the dialler showed it.
     const result = await pool.query(
       `WITH threads AS (${threadsSql})
-       SELECT
-         COALESCE(t.thread_key, ct.id::text) AS thread_key,
-         COALESCE(t.contact_id, ct.id)       AS contact_id,
-         COALESCE(t.display_name, ct.name, ct.email, ct.phone, 'Unknown') AS display_name,
-         COALESCE(t.phone, ct.phone)         AS phone,
-         COALESCE(t.email, ct.email)         AS email,
-         t.last_at,
-         t.last_body,
-         COALESCE(t.unread_count, 0)         AS unread_count
-       FROM contacts ct
-       LEFT JOIN threads t ON t.contact_id = ct.id
-       WHERE COALESCE(ct.status, 'active') <> 'archived'
-         AND (ct.silo IS NULL OR ct.silo = $1)
-         ${ctSearch.sql}
-       UNION ALL
-       SELECT t.thread_key, t.contact_id, t.display_name, t.phone, t.email,
-              t.last_at, t.last_body, COALESCE(t.unread_count, 0)
+       SELECT t.thread_key, t.contact_id, t.display_name, t.phone, t.email, t.last_at, t.last_body,
+              COALESCE(t.unread_count, 0) AS unread_count
          FROM threads t
-        WHERE t.contact_id IS NULL
+       UNION ALL
+       SELECT ct.id::text, ct.id, COALESCE(ct.name, ct.email, ct.phone, 'Unknown'), ct.phone, ct.email,
+              NULL, NULL, 0
+         FROM contacts ct
+        WHERE COALESCE(ct.status, 'active') <> 'archived'
+          AND (ct.silo IS NULL OR ct.silo = $1)
+          ${ctSearch.sql}
+          AND NOT EXISTS (SELECT 1 FROM threads t2 WHERE t2.contact_id = ct.id)
        ORDER BY last_at DESC NULLS LAST, display_name ASC
        LIMIT 1000`,
       typeParams,
