@@ -36,23 +36,30 @@ describe("texts to US numbers go out from the toll-free line", () => {
     expect(isUsNumber("+447700900000")).toBe(false);
     expect(isUsNumber("")).toBe(false);
   });
-  it("uses the 866 for US recipients and the local number for everyone else", () => {
-    expect(DEFAULT_US_SMS_FROM).toBe("+18666318939");
-    expect(smsFromFor("+19173043342", LOCAL)).toBe("+18666318939");
+  // BF_SERVER_v813_NO_TOLLFREE_SMS - texting on the 866 was refused, so everyone gets the usual number by default.
+  it("uses the local number for US and Canadian recipients by default", () => {
+    expect(DEFAULT_US_SMS_FROM).toBe("");
+    expect(smsFromFor("+19173043342", LOCAL)).toBe(LOCAL);
     expect(smsFromFor("+15875550123", LOCAL)).toBe(LOCAL);
   });
+  it("never sends from a toll-free number, even when TWILIO_US_SMS_FROM names one", () => {
+    for (const n of ["+18666318939", "18666318939", "(866) 631-8939", "+18005550199"]) {
+      process.env.TWILIO_US_SMS_FROM = n;
+      expect(smsFromFor("+19173043342", LOCAL), n).toBe(LOCAL);
+    }
+  });
   it("can be pointed elsewhere or switched off without code", () => {
-    process.env.TWILIO_US_SMS_FROM = "+18005550199";
-    expect(smsFromFor("+19173043342", LOCAL)).toBe("+18005550199");
+    process.env.TWILIO_US_SMS_FROM = "+12125550199";
+    expect(smsFromFor("+19173043342", LOCAL)).toBe("+12125550199");
     process.env.TWILIO_US_SMS_FROM = "off";
     expect(smsFromFor("+19173043342", LOCAL)).toBe(LOCAL);
   });
 
-  it.each(TRANSACTIONAL)("%s sends a US text from the 866 and a Canadian one from the local number", async (name) => {
+  it.each(TRANSACTIONAL)("%s sends US and Canadian texts from the local number", async (name) => {
     const us = await driveSender(name, US_TO, { queryMock, createMock });
     expect(us.error).toBeUndefined();
     expect(us.payload, `${name} reached Twilio`).toBeDefined();
-    expect(us.payload!.from).toBe(DEFAULT_US_SMS_FROM);
+    expect(us.payload!.from).toBe(LOCAL_FROM);
     expect(us.payload!.to).toBe(US_TO);
     const ca = await driveSender(name, CA_TO, { queryMock, createMock });
     expect(ca.payload!.from).toBe(LOCAL_FROM);
