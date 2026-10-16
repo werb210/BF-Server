@@ -12,6 +12,7 @@
 import express, { Router, type Request, type Response } from "express";
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
 import { pool } from "../db.js";
+import { ringableStaffSql } from "../modules/presence/presenceService.js"; // BF_SERVER_v817_DIALER_MESSAGING
 import { config } from "../config/index.js";
 import { sharedOpenAI } from "../lib/sharedClients.js";
 import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_SNAT_REUSE_v784
@@ -161,11 +162,13 @@ function toE164(raw: string | null | undefined): string | null {
 async function resolveTarget(t: Target): Promise<{ identity: string | null; available: boolean; onCall: boolean; clientReady: boolean; cell: string | null; standaloneWatch: boolean; userId: string | null }> {
   const nameLike = t === "sales" ? "%todd%" : "%andrew%";
   try {
-    const { rows } = await pool.query<{ status: string; twilio_identity: string | null; on_call: boolean; fresh: boolean; phone: string | null; standalone_watch: boolean; user_id: string | null }>(
+    const { rows } = await pool.query<{ status: string; twilio_identity: string | null; on_call: boolean; fresh: boolean; ringable: boolean; phone: string | null; standalone_watch: boolean; user_id: string | null }>(
       `SELECT sp.status, sp.twilio_identity, coalesce(sp.on_call, false) AS on_call, u.id AS user_id,
               ((sp.last_heartbeat > now() - interval '90 seconds') OR EXISTS (
                 SELECT 1 FROM staff_device_credentials dc WHERE dc.user_id = u.id AND dc.revoked_at IS NULL
                   AND dc.expires_at > now())) AS fresh, -- BF_SERVER_PHONE_ROUTING_v688b: signed in on the dialler app counts
+              -- BF_SERVER_v817_DIALER_MESSAGING - ringable even when the closed iOS app stopped heartbeating
+              ${ringableStaffSql("sp", "u")} AS ringable,
               u.verified_callback_number AS phone,
               (u.callback_verified_at IS NOT NULL AND EXISTS (
                 SELECT 1 FROM watch_devices wd WHERE wd.staff_user_id=u.id AND wd.revoked_at IS NULL
@@ -176,7 +179,9 @@ async function resolveTarget(t: Target): Promise<{ identity: string | null; avai
     );
     const r = rows[0];
     if (!r) return { identity: null, available: false, onCall: false, clientReady: false, cell: null, standaloneWatch: false, userId: null };
-    const clientReady = r.status === "available" && !!r.twilio_identity && !!r.fresh;
+    // BF_SERVER_v817_DIALER_MESSAGING - was status === 'available' && fresh: a closed iOS app
+    // (stale heartbeat -> 'offline') never rang although it still receives VoIP pushes.
+    const clientReady = (r.status === "available" && !!r.twilio_identity && !!r.fresh) || (!!r.ringable && !!r.twilio_identity);
     return { identity: r.twilio_identity, available: r.status === "available" && !!r.twilio_identity, onCall: !!r.on_call, clientReady, cell: toE164(r.phone), standaloneWatch: !!r.standalone_watch, userId: r.user_id ?? null };
   } catch { return { identity: null, available: false, onCall: false, clientReady: false, cell: null, standaloneWatch: false, userId: null }; }
 }
@@ -187,11 +192,10 @@ async function readyStaffIdentities(excludeUserId: string | null): Promise<strin
     const { rows } = await pool.query<{ twilio_identity: string }>(
       `SELECT DISTINCT sp.twilio_identity
          FROM users u JOIN staff_presence sp ON sp.user_id = u.id
-        WHERE sp.status = 'available' AND sp.twilio_identity IS NOT NULL
-          AND coalesce(sp.on_call, false) = false AND coalesce(u.active, true) = true
-          AND ((sp.last_heartbeat > now() - interval '90 seconds') OR EXISTS (
-                SELECT 1 FROM staff_device_credentials dc WHERE dc.user_id = u.id AND dc.revoked_at IS NULL
-                  AND dc.expires_at > now()))
+        -- BF_SERVER_v817_DIALER_MESSAGING - ringable (registered identity, not busy / on a call /
+        -- in a meeting) instead of status = 'available', which excluded every closed iOS dialler.
+        WHERE ${ringableStaffSql("sp", "u")}
+          AND coalesce(u.active, true) = true
           AND ($1::text IS NULL OR u.id::text <> $1)
           AND NOT (coalesce(u.first_name, '') ILIKE '%andrew%' OR coalesce(u.last_name, '') ILIKE '%andrew%')
         LIMIT 9`,

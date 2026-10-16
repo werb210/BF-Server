@@ -45,10 +45,21 @@ export const WATCH_APNS_VARS = [
 
 export const FCM_VARS = ["FIREBASE_SERVICE_ACCOUNT_JSON"];
 
+// BF_SERVER_v817_CLIENT - the env the client APNs path effectively reads (own value, else the Watch one).
+function clientApnsEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...env };
+  for (const part of ["TEAM_ID", "KEY_ID", "PRIVATE_KEY"]) {
+    const own = String(env["CLIENT_APNS_" + part] ?? "").trim();
+    if (own) out["WATCH_APNS_" + part] = own;
+  }
+  return out;
+}
+
 export function pushConfigReport(env: NodeJS.ProcessEnv = process.env) {
   const transports = [
-    statusFor("client_apns", env, CLIENT_APNS_VARS,
-      "applicant iOS push; the three WATCH_APNS_* values are shared with Watch push"),
+    // BF_SERVER_v817_CLIENT - CLIENT_APNS_TEAM_ID / _KEY_ID / _PRIVATE_KEY override the shared WATCH_APNS_* values.
+    statusFor("client_apns", clientApnsEnv(env), CLIENT_APNS_VARS,
+      "applicant iOS push; CLIENT_APNS_TEAM_ID/_KEY_ID/_PRIVATE_KEY, else the shared WATCH_APNS_* values"),
     statusFor("watch_apns", env, WATCH_APNS_VARS, "Apple Watch push"),
     statusFor("fcm", env, FCM_VARS, "Android push for both client apps"),
   ];

@@ -163,6 +163,9 @@ export const EnvSchema = z
     CLIENT_APNS_BUNDLE_ID_BF: z.string().optional(), // identifier; read in services/clientPushService.ts
     CLIENT_APNS_BUNDLE_ID_BI: z.string().optional(), // identifier; read in services/clientPushService.ts
     CLIENT_APNS_ENVIRONMENT: z.string().optional(), // setting; read in services/clientPushService.ts
+    CLIENT_APNS_TEAM_ID: z.string().optional(), // identifier; read in services/clientPushService.ts // BF_SERVER_v817_CLIENT
+    CLIENT_APNS_KEY_ID: z.string().optional(), // identifier; read in services/clientPushService.ts // BF_SERVER_v817_CLIENT
+    CLIENT_APNS_PRIVATE_KEY: z.string().optional(), // credential (secret); read in services/clientPushService.ts // BF_SERVER_v817_CLIENT
     CLIENT_APP_MIN_BUILD: z.string().optional(), // number; read in routes/client/index.ts
     CLIENT_APP_URL: z.string().optional(), // URL; read in services/brokerImport/actions.ts
     CLIENT_PORTAL_URL: z.string().optional(), // URL; read in modules/applications/applications.routes.ts

@@ -1017,6 +1017,70 @@ router.get(
   })
 );
 
+// BF_SERVER_v817_DIALER_MESSAGING - make sure a mini-portal application has a contact before its
+// message is stored. Order: applications.contact_id -> application_contacts (applicant first, then
+// oldest) -> a new contact from the signed-in client's phone + the applicant name in metadata (or the
+// business name, or the formatted phone), in the application's silo. Links it to applications.contact_id.
+// Returns null only when there is nothing to build a contact from (or the database failed - logged).
+export async function ensureApplicationContactForMessage(applicationId: string, phone10: string): Promise<string | null> {
+  try {
+    const appRes = await dbQuery<{ contact_id: string | null; silo: string | null; metadata: any; business_legal_name: string | null; name: string | null }>(
+      `SELECT contact_id, silo, metadata, business_legal_name, name FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+      [applicationId],
+    );
+    const app = appRes.rows[0];
+    if (!app) return null;
+    if (app.contact_id) return app.contact_id;
+
+    let contactId: string | null = null;
+    const linked = await dbQuery<{ contact_id: string }>(
+      `SELECT contact_id FROM application_contacts
+        WHERE application_id::text = ($1)::text
+        ORDER BY (role = 'applicant') DESC, created_at ASC
+        LIMIT 1`,
+      [applicationId],
+    );
+    contactId = linked.rows[0]?.contact_id ?? null;
+
+    if (!contactId) {
+      const md = app.metadata && typeof app.metadata === "object" ? app.metadata : {};
+      const a = md.applicant && typeof md.applicant === "object" ? md.applicant : {};
+      const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+      const metaPhone10 = (str(a.phone) || str(md.applicant_phone) || str(md.readiness_phone)).replace(/[^0-9]/g, "").slice(-10);
+      const p10 = phone10 && phone10.length === 10 ? phone10 : metaPhone10.length === 10 ? metaPhone10 : "";
+      if (!p10) return null;
+      let first = str(a.firstName) || str(a.first_name);
+      let last = str(a.lastName) || str(a.last_name);
+      if (!first && !last) {
+        const full = str(a.name) || str(a.fullName) || str(md.applicant_name) || str(md.applicantName);
+        if (full) { const parts = full.split(/\s+/); first = parts.shift() ?? ""; last = parts.join(" "); }
+      }
+      if (!first && !last) first = str(app.business_legal_name) || str(md.business?.legalName) || str(md.business?.businessName) || str(app.name);
+      if (!first && !last) first = `(${p10.slice(0, 3)}) ${p10.slice(3, 6)}-${p10.slice(6)}`;
+      const { createContact } = await import("../../services/contacts.js");
+      const created = await createContact({ query: (t: string, p?: any[]) => dbQuery(t, p) } as any, {
+        first_name: first,
+        last_name: last,
+        phone: `+1${p10}`,
+        role: "applicant",
+        is_primary_applicant: true,
+        silo: app.silo || "BF",
+      });
+      contactId = created?.id ?? null;
+    }
+    if (contactId) {
+      await dbQuery(
+        `UPDATE applications SET contact_id = $2::uuid WHERE id::text = ($1)::text AND contact_id IS NULL`,
+        [applicationId, contactId],
+      );
+    }
+    return contactId;
+  } catch (err: unknown) {
+    logWarnSwallowed(err, "routes/client/index.ts:v817_ensure_contact", undefined);
+    return null;
+  }
+}
+
 router.post(
   "/messages",
   // BF_SERVER_v64_CLIENT_MSG_ENRICH — populate contact_id + silo from
@@ -1069,19 +1133,24 @@ router.post(
       [applicationId, v812Phone10]
     ).catch((err: unknown) => logWarnSwallowed(err, "routes/client/index.ts:v812_contact_link", undefined));
 
+    // BF_SERVER_v817_DIALER_MESSAGING - the v812 phone link can still leave applications.contact_id
+    // NULL (no contact with that phone yet), and the staff Messages list requires a contact, so the
+    // message was invisible to staff. Fall back to the application's linked contact, then create one.
+    const messageContactId = await ensureApplicationContactForMessage(applicationId, v812Phone10);
+
     const id = randomUUID();
     await dbQuery(
       `INSERT INTO communications_messages
          (id, type, direction, status, application_id, contact_id, silo, body, attachments, created_at)
        VALUES (
          $1, 'message', 'inbound', 'received', $2,
-         (SELECT contact_id FROM applications WHERE id = $2 LIMIT 1),
+         COALESCE($5::uuid, (SELECT contact_id FROM applications WHERE id = $2 LIMIT 1)),
          COALESCE((SELECT silo FROM applications WHERE id = $2 LIMIT 1), 'BF'),
          $3,
          CASE WHEN $4::text = '[]' THEN NULL ELSE $4::jsonb END,
          now()
        )`,
-      [id, applicationId, body ?? "", JSON.stringify(attachments)]
+      [id, applicationId, body ?? "", JSON.stringify(attachments), messageContactId]
     );
     // BF_SERVER_BLOCK_v619 - automation trigger.
     void import("../../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent({ trigger: "message.inbound", applicationId, data: { channel: "client_portal" } })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));

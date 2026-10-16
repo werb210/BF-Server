@@ -184,11 +184,15 @@ router.post("/webhooks/twilio/sms-inbound", express.urlencoded({ extended: false
     }
 
     const contactId = await resolveInboundSmsContact(from);
+    // BF_SERVER_v817_DIALER_MESSAGING - communications_messages.id has no default and the
+    // twilio_message_sid unique index is partial, so this insert (no id, ON CONFLICT without the
+    // index predicate) failed on every text and the message never appeared. Supply the id, the
+    // status and phone_number the other inbound path writes, and the predicate.
     await pool.query(
       `INSERT INTO communications_messages
-        (conversation_id, contact_id, channel, type, direction, body, media_url, from_number, to_number, silo, twilio_message_sid, created_at)
-       VALUES ($1, $2, 'sms', 'sms', 'inbound', $3, $4, $5, $6, 'BF', $7, NOW())
-       ON CONFLICT (twilio_message_sid) DO NOTHING`,
+        (id, conversation_id, contact_id, channel, type, direction, status, body, media_url, from_number, to_number, phone_number, silo, twilio_message_sid, created_at)
+       VALUES (gen_random_uuid(), $1, $2, 'sms', 'sms', 'inbound', 'received', $3, $4, $5, $6, $5, 'BF', $7, NOW())
+       ON CONFLICT (twilio_message_sid) WHERE twilio_message_sid IS NOT NULL DO NOTHING`,
       [convId, contactId, body, mediaUrl, from, to || null, messageSid || null],
     );
 

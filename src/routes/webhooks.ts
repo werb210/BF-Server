@@ -737,6 +737,34 @@ async function persistInboundSms(req: any): Promise<void> {
   }
   resolvedSilo = resolvedSilo ?? "BF";
 
+  // BF_SERVER_v817_DIALER_MESSAGING - a text from a number with no contact used to be saved with
+  // contact_id NULL, so it never showed on any contact and staff could not see who wrote. Create
+  // the contact (named by the formatted number, role 'other' - the same shape smsInboundWebhook
+  // uses) so the conversation groups under it in the portal and the dialler.
+  let createdContactId: string | null = null;
+  // Verification-code texts (a service texting a login code to our number) are not clients.
+  const looksLikeCode = /(^|[^0-9])[0-9]{4,8}([^0-9]|$)/.test(body) && /\b(code|passcode|pin|otp)\b/i.test(body);
+  if (!contact?.id && !looksLikeCode && fromNum.replace(/\D/g, "").length >= 10) {
+    try {
+      const { createContact } = await import("../services/contacts.js");
+      const d = fromNum.replace(/\D/g, "");
+      const ten = d.length === 11 && d.startsWith("1") ? d.slice(1) : d.length === 10 ? d : "";
+      const label = ten ? `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}` : fromNum;
+      const created = await createContact(pool, {
+        first_name: label,
+        last_name: "",
+        phone: fromNum,
+        role: "other",
+        is_primary_applicant: false,
+        silo: resolvedSilo,
+      });
+      createdContactId = created?.id ?? null;
+    } catch (err) {
+      console.warn(JSON.stringify({ event: "sms_inbound_contact_create_failed", from: fromNum, err: String(err).slice(0, 200) }));
+    }
+  }
+  const inboundContactId: string | null = contact?.id ?? createdContactId;
+
   // v635_sms_match_log: log the contact lookup outcome so silent
   // persists are visible in Azure log stream.
   console.log(JSON.stringify({
@@ -758,14 +786,14 @@ async function persistInboundSms(req: any): Promise<void> {
        (id, type, direction, status, contact_id, body, media_url, from_number, to_number, phone_number, twilio_sid, silo, created_at)
      VALUES (gen_random_uuid(), 'sms', 'inbound', 'received', $1, $2, $3, $4, $5, $4, $6, $7, now())
      ON CONFLICT (twilio_sid) WHERE twilio_sid IS NOT NULL DO NOTHING`,
-    [contact?.id ?? null, body, mediaUrl, fromNum, toNum, sid, resolvedSilo]
+    [inboundContactId, body, mediaUrl, fromNum, toNum, sid, resolvedSilo] // BF_SERVER_v817_DIALER_MESSAGING
   ).catch((err) => {
     // Surface the failure in logs instead of swallowing it silently.
     console.error({ event: "sms_inbound_persist_failed", err: String(err) });
   });
 
   eventBus.emit("sms.inbound.received", {
-    contactId: contact?.id ?? null,
+    contactId: inboundContactId, // BF_SERVER_v817_DIALER_MESSAGING
     from: fromNum,
     to: toNum,
     body,
@@ -786,7 +814,7 @@ async function persistInboundSms(req: any): Promise<void> {
   } catch (e) { console.error("[notify] sms_inbound failed", String(e).slice(0, 150)); }
   console.log(JSON.stringify({
     event: "sms_inbound_persisted",
-    contact_id: contact?.id ?? null,
+    contact_id: inboundContactId, // BF_SERVER_v817_DIALER_MESSAGING
     silo: resolvedSilo,
     sid,
   }));
