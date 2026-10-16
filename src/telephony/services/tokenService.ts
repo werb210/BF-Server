@@ -16,6 +16,12 @@ function requireTokenConfig(value: string | undefined, name: string): string {
   return value;
 }
 
+// BF_SERVER_v815_VOIP_PUSH
+export function pushCredentialGrant(env: NodeJS.ProcessEnv = process.env): { pushCredentialSid?: string } {
+  const sid = String(env.TWILIO_PUSH_CREDENTIAL_SID ?? "").trim();
+  return /^CR[0-9a-f]{32}$/i.test(sid) ? { pushCredentialSid: sid } : {};
+}
+
 export function generateVoiceToken(identity: string): string {
   const resolvedIdentity = identity?.trim().length ? identity : uuid();
 
@@ -29,9 +35,13 @@ export function generateVoiceToken(identity: string): string {
     }
   );
 
+  // BF_SERVER_v815_VOIP_PUSH - the iPhone dialer registers for incoming calls with this token. Twilio can only wake
+  // a closed iPhone (VoIP push -> CallKit) when the token names the Push Credential made from the company Apple key
+  // for com.borealfinancial.dialer. Unset = exactly as before (no push credential).
   const voiceGrant = new VoiceGrant({
     outgoingApplicationSid: requireTokenConfig(config.twilio.voiceAppSid, "TWILIO_VOICE_APP_SID"),
     incomingAllow: true,
+    ...pushCredentialGrant(),
   });
 
   token.addGrant(voiceGrant);
