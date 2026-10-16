@@ -6,7 +6,7 @@
 import { Router, urlencoded } from "express";
 import { auth } from "../middleware/auth.js";
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
-import { generateVoiceToken } from "../telephony/services/tokenService.js"; // BF_SERVER_VOICE_TOKEN_ROUTE_v1
+import { generateVoiceToken, parseVoiceTokenApp } from "../telephony/services/tokenService.js"; // BF_SERVER_VOICE_TOKEN_ROUTE_v1
 import { pool } from "../db.js";
 
 // BF_SERVER_BLOCK_CALL_CONTACT_RESOLVE_v1 — resolve the CRM contact for a dialed
@@ -66,7 +66,9 @@ router.post("/token", auth, async (req: any, res) => {
   const identity: string = req.user?.userId || req.user?.id || req.user?.sub || "";
   if (!identity) return res.status(401).json({ error: "unauthorized" });
   try {
-    const token = generateVoiceToken(identity);
+    // BF_SERVER_v817_IPAD_VOIP - optional `app` ("dialer" default | "portal-ios") in body, query or X-Boreal-App header picks the push credential.
+    const app = parseVoiceTokenApp(req.body?.app ?? req.query?.app ?? req.get?.("X-Boreal-App"));
+    const token = generateVoiceToken(identity, { app });
     // BF_SERVER_v817_DIALER_MESSAGING - register the client identity in staff_presence so the
     // IVR can ring this dialler by VoIP push even after its heartbeat goes stale.
     const { recordVoiceTokenIssued } = await import("../modules/presence/presenceService.js");

@@ -42,7 +42,10 @@ async function transcribe(buffer: Buffer): Promise<string> {
     if (!config.openai.apiKey) return "";
     const client = sharedOpenAI(config.openai.apiKey);
     const file = await OpenAI.toFile(buffer, "voicemail.mp3");
-    const res = await client.audio.transcriptions.create({ file, model: "whisper-1" });
+    // BF_SERVER_v817_AUDIO_MODELS - model from OPENAI_TRANSCRIBE_MODEL, falling back to whisper-1.
+    const { transcribeModel, LEGACY_TRANSCRIBE_MODEL, withAudioModelFallback } = await import("../../lib/openaiAudioModels.js");
+    const res = await withAudioModelFallback(transcribeModel(), LEGACY_TRANSCRIBE_MODEL,
+      (model) => client.audio.transcriptions.create({ file, model }), "voicemail_transcribe");
     const text = (res as { text?: string })?.text;
     return typeof text === "string" ? text.trim() : "";
   } catch {

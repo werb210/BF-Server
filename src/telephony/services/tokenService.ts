@@ -17,12 +17,29 @@ function requireTokenConfig(value: string | undefined, name: string): string {
 }
 
 // BF_SERVER_v815_VOIP_PUSH
-export function pushCredentialGrant(env: NodeJS.ProcessEnv = process.env): { pushCredentialSid?: string } {
-  const sid = String(env.TWILIO_PUSH_CREDENTIAL_SID ?? "").trim();
+// BF_SERVER_v817_IPAD_VOIP - which native app the token is for. Each app has its own Twilio Push Credential (its own
+// bundle id): "dialer" (iPhone dialer, com.borealfinancial.dialer) reads TWILIO_PUSH_CREDENTIAL_SID; "portal-ios"
+// (staff portal iPad app, com.borealfinancial.portal) reads TWILIO_PUSH_CREDENTIAL_SID_PORTAL. Anything else = dialer.
+export type VoiceTokenApp = "dialer" | "portal-ios";
+
+// BF_SERVER_v817_IPAD_VOIP - "portal_ipad" is accepted as an alias of "portal-ios" (earlier spelling).
+export function parseVoiceTokenApp(raw: unknown): VoiceTokenApp {
+  const v = String(Array.isArray(raw) ? raw[0] : raw ?? "").trim().toLowerCase();
+  return v === "portal-ios" || v === "portal_ipad" ? "portal-ios" : "dialer";
+}
+
+export function pushCredentialGrant(
+  env: NodeJS.ProcessEnv = process.env,
+  app: VoiceTokenApp = "dialer",
+): { pushCredentialSid?: string } {
+  const raw = app === "portal-ios" ? env.TWILIO_PUSH_CREDENTIAL_SID_PORTAL : env.TWILIO_PUSH_CREDENTIAL_SID;
+  const sid = String(raw ?? "").trim();
   return /^CR[0-9a-f]{32}$/i.test(sid) ? { pushCredentialSid: sid } : {};
 }
 
-export function generateVoiceToken(identity: string): string {
+// BF_SERVER_v817_IPAD_VOIP - same identity for every app: Twilio delivers an incoming <Client> call to every device
+// registered under the identity, so the IVR rings the iPhone dialer and the iPad portal together.
+export function generateVoiceToken(identity: string, opts: { app?: VoiceTokenApp } = {}): string {
   const resolvedIdentity = identity?.trim().length ? identity : uuid();
 
   const token = new AccessToken(
@@ -41,7 +58,7 @@ export function generateVoiceToken(identity: string): string {
   const voiceGrant = new VoiceGrant({
     outgoingApplicationSid: requireTokenConfig(config.twilio.voiceAppSid, "TWILIO_VOICE_APP_SID"),
     incomingAllow: true,
-    ...pushCredentialGrant(),
+    ...pushCredentialGrant(process.env, opts.app ?? "dialer"),
   });
 
   token.addGrant(voiceGrant);

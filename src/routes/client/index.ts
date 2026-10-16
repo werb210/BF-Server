@@ -1030,7 +1030,27 @@ export async function ensureApplicationContactForMessage(applicationId: string, 
     );
     const app = appRes.rows[0];
     if (!app) return null;
-    if (app.contact_id) return app.contact_id;
+    if (app.contact_id) {
+      // BF_SERVER_v818_MERGED_CONTACT - a merged contact is archived with merged_into_id set; staff work on the
+      // survivor, and the portal's Messages list skipped archived contacts, so the chat looked lost. Follow the
+      // merge to the live survivor and repoint the application.
+      const live = await dbQuery<{ id: string }>(
+        `SELECT surv.id
+           FROM contacts c
+           JOIN contacts surv ON surv.id = c.merged_into_id
+          WHERE c.id = $1::uuid
+            AND coalesce(surv.status, 'active') <> 'archived'
+            AND surv.merged_into_id IS NULL
+          LIMIT 1`,
+        [app.contact_id],
+      );
+      const survivor = live.rows[0]?.id ?? null;
+      if (survivor) {
+        await dbQuery(`UPDATE applications SET contact_id = $2::uuid WHERE id::text = ($1)::text`, [applicationId, survivor]);
+        return survivor;
+      }
+      return app.contact_id;
+    }
 
     let contactId: string | null = null;
     const linked = await dbQuery<{ contact_id: string }>(
@@ -1126,6 +1146,10 @@ router.post(
                      = COALESCE(NULLIF($2::text, ''),
                                 right(regexp_replace(coalesce(a.metadata->>'applicant_phone',''), '[^0-9]', '', 'g'), 10))
                    AND length(right(regexp_replace(coalesce(c.phone,''), '[^0-9]', '', 'g'), 10)) = 10
+                   -- BF_SERVER_v818_MERGED_CONTACT - never link to an archived / merged-away contact (oldest-first
+                   -- picked the merge loser, so the chat landed on a contact the portal hides).
+                   AND coalesce(c.status, 'active') <> 'archived'
+                   AND c.merged_into_id IS NULL
                  ORDER BY (c.silo = a.silo) DESC, c.created_at ASC
                  LIMIT 1), a.contact_id)
         WHERE a.id::text = ($1)::text
