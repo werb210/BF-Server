@@ -48,13 +48,14 @@ describe("sendWatchNotification", () => {
       ] }],
       [/DELETE FROM watch_push_registrations/, { rows: [] }],
     ]));
-    const send = vi.fn()
-      .mockRejectedValueOnce(new WatchApnsError(410, reason, true))
-      .mockResolvedValueOnce(undefined);
+    // BF_SERVER_v819_PUSH - a BadDeviceToken is first retried on the other host, so the bad token fails on both.
+    const send = vi.fn(async (registration: { token: string }) => {
+      if (registration.token === "plain:bad-cipher") throw new WatchApnsError(410, reason, true);
+    });
     configureWatchPushProvider({ send });
     expect(await sendWatchNotification(input, deps())).toBe(1);
-    expect(send).toHaveBeenCalledTimes(2);
-    expect(query).toHaveBeenCalledWith("DELETE FROM watch_push_registrations WHERE id=$1", ["bad"]);
+    expect(send).toHaveBeenCalledTimes(reason === "BadDeviceToken" ? 3 : 2);
+    expect(query).toHaveBeenCalledWith("DELETE FROM watch_push_registrations WHERE device_id=$1" /* BF_SERVER_v819_PUSH - no id column */, ["bad"]);
   });
 
   it.each([
@@ -77,6 +78,29 @@ describe("sendWatchNotification", () => {
     const sql = lookups[0][0] as string;
     expect(sql).toContain("d.revoked_at IS NULL");
     expect(sql).toContain("p.push_type='standard'");
+  });
+
+  // BF_SERVER_v819_PUSH - a sandbox token registered as production (or the reverse) is delivered, not deleted.
+  it("retries BadDeviceToken on the other APNs host and remembers the host that worked", async () => {
+    query.mockImplementation(answerBySql([[REGS, { rows: [{ id: "d1", device_id: "d1", token_ciphertext: "c", environment: "production" }] }]]));
+    const send = vi.fn(async (registration: { environment: string }) => {
+      if (registration.environment === "production") throw new WatchApnsError(400, "BadDeviceToken", true);
+    });
+    configureWatchPushProvider({ send });
+    expect(await sendWatchNotification(input, deps())).toBe(1);
+    expect(send.mock.calls.map(([r]) => (r as { environment: string }).environment)).toEqual(["production", "sandbox"]);
+    expect(callsMatching(query, /DELETE FROM watch_push_registrations/)).toHaveLength(0);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("UPDATE watch_push_registrations SET environment=$2"), ["d1", "sandbox"]);
+  });
+
+  // BF_SERVER_v819_PUSH - the lookup must only name columns that exist on watch_push_registrations.
+  it("selects only columns that exist on watch_push_registrations", async () => {
+    answerRegs([]);
+    configureWatchPushProvider({ send: vi.fn() });
+    await sendWatchNotification(input, deps());
+    const sql = callsMatching(query, REGS)[0][0] as string;
+    const columns = ["device_id", "token_hash", "token_ciphertext", "push_type", "environment", "created_at", "updated_at"];
+    for (const [, column] of sql.matchAll(/\bp\.([a-z_]+)/g)) expect(columns).toContain(column);
   });
 
   it("cannot pass arbitrary sensitive data through the opaque id field", async () => {

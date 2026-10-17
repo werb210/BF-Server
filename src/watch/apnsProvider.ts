@@ -46,6 +46,38 @@ export class WatchApnsTimeoutError extends Error {
   }
 }
 
+// BF_SERVER_v819_PUSH - the stream closed (session torn down underneath it) before Apple answered.
+export class WatchApnsConnectionError extends Error {
+  readonly invalidRegistration = false;
+
+  constructor(reason: string) {
+    super(`APNs connection lost before a response (${reason})`);
+    this.name = "WatchApnsConnectionError";
+  }
+}
+
+// BF_SERVER_v819_PUSH - every client push and Watch push hung for 10 s and timed out in production
+// (client_apns_send_failed "APNs request timed out after 10000ms", one api.push.apple.com socket held
+// open for hours). The cached HTTP/2 session went stale - the idle connection was silently dropped by
+// Azure/NAT/Apple - but nothing ever closed it, so every later request was written into a dead socket.
+// Sessions now close after an idle period, are dropped on goaway/error/close/timeout/ERR_HTTP2_*, and a
+// send that fails at the transport level is retried ONCE on a fresh session. An HTTP status from Apple
+// is an answer, never a transport failure, and is never retried here.
+const DEFAULT_IDLE_TIMEOUT_MS = 50_000;
+const RETRYABLE_SOCKET_CODES = new Set(["ECONNRESET", "EPIPE", "ETIMEDOUT", "ECONNABORTED", "ENETUNREACH", "EHOSTUNREACH"]);
+
+function errorCode(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" ? code : "";
+}
+
+/** True when a failure came from the connection rather than from Apple's answer. */
+export function isApnsTransportFailure(error: unknown): boolean {
+  if (error instanceof WatchApnsTimeoutError || error instanceof WatchApnsConnectionError) return true;
+  const code = errorCode(error);
+  return code.startsWith("ERR_HTTP2_") || RETRYABLE_SOCKET_CODES.has(code);
+}
+
 /** A small reusable HTTP/2 transport. It contains no credentials and never logs requests. */
 export class NodeWatchApnsTransport implements WatchApnsTransport {
   private readonly clients = new Map<string, ClientHttp2Session>();
@@ -53,25 +85,68 @@ export class NodeWatchApnsTransport implements WatchApnsTransport {
   constructor(
     private readonly requestTimeoutMs = 10_000,
     private readonly connect: typeof http2.connect = http2.connect,
+    private readonly idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
   ) {}
+
+  /** Forget a session (so the next send connects afresh) and optionally tear it down. */
+  private discard(origin: string, session: ClientHttp2Session, reason: string, destroy: boolean): void {
+    const wasCached = this.clients.get(origin) === session;
+    if (wasCached) this.clients.delete(origin);
+    if (destroy && !session.destroyed && typeof session.destroy === "function") {
+      try { session.destroy(); } catch { /* already torn down */ }
+    }
+    if (wasCached) console.warn(JSON.stringify({ event: "apns_session_reset", host: origin.replace(/^https:\/\//, ""), reason }));
+  }
 
   private client(origin: string): ClientHttp2Session {
     const existing = this.clients.get(origin);
     if (existing && !existing.closed && !existing.destroyed) return existing;
+    if (existing) this.clients.delete(origin);
     const created = this.connect(origin);
-    const removeClient = () => {
-      if (this.clients.get(origin) === created) this.clients.delete(origin);
-    };
-    created.on("close", removeClient);
-    // A session may emit an error without an active request listener.
-    created.on("error", removeClient);
     this.clients.set(origin, created);
+    // BF_SERVER_v819_PUSH - the cached session must never outlive its connection.
+    created.on("close", () => this.discard(origin, created, "close", false));
+    // A session may emit an error without an active request listener; the listener also keeps it from crashing the process.
+    created.on("error", (error: unknown) => this.discard(origin, created, `error:${errorCode(error) || "unknown"}`, true));
+    // Apple sends GOAWAY when it retires a connection; in-flight streams may finish, new ones need a new session.
+    created.on("goaway", () => {
+      this.discard(origin, created, "goaway", false);
+      if (!created.closed && !created.destroyed && typeof created.close === "function") {
+        try { created.close(); } catch { /* already closing */ }
+      }
+    });
+    // An idle connection is what NAT/load balancers drop silently. Close it ourselves before that happens.
+    if (typeof created.setTimeout === "function") created.setTimeout(this.idleTimeoutMs);
+    created.on("timeout", () => this.discard(origin, created, "idle", true));
+    // The push socket must never keep the process alive on shutdown.
+    if (typeof created.unref === "function") created.unref();
     return created;
   }
 
-  send(origin: string, headers: OutgoingHttpHeaders, payload: string): Promise<{ statusCode: number; body: string }> {
+  async send(origin: string, headers: OutgoingHttpHeaders, payload: string): Promise<{ statusCode: number; body: string }> {
+    try {
+      return await this.attempt(origin, headers, payload);
+    } catch (error) {
+      // BF_SERVER_v819_PUSH - the failed session has been discarded; one retry runs on a fresh connection.
+      if (!isApnsTransportFailure(error)) throw error;
+      return this.attempt(origin, headers, payload);
+    }
+  }
+
+  private attempt(origin: string, headers: OutgoingHttpHeaders, payload: string): Promise<{ statusCode: number; body: string }> {
     return new Promise((resolve, reject) => {
-      const request = this.client(origin).request(headers);
+      let session: ClientHttp2Session;
+      let request: ReturnType<ClientHttp2Session["request"]>;
+      try {
+        session = this.client(origin);
+        request = session.request(headers);
+      } catch (error) {
+        // request() throws synchronously on a session that is closing/destroyed (ERR_HTTP2_*).
+        const failed = this.clients.get(origin);
+        if (failed) this.discard(origin, failed, `request:${errorCode(error) || "unknown"}`, true);
+        reject(error);
+        return;
+      }
       let statusCode = 0;
       let body = "";
       let settled = false;
@@ -83,6 +158,7 @@ export class NodeWatchApnsTransport implements WatchApnsTransport {
         request.off("data", onData);
         request.off("end", onEnd);
         request.off("error", onError);
+        request.off("close", onClose);
       };
       const settle = (result: { statusCode: number; body: string } | Error) => {
         if (settled) return;
@@ -95,17 +171,29 @@ export class NodeWatchApnsTransport implements WatchApnsTransport {
         statusCode = Number(responseHeaders[":status"] ?? 0);
       };
       const onData = (chunk: string) => { if (body.length < 4096) body += chunk; };
-      const onEnd = () => settle({ statusCode, body });
-      const onError = (error: Error) => settle(error);
+      const onEnd = () => {
+        // BF_SERVER_v819_PUSH - a stream "ends" without any response when its session is destroyed; that is a
+        // lost connection, not an answer from Apple.
+        if (!statusCode && (session.destroyed || session.closed)) settle(new WatchApnsConnectionError("session_closed"));
+        else settle({ statusCode, body });
+      };
+      const onClose = () => settle(statusCode ? { statusCode, body } : new WatchApnsConnectionError("stream_closed"));
+      const onError = (error: Error) => {
+        if (isApnsTransportFailure(error)) this.discard(origin, session, `stream:${errorCode(error)}`, true);
+        settle(error);
+      };
 
       request.setEncoding("utf8");
       request.on("response", onResponse);
       request.on("data", onData);
       request.on("end", onEnd);
       request.on("error", onError);
+      request.on("close", onClose);
       timer = setTimeout(() => {
         settle(new WatchApnsTimeoutError(this.requestTimeoutMs));
         request.close(http2.constants.NGHTTP2_CANCEL);
+        // BF_SERVER_v819_PUSH - a request that gets no answer means the connection is dead, not slow.
+        this.discard(origin, session, "request_timeout", true);
       }, this.requestTimeoutMs);
       request.end(payload);
     });

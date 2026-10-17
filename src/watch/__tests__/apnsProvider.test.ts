@@ -83,6 +83,11 @@ class FakeSession extends EventEmitter {
   closed = false;
   destroyed = false;
   readonly request = vi.fn(() => new FakeRequest());
+  // BF_SERVER_v819_PUSH - the transport now manages session lifetime.
+  readonly setTimeout = vi.fn();
+  readonly unref = vi.fn();
+  readonly close = vi.fn(() => { this.closed = true; });
+  readonly destroy = vi.fn(() => { this.destroyed = true; });
 }
 
 describe("NodeWatchApnsTransport", () => {
@@ -108,10 +113,13 @@ describe("NodeWatchApnsTransport", () => {
     request.emit("end");
   });
 
-  it("times out once, cancels only the request, and does not expose credentials", async () => {
+  // BF_SERVER_v819_PUSH - a timeout now also discards the (dead) session and retries once on a fresh one.
+  it("times out, cancels the request, drops the session, retries once, and does not expose credentials", async () => {
     vi.useFakeTimers();
-    const session = new FakeSession();
-    const connect = vi.fn(() => session as any);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const first = new FakeSession();
+    const second = new FakeSession();
+    const connect = vi.fn().mockReturnValueOnce(first as any).mockReturnValueOnce(second as any);
     const transport = new NodeWatchApnsTransport(100, connect);
     const secrets = {
       token: "device-token-secret",
@@ -126,8 +134,11 @@ describe("NodeWatchApnsTransport", () => {
     void promise.catch(rejection);
 
     await vi.advanceTimersByTimeAsync(100);
+    expect(connect).toHaveBeenCalledTimes(2);
+    expect(first.destroy).toHaveBeenCalledTimes(1);
+    expect(rejection).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(100);
     const error = await promise.catch((failure: unknown) => failure);
-    const request = session.request.mock.results[0].value;
 
     expect(error).toBeInstanceOf(WatchApnsTimeoutError);
     expect(error).toMatchObject({ invalidRegistration: false });
@@ -135,13 +146,17 @@ describe("NodeWatchApnsTransport", () => {
     expect(String(error)).not.toContain(secrets.key);
     expect(String(error)).not.toContain(secrets.jwt);
     expect(rejection).toHaveBeenCalledTimes(1);
-    expect(request.close).toHaveBeenCalledTimes(1);
-    expect(session.listenerCount("close")).toBe(1);
+    for (const session of [first, second]) {
+      const request = session.request.mock.results[0].value;
+      expect(request.close).toHaveBeenCalledTimes(1);
+      expect(request.listenerCount("end")).toBe(0);
+      expect(request.listenerCount("error")).toBe(0);
+      request.emit("end");
+    }
     expect(vi.getTimerCount()).toBe(0);
-    expect(request.listenerCount("end")).toBe(0);
-    expect(request.listenerCount("error")).toBe(0);
-    request.emit("end");
     expect(rejection).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(secrets.token);
+    warn.mockRestore();
   });
 
   it("rejects once on a request error before timeout and clears the timer", async () => {

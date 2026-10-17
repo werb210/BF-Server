@@ -891,7 +891,8 @@ router.get(
       `WITH thread AS (
          SELECT contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1
        )
-       SELECT id, direction, body, staff_name, cta_label, cta_action, attachments, created_at, read_at /* BF_SERVER_BLOCK_v507 */
+       SELECT id, direction, body, staff_name, cta_label, cta_action, attachments, created_at, read_at /* BF_SERVER_BLOCK_v507 */,
+              type, media_url /* BF_SERVER_v819_CLIENT_MMS - texted pictures show as an attachment, not "[media]" */
        FROM communications_messages
        -- BF_SERVER_THREAD_PER_APP_v1: this application's own messages, plus only
        -- contact-level messages not tied to any application.
@@ -1005,16 +1006,149 @@ router.get(
       data: v778_rows.map((r: any) => ({
         id: r.id,
         direction: r.direction,
-        body: r.body,
         staff_name: r.staff_name ?? null,
         cta_label: r.cta_label ?? null,
         cta_action: r.cta_action ?? null,
-        attachments: Array.isArray(r.attachments) ? r.attachments : null,
+        // BF_SERVER_v819_CLIENT_MMS - a picture the client texted in is a row with media_url and a "[media]"
+        // placeholder body. The client gets an attachment pointing at the owner-guarded media route below, never
+        // the stored URL itself.
+        ...clientMmsView(r, applicationId),
         created_at: r.created_at,
         read_at: r.read_at ?? null, // BF_SERVER_BLOCK_v507_READ_RECEIPTS
       })),
     });
   })
+);
+
+// BF_SERVER_v819_CLIENT_MMS - best guess at what a stored media URL holds. Twilio media URLs carry no extension;
+// persisted blob copies do (see extFromContentType in services/mmsMedia.ts). Phone MMS is almost always a picture,
+// so an unknown type is treated as a JPEG.
+export function guessMediaContentType(mediaUrl: string): string {
+  let path = "";
+  try { path = new URL(mediaUrl).pathname.toLowerCase(); } catch { path = String(mediaUrl || "").toLowerCase(); }
+  const ext = path.includes(".") ? path.slice(path.lastIndexOf(".") + 1) : "";
+  const byExt: Record<string, string> = {
+    jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp", heic: "image/heic",
+    pdf: "application/pdf", mp4: "video/mp4",
+  };
+  return byExt[ext] ?? "image/jpeg";
+}
+
+// BF_SERVER_v819_CLIENT_MMS - body + attachments for one client thread row. A row without media_url is unchanged.
+export function clientMmsView(r: any, applicationId: string): { body: any; attachments: any[] | null } {
+  const existing = Array.isArray(r.attachments) ? r.attachments : null;
+  const mediaUrl = typeof r.media_url === "string" ? r.media_url.trim() : "";
+  if (!mediaUrl) return { body: r.body, attachments: existing };
+  const contentType = guessMediaContentType(mediaUrl);
+  const attachment = {
+    name: contentType.startsWith("image/") ? "Picture" : "File",
+    contentType,
+    url: `/api/client/messages/${encodeURIComponent(String(r.id))}/media?applicationId=${encodeURIComponent(applicationId)}`,
+  };
+  return {
+    body: typeof r.body === "string" && r.body.trim() === "[media]" ? "" : r.body,
+    attachments: [...(existing ?? []), attachment],
+  };
+}
+
+// BF_SERVER_v819_CLIENT_MMS - only these types are served inline; anything else downloads as a plain file so a
+// stored HTML/SVG copy can never render on the API origin.
+const CLIENT_MEDIA_INLINE = /^(image\/(jpeg|png|gif|webp|heic|heif)|application\/pdf|video\/mp4|audio\/[a-z0-9.+-]+)$/i;
+
+// BF_SERVER_v819_CLIENT_MMS - the picture/file behind a thread message. Same thread WHERE as GET /messages, and the
+// caller must own the application (the router guard already ran; checked again here so the route never depends
+// on it). Fetching mirrors the staff proxy GET /api/communications/messages/:id/media.
+router.get(
+  "/messages/:id/media",
+  safeHandler(async (req: any, res: any) => {
+    const id = String(req.params?.id ?? "").trim().toLowerCase();
+    const applicationId = normalizeApplicationIdCandidate(typeof req.query.applicationId === "string" ? req.query.applicationId : "");
+    if (!applicationId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const auth = req.headers?.authorization;
+    if (!auth || typeof auth !== "string" || !auth.startsWith("Bearer ")) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    if (!(await requireApplicationAccess(req, res, applicationId))) return;
+
+    const found = await dbQuery<{ media_url: string | null }>(
+      `WITH thread AS (
+         SELECT contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1
+       )
+       SELECT media_url
+       FROM communications_messages
+       WHERE id::text = ($2)::text
+         AND (
+               application_id::text = ($1)::text
+            OR (
+                 application_id IS NULL
+             AND (SELECT contact_id FROM thread) IS NOT NULL
+             AND contact_id::text = (SELECT contact_id::text FROM thread)
+               )
+             )
+       LIMIT 1`,
+      [applicationId, id],
+    );
+    const mediaUrl = found.rows[0]?.media_url ? String(found.rows[0].media_url) : "";
+    if (!mediaUrl) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    const { fetchTwilioMedia, persistTwilioMediaToBlob } = await import("../../services/mmsMedia.js");
+    let buf: Buffer;
+    let ct = "";
+    if (/^https:\/\/api\.twilio\.com\//i.test(mediaUrl)) {
+      const persisted = await persistTwilioMediaToBlob(mediaUrl);
+      if (persisted) {
+        await dbQuery("UPDATE communications_messages SET media_url = $2 WHERE id::text = ($1)::text", [id, persisted.url])
+          .catch((err: unknown) => logWarnSwallowed(err, "routes/client/index.ts:v819_media_persist", undefined));
+        ct = persisted.contentType;
+        buf = persisted.buffer;
+      } else {
+        const direct = await fetchTwilioMedia(mediaUrl);
+        if (!direct) {
+          console.warn("[client-mms-media] twilio fetch failed", { id });
+          res.status(502).json({ error: "media_unavailable" });
+          return;
+        }
+        ct = direct.contentType;
+        buf = direct.buffer;
+      }
+    } else if (/^https:\/\//i.test(mediaUrl)) {
+      try {
+        const upstream = await fetch(mediaUrl);
+        if (!upstream.ok) {
+          console.warn("[client-mms-media] stored copy unreadable", { id, status: upstream.status });
+          res.status(502).json({ error: "media_unavailable" });
+          return;
+        }
+        ct = upstream.headers.get("content-type") ?? "";
+        buf = Buffer.from(await upstream.arrayBuffer());
+      } catch (err: unknown) {
+        console.warn("[client-mms-media] stored copy fetch threw", { id, error: err instanceof Error ? err.message : String(err) });
+        res.status(502).json({ error: "media_unavailable" });
+        return;
+      }
+    } else {
+      console.warn("[client-mms-media] refused non-https media url", { id });
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    ct = String(ct || "").split(";")[0]!.trim().toLowerCase();
+    if (!ct || ct === "application/octet-stream") ct = guessMediaContentType(mediaUrl);
+    if (!CLIENT_MEDIA_INLINE.test(ct)) {
+      ct = "application/octet-stream";
+      res.setHeader("Content-Disposition", "attachment");
+    }
+    res.setHeader("Content-Type", ct);
+    res.setHeader("Cache-Control", "private, max-age=86400");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.status(200).end(buf);
+  }),
 );
 
 // BF_SERVER_v817_DIALER_MESSAGING - make sure a mini-portal application has a contact before its
