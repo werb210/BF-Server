@@ -217,8 +217,9 @@ export async function enrichAndDistributeVoicemail(params: {
     // Voicemail enrichment is best effort; do not fail the Twilio callback.
   }
 
+  let voicemailId: string | null = null; // BF_SERVER_v821_DIALER - for the app/Watch alert
   try {
-    await pool.query(
+    const vm = await pool.query(
       `INSERT INTO voicemails
         (id, client_id, call_sid, recording_sid, recording_url, blob_url, transcript, duration_seconds, contact_id, application_id, silo, from_number, conversation_id, message_id, staff_user_id, created_at)
        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, now())
@@ -235,9 +236,11 @@ export async function enrichAndDistributeVoicemail(params: {
          from_number      = COALESCE(EXCLUDED.from_number, voicemails.from_number),
          conversation_id  = COALESCE(EXCLUDED.conversation_id, voicemails.conversation_id),
          message_id       = COALESCE(EXCLUDED.message_id, voicemails.message_id),
-         staff_user_id    = COALESCE(EXCLUDED.staff_user_id, voicemails.staff_user_id)`,
+         staff_user_id    = COALESCE(EXCLUDED.staff_user_id, voicemails.staff_user_id)
+       RETURNING id::text AS id`,
       [initialClientId ?? contactId, callSid, recordingSid, recordingUrl, mediaUrl, transcript || null, durationSeconds, contactId, applicationId, silo, fromNumber, convId, messageId, staffUserId],
     );
+    voicemailId = (vm as { rows?: Array<{ id?: string }> } | undefined)?.rows?.[0]?.id ?? null;
   } catch (e: any) {
     console.error("voicemail_row_upsert_failed", {
       call_sid: callSid,
@@ -278,6 +281,6 @@ export async function enrichAndDistributeVoicemail(params: {
   const { alertVoicemail } = await import("../../services/notifications/staffAlertEvents.js");
   await alertVoicemail({
     from: fromNumber || null, callerLabel: clientCaller?.label ?? null, contactId, staffUserId,
-    transcript, silo, recordingSid,
+    transcript, silo, recordingSid, voicemailId,
   });
 }

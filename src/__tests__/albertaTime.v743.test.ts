@@ -31,7 +31,10 @@ describe("Alberta time is UTC-6 all year", () => {
   it("no server code still assumes America/Edmonton clock changes", () => {
     // BF_SERVER_v786_WORKFLOW_GRAPH - the shared workflow format stores the zone name; graph.ts is the one
     // place that names it, and it computes it as ALBERTA_TZ (checked below).
-    const hits = walk("src").filter((p) => readFileSync(p, "utf8").includes("America/Edmonton") && !p.endsWith(join("modules", "automation", "graph.ts")));
+    // BF_SERVER_v821_DIALER - voice/callHours.ts is a staff member's own do-not-disturb hours in a time zone they
+    // choose (default America/Edmonton, DST via Intl on purpose). It is not business hours and never uses ALBERTA_TZ.
+    const allowed = [join("modules", "automation", "graph.ts"), join("voice", "callHours.ts")];
+    const hits = walk("src").filter((p) => readFileSync(p, "utf8").includes("America/Edmonton") && !allowed.some((a) => p.endsWith(a)));
     expect(hits).toEqual([]);
     expect(effectiveTz("America/Edmonton")).toBe(ALBERTA_TZ);
   });

@@ -43,6 +43,7 @@ export type NotifyAllStaffCtx = {
     /** Optional privacy-safe Watch copy; defaults to the normal notification copy. */
     title?: string;
     body?: string;
+    voicemailId?: string; // BF_SERVER_v821_DIALER
   };
   // BF_SERVER_v820_WATCH_CALLS - also alert the iPhone dialler (APNs, staff_push_tokens). Title/body default to the
   // notification's; they are clipped to 80/120 characters and only allowlisted ids travel with them.
@@ -170,6 +171,7 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx, dependencies: {
             title: ctx.watch.title ?? ctx.title ?? humanizeType(ctx.notificationType),
             body: ctx.watch.body ?? ctx.body,
             resourceId: ctx.watch.resourceId,
+            ...(ctx.watch.voicemailId ? { voicemailId: ctx.watch.voicemailId } : {}), // BF_SERVER_v821_DIALER
           });
         } catch (err) {
           // BF_SERVER_v819_PUSH - the bare event hid the cause for weeks (the registration lookup selected a column

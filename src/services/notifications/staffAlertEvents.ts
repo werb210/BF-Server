@@ -65,22 +65,32 @@ export async function alertMissedCall(input: { from: string | null | undefined; 
   });
 }
 
+// BF_SERVER_v821_DIALER - the lock screen / Watch line is "{caller}: {what they said}" (<=120, ellipsis). This runs
+// at the end of voicemailEnrich, i.e. AFTER transcription, so the transcript is there whenever Whisper produced one.
+export function voicemailAlertBody(label: string, transcript: string | null | undefined): string {
+  const said = String(transcript ?? "").replace(/\s+/g, " ").trim();
+  return preview(`${label}: ${said || "New voicemail"}`, STAFF_ALERT_BODY_MAX);
+}
+
 export async function alertVoicemail(input: {
   from: string | null | undefined; callerLabel?: string | null; contactId?: string | null; staffUserId?: string | null;
   transcript?: string | null; silo?: Silo; recordingSid?: string | null;
+  voicemailId?: string | null; // BF_SERVER_v821_DIALER - top-level voicemailId in the push so the app opens it
 }): Promise<void> {
   await run("voicemail", async () => {
     const from = String(input.from ?? "").trim() || null;
     const label = input.callerLabel || (await contactLabel(from)).label;
     const text = input.transcript ? preview(input.transcript) : "New voicemail";
+    const alertBody = voicemailAlertBody(label, input.transcript); // BF_SERVER_v821_DIALER
     await notifyAllStaff({
       pool, silo: input.silo ?? "BF", skipSms: true, // the voicemail SMS is already sent by voicemailEnrich
       ...(input.staffUserId ? { userIds: [input.staffUserId] } : {}),
       notificationType: "voicemail", title: `Voicemail from ${label}`, body: text,
       refTable: input.recordingSid ? "voicemails" : undefined, refId: input.recordingSid ?? undefined,
       contextUrl: input.contactId ? `/crm/contacts/${input.contactId}` : "/communications",
-      watch: { category: "MISSED_CALL", eventType: "voicemail", title: "Voicemail", body: label },
-      staffAlert: { category: "VOICEMAIL", type: "voicemail", title: `Voicemail from ${label}`, body: text, data: { contactId: input.contactId ?? null, phone: e164(from) } },
+      watch: { category: "MISSED_CALL", eventType: "voicemail", title: "Voicemail", body: alertBody, voicemailId: input.voicemailId ?? undefined },
+      staffAlert: { category: "VOICEMAIL", type: "voicemail", title: `Voicemail from ${label}`, body: alertBody,
+        data: { contactId: input.contactId ?? null, phone: e164(from), voicemailId: input.voicemailId ?? null } },
     });
   });
 }

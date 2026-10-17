@@ -74,7 +74,8 @@ describe("staff alert APNs payload", () => {
       data: { contactId: CONTACT, applicationId: APP_ID, phone: "+14035550144", threadKind: "messages", ssn: "nope" } as any,
     });
     expect(payload).toEqual({
-      aps: { alert: { title: "Message from Jane Client", body: `${"x".repeat(119)}…` }, sound: "default", category: "CLIENT_MESSAGE", "thread-id": `client_message:${CONTACT}` },
+      aps: { alert: { title: "Message from Jane Client", body: `${"x".repeat(119)}…` }, sound: "default", category: "CLIENT_MESSAGE", "thread-id": `client_message:${CONTACT}`,
+        "interruption-level": "time-sensitive", "relevance-score": 0.7 }, // BF_SERVER_v821_DIALER
       schema: 1, type: "client_message", contactId: CONTACT, applicationId: APP_ID, phone: "+14035550144", threadKind: "messages",
     });
   });
@@ -82,7 +83,8 @@ describe("staff alert APNs payload", () => {
   it("drops ids that are not ids", () => {
     const payload = buildStaffAlertPayload({ title: "Missed call", body: "Unknown", category: "MISSED_CALL", type: "missed_call",
       data: { contactId: "not-a-uuid", phone: "4035550144", threadKind: "email" as any } });
-    expect(payload).toEqual({ aps: { alert: { title: "Missed call", body: "Unknown" }, sound: "default", category: "MISSED_CALL", "thread-id": "missed_call:general" }, schema: 1, type: "missed_call" });
+    expect(payload).toEqual({ aps: { alert: { title: "Missed call", body: "Unknown" }, sound: "default", category: "MISSED_CALL", "thread-id": "missed_call:general",
+      "interruption-level": "time-sensitive", "relevance-score": 0.9 }, schema: 1, type: "missed_call" }); // BF_SERVER_v821_DIALER
   });
 });
 

@@ -153,3 +153,98 @@ export async function summaryForCallSid(
   if (row.status === "failed") return { status: "none", summary: null, contactId, suggestedTasks: [] };
   return { status: "pending", summary: null, contactId, suggestedTasks: [] };
 }
+
+// BF_SERVER_v821_DIALER - GET /api/calls/:callSid/summary for the iPhone dialler and the Watch.
+//   -> { status: "pending" | "ready" | "none", summary?, nextSteps?: string[], taskId?, contactId?, contactName? }
+// The CallSid may be any leg the app holds: the app's own leg of a conference call, the answered app/cell leg of a
+// reception or direct-line call (recordedDial.ts leg-status), the caller's parent leg, or a Watch bridge id.
+// Access mirrors the mid-call controls (voiceMidCall.ts userMaySee): Admin, the call's creator, or a staff
+// participant of the call. Unknown calls answer "none" (nothing about them is disclosed).
+export type DialerCallSummary = {
+  status: "pending" | "ready" | "none";
+  summary?: string;
+  nextSteps?: string[];
+  taskId?: string;
+  contactId?: string;
+  contactName?: string;
+};
+
+/** A recording that has not produced a summary this long after the call ended is not going to. */
+export const SUMMARY_GIVE_UP_MINUTES = 20;
+
+export const DIALER_SUMMARY_SQL = `
+  SELECT cf.id::text AS conference_id, cf.contact_id, cf.created_by_user_id, cf.status AS call_status,
+         cf.created_at, cf.ended_at,
+         t.status AS transcript_status, t.voice_intelligence_summary, t.suggested_tasks,
+         r.status AS recording_status,
+         NULLIF(TRIM(COALESCE(NULLIF(TRIM(c.name), ''), TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')))), '') AS contact_name,
+         EXISTS (SELECT 1 FROM conference_participants vp
+                  WHERE vp.conference_id = cf.id AND vp.kind = 'staff' AND vp.identity = $2) AS viewer_on_call,
+         (SELECT tk.id::text FROM tasks tk
+           WHERE tk.deleted_at IS NULL
+             AND (tk.source_ref_id = cf.id
+                  OR (tk.source = 'CALL_DISPOSITION' AND tk.source_ref_id IN (
+                        SELECT cl.id FROM call_logs cl WHERE cl.twilio_call_sid = $1)))
+           ORDER BY tk.created_at DESC LIMIT 1) AS task_id
+    FROM conferences cf
+    LEFT JOIN LATERAL (
+      SELECT ct.status, ct.voice_intelligence_summary, ct.suggested_tasks
+        FROM call_transcripts ct WHERE ct.conference_id = cf.id
+       ORDER BY ct.updated_at DESC LIMIT 1
+    ) t ON true
+    LEFT JOIN LATERAL (
+      SELECT cr.status FROM call_recordings cr WHERE cr.conference_id = cf.id
+       ORDER BY cr.updated_at DESC NULLS LAST LIMIT 1
+    ) r ON true
+    LEFT JOIN contacts c ON c.id::text = cf.contact_id
+   WHERE cf.id IN (SELECT p.conference_id FROM conference_participants p WHERE p.twilio_call_sid = $1)
+      OR cf.friendly_name = 'wb_' || $1
+   ORDER BY cf.created_at DESC
+   LIMIT 1`;
+
+/** Next steps: the extracted follow-up suggestions, else the summary's "Follow-ups:" line. */
+export function nextStepsFrom(summary: string, suggested: SuggestedTask[]): string[] {
+  if (suggested.length) return suggested.map((t) => t.title);
+  const m = /follow[- ]?ups?\s*:\s*([\s\S]*)$/i.exec(summary);
+  if (!m) return [];
+  return m[1]
+    .split(/\n|;/)
+    .map((s) => s.replace(/^[\s\-*•\d.)]+/, "").trim())
+    .filter((s) => s && !/^(none|n\/a|nothing)\.?$/i.test(s))
+    .slice(0, 5);
+}
+
+export async function dialerCallSummary(
+  callRef: string,
+  viewer: { userId: string; isAdmin: boolean },
+  query: Query = (sql, params) => pool.query(sql, params as any[]),
+  now: Date = new Date(),
+): Promise<{ access: "ok" | "forbidden"; body: DialerCallSummary }> {
+  const { rows } = await query(DIALER_SUMMARY_SQL, [callRef, viewer.userId]);
+  const row = rows[0];
+  if (!row) return { access: "ok", body: { status: "none" } };
+  const allowed = viewer.isAdmin || String(row.created_by_user_id ?? "") === viewer.userId || row.viewer_on_call === true;
+  if (!allowed) return { access: "forbidden", body: { status: "none" } };
+
+  const body: DialerCallSummary = { status: "pending" };
+  if (row.contact_id) body.contactId = String(row.contact_id);
+  if (row.contact_name) body.contactName = String(row.contact_name);
+  if (row.task_id) body.taskId = String(row.task_id);
+
+  const summary = String(row.voice_intelligence_summary ?? "").trim();
+  if (summary) {
+    body.status = "ready";
+    body.summary = summary;
+    body.nextSteps = nextStepsFrom(summary, parseSuggestedTasks(row.suggested_tasks ?? []));
+    return { access: "ok", body };
+  }
+  // No summary is coming: transcription failed, nothing was recorded, or it has simply been too long.
+  const endedAt = row.ended_at ? new Date(row.ended_at) : null;
+  const startedAt = row.created_at ? new Date(row.created_at) : null;
+  const ageMinutes = (d: Date | null) => (d ? (now.getTime() - d.getTime()) / 60000 : 0);
+  const stale = (endedAt ? ageMinutes(endedAt) : ageMinutes(startedAt) - 120) > SUMMARY_GIVE_UP_MINUTES;
+  if (row.transcript_status === "failed" || row.recording_status === "absent") body.status = "none";
+  else if (!row.recording_status && row.call_status === "ended" && ageMinutes(endedAt) > 2) body.status = "none";
+  else if (stale) body.status = "none";
+  return { access: "ok", body };
+}

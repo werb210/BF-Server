@@ -19,12 +19,25 @@ export const DEFAULT_STAFF_APNS_BUNDLE_ID = "com.borealfinancial.dialer";
 export const STAFF_ALERT_TITLE_MAX = 80;
 export const STAFF_ALERT_BODY_MAX = 120;
 
+// BF_SERVER_v821_DIALER - every staff alert is a client reaching out (a call, a voicemail, a message, a text, a
+// "talk to a person"), so it may break through a Work focus: interruption-level time-sensitive (the dialler has the
+// Time Sensitive Notifications entitlement). relevance-score (0-1) orders them in the notification summary.
+export const STAFF_ALERT_INTERRUPTION_LEVEL = "time-sensitive";
+export const STAFF_ALERT_RELEVANCE: Record<StaffAlertCategory, number> = {
+  HANDOFF: 1,
+  MISSED_CALL: 0.9,
+  VOICEMAIL: 0.8,
+  CLIENT_MESSAGE: 0.7,
+  SMS: 0.6,
+};
+
 /** Only these ids may reach the device; everything else the lock screen should not carry is dropped. */
 export type StaffAlertData = {
   contactId?: string | null;
   applicationId?: string | null;
   phone?: string | null;
   threadKind?: "sms" | "messages" | null;
+  voicemailId?: string | null; // BF_SERVER_v821_DIALER - lets the app open the voicemail
 };
 
 export type StaffAlertInput = {
@@ -91,6 +104,7 @@ export function buildStaffAlertPayload(input: Omit<StaffAlertInput, "userId">): 
   const applicationId = typeof data.applicationId === "string" && UUID.test(data.applicationId) ? data.applicationId : undefined;
   const phone = typeof data.phone === "string" && /^\+[1-9]\d{7,14}$/.test(data.phone) ? data.phone : undefined;
   const threadKind = data.threadKind === "sms" || data.threadKind === "messages" ? data.threadKind : undefined;
+  const voicemailId = typeof data.voicemailId === "string" && UUID.test(data.voicemailId) ? data.voicemailId : undefined;
   // Group a contact's alerts together (iOS stacks by thread-id), else by kind of event.
   const threadId = `${input.type}:${contactId ?? phone ?? "general"}`;
   return {
@@ -99,6 +113,9 @@ export function buildStaffAlertPayload(input: Omit<StaffAlertInput, "userId">): 
       sound: "default",
       category: input.category,
       "thread-id": threadId,
+      // BF_SERVER_v821_DIALER - breaks through a Work focus; ranked in the summary.
+      "interruption-level": STAFF_ALERT_INTERRUPTION_LEVEL,
+      "relevance-score": STAFF_ALERT_RELEVANCE[input.category] ?? 0.5,
     },
     schema: 1,
     type: input.type,
@@ -106,6 +123,7 @@ export function buildStaffAlertPayload(input: Omit<StaffAlertInput, "userId">): 
     ...(applicationId ? { applicationId } : {}),
     ...(phone ? { phone } : {}),
     ...(threadKind ? { threadKind } : {}),
+    ...(voicemailId ? { voicemailId } : {}),
   };
 }
 

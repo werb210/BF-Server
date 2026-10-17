@@ -4,7 +4,8 @@
 // conferenceFriendly we return.
 
 import { Router, urlencoded } from "express";
-import { auth } from "../middleware/auth.js";
+import { auth, requireAuthorization } from "../middleware/auth.js";
+import { ROLES } from "../auth/roles.js"; // BF_SERVER_v821_DIALER
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
 import { generateVoiceToken, parseVoiceTokenApp } from "../telephony/services/tokenService.js"; // BF_SERVER_VOICE_TOKEN_ROUTE_v1
 import { pool } from "../db.js";
@@ -584,6 +585,17 @@ router.post("/status", urlencoded({ extended: false }), twilioOrStaffAuth, (req:
   const callId = typeof rawCallId === "string" && rawCallId.trim() ? rawCallId.trim() : null;
   return res.status(200).json({ status: "ok", data: { received: true, callId, callStatus: status } });
 });
+
+// BF_SERVER_v821_DIALER - the caller card for the iPhone dialler's incoming-call / in-call screen.
+//   GET /api/voice/caller-card?phone=<E.164>  (staff; silo from X-Silo like every other route)
+//   -> { found, contactId?, name?, company?, stage?, applicationId?, lastNote? (<=140), lastContactAt?, tags? }
+router.get("/caller-card", auth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] }), safeHandler(async (req: any, res) => {
+  const { callerCardFor, toE164 } = await import("../voice/callerCard.js");
+  const raw = typeof req.query?.phone === "string" ? req.query.phone : "";
+  if (!toE164(raw)) return res.status(400).json({ error: { code: "invalid_phone", message: "phone must be an E.164 number, e.g. +14035550123" } });
+  const { getSilo } = await import("../middleware/silo.js");
+  return res.status(200).json(await callerCardFor(pool, raw, getSilo(res)));
+}));
 
 // v504b -- mid-call endpoints live on the same /voice mount
 router.use("/", voiceMidCallRoutes);

@@ -285,4 +285,27 @@ router.get(
   })
 );
 
+// BF_SERVER_v821_DIALER - the iPhone dialler / Watch post-call card: AI summary + next steps for one call.
+//   GET /api/calls/:callSid/summary -> { status: "pending"|"ready"|"none", summary?, nextSteps?, taskId?, contactId?, contactName? }
+// :callSid is a Twilio CallSid (any leg the app holds) or a Watch bridge id. Staff read only calls they are on
+// (creator or staff participant, as voiceMidCall.ts); Admin reads any. Unknown -> { status: "none" }.
+router.get(
+  "/:callSid/summary",
+  requireAuth,
+  requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  safeHandler(async (req: any, res: any) => {
+    const callSid = String(req.params.callSid ?? "").trim();
+    if (!/^CA[0-9a-f]{32}$/i.test(callSid) && !uuidSchema.safeParse(callSid).success) {
+      throw new AppError("validation_error", "Invalid callSid.", 400);
+    }
+    const userId = String(req.user?.userId ?? req.user?.id ?? req.user?.sub ?? "");
+    const { dialerCallSummary } = await import("../services/calls/autoCallSummary.js");
+    const result = await dialerCallSummary(callSid, { userId, isAdmin: req.user?.role === ROLES.ADMIN });
+    if (result.access === "forbidden") {
+      return res.status(403).json({ ok: false, error: "forbidden", message: "You can only read summaries of calls you were on." });
+    }
+    return res.status(200).json(result.body);
+  })
+);
+
 export default router;
