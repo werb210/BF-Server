@@ -123,9 +123,39 @@ router.post("/provider/:callId/accept", urlencoded({ extended: false }), twilioW
   const found = await pool.query(`SELECT destination FROM watch_call_bridges WHERE id=$1 AND status NOT IN ('ended','failed')`, [req.params.callId]);
   if (!found.rows[0]) return res.status(404).type("text/xml").send("<Response><Hangup/></Response>");
   await pool.query(`UPDATE watch_call_bridges SET status='bridging',version=version+1,updated_at=now() WHERE id=$1 AND status IN ('requesting','waitingForCallback','ringing')`, [req.params.callId]);
-  (response.dial() as any).number(found.rows[0].destination);
+  // BF_SERVER_v821_DIALER - the bridge was a bare <Dial><Number>: never recorded, so a Watch call never reached the AI
+  // summary. Record it like a conference call: a call record (wb_<bridge id>) with the staff leg under this cell
+  // call's CallSid, the notice to both sides (the client hears it on answer, before being connected), dual channel.
+  const destination = String(found.rows[0].destination);
+  const rec = await openBridgeRecord(req.params.callId, destination, String(req.body?.CallSid ?? "").trim() || null);
+  const { recordingDialAttrs, consentUrl, RECORDING_NOTICE } = await import("../voice/recordedDial.js");
+  if (rec) response.say({ voice: "Polly.Joanna" }, RECORDING_NOTICE);
+  const dial = response.dial({ ...recordingDialAttrs(rec) } as any) as any;
+  if (rec) dial.number({ url: consentUrl(), method: "POST" }, destination);
+  else dial.number(destination);
   return res.type("text/xml").send(response.toString());
 }));
+
+// BF_SERVER_v821_DIALER - the call record a bridge's recording is filed under. Null = not recorded (logged).
+async function openBridgeRecord(bridgeId: string, destination: string, cellCallSid: string | null): Promise<string | null> {
+  const { openCallRecord, bridgeRecordName } = await import("../voice/recordedDial.js");
+  let staffUserId: string | null = null;
+  let contactId: string | null = null;
+  let line = "BF";
+  try {
+    const r = await pool.query(`SELECT staff_user_id::text AS staff_user_id, contact_id::text AS contact_id, line FROM watch_call_bridges WHERE id=$1`, [bridgeId]);
+    staffUserId = r.rows[0]?.staff_user_id ?? null;
+    contactId = r.rows[0]?.contact_id ?? null;
+    line = r.rows[0]?.line || "BF";
+  } catch (err) {
+    console.warn("[watch_call] bridge record lookup failed", { message: err instanceof Error ? err.message : String(err) });
+  }
+  if (!contactId) contactId = (await contactForPhone(pool, destination))?.id ?? null;
+  return openCallRecord(pool, {
+    friendlyName: bridgeRecordName(bridgeId), direction: "outbound", silo: line, contactId, createdByUserId: staffUserId,
+    participants: [{ kind: "staff", identity: staffUserId, callSid: cellCallSid }, { kind: "pstn", phone: destination }],
+  });
+}
 
 // BF_SERVER_v820_WATCH_CALLS - what the screen names: the CRM contact, else the contact matching the number, else digits.
 async function destinationLabel(contactId: unknown, destination: string): Promise<string> {
@@ -154,6 +184,11 @@ router.post("/provider/:callId/status", urlencoded({ extended: false }), twilioW
          WHEN 'ringing' THEN 4 WHEN 'connected' THEN 5 ELSE 6 END
          <= CASE $2 WHEN 'requesting' THEN 1 WHEN 'waitingForCallback' THEN 2 WHEN 'bridging' THEN 3
          WHEN 'ringing' THEN 4 WHEN 'connected' THEN 5 ELSE 6 END`, [req.params.callId, next]);
+  // BF_SERVER_v821_DIALER - the bridge's call record (if it was recorded) ends with the bridge.
+  if (next === "ended" || next === "failed") {
+    const { closeCallRecord, bridgeRecordName } = await import("../voice/recordedDial.js");
+    await closeCallRecord(pool, bridgeRecordName(req.params.callId));
+  }
   return res.status(204).send();
 }));
 

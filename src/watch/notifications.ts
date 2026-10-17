@@ -17,6 +17,7 @@ export const configureWatchPushProvider = (provider: WatchPushProvider | null) =
 
 export async function sendWatchNotification(input: {
   staffUserId: string; category: WatchNotificationCategory; eventType: WatchEventType; title: string; body: string; resourceId?: string;
+  voicemailId?: string; // BF_SERVER_v821_DIALER - top-level, UUID only, so the Watch can open the voicemail
 }, dependencies: {
   query?: typeof pool.query;
   decrypt?: typeof decryptWatchPushToken;
@@ -25,6 +26,7 @@ export async function sendWatchNotification(input: {
   const query = dependencies.query ?? pool.query.bind(pool);
   const decrypt = dependencies.decrypt ?? decryptWatchPushToken;
   const opaqueId = input.resourceId && /^[A-Za-z0-9_-]{1,128}$/.test(input.resourceId) ? input.resourceId : undefined;
+  const voicemailId = input.voicemailId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.voicemailId) ? input.voicemailId : undefined;
   // Deliberately allowlist fields: arbitrary event/CRM/application data can never
   // flow into an APNs lock-screen payload.
   const payload = {
@@ -32,6 +34,7 @@ export async function sendWatchNotification(input: {
     schema: 1,
     type: input.eventType,
     ...(opaqueId ? { id: opaqueId } : {}),
+    ...(voicemailId ? { voicemailId } : {}),
   };
   // BF_SERVER_v819_PUSH - watch_push_registrations has no id column (its primary key is device_id, see
   // migrations/2026_09_02_v154_watch_backend.sql and 000000_baseline.sql). "SELECT p.id" failed with

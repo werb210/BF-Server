@@ -380,16 +380,22 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
       const { staffForDirectNumber } = await import("../voice/directLines.js");
       const owner = await staffForDirectNumber(dlPool, to);
       if (owner) {
-        const { getPublicBaseUrl: dlBase } = await import("../voice/twilioClient.js");
         const vdl = new VoiceResponse();
+        // BF_SERVER_v821_DIALER - outside the owner's call hours: "{Name} is away right now..." (press 1 = ring anyway).
+        const { awayStatus } = await import("../voice/callHours.js");
+        const away = await awayStatus(dlPool, owner.userId);
+        if (away.away) {
+          const { awayTwiml } = await import("../voice/staffRing.js");
+          awayTwiml(vdl, { name: owner.name.split(" ")[0] || owner.name, userId: owner.userId, urgentPassthrough: away.urgentPassthrough, ring: "direct" });
+          console.log(JSON.stringify({ event: "direct_line_away", callSid, to, staffUserId: owner.userId, urgentPassthrough: away.urgentPassthrough }));
+          return res.send(vdl.toString());
+        }
         // BF_SERVER_v820_WATCH_CALLS - an owner with the standalone Watch fallback on: the app rings for 15 s, then
         // direct-unavailable?cell=1 rings their verified cell with the press-1 screen (sequential, never parallel).
-        const { verifiedWatchCell, CLIENT_FIRST_TIMEOUT_SECONDS } = await import("../voice/watchCellFallback.js");
-        const watchCell = await verifiedWatchCell(dlPool, owner.userId);
-        const dlAction = `${dlBase()}/api/webhooks/twilio/reception/direct-unavailable?user=${encodeURIComponent(owner.userId)}${watchCell ? "&cell=1" : ""}`;
-        const dial = vdl.dial({ answerOnBridge: true, timeout: watchCell ? CLIENT_FIRST_TIMEOUT_SECONDS : 25, callerId: from, action: dlAction, method: "POST" } as any);
-        dial.client(owner.identity);
-        console.log(JSON.stringify({ event: "direct_line_call", callSid, to, staffUserId: owner.userId, cellFallback: Boolean(watchCell) }));
+        // BF_SERVER_v821_DIALER - plus the caller card on the <Client> and recording of the bridged call.
+        const { ringDirectLine } = await import("../voice/staffRing.js");
+        const rung = await ringDirectLine(vdl, dlPool, { owner, from, callSid });
+        console.log(JSON.stringify({ event: "direct_line_call", callSid, to, staffUserId: owner.userId, cellFallback: rung.watchCell, recorded: rung.recorded }));
         return res.send(vdl.toString());
       }
     } catch (err: any) {
@@ -530,8 +536,26 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
     return;
   }
   if ((looksLikePhone || outboundFlag) && to) {
-    const dial = vr.dial({ callerId: effectiveCallerId, answerOnBridge: true, timeout: 30 });
-    dial.number(to);
+    // BF_SERVER_v821_DIALER - a staff app call placed with a bare To (no conferenceFriendly) was a plain
+    // <Dial><Number>: never recorded, so never transcribed or summarised. Record it like a conference call: a call
+    // record row, the notice to both parties (the callee hears it on answer, before being connected), dual channel.
+    let rec: string | null = null;
+    if (isStaffSdkCall && callSid) {
+      const { openCallRecord, outboundRecordName } = await import("../voice/recordedDial.js");
+      const { contactForPhone } = await import("../voice/watchCellFallback.js");
+      const contact = await contactForPhone(pool, to);
+      rec = await openCallRecord(pool, {
+        friendlyName: outboundRecordName(callSid), direction: "outbound",
+        silo: String(params.silo ?? params.Silo ?? "").trim().toUpperCase() || "BF",
+        contactId: contact?.id ?? null, createdByUserId: sdkIdentity,
+        participants: [{ kind: "staff", identity: sdkIdentity, callSid }, { kind: "pstn", phone: to }],
+      });
+    }
+    const { RECORDING_NOTICE, consentUrl, recordingDialAttrs } = await import("../voice/recordedDial.js");
+    if (rec) vr.say({ voice: "Polly.Joanna" }, RECORDING_NOTICE);
+    const dial = vr.dial({ callerId: effectiveCallerId, answerOnBridge: true, timeout: 30, ...recordingDialAttrs(rec) } as any);
+    if (rec) dial.number({ url: consentUrl(), method: "POST" } as any, to);
+    else dial.number(to);
   } else if (rawFrom.startsWith("client:")) {
     // BF_SERVER_STAFF_LEG_NO_VOICEMAIL_v1 — a staff browser (SDK) leg that
     // lands here has no conference to join (it ended, or the callee never

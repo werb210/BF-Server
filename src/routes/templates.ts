@@ -40,6 +40,44 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   res.json({ items: rows });
 }));
 
+// BF_SERVER_v821_DIALER - quick replies for the iPhone dialler / Watch: GET / already returns templates AND snippets,
+// but every column (HTML bodies included) and no cap. This is the lightweight list:
+//   GET /api/templates/quick?channel=sms -> { items: [{ id, name, body, isSnippet }] }  (max 50, snippets first, then name)
+// body is the RAW text with merge fields ({{contact.first_name}}) unrendered: POST /api/communications/sms and
+// /api/communications/messages/send render them for the recipient on send.
+export const QUICK_REPLY_LIMIT = 50;
+router.get("/quick", safeHandler(async (req: any, res: any) => {
+  const silo = getSilo(res);
+  const userId = req.user?.id ?? req.user?.userId ?? null;
+  const channel = req.query.channel == null ? "sms" : String(req.query.channel).toLowerCase();
+  if (!CHANNELS.has(channel)) return res.status(400).json({ error: "invalid_channel" });
+  const { rows } = await pool.query(
+    `SELECT id::text AS id, name, COALESCE(NULLIF(body_text, ''), body_html, '') AS body, is_snippet
+       FROM message_templates
+      WHERE silo IN ('BF', $1)
+        AND (shared = true OR owner_user_id = $2)
+        AND channel = $3
+      ORDER BY is_snippet DESC, name ASC
+      LIMIT ${QUICK_REPLY_LIMIT}`,
+    [silo, userId, channel],
+  );
+  res.json({
+    items: rows.map((r: any) => ({ id: String(r.id), name: String(r.name ?? ""), body: htmlToText(String(r.body ?? "")), isSnippet: r.is_snippet === true })),
+  });
+}));
+
+/** Plain text for a template that only has an HTML body (merge fields are left untouched). */
+function htmlToText(body: string): string {
+  if (!/<[a-z][\s\S]*>/i.test(body)) return body;
+  return body
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 router.post("/", safeHandler(async (req: any, res: any) => {
   const silo = getSilo(res);
   const userId = req.user?.id ?? req.user?.userId ?? null;
