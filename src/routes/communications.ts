@@ -255,6 +255,10 @@ router.post(
 
     const smsBody = `Maya handoff (${surface}): ${summary ?? "visitor requested human"}. Session ${sessionId ?? "n/a"}.`;
     const fanout = await sendStaffNotification({ recipients: recipientsRaw, body: smsBody });
+    // BF_SERVER_v820_WATCH_CALLS - bell + iPhone dialler + Watch alert for "talk to a person". Detached, never throws.
+    void import("../services/notifications/staffAlertEvents.js")
+      .then((m) => m.alertMayaHandoff({ escalationId: id, contactId: resolvedContactId, summary, silo, phone: phoneRaw }))
+      .catch((err: any) => console.warn("[maya-handoff] staff alert failed", err?.message ?? String(err)));
 
     return res.status(200).json({ status: "ok", id, fanout });
   }),

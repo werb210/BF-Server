@@ -4,6 +4,8 @@ import { safeErr } from "../../lib/safeErr.js";
 import { sendSMS } from "../smsService.js";
 import { sendWatchNotification, type WatchEventType, type WatchNotificationCategory } from "../../watch/notifications.js";
 import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+// BF_SERVER_v820_WATCH_CALLS - lock-screen alerts on the staff iPhone dialler, next to browser push and the Watch.
+import { sendStaffAlert, type StaffAlertCategory, type StaffAlertData, type StaffAlertType } from "./staffAlerts.js";
 
 // BF_SERVER_BLOCK_1_24_NOTIFICATIONS_TITLE — fallback title when caller didn't pass one.
 function humanizeType(type: string): string {
@@ -42,6 +44,18 @@ export type NotifyAllStaffCtx = {
     title?: string;
     body?: string;
   };
+  // BF_SERVER_v820_WATCH_CALLS - also alert the iPhone dialler (APNs, staff_push_tokens). Title/body default to the
+  // notification's; they are clipped to 80/120 characters and only allowlisted ids travel with them.
+  staffAlert?: {
+    category: StaffAlertCategory;
+    type: StaffAlertType;
+    title?: string;
+    body?: string;
+    data?: StaffAlertData;
+  };
+  // BF_SERVER_v820_WATCH_CALLS - limit the recipients to these staff (e.g. a missed call to one person's direct
+  // line). Still only active Admin/Staff/Marketing accounts; the silo filter does not apply to a named person.
+  userIds?: string[];
 };
 
 export async function notifyAllStaff(ctx: NotifyAllStaffCtx): Promise<{
@@ -53,19 +67,35 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx, dependencies?: {
   pushToUser?: typeof pushToUser;
   sendSMS?: typeof sendSMS;
   sendWatchNotification?: typeof sendWatchNotification;
+  sendStaffAlert?: typeof sendStaffAlert;
 }): Promise<{ smsSent: number; notifsCreated: number; recipientCount: number }>;
 export async function notifyAllStaff(ctx: NotifyAllStaffCtx, dependencies: {
   pushToUser?: typeof pushToUser;
   sendSMS?: typeof sendSMS;
   sendWatchNotification?: typeof sendWatchNotification;
+  sendStaffAlert?: typeof sendStaffAlert;
 } = {}): Promise<{ smsSent: number; notifsCreated: number; recipientCount: number }> {
   const pushBrowser = dependencies.pushToUser ?? pushToUser;
   const sendText = dependencies.sendSMS ?? sendSMS;
   const sendWatch = dependencies.sendWatchNotification ?? sendWatchNotification;
+  const sendAlert = dependencies.sendStaffAlert ?? sendStaffAlert; // BF_SERVER_v820_WATCH_CALLS
+  const targetIds = Array.isArray(ctx.userIds) ? ctx.userIds.filter((id) => typeof id === "string" && id.trim()) : null;
   const silo = ctx.silo ?? "BF";
 
   // "All staff" per V1 spec: Admin + Staff + Marketing roles, BF silo, active.
-  const recipients = await ctx.pool
+  const recipients = targetIds
+    // BF_SERVER_v820_WATCH_CALLS - named recipients (an event that belongs to one person).
+    ? await ctx.pool
+      .query<{ id: string; phone_number: string | null; email: string | null }>(
+        `SELECT id::text AS id, phone_number, email
+           FROM users
+          WHERE active = true
+            AND role IN ('Admin', 'Staff', 'Marketing')
+            AND id::text = ANY($1::text[])`,
+        [targetIds],
+      )
+      .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/notifications/notifyAllStaff.ts:named", ({ rows: [] as Array<{ id: string; phone_number: string | null; email: string | null }> })))
+    : await ctx.pool
     .query<{ id: string; phone_number: string | null; email: string | null }>(
       // BF_SERVER_RESTORE_ADMIN_NOTIFY_v91
       // v60 and v80 both excluded these two ids on the belief that they were
@@ -145,6 +175,22 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx, dependencies: {
           // BF_SERVER_v819_PUSH - the bare event hid the cause for weeks (the registration lookup selected a column
           // that does not exist). Log the error text and code; sendWatchNotification never puts tokens in errors.
           console.warn(JSON.stringify({ event: "watch_push_failed", staffUserId: user.id, error: safeErr(err).slice(0, 300) }));
+        }
+      }
+
+      if (ctx.staffAlert) {
+        // BF_SERVER_v820_WATCH_CALLS - best-effort; sendStaffAlert logs its own per-device failures.
+        try {
+          await sendAlert({
+            userId: user.id,
+            category: ctx.staffAlert.category,
+            type: ctx.staffAlert.type,
+            title: ctx.staffAlert.title ?? ctx.title ?? humanizeType(ctx.notificationType),
+            body: ctx.staffAlert.body ?? ctx.body,
+            data: ctx.staffAlert.data,
+          });
+        } catch (err) {
+          console.warn(JSON.stringify({ event: "staff_push_failed", staffUserId: user.id, error: safeErr(err).slice(0, 300) }));
         }
       }
     }),

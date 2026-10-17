@@ -1330,6 +1330,12 @@ router.post(
       }).catch(() => undefined);
     } catch { /* helper missing in some envs */ }
 
+    // BF_SERVER_v820_WATCH_CALLS - bell + iPhone dialler + Watch alert (contact name + short preview). Detached and
+    // never throws, so the client's send is never slowed or failed by it.
+    void import("../../services/notifications/staffAlertEvents.js")
+      .then((m) => m.alertClientMessage({ messageId: id, applicationId, contactId: messageContactId, body, attachmentCount: attachments.length }))
+      .catch((err: any) => console.warn("[client/messages] staff alert failed", err?.message ?? String(err)));
+
     res.status(201).json({ status: "ok", data: { id } });
   })
 );
