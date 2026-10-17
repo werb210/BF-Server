@@ -62,6 +62,7 @@ import creditFinancialsRoutes from "./creditFinancials.js"; // BF_SERVER_BLOCK_v
 import brokerImportRoutes from "./brokerImports.js"; // BF_SERVER_BLOCK_v521_BROKER_IMPORT
 import templatesRoutes from "./templates.js"; // v693
 import staffRoutes from "./staff.js";
+import staffPushTokenRoutes from "./staffPushToken.js"; // BF_SERVER_v820_WATCH_CALLS
 import supportRoutes from "./support.js";
 import tasksRoutes from "./tasks.js";
 import serviceBridgeRoutes from "./serviceBridge.js"; // BF_SERVER_SERVICE_BRIDGE_v1
@@ -278,6 +279,8 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/reporting", router: reportingRoutes },
   { path: "/reports", router: reportsRoutes },
   { path: "/settings", router: settingsRoutes },
+  // BF_SERVER_v820_WATCH_CALLS - before "/staff": that router requires STAFF_OVERVIEW for everything under it.
+  { path: "/staff/push-token", router: staffPushTokenRoutes },
   { path: "/staff", router: staffRoutes },
   { path: "/support", router: supportRoutes },
   { path: "/tasks", router: tasksRoutes },
@@ -388,6 +391,8 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/webhooks/twilio/reception/intent", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/reception/unavailable", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/reception/fallback", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/reception/screen", roles: [] }, // BF_SERVER_v820_WATCH_CALLS
+  { method: "POST", path: "/api/webhooks/twilio/reception/screen-result", roles: [] }, // BF_SERVER_v820_WATCH_CALLS
   { method: "POST", path: "/api/webhooks/twilio/conference/join", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/conference/status", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/call/status", roles: [] },
@@ -465,6 +470,8 @@ export const ROUTES: ApiRoute[] = [
   { method: "PATCH", path: "/api/lender/products/:id", roles: [ROLES.LENDER] },
   { method: "POST", path: "/api/lenders/:lenderId/users", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/staff/overview", roles: [ROLES.ADMIN, ROLES.STAFF] },
+  { method: "POST", path: "/api/staff/push-token", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING] }, // BF_SERVER_v820_WATCH_CALLS
+  { method: "DELETE", path: "/api/staff/push-token", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING] }, // BF_SERVER_v820_WATCH_CALLS
   { method: "GET", path: "/api/dashboard", roles: [ROLES.ADMIN, ROLES.STAFF] },
   { method: "GET", path: "/api/widget/summary", roles: [ROLES.ADMIN, ROLES.STAFF] }, // BF_SERVER_WIDGET_SUMMARY_v41
   { method: "POST", path: "/api/referrals", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.REFERRER] },

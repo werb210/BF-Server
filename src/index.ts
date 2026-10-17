@@ -41,6 +41,7 @@ import { initTeamWebSocket } from "./ws/teamSocket.js"; // BF_SERVER_BLOCK_v750_
 import { logGraphConfigStatus } from "./services/email/graphSendService.js"; // BF_SERVER_v72_BLOCK_1_5
 import { initializeClientPushProvider } from "./services/clientPushService.js";
 import { initializeWatchPushProvider } from "./watch/initWatchPush.js";
+import { initializeStaffPushProvider } from "./services/notifications/staffAlerts.js"; // BF_SERVER_v820_WATCH_CALLS
 import { assertJwtSecretAtStartup } from "./startup/jwtSecretPolicy.js"; // BF_SERVER_v789_JWT_SECRET_POLICY
 import { warnIfOtpHashSaltDerived } from "./modules/auth/otpHashSalt.js"; // BF_SERVER_v789_OTP_HASH_SALT
 
@@ -442,6 +443,12 @@ export async function start(): Promise<void> {
       initializeWatchPushProvider();
     } catch (err) {
       console.error(JSON.stringify({ event: "watch_push_init_failed", error: String(err) }));
+    }
+    // BF_SERVER_v820_WATCH_CALLS - staff dialler alerts; optional, never stops the server.
+    try {
+      initializeStaffPushProvider();
+    } catch (err) {
+      console.error(JSON.stringify({ event: "staff_push_init_failed", error: String(err) }));
     }
   });
   initTeamWebSocket(httpServer); // BF_SERVER_BLOCK_v750_TEAM_CHAT

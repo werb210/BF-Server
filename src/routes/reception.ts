@@ -16,6 +16,12 @@ import { ringableStaffSql } from "../modules/presence/presenceService.js"; // BF
 import { config } from "../config/index.js";
 import { sharedOpenAI } from "../lib/sharedClients.js";
 import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_SNAT_REUSE_v784
+// BF_SERVER_v820_WATCH_CALLS - app first, then the verified cell (screened), for staff who opted in.
+import {
+  CELL_RING_TIMEOUT_SECONDS, CLIENT_FIRST_TIMEOUT_SECONDS, SCREEN_GATHER_TIMEOUT_SECONDS,
+  callerHungUp, callerLabel, dialWasNotAnswered, screenUrl, verifiedWatchCell,
+} from "../voice/watchCellFallback.js";
+import { alertMissedCall } from "../services/notifications/staffAlertEvents.js";
 
 const router = Router();
 
@@ -222,6 +228,21 @@ function offerMessageOrVoicemail(v: any, openerKey: string, openerText: string, 
   v.record({ maxLength: 120, playBeep: true, action });
 }
 
+// BF_SERVER_v820_WATCH_CALLS - the cell leg: a screened <Number> so the person presses 1 to take the call. Their
+// cell's own voicemail cannot press 1, so an unanswered cell hangs up the leg and the caller reaches Boreal voicemail.
+function dialCell(v: any, cell: string, action: string, callerId: string | undefined, from: string): void {
+  const dial = v.dial({ answerOnBridge: true, timeout: CELL_RING_TIMEOUT_SECONDS, action, method: "POST", callerId });
+  dial.number({ url: screenUrl(from), method: "POST" }, cell);
+}
+
+function callerFrom(req: Request): string { return String((req.body?.From ?? "")).trim(); }
+
+// BF_SERVER_v820_WATCH_CALLS - a caller that ends at voicemail (or hangs up) without anyone answering is a missed
+// call: alert the person it was for (everyone for the shared engagement line). Never delays the TwiML.
+function missedCall(req: Request, staffUserId: string | null): void {
+  void alertMissedCall({ from: callerFrom(req) || null, staffUserId, silo: "BF", callSid: String(req.body?.CallSid ?? "") || null });
+}
+
 router.get("/voice", safeHandler(async (req: Request, res: Response) => {
   const key = String(req.query.key || "");
   const text = PHRASES[key];
@@ -326,18 +347,21 @@ router.post("/intent", twilioWebhookValidation, safeHandler(async (req: Request,
     const others = await readyStaffIdentities(andrew.userId);
     const identities = Array.from(new Set([...(todd.clientReady && todd.identity ? [todd.identity] : []), ...others])).slice(0, 10);
     const callerId = String((req.body?.From ?? "")).trim() || config.twilio.callerId || config.twilio.from || config.twilio.number || undefined;
+    // BF_SERVER_v820_WATCH_CALLS - with Todd's Watch fallback on, the apps ring for 15 s, then his cell (screened).
+    const toddCell = todd.standaloneWatch && todd.cell ? todd.cell : null;
     if (identities.length > 0) {
       emit(v, "connect_engagement", PHRASES.connect_engagement);
-      const dial = v.dial({ answerOnBridge: true, timeout: 25, action: `${BASE}/unavailable?target=engagement`, method: "POST", callerId });
+      const action = `${BASE}/unavailable?target=engagement${toddCell ? "&cell=1" : ""}`;
+      const dial = v.dial({ answerOnBridge: true, timeout: toddCell ? CLIENT_FIRST_TIMEOUT_SECONDS : 25, action, method: "POST", callerId });
       for (const identity of identities) dial.client(identity);
       return send(res, v);
     }
-    if (todd.standaloneWatch && todd.cell) {
+    if (toddCell) {
       emit(v, "connect_engagement", PHRASES.connect_engagement);
-      const dial = v.dial({ answerOnBridge: true, timeout: 25, action: `${BASE}/unavailable?target=engagement`, method: "POST", callerId });
-      dial.number(todd.cell);
+      dialCell(v, toddCell, `${BASE}/unavailable?target=engagement`, callerId, callerFrom(req));
       return send(res, v);
     }
+    missedCall(req, null);
     offerMessageOrVoicemail(v, "engagement_unavail", PHRASES.engagement_unavail, null);
     return send(res, v);
   }
@@ -349,23 +373,24 @@ router.post("/intent", twilioWebhookValidation, safeHandler(async (req: Request,
   // BF_SERVER_PHONE_HOTFIX_v1 - forward the ORIGINAL caller's number so staff see who
   // is calling (Twilio allows the inbound caller's number as callerId when forwarding).
   const callerId = String((req.body?.From ?? "")).trim() || config.twilio.callerId || config.twilio.from || config.twilio.number || undefined;
-  // Never parallel-dial cellular: a reachable iPhone/portal remains authoritative.
-  // The explicitly enabled standalone Watch fallback below is sequential only.
+  // Never parallel-dial cellular: a reachable iPhone/portal rings first and on its own.
+  // BF_SERVER_v820_WATCH_CALLS - the explicitly enabled standalone Watch fallback (server-verified cell + an
+  // opted-in Watch) is SEQUENTIAL: the app rings for 15 s, then /unavailable?cell=1 rings the cell, screened.
+  const watchCell = t.standaloneWatch && t.cell ? t.cell : null;
   if (t.clientReady && t.identity) {
     emit(v, `connect_${lkey(target)}`, `One moment, connecting you to ${name}.`);
-    const dial = v.dial({ answerOnBridge: true, timeout: 25, action: `${BASE}/unavailable?target=${target}`, method: "POST", callerId });
+    const action = `${BASE}/unavailable?target=${target}${watchCell ? "&cell=1" : ""}`;
+    const dial = v.dial({ answerOnBridge: true, timeout: watchCell ? CLIENT_FIRST_TIMEOUT_SECONDS : 25, action, method: "POST", callerId });
     dial.client(t.identity);
     return send(res, v);
   }
-  // The established, reachable Boreal VoIP client always wins. Cellular
-  // forwarding is only a fallback when an owned Watch explicitly opted in and
-  // the staff callback number is server-verified.
-  if (t.standaloneWatch && t.cell) {
+  // No reachable app: the opted-in cell (screened) is the only leg.
+  if (watchCell) {
     emit(v, `connect_${lkey(target)}`, `One moment, connecting you to ${name}.`);
-    const dial = v.dial({ answerOnBridge: true, timeout: 25, action: `${BASE}/unavailable?target=${target}`, method: "POST", callerId });
-    dial.number(t.cell);
+    dialCell(v, watchCell, `${BASE}/unavailable?target=${target}`, callerId, callerFrom(req));
     return send(res, v);
   }
+  missedCall(req, t.userId);
   const reasonKey = t.onCall ? `reason_${lkey(target)}_oncall` : `reason_${lkey(target)}_unavail`;
   const reasonText = `Sorry, ${name} ${t.onCall ? "is on another call" : "isn't available right now"}.`;
   offerMessageOrVoicemail(v, reasonKey, reasonText, t.userId);
@@ -373,18 +398,61 @@ router.post("/intent", twilioWebhookValidation, safeHandler(async (req: Request,
 }));
 
 router.post("/unavailable", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
+  // BF_SERVER_v820_WATCH_CALLS - cell=1: the app leg was the first of two. Unanswered (no-answer / busy / failed)
+  // and the caller still on the line -> ring the opted-in cell, screened. The cell leg's own action has no cell=1,
+  // so this happens at most once per call.
+  const tryCell = String(req.query.cell ?? "") === "1";
+  const unanswered = dialWasNotAnswered(req.body?.DialCallStatus);
+  const callerId = callerFrom(req) || config.twilio.callerId || config.twilio.from || config.twilio.number || undefined;
   if (String(req.query.target || "") === "engagement") {
     const v = await newVR();
-    if (String(req.body?.DialCallStatus ?? "") === "completed") { v.hangup(); return send(res, v); }
+    if (!unanswered) { v.hangup(); return send(res, v); }
+    if (tryCell && !callerHungUp(req.body)) {
+      const todd = await resolveTarget("sales");
+      if (todd.standaloneWatch && todd.cell) {
+        dialCell(v, todd.cell, `${BASE}/unavailable?target=engagement`, callerId, callerFrom(req));
+        return send(res, v);
+      }
+    }
+    missedCall(req, null);
     offerMessageOrVoicemail(v, "engagement_noanswer", PHRASES.engagement_noanswer, null);
     return send(res, v);
   }
   const target = (String(req.query.target || "") === "underwriting" ? "underwriting" : "sales") as Target;
-  const dialStatus = String(req.body?.DialCallStatus ?? "");
   const v = await newVR();
-  if (dialStatus === "completed") { v.hangup(); return send(res, v); }
+  if (!unanswered) { v.hangup(); return send(res, v); }
   const tt = await resolveTarget(target);
+  if (tryCell && !callerHungUp(req.body) && tt.standaloneWatch && tt.cell) {
+    dialCell(v, tt.cell, `${BASE}/unavailable?target=${target}`, callerId, callerFrom(req));
+    return send(res, v);
+  }
+  missedCall(req, tt.userId);
   offerMessageOrVoicemail(v, `noanswer_${lkey(target)}`, `Sorry, ${displayFor(target)} didn't pick up.`, tt.userId);
+  return send(res, v);
+}));
+
+// BF_SERVER_v820_WATCH_CALLS - call screening on the staff cell leg (Twilio <Number url>). Runs on the cell once it
+// answers, before the caller is bridged: "Boreal call from {name}. Press 1 to accept." 1 connects; anything else,
+// or silence (the cell's voicemail), hangs up this leg so the parent <Dial> reports no-answer and the caller goes on
+// to Boreal voicemail. The caller number comes from the server-built URL (covered by the Twilio signature).
+router.post("/screen", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
+  const v = await newVR();
+  const from = String(req.query.from ?? "").trim() || callerFrom(req);
+  const label = await callerLabel(pool, from);
+  const g = v.gather({ input: "dtmf", numDigits: 1, timeout: SCREEN_GATHER_TIMEOUT_SECONDS, action: `${BASE}/screen-result`, method: "POST" });
+  g.say({ voice: VOICE }, `Boreal call from ${label}. Press 1 to accept.`);
+  v.hangup();
+  return send(res, v);
+}));
+
+router.post("/screen-result", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
+  const v = await newVR();
+  if (digit(req) === "1") {
+    // Ending the screening TwiML without a hangup bridges this leg to the caller.
+    v.say({ voice: VOICE }, "Connecting.");
+    return send(res, v);
+  }
+  v.hangup();
   return send(res, v);
 }));
 
@@ -401,8 +469,18 @@ router.post("/fallback", twilioWebhookValidation, safeHandler(async (req: Reques
 // BF_SERVER_DIRECT_LINES_v688 - nobody answered a direct line: that person's own voicemail.
 router.post("/direct-unavailable", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
   const v = await newVR();
-  if (String(req.body?.DialCallStatus ?? "") === "completed") return send(res, v);
+  if (!dialWasNotAnswered(req.body?.DialCallStatus)) return send(res, v); // BF_SERVER_v820_WATCH_CALLS
   const userId = String(req.query.user ?? "").trim() || null;
+  // BF_SERVER_v820_WATCH_CALLS - the app rang for 15 s; now the owner's opted-in cell, screened (once).
+  if (userId && String(req.query.cell ?? "") === "1" && !callerHungUp(req.body)) {
+    const cell = await verifiedWatchCell(pool, userId);
+    if (cell) {
+      const from = callerFrom(req);
+      dialCell(v, cell, `${BASE}/direct-unavailable?user=${encodeURIComponent(userId)}`, from || undefined, from);
+      return send(res, v);
+    }
+  }
+  missedCall(req, userId);
   let name = "The person you called";
   if (userId) {
     try {

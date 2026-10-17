@@ -6,6 +6,8 @@ import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.j
 import { getWatchCallProvider } from "./provider.js";
 import { allowedLine, watchAuth, watchError } from "./security.js";
 import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
+import { getBaseUrl } from "../voice/twilioClient.js"; // BF_SERVER_v820_WATCH_CALLS
+import { SCREEN_GATHER_TIMEOUT_SECONDS, contactForPhone, spokenNumber } from "../voice/watchCellFallback.js"; // BF_SERVER_v820_WATCH_CALLS
 
 const router = Router();
 const normalizeE164 = (raw: unknown): string | null => {
@@ -90,14 +92,56 @@ router.delete("/calls/:callId", watchAuth, safeHandler(async (req: any, res) => 
 
 // Twilio-authenticated endpoints. Destination is loaded from the database and is
 // never accepted from provider/client request parameters.
+// BF_SERVER_v820_WATCH_CALLS - the staff cell answers first. If it went to the cell's voicemail, bridging straight
+// away connected the client to the staff member's voicemail greeting. The cell leg is now screened: "Boreal call to
+// {contact}. Press 1 to connect." Only a 1 bridges to the destination; anything else / silence hangs up and the
+// bridge is marked failed (callback_not_accepted).
 router.post("/provider/:callId/twiml", urlencoded({ extended: false }), twilioWebhookValidation, safeHandler(async (req, res) => {
+  const found = await pool.query(`SELECT destination,contact_id FROM watch_call_bridges WHERE id=$1 AND status NOT IN ('ended','failed')`, [req.params.callId]);
+  if (!found.rows[0]) return res.status(404).type("text/xml").send("<Response><Hangup/></Response>");
+  const label = await destinationLabel(found.rows[0].contact_id, found.rows[0].destination);
+  const response: any = new twilio.twiml.VoiceResponse(); // BF_SERVER_v820_WATCH_CALLS - local twilio typings omit gather/hangup
+  const gather = response.gather({
+    input: ["dtmf"], numDigits: 1, timeout: SCREEN_GATHER_TIMEOUT_SECONDS, actionOnEmptyResult: true,
+    action: `${getBaseUrl()}/api/telephony/watch/provider/${encodeURIComponent(req.params.callId)}/accept`, method: "POST",
+  } as any);
+  gather.say({ voice: "Polly.Joanna" }, `Boreal call to ${label}. Press 1 to connect.`);
+  response.hangup();
+  return res.type("text/xml").send(response.toString());
+}));
+
+router.post("/provider/:callId/accept", urlencoded({ extended: false }), twilioWebhookValidation, safeHandler(async (req, res) => {
+  const response: any = new twilio.twiml.VoiceResponse(); // BF_SERVER_v820_WATCH_CALLS - local twilio typings omit gather/hangup
+  const digits = String(req.body?.Digits ?? "").trim();
+  if (digits !== "1") {
+    await pool.query(
+      `UPDATE watch_call_bridges SET status='failed',error_code='callback_not_accepted',version=version+1,updated_at=now(),ended_at=now()
+        WHERE id=$1 AND status NOT IN ('ended','failed')`, [req.params.callId]);
+    response.hangup();
+    return res.type("text/xml").send(response.toString());
+  }
   const found = await pool.query(`SELECT destination FROM watch_call_bridges WHERE id=$1 AND status NOT IN ('ended','failed')`, [req.params.callId]);
   if (!found.rows[0]) return res.status(404).type("text/xml").send("<Response><Hangup/></Response>");
-  await pool.query(`UPDATE watch_call_bridges SET status='bridging',version=version+1,updated_at=now() WHERE id=$1 AND status IN ('requesting','waitingForCallback')`, [req.params.callId]);
-  const response = new twilio.twiml.VoiceResponse();
+  await pool.query(`UPDATE watch_call_bridges SET status='bridging',version=version+1,updated_at=now() WHERE id=$1 AND status IN ('requesting','waitingForCallback','ringing')`, [req.params.callId]);
   (response.dial() as any).number(found.rows[0].destination);
   return res.type("text/xml").send(response.toString());
 }));
+
+// BF_SERVER_v820_WATCH_CALLS - what the screen names: the CRM contact, else the contact matching the number, else digits.
+async function destinationLabel(contactId: unknown, destination: string): Promise<string> {
+  if (typeof contactId === "string" && contactId) {
+    try {
+      const r = await pool.query(
+        `SELECT NULLIF(TRIM(COALESCE(NULLIF(TRIM(name), ''), TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')))), '') AS name
+           FROM contacts WHERE id::text=$1 LIMIT 1`, [contactId]);
+      if (r.rows[0]?.name) return String(r.rows[0].name);
+    } catch (err) {
+      console.warn("[watch_call] contact name lookup failed", { message: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  const byPhone = await contactForPhone(pool, destination);
+  return byPhone?.name || spokenNumber(destination);
+}
 
 router.post("/provider/:callId/status", urlencoded({ extended: false }), twilioWebhookValidation, safeHandler(async (req, res) => {
   const statusMap: Record<string, string> = { initiated: "waitingForCallback", ringing: "ringing", "in-progress": "connected", completed: "ended", busy: "failed", failed: "failed", "no-answer": "failed", canceled: "ended" };

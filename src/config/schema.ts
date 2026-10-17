@@ -291,6 +291,11 @@ export const EnvSchema = z
     VOICEMAIL_BLOB_CONTAINER: z.string().optional(), // Azure Blob name/container; read in modules/voice/voicemailEnrich.service.ts
     VOICEMAIL_NOTIFY_NUMBER: z.string().optional(), // phone number(s), E.164; read in modules/voice/voicemailEnrich.service.ts
     VOICE_INTELLIGENCE_SERVICE_SID: z.string().optional(), // identifier; read in routes/recordingWebhooks.ts
+    // BF_SERVER_v820_WATCH_CALLS - staff iPhone dialler alert push; each falls back to the WATCH_APNS_* value.
+    STAFF_APNS_BUNDLE_ID: z.string().optional(), // identifier (default com.borealfinancial.dialer); read in services/notifications/staffAlerts.ts
+    STAFF_APNS_TEAM_ID: z.string().optional(), // identifier; read in services/notifications/staffAlerts.ts
+    STAFF_APNS_KEY_ID: z.string().optional(), // identifier; read in services/notifications/staffAlerts.ts
+    STAFF_APNS_PRIVATE_KEY: z.string().optional(), // credential (secret); read in services/notifications/staffAlerts.ts
     WATCH_APNS_BUNDLE_ID: z.string().optional(), // identifier; read in watch/initWatchPush.ts
     WATCH_APNS_KEY_ID: z.string().optional(), // identifier; read in services/clientPushService.ts
     WATCH_APNS_PRIVATE_KEY: z.string().optional(), // credential (secret); read in services/clientPushService.ts

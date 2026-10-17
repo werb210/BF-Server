@@ -272,4 +272,12 @@ export async function enrichAndDistributeVoicemail(params: {
   } catch {
     // Voicemail enrichment is best effort; do not fail the Twilio callback.
   }
+
+  // BF_SERVER_v820_WATCH_CALLS - bell + iPhone dialler + Watch alert for the voicemail (to the person it was left
+  // for, else all staff). alertVoicemail never throws.
+  const { alertVoicemail } = await import("../../services/notifications/staffAlertEvents.js");
+  await alertVoicemail({
+    from: fromNumber || null, callerLabel: clientCaller?.label ?? null, contactId, staffUserId,
+    transcript, silo, recordingSid,
+  });
 }

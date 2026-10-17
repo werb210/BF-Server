@@ -382,9 +382,14 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
       if (owner) {
         const { getPublicBaseUrl: dlBase } = await import("../voice/twilioClient.js");
         const vdl = new VoiceResponse();
-        const dial = vdl.dial({ answerOnBridge: true, timeout: 25, callerId: from, action: `${dlBase()}/api/webhooks/twilio/reception/direct-unavailable?user=${encodeURIComponent(owner.userId)}`, method: "POST" } as any);
+        // BF_SERVER_v820_WATCH_CALLS - an owner with the standalone Watch fallback on: the app rings for 15 s, then
+        // direct-unavailable?cell=1 rings their verified cell with the press-1 screen (sequential, never parallel).
+        const { verifiedWatchCell, CLIENT_FIRST_TIMEOUT_SECONDS } = await import("../voice/watchCellFallback.js");
+        const watchCell = await verifiedWatchCell(dlPool, owner.userId);
+        const dlAction = `${dlBase()}/api/webhooks/twilio/reception/direct-unavailable?user=${encodeURIComponent(owner.userId)}${watchCell ? "&cell=1" : ""}`;
+        const dial = vdl.dial({ answerOnBridge: true, timeout: watchCell ? CLIENT_FIRST_TIMEOUT_SECONDS : 25, callerId: from, action: dlAction, method: "POST" } as any);
         dial.client(owner.identity);
-        console.log(JSON.stringify({ event: "direct_line_call", callSid, to, staffUserId: owner.userId }));
+        console.log(JSON.stringify({ event: "direct_line_call", callSid, to, staffUserId: owner.userId, cellFallback: Boolean(watchCell) }));
         return res.send(vdl.toString());
       }
     } catch (err: any) {
@@ -810,7 +815,10 @@ async function persistInboundSms(req: any): Promise<void> {
     const senderLabel = contact?.name && contact.name.trim() ? contact.name.trim() : fromNum;
     const notifTitle = contact?.name && contact.name.trim() ? `New SMS from ${contact.name.trim()}` : "New SMS";
     await notifyAllStaff({ pool, silo: resolvedSilo, skipSms: true, notificationType: "sms_inbound", title: notifTitle, body: `${senderLabel}: ${preview}`, contextUrl: "/communications",
-      watch: { category: "MESSAGE", eventType: "client_message", title: "New client message", body: "New client message" } });
+      watch: { category: "MESSAGE", eventType: "client_message", title: "New client message", body: "New client message" },
+      // BF_SERVER_v820_WATCH_CALLS - lock-screen alert on the iPhone dialler, like iMessage: sender + short preview.
+      staffAlert: { category: "SMS", type: "sms", title: senderLabel, body: Body ? preview : "Sent a picture",
+        data: { contactId: inboundContactId, phone: /^\+[1-9]\d{7,14}$/.test(fromNum) ? fromNum : null, threadKind: "sms" } } });
   } catch (e) { console.error("[notify] sms_inbound failed", String(e).slice(0, 150)); }
   console.log(JSON.stringify({
     event: "sms_inbound_persisted",
