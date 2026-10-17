@@ -42,4 +42,15 @@ describe("notifyAllStaff Watch opt-in", () => {
       .resolves.toEqual({ smsSent: 1, notifsCreated: 2, recipientCount: 2 });
     expect(db.query.mock.calls.filter(([sql]: [string]) => sql.includes("INSERT INTO notifications"))).toHaveLength(2);
   });
+
+  // BF_SERVER_v819_PUSH - the failure log carries the cause.
+  it("logs the Watch failure reason", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    watchSend.mockRejectedValue(Object.assign(new Error("column p.id does not exist"), { code: "42703" }));
+    await notifyAllStaff({ pool: pool(), notificationType: "task", body: "Task", watch: { category: "TASK", eventType: "task" } }, deps() as any);
+    const logged = warn.mock.calls.map(([line]) => String(line)).filter((line) => line.includes("watch_push_failed"));
+    expect(logged).toHaveLength(2);
+    expect(JSON.parse(logged[0])).toMatchObject({ event: "watch_push_failed", error: "column p.id does not exist (42703)" });
+    warn.mockRestore();
+  });
 });

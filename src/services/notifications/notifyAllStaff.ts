@@ -141,8 +141,10 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx, dependencies: {
             body: ctx.watch.body ?? ctx.body,
             resourceId: ctx.watch.resourceId,
           });
-        } catch {
-          console.warn(JSON.stringify({ event: "watch_push_failed", staffUserId: user.id }));
+        } catch (err) {
+          // BF_SERVER_v819_PUSH - the bare event hid the cause for weeks (the registration lookup selected a column
+          // that does not exist). Log the error text and code; sendWatchNotification never puts tokens in errors.
+          console.warn(JSON.stringify({ event: "watch_push_failed", staffUserId: user.id, error: safeErr(err).slice(0, 300) }));
         }
       }
     }),

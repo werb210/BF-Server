@@ -63,8 +63,9 @@ export const REPORTS: ReportDef[] = [
   { key: "ads_dropoff", title: "Where applications stop", silo: "BF", group: "marketing", size: "full", source: "portal", description: "The step unfinished applications stopped at, and why." },
   { key: "ads_visitors", title: "Website visitors", silo: "BF", group: "marketing", size: "full", source: "portal", description: "Who came, from where, and what they did." },
   { key: "bi_dashboard", title: "Insurance pipeline", silo: "BI", group: "operations", size: "full", source: "portal", description: "Boreal Insurance open pipeline and what needs attention." },
-  { key: "ads_story", title: "Ads: the story", silo: "BF", group: "marketing", size: "full", source: "marketing", description: "Ad spend to applications, funded deals and return." },
-  { key: "ads_dropoff", title: "Where applications stop", silo: "BF", group: "marketing", size: "half", source: "marketing", description: "The step unfinished applications stopped at." },
+  // BF_SERVER_v819_MOBILE_REPORT - the client app usage report (Marketing > Mobile apps) as a Dashboard card;
+  // the duplicate ads_story / ads_dropoff entries that listed both reports twice are removed.
+  { key: "mobile_apps", title: "Mobile apps", silo: "BF", group: "marketing", size: "full", source: "portal", description: "Client app use: active users, app vs web, devices, notifications and quick sign-in." },
 ];
 
 export function normalizeRole(role: unknown): "Admin" | "Marketing" | "Staff" {

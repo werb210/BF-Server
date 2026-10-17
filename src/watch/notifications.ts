@@ -33,19 +33,38 @@ export async function sendWatchNotification(input: {
     type: input.eventType,
     ...(opaqueId ? { id: opaqueId } : {}),
   };
+  // BF_SERVER_v819_PUSH - watch_push_registrations has no id column (its primary key is device_id, see
+  // migrations/2026_09_02_v154_watch_backend.sql and 000000_baseline.sql). "SELECT p.id" failed with
+  // 'column p.id does not exist' on every call, so not one Watch push was ever sent: notifyAllStaff caught the
+  // throw and logged a bare watch_push_failed. The registration is identified by its device_id.
   const registrations = await query(
-    `SELECT p.id,p.device_id,p.token_ciphertext,p.environment FROM watch_push_registrations p JOIN watch_devices d ON d.id=p.device_id
+    `SELECT p.device_id AS id,p.device_id,p.token_ciphertext,p.environment FROM watch_push_registrations p JOIN watch_devices d ON d.id=p.device_id
       WHERE d.staff_user_id=$1 AND d.revoked_at IS NULL AND p.push_type='standard'`, [input.staffUserId]);
   let sent = 0;
   for (const row of registrations.rows) {
     try {
-      await pushProvider.send({ token: decrypt(row.token_ciphertext), environment: row.environment }, payload);
+      const token = decrypt(row.token_ciphertext);
+      try {
+        await pushProvider.send({ token, environment: row.environment }, payload);
+      } catch (error) {
+        // BF_SERVER_v819_PUSH - Apple answers BadDeviceToken when the token belongs to the other APNs host
+        // (Xcode debug build = sandbox, TestFlight/App Store = production). Try the other host once before the
+        // registration is treated as dead, and remember the host that worked.
+        if ((error as { reason?: unknown })?.reason !== "BadDeviceToken") throw error;
+        const other = row.environment === "production" ? "sandbox" : "production";
+        await pushProvider.send({ token, environment: other }, payload);
+        await query("UPDATE watch_push_registrations SET environment=$2,updated_at=now() WHERE device_id=$1", [row.device_id, other])
+          .catch((updateError: unknown) => console.warn(JSON.stringify({
+            event: "watch_push_environment_update_failed", registrationId: row.id,
+            error: String((updateError as Error)?.message ?? updateError).slice(0, 200),
+          })));
+      }
       sent += 1;
     } catch (error) {
       const failure = error as { statusCode?: unknown; reason?: unknown; invalidRegistration?: unknown };
       if (failure.invalidRegistration === true) {
         try {
-          await query("DELETE FROM watch_push_registrations WHERE id=$1", [row.id]);
+          await query("DELETE FROM watch_push_registrations WHERE device_id=$1", [row.id]);
         } catch {
           console.warn(JSON.stringify({ event: "watch_push_registration_cleanup_failed", registrationId: row.id }));
         }
@@ -55,6 +74,8 @@ export async function sendWatchNotification(input: {
         environment: row.environment,
         ...(typeof failure.statusCode === "number" ? { statusCode: failure.statusCode } : {}),
         ...(typeof failure.reason === "string" ? { reason: failure.reason } : {}),
+        // BF_SERVER_v819_PUSH - timeouts/connection errors/decrypt failures carry no status; say what happened.
+        ...(typeof failure.statusCode !== "number" ? { error: String((error as Error)?.message ?? error).slice(0, 200) } : {}),
       }));
     }
   }
