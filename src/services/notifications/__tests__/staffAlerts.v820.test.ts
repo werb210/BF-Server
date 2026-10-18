@@ -104,7 +104,7 @@ describe("sendStaffAlert", () => {
     tokens([{ id: "t1", token: TOKEN_A, environment: "production" }, { id: "t2", token: TOKEN_B, environment: "sandbox" }]);
     expect(await sendStaffAlert(input)).toBe(2);
     expect(send.mock.calls.map((c: any[]) => [c[0].token, c[0].environment])).toEqual([[TOKEN_A, "production"], [TOKEN_B, "sandbox"]]);
-    expect(callsMatching(h.query, /FROM staff_push_tokens/)[0]![1]).toEqual([STAFF_USER_ID]);
+    expect(callsMatching(h.query, /FROM staff_push_tokens/)[0]![1]).toEqual([STAFF_USER_ID, ["dialer-ios", "portal-ios"]]); // v823
   });
 
   it("BadDeviceToken tries the other host once and remembers it", async () => {
@@ -157,7 +157,8 @@ describe("notifyAllStaff fans the alert out to the iPhone dialler", () => {
     await notifyAllStaff({ pool: db(), skipSms: true, notificationType: "sms_inbound", title: "New SMS from Jane", body: "Jane: hi",
       staffAlert: { category: "SMS", type: "sms", title: "Jane", body: "hi", data: { contactId: CONTACT, threadKind: "sms" } } }, d as any);
     expect(d.sendStaffAlert).toHaveBeenCalledTimes(2);
-    expect(d.sendStaffAlert).toHaveBeenCalledWith({ userId: "u1", category: "SMS", type: "sms", title: "Jane", body: "hi", data: { contactId: CONTACT, threadKind: "sms" } });
+    expect(d.sendStaffAlert).toHaveBeenCalledWith({ userId: "u1", category: "SMS", type: "sms", title: "Jane", body: "hi",
+      data: { contactId: CONTACT, threadKind: "sms", url: null } }); // v823: the iPad's tap target (no contextUrl here)
   });
 
   it("does not alert the dialler without ctx.staffAlert, and a failure never breaks the fan-out", async () => {

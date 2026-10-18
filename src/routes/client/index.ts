@@ -331,6 +331,68 @@ router.get(
   })
 );
 
+// BF_SERVER_v823_LIVE_ACTIVITY - the client app asks for its lock-screen status (iPhone Live Activity token, or the
+// Android status notification). Only the signed-in owner of the file; the current stage is recorded so the first
+// push is the next change, not a repeat.
+router.post(
+  "/application-status/watch",
+  safeHandler(async (req: any, res: any) => {
+    const { validWatch, upsertWatch, statusContent } = await import("../../services/clientStatus/applicationStatusLive.js");
+    const body = req.body ?? {};
+    const input = {
+      applicationId: typeof body.applicationId === "string" ? body.applicationId.trim() : "",
+      platform: body.platform,
+      // The same id /api/push/register-token stores the phone's push token under (token id, else sub).
+      userId: await (async () => {
+        const { principalFromRequest } = await import("../../auth/principal.js");
+        const claims = (principalFromRequest(req)?.claims ?? {}) as Record<string, unknown>;
+        const id = claims.id ?? claims.sub ?? req.user?.id ?? req.user?.userId;
+        return id == null || id === "" ? null : String(id);
+      })(),
+      activityToken: typeof body.activityToken === "string" ? body.activityToken.trim() : null,
+      startToken: typeof body.startToken === "string" ? body.startToken.trim() : null,
+      environment: body.environment === "sandbox" ? "sandbox" as const : "production" as const,
+    };
+    if (!validWatch(input)) {
+      res.status(400).json({ error: "invalid_watch" });
+      return;
+    }
+    const { callerOwnsApplication } = await import("../../auth/clientApplicationOwnership.js");
+    if (!(await callerOwnsApplication(req, input.applicationId))) {
+      res.status(404).json({ found: false });
+      return;
+    }
+    const current = await dbQuery(`select pipeline_state from applications where id::text = ($1)::text limit 1`, [input.applicationId]);
+    if (!current.rows[0]) {
+      res.status(404).json({ found: false });
+      return;
+    }
+    await upsertWatch(input, statusContent(current.rows[0].pipeline_state));
+    res.status(200).json({ ok: true });
+  })
+);
+
+router.delete(
+  "/application-status/watch",
+  safeHandler(async (req: any, res: any) => {
+    const body = req.body ?? {};
+    const applicationId = typeof body.applicationId === "string" ? body.applicationId.trim() : "";
+    const platform = body.platform === "android" ? "android" : body.platform === "ios" ? "ios" : null;
+    if (!applicationId || !platform) {
+      res.status(400).json({ error: "invalid_watch" });
+      return;
+    }
+    const { callerOwnsApplication } = await import("../../auth/clientApplicationOwnership.js");
+    if (!(await callerOwnsApplication(req, applicationId))) {
+      res.status(404).json({ found: false });
+      return;
+    }
+    const { endWatch } = await import("../../services/clientStatus/applicationStatusLive.js");
+    await endWatch(applicationId, platform);
+    res.status(200).json({ ok: true });
+  })
+);
+
 // BF_SERVER_v802_CLIENT_ADVISOR - the client app's Home shows who is looking after the file:
 // the application's owner, else the contact's owner, when that person is active staff. Its own
 // route (read once per application) because the photo can be a large data URL and the stage

@@ -68,9 +68,9 @@ Configure these **manual deployment settings** in the production Azure App Servi
 WATCH_APNS_TEAM_ID=<Apple Team ID>
 WATCH_APNS_KEY_ID=<APNs Key ID>
 WATCH_APNS_PRIVATE_KEY=<contents of the Apple APNs signing key>
-WATCH_APNS_BUNDLE_ID=financial.boreal.dialer.watchkitapp
+WATCH_APNS_BUNDLE_ID=com.borealfinancial.dialer.watchkitapp
 ```
 
-`WATCH_APNS_PRIVATE_KEY` must be stored as an Azure App Service secret/application setting. Both literal newlines and Azure-style escaped `\n` newlines are supported. Do not commit an Apple `.p8` file or paste a real signing key into source code, documentation, logs, or health endpoints. The expected production APNs topic is `financial.boreal.dialer.watchkitapp`, while the environment variable remains authoritative so deployments can be validated and configured explicitly.
+`WATCH_APNS_PRIVATE_KEY` must be stored as an Azure App Service secret/application setting. Both literal newlines and Azure-style escaped `\n` newlines are supported. Do not commit an Apple `.p8` file or paste a real signing key into source code, documentation, logs, or health endpoints. The expected production APNs topic is `com.borealfinancial.dialer.watchkitapp` (BF_SERVER_v823_PUSH: the Watch app moved to the company team in v815), while the environment variable remains authoritative so deployments can be validated and configured explicitly.
 
 If all four settings are absent, Watch delivery is disabled with a `watch_apns_not_configured` startup warning. A partial production configuration is fatal and reports only the names of missing settings.

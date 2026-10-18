@@ -8,13 +8,18 @@ import { pool } from "../../db.js";
 import { AppleWatchApnsProvider } from "../../watch/apnsProvider.js";
 import type { WatchPushProvider } from "../../watch/notifications.js";
 
-export const STAFF_ALERT_CATEGORIES = ["MISSED_CALL", "VOICEMAIL", "CLIENT_MESSAGE", "SMS", "HANDOFF"] as const;
+// BF_SERVER_v823_PUSH - TASK / task_due: task reminders and the "due today" digest reach the phone and iPad too.
+export const STAFF_ALERT_CATEGORIES = ["MISSED_CALL", "VOICEMAIL", "CLIENT_MESSAGE", "SMS", "HANDOFF", "TASK"] as const;
 export type StaffAlertCategory = typeof STAFF_ALERT_CATEGORIES[number];
-export const STAFF_ALERT_TYPES = ["missed_call", "voicemail", "client_message", "sms", "maya_handoff"] as const;
+export const STAFF_ALERT_TYPES = ["missed_call", "voicemail", "client_message", "sms", "maya_handoff", "task_due"] as const;
 export type StaffAlertType = typeof STAFF_ALERT_TYPES[number];
 
-export const STAFF_PUSH_APPS = ["dialer-ios"] as const;
+// BF_SERVER_v823_PUSH - the iPad portal app (com.borealfinancial.portal) registers its ordinary APNs token as
+// "portal-ios" and gets the same alerts as the iPhone dialler; before this only incoming calls (VoIP) reached it.
+export const STAFF_PUSH_APPS = ["dialer-ios", "portal-ios"] as const;
+export type StaffPushApp = typeof STAFF_PUSH_APPS[number];
 export const DEFAULT_STAFF_APNS_BUNDLE_ID = "com.borealfinancial.dialer";
+export const DEFAULT_PORTAL_APNS_BUNDLE_ID = "com.borealfinancial.portal";
 
 export const STAFF_ALERT_TITLE_MAX = 80;
 export const STAFF_ALERT_BODY_MAX = 120;
@@ -29,6 +34,7 @@ export const STAFF_ALERT_RELEVANCE: Record<StaffAlertCategory, number> = {
   VOICEMAIL: 0.8,
   CLIENT_MESSAGE: 0.7,
   SMS: 0.6,
+  TASK: 0.4,
 };
 
 /** Only these ids may reach the device; everything else the lock screen should not carry is dropped. */
@@ -39,6 +45,7 @@ export type StaffAlertData = {
   threadKind?: "sms" | "messages" | null;
   voicemailId?: string | null; // BF_SERVER_v821_DIALER - lets the app open the voicemail
   senderName?: string | null; // BF_SERVER_v822_CARPLAY - who wrote a text/message, for Siri and CarPlay
+  url?: string | null; // BF_SERVER_v823_PUSH - the portal page a tap on the iPad opens (e.g. /communications)
 };
 
 // BF_SERVER_v822_CARPLAY - texts and client messages become iOS "communication notifications": mutable-content lets
@@ -59,6 +66,7 @@ export type StaffAlertInput = {
 type Q = { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[]; rowCount?: number | null }> };
 
 let provider: WatchPushProvider | null = null;
+let portalProvider: WatchPushProvider | null = null; // BF_SERVER_v823_PUSH
 
 export function staffApnsCredentials(env: NodeJS.ProcessEnv = process.env): {
   teamId?: string; keyId?: string; privateKey?: string; bundleId: string;
@@ -82,10 +90,14 @@ export function initializeStaffPushProvider(env: NodeJS.ProcessEnv = process.env
   }
   try {
     provider = new AppleWatchApnsProvider({ teamId, keyId, privateKey, bundleId });
+    // BF_SERVER_v823_PUSH - same team key, the portal's bundle id as the topic.
+    const portalBundleId = env.PORTAL_APNS_BUNDLE_ID?.trim() || DEFAULT_PORTAL_APNS_BUNDLE_ID;
+    portalProvider = new AppleWatchApnsProvider({ teamId, keyId, privateKey, bundleId: portalBundleId });
   } catch (error) {
     // Push is optional: a malformed key disables staff alerts loudly, it never stops the server.
     console.error(JSON.stringify({ event: "staff_apns_misconfigured", error: String((error as Error)?.message ?? error) }));
     provider = null;
+    portalProvider = null;
     return false;
   }
   console.log(JSON.stringify({ event: "staff_apns_initialized", bundleId, teamId, keyId }));
@@ -95,7 +107,17 @@ export function initializeStaffPushProvider(env: NodeJS.ProcessEnv = process.env
 export function isStaffPushConfigured(): boolean { return provider !== null; }
 
 /** Test seam. */
-export function __setStaffPushProvider(p: WatchPushProvider | null): void { provider = p; }
+export function __setStaffPushProvider(p: WatchPushProvider | null, portal: WatchPushProvider | null = p): void {
+  provider = p;
+  portalProvider = portal;
+}
+
+/** BF_SERVER_v823_PUSH - only an in-portal path ("/communications", "/crm/contacts/<id>") travels to the iPad. */
+export function portalAlertUrl(raw: unknown): string | undefined {
+  const s = typeof raw === "string" ? raw.trim() : "";
+  if (!s.startsWith("/") || s.startsWith("//") || s.length > 300 || /[\s\\]/.test(s) || s.includes("..")) return undefined;
+  return s;
+}
 
 function clip(value: unknown, max: number): string {
   const s = String(value ?? "").replace(/\s+/g, " ").trim();
@@ -123,7 +145,8 @@ export function buildStaffAlertPayload(input: Omit<StaffAlertInput, "userId">): 
       category: input.category,
       "thread-id": threadId,
       // BF_SERVER_v821_DIALER - breaks through a Work focus; ranked in the summary.
-      "interruption-level": STAFF_ALERT_INTERRUPTION_LEVEL,
+      // BF_SERVER_v823_PUSH - a task reminder is the staff member's own to-do, not a client reaching out.
+      "interruption-level": input.category === "TASK" ? "active" : STAFF_ALERT_INTERRUPTION_LEVEL,
       "relevance-score": STAFF_ALERT_RELEVANCE[input.category] ?? 0.5,
       ...(isMessage ? { "mutable-content": 1 } : {}), // BF_SERVER_v822_CARPLAY
     },
@@ -140,17 +163,20 @@ export function buildStaffAlertPayload(input: Omit<StaffAlertInput, "userId">): 
 
 /** Sends one alert to every registered dialler of the staff member. Returns how many devices accepted it. */
 export async function sendStaffAlert(input: StaffAlertInput, dependencies: { query?: Q["query"] } = {}): Promise<number> {
-  if (!provider) return 0;
+  if (!provider && !portalProvider) return 0;
   if (!STAFF_ALERT_CATEGORIES.includes(input.category)) return 0;
   const query = dependencies.query ?? pool.query.bind(pool);
-  const payload = buildStaffAlertPayload(input);
-  let rows: Array<{ id: string; token: string; environment: string }> = [];
+  const dialerPayload = buildStaffAlertPayload(input);
+  // BF_SERVER_v823_PUSH - the iPad portal routes a tap by url (a portal path).
+  const portalUrl = portalAlertUrl(input.data?.url);
+  const portalPayload = portalUrl ? { ...dialerPayload, url: portalUrl } : dialerPayload;
+  let rows: Array<{ id: string; token: string; environment: string; app?: string }> = [];
   try {
     rows = (await query(
-      `SELECT id::text AS id, token, environment FROM staff_push_tokens
-        WHERE user_id::text = $1 AND app = 'dialer-ios'
+      `SELECT id::text AS id, token, environment, app FROM staff_push_tokens
+        WHERE user_id::text = $1 AND app = ANY($2::text[])
         ORDER BY updated_at DESC LIMIT 10`,
-      [input.userId],
+      [input.userId, [...STAFF_PUSH_APPS]],
     )).rows as typeof rows;
   } catch (err) {
     console.warn(JSON.stringify({ event: "staff_push_lookup_failed", userId: input.userId, error: String((err as Error)?.message ?? err).slice(0, 200) }));
@@ -159,15 +185,19 @@ export async function sendStaffAlert(input: StaffAlertInput, dependencies: { que
   let sent = 0;
   for (const row of rows) {
     const environment = row.environment === "sandbox" ? "sandbox" : "production";
+    const isPortal = row.app === "portal-ios";
+    const sender = isPortal ? portalProvider : provider;
+    const payload = isPortal ? portalPayload : dialerPayload;
+    if (!sender) continue;
     try {
       try {
-        await provider.send({ token: row.token, environment }, payload);
+        await sender.send({ token: row.token, environment }, payload);
       } catch (error) {
         // Xcode debug builds hold sandbox tokens, TestFlight/App Store production ones; Apple answers
         // BadDeviceToken from the wrong host. Try the other host once and remember the one that worked.
         if ((error as { reason?: unknown })?.reason !== "BadDeviceToken") throw error;
         const other = environment === "production" ? "sandbox" : "production";
-        await provider.send({ token: row.token, environment: other }, payload);
+        await sender.send({ token: row.token, environment: other }, payload);
         await query(`UPDATE staff_push_tokens SET environment=$2, last_error=NULL, updated_at=now() WHERE id::text=$1`, [row.id, other])
           .catch((e: unknown) => console.warn(JSON.stringify({ event: "staff_push_environment_update_failed", tokenId: row.id, error: String((e as Error)?.message ?? e).slice(0, 200) })));
       }
