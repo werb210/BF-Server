@@ -412,6 +412,11 @@ export async function start(): Promise<void> {
     await workerStagger();
     try { const w = startLenderBounceWorker(pool); workerStops.push(w.stop); console.log("[startup] lender-bounce worker started"); }
     catch (err) { console.error("[startup] lender-bounce worker failed to start:", err); }
+    // BF_SERVER_v823_LIVE_ACTIVITY - the client app's lock-screen application status.
+    const { startClientStatusWorker } = await import("./workers/clientStatusWorker.js");
+    await workerStagger();
+    try { const w = startClientStatusWorker(pool); workerStops.push(w.stop); console.log("[startup] client-status worker started"); }
+    catch (err) { console.error("[startup] client-status worker failed to start:", err); }
 
     // BF_SERVER_BLOCK_v665 — graceful shutdown. On container recycle the workers'
     // poll loops must stop BEFORE the pool tears down, otherwise each tick queries

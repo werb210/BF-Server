@@ -13,16 +13,37 @@ import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
 const TICK_MS = 5 * 60 * 1000; // every 5 minutes
 
+// BF_SERVER_v823_PUSH - reminders and the morning digest were written to the bell only (raw SQL past the helper
+// that pushes), so no phone or iPad heard about them. Each new row now also goes to the staff member's iPhone dialler
+// and iPad portal (staff alert, category TASK). Best-effort: a push failure never stops the worker.
+type NewNotice = { user_id: string; body: string | null };
+async function pushTaskNotices(rows: NewNotice[] | undefined, title: string): Promise<void> {
+  if (!rows || rows.length === 0) return;
+  try {
+    const { sendStaffAlert } = await import("../services/notifications/staffAlerts.js");
+    for (const row of rows.slice(0, 200)) {
+      if (!row?.user_id) continue;
+      await sendStaffAlert({ userId: String(row.user_id), category: "TASK", type: "task_due", title,
+        body: String(row.body ?? "").replace(/^Task reminder: /, ""), data: { url: "/tasks" } })
+        .catch((e: unknown) => console.warn("[tasks-worker] push", e instanceof Error ? e.message : e));
+    }
+  } catch (e) {
+    console.warn("[tasks-worker] push", e instanceof Error ? e.message : e);
+  }
+}
+
 async function runReminders(pool: Pool): Promise<void> {
-  await pool.query(
+  const inserted = await pool.query<NewNotice>(
     `INSERT INTO notifications (user_id, type, ref_table, ref_id, body, context_url)
      SELECT t.assignee_user_id, 'task_reminder', 'tasks', t.id::text,
             'Task reminder: ' || t.title, '/tasks'
        FROM tasks t
       WHERE t.reminder_at IS NOT NULL AND t.reminder_at <= now()
         AND t.reminder_sent_at IS NULL AND t.deleted_at IS NULL
-        AND t.status <> 'COMPLETED' AND t.assignee_user_id IS NOT NULL`
+        AND t.status <> 'COMPLETED' AND t.assignee_user_id IS NOT NULL
+     RETURNING user_id, body`
   );
+  await pushTaskNotices(inserted?.rows, "Task reminder");
   await pool.query(
     `UPDATE tasks SET reminder_sent_at = now()
       WHERE reminder_at IS NOT NULL AND reminder_at <= now()
@@ -80,7 +101,7 @@ async function runDigest(pool: Pool): Promise<void> {
       GROUP BY t.assignee_user_id
      ON CONFLICT (user_id, digest_date) DO NOTHING`
   );
-  await pool.query(
+  const digest = await pool.query<NewNotice>(
     `INSERT INTO notifications (user_id, type, ref_table, ref_id, body, context_url)
      SELECT dl.user_id, 'task_digest', 'tasks', NULL,
             'You have ' || cnt.n || ' task' || CASE WHEN cnt.n = 1 THEN '' ELSE 's' END || ' due today.',
@@ -91,8 +112,10 @@ async function runDigest(pool: Pool): Promise<void> {
           WHERE t.assignee_user_id = dl.user_id AND t.deleted_at IS NULL
             AND t.status <> 'COMPLETED' AND t.due_at::date = current_date
        ) cnt ON true
-      WHERE dl.digest_date = current_date AND dl.notified_at IS NULL AND cnt.n > 0`
+      WHERE dl.digest_date = current_date AND dl.notified_at IS NULL AND cnt.n > 0
+     RETURNING user_id, body`
   );
+  await pushTaskNotices(digest?.rows, "Due today");
   await pool.query(
     `UPDATE task_digest_log SET notified_at = now()
       WHERE digest_date = current_date AND notified_at IS NULL`

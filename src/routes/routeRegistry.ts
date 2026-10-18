@@ -498,6 +498,8 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/public/readiness", roles: [] },
   { method: "POST", path: "/api/crm/readiness", roles: [] },
   { method: "GET", path: "/api/client/application-stage", roles: [] },
+  { method: "POST", path: "/api/client/application-status/watch", roles: [] }, // BF_SERVER_v823_LIVE_ACTIVITY
+  { method: "DELETE", path: "/api/client/application-status/watch", roles: [] },
   { method: "POST", path: "/api/client/profile", roles: [] }, // BF_SERVER_v807_CLIENT_PROFILE
   { method: "GET", path: "/api/client/sms-updates", roles: [] }, // BF_SERVER_v809_SMS_UPDATES_CONSENT
   { method: "GET", path: "/api/shared/f/:token", roles: [] }, // BF_SERVER_v810_LIBRARY_PLUS

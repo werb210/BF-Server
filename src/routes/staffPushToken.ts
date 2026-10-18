@@ -35,7 +35,7 @@ router.post("/", safeHandler(async (req: any, res: any) => {
     return res.status(400).json({ error: { code: "invalid_environment", message: "environment must be production or sandbox" } });
   const app = req.body?.app === undefined ? "dialer-ios" : req.body.app;
   if (!(STAFF_PUSH_APPS as readonly string[]).includes(app))
-    return res.status(400).json({ error: { code: "invalid_app", message: "app must be dialer-ios" } });
+    return res.status(400).json({ error: { code: "invalid_app", message: "app must be dialer-ios or portal-ios" } }); // BF_SERVER_v823_PUSH
   const { rows } = await pool.query(
     `INSERT INTO staff_push_tokens (user_id, token, environment, app, created_at, updated_at, last_error)
      VALUES ($1::uuid, $2, $3, $4, now(), now(), NULL)

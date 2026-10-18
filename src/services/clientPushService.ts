@@ -64,6 +64,9 @@ export function isClientPushConfigured(): boolean { return configured; }
 
 export function isAnyClientPushConfigured(): boolean { return configured || isFcmConfigured(); }
 
+/** BF_SERVER_v823_LIVE_ACTIVITY - the client app's APNs sender, for Live Activity updates. Null when not configured. */
+export function clientApnsProvider(): AppleWatchApnsProvider | null { return provider; }
+
 /** Test seam. */
 export function __setClientPushProvider(p: AppleWatchApnsProvider | null): void {
   provider = p; configured = p !== null;

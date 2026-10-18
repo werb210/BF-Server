@@ -189,7 +189,8 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx, dependencies: {
             type: ctx.staffAlert.type,
             title: ctx.staffAlert.title ?? ctx.title ?? humanizeType(ctx.notificationType),
             body: ctx.staffAlert.body ?? ctx.body,
-            data: ctx.staffAlert.data,
+            // BF_SERVER_v823_PUSH - the iPad portal opens the bell's page on tap.
+            data: { ...(ctx.staffAlert.data ?? {}), url: ctx.staffAlert.data?.url ?? ctx.contextUrl ?? null },
           });
         } catch (err) {
           console.warn(JSON.stringify({ event: "staff_push_failed", staffUserId: user.id, error: safeErr(err).slice(0, 300) }));

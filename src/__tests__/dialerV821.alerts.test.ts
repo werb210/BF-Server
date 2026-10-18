@@ -17,7 +17,8 @@ beforeEach(() => { h.query.mockReset(); h.query.mockImplementation(answerBySql([
 afterEach(() => { vi.doUnmock("../services/notifications/notifyAllStaff.js"); vi.resetModules(); configureWatchPushProvider(null); vi.restoreAllMocks(); });
 
 describe("Focus: staff alerts are time-sensitive with a relevance score", () => {
-  it.each(STAFF_ALERT_CATEGORIES.map((c) => [c]))("%s", (category) => {
+  // BF_SERVER_v823_PUSH - TASK (the staff member's own reminder) is "active", not time-sensitive; see below.
+  it.each(STAFF_ALERT_CATEGORIES.filter((c) => c !== "TASK").map((c) => [c]))("%s", (category) => {
     const payload = buildStaffAlertPayload({ title: "T", body: "B", category, type: "missed_call" }) as any;
     expect(payload.aps["interruption-level"]).toBe("time-sensitive");
     const score = payload.aps["relevance-score"];
@@ -26,8 +27,14 @@ describe("Focus: staff alerts are time-sensitive with a relevance score", () => 
     expect(score).toBeLessThanOrEqual(1);
   });
 
-  it("covers MISSED_CALL, VOICEMAIL, CLIENT_MESSAGE, SMS and HANDOFF", () => {
-    expect([...STAFF_ALERT_CATEGORIES].sort()).toEqual(["CLIENT_MESSAGE", "HANDOFF", "MISSED_CALL", "SMS", "VOICEMAIL"]);
+  it("covers MISSED_CALL, VOICEMAIL, CLIENT_MESSAGE, SMS and HANDOFF (and TASK, v823)", () => {
+    expect([...STAFF_ALERT_CATEGORIES].sort()).toEqual(["CLIENT_MESSAGE", "HANDOFF", "MISSED_CALL", "SMS", "TASK", "VOICEMAIL"]);
+  });
+
+  it("a task reminder does not break through Focus", () => {
+    const payload = buildStaffAlertPayload({ title: "Task reminder", body: "Call Jane", category: "TASK", type: "task_due" }) as any;
+    expect(payload.aps["interruption-level"]).toBe("active");
+    expect(payload.aps["relevance-score"]).toBe(0.4);
   });
 });
 

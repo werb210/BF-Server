@@ -236,14 +236,18 @@ export class AppleWatchApnsProvider implements WatchPushProvider {
     return value;
   }
 
-  async send(registration: { token: string; environment: WatchApnsEnvironment }, payload: Record<string, unknown>): Promise<void> {
+  // BF_SERVER_v823_LIVE_ACTIVITY - options let the client app's Live Activity pushes use push type "liveactivity" and
+  // the "<bundle>.push-type.liveactivity" topic; every existing caller keeps the alert defaults.
+  async send(registration: { token: string; environment: WatchApnsEnvironment }, payload: Record<string, unknown>,
+    options: { pushType?: "alert" | "liveactivity"; priority?: "5" | "10" } = {}): Promise<void> {
+    const pushType = options.pushType ?? "alert";
     const response = await this.transport.send(HOSTS[registration.environment], {
       ":method": "POST",
       ":path": `/3/device/${registration.token}`,
       authorization: `bearer ${this.providerToken()}`,
-      "apns-topic": this.config.bundleId,
-      "apns-push-type": "alert",
-      "apns-priority": "10",
+      "apns-topic": pushType === "liveactivity" ? `${this.config.bundleId}.push-type.liveactivity` : this.config.bundleId,
+      "apns-push-type": pushType,
+      "apns-priority": options.priority ?? "10",
       "apns-expiration": "0",
       "content-type": "application/json",
     }, JSON.stringify(payload));
