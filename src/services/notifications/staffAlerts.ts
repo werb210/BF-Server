@@ -38,7 +38,14 @@ export type StaffAlertData = {
   phone?: string | null;
   threadKind?: "sms" | "messages" | null;
   voicemailId?: string | null; // BF_SERVER_v821_DIALER - lets the app open the voicemail
+  senderName?: string | null; // BF_SERVER_v822_CARPLAY - who wrote a text/message, for Siri and CarPlay
 };
+
+// BF_SERVER_v822_CARPLAY - texts and client messages become iOS "communication notifications": mutable-content lets
+// the dialler's notification service extension attach the sender (name + number), so Siri can read them aloud in
+// CarPlay / on AirPods and offer "Reply". Calls, voicemails and handoffs stay ordinary alerts.
+export const STAFF_ALERT_MESSAGE_CATEGORIES: readonly StaffAlertCategory[] = ["SMS", "CLIENT_MESSAGE"];
+export const STAFF_ALERT_SENDER_MAX = 60;
 
 export type StaffAlertInput = {
   userId: string;
@@ -105,6 +112,8 @@ export function buildStaffAlertPayload(input: Omit<StaffAlertInput, "userId">): 
   const phone = typeof data.phone === "string" && /^\+[1-9]\d{7,14}$/.test(data.phone) ? data.phone : undefined;
   const threadKind = data.threadKind === "sms" || data.threadKind === "messages" ? data.threadKind : undefined;
   const voicemailId = typeof data.voicemailId === "string" && UUID.test(data.voicemailId) ? data.voicemailId : undefined;
+  const isMessage = STAFF_ALERT_MESSAGE_CATEGORIES.includes(input.category); // BF_SERVER_v822_CARPLAY
+  const senderName = isMessage ? clip(data.senderName, STAFF_ALERT_SENDER_MAX) || undefined : undefined;
   // Group a contact's alerts together (iOS stacks by thread-id), else by kind of event.
   const threadId = `${input.type}:${contactId ?? phone ?? "general"}`;
   return {
@@ -116,6 +125,7 @@ export function buildStaffAlertPayload(input: Omit<StaffAlertInput, "userId">): 
       // BF_SERVER_v821_DIALER - breaks through a Work focus; ranked in the summary.
       "interruption-level": STAFF_ALERT_INTERRUPTION_LEVEL,
       "relevance-score": STAFF_ALERT_RELEVANCE[input.category] ?? 0.5,
+      ...(isMessage ? { "mutable-content": 1 } : {}), // BF_SERVER_v822_CARPLAY
     },
     schema: 1,
     type: input.type,
@@ -124,6 +134,7 @@ export function buildStaffAlertPayload(input: Omit<StaffAlertInput, "userId">): 
     ...(phone ? { phone } : {}),
     ...(threadKind ? { threadKind } : {}),
     ...(voicemailId ? { voicemailId } : {}),
+    ...(senderName ? { senderName } : {}), // BF_SERVER_v822_CARPLAY
   };
 }
 
