@@ -125,7 +125,7 @@ export async function alertClientMessage(input: {
       contextUrl: contactId ? `/communications?contact=${contactId}` : "/communications",
       watch: { category: "MESSAGE", eventType: "client_message", title: `Message from ${who}`, body: text },
       staffAlert: { category: "CLIENT_MESSAGE", type: "client_message", title: `Message from ${who}`, body: text,
-        data: { contactId, applicationId: input.applicationId, threadKind: "messages" } },
+        data: { contactId, applicationId: input.applicationId, threadKind: "messages", senderName: name || null } }, // BF_SERVER_v822_CARPLAY
     });
   });
 }

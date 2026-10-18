@@ -75,7 +75,7 @@ describe("staff alert APNs payload", () => {
     });
     expect(payload).toEqual({
       aps: { alert: { title: "Message from Jane Client", body: `${"x".repeat(119)}…` }, sound: "default", category: "CLIENT_MESSAGE", "thread-id": `client_message:${CONTACT}`,
-        "interruption-level": "time-sensitive", "relevance-score": 0.7 }, // BF_SERVER_v821_DIALER
+        "interruption-level": "time-sensitive", "relevance-score": 0.7, "mutable-content": 1 }, // BF_SERVER_v821_DIALER, v822 CarPlay
       schema: 1, type: "client_message", contactId: CONTACT, applicationId: APP_ID, phone: "+14035550144", threadKind: "messages",
     });
   });
@@ -215,7 +215,7 @@ describe("the five alert events", () => {
     await alertMayaHandoff({ escalationId: "e1", contactId: CONTACT, summary: "Wants to talk about rates", phone: "403-555-0144" });
     const [msg, handoff] = h.notify.mock.calls.map((c) => c[0]);
     expect(msg.staffAlert).toEqual({ category: "CLIENT_MESSAGE", type: "client_message", title: "Message from Jane Client", body: "Here are my statements",
-      data: { contactId: CONTACT, applicationId: APP_ID, threadKind: "messages" } });
+      data: { contactId: CONTACT, applicationId: APP_ID, threadKind: "messages", senderName: "Jane Client" } }); // v822
     expect(msg.watch).toMatchObject({ category: "MESSAGE", eventType: "client_message" });
     expect(handoff.staffAlert).toMatchObject({ category: "HANDOFF", type: "maya_handoff", body: "Wants to talk about rates", data: { contactId: CONTACT, phone: "+14035550144" } });
   });

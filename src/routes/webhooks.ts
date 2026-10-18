@@ -842,7 +842,8 @@ async function persistInboundSms(req: any): Promise<void> {
       watch: { category: "MESSAGE", eventType: "client_message", title: "New client message", body: "New client message" },
       // BF_SERVER_v820_WATCH_CALLS - lock-screen alert on the iPhone dialler, like iMessage: sender + short preview.
       staffAlert: { category: "SMS", type: "sms", title: senderLabel, body: Body ? preview : "Sent a picture",
-        data: { contactId: inboundContactId, phone: /^\+[1-9]\d{7,14}$/.test(fromNum) ? fromNum : null, threadKind: "sms" } } });
+        data: { contactId: inboundContactId, phone: /^\+[1-9]\d{7,14}$/.test(fromNum) ? fromNum : null, threadKind: "sms",
+          senderName: contact?.name && contact.name.trim() ? contact.name.trim() : null } } }); // BF_SERVER_v822_CARPLAY
   } catch (e) { console.error("[notify] sms_inbound failed", String(e).slice(0, 150)); }
   console.log(JSON.stringify({
     event: "sms_inbound_persisted",
