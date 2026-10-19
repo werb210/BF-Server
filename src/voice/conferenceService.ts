@@ -299,7 +299,22 @@ export async function dialPstnIntoConference(args: DialIntoConferenceArgs): Prom
     statusCallbackEvent: ["initiated","ringing","answered","completed"],
     statusCallbackMethod: "POST",
   });
+  await __attachLegSid(args.participantId, call.sid); // BF_SERVER_v829_DIALER_RELIABILITY
   return { callSid: call.sid };
+}
+
+// BF_SERVER_v829_DIALER_RELIABILITY - every leg we dial is saved on its participant row at once. Without the CallSid the
+// customer's ringing leg could not be cancelled when staff hung up (their phone kept ringing into an empty call),
+// busy / no-answer was never seen, and hold / mute / remove on the customer failed. Ring-all staff legs had the same
+// gap, so the first answer never cancelled the others.
+async function __attachLegSid(participantId: unknown, callSid: string | undefined): Promise<void> {
+  const pid = String(participantId ?? "").trim();
+  if (!pid || !callSid) return;
+  try {
+    await attachCallSidToParticipant(pid, callSid);
+  } catch (err: any) {
+    console.warn("[voice] could not save the leg's CallSid", { participantId: pid, callSid, message: err?.message });
+  }
 }
 
 export async function dialClientIntoConference(args: DialIntoConferenceArgs): Promise<{ callSid: string }> {
@@ -320,6 +335,7 @@ export async function dialClientIntoConference(args: DialIntoConferenceArgs): Pr
     statusCallbackMethod: "POST",
     timeout: 15, // BF_SERVER_NO_ANSWER_15S — ring staff 15s, then caller -> voicemail
   });
+  await __attachLegSid(args.participantId, call.sid); // BF_SERVER_v829_DIALER_RELIABILITY
   return { callSid: call.sid };
 }
 
@@ -330,6 +346,9 @@ export async function cancelPendingParticipantCall(participantId: string): Promi
   try {
     const tw = __getTw();
     await tw.calls(p.twilio_call_sid).update({ status: "canceled" });
-  } catch { /* best-effort */ }
+  } catch (err: any) {
+    // BF_SERVER_v829_DIALER_RELIABILITY - best-effort, but logged (the leg may already have ended).
+    console.warn("[voice] cancel ringing leg failed", { participantId, callSid: p.twilio_call_sid, message: err?.message });
+  }
 }
 // v599b compat shim end ----------------------------------------------------

@@ -125,7 +125,7 @@ describe("v688b: caller ID and receptionist reach", () => {
     app.use("/api/webhooks/twilio/reception", reception);
     const res = await request(app).post("/api/webhooks/twilio/reception/intent?company=BF").type("form").send({ Digits: "2", CallSid: "CA1", From: "+15875550100" });
     expect(res.status).toBe(200);
-    expect(res.text).toContain("<Client>andrew-device</Client>");
+    expect(res.text).toMatch(/<Client[^>]*>andrew-device<\/Client>/);
     const lookup = callsMatching(h.queryMock, /sp\.status, sp\.twilio_identity/);
     expect(String(lookup[0]![0])).toMatch(/last_heartbeat > now\(\) - interval '90 seconds'\) OR EXISTS \(\s*SELECT 1 FROM staff_device_credentials dc/);
   });

@@ -6,11 +6,12 @@ import twilio from "twilio";
 
 vi.mock("twilio", async () => await vi.importActual<typeof import("twilio")>("twilio"));
 const direction = vi.hoisted(() => ({ value: "internal" as string }));
+const leg = vi.hoisted(() => ({ kind: "staff" as string })); // BF_SERVER_v829_DIALER_RELIABILITY
 vi.mock("../../db.js", () => ({
   pool: {
     query: vi.fn(async (sql: string) => {
       if (sql.includes("SELECT direction FROM conferences")) return { rows: [{ direction: direction.value }] };
-      if (sql.includes("FROM conference_participants")) return { rows: [{ kind: "staff" }] };
+      if (sql.includes("FROM conference_participants")) return { rows: [{ kind: leg.kind }] };
       return { rows: [] };
     }),
   },
@@ -31,7 +32,7 @@ async function joinTwiml(): Promise<string> {
 }
 
 describe("v686 conference recording by call type", () => {
-  beforeEach(() => { process.env.TWILIO_AUTH_TOKEN = AUTH; delete process.env.ENABLE_CALL_RECORDING; });
+  beforeEach(() => { process.env.TWILIO_AUTH_TOKEN = AUTH; delete process.env.ENABLE_CALL_RECORDING; leg.kind = "staff"; });
 
   it("a staff-to-staff Quick Call is not recorded or announced", async () => {
     direction.value = "internal";
@@ -43,8 +44,13 @@ describe("v686 conference recording by call type", () => {
 
   it("a call with a client is still recorded with the consent notice", async () => {
     direction.value = "outbound";
+    leg.kind = "pstn"; // BF_SERVER_v829_DIALER_RELIABILITY - the client hears the notice
     const xml = await joinTwiml();
     expect(xml).toContain("record-from-start");
     expect(xml).toContain("may be recorded");
+    leg.kind = "staff"; // ... staff do not (it held them in silence before connecting)
+    const staffXml = await joinTwiml();
+    expect(staffXml).toContain("record-from-start");
+    expect(staffXml).not.toContain("may be recorded");
   });
 });

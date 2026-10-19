@@ -75,6 +75,8 @@ export async function ringDirectLine(v: any, q: Q, args: {
     answerOnBridge: true, timeout: watchCell ? CLIENT_FIRST_TIMEOUT_SECONDS : 25, callerId: args.from, action: dlAction, method: "POST",
     ...recordingDialAttrs(rec),
   } as any);
-  dialClient(dial, args.owner.identity, card, legStatusAttrs(rec, args.owner.identity));
+  // BF_SERVER_v829_DIALER_RELIABILITY - the leg callback also records who answered, so set it even with recording off.
+  const legName = rec ?? (args.callSid ? inboundRecordName(String(args.callSid)) : null);
+  dialClient(dial, args.owner.identity, card, legStatusAttrs(legName, args.owner.identity));
   return { watchCell: Boolean(watchCell), recorded: Boolean(rec) };
 }

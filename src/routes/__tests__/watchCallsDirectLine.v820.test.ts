@@ -38,8 +38,8 @@ beforeEach(() => { vi.spyOn(console, "log").mockImplementation(() => {}); });
 describe("direct line routing with the standalone Watch fallback", () => {
   it("rings the owner's app for 15 s and hands the cell to direct-unavailable?cell=1", async () => {
     const xml = await callDirectLine("4035550103");
-    expect(xml).toContain(`<Client>${OWNER}</Client>`);
-    expect(xml).toContain('timeout="15"');
+    expect(xml).toMatch(new RegExp(`<Client[^>]*>${OWNER}</Client>`));
+    expect(xml).toContain('timeout="22"') // BF_SERVER_v829_DIALER_RELIABILITY - was 15;
     expect(xml).toContain(`/api/webhooks/twilio/reception/direct-unavailable?user=${OWNER}&amp;cell=1`);
     expect(xml).not.toContain("<Number"); // never parallel with the app
     expect(callsMatching(h.query, WATCH_CELL_SQL)[0]![1]).toEqual([OWNER]);
@@ -47,7 +47,7 @@ describe("direct line routing with the standalone Watch fallback", () => {
 
   it("keeps the 25 s app-only ring without the fallback", async () => {
     const xml = await callDirectLine(null);
-    expect(xml).toContain(`<Client>${OWNER}</Client>`);
+    expect(xml).toMatch(new RegExp(`<Client[^>]*>${OWNER}</Client>`));
     expect(xml).toContain('timeout="25"');
     expect(xml).not.toContain("cell=1");
   });

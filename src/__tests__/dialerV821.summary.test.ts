@@ -165,7 +165,7 @@ describe("reception and direct-line calls answered in the app are recorded into 
     const xml = await postWebhook("../routes/webhooks.js", "/api/webhooks", "/twilio/voice/twiml", { From: CALLER, To: "+18255550190", CallSid: CALL_SID });
     expect(xml).not.toContain("record=");
     expect(xml).not.toContain("may be recorded");
-    expect(xml).toContain(`<Client>${OWNER}</Client>`);
+    expect(xml).toMatch(new RegExp(`<Client[^>]*>${OWNER}</Client>`));
     expect(callsMatching(h.query, OPEN_RECORD)).toHaveLength(0);
   });
 

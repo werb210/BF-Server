@@ -243,6 +243,13 @@ function dialCell(v: any, cell: string, action: string, callerId: string | undef
   dial.number({ url: screenUrl(from), method: "POST", ...legStatusAttrs(rec, identity) }, cell);
 }
 
+// BF_SERVER_v829_DIALER_RELIABILITY - the leg status callback also records who answered (call_logs), so it is set even
+// when recording is off and no call record was opened; rx_<parent CallSid> carries the caller's sid.
+function legRecordName(req: Request): string | null {
+  const callSid = String(req.body?.CallSid ?? "").trim();
+  return callSid ? inboundRecordName(callSid) : null;
+}
+
 function callerFrom(req: Request): string { return String((req.body?.From ?? "")).trim(); }
 
 // BF_SERVER_v820_WATCH_CALLS - a caller that ends at voicemail (or hangs up) without anyone answering is a missed
@@ -404,7 +411,7 @@ router.post("/intent", twilioWebhookValidation, safeHandler(async (req: Request,
       emit(v, "connect_engagement", PHRASES.connect_engagement);
       const action = `${BASE}/unavailable?target=engagement${toddCell ? "&cell=1" : ""}`;
       const dial = v.dial({ answerOnBridge: true, timeout: toddCell ? CLIENT_FIRST_TIMEOUT_SECONDS : 25, action, method: "POST", callerId, ...recordingDialAttrs(rec) });
-      for (const identity of identities) dialClient(dial, identity, card, legStatusAttrs(rec, identity));
+      for (const identity of identities) dialClient(dial, identity, card, legStatusAttrs(rec ?? legRecordName(req), identity)); // BF_SERVER_v829_DIALER_RELIABILITY
       return send(res, v);
     }
     if (toddCell) {
@@ -446,7 +453,7 @@ async function ringNamedTarget(v: any, req: Request, target: Target, t: Awaited<
     emit(v, `connect_${lkey(target)}`, `One moment, connecting you to ${name}.`);
     const action = `${BASE}/unavailable?target=${target}${watchCell ? "&cell=1" : ""}`;
     const dial = v.dial({ answerOnBridge: true, timeout: watchCell ? CLIENT_FIRST_TIMEOUT_SECONDS : 25, action, method: "POST", callerId, ...recordingDialAttrs(rec) });
-    dialClient(dial, t.identity, card, legStatusAttrs(rec, t.identity));
+    dialClient(dial, t.identity, card, legStatusAttrs(rec ?? legRecordName(req), t.identity)); // BF_SERVER_v829_DIALER_RELIABILITY
     return;
   }
   // No reachable app: the opted-in cell (screened) is the only leg.
@@ -601,7 +608,7 @@ router.post("/leg-status", twilioWebhookValidation, safeHandler(async (req: Requ
   const identity = String(req.query.identity ?? "").trim();
   const callSid = String(req.body?.CallSid ?? "").trim();
   if (friendlyName && identity && callSid) {
-    await recordLegStatus(pool, { friendlyName, identity, callSid, status: String(req.body?.CallStatus ?? "") });
+    await recordLegStatus(pool, { friendlyName, identity, callSid, status: String(req.body?.CallStatus ?? ""), parentCallSid: String(req.body?.ParentCallSid ?? "").trim() || null }); // BF_SERVER_v829_DIALER_RELIABILITY
   }
   return res.status(204).end();
 }));

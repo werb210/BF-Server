@@ -183,6 +183,25 @@ router.get("/dispositions", auth, (_req: Request, res: Response) => {
   res.json({ success: true, data: { dispositions: CALL_DISPOSITIONS } });
 });
 
+// BF_SERVER_v829_DIALER_RELIABILITY - the iPhone dialler reports what happened on its own calls (answer tapped, audio
+// handed over, connected, failures) in batches, so a slow or failed call can be traced afterwards. The shipped app had
+// no error reporting at all.
+//   POST /api/telephony/client-events { appVersion?, events: [{ event, at (ISO), callRef?, metadata? }] } (<= 100)
+router.post("/client-events", auth, safeHandler(async (req: any, res: Response) => {
+  const userId = req.user?.userId || req.user?.id || req.user?.sub || null;
+  const { normalizeClientEvents } = await import("../../modules/calls/dialerClientEvents.js");
+  const events = normalizeClientEvents(req.body?.events);
+  if (!events.length) return res.status(400).json({ ok: false, error: "no_events" });
+  const appVersion = typeof req.body?.appVersion === "string" ? req.body.appVersion.slice(0, 40) : null;
+  await pool.query(
+    `INSERT INTO dialer_client_events (user_id, app_version, event, call_ref, metadata, occurred_at)
+     SELECT $1::uuid, $2, e.event, e.call_ref, e.metadata, e.occurred_at
+       FROM jsonb_to_recordset($3::jsonb) AS e(event text, call_ref text, metadata jsonb, occurred_at timestamptz)`,
+    [userId, appVersion, JSON.stringify(events)],
+  );
+  return res.json({ ok: true, stored: events.length });
+}));
+
 router.post("/calls/:id/disposition", auth, async (req: any, res: Response) => {
   // BF_SERVER_CALL_REF_v161 - the dialer only ever holds a Twilio CallSid, so
   // accept either that or our own call id.
@@ -195,23 +214,28 @@ router.post("/calls/:id/disposition", auth, async (req: any, res: Response) => {
   if (!staffUserId) return res.status(401).json({ success: false, error: "unauthenticated" });
 
   try {
-    const updated = await pool.query(
-      `UPDATE call_logs SET disposition = $1
-        WHERE ${callRefPredicate(ref)} AND staff_user_id = $3
-        RETURNING id::text, COALESCE(contact_id, crm_contact_id) AS contact_id, silo`,
-      [plan.disposition, id, staffUserId],
-    );
-    if (!updated.rowCount) return res.status(404).json({ success: false, error: "call_not_found" });
-    const row: any = updated.rows[0];
+    // BF_SERVER_v829_DIALER_RELIABILITY - an inbound call is logged under the caller's CallSid; the dialler holds its
+    // own leg's sid. findCallForStaff resolves either (and claims an unattributed inbound call for the caller's leg).
+    const { findCallForStaff } = await import("../../modules/calls/callAttribution.js");
+    const found = await findCallForStaff(pool, ref, String(staffUserId));
+    if (!found) return res.status(404).json({ success: false, error: "call_not_found", message: "This call isn't linked to you, so the outcome could not be saved." });
+    await pool.query(`UPDATE call_logs SET disposition = $1, updated_at = now() WHERE id = $2::uuid`, [plan.disposition, found.id]);
+    const row: any = { id: found.id, contact_id: found.contactId, silo: found.silo };
 
+    // BF_SERVER_v829_DIALER_RELIABILITY - the task is keyed on the call_logs id. It was keyed on the ref, which for a
+    // CallSid ("CA...") failed the ::uuid cast, so no task was ever made while the app was told one was.
+    let followUpCreated = false;
     if (plan.followUp && row?.contact_id) {
       await pool.query(
         `INSERT INTO tasks (silo, title, body, type, priority, due_at, assignee_user_id, contact_id, source, source_ref_id)
          SELECT $1, $2, $3, 'TODO', 'MEDIUM', now() + ($4 || ' days')::interval, $5::uuid, $6::uuid, 'CALL_DISPOSITION', $7::uuid
           WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE source = 'CALL_DISPOSITION' AND source_ref_id = $7::uuid)`,
         [row.silo, plan.followUp.label, `Auto-created from call outcome: ${plan.disposition}`,
-          String(plan.followUp.days), staffUserId, row.contact_id, id],
+          String(plan.followUp.days), staffUserId, row.contact_id, row.id],
       ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "telephony/routes/telephonyRoutes.ts:205");});
+      const made = await pool.query(`SELECT 1 FROM tasks WHERE source = 'CALL_DISPOSITION' AND source_ref_id = $1::uuid LIMIT 1`, [row.id])
+        .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "telephony/routes/telephonyRoutes.ts:followup-check", { rows: [] as any[] }));
+      followUpCreated = made.rows.length > 0;
     }
 
     // BF_SERVER_CALL_OUTCOME_CRM_v273 - update the contact itself, then note what changed.
@@ -229,7 +253,7 @@ router.post("/calls/:id/disposition", auth, async (req: any, res: Response) => {
       data: {
         callId: id,
         disposition: plan.disposition,
-        followUpCreated: Boolean(plan.followUp && row?.contact_id),
+        followUpCreated, // BF_SERVER_v829_DIALER_RELIABILITY - only when the task exists
         suppressOutreach: plan.suppressOutreach,
         crmUpdate, // v273
       },

@@ -49,7 +49,7 @@ describe("reception routing precedence", () => {
   it("rings only the Boreal client (25 s) for staff without the Watch fallback, even with a cell on file", async () => {
     andrew({ phone: "403-555-0100", standalone_watch: false });
     const xml = await askForCredit();
-    expect(xml).toContain("<Client>andrew-client</Client>");
+    expect(xml).toMatch(/<Client[^>]*>andrew-client<\/Client>/);
     expect(xml).toContain('timeout="25"');
     expect(xml).not.toContain("<Number");
     expect(xml).not.toContain("cell=1");
@@ -59,8 +59,8 @@ describe("reception routing precedence", () => {
   it("with the Watch fallback on, rings the ready client first for 15 s and hands the cell to the action callback", async () => {
     andrew({ phone: "403-555-0100", standalone_watch: true });
     const xml = await askForCredit();
-    expect(xml).toContain("<Client>andrew-client</Client>");
-    expect(xml).toContain('timeout="15"');
+    expect(xml).toMatch(/<Client[^>]*>andrew-client<\/Client>/);
+    expect(xml).toContain('timeout="22"') // BF_SERVER_v829_DIALER_RELIABILITY - was 15;
     expect(xml).toContain(`action="${BASE}/unavailable?target=underwriting&amp;cell=1"`);
     expect(xml).not.toContain("<Number");
   });
@@ -144,9 +144,9 @@ describe("client engagement group with Todd's Watch fallback", () => {
   it("rings the apps for 15 s, then Todd's screened cell", async () => {
     engagement(true);
     const first = await post("/intent?company=BF", { Digits: "1", From: CALLER });
-    expect(first).toContain("<Client>todd-client</Client>");
-    expect(first).toContain("<Client>staff-2</Client>");
-    expect(first).toContain('timeout="15"');
+    expect(first).toMatch(/<Client[^>]*>todd-client<\/Client>/);
+    expect(first).toMatch(/<Client[^>]*>staff-2<\/Client>/);
+    expect(first).toContain('timeout="22"') // BF_SERVER_v829_DIALER_RELIABILITY - was 15;
     expect(first).toContain("target=engagement&amp;cell=1");
     expect(first).not.toContain("<Number");
 
