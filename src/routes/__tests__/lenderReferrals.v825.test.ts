@@ -150,7 +150,7 @@ describe("POST /api/lender-referrals/mine", () => {
     expect(res.status).toBe(200);
     expect(res.body.files).toEqual([{
       id: "r1", business_name: "Northwind", client_name: "Jane", requested_amount: "250000.00", zip_name: "n.zip", sent_at: "2026-10-19T16:00:00Z",
-      progress: "Funded", share: "50% of Boreal's fee", payout_amount: "1500.00", payout_paid_on: "2026-11-01",
+      progress: "Funded", status: "accepted", stage: "funded", share: "50% of Boreal's fee", payout_amount: "1500.00", payout_paid_on: "2026-11-01",
     }]);
   });
 });

@@ -1009,6 +1009,16 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
       ? md.readiness as Record<string, any>
       : null;
 
+  // BF_SERVER_v828_BOREAL_PACKAGE_PREFILL - a broker / lender file read from its zip keeps the fields in
+  // metadata.broker_prefill until the client finishes the application. Show them on the Application tab meanwhile;
+  // anything the client submits (kyc / business / applicant) still wins.
+  const bp = (md?.broker_prefill && typeof md.broker_prefill === 'object') ? md.broker_prefill as Record<string, any> : null;
+  const bpBusiness = bp?.business && typeof bp.business === 'object' ? bp.business as Record<string, any> : null;
+  const bpKyc = bp?.kyc && typeof bp.kyc === 'object' ? bp.kyc as Record<string, any> : null;
+  const bpApplicant = bp?.applicant && typeof bp.applicant === 'object'
+    ? { ...bp.applicant, name: [bp.applicant.firstName, bp.applicant.lastName].filter(Boolean).join(' ') || null } as Record<string, any>
+    : null;
+
   // BF_SERVER_BLOCK_v_SIGNING_INDICATOR_v1 — staff signing-state indicator source.
   const snEmbed = (md?.signnow_embedded && typeof md.signnow_embedded === 'object') ? md.signnow_embedded as Record<string, any> : null;
   const signingStatus = deriveSigningStatus({
@@ -1036,21 +1046,21 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
         null,
     },
     // BF_SERVER_MAYA_SEES_PORTAL_v782 - same resolution as applicationProfileFromMetadata (client Maya reads that).
-    kyc: md?.borrower ?? md?.kyc_responses ?? md?.kyc ?? fd?.kyc ?? fd?.financialProfile ?? readinessSrc ?? null,
+    kyc: md?.borrower ?? md?.kyc_responses ?? md?.kyc ?? fd?.kyc ?? fd?.financialProfile ?? bpKyc ?? readinessSrc ?? null,
     // v_CRM_APPLICANT_SOURCE: prefer md.applicant (raw camelCase Step-4 fields, the same
     // source the Accord PDF builder reads) over md.borrower (a trimmed shape) so the CRM
     // contact panels render the full applicant detail for existing and new contacts.
-    applicantDetails: md?.applicant ?? md?.borrower ?? fd?.applicant ?? readinessSrc ?? null,
-    applicantInfo: md?.applicant ?? md?.borrower ?? fd?.applicant ?? readinessSrc ?? null,
-    businessDetails: md?.company ?? md?.business ?? fd?.business ?? readinessSrc ?? null,
-    business: md?.company ?? md?.business ?? fd?.business ?? readinessSrc ?? null,
+    applicantDetails: md?.applicant ?? md?.borrower ?? fd?.applicant ?? bpApplicant ?? readinessSrc ?? null,
+    applicantInfo: md?.applicant ?? md?.borrower ?? fd?.applicant ?? bpApplicant ?? readinessSrc ?? null,
+    businessDetails: md?.company ?? md?.business ?? fd?.business ?? bpBusiness ?? readinessSrc ?? null,
+    business: md?.company ?? md?.business ?? fd?.business ?? bpBusiness ?? readinessSrc ?? null,
     owners: Array.isArray(md?.owners)
       ? md.owners
       : (md?.partner ? [md.partner]
          : md?.applicant?.partner ? [md.applicant.partner]
          : fd?.applicant?.partner ? [fd.applicant.partner]
          : []),
-    financialProfile: md?.financials ?? md?.kyc ?? fd?.kyc ?? fd?.financialProfile ?? readinessSrc ?? null,
+    financialProfile: md?.financials ?? md?.kyc ?? fd?.kyc ?? fd?.financialProfile ?? bpKyc ?? readinessSrc ?? null,
     fundingRequest: {
       amount: app.requested_amount,
       productCategory: md?.application?.productCategory ?? md?.product_category ?? fd?.productCategory ?? null,
@@ -1060,7 +1070,7 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
     signing: { status: signingStatus, signedAt: app.signnow_app_signed_at ?? null },
     // BF_SERVER_CALL_PHONE_v765 - the number the portal's Call client button dials: the CRM contact's phone (staff
     // correct numbers there) first, then the applicant's phone from the application.
-    callPhone: firstPhone(app.contact_phone, md?.applicant?.phone, md?.applicant?.mobile, md?.borrower?.phone, fd?.applicant?.phone, readinessSrc?.phone),
+    callPhone: firstPhone(app.contact_phone, md?.applicant?.phone, md?.applicant?.mobile, md?.borrower?.phone, fd?.applicant?.phone, md?.readiness_phone, readinessSrc?.phone),
     rawPayload: md,
   };
 

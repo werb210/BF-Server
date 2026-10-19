@@ -1868,10 +1868,18 @@ router.get(
       [phone10],
     );
 
+    // BF_SERVER_v828_CLIENT_CLAIM_IMPORT - a file a broker or lender sent for this client (accepted by Boreal) has no
+    // contact yet, so the join above misses it. The switcher lists it as ready to finish.
+    let imported: any[] = [];
+    if (includeDrafts) {
+      const { importedDraftsForPhone } = await import("../../services/brokerImport/claim.js");
+      imported = await importedDraftsForPhone(phone10);
+    }
+
     // de-dupe by application id (a phone can appear on multiple contact-linked rows)
     const seen = new Set<string>();
     const applications = [] as any[];
-    for (const row of r.rows) {
+    for (const row of [...imported, ...r.rows]) {
       const id = String((row as any).id);
       if (seen.has(id)) continue;
       seen.add(id);
@@ -1880,6 +1888,24 @@ router.get(
 
     if (!applications.length) return res.json({ found: false, applications: [] });
     return res.json({ found: true, applications, application: applications[0] });
+  }),
+);
+
+// BF_SERVER_v828_CLIENT_CLAIM_IMPORT - POST /api/client/applications/:id/claim-import
+// The signed-in client takes over a file a broker or lender sent for them (Continue in the client portal's switcher).
+// Only a draft waiting for the caller's own phone can be claimed. Returns the pre-filled fields for the wizard.
+router.post(
+  "/applications/:id/claim-import",
+  requireAuthAllowClient,
+  safeHandler(async (req: any, res: any) => {
+    const applicationId = String(req.params.id ?? "").trim();
+    if (!/^[0-9a-f-]{36}$/i.test(applicationId)) return res.status(400).json({ error: "invalid_application_id" });
+    const phone10 = String(req.user?.phone ?? "").replace(/[^0-9]/g, "").slice(-10);
+    if (!phone10) return res.status(401).json({ error: "no_phone_claim" });
+    const { claimImportedDraftForPhone } = await import("../../services/brokerImport/claim.js");
+    const claimed = await claimImportedDraftForPhone(applicationId, phone10);
+    if (!claimed) return res.status(404).json({ error: "not_found", message: "This application is not waiting for you." });
+    return res.json({ ok: true, applicationId: claimed.applicationId, brokerImport: true, brokerPrefill: claimed.brokerPrefill, brokerName: claimed.brokerName });
   }),
 );
 
