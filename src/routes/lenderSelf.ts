@@ -55,7 +55,8 @@ interface LenderRequest extends Request {
   lenderId?: string;
 }
 
-function requireLender(req: LenderRequest, res: Response, next: NextFunction): void {
+// BF_SERVER_v825_LENDER_REFERRALS - exported for the lender referrals routes.
+export function requireLender(req: LenderRequest, res: Response, next: NextFunction): void {
   const token = req.headers.authorization?.split(" ")[1];
   const secret = process.env.JWT_SECRET;
   if (!token || !secret) {

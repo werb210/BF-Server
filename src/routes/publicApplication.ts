@@ -169,7 +169,7 @@ router.post(
           await dbQuery(`UPDATE applications SET pipeline_state = NULL, current_stage = NULL, status = NULL, metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('broker_claimed_at', now()::text), updated_at = now() WHERE id::text = $1`, [bd.id]);
           await dbQuery(`UPDATE broker_imports SET status = 'claimed', updated_at = now() WHERE application_id = $1`, [bd.id]).catch(() => {});
           setPhase("done");
-          res.status(200).json(ok({ applicationId: bd.id, reused: true, brokerImport: true, brokerPrefill: bd.metadata?.broker_prefill ?? null, brokerName: bd.metadata?.broker_import?.broker_name ?? null }));
+          res.status(200).json(ok({ applicationId: bd.id, reused: true, brokerImport: true, brokerPrefill: bd.metadata?.broker_prefill ?? null, brokerName: bd.metadata?.lender_referral ? "the documents you provided" /* BF_SERVER_v825_LENDER_REFERRALS - never name the lender that declined the file */ : (bd.metadata?.broker_import?.broker_name ?? null) }));
           return;
         }
       }
