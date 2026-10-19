@@ -31,6 +31,14 @@ const CALL_TASK_AFTER_DAYS = 2;
 // do not contact them at all.
 const CONSENT_WINDOW_MONTHS = 6;
 
+// BF_SERVER_v826_TASK_SILO - tasks.silo only accepts 'BF', 'BI' or 'SLF'. An application with a lower-case or other
+// silo made every call-task insert fail ("violates check constraint tasks_silo_check"), and because the failed row
+// was never marked, the same insert failed again every pass.
+export function taskSilo(silo: string | null | undefined): "BF" | "BI" | "SLF" {
+  const s = String(silo ?? "").trim().toUpperCase();
+  return s === "BI" || s === "SLF" ? s : "BF";
+}
+
 export const ABANDON_SMS_BODY =
   "Hi! It's Boreal Financial. We noticed you started an application but did not "
   + "complete it. Are there any questions you have before you complete your "
@@ -227,7 +235,7 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
                                 LIMIT 1)),
                      $4, 'WORKFLOW', NULL)`,
             [
-              row.silo || "BF",
+              taskSilo(row.silo),
               "Call: started an application, did not finish",
               `Started an application two days ago and has not submitted. An SMS `
                 + `was sent after 4 hours. Phone: ${row.phone ?? "unknown"}.`,
