@@ -157,6 +157,9 @@ export async function listForLender(lenderId: string, db: Q = pool): Promise<any
     zip_name: row.zip_name,
     sent_at: row.created_at,
     progress: referralProgress(row),
+    // BF_SERVER_v828_PARTNER_STAGE_TRACKER - the referral status and pipeline stage, for the lender portal's tracker.
+    status: row.status,
+    stage: row.status === "accepted" ? row.pipeline_state ?? null : null,
     share: referralShare(row),
     payout_amount: row.complete_package ? row.payout_amount ?? null : null,
     payout_paid_on: row.complete_package ? row.payout_paid_on ?? null : null,
