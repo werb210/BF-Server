@@ -6,6 +6,7 @@ import clientPushRoutes from "./clientPush.js"; // BF_SERVER_CLIENT_PUSH_TOKEN_v
 import lenderSelfRoutes from "./lenderSelf.js"; // BF_SERVER_LENDER_SELF_v1
 import referrerSelfRoutes from "./referrerSelf.js"; // BF_SERVER_REFERRER_SELF_v1
 import brokerSelfRoutes from "./brokerSelf.js"; // BF_SERVER_BROKER_PORTAL_v717
+import lenderReferralRoutes from "./lenderReferrals.js"; // BF_SERVER_v825_LENDER_REFERRALS
 import adminReferrersRoutes from "./adminReferrers.js"; // BF_SERVER_ADMIN_REFERRERS_v1
 import slfRoutes from "./slf.js"; // BF_SERVER_BLOCK_v153_SLF_BACKEND_MINIMAL_v1
 import applicationsRoutes from "../modules/applications/applications.routes.js";
@@ -246,6 +247,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/lender", router: lenderSelfRoutes }, // BF_SERVER_LENDER_SELF_v1
   { path: "/referrer", router: referrerSelfRoutes }, // BF_SERVER_REFERRER_SELF_v1
   { path: "/broker", router: brokerSelfRoutes }, // BF_SERVER_BROKER_PORTAL_v717
+  { path: "/lender-referrals", router: lenderReferralRoutes }, // BF_SERVER_v825_LENDER_REFERRALS
   { path: "/admin/referrers", router: adminReferrersRoutes }, // BF_SERVER_ADMIN_REFERRERS_v1
   { path: "/telephony", router: telephonyRoutes },
   { path: "/realtime", router: realtimeRoutes },
