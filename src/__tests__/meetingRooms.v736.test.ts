@@ -24,7 +24,7 @@ describe("meeting rooms", () => {
     expect(isOpen({ ...room, status: "cancelled" }, new Date("2026-10-06T16:10:00Z"))).toBe(false);
   });
   it("one tap dials the 866, option 3, then the code", () => {
-    expect(oneTapDial("482913")).toBe("+18666318939,,3,,,482913#");
+    expect(oneTapDial("482913")).toBe("+18666318939,,3482913#");
     expect(conferenceName(room.id)).toBe("boreal-meet-" + room.id);
   });
   it("the invite and join page give the number, option and code, with the title escaped", () => {

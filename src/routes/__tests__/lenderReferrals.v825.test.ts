@@ -14,6 +14,7 @@ import {
   acceptReferral,
   clientInviteText,
   declineReferral,
+  importReferral,
   parseReferralDetails,
   referralProgress,
   referralShare,
@@ -154,47 +155,75 @@ describe("POST /api/lender-referrals/mine", () => {
   });
 });
 
+// BF_SERVER_v827_REFERRAL_PIPELINE_CARD - files are imported into a pipeline card first; accepting adds the sign-in
+// phone, the split and the text.
 describe("staff accept or decline", () => {
-  const pendingRow = {
+  const referral = {
     id: "r1", lender_id: LENDER_ID, lender_name: "Prairie Bank", business_name: "Northwind Logistics", client_name: "Jane Smith",
-    client_phone: "+17805550100", requested_amount: "250000.00", zip_name: "n.zip", zip_data: Buffer.from("zip"),
+    client_phone: "+17805550100", requested_amount: "250000.00", zip_name: "n.zip", zip_data: Buffer.from("zip"), application_id: null as string | null,
   };
+  const dbFor = (over: Record<string, unknown> = {}, extra: Array<[RegExp, unknown]> = []) => ({ query: vi.fn(answerBySql([
+    ...extra,
+    [/SET status = 'accepting'/, { rows: [referral] }],
+    [/FROM lender_referrals WHERE id::text = \$1 AND status IN/, { rows: [{ ...referral, ...over }] }],
+    [/RETURNING metadata->'broker_prefill'/, { rows: [{ first_name: "Jane", import_id: "imp1" }] }],
+  ])) });
 
-  it("accepting imports the file, records the 50% share for a complete package, then texts the client", async () => {
-    const db = { query: vi.fn(answerBySql([
-      [/SET status = 'accepting'/, { rows: [pendingRow] }],
-    ])) };
-    const importZip = vi.fn(async () => ({ importId: "imp1", applicationId: "app1", businessName: null, warnings: [], prefill: { applicant: { firstName: "Jane" } } }));
+  it("importing a file makes a draft card with no sign-in phone, and texts nobody", async () => {
+    const db = dbFor();
+    const importZip = vi.fn(async () => ({ importId: "imp1", applicationId: "app1", businessName: null, warnings: [], prefill: null }));
+    expect(await importReferral("r1", { db, importZip })).toBe("app1");
+    expect(importZip).toHaveBeenCalledWith(expect.objectContaining({ applicantPhone: null, brokerName: "Prairie Bank" }));
+    expect(String(callsMatching(db.query, /'lender_referral'/)[0]![0])).toMatch(/- 'readiness_phone'/);
+    expect(callsMatching(db.query, /broker_imports SET applicant_phone = NULL/)).toHaveLength(1);
+    expect(callsMatching(db.query, /SET application_id = \$2.*zip_data = NULL/s)).toHaveLength(1);
+  });
+
+  it("a file that cannot be read keeps its zip and saves the reason", async () => {
+    const db = dbFor();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(await importReferral("r1", { db, importZip: async () => { throw new Error("OCR is down"); } })).toBeNull();
+    expect(callsMatching(db.query, /SET import_error = \$2/)[0]![1]).toEqual(["r1", "OCR is down"]);
+    warn.mockRestore();
+  });
+
+  it("accepting gives the card the client's phone, records the 50% share, then texts the client", async () => {
+    const db = dbFor({ application_id: "app1", zip_data: null });
     const sendSms = vi.fn(async () => ({ success: true }));
-    const out = await acceptReferral("r1", { staffId: "s1", completePackage: true, note: null }, { db, importZip, sendSms, appUrl: "https://client.test" });
+    const out = await acceptReferral("r1", { staffId: "s1", completePackage: true, note: null }, { db, sendSms, appUrl: "https://client.test" });
     expect(out).toEqual({ applicationId: "app1", texted: true, warnings: [] });
-    expect(importZip).toHaveBeenCalledWith(expect.objectContaining({ brokerName: "Prairie Bank", applicantPhone: "+17805550100", uploadedBy: "lender:" + LENDER_ID }));
+    expect(callsMatching(db.query, /jsonb_build_object\('readiness_phone'/)[0]![1]).toEqual(["app1", "+17805550100", true]);
+    expect(callsMatching(db.query, /broker_imports SET applicant_phone = \$2/)[0]![1]).toEqual(["imp1", "+17805550100"]);
     const split = callsMatching(db.query, /INSERT INTO broker_deal_confirmations/)[0]![1] as unknown[];
     expect(split.slice(0, 5)).toEqual(["app1", "Prairie Bank", 50, 50, "Lender referral, complete package: 50% of Boreal's fee"]);
-    const meta = callsMatching(db.query, /'lender_referral'/)[0]![1] as unknown[];
-    expect(meta).toEqual(["app1", "r1", true, "Northwind Logistics", "250000.00", LENDER_ID, "Prairie Bank", true]);
-    expect(callsMatching(db.query, /SET status = 'accepted'.*zip_data = NULL/s)).toHaveLength(1);
-    expect(sendSms).toHaveBeenCalledWith(expect.objectContaining({ to: "+17805550100", message: expect.not.stringContaining("Prairie") }));
+    expect(sendSms).toHaveBeenCalledWith(expect.objectContaining({ to: "+17805550100", message: expect.stringMatching(/^Hi Jane, Boreal Financial/) }));
+    expect(sendSms.mock.calls[0]![0].message).not.toContain("Prairie");
   });
 
   it("an incomplete package records no share", async () => {
-    const db = { query: vi.fn(answerBySql([[/SET status = 'accepting'/, { rows: [pendingRow] }]])) };
-    await acceptReferral("r1", { staffId: "s1", completePackage: false, note: "No bank statements" }, {
-      db, importZip: async () => ({ importId: "imp1", applicationId: "app1", businessName: "Northwind", warnings: [], prefill: null }), sendSms: async () => ({}),
-    });
+    const db = dbFor({ application_id: "app1", zip_data: null });
+    await acceptReferral("r1", { staffId: "s1", completePackage: false, note: "No bank statements" }, { db, sendSms: async () => ({}) });
     const split = callsMatching(db.query, /INSERT INTO broker_deal_confirmations/)[0]![1] as unknown[];
     expect(split.slice(2, 5)).toEqual([100, 0, "Lender referral, incomplete package: no referral share"]);
   });
 
-  it("puts the file back in the queue when the import fails, and texts nobody", async () => {
-    const db = { query: vi.fn(answerBySql([[/SET status = 'accepting'/, { rows: [pendingRow] }]])) };
-    const { BrokerImportError } = await import("../../services/brokerImport/importBrokerFile.js");
+  it("puts the file back in the queue when it cannot be imported, and texts nobody", async () => {
+    const db = dbFor();
     const sendSms = vi.fn();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await expect(acceptReferral("r1", { staffId: "s1", completePackage: true, note: null }, {
-      db, importZip: async () => { throw new BrokerImportError("already_imported", "This applicant already has an imported file waiting.", 409); }, sendSms,
-    })).rejects.toMatchObject({ code: "already_imported", status: 409 });
+      db, importZip: async () => { throw new Error("bad"); }, sendSms,
+    })).rejects.toMatchObject({ code: "import_failed", status: 422 });
     expect(callsMatching(db.query, /SET status = 'pending'/)).toHaveLength(1);
     expect(sendSms).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("refuses when another imported file is already waiting for that phone", async () => {
+    const db = dbFor({ application_id: "app1", zip_data: null }, [[/SELECT id FROM applications/, { rows: [{ id: "other" }] }]]);
+    await expect(acceptReferral("r1", { staffId: "s1", completePackage: true, note: null }, { db, sendSms: async () => ({}) }))
+      .rejects.toMatchObject({ code: "phone_in_use" });
+    expect(callsMatching(db.query, /SET status = 'pending'/)).toHaveLength(1);
   });
 
   it("a file already decided cannot be accepted or declined again", async () => {
@@ -203,9 +232,11 @@ describe("staff accept or decline", () => {
     await expect(declineReferral("r1", "s1", null, db)).rejects.toMatchObject({ code: "not_pending" });
   });
 
-  it("declining deletes the zip", async () => {
-    const db = { query: vi.fn(answerBySql([[/SET status = 'declined'/, { rows: [{ id: "r1" }] }]])) };
+  it("declining deletes the zip and takes the card off the pipeline", async () => {
+    const db = { query: vi.fn(answerBySql([[/SET status = 'declined'/, { rows: [{ id: "r1", application_id: "app1", import_id: "imp1" }] }]])) };
     await declineReferral("r1", "s1", "Outside our box", db);
     expect(String(callsMatching(db.query, /SET status = 'declined'/)[0]![0])).toMatch(/zip_data = NULL/);
+    expect(String(callsMatching(db.query, /lender_referral_declined/)[0]![0])).toMatch(/- 'readiness_phone'/);
+    expect(callsMatching(db.query, /broker_imports SET status = 'discarded'/)).toHaveLength(1);
   });
 });

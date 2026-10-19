@@ -68,8 +68,8 @@ describe("v825 lender referrals against the real schema", () => {
   it("accepting records the referral on the application and the 50% split, and keeps no zip", async () => {
     const importZip = async (opts: { brokerName: string }) => {
       await pool.query(
-        "INSERT INTO applications (id, name, created_at, updated_at, pipeline_state, status, source, metadata) VALUES ($1, $2, now(), now(), 'draft', 'RECEIVED', 'broker_import', jsonb_build_object('broker_import', jsonb_build_object('broker_name', $3::text)))",
-        [appId, `${opts.brokerName} file`, opts.brokerName]);
+        "INSERT INTO applications (id, name, created_at, updated_at, pipeline_state, status, source, metadata) VALUES ($1, $2, now(), now(), 'draft', 'RECEIVED', 'broker_import', jsonb_build_object('broker_import', jsonb_build_object('broker_name', $3::text, 'import_id', $4::text), 'readiness_phone', '+17805550199'))",
+        [appId, `${opts.brokerName} file`, opts.brokerName, importId]);
       await pool.query("INSERT INTO broker_imports (id, broker_name, zip_name, application_id, status) VALUES ($1, $2, 'northwind.zip', $3, 'awaiting_client')", [importId, opts.brokerName, appId]);
       return { importId, applicationId: appId, businessName: null, warnings: [], prefill: null };
     };
@@ -82,6 +82,9 @@ describe("v825 lender referrals against the real schema", () => {
     expect(app.rows[0].name).toBe(`Northwind ${tag}`);
     expect(Number(app.rows[0].requested_amount)).toBe(250000);
     expect(app.rows[0].ref).toMatchObject({ referral_id: acceptedId, lender_id: lenderId, complete_package: true });
+    const phone = await pool.query("SELECT metadata->>'readiness_phone' AS p FROM applications WHERE id = $1", [appId]);
+    expect(phone.rows[0].p).toBe(phoneA); // the client's cell from the lender, not the one read off the form
+    expect(app.rows[0].ref.status).toBe("accepted");
     const split = await pool.query("SELECT boreal_pct, broker_pct, status, terms FROM broker_deal_confirmations WHERE application_id = $1", [appId]);
     expect(split.rows[0]).toMatchObject({ status: "accepted", terms: "Lender referral, complete package: 50% of Boreal's fee" });
     expect([Number(split.rows[0].boreal_pct), Number(split.rows[0].broker_pct)]).toEqual([50, 50]);

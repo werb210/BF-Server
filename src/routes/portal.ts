@@ -376,7 +376,8 @@ router.get(
           COALESCE(a.metadata->>'status_note', '')              AS status_note,
           -- BF_SERVER_BROKER_PIPELINE_v724 - which broker sent it, and the split status.
           CASE WHEN a.source = 'broker_import' THEN COALESCE(a.metadata->'broker_import'->>'broker_name', 'Partner broker') END AS broker_name,
-          (SELECT d.status FROM broker_deal_confirmations d WHERE d.application_id = a.id::text LIMIT 1) AS broker_split_status
+          (SELECT d.status FROM broker_deal_confirmations d WHERE d.application_id = a.id::text LIMIT 1) AS broker_split_status,
+          a.metadata->'lender_referral'->>'status' AS lender_referral_status -- BF_SERVER_v827_REFERRAL_PIPELINE_CARD
         FROM applications a
         LEFT JOIN companies c ON c.id = a.company_id
         LEFT JOIN LATERAL (
@@ -440,6 +441,7 @@ router.get(
         partner_contact_id: r.partner_contact_id ?? null,
         broker_name: r.broker_name ?? null, // BF_SERVER_BROKER_PIPELINE_v724
         broker_split_status: r.broker_split_status ?? null,
+        lender_referral_status: r.lender_referral_status ?? null, // BF_SERVER_v827_REFERRAL_PIPELINE_CARD
       }));
       return res.json({
         stages: PIPELINE_STAGES,

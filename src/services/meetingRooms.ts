@@ -25,7 +25,10 @@ export function isOpen(room: Pick<MeetingRoom, "starts_at" | "duration_min" | "s
 }
 
 /** One-tap dial string for phones: dial the 866, pick option 3, enter the code. */
-export function oneTapDial(code: string): string { return DIAL_IN_E164 + ",,3,,," + code + "#"; }
+// BF_SERVER_v827_CONFERENCE_DIAL - "3" and the code go in one burst after the call is answered. The greeting takes them
+// together ("3" + code + "#"), so no digit is lost between menus (the old ",,3,,,code#" sent the code while the
+// next menu was still loading, so part of it was dropped and the caller heard "try again").
+export function oneTapDial(code: string): string { return DIAL_IN_E164 + ",,3" + code + "#"; }
 
 export function joinUrl(slug: string): string {
   const base = (process.env.PUBLIC_SERVER_URL || "https://server.boreal.financial").replace(/[/]+$/, "");

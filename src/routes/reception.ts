@@ -283,16 +283,38 @@ router.get("/voice", safeHandler(async (req: Request, res: Response) => {
   return res.send(buf);
 }));
 
-router.post("/greeting", twilioWebhookValidation, safeHandler(async (_req: Request, res: Response) => {
+// BF_SERVER_v827_CONFERENCE_DIAL - the greeting takes up to 8 keys ending with # (or a 3-second pause), so "3" followed
+// straight away by the access code joins the meeting in one step: nothing is lost while the next menu loads. A single
+// key (1 / 2 / 3) still works as before, after the short pause.
+router.post("/greeting", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
   const v = await newVR();
-  const g = v.gather({ input: "speech dtmf", numDigits: 1, speechTimeout: "auto", timeout: 6, action: `${BASE}/company`, method: "POST" });
+  const again = String(req.query.again ?? "") === "1";
+  const g = v.gather({ input: "speech dtmf", numDigits: 8, finishOnKey: "#", speechTimeout: "auto", timeout: 3, action: `${BASE}/company${again ? "?again=1" : ""}`, method: "POST" });
   emit(g, "greeting", PHRASES.greeting);
-  v.redirect({ method: "POST" }, `${BASE}/company`);
+  v.redirect({ method: "POST" }, `${BASE}/company${again ? "?again=1" : ""}`);
   return send(res, v);
 }));
 
+/** BF_SERVER_v827_CONFERENCE_DIAL - speech that is really the greeting heard back (speakerphone echo), not an answer. */
+export function looksLikeEcho(speechText: string): boolean {
+  const s = String(speechText ?? "").toLowerCase();
+  if (!s) return false;
+  return /\bpress\b|scheduled|you can say|this call may be recorded|group of companies/.test(s) || s.split(/\s+/).filter(Boolean).length > 6;
+}
+
 router.post("/company", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
-  const s = speech(req); const d = digit(req);
+  const raw = digit(req).replace(/[^0-9]/g, "");
+  const d = raw.slice(0, 1);
+  let s = speech(req);
+  // BF_SERVER_v827_CONFERENCE_DIAL - the greeting heard back through a speakerphone is not an answer: play it once more
+  // (then carry on as Boreal Financial), instead of acting on "meeting" / "financial" in the echo.
+  if (!raw && looksLikeEcho(s)) {
+    console.log(JSON.stringify({ event: "reception_echo_ignored", callSid: req.body?.CallSid ?? null, speech: s }));
+    if (String(req.query.again ?? "") !== "1") { const ve = await newVR(); ve.redirect({ method: "POST" }, `${BASE}/greeting?again=1`); return send(res, ve); }
+    s = "";
+  }
+  // "3" + the six-digit code in one go: join that meeting straight away.
+  if (d === "3" && raw.length === 7) { const vm = await newVR(); vm.redirect({ method: "POST" }, `${BASE}/meeting-code?try=0&code=${raw.slice(1)}`); return send(res, vm); }
   // BF_SERVER_MEETING_ROOMS_v736 - option 3 (or "meeting" / "conference") joins a meeting room.
   if (d === "3" || /meeting|conference/.test(s)) { const vm = await newVR(); vm.redirect({ method: "POST" }, `${BASE}/meeting`); return send(res, vm); }
   let company = "BF";
@@ -321,7 +343,9 @@ router.post("/meeting-code", twilioWebhookValidation, safeHandler(async (req: Re
   const v = await newVR();
   const tries = Number(req.query.try ?? 0) || 0;
   const { findOpenRoomByCode, conferenceName, roomConferenceAttrs } = await import("../services/meetingRooms.js");
-  const room = await findOpenRoomByCode(digit(req)).catch((err: unknown) => {
+  // BF_SERVER_v827_CONFERENCE_DIAL - the code can come from the greeting ("3" + code) as ?code=.
+  const entered = typeof req.query.code === "string" && /^[0-9]{6}$/.test(req.query.code) ? req.query.code : digit(req);
+  const room = await findOpenRoomByCode(entered).catch((err: unknown) => {
     console.error("[meeting] code lookup failed", err instanceof Error ? err.message : String(err));
     return null;
   });
