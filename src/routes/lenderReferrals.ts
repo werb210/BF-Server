@@ -5,6 +5,8 @@
 //   Staff (Admin / Staff):
 //     GET  /api/lender-referrals                            the review queue
 //     GET  /api/lender-referrals/:id/zip                    download the zip to review it
+//     GET  /api/lender-referrals/by-application/:id         the referral behind a pipeline card (v827)
+//     POST /api/lender-referrals/:id/retry-import           import a file that could not be read (v827)
 //     POST /api/lender-referrals/:id/accept                 { complete_package: boolean, note? }
 //     POST /api/lender-referrals/:id/decline                { note? }
 import { Router, type Request, type Response } from "express";
@@ -24,6 +26,8 @@ import {
   lenderName,
   listForLender,
   listForStaff,
+  importReferral,
+  referralForApplication,
   parseReferralDetails,
   referralZip,
   saveReferral,
@@ -93,7 +97,7 @@ router.post("/mine", requireLender, uploadFiles, safeHandler(async (req: LenderR
         body: `${name} sent ${sent} declined file${sent === 1 ? "" : "s"} for review.`,
         refTable: "lender_referrals",
         refId: results.find((r) => r.ok)!.id! + ":" + Date.now(),
-        contextUrl: "/marketing?tab=referrers&sub=lender-referrals",
+        contextUrl: "/pipeline", // BF_SERVER_v827_REFERRAL_PIPELINE_CARD - the files show as Received cards
         silo: "BF",
       });
     } catch (error) {
@@ -101,6 +105,19 @@ router.post("/mine", requireLender, uploadFiles, safeHandler(async (req: LenderR
     }
   }
   res.status(sent > 0 ? 201 : 400).json({ sent, results });
+  // BF_SERVER_v827_REFERRAL_PIPELINE_CARD - import each file into a pipeline card after answering (reading the
+  // documents can take a while). One at a time; a failure is saved on the referral for staff.
+  const saved = results.filter((r) => r.ok && r.id).map((r) => r.id!);
+  void (async () => {
+    for (const id of saved) {
+      try { await importReferral(id); } catch (error) { logWarnSwallowed(error, "routes/lenderReferrals.ts:import"); }
+    }
+  })();
+}));
+
+// BF_SERVER_v827_REFERRAL_PIPELINE_CARD - the referral behind an application (its review panel).
+router.get("/by-application/:applicationId", ...staff, safeHandler(async (req: Request, res: Response) => {
+  res.json({ referral: await referralForApplication(String(req.params.applicationId)) });
 }));
 
 router.get("/", ...staff, safeHandler(async (_req: Request, res: Response) => {
@@ -128,6 +145,13 @@ router.post("/:id/accept", ...staff, safeHandler(async (req: any, res: Response)
     if (error instanceof LenderReferralError) return void res.status(error.status).json({ error: error.code, message: error.message });
     throw error;
   }
+}));
+
+// BF_SERVER_v827_REFERRAL_PIPELINE_CARD - try the import again for a file that could not be read.
+router.post("/:id/retry-import", ...staff, safeHandler(async (req: Request, res: Response) => {
+  const applicationId = await importReferral(String(req.params.id));
+  if (!applicationId) return void res.status(422).json({ error: "import_failed", message: "The file still could not be read. Download the zip and check it." });
+  res.json({ ok: true, applicationId });
 }));
 
 router.post("/:id/decline", ...staff, safeHandler(async (req: any, res: Response) => {

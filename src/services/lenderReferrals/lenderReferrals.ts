@@ -1,4 +1,8 @@
 // BF_SERVER_v825_LENDER_REFERRALS
+// BF_SERVER_v827_REFERRAL_PIPELINE_CARD - each uploaded file is imported straight away (in the background) into a
+// draft application, so it shows as a card in the Received column of the Sales Pipeline marked "Lender referral -
+// needs review"; staff open it, see the documents and Accept / Decline on the application. The draft has no
+// sign-in phone until it is accepted, so the client still cannot see or claim it, and nobody is texted.
 // Lenders send Boreal the files they declined ("dead files") from the lender portal: one zip per client, several
 // at a time. Nothing reaches the client until Boreal staff accept the file:
 //   upload    -> lender_referrals row, status 'pending', the zip kept in the row. No application, no CRM contact,
@@ -163,7 +167,7 @@ export async function listForStaff(db: Q = pool): Promise<any[]> {
   const r = await db.query(
     `SELECT r.id::text AS id, r.lender_id, r.lender_name, r.business_name, r.client_name, r.client_phone, r.requested_amount,
             r.decline_reason, r.zip_name, r.zip_size, r.file_names, r.status, r.complete_package, r.decision_note,
-            r.decided_by, r.decided_at, r.application_id, r.client_texted_at, r.created_at, a.pipeline_state,
+            r.decided_by, r.decided_at, r.application_id, r.client_texted_at, r.created_at, r.import_error, a.pipeline_state,
             (r.zip_data IS NOT NULL) AS has_zip
        FROM lender_referrals r
        LEFT JOIN applications a ON a.id::text = r.application_id
@@ -173,6 +177,21 @@ export async function listForStaff(db: Q = pool): Promise<any[]> {
   return r.rows.map((row) => ({ ...row, progress: referralProgress(row) }));
 }
 
+/** BF_SERVER_v827_REFERRAL_PIPELINE_CARD - the referral behind an application (the review panel on the application). */
+export async function referralForApplication(applicationId: string, db: Q = pool): Promise<any | null> {
+  const r = await db.query(
+    `SELECT r.id::text AS id, r.lender_id, r.lender_name, r.business_name, r.client_name, r.client_phone, r.requested_amount,
+            r.decline_reason, r.zip_name, r.status, r.complete_package, r.decision_note, r.decided_at, r.application_id,
+            r.client_texted_at, r.created_at, (r.zip_data IS NOT NULL) AS has_zip
+       FROM lender_referrals r
+      WHERE r.application_id = $1
+      ORDER BY r.created_at DESC
+      LIMIT 1`,
+    [applicationId],
+  );
+  return r.rows[0] ?? null;
+}
+
 export async function referralZip(id: string, db: Q = pool): Promise<{ name: string; data: Buffer } | null> {
   const r = await db.query(`SELECT zip_name, zip_data FROM lender_referrals WHERE id::text = $1 LIMIT 1`, [id]);
   const row = r.rows[0];
@@ -180,101 +199,180 @@ export async function referralZip(id: string, db: Q = pool): Promise<{ name: str
   return { name: String(row.zip_name || "file.zip"), data: Buffer.from(row.zip_data) };
 }
 
+type ImportFn = (opts: { zip: Buffer; zipName: string; brokerName: string; uploadedBy: string | null; applicantPhone?: string | null }) =>
+  Promise<{ importId: string; applicationId: string; businessName: string | null; warnings: string[]; prefill: any }>;
+type SmsFn = (args: { to: string; message: string; track?: any }) => Promise<unknown>;
+
+async function defaultImport(): Promise<ImportFn> {
+  return (await import("../brokerImport/importBrokerFile.js")).importBrokerZip;
+}
+
+/**
+ * BF_SERVER_v827_REFERRAL_PIPELINE_CARD - import a pending referral's zip into a draft application (documents filed,
+ * application form read) so it shows on the pipeline. The draft gets no sign-in phone, so the client cannot claim it
+ * and nobody is texted; the phone is added when staff accept. Returns the application id, or null when the import
+ * did not work (the zip is kept and the reason saved for staff).
+ */
+export async function importReferral(id: string, deps: { db?: Q; importZip?: ImportFn } = {}): Promise<string | null> {
+  const db = deps.db ?? pool;
+  const r = await db.query(
+    `SELECT id::text AS id, lender_id, lender_name, business_name, requested_amount, zip_name, zip_data, application_id
+       FROM lender_referrals WHERE id::text = $1 AND status IN ('pending', 'accepting') LIMIT 1`,
+    [id],
+  );
+  const row = r.rows[0];
+  if (!row) return null;
+  if (row.application_id) return String(row.application_id);
+  if (!row.zip_data) return null;
+  const lender = String(row.lender_name || "Lender");
+  try {
+    const importZip = deps.importZip ?? (await defaultImport());
+    const imported = await importZip({
+      zip: Buffer.from(row.zip_data),
+      zipName: String(row.zip_name),
+      brokerName: lender,
+      uploadedBy: "lender:" + String(row.lender_id),
+      applicantPhone: null,
+    });
+    // No sign-in phone until accepted (the import may have read one off the application form).
+    await db.query(
+      `UPDATE applications
+          SET name = CASE WHEN $3::boolean THEN $4 ELSE name END,
+              requested_amount = COALESCE(requested_amount, $5::numeric),
+              metadata = (COALESCE(metadata, '{}'::jsonb) - 'readiness_phone') || jsonb_build_object('lender_referral', jsonb_build_object(
+                'referral_id', $2::text, 'lender_id', $6::text, 'lender_name', $7::text, 'status', 'pending')),
+              updated_at = now()
+        WHERE id::text = $1`,
+      [imported.applicationId, id, !imported.businessName, row.business_name, row.requested_amount, String(row.lender_id), lender],
+    );
+    await db.query(`UPDATE broker_imports SET applicant_phone = NULL, updated_at = now() WHERE id::text = $1`, [imported.importId]);
+    await db.query(
+      `UPDATE lender_referrals SET application_id = $2, import_id = $3, import_error = NULL, zip_data = NULL, updated_at = now()
+        WHERE id::text = $1`,
+      [id, imported.applicationId, imported.importId],
+    );
+    return imported.applicationId;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("[lender-referrals] import failed", { id, error: message });
+    await db.query(`UPDATE lender_referrals SET import_error = $2, updated_at = now() WHERE id::text = $1`, [id, message.slice(0, 500)]);
+    return null;
+  }
+}
+
 export async function declineReferral(id: string, staffId: string | null, note: string | null, db: Q = pool): Promise<void> {
   const r = await db.query(
     `UPDATE lender_referrals
         SET status = 'declined', decision_note = $3, decided_by = $2, decided_at = now(), zip_data = NULL, updated_at = now()
       WHERE id::text = $1 AND status = 'pending'
-      RETURNING id`,
+      RETURNING id, application_id, import_id`,
     [id, staffId, note],
   );
-  if (!r.rows[0]) throw new LenderReferralError("not_pending", "This file was already accepted or declined.", 409);
+  const row = r.rows[0];
+  if (!row) throw new LenderReferralError("not_pending", "This file was already accepted or declined.", 409);
+  // BF_SERVER_v827_REFERRAL_PIPELINE_CARD - the draft leaves the pipeline and can never be claimed.
+  if (row.application_id) {
+    await db.query(
+      `UPDATE applications
+          SET source = 'lender_referral_declined',
+              metadata = (COALESCE(metadata, '{}'::jsonb) - 'readiness_phone')
+                || jsonb_build_object('lender_referral', COALESCE(metadata->'lender_referral', '{}'::jsonb) || jsonb_build_object('status', 'declined')),
+              updated_at = now()
+        WHERE id::text = $1 AND pipeline_state = 'draft'`,
+      [String(row.application_id)],
+    );
+  }
+  if (row.import_id) {
+    await db.query(`UPDATE broker_imports SET status = 'discarded', updated_at = now() WHERE id::text = $1`, [String(row.import_id)]);
+  }
 }
-
-type ImportFn = (opts: { zip: Buffer; zipName: string; brokerName: string; uploadedBy: string | null; applicantPhone?: string | null }) =>
-  Promise<{ importId: string; applicationId: string; businessName: string | null; warnings: string[]; prefill: any }>;
-type SmsFn = (args: { to: string; message: string; track?: any }) => Promise<unknown>;
 
 export type AcceptResult = { applicationId: string; texted: boolean; warnings: string[] };
 
-/** Accept: import the file, record the referral share, then text the client. */
+/** Accept: (import if not done yet), give the draft the client's sign-in phone, record the referral share, text the client. */
 export async function acceptReferral(
   id: string,
   opts: { staffId: string | null; completePackage: boolean; note: string | null },
   deps: { db?: Q; importZip?: ImportFn; sendSms?: SmsFn; appUrl?: string } = {},
 ): Promise<AcceptResult> {
   const db = deps.db ?? pool;
-  // Claim the row first so two clicks never import the file twice.
+  // Claim the row first so two clicks never accept the file twice.
   const claimed = await db.query(
     `UPDATE lender_referrals SET status = 'accepting', updated_at = now()
-      WHERE id::text = $1 AND status = 'pending' AND zip_data IS NOT NULL
-      RETURNING id::text AS id, lender_id, lender_name, business_name, client_name, client_phone, requested_amount, zip_name, zip_data`,
+      WHERE id::text = $1 AND status = 'pending' AND (application_id IS NOT NULL OR zip_data IS NOT NULL)
+      RETURNING id::text AS id, lender_id, lender_name, client_name, client_phone`,
     [id],
   );
   const row = claimed.rows[0];
   if (!row) throw new LenderReferralError("not_pending", "This file was already accepted or declined.", 409);
+  const back = async () => { await db.query(`UPDATE lender_referrals SET status = 'pending', updated_at = now() WHERE id::text = $1`, [id]); };
 
-  let imported: Awaited<ReturnType<ImportFn>>;
-  try {
-    const importZip = deps.importZip ?? (await import("../brokerImport/importBrokerFile.js")).importBrokerZip;
-    imported = await importZip({
-      zip: Buffer.from(row.zip_data),
-      zipName: String(row.zip_name),
-      brokerName: String(row.lender_name || "Lender"),
-      uploadedBy: "lender:" + String(row.lender_id),
-      applicantPhone: row.client_phone,
-    });
-  } catch (error) {
-    await db.query(`UPDATE lender_referrals SET status = 'pending', updated_at = now() WHERE id::text = $1`, [id]);
-    const { BrokerImportError } = await import("../brokerImport/importBrokerFile.js");
-    if (error instanceof BrokerImportError) throw new LenderReferralError(error.code, error.message, error.status);
-    throw error;
+  const applicationId = await importReferral(id, { db, ...(deps.importZip ? { importZip: deps.importZip } : {}) });
+  if (!applicationId) {
+    await back();
+    throw new LenderReferralError("import_failed", "The file could not be read. Download the zip and check it.", 422);
+  }
+  const phone = String(row.client_phone);
+  const dup = await db.query(
+    `SELECT id FROM applications
+      WHERE source = 'broker_import' AND pipeline_state = 'draft' AND id::text <> $2
+        AND right(regexp_replace(coalesce(metadata->>'readiness_phone', ''), '[^0-9]', '', 'g'), 10) = right($1, 10)
+      LIMIT 1`,
+    [phone.replace(/[^0-9]/g, ""), applicationId],
+  );
+  if (dup.rows[0]) {
+    await back();
+    throw new LenderReferralError("phone_in_use", "Another imported file is already waiting for this client's cell number.", 409);
   }
 
   const share = opts.completePackage ? REFERRAL_SHARE_PCT : 0;
-  // The lender's name stays for staff (pipeline label); the client app shows "the documents you provided".
-  await db.query(
+  const lender = String(row.lender_name || "Lender");
+  const app = await db.query(
     `UPDATE applications
-        SET name = CASE WHEN $3::boolean THEN $4 ELSE name END,
-            requested_amount = COALESCE(requested_amount, $5::numeric),
-            metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('lender_referral', jsonb_build_object(
-              'referral_id', $2::text, 'lender_id', $6::text, 'lender_name', $7::text, 'complete_package', $8::boolean)),
+        SET metadata = COALESCE(metadata, '{}'::jsonb)
+              || jsonb_build_object('readiness_phone', $2::text)
+              || jsonb_build_object('lender_referral', COALESCE(metadata->'lender_referral', '{}'::jsonb)
+                   || jsonb_build_object('status', 'accepted', 'complete_package', $3::boolean)),
             updated_at = now()
-      WHERE id::text = $1`,
-    [imported.applicationId, id, !imported.businessName, row.business_name, row.requested_amount, String(row.lender_id),
-      String(row.lender_name || "Lender"), opts.completePackage],
+      WHERE id::text = $1
+      RETURNING metadata->'broker_prefill'->'applicant'->>'firstName' AS first_name, metadata->'broker_import'->>'import_id' AS import_id`,
+    [applicationId, phone, opts.completePackage],
   );
+  const importId = app.rows[0]?.import_id ?? null;
+  if (importId) await db.query(`UPDATE broker_imports SET applicant_phone = $2, updated_at = now() WHERE id::text = $1`, [importId, phone]);
   await db.query(
     `INSERT INTO broker_deal_confirmations
        (application_id, broker_name, boreal_pct, broker_pct, terms, notes, agreed_by_broker, agreed_on, recorded_by, status, accepted_at)
      VALUES ($1, $2, $3, $4, $5, $6, 'Lender referral terms', CURRENT_DATE, $7, 'accepted', now())
      ON CONFLICT (application_id) DO NOTHING`,
-    [imported.applicationId, String(row.lender_name || "Lender"), 100 - share, share,
+    [applicationId, lender, 100 - share, share,
       opts.completePackage ? `Lender referral, complete package: ${REFERRAL_SHARE_PCT}% of Boreal's fee` : "Lender referral, incomplete package: no referral share",
       opts.note, opts.staffId],
   );
   await db.query(
     `UPDATE lender_referrals
         SET status = 'accepted', complete_package = $2, decision_note = $3, decided_by = $4, decided_at = now(),
-            application_id = $5, import_id = $6, zip_data = NULL, updated_at = now()
+            zip_data = NULL, updated_at = now()
       WHERE id::text = $1`,
-    [id, opts.completePackage, opts.note, opts.staffId, imported.applicationId, imported.importId],
+    [id, opts.completePackage, opts.note, opts.staffId],
   );
 
   let texted = false;
   try {
     const sendSms = deps.sendSms ?? (await import("../../modules/notifications/sms.service.js")).sendSms;
     const appUrl = deps.appUrl ?? (process.env.CLIENT_APP_URL || "https://client.boreal.financial").replace(/\/+$/, "");
-    const first = String(imported.prefill?.applicant?.firstName ?? "").trim() || String(row.client_name ?? "").trim().split(/\s+/)[0] || null;
-    await sendSms({ to: String(row.client_phone), message: clientInviteText(first, appUrl), track: { kind: "lender_referral_invite", applicationId: imported.applicationId } });
+    const first = String(app.rows[0]?.first_name ?? "").trim() || String(row.client_name ?? "").trim().split(/\s+/)[0] || null;
+    await sendSms({ to: phone, message: clientInviteText(first, appUrl), track: { kind: "lender_referral_invite", applicationId } });
     await db.query(`UPDATE lender_referrals SET client_texted_at = now(), updated_at = now() WHERE id::text = $1`, [id]);
-    await db.query(
-      `UPDATE broker_imports SET summary = COALESCE(summary, '{}'::jsonb) || jsonb_build_object('client_texted_at', now()::text), updated_at = now() WHERE id::text = $1`,
-      [imported.importId],
-    );
+    if (importId) {
+      await db.query(
+        `UPDATE broker_imports SET summary = COALESCE(summary, '{}'::jsonb) || jsonb_build_object('client_texted_at', now()::text), updated_at = now() WHERE id::text = $1`,
+        [importId],
+      );
+    }
     texted = true;
   } catch (error) {
     console.warn("[lender-referrals] client text failed", { id, error: error instanceof Error ? error.message : String(error) });
   }
-  return { applicationId: imported.applicationId, texted, warnings: imported.warnings ?? [] };
+  return { applicationId, texted, warnings: [] };
 }
