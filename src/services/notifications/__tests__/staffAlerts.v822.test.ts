@@ -38,7 +38,8 @@ describe("v822 CarPlay message alerts", () => {
   it("leaves calls, voicemails and handoffs as ordinary alerts", () => {
     for (const [category, type] of [["MISSED_CALL", "missed_call"], ["VOICEMAIL", "voicemail"], ["HANDOFF", "maya_handoff"]] as const) {
       const payload = buildStaffAlertPayload({ title: "t", body: "b", category, type, data: { senderName: "Jane" } }) as any;
-      expect(payload.aps["mutable-content"]).toBeUndefined();
+      // BF_SERVER_v832_DIALER_SIGNOUT_ALERTS - a missed call is mutable so the dialler can drop its own duplicate.
+      expect(payload.aps["mutable-content"]).toBe(category === "MISSED_CALL" ? 1 : undefined);
       expect(payload.senderName).toBeUndefined();
     }
     expect([...STAFF_ALERT_MESSAGE_CATEGORIES].sort()).toEqual(["CLIENT_MESSAGE", "SMS"]);

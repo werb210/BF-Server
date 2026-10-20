@@ -84,7 +84,7 @@ describe("staff alert APNs payload", () => {
     const payload = buildStaffAlertPayload({ title: "Missed call", body: "Unknown", category: "MISSED_CALL", type: "missed_call",
       data: { contactId: "not-a-uuid", phone: "4035550144", threadKind: "email" as any } });
     expect(payload).toEqual({ aps: { alert: { title: "Missed call", body: "Unknown" }, sound: "default", category: "MISSED_CALL", "thread-id": "missed_call:general",
-      "interruption-level": "time-sensitive", "relevance-score": 0.9 }, schema: 1, type: "missed_call" }); // BF_SERVER_v821_DIALER
+      "interruption-level": "time-sensitive", "relevance-score": 0.9, "mutable-content": 1 }, schema: 1, type: "missed_call" }); // BF_SERVER_v821_DIALER, v832 mutable-content
   });
 });
 
