@@ -208,6 +208,11 @@ export async function start(): Promise<void> {
     try { const w = startBankingAutoWorker(pool); workerStops.push(w.stop); console.log("[startup] banking auto-worker started"); }
     catch (err) { console.error("[startup] banking auto-worker failed to start:", err); }
 
+    // BF_SERVER_v834_IMPORT_FIXES - fields for files imported from a Boreal package before v828 (once per file).
+    void import("./services/brokerImport/packageBackfill.js")
+      .then((m) => m.backfillPackagePrefill())
+      .catch((err) => console.warn("[startup] package backfill failed:", (err as Error)?.message ?? err));
+
     // BF_SERVER_BLOCK_v146_LENDER_PACKAGE_WORKER_v1
     const { startLenderPackageWorker } = await import("./workers/lenderPackageWorker.js");
     await workerStagger();
