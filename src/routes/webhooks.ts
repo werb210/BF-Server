@@ -330,7 +330,9 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
     if (callSid) await setParticipantCallSid(callerPid, callSid);
     // Ring all staff in parallel.
     const staffIds: string[] = [];
-    await Promise.all(available.rows.map(async (row) => {
+    // BF_SERVER_v829_DIALER_RELIABILITY - not awaited: answering Twilio no longer waits on one Twilio API call per staff
+    // phone, which delayed the caller's audio. Each leg's CallSid is saved as it is placed (conferenceService).
+    void Promise.all(available.rows.map(async (row) => {
       const pid = await addParticipantRow({
         conferenceId: conf.id, kind: "staff",
         identity: row.twilio_identity, displayName: row.twilio_identity,
@@ -343,7 +345,7 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
           fromNumber: clientPhone,
         });
       } catch (e: any) { console.warn("ring_all_dial_failed", { identity: row.twilio_identity, message: e?.message }); }
-    }));
+    })).catch((e: any) => console.warn("ring_all_failed", { callSid, message: e?.message }));
     void broadcastIncomingRing(conf.id, clientPhone || from); // BF_SERVER_INCOMING_RING_ARGS_v1
     const base = getPublicBaseUrl();
     vrc.redirect({ method: "POST" }, `${base}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(conf.friendly_name)}&pid=${encodeURIComponent(callerPid)}`);
@@ -433,7 +435,9 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
     });
     if (callSid) await setParticipantCallSid(callerPid, callSid);
     const staffIds: string[] = [];
-    await Promise.all(available.rows.map(async (row) => {
+    // BF_SERVER_v829_DIALER_RELIABILITY - not awaited: answering Twilio no longer waits on one Twilio API call per staff
+    // phone, which delayed the caller's audio. Each leg's CallSid is saved as it is placed (conferenceService).
+    void Promise.all(available.rows.map(async (row) => {
       const pid = await addParticipantRow({
         conferenceId: conf.id, kind: "staff",
         identity: row.twilio_identity, displayName: row.twilio_identity,
@@ -445,7 +449,7 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
           identity: row.twilio_identity, participantId: pid, fromNumber: from,
         });
       } catch (e: any) { console.warn("ring_all_dial_failed", { identity: row.twilio_identity, message: e?.message }); }
-    }));
+    })).catch((e: any) => console.warn("ring_all_failed", { callSid, message: e?.message }));
     void broadcastIncomingRing(conf.id, from); // BF_SERVER_INCOMING_RING_ARGS_v1
     const base = getPublicBaseUrl();
     vrp.redirect({ method: "POST" }, `${base}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(conf.friendly_name)}&pid=${encodeURIComponent(callerPid)}`);

@@ -79,6 +79,7 @@ describe("wiring", () => {
     h.queryMock.mockImplementation(answerBySql([
       [/FROM watch_sessions s JOIN watch_devices d/, { rows: [{ id: "s1", staff_user_id: STAFF, role: "Staff", silo: "BF", silos: [] }] }],
       [/UPDATE call_logs SET disposition/, { rows: [{ id: CALL, contact_id: CONTACT, silo: "BF" }], rowCount: 1 }],
+      [/FROM call_logs WHERE id = \$1::uuid AND staff_user_id/, { rows: [{ id: CALL, contact_id: CONTACT, silo: "BF" }] }], // BF_SERVER_v829_DIALER_RELIABILITY
       [/SET lead_status/, (_s: string, p?: unknown[]) => ({ rows: [{ lead_status: p?.[1] }] })],
       [/marketing_sequence_enrollments/, { rows: [{ id: "e1" }] }],
     ]));

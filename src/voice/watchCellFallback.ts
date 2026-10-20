@@ -6,7 +6,9 @@
 type Q = { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> };
 
 /** How long the Boreal app (iPhone dialler / iPad) rings before the cell is tried. */
-export const CLIENT_FIRST_TIMEOUT_SECONDS = 15;
+// BF_SERVER_v829_DIALER_RELIABILITY - was 15. The clock starts before the VoIP push reaches the phone, so the iPhone
+// really rang for ~10 s and a late tap on Answer met a cancelled call.
+export const CLIENT_FIRST_TIMEOUT_SECONDS = 22;
 /** How long the cell leg rings (includes the screening prompt). */
 export const CELL_RING_TIMEOUT_SECONDS = 25;
 /** How long the screening prompt waits for a key. */

@@ -122,14 +122,14 @@ describe("<Client> custom parameters on inbound calls", () => {
 
   it("no matching contact: the plain <Client>identity</Client>", async () => {
     const xml = await directLine([]);
-    expect(xml).toContain(`<Client>${OWNER}</Client>`);
+    expect(xml).toMatch(new RegExp(`<Client[^>]*>${OWNER}</Client>`));
     expect(xml).not.toContain("<Parameter");
   });
 
   it("a failing card lookup never stops the call", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const xml = await directLine([[CARD_SQL, new Error("db down")]]);
-    expect(xml).toContain(`<Client>${OWNER}</Client>`);
+    expect(xml).toMatch(new RegExp(`<Client[^>]*>${OWNER}</Client>`));
   });
 
   it("reception engagement group: every member's <Client> carries the card", async () => {

@@ -141,8 +141,8 @@ describe("TwiML outside call hours", () => {
   });
 
   it("direct line within hours (or DND off) rings as normal", async () => {
-    expect(await directLine(awayRow({ enabled: false }))).toContain(`<Client>${OWNER}</Client>`);
-    expect(await directLine(null)).toContain(`<Client>${OWNER}</Client>`);
+    expect(await directLine(awayRow({ enabled: false }))).toMatch(new RegExp(`<Client[^>]*>${OWNER}</Client>`));
+    expect(await directLine(null)).toMatch(new RegExp(`<Client[^>]*>${OWNER}</Client>`));
   });
 
   async function awayChoice(query: string, body: Record<string, string>, rules: Array<[RegExp, unknown]> = []) {
@@ -158,8 +158,8 @@ describe("TwiML outside call hours", () => {
       [/SELECT sp\.twilio_identity FROM users u LEFT JOIN staff_presence sp/, { rows: [{ twilio_identity: OWNER }] }],
       [/WHERE u\.id::text = \$1\s+AND u\.callback_verified_at IS NOT NULL/, { rows: [{ phone: "4035550103" }] }],
     ]);
-    expect(xml).toContain(`<Client>${OWNER}</Client>`);
-    expect(xml).toContain('timeout="15"');
+    expect(xml).toMatch(new RegExp(`<Client[^>]*>${OWNER}</Client>`));
+    expect(xml).toContain('timeout="22"') // BF_SERVER_v829_DIALER_RELIABILITY - was 15;
     expect(xml).toContain(`direct-unavailable?user=${OWNER}&amp;cell=1`);
   });
 
@@ -175,7 +175,7 @@ describe("TwiML outside call hours", () => {
         status: "available", twilio_identity: "andrew-client", on_call: false, fresh: true, ringable: true, phone: null, standalone_watch: false, user_id: ANDREW,
       }] }],
     ]);
-    expect(xml).toContain("<Client>andrew-client</Client>");
+    expect(xml).toMatch(/<Client[^>]*>andrew-client<\/Client>/);
   });
 
   it("reception: a named target outside their hours gets the away prompt instead of ringing", async () => {
@@ -204,8 +204,8 @@ describe("TwiML outside call hours", () => {
     ]));
     const app = mountRouter((await import("../routes/reception.js")).default, "/api/webhooks/twilio/reception");
     const xml = (await request(app).post("/api/webhooks/twilio/reception/intent?company=BF").type("form").send({ Digits: "1", From: CALLER })).text;
-    expect(xml).toContain("<Client>todd-client</Client>");
-    expect(xml).toContain("<Client>staff-3</Client>");
+    expect(xml).toMatch(/<Client[^>]*>todd-client<\/Client>/);
+    expect(xml).toMatch(/<Client[^>]*>staff-3<\/Client>/);
     expect(xml).not.toContain("staff-2");
     expect(callsMatching(h.query, GROUP_HOURS_SQL)[0]![1]).toEqual([["todd-client", "staff-2", "staff-3"]]);
   });
@@ -218,6 +218,6 @@ describe("TwiML outside call hours", () => {
     ]));
     const app = mountRouter((await import("../routes/webhooks.js")).default, "/api/webhooks");
     const res = await request(app).post("/api/webhooks/twilio/voice/twiml").type("form").send({ From: CALLER, To: "+18255550190", CallSid: "CA-dnd-3" });
-    expect(res.text).toContain(`<Client>${OWNER}</Client>`);
+    expect(res.text).toMatch(new RegExp(`<Client[^>]*>${OWNER}</Client>`));
   });
 });

@@ -497,6 +497,10 @@ router.post("/calls", auth, async (req: any, res) => {
       const { callerIdForUser } = await import("../voice/directLines.js");
       const callerId = await callerIdForUser(pool, userId); // BF_SERVER_PHONE_ROUTING_v688b - direct number, else the 866 main line
       if (!callerId) return res.status(503).json({ ok: false, error: "caller_id_unconfigured" });
+      // BF_SERVER_v829_DIALER_RELIABILITY - dialOnJoin (the iPhone dialler): the customer is dialled when the staff
+      // leg joins the conference (conferenceWebhooks /conference/join), so a staff side that fails or hangs up during
+      // setup never leaves the customer ringing into an empty call.
+      const dialOnJoin = target.dialOnJoin === true;
       const calleePid = await addParticipantRow({
         conferenceId: conf.id,
         kind: "pstn",
@@ -504,7 +508,19 @@ router.post("/calls", auth, async (req: any, res) => {
         // BF_SERVER_CALLER_DISPLAY_v148 - was `?? toPstn`, which put a bare
         // E.164 string in the call UI whenever the caller did not supply a name.
         displayName: await resolveDisplayName(pool, toPstn, target.contactName),
+        ...(dialOnJoin ? { status: "pending_dial" } : {}),
       });
+      if (dialOnJoin) {
+        return res.json({
+          ok: true,
+          conferenceId: conf.id,
+          conferenceFriendly: conf.friendly_name,
+          callerParticipantId: callerPid,
+          calleeParticipantId: calleePid,
+          calleeCallSid: null,
+          dialOnJoin: true,
+        });
+      }
       const calleeSid = await dialPstnIntoConference({
         conferenceId: conf.id,
         conferenceFriendly: conf.friendly_name,

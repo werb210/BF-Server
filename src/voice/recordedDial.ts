@@ -129,7 +129,7 @@ export function consentUrl(): string {
 }
 
 /** Twilio leg status callback -> participant row (answered) / call record ended (completed). Never throws. */
-export async function recordLegStatus(q: Q, args: { friendlyName: string; identity: string; callSid: string; status: string }): Promise<void> {
+export async function recordLegStatus(q: Q, args: { friendlyName: string; identity: string; callSid: string; status: string; parentCallSid?: string | null }): Promise<void> {
   const status = String(args.status || "").toLowerCase();
   try {
     if (status === "in-progress" || status === "answered") {
@@ -146,6 +146,14 @@ export async function recordLegStatus(q: Q, args: { friendlyName: string; identi
         `UPDATE conferences SET status = 'answered', updated_at = now() WHERE friendly_name = $1 AND status = 'ringing'`,
         [args.friendlyName],
       );
+      // BF_SERVER_v829_DIALER_RELIABILITY - the inbound call_logs row (caller's sid) gets who answered and this leg's
+      // sid, so the dialler can save the call outcome.
+      const { claimInboundCall, parentSidFromRecordName } = await import("../modules/calls/callAttribution.js");
+      await claimInboundCall(q, {
+        parentCallSid: args.parentCallSid || parentSidFromRecordName(args.friendlyName),
+        answeredLegSid: args.callSid,
+        identity: args.identity,
+      });
     } else if (status === "completed") {
       await q.query(
         `UPDATE conference_participants SET status = 'left', left_at = now() WHERE twilio_call_sid = $1 AND status <> 'left'`,

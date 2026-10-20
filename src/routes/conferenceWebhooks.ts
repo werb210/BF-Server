@@ -80,21 +80,59 @@ router.post("/conference/join", twilioWebhookValidation, safeHandler(async (req:
     console.warn("[voice] conference direction lookup failed", { conf, message: err?.message });
   }
   const enableRecording = process.env.ENABLE_CALL_RECORDING !== "false" && !internalCall;
-  // BF_SERVER_BLOCK_v764_RECORDING_CONSENT — Canada is two-party consent.
-  // Announce recording to each party as they join a recorded conference,
-  // before they enter. Only when recording is actually on.
-  if (enableRecording) {
-    vr.say({ voice: "Polly.Joanna" }, "This call may be recorded for quality and training purposes.");
-  }
   // BF_SERVER_BLOCK_v843_NO_ANSWER_VOICEMAIL — look up this leg's kind so the
   // caller (pstn / client_miniportal) waits with a bounded hold that falls to
   // voicemail when nobody answers, while staff legs start the conference on join.
   let legKind: string | null = null;
+  let legRole: string | null = null; // BF_SERVER_v829_DIALER_RELIABILITY
+  let legIdentity: string | null = null;
+  let legConferenceId: string | null = null;
+  let othersJoined = 0;
   if (pid) {
-    const kr = await pool.query<{ kind: string | null }>(
-      `SELECT kind FROM conference_participants WHERE id = $1 LIMIT 1`, [pid],
+    const kr = await pool.query<{ kind: string | null; role: string | null; identity: string | null; conference_id: string | null; others_joined: number }>(
+      `SELECT p.kind, p.role, p.identity, p.conference_id::text AS conference_id,
+              (SELECT COUNT(*)::int FROM conference_participants o
+                WHERE o.conference_id = p.conference_id AND o.id <> p.id AND o.status = 'joined') AS others_joined
+         FROM conference_participants p WHERE p.id = $1 LIMIT 1`, [pid],
     ).catch((err: any) => { console.warn("[silent-query] routes/conferenceWebhooks.ts", { message: err?.message }); return { rows: [] as any[] }; });
     legKind = kr.rows[0]?.kind ?? null;
+    legRole = kr.rows[0]?.role ?? null;
+    legIdentity = kr.rows[0]?.identity ?? null;
+    legConferenceId = kr.rows[0]?.conference_id ?? null;
+    othersJoined = Number(kr.rows[0]?.others_joined ?? 0);
+  }
+  // BF_SERVER_BLOCK_v764_RECORDING_CONSENT — Canada is two-party consent.
+  // Announce recording to each party as they join a recorded conference,
+  // before they enter. Only when recording is actually on.
+  // BF_SERVER_v829_DIALER_RELIABILITY - not to staff: on an answered call it held them ~4 s in silence before they
+  // were connected to a caller who had already heard it.
+  if (enableRecording && legKind !== "staff") {
+    vr.say({ voice: "Polly.Joanna" }, "This call may be recorded for quality and training purposes.");
+  }
+  // BF_SERVER_v829_DIALER_RELIABILITY - the staff member who placed an outbound call waits in the conference, hearing a
+  // ringback tone, until the customer joins (the customer's join starts it). With dialOnJoin the customer is dialled
+  // only now that the staff leg is here. Not awaited: the TwiML must not wait on Twilio.
+  const staffPlacedCall = legKind === "staff" && legRole === "moderator" && (confDirection === "outbound" || confDirection === "internal");
+  const waitForCallee = staffPlacedCall && othersJoined === 0;
+  if (staffPlacedCall && legConferenceId) {
+    const conferenceId = legConferenceId;
+    void import("../voice/outboundCallFlow.js").then(({ dialPendingCallees }) => dialPendingCallees(conferenceId))
+      .catch((err: any) => console.warn("[outbound] pending dial failed", { conferenceId, message: err?.message }));
+  }
+  // BF_SERVER_v829_DIALER_RELIABILITY - a ring-all leg answered: the inbound call_logs row (the caller's CallSid) gets
+  // who answered and this leg's sid, so the dialler can save the call outcome.
+  if (legKind === "staff" && (confDirection === "inbound" || confDirection === "client_miniportal") && legConferenceId && callSid) {
+    const conferenceId = legConferenceId;
+    const identity = legIdentity;
+    void (async () => {
+      const caller = await pool.query<{ sid: string | null }>(
+        `SELECT twilio_call_sid AS sid FROM conference_participants
+          WHERE conference_id = $1 AND kind <> 'staff' AND twilio_call_sid IS NOT NULL ORDER BY created_at ASC LIMIT 1`,
+        [conferenceId],
+      );
+      const { claimInboundCall } = await import("../modules/calls/callAttribution.js");
+      await claimInboundCall(pool, { parentCallSid: caller.rows[0]?.sid ?? null, answeredLegSid: callSid, identity });
+    })().catch((err: any) => console.warn("[call-attribution] ring-all claim failed", { conferenceId, message: err?.message }));
   }
   // BF_SERVER_VOICE_AUDIT_v686 - only an inbound caller waits for staff and can
   // fall through to voicemail. An outbound callee must never enter that loop.
@@ -107,7 +145,7 @@ router.post("/conference/join", twilioWebhookValidation, safeHandler(async (req:
     statusCallbackMethod: "POST",
     // Caller waits (doesn't start conf) so its waitUrl can escape to voicemail on
     // no-answer; staff joining starts the conference and ends the caller's wait.
-    startConferenceOnEnter: isCallerLeg ? false : true,
+    startConferenceOnEnter: isCallerLeg || waitForCallee ? false : true, // BF_SERVER_v829_DIALER_RELIABILITY
     // 2-party PSTN call: either party hangup ends the conference.
     endConferenceOnExit: true,
     // No periodic chirp on participant flap.
@@ -116,6 +154,9 @@ router.post("/conference/join", twilioWebhookValidation, safeHandler(async (req:
   };
   if (isCallerLeg) {
     confAttrs.waitUrl = `${base}/api/webhooks/twilio/conference/wait?conf=${encodeURIComponent(conf)}&pid=${encodeURIComponent(pid)}&n=0`;
+    confAttrs.waitMethod = "POST";
+  } else if (waitForCallee) {
+    confAttrs.waitUrl = `${base}/api/webhooks/twilio/conference/ringback`; // BF_SERVER_v829_DIALER_RELIABILITY
     confAttrs.waitMethod = "POST";
   }
   if (enableRecording) {
@@ -138,6 +179,20 @@ router.post("/conference/join", twilioWebhookValidation, safeHandler(async (req:
     twiml_bytes: twiml.length,
   }));
   return res.send(twiml);
+}));
+
+// BF_SERVER_v829_DIALER_RELIABILITY - what the staff member hears while the customer's phone rings.
+router.post("/conference/ringback", twilioWebhookValidation, safeHandler(async (_req: any, res) => {
+  const { ringbackTwiml } = await import("../voice/outboundCallFlow.js");
+  res.setHeader("Content-Type", "text/xml");
+  return res.send(ringbackTwiml(getPublicBaseUrl()));
+}));
+// The tone itself (public: a plain ringback tone, no data).
+router.get("/conference/ringback.wav", safeHandler(async (_req: any, res) => {
+  const { ringbackAudio } = await import("../voice/outboundCallFlow.js");
+  res.setHeader("Content-Type", "audio/wav");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  return res.send(ringbackAudio());
 }));
 
 // BF_SERVER_BLOCK_v843_NO_ANSWER_VOICEMAIL — caller hold loop with voicemail escape.
@@ -228,6 +283,8 @@ router.post("/conference/status", twilioWebhookValidation, safeHandler(async (re
           const { cancelPendingParticipantCall } = await import("../voice/conferenceService.js");
           for (const participant of pending.rows) await cancelPendingParticipantCall(participant.id);
         }
+        // BF_SERVER_v829_DIALER_RELIABILITY - a callee still waiting for the staff leg is never dialled now.
+        await pool.query(`UPDATE conference_participants SET status = 'canceled' WHERE conference_id = $1 AND status = 'pending_dial'`, [conf.id]);
       } catch (err: any) {
         console.warn("[voice] cancel still-ringing legs failed", { conferenceId: conf.id, message: err?.message });
       }
@@ -285,6 +342,17 @@ router.post("/conference/status", twilioWebhookValidation, safeHandler(async (re
         const r = await pool.query<{ kind: string | null }>(`UPDATE conference_participants SET status = 'left', left_at = now() WHERE twilio_call_sid = $1 RETURNING kind`, [callSid]);
         leftKind = r.rows[0]?.kind ?? null;
       }
+      // BF_SERVER_v829_DIALER_RELIABILITY - the staff member hung up an outbound call while the customer's phone was
+      // still ringing (the conference never started, so conference-end may not come): stop that ringing now.
+      if ((conf.direction === "outbound" || conf.direction === "internal") && leftKind === "staff") {
+        const ringing = await pool.query<{ id: string }>(
+          `SELECT id FROM conference_participants WHERE conference_id = $1 AND kind <> 'staff' AND status IN ('invited','ringing')`,
+          [conf.id],
+        );
+        const { cancelPendingParticipantCall } = await import("../voice/conferenceService.js");
+        for (const r of ringing.rows) await cancelPendingParticipantCall(r.id);
+        await pool.query(`UPDATE conference_participants SET status = 'canceled' WHERE conference_id = $1 AND status = 'pending_dial'`, [conf.id]);
+      }
       // BF_SERVER_BLOCK_v699_CALLER_HANGUP_CANCELS_RING_v1
       // If the caller (client mini-portal / inbound PSTN) hangs up before any
       // staff answers, the ring-all staff legs were left ringing forever — the
@@ -331,6 +399,15 @@ router.post("/call/status", twilioWebhookValidation, safeHandler(async (req: any
   if (!callSid) return res.status(200).send("");
   const part = await getParticipantBySid(callSid);
   if (!part) return res.status(200).send("");
+
+  // BF_SERVER_v829_DIALER_RELIABILITY - a customer who never answered (busy / no answer / failed): keep why and end
+  // the staff leg with that reason instead of leaving it in silence.
+  const { handleUnansweredCallee } = await import("../voice/outboundCallFlow.js");
+  const unanswered = await handleUnansweredCallee(part as any, status);
+  if (unanswered) {
+    await notifyConferenceState(part.conference_id, "conference.update", { callSid, callStatus: status });
+    return res.status(200).send("");
+  }
 
   let newStatus = part.status;
   if (status === "ringing") newStatus = "ringing";
