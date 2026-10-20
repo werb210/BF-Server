@@ -131,6 +131,12 @@ async function mirrorDocToSiblingLegs(args: {
   }
 }
 
+// BF_SERVER_v837_NO_OCR_FOR_SIGNED_FORMS - categories that are filed without OCR.
+export const NO_OCR_CATEGORIES = new Set(["other", "sba_forms", "signed_application", "signed application"]);
+export function isNoOcrCategory(category: unknown): boolean {
+  return NO_OCR_CATEGORIES.has(String(category ?? "").trim().toLowerCase());
+}
+
 export async function persistAndEnqueue(opts: {
   applicationId: string;
   category: string;
@@ -169,7 +175,9 @@ export async function persistAndEnqueue(opts: {
   try {
     // BF_SERVER_BLOCK_v818_OTHER_SKIP_OCR — "Other" docs are not OCR'd; they still reach the
     // lender package through the normal Accept flow (the package includes any accepted doc).
-    const isOtherDoc = String(opts.category ?? "").trim().toLowerCase() === "other";
+    // BF_SERVER_v837_NO_OCR_FOR_SIGNED_FORMS - signed SBA forms and signed applications (e.g. in a partner's zip) are
+    // Boreal's own forms: nothing to read from them, so they are not OCR'd either.
+    const isOtherDoc = isNoOcrCategory(opts.category);
     await tx.query("BEGIN");
 
     await tx.query(
@@ -279,7 +287,7 @@ export async function persistAndEnqueue(opts: {
 
   // OCR is best-effort — if it fails we still return success for the upload.
   // BF_SERVER_BLOCK_v818_OTHER_SKIP_OCR — never OCR "Other" docs.
-  if (String(opts.category ?? "").trim().toLowerCase() !== "other") {
+  if (!isNoOcrCategory(opts.category)) { // BF_SERVER_v837_NO_OCR_FOR_SIGNED_FORMS
     try {
       await enqueueOcrForDocument(documentId);
     } catch (err) {
