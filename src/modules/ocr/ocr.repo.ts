@@ -86,7 +86,9 @@ export async function lockOcrJobs(params: {
        )
          and (oj.locked_at is null or oj.locked_at <= now() - ($3 * interval '1 minute'))
          and a.pipeline_state IS NOT NULL
-         and a.pipeline_state NOT IN ('draft', 'Draft', '')
+         -- BF_SERVER_v834_IMPORT_FIXES - a file a broker or lender sent stays a draft until the client signs in, and
+         -- its documents sat "OCR queued" all that time. They are read now: staff work the file before the client does.
+         and (a.pipeline_state NOT IN ('draft', 'Draft', '') or a.source = 'broker_import')
        order by oj.created_at asc
        limit $1
        for update skip locked
