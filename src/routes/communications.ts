@@ -10,6 +10,7 @@ import { fetchTwilioMedia, persistTwilioMediaToBlob } from "../services/mmsMedia
 import twilio from "twilio";
 import { isUndeliverableNumber } from "../lib/smsDeliverability.js"; // BF_SERVER_GUARD_EVERYWHERE_v136
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { replayKey } from "../middleware/replayKey.js"; // BF_SERVER_v831_DIALER_POLISH
 
 const router = Router();
 import { smsFromFor, smsSenderFor } from "../lib/smsFrom.js"; // BF_SERVER_US_SMS_TOLLFREE_v755
@@ -94,7 +95,7 @@ export function normalizeCallEventType(raw: unknown): string {
   return CALL_EVENT_TYPES.has(mapped) ? mapped : "";
 }
 
-router.post("/call-events", safeHandler(async (req: any, res: any) => {
+router.post("/call-events", replayKey("call-events"), safeHandler(async (req: any, res: any) => { // BF_SERVER_v831_DIALER_POLISH
   const userId = req.user?.id ?? req.user?.userId ?? null;
   const { getSilo } = await import("../middleware/silo.js");
   const silo = getSilo(res);
@@ -105,7 +106,15 @@ router.post("/call-events", safeHandler(async (req: any, res: any) => {
   // "call.ended"; anything else is a 400, not a 500.
   const eventType = normalizeCallEventType(body.event_type);
   const toNumber = typeof body.to_number === "string" ? body.to_number : "";
-  if (!eventType || !toNumber) return res.status(400).json({ error: "event_type and to_number are required" });
+  // BF_SERVER_v831_DIALER_POLISH - the dialler logged an incoming call with the caller in to_number and no direction,
+  // so it read as an outgoing call to the caller. An incoming call now names the caller in from_number (to_number is
+  // optional for it), and a direction outside inbound/outbound is dropped instead of failing the CHECK with a 500.
+  const rawDirection = String(body.direction ?? "").trim().toLowerCase();
+  const direction = rawDirection === "inbound" || rawDirection === "outbound" ? rawDirection : null;
+  const fromNumber = typeof body.from_number === "string" ? body.from_number : "";
+  if (!eventType || (!toNumber && !(direction === "inbound" && fromNumber))) {
+    return res.status(400).json({ error: "event_type and to_number are required" });
+  }
   // BF_SERVER_BLOCK_v708 - when the client doesn't thread contact_id, resolve it
   // by matching the call's numbers (last 10 digits) to a contact in this silo.
   let contactId: string | null = body.contact_id ?? null;
@@ -123,7 +132,7 @@ router.post("/call-events", safeHandler(async (req: any, res: any) => {
   }
   const { rows } = await pool.query(`INSERT INTO call_events (user_id, contact_id, application_id, silo, event_type, direction, from_number, to_number, twilio_call_sid, duration_seconds, error_code, payload)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb) RETURNING id, occurred_at`,
-    [userId, contactId, body.application_id ?? null, silo, eventType, body.direction ?? null, body.from_number ?? null, toNumber, body.twilio_call_sid ?? null, body.duration_seconds ?? null, body.error_code ?? null, JSON.stringify(body.payload ?? {})]);
+    [userId, contactId, body.application_id ?? null, silo, eventType, direction, fromNumber || null, toNumber || null, body.twilio_call_sid ?? null, body.duration_seconds ?? null, body.error_code ?? null, JSON.stringify(body.payload ?? {})]);
   if (eventType === "call.missed") {
     // BF_SERVER_BLOCK_v619 - automation trigger.
     void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent({ trigger: "call.missed", silo, contactId, applicationId: body.application_id ?? null })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
@@ -138,7 +147,7 @@ router.post("/call-events", safeHandler(async (req: any, res: any) => {
   // engaged/demo_booked/onboarding/active, and re-firing on later call events is a no-op).
   // BF_SERVER_v789_BI_OUTREACH_VIA_API - bi_contacts is BI-Server's table; ask BI to
   // advance it (forward-only rules live there). Non-blocking; failures are logged.
-  if (silo === "BI" && String(body.direction ?? "").toLowerCase() !== "inbound") {
+  if (silo === "BI" && direction !== "inbound") {
     const d10 = String(toNumber || "").replace(/\D/g, "").slice(-10);
     if (d10.length === 10) {
       void import("../services/biOutreach.js")
@@ -1246,7 +1255,7 @@ export function formatPhoneForName(e164: string): string {
   return ten ? `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}` : String(e164 ?? "");
 }
 
-router.post("/sms", safeHandler(async (req: any, res: any) => {
+router.post("/sms", replayKey("sms"), safeHandler(async (req: any, res: any) => { // BF_SERVER_v831_DIALER_POLISH - a resent text goes once
   const { contactId } = req.body ?? {};
   // BF_SERVER_v817_DIALER_MESSAGING - normalise `to` once; everything below uses the E.164 form.
   let to: string = "";

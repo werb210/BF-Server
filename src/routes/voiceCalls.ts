@@ -281,6 +281,10 @@ router.post("/resolve-caller", auth, safeHandler(async (req: any, res) => {
   return res.json({ ok: true, matched: false, isStaff: false, name: null });
 }));
 
+// BF_SERVER_v831_DIALER_POLISH - incoming calls logged before v829 never recorded who answered, so only later ones can
+// be told apart as missed.
+export const MISSED_STATUS_SINCE = "2026-10-20T00:00:00-06:00";
+
 // BF_SERVER_RECENT_CALLS_v1 - recent calls for the logged-in staff member, newest
 // first, with the resolved contact name. Powers the dialer "Recents" list.
 router.get("/recent-calls", auth, safeHandler(async (req: any, res) => {
@@ -288,9 +292,17 @@ router.get("/recent-calls", auth, safeHandler(async (req: any, res) => {
   if (!userId) return res.json({ ok: true, items: [] });
   const r = await pool
     .query(
-      `SELECT id, direction, status, duration_seconds, created_at, phone_number, contact_id, contact_name, disposition
+      // BF_SERVER_v831_DIALER_POLISH - call_sid: the row's "Call summary" in the dialler needs it, and the outer list
+      // dropped it, so the summary never loaded. status 'missed': an incoming call nobody answered (no answering leg was
+      // recorded, which v829 started doing) - these all showed as plain "Incoming".
+      `SELECT id, direction, status, duration_seconds, created_at, phone_number, contact_id, contact_name, disposition, sid AS call_sid
          FROM (
-           SELECT cl.id::text AS id, cl.direction, cl.status, cl.duration_seconds, cl.created_at,
+           SELECT cl.id::text AS id, cl.direction,
+                  CASE WHEN cl.direction = 'inbound' AND cl.answered_leg_sid IS NULL AND cl.staff_user_id IS NULL
+                            AND cl.created_at >= '${MISSED_STATUS_SINCE}'::timestamptz
+                            AND COALESCE(cl.status, '') NOT IN ('initiated', 'ringing', 'queued', 'in-progress')
+                       THEN 'missed' ELSE cl.status END AS status,
+                  cl.duration_seconds, cl.created_at,
                   cl.phone_number, cl.crm_contact_id AS contact_id,
                   -- BF_SERVER_CALLER_COLUMNS_v351 - a placeholder contact name falls back to
                   -- the person's own name, then the phone match, then the application's business.
@@ -417,6 +429,15 @@ export function collapseOutboundLegs(rows: any[]): any[] {
   });
   return out.filter((_, i) => !drop.has(i)).sort((x, y) => ms(y.created_at) - ms(x.created_at));
 }
+
+// BF_SERVER_v831_DIALER_POLISH - caller ID for the iPhone when the app is closed: every contact's number and name in
+// the request's silo (voice/callerDirectory.ts). Staff only.
+router.get("/caller-directory", auth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING] }), safeHandler(async (_req: any, res) => {
+  const { getSilo } = await import("../middleware/silo.js");
+  const { callerDirectory } = await import("../voice/callerDirectory.js");
+  const entries = await callerDirectory(pool, getSilo(res));
+  return res.status(200).json({ ok: true, entries });
+}));
 
 // BF_SERVER_DIRECT_LINES_v688 - admins give each staff member their own direct number (Settings -> Phone lines).
 router.get("/direct-numbers", auth, safeHandler(async (_req: any, res) => {

@@ -13,6 +13,7 @@ import { describeCrmUpdate, safeDispositionCrmUpdate } from "../../modules/calls
 // BF_SERVER_CALL_REF_v161
 import { parseCallRef, callRefPredicate } from "../../modules/calls/callRef.js";
 import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { replayKey } from "../../middleware/replayKey.js"; // BF_SERVER_v831_DIALER_POLISH
 
 const router = express.Router();
 import { sharedTwilio } from "../../lib/sharedClients.js";
@@ -213,7 +214,8 @@ router.post("/client-events", auth, safeHandler(async (req: any, res: Response) 
   return res.json({ ok: true, stored: events.length });
 }));
 
-router.post("/calls/:id/disposition", auth, async (req: any, res: Response) => {
+// BF_SERVER_v831_DIALER_POLISH - an outcome resent from the dialler's offline queue writes one CRM note, not two.
+router.post("/calls/:id/disposition", auth, replayKey("disposition"), async (req: any, res: Response) => {
   // BF_SERVER_CALL_REF_v161 - the dialer only ever holds a Twilio CallSid, so
   // accept either that or our own call id.
   const ref = parseCallRef(req.params.id);

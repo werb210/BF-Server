@@ -59,6 +59,8 @@ describe("dialerCallSummary", () => {
       status: "ready", summary: "- Wants $250k LOC\nFollow-ups: send bank statements",
       nextSteps: ["Send bank statements", "Call back Friday"],
       taskId: "d0d0d0d0-0000-4000-8000-000000000003", contactId: CONTACT, contactName: "Jane Client",
+      // BF_SERVER_v831_DIALER_POLISH - the outcome sheet's suggested follow-ups
+      suggestedTasks: [{ title: "Send bank statements", type: "EMAIL", dueInDays: 1 }, { title: "Call back Friday", type: "CALL", dueInDays: 3 }],
     } });
   });
 

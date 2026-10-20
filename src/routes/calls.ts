@@ -280,7 +280,14 @@ router.get(
     if (typeof callSid !== "string" || !/^CA[0-9a-f]{32}$/i.test(callSid)) {
       throw new AppError("validation_error", "Invalid callSid.", 400);
     }
-    const { summaryForCallSid } = await import("../services/calls/autoCallSummary.js");
+    // BF_SERVER_v831_DIALER_POLISH - anyone signed in could read any call's summary by its CallSid. Same rule as
+    // /:callSid/summary now: Admin, the call's creator, or a staff member who was on the call.
+    const { dialerCallSummary, summaryForCallSid } = await import("../services/calls/autoCallSummary.js");
+    const userId = String(req.user?.userId ?? req.user?.id ?? req.user?.sub ?? "");
+    const access = await dialerCallSummary(callSid, { userId, isAdmin: req.user?.role === ROLES.ADMIN });
+    if (access.access === "forbidden") {
+      return res.status(403).json({ ok: false, error: "forbidden", message: "You can only read summaries of calls you were on." });
+    }
     res.status(200).json(ok(await summaryForCallSid(callSid), req.rid));
   })
 );

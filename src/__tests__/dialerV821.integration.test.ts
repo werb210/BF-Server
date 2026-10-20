@@ -101,6 +101,7 @@ describe("v821 dialler SQL against the real schema", () => {
       [conf.id, "- Wants a quote\nFollow-ups: send statements", JSON.stringify([{ title: "Send statements", type: "EMAIL", dueInDays: 1 }])]);
     expect((await dialerCallSummary(legSid, { userId: staff, isAdmin: false })).body).toEqual({
       status: "ready", summary: "- Wants a quote\nFollow-ups: send statements", nextSteps: ["Send statements"], contactId: contact, contactName: `Jane ${tag}`,
+      suggestedTasks: [{ title: "Send statements", type: "EMAIL", dueInDays: 1 }], // BF_SERVER_v831_DIALER_POLISH
     });
 
     await recordLegStatus(pool, { friendlyName: rec!, identity: staff, callSid: legSid, status: "completed" });

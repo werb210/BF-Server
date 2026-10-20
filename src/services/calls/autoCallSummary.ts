@@ -167,6 +167,8 @@ export type DialerCallSummary = {
   taskId?: string;
   contactId?: string;
   contactName?: string;
+  /** BF_SERVER_v831_DIALER_POLISH - the follow-ups the outcome sheet offers (it read them from the old route). */
+  suggestedTasks?: SuggestedTask[];
 };
 
 /** A recording that has not produced a summary this long after the call ended is not going to. */
@@ -235,7 +237,9 @@ export async function dialerCallSummary(
   if (summary) {
     body.status = "ready";
     body.summary = summary;
-    body.nextSteps = nextStepsFrom(summary, parseSuggestedTasks(row.suggested_tasks ?? []));
+    const suggested = parseSuggestedTasks(row.suggested_tasks ?? []);
+    body.nextSteps = nextStepsFrom(summary, suggested);
+    if (suggested.length) body.suggestedTasks = suggested; // BF_SERVER_v831_DIALER_POLISH
     return { access: "ok", body };
   }
   // No summary is coming: transcription failed, nothing was recorded, or it has simply been too long.
