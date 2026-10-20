@@ -4,7 +4,8 @@
 // file imported before that went through the old guess-from-the-PDF route, so its Application tab showed almost
 // nothing (Todd's test lender file, Oct 19: only employees, city and email). Those imports still have
 // application-fields.json among their documents (newer imports don't file it), so the fields are read from it now:
-// once per application, at start-up. The application's name and amount are fixed too when the import had none.
+// once per application, at start-up. The application's name and amount are fixed too when the import had none (and
+// the name the lender sees on a referred file).
 import { pool } from "../../db.js";
 import { getStorage } from "../../lib/storage/index.js";
 import { prefillFromBorealFields } from "./borealPackage.js";
@@ -54,6 +55,14 @@ export async function backfillPackagePrefill(deps: { db?: Q; storage?: Store } =
           WHERE id::text = $1`,
         [row.id, prefill ? JSON.stringify(prefill) : null, name, isPlaceholderName(row.name), prefill?.kyc.fundingAmount ?? null],
       );
+      // The lender's own list shows the referral's name: fix a made-up one there too.
+      if (name) {
+        await db.query(
+          `UPDATE lender_referrals SET business_name = $2, updated_at = now()
+            WHERE application_id = $1 AND (business_name IS NULL OR business_name ~* '^application[[:space:]_-]+[0-9a-f]{8}')`,
+          [row.id, name],
+        );
+      }
       if (prefill) filled += 1;
     } catch (err: any) {
       console.warn("[broker-import] package backfill could not update the application", { applicationId: row.id, message: err?.message });
