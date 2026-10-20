@@ -10,6 +10,7 @@ import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { resumeSequenceTask } from "../services/sequenceEngine.js"; // BF_SERVER_SEQ_TASK_STEP_v1
 import { safeHandler } from "../middleware/safeHandler.js";
 import { respondOk } from "../utils/respondOk.js";
+import { replayKey } from "../middleware/replayKey.js"; // BF_SERVER_v831_DIALER_POLISH
 import { fetchBiOutreachContact } from "../services/biOutreach.js"; // BF_SERVER_v789_BI_OUTREACH_VIA_API
 
 function respondError(res: any, status: number, message: string): void {
@@ -275,7 +276,8 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   respondOk(res, { tasks: r.rows });
 }));
 
-router.post("/", safeHandler(async (req: any, res: any) => {
+// BF_SERVER_v831_DIALER_POLISH - a task the dialler saved offline and sent again is made once.
+router.post("/", replayKey("tasks"), safeHandler(async (req: any, res: any) => {
   const b = req.body ?? {};
   const title = s(b.title);
   if (!title) { respondError(res, 400, "title_required"); return; }

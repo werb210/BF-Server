@@ -40,7 +40,7 @@ async function signedPost(mount: string, modPath: string, path: string, params: 
 function staff(over: { andrew?: Record<string, unknown> } = {}) {
   h.query.mockImplementation(answerBySql([
     [/FROM users u JOIN staff_presence sp ON sp\.user_id = u\.id\s+WHERE \(u\.first_name ILIKE \$1/, (_sql: string, p?: unknown[]) => ({
-      rows: [p?.[0] === "%andrew%"
+      rows: [p?.[0] === "andrew" // BF_SERVER_v831_DIALER_POLISH - exact first name now
         ? { status: "available", twilio_identity: "andrew-client", on_call: false, fresh: true, phone: null, standalone_watch: false, user_id: ANDREW, ...over.andrew }
         : { status: "available", twilio_identity: "todd-client", on_call: false, fresh: true, phone: null, standalone_watch: false, user_id: TODD }],
     })],

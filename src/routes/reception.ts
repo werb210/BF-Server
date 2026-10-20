@@ -164,6 +164,13 @@ function send(res: Response, v: any): Response { res.setHeader("Content-Type", "
 type Target = "sales" | "underwriting" | "engagement";
 function displayFor(t: Target): string { return t === "sales" ? "Todd" : "Andrew"; }
 function lkey(t: Target): string { return t === "sales" ? "todd" : "andrew"; }
+// BF_SERVER_v831_DIALER_POLISH - who each reception choice rings.
+export function receptionFirstName(t: Target): string { return t === "sales" ? "todd" : "andrew"; }
+export function receptionUserId(t: Target): string | null {
+  const raw = t === "sales" ? process.env.RECEPTION_SALES_USER_ID : process.env.RECEPTION_UNDERWRITING_USER_ID;
+  const id = String(raw ?? "").trim();
+  return /^[0-9a-f-]{36}$/i.test(id) ? id : null;
+}
 
 function toE164(raw: string | null | undefined): string | null {
   if (!raw) return null;
@@ -176,7 +183,11 @@ function toE164(raw: string | null | undefined): string | null {
 }
 
 async function resolveTarget(t: Target): Promise<{ identity: string | null; available: boolean; onCall: boolean; clientReady: boolean; cell: string | null; standaloneWatch: boolean; userId: string | null }> {
-  const nameLike = t === "sales" ? "%todd%" : "%andrew%";
+  // BF_SERVER_v831_DIALER_POLISH - was ILIKE '%todd%' / '%andrew%': anyone whose first or last name merely contained
+  // "todd" (Toddington) could take Todd's calls. Now an exact first name, active users only, or the user id in
+  // RECEPTION_SALES_USER_ID / RECEPTION_UNDERWRITING_USER_ID when set.
+  const nameLike = receptionFirstName(t);
+  const pinnedId = receptionUserId(t);
   try {
     const { rows } = await pool.query<{ status: string; twilio_identity: string | null; on_call: boolean; fresh: boolean; ringable: boolean; phone: string | null; standalone_watch: boolean; user_id: string | null }>(
       `SELECT sp.status, sp.twilio_identity, coalesce(sp.on_call, false) AS on_call, u.id AS user_id,
@@ -190,8 +201,10 @@ async function resolveTarget(t: Target): Promise<{ identity: string | null; avai
                 SELECT 1 FROM watch_devices wd WHERE wd.staff_user_id=u.id AND wd.revoked_at IS NULL
                   AND wd.standalone_routing_enabled=true)) AS standalone_watch
          FROM users u JOIN staff_presence sp ON sp.user_id = u.id
-        WHERE (u.first_name ILIKE $1 OR u.last_name ILIKE $1) ORDER BY sp.last_heartbeat DESC NULLS LAST LIMIT 1`,
-      [nameLike],
+        WHERE (u.first_name ILIKE $1 OR u.id::text = $2) AND ($2::text IS NULL OR u.id::text = $2)
+          AND coalesce(u.active, true) = true
+        ORDER BY sp.last_heartbeat DESC NULLS LAST LIMIT 1`,
+      [nameLike, pinnedId],
     );
     const r = rows[0];
     if (!r) return { identity: null, available: false, onCall: false, clientReady: false, cell: null, standaloneWatch: false, userId: null };
@@ -213,9 +226,9 @@ async function readyStaffIdentities(excludeUserId: string | null): Promise<strin
         WHERE ${ringableStaffSql("sp", "u")}
           AND coalesce(u.active, true) = true
           AND ($1::text IS NULL OR u.id::text <> $1)
-          AND NOT (coalesce(u.first_name, '') ILIKE '%andrew%' OR coalesce(u.last_name, '') ILIKE '%andrew%')
+          AND NOT (CASE WHEN $2::text IS NOT NULL THEN u.id::text = $2 ELSE coalesce(u.first_name, '') ILIKE 'andrew' END)
         LIMIT 9`,
-      [excludeUserId],
+      [excludeUserId, receptionUserId("underwriting")],
     );
     return rows.map((r) => r.twilio_identity).filter(Boolean);
   } catch (err: any) {

@@ -524,6 +524,13 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
       user && user.role && !user.disabled && user.active
     );
 
+    // BF_SERVER_v831_DIALER_POLISH - the staff dialler says userType:"staff". A number that is not an active staff
+    // member used to get a client token: the sign-in "worked", the app looked normal, and calls never rang.
+    if (String((req.body ?? {}).userType ?? "") === "staff" && !isActiveStaff) {
+      console.log("[otp_verify] not_staff", { phone: maskPhoneLast4(phone) });
+      return res.status(403).json({ error: "not_staff", message: "This number isn't set up as a Boreal staff account. Ask an admin to add it." });
+    }
+
     let token: string;
     if (isActiveStaff && user && !wantsClient) {
       const role = normalizeRole(user.role ?? "") ?? ROLES.STAFF;
@@ -665,6 +672,33 @@ router.post("/device-sign-in/revoke", requireAuth, safeHandler(async (req: any, 
   const q = (sql: string, params: unknown[]) => pool.query(sql, params as any[]);
   const credentialId = typeof req.body?.credentialId === "string" ? req.body.credentialId : null;
   return res.json({ revoked: await revokeStaffDevices(q, String(req.user?.id ?? ""), credentialId) });
+}));
+
+// BF_SERVER_v831_DIALER_POLISH - a fresh 7-day staff token for a staff token that still works. The dialler signed staff
+// out without warning every 7 days (there was no way to renew); it now renews once its token is within 2 days of
+// expiring. Same checks as any staff request (requireStaffAuth: token version, disabled users), plus the user must
+// still be active staff.
+router.post("/session/renew", requireStaffAuth, safeHandler(async (req: any, res: any) => {
+  const userId = String(req.user?.userId ?? req.user?.id ?? "");
+  if (!userId || req.user?.isServicePrincipal) return res.status(403).json({ error: "staff_user_required" });
+  const { findAuthUserById } = await import("../modules/auth/auth.repo.js");
+  const { isStaffRole } = await import("../auth/roles.js");
+  const user: any = await findAuthUserById(userId);
+  const role = user ? normalizeRole(user.role ?? "") : null;
+  if (!user || !role || !isStaffRole(role) || user.disabled || user.active === false) {
+    return res.status(401).json({ error: "session_not_renewable", message: "Your account can't be signed in. Ask an admin." });
+  }
+  const userSilos = Array.isArray(user.silos) ? (user.silos as string[]) : [];
+  const token = signAccessToken({
+    sub: String(user.id),
+    role,
+    tokenVersion: user.tokenVersion ?? 0,
+    phone: user.phoneNumber ?? undefined,
+    capabilities: fetchCapabilitiesForRole(role),
+    ...(user.silo ? { silo: user.silo } : {}),
+    ...(userSilos.length ? { silos: userSilos } : {}),
+  } as any);
+  return res.status(200).json({ status: "ok", data: { token } });
 }));
 
 // BF_SERVER_v789_STAFF_USER_STATE - sign-out. Access tokens are stateless, so a
