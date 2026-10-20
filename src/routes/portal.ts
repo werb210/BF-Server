@@ -2828,8 +2828,9 @@ router.post(
       }
     }
 
+    // BF_SERVER_v837_NO_OCR_FOR_SIGNED_FORMS - documents that are never OCR'd (signed forms, "Other") stay that way.
     const docsRes = await runQuery<{ id: string }>(
-      `SELECT id FROM documents WHERE application_id::text = ($1)::text`,
+      `SELECT id FROM documents WHERE application_id::text = ($1)::text AND coalesce(ocr_status, '') <> 'skipped'`,
       [applicationId]
     );
     let reset = 0;

@@ -370,6 +370,9 @@ export async function enqueueOcrForApplication(applicationId: string): Promise<O
   const documents = await listDocumentsByApplicationId(applicationId);
   const jobs: OcrJobRecord[] = [];
   for (const document of documents) {
+    // BF_SERVER_v837_NO_OCR_FOR_SIGNED_FORMS - "Re-run OCR on all documents" re-queued documents that are never read
+    // (Boreal's own signed application and SBA forms, "Other" files), which then sat "OCR queued".
+    if (String((document as any).ocr_status ?? "").toLowerCase() === "skipped") continue;
     const job = await createOcrJob({
       documentId: document.id,
       applicationId: document.application_id,
