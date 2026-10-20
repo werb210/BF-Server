@@ -148,7 +148,9 @@ export function buildStaffAlertPayload(input: Omit<StaffAlertInput, "userId">): 
       // BF_SERVER_v823_PUSH - a task reminder is the staff member's own to-do, not a client reaching out.
       "interruption-level": input.category === "TASK" ? "active" : STAFF_ALERT_INTERRUPTION_LEVEL,
       "relevance-score": STAFF_ALERT_RELEVANCE[input.category] ?? 0.5,
-      ...(isMessage ? { "mutable-content": 1 } : {}), // BF_SERVER_v822_CARPLAY
+      // BF_SERVER_v822_CARPLAY. BF_SERVER_v832_DIALER_SIGNOUT_ALERTS - a missed call too: the dialler's extension then
+      // removes the "Missed call" the phone posted itself for the same caller (it showed twice).
+      ...(isMessage || input.category === "MISSED_CALL" ? { "mutable-content": 1 } : {}),
     },
     schema: 1,
     type: input.type,
