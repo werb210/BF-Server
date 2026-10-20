@@ -147,7 +147,9 @@ router.post("/conference/join", twilioWebhookValidation, safeHandler(async (req:
     // no-answer; staff joining starts the conference and ends the caller's wait.
     startConferenceOnEnter: isCallerLeg || waitForCallee ? false : true, // BF_SERVER_v829_DIALER_RELIABILITY
     // 2-party PSTN call: either party hangup ends the conference.
-    endConferenceOnExit: true,
+    // BF_SERVER_v830_DIALER_CONTROLS - a leg added to a call in progress (multi=1) stays when another leaves;
+    // endIfAlone (participant-leave) ends the call once one person is left.
+    endConferenceOnExit: String(req.query.multi ?? "") === "1" ? false : true,
     // No periodic chirp on participant flap.
     beep: false,
     trim: "trim-silence",
@@ -193,6 +195,14 @@ router.get("/conference/ringback.wav", safeHandler(async (_req: any, res) => {
   res.setHeader("Content-Type", "audio/wav");
   res.setHeader("Cache-Control", "public, max-age=86400");
   return res.send(ringbackAudio());
+}));
+
+// BF_SERVER_v830_DIALER_CONTROLS - keypad tones announced to one participant (POST /voice/conferences/:id/participants/
+// :pid/dtmf). Only digits, * # and w ever reach the TwiML.
+router.post("/conference/tones", twilioWebhookValidation, safeHandler(async (req: any, res) => {
+  const { tonesTwiml } = await import("../voice/conferenceTones.js");
+  res.setHeader("Content-Type", "text/xml");
+  return res.send(tonesTwiml(String(req.query.d ?? "")));
 }));
 
 // BF_SERVER_BLOCK_v843_NO_ANSWER_VOICEMAIL — caller hold loop with voicemail escape.
@@ -378,6 +388,11 @@ router.post("/conference/status", twilioWebhookValidation, safeHandler(async (re
           await pool.query(`UPDATE conferences SET status = 'ended', ended_at = now(), updated_at = now() WHERE id = $1`, [conf.id]);
         }
       }
+      // BF_SERVER_v830_DIALER_CONTROLS - after a transfer / 3-way call, the last person left is not kept in an empty call.
+      {
+        const { endIfAlone } = await import("../voice/multiParty.js");
+        await endIfAlone(conf.id);
+      }
       break;
     }
     case "participant-mute":
@@ -405,6 +420,10 @@ router.post("/call/status", twilioWebhookValidation, safeHandler(async (req: any
   const { handleUnansweredCallee } = await import("../voice/outboundCallFlow.js");
   const unanswered = await handleUnansweredCallee(part as any, status);
   if (unanswered) {
+    // BF_SERVER_v830_DIALER_CONTROLS - e.g. a cold transfer whose new party never answered: the customer is not left
+    // alone in a silent call.
+    const { endIfAlone } = await import("../voice/multiParty.js");
+    await endIfAlone(part.conference_id);
     await notifyConferenceState(part.conference_id, "conference.update", { callSid, callStatus: status });
     return res.status(200).send("");
   }

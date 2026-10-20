@@ -189,3 +189,15 @@ export async function identitiesOutsideHours(q: Q, identities: string[], now: Da
   }
   return out;
 }
+
+/** BF_SERVER_v830_DIALER_CONTROLS - the staff member switched themselves to Busy (dialler / portal / widget). Never
+ *  throws: a failed lookup must not stop a call ringing. */
+export async function ownerIsBusy(q: { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> }, userId: string): Promise<boolean> {
+  try {
+    const r = await q.query(`SELECT coalesce(manual_busy, false) AS busy FROM staff_presence WHERE user_id::text = $1 LIMIT 1`, [userId]);
+    return r.rows[0]?.busy === true;
+  } catch (err: any) {
+    console.warn("[presence] busy lookup failed; ringing as normal", { userId, message: err?.message });
+    return false;
+  }
+}

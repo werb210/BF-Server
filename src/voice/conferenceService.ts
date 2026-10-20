@@ -268,6 +268,8 @@ export interface DialIntoConferenceArgs {
   identity?: string | null;
   role?: "moderator" | "participant" | string;
   endOnExit?: boolean;
+  /** BF_SERVER_v830_DIALER_CONTROLS - joins a call that already has two people: stays when another leaves. */
+  multiParty?: boolean;
   [k: string]: any;
 }
 
@@ -293,7 +295,7 @@ export async function dialPstnIntoConference(args: DialIntoConferenceArgs): Prom
     // BF_SERVER_v817_DIALER_MESSAGING - honour the caller ID the route resolved (the staff
     // member's direct line / 866 main line); __callerId() ignored it and showed a generic number.
     to: phone, from: __outboundFrom(args.fromNumber),
-    url: `${__baseUrl()}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(friendly)}&pid=${encodeURIComponent(String(args.participantId ?? ""))}`,
+    url: `${__baseUrl()}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(friendly)}&pid=${encodeURIComponent(String(args.participantId ?? ""))}${args.multiParty ? "&multi=1" : ""}`, // BF_SERVER_v830_DIALER_CONTROLS
     method: "POST",
     statusCallback: `${__baseUrl()}/api/webhooks/twilio/call/status`, // BF_SERVER_v817_DIALER_MESSAGING - /voice/call-status never existed; conferenceWebhooks serves /call/status
     statusCallbackEvent: ["initiated","ringing","answered","completed"],
@@ -328,7 +330,7 @@ export async function dialClientIntoConference(args: DialIntoConferenceArgs): Pr
     // caller; fall back to our caller ID when no real number is available.
     to: `client:${identity}`,
     from: __outboundFrom(args.fromNumber), // BF_SERVER_v817_DIALER_MESSAGING - shared fallback chain
-    url: `${__baseUrl()}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(friendly)}&pid=${encodeURIComponent(String(args.participantId ?? ""))}`,
+    url: `${__baseUrl()}/api/webhooks/twilio/conference/join?conf=${encodeURIComponent(friendly)}&pid=${encodeURIComponent(String(args.participantId ?? ""))}${args.multiParty ? "&multi=1" : ""}`, // BF_SERVER_v830_DIALER_CONTROLS
     method: "POST",
     statusCallback: `${__baseUrl()}/api/webhooks/twilio/call/status`, // BF_SERVER_v817_DIALER_MESSAGING - /voice/call-status never existed; conferenceWebhooks serves /call/status
     statusCallbackEvent: ["initiated","ringing","answered","completed"],

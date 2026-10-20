@@ -392,6 +392,15 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
           console.log(JSON.stringify({ event: "direct_line_away", callSid, to, staffUserId: owner.userId, urgentPassthrough: away.urgentPassthrough }));
           return res.send(vdl.toString());
         }
+        // BF_SERVER_v830_DIALER_CONTROLS - Busy (the dialler / portal switch) now applies to the direct line too: the
+        // caller hears "{Name} is away right now", can press 1 if it is urgent, else leaves a voicemail.
+        const { ownerIsBusy } = await import("../voice/callHours.js");
+        if (await ownerIsBusy(dlPool, owner.userId)) {
+          const { awayTwiml } = await import("../voice/staffRing.js");
+          awayTwiml(vdl, { name: owner.name.split(" ")[0] || owner.name, userId: owner.userId, urgentPassthrough: true, ring: "direct" });
+          console.log(JSON.stringify({ event: "direct_line_busy", callSid, to, staffUserId: owner.userId }));
+          return res.send(vdl.toString());
+        }
         // BF_SERVER_v820_WATCH_CALLS - an owner with the standalone Watch fallback on: the app rings for 15 s, then
         // direct-unavailable?cell=1 rings their verified cell with the press-1 screen (sequential, never parallel).
         // BF_SERVER_v821_DIALER - plus the caller card on the <Client> and recording of the bridged call.

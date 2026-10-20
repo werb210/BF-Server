@@ -110,6 +110,17 @@ router.post("/presence", auth, safeHandler(async (req: any, res: Response) => {
   }
   const userId = req.user?.userId || req.user?.id;
   if (!userId) return res.status(401).json({ error: "unauthorized" });
+  // BF_SERVER_v830_DIALER_CONTROLS - "offline" (the dialler going to the background, signing out) no longer touches
+  // Busy and no longer counts as a heartbeat. It cleared manual_busy and stamped last_heartbeat = now(), so Busy lasted
+  // only until the next app switch and a backgrounded phone looked online. Now it only ends the heartbeat.
+  if (status === "offline") {
+    await pool.query(
+      `UPDATE staff_presence SET last_heartbeat = LEAST(last_heartbeat, now() - interval '10 minutes'), updated_at = now() WHERE user_id = $1`,
+      [userId],
+    ).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "telephony/routes/telephonyRoutes.ts:presence-offline"); });
+    await recomputePresence(userId).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "telephony/routes/telephonyRoutes.ts:presence-offline-recompute"); });
+    return res.json({ ok: true, status });
+  }
   // BF_SERVER_PRESENCE_AUTO_BUSY_v1 — topbar toggle sets the manual_busy reason.
   const manualBusy = status === "busy";
   await pool.query(
