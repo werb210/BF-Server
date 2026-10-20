@@ -7,6 +7,7 @@ import { lockOcrJobs } from "../modules/ocr/ocr.repo.js";
 
 const app = randomUUID();
 const doc = randomUUID();
+const referral = randomUUID();
 const tag = "v834" + Math.floor(Math.random() * 1e6);
 
 describe("v834 import fixes against the real schema", () => {
@@ -21,9 +22,15 @@ describe("v834 import fixes against the real schema", () => {
        VALUES ($1, $2, 'other', 'other', 'uploaded', 'application-fields.json', $3, now())`,
       [doc, app, `blob-${tag}`],
     );
+    await pool.query(
+      `INSERT INTO lender_referrals (id, lender_id, business_name, client_phone, zip_name, status, application_id)
+       VALUES ($1, 'lender-test', $2, '+15875550123', 'file.zip', 'accepted', $3)`,
+      [referral, `application ${app.replace(/-/g, " ")}`, app],
+    );
   });
   afterAll(async () => {
     const clean = (sql: string, params: unknown[]) => pool.query(sql, params).catch((e) => console.warn("cleanup", String(e)));
+    await clean("DELETE FROM lender_referrals WHERE id = $1", [referral]);
     await clean("DELETE FROM documents WHERE id = $1", [doc]);
     await clean("DELETE FROM applications WHERE id = $1", [app]);
   });
@@ -39,6 +46,8 @@ describe("v834 import fixes against the real schema", () => {
     expect(Number(r.rows[0].requested_amount)).toBe(250000);
     expect(r.rows[0].metadata.broker_prefill.applicant.firstName).toBe("Pat");
     expect(r.rows[0].metadata.package_prefill_backfilled).toBeTruthy();
+    const ref = await pool.query(`SELECT business_name FROM lender_referrals WHERE id = $1`, [referral]);
+    expect(ref.rows[0].business_name).toBe(`Grocer ${tag}`);
     storage.get.mockClear();
     await backfillPackagePrefill({ storage });
     expect(storage.get).not.toHaveBeenCalledWith(`blob-${tag}`); // once only

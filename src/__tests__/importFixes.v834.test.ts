@@ -55,6 +55,7 @@ describe("package fields for files imported before v828", () => {
     expect(prefill.applicant).toMatchObject({ firstName: "Todd", lastName: "Werboweski", dob: "1971-10-07" });
     expect(prefill.kyc.fundingAmount).toBe(1000000);
     expect(p.slice(2)).toEqual(["TEST - Todd's Grocery Store", true, 1000000]);
+    expect(callsMatching(db.query, /UPDATE lender_referrals SET business_name/)[0]![1]).toEqual(["app-1", "TEST - Todd's Grocery Store"]);
     const [findSql] = callsMatching(db.query, /FROM applications a\s+JOIN documents d/)[0]!;
     expect(String(findSql)).toContain("COALESCE(a.metadata->>'package_prefill_backfilled', '') = ''");
   });
