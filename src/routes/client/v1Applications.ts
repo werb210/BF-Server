@@ -30,7 +30,7 @@ import { checkSubmitCompleteness, type CompletenessResult } from "../../services
 import { MARKETING_SMS_OPTIN_TEXT } from "../../services/smsConsent.js"; // BF_SERVER_v808_MARKETING_OPTIN
 // BF_APP_ID_CAST_v39 - Block 39-A - applications.id comparisons cast to text
 
-import { UNSUBMITTED_CLIENT_DRAFT_EXCLUSION } from "./signInDraftFilter.js"; // BF_SERVER_v838_SIGNIN_SKIPS_UNSUBMITTED
+import { UNSUBMITTED_CLIENT_DRAFT_EXCLUSION, CLIENT_REMOVED_EXCLUSION, keepNewestUnfinished, removeUnfinishedDrafts } from "./signInDraftFilter.js"; // BF_SERVER_v838_SIGNIN_SKIPS_UNSUBMITTED / v839
 
 const router = Router();
 
@@ -1860,7 +1860,8 @@ router.get(
               (a.signnow_app_signed_at IS NULL AND EXISTS (
                  SELECT 1 FROM application_lender_selections s
                   WHERE s.application_id::text = a.id::text AND s.finalized_at IS NOT NULL
-              )) AS signature_needed
+              )) AS signature_needed,
+              a.source -- BF_SERVER_v839_CLIENT_DRAFT_CLEANUP - which unfinished ones the client started
          FROM applications a
          -- BF_SERVER_CLOSING_COST_FIX_v1 - resolve the contact via the parent for
          -- linked legs created without their own contact_id, so every leg
@@ -1869,9 +1870,13 @@ router.get(
                 (SELECT p.contact_id FROM applications p WHERE p.id::text = a.parent_application_id::text)) -- v342_FIX_CRM_CONTACTS
         WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $1
           ${draftFilter}
+          ${CLIENT_REMOVED_EXCLUSION}
         ORDER BY a.updated_at DESC`,
       [phone10],
     );
+    // BF_SERVER_v839_CLIENT_DRAFT_CLEANUP - every sign-in used to leave a blank application behind, so the client
+    // portal's switcher listed several "Unfinished application" rows. Only the newest unfinished one is listed.
+    r.rows = keepNewestUnfinished(r.rows);
 
     // BF_SERVER_v828_CLIENT_CLAIM_IMPORT - a file a broker or lender sent for this client (accepted by Boreal) has no
     // contact yet, so the join above misses it. The switcher lists it as ready to finish.
@@ -1893,6 +1898,22 @@ router.get(
 
     if (!applications.length) return res.json({ found: false, applications: [] });
     return res.json({ found: true, applications, application: applications[0] });
+  }),
+);
+
+// BF_SERVER_v839_CLIENT_DRAFT_CLEANUP - POST /api/client/applications/:id/remove-unfinished
+// The client removes an unfinished application from their list (Remove in the client portal's switcher). Only an
+// application they started and never submitted; older unfinished ones of theirs go with it, since the list shows
+// one. Nothing is deleted: the rows are marked client_removed and staff still see them in the CRM.
+router.post(
+  "/applications/:id/remove-unfinished",
+  requireAuthAllowClient,
+  safeHandler(async (req: any, res: any) => {
+    const phone10 = String(req.user?.phone ?? "").replace(/[^0-9]/g, "").slice(-10);
+    if (!phone10) return res.status(401).json({ ok: false, error: "no_phone_claim" });
+    const removed = await removeUnfinishedDrafts(pool, String(req.params.id), phone10);
+    if (removed === null) return res.status(409).json({ ok: false, error: "not_unfinished", message: "Only an application you have not sent can be removed." });
+    return res.json({ ok: true, removed });
   }),
 );
 
