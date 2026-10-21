@@ -30,6 +30,8 @@ import { checkSubmitCompleteness, type CompletenessResult } from "../../services
 import { MARKETING_SMS_OPTIN_TEXT } from "../../services/smsConsent.js"; // BF_SERVER_v808_MARKETING_OPTIN
 // BF_APP_ID_CAST_v39 - Block 39-A - applications.id comparisons cast to text
 
+import { UNSUBMITTED_CLIENT_DRAFT_EXCLUSION } from "./signInDraftFilter.js"; // BF_SERVER_v838_SIGNIN_SKIPS_UNSUBMITTED
+
 const router = Router();
 
 // BF_SERVER_v789_ID_NORMALIZE - defense in depth behind the client router's
@@ -1843,9 +1845,12 @@ router.get(
     // drafts via ?includeDrafts=true. Default (OTP routing) still excludes them
     // so a draft-only caller resumes the wizard instead of routing to a portal.
     const includeDrafts = String(req.query?.includeDrafts ?? "") === "true";
+    // BF_SERVER_v838_SIGNIN_SKIPS_UNSUBMITTED - a client's own unfinished application is created at 'Received'
+    // (not 'draft'), so sign-in found it and opened the client portal on a form never sent ("You're all caught
+    // up"). Sign-in now skips client-started applications that were never submitted; the wizard picks them up.
     const draftFilter = includeDrafts
       ? "AND a.pipeline_state IS NOT NULL AND a.pipeline_state <> ''"
-      : "AND a.pipeline_state NOT IN ('draft','Draft','') AND a.pipeline_state IS NOT NULL";
+      : `AND a.pipeline_state NOT IN ('draft','Draft','') AND a.pipeline_state IS NOT NULL ${UNSUBMITTED_CLIENT_DRAFT_EXCLUSION}`;
 
     const r = await pool.query(
       `SELECT a.id, a.pipeline_state, a.submitted_at, a.name AS business_name,
