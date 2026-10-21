@@ -25,6 +25,7 @@ export const INTEGRATION_TEST_FILES: string[] = [
   "src/watch/__tests__/watchPushLookup.v819.integration.test.ts", // BF_SERVER_v819_PUSH - needs Postgres
   "src/__tests__/dialerV821.integration.test.ts", // BF_SERVER_v821_DIALER - needs Postgres
   "src/__tests__/lenderReferrals.v825.integration.test.ts", // BF_SERVER_v825_LENDER_REFERRALS - needs Postgres
+  "src/__tests__/signInSkipsUnsubmitted.v838.integration.test.ts", // BF_SERVER_v838_SIGNIN_SKIPS_UNSUBMITTED - needs Postgres
   "src/__tests__/applicationOrigin.v828.integration.test.ts", // BF_SERVER_v828_APPLICATION_ORIGIN - needs Postgres
   "src/__tests__/dialerReliability.v829.integration.test.ts", // BF_SERVER_v829_DIALER_RELIABILITY - needs Postgres
   "src/__tests__/dialerControls.v830.integration.test.ts", // BF_SERVER_v830_DIALER_CONTROLS - needs Postgres
