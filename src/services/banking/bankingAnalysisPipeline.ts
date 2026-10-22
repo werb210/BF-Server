@@ -1,5 +1,7 @@
 // BF_SERVER_BLOCK_1_30_DOC_INTEL_AND_BANKING
 import { pool } from "../../db.js";
+import { recordStatementMath } from "../../fraud/statementHook.js"; // BF_SERVER_v846_FRAUD
+import type { Q as FraudQ } from "../../fraud/types.js"; // BF_SERVER_v846_FRAUD
 import { logInfo, logError } from "../../observability/logger.js";
 import { analyzeWithDocIntel } from "../../modules/ocr/azureDocIntelProvider.js";
 import {
@@ -327,6 +329,9 @@ export async function runBankingAnalysis(
       transactions = [];
       docError = `${currency} statement excluded from ${expectedCurrency} totals; currency conversion is not inferred.`;
     }
+    // BF_SERVER_v846_FRAUD - fraud check 2 (statement math) needs the statement's own order and its opening/closing
+    // lines, which sanitizeTransactions removes next. Never throws.
+    if (transactions.length) await recordStatementMath(pool as unknown as FraudQ, applicationId, doc.documentId, transactions);
     const beforeSanitize = transactions.length;
     transactions = sanitizeTransactions(transactions);
     integrityReport.opening_balance_rows_removed += beforeSanitize - transactions.length;

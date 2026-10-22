@@ -241,6 +241,11 @@ export async function start(): Promise<void> {
     await workerStagger();
     try { const w = startTamperScanWorker(pool); workerStops.push(w.stop); console.log("[startup] tamper-scan worker started"); }
     catch (err) { console.error("[startup] tamper-scan worker failed:", err); }
+    // BF_SERVER_v846_FRAUD - the fraud checks queue, the Keystone watchlist sync and the inside-job alerts.
+    const { startFraudWorker } = await import("./workers/fraudWorker.js");
+    await workerStagger();
+    try { const w = startFraudWorker(pool); workerStops.push(w.stop); console.log("[startup] fraud worker started"); }
+    catch (err) { console.error("[startup] fraud worker failed to start:", err); }
 
     // BF_INBOUND_ATTACHMENT_WORKER_v1 - auto-file inbound email attachments to the CRM.
     const { startInboundAttachmentWorker } = await import("./workers/inboundAttachmentWorker.js");

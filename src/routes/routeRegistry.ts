@@ -134,6 +134,7 @@ import libraryPublicRoutes from "./libraryPublic.js"; // BF_SERVER_v810_LIBRARY_
 import diagnosticsRoutes from "./diagnostics.js";
 import { createMountTracker } from "./_canonicalMount.js";
 import { siloMiddleware } from "../middleware/silo.js";
+import fraudRoutes from "./fraud.js"; // BF_SERVER_v846_FRAUD
 import { requireAuth, requireAuthAllowClient } from "../middleware/auth.js";
 import watchAuthRoutes from "../watch/authRoutes.js";
 import watchDeviceRoutes from "../watch/deviceRoutes.js";
@@ -345,6 +346,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/credit-financials", router: creditFinancialsRoutes }, // BF_SERVER_BLOCK_v535
   { path: "/broker-imports", router: brokerImportRoutes }, // BF_SERVER_BLOCK_v521_BROKER_IMPORT
   { path: "/templates", router: templatesRoutes }, // v693
+  { path: "/fraud", router: fraudRoutes }, // BF_SERVER_v846_FRAUD - staff fraud checks; settings Admin only
 ];
 
 export const PORTAL_ROUTE_REQUIREMENTS: Pick<ApiRoute, "method" | "path">[] = [

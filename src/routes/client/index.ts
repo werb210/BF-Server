@@ -19,6 +19,7 @@ import productQuestionsRouter from "./productQuestions.js"; // BF_SERVER_PRODUCT
 import sessionRouter from "./session.js";
 import { makeSigningOwnerGuard } from "./signingOwner.js"; // BF_SERVER_BLOCK_v473_SIGNING_OWNER_v1
 import submitAttemptsRouter from "./submitAttempts.js";
+import fraudSignalsRouter from "./fraudSignals.js"; // BF_SERVER_v846_FRAUD
 import { clientDocumentsRateLimit } from "../../middleware/rateLimit.js";
 import { rateLimitKeyFromRequest } from "../../middleware/clientIp.js"; // BF_SERVER_v791_RATE_LIMIT_KEYS
 import { safeHandler } from "../../middleware/safeHandler.js";
@@ -34,6 +35,7 @@ import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_v
 
 const router = Router();
 router.use(submitAttemptsRouter); // BF_SERVER_BLOCK_v842_SUBMIT_ATTEMPTS — frictionless beacon, before rate-limit/ownership middleware
+router.use(fraudSignalsRouter); // BF_SERVER_v846_FRAUD - device and behaviour beacon, same reason
 router.use(uploadFailureRouter); // BF_SERVER_UPLOAD_DIAG_v751 - upload-failure beacon, same reason
 router.use(deviceSignInRouter); // BF_SERVER_CLIENT_FACE_ID_v296 - public sign-in must not need an app id
 router.use(passkeysRouter); // BF_SERVER_BLOCK_v599 - passkey sign-in, before the app-id checks
