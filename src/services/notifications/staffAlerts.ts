@@ -185,7 +185,10 @@ export async function sendStaffAlert(input: StaffAlertInput, dependencies: { que
     return 0;
   }
   let sent = 0;
+  const seenTokens = new Set<string>(); // BF_SERVER_v845_PUSH_DEDUPE - one alert per device, even with duplicate token rows
   for (const row of rows) {
+    if (seenTokens.has(row.token)) continue;
+    seenTokens.add(row.token);
     const environment = row.environment === "sandbox" ? "sandbox" : "production";
     const isPortal = row.app === "portal-ios";
     const sender = isPortal ? portalProvider : provider;

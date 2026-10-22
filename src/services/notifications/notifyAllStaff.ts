@@ -162,7 +162,27 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx, dependencies: {
         console.warn(`[notifyAllStaff] notification insert failed for user=${user.id}`, safeErr(err));
       }
 
-      if (ctx.watch) {
+      let alertDevices = 0; // BF_SERVER_v845_PUSH_DEDUPE
+      if (ctx.staffAlert) {
+        // BF_SERVER_v820_WATCH_CALLS - best-effort; sendStaffAlert logs its own per-device failures.
+        try {
+          alertDevices = Number(await sendAlert({
+            userId: user.id,
+            category: ctx.staffAlert.category,
+            type: ctx.staffAlert.type,
+            title: ctx.staffAlert.title ?? ctx.title ?? humanizeType(ctx.notificationType),
+            body: ctx.staffAlert.body ?? ctx.body,
+            // BF_SERVER_v823_PUSH - the iPad portal opens the bell's page on tap.
+            data: { ...(ctx.staffAlert.data ?? {}), url: ctx.staffAlert.data?.url ?? ctx.contextUrl ?? null },
+          })) || 0;
+        } catch (err) {
+          console.warn(JSON.stringify({ event: "staff_push_failed", staffUserId: user.id, error: safeErr(err).slice(0, 300) }));
+        }
+      }
+      // BF_SERVER_v845_PUSH_DEDUPE - the iPhone dialler's alert (sender + message) is mirrored to the Apple Watch by iOS.
+      // Sending the Watch app its own "New client message" push as well made the watch show every event twice.
+      // The Watch push now goes only when the dialler alert reached no device.
+      if (ctx.watch && alertDevices === 0) {
         try {
           await sendWatch({
             staffUserId: user.id,
@@ -177,23 +197,6 @@ export async function notifyAllStaff(ctx: NotifyAllStaffCtx, dependencies: {
           // BF_SERVER_v819_PUSH - the bare event hid the cause for weeks (the registration lookup selected a column
           // that does not exist). Log the error text and code; sendWatchNotification never puts tokens in errors.
           console.warn(JSON.stringify({ event: "watch_push_failed", staffUserId: user.id, error: safeErr(err).slice(0, 300) }));
-        }
-      }
-
-      if (ctx.staffAlert) {
-        // BF_SERVER_v820_WATCH_CALLS - best-effort; sendStaffAlert logs its own per-device failures.
-        try {
-          await sendAlert({
-            userId: user.id,
-            category: ctx.staffAlert.category,
-            type: ctx.staffAlert.type,
-            title: ctx.staffAlert.title ?? ctx.title ?? humanizeType(ctx.notificationType),
-            body: ctx.staffAlert.body ?? ctx.body,
-            // BF_SERVER_v823_PUSH - the iPad portal opens the bell's page on tap.
-            data: { ...(ctx.staffAlert.data ?? {}), url: ctx.staffAlert.data?.url ?? ctx.contextUrl ?? null },
-          });
-        } catch (err) {
-          console.warn(JSON.stringify({ event: "staff_push_failed", staffUserId: user.id, error: safeErr(err).slice(0, 300) }));
         }
       }
     }),

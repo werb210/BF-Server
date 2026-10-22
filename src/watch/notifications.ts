@@ -44,9 +44,14 @@ export async function sendWatchNotification(input: {
     `SELECT p.device_id AS id,p.device_id,p.token_ciphertext,p.environment FROM watch_push_registrations p JOIN watch_devices d ON d.id=p.device_id
       WHERE d.staff_user_id=$1 AND d.revoked_at IS NULL AND p.push_type='standard'`, [input.staffUserId]);
   let sent = 0;
+  // BF_SERVER_v845_PUSH_DEDUPE - every Watch app install registers a new device row, often with the same APNs token,
+  // so one event reached the same watch once per stale row. Send once per distinct token.
+  const seenTokens = new Set<string>();
   for (const row of registrations.rows) {
     try {
       const token = decrypt(row.token_ciphertext);
+      if (seenTokens.has(token)) continue;
+      seenTokens.add(token);
       try {
         await pushProvider.send({ token, environment: row.environment }, payload);
       } catch (error) {
