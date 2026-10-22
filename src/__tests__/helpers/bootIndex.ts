@@ -29,6 +29,7 @@ export const WORKER_MODULES: Array<[string, string]> = [
   ["workers/signnowCompletionPoller.js", "startSignNowCompletionPoller"],
   ["workers/readReceiptWorker.js", "startReadReceiptWorker"],
   ["workers/tamperScanWorker.js", "startTamperScanWorker"],
+  ["workers/fraudWorker.js", "startFraudWorker"], // BF_SERVER_v846_FRAUD
   ["workers/inboundAttachmentWorker.js", "startInboundAttachmentWorker"],
   ["workers/abandonedApplicationWorker.js", "startAbandonedApplicationWorker"],
   ["workers/automationWorker.js", "startAutomationWorker"],

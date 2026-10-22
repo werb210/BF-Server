@@ -24,6 +24,7 @@ export const INTEGRATION_TEST_FILES: string[] = [
   "src/__tests__/chatIsChat.v629.integration.test.ts", // BF_SERVER_CHAT_IS_CHAT_v629 - needs Postgres
   "src/watch/__tests__/watchPushLookup.v819.integration.test.ts", // BF_SERVER_v819_PUSH - needs Postgres
   "src/__tests__/dialerV821.integration.test.ts", // BF_SERVER_v821_DIALER - needs Postgres
+  "src/__tests__/fraud.v846.integration.test.ts", // BF_SERVER_v846_FRAUD - needs Postgres
   "src/__tests__/lenderReferrals.v825.integration.test.ts", // BF_SERVER_v825_LENDER_REFERRALS - needs Postgres
   "src/__tests__/clientDraftCleanup.v839.integration.test.ts", // BF_SERVER_v839_CLIENT_DRAFT_CLEANUP - needs Postgres
   "src/__tests__/signInSkipsUnsubmitted.v838.integration.test.ts", // BF_SERVER_v838_SIGNIN_SKIPS_UNSUBMITTED - needs Postgres

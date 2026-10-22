@@ -2,6 +2,8 @@
 // BF_SERVER_v76_BLOCK_1_9_FIX — fields value widened to string|number|boolean|null
 // to match buildApplicationPackage.FlatFields and the FlatField producer below.
 import { familyAppIdsSql } from "../../modules/applications/applications.repo.js"; // BF_SERVER_v797_FAMILY_DOCS
+import { loadPrescreenForPackage } from "../../fraud/prescreen.js"; // BF_SERVER_v846_FRAUD
+import type { Q as FraudQ } from "../../fraud/types.js"; // BF_SERVER_v846_FRAUD
 import type { Pool } from "pg";
 import { Buffer } from "node:buffer";
 import { getStorage } from "../../lib/storage/index.js";
@@ -341,5 +343,10 @@ export async function loadPackageInputs(ctx: LoadCtx): Promise<PackageInputs> {
     .filter((d) => d.files.length > 0);
   const filed = new Set(docsOut.flatMap((d) => d.files.map((f) => f.filename)));
   const sbaLoose = sbaPdfs.filter((p) => !isAppCopy(p.filename) && !filed.has(p.filename));
-  return { signedApplicationPdf, creditSummaryPdf, documents: docsOut, additionalSignedDocs: [...additionalSignedDocs, ...formPdfs, ...sbaLoose], fields };
+  // BF_SERVER_v846_FRAUD - the fraud pre-screen page, when staff chose to include it. Best effort.
+  const prescreen = await loadPrescreenForPackage(ctx.pool as unknown as FraudQ, ctx.applicationId, "Boreal Financial").catch((e) => {
+    console.warn("[loadPackageInputs] fraud pre-screen skipped", e instanceof Error ? e.message : String(e));
+    return null;
+  });
+  return { signedApplicationPdf, creditSummaryPdf, documents: docsOut, additionalSignedDocs: [...additionalSignedDocs, ...formPdfs, ...sbaLoose, ...(prescreen ? [prescreen] : [])], fields };
 }

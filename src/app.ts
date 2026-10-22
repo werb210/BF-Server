@@ -1,5 +1,7 @@
 import express from "express";
 import { clientFailureLog } from "./middleware/clientFailureLog.js"; // BF_SERVER_CLIENT_FAILURE_LOG_v749
+import { staffRiskObserver, INSIDER_TIME_ZONE } from "./fraud/insider.js"; // BF_SERVER_v846_FRAUD
+import type { Q as FraudQ } from "./fraud/types.js"; // BF_SERVER_v846_FRAUD
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
@@ -181,6 +183,12 @@ export function createApp() {
    * API ROUTES (LOCKED PREFIX)
    */
   const apiRouter = Router();
+
+  // BF_SERVER_v846_FRAUD - inside-job alerts (fraud check 14): watches finished staff requests; never blocks or changes one.
+  apiRouter.use(staffRiskObserver({
+    db: async () => (await import("./db.js")).pool as unknown as FraudQ,
+    timeZone: () => INSIDER_TIME_ZONE,
+  }));
 
   apiRouter.use("/auth", authRoutes);
   apiRouter.use("/call", callRoutes);
