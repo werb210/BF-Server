@@ -31,7 +31,7 @@ export type MayaIdentity = {
   silo?: string;
 };
 
-const VALID_SILOS = new Set(["BF", "BI", "SLF"]);
+const VALID_SILOS = new Set(["BF", "BI", "SLF", "KS"]); // BF_SERVER_v850_KS_CRM
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";

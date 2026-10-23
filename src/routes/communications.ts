@@ -831,7 +831,7 @@ router.get("/threads", safeHandler(async (req: any, res: any) => {
     ? req.query.businessUnit.toUpperCase()
     : null;
   const isAdmin = String(req.user?.role ?? "").toLowerCase() === "admin";
-  const effectiveSilo = isAdmin && requestedBu && /^(BF|BI|SLF)$/.test(requestedBu)
+  const effectiveSilo = isAdmin && requestedBu && /^(BF|BI|SLF|KS)$/.test(requestedBu) // BF_SERVER_v850_KS_CRM
     ? requestedBu
     : silo;
 

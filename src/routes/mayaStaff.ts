@@ -493,7 +493,7 @@ router.post(
       ? req.body.staff_user_id.trim()
       : typeof req.body?.user_id === "string" && req.body.user_id.trim() ? req.body.user_id.trim() : null;
     const siloRaw = typeof req.body?.silo === "string" ? req.body.silo : (req.header("x-silo") || "");
-    const silo = ["BF", "BI", "SLF"].includes(siloRaw.trim().toUpperCase()) ? siloRaw.trim().toUpperCase() : null;
+    const silo = ["BF", "BI", "SLF", "KS"].includes(siloRaw.trim().toUpperCase()) ? siloRaw.trim().toUpperCase() : null; // BF_SERVER_v850_KS_CRM
     const approved = req.body?.approved === true;
     if (!body) return res.status(400).json({ ok: false, error: "body_required" });
     try {
@@ -1580,7 +1580,7 @@ router.post(
     // that pass its CHECKs. assignee_user_id is NOT NULL: the staff user Maya acts for, else the
     // contact's owner; with neither the task cannot be created.
     const siloRaw = (biStr(req.body?.silo) ?? "BF").toUpperCase();
-    const silo = siloRaw === "BI" || siloRaw === "SLF" ? siloRaw : "BF";
+    const silo = siloRaw === "BI" || siloRaw === "SLF" || siloRaw === "KS" ? siloRaw : "BF"; // BF_SERVER_v850_KS_CRM
     const dueAt = biStr(req.body?.due_at);
     const priorityRaw = (biStr(req.body?.priority) ?? "none").toUpperCase();
     const priority = ["LOW", "MEDIUM", "HIGH"].includes(priorityRaw) ? priorityRaw : "NONE";

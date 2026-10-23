@@ -16,8 +16,9 @@ import type { Request, Response, NextFunction } from "express";
  * handlers can read it via getSilo(res).
  */
 
-export type Silo = "BF" | "BI" | "SLF";
-const VALID_SILOS: Silo[] = ["BF", "BI", "SLF"];
+// BF_SERVER_v850_KS_CRM - KS = Keystone: its CRM and communications run through the same routes as BF.
+export type Silo = "BF" | "BI" | "SLF" | "KS";
+const VALID_SILOS: Silo[] = ["BF", "BI", "SLF", "KS"];
 
 function isValidSilo(value: unknown): value is Silo {
   return typeof value === "string" && (VALID_SILOS as string[]).includes(value);
