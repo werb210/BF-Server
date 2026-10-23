@@ -87,6 +87,8 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
     const _docLabel = `${_bizName} — ${_stamp}`;
     const email = inputs.applicantEmail;
     if (!email) return { status: "not_ready", reason: "no_applicant_email" };
+    // BF_SERVER_v851_APPLICANT_NAME - loadApplicationForPdf already fell back to the CRM contact's real name; none at all -> stop.
+    if (!inputs.applicantName) return { status: "not_ready", reason: "applicant_name_missing" };
 
     const sess = md.signnow_embedded && typeof md.signnow_embedded === "object" ? md.signnow_embedded : null;
     // BF_SERVER_BLOCK_v_ACCORD_GROUP_REFRESH_v1 — never reuse a cached group that is

@@ -6,6 +6,7 @@
 // reports who was texted so the portal can say. Owner 1 is never emailed; only
 // additional owners get an email invite (see embeddedSigningSession).
 import { dbQuery } from "../db.js";
+import { realName, resolveApplicantName } from "../services/applicantName.js"; // BF_SERVER_v851_APPLICANT_NAME
 
 export type SigningNotice = {
   name: string | null;
@@ -36,7 +37,12 @@ export async function owner1Contact(applicationId: string): Promise<Contact> {
     [applicationId],
   );
   const row = r.rows[0];
-  const name = [row?.first, row?.last].map((x) => (x ?? "").trim()).filter(Boolean).join(" ") || null;
+  // BF_SERVER_v851_APPLICANT_NAME - the OTP placeholder is not a name: fall back to the CRM contact's real name.
+  let name = [realName(row?.first), realName(row?.last)].filter(Boolean).join(" ") || null;
+  if (!name && row) {
+    const resolved = await resolveApplicantName(applicationId);
+    if (resolved.status === "ok" || resolved.status === "repaired") name = resolved.name.full;
+  }
   return { name, phone: usablePhone(row?.phone ?? null), lastSentAt: row?.sms_at ?? null };
 }
 

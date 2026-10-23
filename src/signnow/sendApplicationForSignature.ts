@@ -4,6 +4,7 @@
 import crypto from "node:crypto";
 import { dbQuery } from "../db.js";
 import { crmContactEmail } from "../services/clientEmail.js"; // BF_SERVER_CRM_EMAIL_WINS_v756
+import { applicantNameFrom, resolveApplicantName, APPLICANT_NAME_MISSING } from "../services/applicantName.js"; // BF_SERVER_v851_APPLICANT_NAME
 import { logCrmEvent } from "../modules/crm/crmTimeline.service.js";
 import { buildApplicationPdf, type ApplicationPdfInputs, type PdfOwner } from "./pdfBuilder.js";
 import { uploadSignedApplicationPdf } from "./blobStorage.js";
@@ -69,8 +70,19 @@ export async function loadApplicationForPdf(applicationId: string): Promise<Appl
   const row = res.rows[0];
   const md = obj(row?.metadata) ?? {};
   const business = obj(md.business) ?? {};
-  const applicant = obj(md.applicant) ?? {};
+  // BF_SERVER_v851_APPLICANT_NAME - a copy: the name fallback below must not change the caller's metadata object.
+  const applicant: Record<string, any> = { ...(obj(md.applicant) ?? {}) };
   const kyc = obj(md.kyc) ?? obj(md.financial) ?? {};
+  // BF_SERVER_v851_APPLICANT_NAME - the application still carrying the OTP placeholder (or no name) signs under the CRM contact's
+  // real name, which is also written back into metadata.applicant. No real name anywhere -> blank, never "Unknown".
+  let name = applicantNameFrom(applicant);
+  if (!name) {
+    const resolved = await resolveApplicantName(applicationId);
+    name = resolved.status === "ok" || resolved.status === "repaired" ? resolved.name : null;
+  }
+  applicant.firstName = name?.first ?? null;
+  applicant.lastName = name?.last ?? null;
+  applicant.fullName = name?.full ?? null;
 
   // BF_SERVER_ACCORD_ALL_OWNERS_v106
   // This list built applicant + partner and stopped. accordPdfBuilder builds a
@@ -156,6 +168,11 @@ export async function loadApplicationForPdf(applicationId: string): Promise<Appl
 export async function sendApplicationForSignature(ctx: OrchestratorContext): Promise<SendResult> {
   if (!ctx?.applicationId) return { ok: false, mode: "skipped", reason: "missing_application_id" };
   const inputs = await loadApplicationForPdf(ctx.applicationId);
+  if (!inputs.applicantName) {
+    // BF_SERVER_v851_APPLICANT_NAME - never send an application for signing without the applicant's name.
+    console.warn(`[signnow] applicant name missing for app=${ctx.applicationId}; signing not sent`);
+    return { ok: false, mode: "skipped", reason: APPLICANT_NAME_MISSING };
+  }
   const pdfBytes = await buildApplicationPdf(inputs);
   const buffer = Buffer.from(pdfBytes);
   let blobName: string, blobUrl: string;
