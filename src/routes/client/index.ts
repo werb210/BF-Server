@@ -24,6 +24,7 @@ import { clientDocumentsRateLimit } from "../../middleware/rateLimit.js";
 import { rateLimitKeyFromRequest } from "../../middleware/clientIp.js"; // BF_SERVER_v791_RATE_LIMIT_KEYS
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { dbQuery } from "../../db.js";
+import { realName, contactNameFrom, withoutPlaceholderNames } from "../../services/applicantName.js"; // BF_SERVER_v851_APPLICANT_NAME
 import { principalFromRequest } from "../../auth/principal.js"; // BF_SERVER_v812_CLIENT_MSG_CONTACT_LINK
 import { AppError } from "../../middleware/errors.js";
 import {
@@ -810,7 +811,7 @@ router.get(
     // application.metadata->'kyc'. Token path is unaffected.
     if (!row && phone) {
       const appResult = await dbQuery(
-        `SELECT c.name AS full_name, c.first_name, c.company_name, c.email, c.phone,
+        `SELECT c.name AS full_name, c.first_name, c.last_name AS v851_last_name, c.company_name, c.email, c.phone,
                 COALESCE(a.metadata->'kyc'->>'industry', a.metadata->>'industry',
                          a.metadata->'formData'->'kyc'->>'industry') AS industry,
                 COALESCE(a.metadata->'kyc'->>'businessLocation', a.metadata->>'businessLocation') AS business_location,
@@ -840,7 +841,8 @@ router.get(
           source: "crm",
           prefill: {
             companyName: c.company_name ?? null,
-            fullName: c.full_name ?? null,
+            // BF_SERVER_v851_APPLICANT_NAME - never the OTP placeholder ("Unknown (application started)").
+            fullName: realName(c.full_name) ?? contactNameFrom({ first_name: c.first_name, last_name: c.v851_last_name })?.full ?? null,
             email: c.email ?? null,
             phone: c.phone ?? phone,
             industry: c.industry ?? null,
@@ -861,14 +863,14 @@ router.get(
             // BF_SERVER_PREFILL_OWN_PHONE_v778 - business and owner details from the last application, so a returning
             // client does not retype them. ID numbers and banking details are never sent back.
             business: safePrefillFields(c.business),
-            applicant: safePrefillFields(c.applicant),
+            applicant: withoutPlaceholderNames(safePrefillFields(c.applicant)), // BF_SERVER_v851_APPLICANT_NAME
           },
         });
         return;
       }
       // BF_SERVER_PREFILL_OWN_PHONE_v778 - known to the CRM (a call, a web lead) but no application yet.
       const contact = await dbQuery(
-        `SELECT name, company_name, email, phone FROM contacts
+        `SELECT name, first_name, last_name, company_name, email, phone FROM contacts
           WHERE right(regexp_replace(coalesce(phone, ''), '\\D', '', 'g'), 10) = right(regexp_replace($1, '\\D', '', 'g'), 10)
             AND length(regexp_replace($1, '\\D', '', 'g')) >= 10
             AND coalesce(silo, 'BF') = 'BF'
@@ -876,8 +878,10 @@ router.get(
         [phone]
       );
       const k = contact.rows[0];
-      if (k && (k.name || k.email || k.company_name)) {
-        res.status(200).json({ found: true, source: "contact", prefill: { companyName: k.company_name ?? null, fullName: k.name ?? null, email: k.email ?? null, phone: k.phone ?? phone } });
+      // BF_SERVER_v851_APPLICANT_NAME - the placeholder contact created at OTP is not a name worth prefilling.
+      const kName = k ? (realName(k.name) ?? contactNameFrom({ first_name: k.first_name, last_name: k.last_name })?.full ?? null) : null;
+      if (k && (kName || k.email || k.company_name)) {
+        res.status(200).json({ found: true, source: "contact", prefill: { companyName: k.company_name ?? null, fullName: kName, email: k.email ?? null, phone: k.phone ?? phone } });
         return;
       }
     }
@@ -892,7 +896,7 @@ router.get(
       prefill: {
         // Identity
         companyName: row.company_name ?? null,
-        fullName: row.full_name ?? null,
+        fullName: realName(row.full_name), // BF_SERVER_v851_APPLICANT_NAME
         email: row.email ?? null,
         phone: row.phone ?? null,
         // Business profile

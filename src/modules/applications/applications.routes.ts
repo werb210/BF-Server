@@ -1895,6 +1895,16 @@ router.post('/:id/resend-signing', safeHandler(async (req: any, res: any) => {
     res.json({ status: 'ok', data: { ok: false, reason, snapshot } });
     return;
   }
+  // BF_SERVER_v851_APPLICANT_NAME - no signing for "Unknown (application started)": use the CRM contact's real name (written back
+  // into metadata.applicant) and refuse when there is none.
+  {
+    const { resolveApplicantName, APPLICANT_NAME_MISSING, APPLICANT_NAME_MISSING_MESSAGE } = await import('../../services/applicantName.js');
+    const named = await resolveApplicantName(id, pool as any);
+    if (named.status === 'missing') {
+      res.status(422).json({ error: APPLICANT_NAME_MISSING, message: APPLICANT_NAME_MISSING_MESSAGE, data: { ok: false, reason: APPLICANT_NAME_MISSING } });
+      return;
+    }
+  }
   // BF_SERVER_SBA_ONE_BUTTON_v789 - on an SBA file this button starts (or, after edits, restarts) the SBA signing:
   // every owner signs the application, their SBA forms and a 4506-C for each saved lender.
   const trig = await import('../../signnow/sba/sbaTrigger.js');

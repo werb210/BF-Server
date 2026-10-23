@@ -98,6 +98,16 @@ export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): 
   // Facility section filled before SignNow fires (otherwise the envelope/package
   // would go out with empty collateral fields).
   if (snap.collateralRequired && !snap.collateralComplete) return { fired: false, reason: "collateral_incomplete" };
+  // BF_SERVER_v851_APPLICANT_NAME - never start signing for "Unknown (application started)". The CRM contact's real name is used
+  // (and written back) when the application has none; with no real name at all this logs and skips.
+  {
+    const { resolveApplicantName, APPLICANT_NAME_MISSING } = await import("../applicantName.js");
+    const named = await resolveApplicantName(ctx.applicationId, ctx.pool as any);
+    if (named.status === "missing") {
+      console.warn(`[orchestrator] applicant name missing for app=${ctx.applicationId}; signing skipped`);
+      return { fired: false, reason: APPLICANT_NAME_MISSING };
+    }
+  }
   // BF_SERVER_SBA_ONE_BUTTON_v789 - Send on an SBA file starts the SBA signing (application + SBA forms +
   // a 4506-C for the lenders just saved) instead of failing, and never sends the staff "credit summary" alert:
   // an SBA file has no credit summary.
