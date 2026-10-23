@@ -56,9 +56,10 @@ export async function logSentMessage(pool: Pool, userId: string, message: SentMe
     [userId],
   );
   const silo = owner.rows[0]?.silo || "BF";
-  const matched = await pool.query<{ id: string }>(
-    `SELECT id FROM contacts
-      WHERE silo = $1
+  // BF_SERVER_v850_KS_CRM - Keystone (KS) contacts are matched too; each row is logged in the contact's own silo.
+  const matched = await pool.query<{ id: string; silo?: string | null }>(
+    `SELECT id, silo FROM contacts
+      WHERE (silo = $1 OR silo = 'KS')
         AND (lower(email) = ANY($2::text[]) OR lower(secondary_email) = ANY($2::text[]))`,
     [silo, recipients],
   );
@@ -74,7 +75,7 @@ export async function logSentMessage(pool: Pool, userId: string, message: SentMe
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9,$10)
        ON CONFLICT (graph_message_id, contact_id) WHERE graph_message_id IS NOT NULL
        DO NOTHING`,
-      [from, addressesOf(message.toRecipients), addressesOf(message.ccRecipients), [], String(message.subject ?? ""), String(message.body?.content ?? ""), userId, contact.id, silo, message.id],
+      [from, addressesOf(message.toRecipients), addressesOf(message.ccRecipients), [], String(message.subject ?? ""), String(message.body?.content ?? ""), userId, contact.id, contact.silo || silo, message.id],
     ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "modules/o365/sentItemsLog.ts:69", ({ rowCount: 0 })));
     written += result.rowCount ?? 0;
   }

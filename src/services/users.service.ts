@@ -31,8 +31,8 @@ const adminUpdateSchema = z.object({
   last_name: z.string().min(1).optional(),
   email: z.string().email().optional(),
   phone: z.string().optional(),
-  silo: z.enum(["BF", "BI", "SLF"]).optional(),
-  silos: z.array(z.enum(["BF", "BI", "SLF"])).optional(),
+  silo: z.enum(["BF", "BI", "SLF", "KS"]).optional(), // BF_SERVER_v850_KS_CRM
+  silos: z.array(z.enum(["BF", "BI", "SLF", "KS"])).optional(),
 });
 
 const createUserSchema = z.object({
@@ -40,8 +40,8 @@ const createUserSchema = z.object({
   phone: z.string().min(1).optional(),
   role: z.string().min(1),
   lenderId: z.string().uuid().optional(),
-  silo: z.enum(["BF", "BI", "SLF"]).optional(),
-  silos: z.array(z.enum(["BF", "BI", "SLF"])).optional(),
+  silo: z.enum(["BF", "BI", "SLF", "KS"]).optional(), // BF_SERVER_v850_KS_CRM
+  silos: z.array(z.enum(["BF", "BI", "SLF", "KS"])).optional(),
 });
 
 type UserRecord = {

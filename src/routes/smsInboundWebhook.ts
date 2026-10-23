@@ -13,7 +13,8 @@ const router = Router();
 // the inbound row. Previously these were omitted, so every inbound SMS was born
 // orphaned (contact_id NULL, type NULL): it fell into the Messages-tab "null"
 // thread and inflated the nav badge with a count no click could clear.
-async function resolveInboundSmsContact(from: string): Promise<string | null> {
+// BF_SERVER_v850_KS_CRM - also says which silo the contact is in: BF first, then Keystone (KS).
+async function resolveInboundSmsContactAndSilo(from: string): Promise<{ id: string | null; silo: "BF" | "KS" }> {
   const digits = from.replace(/[^0-9]/g, "");
   const last10 = digits.length >= 10 ? digits.slice(-10) : digits;
 
@@ -52,7 +53,18 @@ async function resolveInboundSmsContact(from: string): Promise<string | null> {
           LIMIT 1`,
         [last10],
       );
-      if (r.rows[0]) return r.rows[0].id;
+      if (r.rows[0]) return { id: r.rows[0].id, silo: "BF" };
+      if (last10.length === 10) {
+        const ks = await pool.query<{ id: string }>(
+          `SELECT id FROM contacts
+            WHERE silo = 'KS' AND merged_into_id IS NULL AND coalesce(status, '') <> 'archived'
+              AND (right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10) = $1
+                   OR right(regexp_replace(coalesce(secondary_phone, ''), '[^0-9]', '', 'g'), 10) = $1)
+            ORDER BY updated_at DESC NULLS LAST LIMIT 1`,
+          [last10],
+        );
+        if (ks.rows[0]) return { id: ks.rows[0].id, silo: "KS" };
+      }
     }
 
     const created = await createContact(pool, {
@@ -63,10 +75,10 @@ async function resolveInboundSmsContact(from: string): Promise<string | null> {
       is_primary_applicant: false,
       silo: "BF",
     });
-    return created.id;
+    return { id: created.id, silo: "BF" };
   } catch (err: unknown) {
     console.warn("[sms-inbound] contact resolve failed", err instanceof Error ? err.message : String(err));
-    return null;
+    return { id: null, silo: "BF" };
   }
 }
 
@@ -183,7 +195,7 @@ router.post("/webhooks/twilio/sms-inbound", express.urlencoded({ extended: false
       );
     }
 
-    const contactId = await resolveInboundSmsContact(from);
+    const { id: contactId, silo: contactSilo } = await resolveInboundSmsContactAndSilo(from); // BF_SERVER_v850_KS_CRM
     // BF_SERVER_v817_DIALER_MESSAGING - communications_messages.id has no default and the
     // twilio_message_sid unique index is partial, so this insert (no id, ON CONFLICT without the
     // index predicate) failed on every text and the message never appeared. Supply the id, the
@@ -191,9 +203,9 @@ router.post("/webhooks/twilio/sms-inbound", express.urlencoded({ extended: false
     await pool.query(
       `INSERT INTO communications_messages
         (id, conversation_id, contact_id, channel, type, direction, status, body, media_url, from_number, to_number, phone_number, silo, twilio_message_sid, created_at)
-       VALUES (gen_random_uuid(), $1, $2, 'sms', 'sms', 'inbound', 'received', $3, $4, $5, $6, $5, 'BF', $7, NOW())
+       VALUES (gen_random_uuid(), $1, $2, 'sms', 'sms', 'inbound', 'received', $3, $4, $5, $6, $5, $8, $7, NOW())
        ON CONFLICT (twilio_message_sid) WHERE twilio_message_sid IS NOT NULL DO NOTHING`,
-      [convId, contactId, body, mediaUrl, from, to || null, messageSid || null],
+      [convId, contactId, body, mediaUrl, from, to || null, messageSid || null, contactSilo],
     );
 
     // BF_SERVER_MMS_BLOB_PERSIST_v1 - copy the MMS to public blob off the hot
@@ -211,7 +223,7 @@ router.post("/webhooks/twilio/sms-inbound", express.urlencoded({ extended: false
 
     if (contactId) {
       // BF_SERVER_BLOCK_v619 - automation trigger.
-      void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent({ trigger: "message.inbound", silo: "BF", contactId, data: { channel: "sms" } })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
+      void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent({ trigger: "message.inbound", silo: contactSilo, contactId, data: { channel: "sms" } })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
     }
 
     return res.type("text/xml").send("<Response/>");
