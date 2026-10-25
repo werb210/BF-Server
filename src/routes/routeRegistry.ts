@@ -100,6 +100,8 @@ import webhooksRoutes from "./webhooks.js";
 import graphWebhooksRoutes from "./graphWebhooks.js"; // BF_SERVER_GRAPH_WEBHOOKS_v1
 import webauthnRoutes from "./webauthn.js"; // BF_SERVER_WEBAUTHN_v1
 import receptionRoutes from "./reception.js"; // BF_SERVER_RECEPTION_v1
+import ksVoiceRoutes from "./ksVoice.js"; // BF_SERVER_v853_KS_PHONE_SUPPORT
+import ksSupportRoutes from "./ksSupport.js"; // BF_SERVER_v853_KS_PHONE_SUPPORT
 import meetingsRoutes from "./meetings.js"; // BF_SERVER_MEETING_ROOMS_v736
 import clientBookingRoutes from "./clientBooking.js"; // BF_SERVER_CLIENT_BOOKING_v738
 import emailPixelRoutes from "./emailPixel.js"; // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING
@@ -312,6 +314,8 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/track", router: emailPixelRoutes }, // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING (public)
   { path: "/voice", router: voiceCallsRoutes },
   { path: "/webhooks/twilio/reception", router: receptionRoutes }, // BF_SERVER_RECEPTION_v1
+  { path: "/webhooks/twilio/ks", router: ksVoiceRoutes }, // BF_SERVER_v853_KS_PHONE_SUPPORT - the Keystone sales / support line (Twilio)
+  { path: "/ks/support", router: ksSupportRoutes }, // BF_SERVER_v853_KS_PHONE_SUPPORT - Keystone support tickets + phone settings
   { path: "/meetings", router: meetingsRoutes }, // BF_SERVER_MEETING_ROOMS_v736
   { path: "/booking", router: clientBookingRoutes }, // BF_SERVER_CLIENT_BOOKING_v738 (public)
   { path: "/webauthn", router: webauthnRoutes }, // BF_SERVER_WEBAUTHN_v1
