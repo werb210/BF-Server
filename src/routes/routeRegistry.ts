@@ -135,6 +135,7 @@ import diagnosticsRoutes from "./diagnostics.js";
 import { createMountTracker } from "./_canonicalMount.js";
 import { siloMiddleware } from "../middleware/silo.js";
 import fraudRoutes from "./fraud.js"; // BF_SERVER_v846_FRAUD
+import retentionRoutes from "./retention.js"; // BF_SERVER_v855_RETENTION
 import ksCrmRoutes from "./ksCrm.js"; // BF_SERVER_v850_KS_CRM
 import { requireAuth, requireAuthAllowClient } from "../middleware/auth.js";
 import watchAuthRoutes from "../watch/authRoutes.js";
@@ -348,6 +349,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/broker-imports", router: brokerImportRoutes }, // BF_SERVER_BLOCK_v521_BROKER_IMPORT
   { path: "/templates", router: templatesRoutes }, // v693
   { path: "/fraud", router: fraudRoutes }, // BF_SERVER_v846_FRAUD - staff fraud checks; settings Admin only
+  { path: "/retention", router: retentionRoutes }, // BF_SERVER_v855_RETENTION - staff status; Admin holds and report
   { path: "/ks/crm", router: ksCrmRoutes }, // BF_SERVER_v850_KS_CRM - KS-Ops ingest (X-KS-Ops-Key) + Keystone pipeline
 ];
 
