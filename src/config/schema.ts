@@ -235,6 +235,12 @@ export const EnvSchema = z
     O365_OAUTH_RETURN_URL: z.string().optional(), // URL; read in routes/o365OAuth.ts
     O365_SHARED_INBOX_EMAIL: z.string().optional(), // email address(es); read in routes/email.ts
     PUBLIC_SERVER_URL: z.string().optional(), // URL; read in routes/crm/emails.ts
+    QBO_CLIENT_ID: z.string().optional(), // identifier; read in services/quickbooks/qboConfig.ts // BF_SERVER_v852_CALC_QBO
+    QBO_CLIENT_SECRET: z.string().optional(), // credential (secret); read in services/quickbooks/qboConfig.ts
+    QBO_ENVIRONMENT: z.string().optional(), // sandbox | production; read in services/quickbooks/qboConfig.ts
+    QBO_REDIRECT_URI: z.string().optional(), // URL; read in services/quickbooks/qboConfig.ts
+    QBO_RETURN_URL: z.string().optional(), // URL; read in services/quickbooks/qboConfig.ts
+    QBO_TOKEN_ENCRYPTION_KEY: z.string().optional(), // credential (secret), 32+ characters; read in services/quickbooks/qboCrypto.ts
     RECEPTION_ENABLED: z.string().optional(), // true/false switch; read in routes/webhooks.ts
     RECEPTION_NOVA_VOICE: z.string().optional(), // setting; read in routes/reception.ts
     RESEARCH_LLM_MODEL: z.string().optional(), // OpenAI model name; read in services/credit/research.ts

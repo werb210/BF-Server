@@ -157,6 +157,7 @@ router.post("/:id/confirm-acceptance", requireAuth, requireAuthorization({ roles
       WHERE id::text = $1`,
     [row.application_id, fundedAmount, id, rawCurrency],
   ).catch((e) => console.warn("[offer_accept] funded_amount write failed", e instanceof Error ? e.message : String(e)));
+  (await import("../services/quickbooks/qboHooks.js")).queueQboFeeInvoice(row.application_id, "funded"); // BF_SERVER_v852_CALC_QBO
 
   // Fire SignNow envelope on the lender's term sheet (best-effort).
   try {

@@ -176,6 +176,7 @@ router.post(
       [id, signer, v.signedAt.toISOString(), userId, v.note, v.feePercent, v.feeAmount],
     );
     console.info({ event: "fee_agreement_marked_signed", applicationId: id, userId, feePercent: v.feePercent, feeAmount: v.feeAmount });
+    (await import("../services/quickbooks/qboHooks.js")).queueQboFeeInvoice(id, "fee_agreement_marked_signed"); // BF_SERVER_v852_CALC_QBO
     res.status(200).json({ ok: true });
   })
 );
