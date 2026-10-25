@@ -1531,6 +1531,7 @@ router.patch(
           WHERE id::text = ($1)::text`,
         [applicationId, fundedAmount],
       ).catch((e) => console.warn("[status] funded_amount write failed", e instanceof Error ? e.message : String(e)));
+      (await import("../services/quickbooks/qboHooks.js")).queueQboFeeInvoice(applicationId, "funded"); // BF_SERVER_v852_CALC_QBO
     }
     res.status(200).json({ ok: true, applicationId, status });
   })

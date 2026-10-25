@@ -246,6 +246,11 @@ export async function start(): Promise<void> {
     await workerStagger();
     try { const w = startFraudWorker(pool); workerStops.push(w.stop); console.log("[startup] fraud worker started"); }
     catch (err) { console.error("[startup] fraud worker failed to start:", err); }
+    // BF_SERVER_v852_CALC_QBO - QuickBooks fee invoices for signed media fee agreements (idle until QuickBooks is set up).
+    const { startQboFeeInvoiceWorker } = await import("./workers/qboFeeInvoiceWorker.js");
+    await workerStagger();
+    try { const w = startQboFeeInvoiceWorker(pool); workerStops.push(w.stop); console.log("[startup] quickbooks fee-invoice worker started"); }
+    catch (err) { console.error("[startup] quickbooks fee-invoice worker failed to start:", err); }
 
     // BF_INBOUND_ATTACHMENT_WORKER_v1 - auto-file inbound email attachments to the CRM.
     const { startInboundAttachmentWorker } = await import("./workers/inboundAttachmentWorker.js");
