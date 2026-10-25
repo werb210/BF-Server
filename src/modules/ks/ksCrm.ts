@@ -54,6 +54,7 @@ export type KsCompanyInput = {
   plan: string | null;
   seats: number | null;
   status: string | null;
+  support_level?: string | null; // BF_SERVER_v853_KS_PHONE_SUPPORT - email | priority | premium | dedicated (ticket SLA)
 };
 export type KsEventInput = { type: KsEventType; at: string; summary: string | null };
 export type KsUpsertInput = {
@@ -136,6 +137,11 @@ export function parseKsUpsert(body: unknown): { ok: true; value: KsUpsertInput }
       const code = optText(errors, "company.company_code", c.company_code, 100);
       const plan = optText(errors, "company.plan", c.plan, 100);
       const status = optText(errors, "company.status", c.status, 50);
+      // BF_SERVER_v853_KS_PHONE_SUPPORT - the licensee's support level (optional).
+      const supportLevel = optText(errors, "company.support_level", c.support_level, 20);
+      if (supportLevel && !["email", "priority", "premium", "dedicated"].includes(supportLevel)) {
+        errors["company.support_level"] = "must be email, priority, premium or dedicated";
+      }
       let seats: number | null = null;
       if (c.seats !== undefined && c.seats !== null) {
         const n = typeof c.seats === "string" && c.seats.trim() ? Number(c.seats) : c.seats;
@@ -145,7 +151,7 @@ export function parseKsUpsert(body: unknown): { ok: true; value: KsUpsertInput }
       if (!name && !code && !errors["company.name"] && !errors["company.company_code"]) {
         errors.company = "needs a name or company_code";
       }
-      company = { name, website, company_code: code, plan, seats, status };
+      company = { name, website, company_code: code, plan, seats, status, support_level: supportLevel }; // BF_SERVER_v853_KS_PHONE_SUPPORT
     }
   }
 
@@ -326,6 +332,11 @@ export async function upsertKsCrm(q: Q, input: KsUpsertInput): Promise<KsUpsertR
         WHERE id = $1`,
       [company.id, c.name, c.website, c.company_code, c.plan, c.seats, c.status],
     );
+  }
+
+  // BF_SERVER_v853_KS_PHONE_SUPPORT - the support level, when KS-Ops sent one.
+  if (company && input.company?.support_level) {
+    await q.query(`UPDATE companies SET ks_support_level = $2 WHERE id = $1 AND ks_support_level IS DISTINCT FROM $2`, [company.id, input.company.support_level]);
   }
 
   // Contact

@@ -355,6 +355,14 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
   // ── v503: PSTN inbound -> conference + ring-all staff
   const looksLikePhoneFrom = /^\+?\d{8,15}$/.test(from);
   if (looksLikePhoneFrom && !from.startsWith("client:")) {
+    // BF_SERVER_v853_KS_PHONE_SUPPORT - the Keystone number has its own menu, queues and silo (routes/ksVoice.ts).
+    if ((await import("../modules/ks/ksPhone.js")).isKsVoiceNumber(to)) {
+      const { default: KsVoiceResponse } = await import("twilio/lib/twiml/VoiceResponse.js");
+      const vks = new KsVoiceResponse();
+      vks.redirect({ method: "POST" }, "/api/webhooks/twilio/ks/voice");
+      console.log(JSON.stringify({ event: "ks_voice_redirect", callSid: callSid || null }));
+      return res.send(vks.toString());
+    }
     // BF_SERVER_INBOUND_CALL_LOG_v1 — record every inbound PSTN call up front so
     // the later /twilio/voice status callback can find it. Without this the
     // callback logs voice_webhook_call_not_found and the call never lands in
