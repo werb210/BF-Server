@@ -71,6 +71,7 @@ import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILE
 
 const router = Router();
 import { smsFromFor, smsSenderFor } from "../lib/smsFrom.js"; // BF_SERVER_US_SMS_TOLLFREE_v755
+import { refuseIfLocked } from "../retention/retention.js"; // BF_SERVER_v855_RETENTION
 
 // BF_SERVER_DOC_WAIVERS_ROUTES_v1 — Request Items checklist (dynamic Step-5 required set) +
 // admin-only per-application document waivers.
@@ -830,6 +831,8 @@ router.post(
           AND (name IS NULL OR name = '' OR name IN ('Draft application', 'Untitled Application'))
           AND created_at < NOW() - ($2 || ' days')::interval
           AND (silo IS NULL OR UPPER(silo) = UPPER($1))
+          AND NOT EXISTS (SELECT 1 FROM retention_applications ra -- BF_SERVER_v855_RETENTION
+                           WHERE ra.application_id = applications.id::text AND (ra.is_record OR ra.held))
         ORDER BY created_at ASC
         LIMIT 200`,
       [silo, String(days)]
@@ -877,6 +880,7 @@ router.delete(
       res.status(404).json({ code: "not_found", message: "Application not found." });
       return;
     }
+    if (await refuseIfLocked(req, res, "application", applicationId)) return; // BF_SERVER_v855_RETENTION
     // BF_SERVER_BLOCK_v691_DELETE_FK_DISCOVERY_v1
     // The hand-maintained childTables list (v189) kept missing tables that
     // carry an FK to applications without ON DELETE CASCADE (call_logs,

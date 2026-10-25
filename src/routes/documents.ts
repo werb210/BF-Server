@@ -30,6 +30,7 @@ import { rateLimitKeyFromRequest } from "../middleware/clientIp.js";
 import { isStaffOrService, principalFromRequest } from "../auth/principal.js";
 import { isApplicationFraud, FRAUD_LOCK_MESSAGE } from "../services/fraud/fraudGuard.js";
 import { isClientUploadableCategory } from "../services/documents/clientUploadCategories.js";
+import { refuseIfLocked } from "../retention/retention.js"; // BF_SERVER_v855_RETENTION
 
 const router = express.Router();
 
@@ -630,6 +631,7 @@ router.delete(
       [documentId, applicationId]
     );
     if (!exists.rows[0]) return fail(res, 404, "DOCUMENT_NOT_FOUND");
+    if (await refuseIfLocked(req, res, "document", documentId)) return; // BF_SERVER_v855_RETENTION
 
     // #8 — delete the blob first so storage is not orphaned on row removal.
     const blobRow = await pool.query<{ blob_name: string | null }>(

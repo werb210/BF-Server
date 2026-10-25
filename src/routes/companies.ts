@@ -5,6 +5,7 @@ import { AppError } from "../middleware/errors.js";
 import { pool } from "../db.js";
 import { getSilo, resolveSiloFromRequest } from "../middleware/silo.js";
 import { createCompany } from "../services/companies.js";
+import { refuseIfLocked } from "../retention/retention.js"; // BF_SERVER_v855_RETENTION
 
 const router = Router();
 router.use(requireAuth);
@@ -135,6 +136,7 @@ router.patch("/:id", safeHandler(async (req: any, res: any) => {
 }));
 
 router.delete("/:id", safeHandler(async (req: any, res: any) => {
+  if (await refuseIfLocked(req, res, "company", String(req.params.id))) return; // BF_SERVER_v855_RETENTION
   await pool.query(`DELETE FROM companies WHERE id = $1`, [req.params.id]);
   res.status(204).end();
 }));

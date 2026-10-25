@@ -33,6 +33,7 @@ import {
   requireApplicationAccess,
 } from "../../auth/clientApplicationOwnership.js"; // BF_SERVER_v784_CLIENT_OWNERSHIP, BF_SERVER_v789_FORM_RESPONSE_AUTH
 import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_v789_SILENT_QUERIES
+import { applicationRetention } from "../../retention/retention.js"; // BF_SERVER_v855_RETENTION
 
 const router = Router();
 router.use(submitAttemptsRouter); // BF_SERVER_BLOCK_v842_SUBMIT_ATTEMPTS — frictionless beacon, before rate-limit/ownership middleware
@@ -133,6 +134,18 @@ router.post("/account/delete", safeHandler(async (req: any, res: any) => {
                    UNION SELECT contact_id FROM application_contacts WHERE application_id::text = ($1)::text)`,
     [applicationId],
   );
+  // BF_SERVER_v855_RETENTION - a lending file is a record the brokerage must keep for 7 years after it closes (or while a
+  // legal hold covers it). The account is closed (opted out above) and the record is kept until then, as the store
+  // rules allow for data kept to meet legal obligations; an empty draft is still deleted.
+  const kept = await applicationRetention(applicationId);
+  if (kept?.locked) {
+    console.info("[client-account-delete] record kept for retention", { applicationId, reason: kept.reason, deletable_on: kept.deletable_on });
+    res.json({
+      ok: true, deleted: false, retained: true, deletable_on: kept.deletable_on,
+      message: "Your account is closed and you will not be contacted again. Your application is a lending record we are required to keep for 7 years after the file closes. It becomes eligible for deletion after that, once any legal holds have been released.",
+    });
+    return;
+  }
   const { rowCount } = await pool.query(
     `DELETE FROM applications WHERE id::text = ($1)::text`, [applicationId]);
   if (!rowCount) { res.status(404).json({ error: "not_found" }); return; }

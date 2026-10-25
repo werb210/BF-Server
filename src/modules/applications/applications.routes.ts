@@ -3,6 +3,7 @@ import { requireAuth, requireCapability } from '../../middleware/auth.js';
 import { CAPABILITIES } from '../../auth/capabilities.js';
 import { familyAppIdsSql } from './applications.repo.js'; // BF_SERVER_v797_FAMILY_DOCS
 import { pool } from '../../db.js';
+import { refuseIfLocked } from "../../retention/retention.js"; // BF_SERVER_v855_RETENTION
 import { isPipelineState } from './pipelineState.js';
 import { transitionPipelineState } from './applications.service.js';
 import { sendRejectionNoticeToClient, allSentLendersPassed } from '../../services/rejectionNotice.js';
@@ -694,6 +695,7 @@ router.delete('/:id', requireAdmin, safeHandler(async (req: any, res: any) => {
   if (own.rows[0].silo && callerSilo && own.rows[0].silo !== callerSilo) {
     return res.status(403).json({ error: 'wrong_silo' });
   }
+  if (await refuseIfLocked(req, res, 'application', id)) return; // BF_SERVER_v855_RETENTION
   const { rowCount } = await pool.query(`DELETE FROM applications WHERE id::text = ($1)::text`, [id]);
   if (!rowCount) return res.status(404).json({ error: 'not_found' });
   res.json({ ok: true });

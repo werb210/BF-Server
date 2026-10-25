@@ -35,6 +35,7 @@ export const INTEGRATION_TEST_FILES: string[] = [
   "src/__tests__/dialerControls.v830.integration.test.ts", // BF_SERVER_v830_DIALER_CONTROLS - needs Postgres
   "src/__tests__/dialerPolish.v831.integration.test.ts", // BF_SERVER_v831_DIALER_POLISH - needs Postgres
   "src/__tests__/importFixes.v834.integration.test.ts", // BF_SERVER_v834_IMPORT_FIXES - needs Postgres
+  "src/__tests__/retention.v855.integration.test.ts", // BF_SERVER_v855_RETENTION - needs Postgres
   "src/__tests__/aiChatFlow.v784.integration.test.ts", // BF_SERVER_v784_CHAT_SCHEMA - needs Postgres
   "src/__tests__/workflowEngine.v786.integration.test.ts", // BF_SERVER_v786_WORKFLOW_GRAPH - needs Postgres
   "src/__tests__/workflowTestRun.v792.integration.test.ts", // BF_SERVER_v792_WORKFLOW_TEST_RUN - needs Postgres
