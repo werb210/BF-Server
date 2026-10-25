@@ -13,6 +13,7 @@ import { pool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { getSilo } from "../middleware/silo.js";
+import { isKeystoneWidgetCall, ksWidgetFor, requestedWidgetSilo } from "../modules/ks/ksWidget.js"; // BF_SERVER_v854_KS_WIDGETS
 import { ApplicationStage } from "../modules/applications/pipelineState.js";
 // BF_SERVER_WIDGET_PARKED_v109
 import { liveStageFilter } from "../modules/applications/reportingScope.js";
@@ -38,6 +39,13 @@ const REAL_DEAL = `
 router.get("/summary", requireAuth, safeHandler(async (req: any, res: any) => {
   const silo = getSilo(res);
   const userId = req.user?.id ?? req.user?.userId ?? null;
+
+  // BF_SERVER_v854_KS_WIDGETS - Keystone (KS) is a sales operation: open deals, KS tasks and messages, paying licensees,
+  // finished demos with no follow-up, support tickets. Only staff allowed into the Keystone CRM get the figures;
+  // anyone else gets an empty Keystone summary with the reason, never another silo's numbers.
+  if (isKeystoneWidgetCall(requestedWidgetSilo(req), silo)) {
+    return res.json(await ksWidgetFor(pool, req.user, userId));
+  }
 
   const [pipeline, tasksDue, unread, earned] = await Promise.all([
     pool.query<{ count: string }>(
