@@ -1871,14 +1871,20 @@ router.get(
                  SELECT 1 FROM application_lender_selections s
                   WHERE s.application_id::text = a.id::text AND s.finalized_at IS NOT NULL
               )) AS signature_needed,
-              a.source -- BF_SERVER_v839_CLIENT_DRAFT_CLEANUP - which unfinished ones the client started
+              a.source, -- BF_SERVER_v839_CLIENT_DRAFT_CLEANUP - which unfinished ones the client started
+              -- BF_SERVER_v858_PARTNER_SIGNING - the caller is the applicant, or a partner on someone else's file
+              CASE WHEN right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $1 THEN 'applicant' ELSE 'partner' END AS viewer_role
          FROM applications a
          -- BF_SERVER_CLOSING_COST_FIX_v1 - resolve the contact via the parent for
          -- linked legs created without their own contact_id, so every leg
          -- (equipment / closing-cost companion) surfaces in the CMP switcher.
-         JOIN contacts c ON c.id = COALESCE(a.contact_id,
+         LEFT JOIN contacts c ON c.id = COALESCE(a.contact_id,
                 (SELECT p.contact_id FROM applications p WHERE p.id::text = a.parent_application_id::text)) -- v342_FIX_CRM_CONTACTS
-        WHERE right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $1
+        WHERE (right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = $1
+               -- BF_SERVER_v858_PARTNER_SIGNING - or a partner on the file (application_contacts role partner) signing in
+               OR EXISTS (SELECT 1 FROM application_contacts v858ac JOIN contacts v858c ON v858c.id = v858ac.contact_id
+                           WHERE v858ac.application_id::text = a.id::text AND v858ac.role = 'partner'
+                             AND right(regexp_replace(coalesce(v858c.phone, ''), '[^0-9]', '', 'g'), 10) = $1))
           ${draftFilter}
           ${CLIENT_REMOVED_EXCLUSION}
         ORDER BY a.updated_at DESC`,
