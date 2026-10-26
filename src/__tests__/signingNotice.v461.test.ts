@@ -63,9 +63,9 @@ describe("v461 signing text to Owner 1", () => {
     expect(src).not.toContain("sendViaGraph");
   });
 
-  it("the orchestrator resends on a second Send and reports the notice on the first", () => {
+  it("the orchestrator notifies every signer on a second Send and reports the notice on the first", () => {
     const src = fs.readFileSync("src/services/submission/orchestrator.ts", "utf8");
-    expect(src).toContain("snap.applicationSigned ? undefined : await signingNoticeFor(ctx.applicationId, true)");
+    expect(src).toContain("snap.applicationSigned ? undefined : await v860NotifyAllSigners(ctx.applicationId)");
     expect(src).toContain("const notice = await signingNoticeFor(ctx.applicationId, false);");
   });
 });

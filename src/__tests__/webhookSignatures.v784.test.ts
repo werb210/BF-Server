@@ -175,6 +175,7 @@ describe("SendGrid webhook", () => {
 
 describe("ensureSignnowWebhook registers subscriptions with secret_key", () => {
   const CB = "https://server.test/api/webhooks/signnow";
+  const CBV = CB + "?v=860"; // BF_SERVER_v860_SIGNNOW_WEBHOOK
   const SECRET = "signnow-secret-784";
   type Call = { method: string; path: string; body: any };
 
@@ -207,20 +208,19 @@ describe("ensureSignnowWebhook registers subscriptions with secret_key", () => {
     await ensureSignnowWebhook();
     const posts = calls.filter((c) => c.method === "POST" && c.path === "/api/v2/events");
     expect(posts.map((p) => p.body.event).sort()).toEqual(["user.document.complete", "user.document.fieldinvite.signed"]);
-    for (const p of posts) expect(p.body.attributes).toMatchObject({ callback: CB, secret_key: SECRET });
+    for (const p of posts) expect(p.body.attributes).toMatchObject({ callback: CBV, secret_key: SECRET });
   });
 
-  it("updates an existing active subscription that lacks a secret in place, and leaves one that has it", async () => {
+  it("re-sends the current secret to every existing active subscription", async () => {
     const calls = stubSignNow([
-      { id: "s1", event: "user.document.fieldinvite.signed", entity_id: "u1", json_attributes: { callback_url: CB, use_tls_12: true } },
-      { id: "s2", event: "user.document.complete", entity_id: "u1", json_attributes: { callback_url: CB, secret_key: SECRET } },
+      { id: "s1", event: "user.document.fieldinvite.signed", entity_id: "u1", json_attributes: { callback_url: CBV, use_tls_12: true } },
+      { id: "s2", event: "user.document.complete", entity_id: "u1", json_attributes: { callback_url: CBV, secret_key: SECRET } },
     ]);
     const { ensureSignnowWebhook } = await import("../signnow/ensureWebhookSubscription.js");
     await ensureSignnowWebhook();
     expect(calls.filter((c) => c.method === "POST" && c.path === "/api/v2/events")).toHaveLength(0);
     const puts = calls.filter((c) => c.method === "PUT");
-    expect(puts).toHaveLength(1);
-    expect(puts[0].path).toBe("/api/v2/events/s1");
-    expect(puts[0].body).toMatchObject({ event: "user.document.fieldinvite.signed", entity_id: "u1", action: "callback", attributes: { callback: CB, secret_key: SECRET } });
+    expect(puts.map((p) => p.path).sort()).toEqual(["/api/v2/events/s1", "/api/v2/events/s2"]);
+    expect(puts[0].body).toMatchObject({ event: "user.document.fieldinvite.signed", entity_id: "u1", action: "callback", attributes: { callback: CBV, secret_key: SECRET } });
   });
 });

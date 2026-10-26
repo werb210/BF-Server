@@ -237,7 +237,7 @@ function subscriptionAttrs(it: unknown): Record<string, unknown> {
   const a = (o.attributes ?? o.json_attributes ?? {}) as Record<string, unknown>;
   return a && typeof a === "object" ? a : {};
 }
-function subscriptionHasSecret(it: unknown): boolean {
+export function subscriptionHasSecret(it: unknown): boolean {
   const a = subscriptionAttrs(it);
   const v = a.secret_key ?? (it as Record<string, unknown> | null)?.secret_key;
   return typeof v === "string" ? v.length > 0 : v === true;
@@ -274,7 +274,12 @@ export async function ensureUserSignedSubscription(
   const userId = await getAuthenticatedUserId();
   if (!userId) return { created: false, summary: "no user id from GET /user" };
   let existing: unknown[] = [];
-  try { existing = await listEventSubscriptions(); } catch { existing = []; }
+  // BF_SERVER_v860_SIGNNOW_WEBHOOK - a failed list used to be swallowed, so an old subscription
+  // without our secret_key was never found or updated and every callback was rejected.
+  try { existing = await listEventSubscriptions(); } catch (e) {
+    console.error(`[signnow-webhook] could not list subscriptions: ${e instanceof Error ? e.message : String(e)}`);
+    existing = [];
+  }
   const matches = existing.filter((it) => {
     const s = JSON.stringify(it ?? "");
     return s.includes(eventName) && s.includes(callbackUrl);
@@ -283,7 +288,9 @@ export async function ensureUserSignedSubscription(
     if (!secretKey) return { created: false, summary: `subscription already present (${eventName}); SIGNNOW_WEBHOOK_SECRET unset so callbacks are unsigned and will be rejected` };
     let updated = 0;
     for (const it of matches) {
-      if (!subscriptionIsActive(it) || subscriptionHasSecret(it)) continue;
+      // BF_SERVER_v860_SIGNNOW_WEBHOOK - always re-send the current secret: a stored key may be an
+      // old one, and SignNow does not show which key it holds.
+      if (!subscriptionIsActive(it)) continue;
       const o = (it ?? {}) as Record<string, unknown>;
       const id = typeof o.id === "string" ? o.id : "";
       if (!id) continue;
