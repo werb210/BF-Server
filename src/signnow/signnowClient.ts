@@ -128,6 +128,10 @@ export async function createEmbeddedGroupLink(groupId: string, inviteId: string,
   if (typeof url !== "string") throw new SignNowError("SignNow embedded link returned no url", undefined, body);
   return { url, expiresAt: null };
 }
+// BF_SERVER_v857_SIGNING_NOTIFY - cancel the embedded invites of a document group that is being replaced.
+export async function cancelEmbeddedGroupInvites(groupId: string): Promise<void> {
+  await signnowFetch(`/v2/document-groups/${encodeURIComponent(groupId)}/embedded-invites`, { method: "DELETE" });
+}
 export async function getDocumentGroupStatus(groupId: string): Promise<{ signed: boolean; summary: string }> {
   const body = (await signnowFetch(`/v2/document-groups/${encodeURIComponent(groupId)}`, { method: "GET" })) as any;
   const data = body?.data ?? body ?? {};

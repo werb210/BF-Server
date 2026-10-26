@@ -69,7 +69,9 @@ describe("owner invite queue", () => {
     expect(linkMock.mock.calls.map((c) => c[2])).toEqual(["four@x.com"]);
     expect(sendMock).toHaveBeenCalledTimes(1);
     expect(sendMock.mock.calls[0]![0]).toMatchObject({ to: "four@x.com", subject: "Your Boreal application is ready to sign" });
-    expect(sendMock.mock.calls[0]![0].bodyHtml).toContain("https://sign.test/four@x.com");
+    // BF_SERVER_v857_SIGNING_NOTIFY - the email carries the link that never expires, not the 45-minute SignNow link.
+    expect(sendMock.mock.calls[0]![0].bodyHtml).toMatch(/\/api\/signing\/owner\/[^"]+\.4\.[A-Za-z0-9_-]{43}/);
+    expect(sendMock.mock.calls[0]![0].bodyHtml).not.toContain("https://sign.test/four@x.com");
     expect(markSent()[0]![1]).toEqual([APP, 4]);
   });
 

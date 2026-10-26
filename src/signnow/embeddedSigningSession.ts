@@ -7,6 +7,7 @@ import { buildAccordPdf } from "./accordPdfBuilder.js";
 import { uploadSignedApplicationPdf } from "./blobStorage.js";
 import * as signnow from "./signnowClient.js";
 import { pnwSigningSatisfiedForAppSigning } from "./pnwSigning.js";
+import { signersFromInputs, signerFingerprint } from "./signingNotify.js"; // BF_SERVER_v857_SIGNING_NOTIFY
 
 const ROLE_OWNER1 = "Owner 1";
 const ROLE_OWNER2 = "Owner 2";
@@ -17,7 +18,7 @@ export type SigningSessionResult =
   | { status: "signed" }
   | { status: "not_ready"; reason: string }
   | { status: "stub"; reason?: string }
-  | { status: "ready"; url: string; expiresAt: string | null }
+  | { status: "ready"; url: string; expiresAt: string | null; replaced?: boolean } // BF_SERVER_v857_SIGNING_NOTIFY - replaced: an older document was retired
   | { status: "error"; reason: string };
 
 async function isAccordFinalized(applicationId: string): Promise<boolean> {
@@ -47,7 +48,8 @@ export function accordGroupNeedsRefresh(accordFinalized: boolean, cachedDocCount
   return accordFinalized && cachedDocCount < 2;
 }
 
-export async function getOrCreateEmbeddedSigningSession(applicationId: string): Promise<SigningSessionResult> {
+// BF_SERVER_v857_SIGNING_NOTIFY - skipOwner1Notice: the caller (staff "Send for signing") notifies every signer itself.
+export async function getOrCreateEmbeddedSigningSession(applicationId: string, v857Opts: { skipOwner1Notice?: boolean } = {}): Promise<SigningSessionResult> {
   if (!applicationId) return { status: "not_ready", reason: "missing_application_id" };
   const appRes = await dbQuery<{ signnow_app_signed_at: string | null; metadata: any; finalized_count: string }>(
     `SELECT a.signnow_app_signed_at, a.metadata,
@@ -95,7 +97,27 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
     // missing the Accord form while Accord is finalized; fall through to regenerate it.
     const cachedDocIds = Array.isArray(sess?.doc_ids) ? (sess!.doc_ids as unknown[]) : [];
     const needsAccordRefresh = accordGroupNeedsRefresh(await isAccordFinalized(applicationId), cachedDocIds.length);
-    if (sess?.group_id && sess?.invite_id && !needsAccordRefresh) {
+    // BF_SERVER_v857_SIGNING_NOTIFY - the cached document was built for particular signers. When a name, email or phone has changed
+    // since (or it predates v857, e.g. one built for "Unknown (application started)"), and Owner 1 has not signed it,
+    // retire it and build a fresh one. One Owner 1 already signed is kept (staff can Reset signing).
+    const v857Signers = signersFromInputs(inputs);
+    const v857Fp = signerFingerprint(v857Signers);
+    let v857Stale = false;
+    if (sess?.group_id && sess?.invite_id && !needsAccordRefresh && sess.signers_fp !== v857Fp) {
+      const v857PrevEmail = String((Array.isArray(sess.signers) && sess.signers[0]?.email) || email);
+      let v857Owner1Done = false;
+      try { v857Owner1Done = await signnow.getSignerInviteComplete(String(sess.group_id), v857PrevEmail); }
+      catch (e) { console.warn(`[signnow] signer check failed for app=${applicationId} before replacing the signing document: ${e instanceof Error ? e.message : String(e)}`); }
+      if (v857Owner1Done) {
+        console.warn(`[signnow] signer details changed for app=${applicationId} after Owner 1 signed; keeping the signed document`);
+      } else {
+        v857Stale = true;
+        console.warn(`[signnow] signing document for app=${applicationId} was built for other signer details; replacing it`);
+        try { await signnow.cancelEmbeddedGroupInvites(String(sess.group_id)); }
+        catch (e) { console.warn(`[signnow] could not cancel the old signing invite for app=${applicationId}: ${e instanceof Error ? e.message : String(e)}`); }
+      }
+    }
+    if (sess?.group_id && sess?.invite_id && !needsAccordRefresh && !v857Stale) {
       try {
         // BF_SERVER_BLOCK_v_SIGNING_SESSION_PERSIGNER_v1 — if THIS applicant has
         // already signed their invite (group still open for partners), do NOT
@@ -237,6 +259,9 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
     // waiting. Text Owner 1 the PORTAL address rather than the signing link itself,
     // because embedded links are hard-capped at 45 minutes by SignNow (19019003) and
     // the portal re-mints a fresh one on every load.
+    // BF_SERVER_v857_SIGNING_NOTIFY - only for a first session built without staff (the Send for signing button notifies everyone
+    // itself); a replacement session is not a new request, so the client is not texted again for it.
+    if (!v857Opts.skipOwner1Notice && !sess?.group_id) {
     try {
       const o1phone = (inputs.owners[0]?.phone ?? "").trim();
       const o1digits = o1phone.replace(/\D/g, "");
@@ -268,23 +293,26 @@ export async function getOrCreateEmbeddedSigningSession(applicationId: string): 
       // valid and staff can still direct the client manually.
       console.warn(`[signnow] Owner 1 signing SMS failed for app=${applicationId}: ${e instanceof Error ? e.message : String(e)}`);
     }
+    } // BF_SERVER_v857_SIGNING_NOTIFY
 
     await dbQuery(
       `UPDATE applications
           SET signnow_document_id = $2,
-              metadata = COALESCE(metadata, '{}'::jsonb)
+              metadata = (COALESCE(metadata, '{}'::jsonb) - 'owner_invite_sent' - 'owner2_invite_sent_at' - 'partner_invite_error' - 'partner_invite_error_at' - 'owner_invite_error' - 'owner_invite_error_at') -- BF_SERVER_v857_SIGNING_NOTIFY
                 || jsonb_build_object(
                   'signed_application_blob_name', COALESCE($5::text, metadata->>'signed_application_blob_name'),
                   'signed_application_blob_url',  COALESCE($6::text, metadata->>'signed_application_blob_url'))
                 || jsonb_build_object(
                   'signnow_embedded', jsonb_build_object(
                     'group_id', $2::text, 'invite_id', $3::text, 'doc_ids', $4::jsonb,
+                    'signers_fp', $8::text, 'signers', $9::jsonb, -- BF_SERVER_v857_SIGNING_NOTIFY
                     'created_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')))
                 || jsonb_build_object('signnow_date_anchors', $7::jsonb),
               updated_at = now()
         WHERE id::text = ($1)::text`,
-      [applicationId, group.groupId, invite.inviteId, JSON.stringify(docIds), blobName, blobUrl, JSON.stringify(dateAnchorsByDoc)]);
-    return { status: "ready", url: link.url, expiresAt: link.expiresAt };
+      [applicationId, group.groupId, invite.inviteId, JSON.stringify(docIds), blobName, blobUrl, JSON.stringify(dateAnchorsByDoc),
+       v857Fp, JSON.stringify(v857Signers.map((s) => ({ index: s.index, role: s.role, name: s.name, email: s.email })))]); // BF_SERVER_v857_SIGNING_NOTIFY
+    return { status: "ready", url: link.url, expiresAt: link.expiresAt, ...(v857Stale ? { replaced: true } : {}) };
   } catch (err) {
     console.error(`[signnow] signing-session error app=${applicationId}:`, err instanceof Error ? (err.stack ?? err.message) : err);
     return { status: "error", reason: err instanceof Error ? err.message : "signnow_error" };

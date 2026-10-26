@@ -102,7 +102,7 @@ router.get(
     res.status(200).json({
       required: true,
       status: ag.status,
-      signerName: ag.signer_name,
+      signerName: await (await import("../signnow/signingNotify.js")).displaySignerName(id, ag.signer_name), // BF_SERVER_v857_SIGNING_NOTIFY
       signerEmail: ag.signer_email,
       signerIsApplicant: ag.signer_is_applicant,
       lenderName: ag.trigger_lender_name,

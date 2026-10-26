@@ -69,7 +69,7 @@ describe("v851 Send for signing needs the applicant's name", () => {
     const r = await send();
     expect(r.status).toBe(200);
     expect(r.body.data).toMatchObject({ ok: true });
-    expect(h.getOrCreateEmbeddedSigningSession).toHaveBeenCalledWith(APP_ID);
+    expect(h.getOrCreateEmbeddedSigningSession).toHaveBeenCalledWith(APP_ID, { skipOwner1Notice: true }); // BF_SERVER_v857_SIGNING_NOTIFY
     const write = callsMatching(h.queryMock, /UPDATE applications[\s\S]*'\{applicant\}'/);
     expect(write).toHaveLength(1);
     expect(write[0][1]).toEqual([APP_ID, "Jordan", "Rivers", "Jordan Rivers"]);

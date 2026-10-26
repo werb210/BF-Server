@@ -1858,7 +1858,7 @@ router.get('/:id/signing-readiness', safeHandler(async (req: any, res: any) => {
   // Only the SBA-specific states are added: forms not finished, or signing already out.
   if (reason === 'ready') reason = await sbaReadinessReason(id, reason);
   const d = await pool.query(
-    `SELECT signnow_app_signed_at, signnow_document_id, requested_amount, metadata->'signnow_embedded' AS embedded FROM applications WHERE id::text = ($1)::text`,
+    `SELECT signnow_app_signed_at, signnow_document_id, requested_amount, metadata->'signnow_embedded' AS embedded, metadata->'signing_notify' AS v857_notify FROM applications WHERE id::text = ($1)::text`,
     [id]
   ).catch((err: any) => { console.warn("[silent-query] modules/applications/applications.routes.ts", { message: err?.message }); return { rows: [] as any[] }; });
   const drow: any = d.rows[0] ?? {};
@@ -1877,6 +1877,7 @@ router.get('/:id/signing-readiness', safeHandler(async (req: any, res: any) => {
       signed: Boolean(drow.signnow_app_signed_at),
       documentId: drow.signnow_document_id ?? null,
       sessionMinted: Boolean(drow.embedded),
+      notify: drow.v857_notify ?? null, // BF_SERVER_v857_SIGNING_NOTIFY - who was last emailed / texted to sign
     },
   } });
 }));
@@ -1925,9 +1926,17 @@ router.post('/:id/resend-signing', safeHandler(async (req: any, res: any) => {
     res.json({ status: 'ok', data: { ok: false, reason: 'signing_unavailable', snapshot } });
     return;
   }
-  const result: any = await mod.getOrCreateEmbeddedSigningSession(id);
+  // BF_SERVER_v857_SIGNING_NOTIFY - staff pressed Send for signing: build (or re-build) the session, then tell every signer who still
+  // has to sign, by email and text, and report each one to the card.
+  const result: any = await mod.getOrCreateEmbeddedSigningSession(id, { skipOwner1Notice: true });
   const ok = result?.status === 'ready' || result?.status === 'signed';
-  res.json({ status: 'ok', data: { ok, sessionStatus: result?.status ?? 'unknown', reason: ok ? 'ready' : (result?.reason ?? result?.status ?? 'not_ready'), snapshot } });
+  let v857Notify: any = null;
+  if (result?.status === 'ready') {
+    const { notifySigners } = await import('../../signnow/signingNotify.js');
+    v857Notify = await notifySigners(id);
+  }
+  res.json({ status: 'ok', data: { ok, sessionStatus: result?.status ?? 'unknown', reason: ok ? 'ready' : (result?.reason ?? result?.status ?? 'not_ready'),
+    replaced: result?.replaced === true, notify: v857Notify, signers: v857Notify?.signers ?? [], snapshot } });
 }));
 
 // BF_SERVER_BLOCK_v_SENT_LENDERS_v1 — which lenders already received the package (Lenders-tab "Sent \u2713").
