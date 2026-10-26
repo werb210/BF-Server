@@ -60,7 +60,18 @@ router.post(
     // secret so a misconfigured deploy fails closed instead of open.
     if (!verifySignNowSignature(req as any)) {
       // eslint-disable-next-line no-console
-      console.warn("[signnow-webhook] rejected: missing or invalid x-signnow-signature");
+      // BF_SERVER_v860_SIGNNOW_WEBHOOK - say why (never the secret or the signature itself).
+      const v860Sig = String(req.header?.("x-signnow-signature") ?? "").trim();
+      const v860Why = !(process.env.SIGNNOW_WEBHOOK_SECRET ?? "").trim() ? "secret_unset"
+        : !v860Sig ? "no_signature_header"
+        : !Buffer.isBuffer((req as any).rawBody) ? "no_raw_body"
+        : "signature_mismatch";
+      console.warn("[signnow-webhook] rejected: missing or invalid x-signnow-signature", {
+        why: v860Why,
+        signatureLength: v860Sig.length,
+        signHeaders: Object.keys(req.headers ?? {}).filter((k) => /sign/i.test(k)),
+        callbackVersion: typeof req.query?.v === "string" ? req.query.v : null,
+      });
       res.status(401).json({ error: "invalid_signature" });
       return;
     }

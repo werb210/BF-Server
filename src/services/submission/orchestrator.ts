@@ -82,6 +82,19 @@ export async function isSbaForReadiness(applicationId: string): Promise<boolean>
 }
 // BF_SERVER_BLOCK_v461_SIGNING_NOTICE - who was asked to sign travels with the result.
 export type StageAResult = { fired: boolean; reason?: string; notice?: import("../../signnow/ownerSigningNotice.js").SigningNotice };
+// BF_SERVER_v860_SIGNNOW_WEBHOOK
+async function v860NotifyAllSigners(applicationId: string) {
+  try {
+    const { notifySigners } = await import("../../signnow/signingNotify.js");
+    const r = await notifySigners(applicationId);
+    console.log(`[orchestrator] signing notice re-sent to every signer for app=${applicationId}`, {
+      signers: r.signers.length, allSigned: r.allSigned, error: r.error ?? null,
+    });
+  } catch (e) {
+    console.warn("[orchestrator] signing notice to every signer failed", { applicationId, message: e instanceof Error ? e.message : String(e) });
+  }
+  return signingNoticeFor(applicationId, false);
+}
 async function signingNoticeFor(applicationId: string, resend: boolean) {
   try {
     const mod = await import("../../signnow/ownerSigningNotice.js");
@@ -128,7 +141,9 @@ export async function maybeStartCreditSummaryAndSign(ctx: OrchestratorContext): 
     .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/submission/orchestrator.ts:81", ({ rows: [] as Array<{ id: string }> })));
   if (!claim.rows.length) {
     // BF_SERVER_BLOCK_v461_SIGNING_NOTICE - Send again on an unsigned file resends the request.
-    const notice = snap.applicationSigned ? undefined : await signingNoticeFor(ctx.applicationId, true);
+    // BF_SERVER_v860_SIGNNOW_WEBHOOK - Send on an unsigned file now sends the same notice as
+    // "Send for signing" (email to every unsigned signer, text only to those who opted in).
+    const notice = snap.applicationSigned ? undefined : await v860NotifyAllSigners(ctx.applicationId);
     return { fired: false, reason: "already_started", ...(notice ? { notice } : {}) };
   }
   try { const pth = "../notifications/notifyAdminsForCreditSummary.js"; const mod = await import(pth).catch(() => null as any); if (mod && typeof (mod as any).notifyAdminsForCreditSummary === "function") await (mod as any).notifyAdminsForCreditSummary(ctx); else console.log(`[orchestrator] would notify admins for app=${ctx.applicationId}`);} catch (e) { console.warn("[orchestrator] notify admins failed", e); }
