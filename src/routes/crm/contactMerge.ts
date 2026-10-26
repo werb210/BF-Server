@@ -9,6 +9,8 @@ import { requireAuth } from "../../middleware/auth.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { resolveSiloFromRequest } from "../../middleware/silo.js";
 import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { CONTACT_MERGE_FIELDS, pickFieldChoices } from "../../modules/crmUnify/duplicates.js"; // BF_SERVER_v856_CRM_UNIFY
+import { resolveContactSurvivor } from "../../modules/crmUnify/mergeChain.js"; // BF_SERVER_v856_CRM_UNIFY
 
 const router = Router({ mergeParams: true });
 router.use(requireAuth);
@@ -125,6 +127,9 @@ router.get(
       `WITH me AS (
          SELECT id, name, email, phone, company_id
            FROM contacts WHERE id = $1::uuid AND silo = $2
+            -- BF_SERVER_v856_CRM_UNIFY - an archived or merged record is not offered merges (its page sends staff
+            -- to the surviving record instead).
+            AND merged_into_id IS NULL AND coalesce(status, 'active') <> 'archived'
        )
        SELECT c.id, c.name, c.email, c.phone, c.created_at,
               co.name AS company_name,
@@ -182,12 +187,11 @@ router.get(
 
 // The merge. Survivor keeps its own non-empty fields and inherits anything it is MISSING
 // from the losers - a merge must never destroy data that only the loser had.
-router.post(
-  "/merge",
-  safeHandler(async (req: any, res: any) => {
+// BF_SERVER_v856_CRM_UNIFY - exported so the unified CRM merge (/api/crm/unified/merge/contact) runs the same merge.
+export async function mergeContactsHandler(req: any, res: any): Promise<any> {
     const silo = resolveSiloFromRequest(req);
-    const survivorId = String(req.body?.survivorId ?? "").trim();
-    const loserIds: string[] = Array.isArray(req.body?.loserIds)
+    let survivorId = String(req.body?.survivorId ?? "").trim();
+    let loserIds: string[] = Array.isArray(req.body?.loserIds)
       ? req.body.loserIds.map((x: unknown) => String(x).trim()).filter(Boolean)
       : [];
     const dryRun = req.body?.dryRun === true;
@@ -198,11 +202,32 @@ router.post(
     if (loserIds.includes(survivorId)) {
       return res.status(400).json({ ok: false, error: "a contact cannot be merged into itself" });
     }
+    // BF_SERVER_v856_CRM_UNIFY - follow merged_into chains: a survivor that was itself merged means its live
+    // survivor; a loser that was already merged into this survivor is skipped. An archived (not merged) survivor
+    // is refused with a message staff can act on.
+    const sInfo = await resolveContactSurvivor(pool, survivorId, silo);
+    if (!sInfo.missing && sInfo.archived) {
+      return res.status(409).json({ ok: false, code: "survivor_archived", error: "This contact is archived. Restore it before merging other records into it." });
+    }
+    if (!sInfo.missing) survivorId = sInfo.id;
+    const liveLosers: string[] = [];
+    for (const lid of loserIds) {
+      const lInfo = await resolveContactSurvivor(pool, lid, silo);
+      if (lInfo.missing) { if (!liveLosers.includes(lid)) liveLosers.push(lid); continue; } // the merge reports it
+      if (lInfo.id === survivorId || lid === survivorId) continue;
+      const target = lInfo.merged ? lInfo.id : lid;
+      if (!liveLosers.includes(target)) liveLosers.push(target);
+    }
+    loserIds = liveLosers;
+    if (loserIds.length === 0) {
+      return res.json({ ok: true, data: { survivorId, loserIds: [], moved: {}, note: "Those records were already merged into this contact." } });
+    }
 
     const tables = await contactRefTables();
     const client = await pool.connect();
     const summary: Record<string, number> = {};
     const dropped: Record<string, any[]> = {};
+    const loserRows: any[] = []; // BF_SERVER_v856_CRM_UNIFY
 
     try {
       await client.query("BEGIN");
@@ -227,6 +252,13 @@ router.post(
         );
         if (lo.rowCount === 0) throw new Error(`contact ${loserId} not found in this silo`);
         const loser = lo.rows[0];
+        loserRows.push(loser); // BF_SERVER_v856_CRM_UNIFY
+        // BF_SERVER_v856_CRM_UNIFY - an advisor link between the two records would become a self-link; drop it.
+        await client.query(
+          `DELETE FROM crm_contact_links
+            WHERE (contact_id = $1::uuid AND related_contact_id = $2::uuid) OR (contact_id = $2::uuid AND related_contact_id = $1::uuid)`,
+          [survivorId, loserId],
+        );
 
         // Repoint every table that references the loser. Before each repoint, drop the loser
         // rows that would collide with a survivor row on a UNIQUE constraint containing
@@ -257,6 +289,15 @@ router.post(
           [survivorId, loserId],
         );
         if ((cl.rowCount ?? 0) > 0) summary["call_logs"] = (summary["call_logs"] ?? 0) + (cl.rowCount ?? 0);
+        // BF_SERVER_v856_CRM_UNIFY - people linked TO the loser (advisors) move to the survivor too.
+        await client.query(
+          `DELETE FROM crm_contact_links l
+            WHERE l.related_contact_id = $2::uuid
+              AND EXISTS (SELECT 1 FROM crm_contact_links k
+                           WHERE k.contact_id = l.contact_id AND k.related_contact_id = $1::uuid AND k.relation = l.relation)`,
+          [survivorId, loserId],
+        );
+        await client.query(`UPDATE crm_contact_links SET related_contact_id = $1::uuid WHERE related_contact_id = $2::uuid`, [survivorId, loserId]);
 
         // Fill in anything the survivor is missing. coalesce keeps the survivor's value
         // wherever it has one.
@@ -330,6 +371,41 @@ router.post(
         );
       }
 
+      // BF_SERVER_v856_CRM_UNIFY - the values staff picked on the side-by-side screen (each must be on one of the records),
+      // then, for the unified merge, the losers are deleted (contact_merges keeps their snapshot). A loser
+      // something still points at stays archived instead.
+      const choices = pickFieldChoices(CONTACT_MERGE_FIELDS, [survivor, ...loserRows], req.body?.fields);
+      if (choices.length) {
+        await client.query(
+          `UPDATE contacts SET ${choices.map(([k], i) => `"${k}" = $${i + 2}`).join(", ")}, updated_at = now() WHERE id = $1::uuid`,
+          [survivorId, ...choices.map(([, v]) => v)],
+        );
+        // A chosen email / phone from a loser was also kept as the secondary one above: keep the survivor's own instead.
+        await client.query(
+          `UPDATE contacts SET
+             secondary_email = CASE WHEN lower(btrim(coalesce(secondary_email, ''))) = lower(btrim(coalesce(email, '')))
+                                    THEN CASE WHEN lower(btrim(coalesce($2, ''))) <> lower(btrim(coalesce(email, ''))) THEN nullif(btrim($2), '') END
+                                    ELSE secondary_email END,
+             secondary_phone = CASE WHEN regexp_replace(coalesce(secondary_phone, ''), '[^0-9]', '', 'g') = regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g')
+                                    THEN CASE WHEN regexp_replace(coalesce($3, ''), '[^0-9]', '', 'g') <> regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') THEN nullif(btrim($3), '') END
+                                    ELSE secondary_phone END
+           WHERE id = $1::uuid`,
+          [survivorId, survivor.email ?? null, survivor.phone ?? null],
+        );
+      }
+      if (req.body?.deleteLosers === true) {
+        for (const loserId of loserIds) {
+          await client.query("SAVEPOINT bf_merge_delete");
+          try {
+            await client.query(`DELETE FROM contacts WHERE id = $1::uuid AND merged_into_id = $2::uuid`, [loserId, survivorId]);
+            await client.query("RELEASE SAVEPOINT bf_merge_delete");
+          } catch (delErr: any) {
+            await client.query("ROLLBACK TO SAVEPOINT bf_merge_delete");
+            console.warn("[contact-merge] loser kept archived (still referenced)", { loserId, message: delErr?.message });
+          }
+        }
+      }
+
       if (dryRun) {
         await client.query("ROLLBACK");
         return res.json({ ok: true, data: { dryRun: true, survivorId, loserIds, wouldMove: summary } });
@@ -341,11 +417,14 @@ router.post(
     } catch (err: any) {
       await client.query("ROLLBACK").catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/crm/contactMerge.ts:341", undefined));
       console.error("[contact-merge] failed", { survivorId, loserIds, message: err?.message });
-      return res.status(500).json({ ok: false, error: err?.message ?? "merge_failed" });
+      // BF_SERVER_v856_CRM_UNIFY - guard failures are the caller's to fix (409), not a server fault.
+      const guard = /archived|already-merged|not found in this silo/.test(String(err?.message ?? ""));
+      return res.status(guard ? 409 : 500).json({ ok: false, error: err?.message ?? "merge_failed" });
     } finally {
       client.release();
     }
-  }),
-);
+}
+
+router.post("/merge", safeHandler(mergeContactsHandler)); // BF_SERVER_v856_CRM_UNIFY
 
 export default router;

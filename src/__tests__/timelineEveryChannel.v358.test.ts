@@ -14,7 +14,8 @@ async function timelineSql(isContact: boolean): Promise<string> {
   queryMock.mockReset();
   queryMock.mockImplementation(answerBySql([]));
   await loadCrmTimeline(isContact, "c-1", "BF");
-  expect(queryMock).toHaveBeenCalledTimes(1);
+  // BF_SERVER_v856_CRM_UNIFY - a company's timeline then reads its people and its applications' stage moves.
+  expect(queryMock).toHaveBeenCalledTimes(isContact ? 1 : 3);
   expect(queryMock.mock.calls[0]![1]).toEqual(["c-1", "BF"]);
   return String(queryMock.mock.calls[0]![0]);
 }

@@ -7,8 +7,6 @@
 import { Router, type Request, type Response } from "express";
 import { pool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { findOrCreateCompanyByNameAndSilo } from "../services/companies.js";
-import { findOrCreateContactByEmailAndCompany } from "../services/contacts.js";
 import { isCollateralFormDocType, buildCollateralFormPdfFromData } from "../pdf/collateralFormPdf.js";
 import { attachRenderedFormDocument } from "../pdf/attachRenderedFormDocument.js";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
@@ -214,47 +212,13 @@ router.post("/applications/:id/form-responses/:doc_type/submit", requireAuth, as
     // dedups by email/phone (v725). personal_net_worth -> enrich the application's
     // existing applicant contact with cell/email when those are missing.
     try {
-      const SILO = "BF";
-      const SENTINEL = "00000000-0000-0000-0000-000000000000";
       const formData: any = (r.rows[0] as any)?.data ?? data ?? {};
       if (docType === "professional_advisors") {
-        const advisors: Record<string, any> = (formData?.advisors ?? {}) as Record<string, any>;
-        const ROLE_TAG: Record<string, string> = {
-          cpa: "Accountant/advisor",
-          attorney: "Lawyer/advisor",
-          insurance: "Insurance/advisor",
-          ar_credit_insurance: "A/R Credit Insurance/advisor",
-        };
-        for (const key of Object.keys(ROLE_TAG)) {
-          const row = (advisors[key] ?? {}) as Record<string, any>;
-          const firm = String(row.firm ?? "").trim();
-          const person = String(row.contact ?? "").trim();
-          const email = String(row.email ?? "").trim();
-          const phone = String(row.phone ?? "").trim();
-          if (!firm && !person && !email && !phone) continue;
-          let companyId: string | null = null;
-          if (firm) {
-            const co = await findOrCreateCompanyByNameAndSilo(pool, firm, SILO, { name: firm, silo: SILO });
-            companyId = co.row.id;
-          }
-          const parts = (person || firm || "Advisor").split(/\s+/);
-          const first = parts[0] ?? "Advisor";
-          const last = parts.slice(1).join(" ");
-          const { row: contact } = await findOrCreateContactByEmailAndCompany(
-            pool,
-            email,
-            companyId ?? SENTINEL,
-            SILO,
-            { first_name: first, last_name: last, email: email || null, phone: phone || null, company_id: companyId, silo: SILO, role: "other" },
-          );
-          await pool.query(
-            `UPDATE contacts
-                SET tags = (SELECT array(SELECT DISTINCT unnest(COALESCE(tags, '{}'::text[]) || $2::text[]))),
-                    updated_at = now()
-              WHERE id = $1`,
-            [contact.id, [ROLE_TAG[key]]],
-          );
-        }
+        // BF_SERVER_v856_CRM_UNIFY - in the APPLICATION's silo (was always BF), tagged with the shared core tag
+        // (cpa -> Accountant/Bookkeeper, attorney -> Lawyer, Insurance, A/R Credit Insurance), still employed by
+        // their firm, and linked to the client contact and the client's company with role Advisor + the type.
+        const { syncApplicationAdvisors } = await import("../modules/crmUnify/peopleSync.js");
+        await syncApplicationAdvisors(pool, appId, formData);
       } else if (docType === "personal_net_worth") {
         const f: Record<string, any> = (formData?.fields ?? formData ?? {}) as Record<string, any>;
         const cell = String(f.primary_cell ?? "").trim();

@@ -68,7 +68,7 @@ export async function submitContactForm(req: Request, res: Response) {
       // "Contact form" so it is filterable in CRM.
       await pool.query(
         `UPDATE contacts
-            SET tags = (SELECT ARRAY(SELECT DISTINCT unnest(COALESCE(tags,'{}') || ARRAY['Contact form'])))
+            SET tags = (SELECT ARRAY(SELECT DISTINCT unnest(COALESCE(tags,'{}') || ARRAY['contact_form']))) -- BF_SERVER_v856_CRM_UNIFY
           WHERE silo = 'BF' AND lower(email) = lower($1)`,
         [String(email)],
       );

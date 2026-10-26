@@ -106,7 +106,7 @@ describe("contact merge", () => {
     for (const survivor of [{ id: SURVIVOR, status: "archived" }, { id: SURVIVOR, status: "active", merged_into_id: LOSER }]) {
       h.query.mockReset().mockImplementation(answerBySql(mergeRules(survivor)));
       const res = await merge({ survivorId: SURVIVOR, loserIds: [LOSER] });
-      expect(res.status).toBe(500);
+      expect(res.status).toBe(409); // BF_SERVER_v856_CRM_UNIFY - a guard refusal is the caller's to fix, not a server fault
       expect(res.body.error).toContain("cannot merge into an archived or already-merged contact");
       expect(statements()).toContain("ROLLBACK");
       expect(callsMatching(h.query, /SET merged_into_id/)).toHaveLength(0);

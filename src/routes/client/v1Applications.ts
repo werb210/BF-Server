@@ -32,6 +32,14 @@ import { MARKETING_SMS_OPTIN_TEXT } from "../../services/smsConsent.js"; // BF_S
 
 import { UNSUBMITTED_CLIENT_DRAFT_EXCLUSION, CLIENT_REMOVED_EXCLUSION, keepNewestUnfinished, removeUnfinishedDrafts } from "./signInDraftFilter.js"; // BF_SERVER_v838_SIGNIN_SKIPS_UNSUBMITTED / v839
 
+// BF_SERVER_v856_CRM_UNIFY - after a submit, every person on the application (partners, guarantors, advisors) becomes
+// a CRM contact in the application's silo, linked to the application and the company. Never blocks the submit.
+function syncPeopleAfterSubmit(applicationId: string): void {
+  void import("../../modules/crmUnify/peopleSync.js")
+    .then(async (m) => m.syncApplicationPeople(pool, applicationId))
+    .catch((err) => console.warn("[crm_people_sync] submit sync failed", { applicationId, message: err instanceof Error ? err.message : String(err) }));
+}
+
 const router = Router();
 
 // BF_SERVER_v789_ID_NORMALIZE - defense in depth behind the client router's
@@ -1458,6 +1466,7 @@ router.post(
           },
         });
       }
+      syncPeopleAfterSubmit(String(application.id)); // BF_SERVER_v856_CRM_UNIFY
       return res.json({ ok: true, applicationId: application.id, mode: "legacy" });
     }
 
@@ -1589,6 +1598,7 @@ router.post(
       );
 
       await tx.query("COMMIT");
+      syncPeopleAfterSubmit(String(application.id)); // BF_SERVER_v856_CRM_UNIFY
 
       logInfo("submit_normalize_completed", {
         event: "submit_normalize_completed",

@@ -47,11 +47,11 @@ describe("contact form automation v1", () => {
     h.contactResult = { row: { id: "ct 1/x" }, created: true };
   });
 
-  it("tags the contact 'Contact form'", async () => {
+  it("tags the contact contact_form", async () => { // BF_SERVER_v856_CRM_UNIFY
     await submit();
     const tag = callsMatching(h.queryMock, /UPDATE contacts\s+SET tags/);
     expect(tag).toHaveLength(1);
-    expect(String(tag[0]![0])).toContain("ARRAY['Contact form']");
+    expect(String(tag[0]![0])).toContain("ARRAY['contact_form']");
     expect(String(tag[0]![0])).toContain("lower(email) = lower($1)");
     expect(tag[0]![1]).toEqual(["Ann@Acme.test"]);
   });
