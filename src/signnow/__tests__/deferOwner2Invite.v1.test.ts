@@ -112,7 +112,9 @@ describe("owner 2 invite is deferred to the correct sequential step", () => {
       expect(res.status).toBe(200);
       expect(linkMock).toHaveBeenCalledWith("group-1", "invite-1", "owner2@x.com");
       expect(sendMock.mock.calls[0]![0]).toMatchObject({ to: "owner2@x.com", subject: "Your Boreal application is ready to sign" });
-      expect(sendMock.mock.calls[0]![0].bodyHtml).toContain("https://sign.test/owner2@x.com");
+      // BF_SERVER_v857_SIGNING_NOTIFY - the email carries the link that never expires, not the 45-minute SignNow link.
+      expect(sendMock.mock.calls[0]![0].bodyHtml).toMatch(/https:\/\/server\.boreal\.financial\/api\/signing\/owner\/app-2\.2\.[A-Za-z0-9_-]{43}/);
+      expect(sendMock.mock.calls[0]![0].bodyHtml).not.toContain("https://sign.test/owner2@x.com");
     });
 
     it("clears the pending flag only on a successful send", async () => {

@@ -122,7 +122,7 @@ describe("the other entry points use the same start", () => {
     const app = await mount("/api/applications", "../../../modules/applications/applications.routes.js");
     await request(app).post(`/api/applications/${APP_ID}/resend-signing`).set("Authorization", `Bearer ${token()}`).send({});
     expect(h.start).not.toHaveBeenCalled();
-    expect(h.embedded).toHaveBeenCalledWith(APP_ID);
+    expect(h.embedded).toHaveBeenCalledWith(APP_ID, { skipOwner1Notice: true }); // BF_SERVER_v857_SIGNING_NOTIFY
   });
 
   it("readiness reports SBA forms unfinished / signing already out", async () => {

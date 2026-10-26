@@ -12,6 +12,9 @@ import { pool } from "../db.js"; // BF_SERVER_OFFER_TERMSHEET_SIGNING_v1
 import { createEmbeddedGroupLink } from "../signnow/signnowClient.js";
 import { sendViaGraph } from "../services/email/graphSendService.js";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_v789_SILENT_QUERIES
+import rateLimit from "express-rate-limit"; // BF_SERVER_v857_SIGNING_NOTIFY
+import { rateLimitKeyFromRequest } from "../middleware/clientIp.js"; // BF_SERVER_v857_SIGNING_NOTIFY
+import { ownerSigningUrl, resolveOwnerSigningLink } from "../signnow/signingNotify.js"; // BF_SERVER_v857_SIGNING_NOTIFY
 
 // BF_SERVER_BLOCK_v141_SIGNNOW_WEBHOOK_REPAIR_v1
 // HMAC-SHA256 verify against SIGNNOW_WEBHOOK_SECRET over the raw body, sent in
@@ -295,15 +298,17 @@ router.post(
         const p = pend.rows[0];
         if (p?.email && p.gid && p.iid) {
           const o2link = await createEmbeddedGroupLink(String(p.gid), String(p.iid), String(p.email));
+          // BF_SERVER_v857_SIGNING_NOTIFY - email the link that never expires (SignNow links die after 45 minutes).
+          const v857o2url = ownerSigningUrl(String(app.id), 2, String(p.email)) ?? o2link.url;
           const greeting = p.name ? `Hi ${p.name},` : "Hello,";
           const sent = await sendViaGraph({
             to: String(p.email),
             subject: "Your Boreal application is ready to sign",
-            bodyHtml: `<p>${greeting}</p><p>An application you are listed on as an owner is ready for your signature. Please review and sign using your secure link below:</p><p><a href="${o2link.url}">Review &amp; sign your application</a></p><p>This link is unique to you. If you weren't expecting this, you can safely ignore this email.</p>`,
+            bodyHtml: `<p>${greeting}</p><p>An application you are listed on as an owner is ready for your signature. Please review and sign using your secure link below:</p><p><a href="${v857o2url}">Review &amp; sign your application</a></p><p>This link is unique to you. If you weren't expecting this, you can safely ignore this email.</p>`,
             bodyText: `${greeting}
 
 An application you are listed on as an owner is ready for your signature. Please review and sign using your secure link:
-${o2link.url}
+${v857o2url}
 
 This link is unique to you.`,
           });
@@ -368,12 +373,13 @@ This link is unique to you.`,
         if (nextOwner && row?.gid && row?.iid) {
           try {
             const link = await createEmbeddedGroupLink(String(row.gid), String(row.iid), String(nextOwner.email));
+            const v857url = ownerSigningUrl(String(app.id), Number(nextOwner.index), String(nextOwner.email)) ?? link.url; // BF_SERVER_v857_SIGNING_NOTIFY
             const greeting = nextOwner.name ? `Hi ${nextOwner.name},` : "Hello,";
             const sent = await sendViaGraph({
               to: String(nextOwner.email),
               subject: "Your Boreal application is ready to sign",
-              bodyHtml: `<p>${greeting}</p><p>An application you are listed on as an owner is ready for your signature. Please review and sign using your secure link below:</p><p><a href="${link.url}">Review &amp; sign your application</a></p><p>This link is unique to you. If you weren't expecting this, you can safely ignore this email.</p>`,
-              bodyText: `${greeting}\n\nAn application you are listed on as an owner is ready for your signature. Please review and sign using your secure link:\n${link.url}\n\nThis link is unique to you.`,
+              bodyHtml: `<p>${greeting}</p><p>An application you are listed on as an owner is ready for your signature. Please review and sign using your secure link below:</p><p><a href="${v857url}">Review &amp; sign your application</a></p><p>This link is unique to you. If you weren't expecting this, you can safely ignore this email.</p>`,
+              bodyText: `${greeting}\n\nAn application you are listed on as an owner is ready for your signature. Please review and sign using your secure link:\n${v857url}\n\nThis link is unique to you.`,
             });
             if (sent.ok) {
               await dbQuery(
@@ -417,6 +423,21 @@ This link is unique to you.`,
 
     res.status(200).json({ received: true, purged: true });
   })
+);
+
+// BF_SERVER_v857_SIGNING_NOTIFY - GET /api/signing/owner/:token (public): an owner other than the applicant opens their own signing
+// documents. Each click mints a fresh SignNow link; before Owner 1 has signed it shows who signs first.
+const v857SigningLinkLimiter = rateLimit({ windowMs: 10 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, keyGenerator: (req: any) => rateLimitKeyFromRequest(req) }) as any;
+router.get(
+  "/signing/owner/:token",
+  v857SigningLinkLimiter,
+  safeHandler(async (req: any, res: any) => {
+    const out = await resolveOwnerSigningLink(String(req.params.token ?? ""));
+    res.set("Cache-Control", "no-store");
+    res.set("Referrer-Policy", "no-referrer");
+    if (out.kind === "redirect") { res.redirect(302, out.url); return; }
+    res.status(out.status).type("html").send(out.html);
+  }),
 );
 
 export default router;
