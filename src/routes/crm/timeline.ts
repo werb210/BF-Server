@@ -285,7 +285,55 @@ export async function loadCrmTimeline(isContact: boolean, id: string, silo: stri
         ORDER BY ts DESC LIMIT 500`;
 
   const { rows } = await pool.query(sql, [id, silo]);
-  return rows;
+  if (isContact) return rows;
+  return withCompanyPeopleActivity(rows, id, silo);
+}
+
+// BF_SERVER_v856_CRM_UNIFY - a company's timeline also shows the activity of its people (calls, emails, meetings, SMS,
+// notes and tasks on their contact records, labelled with whose they are) and its applications' stage moves, so a
+// company whose contacts are busy no longer says "No activity yet".
+async function withCompanyPeopleActivity(companyRows: any[], companyId: string, silo: string): Promise<any[]> {
+  const people = await pool.query(
+    `SELECT c.id::text AS id, coalesce(nullif(btrim(c.name), ''), c.email, 'Contact') AS name
+       FROM contacts c
+      WHERE c.silo = $2 AND c.merged_into_id IS NULL
+        AND (c.company_id::text = $1
+             OR c.id IN (SELECT contact_id FROM crm_company_people WHERE company_id::text = $1)
+             OR c.id IN (SELECT contact_id FROM applications WHERE company_id::text = $1 AND contact_id IS NOT NULL))
+      ORDER BY c.created_at ASC
+      LIMIT 25`,
+    [companyId, silo],
+  );
+  const out: any[] = [...companyRows];
+  const seen = new Set(companyRows.map((r: any) => `${r.kind}|${r.id}`));
+  for (const p of people.rows as Array<{ id: string; name: string }>) {
+    const items = await loadCrmTimeline(true, p.id, silo);
+    for (const it of items) {
+      const k = `${it.kind}|${it.id}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push({ ...it, contact_id: p.id, contact_name: p.name, title: it.title ?? null, via: p.name });
+    }
+  }
+  const apps = await pool.query(
+    `SELECT 'system' AS kind, ('stage-' || e.id::text) AS id, e.created_at AS ts,
+            ('Application ' || replace(coalesce(e.to_stage, ''), '_', ' ')) AS title,
+            coalesce(nullif(btrim(a.business_legal_name), ''), a.name) AS body, a.id::text AS extra
+       FROM application_stage_events e
+       JOIN applications a ON a.id = e.application_id
+      WHERE a.silo = $2 AND a.submitted_at IS NOT NULL
+        AND (a.company_id::text = $1
+             OR a.contact_id IN (SELECT id FROM contacts WHERE company_id::text = $1 AND silo = $2))
+      ORDER BY e.created_at DESC
+      LIMIT 100`,
+    [companyId, silo],
+  );
+  for (const it of apps.rows as any[]) {
+    const k = `${it.kind}|${it.id}`;
+    if (!seen.has(k)) { seen.add(k); out.push(it); }
+  }
+  out.sort((a: any, b: any) => new Date(b.ts ?? 0).getTime() - new Date(a.ts ?? 0).getTime());
+  return out.slice(0, 500);
 }
 
 router.get("/", safeHandler(async (req: any, res: any) => {

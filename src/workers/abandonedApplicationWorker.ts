@@ -209,14 +209,23 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
       // case: type IN ('CALL','EMAIL','SMS','TODO'),
       // priority IN ('NONE','LOW','MEDIUM','HIGH'). See 2026_07_04_tasks_v1.sql.
       const callDue = await pool.query<{ id: string; contact_id: string; silo: string | null; phone: string | null }>(
-        `SELECT a.id, a.contact_id, a.silo, c.phone
+        // BF_SERVER_v856_CRM_UNIFY - one task per PERSON, never after they submit: someone who restarted the wizard
+        // seven times got seven tasks (one per draft, every one still "unsubmitted"), and kept getting them after
+        // submitting another application. Skip anyone with a submitted application or with this task already.
+        `SELECT DISTINCT ON (a.contact_id) a.id, a.contact_id, a.silo, c.phone
            FROM applications a
             JOIN contacts AS c ON c.id = a.contact_id
           WHERE a.submitted_at IS NULL
             AND a.abandon_task_created_at IS NULL
             AND a.updated_at < now() - ($1 || ' days')::interval
             AND a.updated_at > now() - ($2 || ' months')::interval
-          ORDER BY a.updated_at ASC
+            AND NOT EXISTS (SELECT 1 FROM applications s WHERE s.contact_id = a.contact_id AND s.submitted_at IS NOT NULL)
+            AND NOT EXISTS (SELECT 1 FROM tasks t
+                             WHERE t.contact_id = a.contact_id
+                               AND t.title = 'Call: started an application, did not finish'
+                               AND t.deleted_at IS NULL
+                               AND t.created_at > now() - interval '30 days')
+          ORDER BY a.contact_id, a.updated_at DESC
           LIMIT 25`,
         [String(CALL_TASK_AFTER_DAYS), String(CONSENT_WINDOW_MONTHS)],
       );
@@ -245,6 +254,12 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
           await pool.query(
             `UPDATE applications SET abandon_task_created_at = now() WHERE id = $1`,
             [row.id],
+          );
+          // BF_SERVER_v856_CRM_UNIFY - the person's other unfinished drafts are covered by this one task.
+          await pool.query(
+            `UPDATE applications SET abandon_task_created_at = coalesce(abandon_task_created_at, now())
+              WHERE contact_id = $1 AND submitted_at IS NULL AND id <> $2`,
+            [row.contact_id, row.id],
           );
         } catch (err) {
           console.warn("[abandonedApplication] task failed", { applicationId: row.id, err: String(err) });

@@ -24,6 +24,9 @@ import timelineRoutes from "./crm/timeline.js";
 import sharedMailboxesRoutes from "./crm/sharedMailboxes.js";
 import inboxRoutes from "./crm/inbox.js";
 import voicemailsRoutes from "./crm/voicemails.js"; // BF_SERVER_BLOCK_v830_VOICEMAILS_LIST
+import crmUnifyRoutes from "./crmUnify.js"; // BF_SERVER_v856_CRM_UNIFY
+import { SYSTEM_TAGS, parseTagFilter, untaggedSql } from "../modules/crmUnify/tags.js"; // BF_SERVER_v856_CRM_UNIFY
+import { dedupeStageEvents } from "../modules/crmUnify/contactPanel.js"; // BF_SERVER_v856_CRM_UNIFY
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 import { logWarn } from "../observability/logger.js"; // BF_SERVER_v789_WAITLIST_NO_TAKEOVER
 import { emitAutomationEvent } from "../modules/automation/automationEngine.js"; // BF_SERVER_v786_WORKFLOW_GRAPH
@@ -46,6 +49,8 @@ router.post("/web-leads", SupportController.createWebLead);
 
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.CRM_READ]));
+// BF_SERVER_v856_CRM_UNIFY - tags, company people/details, duplicates + merge, clean-up, AI summary sources (every silo).
+router.use("/unified", crmUnifyRoutes);
 
 // BF_SERVER_BLOCK_BI_ROUND7_OPS_DASHBOARD_v1
 router.get("/leads", safeHandler(async (req: any, res: any) => {
@@ -237,12 +242,13 @@ router.get("/contacts/:id/stage-events", safeHandler(async (req: any, res: any) 
   const silo = resolveSiloFromRequest(req); // BF_SERVER_v789_SILO_SCOPING
   const { rows } = await pool.query(
     `SELECT e.id::text, e.application_id::text AS application_id, e.from_stage, e.to_stage,
-            e.trigger, e.triggered_by, e.reason, e.created_at
+            e.trigger, e.triggered_by, e.reason, e.created_at, (a.submitted_at IS NOT NULL) AS app_submitted
        FROM application_stage_events e
+       JOIN applications a ON a.id = e.application_id
       WHERE e.application_id IN (SELECT id FROM applications WHERE contact_id = $1::uuid AND silo = $2)
       ORDER BY e.created_at DESC
-      LIMIT 100`, [id, silo]);
-  respondOk(res, rows);
+      LIMIT 300`, [id, silo]);
+  respondOk(res, dedupeStageEvents(rows as any[]).slice(0, 100)); // BF_SERVER_v856_CRM_UNIFY
 }));
 router.get("/contacts/:id/applications", safeHandler(async (req: any, res: any) => {
   // BF_SERVER_BLOCK_v302_CRM_CONTACT_APPLICATIONS_SCHEMA_FIX_v1
@@ -395,10 +401,19 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
     }
   }
   // BF_SERVER_BLOCK_v805_TAG_FILTER — filter contacts by a single tag (e.g. "active"); case-insensitive.
-  const tagFilter = typeof req.query.tag === "string" ? req.query.tag.trim().toLowerCase() : "";
-  if (tagFilter && hasTags) {
-    values.push(tagFilter);
-    where.push(`EXISTS (SELECT 1 FROM unnest(coalesce(c.tags, '{}'::text[])) t WHERE lower(t) = $${values.length})`);
+  // BF_SERVER_v856_CRM_UNIFY - ?tags=a,b (any of) and __none__ (no staff tags; system tags alone count as untagged).
+  const tagSel = parseTagFilter(req.query ?? {});
+  if (hasTags && (tagSel.tags.length || tagSel.untagged)) {
+    const ors: string[] = [];
+    if (tagSel.tags.length) {
+      values.push(tagSel.tags);
+      ors.push(`EXISTS (SELECT 1 FROM unnest(coalesce(c.tags, '{}'::text[])) t WHERE bf_norm_tag(t) = ANY($${values.length}::text[]))`);
+    }
+    if (tagSel.untagged) {
+      values.push([...SYSTEM_TAGS]);
+      ors.push(untaggedSql("c.tags", values.length));
+    }
+    where.push(`(${ors.join(" OR ")})`);
   }
   if (search) {
     values.push(`%${search}%`);
@@ -419,6 +434,7 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
     if (hasCompanyName) {
       searchParts.push(`coalesce(c.company_name, '') ILIKE $${like}`);
     }
+    searchParts.push(`coalesce(co.name, '') ILIKE $${like}`); // BF_SERVER_v856_CRM_UNIFY - the linked company's name
     if (hasTags) {
       searchParts.push(`array_to_string(coalesce(c.tags, '{}'::text[]), ' ') ILIKE $${like}`);
     }
@@ -462,7 +478,10 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
       c.last_name,
       c.email,
       c.phone,
-      ${hasCompanyName ? "coalesce(c.company_name, '')" : "''::text"} AS company_name,
+      coalesce(nullif(btrim(co.name), ''), ${hasCompanyName ? "nullif(btrim(c.company_name), '')" : "NULL::text"},
+               (SELECT coalesce(nullif(btrim(a2.business_legal_name), ''), nullif(btrim(a2.metadata->'business'->>'companyName'), ''))
+                  FROM applications a2 WHERE a2.contact_id = c.id ORDER BY (a2.submitted_at IS NOT NULL) DESC, a2.updated_at DESC NULLS LAST LIMIT 1),
+               '') AS company_name,
       ${hasCompanyId ? "c.company_id" : "NULL::uuid"} AS company_id,
       ${hasLeadStatus ? "coalesce(c.lead_status, 'New')" : "'New'::text"} AS lead_status,
       ${hasTags ? "coalesce(c.tags, '{}')" : "'{}'::text[]"} AS tags,
@@ -1000,7 +1019,9 @@ router.get("/contacts/:id", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const { rows } = await pool.query(
     `SELECT c.*,
-            co.name AS company_name,
+            coalesce(nullif(btrim(co.name), ''), nullif(btrim(c.company_name), ''),
+                     (SELECT coalesce(nullif(btrim(a2.business_legal_name), ''), nullif(btrim(a2.metadata->'business'->>'companyName'), ''))
+                        FROM applications a2 WHERE a2.contact_id = c.id ORDER BY (a2.submitted_at IS NOT NULL) DESC, a2.updated_at DESC NULLS LAST LIMIT 1)) AS company_name,
             (u.first_name || ' ' || u.last_name) AS owner_name,
             -- BF_SERVER_CRM_CONTACT_APPLICATION_IDS_v1: contact-detail panels key off
             -- contact.applicationIds; this aggregates every linked application id so the
@@ -1089,10 +1110,19 @@ router.get("/companies", safeHandler(async (req: any, res: any) => {
     where += ` AND co.owner_id = $${params.length}`;
   }
   // BF_SERVER_CRM_COMPANY_TAG_FILTER — single-tag filter parity with contacts.
-  const tagFilter = String(req.query.tag ?? "").trim().toLowerCase();
-  if (tagFilter) {
-    params.push(tagFilter);
-    where += ` AND EXISTS (SELECT 1 FROM unnest(coalesce(co.tags, '{}'::text[])) t WHERE lower(t) = $${params.length})`;
+  // BF_SERVER_v856_CRM_UNIFY - same tag filter as contacts: ?tags=a,b (any of), __none__ = no staff tags.
+  const coTagSel = parseTagFilter(req.query ?? {});
+  if (coTagSel.tags.length || coTagSel.untagged) {
+    const ors: string[] = [];
+    if (coTagSel.tags.length) {
+      params.push(coTagSel.tags);
+      ors.push(`EXISTS (SELECT 1 FROM unnest(coalesce(co.tags, '{}'::text[])) t WHERE bf_norm_tag(t) = ANY($${params.length}::text[]))`);
+    }
+    if (coTagSel.untagged) {
+      params.push([...SYSTEM_TAGS]);
+      ors.push(untaggedSql("co.tags", params.length));
+    }
+    where += ` AND (${ors.join(" OR ")})`;
   }
   // BF_SERVER_CRM_LIST_TOTALS_v1 - companies had NO paging at all: a hardcoded
   // LIMIT 500 and no page/pageSize/total. Contacts has always paged; this brings
@@ -1765,7 +1795,7 @@ router.get("/contacts/:id/journey", requireAuth, safeHandler(async (req: any, re
       LIMIT 20`,
     [contactId],
   );
-  const applications = apps.rows.map((r: any) => ({
+  const allApplications = apps.rows.map((r: any) => ({
     id: r.id,
     currentStep: r.current_step ?? null,
     submitted: Boolean(r.submitted_at),
@@ -1774,8 +1804,13 @@ router.get("/contacts/:id/journey", requireAuth, safeHandler(async (req: any, re
     lastActivityAt: r.updated_at,
     pipelineState: r.pipeline_state ?? null,
   }));
+  // BF_SERVER_v856_CRM_UNIFY - a submitted application shows as submitted; unfinished drafts (restarts of the wizard)
+  // are collapsed: after a submit they are only counted, before one only the newest draft shows.
+  const submittedApps = allApplications.filter((a: any) => a.submitted);
+  const applications = submittedApps.length ? submittedApps : allApplications.slice(0, 1);
+  const draftsCollapsed = allApplications.length - applications.length;
 
-  if (!sess.rows.length) return respondOk(res, { sessions: [], events: [], applications });
+  if (!sess.rows.length) return respondOk(res, { sessions: [], events: [], applications, draftsCollapsed });
   const ids = sess.rows.map((r: any) => r.session_id);
   const ev = await pool.query(
     `SELECT session_id, event_type, path, title, step, dwell_ms, occurred_at, meta
@@ -1795,12 +1830,13 @@ router.get("/contacts/:id/journey", requireAuth, safeHandler(async (req: any, re
     sessions: sess.rows,
     events: ev.rows,
     applications, // BF_SERVER_JOURNEY_APP_STEPS_v77
+    draftsCollapsed, // BF_SERVER_v856_CRM_UNIFY
     summary: {
       pageviewCount: pageviews.length,
       totalDwellMs: totalDwell,
       exitPage: submitted ? null : lastPage?.path ?? null,
       lastWizardStep: wizardSteps.length ? wizardSteps[wizardSteps.length - 1].step : null,
-      submitted,
+      submitted: submitted || submittedApps.length > 0, // BF_SERVER_v856_CRM_UNIFY - the application is the truth
     },
   });
 }));

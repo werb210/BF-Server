@@ -208,6 +208,12 @@ export async function start(): Promise<void> {
     try { const w = startBankingAutoWorker(pool); workerStops.push(w.stop); console.log("[startup] banking auto-worker started"); }
     catch (err) { console.error("[startup] banking auto-worker failed to start:", err); }
 
+    // BF_SERVER_v856_CRM_UNIFY - once per database: every application's partners, guarantors and advisors become CRM
+    // contacts linked to the application and the company (crm_backfill_runs records the run).
+    void import("./modules/crmUnify/peopleSync.js")
+      .then((m) => m.backfillCrmPeopleOnce(pool))
+      .catch((err) => console.warn("[startup] crm people backfill failed:", (err as Error)?.message ?? err));
+
     // BF_SERVER_v834_IMPORT_FIXES - fields for files imported from a Boreal package before v828 (once per file).
     void import("./services/brokerImport/packageBackfill.js")
       .then((m) => m.backfillPackagePrefill())

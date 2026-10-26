@@ -27,6 +27,7 @@ export const INTEGRATION_TEST_FILES: string[] = [
   "src/__tests__/fraud.v846.integration.test.ts", // BF_SERVER_v846_FRAUD - needs Postgres
   "src/__tests__/ksSupport.v853.integration.test.ts", // BF_SERVER_v853_KS_PHONE_SUPPORT - needs Postgres
   "src/__tests__/ksCrm.v850.integration.test.ts", // BF_SERVER_v850_KS_CRM - needs Postgres
+  "src/__tests__/crmUnify.v856.integration.test.ts", // BF_SERVER_v856_CRM_UNIFY - needs Postgres
   "src/__tests__/quickbooks.v852.integration.test.ts", // BF_SERVER_v852_CALC_QBO - needs Postgres
   "src/__tests__/lenderReferrals.v825.integration.test.ts", // BF_SERVER_v825_LENDER_REFERRALS - needs Postgres
   "src/__tests__/ksWidget.v854.integration.test.ts", // BF_SERVER_v854_KS_WIDGETS - needs Postgres
