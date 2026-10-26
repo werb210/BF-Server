@@ -578,9 +578,22 @@ router.get(
     const applicationId =
       typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : null;
     if (!applicationId) { res.status(400).json({ error: "applicationId_required" }); return; }
-    const mod = await import("../../signnow/embeddedSigningSession.js");
-    const result = await mod.getOrCreateEmbeddedSigningSession(applicationId);
-    res.status(200).json(result);
+    // BF_SERVER_v858_PARTNER_SIGNING - this always opened Owner 1's link, so a partner signed in with their own phone was handed
+    // the applicant's documents. Now: the signed-in owner's own link, who they wait for, "signed", or 403.
+    const { clientSigningSession } = await import("../../signnow/clientSigner.js");
+    const { principalFromRequest } = await import("../../auth/principal.js");
+    const v858Claims = (principalFromRequest(req)?.claims ?? {}) as Record<string, unknown>;
+    const v858Who = { phone10: signedInPhone10(req), email: typeof v858Claims.email === "string" ? v858Claims.email : null };
+    let v858Out: Awaited<ReturnType<typeof clientSigningSession>>;
+    try {
+      v858Out = await clientSigningSession(applicationId, v858Who);
+    } catch (err) {
+      console.error("[client-signing] signer check failed", { applicationId, message: err instanceof Error ? err.message : String(err) });
+      res.status(503).json({ error: "signer_check_failed" });
+      return;
+    }
+    if (v858Out.kind === "refuse") { res.status(v858Out.status).json({ error: v858Out.error }); return; }
+    res.status(200).json(v858Out.body);
   })
 );
 

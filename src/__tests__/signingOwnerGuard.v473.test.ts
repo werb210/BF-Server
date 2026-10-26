@@ -65,6 +65,9 @@ describe("v473 signing-session owner guard", () => {
       // Not recognised by the router-wide guard, so the signing guard is what answers.
       [/FROM applications WHERE lower\(id::text\) = ANY/, { rows: [] }],
       [/SELECT COUNT\(\*\)::int AS mine FROM app_phones/, (_s: string, p?: unknown[]) => ({ rows: [{ mine: p?.[0] === APP && p?.[1] === OWNER.slice(-10) ? 1 : 0 }] })],
+      // BF_SERVER_v858_PARTNER_SIGNING - the signed-in phone is the applicant's (Owner 1), so Owner 1's session opens.
+      [/AS v858_embedded/, { rows: [{ signnow_app_signed_at: null, v858_embedded: null, v858_queue: null }] }],
+      [/AS v858_role/, { rows: [{ v858_role: "applicant", phone: OWNER, email: "owner@x.test" }] }],
     ]));
     const app = express();
     app.use(express.json());
@@ -78,7 +81,7 @@ describe("v473 signing-session owner guard", () => {
     expect(h.session).not.toHaveBeenCalled();
     const mine = await request(app).get(`/api/client/signing-session?applicationId=${APP}`).set("Authorization", tok(OWNER));
     expect(mine.status).toBe(200);
-    expect(mine.body).toEqual({ status: "ready", url: "https://signnow.test/s/1" });
+    expect(mine.body).toMatchObject({ status: "ready", url: "https://signnow.test/s/1", signer: { index: 1, isApplicant: true } }); // BF_SERVER_v858_PARTNER_SIGNING
     expect(h.session).toHaveBeenCalledWith(APP);
   });
 });
