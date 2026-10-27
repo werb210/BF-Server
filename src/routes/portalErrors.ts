@@ -18,7 +18,7 @@ const schema = z.object({
   stack: z.string().max(8000).nullable().optional(),
   url: z.string().max(500).nullable().optional(),
   userAgent: z.string().max(500).nullable().optional(),
-  context: z.record(z.unknown()).nullable().optional(),
+  context: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 /**

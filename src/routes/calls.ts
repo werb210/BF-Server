@@ -32,8 +32,8 @@ const callStartSchema = z.object({
       "cancelled",
     ])
     .optional(),
-  crmContactId: z.string().uuid().optional(),
-  applicationId: z.string().uuid().optional(),
+  crmContactId: z.guid().optional(),
+  applicationId: z.guid().optional(),
 });
 
 const callStatusSchema = z.object({
@@ -57,15 +57,15 @@ const callEndSchema = z.object({
   durationSeconds: z.number().int().nonnegative().optional().nullable(),
 });
 
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.guid();
 
 const transcriptSchema = z.object({
   callSid: z.string(),
   transcript: z.string(),
   summary: z.string().optional(),
   score: z.number().optional(),
-  crmContactId: z.string().uuid().optional(),
-  applicationId: z.string().uuid().optional(),
+  crmContactId: z.guid().optional(),
+  applicationId: z.guid().optional(),
 });
 
 function buildRequestMetadata(req: Request): { ip?: string; userAgent?: string } {
@@ -97,8 +97,8 @@ router.post(
     // (iOS dialer still sends it) but we ignore its value.
     const parsed = z
       .object({
-        staff_id: z.string().uuid().optional(),
-        client_id: z.string().uuid(),
+        staff_id: z.guid().optional(),
+        client_id: z.guid(),
         phone_number: z.string().min(1),
         call_duration: z.number().int().nonnegative().default(0),
         direction: z.enum(["outbound", "inbound"]),

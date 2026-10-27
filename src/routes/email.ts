@@ -16,8 +16,8 @@ const sendEmailSchema = z.object({
   subject: z.string().min(1),
   body: z.string().min(1),
   fromInbox: z.enum(["personal", "shared"]),
-  crmContactId: z.string().uuid().optional(),
-  applicationId: z.string().uuid().optional(),
+  crmContactId: z.guid().optional(),
+  applicationId: z.guid().optional(),
 });
 
 router.post(

@@ -247,8 +247,8 @@ const createWizardObject = z.record(z.string(), z.unknown());
 const createSchema = z.object({
   business_name: z.string().min(1).nullable().optional(),
   requested_amount: z.number().positive().nullable().optional(),
-  lender_id: z.string().uuid().nullable().optional(),
-  product_id: z.string().uuid().nullable().optional(),
+  lender_id: z.guid().nullable().optional(),
+  product_id: z.guid().nullable().optional(),
   product_category: z.string().min(1).nullable().optional(),
   kyc_responses: z.record(z.string(), z.unknown()).optional(),
   // BF_SERVER_BLOCK_v125a_CLOSING_COSTS_END_TO_END_v1 - accept linked-app
@@ -257,7 +257,7 @@ const createSchema = z.object({
   // saved with parent_application_id=NULL and the metadata.kind marker
   // missing, breaking the parent->child relationship and submit-time
   // idempotency.
-  parent_application_id: z.string().uuid().nullable().optional(),
+  parent_application_id: z.guid().nullable().optional(),
   linked_application_token: z.string().optional(),
   linked_application_reason: z.string().optional(),
   kind: z.string().optional(),
@@ -287,8 +287,8 @@ const patchSchema = z.object({
   // Columnar fields persisted directly to applications.* columns.
   business_name: z.string().min(1).nullable().optional(),
   requested_amount: z.number().positive().nullable().optional(),
-  lender_id: z.string().uuid().nullable().optional(),
-  lender_product_id: z.string().uuid().nullable().optional(),
+  lender_id: z.guid().nullable().optional(),
+  lender_product_id: z.guid().nullable().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 
   // Wizard step tracker - snake_case is the canonical legacy name; the

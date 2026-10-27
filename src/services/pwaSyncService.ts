@@ -73,7 +73,7 @@ const lenderSchema = z.object({
 });
 
 const lenderProductSchema = z.object({
-  lenderId: z.string().uuid(),
+  lenderId: z.guid(),
   name: z.string().optional(),
   active: z.boolean().optional(),
   required_documents: z.array(z.record(z.string(), z.unknown())).optional(),
@@ -90,7 +90,7 @@ const userSchema = z.object({
   email: z.string().email().optional(),
   phone: z.string().min(1).optional(),
   role: z.string().min(1),
-  lenderId: z.string().uuid().optional(),
+  lenderId: z.guid().optional(),
 });
 
 function stableStringify(value: unknown): string {
