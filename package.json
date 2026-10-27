@@ -74,5 +74,6 @@
   "overrides": {
     "qs": "^6.16.0",
     "proxy-addr": "^2.0.8"
-  }
+  },
+  "x-v859": "BF_SERVER_v859_DEP_SECURITY"
 }
