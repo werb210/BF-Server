@@ -5,7 +5,7 @@
 //    contact and log the email to it.
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { answerBySql, callsMatching } from "./helpers/answerBySql.js";
 import { APP_ID, buildV1App, submitBaseRules } from "./helpers/v1AppsHarness.js";
 import { bearer } from "./helpers/staffToken.js";
@@ -37,6 +37,11 @@ describe("CRM record creation", () => {
     queryMock.mockReset();
     mirrorMock.mockClear();
     graphFetch.mockClear();
+  });
+  // BF_SERVER_v861_TEST_SETTLE - submit starts background CRM work (people sync) after it answers. Let it finish before
+  // the next test, so its queries never land on the next test's freshly reset mock (the v859 PR run failed this way).
+  afterEach(async () => {
+    for (let i = 0; i < 5; i += 1) await new Promise((r) => setTimeout(r, 20));
   });
 
   it("mirror call maps normalized + alternate keys", async () => {

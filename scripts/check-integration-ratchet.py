@@ -102,6 +102,27 @@ def main() -> int:
         for t in report.get("testResults", [])
         if t.get("status") == "failed"
     )
+    # BF_SERVER_v861_RATCHET_ANNOTATIONS - an annotation per failing test (up to 20) shows on the check run itself,
+    # so the failing test is visible without opening the job log.
+    shown = 0
+    for t in report.get("testResults", []):
+        if t.get("status") != "failed":
+            continue
+        fname = t.get("name", "?").split("/")[-1]
+        fails = [a for a in (t.get("assertionResults") or []) if a.get("status") == "failed"]
+        if not fails:
+            msg = (t.get("message") or "failed before running")[:300].replace("\n", " ")
+            print(f"::error title=integration import failure::{fname}: {msg}")
+            shown += 1
+        for a in fails:
+            if shown >= 20:
+                break
+            first = ((a.get("failureMessages") or [""])[0])[:300].replace("\n", " ")
+            print(f"::error title=integration test failed::{fname} > {a.get('fullName', '?')}: {first}")
+            shown += 1
+        if shown >= 20:
+            break
+
     if names:
         summary("<details><summary>Failing files</summary>\n")
         for n in names:
