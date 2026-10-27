@@ -13,7 +13,7 @@ const router = Router();
 
 // BF_SERVER_BLOCK_v129a_READINESS_PHONE_NORMALIZE_v1
 const StartSchema = z.object({
-  sessionId: z.string().uuid().optional(),
+  sessionId: z.guid().optional(),
   source:    z.string().trim().optional(),
   // When the wizard mounts after OTP login, Step 1 sends the verified
   // phone here so we can claim the orphaned draft from the website
@@ -21,14 +21,14 @@ const StartSchema = z.object({
   readiness_phone: z.string().trim().optional(),
   // BF_SERVER_BLOCK_v_ATTRIBUTION_v1 - marketing source attribution captured at
   // apply-start (utm_source/medium/campaign, referrer, landing_page).
-  attribution: z.record(z.string()).optional(),
+  attribution: z.record(z.string(), z.string()).optional(),
   // BF_SERVER_ABANDONED_STEP1_PROFILE_v162 - the wizard now sends the Step 1
   // financial profile at /start (the only server call before submit; per-step
   // save is a no-op). Persisting it means an abandoned Step 1 shows what the
   // applicant actually picked - country, monthly revenue, amount - instead of
   // blanks, so staff can see the real drop-off. Loosely typed on purpose: the
   // wizard's kyc shape evolves and we only read a few known keys from it.
-  financialProfile: z.record(z.any()).optional(),
+  financialProfile: z.record(z.string(), z.any()).optional(),
   // BF_SERVER_CLARITY_PLAYBACK_v170 - the wizard reconstructs the Clarity session
   // player URL client-side (from _clck/_clsk cookies) and sends it here so staff
   // can open this applicant's recording directly from the CRM, no searching.

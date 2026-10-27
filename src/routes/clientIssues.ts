@@ -32,7 +32,7 @@ export function base64DecodedBytes(value: string): number {
 const schema = z.object({
   message: z.string().trim().min(1).max(4000),
   screenshotBase64: z.string().optional(),
-  applicationId: z.string().uuid().optional(),
+  applicationId: z.guid().optional(),
   contactPhone: z.string().trim().optional(),
 });
 
