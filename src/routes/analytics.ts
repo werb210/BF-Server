@@ -65,6 +65,23 @@ function str(v: unknown, max: number): string | null {
   return typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
 }
 
+// BF_SERVER_v877_ANALYTICS_BOT_FILTER
+// The client app's step events were being posted by scripts on cloud servers
+// (user agent "node", Microsoft/Azure addresses): about 50 fake "client step viewed"
+// events in one night, inflating the wizard numbers. Real events come from a browser
+// or the iOS/Android app, whose web views send a normal "Mozilla/5.0 ..." user agent.
+// Anything else is answered 202 as usual (so a script learns nothing) but not stored.
+const SCRIPT_UA_RE = /^(node|undici|node-fetch|axios|got|curl|wget|python|python-requests|aiohttp|go-http-client|java|okhttp|apache-httpclient|libwww-perl|ruby|php|postmanruntime|insomnia|httpie|powershell|deno|bun)\b/i;
+const BOT_UA_RE = /bot\b|crawler|spider|headlesschrome|phantomjs|slurp|preview|monitor|uptime|pingdom|lighthouse/i;
+
+export function isScriptOrBotUserAgent(ua: string | null | undefined): boolean {
+  const v = (ua ?? "").trim();
+  if (!v) return true;
+  if (SCRIPT_UA_RE.test(v)) return true;
+  if (BOT_UA_RE.test(v)) return true;
+  return !/^Mozilla\//i.test(v);
+}
+
 export function buildAnalyticsRouter(): Router {
   const router = Router();
   const limiter = rateLimit({
@@ -93,12 +110,16 @@ export function buildAnalyticsRouter(): Router {
     const rawSession = str(b.session_id, 100) ?? str(b.sessionId, 100) ?? str(payload?.session_id, 100);
     const sessionId = rawSession && redactContactText(rawSession) === rawSession ? rawSession : null;
     const properties = sanitizeProperties(b.properties ?? payload);
+    const userAgent = str(req.headers?.["user-agent"], 300);
+    if (isScriptOrBotUserAgent(userAgent)) {
+      return res.status(202).json({ ok: true, stored: false });
+    }
     try {
       await logAnalyticsEvent({
         event,
         metadata: { source: "bf-client", session_id: sessionId, properties },
         ip: clientIpFromRequest(req),
-        userAgent: str(req.headers?.["user-agent"], 300) ?? undefined,
+        userAgent: userAgent ?? undefined,
       });
     } catch (err) {
       // Tracking must never break the page; leave a trace and answer normally.

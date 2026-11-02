@@ -171,19 +171,96 @@ export async function handleGraphNotifications(pool: Pool, values: GraphNotifica
         continue;
       }
 
-      await createNotification({
-        notificationId: crypto.randomUUID(),
-        userId: sub.user_id,
-        applicationId: null,
-        type: "email_received",
-        title: "New email",
-        body: "You have a new message in your inbox.",
-        metadata: { source: "graph_subscription" },
-      });
+      await notifyNewEmail(pool, sub.user_id, n.resourceData?.id ?? null);
     } catch {
       /* best-effort */
     }
   }
+}
+
+// BF_SERVER_v877_EMAIL_ALERT_COALESCE
+// Every inbound email raised its own "New email" notification and browser push: 101
+// pushes to one person in one Sunday evening, often two per email (Graph delivers a
+// notification more than once when a subscription overlaps its renewal or a webhook
+// reply is slow). Now:
+// - the same message never notifies twice (remembered here for an hour, and in the
+//   notification's metadata for a day);
+// - while an unread "New email" notification from the last 15 minutes exists, a new
+//   email updates that one ("3 new emails") instead of raising another push.
+// Notifications for one person are handled one at a time so two copies arriving
+// together cannot both get through.
+export const EMAIL_COALESCE_MINUTES = 15;
+const SEEN_TTL_MS = 60 * 60 * 1000;
+const seenMessages = new Map<string, number>();
+const userChains = new Map<string, Promise<void>>();
+
+function alreadySeen(key: string): boolean {
+  const now = Date.now();
+  if (seenMessages.size > 5000) {
+    for (const [k, t] of seenMessages) if (now - t > SEEN_TTL_MS) seenMessages.delete(k);
+  }
+  const t = seenMessages.get(key);
+  if (t !== undefined && now - t < SEEN_TTL_MS) return true;
+  seenMessages.set(key, now);
+  return false;
+}
+
+export function __resetEmailAlertStateForTests(): void {
+  seenMessages.clear();
+  userChains.clear();
+}
+
+export function notifyNewEmail(pool: Pool, userId: string, messageId: string | null): Promise<void> {
+  if (messageId && alreadySeen(`${userId}:${messageId}`)) return Promise.resolve();
+  const prev = userChains.get(userId) ?? Promise.resolve();
+  const next = prev.then(() => notifyNewEmailNow(pool, userId, messageId)).catch((err: unknown) => {
+    logWarnSwallowed(err, "modules/o365/mailSubscriptions.ts:notifyNewEmail");
+  });
+  userChains.set(userId, next);
+  void next.then(() => { if (userChains.get(userId) === next) userChains.delete(userId); });
+  return next;
+}
+
+async function notifyNewEmailNow(pool: Pool, userId: string, messageId: string | null): Promise<void> {
+  if (messageId) {
+    const dup = await pool.query(
+      `SELECT 1 FROM notifications
+        WHERE user_id = $1 AND type = 'email_received'
+          AND created_at > now() - interval '1 day'
+          AND coalesce(metadata->'messageIds', '[]'::jsonb) ? $2
+        LIMIT 1`,
+      [userId, messageId]
+    );
+    if (dup.rows?.length) return;
+  }
+  const merged = await pool.query<{ id: string; count: number }>(
+    `UPDATE notifications n
+        SET metadata = jsonb_build_object(
+              'source', 'graph_subscription',
+              'count', coalesce((n.metadata->>'count')::int, 1) + 1,
+              'messageIds', coalesce(n.metadata->'messageIds', '[]'::jsonb)
+                || CASE WHEN $2::text IS NULL THEN '[]'::jsonb ELSE jsonb_build_array($2::text) END),
+            title = (coalesce((n.metadata->>'count')::int, 1) + 1) || ' new emails',
+            body = 'You have ' || (coalesce((n.metadata->>'count')::int, 1) + 1) || ' new messages in your inbox.'
+      WHERE n.id = (
+        SELECT id FROM notifications
+         WHERE user_id = $1 AND type = 'email_received'
+           AND read_at IS NULL AND is_read = false
+           AND created_at > now() - make_interval(mins => $3::int)
+         ORDER BY created_at DESC LIMIT 1)
+      RETURNING n.id, (n.metadata->>'count')::int AS count`,
+    [userId, messageId, EMAIL_COALESCE_MINUTES]
+  );
+  if (merged.rows?.length) return; // folded into the unread alert - no second push
+  await createNotification({
+    notificationId: crypto.randomUUID(),
+    userId,
+    applicationId: null,
+    type: "email_received",
+    title: "New email",
+    body: "You have a new message in your inbox.",
+    metadata: { source: "graph_subscription", count: 1, messageIds: messageId ? [messageId] : [] },
+  });
 }
 
 export async function ensureSubscriptionsForConnectedUsers(pool: Pool): Promise<void> {
