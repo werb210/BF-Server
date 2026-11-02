@@ -1,7 +1,7 @@
 -- BROKER_TOOLS_6_CREDIT_BUREAU - consumer / commercial credit bureau pulls (Equifax Canada, TransUnion Canada) behind a
 -- provider interface: the applicant's consent (given in the client app, or recorded by an Admin from a signed form),
 -- each pull with its key fields and the report PDF. Idempotent.
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- BF_SERVER_v879_NO_PGCRYPTO - pgcrypto is not allow-listed on Azure Database for PostgreSQL; gen_random_uuid() is built into PostgreSQL 13+.
 
 CREATE TABLE IF NOT EXISTS credit_consents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

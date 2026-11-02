@@ -1,7 +1,7 @@
 -- BROKER_TOOLS_2_INVOICE_READING - vendor invoices read by the AI (vendor, invoice number, date, line items, subtotal,
 -- taxes, total, equipment with serial / VIN). Each reading is a draft until staff confirm it; confirming fills the
 -- deal's equipment fields and, when the file has an Active Contract, its equipment assets. Idempotent.
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- BF_SERVER_v879_NO_PGCRYPTO - pgcrypto is not allow-listed on Azure Database for PostgreSQL; gen_random_uuid() is built into PostgreSQL 13+.
 
 CREATE TABLE IF NOT EXISTS vendor_invoices (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

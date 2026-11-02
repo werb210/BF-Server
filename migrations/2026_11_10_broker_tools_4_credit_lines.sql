@@ -1,7 +1,7 @@
 -- BROKER_TOOLS_4_CREDIT_LINES - approved credit lines per client: lender, limit, expiry and conditions; each draw
 -- reduces what is available (a repayment restores it); reminder tasks before a line expires (once per expiry date).
 -- Idempotent.
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- BF_SERVER_v879_NO_PGCRYPTO - pgcrypto is not allow-listed on Azure Database for PostgreSQL; gen_random_uuid() is built into PostgreSQL 13+.
 
 CREATE TABLE IF NOT EXISTS credit_lines (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
