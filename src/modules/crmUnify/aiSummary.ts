@@ -38,7 +38,9 @@ async function recordFacts(db: Q, silo: string, entity: "contact" | "company", i
               (SELECT count(*)::int FROM communications_messages m WHERE m.contact_id = c.id) AS messages,
               (SELECT count(*)::int FROM call_logs l WHERE l.crm_contact_id = c.id) AS calls,
               (SELECT count(*)::int FROM crm_email_log e WHERE e.contact_id = c.id) AS emails,
-              (SELECT count(*)::int FROM visitor_sessions v WHERE v.contact_id = c.id) AS visits
+              -- BF_SERVER_v864_AI_SUMMARY_FIX - visitor_sessions.contact_id is text; comparing it with the uuid
+              -- c.id ("operator does not exist: text = uuid") failed every contact summary with "Unexpected error".
+              (SELECT count(*)::int FROM visitor_sessions v WHERE v.contact_id = c.id::text) AS visits
          FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
         WHERE c.id = $1::uuid AND c.silo = $2`,
       [id, silo],
@@ -66,8 +68,28 @@ const COUNT_LABELS: Array<[string, string]> = [
   ["emails", "Emails"], ["visits", "Website visits"], ["people", "People at the company"],
 ];
 
+// BF_SERVER_v864_AI_SUMMARY_FIX - a failure says which step failed in words staff can act on; the real error is
+// logged on the server with the record it was for.
+export class SummaryError extends Error {
+  constructor(public readonly code: "summary_read_failed" | "ai_unavailable" | "summary_save_failed", message: string) {
+    super(message);
+    this.name = "SummaryError";
+  }
+}
+
+function logSummaryFailure(step: string, entity: string, id: string, silo: string, err: unknown): void {
+  const e = err as { message?: string; status?: number; code?: string };
+  console.error("[crm-ai-summary] " + step + " failed", { entity, id, silo, message: e?.message ?? String(err), status: e?.status ?? null, code: e?.code ?? null });
+}
+
 export async function generateSummary(db: Q, deps: SummaryDeps, silo: string, entity: "contact" | "company", id: string, userId: string | null): Promise<SummaryPayload | null> {
-  const facts = await recordFacts(db, silo, entity, id);
+  let facts: Awaited<ReturnType<typeof recordFacts>>;
+  try {
+    facts = await recordFacts(db, silo, entity, id);
+  } catch (err) {
+    logSummaryFailure("reading the record", entity, id, silo, err);
+    throw new SummaryError("summary_read_failed", "Could not read this record to summarize it. The error has been logged on the server.");
+  }
   if (!facts) return null;
   const sources: SummarySource[] = [];
   const site = websiteFor(facts.website, facts.emails);
@@ -93,14 +115,31 @@ export async function generateSummary(db: Q, deps: SummaryDeps, silo: string, en
     if (n > 0) sources.push({ type: key, label, detail: String(n), status: "used" });
   }
   sources.push({ type: "profile", label: entity === "contact" ? "Contact record and timeline" : "Company record and timeline", status: "used" });
-  const summary = (await deps.brief(entity, id, silo)).trim() || "No summary returned.";
+  let summary: string;
+  try {
+    summary = String((await deps.brief(entity, id, silo)) ?? "").trim() || "No summary returned.";
+  } catch (err) {
+    logSummaryFailure("the AI request", entity, id, silo, err);
+    const e = err as { status?: number; code?: string; message?: string };
+    const why = !process.env.OPENAI_API_KEY
+      ? "The AI service is not set up on the server (OPENAI_API_KEY)."
+      : e?.status === 429 ? "The AI service is busy or out of credit right now."
+      : e?.status === 401 ? "The AI service rejected the server's key."
+      : "The AI service did not answer.";
+    throw new SummaryError("ai_unavailable", why + " Try again in a minute.");
+  }
   const generatedAt = new Date().toISOString();
-  await db.query(
+  try {
+    await db.query(
     `INSERT INTO crm_ai_summaries (silo, entity, entity_id, summary, business, sources, generated_at, generated_by)
      VALUES ($1, $2, $3::uuid, $4, $5, $6::jsonb, $7, $8::uuid)
      ON CONFLICT (silo, entity, entity_id) DO UPDATE SET summary = EXCLUDED.summary, business = EXCLUDED.business,
        sources = EXCLUDED.sources, generated_at = EXCLUDED.generated_at, generated_by = EXCLUDED.generated_by`,
     [silo, entity, id, summary, business, JSON.stringify(sources), generatedAt, userId],
   );
+  } catch (err) {
+    // The summary itself is fine; show it even though it could not be kept for next time.
+    logSummaryFailure("saving the summary", entity, id, silo, err);
+  }
   return { summary, business, sources, generatedAt, cached: false };
 }

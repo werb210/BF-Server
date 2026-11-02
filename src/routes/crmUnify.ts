@@ -40,7 +40,7 @@ import { companyDetails, detailUpdates } from "../modules/crmUnify/companyDetail
 import { companyDuplicates, contactDuplicates, dismissDuplicate, duplicateGroups, mergePreview } from "../modules/crmUnify/duplicates.js";
 import { mergeCompanies } from "../modules/crmUnify/companyMerge.js";
 import { applyCleanup, listBatches, scanCleanup, undoCleanup, validChange } from "../modules/crmUnify/cleanup.js";
-import { cachedSummary, generateSummary } from "../modules/crmUnify/aiSummary.js";
+import { cachedSummary, generateSummary, SummaryError } from "../modules/crmUnify/aiSummary.js";
 import { ksLicenseeInfo } from "../modules/crmUnify/ksLicensee.js";
 import { resolveContactSurvivor } from "../modules/crmUnify/mergeChain.js";
 import { backfillCrmPeople } from "../modules/crmUnify/peopleSync.js";
@@ -378,11 +378,18 @@ router.post("/ai-summary/:entity/:id", summaryLimiter, safeHandler(async (req: a
   const id = String(req.params.id);
   if (!entity || !isUuid(id)) return res.status(400).json({ ok: false, error: "invalid_request" });
   const brief = await import("../services/crm/contactBrief.js");
-  const out = await generateSummary(pool, {
-    brief: (e, x, silo) => (e === "contact" ? brief.contactBrief(x, silo) : brief.companyBrief(x, silo)),
-    background: (domain) => brief.companyBackground(domain),
-  }, resolveSiloFromRequest(req), entity, id, userIdOf(req));
-  if (!out) return res.status(404).json({ ok: false, error: "not_found" });
+  let out;
+  try {
+    out = await generateSummary(pool, {
+      brief: (e, x, silo) => (e === "contact" ? brief.contactBrief(x, silo) : brief.companyBrief(x, silo)),
+      background: (domain) => brief.companyBackground(domain),
+    }, resolveSiloFromRequest(req), entity, id, userIdOf(req));
+  } catch (err) {
+    // BF_SERVER_v864_AI_SUMMARY_FIX - a clear message instead of the generic "Unexpected error" (logged in aiSummary.ts).
+    if (err instanceof SummaryError) return res.status(err.code === "ai_unavailable" ? 503 : 500).json({ ok: false, error: err.code, message: err.message });
+    throw err;
+  }
+  if (!out) return res.status(404).json({ ok: false, error: "not_found", message: "This record was not found in this business." });
   res.json({ ok: true, data: out });
 }));
 

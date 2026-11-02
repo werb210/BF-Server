@@ -7,6 +7,7 @@ import { getGraphForUser } from "../modules/o365/graphClient.js";
 import { SENT_LOGGED_HEADER } from "../modules/o365/sentItemsLog.js"; // BF_SERVER_SENT_ITEMS_v39
 import { draftErrorResponse } from "../modules/o365/draftErrors.js"; // BF_SERVER_DRAFT_NOT_FOUND_v1
 import { pullOutlookContactsForUser } from "../modules/o365/contactPull.js"; // BF_SERVER_CONTACTS_PULL_v1
+import { planOutOfOffice, isPlanError, recordBorealOutOfOffice, readBorealOutOfOffice } from "../modules/o365/outOfOffice.js"; // BF_SERVER_v864_OOO_UNTIL
 import { getStorage } from "../lib/storage/index.js"; // v693
 import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { randomUUID } from "node:crypto";
@@ -814,7 +815,9 @@ router.get("/mail/mailbox-settings", safeHandler(async (req: any, res: any) => {
     if (r.status === 401 || r.status === 403) return res.status(412).json({ error: "o365_insufficient_scope", detail });
     return res.status(502).json({ error: "graph_mailbox_settings_failed", detail });
   }
-  res.json(await r.json());
+  // BF_SERVER_v864_OOO_UNTIL - also return Boreal's own out-of-office window, so the portal can show "Active until".
+  const settings: any = await r.json();
+  res.json({ ...(settings && typeof settings === "object" ? settings : {}), borealOutOfOffice: await readBorealOutOfOffice(String(userId)) });
 }));
 
 router.patch("/mail/out-of-office", safeHandler(async (req: any, res: any) => {
@@ -822,18 +825,11 @@ router.patch("/mail/out-of-office", safeHandler(async (req: any, res: any) => {
   if (!userId) return res.status(401).json({ error: "unauthenticated" });
   const graph = await getGraphForUser(pool, userId);
   if (!graph) return res.status(412).json({ error: "o365_not_connected" });
+  // BF_SERVER_v864_OOO_UNTIL - "Active until" a day: on now, off at the end of that day in the user's zone.
   const b = req.body ?? {};
-  const status = ["disabled", "alwaysEnabled", "scheduled"].includes(b.status) ? b.status : "disabled";
-  const auto: Record<string, unknown> = {
-    status,
-    externalAudience: b.externalAudience === "none" || b.externalAudience === "contactsOnly" ? b.externalAudience : "all",
-    internalReplyMessage: typeof b.internalReplyMessage === "string" ? b.internalReplyMessage : "",
-    externalReplyMessage: typeof b.externalReplyMessage === "string" ? b.externalReplyMessage : "",
-  };
-  if (status === "scheduled" && b.start && b.end) {
-    auto.scheduledStartDateTime = { dateTime: String(b.start), timeZone: "UTC" };
-    auto.scheduledEndDateTime = { dateTime: String(b.end), timeZone: "UTC" };
-  }
+  const plan = planOutOfOffice(b);
+  if (isPlanError(plan)) return res.status(400).json(plan);
+  const { status, auto } = plan;
   const r = await graph.fetch("/me/mailboxSettings", {
     method: "PATCH", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ automaticRepliesSetting: auto }),
@@ -843,7 +839,8 @@ router.patch("/mail/out-of-office", safeHandler(async (req: any, res: any) => {
     if (r.status === 401 || r.status === 403) return res.status(412).json({ error: "o365_insufficient_scope", detail });
     return res.status(502).json({ error: "graph_set_oof_failed", detail });
   }
-  res.json({ ok: true, status });
+  await recordBorealOutOfOffice(String(userId), plan, b.timeZone);
+  res.json({ ok: true, status, from: plan.from ? plan.from.toISOString() : null, until: plan.until ? plan.until.toISOString() : null });
 }));
 
 // BF_SERVER_BLOCK_v_PRESENCE_v1 - the signed-in user's Teams presence (needs Presence.Read).
@@ -1142,6 +1139,10 @@ router.post("/contacts/pull", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId;
   if (!userId) return res.status(401).json({ error: "unauthenticated" });
   const result = await pullOutlookContactsForUser(pool, userId);
+  // BF_SERVER_v864_CONTACTS_PULL_FIX - say when it could not run instead of reporting "linked 0".
+  if (!result.connected) return res.status(412).json({ ok: false, error: "o365_not_connected", message: "Connect Microsoft 365 in Settings > My Profile first." });
+  if (result.error === "missing_permission") return res.status(412).json({ ok: false, ...result, message: "Microsoft 365 did not allow reading your Outlook contacts. Reconnect Microsoft 365 (Stay connected) and accept the Contacts permission." });
+  if (result.error) return res.status(502).json({ ok: false, ...result, message: "Outlook did not answer. Try again in a minute." });
   res.json({ ok: true, ...result });
 })); // BF_SERVER_CONTACTS_PULL_v1
 

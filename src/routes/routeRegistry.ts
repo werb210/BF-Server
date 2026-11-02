@@ -138,7 +138,9 @@ import { createMountTracker } from "./_canonicalMount.js";
 import { siloMiddleware } from "../middleware/silo.js";
 import fraudRoutes from "./fraud.js"; // BF_SERVER_v846_FRAUD
 import retentionRoutes from "./retention.js"; // BF_SERVER_v855_RETENTION
+import activeContractsRoutes from "./activeContracts.js"; // BF_SERVER_v864_ACTIVE_CONTRACTS
 import ksCrmRoutes from "./ksCrm.js"; // BF_SERVER_v850_KS_CRM
+import ksMarketingRoutes from "./ksMarketing.js"; // BF_SERVER_v865_KS_MARKETING
 import quickbooksRoutes from "./quickbooks.js"; // BF_SERVER_v852_CALC_QBO
 import { requireAuth, requireAuthAllowClient } from "../middleware/auth.js";
 import watchAuthRoutes from "../watch/authRoutes.js";
@@ -360,7 +362,9 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/templates", router: templatesRoutes }, // v693
   { path: "/fraud", router: fraudRoutes }, // BF_SERVER_v846_FRAUD - staff fraud checks; settings Admin only
   { path: "/retention", router: retentionRoutes }, // BF_SERVER_v855_RETENTION - staff status; Admin holds and report
+  { path: "/active-contracts", router: activeContractsRoutes }, // BF_SERVER_v864_ACTIVE_CONTRACTS - contracts, renewals, compensation
   { path: "/ks/crm", router: ksCrmRoutes }, // BF_SERVER_v850_KS_CRM - KS-Ops ingest (X-KS-Ops-Key) + Keystone pipeline
+  { path: "/ks/marketing", router: ksMarketingRoutes }, // BF_SERVER_v865_KS_MARKETING - KS-Ops prospect marketing: CRM contacts out, timeline events in (X-KS-Ops-Key)
   { path: "/quickbooks", router: quickbooksRoutes }, // BF_SERVER_v852_CALC_QBO - QuickBooks connection (Admin) + fee invoices
 ];
 

@@ -16,6 +16,9 @@ export type PresenceRow = {
   manual_busy?: boolean | null;
   on_call?: boolean | null;
   in_meeting?: boolean | null;
+  // BF_SERVER_v864_OOO_UNTIL
+  out_of_office_from?: Date | string | null;
+  out_of_office_until?: Date | string | null;
 };
 
 export type PresenceReason =
@@ -26,6 +29,7 @@ export type PresenceReason =
   | "manual_busy"
   | "on_call"
   | "in_meeting"
+  | "out_of_office"
   | "no_twilio_identity";
 
 export type PresenceExplanation = {
@@ -110,6 +114,14 @@ export function explainPresence(
   }
   if (row.in_meeting) {
     return { ...base, reachable: false, reason: "in_meeting", message: "this user is in a meeting" };
+  }
+  // BF_SERVER_v864_OOO_UNTIL - same rule as RECOMPUTE_SQL: inside the out-of-office window, until its end.
+  if (row.out_of_office_until) {
+    const until = row.out_of_office_until === "infinity" ? Infinity : new Date(row.out_of_office_until as string).getTime();
+    const from = row.out_of_office_from ? new Date(row.out_of_office_from as string).getTime() : -Infinity;
+    if (until > now.getTime() && from <= now.getTime()) {
+      return { ...base, reachable: false, reason: "out_of_office", message: "this user is out of office (Settings > My Profile)" };
+    }
   }
   if (!withinBusinessHours(now, timeZone)) {
     return {

@@ -257,6 +257,11 @@ export async function start(): Promise<void> {
     await workerStagger();
     try { const w = startQboFeeInvoiceWorker(pool); workerStops.push(w.stop); console.log("[startup] quickbooks fee-invoice worker started"); }
     catch (err) { console.error("[startup] quickbooks fee-invoice worker failed to start:", err); }
+    // BF_SERVER_v864_ACTIVE_CONTRACTS - funded files become contracts; renewal engine; lender statement intake (hourly).
+    const { startActiveContractsWorker } = await import("./workers/activeContractsWorker.js");
+    await workerStagger();
+    try { const w = startActiveContractsWorker(pool); workerStops.push(w.stop); console.log("[startup] active-contracts worker started"); }
+    catch (err) { console.error("[startup] active-contracts worker failed to start:", err); }
 
     // BF_INBOUND_ATTACHMENT_WORKER_v1 - auto-file inbound email attachments to the CRM.
     const { startInboundAttachmentWorker } = await import("./workers/inboundAttachmentWorker.js");
