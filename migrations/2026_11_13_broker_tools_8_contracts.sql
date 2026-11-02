@@ -1,6 +1,6 @@
 -- BROKER_TOOLS_8_CONTRACTS - contracts from Word (.docx) templates with merge fields: the templates, and each contract
 -- made on a deal (filled .docx, PDF, signers, SignNow ids, signed PDF). Idempotent.
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- BF_SERVER_v879_NO_PGCRYPTO - pgcrypto is not allow-listed on Azure Database for PostgreSQL; gen_random_uuid() is built into PostgreSQL 13+.
 
 CREATE TABLE IF NOT EXISTS contract_templates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
