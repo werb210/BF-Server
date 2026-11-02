@@ -6,6 +6,9 @@ export const ApplicationStage = {
   OFF_TO_LENDER:             "Off to Lender",
   OFFER:                     "Offer",
   ACCEPTED:                  "Accepted",
+  // BF_SERVER_v865_BROKER_TOOLS - after Accepted: the lender has advanced the money. Reached only when every funding
+  // condition is cleared or waived (or an Admin overrides with a reason).
+  FUNDED:                    "Funded",
   REJECTED:                  "Rejected",
   // BF_SERVER_FRAUD_HOLD_v48 - parking stages. Neither deletes anything; both
   // take the file out of the numbers. See reportingScope.ts for which counts.
@@ -23,6 +26,7 @@ export const PIPELINE_STATES: ApplicationStage[] = [
   ApplicationStage.OFF_TO_LENDER,
   ApplicationStage.OFFER,
   ApplicationStage.ACCEPTED,
+  ApplicationStage.FUNDED, // BF_SERVER_v865_BROKER_TOOLS
   ApplicationStage.REJECTED,
   ApplicationStage.FRAUD,
   ApplicationStage.HOLD,
@@ -74,7 +78,8 @@ export const LEGAL_TRANSITIONS: Record<PipelineState, readonly PipelineState[]> 
     ApplicationStage.REJECTED,
     ApplicationStage.DOCUMENTS_REQUIRED,
   ],
-  [ApplicationStage.ACCEPTED]: [],
+  [ApplicationStage.ACCEPTED]: [ApplicationStage.FUNDED], // BF_SERVER_v865_BROKER_TOOLS
+  [ApplicationStage.FUNDED]: [],
   [ApplicationStage.REJECTED]: [],
   [ApplicationStage.FRAUD]: [],
   [ApplicationStage.HOLD]: [],
@@ -119,6 +124,7 @@ export const STATUS_FROM_PIPELINE: Record<string, string> = {
   [ApplicationStage.OFF_TO_LENDER]:             "OFF_TO_LENDER",
   [ApplicationStage.OFFER]:                     "OFF_TO_LENDER",
   [ApplicationStage.ACCEPTED]:                  "ACCEPTED",
+  [ApplicationStage.FUNDED]:                    "ACCEPTED", // BF_SERVER_v865_BROKER_TOOLS - no FUNDED key in the check
   [ApplicationStage.REJECTED]:                  "DECLINED",
   // BF_SERVER_FRAUD_HOLD_v48 - applications_status_check does not allow a
   // Fraud/Hold key, so map to the nearest permitted value. The real stage lives
