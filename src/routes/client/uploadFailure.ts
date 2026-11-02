@@ -16,7 +16,8 @@ export function sanitizeUploadFailure(body: any): Record<string, unknown> {
   const docType = str(body?.documentType, 80);
   return {
     applicationId: appId && /^[0-9a-f-]{36}$/i.test(appId) ? appId : null,
-    documentType: docType && /^[a-z0-9_:-]+$/i.test(docType) ? docType : null,
+    // BF_SERVER_v848_DUPLICATE_UX - lender-required types can be plain words ("articles of incorporation"); those were logged as null.
+    documentType: docType && /^[\w :.,()&/'-]+$/.test(docType) ? docType : null,
     status: num(body?.status),
     errorName: str(body?.errorName, 40),
     errorMessage: str(body?.errorMessage, 200),

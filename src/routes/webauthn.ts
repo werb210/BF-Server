@@ -14,6 +14,7 @@ import { fetchCapabilitiesForRole } from "../auth/capabilities.js";
 import { findAuthUserById } from "../modules/auth/auth.repo.js";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js";
 import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_SILENT_QUERIES_v678
+import { refreshFieldsForSignIn } from "../auth/staffRefresh.js"; // BF_SERVER_v868_SLIDING_REFRESH
 
 const router = Router();
 const RP_ID = process.env.WEBAUTHN_RP_ID || "staff.boreal.financial";
@@ -137,7 +138,9 @@ router.post("/login/verify", safeHandler(async (req: any, res) => {
   await pool.query(`DELETE FROM webauthn_challenges WHERE challenge = $1`, [issuedChallenge]);
   const user = await findAuthUserById(cred.user_id);
   if (!user || (user as any).disabled || !(user as any).active) return res.status(403).json({ error: "user_inactive" });
-  return res.json({ status: "ok", data: { token: mintStaffToken(user) } });
+  // BF_SERVER_v868_SLIDING_REFRESH - and a refresh token, so the portal keeps the session going (up to 30 days).
+  const refreshFields = await refreshFieldsForSignIn(pool as any, { userId: String(cred.user_id), tokenVersion: (user as any).tokenVersion ?? 0 });
+  return res.json({ status: "ok", data: { token: mintStaffToken(user), ...refreshFields } });
 }));
 
 export default router;

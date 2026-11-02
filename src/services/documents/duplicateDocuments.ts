@@ -52,6 +52,18 @@ export async function assertNotDuplicate(applicationId: string, buffer: Buffer, 
   return hash;
 }
 
+// BF_SERVER_v848_DUPLICATE_UX - a re-sent file is not an upload failure. One info line so support can still see it
+// (the client app no longer reports a 409 duplicate as a client-upload-failure). No file name: it can be personal.
+export function logDuplicateRefused(applicationId: string, category: string | null, err: DuplicateDocumentError): void {
+  console.info("[documents] duplicate upload refused " + JSON.stringify({
+    applicationId,
+    category: category ?? null,
+    existingId: err.existing.id,
+    existingCategory: err.existing.category,
+    existingStatus: err.existing.status,
+  }));
+}
+
 export function duplicateResponseBody(err: DuplicateDocumentError) {
   return { ok: false, error: "DUPLICATE_DOCUMENT", message: err.message, existing: err.existing };
 }

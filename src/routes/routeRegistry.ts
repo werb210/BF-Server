@@ -90,6 +90,7 @@ import publicApplicationRoutes from "./publicApplication.js";
 import visitorTrackRoutes from "./visitorTrack.js"; // BF_SERVER_VISITOR_JOURNEY_v1 (public)
 import analyticsRoutes from "./analytics.js"; // BF_SERVER_v789_ANALYTICS_COLLECTOR (public, 60/min per IP)
 import naicsRoutes from "./naics.js"; // BF_SERVER_NAICS_v83 (public)
+import privacyRoutes from "./privacy.js"; // BF_SERVER_v868_QUEBEC_CONSENT (public)
 import recipientSuggestRoutes from "./recipientSuggest.js"; // BF_SERVER_RECIPIENT_SUGGEST_v100
 import referralsRoutes from "./referrals.js";
 import referralsExtRoutes from "./referralsExt.js";
@@ -125,7 +126,7 @@ import issuesRoutes from "./issues.js";
 import conversationsRoutes from "./conversations.js";
 import smsInboundWebhookRoutes from "./smsInboundWebhook.js";
 // BF_SERVER_BLOCK_v214_MAYA_STAFF_PIPELINE_QUERY_v1
-import mayaStaffRouter from "./mayaStaff.js";
+import mayaStaffRouter, { verifyMayaService } from "./mayaStaff.js";
 import mayaStaffInsightsRouter from "./mayaStaffInsights.js"; // BF_SERVER_MAYA_INSIGHTS_v655
 import mayaStaffAdsRouter from "./mayaStaffAds.js"; // BF_SERVER_MAYA_ADS_v683
 import mayaStaffAdsInsightsRouter from "./mayaStaffAdsInsights.js"; // BF_SERVER_MAYA_ADS_TOOLS_v712
@@ -149,6 +150,7 @@ import watchDataRoutes from "../watch/dataRoutes.js";
 import brokerToolsRoutes from "./brokerTools.js"; // BF_SERVER_v865_BROKER_TOOLS
 import clientBrokerRoutes from "./clientBroker.js"; // BF_SERVER_v865_BROKER_TOOLS
 import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
+import { mayaActingStaff } from "../services/mayaActingStaff.js"; // BF_SERVER_v868_MAYA_ACTING_STAFF
 
 export type ApiRoute = {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -220,6 +222,9 @@ combinedMayaRoutes.post("/website-chat", mayaProxyRateLimit, safeHandler(async (
     req
   );
 }));
+// BF_SERVER_v868_MAYA_ACTING_STAFF - the assistant's staff tools act only as the staff member named in the
+// X-Maya-Context this server signed (the agent hands it back); a different staff_user_id or silo gets 403.
+combinedMayaRoutes.use("/staff", mayaActingStaff((req) => Boolean(verifyMayaService(req))));
 combinedMayaRoutes.use(mayaRoutes);
 combinedMayaRoutes.use(mayaPendingActionsRouter); // BF_SERVER_v784_MAYA_SMS_CONFIRM - /pending-actions (staff humans only)
 combinedMayaRoutes.use(mayaAdminStubs);
@@ -349,6 +354,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/track/journey", router: visitorTrackRoutes }, // BF_SERVER_VISITOR_JOURNEY_v1 (public)
   { path: "/analytics", router: analyticsRoutes }, // BF_SERVER_v789_ANALYTICS_COLLECTOR (public, rate limited in the router)
   { path: "/naics", router: naicsRoutes }, // BF_SERVER_NAICS_v83 (public)
+  { path: "/privacy", router: privacyRoutes }, // BF_SERVER_v868_QUEBEC_CONSENT - GET /api/privacy/region (public)
   { path: "/recipients/suggest", router: recipientSuggestRoutes }, // BF_SERVER_RECIPIENT_SUGGEST_v100
   { path: "/", router: rootRoutes },
   { path: "/slf", router: slfRoutes },
@@ -520,6 +526,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/public/application/start", roles: [] },
   { method: "POST", path: "/api/track/journey", roles: [] }, // BF_SERVER_VISITOR_JOURNEY_v1
   { method: "POST", path: "/api/analytics", roles: [] }, // BF_SERVER_v789_ANALYTICS_COLLECTOR
+  { method: "GET", path: "/api/privacy/region", roles: [] }, // BF_SERVER_v868_QUEBEC_CONSENT
   { method: "POST", path: "/api/public/readiness", roles: [] },
   { method: "POST", path: "/api/crm/readiness", roles: [] },
   { method: "GET", path: "/api/client/application-stage", roles: [] },

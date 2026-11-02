@@ -91,6 +91,18 @@ export const otpStartLimiter = rateLimit({
   skip: () => isTest, // the suite fires many OTPs from one IP
 });
 
+// BF_SERVER_v868_SLIDING_REFRESH - POST /api/auth/refresh. A refresh token is 256 random bits, so this only
+// stops floods; an office of staff behind one address refreshing a few times a day stays far below it.
+export const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { status: "error", message: "Too many attempts. Try again later." },
+  keyGenerator: keyFromRequest,
+  skip: () => isTest,
+});
+
 export const otpVerifyLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
