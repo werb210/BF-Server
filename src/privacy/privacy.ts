@@ -17,7 +17,7 @@ import type { Q } from "../settingsPack/common.js";
 
 export const REQUEST_KINDS = ["access", "correction", "deletion"] as const;
 export type RequestKind = (typeof REQUEST_KINDS)[number];
-export const CONSENT_SURFACES = ["client_app", "booking_page", "website"] as const;
+export const CONSENT_SURFACES = ["client_app", "booking_page", "website", "website_kit"] as const; // BF_SERVER_v874_MARKETING_TOOLS - website_kit: the kit on another website
 
 export function ipHash(ip: string): string {
   const salt = String(process.env.JWT_SECRET ?? "ks");

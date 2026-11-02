@@ -5,6 +5,7 @@
 import type { Pool } from "pg";
 import { runEmailSend, runSmsSend } from "../services/marketingSendRunner.js";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { needsCampaignRunner, runCampaignEmailJob } from "../marketing/campaignRunner.js"; // BF_SERVER_v874_MARKETING_TOOLS
 
 const TICK_MS = 30_000;
 
@@ -55,8 +56,25 @@ export function startSendQueueWorker(pool: Pool): { stop: () => void } {
             `UPDATE marketing_send_jobs SET status=$5, total=$2, sent=$3, failed=$4, finished_at=now(), updated_at=now() WHERE id=$1`,
             [job.id, result.total, result.smsSent + result.emailSent, result.failed, result.aborted ? 'canceled' : 'done'],
           ); // BF_SERVER_SEND_KILL_SWITCH_v1
+        } else if (needsCampaignRunner(p as Record<string, any>)) {
+          // BF_SERVER_v874_MARKETING_TOOLS - an A/B subject test or best-time sending runs in phases: between phases the
+          // job goes back to the queue with not_before set to when the next phase is due.
+          const step = await runCampaignEmailJob(pool, { id: job.id, silo: job.silo, tag: job.tag, payload: p as Record<string, any> }, progress, abortCheck);
+          if (step.status === "waiting") {
+            await pool.query(
+              `UPDATE marketing_send_jobs SET status='queued', not_before=$2, payload = payload || $3::jsonb, total=$4, sent=$5, failed=$6, updated_at=now() WHERE id=$1`,
+              [job.id, (step.notBefore ?? new Date()).toISOString(), JSON.stringify(step.payloadPatch ?? {}), step.total, step.sent, step.failed],
+            );
+          } else {
+            await pool.query(
+              `UPDATE marketing_send_jobs SET status=$6, total=$2, sent=$3, failed=$4, error=$5, payload = payload || $7::jsonb, finished_at=now(), updated_at=now() WHERE id=$1`,
+              [job.id, step.total, step.sent, step.failed, step.error ?? null, step.status === "canceled" ? "canceled" : "done", JSON.stringify(step.payloadPatch ?? {})],
+            );
+          }
         } else {
-          const result = await runEmailSend(pool, { silo: job.silo, tag: job.tag, subject: String(p.subject || ""), html: String(p.html || ""), tags: (p.tags as string[] | undefined) ?? null, excludeTags: (p.excludeTags as string[] | undefined) ?? null, templateId: (p as any).templateId ?? null }, progress, abortCheck); // BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1 BF_SERVER_TEMPLATE_ANALYTICS_v1 BF_SERVER_SEND_KILL_SWITCH_v1
+          // BF_SERVER_v874_MARKETING_TOOLS - jobId puts each send in the campaign ledger (campaign report); `resend` now
+          // reaches queued sends too.
+          const result = await runEmailSend(pool, { silo: job.silo, tag: job.tag, subject: String(p.subject || ""), html: String(p.html || ""), tags: (p.tags as string[] | undefined) ?? null, excludeTags: (p.excludeTags as string[] | undefined) ?? null, templateId: (p as any).templateId ?? null, resend: (p as any).resend === true, jobId: job.id }, progress, abortCheck); // BF_SERVER_EMAIL_AUDIENCE_INCL_EXCL_v1 BF_SERVER_TEMPLATE_ANALYTICS_v1 BF_SERVER_SEND_KILL_SWITCH_v1
           await pool.query(
             `UPDATE marketing_send_jobs SET status=$6, total=$2, sent=$3, failed=$4, error=$5, finished_at=now(), updated_at=now() WHERE id=$1`,
             [job.id, result.total, result.sent, result.failed, result.rejectError ? `rejected (status ${result.rejectStatus ?? "unknown"}): ${result.rejectError}` : null, result.aborted ? 'canceled' : 'done'],

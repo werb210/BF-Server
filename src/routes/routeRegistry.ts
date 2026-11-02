@@ -155,6 +155,9 @@ import paymentsRoutes from "./payments.js";
 // BF_SERVER_v873_LENDER_API - lender API connections and the lenders' signed webhooks.
 import lenderConnectionsRoutes from "./lenderConnections.js";
 import lenderWebhooksRoutes from "./lenderWebhooks.js";
+// BF_SERVER_v874_MARKETING_TOOLS - lead scoring and the website kit (staff settings; the public kit on other websites).
+import leadScoreRoutes from "./leadScores.js";
+import { websiteKitAdminRoutes, websiteKitPublicRoutes } from "./websiteKit.js";
 import { scopedAssistantRequest } from "../visibility/scopedDb.js";
 import { recordGuard, type GuardRule } from "../visibility/recordGuard.js";
 import mayaStaffInsightsRouter from "./mayaStaffInsights.js"; // BF_SERVER_MAYA_INSIGHTS_v655
@@ -435,6 +438,10 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   // BF_SERVER_v873_LENDER_API
   { path: "/lender-connections", router: lenderConnectionsRoutes }, // Lenders > Connection (Admin); Submit by API / sync on a file (staff)
   { path: "/lender-webhooks", router: lenderWebhooksRoutes }, // public: a lender's status pushes (address secret + signature)
+  // BF_SERVER_v874_MARKETING_TOOLS - each router checks its own roles and resolves the silo per request.
+  { path: "/lead-scores", router: leadScoreRoutes }, // staff: scores (record visibility applies); Admin/Marketing: rules
+  { path: "/website-kit", router: websiteKitAdminRoutes }, // Admin/Marketing: the silo's kit settings and forms
+  { path: "/kit", router: websiteKitPublicRoutes }, // public: answers only the website addresses listed for the key's silo
 ];
 
 // BF_SERVER_v870_CRM_DATA_MODEL - staff mounts whose routes address one application by id (router-relative patterns).
@@ -535,6 +542,12 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/payments/stripe/webhook", roles: [] },
   { method: "POST", path: "/api/kyc/webhooks/:provider", roles: [] },
   { method: "POST", path: "/api/lender-webhooks/:connectionId/:token", roles: [] }, // BF_SERVER_v873_LENDER_API
+  // BF_SERVER_v874_MARKETING_TOOLS - the website kit on other websites (public key + website address check)
+  { method: "GET", path: "/api/kit/:key/kit.js", roles: [] },
+  { method: "POST", path: "/api/kit/:key/forms/:formId", roles: [] },
+  { method: "POST", path: "/api/kit/:key/chat", roles: [] },
+  { method: "POST", path: "/api/kit/:key/track", roles: [] },
+  { method: "POST", path: "/api/kit/:key/consent", roles: [] },
   { method: "GET", path: "/api/client/quotes/applications/:id", roles: [] },
   { method: "GET", path: "/api/client/quotes/:qid", roles: [] },
   { method: "GET", path: "/api/client/quotes/:qid/pdf", roles: [] },

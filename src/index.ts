@@ -254,6 +254,12 @@ export async function start(): Promise<void> {
     try { const w = startPaymentLinksWorker(pool); workerStops.push(w.stop); console.log("[startup] payment-links worker started"); }
     catch (err) { console.error("[startup] payment-links worker failed to start:", err); }
 
+    // BF_SERVER_v874_MARKETING_TOOLS - lead scores refreshed every 30 minutes, silo by silo.
+    const { startLeadScoreWorker } = await import("./workers/leadScoreWorker.js");
+    await workerStagger();
+    try { const w = startLeadScoreWorker(pool); workerStops.push(w.stop); console.log("[startup] lead-score worker started"); }
+    catch (err) { console.error("[startup] lead-score worker failed to start:", err); }
+
     // BF_SERVER_v873_LENDER_API - lender API submit retries and status / balance polling.
     const { startLenderSyncWorker } = await import("./workers/lenderSyncWorker.js");
     await workerStagger();

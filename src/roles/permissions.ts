@@ -225,6 +225,11 @@ const AREA_RULES: ReadonlyArray<[RegExp, Area]> = [
   [/^\/forecast\/stages(\/|$)/, "settings"],
   [/^\/forecast(\/|$)/, "reports"],
   [/^\/(quotes|kyc|payments)(\/|$)/, "applications"],
+  // BF_SERVER_v874_MARKETING_TOOLS - the rules behind lead scores and the website kit are marketing set-up; looking
+  // scores up (and the list of top scores) is reading contacts.
+  [/^\/lead-scores\/settings(\/|$)/, "marketing"],
+  [/^\/lead-scores(\/|$)/, "contacts"],
+  [/^\/website-kit(\/|$)/, "marketing"],
   [/^\/(marketing|automations)(\/|$)/, "marketing"], // automations (workflows) are a Marketing-role tool
   [/^\/(reporting|reports)(\/|$)/, "reports"],
   // A client's fee invoice on a file is application work; the QuickBooks connection itself is billing.

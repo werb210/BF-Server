@@ -33,12 +33,26 @@ import { randomUUID } from "node:crypto";
 import { BlobServiceClient } from "@azure/storage-blob";
 import { renderBrandedEmail, type BrandedEmailFields } from "../services/emailTemplateRender.js";
 import { resolveScheduledAt, SendScheduleError } from "../services/sendSchedule.js"; // BF_SERVER_SEND_LATER_v35
+import { parseCampaignOptions, type CampaignOptions } from "../marketing/campaignRunner.js"; // BF_SERVER_v874_MARKETING_TOOLS
+import campaignReportRoutes from "../marketing/campaignReport.js"; // BF_SERVER_v874_MARKETING_TOOLS
 
 
 const router = Router();
 
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.MARKETING_VIEW]));
+router.use(campaignReportRoutes); // BF_SERVER_v874_MARKETING_TOOLS - GET /campaign-report (this silo's campaigns)
+
+/**
+ * BF_SERVER_v874_MARKETING_TOOLS - the email campaign send options (A/B subject test, each person's best time). Sends
+ * the 400 and returns null when they do not make sense, or returns the options to store in the job's payload. No plan
+ * limits or allowances: every Boreal marketer has both options.
+ */
+function campaignOptionsOr400(req: any, res: any, subject: string): CampaignOptions | null {
+  const parsed = parseCampaignOptions(req.body ?? {}, subject);
+  if (!parsed.ok) { res.status(400).json({ error: { code: parsed.error, message: parsed.message } }); return null; }
+  return parsed.value;
+}
 router.use(adSpendAnalysisRoutes);
 router.use(adsStoryRoutes); // BF_SERVER_ADS_STORY_v707
 router.use(customerMatchRoutes); // BF_SERVER_CUSTOMER_MATCH_LISTS_v711
@@ -809,6 +823,8 @@ router.post("/email/send", safeHandler(async (req: any, res: any) => {
   const includeTags = tagArr(b.tags);
   const excludeTags = tagArr(b.excludeTags);
   if (emailAudienceMissing(tag, includeTags)) { res.status(400).json({ error: "audience_required", message: "Choose at least one tag to send to." }); return; } // BF_SERVER_v789_EMAIL_BLAST_CONSENT
+  const options = campaignOptionsOr400(req, res, subject); // BF_SERVER_v874_MARKETING_TOOLS
+  if (!options) return;
   // BF_SERVER_BLOCK_v782_VIEW_IN_BROWSER: host a public copy, inject the link.
   // BF_SERVER_EMAIL_HARDENING_v1 - landing hosting is best-effort; a failed
   // insert must not 500 the whole blast.
@@ -841,7 +857,7 @@ router.post("/email/send", safeHandler(async (req: any, res: any) => {
      VALUES ('email', $1, $2, $3, $4, $5, $6::timestamptz) RETURNING id, not_before`,
     // BF_SERVER_EMAIL_TWO_COLUMN_ONLY_v15 - `resend` rides along in the payload
     // so the worker that picks this job up honours it too.
-    [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId, resend: b.resend === true }), total, req.user?.userId ?? null, schedule.at.toISOString()],
+    [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId, resend: b.resend === true, ...options }), total, req.user?.userId ?? null, schedule.at.toISOString()],
   );
   respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total, notBefore: job.rows[0].not_before, holdMinutes: SEND_HOLD_MINUTES, scheduled: schedule.scheduled });
 }));
@@ -1144,6 +1160,8 @@ router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
   const includeTags = tagArr(b.tags);
   const excludeTags = tagArr(b.excludeTags);
   if (emailAudienceMissing(tag, includeTags)) { res.status(400).json({ error: "audience_required", message: "Choose at least one tag to send to." }); return; } // BF_SERVER_v789_EMAIL_BLAST_CONSENT
+  const options = campaignOptionsOr400(req, res, subject); // BF_SERVER_v874_MARKETING_TOOLS
+  if (!options) return;
   // BF_SERVER_BLOCK_v782_VIEW_IN_BROWSER
   // BF_SERVER_EMAIL_HARDENING_v1 - landing hosting is best-effort here too.
   let htmlOut = html;
@@ -1172,7 +1190,7 @@ router.post("/email/send-template", safeHandler(async (req: any, res: any) => {
     `INSERT INTO marketing_send_jobs (channel, silo, tag, payload, total, created_by, not_before) VALUES ('email', $1, $2, $3, $4, $5, $6::timestamptz) RETURNING id, not_before`,
     // BF_SERVER_EMAIL_TWO_COLUMN_ONLY_v15 - `resend` rides along in the payload
     // so the worker that picks this job up honours it too.
-    [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId, resend: b.resend === true }), total, req.user?.userId ?? null, schedule.at.toISOString()],
+    [silo, tag, JSON.stringify({ subject, html: htmlOut, tags: includeTags, excludeTags, templateId, resend: b.resend === true, ...options }), total, req.user?.userId ?? null, schedule.at.toISOString()],
   );
   respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total, notBefore: job.rows[0].not_before, holdMinutes: SEND_HOLD_MINUTES, scheduled: schedule.scheduled });
 }));
