@@ -208,6 +208,7 @@ export const EnvSchema = z
     GOOGLE_PLACES_API_KEY: z.string().optional(), // credential (secret); read in services/credit/research.ts
     LANDING_BASE_URL: z.string().optional(), // URL; read in services/landingPage.service.ts
     LEAD_ALERT_SMS_TO: z.string().optional(), // phone number(s), E.164; read in services/googleHealth.ts
+    LENDER_CREDENTIALS_ENCRYPTION_KEY: z.string().optional(), // credential (secret), 32 bytes as base64 or 64 hex; read in lenderConnectors/crypto.ts // BF_SERVER_v873_LENDER_API
     LENDER_PACKAGE_ATTACH_MAX_BYTES: z.string().optional(), // number; read in services/lenders/packageLink.ts
     LENDER_PACKAGE_BATCH: z.string().optional(), // batch size per tick; read in workers/lenderPackageWorker.ts
     LENDER_PACKAGE_LINK_DAYS: z.string().optional(), // number; read in services/lenders/packageLink.ts

@@ -152,6 +152,9 @@ import forecastRoutes from "./forecast.js";
 import kycRoutes from "./kyc.js";
 import clientKycRoutes from "./clientKyc.js";
 import paymentsRoutes from "./payments.js";
+// BF_SERVER_v873_LENDER_API - lender API connections and the lenders' signed webhooks.
+import lenderConnectionsRoutes from "./lenderConnections.js";
+import lenderWebhooksRoutes from "./lenderWebhooks.js";
 import { scopedAssistantRequest } from "../visibility/scopedDb.js";
 import { recordGuard, type GuardRule } from "../visibility/recordGuard.js";
 import mayaStaffInsightsRouter from "./mayaStaffInsights.js"; // BF_SERVER_MAYA_INSIGHTS_v655
@@ -429,6 +432,9 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/kyc", router: kycRoutes }, // staff ID verification, Admin settings, public signed vendor webhook
   { path: "/client/kyc", router: clientKycRoutes }, // the applicant's own verifications (OTP phone)
   { path: "/payments", router: paymentsRoutes }, // payment links for broker fees; public /pay and the signed Stripe webhook
+  // BF_SERVER_v873_LENDER_API
+  { path: "/lender-connections", router: lenderConnectionsRoutes }, // Lenders > Connection (Admin); Submit by API / sync on a file (staff)
+  { path: "/lender-webhooks", router: lenderWebhooksRoutes }, // public: a lender's status pushes (address secret + signature)
 ];
 
 // BF_SERVER_v870_CRM_DATA_MODEL - staff mounts whose routes address one application by id (router-relative patterns).
@@ -448,6 +454,7 @@ export const RECORD_GUARDED_MOUNTS: Record<string, GuardRule[]> = {
   "/quotes": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }], // BF_SERVER_v872_QUOTES
   "/kyc": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }], // BF_SERVER_v872_KYC
   "/forecast": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }], // BF_SERVER_v872_FORECAST
+  "/lender-connections": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }], // BF_SERVER_v873_LENDER_API
   "/lender-referrals": [{ pattern: /^\/by-application\/([^/]+)(?:\/|$)/, kind: "application" }],
 };
 
@@ -527,6 +534,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET", path: "/api/payments/pay/:token/done", roles: [] },
   { method: "POST", path: "/api/payments/stripe/webhook", roles: [] },
   { method: "POST", path: "/api/kyc/webhooks/:provider", roles: [] },
+  { method: "POST", path: "/api/lender-webhooks/:connectionId/:token", roles: [] }, // BF_SERVER_v873_LENDER_API
   { method: "GET", path: "/api/client/quotes/applications/:id", roles: [] },
   { method: "GET", path: "/api/client/quotes/:qid", roles: [] },
   { method: "GET", path: "/api/client/quotes/:qid/pdf", roles: [] },

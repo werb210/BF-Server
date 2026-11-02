@@ -140,7 +140,13 @@ export async function dispatchToSelected(
   // v_DISPATCH_LAZY_GOOGLE_ADAPTER_v1 — optional injection seam so the Google
   // Sheet adapter loader can be stubbed in unit tests (the real lazy import is
   // not interceptable by module mocks). Production callers pass two args.
-  deps: { loadGoogleAdapter?: () => Promise<any> } = {}
+  deps: {
+    loadGoogleAdapter?: () => Promise<any>;
+    // BF_SERVER_v873_LENDER_API - "Submit by API" (and the worker's retries): send through the lender's connector only,
+    // with no email fallback; a lender without a usable connection is reported as failed.
+    forceConnector?: boolean;
+    actorUserId?: string | null;
+  } = {}
 ): Promise<string[]> {
   // BF_SERVER_FRAUD_ENFORCE_v50 - refuse before any package is built or sent.
   // This is the single choke point every submission path funnels through.
@@ -196,7 +202,7 @@ export async function dispatchToSelected(
 
   const sent: string[] = [];
   for (const l of lenders) {
-    const method = (l.submission_method ?? "email").toLowerCase();
+    let method = (l.submission_method ?? "email").toLowerCase();
     let ok = false;
     let error: string | null = null;
     let deliveredTo: string | null = null;
@@ -232,7 +238,47 @@ export async function dispatchToSelected(
       })),
     });
 
-    if (method === "email") {
+    // BF_SERVER_v873_LENDER_API - a lender with an enabled API connection gets the package through its
+    // connector. On failure the email below is the fallback when the connection allows it (and this is a normal Send).
+    let sentByConnector = false;
+    try {
+      const lenderApi = await import("../../lenderConnectors/submit.js");
+      const usable = await lenderApi.usableConnection(ctx.pool as any, l.lender_id);
+      const useApi = usable.reason === null && (deps.forceConnector || usable.connection.submit_by_api);
+      if (useApi && usable.reason === null) {
+        const fallbackOk = !deps.forceConnector && usable.connection.email_fallback && Boolean((l.submission_email ?? "").trim());
+        const pkgForApi = await lenderApi.buildLenderPackage(ctx.pool, {
+          applicationId: ctx.applicationId, lenderId: l.lender_id, lenderName: l.name, fields,
+          signedApplicationPdf: signedApp, additionalSignedDocs: lenderAdditionalSignedDocs, creditSummaryPdf: creditSummary, documents: docs,
+        });
+        const out = await lenderApi.submitViaConnector(ctx.pool as any, {
+          connection: usable.connection, pkg: pkgForApi, actorUserId: deps.actorUserId ?? null,
+          source: deps.actorUserId ? "staff" : "api", emailFallbackAvailable: fallbackOk,
+        });
+        if (out.ok) {
+          ok = true;
+          sentByConnector = true;
+          deliveredTo = `${usable.connection.connector} API${out.externalId ? ` (${out.externalId})` : ""}`;
+        } else if (fallbackOk) {
+          method = "email";
+          error = `api_failed_email_fallback: ${out.error}`;
+        } else {
+          error = `api_failed: ${out.error}`.slice(0, 500);
+          sentByConnector = true; // handled: do not also run the lender's other method
+        }
+      } else if (deps.forceConnector) {
+        error = `api_unavailable: ${usable.reason ?? "connection_not_set_to_submit"}`;
+        sentByConnector = true;
+      }
+    } catch (apiErr) {
+      console.warn("[dispatch] lender API connector step failed", { applicationId: ctx.applicationId, lender: l.name, message: apiErr instanceof Error ? apiErr.message : String(apiErr) });
+      if (deps.forceConnector) { error = `api_request_failed: ${apiErr instanceof Error ? apiErr.message : String(apiErr)}`; sentByConnector = true; }
+    }
+    const apiFallbackError = error;
+
+    if (sentByConnector) {
+      // Sent (or refused) through the lender's connector above.
+    } else if (method === "email") {
       const __ownerSigHtml = await resolveOwnerSignatureHtml(ctx.pool, ctx.applicationId); // v693
       // BF_SERVER_BLOCK_v456_LENDER_PACKAGE_LINK - attach small packages, link large ones.
       const delivery = await prepareEmailDelivery(ctx.pool, {
@@ -257,6 +303,16 @@ export async function dispatchToSelected(
         ok = r.ok;
         if (r.ok) deliveredTo = r.deliveredTo;
         else error = r.error;
+      }
+      // BF_SERVER_v873_LENDER_API - this email was the fallback for a failed API send: log it on the lender API timeline.
+      if (apiFallbackError && apiFallbackError.startsWith("api_failed_email_fallback")) {
+        try {
+          const { recordEmailFallback } = await import("../../lenderConnectors/submit.js");
+          await recordEmailFallback(ctx.pool as any, ctx.applicationId, l.lender_id, l.name, apiFallbackError.replace(/^api_failed_email_fallback: /, ""), ok);
+        } catch (e) {
+          console.warn("[dispatch] email fallback log failed", { applicationId: ctx.applicationId, message: e instanceof Error ? e.message : String(e) });
+        }
+        if (ok) error = null;
       }
 
       // BF_SERVER_DUAL_DISPATCH_v1 - a lender configured for email that also has

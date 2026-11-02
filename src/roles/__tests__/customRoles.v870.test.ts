@@ -109,6 +109,9 @@ describe("the permission matrix", () => {
     expect(r("PATCH", "/crm/companies/1")).toEqual({ area: "companies", action: "edit" });
     expect(r("DELETE", "/portal/applications/1")).toEqual({ area: "applications", action: "delete" });
     expect(r("GET", "/credit-summary-v2/1/export.pdf")).toEqual({ area: "applications", action: "export" });
+    // BF_SERVER_v873_LENDER_API - Submit by API on a file is application work; the connection set-up is a lender setting.
+    expect(r("POST", "/lender-connections/applications/a1/lenders/l1/submit")).toEqual({ area: "applications", action: "create" });
+    expect(r("PUT", "/lender-connections/lenders/l1")).toEqual({ area: "lenders", action: "edit" });
     expect(r("GET", "/portal/documents/1")).toEqual({ area: "documents", action: "view" });
     expect(r("GET", "/portal/lender-products")).toEqual({ area: "lenders", action: "view" });
     expect(r("POST", "/quickbooks/applications/a1/retry")).toEqual({ area: "applications", action: "create" });

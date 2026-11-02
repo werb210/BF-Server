@@ -201,6 +201,10 @@ const AREA_RULES: ReadonlyArray<[RegExp, Area]> = [
   [/^\/crm(\/|$)/, "contacts"],
   [/^\/portal\/documents(\/|$)/, "documents"],
   [/^\/documents(\/|$)/, "documents"],
+  // BF_SERVER_v873_LENDER_API - Submit by API / sync / documents on a file are application work; the connection set-up
+  // (credentials, mapping, webhook address, submission log) is a lender setting.
+  [/^\/lender-connections\/applications(\/|$)/, "applications"],
+  [/^\/lender-connections(\/|$)/, "lenders"],
   [/^\/portal\/(lenders|lender-products)(\/|$)/, "lenders"],
   [/^\/(lenders|lender-products|lender-qa)(\/|$)/, "lenders"],
   [/^\/portal\/applications(\/|$)/, "applications"],
