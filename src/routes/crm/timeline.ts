@@ -179,6 +179,7 @@ export async function loadCrmTimeline(isContact: boolean, id: string, silo: stri
                   WHEN 'automation' THEN ('Automation: ' || COALESCE(NULLIF(payload->>'rule_name', '') || ' - ', '') || COALESCE(payload->>'step', 'step')
                                           || CASE WHEN COALESCE(payload->>'outcome', 'done') <> 'done' THEN ' (' || (payload->>'outcome') || ')' ELSE '' END)
                   WHEN 'contract_activity' THEN COALESCE(NULLIF(payload->>'title', ''), 'Contract activity') -- BF_SERVER_v864_ACTIVE_CONTRACTS
+                  WHEN 'call_script' THEN COALESCE(NULLIF(payload->>'title', ''), 'Call script') -- BF_SERVER_v871_CALL_SCRIPTS
                   ELSE event_type END) AS title,
                (CASE WHEN event_type = 'attribution' THEN
                   NULLIF(concat_ws(' | ',
@@ -199,11 +200,13 @@ export async function loadCrmTimeline(isContact: boolean, id: string, silo: stri
                        NULLIF(COALESCE(payload->>'detail',''), '')
                      WHEN event_type = 'contract_activity' THEN
                        NULLIF(COALESCE(payload->>'detail',''), '')
+                     WHEN event_type = 'call_script' THEN
+                       NULLIF(COALESCE(payload->>'detail',''), '')
                 ELSE NULLIF(payload->>'url','') END) AS body,
                (CASE WHEN event_type = 'contract_activity' THEN payload->>'contract_id' ELSE NULL END) AS extra -- BF_SERVER_v864_ACTIVE_CONTRACTS
           FROM crm_timeline_events
          WHERE contact_id = $1
-           AND event_type IN ('contract_activity','sequence_step_sent','email_open','email_click','email_bounce','email_dropped','email_spamreport','email_unsubscribe','email_group_unsubscribe','sms_link_clicked','attribution','email_marketing_sent','client_notice_sent','sms_marketing_sent','email_cascade_sent','email_notice_sent','automation')
+           AND event_type IN ('call_script','contract_activity','sequence_step_sent','email_open','email_click','email_bounce','email_dropped','email_spamreport','email_unsubscribe','email_group_unsubscribe','sms_link_clicked','attribution','email_marketing_sent','client_notice_sent','sms_marketing_sent','email_cascade_sent','email_notice_sent','automation')
         UNION ALL
         -- BF_SERVER_TEAMS_TRANSCRIPT_POLLER_v1 - Teams meetings with their
         -- recording link + transcript. Reuses kind 'recording', which the portal

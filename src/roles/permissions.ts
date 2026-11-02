@@ -182,6 +182,8 @@ const ALWAYS_ALLOWED: ReadonlyArray<{ methods?: RegExp; path: RegExp }> = [
   { path: /^\/lead-rotation\/me$/ },
   { path: /^\/task-defaults(\/|$)/ },
   { methods: /^(GET|HEAD)$/, path: /^\/custom-fields(\/[^/]+)?\/?$/ },
+  { path: /^\/call-queues\/me$/ }, // BF_SERVER_v871_CALL_QUEUES - my own "available for queue calls" switch
+  { methods: /^(GET|HEAD)$/, path: /^\/call-scripts\/?$/ }, // BF_SERVER_v871_CALL_SCRIPTS - the scripts to choose from
   { methods: /^(GET|HEAD)$/, path: /^\/retention\/(status|applications\/[^/]+)$/ },
   { methods: /^(GET|HEAD|POST)$/, path: /^\/privacy\/(consent|region)$/ },
 ];
@@ -207,6 +209,9 @@ const AREA_RULES: ReadonlyArray<[RegExp, Area]> = [
   [/^\/(communications|messages|conversations|email|templates)(\/|$)/, "communications"],
   [/^\/o365\/mail(\/|$)/, "communications"],
   [/^\/(calls|voice|telephony)(\/|$)/, "calls"],
+  [/^\/call-scripts\/runs(\/|$)/, "calls"], // BF_SERVER_v871_CALL_SCRIPTS - filling in a script is part of the call
+  [/^\/call-queues\/callbacks(\/|$)/, "calls"], // BF_SERVER_v871_CALL_QUEUES
+  [/^\/(call-scripts|call-queues)(\/|$)/, "settings"], // BF_SERVER_v871_CALLING_TOOLS - Admin set-up
   [/^\/(marketing|automations)(\/|$)/, "marketing"], // automations (workflows) are a Marketing-role tool
   [/^\/(reporting|reports)(\/|$)/, "reports"],
   // A client's fee invoice on a file is application work; the QuickBooks connection itself is billing.

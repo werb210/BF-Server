@@ -242,6 +242,12 @@ export async function start(): Promise<void> {
     try { const w = startBookingRemindersWorker(pool); workerStops.push(w.stop); console.log("[startup] booking-reminders worker started"); }
     catch (err) { console.error("[startup] booking-reminders worker failed to start:", err); }
 
+    // BF_SERVER_v871_CALL_QUEUES - call queues: offers nobody answered, callers past the longest wait, dispatch.
+    const { startCallQueueWorker } = await import("./workers/callQueueWorker.js");
+    await workerStagger();
+    try { const w = startCallQueueWorker(pool); workerStops.push(w.stop); console.log("[startup] call-queue worker started"); }
+    catch (err) { console.error("[startup] call-queue worker failed to start:", err); }
+
     // BF_SERVER_BLOCK_v146_LENDER_PACKAGE_WORKER_v1
     const { startLenderPackageWorker } = await import("./workers/lenderPackageWorker.js");
     await workerStagger();

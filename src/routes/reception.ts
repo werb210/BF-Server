@@ -34,6 +34,7 @@ import { awayTwiml, openInboundRecord, ringDirectLine, staffVoicemail } from "..
 import { DEFAULT_RING_SECONDS, allOptions, chooseOption, findOption, isRoleRef, officeOpen, optionsPrompt, promptText, type MenuOption, type MenuTarget, type PhoneMenu, type Prompt } from "../phoneMenu/menu.js";
 import { loadMenu, readAudio } from "../phoneMenu/store.js";
 import { handleBlockedCall } from "../voice/blockedNumbers.js";
+import { mainLineQueueId, queueUsable, routeToQueue } from "../callQueues/reception.js"; // BF_SERVER_v871_CALL_QUEUES
 
 const router = Router();
 
@@ -410,6 +411,14 @@ async function routeTarget(v: any, req: Request, menu: PhoneMenu, target: MenuTa
     return;
   }
   if (target.type === "meeting") { v.redirect({ method: "POST" }, `${BASE}/meeting`); return; }
+  // BF_SERVER_v871_CALL_QUEUES - into a call queue; a queue that cannot take the call -> the no-answer route.
+  if (target.type === "queue") {
+    const callSid = String(req.body?.CallSid ?? "").trim();
+    if (!(await routeToQueue(v, { callSid, from: callerFrom(req), noticeSaid: greetingSaysRecorded(menu) }, target.queueId))) {
+      await noAnswer(v, req, menu, ctx, "Sorry, nobody can take your call right now.", null);
+    }
+    return;
+  }
   if (target.type === "ai") {
     const action = `${BASE}/ai?ref=${encodeURIComponent(ctx.ref)}${ctxQuery(ctx)}`;
     const g = v.gather({ input: "speech", speechTimeout: "auto", timeout: 6, action, method: "POST" });
@@ -534,12 +543,26 @@ router.post("/greeting", twilioWebhookValidation, safeHandler(async (req: Reques
     await routeTarget(v, req, menu, menu.afterHours, { ref: "after", label: "", fallback: false, forUserId: null });
     return send(res, v);
   }
+  // BF_SERVER_v871_CALL_QUEUES - when an Admin sends the main line to a queue, callers hear the greeting and wait there.
+  // With no main-line queue (the default) nothing here runs and the menu is exactly as before; a queue that cannot take
+  // the call leaves the caller with the menu.
+  const mainQueue = again ? null : await mainLineQueueId();
+  if (mainQueue && await queueUsable(mainQueue)) {
+    const qv = await newVR();
+    speak(qv, menu.greeting, menu.greeting.mode === "tts" ? menu.greeting.text : "");
+    if (await routeToQueue(qv, { callSid: String(req.body?.CallSid ?? "").trim(), from: callerFrom(req), noticeSaid: greetingSaysRecorded(menu) }, mainQueue)) return send(res, qv);
+  }
   const action = `${BASE}/company${again ? "?again=1" : ""}`;
   const g = v.gather({ input: "speech dtmf", numDigits: 8, finishOnKey: "#", speechTimeout: "auto", timeout: 3, action, method: "POST" });
   speak(g, menu.greeting, promptText(menu.greeting, menu.options, menu.announceOptions));
   v.redirect({ method: "POST" }, action);
   return send(res, v);
 }));
+
+/** BF_SERVER_v871_CALL_QUEUES - the greeting already tells callers the call may be recorded (Boreal's does). */
+function greetingSaysRecorded(menu: PhoneMenu): boolean {
+  return menu.greeting.mode === "tts" && /\brecorded\b/i.test(menu.greeting.text);
+}
 
 /** BF_SERVER_v827_CONFERENCE_DIAL - speech that is really the greeting heard back (speakerphone echo), not an answer. */
 export function looksLikeEcho(speechText: string): boolean {

@@ -11,6 +11,7 @@
 //     voicemail         a person's private voicemail, or the shared voicemail, after an optional message
 //     ai                the AI receptionist: the caller says what they need and is sent to the matching option
 //     meeting           the meeting dial-in (six-digit access code)
+//     queue             a call queue (BF_SERVER_v871_CALL_QUEUES): hold music, place in line, the longest-free person rings
 //   when nothing fits   ask once more (optional), then the chosen option
 //   hours + holidays    Alberta time (UTC-6 all year); outside them the after-hours greeting and choice
 //   no answer           where a call goes when nobody picks up (default: the person's own voicemail; the shared
@@ -38,6 +39,8 @@ export type MenuTarget =
   | { type: "voicemail"; userId: string | null; message: string }
   | { type: "ai" }
   | { type: "meeting" }
+  /** BF_SERVER_v871_CALL_QUEUES - a call queue; an archived or missing queue falls back to the no-answer route. */
+  | { type: "queue"; queueId: string }
   | { type: "submenu"; menu: SubMenu };
 
 export type Prompt = { mode: "tts" | "audio"; text: string; audioId: string | null };
@@ -180,7 +183,7 @@ function checkPrompt(raw: unknown, key: string, errors: Errors, audioIds: Set<st
   return { mode, text, audioId: mode === "audio" ? audioId : null };
 }
 
-type Ctx = { users: Set<string>; audio: Set<string>; ids: Set<string> };
+type Ctx = { users: Set<string>; audio: Set<string>; ids: Set<string>; queues: Set<string> };
 
 function checkTarget(raw: unknown, key: string, errors: Errors, ctx: Ctx, allow: MenuTarget["type"][], depth: number): MenuTarget {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, any>;
@@ -215,6 +218,12 @@ function checkTarget(raw: unknown, key: string, errors: Errors, ctx: Ctx, allow:
     if (message.length > MAX_TEXT) errors[`${key}.message`] = `Keep it under ${MAX_TEXT} characters.`;
     return { type, userId: id, message };
   }
+  if (type === "queue") {
+    // BF_SERVER_v871_CALL_QUEUES
+    const id = str(r.queueId);
+    if (!ctx.queues.has(id)) errors[key] = ctx.queues.size ? "Choose an active call queue." : "Set up a call queue first (Settings > Call queues).";
+    return { type, queueId: id };
+  }
   if (type === "submenu") {
     if (depth > 0) { errors[key] = "A second menu cannot hold another menu."; return { type: "voicemail", userId: null, message: "" }; }
     const m = (r.menu && typeof r.menu === "object" ? r.menu : {}) as Record<string, any>;
@@ -240,7 +249,7 @@ function checkOptions(raw: unknown, key: string, errors: Errors, ctx: Ctx, depth
   if (list.length > 12) errors[key] = "A menu can have at most 12 options (9 keys and 3 spoken only).";
   const seen = new Set<string>();
   const out: MenuOption[] = [];
-  const allow: MenuTarget["type"][] = depth === 0 ? ["user", "group", "voicemail", "ai", "meeting", "submenu"] : ["user", "group", "voicemail", "ai", "meeting"];
+  const allow: MenuTarget["type"][] = depth === 0 ? ["user", "group", "voicemail", "ai", "meeting", "queue", "submenu"] : ["user", "group", "voicemail", "ai", "meeting", "queue"];
   list.slice(0, 12).forEach((o: any, i: number) => {
     const k = `${key}.${i}`;
     const id = str(o?.id);
@@ -283,11 +292,11 @@ function checkWeekly(raw: unknown, errors: Errors): PhoneMenu["hours"]["weekly"]
 
 /** Checks an edited menu against the active users and uploaded recordings. Role refs (@sales / @underwriting) are
  *  accepted only when they still resolve (the caller passes them in userIds). */
-export function validateMenu(raw: unknown, ctx: { userIds: Iterable<string>; audioIds: Iterable<string> }):
+export function validateMenu(raw: unknown, ctx: { userIds: Iterable<string>; audioIds: Iterable<string>; queueIds?: Iterable<string> }):
   { ok: true; value: PhoneMenu } | { ok: false; errors: Errors } {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, any>;
   const errors: Errors = {};
-  const c: Ctx = { users: new Set(ctx.userIds), audio: new Set(ctx.audioIds), ids: new Set() };
+  const c: Ctx = { users: new Set(ctx.userIds), audio: new Set(ctx.audioIds), ids: new Set(), queues: new Set(ctx.queueIds ?? []) };
   const greeting = checkPrompt(r.greeting, "greeting", errors, c.audio);
   const afterHoursGreeting = checkPrompt(r.afterHoursGreeting, "afterHoursGreeting", errors, c.audio);
   const hours = { enabled: r.hours?.enabled === true, weekly: checkWeekly(r.hours?.weekly, errors) };
@@ -298,7 +307,7 @@ export function validateMenu(raw: unknown, ctx: { userIds: Iterable<string>; aud
   if (!Number.isFinite(ringSeconds) || ringSeconds < 10 || ringSeconds > 60) errors["noAnswer.ringSeconds"] = "Ring for 10 to 60 seconds.";
   const noAnswer = {
     ringSeconds: Number.isFinite(ringSeconds) ? Math.min(60, Math.max(10, ringSeconds)) : DEFAULT_RING_SECONDS,
-    target: checkTarget(r.noAnswer?.target ?? { type: "voicemail", userId: null }, "noAnswer.target", errors, c, ["user", "group", "voicemail"], 1),
+    target: checkTarget(r.noAnswer?.target ?? { type: "voicemail", userId: null }, "noAnswer.target", errors, c, ["user", "group", "voicemail", "queue"], 1),
   };
   const holidays: PhoneMenu["holidays"] = [];
   const rawHolidays = Array.isArray(r.holidays) ? r.holidays : [];

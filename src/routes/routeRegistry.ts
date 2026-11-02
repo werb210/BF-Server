@@ -141,6 +141,10 @@ import customFieldsRoutes from "./customFields.js";
 import salesTeamsRoutes from "./salesTeams.js";
 import pipelinesRoutes from "./pipelines.js";
 import rolesRoutes from "./roles.js";
+// BF_SERVER_v871_CALLING_TOOLS - call scripts and call queues.
+import callScriptsRoutes from "./callScripts.js";
+import callQueuesRoutes from "./callQueues.js";
+import callQueueWebhooksRoutes from "./callQueueWebhooks.js";
 import { scopedAssistantRequest } from "../visibility/scopedDb.js";
 import { recordGuard, type GuardRule } from "../visibility/recordGuard.js";
 import mayaStaffInsightsRouter from "./mayaStaffInsights.js"; // BF_SERVER_MAYA_INSIGHTS_v655
@@ -347,6 +351,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/track", router: emailPixelRoutes }, // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING (public)
   { path: "/voice", router: voiceCallsRoutes },
   { path: "/webhooks/twilio/reception", router: receptionRoutes }, // BF_SERVER_RECEPTION_v1
+  { path: "/webhooks/twilio/queue", router: callQueueWebhooksRoutes }, // BF_SERVER_v871_CALL_QUEUES (Twilio-signed)
   { path: "/webhooks/twilio/ks", router: ksVoiceRoutes }, // BF_SERVER_v853_KS_PHONE_SUPPORT - the Keystone sales / support line (Twilio)
   { path: "/ks/support", router: ksSupportRoutes }, // BF_SERVER_v853_KS_PHONE_SUPPORT - Keystone support tickets + phone settings
   { path: "/meetings", router: meetingsRoutes }, // BF_SERVER_MEETING_ROOMS_v736
@@ -407,6 +412,9 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/teams", router: salesTeamsRoutes }, // Settings > Teams: teams, members, record visibility (Admin); GET /me staff
   { path: "/pipelines", router: pipelinesRoutes }, // extra pipelines (Admin builds, staff move deals); Lending stays locked
   { path: "/roles", router: rolesRoutes }, // Settings > Users & roles: custom roles (full Admin); GET /me every staff member
+  // BF_SERVER_v871_CALLING_TOOLS
+  { path: "/call-scripts", router: callScriptsRoutes }, // Settings > Call scripts (Admin builds), runs on contacts, applications and calls (staff)
+  { path: "/call-queues", router: callQueuesRoutes }, // Settings > Call queues: set-up and live panel (Admin), my availability (staff)
 ];
 
 // BF_SERVER_v870_CRM_DATA_MODEL - staff mounts whose routes address one application by id (router-relative patterns).
@@ -487,6 +495,15 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/webhooks/twilio/reception/away-choice", roles: [] }, // BF_SERVER_v821_DIALER
   { method: "POST", path: "/api/webhooks/twilio/reception/leg-status", roles: [] }, // BF_SERVER_v821_DIALER
   { method: "POST", path: "/api/webhooks/twilio/reception/recording-notice", roles: [] }, // BF_SERVER_v821_DIALER
+  // BF_SERVER_v871_CALL_QUEUES - Twilio-signed queue webhooks.
+  { method: "POST", path: "/api/webhooks/twilio/queue/wait", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/queue/left", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/queue/overflow", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/queue/overflow-choice", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/queue/bridge", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/queue/connecting", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/queue/agent-done", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/queue/agent-status", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/conference/join", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/conference/status", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/call/status", roles: [] },
