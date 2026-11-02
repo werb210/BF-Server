@@ -41,6 +41,18 @@ import { markReady } from "../startupState.js";
 import { deps } from "../system/deps.js";
 
 const MIGRATION = "migrations/2026_11_11_v870_crm_data_model.sql";
+// BF_SERVER_v882_DEADLOCK_RETRY - the integration files share one database and run in parallel, so re-running this
+// migration's ALTER TABLEs on users / contacts / applications can deadlock with another file's queries (it did on
+// 2026-11-02). Postgres aborts one side; the migration is idempotent, so running it again is the right answer.
+async function runMigrationRetryingDeadlocks(): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try { await pool.query(readFileSync(MIGRATION, "utf8")); return; }
+    catch (e: any) {
+      if (attempt >= 5 || !["40P01", "55P03"].includes(String(e?.code))) throw e;
+      await new Promise((r) => setTimeout(r, 200 * attempt));
+    }
+  }
+}
 const tag = randomUUID().slice(0, 8);
 const ADMIN = randomUUID(), S1 = randomUUID(), S2 = randomUUID(), S3 = randomUUID(), S4 = randomUUID();
 const PEOPLE = [ADMIN, S1, S2, S3, S4];
@@ -154,8 +166,8 @@ describe("v870 CRM data model (real Postgres)", () => {
 
   it("the migration runs twice and changes nobody's role, visibility or access; built-in roles default to All", async () => {
     const before = (await pool.query(`SELECT id::text, role, record_visibility, custom_role_id, token_version FROM users ORDER BY id`)).rows;
-    await pool.query(readFileSync(MIGRATION, "utf8"));
-    await pool.query(readFileSync(MIGRATION, "utf8"));
+    await runMigrationRetryingDeadlocks();
+    await runMigrationRetryingDeadlocks();
     const after = (await pool.query(`SELECT id::text, role, record_visibility, custom_role_id, token_version FROM users ORDER BY id`)).rows;
     expect(after).toEqual(before);
     const roles = (await pool.query(`SELECT role, visibility FROM role_record_visibility WHERE role IN ('Staff', 'Ops', 'Marketing') ORDER BY role`)).rows;
