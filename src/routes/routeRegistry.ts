@@ -146,6 +146,9 @@ import watchDeviceRoutes from "../watch/deviceRoutes.js";
 import watchDataRoutes from "../watch/dataRoutes.js";
 import brokerToolsRoutes from "./brokerTools.js"; // BF_SERVER_v865_BROKER_TOOLS
 import clientBrokerRoutes from "./clientBroker.js"; // BF_SERVER_v865_BROKER_TOOLS
+import dealDeskRoutes from "./dealDesk.js"; // BF_SERVER_v867_BROKER_TOOLS_2
+import vendorPortalRoutes from "./vendorPortal.js"; // BF_SERVER_v867_BROKER_TOOLS_VENDORS
+import clientCreditRoutes from "./clientCredit.js"; // BF_SERVER_v867_BROKER_TOOLS_CREDIT_BUREAU
 import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 export type ApiRoute = {
@@ -292,6 +295,10 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   // BF_SERVER_v865_BROKER_TOOLS - deal tools for staff, and the client app's side of them.
   { path: "/broker-tools", router: brokerToolsRoutes },
   { path: "/client-broker", router: clientBrokerRoutes },
+  // BF_SERVER_v867_BROKER_TOOLS_2 - invoices, credit lines, rate cards and structuring, scorecards, contracts, vendors, bureau.
+  { path: "/deal-desk", router: dealDeskRoutes },
+  { path: "/vendor-portal", router: vendorPortalRoutes }, // BF_SERVER_v867_BROKER_TOOLS_VENDORS - vendor / dealer portal (its own login check)
+  { path: "/client-credit", router: clientCreditRoutes }, // BF_SERVER_v867_BROKER_TOOLS_CREDIT_BUREAU - client consent to a credit check
   { path: "/reporting", router: reportingRoutes },
   { path: "/reports", router: reportsRoutes },
   { path: "/settings", router: settingsRoutes },
