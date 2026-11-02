@@ -40,6 +40,7 @@ export const INTEGRATION_TEST_FILES: string[] = [
   "src/__tests__/ksCrm.v850.integration.test.ts", // BF_SERVER_v850_KS_CRM - needs Postgres
   "src/__tests__/crmUnify.v856.integration.test.ts", // BF_SERVER_v856_CRM_UNIFY - needs Postgres
   "src/__tests__/brokerTools.v865.integration.test.ts", // BF_SERVER_v865_BROKER_TOOLS - needs Postgres
+  "src/__tests__/brokerTools2.v867.integration.test.ts", // BF_SERVER_v867_BROKER_TOOLS_2 - needs Postgres
   "src/__tests__/quickbooks.v852.integration.test.ts", // BF_SERVER_v852_CALC_QBO - needs Postgres
   "src/__tests__/lenderReferrals.v825.integration.test.ts", // BF_SERVER_v825_LENDER_REFERRALS - needs Postgres
   "src/__tests__/ksWidget.v854.integration.test.ts", // BF_SERVER_v854_KS_WIDGETS - needs Postgres

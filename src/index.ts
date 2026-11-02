@@ -496,6 +496,11 @@ export async function start(): Promise<void> {
     await workerStagger();
     try { const w = startClientStatusWorker(pool); workerStops.push(w.stop); console.log("[startup] client-status worker started"); }
     catch (err) { console.error("[startup] client-status worker failed to start:", err); }
+    // BF_SERVER_v867_BROKER_TOOLS_2 - invoice equipment onto contracts, credit line expiry reminders, contract signing status.
+    const { startBrokerToolsWorker } = await import("./workers/brokerToolsWorker.js");
+    await workerStagger();
+    try { const w = startBrokerToolsWorker(pool); workerStops.push(w.stop); console.log("[startup] broker-tools worker started"); }
+    catch (err) { console.error("[startup] broker-tools worker failed to start:", err); }
 
     // BF_SERVER_BLOCK_v665 — graceful shutdown. On container recycle the workers'
     // poll loops must stop BEFORE the pool tears down, otherwise each tick queries

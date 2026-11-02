@@ -143,6 +143,8 @@ export async function gatherFacts(applicationId: string) {
       principals: principalsFrom(md), notes: md.notes ?? null },
     financials: { periods: financials.periods.map((p) => p.label), rows: financials.rows.map((r) => ({ item: r.item, values: r.values })) },
     collateral: { receivables: collateral.receivables, payables: collateral.payables, equipment: collateral.equipment, realEstate: collateral.realEstate },
+    // BF_SERVER_v867_BROKER_TOOLS_CREDIT_BUREAU - the latest bureau pull per person (score, 90-day lates, collections, bankruptcies).
+    credit_bureau: md.credit_bureau ?? null,
     research: usable.map((f) => ({ source: f.source, label: f.label, value: f.value })),
     crm_history: (timeline as any[]).slice(0, 40).map((t) => `[${t.kind}] ${String(t.ts ?? "").slice(0, 10)} ${String(t.title ?? "")} ${String(t.body ?? "").slice(0, 300)}`) };
   return { app, dealType, financials, collateral, research, facts, hasBank: bank > 0 };

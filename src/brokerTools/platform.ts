@@ -1,14 +1,13 @@
-// BF_SERVER_v865_BROKER_TOOLS - the few things that differ between Boreal's server and Keystone: Boreal has no plans
-// (every tool is on), no team record visibility (the silo check in each route is the guard), and its own brand.
+// BF_SERVER_v867_BROKER_TOOLS - the few things that differ between Boreal's server and Keystone: Boreal has no plans (every tool
+// is on), no team record visibility (the silo check in each route is the guard), no usage billing, and its own brand.
 // Everything else in src/brokerTools is identical in both.
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
 export const PLATFORM = "boreal" as const;
 
 export type BrokerFeature =
-  | "funding_conditions" | "invoice_reading" | "sales_tax"
-  | "credit_lines" | "rate_cards" | "credit_scorecards" | "contract_templates"
-  | "vendor_portal";
+  | "funding_conditions" | "sales_tax"
+  | "invoice_reading" | "credit_lines" | "rate_cards" | "credit_scorecards" | "contract_templates" | "vendor_portal" | "credit_bureau";
 
 export function passThrough(_req: Request, _res: Response, next: NextFunction): void {
   next();
@@ -17,6 +16,21 @@ export function passThrough(_req: Request, _res: Response, next: NextFunction): 
 /** Boreal has no plans: every broker tool is on. */
 export function gate(_feature: BrokerFeature): RequestHandler {
   return passThrough;
+}
+
+/** Boreal has no plans: every broker tool is on (for work outside a request, e.g. the reminders worker). */
+export async function featureOn(_feature: BrokerFeature): Promise<boolean> {
+  return true;
+}
+
+/** Keystone bills some uses (e.g. a credit bureau pull) through its operations service; Boreal does not. */
+export async function recordUsage(_kind: string, _ref: string): Promise<void> {
+  return;
+}
+
+/** Keystone counts e-signatures against the plan's allowance; Boreal does not. */
+export async function countSignings(_groupId: string, _signers: { email: string; role: string }[]): Promise<void> {
+  return;
 }
 
 /** Boreal has no team record visibility: staff who pass the silo check may see the application. */
