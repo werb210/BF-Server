@@ -1,9 +1,10 @@
-// BF_SERVER_RECEPTION_v1 (+ NOVA_VOICE_v1) — Maya phone receptionist.
-// Speech + keypad fallback. Financial: 1 client engagement (Todd + other signed-in staff,
-// not Andrew), 2 credit (Andrew). Risk Management: Todd. Formerly sales / underwriting &
-// named-lender, on their browser softphone only when genuinely available
-// (presence = hours + on-call + in-meeting + manual), else offers "take a
-// message" or "leave a voicemail". Every dead-end records to /voicemail.
+// BF_SERVER_RECEPTION_v1 (+ NOVA_VOICE_v1) — Maya phone receptionist on the 866 main line.
+// BF_SERVER_v869_PHONE_MENU - what callers hear and where each choice goes is now the phone menu in Settings
+// (src/phoneMenu/menu.ts, ported from KS-server #38). With no menu saved it is defaultBorealMenu(), which is exactly
+// the menu callers heard before: Financial (1: client engagement rings Todd plus every other free staff member except
+// Andrew; 2: credit rings Andrew), Risk Management (Todd), 3: a scheduled meeting. People ring on their apps only when
+// genuinely available (presence = hours + on-call + in-meeting + manual), then their opted-in Watch cell; every dead
+// end records a voicemail.
 //
 // Voice: defaults to Polly. When RECEPTION_NOVA_VOICE=true, every line is
 // played from Maya's nova voice via the key-gated /voice endpoint below
@@ -29,6 +30,10 @@ import {
 } from "../voice/recordedDial.js";
 import { awayStatus, identitiesOutsideHours } from "../voice/callHours.js";
 import { awayTwiml, openInboundRecord, ringDirectLine, staffVoicemail } from "../voice/staffRing.js";
+// BF_SERVER_v869_PHONE_MENU / BF_SERVER_v869_BLOCKED_NUMBERS
+import { DEFAULT_RING_SECONDS, allOptions, chooseOption, findOption, isRoleRef, officeOpen, optionsPrompt, promptText, type MenuOption, type MenuTarget, type PhoneMenu, type Prompt } from "../phoneMenu/menu.js";
+import { loadMenu, readAudio } from "../phoneMenu/store.js";
+import { handleBlockedCall } from "../voice/blockedNumbers.js";
 
 const router = Router();
 
@@ -68,6 +73,10 @@ const PHRASES: Record<string, string> = {
   reason_andrew_unavail: "Sorry, Andrew isn't available right now.",
   noanswer_todd: "Sorry, Todd didn't pick up.",
   noanswer_andrew: "Sorry, Andrew didn't pick up.",
+  // BF_SERVER_v869_PHONE_MENU - lines a saved menu can use.
+  menu_retry: "Sorry, I didn't catch that.",
+  connecting: "One moment, connecting you.",
+  ai_prompt: "In a few words, what is your call about?",
 };
 
 const audioCache = new Map<string, Buffer>();
@@ -153,6 +162,34 @@ function emit(node: any, key: string, text: string): void {
   else node.say({ voice: VOICE }, text);
 }
 
+// BF_SERVER_v869_PHONE_MENU - text from the menu, played in the nova voice when it is one of the rendered phrases
+// above (the default menu's words all are), else read by Polly. A text made of several phrases plays each in turn.
+function emitText(node: any, text: string): void {
+  const t = String(text ?? "").trim();
+  if (!t) return;
+  const whole = Object.keys(PHRASES).find((k) => PHRASES[k] === t);
+  if (whole) { emit(node, whole, t); return; }
+  const parts: string[] = [];
+  let rest = t;
+  while (rest) {
+    const k = Object.keys(PHRASES).find((key) => rest.startsWith(PHRASES[key]!) && (rest.length === PHRASES[key]!.length || rest[PHRASES[key]!.length] === " "));
+    if (!k) { node.say({ voice: VOICE }, t); return; }
+    parts.push(k);
+    rest = rest.slice(PHRASES[k]!.length).trimStart();
+  }
+  for (const k of parts) emit(node, k, PHRASES[k]!);
+}
+
+/** A menu prompt: the uploaded recording (then any announced options), or the text read aloud. */
+function speak(node: any, prompt: Prompt, text: string): void {
+  if (prompt.mode === "audio" && prompt.audioId) {
+    node.play(`${BASE}/audio/${encodeURIComponent(prompt.audioId)}`);
+    if (text) node.say({ voice: VOICE }, text);
+    return;
+  }
+  emitText(node, text);
+}
+
 function speech(req: Request): string { return String((req.body?.SpeechResult ?? "") as string).toLowerCase(); }
 function digit(req: Request): string { return String((req.body?.Digits ?? "") as string).trim(); }
 async function newVR(): Promise<any> {
@@ -161,12 +198,9 @@ async function newVR(): Promise<any> {
 }
 function send(res: Response, v: any): Response { res.setHeader("Content-Type", "text/xml"); return res.send(v.toString()); }
 
-type Target = "sales" | "underwriting" | "engagement";
-function displayFor(t: Target): string { return t === "sales" ? "Todd" : "Andrew"; }
-function lkey(t: Target): string { return t === "sales" ? "todd" : "andrew"; }
-// BF_SERVER_v831_DIALER_POLISH - who each reception choice rings.
-export function receptionFirstName(t: Target): string { return t === "sales" ? "todd" : "andrew"; }
-export function receptionUserId(t: Target): string | null {
+// BF_SERVER_v831_DIALER_POLISH - who each reception role rings (the default menu's @sales / @underwriting).
+export function receptionFirstName(t: "sales" | "underwriting" | "engagement"): string { return t === "sales" ? "todd" : "andrew"; }
+export function receptionUserId(t: "sales" | "underwriting" | "engagement"): string | null {
   const raw = t === "sales" ? process.env.RECEPTION_SALES_USER_ID : process.env.RECEPTION_UNDERWRITING_USER_ID;
   const id = String(raw ?? "").trim();
   return /^[0-9a-f-]{36}$/i.test(id) ? id : null;
@@ -182,12 +216,17 @@ function toE164(raw: string | null | undefined): string | null {
   return null;
 }
 
-async function resolveTarget(t: Target): Promise<{ identity: string | null; available: boolean; onCall: boolean; clientReady: boolean; cell: string | null; standaloneWatch: boolean; userId: string | null }> {
-  // BF_SERVER_v831_DIALER_POLISH - was ILIKE '%todd%' / '%andrew%': anyone whose first or last name merely contained
-  // "todd" (Toddington) could take Todd's calls. Now an exact first name, active users only, or the user id in
-  // RECEPTION_SALES_USER_ID / RECEPTION_UNDERWRITING_USER_ID when set.
-  const nameLike = receptionFirstName(t);
-  const pinnedId = receptionUserId(t);
+type Resolved = { identity: string | null; available: boolean; onCall: boolean; clientReady: boolean; cell: string | null; standaloneWatch: boolean; userId: string | null };
+const NOBODY: Resolved = { identity: null, available: false, onCall: false, clientReady: false, cell: null, standaloneWatch: false, userId: null };
+
+/** A person in the menu: a user id, or a reception role (@sales / @underwriting) resolved the way it always was. */
+async function resolveTarget(ref: string): Promise<Resolved> {
+  // BF_SERVER_v831_DIALER_POLISH - an exact first name, active users only, or the user id in
+  // RECEPTION_SALES_USER_ID / RECEPTION_UNDERWRITING_USER_ID when set (never ILIKE '%todd%').
+  const role = ref === "@sales" ? "sales" : ref === "@underwriting" ? "underwriting" : null;
+  const nameLike = role ? receptionFirstName(role) : "";
+  const pinnedId = role ? receptionUserId(role) : (/^[0-9a-f-]{36}$/i.test(ref) ? ref : null);
+  if (!role && !pinnedId) return NOBODY;
   try {
     const { rows } = await pool.query<{ status: string; twilio_identity: string | null; on_call: boolean; fresh: boolean; ringable: boolean; phone: string | null; standalone_watch: boolean; user_id: string | null }>(
       `SELECT sp.status, sp.twilio_identity, coalesce(sp.on_call, false) AS on_call, u.id AS user_id,
@@ -207,16 +246,19 @@ async function resolveTarget(t: Target): Promise<{ identity: string | null; avai
       [nameLike, pinnedId],
     );
     const r = rows[0];
-    if (!r) return { identity: null, available: false, onCall: false, clientReady: false, cell: null, standaloneWatch: false, userId: null };
-    // BF_SERVER_v817_DIALER_MESSAGING - was status === 'available' && fresh: a closed iOS app
-    // (stale heartbeat -> 'offline') never rang although it still receives VoIP pushes.
+    if (!r) return NOBODY;
+    // BF_SERVER_v817_DIALER_MESSAGING - a closed iOS app (stale heartbeat -> 'offline') still receives VoIP pushes.
     const clientReady = (r.status === "available" && !!r.twilio_identity && !!r.fresh) || (!!r.ringable && !!r.twilio_identity);
     return { identity: r.twilio_identity, available: r.status === "available" && !!r.twilio_identity, onCall: !!r.on_call, clientReady, cell: toE164(r.phone), standaloneWatch: !!r.standalone_watch, userId: r.user_id ?? null };
-  } catch { return { identity: null, available: false, onCall: false, clientReady: false, cell: null, standaloneWatch: false, userId: null }; }
+  } catch (err: any) {
+    console.warn("[reception] person lookup failed", { message: err?.message });
+    return NOBODY;
+  }
 }
 
-// Every signed-in, free staff member except Andrew, for the client-engagement group ring.
-async function readyStaffIdentities(excludeUserId: string | null): Promise<string[]> {
+// Every signed-in, free staff member except the listed people (the default menu: except Andrew), for a group that
+// rings "everyone else who is available".
+async function readyStaffIdentities(exceptIds: string[], exceptUnderwritingByName: boolean): Promise<string[]> {
   try {
     const { rows } = await pool.query<{ twilio_identity: string }>(
       `SELECT DISTINCT sp.twilio_identity
@@ -225,10 +267,10 @@ async function readyStaffIdentities(excludeUserId: string | null): Promise<strin
         -- in a meeting) instead of status = 'available', which excluded every closed iOS dialler.
         WHERE ${ringableStaffSql("sp", "u")}
           AND coalesce(u.active, true) = true
-          AND ($1::text IS NULL OR u.id::text <> $1)
-          AND NOT (CASE WHEN $2::text IS NOT NULL THEN u.id::text = $2 ELSE coalesce(u.first_name, '') ILIKE 'andrew' END)
+          AND NOT (u.id::text = ANY($1::text[]))
+          AND NOT ($3::boolean AND (CASE WHEN $2::text IS NOT NULL THEN u.id::text = $2 ELSE coalesce(u.first_name, '') ILIKE 'andrew' END))
         LIMIT 9`,
-      [excludeUserId, receptionUserId("underwriting")],
+      [exceptIds, receptionUserId("underwriting"), exceptUnderwritingByName],
     );
     return rows.map((r) => r.twilio_identity).filter(Boolean);
   } catch (err: any) {
@@ -237,36 +279,36 @@ async function readyStaffIdentities(excludeUserId: string | null): Promise<strin
   }
 }
 
-function offerMessageOrVoicemail(v: any, openerKey: string, openerText: string, staffUserId?: string | null): void {
-  // BF_SERVER_RECEPTION_VOICEMAIL_ONLY_v1 — no "take a message vs voicemail"
-  // choice; play the opener, then go straight to recording a voicemail.
-  emit(v, openerKey, openerText);
+function offerMessageOrVoicemail(v: any, openerText: string, staffUserId?: string | null): void {
+  // BF_SERVER_RECEPTION_VOICEMAIL_ONLY_v1 — no "take a message vs voicemail" choice; play the opener, then go
+  // straight to recording a voicemail.
+  emitText(v, openerText);
   emit(v, "record_prompt", PHRASES.record_prompt);
-  // BF_SERVER_PHONE_HOTFIX_v1 - when the caller asked for a specific person, stamp the
-  // voicemail with that staff user id so it stays private to them (Todd sees Todd's).
+  // BF_SERVER_PHONE_HOTFIX_v1 - a voicemail for a specific person is stamped with their id so it stays private to them.
   const action = staffUserId ? `/api/webhooks/twilio/voicemail?staff=${encodeURIComponent(staffUserId)}` : "/api/webhooks/twilio/voicemail";
   v.record({ maxLength: 120, playBeep: true, action });
 }
 
 // BF_SERVER_v820_WATCH_CALLS - the cell leg: a screened <Number> so the person presses 1 to take the call. Their
 // cell's own voicemail cannot press 1, so an unanswered cell hangs up the leg and the caller reaches Boreal voicemail.
-// BF_SERVER_v821_DIALER - rec: the call record to file the recording under; identity: the staff member on the cell.
 function dialCell(v: any, cell: string, action: string, callerId: string | undefined, from: string, rec: string | null = null, identity: string | null = null): void {
   const dial = v.dial({ answerOnBridge: true, timeout: CELL_RING_TIMEOUT_SECONDS, action, method: "POST", callerId, ...recordingDialAttrs(rec) });
   dial.number({ url: screenUrl(from), method: "POST", ...legStatusAttrs(rec, identity) }, cell);
 }
 
-// BF_SERVER_v829_DIALER_RELIABILITY - the leg status callback also records who answered (call_logs), so it is set even
-// when recording is off and no call record was opened; rx_<parent CallSid> carries the caller's sid.
+// BF_SERVER_v829_DIALER_RELIABILITY - rx_<parent CallSid> carries the caller's sid for the leg status callback.
 function legRecordName(req: Request): string | null {
   const callSid = String(req.body?.CallSid ?? "").trim();
   return callSid ? inboundRecordName(callSid) : null;
 }
 
 function callerFrom(req: Request): string { return String((req.body?.From ?? "")).trim(); }
+function callerIdFor(req: Request): string | undefined {
+  return callerFrom(req) || config.twilio.callerId || config.twilio.from || config.twilio.number || undefined;
+}
 
-// BF_SERVER_v820_WATCH_CALLS - a caller that ends at voicemail (or hangs up) without anyone answering is a missed
-// call: alert the person it was for (everyone for the shared engagement line). Never delays the TwiML.
+// BF_SERVER_v820_WATCH_CALLS - a caller that ends at voicemail without anyone answering is a missed call: alert the
+// person it was for (everyone for a group). Never delays the TwiML.
 function missedCall(req: Request, staffUserId: string | null): void {
   void alertMissedCall({ from: callerFrom(req) || null, staffUserId, silo: "BF", callSid: String(req.body?.CallSid ?? "") || null });
   closeRecord(req); // BF_SERVER_v821_DIALER
@@ -291,8 +333,7 @@ router.get("/voice", safeHandler(async (req: Request, res: Response) => {
   if (!text) return res.status(404).end();
   let buf = audioCache.get(key);
   if (!buf) {
-    // BF_SERVER_RECEPTION_VOICE_FALLBACK_v40 - emit() no longer points a live
-    // call at an unrendered key, so a 503 here can no longer reach a caller.
+    // BF_SERVER_RECEPTION_VOICE_FALLBACK_v40 - emit() never points a live call at an unrendered key.
     const rendered = await renderNova(text);
     if (!rendered) return res.status(503).end();
     audioCache.set(key, rendered);
@@ -303,15 +344,200 @@ router.get("/voice", safeHandler(async (req: Request, res: Response) => {
   return res.send(buf);
 }));
 
-// BF_SERVER_v827_CONFERENCE_DIAL - the greeting takes up to 8 keys ending with # (or a 3-second pause), so "3" followed
-// straight away by the access code joins the meeting in one step: nothing is lost while the next menu loads. A single
-// key (1 / 2 / 3) still works as before, after the short pause.
+// BF_SERVER_v869_PHONE_MENU - an uploaded greeting, fetched by Twilio's <Play> (ids are random UUIDs).
+router.get("/audio/:id", safeHandler(async (req: Request, res: Response) => {
+  const audio = await readAudio(pool, String(req.params.id ?? ""));
+  if (!audio) return res.status(404).end();
+  res.setHeader("Content-Type", audio.content_type);
+  res.setHeader("Cache-Control", "public, max-age=300");
+  return res.send(audio.bytes);
+}));
+
+// ------------------------------------------------------------------ routing a caller to a menu target
+type RouteCtx = {
+  /** The option id (or "after" / "noanswer") the target came from: carried in callback URLs. */
+  ref: string;
+  /** What the option is called ("client engagement"), for "connecting you to our ... team". */
+  label: string;
+  /** true while the menu's no-answer fallback is running: unanswered then ends at voicemail (no loops). */
+  fallback: boolean;
+  /** The person rung before the fallback (their voicemail is where the fallback ends). */
+  forUserId: string | null;
+};
+
+const ctxQuery = (ctx: RouteCtx): string =>
+  `${ctx.fallback ? "&fb=1" : ""}${ctx.forUserId ? `&for=${encodeURIComponent(ctx.forUserId)}` : ""}`;
+
+function ctxFrom(req: Request, ref: string, label: string): RouteCtx {
+  const forId = String(req.query.for ?? "").trim();
+  return { ref, label, fallback: String(req.query.fb ?? "") === "1", forUserId: /^[0-9a-f-]{36}$/i.test(forId) ? forId : null };
+}
+
+/** The target a callback's ref points at in the current menu. */
+function targetForRef(menu: PhoneMenu, ref: string): { target: MenuTarget; label: string } | null {
+  if (ref === "after") return { target: menu.afterHours, label: "" };
+  if (ref === "noanswer") return { target: menu.noAnswer.target, label: "" };
+  const o = findOption(menu, ref);
+  return o ? { target: o.target, label: o.label } : null;
+}
+
+/** Nobody picked up (or nobody could be rung). The default menu: the person's own voicemail (the shared one for a
+ *  group), with the sorry line. A saved menu may send it on once to someone else first. */
+async function noAnswer(v: any, req: Request, menu: PhoneMenu, ctx: RouteCtx, sorry: string, whoUserId: string | null): Promise<void> {
+  const fallback = menu.noAnswer?.target ?? { type: "voicemail", userId: null, message: "" };
+  if (ctx.fallback || fallback.type === "voicemail") {
+    const box = ctx.fallback ? (ctx.forUserId ?? whoUserId) : (fallback.type === "voicemail" && fallback.userId ? fallback.userId : whoUserId);
+    missedCall(req, box);
+    offerMessageOrVoicemail(v, [sorry, fallback.type === "voicemail" && !ctx.fallback ? fallback.message : ""].filter(Boolean).join(" "), box);
+    return;
+  }
+  emitText(v, sorry);
+  await routeTarget(v, req, menu, fallback, { ref: "noanswer", label: "", fallback: true, forUserId: whoUserId });
+}
+
+function groupSorry(kind: "unavail" | "noanswer"): string {
+  return kind === "unavail" ? PHRASES.engagement_unavail! : PHRASES.engagement_noanswer!;
+}
+
+/** Builds the TwiML that sends the caller to a menu target. */
+async function routeTarget(v: any, req: Request, menu: PhoneMenu, target: MenuTarget, ctx: RouteCtx): Promise<void> {
+  const ringSeconds = menu.noAnswer?.ringSeconds ?? DEFAULT_RING_SECONDS;
+  if (target.type === "voicemail") {
+    // A voicemail chosen in the menu (Caden, "where are you") is not a missed call; one reached as a fallback is.
+    const box = target.userId ?? ctx.forUserId;
+    if (ctx.fallback) missedCall(req, box);
+    offerMessageOrVoicemail(v, target.message, box);
+    return;
+  }
+  if (target.type === "meeting") { v.redirect({ method: "POST" }, `${BASE}/meeting`); return; }
+  if (target.type === "ai") {
+    const action = `${BASE}/ai?ref=${encodeURIComponent(ctx.ref)}${ctxQuery(ctx)}`;
+    const g = v.gather({ input: "speech", speechTimeout: "auto", timeout: 6, action, method: "POST" });
+    emit(g, "ai_prompt", PHRASES.ai_prompt);
+    v.redirect({ method: "POST" }, action);
+    return;
+  }
+  if (target.type === "submenu") {
+    const action = `${BASE}/intent?company=${encodeURIComponent(ctx.ref)}`;
+    const g = v.gather({ input: "speech dtmf", numDigits: 1, speechTimeout: "auto", timeout: 6, action, method: "POST" });
+    speak(g, target.menu.prompt, promptText(target.menu.prompt, target.menu.options, target.menu.announceOptions));
+    v.redirect({ method: "POST" }, action);
+    return;
+  }
+  if (target.type === "user") {
+    const t = await resolveTarget(target.userId);
+    // BF_SERVER_v821_DIALER - outside the person's call hours: away prompt (press 1 rings them as normal).
+    const away = await awayStatus(pool, t.userId);
+    if (away.away && t.userId) {
+      awayTwiml(v, { name: target.name, userId: t.userId, urgentPassthrough: away.urgentPassthrough, ring: ctx.ref });
+      return;
+    }
+    await ringNamedTarget(v, req, menu, target, t, ctx);
+    return;
+  }
+  // group
+  const listed = await Promise.all(target.userIds.map((ref) => resolveTarget(ref)));
+  const lead = listed[0] ?? NOBODY;
+  const callerId = callerIdFor(req);
+  const connect = ctx.label ? `One moment, connecting you to our ${ctx.label} team.` : PHRASES.connecting!;
+  if (target.strategy === "sequential") {
+    const ready = await readyInOrder(target.userIds);
+    const first = ready[0];
+    if (!first) { await noAnswer(v, req, menu, ctx, groupSorry("unavail"), null); return; }
+    const { card, rec } = await cardAndRecord(req);
+    emitText(v, connect);
+    const action = `${BASE}/group-next?target=${encodeURIComponent(ctx.ref)}&after=${encodeURIComponent(first.ref)}${ctxQuery(ctx)}`;
+    const dial = v.dial({ answerOnBridge: true, timeout: ringSeconds, action, method: "POST", callerId, ...recordingDialAttrs(rec) });
+    dialClient(dial, first.identity, card, legStatusAttrs(rec ?? legRecordName(req), first.identity));
+    return;
+  }
+  const exceptRefs = target.exceptUserIds;
+  const exceptIds = (await Promise.all(exceptRefs.filter((r) => !isRoleRef(r) || r !== "@underwriting").map((r) => resolveTarget(r))))
+    .map((x) => x.userId).filter((x): x is string => Boolean(x));
+  const underwriting = exceptRefs.includes("@underwriting") ? await resolveTarget("@underwriting") : null;
+  if (underwriting?.userId) exceptIds.push(underwriting.userId);
+  const others = target.everyoneAvailable ? await readyStaffIdentities(exceptIds, Boolean(underwriting)) : [];
+  const listedReady = listed.filter((p) => p.clientReady && p.identity && !exceptIds.includes(String(p.userId))).map((p) => p.identity!);
+  const everyone = Array.from(new Set([...listedReady, ...others])).slice(0, 10);
+  // BF_SERVER_v821_DIALER - a group member outside their call hours is skipped (no prompt for a group ring).
+  const awayIds = await identitiesOutsideHours(pool, everyone);
+  const identities = everyone.filter((identity) => !awayIds.has(identity));
+  const leadAway = (await awayStatus(pool, lead.userId)).away;
+  // BF_SERVER_v820_WATCH_CALLS - with the first listed person's Watch fallback on, the apps ring for 15 s, then their
+  // cell (screened).
+  const leadCell = !leadAway && lead.standaloneWatch && lead.cell ? lead.cell : null;
+  if (identities.length > 0) {
+    const { card, rec } = await cardAndRecord(req); // BF_SERVER_v821_DIALER
+    emitText(v, connect);
+    const action = `${BASE}/unavailable?target=${encodeURIComponent(ctx.ref)}${leadCell ? "&cell=1" : ""}${ctxQuery(ctx)}`;
+    const dial = v.dial({ answerOnBridge: true, timeout: leadCell ? CLIENT_FIRST_TIMEOUT_SECONDS : ringSeconds, action, method: "POST", callerId, ...recordingDialAttrs(rec) });
+    for (const identity of identities) dialClient(dial, identity, card, legStatusAttrs(rec ?? legRecordName(req), identity)); // BF_SERVER_v829_DIALER_RELIABILITY
+    return;
+  }
+  if (leadCell) {
+    const { rec } = await cardAndRecord(req); // BF_SERVER_v821_DIALER
+    emitText(v, connect);
+    dialCell(v, leadCell, `${BASE}/unavailable?target=${encodeURIComponent(ctx.ref)}${ctxQuery(ctx)}`, callerId, callerFrom(req), rec, lead.userId);
+    return;
+  }
+  await noAnswer(v, req, menu, ctx, groupSorry("unavail"), null);
+}
+
+/** The listed people of a one-at-a-time group who can ring now, in order, skipping anyone outside their call hours. */
+async function readyInOrder(refs: string[]): Promise<Array<{ ref: string; identity: string; userId: string | null }>> {
+  const people = await Promise.all(refs.map(async (ref) => ({ ref, r: await resolveTarget(ref) })));
+  const ready = people.filter((p) => p.r.clientReady && p.r.identity).map((p) => ({ ref: p.ref, identity: p.r.identity!, userId: p.r.userId }));
+  const away = await identitiesOutsideHours(pool, ready.map((p) => p.identity));
+  return ready.filter((p) => !away.has(p.identity));
+}
+
+// BF_SERVER_v821_DIALER - one person's ring, shared by the menu and the away prompt's press-1.
+async function ringNamedTarget(v: any, req: Request, menu: PhoneMenu, target: { name: string }, t: Resolved, ctx: RouteCtx): Promise<void> {
+  const name = target.name;
+  // BF_SERVER_PHONE_HOTFIX_v1 - forward the ORIGINAL caller's number so staff see who is calling.
+  const callerId = callerIdFor(req);
+  // Never parallel-dial cellular: a reachable iPhone/portal rings first and on its own.
+  // BF_SERVER_v820_WATCH_CALLS - the explicitly enabled standalone Watch fallback (server-verified cell + an
+  // opted-in Watch) is SEQUENTIAL: the app rings for 15 s, then /unavailable?cell=1 rings the cell, screened.
+  const watchCell = t.standaloneWatch && t.cell ? t.cell : null;
+  if (t.clientReady && t.identity) {
+    const { card, rec } = await cardAndRecord(req); // BF_SERVER_v821_DIALER
+    emitText(v, `One moment, connecting you to ${name}.`);
+    const action = `${BASE}/unavailable?target=${encodeURIComponent(ctx.ref)}${watchCell ? "&cell=1" : ""}${ctxQuery(ctx)}`;
+    const dial = v.dial({ answerOnBridge: true, timeout: watchCell ? CLIENT_FIRST_TIMEOUT_SECONDS : (menu.noAnswer?.ringSeconds ?? DEFAULT_RING_SECONDS), action, method: "POST", callerId, ...recordingDialAttrs(rec) });
+    dialClient(dial, t.identity, card, legStatusAttrs(rec ?? legRecordName(req), t.identity)); // BF_SERVER_v829_DIALER_RELIABILITY
+    return;
+  }
+  // No reachable app: the opted-in cell (screened) is the only leg.
+  if (watchCell) {
+    const { rec } = await cardAndRecord(req); // BF_SERVER_v821_DIALER
+    emitText(v, `One moment, connecting you to ${name}.`);
+    dialCell(v, watchCell, `${BASE}/unavailable?target=${encodeURIComponent(ctx.ref)}${ctxQuery(ctx)}`, callerId, callerFrom(req), rec, t.userId);
+    return;
+  }
+  await noAnswer(v, req, menu, ctx, `Sorry, ${name} ${t.onCall ? "is on another call" : "isn't available right now"}.`, t.userId);
+}
+
+// ------------------------------------------------------------------ the greeting and the menu choices
+// BF_SERVER_v827_CONFERENCE_DIAL - the greeting takes up to 8 keys ending with # (or a 3-second pause), so the meeting
+// key followed straight away by the access code joins the meeting in one step. A single key still works as before.
 router.post("/greeting", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
   const v = await newVR();
   const again = String(req.query.again ?? "") === "1";
-  const g = v.gather({ input: "speech dtmf", numDigits: 8, finishOnKey: "#", speechTimeout: "auto", timeout: 3, action: `${BASE}/company${again ? "?again=1" : ""}`, method: "POST" });
-  emit(g, "greeting", PHRASES.greeting);
-  v.redirect({ method: "POST" }, `${BASE}/company${again ? "?again=1" : ""}`);
+  // BF_SERVER_v869_BLOCKED_NUMBERS - also here, for a number pointed straight at the menu.
+  if (!again && await handleBlockedCall(pool as any, v, callerFrom(req), String(req.body?.CallSid ?? "") || null)) return send(res, v);
+  const { menu } = await loadMenu(pool as any);
+  const status = officeOpen(menu, new Date());
+  if (!status.open) {
+    console.log(JSON.stringify({ event: "phone_menu_closed", callSid: req.body?.CallSid ?? null, holiday: status.holiday }));
+    speak(v, menu.afterHoursGreeting, promptText(menu.afterHoursGreeting, [], false));
+    await routeTarget(v, req, menu, menu.afterHours, { ref: "after", label: "", fallback: false, forUserId: null });
+    return send(res, v);
+  }
+  const action = `${BASE}/company${again ? "?again=1" : ""}`;
+  const g = v.gather({ input: "speech dtmf", numDigits: 8, finishOnKey: "#", speechTimeout: "auto", timeout: 3, action, method: "POST" });
+  speak(g, menu.greeting, promptText(menu.greeting, menu.options, menu.announceOptions));
+  v.redirect({ method: "POST" }, action);
   return send(res, v);
 }));
 
@@ -319,32 +545,36 @@ router.post("/greeting", twilioWebhookValidation, safeHandler(async (req: Reques
 export function looksLikeEcho(speechText: string): boolean {
   const s = String(speechText ?? "").toLowerCase();
   if (!s) return false;
-  return /\bpress\b|scheduled|you can say|this call may be recorded|group of companies/.test(s) || s.split(/\s+/).filter(Boolean).length > 6;
+  return /\bpress\b|scheduled|you can say|this call may be recorded|group of companies|thank you for calling/.test(s) || s.split(/\s+/).filter(Boolean).length > 6;
 }
 
 router.post("/company", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
+  const { menu } = await loadMenu(pool as any);
   const raw = digit(req).replace(/[^0-9]/g, "");
   const d = raw.slice(0, 1);
   let s = speech(req);
+  const again = String(req.query.again ?? "") === "1";
   // BF_SERVER_v827_CONFERENCE_DIAL - the greeting heard back through a speakerphone is not an answer: play it once more
-  // (then carry on as Boreal Financial), instead of acting on "meeting" / "financial" in the echo.
+  // (then carry on as if nothing was chosen), instead of acting on words in the echo.
   if (!raw && looksLikeEcho(s)) {
     console.log(JSON.stringify({ event: "reception_echo_ignored", callSid: req.body?.CallSid ?? null, speech: s }));
-    if (String(req.query.again ?? "") !== "1") { const ve = await newVR(); ve.redirect({ method: "POST" }, `${BASE}/greeting?again=1`); return send(res, ve); }
+    if (!again) { const ve = await newVR(); ve.redirect({ method: "POST" }, `${BASE}/greeting?again=1`); return send(res, ve); }
     s = "";
   }
-  // "3" + the six-digit code in one go: join that meeting straight away.
-  if (d === "3" && raw.length === 7) { const vm = await newVR(); vm.redirect({ method: "POST" }, `${BASE}/meeting-code?try=0&code=${raw.slice(1)}`); return send(res, vm); }
-  // BF_SERVER_MEETING_ROOMS_v736 - option 3 (or "meeting" / "conference") joins a meeting room.
-  if (d === "3" || /meeting|conference/.test(s)) { const vm = await newVR(); vm.redirect({ method: "POST" }, `${BASE}/meeting`); return send(res, vm); }
-  let company = "BF";
-  if (d === "2" || /risk|insurance|brm|management/.test(s)) company = "BRM";
-  else if (d === "1" || /financ|finance|loan|funding|\bbf\b/.test(s)) company = "BF";
   const v = await newVR();
-  if (company === "BRM") { v.redirect({ method: "POST" }, `${BASE}/intent?company=BRM`); return send(res, v); }
-  const g = v.gather({ input: "speech dtmf", numDigits: 1, speechTimeout: "auto", timeout: 6, action: `${BASE}/intent?company=${company}`, method: "POST" });
-  emit(g, "intent_prompt", PHRASES.intent_prompt);
-  v.redirect({ method: "POST" }, `${BASE}/intent?company=${company}`);
+  // The meeting key + the six-digit code in one go: join that meeting straight away.
+  const keyed = d ? menu.options.find((o) => o.digit === d) : undefined;
+  if (keyed?.target.type === "meeting" && raw.length === 7) { v.redirect({ method: "POST" }, `${BASE}/meeting-code?try=0&code=${raw.slice(1)}`); return send(res, v); }
+  let option = chooseOption(menu.options, d, s);
+  console.log(JSON.stringify({ event: "phone_menu_choice", callSid: req.body?.CallSid ?? null, digits: raw || null, speech: s || null, option: option?.id ?? null, again }));
+  if (!option && menu.whenNoChoice.retry && !again) {
+    emit(v, "menu_retry", PHRASES.menu_retry);
+    v.redirect({ method: "POST" }, `${BASE}/greeting?again=1`);
+    return send(res, v);
+  }
+  if (!option && menu.whenNoChoice.optionId) option = menu.options.find((o) => o.id === menu.whenNoChoice.optionId) ?? null;
+  if (!option) { await noAnswer(v, req, menu, { ref: "noanswer", label: "", fallback: false, forUserId: null }, groupSorry("unavail"), null); return send(res, v); }
+  await routeTarget(v, req, menu, option.target, { ref: option.id, label: option.label, fallback: false, forUserId: null });
   return send(res, v);
 }));
 
@@ -363,7 +593,7 @@ router.post("/meeting-code", twilioWebhookValidation, safeHandler(async (req: Re
   const v = await newVR();
   const tries = Number(req.query.try ?? 0) || 0;
   const { findOpenRoomByCode, conferenceName, roomConferenceAttrs } = await import("../services/meetingRooms.js");
-  // BF_SERVER_v827_CONFERENCE_DIAL - the code can come from the greeting ("3" + code) as ?code=.
+  // BF_SERVER_v827_CONFERENCE_DIAL - the code can come from the greeting (meeting key + code) as ?code=.
   const entered = typeof req.query.code === "string" && /^[0-9]{6}$/.test(req.query.code) ? req.query.code : digit(req);
   const room = await findOpenRoomByCode(entered).catch((err: unknown) => {
     console.error("[meeting] code lookup failed", err instanceof Error ? err.message : String(err));
@@ -379,142 +609,147 @@ router.post("/meeting-code", twilioWebhookValidation, safeHandler(async (req: Re
   }
   if (tries < 1) { v.redirect({ method: "POST" }, `${BASE}/meeting?try=${tries + 1}`); return send(res, v); }
   emit(v, "meeting_failed", PHRASES.meeting_failed);
-  v.redirect({ method: "POST" }, `${BASE}/intent?company=BF`);
+  // Then on as if nothing was chosen at the greeting (the default menu: Boreal Financial).
+  const { menu } = await loadMenu(pool as any);
+  v.redirect({ method: "POST" }, `${BASE}/intent?company=${encodeURIComponent(menu.whenNoChoice.optionId ?? "BF")}`);
   return send(res, v);
 }));
 
+// A second menu (Boreal Financial: client engagement / credit). company = the option that opened it. Calls still
+// in progress when this version deployed may post company=BRM: that was Risk Management (Todd).
 router.post("/intent", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
+  const { menu } = await loadMenu(pool as any);
   const s = speech(req); const d = digit(req);
   const v = await newVR();
-  if (/caden/.test(s)) { offerMessageOrVoicemail(v, "opener_caden", PHRASES.opener_caden); return send(res, v); }
-  if (/address|location|where are you|directions/.test(s)) {
-    emit(v, "opener_address1", PHRASES.opener_address1);
-    offerMessageOrVoicemail(v, "opener_address2", PHRASES.opener_address2); return send(res, v);
+  const company = String(req.query.company ?? "");
+  const parent = findOption(menu, company === "BRM" && !findOption(menu, "BRM") ? "sales" : company)
+    ?? menu.options.find((o) => o.id === menu.whenNoChoice.optionId) ?? null;
+  if (!parent) { await noAnswer(v, req, menu, { ref: "noanswer", label: "", fallback: false, forUserId: null }, groupSorry("unavail"), null); return send(res, v); }
+  if (parent.target.type !== "submenu") {
+    await routeTarget(v, req, menu, parent.target, { ref: parent.id, label: parent.label, fallback: false, forUserId: null });
+    return send(res, v);
   }
-  const wantsAndrew = d === "2" || /credit|andrew|underwrit|document|condition|approval|declin|status|lender/.test(s);
-  const wantsTodd = d === "1" || /client|engag|todd|sales|apply|\bnew\b|financ|funding|loan|quote|get started/.test(s);
-  const isBrm = String(req.query.company ?? "BF") === "BRM";
-  let target: Target | null = isBrm ? "sales" : wantsAndrew ? "underwriting" : wantsTodd ? "engagement" : null;
-  // BF_SERVER_VOICE_AUDIT_v686 - retain the caller's attempted response in logs,
-  // then give an unclear caller one explicit keypad retry before voicemail.
-  console.log(JSON.stringify({ event: "reception_intent", callSid: req.body?.CallSid ?? null, speech: s || null, digits: d || null, target, retry: String(req.query.retry ?? "") === "1" }));
-  if (!target && String(req.query.retry ?? "") !== "1") {
-    const company = String(req.query.company ?? "BF");
-    const retryUrl = `${BASE}/intent?company=${encodeURIComponent(company)}&retry=1`;
+  const sub = parent.target.menu;
+  const retry = String(req.query.retry ?? "") === "1";
+  let choice = chooseOption(sub.options, d, s);
+  // BF_SERVER_VOICE_AUDIT_v686 - retain the caller's attempted response in logs, then give an unclear caller one
+  // explicit keypad retry.
+  console.log(JSON.stringify({ event: "reception_intent", callSid: req.body?.CallSid ?? null, speech: s || null, digits: d || null, target: choice?.id ?? null, retry }));
+  if (!choice && sub.whenNoChoice.retry && !retry) {
+    const retryUrl = `${BASE}/intent?company=${encodeURIComponent(parent.id)}&retry=1`;
     const g = v.gather({ input: "speech dtmf", numDigits: 1, speechTimeout: "auto", timeout: 6, action: retryUrl, method: "POST" });
-    emit(g, "intent_retry", PHRASES.intent_retry);
+    emitText(g, sub.retryPrompt || [PHRASES.menu_retry, optionsPrompt(sub.options)].join(" "));
     v.redirect({ method: "POST" }, retryUrl);
     return send(res, v);
   }
-  if (!target) target = "engagement";
-  if (target === "engagement") {
-    const todd = await resolveTarget("sales");
-    const andrew = await resolveTarget("underwriting");
-    const others = await readyStaffIdentities(andrew.userId);
-    const everyone = Array.from(new Set([...(todd.clientReady && todd.identity ? [todd.identity] : []), ...others])).slice(0, 10);
-    // BF_SERVER_v821_DIALER - a group member outside their call hours is skipped (no prompt for a group ring).
-    const awayIds = await identitiesOutsideHours(pool, everyone);
-    const identities = everyone.filter((identity) => !awayIds.has(identity));
-    const toddAway = (await awayStatus(pool, todd.userId)).away;
-    const callerId = String((req.body?.From ?? "")).trim() || config.twilio.callerId || config.twilio.from || config.twilio.number || undefined;
-    // BF_SERVER_v820_WATCH_CALLS - with Todd's Watch fallback on, the apps ring for 15 s, then his cell (screened).
-    const toddCell = !toddAway && todd.standaloneWatch && todd.cell ? todd.cell : null;
-    if (identities.length > 0) {
-      const { card, rec } = await cardAndRecord(req); // BF_SERVER_v821_DIALER
-      emit(v, "connect_engagement", PHRASES.connect_engagement);
-      const action = `${BASE}/unavailable?target=engagement${toddCell ? "&cell=1" : ""}`;
-      const dial = v.dial({ answerOnBridge: true, timeout: toddCell ? CLIENT_FIRST_TIMEOUT_SECONDS : 25, action, method: "POST", callerId, ...recordingDialAttrs(rec) });
-      for (const identity of identities) dialClient(dial, identity, card, legStatusAttrs(rec ?? legRecordName(req), identity)); // BF_SERVER_v829_DIALER_RELIABILITY
-      return send(res, v);
-    }
-    if (toddCell) {
-      const { rec } = await cardAndRecord(req); // BF_SERVER_v821_DIALER
-      emit(v, "connect_engagement", PHRASES.connect_engagement);
-      dialCell(v, toddCell, `${BASE}/unavailable?target=engagement`, callerId, callerFrom(req), rec, todd.userId);
-      return send(res, v);
-    }
-    missedCall(req, null);
-    offerMessageOrVoicemail(v, "engagement_unavail", PHRASES.engagement_unavail, null);
-    return send(res, v);
-  }
-  const t = await resolveTarget(target);
-  // BF_SERVER_v821_DIALER - outside the person's call hours: away prompt (press 1 rings them as normal).
-  const away = await awayStatus(pool, t.userId);
-  if (away.away && t.userId) {
-    awayTwiml(v, { name: displayFor(target), userId: t.userId, urgentPassthrough: away.urgentPassthrough, ring: target === "underwriting" ? "underwriting" : "sales" });
-    return send(res, v);
-  }
-  await ringNamedTarget(v, req, target, t);
+  if (!choice && sub.whenNoChoice.optionId) choice = sub.options.find((o) => o.id === sub.whenNoChoice.optionId) ?? null;
+  if (!choice) { await noAnswer(v, req, menu, { ref: "noanswer", label: "", fallback: false, forUserId: null }, groupSorry("unavail"), null); return send(res, v); }
+  await routeTarget(v, req, menu, choice.target, { ref: choice.id, label: choice.label, fallback: false, forUserId: null });
   return send(res, v);
 }));
 
-// BF_SERVER_v821_DIALER - the named-target ring, shared by /intent and the away prompt's press-1.
-async function ringNamedTarget(v: any, req: Request, target: Target, t: Awaited<ReturnType<typeof resolveTarget>>): Promise<void> {
-  const name = displayFor(target);
-  // BF_SERVER_RECEPTION_SIMRING_v1 — ring the softphone only when its heartbeat
-  // is fresh (a stale "available" row was dialing a dead WebRTC client -> 0-sec
-  // no-answer).
-  // BF_SERVER_PHONE_HOTFIX_v1 - forward the ORIGINAL caller's number so staff see who
-  // is calling (Twilio allows the inbound caller's number as callerId when forwarding).
-  const callerId = String((req.body?.From ?? "")).trim() || config.twilio.callerId || config.twilio.from || config.twilio.number || undefined;
-  // Never parallel-dial cellular: a reachable iPhone/portal rings first and on its own.
-  // BF_SERVER_v820_WATCH_CALLS - the explicitly enabled standalone Watch fallback (server-verified cell + an
-  // opted-in Watch) is SEQUENTIAL: the app rings for 15 s, then /unavailable?cell=1 rings the cell, screened.
-  const watchCell = t.standaloneWatch && t.cell ? t.cell : null;
-  if (t.clientReady && t.identity) {
-    const { card, rec } = await cardAndRecord(req); // BF_SERVER_v821_DIALER
-    emit(v, `connect_${lkey(target)}`, `One moment, connecting you to ${name}.`);
-    const action = `${BASE}/unavailable?target=${target}${watchCell ? "&cell=1" : ""}`;
-    const dial = v.dial({ answerOnBridge: true, timeout: watchCell ? CLIENT_FIRST_TIMEOUT_SECONDS : 25, action, method: "POST", callerId, ...recordingDialAttrs(rec) });
-    dialClient(dial, t.identity, card, legStatusAttrs(rec ?? legRecordName(req), t.identity)); // BF_SERVER_v829_DIALER_RELIABILITY
-    return;
-  }
-  // No reachable app: the opted-in cell (screened) is the only leg.
-  if (watchCell) {
-    const { rec } = await cardAndRecord(req); // BF_SERVER_v821_DIALER
-    emit(v, `connect_${lkey(target)}`, `One moment, connecting you to ${name}.`);
-    dialCell(v, watchCell, `${BASE}/unavailable?target=${target}`, callerId, callerFrom(req), rec, t.userId);
-    return;
-  }
-  missedCall(req, t.userId);
-  const reasonKey = t.onCall ? `reason_${lkey(target)}_oncall` : `reason_${lkey(target)}_unavail`;
-  const reasonText = `Sorry, ${name} ${t.onCall ? "is on another call" : "isn't available right now"}.`;
-  offerMessageOrVoicemail(v, reasonKey, reasonText, t.userId);
-}
-
+// A person or group <Dial> ended. Answered: hang up. Unanswered: the opted-in cell once (cell=1), then no-answer.
 router.post("/unavailable", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
   // BF_SERVER_v820_WATCH_CALLS - cell=1: the app leg was the first of two. Unanswered (no-answer / busy / failed)
   // and the caller still on the line -> ring the opted-in cell, screened. The cell leg's own action has no cell=1,
   // so this happens at most once per call.
   const tryCell = String(req.query.cell ?? "") === "1";
   const unanswered = dialWasNotAnswered(req.body?.DialCallStatus);
-  const callerId = callerFrom(req) || config.twilio.callerId || config.twilio.from || config.twilio.number || undefined;
-  if (String(req.query.target || "") === "engagement") {
-    const v = await newVR();
-    if (!unanswered) { closeRecord(req); v.hangup(); return send(res, v); }
-    if (tryCell && !callerHungUp(req.body)) {
-      const todd = await resolveTarget("sales");
-      if (todd.standaloneWatch && todd.cell) {
+  const v = await newVR();
+  if (!unanswered) { closeRecord(req); v.hangup(); return send(res, v); }
+  const { menu } = await loadMenu(pool as any);
+  const ref = String(req.query.target || "");
+  const found = targetForRef(menu, ref);
+  const ctx = ctxFrom(req, ref, found?.label ?? "");
+  const callerId = callerIdFor(req);
+  if (found?.target.type === "group") {
+    if (tryCell && !callerHungUp(req.body) && found.target.userIds[0]) {
+      const lead = await resolveTarget(found.target.userIds[0]);
+      if (lead.standaloneWatch && lead.cell) {
         const { rec } = await cardAndRecord(req); // BF_SERVER_v821_DIALER - same call record (rx_<CallSid>)
-        dialCell(v, todd.cell, `${BASE}/unavailable?target=engagement`, callerId, callerFrom(req), rec, todd.userId);
+        dialCell(v, lead.cell, `${BASE}/unavailable?target=${encodeURIComponent(ref)}${ctxQuery(ctx)}`, callerId, callerFrom(req), rec, lead.userId);
         return send(res, v);
       }
     }
-    missedCall(req, null);
-    offerMessageOrVoicemail(v, "engagement_noanswer", PHRASES.engagement_noanswer, null);
+    await noAnswer(v, req, menu, ctx, groupSorry("noanswer"), null);
     return send(res, v);
   }
-  const target = (String(req.query.target || "") === "underwriting" ? "underwriting" : "sales") as Target;
+  if (found?.target.type === "user") {
+    const tt = await resolveTarget(found.target.userId);
+    if (tryCell && !callerHungUp(req.body) && tt.standaloneWatch && tt.cell) {
+      const { rec } = await cardAndRecord(req); // BF_SERVER_v821_DIALER
+      dialCell(v, tt.cell, `${BASE}/unavailable?target=${encodeURIComponent(ref)}${ctxQuery(ctx)}`, callerId, callerFrom(req), rec, tt.userId);
+      return send(res, v);
+    }
+    await noAnswer(v, req, menu, ctx, `Sorry, ${found.target.name} didn't pick up.`, tt.userId);
+    return send(res, v);
+  }
+  // The menu changed while this call was ringing: the shared voicemail.
+  missedCall(req, ctx.forUserId);
+  offerMessageOrVoicemail(v, groupSorry("noanswer"), ctx.forUserId);
+  return send(res, v);
+}));
+
+// One-at-a-time group: ring the next listed person after `after`, then the no-answer fallback.
+router.post("/group-next", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
   const v = await newVR();
-  if (!unanswered) { closeRecord(req); v.hangup(); return send(res, v); }
-  const tt = await resolveTarget(target);
-  if (tryCell && !callerHungUp(req.body) && tt.standaloneWatch && tt.cell) {
-    const { rec } = await cardAndRecord(req); // BF_SERVER_v821_DIALER
-    dialCell(v, tt.cell, `${BASE}/unavailable?target=${target}`, callerId, callerFrom(req), rec, tt.userId);
+  if (!dialWasNotAnswered(req.body?.DialCallStatus)) { closeRecord(req); v.hangup(); return send(res, v); }
+  const { menu } = await loadMenu(pool as any);
+  const ref = String(req.query.target ?? "");
+  const found = targetForRef(menu, ref);
+  const ctx = ctxFrom(req, ref, found?.label ?? "");
+  if (!found || found.target.type !== "group" || callerHungUp(req.body)) { await noAnswer(v, req, menu, ctx, groupSorry("noanswer"), null); return send(res, v); }
+  const after = String(req.query.after ?? "");
+  const idx = found.target.userIds.indexOf(after);
+  const next = idx < 0 ? undefined : (await readyInOrder(found.target.userIds.slice(idx + 1)))[0];
+  if (!next) { await noAnswer(v, req, menu, ctx, groupSorry("noanswer"), null); return send(res, v); }
+  const { card, rec } = await cardAndRecord(req);
+  const action = `${BASE}/group-next?target=${encodeURIComponent(ref)}&after=${encodeURIComponent(next.ref)}${ctxQuery(ctx)}`;
+  const dial = v.dial({ answerOnBridge: true, timeout: menu.noAnswer?.ringSeconds ?? DEFAULT_RING_SECONDS, action, method: "POST", callerId: callerIdFor(req), ...recordingDialAttrs(rec) });
+  dialClient(dial, next.identity, card, legStatusAttrs(rec ?? legRecordName(req), next.identity));
+  return send(res, v);
+}));
+
+/** The AI receptionist's pick among the menu's options (keywords first, then OpenAI when configured). */
+export async function aiPick(menu: PhoneMenu, said: string, opts: { timeoutMs?: number } = {}): Promise<MenuOption | null> {
+  const candidates = allOptions(menu).filter((o) => o.target.type !== "ai" && o.target.type !== "submenu");
+  if (!said.trim() || !candidates.length) return null;
+  const byWords = chooseOption(candidates, "", said);
+  if (byWords) return byWords;
+  if (!process.env.OPENAI_API_KEY) return null;
+  try {
+    const client = sharedOpenAI(process.env.OPENAI_API_KEY);
+    const list = candidates.map((o, i) => `${i + 1}: ${o.label}${o.keywords.length ? ` (${o.keywords.join(", ")})` : ""}`).join("\n");
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), opts.timeoutMs ?? 3500));
+    const call = client.chat.completions.create({
+      model: process.env.RECEPTION_AI_MODEL || "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "You route phone calls for the Boreal Group of Companies. Reply with only the number of the best option, or 0 if none fits." },
+        { role: "user", content: `Options:\n${list}\n\nThe caller said: "${said.slice(0, 400)}"` },
+      ],
+    }).then((r: any) => String(r.choices?.[0]?.message?.content ?? "").trim());
+    const answer = await Promise.race([call, timeout]);
+    const n = Number(/\d+/.exec(String(answer ?? ""))?.[0] ?? 0);
+    return n >= 1 && n <= candidates.length ? candidates[n - 1]! : null;
+  } catch (err) {
+    console.warn("[reception] AI receptionist routing failed; taking a message", { message: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+}
+
+router.post("/ai", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
+  const { menu } = await loadMenu(pool as any);
+  const ctx = ctxFrom(req, String(req.query.ref ?? ""), "");
+  const said = speech(req);
+  const option = await aiPick(menu, said);
+  console.log(JSON.stringify({ event: "phone_menu_ai", callSid: req.body?.CallSid ?? null, speech: said || null, option: option?.id ?? null }));
+  const v = await newVR();
+  if (option) {
+    await routeTarget(v, req, menu, option.target, { ref: option.id, label: option.label, fallback: ctx.fallback, forUserId: ctx.forUserId });
     return send(res, v);
   }
-  missedCall(req, tt.userId);
-  offerMessageOrVoicemail(v, `noanswer_${lkey(target)}`, `Sorry, ${displayFor(target)} didn't pick up.`, tt.userId);
+  missedCall(req, ctx.forUserId);
+  offerMessageOrVoicemail(v, PHRASES.opener_unclear!, ctx.forUserId);
   return send(res, v);
 }));
 
@@ -578,7 +813,7 @@ router.post("/direct-unavailable", twilioWebhookValidation, safeHandler(async (r
       console.warn("[reception] direct line name lookup failed", { message: err?.message });
     }
   }
-  offerMessageOrVoicemail(v, "direct_noanswer", `Sorry, ${name} isn't available right now.`, userId);
+  offerMessageOrVoicemail(v, `Sorry, ${name} isn't available right now.`, userId);
   return send(res, v);
 }));
 
@@ -605,8 +840,11 @@ router.post("/away-choice", twilioWebhookValidation, safeHandler(async (req: Req
     await ringDirectLine(v, pool, { owner, from: callerFrom(req), callSid: String(req.body?.CallSid ?? "") });
     return send(res, v);
   }
-  if (ring === "sales" || ring === "underwriting") {
-    await ringNamedTarget(v, req, ring, await resolveTarget(ring));
+  // BF_SERVER_v869_PHONE_MENU - ring = the menu option that rang them (the default menu: sales / underwriting).
+  const { menu } = await loadMenu(pool as any);
+  const opt = findOption(menu, ring);
+  if (opt?.target.type === "user") {
+    await ringNamedTarget(v, req, menu, opt.target, await resolveTarget(opt.target.userId), { ref: opt.id, label: opt.label, fallback: false, forUserId: null });
     return send(res, v);
   }
   staffVoicemail(v, userId);

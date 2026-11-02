@@ -1,6 +1,6 @@
 import { ALBERTA_TZ } from "../lib/albertaTime.js"; // BF_SERVER_ALBERTA_TIME_v743 - Alberta is UTC-6 all year
 // BF_SERVER_CLIENT_BOOKING_v738 - clients book a 30-minute phone call or Teams meeting.
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { pool } from "../db.js";
 import { graphAppFetch, isAppGraphConfigured } from "./teams/graphAppClient.js";
 
@@ -29,22 +29,51 @@ function albertaYmdDow(at: Date): { y: number; m: number; d: number; dow: number
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", weekday: "short" }).formatToParts(at).map((x) => [x.type, x.value]));
   return { y: Number(p.year), m: Number(p.month), d: Number(p.day), dow: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(String(p.weekday)) };
 }
-export function candidateSlots(now: Date, days = 14): Date[] {
+// BF_SERVER_v869_BOOKING_PAGES - a meeting type sets the length, phone or video, the buffer kept free around it, the
+// minimum notice and how far ahead clients can book (ported from KS-server #38). Without one, the original 30-minute
+// call (2 hours' notice, 14 days ahead, weekdays 9 to 5 Alberta time) applies, exactly as before.
+export type MeetingType = {
+  id: string | null; slug: string; name: string; description: string | null; duration_min: number; kind: "phone" | "video";
+  buffer_min: number; min_notice_min: number; max_days_ahead: number;
+};
+export const DEFAULT_MEETING_TYPE: MeetingType = {
+  id: null, slug: "call", name: "Phone call", description: null, duration_min: SLOT_MIN, kind: "phone",
+  buffer_min: 0, min_notice_min: MIN_NOTICE_H * 60, max_days_ahead: 14,
+};
+/** Weekly booking hours (Alberta time): day 0 = Sunday, each [start, end) as "HH:MM". */
+export type BookingHours = Record<number, Array<[string, string]>>;
+const pad = (h: number) => `${String(h).padStart(2, "0")}:00`;
+export const DEFAULT_BOOKING_HOURS: BookingHours = { 0: [], 1: [[pad(DAY_START_H), pad(DAY_END_H)]], 2: [[pad(DAY_START_H), pad(DAY_END_H)]], 3: [[pad(DAY_START_H), pad(DAY_END_H)]], 4: [[pad(DAY_START_H), pad(DAY_END_H)]], 5: [[pad(DAY_START_H), pad(DAY_END_H)]], 6: [] };
+const hhmm = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5));
+
+export function candidateSlots(now: Date, days = 14, opts: { durationMin?: number; minNoticeMin?: number; hours?: BookingHours } = {}): Date[] {
   const out: Date[] = [];
-  const earliest = now.getTime() + MIN_NOTICE_H * 3_600_000;
+  const duration = opts.durationMin ?? SLOT_MIN;
+  const earliest = now.getTime() + (opts.minNoticeMin ?? MIN_NOTICE_H * 60) * 60_000;
+  const hours = opts.hours ?? DEFAULT_BOOKING_HOURS;
   for (let i = 0; i <= days; i += 1) {
     const day = albertaYmdDow(new Date(now.getTime() + i * 86_400_000));
-    if (day.dow === 0 || day.dow === 6) continue;
-    for (let h = DAY_START_H; h < DAY_END_H; h += 1) for (const min of [0, 30]) {
-      const t = albertaTime(day.y, day.m, day.d, h, min);
-      if (t.getTime() >= earliest && !out.some((x) => x.getTime() === t.getTime())) out.push(t);
+    for (const [start, end] of hours[day.dow] ?? []) {
+      for (let m = hhmm(start); m + duration <= hhmm(end); m += 30) {
+        const t = albertaTime(day.y, day.m, day.d, Math.floor(m / 60), m % 60);
+        if (t.getTime() >= earliest && !out.some((x) => x.getTime() === t.getTime())) out.push(t);
+      }
     }
   }
-  return out;
+  return out.sort((a, b) => a.getTime() - b.getTime());
 }
-export function overlaps(slot: Date, busy: Array<{ start: Date; end: Date }>): boolean {
-  const s = slot.getTime(), e = s + SLOT_MIN * 60_000;
+export function overlaps(slot: Date, busy: Array<{ start: Date; end: Date }>, durationMin = SLOT_MIN, bufferMin = 0): boolean {
+  const s = slot.getTime() - bufferMin * 60_000, e = slot.getTime() + (durationMin + bufferMin) * 60_000;
   return busy.some((b) => b.start.getTime() < e && b.end.getTime() > s);
+}
+
+/** BF_SERVER_v869_BOOKING_PAGES - the client's own cancel / reschedule link carries a random token; only its hash is kept. */
+export function newManageToken(): { token: string; hash: string } {
+  const token = randomBytes(24).toString("base64url");
+  return { token, hash: manageTokenHash(token) };
+}
+export function manageTokenHash(token: string): string {
+  return createHash("sha256").update(String(token)).digest("hex");
 }
 export async function bookableStaff(): Promise<Staff[]> {
   const only = String(process.env.BOOKING_STAFF_EMAILS ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -87,15 +116,18 @@ export async function busyTimes(emails: string[], from: Date, to: Date): Promise
   for (const s of json.value ?? []) out.set(s.scheduleId.toLowerCase(), (s.scheduleItems ?? []).filter((i) => i.status !== "free").map((i) => ({ start: new Date(i.start.dateTime + "Z"), end: new Date(i.end.dateTime + "Z") })));
   return out;
 }
-export async function openSlots(now: Date, staffId: string | null, days = 14): Promise<Array<{ startsAt: string; staffIds: string[] }>> {
+export async function openSlots(now: Date, staffId: string | null, days?: number, type: MeetingType = DEFAULT_MEETING_TYPE, hours?: BookingHours): Promise<Array<{ startsAt: string; staffIds: string[] }>> {
   const everyone = await bookableStaff();
   const staff = staffId ? everyone.filter((s) => s.id === staffId) : intakeTeam(everyone);
-  const slots = candidateSlots(now, days);
+  // BF_SERVER_v869_BOOKING_PAGES - the meeting type's length, buffer, notice and booking window.
+  const duration = type.duration_min, buffer = type.buffer_min;
+  const slots = candidateSlots(now, days ?? type.max_days_ahead, { durationMin: duration, minNoticeMin: type.min_notice_min, hours });
   if (!slots.length || !staff.length) return [];
-  const busy = await busyTimes(staff.map(mailboxOf), slots[0]!, new Date(slots[slots.length - 1]!.getTime() + SLOT_MIN * 60_000));
-  const taken = await pool.query<{ staff_user_id: string | null; staff_email: string; starts_at: string }>(`SELECT staff_user_id::text, lower(staff_email) AS staff_email, starts_at FROM client_bookings WHERE status = 'booked' AND starts_at >= $1`, [slots[0]!.toISOString()]);
-  const isTaken = (s: Staff, t: Date) => taken.rows.some((b) => (b.staff_user_id === s.id || b.staff_email === s.email || b.staff_email === mailboxOf(s)) && new Date(b.starts_at).getTime() === t.getTime());
-  return slots.map((t) => ({ startsAt: t.toISOString(), staffIds: staff.filter((s) => !overlaps(t, busy.get(mailboxOf(s)) ?? []) && !isTaken(s, t)).map((s) => s.id) })).filter((x) => x.staffIds.length > 0);
+  const busy = await busyTimes(staff.map(mailboxOf), new Date(slots[0]!.getTime() - buffer * 60_000), new Date(slots[slots.length - 1]!.getTime() + (duration + buffer) * 60_000));
+  const taken = await pool.query<{ staff_user_id: string | null; staff_email: string; starts_at: string; duration_min: number | null }>(`SELECT staff_user_id::text, lower(staff_email) AS staff_email, starts_at, duration_min FROM client_bookings WHERE status = 'booked' AND starts_at >= $1`, [new Date(slots[0]!.getTime() - 4 * 3_600_000).toISOString()]);
+  const bookedFor = (s: Staff) => taken.rows.filter((b) => b.staff_user_id === s.id || b.staff_email === s.email || b.staff_email === mailboxOf(s))
+    .map((b) => ({ start: new Date(b.starts_at), end: new Date(new Date(b.starts_at).getTime() + Number(b.duration_min || SLOT_MIN) * 60_000) }));
+  return slots.map((t) => ({ startsAt: t.toISOString(), staffIds: staff.filter((s) => !overlaps(t, busy.get(mailboxOf(s)) ?? [], duration, buffer) && !overlaps(t, bookedFor(s), duration, buffer)).map((s) => s.id) })).filter((x) => x.staffIds.length > 0);
 }
 // BF_SERVER_v786_BOOKING_CRM - a phone booking needs a real North American number: 10 digits,
 // or 11 starting with 1, formatting ignored. Stored as E.164 (+1XXXXXXXXXX). null = not valid.
@@ -106,7 +138,7 @@ export function bookingPhoneE164(raw: unknown): string | null {
   return null;
 }
 
-type BookingResult = { ok: true; booking: { id: string; startsAt: string; staffFirstName: string | null; kind: BookingKind; joinUrl: string | null } } | { ok: false; reason: string };
+type BookingResult = { ok: true; booking: { id: string; startsAt: string; staffFirstName: string | null; kind: BookingKind; joinUrl: string | null; manageToken?: string; contactId?: string; contactCreated?: boolean; durationMin?: number } } | { ok: false; reason: string };
 
 export class BookingCalendarError extends Error {
   constructor(message: string, readonly bookingId: string) { super(message); this.name = "BookingCalendarError"; }
@@ -116,8 +148,10 @@ export class BookingCalendarError extends Error {
 // last 10 digits of the phone, else created), the client_bookings row and the CRM meeting row
 // (crm_meetings: what the Meetings tab and the timeline read) all exist before Graph is called.
 // If Graph fails the CRM records stay, marked failed, and the caller answers 503.
-export async function createBooking(input: { kind: BookingKind; startsAt: Date; staffId: string | null; name: string; email: string; phone: string | null; notes: string | null; now?: Date }): Promise<BookingResult> {
-  const match = (await openSlots(input.now ?? new Date(), input.staffId, 15)).find((s) => new Date(s.startsAt).getTime() === input.startsAt.getTime());
+export async function createBooking(input: { kind: BookingKind; startsAt: Date; staffId: string | null; name: string; email: string; phone: string | null; notes: string | null; now?: Date;
+  /** BF_SERVER_v869_BOOKING_PAGES */ meetingType?: MeetingType; hours?: BookingHours; smsReminders?: boolean }): Promise<BookingResult> {
+  const type = input.meetingType ?? DEFAULT_MEETING_TYPE;
+  const match = (await openSlots(input.now ?? new Date(), input.staffId, type.id ? type.max_days_ahead + 1 : 15, type, input.hours)).find((s) => new Date(s.startsAt).getTime() === input.startsAt.getTime());
   if (!match) return { ok: false, reason: "slot_taken" };
   const everyone = await bookableStaff();
   const staffList = input.staffId ? everyone : intakeTeam(everyone);
@@ -127,8 +161,8 @@ export async function createBooking(input: { kind: BookingKind; startsAt: Date; 
   const staff = staffList.find((s) => s.id === pickId);
   if (!staff) return { ok: false, reason: "staff_unavailable" };
   const phone = input.phone ? bookingPhoneE164(input.phone) : null;
-  const end = new Date(input.startsAt.getTime() + SLOT_MIN * 60_000);
-  const subject = (input.kind === "teams" ? "Teams meeting" : "Phone call") + " with " + input.name + " - Boreal Financial";
+  const end = new Date(input.startsAt.getTime() + type.duration_min * 60_000);
+  const subject = (type.id ? type.name : (input.kind === "teams" ? "Teams meeting" : "Phone call")) + " with " + input.name + " - Boreal Financial";
   const location = input.kind === "phone" ? "Phone call - Boreal calls " + (phone ?? "") : "Microsoft Teams";
 
   // 1. Contact: find by email or last-10 phone; fill what is missing; tag; owner if none.
@@ -151,13 +185,20 @@ export async function createBooking(input: { kind: BookingKind; startsAt: Date; 
       [randomUUID(), input.name, input.email, phone, staff.id]);
     contactId = ins.rows[0]!.id;
     contactCreated = true;
+    // BF_SERVER_v869_LEAD_ROTATION - a new lead from the team page gets its owner in turn (a booking on someone's own
+    // page stays theirs).
+    if (!input.staffId) {
+      const { assignRotatingOwner } = await import("../leads/leadRotation.js");
+      await assignRotatingOwner(pool as any, contactId, "booking", { replaceOwnerId: staff.id, silo: "BF" });
+    }
   }
 
   // 2. The booking and the CRM meeting.
   const id = randomUUID();
   const meetingId = randomUUID();
-  await pool.query(`INSERT INTO client_bookings (id, contact_id, staff_user_id, staff_email, kind, starts_at, duration_min, client_name, client_email, client_phone, notes, crm_meeting_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, [id, contactId, staff.id, mailboxOf(staff), input.kind, input.startsAt.toISOString(), SLOT_MIN, input.name, input.email, phone, input.notes, meetingId]);
+  const manage = newManageToken(); // BF_SERVER_v869_BOOKING_PAGES
+  await pool.query(`INSERT INTO client_bookings (id, contact_id, staff_user_id, staff_email, kind, starts_at, duration_min, client_name, client_email, client_phone, notes, crm_meeting_id, meeting_type_id, manage_token_hash, sms_reminders)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`, [id, contactId, staff.id, mailboxOf(staff), input.kind, input.startsAt.toISOString(), type.duration_min, input.name, input.email, phone, input.notes, meetingId, type.id, manage.hash, input.smsReminders === true && Boolean(phone)]);
   await pool.query(`INSERT INTO crm_meetings (id, title, attendee_description, start_at, end_at, location, attendees_json, owner_id, contact_id, silo, meeting_type, status)
      VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::uuid,$9::uuid,'BF',$10,'scheduled')`,
     [meetingId, subject, input.notes, input.startsAt.toISOString(), end.toISOString(), location, JSON.stringify([{ name: input.name, email: input.email, phone }]), staff.id, contactId, input.kind]);
@@ -185,5 +226,5 @@ export async function createBooking(input: { kind: BookingKind; startsAt: Date; 
   const joinUrl = ev.onlineMeeting?.joinUrl ?? null;
   await pool.query(`UPDATE client_bookings SET graph_event_id = $2, join_url = $3 WHERE id = $1`, [id, ev.id ?? null, joinUrl]);
   await pool.query(`UPDATE crm_meetings SET graph_id = $2, location = COALESCE($3, location), updated_at = now() WHERE id = $1`, [meetingId, ev.id ?? null, joinUrl]);
-  return { ok: true, booking: { id, startsAt: input.startsAt.toISOString(), staffFirstName: staff.first_name, kind: input.kind, joinUrl } };
+  return { ok: true, booking: { id, startsAt: input.startsAt.toISOString(), staffFirstName: staff.first_name, kind: input.kind, joinUrl, manageToken: manage.token, contactId: contactId!, contactCreated, durationMin: type.duration_min } };
 }

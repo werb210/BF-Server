@@ -78,6 +78,11 @@ async function authenticate(req: Request, res: Response, next: NextFunction, all
     }
     role = check.role;
     capabilities = check.capabilities;
+    // BF_SERVER_v869_SECURITY - the Admin's "require a passkey or two-step sign-in" switch.
+    const { mustRefuseWeakSession, STRONG_SIGN_IN_BODY } = await import("../security/sessions.js");
+    if (mustRefuseWeakSession({ role: check.role, strong: check.sessionStrong, path: String(req.originalUrl || req.url || "") })) {
+      return res.status(403).json(STRONG_SIGN_IN_BODY);
+    }
   }
   const siloClaim = typeof decoded.silo === "string" ? decoded.silo.trim() : "";
 

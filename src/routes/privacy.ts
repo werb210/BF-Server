@@ -8,6 +8,7 @@ import rateLimit from "express-rate-limit";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { clientIpFromRequest, rateLimitKeyFromRequest } from "../middleware/clientIp.js";
 import { regionResolver } from "../privacy/region.js";
+import privacyRequestRoutes from "./privacyRequests.js"; // BF_SERVER_v869_SETTINGS_PACK - consent records and privacy requests
 
 const router = Router();
 
@@ -20,5 +21,8 @@ router.get("/region", regionLimiter, safeHandler(async (req: any, res: any) => {
   res.setHeader("Cache-Control", "private, max-age=300");
   return res.json({ region });
 }));
+
+// BF_SERVER_v869_SETTINGS_PACK - the rest of /api/privacy (one mount per path in routeRegistry).
+router.use(privacyRequestRoutes);
 
 export default router;

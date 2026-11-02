@@ -83,6 +83,7 @@ describe("only real, external contacts are logged", () => {
     const pool = { query: async (sql: string, params: any[]) => {
       if (sql.includes("FROM users")) return { rows: [{ silo: "BF" }], rowCount: 1 };
       if (sql.includes("FROM contacts")) return { rows: [{ id: "contact-1" }], rowCount: 1 };
+      if (sql.includes("FROM never_log_entries")) return { rows: [], rowCount: 0 }; // v869: nothing on the never-log list
       inserts.push(params);
       return { rows: [], rowCount: 1 };
     } } as any;

@@ -19,6 +19,18 @@ import { findCallLogByTwilioSid } from "../modules/calls/calls.repo.js"; // BF_S
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 void twilio;
+// BF_SERVER_v869_PHONE_MENU - has an Admin saved a phone menu? (A lookup failure keeps ring-all, logged.)
+async function phoneMenuSaved(): Promise<boolean> {
+  try {
+    const { pool } = await import("../db.js");
+    const r = await pool.query(`SELECT 1 FROM phone_menu_config WHERE id = 1`);
+    return (r.rows ?? []).length > 0;
+  } catch (err: any) {
+    console.warn("phone_menu_lookup_failed", { message: err?.message });
+    return false;
+  }
+}
+
 const router = Router();
 
 // BF_SERVER_BLOCK_v324_TWILIO_WEBHOOKS_URLENCODED_BODY_v1
@@ -355,6 +367,15 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
   // ── v503: PSTN inbound -> conference + ring-all staff
   const looksLikePhoneFrom = /^\+?\d{8,15}$/.test(from);
   if (looksLikePhoneFrom && !from.startsWith("client:")) {
+    // BF_SERVER_v869_BLOCKED_NUMBERS - a blocked caller never rings anyone (a polite message, or voicemail). Direct
+    // lines, the 866 menu and ring-all all pass through here.
+    {
+      const { pool: blockPool } = await import("../db.js");
+      const { handleBlockedCall } = await import("../voice/blockedNumbers.js");
+      const { default: BlockVR } = await import("twilio/lib/twiml/VoiceResponse.js");
+      const vb = new BlockVR();
+      if (await handleBlockedCall(blockPool as any, vb, from, callSid || null)) return res.send(vb.toString());
+    }
     // BF_SERVER_v853_KS_PHONE_SUPPORT - the Keystone number has its own menu, queues and silo (routes/ksVoice.ts).
     if ((await import("../modules/ks/ksPhone.js")).isKsVoiceNumber(to)) {
       const { default: KsVoiceResponse } = await import("twilio/lib/twiml/VoiceResponse.js");
@@ -420,9 +441,10 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
     } catch (err: any) {
       console.warn("direct_line_lookup_failed", { callSid, message: err?.message });
     }
-    // BF_SERVER_RECEPTION_v1 — when enabled, hand PSTN callers to the Maya
-    // receptionist instead of ring-all. Inert unless RECEPTION_ENABLED=true.
-    if (process.env.RECEPTION_ENABLED === "true") {
+    // BF_SERVER_RECEPTION_v1 — hand PSTN callers to the phone menu instead of ring-all.
+    // BF_SERVER_v869_PHONE_MENU - on when RECEPTION_ENABLED=true (as today) or once an Admin has saved a phone menu
+    // (Settings > Phone menu); RECEPTION_ENABLED=false keeps ring-all.
+    if (process.env.RECEPTION_ENABLED === "true" || (process.env.RECEPTION_ENABLED !== "false" && await phoneMenuSaved())) {
       const vredir = new VoiceResponse();
       vredir.redirect({ method: "POST" }, "/api/webhooks/twilio/reception/greeting");
       return res.send(vredir.toString());
@@ -720,6 +742,12 @@ async function persistInboundSms(req: any): Promise<void> {
   const toNum = typeof To === "string" ? To : null;
   const body = Body ? String(Body) : "[media]";
   const sid = typeof MessageSid === "string" ? MessageSid : null;
+  // BF_SERVER_v869_BLOCKED_NUMBERS - a text from a blocked number is ignored (and logged).
+  {
+    const { pool: blockPool } = await import("../db.js");
+    const { ignoreBlockedText } = await import("../voice/blockedNumbers.js");
+    if (await ignoreBlockedText(blockPool as any, fromNum, body, sid)) return;
+  }
 
   // BF_SERVER_BLOCK_v637_MOBILE_PHONE_AND_BACKFILL_v1 — contacts.mobile_phone does not exist.
   const contact = await pool.query<{ id: string; silo: string | null; name: string | null }>(

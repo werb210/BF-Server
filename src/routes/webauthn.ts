@@ -22,7 +22,7 @@ const RP_NAME = process.env.WEBAUTHN_RP_NAME || "Boreal Financial";
 const ORIGINS = (process.env.WEBAUTHN_ORIGINS || `https://${RP_ID}`)
   .split(",").map((s) => s.trim()).filter(Boolean);
 
-function mintStaffToken(user: any): string {
+function mintStaffToken(user: any, ksid?: string | null): string {
   const role = normalizeRole(user.role ?? "") ?? ROLES.STAFF;
   const userSilos = Array.isArray(user.silos) ? (user.silos as string[]) : [];
   const userSilo = user.silo as string | undefined;
@@ -34,6 +34,7 @@ function mintStaffToken(user: any): string {
     ...(user.phoneNumber ? { phone: user.phoneNumber } : {}),
     ...(userSilo ? { silo: userSilo } : {}),
     ...(userSilos.length ? { silos: userSilos } : {}),
+    ...(ksid ? { ksid } : {}), // BF_SERVER_v869_SECURITY
   } as any);
 }
 
@@ -84,6 +85,11 @@ router.post("/register/verify", requireAuth, safeHandler(async (req: any, res) =
     [userId, cred.id, Buffer.from(cred.publicKey).toString("base64url"), cred.counter ?? 0, cred.transports ?? null,
      typeof req.body?.deviceLabel === "string" ? req.body.deviceLabel.slice(0, 120) : null]);
   await pool.query(`DELETE FROM webauthn_challenges WHERE user_id = $1 AND kind = 'register'`, [userId]);
+  // BF_SERVER_v869_SECURITY - the second step: a passkey added in a text-code session makes that session strong.
+  if (typeof req.user?.ksid === "string" && req.user.ksid) {
+    const { markSessionStrong } = await import("../security/sessions.js");
+    await markSessionStrong(pool as any, req.user.ksid, String(userId));
+  }
   return res.json({ ok: true });
 }));
 
@@ -139,8 +145,12 @@ router.post("/login/verify", safeHandler(async (req: any, res) => {
   const user = await findAuthUserById(cred.user_id);
   if (!user || (user as any).disabled || !(user as any).active) return res.status(403).json({ error: "user_inactive" });
   // BF_SERVER_v868_SLIDING_REFRESH - and a refresh token, so the portal keeps the session going (up to 30 days).
-  const refreshFields = await refreshFieldsForSignIn(pool as any, { userId: String(cred.user_id), tokenVersion: (user as any).tokenVersion ?? 0 });
-  return res.json({ status: "ok", data: { token: mintStaffToken(user), ...refreshFields } });
+  // BF_SERVER_v869_SECURITY - a passkey sign-in is a strong session.
+  const { openSession } = await import("../security/sessions.js");
+  const fwd = String(req.headers?.["x-forwarded-for"] ?? "").split(",")[0]?.trim();
+  const ksid = await openSession(pool as any, { userId: String(cred.user_id), method: "passkey", ip: fwd || req.ip || null, userAgent: String(req.headers?.["user-agent"] ?? "") });
+  const refreshFields = await refreshFieldsForSignIn(pool as any, { userId: String(cred.user_id), tokenVersion: (user as any).tokenVersion ?? 0, ksid });
+  return res.json({ status: "ok", data: { token: mintStaffToken(user, ksid), ...refreshFields } });
 }));
 
 export default router;

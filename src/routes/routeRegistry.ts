@@ -91,6 +91,15 @@ import visitorTrackRoutes from "./visitorTrack.js"; // BF_SERVER_VISITOR_JOURNEY
 import analyticsRoutes from "./analytics.js"; // BF_SERVER_v789_ANALYTICS_COLLECTOR (public, 60/min per IP)
 import naicsRoutes from "./naics.js"; // BF_SERVER_NAICS_v83 (public)
 import privacyRoutes from "./privacy.js"; // BF_SERVER_v868_QUEBEC_CONSENT (public)
+// BF_SERVER_v869_SETTINGS_PACK - Settings pack ported from KS-server #38 (each router checks its own roles).
+import phoneMenuRoutes from "./phoneMenu.js";
+import bookingSettingsRoutes from "./bookingSettings.js";
+import securityRoutes from "./security.js";
+import neverLogRoutes from "./neverLog.js";
+import leadRotationRoutes from "./leadRotation.js";
+import blockedNumbersRoutes from "./blockedNumbers.js";
+import surveysRoutes from "./surveys.js";
+import taskDefaultsRoutes from "./taskDefaults.js";
 import recipientSuggestRoutes from "./recipientSuggest.js"; // BF_SERVER_RECIPIENT_SUGGEST_v100
 import referralsRoutes from "./referrals.js";
 import referralsExtRoutes from "./referralsExt.js";
@@ -355,6 +364,15 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/analytics", router: analyticsRoutes }, // BF_SERVER_v789_ANALYTICS_COLLECTOR (public, rate limited in the router)
   { path: "/naics", router: naicsRoutes }, // BF_SERVER_NAICS_v83 (public)
   { path: "/privacy", router: privacyRoutes }, // BF_SERVER_v868_QUEBEC_CONSENT - GET /api/privacy/region (public)
+  // BF_SERVER_v869_SETTINGS_PACK
+  { path: "/phone-menu", router: phoneMenuRoutes }, // Admin: Settings > Phone menu (the 866 menu)
+  { path: "/booking-settings", router: bookingSettingsRoutes }, // Admin: Settings > Booking pages; staff: own link
+  { path: "/security", router: securityRoutes }, // staff: own sessions; Admin: anyone's, and the strong sign-in switch
+  { path: "/never-log", router: neverLogRoutes }, // Admin: addresses and domains never logged to the CRM
+  { path: "/lead-rotation", router: leadRotationRoutes }, // Admin: round-robin owners for new leads (per silo); staff: away
+  { path: "/blocked-numbers", router: blockedNumbersRoutes }, // Admin: blocked callers and texters
+  { path: "/surveys", router: surveysRoutes }, // public answers; Admin settings; Admin/Staff report
+  { path: "/task-defaults", router: taskDefaultsRoutes }, // staff: follow-up task defaults and the prompt
   { path: "/recipients/suggest", router: recipientSuggestRoutes }, // BF_SERVER_RECIPIENT_SUGGEST_v100
   { path: "/", router: rootRoutes },
   { path: "/slf", router: slfRoutes },
@@ -426,6 +444,9 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/webhooks/twilio/reception/company", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/reception/intent", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/reception/unavailable", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/reception/group-next", roles: [] }, // BF_SERVER_v869_PHONE_MENU
+  { method: "POST", path: "/api/webhooks/twilio/reception/ai", roles: [] }, // BF_SERVER_v869_PHONE_MENU
+  { method: "GET", path: "/api/webhooks/twilio/reception/audio/:id", roles: [] }, // BF_SERVER_v869_PHONE_MENU
   { method: "POST", path: "/api/webhooks/twilio/reception/fallback", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/reception/screen", roles: [] }, // BF_SERVER_v820_WATCH_CALLS
   { method: "POST", path: "/api/webhooks/twilio/reception/screen-result", roles: [] }, // BF_SERVER_v820_WATCH_CALLS

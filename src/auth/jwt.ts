@@ -17,6 +17,8 @@ export type AccessTokenPayload = {
   silo?: string;
   silos?: string[]; // v620: accessible silos for multi-silo users
   capabilities?: Capability[];
+  /** BF_SERVER_v869_SECURITY - the signed-in session (user_sessions.id) this token belongs to. */
+  ksid?: string;
 };
 
 const JWT_ISSUER = "boreal-staff-server";

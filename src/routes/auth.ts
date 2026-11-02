@@ -46,6 +46,12 @@ async function isStaffPhone(phone: string): Promise<boolean> {
     return false;
   }
 }
+// BF_SERVER_v869_SECURITY - the caller's address for the Security page's session list.
+function clientIpOf(req: any): string | null {
+  const fwd = String(req?.headers?.["x-forwarded-for"] ?? "").split(",")[0]?.trim();
+  return (fwd || String(req?.ip ?? "")).replace(/:\d+$/, "").slice(0, 64) || null;
+}
+
 const router = Router();
 
 const isValidPhone = (phone: unknown): phone is string => typeof phone === "string" && phone.trim().length > 0;
@@ -543,7 +549,11 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
       // render the silo selector without an extra round-trip.
       const userSilos = Array.isArray((user as any).silos) ? ((user as any).silos as string[]) : [];
       const userSilo = (user as any).silo as string | undefined;
+      // BF_SERVER_v869_SECURITY - a text-code sign-in opens a session (Settings > Security lists it; one step).
+      const { openSession } = await import("../security/sessions.js");
+      const ksid = await openSession(pool as any, { userId: String(user.id), method: "otp", ip: clientIpOf(req), userAgent: String(req.headers["user-agent"] ?? "") });
       token = signAccessToken({
+        ...(ksid ? { ksid } : {}),
         sub: String(user.id),
         role,
         tokenVersion: user.tokenVersion ?? 0,
@@ -552,7 +562,7 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
         ...(userSilo ? { silo: userSilo } : {}),
         ...(userSilos.length ? { silos: userSilos } : {}),
       });
-      refreshFields = await refreshFieldsForSignIn(pool as any, { userId: String(user.id), tokenVersion: user.tokenVersion ?? 0 });
+      refreshFields = await refreshFieldsForSignIn(pool as any, { userId: String(user.id), tokenVersion: user.tokenVersion ?? 0, ksid });
     } else {
       // BF_SERVER_CLIENT_USERTYPE_v334 - log which of the two reasons applied, so
       // "why am I a client here" is answerable from the log stream alone.
@@ -657,7 +667,11 @@ router.post("/device-sign-in", otpVerifyLimiter, async (req: any, res: any) => {
     const user: any = await findAuthUserById(result.userId);
     const role = normalizeRole(user.role ?? "") ?? ROLES.STAFF;
     const userSilos = Array.isArray(user.silos) ? (user.silos as string[]) : [];
+    // BF_SERVER_v869_SECURITY - Face ID on an enrolled dialler: device + biometric, a strong session.
+    const { openSession } = await import("../security/sessions.js");
+    const ksid = await openSession(pool as any, { userId: String(user.id), method: "device", ip: clientIpOf(req), userAgent: String(req.headers?.["user-agent"] ?? "") });
     const token = signAccessToken({
+      ...(ksid ? { ksid } : {}),
       sub: String(user.id),
       role,
       tokenVersion: user.tokenVersion ?? 0,
@@ -695,7 +709,9 @@ router.post("/session/renew", requireStaffAuth, safeHandler(async (req: any, res
     return res.status(401).json({ error: "session_not_renewable", message: "Your account can't be signed in. Ask an admin." });
   }
   const userSilos = Array.isArray(user.silos) ? (user.silos as string[]) : [];
+  const renewKsid = typeof req.user?.ksid === "string" ? req.user.ksid : undefined; // BF_SERVER_v869_SECURITY - same session
   const token = signAccessToken({
+    ...(renewKsid ? { ksid: renewKsid } : {}),
     sub: String(user.id),
     role,
     tokenVersion: user.tokenVersion ?? 0,
@@ -731,9 +747,16 @@ router.post("/refresh", refreshLimiter, safeHandler(async (req: any, res: any) =
   const role = user ? normalizeRole(user.role ?? "") : null;
   if (!user || !role || !isStaffRole(role) || user.disabled || user.active === false) return refuse("not_active_staff");
   if ((Number(user.tokenVersion ?? 0) || 0) !== rotated.tokenVersion) return refuse("signed_out_everywhere");
+  // BF_SERVER_v869_SECURITY - a chain whose device session was signed out (Settings > Security) ends here too.
+  if (rotated.ksid) {
+    const { checkSession } = await import("../security/sessions.js");
+    const s = await checkSession(pool as any, rotated.ksid, String(user.id));
+    if (!s.ok) return s.status === 503 ? res.status(503).json({ error: "refresh_unavailable" }) : refuse("session_signed_out");
+  }
   // Silo and silos come from the users row now, like a fresh sign-in, so a silo change applies at the next refresh.
   const userSilos = Array.isArray(user.silos) ? (user.silos as string[]) : [];
   const token = signAccessToken({
+    ...(rotated.ksid ? { ksid: rotated.ksid } : {}), // BF_SERVER_v869_SECURITY - the same device session
     sub: String(user.id),
     role,
     tokenVersion: user.tokenVersion ?? 0,

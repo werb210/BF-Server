@@ -98,10 +98,11 @@ export async function loadStaffUser(
   return record;
 }
 
-export type StaffUserRejection = "lookup_failed" | "user_not_found" | "user_inactive" | "user_disabled" | "user_locked" | "token_revoked" | "no_role" | "not_staff";
+export type StaffUserRejection = "lookup_failed" | "user_not_found" | "user_inactive" | "user_disabled" | "user_locked" | "token_revoked" | "no_role" | "not_staff"
+  | "session_revoked" | "session_lookup_failed"; // BF_SERVER_v869_SECURITY
 
 export type StaffUserCheck =
-  | { ok: true; record: StaffUserRecord; role: string; capabilities: string[]; tokenVersion: number }
+  | { ok: true; record: StaffUserRecord; role: string; capabilities: string[]; tokenVersion: number; /** BF_SERVER_v869_SECURITY */ sessionStrong: boolean }
   | { ok: false; status: 401 | 403 | 503; reason: StaffUserRejection };
 
 function claimTokenVersion(claims: Record<string, unknown>): number {
@@ -161,5 +162,15 @@ export async function checkStaffUser(
   const role = typeof record.role === "string" ? record.role.trim() : "";
   if (!role) return { ok: false, status: 401, reason: "no_role" };
   if (!isStaffRole(role)) return { ok: false, status: 403, reason: "not_staff" };
-  return { ok: true, record, role, capabilities: capabilitiesForDbRole(role, claims), tokenVersion };
+  // BF_SERVER_v869_SECURITY - a token from a session that was signed out (one device, or everywhere) is refused.
+  // Tokens from before sessions existed carry no ksid and are not strong.
+  let sessionStrong = false;
+  if (typeof (claims as any).ksid === "string" && (claims as any).ksid) {
+    const { checkSession } = await import("../security/sessions.js");
+    const { pool } = await import("../db.js");
+    const s = await checkSession(pool as any, (claims as any).ksid, String(record.id ?? userId));
+    if (!s.ok) return { ok: false, status: s.status, reason: s.reason };
+    sessionStrong = s.strong;
+  }
+  return { ok: true, record, role, capabilities: capabilitiesForDbRole(role, claims), tokenVersion, sessionStrong };
 }

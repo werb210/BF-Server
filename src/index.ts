@@ -184,6 +184,18 @@ export async function start(): Promise<void> {
     );
   }
 
+  // BF_SERVER_v869_SECURITY - every instance (workers or not) enforces the Admin's "require a passkey or two-step
+  // sign-in" switch; it is re-read every minute.
+  if (process.env.NODE_ENV !== "test") {
+    try {
+      const { pool } = await import("./db.js");
+      const { startSecuritySettingsRefresh } = await import("./security/sessions.js");
+      startSecuritySettingsRefresh(pool as any);
+    } catch (err) {
+      console.error("[startup] security settings refresh failed to start:", err);
+    }
+  }
+
   // BF_AZURE_OCR_TERMSHEET_v44 — start OCR + banking auto-workers.
   // Both are no-ops if NODE_ENV=test.
   // BF_SERVER_BLOCK_v479_BF_WORKERS_SWITCH - and off where BF_WORKERS_ENABLED=false (staging slot).
@@ -218,6 +230,17 @@ export async function start(): Promise<void> {
     void import("./services/brokerImport/packageBackfill.js")
       .then((m) => m.backfillPackagePrefill())
       .catch((err) => console.warn("[startup] package backfill failed:", (err as Error)?.message ?? err));
+
+    // BF_SERVER_v869_SETTINGS_PACK - post-funding surveys (when an Admin switched them on) and booking reminders
+    // 24 h and 1 h before.
+    const { startNpsSurveyWorker } = await import("./workers/npsSurveyWorker.js");
+    await workerStagger();
+    try { const w = startNpsSurveyWorker(pool); workerStops.push(w.stop); console.log("[startup] nps-survey worker started"); }
+    catch (err) { console.error("[startup] nps-survey worker failed to start:", err); }
+    const { startBookingRemindersWorker } = await import("./workers/bookingRemindersWorker.js");
+    await workerStagger();
+    try { const w = startBookingRemindersWorker(pool); workerStops.push(w.stop); console.log("[startup] booking-reminders worker started"); }
+    catch (err) { console.error("[startup] booking-reminders worker failed to start:", err); }
 
     // BF_SERVER_BLOCK_v146_LENDER_PACKAGE_WORKER_v1
     const { startLenderPackageWorker } = await import("./workers/lenderPackageWorker.js");
