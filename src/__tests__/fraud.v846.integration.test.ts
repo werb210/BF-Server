@@ -199,7 +199,8 @@ describe("BF v846 fraud suite (real Postgres)", () => {
     await handleCandidates(db, { id: ADMIN, label: "Pat Admin" }, [{ kind: "banking_details_changed", severity: "red", applicationId: A, detail: { fields: ["transit_number"] } }], new Date()); // same hour: deduped
     await alertAdmins(db);
     await alertAdmins(db);
-    const n = await pool.query(`SELECT user_id::text AS u, body FROM notifications WHERE type = 'fraud_staff_alert' AND application_id = $1`, [A]);
+    // Only this file's two Admins: other integration files running alongside add their own Admin users.
+    const n = await pool.query(`SELECT user_id::text AS u, body FROM notifications WHERE type = 'fraud_staff_alert' AND application_id = $1 AND user_id = ANY($2::uuid[])`, [A, [ADMIN, ADMIN2]]);
     expect(n.rows).toEqual([{ u: ADMIN2, body: "Pat Admin changed the banking details on a file. Review it in the file's Fraud check tab." }]);
   });
 
