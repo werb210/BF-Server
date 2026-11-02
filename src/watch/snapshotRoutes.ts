@@ -4,6 +4,7 @@
 // both values in one call so a foreground refresh is not two round trips on a
 // cellular connection.
 import { Router } from "express";
+import { scopedRequest } from "../visibility/scopedDb.js"; // BF_SERVER_v870_CRM_DATA_MODEL
 import { pool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
@@ -86,6 +87,7 @@ export async function buildWatchSnapshot(userId: string) {
 router.get(
   "/snapshot",
   requireAuth,
+  scopedRequest, // BF_SERVER_v870_CRM_DATA_MODEL
   safeHandler(async (req: any, res: any) => {
     res.json(await buildWatchSnapshot(String(req.user?.userId ?? req.user?.id ?? "")));
   }),

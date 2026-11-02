@@ -6,22 +6,27 @@ import { pool } from "../db.js";
 import { getSilo, resolveSiloFromRequest } from "../middleware/silo.js";
 import { createCompany } from "../services/companies.js";
 import { refuseIfLocked } from "../retention/retention.js"; // BF_SERVER_v855_RETENTION
+import { COMPANIES_RULES, recordGuard } from "../visibility/recordGuard.js"; // BF_SERVER_v870_CRM_DATA_MODEL
+import { ownerFilterSql, scopeForRequest } from "../visibility/scope.js"; // BF_SERVER_v870_CRM_DATA_MODEL
 
 const router = Router();
 router.use(requireAuth);
+router.use(recordGuard(COMPANIES_RULES)); // BF_SERVER_v870_CRM_DATA_MODEL
 
 router.get("/", safeHandler(async (req: any, res: any) => {
   // BF_SERVER_BLOCK_v123_READINESS_SQL_AND_SILO_AUTH_RESOLUTION_v1
   const silo = resolveSiloFromRequest(req);
+  const params: unknown[] = [silo];
+  const scope = ownerFilterSql(await scopeForRequest(req, pool as any), "company", "c", params); // BF_SERVER_v870_CRM_DATA_MODEL
 
   const { rows } = await pool.query(
     `SELECT c.*, count(ct.id)::int AS contact_count
      FROM companies c
      LEFT JOIN contacts ct ON ct.company_id = c.id
-     WHERE c.silo = $1
+     WHERE c.silo = $1 AND ${scope}
      GROUP BY c.id
      ORDER BY c.created_at DESC`,
-    [silo]
+    params
   );
 
   res.json({ ok: true, data: rows });
@@ -78,12 +83,14 @@ router.get("/:id", safeHandler(async (req: any, res: any) => {
   const company = companyRes.rows[0];
   if (!company) throw new AppError("not_found", "Company not found", 404);
 
+  const cParams: unknown[] = [id];
+  const cScope = ownerFilterSql(await scopeForRequest(req, pool as any), "contact", "contacts", cParams); // BF_SERVER_v870_CRM_DATA_MODEL
   const contactsRes = await pool.query(
     `SELECT id, name, email, phone, company_name, lead_status, owner_id, created_at
      FROM contacts
-     WHERE company_id = $1
+     WHERE company_id = $1 AND ${cScope}
      ORDER BY created_at DESC`,
-    [id]
+    cParams
   );
 
   const timelineRes = await pool.query(

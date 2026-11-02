@@ -17,6 +17,7 @@ import { lastContactFor, portfolioReport, QUEUES, queueCounts, runQueue, summari
 import { addAsset, addDocument, addInsurance, CLIENT_REQUESTS, clientSafe, getProductRule, getSettings, listAssets, listDocuments, listInsurance, removeAsset, saveProductRule, saveSettings } from "../activeContracts/extras.js";
 import { confirmReview, defaultStatementDeps, listReviews, rejectReview, reviewUploadedStatement } from "../activeContracts/statements.js";
 import { contractActivity, writeContractEvent } from "../activeContracts/timeline.js";
+import { scopeForRequest } from "../visibility/scope.js"; // BF_SERVER_v870_CRM_DATA_MODEL
 
 const router = Router();
 const staff = [auth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] })];
@@ -43,7 +44,17 @@ async function contractOr404(req: any, res: any): Promise<any | null> {
   if (!ID.test(id)) { res.status(404).json({ ok: false, error: "not_found" }); return null; }
   const row = await getContractRow(db, id, resolveSiloFromRequest(req));
   if (!row) { res.status(404).json({ ok: false, error: "not_found" }); return null; }
+  // BF_SERVER_v870_CRM_DATA_MODEL - a contract is visible to whoever may see its owner's records (All / Team / Own).
+  if (!(await ownerVisible(req))(row.owner_user_id)) { res.status(404).json({ ok: false, error: "not_found" }); return null; }
   return row;
+}
+
+// BF_SERVER_v870_CRM_DATA_MODEL - record visibility for contracts, by the contract's owner (the funded file's owner).
+async function ownerVisible(req: any): Promise<(ownerId: unknown) => boolean> {
+  const scope = await scopeForRequest(req, db as any);
+  if (scope.mode === "all") return () => true;
+  const ids = new Set(scope.ownerIds.map((x) => x.toLowerCase()));
+  return (ownerId: unknown) => typeof ownerId === "string" && ids.has(ownerId.toLowerCase());
 }
 
 // ---- Client view (section 11, behind a flag) ----
@@ -97,7 +108,8 @@ router.get("/", ...staff, safeHandler(async (req: any, res: any) => {
   const companyId = typeof req.query.company_id === "string" && ID.test(req.query.company_id) ? req.query.company_id : null;
   const contactId = typeof req.query.contact_id === "string" && ID.test(req.query.contact_id) ? req.query.contact_id : null;
   const now = new Date();
-  const views = (await listContracts(db, { silo, companyId, contactId })).map((r) => contractView(r, now));
+  const visible = await ownerVisible(req); // BF_SERVER_v870_CRM_DATA_MODEL
+  const views = (await listContracts(db, { silo, companyId, contactId })).filter((r: any) => visible(r.owner_user_id)).map((r) => contractView(r, now));
   const ids = views.map((v) => v.id);
   const [ledger, expected] = [await ledgerFor(db, ids), await expectedFor(db, ids)];
   let last: Date | null = null;
@@ -138,7 +150,9 @@ router.get("/queues/:key", ...staff, safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const months = Number(req.query.months) || (await getSettings(db, silo)).no_contact_months;
   res.setHeader("Cache-Control", "no-store");
-  return res.json({ ok: true, key, title: QUEUES[key], contracts: await runQueue(db, silo, key, new Date(), { months }) });
+  const visible = await ownerVisible(req); // BF_SERVER_v870_CRM_DATA_MODEL
+  const contracts = (await runQueue(db, silo, key, new Date(), { months })).filter((c: any) => visible(c.owner_user_id));
+  return res.json({ ok: true, key, title: QUEUES[key], contracts });
 }));
 router.get("/reports/portfolio", ...adminOnly, safeHandler(async (req: any, res: any) => {
   res.setHeader("Cache-Control", "no-store");

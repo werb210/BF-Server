@@ -136,6 +136,13 @@ import conversationsRoutes from "./conversations.js";
 import smsInboundWebhookRoutes from "./smsInboundWebhook.js";
 // BF_SERVER_BLOCK_v214_MAYA_STAFF_PIPELINE_QUERY_v1
 import mayaStaffRouter, { verifyMayaService } from "./mayaStaff.js";
+// BF_SERVER_v870_CRM_DATA_MODEL - custom fields, teams and record visibility, extra pipelines, custom roles.
+import customFieldsRoutes from "./customFields.js";
+import salesTeamsRoutes from "./salesTeams.js";
+import pipelinesRoutes from "./pipelines.js";
+import rolesRoutes from "./roles.js";
+import { scopedAssistantRequest } from "../visibility/scopedDb.js";
+import { recordGuard, type GuardRule } from "../visibility/recordGuard.js";
 import mayaStaffInsightsRouter from "./mayaStaffInsights.js"; // BF_SERVER_MAYA_INSIGHTS_v655
 import mayaStaffAdsRouter from "./mayaStaffAds.js"; // BF_SERVER_MAYA_ADS_v683
 import mayaStaffAdsInsightsRouter from "./mayaStaffAdsInsights.js"; // BF_SERVER_MAYA_ADS_TOOLS_v712
@@ -234,6 +241,11 @@ combinedMayaRoutes.post("/website-chat", mayaProxyRateLimit, safeHandler(async (
 // BF_SERVER_v868_MAYA_ACTING_STAFF - the assistant's staff tools act only as the staff member named in the
 // X-Maya-Context this server signed (the agent hands it back); a different staff_user_id or silo gets 403.
 combinedMayaRoutes.use("/staff", mayaActingStaff((req) => Boolean(verifyMayaService(req))));
+// BF_SERVER_v870_CRM_DATA_MODEL - the assistant's staff tools read only what the acting staff member (verified just
+// above) may see. Only for verified service calls. Tools that read no contact, company or application (Ads, GA4,
+// lender products, automations) are left alone.
+const ASSISTANT_UNSCOPED = /^\/(ads-|ga4|lender-products|automations-overview|audit-recent)/;
+combinedMayaRoutes.use("/staff", (req, res, next) => (verifyMayaService(req) && !ASSISTANT_UNSCOPED.test(req.path) ? scopedAssistantRequest(req, res, next) : next()));
 combinedMayaRoutes.use(mayaRoutes);
 combinedMayaRoutes.use(mayaPendingActionsRouter); // BF_SERVER_v784_MAYA_SMS_CONFIRM - /pending-actions (staff humans only)
 combinedMayaRoutes.use(mayaAdminStubs);
@@ -390,7 +402,29 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/ks/crm", router: ksCrmRoutes }, // BF_SERVER_v850_KS_CRM - KS-Ops ingest (X-KS-Ops-Key) + Keystone pipeline
   { path: "/ks/marketing", router: ksMarketingRoutes }, // BF_SERVER_v865_KS_MARKETING - KS-Ops prospect marketing: CRM contacts out, timeline events in (X-KS-Ops-Key)
   { path: "/quickbooks", router: quickbooksRoutes }, // BF_SERVER_v852_CALC_QBO - QuickBooks connection (Admin) + fee invoices
+  // BF_SERVER_v870_CRM_DATA_MODEL
+  { path: "/custom-fields", router: customFieldsRoutes }, // Settings > Properties: definitions (Admin), values on records (staff)
+  { path: "/teams", router: salesTeamsRoutes }, // Settings > Teams: teams, members, record visibility (Admin); GET /me staff
+  { path: "/pipelines", router: pipelinesRoutes }, // extra pipelines (Admin builds, staff move deals); Lending stays locked
+  { path: "/roles", router: rolesRoutes }, // Settings > Users & roles: custom roles (full Admin); GET /me every staff member
 ];
+
+// BF_SERVER_v870_CRM_DATA_MODEL - staff mounts whose routes address one application by id (router-relative patterns).
+// The CRM, companies, portal, applications, documents and application-notes routers carry their own guards. A staff
+// member who may not see the application gets 404 (as for an id that does not exist).
+const APP_FIRST: GuardRule[] = [{ pattern: /^\/([^/]+)(?:\/|$)/, kind: "application" }];
+export const RECORD_GUARDED_MOUNTS: Record<string, GuardRule[]> = {
+  "/credit-summary": [{ pattern: /^\/([^/]+)(?:\/|$)/, kind: "application" }],
+  "/credit-summary-v2": APP_FIRST,
+  "/credit-research": APP_FIRST,
+  "/credit-collateral": APP_FIRST,
+  "/credit-financials": APP_FIRST,
+  "/application-origin": APP_FIRST,
+  "/banking": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }],
+  "/fraud": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }],
+  "/retention": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }],
+  "/lender-referrals": [{ pattern: /^\/by-application\/([^/]+)(?:\/|$)/, kind: "application" }],
+};
 
 export const PORTAL_ROUTE_REQUIREMENTS: Pick<ApiRoute, "method" | "path">[] = [
   { method: "GET", path: "/api/auth/me" },
@@ -583,6 +617,10 @@ export function registerApiRouteMounts(app: Router): void {
 
   API_ROUTE_MOUNTS.forEach((entry) => {
     if (entry.path === "/ocr/admin") return;
-    mount(app, entry.path, entry.router);
+    // BF_SERVER_v870_CRM_DATA_MODEL - mounts keyed by an application id check that the user may see that application.
+    const guarded = RECORD_GUARDED_MOUNTS[entry.path]
+      ? Router().use(recordGuard(RECORD_GUARDED_MOUNTS[entry.path], { requireFirst: true }), entry.router)
+      : entry.router;
+    mount(app, entry.path, guarded);
   });
 }

@@ -18,6 +18,7 @@ import { smsFromFor, smsSenderFor } from "../lib/smsFrom.js"; // BF_SERVER_US_SM
 // BF_SERVER_MEDIA_QUERY_AUTH_v1 - <img>/<audio>/EventSource cannot send an
 // Authorization header, so the media proxies and the message stream accept a
 // ?token= query param. This runs BEFORE router.use(requireAuth).
+import { scopedReads } from "../visibility/scopedDb.js"; // BF_SERVER_v870_CRM_DATA_MODEL
 // BF_SERVER_v789_URL_TICKETS - the query param must be a 60-second URL ticket
 // from POST /api/auth/url-ticket (a full staff JWT there is a 401). Without a
 // query token the normal Authorization header applies via requireAuth below.
@@ -85,6 +86,9 @@ async function mergeCtxForContact(opts: { contactId?: string | null; phone?: str
 }
 router.use(unlessUrlTicket(requireAuth)); // BF_SERVER_v789_URL_TICKETS
 router.use(requireCapability([CAPABILITIES.COMMUNICATIONS_READ]));
+// BF_SERVER_v870_CRM_DATA_MODEL - lists, threads, timelines and call events show only activity whose contact,
+// company and application this user may see (all / team / own). See src/visibility/scopedDb.ts.
+router.use(scopedReads);
 
 // BF_SERVER_v817_DIALER_MESSAGING - see the call-events route below.
 const CALL_EVENT_TYPES = new Set(["call.started", "call.ended", "call.failed", "call.missed", "call.declined"]);

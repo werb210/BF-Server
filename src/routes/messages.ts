@@ -9,6 +9,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { eventBus } from "../events/eventBus.js";
 import { optionalString, requireString } from "../system/validate.js";
+import { scopedRequest } from "../visibility/scopedDb.js"; // BF_SERVER_v870_CRM_DATA_MODEL
 
 const router = Router();
 
@@ -16,6 +17,7 @@ const router = Router();
 router.get(
   "/",
   requireAuth,
+  scopedRequest, // BF_SERVER_v870_CRM_DATA_MODEL - only messages on records this user may see
   safeHandler(async (req: any, res: any) => {
     const contactId = typeof req.query.contactId === "string" ? req.query.contactId.trim() : null;
     const applicationId = typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : null;

@@ -67,9 +67,15 @@ import { misfiledSignal, type ClassificationRow } from "../services/documents/mi
 import { bankCoverageForApplication, type Coverage } from "../services/documents/bankStatementCoverage.js"; // BF_SERVER_BANK_COVERAGE_v267
 import { loadNamingContext, sanitizeDisplayName, uniqueDisplayName } from "../services/documents/documentNaming.js"; // BF_SERVER_RENAME_ON_ACCEPT_v264
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
+import { PORTAL_RULES, recordGuard } from "../visibility/recordGuard.js"; // BF_SERVER_v870_CRM_DATA_MODEL
+import { ownerFilterSql, teamOwnerIds, narrowToOwners, scopeForRequest } from "../visibility/scope.js"; // BF_SERVER_v870_CRM_DATA_MODEL
+import { customFieldFilters } from "../customFields/definitions.js"; // BF_SERVER_v870_CRM_DATA_MODEL
+import { listDefinitions } from "../customFields/service.js"; // BF_SERVER_v870_CRM_DATA_MODEL
 // BF_APP_ID_CAST_v39 — Block 39-A — applications.id comparisons cast to text
 
 const router = Router();
+// BF_SERVER_v870_CRM_DATA_MODEL - one application (and its documents) by id, for every /api/portal sub-router behind this one.
+router.use(recordGuard(PORTAL_RULES, { requireFirst: true }));
 import { smsFromFor, smsSenderFor } from "../lib/smsFrom.js"; // BF_SERVER_US_SMS_TOLLFREE_v755
 import { refuseIfLocked } from "../retention/retention.js"; // BF_SERVER_v855_RETENTION
 
@@ -311,7 +317,17 @@ router.get(
         // + docs), exactly like a closing-cost companion. Surface it as its own
         // card too instead of hiding it as a collapsed child.
         where.push(`(a.parent_application_id IS NULL OR a.source IN ('closing_costs_companion', 'capital_and_equipment_leg'))`);
+        // BF_SERVER_v870_CRM_DATA_MODEL - a deal moved to another pipeline (Renewals, Equipment...) shows on that board.
+        where.push(`a.pipeline_id IS NULL`);
       }
+      // BF_SERVER_v870_CRM_DATA_MODEL - only the files this user may see, narrowed to ?team_id= (the Team filter, growth and up).
+      let pipelineScope = await scopeForRequest(req, pool as any);
+      const teamFilter = String(req.query.team_id ?? "").trim();
+      if (teamFilter) pipelineScope = narrowToOwners(pipelineScope, await teamOwnerIds(pool as any, teamFilter));
+      where.push(ownerFilterSql(pipelineScope, "application", "a", values));
+      // BF_SERVER_v870_CRM_DATA_MODEL - custom field filters (cf_<name>=...).
+      const appDefs = await listDefinitions(pool as any, "application", businessUnit);
+      where.push(...customFieldFilters(appDefs, req.query ?? {}, "a", values));
       // BF_SERVER_BLOCK_v131_PIPELINE_SQL_REPAIR_v1
       // Replace the bogus `a.primary_contact_id` JOIN — that column was
       // never added by any migration. The whole query was throwing
@@ -331,6 +347,7 @@ router.get(
           a.product_category                                    AS product_category,
           a.parent_application_id                               AS parent_application_id,
           a.owner_user_id                                       AS owner_user_id,
+          a.custom_fields                                       AS custom_fields, -- BF_SERVER_v870_CRM_DATA_MODEL
           COALESCE(a.pipeline_state IN ('draft','Draft',''),false) AS is_draft,
           -- BF_SERVER_PIPELINE_PLACEHOLDER_NAME_v1 - treat wizard placeholders as
           -- absent so a submitted app never renders (or gets client-filtered) as
@@ -443,6 +460,7 @@ router.get(
         broker_name: r.broker_name ?? null, // BF_SERVER_BROKER_PIPELINE_v724
         broker_split_status: r.broker_split_status ?? null,
         lender_referral_status: r.lender_referral_status ?? null, // BF_SERVER_v827_REFERRAL_PIPELINE_CARD
+        custom_fields: r.custom_fields ?? {}, // BF_SERVER_v870_CRM_DATA_MODEL
       }));
       return res.json({
         stages: PIPELINE_STAGES,

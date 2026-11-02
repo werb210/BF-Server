@@ -98,6 +98,8 @@ export async function changeUserRole(params: {
   try {
     await client.query("begin");
     await updateUserRoleById(params.userId, params.role, client);
+    // BF_SERVER_v870_CRM_DATA_MODEL - naming a built-in role puts the person on exactly that role (no custom role on top).
+    await client.query(`update users set custom_role_id = null where id = $1 and custom_role_id is not null`, [params.userId]);
     await incrementTokenVersion(params.userId, client);
     await revokeRefreshTokensForUser(params.userId, client);
     await recordAuditEvent({

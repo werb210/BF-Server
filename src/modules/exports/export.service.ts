@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { pool, runQuery } from "../../db.js";
+import { currentScopedClient } from "../../visibility/scopedDb.js"; // BF_SERVER_v870_CRM_DATA_MODEL
 import { Query } from "pg";
 import { PIPELINE_STATES } from "../applications/pipelineState.js";
 
@@ -110,7 +111,10 @@ async function streamQueryAsCsv(params: {
   columns: string[];
   write: (chunk: string) => void;
 }): Promise<void> {
-  const client = await pool.connect();
+  // BF_SERVER_v870_CRM_DATA_MODEL - inside a scoped request stream on its connection (the filtered views); never release it here.
+  const scoped = currentScopedClient();
+  const client = scoped ?? await pool.connect();
+  const release = () => { if (!scoped) client.release(); };
   const query = new Query(params.query, params.values);
   return new Promise((resolve, reject) => {
     query.on("row", (row: Record<string, unknown>) => {
@@ -118,11 +122,11 @@ async function streamQueryAsCsv(params: {
       params.write(`${line}\n`);
     });
     query.on("error", (err: Error) => {
-      client.release();
+      release();
       reject(err);
     });
     query.on("end", () => {
-      client.release();
+      release();
       resolve();
     });
     (client as any)["query"](query);

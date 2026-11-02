@@ -14,6 +14,8 @@ export type StaffUserRecord = {
   deleted_at: Date | string | null;
   locked_until: Date | string | null;
   token_version: number | null;
+  /** BF_SERVER_v870_CRM_DATA_MODEL - the person's custom role (null/undefined: their built-in role only). */
+  custom_role_id?: string | null;
   // Profile fields the middleware merges into req.user (email, silo, silos ...).
   // Null when the loader has no profile for the user.
   profile: Record<string, unknown> | null;

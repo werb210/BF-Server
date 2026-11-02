@@ -31,8 +31,10 @@ import { isStaffOrService, principalFromRequest } from "../auth/principal.js";
 import { isApplicationFraud, FRAUD_LOCK_MESSAGE } from "../services/fraud/fraudGuard.js";
 import { isClientUploadableCategory } from "../services/documents/clientUploadCategories.js";
 import { refuseIfLocked } from "../retention/retention.js"; // BF_SERVER_v855_RETENTION
+import { DOCUMENTS_RULES, recordGuard } from "../visibility/recordGuard.js"; // BF_SERVER_v870_CRM_DATA_MODEL
 
 const router = express.Router();
+router.use(recordGuard(DOCUMENTS_RULES, { requireFirst: true })); // BF_SERVER_v870_CRM_DATA_MODEL
 
 const upload = multer({
   storage: multer.memoryStorage(),

@@ -36,7 +36,7 @@ export const STAFF_USER_CACHE_TTL_MS = 30_000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const STAFF_USER_LOOKUP_SQL = `SELECT id::text AS id, email, role, silo, silos, active, is_active, disabled,
-       status, deleted_at, locked_until, token_version
+       status, deleted_at, locked_until, token_version, custom_role_id::text AS custom_role_id
   FROM users WHERE id = $1 LIMIT 1`;
 
 // The production loader: one row from users by id.
@@ -56,6 +56,7 @@ export const dbStaffUserLoader: StaffUserLoader = async (userId) => {
     deleted_at: Date | string | null;
     locked_until: Date | string | null;
     token_version: number | null;
+    custom_role_id?: string | null;
   }>(STAFF_USER_LOOKUP_SQL, [userId]);
   const row = result.rows[0];
   if (!row) return null;
@@ -69,6 +70,7 @@ export const dbStaffUserLoader: StaffUserLoader = async (userId) => {
     deleted_at: row.deleted_at ?? null,
     locked_until: row.locked_until ?? null,
     token_version: row.token_version == null ? 0 : Number(row.token_version),
+    custom_role_id: row.custom_role_id ?? null, // BF_SERVER_v870_CRM_DATA_MODEL
     profile: { id: String(row.id), email: row.email ?? null, role: row.role ?? null, silo: row.silo ?? null, silos: row.silos ?? null },
   };
 };
