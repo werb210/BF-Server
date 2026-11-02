@@ -6,10 +6,12 @@ import { buildWatchSnapshot } from "./snapshotRoutes.js"; // BF_SERVER_WATCH_FAC
 // BF_SERVER_CALL_DISPOSITION_v145
 import { CALL_DISPOSITIONS as SHARED_CALL_DISPOSITIONS, followUpFor } from "../modules/calls/callDisposition.js";
 import { describeCrmUpdate, safeDispositionCrmUpdate } from "../modules/calls/dispositionCrmUpdate.js";
+import { scopedRequest } from "../visibility/scopedDb.js"; // BF_SERVER_v870_CRM_DATA_MODEL
 import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_CALL_OUTCOME_CRM_v273
 
 const router = Router();
 router.use(watchAuth);
+router.use(scopedRequest); // BF_SERVER_v870_CRM_DATA_MODEL - the Watch shows only the records this user may see
 // BF_SERVER_WATCH_FACE_v370 - what the Watch complications show, fetched by
 // the Watch itself. The iPhone's app group lives on the phone, so nothing it
 // wrote could ever reach a complication on the wrist.

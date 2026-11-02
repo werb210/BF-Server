@@ -32,6 +32,8 @@
     "helmet": "^8.1.0",
     "jpeg-js": "^0.4.4",
     "jsonwebtoken": "^9.0.3",
+    "jszip": "^3.10.2",
+    "mammoth": "^1.13.0",
     "multer": "^2.5.0",
     "openai": "^6.49.0",
     "pdf-lib": "^1.17.1",

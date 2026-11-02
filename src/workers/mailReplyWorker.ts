@@ -62,6 +62,8 @@ async function pollOnce(pool: Pool): Promise<void> {
       const sender = String(m.from?.emailAddress?.address || "").toLowerCase();
       const msgId = String(m.internetMessageId || m.id || "");
       if (!sender || sender === mailbox || !msgId) continue;
+      // BF_SERVER_v869_NEVER_LOG - mail from an address or domain on the never-log list is not logged or filed.
+      if (await (await import("../neverLog/neverLog.js")).isNeverLogged(pool as any, sender)) continue;
 
       const c = await pool.query<{ id: string; silo: string }>(
         `SELECT id, silo FROM contacts WHERE lower(email) = $1 ORDER BY created_at LIMIT 1`,

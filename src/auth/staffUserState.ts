@@ -36,7 +36,7 @@ export const STAFF_USER_CACHE_TTL_MS = 30_000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const STAFF_USER_LOOKUP_SQL = `SELECT id::text AS id, email, role, silo, silos, active, is_active, disabled,
-       status, deleted_at, locked_until, token_version
+       status, deleted_at, locked_until, token_version, custom_role_id::text AS custom_role_id
   FROM users WHERE id = $1 LIMIT 1`;
 
 // The production loader: one row from users by id.
@@ -56,6 +56,7 @@ export const dbStaffUserLoader: StaffUserLoader = async (userId) => {
     deleted_at: Date | string | null;
     locked_until: Date | string | null;
     token_version: number | null;
+    custom_role_id?: string | null;
   }>(STAFF_USER_LOOKUP_SQL, [userId]);
   const row = result.rows[0];
   if (!row) return null;
@@ -69,6 +70,7 @@ export const dbStaffUserLoader: StaffUserLoader = async (userId) => {
     deleted_at: row.deleted_at ?? null,
     locked_until: row.locked_until ?? null,
     token_version: row.token_version == null ? 0 : Number(row.token_version),
+    custom_role_id: row.custom_role_id ?? null, // BF_SERVER_v870_CRM_DATA_MODEL
     profile: { id: String(row.id), email: row.email ?? null, role: row.role ?? null, silo: row.silo ?? null, silos: row.silos ?? null },
   };
 };
@@ -98,10 +100,11 @@ export async function loadStaffUser(
   return record;
 }
 
-export type StaffUserRejection = "lookup_failed" | "user_not_found" | "user_inactive" | "user_disabled" | "user_locked" | "token_revoked" | "no_role" | "not_staff";
+export type StaffUserRejection = "lookup_failed" | "user_not_found" | "user_inactive" | "user_disabled" | "user_locked" | "token_revoked" | "no_role" | "not_staff"
+  | "session_revoked" | "session_lookup_failed"; // BF_SERVER_v869_SECURITY
 
 export type StaffUserCheck =
-  | { ok: true; record: StaffUserRecord; role: string; capabilities: string[]; tokenVersion: number }
+  | { ok: true; record: StaffUserRecord; role: string; capabilities: string[]; tokenVersion: number; /** BF_SERVER_v869_SECURITY */ sessionStrong: boolean }
   | { ok: false; status: 401 | 403 | 503; reason: StaffUserRejection };
 
 function claimTokenVersion(claims: Record<string, unknown>): number {
@@ -161,5 +164,15 @@ export async function checkStaffUser(
   const role = typeof record.role === "string" ? record.role.trim() : "";
   if (!role) return { ok: false, status: 401, reason: "no_role" };
   if (!isStaffRole(role)) return { ok: false, status: 403, reason: "not_staff" };
-  return { ok: true, record, role, capabilities: capabilitiesForDbRole(role, claims), tokenVersion };
+  // BF_SERVER_v869_SECURITY - a token from a session that was signed out (one device, or everywhere) is refused.
+  // Tokens from before sessions existed carry no ksid and are not strong.
+  let sessionStrong = false;
+  if (typeof (claims as any).ksid === "string" && (claims as any).ksid) {
+    const { checkSession } = await import("../security/sessions.js");
+    const { pool } = await import("../db.js");
+    const s = await checkSession(pool as any, (claims as any).ksid, String(record.id ?? userId));
+    if (!s.ok) return { ok: false, status: s.status, reason: s.reason };
+    sessionStrong = s.strong;
+  }
+  return { ok: true, record, role, capabilities: capabilitiesForDbRole(role, claims), tokenVersion, sessionStrong };
 }

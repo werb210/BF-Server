@@ -158,6 +158,11 @@ router.post("/:id/confirm-acceptance", requireAuth, requireAuthorization({ roles
     [row.application_id, fundedAmount, id, rawCurrency],
   ).catch((e) => console.warn("[offer_accept] funded_amount write failed", e instanceof Error ? e.message : String(e)));
   (await import("../services/quickbooks/qboHooks.js")).queueQboFeeInvoice(row.application_id, "funded"); // BF_SERVER_v852_CALC_QBO
+  // BF_SERVER_v864_ACTIVE_CONTRACTS - the funded file becomes an Active Contract now (the hourly sweep is the safety net). Idempotent;
+  // the application itself is only read. Never the reason an acceptance fails.
+  void import("../activeContracts/repo.js")
+    .then((m) => m.createContractFromApplication(pool as any, String(row.application_id)))
+    .catch((err) => console.warn("[offer_accept] active contract not created yet (the sweep retries)", err instanceof Error ? err.message : String(err)));
 
   // Fire SignNow envelope on the lender's term sheet (best-effort).
   try {

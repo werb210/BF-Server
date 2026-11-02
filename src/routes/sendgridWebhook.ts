@@ -83,6 +83,10 @@ router.post("/", safeHandler(async (req: any, res: any) => {
   const seenTypes = new Set<string>();
   for (const ev of Array.isArray(events) ? events : []) {
     try {
+      // BF_SERVER_v865_KS_MARKETING - Keystone marketing email (KS-Ops) shares this SendGrid account. Its events carry
+      // ks_mkt / ks_mkt_send_id and are handled by KS-Ops; matching them here by email could opt out, or log activity
+      // on, a Boreal contact who happens to share the address.
+      if (ev?.ks_mkt_send_id || ev?.ks_mkt === "1" || ev?.ks_mkt_test === "1") continue;
       const email = String(ev?.email || "").toLowerCase();
       const event = String(ev?.event || "");
       if (event) seenTypes.add(event);
@@ -129,6 +133,15 @@ router.post("/", safeHandler(async (req: any, res: any) => {
       const tseId = ev?.tse_id ? String(ev.tse_id) : null;
       if (tseId && event === "open") await pool.query(`UPDATE template_send_events SET opened_at = COALESCE(opened_at, now()) WHERE id = $1`, [tseId]).catch((err: any) => { console.warn("sendgrid_tse_open_failed", { tseId, message: err?.message }); });
       else if (tseId && event === "click") await pool.query(`UPDATE template_send_events SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [tseId]).catch((err: any) => { console.warn("sendgrid_tse_click_failed", { tseId, message: err?.message }); });
+      // BF_SERVER_v874_MARKETING_TOOLS - the campaign ledger (campaign report, A/B test winner) via the cs_id custom arg.
+      const csId = ev?.cs_id ? String(ev.cs_id) : null;
+      const csColumn = event === "open" ? "opened_at" : event === "click" ? "clicked_at" : event === "unsubscribe" || event === "group_unsubscribe" || event === "spamreport" ? "unsubscribed_at" : null;
+      if (csId && csColumn && /^[0-9a-f-]{36}$/i.test(csId)) {
+        await pool.query(
+          `UPDATE campaign_sends SET ${csColumn} = COALESCE(${csColumn}, now())${csColumn === "clicked_at" ? ", opened_at = COALESCE(opened_at, now())" : ""} WHERE id = $1`,
+          [csId],
+        ).catch((err: any) => { console.warn("sendgrid_campaign_send_update_failed", { csId, event, message: err?.message }); });
+      }
       // BF_SERVER_EMAIL_LINK_CLICKS_v19 - per-URL ledger. template_id and silo are
       // looked up from the send ledger when the tse_id custom arg is present; a
       // click with no template still records, it just cannot be rolled up by template.

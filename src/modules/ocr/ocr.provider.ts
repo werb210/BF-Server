@@ -3,6 +3,7 @@ import { logWarn } from "../../observability/logger.js";
 import { withRetry } from "../../lib/retry.js";
 import { extractPdfInChunks, isRetryableOcrError } from "./pdfChunking.js"; // BF_SERVER_OCR_LARGE_PDF_v260
 import { pushDeadLetter } from "../../lib/deadLetter.js";
+import { documentToText, OcrPermanentError } from "./officeText.js"; // BF_SERVER_v848_OFFICE_DOCS
 import {
   fetchOcrFieldRegistry,
   type OcrFieldDefinition,
@@ -137,7 +138,8 @@ export function createOpenAiOcrProvider(): OcrProvider {
 
       // One model request. BF_SERVER_OCR_LARGE_PDF_v260 - each request gets its own
       // timeout, and permanent 4xx errors (e.g. context_length_exceeded) are not retried.
-      const requestOnce = async (buffer: Buffer, mimeType: string, fileName: string | undefined) => {
+      // BF_SERVER_v848_OFFICE_DOCS - convertedText carries a Word/Excel/CSV/text file already turned into text.
+      const requestOnce = async (buffer: Buffer, mimeType: string, fileName: string | undefined, convertedText?: string) => {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), timeoutMs);
         try {
@@ -145,7 +147,12 @@ export function createOpenAiOcrProvider(): OcrProvider {
           const content: Array<Record<string, unknown>> = [
             { type: "input_text", text: promptText },
           ];
-          if (mimeType === "application/pdf") {
+          if (convertedText !== undefined) {
+            content.push({
+              type: "input_text",
+              text: `The document's text is already stored, so return "raw_text":"" and only the fields.\n\nDocument "${fileName ?? "document"}" (converted to plain text; spreadsheet cells are tab-separated):\n\n${convertedText}`,
+            });
+          } else if (mimeType === "application/pdf") {
             content.push({
               type: "input_file",
               filename: fileName ?? "document.pdf",
@@ -157,7 +164,7 @@ export function createOpenAiOcrProvider(): OcrProvider {
               image_url: `data:${mimeType};base64,${base64}`,
             });
           } else {
-            throw new Error("unsupported_mime_type");
+            throw new OcrPermanentError(`unsupported_mime_type:${mimeType}`); // BF_SERVER_v848_OFFICE_DOCS - never retried
           }
           const requestBody = { model, input: [{ role: "user", content }] };
           const payload = await withRetry(async () => {
@@ -203,11 +210,20 @@ export function createOpenAiOcrProvider(): OcrProvider {
             provider: "openai",
           };
         }
-        const single = await requestOnce(params.buffer, params.mimeType, params.fileName);
+        // BF_SERVER_v848_OFFICE_DOCS - anything that is not a PDF or an image is converted to text first;
+        // a type that cannot be converted throws OcrPermanentError and the job stops after one try.
+        const converted = params.mimeType.startsWith("image/")
+          ? null
+          : await documentToText(params.buffer, params.mimeType, params.fileName);
+        const single = await requestOnce(params.buffer, params.mimeType, params.fileName, converted?.text);
         return {
-          text: single.text,
+          text: converted ? converted.text : single.text,
           json: { fields: single.fields ?? {} },
-          meta: { ...single.meta, model_extracted_field_count: single.fields ? Object.keys(single.fields).length : 0 },
+          meta: {
+            ...single.meta,
+            model_extracted_field_count: single.fields ? Object.keys(single.fields).length : 0,
+            ...(converted ? { converted_from: converted.kind, text_chars: converted.originalChars, text_truncated: converted.truncated } : {}),
+          },
           model,
           provider: "openai",
         };

@@ -15,7 +15,7 @@ import { toStringSafe } from "../utils/toStringSafe.js";
 import { pool } from "../db.js";
 import { resolveUploadCategory } from "./uploadCategory.js";
 import { getStorage } from "../lib/storage/index.js";
-import { assertNotDuplicate, duplicateGroupsForApplication, duplicateResponseBody, DuplicateDocumentError } from "../services/documents/duplicateDocuments.js"; // BF_SERVER_DOCUMENT_DUPLICATE_GUARD_v256
+import { assertNotDuplicate, duplicateGroupsForApplication, duplicateResponseBody, DuplicateDocumentError, logDuplicateRefused } from "../services/documents/duplicateDocuments.js"; // BF_SERVER_DOCUMENT_DUPLICATE_GUARD_v256
 import { enqueueOcrForDocument } from "../modules/ocr/ocr.service.js";
 import { computeOutstandingDocs } from "./clientDocumentsNeeded.js"; // BF_SERVER_SHARED_DOCS_GATE_v1
 import { requireAuthorization } from "../middleware/auth.js";
@@ -31,8 +31,10 @@ import { isStaffOrService, principalFromRequest } from "../auth/principal.js";
 import { isApplicationFraud, FRAUD_LOCK_MESSAGE } from "../services/fraud/fraudGuard.js";
 import { isClientUploadableCategory } from "../services/documents/clientUploadCategories.js";
 import { refuseIfLocked } from "../retention/retention.js"; // BF_SERVER_v855_RETENTION
+import { DOCUMENTS_RULES, recordGuard } from "../visibility/recordGuard.js"; // BF_SERVER_v870_CRM_DATA_MODEL
 
 const router = express.Router();
+router.use(recordGuard(DOCUMENTS_RULES, { requireFirst: true })); // BF_SERVER_v870_CRM_DATA_MODEL
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -473,7 +475,7 @@ router.post("/public-upload", publicUploadLimiter, upload.single("file"), safeHa
       status: "uploaded",
     });
   } catch (err) {
-    if (err instanceof DuplicateDocumentError) return res.status(409).json(duplicateResponseBody(err)); // v256
+    if (err instanceof DuplicateDocumentError) { logDuplicateRefused(applicationId, category, err); return res.status(409).json(duplicateResponseBody(err)); } // v256, BF_SERVER_v848_DUPLICATE_UX
     console.error("[documents] public-upload failed", { applicationId, category, err: String(err) });
     return fail(res, 500, "UPLOAD_FAILED");
   }
@@ -527,7 +529,7 @@ router.post("/upload", uploadTiming, requireAuthAllowClient, upload.single("file
       status: "uploaded",
     });
   } catch (err) {
-    if (err instanceof DuplicateDocumentError) return res.status(409).json(duplicateResponseBody(err)); // v256
+    if (err instanceof DuplicateDocumentError) { logDuplicateRefused(applicationId, category, err); return res.status(409).json(duplicateResponseBody(err)); } // v256, BF_SERVER_v848_DUPLICATE_UX
     console.error("[documents] upload failed", { applicationId, category, err: String(err) });
     return fail(res, 500, "UPLOAD_FAILED");
   }

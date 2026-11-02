@@ -89,6 +89,7 @@ describe("BF_SERVER_EMAIL_FAIL_VISIBILITY_v1", () => {
     const pool = {
       query: vi.fn(answerBySql([
         [/UPDATE marketing_send_jobs SET status='running'/, { rows: [{ id: "job-1", channel: "email", silo: "BF", tag: "vip", created_by: null, payload: { subject: "S", html: "<p>x</p>" } }] }],
+        [/INSERT INTO campaign_sends/, (_s: string, p?: unknown[]) => ({ rows: [{ id: `cs-${String(p?.[1])}` }], rowCount: 1 })], // BF_SERVER_v874_MARKETING_TOOLS: the campaign ledger row
         [RECIPIENTS, two],
       ])),
     };

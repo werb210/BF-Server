@@ -18,6 +18,17 @@
 // swallow any future test that happened to match, which is exactly how a suite
 // rots. Adding a file here has to be a decision someone makes on purpose.
 export const INTEGRATION_TEST_FILES: string[] = [
+  "src/__tests__/integrations.v875.integration.test.ts", // BF_SERVER_v875_INTEGRATIONS - needs Postgres
+  "src/__tests__/marketingTools.v874.integration.test.ts", // BF_SERVER_v874_MARKETING_TOOLS - needs Postgres
+  "src/__tests__/lenderApi.v873.integration.test.ts", // BF_SERVER_v873_LENDER_API - needs Postgres
+  "src/__tests__/dealTools.v872.integration.test.ts", // BF_SERVER_v872_DEAL_TOOLS - needs Postgres
+  "src/__tests__/callingTools.v871.integration.test.ts", // BF_SERVER_v871_CALLING_TOOLS - needs Postgres
+  "src/__tests__/crmDataModel.v870.integration.test.ts", // BF_SERVER_v870_CRM_DATA_MODEL - needs Postgres
+  "src/__tests__/staffRefresh.v868.integration.test.ts", // BF_SERVER_v868_SLIDING_REFRESH - needs Postgres
+  "src/__tests__/settingsPack.v869.integration.test.ts", // BF_SERVER_v869_SETTINGS_PACK - needs Postgres
+  "src/__tests__/aiSummary.v864.integration.test.ts", // BF_SERVER_v864_AI_SUMMARY_FIX - needs Postgres
+  "src/__tests__/oooUntil.v864.integration.test.ts", // BF_SERVER_v864_OOO_UNTIL - needs Postgres
+  "src/__tests__/contactsPull.v864.integration.test.ts", // BF_SERVER_v864_CONTACTS_PULL_FIX - needs Postgres
   "src/__tests__/applicationCrmMirror.dedup.v65.test.ts",
   "src/__tests__/auth.otp.client-fallthrough.test.ts",
   "src/__tests__/bi-workflows.smoke.test.ts",
@@ -40,6 +51,7 @@ export const INTEGRATION_TEST_FILES: string[] = [
   "src/__tests__/dialerPolish.v831.integration.test.ts", // BF_SERVER_v831_DIALER_POLISH - needs Postgres
   "src/__tests__/importFixes.v834.integration.test.ts", // BF_SERVER_v834_IMPORT_FIXES - needs Postgres
   "src/__tests__/retention.v855.integration.test.ts", // BF_SERVER_v855_RETENTION - needs Postgres
+  "src/__tests__/activeContracts.v864.integration.test.ts", // BF_SERVER_v864_ACTIVE_CONTRACTS - needs Postgres
   "src/__tests__/aiChatFlow.v784.integration.test.ts", // BF_SERVER_v784_CHAT_SCHEMA - needs Postgres
   "src/__tests__/workflowEngine.v786.integration.test.ts", // BF_SERVER_v786_WORKFLOW_GRAPH - needs Postgres
   "src/__tests__/workflowTestRun.v792.integration.test.ts", // BF_SERVER_v792_WORKFLOW_TEST_RUN - needs Postgres

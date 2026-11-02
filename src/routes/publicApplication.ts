@@ -319,6 +319,11 @@ router.post(
             } as any
           );
           startContactId = res2?.row?.id ?? null;
+          // BF_SERVER_v869_LEAD_ROTATION - a new form lead gets an owner in turn (when an Admin turned it on).
+          if (startContactId && res2?.created) {
+            const { assignRotatingOwner } = await import("../leads/leadRotation.js");
+            await assignRotatingOwner(pool as any, startContactId, "form", { silo: silo === "BI" || silo === "SLF" ? silo : "BF" });
+          }
           if (startContactId) {
             await dbQuery(
               `UPDATE contacts

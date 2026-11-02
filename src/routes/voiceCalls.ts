@@ -6,6 +6,7 @@
 import { Router, urlencoded } from "express";
 import { auth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js"; // BF_SERVER_v821_DIALER
+import { scopedRequest } from "../visibility/scopedDb.js"; // BF_SERVER_v870_CRM_DATA_MODEL
 import { twilioWebhookValidation } from "../middleware/twilioWebhookValidation.js";
 import { generateVoiceToken, parseVoiceTokenApp } from "../telephony/services/tokenService.js"; // BF_SERVER_VOICE_TOKEN_ROUTE_v1
 import { pool } from "../db.js";
@@ -287,7 +288,9 @@ export const MISSED_STATUS_SINCE = "2026-10-20T00:00:00-06:00";
 
 // BF_SERVER_RECENT_CALLS_v1 - recent calls for the logged-in staff member, newest
 // first, with the resolved contact name. Powers the dialer "Recents" list.
-router.get("/recent-calls", auth, safeHandler(async (req: any, res) => {
+// BF_SERVER_v870_CRM_DATA_MODEL - calls on records this user may not see are left out, and an unlinked caller is
+// named only from contacts this user may see.
+router.get("/recent-calls", auth, scopedRequest, safeHandler(async (req: any, res) => {
   const userId = req.user?.userId ?? req.user?.id ?? null;
   if (!userId) return res.json({ ok: true, items: [] });
   const r = await pool
@@ -432,7 +435,7 @@ export function collapseOutboundLegs(rows: any[]): any[] {
 
 // BF_SERVER_v831_DIALER_POLISH - caller ID for the iPhone when the app is closed: every contact's number and name in
 // the request's silo (voice/callerDirectory.ts). Staff only.
-router.get("/caller-directory", auth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING] }), safeHandler(async (_req: any, res) => {
+router.get("/caller-directory", auth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING] }), scopedRequest /* BF_SERVER_v870_CRM_DATA_MODEL */, safeHandler(async (_req: any, res) => {
   const { getSilo } = await import("../middleware/silo.js");
   const { callerDirectory } = await import("../voice/callerDirectory.js");
   const entries = await callerDirectory(pool, getSilo(res));

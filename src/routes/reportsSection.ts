@@ -3,6 +3,7 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
+import { scopedRequest } from "../visibility/scopedDb.js"; // BF_SERVER_v870_CRM_DATA_MODEL - only the records this user may see (and ?team_id=)
 import { catalogFor, reportByKey, canSee, normalizeRole } from "../services/reports/catalog.js";
 import { DATA } from "../services/reports/data.js";
 
@@ -69,7 +70,7 @@ router.put("/team-tabs", requireAuth, safeHandler(async (req: any, res: any) => 
   } catch (err) { await client.query("ROLLBACK"); throw err; } finally { client.release(); }
   res.json({ ok: true });
 }));
-router.get("/data/:key", requireAuth, safeHandler(async (req: any, res: any) => {
+router.get("/data/:key", requireAuth, scopedRequest, safeHandler(async (req: any, res: any) => {
   const def = reportByKey(String(req.params?.key ?? "")); const run = def ? DATA[def.key] : undefined;
   if (!def || !run) { res.status(404).json({ error: "unknown_report" }); return; }
   if (!canSee(req.user?.role, def.group)) { res.status(403).json({ error: "not_allowed" }); return; }

@@ -20,6 +20,8 @@ import { clampDays } from "../modules/reporting/mobileApps.js";
 const app = express();
 app.use(express.json());
 app.use("/api/reports", reportRouter);
+// v877: events are only stored from a browser/app user agent; supertest sends none.
+app.use((req, _res, next) => { req.headers["user-agent"] ??= "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36"; next(); });
 app.use("/api/analytics", buildAnalyticsRouter());
 
 beforeEach(() => {

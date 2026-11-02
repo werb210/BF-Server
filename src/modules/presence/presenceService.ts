@@ -31,6 +31,8 @@ export function ringableStaffSql(sp = "sp", u = "u"): string {
     AND coalesce(${sp}.manual_busy, false) = false
     AND coalesce(${sp}.on_call, false) = false
     AND coalesce(${sp}.in_meeting, false) = false
+    AND NOT (${sp}.out_of_office_until IS NOT NULL AND ${sp}.out_of_office_until > now()
+             AND coalesce(${sp}.out_of_office_from, '-infinity'::timestamptz) <= now())
     AND (
       (${sp}.status = 'available' AND ${sp}.last_heartbeat > now() - interval '5 minutes')
       OR (${sp}.status = 'offline' AND ${BUSINESS_HOURS_SQL}
@@ -64,6 +66,9 @@ const RECOMPUTE_SQL = `
     status = CASE
       WHEN last_heartbeat < now() - interval '5 minutes' THEN 'offline'
       WHEN manual_busy OR on_call OR in_meeting THEN 'busy'
+      -- BF_SERVER_v864_OOO_UNTIL - out of office (from Settings > My Profile) until its end, then back to normal.
+      WHEN out_of_office_until IS NOT NULL AND out_of_office_until > now()
+        AND coalesce(out_of_office_from, '-infinity'::timestamptz) <= now() THEN 'busy'
       WHEN extract(hour from (now() AT TIME ZONE 'America/Regina')) < 8
         OR extract(hour from (now() AT TIME ZONE 'America/Regina')) >= 18 THEN 'busy'
       ELSE 'available'

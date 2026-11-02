@@ -184,6 +184,18 @@ export async function start(): Promise<void> {
     );
   }
 
+  // BF_SERVER_v869_SECURITY - every instance (workers or not) enforces the Admin's "require a passkey or two-step
+  // sign-in" switch; it is re-read every minute.
+  if (process.env.NODE_ENV !== "test") {
+    try {
+      const { pool } = await import("./db.js");
+      const { startSecuritySettingsRefresh } = await import("./security/sessions.js");
+      startSecuritySettingsRefresh(pool as any);
+    } catch (err) {
+      console.error("[startup] security settings refresh failed to start:", err);
+    }
+  }
+
   // BF_AZURE_OCR_TERMSHEET_v44 — start OCR + banking auto-workers.
   // Both are no-ops if NODE_ENV=test.
   // BF_SERVER_BLOCK_v479_BF_WORKERS_SWITCH - and off where BF_WORKERS_ENABLED=false (staging slot).
@@ -218,6 +230,47 @@ export async function start(): Promise<void> {
     void import("./services/brokerImport/packageBackfill.js")
       .then((m) => m.backfillPackagePrefill())
       .catch((err) => console.warn("[startup] package backfill failed:", (err as Error)?.message ?? err));
+
+    // BF_SERVER_v869_SETTINGS_PACK - post-funding surveys (when an Admin switched them on) and booking reminders
+    // 24 h and 1 h before.
+    const { startNpsSurveyWorker } = await import("./workers/npsSurveyWorker.js");
+    await workerStagger();
+    try { const w = startNpsSurveyWorker(pool); workerStops.push(w.stop); console.log("[startup] nps-survey worker started"); }
+    catch (err) { console.error("[startup] nps-survey worker failed to start:", err); }
+    const { startBookingRemindersWorker } = await import("./workers/bookingRemindersWorker.js");
+    await workerStagger();
+    try { const w = startBookingRemindersWorker(pool); workerStops.push(w.stop); console.log("[startup] booking-reminders worker started"); }
+    catch (err) { console.error("[startup] booking-reminders worker failed to start:", err); }
+
+    // BF_SERVER_v871_CALL_QUEUES - call queues: offers nobody answered, callers past the longest wait, dispatch.
+    const { startCallQueueWorker } = await import("./workers/callQueueWorker.js");
+    await workerStagger();
+    try { const w = startCallQueueWorker(pool); workerStops.push(w.stop); console.log("[startup] call-queue worker started"); }
+    catch (err) { console.error("[startup] call-queue worker failed to start:", err); }
+
+    // BF_SERVER_v872_PAYMENTS - payment links: QuickBooks retries and expiry.
+    const { startPaymentLinksWorker } = await import("./workers/paymentLinksWorker.js");
+    await workerStagger();
+    try { const w = startPaymentLinksWorker(pool); workerStops.push(w.stop); console.log("[startup] payment-links worker started"); }
+    catch (err) { console.error("[startup] payment-links worker failed to start:", err); }
+
+    // BF_SERVER_v874_MARKETING_TOOLS - lead scores refreshed every 30 minutes, silo by silo.
+    const { startLeadScoreWorker } = await import("./workers/leadScoreWorker.js");
+    await workerStagger();
+    try { const w = startLeadScoreWorker(pool); workerStops.push(w.stop); console.log("[startup] lead-score worker started"); }
+    catch (err) { console.error("[startup] lead-score worker failed to start:", err); }
+
+    // BF_SERVER_v873_LENDER_API - lender API submit retries and status / balance polling.
+    const { startLenderSyncWorker } = await import("./workers/lenderSyncWorker.js");
+    await workerStagger();
+    try { const w = startLenderSyncWorker(pool); workerStops.push(w.stop); console.log("[startup] lender-sync worker started"); }
+    catch (err) { console.error("[startup] lender-sync worker failed to start:", err); }
+
+    // BF_SERVER_v875_WEBHOOKS - outgoing webhooks: due deliveries every 10 seconds (batched per endpoint), log kept 30 days.
+    const { startOutboundWebhookWorker } = await import("./workers/outboundWebhookWorker.js");
+    await workerStagger();
+    try { const w = startOutboundWebhookWorker(pool); workerStops.push(w.stop); console.log("[startup] outbound-webhook worker started"); }
+    catch (err) { console.error("[startup] outbound-webhook worker failed to start:", err); }
 
     // BF_SERVER_BLOCK_v146_LENDER_PACKAGE_WORKER_v1
     const { startLenderPackageWorker } = await import("./workers/lenderPackageWorker.js");
@@ -257,6 +310,11 @@ export async function start(): Promise<void> {
     await workerStagger();
     try { const w = startQboFeeInvoiceWorker(pool); workerStops.push(w.stop); console.log("[startup] quickbooks fee-invoice worker started"); }
     catch (err) { console.error("[startup] quickbooks fee-invoice worker failed to start:", err); }
+    // BF_SERVER_v864_ACTIVE_CONTRACTS - funded files become contracts; renewal engine; lender statement intake (hourly).
+    const { startActiveContractsWorker } = await import("./workers/activeContractsWorker.js");
+    await workerStagger();
+    try { const w = startActiveContractsWorker(pool); workerStops.push(w.stop); console.log("[startup] active-contracts worker started"); }
+    catch (err) { console.error("[startup] active-contracts worker failed to start:", err); }
 
     // BF_INBOUND_ATTACHMENT_WORKER_v1 - auto-file inbound email attachments to the CRM.
     const { startInboundAttachmentWorker } = await import("./workers/inboundAttachmentWorker.js");

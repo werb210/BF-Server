@@ -17,6 +17,8 @@ export type AccessTokenPayload = {
   silo?: string;
   silos?: string[]; // v620: accessible silos for multi-silo users
   capabilities?: Capability[];
+  /** BF_SERVER_v869_SECURITY - the signed-in session (user_sessions.id) this token belongs to. */
+  ksid?: string;
 };
 
 const JWT_ISSUER = "boreal-staff-server";
@@ -106,9 +108,13 @@ function validatePayload(payload: unknown): asserts payload is AccessTokenPayloa
   }
 }
 
-export function signAccessToken(payload: AccessTokenPayload): string {
+// BF_SERVER_v868_SLIDING_REFRESH - opts.expiresInSeconds shortens a token minted by a refresh so it never
+// outlives the 30-day session limit (src/auth/staffRefresh.ts). Every other caller keeps the configured lifetime.
+export function signAccessToken(payload: AccessTokenPayload, opts: { expiresInSeconds?: number } = {}): string {
   const secret = requireJwtSecret();
-  const expiresIn = config.auth.accessExpiresIn as SignOptions["expiresIn"];
+  const expiresIn = (opts.expiresInSeconds && opts.expiresInSeconds > 0
+    ? Math.floor(opts.expiresInSeconds)
+    : config.auth.accessExpiresIn) as SignOptions["expiresIn"];
   const options: SignOptions = {
     algorithm: "HS256",
     issuer: JWT_ISSUER,

@@ -23,8 +23,11 @@ vi.mock("../db.js", async (orig) => {
 import analyticsRoutes, { buildAnalyticsRouter, sanitizeProperties, isContactKey, redactContactText, REDACTED } from "../routes/analytics.js";
 import { API_ROUTE_MOUNTS, ROUTES } from "../routes/routeRegistry.js";
 
+// v877: events are only stored from a browser/app user agent; supertest sends none.
+const BROWSER_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15";
 function appWith() {
   const app = express();
+  app.use((req, _res, next) => { req.headers["user-agent"] ??= BROWSER_UA; next(); });
   app.use("/api/analytics", buildAnalyticsRouter());
   return app;
 }

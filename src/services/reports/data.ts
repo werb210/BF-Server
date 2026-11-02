@@ -99,6 +99,8 @@ export async function commissionByMonth(windowDays: unknown) {
 import * as B2 from "./data2.js";
 export const DATA: Record<string, (q: Record<string, unknown>, ctx: B2.Ctx) => Promise<unknown>> = {
   revenue_forecast: () => B2.revenueForecast(),
+  forecast: async (q, ctx) => (await import("../../forecast/forecast.js")).forecast(q, ctx), // BF_SERVER_v872_FORECAST
+  fee_payments: async (q) => (await import("../../payments/paymentLinks.js")).paymentsReport(pool as any, q), // BF_SERVER_v872_PAYMENTS
   best_lender_by_deal_type: async (q) => (await import("./data3.js")).bestLenderByDealType(q), // BF_SERVER_REPORTS_BATCH3_v721
   consent_health: async () => (await import("./data3.js")).consentHealth(),
   decline_reasons: async (q) => (await import("./data3.js")).declineReasons(q), // BF_SERVER_REPORTS_BATCH4_v722

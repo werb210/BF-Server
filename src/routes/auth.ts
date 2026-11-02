@@ -7,7 +7,7 @@ import { signAccessToken } from "../auth/jwt.js";
 import { ROLES, normalizeRole } from "../auth/roles.js";
 import { isTest } from "../config/runtime.js";
 import { requireAuth, requireAuthAllowClient } from "../middleware/requireAuth.js";
-import { otpStartLimiter, otpVerifyLimiter } from "../middleware/authRateLimit.js"; // BF_SERVER_AUTH_RATE_LIMIT_v1
+import { otpStartLimiter, otpVerifyLimiter, refreshLimiter } from "../middleware/authRateLimit.js"; // BF_SERVER_AUTH_RATE_LIMIT_v1
 import { authMeHandler } from "./auth/me.js";
 // BF_SERVER_v789_STAFF_USER_STATE / BF_SERVER_v789_URL_TICKETS
 import { requireAuth as requireStaffAuth } from "../middleware/auth.js";
@@ -22,6 +22,7 @@ import { pool } from "../db.js";
 import { notifyAllStaff } from "../services/notifications/notifyAllStaff.js";
 import { isReviewPhone, reviewCodeMatches } from "../services/reviewLogin.js"; // BF_SERVER_REVIEW_LOGIN_v710
 import microsoftRoutes from "./authMicrosoft.js";
+import ssoRoutes from "./authSso.js"; // BF_SERVER_v875_SSO
 
 import { checkTextable, NOT_TEXTABLE_MESSAGES } from "../lib/phoneLineType.js"; // BF_SERVER_PHONE_LINE_TYPE_v771
 import { checkOtpSend, OTP_GUARD_MESSAGES, OTP_GUARD_STATUS } from "../lib/otpGuard.js"; // BF_SERVER_OTP_ABUSE_GUARD_v772
@@ -32,6 +33,10 @@ import { maskPhoneLast4, maskPhonesInText } from "../lib/maskPhone.js"; // BF_SE
 const OTP_TRUSTED_ROLES: ReadonlySet<string> = new Set([ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING]);
 import { sharedTwilio } from "../lib/sharedClients.js";
 import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS // BF_SERVER_SNAT_REUSE_v784
+import {
+  accessLifetimeSeconds, refreshFieldsForSignIn, revokeAllStaffRefresh, revokeRefreshFamily, revokeRefreshToken, rotateStaffRefresh,
+} from "../auth/staffRefresh.js"; // BF_SERVER_v868_SLIDING_REFRESH
+import { config } from "../config/index.js";
 async function isStaffPhone(phone: string): Promise<boolean> {
   try {
     const user = await findAuthUserByPhone(phone);
@@ -42,6 +47,12 @@ async function isStaffPhone(phone: string): Promise<boolean> {
     return false;
   }
 }
+// BF_SERVER_v869_SECURITY - the caller's address for the Security page's session list.
+function clientIpOf(req: any): string | null {
+  const fwd = String(req?.headers?.["x-forwarded-for"] ?? "").split(",")[0]?.trim();
+  return (fwd || String(req?.ip ?? "")).replace(/:\d+$/, "").slice(0, 64) || null;
+}
+
 const router = Router();
 
 const isValidPhone = (phone: unknown): phone is string => typeof phone === "string" && phone.trim().length > 0;
@@ -532,13 +543,18 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
     }
 
     let token: string;
+    let refreshFields: Record<string, string> = {}; // BF_SERVER_v868_SLIDING_REFRESH - staff sign-ins only
     if (isActiveStaff && user && !wantsClient) {
       const role = normalizeRole(user.role ?? "") ?? ROLES.STAFF;
       // v620: include silos[] + silo from user row so BF-portal can
       // render the silo selector without an extra round-trip.
       const userSilos = Array.isArray((user as any).silos) ? ((user as any).silos as string[]) : [];
       const userSilo = (user as any).silo as string | undefined;
+      // BF_SERVER_v869_SECURITY - a text-code sign-in opens a session (Settings > Security lists it; one step).
+      const { openSession } = await import("../security/sessions.js");
+      const ksid = await openSession(pool as any, { userId: String(user.id), method: "otp", ip: clientIpOf(req), userAgent: String(req.headers["user-agent"] ?? "") });
       token = signAccessToken({
+        ...(ksid ? { ksid } : {}),
         sub: String(user.id),
         role,
         tokenVersion: user.tokenVersion ?? 0,
@@ -547,6 +563,7 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
         ...(userSilo ? { silo: userSilo } : {}),
         ...(userSilos.length ? { silos: userSilos } : {}),
       });
+      refreshFields = await refreshFieldsForSignIn(pool as any, { userId: String(user.id), tokenVersion: user.tokenVersion ?? 0, ksid });
     } else {
       // BF_SERVER_CLIENT_USERTYPE_v334 - log which of the two reasons applied, so
       // "why am I a client here" is answerable from the log stream alone.
@@ -615,7 +632,7 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
 
     return res.status(200).json({
       status: "ok",
-      data: { token, hasSubmittedApplication, submittedApplicationId },
+      data: { token, ...refreshFields, hasSubmittedApplication, submittedApplicationId },
     });
   } catch (_err) {
     return res.status(401).json({ error: "Invalid code" });
@@ -651,7 +668,11 @@ router.post("/device-sign-in", otpVerifyLimiter, async (req: any, res: any) => {
     const user: any = await findAuthUserById(result.userId);
     const role = normalizeRole(user.role ?? "") ?? ROLES.STAFF;
     const userSilos = Array.isArray(user.silos) ? (user.silos as string[]) : [];
+    // BF_SERVER_v869_SECURITY - Face ID on an enrolled dialler: device + biometric, a strong session.
+    const { openSession } = await import("../security/sessions.js");
+    const ksid = await openSession(pool as any, { userId: String(user.id), method: "device", ip: clientIpOf(req), userAgent: String(req.headers?.["user-agent"] ?? "") });
     const token = signAccessToken({
+      ...(ksid ? { ksid } : {}),
       sub: String(user.id),
       role,
       tokenVersion: user.tokenVersion ?? 0,
@@ -689,7 +710,9 @@ router.post("/session/renew", requireStaffAuth, safeHandler(async (req: any, res
     return res.status(401).json({ error: "session_not_renewable", message: "Your account can't be signed in. Ask an admin." });
   }
   const userSilos = Array.isArray(user.silos) ? (user.silos as string[]) : [];
+  const renewKsid = typeof req.user?.ksid === "string" ? req.user.ksid : undefined; // BF_SERVER_v869_SECURITY - same session
   const token = signAccessToken({
+    ...(renewKsid ? { ksid: renewKsid } : {}),
     sub: String(user.id),
     role,
     tokenVersion: user.tokenVersion ?? 0,
@@ -704,9 +727,62 @@ router.post("/session/renew", requireStaffAuth, safeHandler(async (req: any, res
 // BF_SERVER_v789_STAFF_USER_STATE - sign-out. Access tokens are stateless, so a
 // single-session logout is the client discarding its token; this endpoint exists
 // so every app has one call to make and always answers 204.
-router.post("/logout", (_req, res) => {
+// BF_SERVER_v868_SLIDING_REFRESH - trade a refresh token for a new access token and a new refresh token (the old
+// one is used up). Public like /otp/verify: the refresh token is the credential. The user must still be active staff
+// with the same token version. 401 = sign in again; 409 = another tab refreshed a moment ago, read the stored token.
+router.post("/refresh", refreshLimiter, safeHandler(async (req: any, res: any) => {
+  res.setHeader("Cache-Control", "no-store");
+  const raw = req.body?.refreshToken;
+  const rotated = await rotateStaffRefresh(pool as any, typeof raw === "string" ? raw.trim() : "");
+  if (!rotated.ok) {
+    return res.status(rotated.status).json({ error: rotated.status === 409 ? "refresh_in_flight" : "refresh_invalid", reason: rotated.reason });
+  }
+  const refuse = async (why: string) => {
+    await revokeRefreshFamily(pool as any, rotated.familyId);
+    console.warn("[auth] refresh refused", { userId: rotated.userId, why });
+    return res.status(401).json({ error: "refresh_invalid", reason: why });
+  };
+  const { findAuthUserById } = await import("../modules/auth/auth.repo.js");
+  const { isStaffRole } = await import("../auth/roles.js");
+  const user: any = await findAuthUserById(rotated.userId);
+  const role = user ? normalizeRole(user.role ?? "") : null;
+  if (!user || !role || !isStaffRole(role) || user.disabled || user.active === false) return refuse("not_active_staff");
+  if ((Number(user.tokenVersion ?? 0) || 0) !== rotated.tokenVersion) return refuse("signed_out_everywhere");
+  // BF_SERVER_v869_SECURITY - a chain whose device session was signed out (Settings > Security) ends here too.
+  if (rotated.ksid) {
+    const { checkSession } = await import("../security/sessions.js");
+    const s = await checkSession(pool as any, rotated.ksid, String(user.id));
+    if (!s.ok) return s.status === 503 ? res.status(503).json({ error: "refresh_unavailable" }) : refuse("session_signed_out");
+  }
+  // Silo and silos come from the users row now, like a fresh sign-in, so a silo change applies at the next refresh.
+  const userSilos = Array.isArray(user.silos) ? (user.silos as string[]) : [];
+  const token = signAccessToken({
+    ...(rotated.ksid ? { ksid: rotated.ksid } : {}), // BF_SERVER_v869_SECURITY - the same device session
+    sub: String(user.id),
+    role,
+    tokenVersion: user.tokenVersion ?? 0,
+    phone: user.phoneNumber ?? undefined,
+    capabilities: fetchCapabilitiesForRole(role),
+    ...(user.silo ? { silo: user.silo } : {}),
+    ...(userSilos.length ? { silos: userSilos } : {}),
+  } as any, { expiresInSeconds: accessLifetimeSeconds(config.auth.accessExpiresIn, rotated.sessionStartedAt, Date.now()) });
+  return res.status(200).json({
+    status: "ok",
+    data: { token, refreshToken: rotated.refreshToken, refreshExpiresAt: rotated.refreshExpiresAt, sessionExpiresAt: rotated.sessionExpiresAt },
+  });
+}));
+
+// BF_SERVER_v868_SLIDING_REFRESH - sign out on this device: the refresh chain ends. Always 204.
+router.post("/refresh/revoke", refreshLimiter, safeHandler(async (req: any, res: any) => {
+  await revokeRefreshToken(pool as any, req.body?.refreshToken);
+  return res.status(204).end();
+}));
+
+// BF_SERVER_v868_SLIDING_REFRESH - a refreshToken in the body is revoked too.
+router.post("/logout", safeHandler(async (req: any, res: any) => {
+  if (req.body?.refreshToken) await revokeRefreshToken(pool as any, req.body.refreshToken);
   res.status(204).end();
-});
+}));
 
 // Sign out everywhere: bumps users.token_version, so every token issued before
 // now (tv below the new version) is refused by the staff middleware, and revokes
@@ -718,6 +794,7 @@ router.post("/logout-all", requireStaffAuth, async (req: any, res: any) => {
     const { incrementTokenVersion, revokeRefreshTokensForUser } = await import("../modules/auth/auth.repo.js");
     await incrementTokenVersion(userId);
     await revokeRefreshTokensForUser(userId);
+    await revokeAllStaffRefresh(pool as any, userId); // BF_SERVER_v868_SLIDING_REFRESH
     clearStaffUserCache(userId);
     return res.status(204).end();
   } catch (err) {
@@ -742,6 +819,9 @@ router.post("/url-ticket", requireStaffAuth, async (req: any, res: any) => {
 });
 
 router.get("/me", requireAuthAllowClient, authMeHandler); // BF_SERVER_v784_STAFF_ONLY_AUTH - client app reads its own identity
+// BF_SERVER_v875_SSO - "Sign in with Microsoft". Before microsoftRoutes: that router puts requireAuth in front of
+// everything it sees.
+router.use("/sso", ssoRoutes);
 router.use(microsoftRoutes);
 
 export default router;

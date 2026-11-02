@@ -44,13 +44,13 @@ export function staffVoicemail(v: any, userId: string | null, prompt = "Please l
  * Outside call hours. urgentPassthrough: "{Name} is away right now... press 1" <Gather numDigits=1 timeout=6>, then
  * (no key) their voicemail; 1 -> ringUrl. Without passthrough: straight to their voicemail.
  */
-export function awayTwiml(v: any, args: { name: string; userId: string; urgentPassthrough: boolean; ring: "direct" | "sales" | "underwriting" }): void {
+export function awayTwiml(v: any, args: { name: string; userId: string; urgentPassthrough: boolean; ring: string }): void {
   if (!args.urgentPassthrough) {
     v.say({ voice: VOICE }, `${args.name} is away right now.`);
     staffVoicemail(v, args.userId);
     return;
   }
-  const action = `${RECEPTION_BASE}/away-choice?user=${encodeURIComponent(args.userId)}&ring=${args.ring}`;
+  const action = `${RECEPTION_BASE}/away-choice?user=${encodeURIComponent(args.userId)}&ring=${encodeURIComponent(args.ring)}`;
   const g = v.gather({ input: "dtmf", numDigits: 1, timeout: AWAY_GATHER_TIMEOUT_SECONDS, action, method: "POST" });
   g.say({ voice: VOICE }, awayPromptText(args.name));
   staffVoicemail(v, args.userId);

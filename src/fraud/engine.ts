@@ -14,7 +14,7 @@ import { addressSub, businessReality, contactRisk, domainAgeSub, emailMatchesNam
 import { classifyAddressByList } from "./providers/lookups.js";
 import { registryNumber } from "./providers/registry.js";
 import { emailDomain, normDomain, toE164, normName } from "./hash.js";
-import { evaluateIdentity, type IdDoc } from "./checks/identity.js";
+import { evaluateIdentity, type IdDoc, type IdVerification } from "./checks/identity.js";
 import { evaluateBehaviour, evaluateDevice, type DeviceRow } from "./checks/device.js";
 import { detectStacking } from "./checks/stacking.js";
 import { evaluateInsider, evaluateNetwork, evaluateVoice, type VoiceOutcome } from "./checks/misc.js";
@@ -276,7 +276,13 @@ export async function runFraudChecks(db: Q, applicationId: string, deps: EngineD
     });
     const dup = docs.length ? await gatherDuplicates(db, p) : { hits: [] as DuplicateHit[] };
     const reused = new Set(dup.hits.filter((h) => h.idKind === "id" && !h.sameBusiness).map((h) => h.otherApplicationId)).size;
-    return evaluateIdentity({ idDocs: docs, applicantName: p.applicant.name, applicantDob: p.applicant.dob, ownerNames: p.owners.map((o) => o.name).filter((n): n is string => Boolean(n)), reusedElsewhere: reused, idvConfigured: providers.idv.configured() });
+    // BF_SERVER_v872_KYC - ID verifications (vendor or staff decisions) on the file are one more signal.
+    const kyc = await db.query(
+      `SELECT person_role, status, provider, decision_source FROM kyc_verifications WHERE application_id = $1 ORDER BY requested_at DESC LIMIT 20`,
+      [applicationId],
+    );
+    const verifications: IdVerification[] = kyc.rows.map((r: any) => ({ role: String(r.person_role ?? "applicant"), status: String(r.status), provider: String(r.provider), decidedBy: r.decision_source === "staff" ? "staff" : r.decision_source === "vendor" ? "vendor" : null }));
+    return evaluateIdentity({ idDocs: docs, applicantName: p.applicant.name, applicantDob: p.applicant.dob, ownerNames: p.owners.map((o) => o.name).filter((n): n is string => Boolean(n)), reusedElsewhere: reused, idvConfigured: providers.idv.configured(), verifications });
   });
 
   // Checks 9 and 10: device, location and behaviour signals from the client app.

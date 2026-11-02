@@ -90,6 +90,16 @@ import publicApplicationRoutes from "./publicApplication.js";
 import visitorTrackRoutes from "./visitorTrack.js"; // BF_SERVER_VISITOR_JOURNEY_v1 (public)
 import analyticsRoutes from "./analytics.js"; // BF_SERVER_v789_ANALYTICS_COLLECTOR (public, 60/min per IP)
 import naicsRoutes from "./naics.js"; // BF_SERVER_NAICS_v83 (public)
+import privacyRoutes from "./privacy.js"; // BF_SERVER_v868_QUEBEC_CONSENT (public)
+// BF_SERVER_v869_SETTINGS_PACK - Settings pack ported from KS-server #38 (each router checks its own roles).
+import phoneMenuRoutes from "./phoneMenu.js";
+import bookingSettingsRoutes from "./bookingSettings.js";
+import securityRoutes from "./security.js";
+import neverLogRoutes from "./neverLog.js";
+import leadRotationRoutes from "./leadRotation.js";
+import blockedNumbersRoutes from "./blockedNumbers.js";
+import surveysRoutes from "./surveys.js";
+import taskDefaultsRoutes from "./taskDefaults.js";
 import recipientSuggestRoutes from "./recipientSuggest.js"; // BF_SERVER_RECIPIENT_SUGGEST_v100
 import referralsRoutes from "./referrals.js";
 import referralsExtRoutes from "./referralsExt.js";
@@ -125,7 +135,36 @@ import issuesRoutes from "./issues.js";
 import conversationsRoutes from "./conversations.js";
 import smsInboundWebhookRoutes from "./smsInboundWebhook.js";
 // BF_SERVER_BLOCK_v214_MAYA_STAFF_PIPELINE_QUERY_v1
-import mayaStaffRouter from "./mayaStaff.js";
+import mayaStaffRouter, { verifyMayaService } from "./mayaStaff.js";
+// BF_SERVER_v870_CRM_DATA_MODEL - custom fields, teams and record visibility, extra pipelines, custom roles.
+import customFieldsRoutes from "./customFields.js";
+import salesTeamsRoutes from "./salesTeams.js";
+import pipelinesRoutes from "./pipelines.js";
+import rolesRoutes from "./roles.js";
+// BF_SERVER_v871_CALLING_TOOLS - call scripts and call queues.
+import callScriptsRoutes from "./callScripts.js";
+import callQueuesRoutes from "./callQueues.js";
+import callQueueWebhooksRoutes from "./callQueueWebhooks.js";
+// BF_SERVER_v872_DEAL_TOOLS - quotes, forecast, ID verification and payment links.
+import quotesRoutes from "./quotes.js";
+import clientQuotesRoutes from "./clientQuotes.js";
+import forecastRoutes from "./forecast.js";
+import kycRoutes from "./kyc.js";
+import clientKycRoutes from "./clientKyc.js";
+import paymentsRoutes from "./payments.js";
+// BF_SERVER_v873_LENDER_API - lender API connections and the lenders' signed webhooks.
+import lenderConnectionsRoutes from "./lenderConnections.js";
+import lenderWebhooksRoutes from "./lenderWebhooks.js";
+// BF_SERVER_v874_MARKETING_TOOLS - lead scoring and the website kit (staff settings; the public kit on other websites).
+import leadScoreRoutes from "./leadScores.js";
+import { websiteKitAdminRoutes, websiteKitPublicRoutes } from "./websiteKit.js";
+// BF_SERVER_v875_INTEGRATIONS - outgoing webhooks, API keys and the public REST API, Microsoft sign-in settings.
+import webhookEndpointsRoutes from "./webhookEndpoints.js";
+import apiKeysRoutes from "./apiKeys.js";
+import ssoSettingsRoutes from "./ssoSettings.js";
+import publicApiRoutes from "../publicApi/router.js";
+import { scopedAssistantRequest } from "../visibility/scopedDb.js";
+import { recordGuard, type GuardRule } from "../visibility/recordGuard.js";
 import mayaStaffInsightsRouter from "./mayaStaffInsights.js"; // BF_SERVER_MAYA_INSIGHTS_v655
 import mayaStaffAdsRouter from "./mayaStaffAds.js"; // BF_SERVER_MAYA_ADS_v683
 import mayaStaffAdsInsightsRouter from "./mayaStaffAdsInsights.js"; // BF_SERVER_MAYA_ADS_TOOLS_v712
@@ -138,7 +177,9 @@ import { createMountTracker } from "./_canonicalMount.js";
 import { siloMiddleware } from "../middleware/silo.js";
 import fraudRoutes from "./fraud.js"; // BF_SERVER_v846_FRAUD
 import retentionRoutes from "./retention.js"; // BF_SERVER_v855_RETENTION
+import activeContractsRoutes from "./activeContracts.js"; // BF_SERVER_v864_ACTIVE_CONTRACTS
 import ksCrmRoutes from "./ksCrm.js"; // BF_SERVER_v850_KS_CRM
+import ksMarketingRoutes from "./ksMarketing.js"; // BF_SERVER_v865_KS_MARKETING
 import quickbooksRoutes from "./quickbooks.js"; // BF_SERVER_v852_CALC_QBO
 import { requireAuth, requireAuthAllowClient } from "../middleware/auth.js";
 import watchAuthRoutes from "../watch/authRoutes.js";
@@ -147,6 +188,7 @@ import watchDataRoutes from "../watch/dataRoutes.js";
 import brokerToolsRoutes from "./brokerTools.js"; // BF_SERVER_v865_BROKER_TOOLS
 import clientBrokerRoutes from "./clientBroker.js"; // BF_SERVER_v865_BROKER_TOOLS
 import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
+import { mayaActingStaff } from "../services/mayaActingStaff.js"; // BF_SERVER_v868_MAYA_ACTING_STAFF
 
 export type ApiRoute = {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -218,6 +260,14 @@ combinedMayaRoutes.post("/website-chat", mayaProxyRateLimit, safeHandler(async (
     req
   );
 }));
+// BF_SERVER_v868_MAYA_ACTING_STAFF - the assistant's staff tools act only as the staff member named in the
+// X-Maya-Context this server signed (the agent hands it back); a different staff_user_id or silo gets 403.
+combinedMayaRoutes.use("/staff", mayaActingStaff((req) => Boolean(verifyMayaService(req))));
+// BF_SERVER_v870_CRM_DATA_MODEL - the assistant's staff tools read only what the acting staff member (verified just
+// above) may see. Only for verified service calls. Tools that read no contact, company or application (Ads, GA4,
+// lender products, automations) are left alone.
+const ASSISTANT_UNSCOPED = /^\/(ads-|ga4|lender-products|automations-overview|audit-recent)/;
+combinedMayaRoutes.use("/staff", (req, res, next) => (verifyMayaService(req) && !ASSISTANT_UNSCOPED.test(req.path) ? scopedAssistantRequest(req, res, next) : next()));
 combinedMayaRoutes.use(mayaRoutes);
 combinedMayaRoutes.use(mayaPendingActionsRouter); // BF_SERVER_v784_MAYA_SMS_CONFIRM - /pending-actions (staff humans only)
 combinedMayaRoutes.use(mayaAdminStubs);
@@ -319,6 +369,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/track", router: emailPixelRoutes }, // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING (public)
   { path: "/voice", router: voiceCallsRoutes },
   { path: "/webhooks/twilio/reception", router: receptionRoutes }, // BF_SERVER_RECEPTION_v1
+  { path: "/webhooks/twilio/queue", router: callQueueWebhooksRoutes }, // BF_SERVER_v871_CALL_QUEUES (Twilio-signed)
   { path: "/webhooks/twilio/ks", router: ksVoiceRoutes }, // BF_SERVER_v853_KS_PHONE_SUPPORT - the Keystone sales / support line (Twilio)
   { path: "/ks/support", router: ksSupportRoutes }, // BF_SERVER_v853_KS_PHONE_SUPPORT - Keystone support tickets + phone settings
   { path: "/meetings", router: meetingsRoutes }, // BF_SERVER_MEETING_ROOMS_v736
@@ -347,6 +398,16 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/track/journey", router: visitorTrackRoutes }, // BF_SERVER_VISITOR_JOURNEY_v1 (public)
   { path: "/analytics", router: analyticsRoutes }, // BF_SERVER_v789_ANALYTICS_COLLECTOR (public, rate limited in the router)
   { path: "/naics", router: naicsRoutes }, // BF_SERVER_NAICS_v83 (public)
+  { path: "/privacy", router: privacyRoutes }, // BF_SERVER_v868_QUEBEC_CONSENT - GET /api/privacy/region (public)
+  // BF_SERVER_v869_SETTINGS_PACK
+  { path: "/phone-menu", router: phoneMenuRoutes }, // Admin: Settings > Phone menu (the 866 menu)
+  { path: "/booking-settings", router: bookingSettingsRoutes }, // Admin: Settings > Booking pages; staff: own link
+  { path: "/security", router: securityRoutes }, // staff: own sessions; Admin: anyone's, and the strong sign-in switch
+  { path: "/never-log", router: neverLogRoutes }, // Admin: addresses and domains never logged to the CRM
+  { path: "/lead-rotation", router: leadRotationRoutes }, // Admin: round-robin owners for new leads (per silo); staff: away
+  { path: "/blocked-numbers", router: blockedNumbersRoutes }, // Admin: blocked callers and texters
+  { path: "/surveys", router: surveysRoutes }, // public answers; Admin settings; Admin/Staff report
+  { path: "/task-defaults", router: taskDefaultsRoutes }, // staff: follow-up task defaults and the prompt
   { path: "/recipients/suggest", router: recipientSuggestRoutes }, // BF_SERVER_RECIPIENT_SUGGEST_v100
   { path: "/", router: rootRoutes },
   { path: "/slf", router: slfRoutes },
@@ -360,9 +421,60 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/templates", router: templatesRoutes }, // v693
   { path: "/fraud", router: fraudRoutes }, // BF_SERVER_v846_FRAUD - staff fraud checks; settings Admin only
   { path: "/retention", router: retentionRoutes }, // BF_SERVER_v855_RETENTION - staff status; Admin holds and report
+  { path: "/active-contracts", router: activeContractsRoutes }, // BF_SERVER_v864_ACTIVE_CONTRACTS - contracts, renewals, compensation
   { path: "/ks/crm", router: ksCrmRoutes }, // BF_SERVER_v850_KS_CRM - KS-Ops ingest (X-KS-Ops-Key) + Keystone pipeline
+  { path: "/ks/marketing", router: ksMarketingRoutes }, // BF_SERVER_v865_KS_MARKETING - KS-Ops prospect marketing: CRM contacts out, timeline events in (X-KS-Ops-Key)
   { path: "/quickbooks", router: quickbooksRoutes }, // BF_SERVER_v852_CALC_QBO - QuickBooks connection (Admin) + fee invoices
+  // BF_SERVER_v870_CRM_DATA_MODEL
+  { path: "/custom-fields", router: customFieldsRoutes }, // Settings > Properties: definitions (Admin), values on records (staff)
+  { path: "/teams", router: salesTeamsRoutes }, // Settings > Teams: teams, members, record visibility (Admin); GET /me staff
+  { path: "/pipelines", router: pipelinesRoutes }, // extra pipelines (Admin builds, staff move deals); Lending stays locked
+  { path: "/roles", router: rolesRoutes }, // Settings > Users & roles: custom roles (full Admin); GET /me every staff member
+  // BF_SERVER_v871_CALLING_TOOLS
+  { path: "/call-scripts", router: callScriptsRoutes }, // Settings > Call scripts (Admin builds), runs on contacts, applications and calls (staff)
+  { path: "/call-queues", router: callQueuesRoutes }, // Settings > Call queues: set-up and live panel (Admin), my availability (staff)
+  // BF_SERVER_v872_DEAL_TOOLS
+  { path: "/quotes", router: quotesRoutes }, // staff: quotes from the lender offers on a file (Quotes tab)
+  { path: "/client/quotes", router: clientQuotesRoutes }, // the client's own sent quotes (OTP phone)
+  { path: "/forecast", router: forecastRoutes }, // weighted commission forecast; a file's expected close date and category
+  { path: "/kyc", router: kycRoutes }, // staff ID verification, Admin settings, public signed vendor webhook
+  { path: "/client/kyc", router: clientKycRoutes }, // the applicant's own verifications (OTP phone)
+  { path: "/payments", router: paymentsRoutes }, // payment links for broker fees; public /pay and the signed Stripe webhook
+  // BF_SERVER_v873_LENDER_API
+  { path: "/lender-connections", router: lenderConnectionsRoutes }, // Lenders > Connection (Admin); Submit by API / sync on a file (staff)
+  { path: "/lender-webhooks", router: lenderWebhooksRoutes }, // public: a lender's status pushes (address secret + signature)
+  // BF_SERVER_v874_MARKETING_TOOLS - each router checks its own roles and resolves the silo per request.
+  { path: "/lead-scores", router: leadScoreRoutes }, // staff: scores (record visibility applies); Admin/Marketing: rules
+  { path: "/website-kit", router: websiteKitAdminRoutes }, // Admin/Marketing: the silo's kit settings and forms
+  { path: "/kit", router: websiteKitPublicRoutes }, // public: answers only the website addresses listed for the key's silo
+  // BF_SERVER_v875_INTEGRATIONS - Admin set-up per silo (webhooks, API keys) and Boreal-wide (Microsoft sign-in); the
+  // public REST API answers only to an API key (its own JSON errors, the key's silo and permissions).
+  { path: "/webhook-endpoints", router: webhookEndpointsRoutes },
+  { path: "/api-keys", router: apiKeysRoutes },
+  { path: "/sso-settings", router: ssoSettingsRoutes },
+  { path: "/open/v1", router: publicApiRoutes },
 ];
+
+// BF_SERVER_v870_CRM_DATA_MODEL - staff mounts whose routes address one application by id (router-relative patterns).
+// The CRM, companies, portal, applications, documents and application-notes routers carry their own guards. A staff
+// member who may not see the application gets 404 (as for an id that does not exist).
+const APP_FIRST: GuardRule[] = [{ pattern: /^\/([^/]+)(?:\/|$)/, kind: "application" }];
+export const RECORD_GUARDED_MOUNTS: Record<string, GuardRule[]> = {
+  "/credit-summary": [{ pattern: /^\/([^/]+)(?:\/|$)/, kind: "application" }],
+  "/credit-summary-v2": APP_FIRST,
+  "/credit-research": APP_FIRST,
+  "/credit-collateral": APP_FIRST,
+  "/credit-financials": APP_FIRST,
+  "/application-origin": APP_FIRST,
+  "/banking": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }],
+  "/fraud": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }],
+  "/retention": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }],
+  "/quotes": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }], // BF_SERVER_v872_QUOTES
+  "/kyc": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }], // BF_SERVER_v872_KYC
+  "/forecast": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }], // BF_SERVER_v872_FORECAST
+  "/lender-connections": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }], // BF_SERVER_v873_LENDER_API
+  "/lender-referrals": [{ pattern: /^\/by-application\/([^/]+)(?:\/|$)/, kind: "application" }],
+};
 
 export const PORTAL_ROUTE_REQUIREMENTS: Pick<ApiRoute, "method" | "path">[] = [
   { method: "GET", path: "/api/auth/me" },
@@ -416,12 +528,52 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/webhooks/twilio/reception/company", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/reception/intent", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/reception/unavailable", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/reception/group-next", roles: [] }, // BF_SERVER_v869_PHONE_MENU
+  { method: "POST", path: "/api/webhooks/twilio/reception/ai", roles: [] }, // BF_SERVER_v869_PHONE_MENU
+  { method: "GET", path: "/api/webhooks/twilio/reception/audio/:id", roles: [] }, // BF_SERVER_v869_PHONE_MENU
   { method: "POST", path: "/api/webhooks/twilio/reception/fallback", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/reception/screen", roles: [] }, // BF_SERVER_v820_WATCH_CALLS
   { method: "POST", path: "/api/webhooks/twilio/reception/screen-result", roles: [] }, // BF_SERVER_v820_WATCH_CALLS
   { method: "POST", path: "/api/webhooks/twilio/reception/away-choice", roles: [] }, // BF_SERVER_v821_DIALER
   { method: "POST", path: "/api/webhooks/twilio/reception/leg-status", roles: [] }, // BF_SERVER_v821_DIALER
   { method: "POST", path: "/api/webhooks/twilio/reception/recording-notice", roles: [] }, // BF_SERVER_v821_DIALER
+  // BF_SERVER_v871_CALL_QUEUES - Twilio-signed queue webhooks.
+  { method: "POST", path: "/api/webhooks/twilio/queue/wait", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/queue/left", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/queue/overflow", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/queue/overflow-choice", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/queue/bridge", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/queue/connecting", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/queue/agent-done", roles: [] },
+  { method: "POST", path: "/api/webhooks/twilio/queue/agent-status", roles: [] },
+  // BF_SERVER_v872_DEAL_TOOLS - public: the client's payment link, Stripe's and the ID vendor's signed webhooks, and the
+  // client app's own quotes and ID checks (OTP phone, ownership checked in the route).
+  { method: "GET", path: "/api/payments/pay/:token", roles: [] },
+  { method: "GET", path: "/api/payments/pay/:token/done", roles: [] },
+  { method: "POST", path: "/api/payments/stripe/webhook", roles: [] },
+  { method: "POST", path: "/api/kyc/webhooks/:provider", roles: [] },
+  { method: "POST", path: "/api/lender-webhooks/:connectionId/:token", roles: [] }, // BF_SERVER_v873_LENDER_API
+  // BF_SERVER_v874_MARKETING_TOOLS - the website kit on other websites (public key + website address check)
+  { method: "GET", path: "/api/kit/:key/kit.js", roles: [] },
+  { method: "POST", path: "/api/kit/:key/forms/:formId", roles: [] },
+  { method: "POST", path: "/api/kit/:key/chat", roles: [] },
+  { method: "POST", path: "/api/kit/:key/track", roles: [] },
+  { method: "POST", path: "/api/kit/:key/consent", roles: [] },
+  // BF_SERVER_v875_INTEGRATIONS - Microsoft sign-in (state cookie + PKCE, one-time hand-off code) and the public REST
+  // API (API key in the Authorization header; the OpenAPI document is open).
+  { method: "GET", path: "/api/auth/sso/config", roles: [] },
+  { method: "GET", path: "/api/auth/sso/:provider/start", roles: [] },
+  { method: "GET", path: "/api/auth/sso/:provider/callback", roles: [] },
+  { method: "POST", path: "/api/auth/sso/exchange", roles: [] },
+  { method: "GET", path: "/api/open/v1/openapi.json", roles: [] },
+  { method: "GET", path: "/api/client/quotes/applications/:id", roles: [] },
+  { method: "GET", path: "/api/client/quotes/:qid", roles: [] },
+  { method: "GET", path: "/api/client/quotes/:qid/pdf", roles: [] },
+  { method: "POST", path: "/api/client/quotes/:qid/accept", roles: [] },
+  { method: "POST", path: "/api/client/quotes/:qid/decline", roles: [] },
+  { method: "GET", path: "/api/client/kyc/applications/:id", roles: [] },
+  { method: "POST", path: "/api/client/kyc/verifications/:vid/start", roles: [] },
+  { method: "POST", path: "/api/client/kyc/verifications/:vid/upload", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/conference/join", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/conference/status", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/call/status", roles: [] },
@@ -516,6 +668,7 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/public/application/start", roles: [] },
   { method: "POST", path: "/api/track/journey", roles: [] }, // BF_SERVER_VISITOR_JOURNEY_v1
   { method: "POST", path: "/api/analytics", roles: [] }, // BF_SERVER_v789_ANALYTICS_COLLECTOR
+  { method: "GET", path: "/api/privacy/region", roles: [] }, // BF_SERVER_v868_QUEBEC_CONSENT
   { method: "POST", path: "/api/public/readiness", roles: [] },
   { method: "POST", path: "/api/crm/readiness", roles: [] },
   { method: "GET", path: "/api/client/application-stage", roles: [] },
@@ -551,6 +704,10 @@ export function registerApiRouteMounts(app: Router): void {
 
   API_ROUTE_MOUNTS.forEach((entry) => {
     if (entry.path === "/ocr/admin") return;
-    mount(app, entry.path, entry.router);
+    // BF_SERVER_v870_CRM_DATA_MODEL - mounts keyed by an application id check that the user may see that application.
+    const guarded = RECORD_GUARDED_MOUNTS[entry.path]
+      ? Router().use(recordGuard(RECORD_GUARDED_MOUNTS[entry.path], { requireFirst: true }), entry.router)
+      : entry.router;
+    mount(app, entry.path, guarded);
   });
 }

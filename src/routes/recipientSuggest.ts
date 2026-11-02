@@ -16,6 +16,7 @@
 // Staff get a floor on their score: a colleague is nearly always who you meant,
 // and a new hire you have never emailed should still outrank a cold lead.
 import { Router } from "express";
+import { scopedRequest } from "../visibility/scopedDb.js"; // BF_SERVER_v870_CRM_DATA_MODEL - suggest only contacts this user may see
 import { pool } from "../db.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { safeHandler } from "../middleware/safeHandler.js";
@@ -24,7 +25,7 @@ import { resolveSiloFromRequest } from "../middleware/silo.js";
 
 const router = Router();
 
-router.get("/", requireAuth, safeHandler(async (req: any, res: any) => {
+router.get("/", requireAuth, scopedRequest, safeHandler(async (req: any, res: any) => {
   const q = String(req.query.q ?? "").trim();
   const limit = Math.min(Number(req.query.limit ?? 10) || 10, 25);
   const silo = resolveSiloFromRequest(req);

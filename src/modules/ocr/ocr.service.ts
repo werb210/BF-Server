@@ -20,6 +20,7 @@ import {
   resetOcrJob,
 } from "./ocr.repo.js";
 import { createOpenAiOcrProvider, createAzureDocIntelOcrProvider, type OcrProvider } from "./ocr.provider.js";
+import { isPermanentOcrError } from "./officeText.js"; // BF_SERVER_v848_OFFICE_DOCS
 // BF_SERVER_BLOCK_1_30_DOC_INTEL_AND_BANKING
 import { createOcrStorage, OcrStorageValidationError, type OcrStorage } from "./ocr.storage.js";
 import { type OcrJobRecord } from "./ocr.types.js";
@@ -651,8 +652,11 @@ export async function processOcrJob(
     // wait out the window, so a busy minute defers the job rather than killing
     // it three retries later.
     const rateLimited = isRateLimitError(message);
+    // BF_SERVER_v848_OFFICE_DOCS - a file type the reader cannot handle fails the same way every time:
+    // stop now instead of retrying it three times.
+    const permanent = !rateLimited && isPermanentOcrError(error);
     const attemptCount = rateLimited ? job.attempt_count : job.attempt_count + 1;
-    const status = !rateLimited && attemptCount >= maxAttempts ? "canceled" : "failed";
+    const status = permanent || (!rateLimited && attemptCount >= maxAttempts) ? "canceled" : "failed";
     const nextAttemptAt = rateLimited
       ? new Date(Date.now() + rateLimitDelayMs(message))
       : status === "canceled" ? null : computeNextAttempt(job.attempt_count, maxAttempts);
@@ -672,7 +676,21 @@ export async function processOcrJob(
       nextAttemptAt,
       maxAttempts,
     });
+    if (permanent) {
+      // BF_SERVER_v848_OFFICE_DOCS - markOcrJobFailure only flags the document on a retryable failure.
+      await dbQuery(
+        `UPDATE documents SET ocr_status = 'failed', updated_at = now() WHERE id::text = ($1)::text`,
+        [job.document_id],
+      ).catch((err: unknown) => {
+        logError("ocr_permanent_failure_status_sync_failed", {
+          code: "ocr_permanent_failure_status_sync_failed",
+          documentId: job.document_id,
+          error: err instanceof Error ? err.message : "unknown_error",
+        });
+      });
+    }
     logError("ocr_job_failed", {
+      permanent, // BF_SERVER_v848_OFFICE_DOCS
       code: "ocr_job_failed",
       jobId: job.id,
       documentId: job.document_id,

@@ -15,7 +15,7 @@ import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILE
 // tag. A contact carrying ANY exclude tag is removed; exclude wins over include.
 // Single `tag` kept for back-compat (raw email panel, SMS, Maya tools, old jobs).
 // BF_SERVER_EMAIL_TWO_COLUMN_ONLY_v15 - `resend` bypasses the 24h dedupe.
-export type EmailJob = { silo: string; tag: string | null; subject: string; html: string; resend?: boolean; tags?: string[] | null; excludeTags?: string[] | null; templateId?: string | null }; // BF_SERVER_TEMPLATE_ANALYTICS_v1
+export type EmailJob = { silo: string; tag: string | null; subject: string; html: string; resend?: boolean; tags?: string[] | null; excludeTags?: string[] | null; templateId?: string | null; /** BF_SERVER_v874_MARKETING_TOOLS - the queued job, for the campaign ledger */ jobId?: string | null }; // BF_SERVER_TEMPLATE_ANALYTICS_v1
 export type SendProgress = (sent: number, failed: number) => Promise<void>;
 // BF_SERVER_SEND_KILL_SWITCH_v1 - worker callback checked between recipient batches.
 export type ShouldAbort = () => Promise<boolean>;
@@ -42,16 +42,12 @@ export async function countEmailRecipients(pool: Pool, silo: string, tag: string
   return r.rows[0]?.n ?? 0;
 }
 
-export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendProgress, shouldAbort?: ShouldAbort): Promise<EmailSendResult> { // BF_SERVER_EMAIL_FAIL_VISIBILITY_v1 BF_SERVER_SEND_KILL_SWITCH_v1
-  // BF_SERVER_v789_EMAIL_BLAST_CONSENT - a job with no tag and no include tags would
-  // reach the whole silo; refuse it here too so a queued or Maya job cannot bypass the
-  // route-level audience_required check.
-  const hasAudience = Boolean(job.tag && job.tag.trim()) || (Array.isArray(job.tags) && job.tags.some((t) => String(t ?? "").trim()));
-  if (!hasAudience) {
-    console.warn("marketing_email_send_refused_no_audience", { silo: job.silo });
-    return { total: 0, sent: 0, failed: 0, rejectStatus: 400, rejectError: "audience_required" };
-  }
-  const recips = await pool.query<{ id: string; email: string; name: string | null; company: string | null }>(
+export type EmailRecipient = { id: string; email: string; name: string | null; company: string | null };
+
+/** BF_SERVER_v874_MARKETING_TOOLS - the people an email blast reaches (consent, tags, opt-out); the same predicate as
+ *  countEmailRecipients. */
+export async function emailRecipients(pool: Pool, job: EmailJob): Promise<EmailRecipient[]> {
+  const recips = await pool.query<EmailRecipient>(
     `SELECT c.id, c.email, c.name, co.name AS company
        FROM contacts c LEFT JOIN companies co ON co.id = c.company_id
       WHERE c.silo = $1 AND ${EMAIL_BLAST_ELIGIBLE_SQL}
@@ -60,58 +56,122 @@ export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendP
         AND ($4::text[] IS NULL OR NOT (COALESCE(c.tags,'{}') && $4))`,
     [job.silo, job.tag, job.tags ?? null, job.excludeTags ?? null],
   );
+  return recips.rows;
+}
+
+export function emailAudienceGiven(job: Pick<EmailJob, "tag" | "tags">): boolean {
+  return Boolean(job.tag && job.tag.trim()) || (Array.isArray(job.tags) && job.tags.some((t) => String(t ?? "").trim()));
+}
+
+// BF_SERVER_v874_MARKETING_TOOLS - what one campaign email to one person did.
+export type OneEmailOutcome = "sent" | "failed" | "skipped";
+
+/**
+ * Sends one campaign email. BF_SERVER_v874_MARKETING_TOOLS: when the send belongs to a queued job it is recorded in the
+ * campaign ledger (campaign_sends, one row per job and person) so opens, clicks and unsubscribes count for that
+ * campaign (the campaign report, the A/B test winner, lead scoring). Honours the 24-hour duplicate guard unless the job
+ * asked to resend. No allowance or meter: Boreal's campaigns have no plan limits.
+ */
+export async function sendCampaignEmailTo(
+  pool: Pool,
+  job: EmailJob,
+  c: EmailRecipient,
+  opts: { subject: string; variant?: "A" | "B"; claimedSendId?: string | null },
+): Promise<{ outcome: OneEmailOutcome; status?: number; error?: string }> {
+  // BF_SERVER_EMAIL_TWO_COLUMN_ONLY_v15 - `resend` skips the 24-hour dedupe.
+  // The guard exists so a resumed job cannot double-send, which is right for
+  // a real blast; but it also silently swallowed every repeat test send and
+  // reported "sent 0 of 0" as though the send had simply produced nothing.
+  const alreadySent = job.resend ? { rowCount: 0, rows: [] as { id: string }[] } : await pool.query<{ id: string }>(
+    `SELECT id FROM crm_timeline_events
+      WHERE contact_id = $1 AND event_type = 'email_marketing_sent'
+        AND created_at > now() - interval '24 hours'
+        AND payload->>'subject' = $2
+      LIMIT 1`,
+    [c.id, opts.subject],
+  );
+  if (alreadySent.rows[0]) {
+    if (opts.claimedSendId) await pool.query(`UPDATE campaign_sends SET status = 'skipped' WHERE id = $1`, [opts.claimedSendId]);
+    return { outcome: "skipped" };
+  }
+  const first = (c.name || "").trim().split(/\s+/)[0] || "there";
+  const vars = { first_name: first, name: c.name || "there", email: c.email, company: c.company || "" };
+  // BF_SERVER_TEMPLATE_ANALYTICS_v1 - ledger row + tse_id custom arg so SendGrid open/click attributes back to the template.
+  let __tseId: string | null = null;
+  if (job.templateId) {
+    try {
+      const __t = await pool.query<{ id: string }>(
+        `INSERT INTO template_send_events (template_id, contact_id, channel, silo, subject) VALUES ($1,$2,'email',$3,$4) RETURNING id`,
+        [job.templateId, c.id, job.silo, opts.subject],
+      );
+      __tseId = __t.rows[0]?.id ?? null;
+    } catch (err) { __tseId = logWarnSwallowed(err, "services/marketingSendRunner.ts:template_send_events", null); }
+  }
+  // BF_SERVER_v874_MARKETING_TOOLS - the campaign ledger row (one per job and person).
+  let csId: string | null = opts.claimedSendId ?? null;
+  if (!csId && job.jobId) {
+    const cs = await pool.query<{ id: string }>(
+      `INSERT INTO campaign_sends (job_id, contact_id, silo, variant, subject, status, sent_at)
+       VALUES ($1, $2, $3, $4, $5, 'sent', now())
+       ON CONFLICT (job_id, contact_id) DO NOTHING RETURNING id`,
+      [job.jobId, c.id, job.silo, opts.variant ?? "A", opts.subject],
+    );
+    csId = cs.rows[0]?.id ?? null;
+    if (!csId) return { outcome: "skipped" }; // already sent in this campaign (a resumed job)
+  }
+  const customArgs: Record<string, string> = { ...(__tseId ? { tse_id: __tseId } : {}), ...(csId ? { cs_id: csId } : {}) };
+  const dropLedgers = async () => {
+    if (__tseId) await pool.query(`DELETE FROM template_send_events WHERE id = $1`, [__tseId]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/marketingSendRunner.ts:84");});
+    if (csId) await pool.query(`UPDATE campaign_sends SET status = 'failed' WHERE id = $1`, [csId]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/marketingSendRunner.ts:campaign_sends_failed");});
+  };
+  try {
+    const r = await sendOne({ to: c.email, subject: mergeFields(opts.subject, vars), html: mergeFields(job.html, vars), contactId: c.id, customArgs: Object.keys(customArgs).length ? customArgs : undefined });
+    if (r.ok) {
+      if (opts.claimedSendId) await pool.query(`UPDATE campaign_sends SET status = 'sent', sent_at = now() WHERE id = $1`, [opts.claimedSendId]);
+      await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [c.id, "email_marketing_sent", JSON.stringify({ subject: opts.subject, tag: job.tag, ...(job.jobId ? { jobId: job.jobId, variant: opts.variant ?? "A" } : {}) })]);
+      return { outcome: "sent" };
+    }
+    await dropLedgers();
+    console.error("sendgrid_email_failed", { to: c.email, status: r.status, error: r.error });
+    return { outcome: "failed", status: r.status, error: r.error };
+  } catch (e) {
+    await dropLedgers();
+    const error = e instanceof Error ? e.message : String(e);
+    console.error("sendgrid_email_exception", { to: c.email, error });
+    return { outcome: "failed", error };
+  }
+}
+
+export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendProgress, shouldAbort?: ShouldAbort): Promise<EmailSendResult> { // BF_SERVER_EMAIL_FAIL_VISIBILITY_v1 BF_SERVER_SEND_KILL_SWITCH_v1
+  // BF_SERVER_v789_EMAIL_BLAST_CONSENT - a job with no tag and no include tags would
+  // reach the whole silo; refuse it here too so a queued or Maya job cannot bypass the
+  // route-level audience_required check.
+  if (!emailAudienceGiven(job)) {
+    console.warn("marketing_email_send_refused_no_audience", { silo: job.silo });
+    return { total: 0, sent: 0, failed: 0, rejectStatus: 400, rejectError: "audience_required" };
+  }
+  const rows = await emailRecipients(pool, job);
   let sent = 0, failed = 0, skipped = 0, i = 0;
   let aborted = false; // BF_SERVER_SEND_KILL_SWITCH_v1
   let rejectStatus: number | undefined;
   let rejectError: string | undefined;
-  for (const c of recips.rows) {
-    // BF_SERVER_EMAIL_TWO_COLUMN_ONLY_v15 - `resend` skips the 24-hour dedupe.
-    // The guard exists so a resumed job cannot double-send, which is right for
-    // a real blast; but it also silently swallowed every repeat test send and
-    // reported "sent 0 of 0" as though the send had simply produced nothing.
-    const alreadySent = job.resend ? { rowCount: 0, rows: [] as { id: string }[] } : await pool.query<{ id: string }>(
-      `SELECT id FROM crm_timeline_events
-        WHERE contact_id = $1 AND event_type = 'email_marketing_sent'
-          AND created_at > now() - interval '24 hours'
-          AND payload->>'subject' = $2
-        LIMIT 1`,
-      [c.id, job.subject],
-    );
-    if (alreadySent.rows[0]) { skipped++; i++; continue; }
-    const first = (c.name || "").trim().split(/\s+/)[0] || "there";
-    const vars = { first_name: first, name: c.name || "there", email: c.email, company: c.company || "" };
-    // BF_SERVER_TEMPLATE_ANALYTICS_v1 - ledger row + tse_id custom arg so SendGrid open/click attributes back to the template.
-    let __tseId: string | null = null;
-    if (job.templateId) {
-      try {
-        const __t = await pool.query<{ id: string }>(
-          `INSERT INTO template_send_events (template_id, contact_id, channel, silo, subject) VALUES ($1,$2,'email',$3,$4) RETURNING id`,
-          [job.templateId, c.id, job.silo, job.subject],
-        );
-        __tseId = __t.rows[0]?.id ?? null;
-      } catch { __tseId = null; }
+  for (const c of rows) {
+    const r = await sendCampaignEmailTo(pool, job, c, { subject: job.subject });
+    if (r.outcome === "skipped") { skipped++; i++; continue; }
+    if (r.outcome === "sent") sent++;
+    else {
+      failed++;
+      if (rejectStatus === undefined) rejectStatus = r.status;
+      if (rejectError === undefined) rejectError = r.error;
     }
-    try {
-      const r = await sendOne({ to: c.email, subject: mergeFields(job.subject, vars), html: mergeFields(job.html, vars), contactId: c.id, customArgs: __tseId ? { tse_id: __tseId } : undefined });
-      if (r.ok) {
-        sent++;
-        await pool.query(`INSERT INTO crm_timeline_events (contact_id, event_type, payload) VALUES ($1,$2,$3)`, [c.id, "email_marketing_sent", JSON.stringify({ subject: job.subject, tag: job.tag })]);
-      } else {
-        failed++;
-        if (__tseId) await pool.query(`DELETE FROM template_send_events WHERE id = $1`, [__tseId]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/marketingSendRunner.ts:84");});
-        if (rejectStatus === undefined) rejectStatus = r.status;
-        if (rejectError === undefined) rejectError = r.error;
-        console.error("sendgrid_email_failed", { to: c.email, status: r.status, error: r.error });
-      }
-    } catch (e) { failed++; if (__tseId) await pool.query(`DELETE FROM template_send_events WHERE id = $1`, [__tseId]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/marketingSendRunner.ts:89");}); if (rejectError === undefined) rejectError = e instanceof Error ? e.message : String(e); console.error("sendgrid_email_exception", { to: c.email, error: e instanceof Error ? e.message : String(e) }); }
     i++;
     if (i % 50 === 0) {
-      if (onProgress) { try { await onProgress(sent, failed); } catch { /* progress best-effort */ } }
-      if (shouldAbort) { try { if (await shouldAbort()) { aborted = true; break; } } catch { /* keep sending */ } } // BF_SERVER_SEND_KILL_SWITCH_v1
+      if (onProgress) { try { await onProgress(sent, failed); } catch (err) { logWarnSwallowed(err, "services/marketingSendRunner.ts:progress"); } }
+      if (shouldAbort) { try { if (await shouldAbort()) { aborted = true; break; } } catch (err) { logWarnSwallowed(err, "services/marketingSendRunner.ts:abort_check"); } } // BF_SERVER_SEND_KILL_SWITCH_v1
     }
   }
-  if (onProgress) { try { await onProgress(sent, failed); } catch { /* best-effort */ } }
-  return { total: recips.rows.length - skipped, sent, failed, rejectStatus, rejectError, aborted };
+  if (onProgress) { try { await onProgress(sent, failed); } catch (err) { logWarnSwallowed(err, "services/marketingSendRunner.ts:progress_final"); } }
+  return { total: rows.length - skipped, sent, failed, rejectStatus, rejectError, aborted };
 }
 
 

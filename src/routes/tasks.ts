@@ -2,6 +2,7 @@
 // HubSpot Tasks & Queue Runner build spec). Silo-scoped on every read/write
 // (BF/BI/SLF); views computed server-side; complete stamps completed_at
 // (first-class, unlike HubSpot); delete is soft (deleted_at).
+import { scopedRequest } from "../visibility/scopedDb.js"; // BF_SERVER_v870_CRM_DATA_MODEL
 import { Router } from "express";
 import { mirrorTaskToTodo } from "../modules/o365/todoSync.js"; // BF_SERVER_BLOCK_v_TASKS_TODO_SYNC_v1
 import { pool } from "../db.js";
@@ -62,6 +63,9 @@ function resumeIfSequenceTask(rows: Array<{ source?: string | null; source_ref_i
 
 const router = Router();
 router.use(requireAuth);
+// BF_SERVER_v870_CRM_DATA_MODEL - tasks on a contact or company this user may not see are hidden (lists, runs, queue
+// counts) and cannot be changed by id; tasks assigned to the user always stay visible. See src/visibility/scopedDb.ts.
+router.use(scopedRequest);
 
 const TYPES = ["CALL", "EMAIL", "SMS", "TODO"];
 const PRIORITIES = ["NONE", "LOW", "MEDIUM", "HIGH"];

@@ -13,6 +13,7 @@ import { classifyClaims, staffRejectionStatus } from "../auth/principal.js";
 // BF_SERVER_v789_STAFF_USER_STATE
 import { checkStaffUser } from "../auth/staffUserState.js";
 import { looksLikeServiceToken, verifyServiceToken } from "../auth/serviceTokens.js";
+import { enforceRolePermissions } from "../roles/enforce.js"; // BF_SERVER_v870_CRM_DATA_MODEL
 
 type AuthorizationOptions = {
   roles?: string[];
@@ -89,6 +90,7 @@ async function authenticate(req: Request, res: Response, next: NextFunction, all
     let dbUser: Record<string, unknown> | null = null;
     let effectiveRole: string | null = typeof decodedAny.role === "string" ? decodedAny.role : null;
     let hydratedCaps: string[];
+    let customRoleId: string | null = null; // BF_SERVER_v870_CRM_DATA_MODEL
     if (principal.kind === "staff") {
       const check = await checkStaffUser(typeof userId === "string" ? userId : "", decodedAny, { profile: true });
       if (!check.ok) {
@@ -99,8 +101,14 @@ async function authenticate(req: Request, res: Response, next: NextFunction, all
         });
       }
       dbUser = check.record.profile;
+      customRoleId = check.record.custom_role_id ?? null; // BF_SERVER_v870_CRM_DATA_MODEL
       effectiveRole = check.role;
       hydratedCaps = check.capabilities;
+      // BF_SERVER_v869_SECURITY - the Admin's "require a passkey or two-step sign-in" switch.
+      const { mustRefuseWeakSession, STRONG_SIGN_IN_BODY } = await import("../security/sessions.js");
+      if (mustRefuseWeakSession({ role: check.role, strong: check.sessionStrong, path: String(req.originalUrl || req.url || "") })) {
+        return res.status(403).json(STRONG_SIGN_IN_BODY);
+      }
     } else {
       // BF_AGENT_AUTH_HYDRATE_v53 - service tokens (Maya, dialer) only include
       // {id, role}; derive capabilities from the role so they pass the
@@ -124,6 +132,7 @@ async function authenticate(req: Request, res: Response, next: NextFunction, all
       ...(decoded as any),
       ...(dbUser ?? {}),
       ...(effectiveRole ? { role: effectiveRole } : {}),
+      custom_role_id: customRoleId, // BF_SERVER_v870_CRM_DATA_MODEL - from the users row only, never from the token
       userId,
       capabilities: hydratedCaps,
       silos: (dbUser?.silos as string[] | null | undefined) ?? (Array.isArray((decoded as any).silos) ? (decoded as any).silos : []),
@@ -151,6 +160,9 @@ async function authenticate(req: Request, res: Response, next: NextFunction, all
     if (isServicePrincipal) markRequestServicePrincipal(String(decodedAny.service ?? "unknown"));
 
     res.locals.silo = resolveSiloFromRequest(req);
+
+    // BF_SERVER_v870_CRM_DATA_MODEL - a person on a custom role is held to its permission matrix (no-op for everyone else).
+    if (customRoleId && !(await enforceRolePermissions(req, res))) return;
 
     next();
   } catch {

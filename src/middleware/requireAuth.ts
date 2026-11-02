@@ -6,6 +6,7 @@ import { classifyClaims, staffRejectionStatus } from "../auth/principal.js";
 // BF_SERVER_v789_STAFF_USER_STATE
 import { checkStaffUser } from "../auth/staffUserState.js";
 import { looksLikeServiceToken, verifyServiceToken } from "../auth/serviceTokens.js";
+import { enforceRolePermissions } from "../roles/enforce.js"; // BF_SERVER_v870_CRM_DATA_MODEL
 
 // BF_SERVER_v784_STAFF_ONLY_AUTH - staff humans and service principals only.
 // Client-app routes opt in by name with requireAuthAllowClient.
@@ -66,6 +67,7 @@ async function authenticate(req: Request, res: Response, next: NextFunction, all
   // A missing role is no longer read as "Staff"; only service tokens get here without one.
   let role = typeof decoded.role === "string" ? decoded.role : undefined;
   let capabilities: unknown[] = Array.isArray(decoded.capabilities) ? decoded.capabilities : [];
+  let customRoleId: string | null = null; // BF_SERVER_v870_CRM_DATA_MODEL
   // BF_SERVER_v789_STAFF_USER_STATE - staff humans: the account must be active,
   // unlocked and at the token's tv; the role comes from the database and token
   // capabilities the role does not grant are dropped. Services skip this.
@@ -78,6 +80,12 @@ async function authenticate(req: Request, res: Response, next: NextFunction, all
     }
     role = check.role;
     capabilities = check.capabilities;
+    customRoleId = check.record.custom_role_id ?? null; // BF_SERVER_v870_CRM_DATA_MODEL
+    // BF_SERVER_v869_SECURITY - the Admin's "require a passkey or two-step sign-in" switch.
+    const { mustRefuseWeakSession, STRONG_SIGN_IN_BODY } = await import("../security/sessions.js");
+    if (mustRefuseWeakSession({ role: check.role, strong: check.sessionStrong, path: String(req.originalUrl || req.url || "") })) {
+      return res.status(403).json(STRONG_SIGN_IN_BODY);
+    }
   }
   const siloClaim = typeof decoded.silo === "string" ? decoded.silo.trim() : "";
 
@@ -90,7 +98,10 @@ async function authenticate(req: Request, res: Response, next: NextFunction, all
     silo: siloClaim || "staff",
     siloFromToken: Boolean(siloClaim),
     capabilities,
+    custom_role_id: customRoleId, // BF_SERVER_v870_CRM_DATA_MODEL - from the users row only, never from the token
   } as Request["user"];
+  // BF_SERVER_v870_CRM_DATA_MODEL - a person on a custom role is held to its permission matrix (no-op for everyone else).
+  if (customRoleId && !(await enforceRolePermissions(req, res))) return;
   return next();
 }
 

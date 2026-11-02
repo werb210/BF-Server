@@ -55,7 +55,7 @@ export interface FileInboundResult {
   filed: number;
   duplicates?: number;
   contactId: string | null;
-  reason?: "no_attachments" | "no_message_id" | "no_contact" | "graph_error" | "all_duplicates";
+  reason?: "no_attachments" | "no_message_id" | "no_contact" | "graph_error" | "all_duplicates" | "never_log"; // BF_SERVER_v869_NEVER_LOG
   // BF_INBOUND_ATTACHMENT_ATTEMPT_LEDGER_v189
   permanentSkips?: number;
   transientSkips?: number;
@@ -80,6 +80,12 @@ export async function fileInboundAttachments(opts: {
 
   const fromEmail = message?.from?.emailAddress?.address ?? "";
   const fromName = message?.from?.emailAddress?.name ?? "";
+  // BF_SERVER_v869_NEVER_LOG - never auto-file mail from the never-log list (a person filing one attachment by hand
+  // still can).
+  if (!onlyAttachmentId) {
+    const { isNeverLogged } = await import("../neverLog/neverLog.js");
+    if (await isNeverLogged(pool as any, fromEmail)) return { filed: 0, contactId: null, reason: "never_log" };
+  }
   const contactId = await resolveSenderContactId(pool, silo, fromEmail, fromName, ownerId);
   if (!contactId) return { filed: 0, contactId: null, reason: "no_contact" };
 

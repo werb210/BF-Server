@@ -48,7 +48,10 @@ export function externalRecipients(message: SentMessage): string[] {
 export async function logSentMessage(pool: Pool, userId: string, message: SentMessage): Promise<number> {
   if (!message?.id) return 0;
   if (wasLoggedAtSendTime(message)) return 0;
-  const recipients = externalRecipients(message);
+  // BF_SERVER_v869_NEVER_LOG - addresses and domains on the never-log list (Settings > Never log) are left out.
+  const { neverLogMatcher } = await import("../../neverLog/neverLog.js");
+  const never = await neverLogMatcher(pool as any);
+  const recipients = externalRecipients(message).filter((a) => !never(a));
   if (!recipients.length) return 0;
 
   const owner = await pool.query<{ silo: string | null }>(

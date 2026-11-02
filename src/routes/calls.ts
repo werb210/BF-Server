@@ -11,6 +11,7 @@ import { logCrmEvent } from "../modules/crm/crmTimeline.service.js";
 import { endCall, listCalls, startCall, updateCallStatus } from "../modules/calls/calls.service.js";
 import { type CallStatus } from "../modules/calls/calls.repo.js";
 import { toStringSafe } from "../utils/toStringSafe.js";
+import { scopedRequest } from "../visibility/scopedDb.js"; // BF_SERVER_v870_CRM_DATA_MODEL
 
 const router = Router();
 
@@ -253,6 +254,7 @@ router.get(
   "/",
   requireAuth,
   requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }),
+  scopedRequest, // BF_SERVER_v870_CRM_DATA_MODEL - only calls on records this user may see
   safeHandler(async (req: any, res: any, next: any) => {
     const contactId = typeof toStringSafe(req.query.contactId) === "string" ? toStringSafe(req.query.contactId) : null;
     const applicationId =

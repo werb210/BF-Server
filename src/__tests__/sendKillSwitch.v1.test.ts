@@ -94,6 +94,7 @@ describe("send kill switch v1", () => {
   it.each([[true, "canceled"], [false, "done"]])("the worker checks cancel_requested between batches (requested=%s) and marks the job %s", async (requested, status) => {
     const pool = fakePool([
       [/UPDATE marketing_send_jobs SET status='running'/, { rows: [{ id: "job-1", channel: "email", silo: "BF", tag: "vip", created_by: null, payload: { subject: "S", html: "<p>x</p>" } }] }],
+      [/INSERT INTO campaign_sends/, (_s: string, p?: unknown[]) => ({ rows: [{ id: `cs-${String(p?.[1])}` }], rowCount: 1 })], // BF_SERVER_v874_MARKETING_TOOLS: the campaign ledger row
       [/SELECT cancel_requested FROM marketing_send_jobs/, { rows: [{ cancel_requested: requested }] }],
       [/FROM contacts c LEFT JOIN companies co/, { rows: emailRows }],
     ]);

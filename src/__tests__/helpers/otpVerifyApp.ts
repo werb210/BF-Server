@@ -30,7 +30,7 @@ const passthrough = (_req: unknown, _res: unknown, next: () => void) => next();
 
 /** The OTP rate limiters as no-ops (they would otherwise count every test request). */
 export function passthroughLimiters() {
-  return { otpStartLimiter: passthrough, otpVerifyLimiter: passthrough };
+  return { otpStartLimiter: passthrough, otpVerifyLimiter: passthrough, refreshLimiter: passthrough }; // BF_SERVER_v868_SLIDING_REFRESH
 }
 
 export async function otpApp() {
