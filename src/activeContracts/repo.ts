@@ -109,7 +109,7 @@ async function completeRenewalChain(db: Q, opp: { id: string; contract_id: strin
 export async function sweepFundedApplications(db: Q, limit = 50): Promise<number> {
   const r = await db.query(
     `SELECT a.id::text AS id FROM applications a
-      WHERE ${FUNDED_SQL} AND COALESCE(a.silo, 'BF') <> 'BI'
+      WHERE ${FUNDED_SQL} AND COALESCE(a.silo, 'BF') NOT IN ('BI', 'TEST') -- BF_SERVER_v880_REVIEW_DEMO: store-review test files get no contract, tasks or renewal outreach
         AND NOT EXISTS (SELECT 1 FROM active_contracts c WHERE c.application_id = a.id::text)
       ORDER BY a.funded_at ASC NULLS LAST, a.updated_at ASC LIMIT $1`, [limit]);
   let made = 0;

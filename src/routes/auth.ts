@@ -239,6 +239,27 @@ router.post("/otp/start", otpStartLimiter, async (req, res) => {
   }
 });
 
+// BF_SERVER_v880_REVIEW_DEMO - seeds the review number's sample data before the sign-in answers, so the
+// submitted-application lookup below already finds it. Waits at most 5 seconds; seeding that runs longer carries on
+// in the background. Any failure is logged and the sign-in continues.
+const REVIEW_DEMO_WAIT_MS = 5_000;
+async function seedReviewDemoBestEffort(phone: string): Promise<void> {
+  try {
+    const { ensureReviewDemoData } = await import("../services/reviewDemoData.js");
+    const work = ensureReviewDemoData(phone).catch((err: unknown) => {
+      console.warn("[store-review] demo data failed", err instanceof Error ? err.message : String(err));
+      return null;
+    });
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<"timeout">((resolve) => { timer = setTimeout(() => resolve("timeout"), REVIEW_DEMO_WAIT_MS); });
+    const outcome = await Promise.race([work, timeout]);
+    if (timer) clearTimeout(timer);
+    if (outcome === "timeout") console.warn("[store-review] demo data still running after 5s; sign-in continues");
+  } catch (err) {
+    console.warn("[store-review] demo data failed", err instanceof Error ? err.message : String(err));
+  }
+}
+
 // VERIFY OTP
 router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
   const { phone: rawPhone, code } = req.body;
@@ -303,6 +324,12 @@ router.post("/otp/verify", otpVerifyLimiter, async (req, res) => {
 
     if (verificationCheck.status !== "approved") {
       return res.status(401).json({ error: "Invalid code" });
+    }
+
+    // BF_SERVER_v880_REVIEW_DEMO - the store reviewer's account opens with sample applications, offers, documents
+    // and messages (Apple 2.1(a)). Best-effort and time-boxed: a failure is logged and never blocks the sign-in.
+    if (isReviewPhone(phone)) {
+      await seedReviewDemoBestEffort(phone);
     }
 
     if (!process.env.JWT_SECRET) {
