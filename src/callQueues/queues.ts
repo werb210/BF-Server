@@ -215,11 +215,12 @@ async function ringAgent(pool: Pool, queueId: string, offer: Offer): Promise<boo
     `SELECT c.from_number, c.caller_name, c.contact_id::text AS contact_id, q.ring_seconds, q.name AS queue_name
        FROM call_queue_calls c JOIN call_queues q ON q.id = c.queue_id WHERE c.id = $1::uuid`, [offer.callId])).rows[0];
   const base = getPublicBaseUrl();
-  const params = new URLSearchParams(offerParameters({ callId: offer.callId, queueName: call?.queue_name ?? null, from: call?.from_number ?? null,
-    callerName: call?.caller_name ?? null, contactId: call?.contact_id ?? null }));
+  // encodeURIComponent (spaces as %20, never "+"): the iPhone app decodes percent escapes only.
+  const params = Object.entries(offerParameters({ callId: offer.callId, queueName: call?.queue_name ?? null, from: call?.from_number ?? null,
+    callerName: call?.caller_name ?? null, contactId: call?.contact_id ?? null })).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
   try {
     const c = await twilioImpl.createCall({
-      to: `client:${offer.identity}?${params.toString()}`,
+      to: `client:${offer.identity}?${params}`,
       from: getCallerId(),
       url: `${base}${WEBHOOK_BASE}/bridge?qc=${offer.callId}`,
       method: "POST",

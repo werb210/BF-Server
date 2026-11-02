@@ -206,7 +206,8 @@ describe("v871 calling tools (real Postgres)", () => {
       expect(calls).toHaveLength(1);
       expect(String(calls[0].to)).toMatch(new RegExp(`^client:sam_${tag}\\?`));
       expect(String(calls[0].to)).toContain("callerName=Pat");
-      expect(String(calls[0].to)).toContain(`callerCompany=Sales+${tag}+queue+call`);
+      expect(String(calls[0].to)).toContain(`callerCompany=Sales%20${tag}%20queue%20call`);
+      expect(String(calls[0].to)).toContain("callerNumber=%2B14035550711");
       // Sam does not answer: Sue is offered the caller.
       expect((await twiml(`agent-status?qc=${id}&user=${S1}`, { CallStatus: "no-answer", CallSid: sid(1) })).status).toBe(204);
       await flush();
