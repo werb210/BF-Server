@@ -2,7 +2,7 @@
 // public phone line, the client app's address and the office time zone. Boreal is one company on Alberta time, which
 // is UTC-6 all year (lib/albertaTime.ts, lib/permanentTime.ts), so there is no time-zone setting here on purpose.
 import { ALBERTA_TZ } from "../lib/albertaTime.js";
-import { zoneOffsetMinutes } from "../lib/permanentTime.js";
+import { displayZoneName, zoneOffsetMinutes } from "../lib/permanentTime.js";
 
 export function brandName(): string {
   return "Boreal Financial";
@@ -22,8 +22,9 @@ export function clientUrl(): string {
 export function brokerageTimeZone(): string {
   return ALBERTA_TZ;
 }
+/** The zone name shown to staff (Alberta's own name), not the zone used to compute times. */
 export function brokerageZoneName(): string {
-  return ALBERTA_TZ;
+  return displayZoneName(ALBERTA_TZ); // BF_SERVER_v885_ALBERTA_ZONE_NAME
 }
 export function zoneLabel(): string {
   return "Alberta time";

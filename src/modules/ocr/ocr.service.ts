@@ -25,7 +25,7 @@ import { isPermanentOcrError } from "./officeText.js"; // BF_SERVER_v848_OFFICE_
 import { createOcrStorage, OcrStorageValidationError, type OcrStorage } from "./ocr.storage.js";
 import { type OcrJobRecord } from "./ocr.types.js";
 import { logError, logInfo } from "../../observability/logger.js";
-import { fetchOcrFieldRegistry, type OcrFieldDefinition } from "./ocrFieldRegistry.js";
+import { fetchOcrFieldRegistry, isMoneyOcrField, parseOcrAmount, type OcrFieldDefinition } from "./ocrFieldRegistry.js";
 import {
   isNumericOcrField,
   refreshOcrInsightsForApplication,
@@ -196,24 +196,47 @@ function jaroWinkler(a: string, b: string): number {
   return jaro + prefix * 0.1 * (1 - jaro);
 }
 
+// BF_SERVER_v885_OCR_LABEL_FRAGMENTS - the value is whatever follows the label on the
+// same line, or after a colon. The old fallbacks (split on any "-", or "every word but
+// the first") returned the rest of the label itself, e.g. "Receivable (A/R)" for a line
+// "Accounts Receivable (A/R)" that fuzzy-matched "Accounts Payable".
 function extractValueFromLine(line: string, label: string): string | null {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const regex = new RegExp(`${escaped}\\s*[:\-]?\\s*(.+)$`, "i");
+  const regex = new RegExp(`(?:^|[^A-Za-z0-9])${escaped}(?![A-Za-z0-9])\\s*[:\\-]?\\s*(.+)$`, "i");
   const match = line.match(regex);
   if (match && match[1]) {
     const value = match[1].trim();
     return value.length > 0 ? value : null;
   }
-  const parts = line.split(/[:\-]/);
-  if (parts.length > 1) {
-    const value = parts.slice(1).join(":").trim();
+  const colon = line.indexOf(":");
+  if (colon >= 0) {
+    const value = line.slice(colon + 1).trim();
     return value.length > 0 ? value : null;
   }
-  const tokens = line.trim().split(/\s+/);
-  if (tokens.length > 1) {
-    return tokens.slice(1).join(" ");
-  }
   return null;
+}
+
+// Money fields keep only a clean amount (as a plain number string); anything else is
+// a label fragment and is not stored. Other fields keep the existing behaviour.
+function normalizeExtractedValue(fieldKey: string, value: string): string | null {
+  if (isMoneyOcrField(fieldKey)) {
+    // "(A/R) 230,436.87" - an abbreviation in brackets right after the label is part of the label.
+    const v = value.trim().replace(/^\([A-Za-z][A-Za-z/&.\s]{0,9}\)\s*/, "");
+    let n = parseOcrAmount(v);
+    if (n === null) {
+      // Two-column statements ("230,436.87 210,004.10"): take the first (current) column.
+      const parts = v.split(/\s+/).filter(Boolean);
+      if (parts.length > 1 && parts.every((p) => parseOcrAmount(p) !== null)) n = parseOcrAmount(parts[0]);
+    }
+    return n === null ? null : n.toString();
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return isNumericOcrField(fieldKey) ? parseNumericValue(trimmed) : trimmed;
+}
+
+function containsWholePhrase(line: string, phrase: string): boolean {
+  return ` ${line} `.includes(` ${phrase} `);
 }
 
 function parseNumericValue(value: string): string {
@@ -247,6 +270,18 @@ function extractFieldsFromText(text: string, registry: OcrFieldDefinition[]): Ar
     page: number | null;
   }> = [];
 
+  // BF_SERVER_v885_OCR_LABEL_FRAGMENTS - a line that starts with some field's own label belongs to
+  // that field; it is never a fuzzy match for a different one ("Accounts Receivable (A/R)" is not
+  // "Accounts Payable").
+  const allLabels = fetchOcrFieldRegistry()
+    .flatMap((f) => [f.display_label, ...(f.aliases ?? [])])
+    .map((l) => normalizeMatchText(l))
+    .filter((l) => l.length > 0);
+  const lineOwnedByLabel = lines.map((line) => {
+    const n = normalizeMatchText(line);
+    return allLabels.some((l) => n === l || n.startsWith(`${l} `));
+  });
+
   registry.forEach((field) => {
     const candidateLabels = Array.from(
       new Set([field.display_label, ...(field.aliases ?? [])])
@@ -254,55 +289,57 @@ function extractFieldsFromText(text: string, registry: OcrFieldDefinition[]): Ar
     if (candidateLabels.length === 0) {
       return;
     }
-    let matchedLine: string | null = null;
-    let matchedConfidence = 0;
-    let matchedLabel: string | null = null;
-
-    candidateLabels.forEach((label) => {
+    // BF_SERVER_v885_OCR_LABEL_FRAGMENTS - a label must match whole words ("SIN" is not
+    // inside "Licensing", "Tax" is not inside "Taxes and Licenses", "Subcontractor" is not
+    // inside "Subcontractors"), and the first matching line whose value is valid wins.
+    // Ranking: exact before fuzzy, a line that starts with the label before one that only
+    // contains it, the field's own label before its aliases, then the earliest line.
+    const candidates: Array<{ line: string; label: string; confidence: number; order: number; atStart: number; labelRank: number }> = [];
+    candidateLabels.forEach((label, labelRank) => {
       const labelNormalized = normalizeMatchText(label);
       if (!labelNormalized) {
         return;
       }
 
-      lines.forEach((line) => {
+      lines.forEach((line, lineIndex) => {
         const normalizedLine = normalizeMatchText(line);
         if (!normalizedLine) {
           return;
         }
 
-        if (normalizedLine.includes(labelNormalized)) {
-          if (1 >= matchedConfidence) {
-            matchedLine = line;
-            matchedConfidence = 1;
-            matchedLabel = label;
-          }
+        if (containsWholePhrase(normalizedLine, labelNormalized)) {
+          const atStart = containsWholePhrase(normalizedLine.slice(0, labelNormalized.length), labelNormalized) ? 0 : 1;
+          candidates.push({ line, label, confidence: 1, order: lineIndex, atStart, labelRank });
           return;
         }
 
+        if (lineOwnedByLabel[lineIndex]) {
+          return;
+        }
         const candidate = (normalizedLine.split(/[:\\-]/)[0] ?? "").trim();
         const similarity = jaroWinkler(labelNormalized, candidate || normalizedLine);
         if (similarity >= OCR_FUZZY_THRESHOLD) {
-          if (!matchedLine || similarity > matchedConfidence) {
-            matchedLine = line;
-            matchedConfidence = similarity;
-            matchedLabel = label;
-          }
+          candidates.push({ line, label, confidence: similarity, order: lineIndex, atStart: 1, labelRank });
         }
       });
     });
 
-    if (!matchedLine || !matchedLabel) {
+    candidates.sort((a, b) =>
+      b.confidence - a.confidence || a.atStart - b.atStart || a.labelRank - b.labelRank || a.order - b.order);
+    let normalizedValue: string | null = null;
+    let matchedConfidence = 0;
+    for (const c of candidates) {
+      const raw = extractValueFromLine(c.line, c.label);
+      if (!raw) continue;
+      const v = normalizeExtractedValue(field.field_key, raw);
+      if (v === null) continue;
+      normalizedValue = v;
+      matchedConfidence = c.confidence;
+      break;
+    }
+    if (normalizedValue === null) {
       return;
     }
-
-    const value = extractValueFromLine(matchedLine, matchedLabel);
-    if (!value) {
-      return;
-    }
-
-    const normalizedValue = isNumericOcrField(field.field_key)
-      ? parseNumericValue(value)
-      : value.trim();
 
     results.push({
       fieldKey: field.field_key,
@@ -317,7 +354,7 @@ function extractFieldsFromText(text: string, registry: OcrFieldDefinition[]): Ar
 
 export function extractOcrFields(
   text: string,
-  preExtracted: Record<string, string> = {},
+  preExtracted: Record<string, string | number> = {},
 ): Array<{
   fieldKey: string;
   value: string;
@@ -336,10 +373,10 @@ export function extractOcrFields(
   }> = [];
   const preKeys = new Set<string>();
   for (const [k, v] of Object.entries(preExtracted)) {
-    if (typeof v !== "string") continue;
-    const trimmed = v.trim();
-    if (!trimmed) continue;
-    const normalized = isNumericOcrField(k) ? parseNumericValue(trimmed) : trimmed;
+    if (typeof v !== "string" && typeof v !== "number") continue;
+    const normalized = normalizeExtractedValue(k, String(v));
+    // A model value that is a label fragment is dropped; the text pass may still find it.
+    if (normalized === null) continue;
     results.push({ fieldKey: k, value: normalized, confidence: 1, page: null });
     preKeys.add(k);
   }
@@ -495,15 +532,17 @@ export async function processOcrJob(
     // Pull model-extracted fields out of result.json (provider stores them
     // as { fields: { field_key: value } }) and pass them as priority overrides
     // to the regex fallback pass.
-    const modelFields: Record<string, string> = (() => {
+    const modelFields: Record<string, string | number> = (() => {
       const j = result.json;
       if (!j || typeof j !== "object" || Array.isArray(j)) return {};
       const f = (j as Record<string, unknown>).fields;
       if (!f || typeof f !== "object" || Array.isArray(f)) return {};
-      const out: Record<string, string> = {};
+      const out: Record<string, string | number> = {};
       for (const [k, v] of Object.entries(f as Record<string, unknown>)) {
         if (typeof k === "string" && typeof v === "string" && v.trim()) {
           out[k] = v;
+        } else if (typeof k === "string" && typeof v === "number" && Number.isFinite(v)) {
+          out[k] = v; // BF_SERVER_v885_OCR_LABEL_FRAGMENTS - numeric model values were dropped
         }
       }
       return out;

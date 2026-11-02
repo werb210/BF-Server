@@ -197,6 +197,12 @@ router.get("/metrics", requireAuth, scopedRequest, safeHandler(async (req: any, 
       commissionByStageCurrency: isAdmin ? commissionByStageCurrency : {},
       commissionEarnedByCurrency: isAdmin ? (commissionByStageCurrency["Accepted"] ?? {}) : {},
       fx,
+      // BF_SERVER_v885_DASHBOARD_DEFINITIONS - the cards count different things on purpose; these
+      // sentences say what each one counts so they can be shown under the numbers.
+      definitions: {
+        activeApplications: "Open applications on the Pipeline board. Accepted, Rejected and Hold are not counted, so this is lower than the board's total.",
+        pipelineByStage: "Every application on the Pipeline board today, by its current stage, however old it is.",
+      },
     },
   });
 }));
@@ -815,7 +821,10 @@ router.get("/analytics", requireAuth, scopedRequest, safeHandler(async (req: any
 
   res.json({
     status: "ok",
-    data: { days, revenueFunnel, applicationFunnel, acquisition, marketing, funding, documents, lenders },
+    data: { days, revenueFunnel, applicationFunnel, acquisition, marketing, funding, documents, lenders,
+      // BF_SERVER_v885_DASHBOARD_DEFINITIONS - the funnel only counts applications created in the chosen
+      // period, so it is smaller than "Pipeline by stage", which counts every open application.
+      applicationFunnelDefinition: `Applications created in the last ${days} days, by their current stage. Older applications are not counted, so this can be lower than Pipeline by stage.` },
   });
 }));
 

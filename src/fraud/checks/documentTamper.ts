@@ -2,6 +2,7 @@
 // Builds on the existing metadata scan (src/services/documents/fraudSignals.ts) and adds what is inside the file:
 // mixed or re-embedded fonts, text drawn over a scanned page, page images saved at different quality, and photo
 // editors named in image metadata.
+import { humanDuration } from "../../lib/humanDuration.js";
 import { SUSPECT_PRODUCERS, type DocKind, type PdfMeta } from "../../services/documents/fraudSignals.js";
 import type { PdfStructure } from "../pdfStructure.js";
 import type { JpegInfo } from "../imageHash.js";
@@ -47,10 +48,12 @@ export function evaluateDocumentTamper(i: TamperInput): CheckResult {
         : { code: "incremental_saves", severity: "info", text: `The file was saved ${i.meta.incrementalSaves} times.` });
     }
     if (i.meta.createdAt != null && i.meta.modifiedAt != null && i.meta.modifiedAt - i.meta.createdAt > 60_000) {
-      const mins = Math.round((i.meta.modifiedAt - i.meta.createdAt) / 60_000);
+      // BF_SERVER_v885_FRAUD_TEXT - the gap in words, from the dates stored inside the PDF.
+      const gap = humanDuration(i.meta.modifiedAt - i.meta.createdAt);
+      const text = `The file was last changed ${gap} after it was created (dates stored in the PDF).`;
       reasons.push(strict
-        ? { code: "modified_after_create", severity: "amber", text: `The file was changed ${mins} minute(s) after it was created.` }
-        : { code: "modified_after_create", severity: "info", text: `The file was changed ${mins} minute(s) after it was created.` });
+        ? { code: "modified_after_create", severity: "amber", text }
+        : { code: "modified_after_create", severity: "info", text });
     }
     if (!i.meta.parsed) reasons.push({ code: "unreadable_pdf", severity: "info", text: "The PDF could not be opened for a full scan (it may be password protected). Review it by eye." });
   }

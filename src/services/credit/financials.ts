@@ -100,16 +100,59 @@ export type FinancialTable = {
 };
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
+// BF_SERVER_v885_CREDIT_PERIODS - two documents for the same period (a balance sheet and a
+// P&L) were read with different labels ("Jan-Jul 2026", "January-July 2026", "FY2026") and
+// became separate columns. Columns with the same normalised label, or the same period end
+// and no conflicting figures, are one column.
+const MONTHS: Record<string, string> = { january: "jan", february: "feb", march: "mar", april: "apr", june: "jun", july: "jul", august: "aug", september: "sep", sept: "sep", october: "oct", november: "nov", december: "dec" };
+export function normalizePeriodLabel(label: string): string {
+  return String(label ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").map((w) => MONTHS[w] ?? w).join(" ");
+}
+type PeriodGroup = { label: string; periodEnd: string | null; kind: PeriodKind; members: string[] };
+function groupPeriods(cells: Cell[]): PeriodGroup[] {
+  const raw = new Map<string, { periodEnd: string | null; kind: PeriodKind }>();
+  for (const cell of cells) if (!raw.has(cell.period)) raw.set(cell.period, { periodEnd: cell.period_end, kind: cell.kind });
+  const groups: PeriodGroup[] = [];
+  const itemsOf = (g: PeriodGroup) => cells.filter((c) => g.members.includes(c.period));
+  const conflicts = (a: PeriodGroup, b: PeriodGroup) => {
+    const bi = itemsOf(b);
+    return itemsOf(a).some((x) => bi.some((y) => y.line_item === x.line_item && Math.abs(Number(y.value) - Number(x.value)) > Math.max(1, Math.abs(Number(x.value)) * 0.01)));
+  };
+  for (const [label, d] of raw) {
+    const g: PeriodGroup = { label, periodEnd: d.periodEnd, kind: d.kind, members: [label] };
+    const same = groups.find((x) => normalizePeriodLabel(x.label) === normalizePeriodLabel(label) && !conflicts(x, g))
+      ?? (d.periodEnd ? groups.find((x) => x.periodEnd === d.periodEnd && !conflicts(x, g)) : undefined);
+    if (!same) { groups.push(g); continue; }
+    same.members.push(label);
+    same.periodEnd = same.periodEnd ?? d.periodEnd;
+    // The column is named after the document that carries the income statement.
+    const hasRevenue = (labels: string[]) => cells.some((c) => labels.includes(c.period) && c.line_item === "revenue");
+    if (!hasRevenue([same.label]) && hasRevenue([label])) { same.label = label; same.kind = d.kind; }
+  }
+  return groups;
+}
+
 export function buildTable(cells: Cell[]): FinancialTable {
-  const byPeriod = new Map<string, { periodEnd: string | null; kind: PeriodKind }>();
-  for (const cell of cells) if (!byPeriod.has(cell.period)) byPeriod.set(cell.period, { periodEnd: cell.period_end, kind: cell.kind });
+  const groups = groupPeriods(cells);
   const rank: Record<PeriodKind, number> = { annual: 0, interim: 1, forecast: 2 };
-  const periods = [...byPeriod].map(([label, details]) => ({ label, ...details }))
-    .sort((a, b) => rank[a.kind] - rank[b.kind] || String(a.periodEnd ?? a.label).localeCompare(String(b.periodEnd ?? b.label)));
-  const get = (period: string, item: string) => cells.find((cell) => cell.period === period && cell.line_item === item);
+  groups.sort((a, b) => rank[a.kind] - rank[b.kind] || String(a.periodEnd ?? a.label).localeCompare(String(b.periodEnd ?? b.label)));
+  const periods = groups.map((g) => ({ label: g.label, periodEnd: g.periodEnd, kind: g.kind }));
+  const membersOf = new Map(groups.map((g) => [g.label, g.members]));
+  const get = (period: string, item: string) => {
+    const members = membersOf.get(period) ?? [period];
+    const matches = cells.filter((cell) => members.includes(cell.period) && cell.line_item === item);
+    return matches.find((cell) => cell.edited_by) ?? matches[0];
+  };
   const val = (period: string, item: string) => { const cell = get(period, item); return cell ? Number(cell.value) : null; };
+  // BF_SERVER_v885_CREDIT_PERIODS - a statement with no cost of sales reports "gross profit" equal to
+  // revenue; that is not a gross margin, so it is left blank rather than repeating revenue.
+  const grossMargin = (p: string) => {
+    const rev = val(p, "revenue"); const cos = val(p, "cost_of_sales"); const gm = val(p, "gross_margin");
+    if (gm !== null) return rev !== null && !cos && Math.abs(gm - rev) <= 1 && !get(p, "gross_margin")?.edited_by ? null : gm;
+    return rev !== null && cos !== null ? rev - cos : null;
+  };
   const derived: Record<string, (period: string) => number | null> = {
-    gross_margin: (p) => val(p, "gross_margin") ?? (val(p, "revenue") !== null && val(p, "cost_of_sales") !== null ? val(p, "revenue")! - val(p, "cost_of_sales")! : null),
+    gross_margin: grossMargin,
     ebitda: (p) => val(p, "ebitda") ?? (val(p, "net_income") !== null ? val(p, "net_income")! + (val(p, "interest_expense") ?? 0) + (val(p, "income_taxes") ?? 0) + (val(p, "depreciation_amortization") ?? 0) : null),
     ebitda_plus_rent: (p) => { const e = derived.ebitda!(p); const rent = val(p, "rent_expense"); return e !== null && rent !== null ? e + rent : null; },
     total_debt_service: (p) => val(p, "total_debt_service") ?? (val(p, "cpltd") !== null ? val(p, "cpltd")! + (val(p, "interest_expense") ?? 0) : null),

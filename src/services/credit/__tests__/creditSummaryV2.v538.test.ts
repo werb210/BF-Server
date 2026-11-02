@@ -12,7 +12,7 @@ vi.mock("../research.js", async (orig) => ({ ...(await orig<Record<string, unkno
 vi.mock("../../../routes/crm/timeline.js", async (orig) => ({ ...(await orig<Record<string, unknown>>()), loadCrmTimeline: vi.fn(async () => []) }));
 const create = vi.fn();
 import OpenAI from "openai";
-import { applyEdit, buildOverview, dealTypeFor, generateSummaryV2, mergeKeepingEdits, missingInfo, submitSummaryV2, unsupportedAmounts } from "../creditSummaryV2.js";
+import { applyEdit, buildOverview, businessStartDate, loadSummaryV2, dealTypeFor, generateSummaryV2, mergeKeepingEdits, missingInfo, submitSummaryV2, unsupportedAmounts } from "../creditSummaryV2.js";
 import { API_ROUTE_MOUNTS } from "../../../routes/routeRegistry.js";
 import creditSummaryV2Routes from "../../../routes/creditSummaryV2.js";
 const proPipe = { id: "a1", name: "Pro-Pipe", requested_amount: 5000000, product_category: "ASSET_BASED_LENDING", contact_id: null, silo: "BF",
@@ -52,5 +52,25 @@ describe("v538 staff edits", () => {
     expect(upd[1]).toEqual(["a1", "u1", "Andrew Lee"]);
     query.mockImplementation(async (sql: string) => sql.includes("FROM users") ? { rows: [{ first_name: null, last_name: null, email: "ops@boreal.financial" }] } : { rows: [], rowCount: 1 });
     expect(await submitSummaryV2("a1", "u2")).toEqual({ name: "ops@boreal.financial" });
+  });
+});
+
+describe("v885 credit summary start date and signer", () => {
+  it("passes the start date as entered, without a time-zone shift", () => {
+    expect(businessStartDate({ business: { startDate: "2023-12-31" } })).toBe("2023-12-31");
+    expect(businessStartDate({ business: { startDate: "2023-12-31T00:00:00.000Z" } })).toBe("2023-12-31");
+    expect(businessStartDate({ kyc: { businessStartDate: "2019" } })).toBe("2019-01-01");
+    expect(businessStartDate({ business: {} })).toBeNull();
+  });
+  it("names the viewer as signer on a draft and the submitter once submitted", async () => {
+    query.mockImplementation(async (sql: string) => {
+      if (sql.includes("FROM credit_summaries_v2")) return { rows: [{ doc: {}, status: "draft", submitted_by_name: null }] };
+      if (sql.includes("FROM users")) return { rows: [{ first_name: "Todd", last_name: "Werboweski", email: "t@x" }] };
+      return { rows: [] };
+    });
+    expect((await loadSummaryV2("a1", "u1"))?.signed_by).toBe("Todd Werboweski");
+    query.mockImplementation(async (sql: string) => sql.includes("FROM credit_summaries_v2")
+      ? { rows: [{ doc: {}, status: "submitted", submitted_by_name: "Andrew Lee" }] } : { rows: [] });
+    expect((await loadSummaryV2("a1", "u1"))?.signed_by).toBe("Andrew Lee");
   });
 });
