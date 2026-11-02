@@ -605,6 +605,13 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
     // answered). Hang up. A staff leg must never be routed to the inbound
     // "leave a message" voicemail — that produced phantom voicemails and the
     // "no agents available" the operator heard on their own outbound call.
+    // BF_SERVER_v877_NO_NUMBER_CALL - a staff app call with nothing to dial (no number, no conference, no room)
+    // used to drop silently. Say why, and log which parameters it carried so the app that sent it can be found.
+    if (!to && !sdkConfFriendly && !meetingSlug) {
+      const sent = Object.keys(params).filter((k) => !/^(AccountSid|ApiVersion|ApplicationSid|CallSid|CallStatus|Called|Caller|Direction|From|To)$/.test(k));
+      console.warn(JSON.stringify({ event: "staff_call_without_number", callSid: callSid || null, from: from || null, params: sent }));
+      vr.say({ voice: "Polly.Joanna" }, "There is no number to call.");
+    }
     vr.hangup();
   } else {
     vr.say({ voice: "Polly.Joanna" }, "Sorry, no agents are available right now. Please leave a message after the tone.");
