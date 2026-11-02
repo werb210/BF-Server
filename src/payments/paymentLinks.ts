@@ -12,7 +12,7 @@
 // application that has a QuickBooks fee invoice (v852) records a QuickBooks payment against that invoice and marks the
 // invoice paid when nothing is left owing.
 import { randomBytes } from "node:crypto";
-import { brandName, sendClientMail } from "../settingsPack/boreal.js";
+import { brandName, brokerageTimeZone, sendClientMail } from "../settingsPack/boreal.js";
 import { CONSENT_SQL } from "../services/smsConsent.js";
 import { qboConfigured } from "../services/quickbooks/qboConfig.js";
 import { feeAmountFor } from "../services/quickbooks/feeInvoices.js";
@@ -173,7 +173,7 @@ export function linkMessage(link: Pick<LinkRow, "token" | "description" | "amoun
   const amount = money(link.amount_cents, link.currency);
   const how = link.methods.includes("acss_debit") && link.methods.includes("card") ? "by card or by pre-authorized debit from your bank account"
     : link.methods.includes("acss_debit") ? "by pre-authorized debit from your bank account" : "by card";
-  const until = new Date(link.expires_at).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric", timeZone: "America/Edmonton" });
+  const until = new Date(link.expires_at).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric", timeZone: brokerageTimeZone() });
   const hi = firstName ? `Hi ${firstName},` : "Hi,";
   const subject = `Payment request from ${brand}: ${amount}`;
   const text = [hi, "", `${brand} has sent you a secure payment link for ${link.description} (${amount}).`,
